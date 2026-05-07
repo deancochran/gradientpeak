@@ -282,12 +282,12 @@ export function parseRoute(routeContent: string, fileType?: string): ParsedRoute
 function detectFileType(content: string): string {
   const trimmed = content.trim();
 
-  if (trimmed.startsWith("<?xml") || trimmed.includes("<gpx")) {
-    return "gpx";
-  }
-
   if (trimmed.includes("<TrainingCenterDatabase")) {
     return "tcx";
+  }
+
+  if (trimmed.startsWith("<?xml") || trimmed.includes("<gpx")) {
+    return "gpx";
   }
 
   throw new Error("Unable to detect route file type");

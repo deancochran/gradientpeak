@@ -1,9 +1,11 @@
 import type { RecordingSessionContract } from "@repo/core";
+import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import type { LocationObject } from "expo-location";
+import { Navigation } from "lucide-react-native";
 import React from "react";
-import { View } from "react-native";
-import MapView, { Polyline, PROVIDER_DEFAULT } from "react-native-maps";
+import { Pressable, View } from "react-native";
+import MapView, { type Camera, Polyline, PROVIDER_DEFAULT } from "react-native-maps";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import {
   buildRecordingBackdropModel,
@@ -15,14 +17,21 @@ export interface RecordingBackdropProps {
   recordingState: string;
   service: ActivityRecorderService | null;
   sessionContract: RecordingSessionContract | null;
+  trackingControlBottomOffset: number;
+  trackingControlHidden?: boolean;
 }
 
 export function RecordingBackdrop({
   recordingState,
   service,
   sessionContract,
+  trackingControlBottomOffset,
+  trackingControlHidden = false,
 }: RecordingBackdropProps) {
+  const mapRef = React.useRef<MapView>(null);
   const [currentLocation, setCurrentLocation] = React.useState<LocationObject | null>(null);
+  const [currentHeading, setCurrentHeading] = React.useState(0);
+  const [trackingEnabled, setTrackingEnabled] = React.useState(true);
   const [mapReady, setMapReady] = React.useState(false);
   const model = React.useMemo(
     () => buildRecordingBackdropModel({ currentLocation, service, sessionContract }),
@@ -33,7 +42,28 @@ export function RecordingBackdrop({
 
   React.useEffect(() => {
     setMapReady(false);
+    setTrackingEnabled(true);
   }, [model.mapKey]);
+
+  const followCurrentLocation = React.useCallback(
+    (location: LocationObject, duration = 500) => {
+      if (!mapRef.current) return;
+
+      const heading = getLocationHeading(location, currentHeading);
+      const camera: Camera = {
+        center: {
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+        },
+        heading,
+        pitch: 0,
+        zoom: 16,
+      };
+
+      mapRef.current.animateCamera(camera, { duration });
+    },
+    [currentHeading],
+  );
 
   React.useEffect(() => {
     if (!service || (model.mode !== "live_navigation" && model.mode !== "gps_map")) return;
@@ -49,6 +79,11 @@ export function RecordingBackdrop({
 
     const handleLocationUpdate = (location: LocationObject) => {
       setCurrentLocation(location);
+      setCurrentHeading(getLocationHeading(location, currentHeading));
+
+      if (trackingEnabled) {
+        followCurrentLocation(location);
+      }
     };
 
     service.locationManager.addCallback(handleLocationUpdate);
@@ -57,12 +92,33 @@ export function RecordingBackdrop({
       cancelled = true;
       service.locationManager.removeCallback(handleLocationUpdate);
     };
-  }, [model.mode, service]);
+  }, [currentHeading, followCurrentLocation, model.mode, service, trackingEnabled]);
+
+  const handleMapGesture = React.useCallback(() => {
+    setTrackingEnabled(false);
+  }, []);
+
+  const handleRegionChangeComplete = React.useCallback(
+    (_region: unknown, details?: { isGesture?: boolean }) => {
+      if (details?.isGesture) {
+        handleMapGesture();
+      }
+    },
+    [handleMapGesture],
+  );
+
+  const handleRestoreTracking = React.useCallback(() => {
+    if (!currentLocation) return;
+
+    setTrackingEnabled(true);
+    followCurrentLocation(currentLocation, 350);
+  }, [currentLocation, followCurrentLocation]);
 
   return (
     <View className="absolute inset-0 overflow-hidden bg-background" testID="recording-backdrop">
       {model.shouldRenderMap && model.mapRegion ? (
         <MapView
+          ref={mapRef}
           key={model.mapKey}
           provider={PROVIDER_DEFAULT}
           style={{ flex: 1 }}
@@ -73,12 +129,14 @@ export function RecordingBackdrop({
           showsCompass={true}
           showsScale={true}
           toolbarEnabled={false}
-          rotateEnabled={model.mode === "live_navigation"}
+          rotateEnabled={model.mode === "live_navigation" || model.mode === "gps_map"}
           pitchEnabled={false}
           loadingEnabled={!mapReady}
           loadingBackgroundColor="transparent"
           loadingIndicatorColor="#94a3b8"
           onMapReady={() => setMapReady(true)}
+          onPanDrag={handleMapGesture}
+          onRegionChangeComplete={handleRegionChangeComplete}
           testID="recording-backdrop-map"
         >
           {model.routeCoordinates.length > 1 ? (
@@ -97,6 +155,25 @@ export function RecordingBackdrop({
         <AtmosphericBackdrop mode={model.mode} />
       )}
 
+      {model.shouldRenderMap && !trackingEnabled && currentLocation && !trackingControlHidden ? (
+        <View
+          className="absolute right-4"
+          pointerEvents="box-none"
+          style={{ bottom: trackingControlBottomOffset }}
+        >
+          <Pressable
+            accessibilityLabel="Return to tracking mode"
+            accessibilityRole="button"
+            className="h-12 w-12 items-center justify-center rounded-full border border-border bg-card/95 shadow-lg active:opacity-80"
+            hitSlop={8}
+            onPress={handleRestoreTracking}
+            testID="recording-map-tracking-button"
+          >
+            <Icon as={Navigation} size={20} className="text-foreground" />
+          </Pressable>
+        </View>
+      ) : null}
+
       {showBackdropCopy ? (
         <View className="absolute inset-x-0 top-0 px-6 pt-24">
           <Text className="text-xs font-semibold uppercase tracking-[3px] text-white/65">
@@ -112,6 +189,14 @@ export function RecordingBackdrop({
       ) : null}
     </View>
   );
+}
+
+function getLocationHeading(location: LocationObject, fallback: number) {
+  const heading = location.coords.heading;
+
+  return typeof heading === "number" && Number.isFinite(heading) && heading >= 0
+    ? heading
+    : fallback;
 }
 
 function isMapPendingMode(mode: RecordingBackdropModel["mode"]) {

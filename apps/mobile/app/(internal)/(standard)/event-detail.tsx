@@ -14,7 +14,7 @@ import { format } from "date-fns";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { CheckCircle2, Ellipsis } from "lucide-react-native";
 import React, { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, ScrollView, View } from "react-native";
+import { AccessibilityInfo, ActivityIndicator, ScrollView, View } from "react-native";
 import { z } from "zod";
 import {
   type ActivityPlanListItem,
@@ -158,15 +158,100 @@ function formatScheduleRepeatLabel(event: any, recurring: boolean) {
   return `${cadenceLabel} until ${format(endAt, "MMMM d, yyyy")}`;
 }
 
+function readSearchParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function parseSuggestionTssDelta(value: string | string[] | undefined) {
+  const parsed = Number(readSearchParam(value));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function buildPlanSuggestionDefaults(input: {
+  type?: string;
+  tssDelta: number | null;
+  description?: string;
+}) {
+  const roundedDelta = input.tssDelta === null ? null : Math.round(input.tssDelta);
+  const absoluteDelta = roundedDelta === null ? null : Math.abs(roundedDelta);
+  const targetCopy =
+    absoluteDelta && absoluteDelta > 0 ? `Target: about ${absoluteDelta} TSS.` : null;
+  const description = input.description?.trim() || null;
+  const notes = [description, targetCopy, "Created from the Plan tab readiness suggestion."]
+    .filter(Boolean)
+    .join("\n\n");
+
+  if ((input.type === "add_load" || (roundedDelta ?? 0) > 0) && (roundedDelta ?? 0) > 0) {
+    return {
+      createEventType: "planned" as CreateEventType,
+      title: absoluteDelta ? `Suggested ${absoluteDelta} TSS session` : "Suggested session",
+      notes,
+      helperText: absoluteDelta
+        ? `Plan suggested adding about ${absoluteDelta} TSS. Select or adjust the matched activity plan before creating.`
+        : "Plan suggested adding load. Select or adjust an activity plan before creating.",
+      targetTss: absoluteDelta,
+    };
+  }
+
+  if (input.type || roundedDelta !== null || description) {
+    return {
+      createEventType: "custom" as CreateEventType,
+      title: roundedDelta && roundedDelta < 0 ? "Reduce scheduled load" : "Plan adjustment",
+      notes,
+      helperText:
+        "Plan suggested a schedule adjustment. Custom events do not change training load; edit existing sessions to reduce scheduled TSS.",
+      targetTss: null,
+    };
+  }
+
+  return null;
+}
+
 export default function EventDetailScreen() {
   const router = useRouter();
   const navigateTo = useAppNavigate();
   const { Stack } = require("expo-router") as typeof import("expo-router");
   const queryClient = useQueryClient();
-  const { id, mode, date } = useLocalSearchParams<{ id?: string; mode?: string; date?: string }>();
+  const {
+    id,
+    mode,
+    date,
+    trainingPlanId,
+    activityPlanId,
+    scheduleGapTssDelta,
+    planSuggestionType,
+    planSuggestionTssDelta,
+    planSuggestionDescription,
+  } = useLocalSearchParams<{
+    id?: string;
+    mode?: string;
+    date?: string;
+    trainingPlanId?: string;
+    activityPlanId?: string;
+    scheduleGapTssDelta?: string;
+    planSuggestionType?: string;
+    planSuggestionTssDelta?: string;
+    planSuggestionDescription?: string;
+  }>();
   const eventId = typeof id === "string" ? id : "";
   const startsInCreateMode = mode === "create";
   const createDate = typeof date === "string" ? date : undefined;
+  const createTrainingPlanId = typeof trainingPlanId === "string" ? trainingPlanId : undefined;
+  const preselectedActivityPlanId = typeof activityPlanId === "string" ? activityPlanId : undefined;
+  const scheduleGapTss = parseSuggestionTssDelta(scheduleGapTssDelta);
+  const scheduleGapNote =
+    scheduleGapTss !== null && scheduleGapTss > 0
+      ? `Schedule gap: about ${Math.round(scheduleGapTss)} TSS.`
+      : null;
+  const planSuggestionDefaults = useMemo(
+    () =>
+      buildPlanSuggestionDefaults({
+        type: readSearchParam(planSuggestionType),
+        tssDelta: parseSuggestionTssDelta(planSuggestionTssDelta),
+        description: readSearchParam(planSuggestionDescription),
+      }),
+    [planSuggestionDescription, planSuggestionTssDelta, planSuggestionType],
+  );
 
   const { beginRedirect, isRedirecting, redirectOnNotFound } = useDeletedDetailRedirect({
     onRedirect: () => router.navigate(ROUTES.PLAN.CALENDAR),
@@ -224,13 +309,17 @@ export default function EventDetailScreen() {
 
   useEffect(() => {
     if (startsInCreateMode) {
-      setCreateEventType(null);
+      setCreateEventType(
+        preselectedActivityPlanId ? "planned" : (planSuggestionDefaults?.createEventType ?? null),
+      );
       setActivityPlanSearchQuery("");
       setSelectedActivityPlanId(null);
       const initialStartsAt = buildCreateStartsAt(createDate);
       form.reset({
-        title: "",
-        notes: "",
+        title: planSuggestionDefaults?.title ?? "",
+        notes: [planSuggestionDefaults?.notes ?? null, scheduleGapNote]
+          .filter(Boolean)
+          .join("\n\n"),
         all_day: false,
         start_date: format(initialStartsAt, "yyyy-MM-dd"),
         start_time: format(initialStartsAt, "HH:mm"),
@@ -243,7 +332,14 @@ export default function EventDetailScreen() {
     if (!startsInCreateMode) {
       return;
     }
-  }, [createDate, form, startsInCreateMode]);
+  }, [
+    createDate,
+    form,
+    planSuggestionDefaults,
+    preselectedActivityPlanId,
+    scheduleGapNote,
+    startsInCreateMode,
+  ]);
 
   const createMutation = api.events.create.useMutation({
     onSuccess: async (createdEvent) => {
@@ -302,6 +398,36 @@ export default function EventDetailScreen() {
     () => availableActivityPlans.find((plan) => plan.id === selectedActivityPlanId) ?? null,
     [availableActivityPlans, selectedActivityPlanId],
   );
+  useEffect(() => {
+    if (
+      !startsInCreateMode ||
+      createEventType !== "planned" ||
+      !preselectedActivityPlanId ||
+      selectedActivityPlanId === preselectedActivityPlanId
+    ) {
+      return;
+    }
+
+    const selectedPlan = availableActivityPlans.find(
+      (plan) => plan.id === preselectedActivityPlanId,
+    );
+    if (!selectedPlan) {
+      return;
+    }
+
+    setSelectedActivityPlanId(preselectedActivityPlanId);
+    if (selectedPlan.name) {
+      form.setValue("title", selectedPlan.name, { shouldDirty: true });
+      AccessibilityInfo?.announceForAccessibility?.(`Selected activity plan ${selectedPlan.name}`);
+    }
+  }, [
+    availableActivityPlans,
+    createEventType,
+    form,
+    preselectedActivityPlanId,
+    selectedActivityPlanId,
+    startsInCreateMode,
+  ]);
   const comments = useEntityCommentsController({ entityId: event?.id, entityType: "event" });
   const { data: sourceTrainingPlan } = api.trainingPlans.getById.useQuery(
     event?.training_plan_id ? { id: event.training_plan_id } : skipToken,
@@ -381,6 +507,7 @@ export default function EventDetailScreen() {
     createMutation.mutate({
       event_type: createEventType,
       activity_plan_id: createEventType === "planned" ? selectedActivityPlanId : undefined,
+      training_plan_id: createTrainingPlanId,
       title: resolvedTitle,
       notes: values.notes.trim() ? values.notes.trim() : null,
       all_day: values.all_day,
@@ -678,6 +805,11 @@ export default function EventDetailScreen() {
             onSubmit={submitForm.handleSubmit}
             submitLabel={
               createMutation.isPending || submitForm.isSubmitting ? "Creating..." : "Create Event"
+            }
+            helperText={
+              preselectedActivityPlanId
+                ? `Review ${selectedCreateActivityPlan?.name ?? "the selected activity plan"} before creating this event.`
+                : (planSuggestionDefaults?.helperText ?? null)
             }
             testIDPrefix="event-detail"
             createEventType={createEventType}

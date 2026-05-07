@@ -50,7 +50,7 @@ function buildSessionContract({
 }
 
 describe("TrainerSurface", () => {
-  it("opens trainer controls when the trainer is controllable", () => {
+  it("opens sensors when the trainer is controllable", () => {
     const navigateTo = jest.fn();
 
     renderNative(
@@ -63,12 +63,12 @@ describe("TrainerSurface", () => {
       />,
     );
 
-    fireEvent.press(screen.getByTestId("button-open-trainer-controls"));
+    fireEvent.press(screen.getByTestId("button-open-sensors"));
 
-    expect(navigateTo).toHaveBeenCalledWith("/record/ftms");
+    expect(navigateTo).toHaveBeenCalledWith("/record/sensors");
   });
 
-  it("keeps trainer controls disabled when a trainer is present but not controllable", () => {
+  it("shows trainer consequences when a trainer is present but not controllable", () => {
     const navigateTo = jest.fn();
 
     renderNative(
@@ -85,7 +85,6 @@ describe("TrainerSurface", () => {
       />,
     );
 
-    expect(screen.getByTestId("button-open-trainer-controls").props.disabled).toBe(true);
     expect(screen.getByText("Trainer is connected without direct control.")).toBeTruthy();
 
     expect(navigateTo).not.toHaveBeenCalled();

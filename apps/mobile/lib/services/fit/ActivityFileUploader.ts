@@ -1,5 +1,5 @@
 /**
- * FitUploader - Upload FIT files via API-provided signed URLs
+ * ActivityFileUploader - Upload activity files via API-provided signed URLs
  *
  * Features:
  * - Background upload with progress tracking
@@ -45,14 +45,14 @@ export interface UploadState {
   attempts: number;
 }
 
-export class FitUploader {
+export class ActivityFileUploader {
   private config: UploadConfig;
   private uploadState: UploadState;
 
   constructor(
     _unusedBaseUrl?: string,
     _unusedAccessKey?: string,
-    _bucketName: string = "fit-files",
+    _bucketName: string = "activity-files",
     config?: Partial<UploadConfig>,
   ) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -89,7 +89,7 @@ export class FitUploader {
       const size = file.size ?? 0;
       if (size > MAX_FILE_SIZE) {
         throw new Error(
-          `FIT file size (${(size / (1024 * 1024)).toFixed(2)}MB) exceeds maximum allowed size of 50MB`,
+          `Activity file size (${(size / (1024 * 1024)).toFixed(2)}MB) exceeds maximum allowed size of 50MB`,
         );
       }
 
@@ -156,7 +156,7 @@ export class FitUploader {
       const fileResponse = await fetch(file.uri);
       const blob = await fileResponse.blob();
 
-      console.log(`[FitUploader] Uploading ${blob.size} bytes via Blob`);
+      console.log(`[ActivityFileUploader] Uploading ${blob.size} bytes via Blob`);
 
       const response = await fetch(url, {
         method: method,
@@ -177,7 +177,7 @@ export class FitUploader {
         };
       }
 
-      console.log(`[FitUploader] Upload successful`);
+      console.log(`[ActivityFileUploader] Upload successful`);
 
       return {
         success: true,
@@ -202,7 +202,7 @@ export class FitUploader {
   async cancelUpload(): Promise<void> {
     this.uploadState.isUploading = false;
     this.uploadState.progress = null;
-    console.log("[FitUploader] Upload cancelled");
+    console.log("[ActivityFileUploader] Upload cancelled");
   }
 
   /**

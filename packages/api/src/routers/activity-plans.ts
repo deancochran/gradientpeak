@@ -900,7 +900,10 @@ export const activityPlansRouter = createTRPCRouter({
           ctx.session.user.id,
         );
       } catch (estimationError) {
-        console.warn("Failed to estimate FIT import template; returning raw plan", estimationError);
+        console.warn(
+          "Failed to estimate activity import template; returning raw plan",
+          estimationError,
+        );
       }
 
       return {

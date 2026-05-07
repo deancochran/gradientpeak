@@ -11,12 +11,14 @@ import {
 } from "@/components/calendar/AgendaCards";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
+import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import { parseDateKey, toDateKey } from "@/lib/calendar/dateMath";
 import { buildOpenEventRoute } from "@/lib/calendar/eventRouting";
 import { buildEventsByDate, type CalendarEvent } from "@/lib/calendar/normalizeEvents";
 import { ROUTES } from "@/lib/constants/routes";
 import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import { useAuthStore } from "@/lib/stores/auth-store";
 import { useCalendarStore } from "@/lib/stores/calendar-store";
 
 const CALENDAR_DAY_QUERY_LIMIT = 100;
@@ -56,6 +58,31 @@ function formatTimeRange(event: CalendarEvent): string {
   return `${format(start, "h:mm a")} - ${format(end, "h:mm a")}`;
 }
 
+function readParam(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function formatPlanSuggestion(input: { type?: string; tssDelta?: string; description?: string }) {
+  const delta = Number(input.tssDelta);
+  if (!Number.isFinite(delta) || delta === 0) {
+    return null;
+  }
+
+  const absoluteDelta = Math.abs(Math.round(delta));
+  const direction = input.type === "reduce_load" || delta < 0 ? "Reduce" : "Add";
+  return {
+    title: `${direction} about ${absoluteDelta} TSS`,
+    description:
+      input.description?.trim() ||
+      (direction === "Reduce"
+        ? "Review scheduled sessions on this day and reduce total load."
+        : "Create or refine a session on this day to close the readiness gap."),
+    tssDelta: String(Math.round(delta)),
+    type: direction === "Reduce" ? "reduce_load" : "add_load",
+    actionLabel: direction === "Reduce" ? "Create adjustment note" : "Create suggested session",
+  };
+}
+
 function readEventPlace(event: CalendarEvent): string | null {
   const source = event as CalendarEvent & {
     location?: string | null;
@@ -68,11 +95,29 @@ function readEventPlace(event: CalendarEvent): string | null {
 }
 
 export default function CalendarDayScreen() {
-  const params = useLocalSearchParams<{ date?: string }>();
+  const params = useLocalSearchParams<{
+    date?: string;
+    trainingPlanId?: string;
+    planSuggestionType?: string;
+    planSuggestionTssDelta?: string;
+    planSuggestionDescription?: string;
+  }>();
   const navigateTo = useAppNavigate();
   const todayKey = useMemo(() => toDateKey(new Date()), []);
   const dateKey = typeof params.date === "string" ? params.date : todayKey;
+  const planSuggestion = useMemo(
+    () =>
+      formatPlanSuggestion({
+        type: readParam(params.planSuggestionType),
+        tssDelta: readParam(params.planSuggestionTssDelta),
+        description: readParam(params.planSuggestionDescription),
+      }),
+    [params.planSuggestionDescription, params.planSuggestionTssDelta, params.planSuggestionType],
+  );
   const setActiveDate = useCalendarStore((state) => state.setActiveDate);
+  const eventsQueryEnabled = useAuthStore(
+    (state) => state.ready && !!state.session && hasSessionAuthCredentials(),
+  );
 
   useEffect(() => {
     setActiveDate(dateKey);
@@ -87,6 +132,7 @@ export default function CalendarDayScreen() {
     },
     {
       ...scheduleAwareReadQueryOptions,
+      enabled: eventsQueryEnabled,
       placeholderData: keepPreviousData,
     },
   );
@@ -126,7 +172,19 @@ export default function CalendarDayScreen() {
   const handleCreateEvent = () => {
     navigateTo({
       pathname: "/(internal)/(standard)/event-detail",
-      params: { mode: "create", date: dateKey },
+      params: {
+        mode: "create",
+        date: dateKey,
+        ...(typeof params.trainingPlanId === "string"
+          ? { trainingPlanId: params.trainingPlanId }
+          : {}),
+        ...(planSuggestion
+          ? {
+              planSuggestionType: planSuggestion.type,
+              planSuggestionTssDelta: planSuggestion.tssDelta,
+            }
+          : {}),
+      },
     } as never);
   };
 
@@ -172,6 +230,33 @@ export default function CalendarDayScreen() {
         </View>
       ) : (
         <ScrollView className="flex-1 px-4 pb-6 pt-4" contentContainerStyle={{ gap: 12 }}>
+          {planSuggestion ? (
+            <View
+              className="rounded-3xl border border-primary/30 bg-primary/10 px-5 py-4"
+              testID="calendar-day-plan-suggestion"
+            >
+              <Text className="text-xs font-semibold uppercase tracking-wide text-primary">
+                Plan suggestion
+              </Text>
+              <Text className="mt-2 text-base font-semibold text-foreground">
+                {planSuggestion.title}
+              </Text>
+              <Text className="mt-1 text-sm text-muted-foreground">
+                {planSuggestion.description}
+              </Text>
+              <TouchableOpacity
+                className="mt-3 self-start rounded-full bg-primary px-3 py-1.5"
+                activeOpacity={0.85}
+                onPress={handleCreateEvent}
+                testID="calendar-day-create-from-plan-suggestion"
+              >
+                <Text className="text-xs font-semibold text-primary-foreground">
+                  {planSuggestion.actionLabel}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
           {isRestDay ? (
             <View
               className="rounded-3xl border border-border bg-card px-5 py-5"

@@ -41,6 +41,8 @@ export interface RecordingConfigLaunchContext {
 export interface RecordingConfigSnapshotContext {
   launchSource?: RecordingConfigInput["launchSource"];
   plan?: RecordingConfigInput["plan"];
+  activityPlanId?: string | null;
+  routeId?: string | null;
   routeGeometryAvailable?: boolean;
   gpsAvailable?: boolean;
   session?: RecordingConfigInput["session"];
@@ -114,19 +116,24 @@ export class RecordingConfigResolver {
     context: RecordingConfigSnapshotContext = {},
   ): RecordingConfigInput {
     const trainer = snapshot.devices.controllableTrainer;
+    const activityPlanId =
+      context.activityPlanId !== undefined
+        ? context.activityPlanId
+        : snapshot.activity.activityPlanId;
+    const routeId = context.routeId !== undefined ? context.routeId : snapshot.activity.routeId;
 
     return {
       launchSource: context.launchSource ?? "manual",
       activityCategory: snapshot.activity.category,
       gpsRecordingEnabled: snapshot.activity.gpsMode === "on",
-      mode: snapshot.activity.mode === "planned" ? "planned" : "unplanned",
+      mode: activityPlanId ? "planned" : "unplanned",
       eventId: snapshot.activity.eventId,
-      activityPlanId: snapshot.activity.activityPlanId,
-      routeId: snapshot.activity.routeId,
+      activityPlanId,
+      routeId,
       routeGeometryAvailable: context.routeGeometryAvailable,
       plan: context.plan ?? {
-        hasStructure: snapshot.activity.activityPlanId !== null,
-        hasRoute: snapshot.activity.routeId !== null,
+        hasStructure: activityPlanId !== null,
+        hasRoute: routeId !== null,
         stepCount: 0,
         requiresManualAdvance: !snapshot.policies.controlPolicy.autoAdvanceSteps,
       },
@@ -165,13 +172,14 @@ export class RecordingConfigResolver {
   ): Omit<RecordingCapabilities, "isValid" | "errors" | "warnings"> {
     const hasStructuredPlan = input.plan?.hasStructure ?? false;
     const hasFtmsTrainer = !!input.devices.ftmsTrainer;
-    const trainerControlReady = Boolean(input.devices.ftmsTrainer?.controlReady);
+    const canUseTrainer = hasFtmsTrainer && !input.gpsRecordingEnabled;
+    const trainerControlReady = canUseTrainer && Boolean(input.devices.ftmsTrainer?.controlReady);
     const hasRoute = this.hasRoute(input);
     const hasRouteGeometry = this.hasRouteGeometry(input);
 
     // Data collection capabilities - straightforward hardware checks
     const canTrackLocation = input.gpsRecordingEnabled && input.gpsAvailable;
-    const canTrackPower = input.devices.hasPowerMeter || hasFtmsTrainer;
+    const canTrackPower = input.devices.hasPowerMeter || canUseTrainer;
     const canTrackHeartRate = input.devices.hasHeartRateMonitor;
     const canTrackCadence = input.devices.hasCadenceSensor;
 
@@ -192,8 +200,7 @@ export class RecordingConfigResolver {
     // Follow-along: Activity-specific (swim lanes, etc)
     const shouldShowFollowAlong = shouldUseFollowAlong(input.activityCategory);
 
-    // Trainer control: Show whenever a controllable trainer is connected
-    // Users can manually control power/resistance OR enable auto-erg if they have a plan/route
+    // Trainer control is indoor-only; connected trainers can stay paired during GPS sessions.
     const shouldShowTrainerControl = trainerControlReady;
 
     // Automation - only enable automatic features when we have data to automate with
@@ -201,7 +208,7 @@ export class RecordingConfigResolver {
 
     // Auto-follow: Can automatically adjust trainer IF user enables it AND we have targets to follow
     const shouldAutoFollowTargets =
-      hasFtmsTrainer &&
+      canUseTrainer &&
       trainerControlReady &&
       (hasStructuredPlan || hasRouteGeometry) && // Plan provides power targets, route provides grade
       (input.devices.ftmsTrainer?.autoControlEnabled ?? false);
@@ -237,8 +244,8 @@ export class RecordingConfigResolver {
     const hasStructuredPlan = input.plan?.hasStructure ?? false;
     const hasRoute = this.hasRoute(input);
     const hasRouteGeometry = this.hasRouteGeometry(input);
-    const hasTrainer = Boolean(input.devices.ftmsTrainer);
-    const trainerControllable = Boolean(input.devices.ftmsTrainer?.controlReady);
+    const hasTrainer = Boolean(input.devices.ftmsTrainer) && !input.gpsRecordingEnabled;
+    const trainerControllable = hasTrainer && Boolean(input.devices.ftmsTrainer?.controlReady);
     const routeMode = this.determineRouteMode(input, capabilities);
     const backdropMode = this.determineBackdropMode(input, capabilities, routeMode);
     const degraded = this.determineDegradedState(input);
@@ -250,7 +257,6 @@ export class RecordingConfigResolver {
     const quickActions = this.determineQuickActions({
       hasPlan,
       hasRoute,
-      hasTrainer,
     });
     const defaultPrimarySurface = this.determinePrimarySurface({
       hasStructuredPlan,
@@ -463,7 +469,6 @@ export class RecordingConfigResolver {
   private static determineQuickActions(params: {
     hasPlan: boolean;
     hasRoute: boolean;
-    hasTrainer: boolean;
   }): RecordingQuickAction[] {
     const actions: RecordingQuickAction[] = ["gps", "sensors"];
 
@@ -473,10 +478,6 @@ export class RecordingConfigResolver {
 
     actions.push("plan");
     actions.push("route");
-
-    if (params.hasTrainer) {
-      actions.push("trainer");
-    }
 
     return actions;
   }

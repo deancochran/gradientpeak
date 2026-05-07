@@ -56,13 +56,13 @@ function ActivityDetailPage() {
     { id: activity?.profile_id ?? "00000000-0000-0000-0000-000000000000" },
     { enabled: Boolean(activity?.profile_id) },
   );
-  const streamsQuery = api.fitFiles.getStreams.useQuery(
+  const streamsQuery = api.activityFiles.getStreams.useQuery(
     {
       activityId,
-      fitFilePath: activity?.fit_file_path ?? "placeholder.fit",
+      activityFilePath: activity?.activity_file_path ?? "placeholder.fit",
     },
     {
-      enabled: Boolean(activity?.fit_file_path),
+      enabled: Boolean(activity?.activity_file_path),
       staleTime: 5 * 60 * 1000,
     },
   );
@@ -215,8 +215,8 @@ function ActivityDetailPage() {
         <EntityMapCard
           coordinates={coordinates}
           emptyMessage={
-            activity.fit_file_path
-              ? "Location records were not available in the imported FIT file."
+            activity.activity_file_path
+              ? "Location records were not available in the imported activity file."
               : "This activity has no stored route preview yet."
           }
           subtitle="Web-first map preview built from the saved polyline or FIT records."

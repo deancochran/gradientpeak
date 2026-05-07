@@ -10,6 +10,12 @@ interface RouteElevationBackdropProps {
   service: ActivityRecorderService | null;
 }
 
+interface RouteElevationProfileProps extends RouteElevationBackdropProps {
+  className?: string;
+  showHeader?: boolean;
+  variant?: "compact" | "expanded";
+}
+
 interface RouteElevationDatum extends Record<string, unknown> {
   distanceMeters: number;
   elevation: number;
@@ -27,6 +33,8 @@ interface RenderedChartPoint {
 interface RouteSnapshot {
   currentDistance: number;
   grade: number;
+  isGpsEnabled: boolean;
+  isOnRoute: boolean;
   profile: Array<{ distance: number; elevation: number }>;
   progress: number;
   routeDistance: number;
@@ -39,6 +47,7 @@ interface RouteBackdropViewModel {
   currentProfilePoint: RouteElevationDatum | null;
   gradeLabel: string;
   isRouteComplete: boolean;
+  shouldShowPosition: boolean;
   profilePoints: RouteElevationDatum[];
   progressLabel: string;
   progressRatio: number;
@@ -48,7 +57,8 @@ interface RouteBackdropViewModel {
 
 type ChartYKey = "elevation";
 
-const chartPadding = { bottom: 24, left: 6, right: 6, top: 18 };
+const compactChartPadding = { bottom: 0, left: 0, right: 0, top: 0 };
+const expandedChartPadding = { bottom: 0, left: 0, right: 4, top: 4 };
 
 export function RouteElevationBackdrop({ service }: RouteElevationBackdropProps) {
   const insets = useSafeAreaInsets();
@@ -66,7 +76,12 @@ export function RouteElevationBackdrop({ service }: RouteElevationBackdropProps)
   );
 }
 
-export function RouteElevationProfile({ service }: RouteElevationBackdropProps) {
+export function RouteElevationProfile({
+  className,
+  service,
+  showHeader = true,
+  variant = "expanded",
+}: RouteElevationProfileProps) {
   const font = useFont(require("@/assets/fonts/SpaceMono-Regular.ttf"), 11);
   const isDark = useColorScheme() === "dark";
   const colors = React.useMemo(() => getRouteBackdropColors(isDark), [isDark]);
@@ -91,53 +106,99 @@ export function RouteElevationProfile({ service }: RouteElevationBackdropProps) 
     [
       snapshot.currentDistance,
       snapshot.grade,
+      snapshot.isGpsEnabled,
+      snapshot.isOnRoute,
       snapshot.profile,
       snapshot.progress,
       snapshot.routeDistance,
     ],
   );
+  const isCompact = variant === "compact";
+  const xAxisTicks = React.useMemo(() => {
+    const firstPoint = model.profilePoints[0];
+    const lastPoint = model.profilePoints.at(-1);
+
+    return uniqueEndpointTicks(firstPoint?.distanceMeters, lastPoint?.distanceMeters);
+  }, [model.profilePoints]);
+  const yAxisTicks = React.useMemo(() => {
+    if (model.profilePoints.length === 0) return [];
+
+    const { maxElevation, minElevation } = resolveElevationRange(model.profilePoints);
+
+    return uniqueEndpointTicks(minElevation, maxElevation);
+  }, [model.profilePoints]);
+  const compactMaxXLabel = React.useMemo(() => {
+    const lastPoint = model.profilePoints.at(-1);
+
+    return lastPoint ? `${(lastPoint.distanceMeters / 1000).toFixed(1)} km` : null;
+  }, [model.profilePoints]);
+  const compactMaxYLabel = React.useMemo(() => {
+    if (model.profilePoints.length === 0) return null;
+
+    return `${Math.round(resolveElevationRange(model.profilePoints).maxElevation)} m`;
+  }, [model.profilePoints]);
+  const axisOptions = isCompact
+    ? {
+        font: null,
+        formatXLabel: (value: unknown) => `${(Number(value) / 1000).toFixed(1)} km`,
+        formatYLabel: (value: unknown) => `${Math.round(Number(value))} m`,
+        labelColor: colors.axisLabel,
+        labelOffset: { x: 2, y: 2 },
+        labelPosition: { x: "inset" as const, y: "inset" as const },
+        lineColor: colors.axisLine,
+        lineWidth: 0,
+        tickCount: { x: 2, y: 2 },
+        tickValues: { x: xAxisTicks, y: yAxisTicks },
+      }
+    : {
+        font,
+        formatXLabel: (value: unknown) => `${(Number(value) / 1000).toFixed(1)} km`,
+        formatYLabel: (value: unknown) => `${Math.round(Number(value))} m`,
+        labelColor: colors.axisLabel,
+        labelOffset: { x: 2, y: 3 },
+        labelPosition: { x: "inset" as const, y: "inset" as const },
+        lineColor: colors.axisLine,
+        lineWidth: 1,
+      };
 
   return (
-    <View testID="route-profile-card-content">
-      <View className="mb-3 flex-row items-start justify-between gap-4">
-        <View className="flex-1">
-          <Text className="text-[10px] font-semibold uppercase tracking-[2px] text-muted-foreground">
-            Indoor route
-          </Text>
-          <Text className="mt-1 text-xl font-black leading-tight text-foreground">
-            {model.progressLabel}
-          </Text>
+    <View className={className} testID="route-profile-card-content">
+      {!isCompact && showHeader ? (
+        <View className="mb-3 flex-row items-start justify-between gap-4">
+          <View className="flex-1">
+            <Text className="text-[10px] font-semibold uppercase tracking-[2px] text-muted-foreground">
+              Route profile
+            </Text>
+            <Text className="mt-1 text-xl font-black leading-tight text-foreground">
+              {model.progressLabel}
+            </Text>
+          </View>
         </View>
-      </View>
+      ) : null}
 
       {model.profilePoints.length > 1 ? (
         <View
-          className="h-44 overflow-hidden rounded-[24px] border border-border bg-background"
+          className={`${isCompact ? "min-h-0 flex-1" : "min-h-72 flex-1"} overflow-hidden`}
           testID="route-elevation-chart"
         >
           <CartesianChart<RouteElevationDatum, "distanceMeters", ChartYKey>
             data={model.profilePoints}
             xKey="distanceMeters"
             yKeys={["elevation"]}
-            padding={chartPadding}
-            axisOptions={{
-              font,
-              labelColor: colors.axisLabel,
-              lineColor: colors.axisLine,
-              lineWidth: 1,
-              formatXLabel: (value: unknown) => `${(Number(value) / 1000).toFixed(1)} km`,
-              formatYLabel: (value: unknown) => `${Math.round(Number(value))} m`,
-            }}
+            padding={isCompact ? compactChartPadding : expandedChartPadding}
+            axisOptions={axisOptions}
             frame={{ lineColor: colors.frame, lineWidth: 1 }}
           >
             {({ points, chartBounds }) => {
               const chartPoints = points.elevation as unknown as RenderedChartPoint[];
-              const renderedPoint = resolveRenderedCurrentPoint({
-                chartBounds,
-                currentPoint: model.currentProfilePoint,
-                points: chartPoints,
-                progressRatio: model.progressRatio,
-              });
+              const renderedPoint = model.shouldShowPosition
+                ? resolveRenderedCurrentPoint({
+                    chartBounds,
+                    currentPoint: model.currentProfilePoint,
+                    points: chartPoints,
+                    progressRatio: model.progressRatio,
+                  })
+                : null;
               const completedPoints = buildRenderedCompletedPoints({
                 currentPoint: model.currentProfilePoint,
                 points: chartPoints,
@@ -180,59 +241,54 @@ export function RouteElevationProfile({ service }: RouteElevationBackdropProps) 
               );
             }}
           </CartesianChart>
-          {model.currentProfilePoint ? (
+          {model.currentProfilePoint && model.shouldShowPosition ? (
             <View
               className="absolute h-1 w-1"
               style={{ left: `${model.progressRatio * 100}%`, top: "50%" }}
               testID="route-profile-current-dot"
             />
           ) : null}
-          <GradeCue
-            chartHeight={176}
-            label={model.gradeLabel}
-            progressRatio={model.progressRatio}
-          />
+          {isCompact ? (
+            <View className="pointer-events-none absolute inset-0 justify-between px-1 py-0.5">
+              <Text className="self-start rounded-full bg-background/80 px-1.5 py-0.5 text-[9px] font-bold text-muted-foreground">
+                {compactMaxYLabel}
+              </Text>
+              <Text className="self-end rounded-full bg-background/80 px-1.5 py-0.5 text-[9px] font-bold text-muted-foreground">
+                {compactMaxXLabel}
+              </Text>
+            </View>
+          ) : null}
         </View>
       ) : (
-        <DistanceFallback model={model} />
+        <DistanceFallback compact={isCompact} model={model} />
       )}
     </View>
   );
 }
 
-function GradeCue({
-  chartHeight,
-  label,
-  progressRatio,
+function DistanceFallback({
+  compact,
+  model,
 }: {
-  chartHeight: number;
-  label: string;
-  progressRatio: number;
+  compact?: boolean;
+  model: RouteBackdropViewModel;
 }) {
-  const leftPercent = clamp(progressRatio * 100, 8, 74);
-
   return (
     <View
-      className="absolute rounded-full border border-border bg-card px-3 py-1.5"
-      style={{ left: `${leftPercent}%`, top: chartHeight * 0.08 }}
-      testID="route-profile-grade-cue"
-    >
-      <Text className="text-xs font-black text-foreground">{label}</Text>
-    </View>
-  );
-}
-
-function DistanceFallback({ model }: { model: RouteBackdropViewModel }) {
-  return (
-    <View
-      className="h-44 justify-center rounded-[24px] border border-border bg-background p-4"
+      className={`${compact ? "h-24 rounded-[20px] px-3 py-2" : "h-44 rounded-[24px] border p-4"} justify-center border-border bg-background`}
       testID="route-distance-fallback"
     >
-      <Text className="text-sm font-semibold text-foreground">Distance route</Text>
-      <Text className="mt-2 text-xs leading-5 text-muted-foreground">
-        Elevation data is not available, so progress follows the route distance.
-      </Text>
-      <View className="relative mt-8 h-2 overflow-visible rounded-full bg-muted">
+      {!compact ? (
+        <>
+          <Text className="text-sm font-semibold text-foreground">Route distance</Text>
+          <Text className="mt-2 text-xs leading-5 text-muted-foreground">
+            Elevation data is unavailable, so progress follows distance along the route.
+          </Text>
+        </>
+      ) : null}
+      <View
+        className={`${compact ? "mt-2" : "mt-8"} relative h-2 overflow-visible rounded-full bg-muted`}
+      >
         <View
           className="h-full rounded-full bg-primary"
           style={{ width: `${Math.round(model.progressRatio * 100)}%` }}
@@ -245,6 +301,24 @@ function DistanceFallback({ model }: { model: RouteBackdropViewModel }) {
       </View>
     </View>
   );
+}
+
+function uniqueEndpointTicks(first?: number, last?: number) {
+  const ticks = [first, last].filter((value): value is number => Number.isFinite(value));
+
+  return Array.from(new Set(ticks));
+}
+
+function resolveElevationRange(points: RouteElevationDatum[]) {
+  let minElevation = Number.POSITIVE_INFINITY;
+  let maxElevation = Number.NEGATIVE_INFINITY;
+
+  for (const point of points) {
+    minElevation = Math.min(minElevation, point.elevation);
+    maxElevation = Math.max(maxElevation, point.elevation);
+  }
+
+  return { maxElevation, minElevation };
 }
 
 function getRouteBackdropColors(isDark: boolean) {
@@ -271,6 +345,8 @@ function readRouteSnapshot(service: ActivityRecorderService | null): RouteSnapsh
   return {
     currentDistance: Math.max(0, service?.currentRouteDistance ?? 0),
     grade: service?.currentRouteGrade ?? 0,
+    isGpsEnabled: service?.isGpsRecordingEnabled?.() ?? true,
+    isOnRoute: service?.isOnRoute ?? false,
     profile: service?.currentRoute?.elevation_profile ?? [],
     progress: clamp(service?.routeProgress ?? 0, 0, 100),
     routeDistance: Math.max(0, service?.routeDistance ?? 0),
@@ -291,6 +367,7 @@ function buildRouteBackdropViewModel(snapshot: RouteSnapshot): RouteBackdropView
       ? clamp(clampedDistanceMeters / routeDistanceMeters, 0, 1)
       : clamp(snapshot.progress / 100, 0, 1);
   const currentProfilePoint = interpolateProfilePoint(profilePoints, clampedDistanceMeters);
+  const shouldShowPosition = !snapshot.isGpsEnabled || snapshot.isOnRoute;
   const completedProfilePoints = currentProfilePoint
     ? [
         ...profilePoints.filter((point) => point.distanceMeters <= clampedDistanceMeters),
@@ -305,6 +382,7 @@ function buildRouteBackdropViewModel(snapshot: RouteSnapshot): RouteBackdropView
     currentProfilePoint,
     gradeLabel: formatGrade(snapshot.grade),
     isRouteComplete: routeDistanceMeters > 0 && currentDistanceMeters >= routeDistanceMeters,
+    shouldShowPosition,
     profilePoints,
     progressLabel:
       routeDistanceMeters > 0

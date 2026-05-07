@@ -116,6 +116,7 @@ function inferRouteFileType(fileName?: string): string | undefined {
   if (!fileName) return undefined;
 
   const extension = fileName.split(".").pop()?.trim().toLowerCase();
+  if (extension === "xml") return undefined;
   return extension && extension.length > 0 ? extension : undefined;
 }
 

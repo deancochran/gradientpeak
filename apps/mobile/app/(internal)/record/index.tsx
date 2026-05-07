@@ -1,8 +1,7 @@
-import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { AlertTriangle, ChevronLeft } from "lucide-react-native";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { RecordingLiveCockpit } from "@/components/recording/cockpit";
@@ -28,15 +27,16 @@ function RecordScreen() {
     <View className="flex-1 bg-background" testID="record-screen-ready">
       {controller.serviceState !== "finishing" && controller.serviceState !== "finished" ? (
         <View className="absolute top-4 left-4 z-50" style={{ top: insets.top + 16 }}>
-          <Button
-            size="icon"
-            variant="outline"
+          <Pressable
+            accessibilityLabel="Back"
+            accessibilityRole="button"
+            hitSlop={12}
             testID="record-close-button"
             onPress={controller.onBack}
-            className="h-10 w-10 rounded-full bg-background/80 backdrop-blur-sm border border-border shadow-lg"
+            className="active:opacity-70"
           >
             <Icon as={ChevronLeft} size={20} />
-          </Button>
+          </Pressable>
         </View>
       ) : null}
 

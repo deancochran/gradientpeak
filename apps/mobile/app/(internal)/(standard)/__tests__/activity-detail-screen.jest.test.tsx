@@ -16,7 +16,7 @@ const activityData = {
     likes_count: 0,
     is_private: false,
     notes: "Steady through the middle block.",
-    fit_file_path: null,
+    activity_file_path: null,
     activity_plan_id: "plan-1",
     activity_plans: {
       id: "plan-1",
@@ -153,7 +153,7 @@ jest.mock("@/lib/api", () => ({
         useQuery: () => ({ data: { username: "runner", avatar_url: null } }),
       },
     },
-    fitFiles: {
+    activityFiles: {
       getStreams: {
         useQuery: () => ({ data: null, isLoading: false, error: null }),
       },

@@ -1,5 +1,5 @@
-import * as SecureStore from "expo-secure-store";
 import { useSyncExternalStore } from "react";
+import { safeSecureStore } from "@/lib/storage/safe-secure-store";
 
 const SERVER_URL_OVERRIDE_KEY = "server_url_override";
 const useLocalE2EHost = process.env.EXPO_PUBLIC_MAESTRO_E2E === "1";
@@ -114,7 +114,7 @@ export async function initializeServerConfig() {
 
   initializePromise = (async () => {
     const storedUrl = isServerUrlOverrideEnabled()
-      ? await SecureStore.getItemAsync(SERVER_URL_OVERRIDE_KEY)
+      ? await safeSecureStore.getItemAsync(SERVER_URL_OVERRIDE_KEY)
       : null;
     const normalizedOverride = normalizeBaseUrl(storedUrl);
     updateState(normalizedOverride);
@@ -143,12 +143,12 @@ export async function setServerUrlOverride(url: string | null) {
   }
 
   if (!normalizedOverride) {
-    await SecureStore.deleteItemAsync(SERVER_URL_OVERRIDE_KEY);
+    await safeSecureStore.deleteItemAsync(SERVER_URL_OVERRIDE_KEY);
     updateState(null);
     return { changed: true as const };
   }
 
-  await SecureStore.setItemAsync(SERVER_URL_OVERRIDE_KEY, normalizedOverride);
+  await safeSecureStore.setItemAsync(SERVER_URL_OVERRIDE_KEY, normalizedOverride);
   updateState(normalizedOverride);
   return { changed: true as const };
 }

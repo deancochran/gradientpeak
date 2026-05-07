@@ -10,9 +10,9 @@ import {
 } from "@repo/auth/client";
 import { createGradientPeakExpoAuthClient } from "@repo/auth/client/expo";
 import type { AuthSession } from "@repo/auth/session";
-import * as SecureStore from "expo-secure-store";
 import { getAppScheme } from "@/lib/hooks/useAppScheme";
 import { getServerConfig, subscribeServerConfig } from "@/lib/server-config";
+import { safeSecureStore } from "@/lib/storage/safe-secure-store";
 
 type SessionListener = (session: AuthSession | null) => void;
 
@@ -25,8 +25,8 @@ function createMobileAuthClient() {
     }),
     scheme: getAppScheme(),
     storage: {
-      getItem: SecureStore.getItem,
-      setItem: SecureStore.setItem,
+      getItem: safeSecureStore.getItem,
+      setItem: safeSecureStore.setItem,
     },
   });
 }

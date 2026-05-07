@@ -14,7 +14,11 @@
  * ```
  */
 
-import type { RecordingActivityCategory, RecordingServiceActivityPlan } from "@repo/core";
+import type {
+  MetricFamily,
+  RecordingActivityCategory,
+  RecordingServiceActivityPlan,
+} from "@repo/core";
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import type { Device } from "react-native-ble-plx";
 import type {
@@ -23,7 +27,7 @@ import type {
   RecordingState,
   TimeUpdate,
 } from "@/lib/services/ActivityRecorder";
-import type { ConnectedSensor } from "@/lib/services/ActivityRecorder/sensors";
+import type { ConnectedSensor, PersistedSensor } from "@/lib/services/ActivityRecorder/sensors";
 import type {
   CurrentReadings,
   RecorderProfileRef,
@@ -63,7 +67,17 @@ export interface RecorderActions {
   subscribeScan: (callback: (device: Device) => void) => () => void;
   connectDevice: (deviceId: string) => Promise<void>;
   disconnectDevice: (deviceId: string) => Promise<void>;
+  forgetDevice: (deviceId: string) => Promise<void>;
   resetSensors: () => Promise<void>;
+
+  // Metric sources
+  setPreferredMetricSource: (metricFamily: MetricFamily, sourceId: string) => void;
+  clearPreferredMetricSource: (metricFamily: MetricFamily) => void;
+  disableMetricSource: (metricFamily: MetricFamily, sourceId: string) => void;
+  enableMetricSource: (metricFamily: MetricFamily, sourceId: string) => void;
+
+  // FTMS control
+  selectFTMSControlTarget: (deviceId: string | null) => boolean;
 }
 
 export type RecorderHookCompatibilityStatus =
@@ -303,6 +317,23 @@ export function useSensors(service: ActivityRecorderService | null): SensorsStat
   };
 }
 
+export function useKnownSensors(service: ActivityRecorderService | null): PersistedSensor[] {
+  const [sensors, setSensors] = useState<PersistedSensor[]>(
+    () => service?.sensorsManager.getPersistedSensors() || [],
+  );
+
+  useEffect(() => {
+    if (!service) {
+      setSensors([]);
+      return;
+    }
+
+    return service.sensorsManager.subscribePersistedSensors(setSensors);
+  }, [service]);
+
+  return sensors;
+}
+
 // ================================
 // Plan Hooks (Direct Service Access)
 // ================================
@@ -367,6 +398,13 @@ export function usePlan(service: ActivityRecorderService | null) {
     planTimeRemaining: 0,
   });
 
+  return buildPlanData(service, planView);
+}
+
+function buildPlanData(
+  service: ActivityRecorderService | null,
+  planView: RecordingSessionView["plan"],
+) {
   if (!planView.hasPlan) {
     return {
       hasPlan: false as const,
@@ -399,6 +437,19 @@ export function usePlan(service: ActivityRecorderService | null) {
     clear: () => service?.clearPlan(),
     planTimeRemaining: planView.planTimeRemaining,
   };
+}
+
+export function useActivityRecorderLiveData(service: ActivityRecorderService | null) {
+  const view = useSessionView(service);
+
+  return useMemo(
+    () => ({
+      current: view?.currentReadings ?? EMPTY_CURRENT_READINGS,
+      stats: view?.sessionStats ?? EMPTY_SESSION_STATS,
+      plan: buildPlanData(service, view?.plan ?? EMPTY_PLAN_VIEW),
+    }),
+    [service, view],
+  );
 }
 
 /**
@@ -715,10 +766,51 @@ export function useRecorderActions(service: ActivityRecorderService | null): Rec
     [service],
   );
 
+  const forgetDevice = useCallback(
+    async (deviceId: string) => {
+      if (!service) return;
+      await service.sensorsManager.forgetSensor(deviceId);
+    },
+    [service],
+  );
+
   const resetSensors = useCallback(async () => {
     if (!service) return;
     await service.resetAllSensors();
   }, [service]);
+
+  const setPreferredMetricSource = useCallback(
+    (metricFamily: MetricFamily, sourceId: string) => {
+      service?.setPreferredMetricSource(metricFamily, sourceId);
+    },
+    [service],
+  );
+
+  const clearPreferredMetricSource = useCallback(
+    (metricFamily: MetricFamily) => {
+      service?.clearPreferredMetricSource(metricFamily);
+    },
+    [service],
+  );
+
+  const disableMetricSource = useCallback(
+    (metricFamily: MetricFamily, sourceId: string) => {
+      service?.disableMetricSource(metricFamily, sourceId);
+    },
+    [service],
+  );
+
+  const enableMetricSource = useCallback(
+    (metricFamily: MetricFamily, sourceId: string) => {
+      service?.enableMetricSource(metricFamily, sourceId);
+    },
+    [service],
+  );
+
+  const selectFTMSControlTarget = useCallback(
+    (deviceId: string | null) => service?.selectFTMSControlTarget(deviceId) ?? false,
+    [service],
+  );
 
   return {
     // Recording controls
@@ -736,7 +828,13 @@ export function useRecorderActions(service: ActivityRecorderService | null): Rec
     subscribeScan,
     connectDevice,
     disconnectDevice,
+    forgetDevice,
     resetSensors,
+    setPreferredMetricSource,
+    clearPreferredMetricSource,
+    disableMetricSource,
+    enableMetricSource,
+    selectFTMSControlTarget,
   };
 }
 
@@ -756,14 +854,7 @@ export function useBleState(service: ActivityRecorderService | null): string {
       return;
     }
 
-    const syncBleState = () => {
-      setBleState(service.getBleState());
-    };
-
-    syncBleState();
-
-    const interval = setInterval(syncBleState, 2000);
-    return () => clearInterval(interval);
+    return service.sensorsManager.subscribeBleState(setBleState);
   }, [service]);
 
   return bleState;
@@ -828,6 +919,19 @@ export function useSessionView(
 }
 
 const EMPTY_CURRENT_READINGS: CurrentReadings = {};
+
+const EMPTY_PLAN_VIEW: RecordingSessionView["plan"] = {
+  hasPlan: false,
+  stepIndex: 0,
+  stepCount: 0,
+  progress: null,
+  isLast: false,
+  isFinished: false,
+  canAdvance: false,
+  canSkip: false,
+  canGoBack: false,
+  planTimeRemaining: 0,
+};
 
 const EMPTY_SESSION_STATS: SessionStats = {
   duration: 0,

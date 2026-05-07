@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import React from "react";
 import { Alert } from "react-native";
 import { api } from "@/lib/api";
+import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import {
   useActivityStatus,
   usePlan,
@@ -43,7 +44,7 @@ export function useRecordScreenController() {
   const sessionContract = useRecordingSessionContract(service);
 
   const { data: zones } = api.profiles.getZones.useQuery(undefined, {
-    enabled: !!user && !!service,
+    enabled: !!user && !!service && hasSessionAuthCredentials(),
     staleTime: 1000 * 60 * 5,
   });
 
@@ -345,10 +346,6 @@ export function useRecordScreenController() {
     navigateTo("/record/activity");
   }, [navigateTo]);
 
-  const onOpenFtms = React.useCallback(() => {
-    navigateTo("/record/ftms");
-  }, [navigateTo]);
-
   const onOpenPlan = React.useCallback(() => {
     router.replace({
       pathname: "/search" as never,
@@ -370,6 +367,8 @@ export function useRecordScreenController() {
   const onOpenSensors = React.useCallback(() => {
     navigateTo("/record/sensors");
   }, [navigateTo]);
+
+  const onOpenFtms = onOpenSensors;
 
   const onRemovePlan = React.useCallback(() => {
     service?.clearPlan();

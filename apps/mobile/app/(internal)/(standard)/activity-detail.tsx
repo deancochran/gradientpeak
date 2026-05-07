@@ -128,21 +128,21 @@ function ActivityDetailScreen() {
     { enabled: !!activity?.profile_id },
   );
 
-  // Fetch streams if fit file exists
+  // Fetch streams if an activity file exists
   const activityId = activity?.id;
-  const fitFilePath = activity?.fit_file_path;
+  const activityFilePath = activity?.activity_file_path;
 
   const {
     data: streamsData,
     isLoading: isLoadingStreams,
     error: streamsError,
-  } = api.fitFiles.getStreams.useQuery(
+  } = api.activityFiles.getStreams.useQuery(
     {
-      fitFilePath: fitFilePath!,
+      activityFilePath: activityFilePath!,
       activityId: activityId,
     },
     {
-      enabled: !!fitFilePath && !!activityId,
+      enabled: !!activityFilePath && !!activityId,
       staleTime: 5 * 60 * 1000,
       retry: 2,
     },
@@ -697,7 +697,7 @@ function ActivityDetailScreen() {
           )}
 
           {/* Analysis Charts */}
-          {activity.fit_file_path && (
+          {activity.activity_file_path && (
             <>
               {isLoadingStreams ? (
                 <Card>

@@ -6,7 +6,7 @@
 export { createProviderSyncRepository, createWahooRepository } from "./infrastructure/repositories";
 export {
   createActivityImporter,
-  createWahooImportFitFileStorage,
+  createWahooImportActivityFileStorage,
 } from "./lib/integrations/wahoo/activity-importer";
 export type { WahooWorkoutSummary } from "./lib/integrations/wahoo/client";
 export { createWahooRouteStorage, WahooSyncService } from "./lib/integrations/wahoo/sync-service";

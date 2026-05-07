@@ -210,6 +210,24 @@ describe("goalsRouter", () => {
     });
   });
 
+  it("accepts infinite-query direction metadata", async () => {
+    const goal = createGoalRow();
+    const { caller } = createCaller({
+      queryMap: {
+        profileGoalsSelect: [goal],
+        profileGoalsCount: [{ total: 1 }],
+      },
+    });
+
+    await expect(
+      caller.list({
+        profile_id: OWNER_ID,
+        limit: 20,
+        direction: "forward",
+      }),
+    ).resolves.toMatchObject({ items: [goal] });
+  });
+
   it("rejects list input with unexpected keys", async () => {
     const { caller } = createCaller();
 

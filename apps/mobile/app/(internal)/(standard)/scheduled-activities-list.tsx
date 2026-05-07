@@ -10,14 +10,19 @@ import { Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { ActivityList } from "@/components/plan/calendar/ActivityList";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
+import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import { useAuthStore } from "@/lib/stores/auth-store";
 
 export default function ScheduledScreen() {
   const router = useRouter();
   const navigateTo = useAppNavigate();
   const [refreshing, setRefreshing] = useState(false);
   const utils = api.useUtils();
+  const eventsQueryEnabled = useAuthStore(
+    (state) => state.ready && !!state.session && hasSessionAuthCredentials(),
+  );
 
   // Query all scheduled activities
   const {
@@ -28,7 +33,10 @@ export default function ScheduledScreen() {
     {
       limit: 100, // Get all activities for scheduling view
     },
-    scheduleAwareReadQueryOptions,
+    {
+      ...scheduleAwareReadQueryOptions,
+      enabled: eventsQueryEnabled,
+    },
   );
 
   const scheduledActivities = scheduledData?.items || [];

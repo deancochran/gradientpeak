@@ -81,12 +81,10 @@ function resolveRecordingAction(
     case "trainer":
       return {
         disabled: false,
-        hint: contract?.devices.trainerControllable
-          ? "Open trainer controls."
-          : "Open sensors to connect a controllable trainer.",
+        hint: "Open sensors to connect or review the trainer.",
         id: action,
-        label: contract?.devices.trainerControllable ? "Trainer ready" : "Connect trainer",
-        onPress: contract?.devices.trainerControllable ? context.onOpenFtms : context.onOpenSensors,
+        label: contract?.devices.hasTrainer ? "Trainer connected" : "Connect trainer",
+        onPress: context.onOpenSensors,
       };
     case "sensors":
     default:

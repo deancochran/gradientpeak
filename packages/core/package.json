@@ -44,6 +44,8 @@
     "./schemas/*": "./schemas/*.ts",
     "./utils": "./utils/index.ts",
     "./utils/*": "./utils/*.ts",
+    "./ftms": "./ftms/index.ts",
+    "./ftms/*": "./ftms/*.ts",
     "./ftms-types": "./ftms-types.ts"
   },
   "scripts": {
@@ -57,6 +59,7 @@
   "dependencies": {
     "@garmin/fitsdk": "^21.188.0",
     "@mapbox/polyline": "^1.2.1",
+    "@xmldom/xmldom": "^0.8.11",
     "zod": "^4.2.1"
   },
   "devDependencies": {

@@ -126,12 +126,17 @@ export function formatScheduledTime(dateLike: string | Date | null | undefined) 
 export function buildManualHistoricalImportProvenance(fileName: string) {
   return {
     import_source: "manual_historical" as const,
-    import_file_type: "fit" as const,
+    import_file_type: getActivityImportFileType(fileName) ?? "fit",
     import_original_file_name: fileName,
   };
 }
 
-export async function uploadFitFileToSignedUrl(file: File, signedUrl: string) {
+export function getActivityImportFileType(fileName: string): "fit" | "gpx" | "tcx" | null {
+  const extension = fileName.split(".").pop()?.trim().toLowerCase();
+  return extension === "fit" || extension === "gpx" || extension === "tcx" ? extension : null;
+}
+
+export async function uploadActivityFileToSignedUrl(file: File, signedUrl: string) {
   const response = await fetch(signedUrl, {
     method: "PUT",
     headers: {
@@ -141,7 +146,7 @@ export async function uploadFitFileToSignedUrl(file: File, signedUrl: string) {
   });
 
   if (!response.ok) {
-    throw new Error(`FIT upload failed with status ${response.status}`);
+    throw new Error(`Activity file upload failed with status ${response.status}`);
   }
 }
 

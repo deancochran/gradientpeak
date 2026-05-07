@@ -318,7 +318,7 @@ function parseFitFile(data: ArrayBuffer): {
 }
 
 // Main handler function
-async function analyzeFitFile(requestBody: any): Promise<ActivityAnalysisResult> {
+async function analyzeActivityFile(requestBody: any): Promise<ActivityAnalysisResult> {
   const { activityId, filePath, bucketName } = requestBody;
 
   if (!activityId || !filePath || !bucketName) {
@@ -506,7 +506,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const requestBody = await req.json();
-    const result = await analyzeFitFile(requestBody);
+    const result = await analyzeActivityFile(requestBody);
 
     return new Response(JSON.stringify(result), {
       status: 200,
@@ -539,13 +539,13 @@ Deno.serve(async (req: Request) => {
   1. Run `supabase start` (see: https://supabase.com/docs/reference/cli/supabase-start)
   2. Make an HTTP request:
 
-  curl -i --location --request POST 'http://127.0.0.1:54321/functions/v1/analyze-fit-file' \
+   curl -i --location --request POST 'http://127.0.0.1:54321/functions/v1/analyze-activity-file' \
     --header 'Authorization: Bearer YOUR_JWT_TOKEN' \
     --header 'Content-Type: application/json' \
     --data '{
       "activityId": "your-activity-id",
       "filePath": "path/to/activity.fit",
-      "bucketName": "fit-files"
+      "bucketName": "activity-files"
     }'
 
 */

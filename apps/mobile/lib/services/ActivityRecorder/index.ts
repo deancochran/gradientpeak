@@ -16,6 +16,9 @@
 import {
   type CurrentMetricValue,
   type FTMSFeatures,
+  type FtmsAvailableMode,
+  type FtmsControlMode,
+  type FtmsMachineType,
   GLOBAL_DEFAULTS,
   type IntervalStepV2,
   type MetricFamily,
@@ -29,6 +32,7 @@ import {
   type RecordingLaunchIntent,
   RecordingServiceActivityPlan,
   type RecordingSessionContract,
+  type RecordingTrainerMachineType,
   resolveMetricSources as resolveCoreMetricSources,
 } from "@repo/core";
 import { EventEmitter } from "expo";
@@ -127,6 +131,167 @@ function deepFreeze<T>(value: T): T {
   return value;
 }
 
+function getFtmsSelectedMode(
+  features: FTMSFeatures | undefined,
+  currentMode: unknown,
+): FtmsControlMode | null {
+  if (!features) return null;
+
+  if (typeof currentMode === "string") {
+    switch (currentMode) {
+      case "erg":
+        return "erg";
+      case "sim":
+        return "grade";
+      case "resistance":
+        return "resistance";
+      case "speed":
+        return "speed";
+      case "inclination":
+        return "inclination";
+      case "heart_rate":
+        return "target_heart_rate";
+      case "cadence":
+        return "target_cadence";
+    }
+  }
+
+  if (features.powerTargetSettingSupported) return "erg";
+  if (features.resistanceTargetSettingSupported) return "resistance";
+  if (features.indoorBikeSimulationSupported) return "grade";
+  if (features.speedTargetSettingSupported) return "speed";
+  if (features.inclinationTargetSettingSupported) return "inclination";
+  return "status";
+}
+
+function buildFtmsAvailableModes(
+  features: FTMSFeatures | undefined,
+  selectedMode: FtmsControlMode | null,
+): FtmsAvailableMode[] {
+  if (!features) return [];
+
+  const modes: FtmsAvailableMode[] = [
+    {
+      id: "status",
+      label: "Status",
+      enabled: true,
+      safetyLevel: "none",
+    },
+  ];
+
+  if (features.powerTargetSettingSupported) {
+    modes.push({
+      id: "erg",
+      label: "Target Power",
+      enabled: true,
+      range: toFtmsRange(features.powerRange, "W", 5),
+      safetyLevel: "none",
+    });
+  }
+
+  if (features.resistanceTargetSettingSupported) {
+    modes.push({
+      id: "resistance",
+      label: "Resistance",
+      enabled: true,
+      range: toFtmsRange(features.resistanceRange, "level", 1),
+      safetyLevel: "none",
+    });
+  }
+
+  if (features.indoorBikeSimulationSupported) {
+    modes.push({
+      id: "grade",
+      label: "Grade",
+      enabled: true,
+      safetyLevel: "none",
+    });
+  }
+
+  if (features.inclinationTargetSettingSupported) {
+    modes.push({
+      id: "inclination",
+      label: "Inclination",
+      enabled: true,
+      range: toFtmsRange(features.inclinationRange, "%", 0.5),
+      safetyLevel: "confirm",
+    });
+  }
+
+  if (features.speedTargetSettingSupported) {
+    modes.push({
+      id: "speed",
+      label: "Speed",
+      enabled: true,
+      range: toFtmsRange(features.speedRange, "kph", 0.1),
+      safetyLevel: "strong_confirm",
+    });
+  }
+
+  if (features.heartRateTargetSettingSupported) {
+    modes.push({
+      id: "target_heart_rate",
+      label: "Target Heart Rate",
+      enabled: true,
+      range: toFtmsRange(features.heartRateRange, "bpm", 1),
+      safetyLevel: "confirm",
+    });
+  }
+
+  if (features.targetedCadenceSupported) {
+    modes.push({
+      id: "target_cadence",
+      label: "Target Cadence",
+      enabled: true,
+      safetyLevel: "confirm",
+    });
+  }
+
+  modes.push({
+    id: "free_ride",
+    label: "Free Ride",
+    enabled: selectedMode !== "status",
+    disabledReason: selectedMode === "status" ? "No active target to clear" : undefined,
+    safetyLevel: "confirm",
+  });
+
+  return modes;
+}
+
+function toFtmsRange(
+  range: { min: number; max: number; increment: number } | undefined,
+  unit: string,
+  fallbackIncrement: number,
+): FtmsAvailableMode["range"] | undefined {
+  if (!range) return undefined;
+  return {
+    min: range.min,
+    max: range.max,
+    increment: range.increment || fallbackIncrement,
+    unit,
+  };
+}
+
+function mapFtmsMachineTypeToRecordingMachineType(
+  machineType: FtmsMachineType | undefined,
+): RecordingTrainerMachineType | null {
+  switch (machineType) {
+    case "bike":
+      return "bike";
+    case "treadmill":
+      return "treadmill";
+    case "rower":
+      return "rower";
+    case "cross_trainer":
+    case "step_climber":
+    case "stair_climber":
+      return "elliptical";
+    case "unknown":
+    case undefined:
+      return null;
+  }
+}
+
 // ================================
 // Core Events (minimal, focused)
 // ================================
@@ -196,6 +361,16 @@ type LoadedRoute = {
     distance: number;
     elevation: number;
   }>;
+  distanceIndex?: {
+    segmentDistances: number[];
+    cumulativeDistances: number[];
+  };
+};
+
+type RouteProjection = {
+  distanceAlongRoute: number;
+  distanceFromRoute: number;
+  segmentIndex: number;
 };
 
 // ================================
@@ -238,8 +413,13 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private suppressedPlanRouteId: string | null = null;
   private _routeDistance: number = 0; // Total route distance in meters
   private _currentRouteDistance: number = 0; // User's current distance along route
+  private _isOnRoute: boolean = false;
+  private _distanceFromRouteMeters: number | null = null;
   private routeAttachmentOperationId = 0;
   private lastHandledLocationKey: string | null = null;
+  private routeGradeSegmentIndex = 0;
+  private routeProjectionSegmentIndex = 0;
+  private routeProjectionUpdateCount = 0;
 
   // === Private Managers ===
   private notificationsManager?: NotificationsManager;
@@ -256,6 +436,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private elapsedTimeInterval?: ReturnType<typeof setInterval> | number;
   private sessionUpdateTimer?: ReturnType<typeof setTimeout> | number;
   private lastSessionUpdateAt = 0;
+  private fitRecordingUpdateInFlight = false;
+  private fitRecordingUpdatePending = false;
 
   // === Lap Tracking ===
   private laps: number[] = []; // Array of lap times (moving time in seconds)
@@ -349,6 +531,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       this.publishSessionUpdate();
 
       if (
+        this.shouldUseTrainerDataAndControl() &&
         sensor.isControllable &&
         sensor.connectionState === "connected" &&
         this.state === "recording" &&
@@ -445,7 +628,12 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     });
 
     // If recording and has a plan, re-apply targets (e.g. for %FTP targets in ERG mode)
-    if (this.state === "recording" && this.hasPlan && this.currentStep) {
+    if (
+      this.shouldUseTrainerDataAndControl() &&
+      this.state === "recording" &&
+      this.hasPlan &&
+      this.currentStep
+    ) {
       console.log("[Service] Re-applying targets with new metrics");
       this.trainerControl
         .applyStepTargets(this.currentStep, "periodic_refinement")
@@ -486,7 +674,12 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       this.liveMetricsManager.updateMetrics(updates);
 
       // Re-apply targets if recording with plan
-      if (this.state === "recording" && this.hasPlan && this.currentStep) {
+      if (
+        this.shouldUseTrainerDataAndControl() &&
+        this.state === "recording" &&
+        this.hasPlan &&
+        this.currentStep
+      ) {
         this.trainerControl
           .applyStepTargets(this.currentStep, "periodic_refinement")
           .catch(console.error);
@@ -577,6 +770,14 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   public setPreferredMetricSource(metricFamily: MetricFamily, sourceId: string): void {
+    this.clearBufferedReadingsForMetricFamily(metricFamily);
+    this.sessionController.updateOverrideState((state) => ({
+      ...state,
+      disabledSources: {
+        ...state.disabledSources,
+        [metricFamily]: (state.disabledSources[metricFamily] ?? []).filter((id) => id !== sourceId),
+      },
+    }));
     this.applySessionOverride({
       type: "preferred_source",
       metricFamily,
@@ -587,6 +788,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   public clearPreferredMetricSource(metricFamily: MetricFamily): void {
+    this.clearBufferedReadingsForMetricFamily(metricFamily);
     const { [metricFamily]: _removed, ...remainingPreferredSources } =
       this.getSessionOverrideState().preferredSources;
     this.sessionController.updateOverrideState((state) => ({
@@ -595,6 +797,53 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     }));
 
     this.publishSessionUpdate();
+  }
+
+  public disableMetricSource(metricFamily: MetricFamily, sourceId: string): void {
+    this.clearBufferedReadingsForMetricFamily(metricFamily);
+    this.sessionController.updateOverrideState((state) => {
+      const disabledForMetric = new Set(state.disabledSources[metricFamily] ?? []);
+      disabledForMetric.add(sourceId);
+      const { [metricFamily]: _removed, ...remainingPreferredSources } = state.preferredSources;
+
+      return {
+        ...state,
+        preferredSources: remainingPreferredSources,
+        disabledSources: {
+          ...state.disabledSources,
+          [metricFamily]: [...disabledForMetric],
+        },
+      };
+    });
+
+    this.publishSessionUpdate();
+  }
+
+  public enableMetricSource(metricFamily: MetricFamily, sourceId: string): void {
+    this.sessionController.updateOverrideState((state) => ({
+      ...state,
+      disabledSources: {
+        ...state.disabledSources,
+        [metricFamily]: (state.disabledSources[metricFamily] ?? []).filter((id) => id !== sourceId),
+      },
+    }));
+
+    this.publishSessionUpdate();
+  }
+
+  private clearBufferedReadingsForMetricFamily(metricFamily: MetricFamily): void {
+    switch (metricFamily) {
+      case "heart_rate":
+        this.liveMetricsManager.clearBufferedSensorMetric("heartrate");
+        break;
+      case "power":
+      case "cadence":
+      case "speed":
+        this.liveMetricsManager.clearBufferedSensorMetric(metricFamily);
+        break;
+      default:
+        break;
+    }
   }
 
   public getSessionView(): RecordingSessionView {
@@ -612,19 +861,46 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     const trainer = this.sensorsManager.getControllableTrainer();
     const trainerState = this.sensorsManager.getTrainerState();
     const controller = trainer?.ftmsController;
+    const ftmsCandidates = Array.from(this.sensorsManager.getFTMSCandidates().values());
+    const selectedCandidate = ftmsCandidates.find(
+      (candidate) => candidate.deviceId === this.sensorsManager.getSelectedFTMSDeviceId(),
+    );
+    const candidates = ftmsCandidates
+      .filter((candidate) => candidate.supportsControl)
+      .map((candidate) => ({
+        deviceId: candidate.deviceId,
+        displayName: candidate.deviceName,
+        supportsControl: candidate.supportsControl,
+      }));
+    const selectedMode = getFtmsSelectedMode(trainer?.ftmsFeatures, controller?.getCurrentMode());
 
     return {
       deviceId: trainerState.deviceId,
       deviceName: trainerState.deviceName,
-      machineType: inferTrainerMachineType(trainer) ?? null,
+      selectedDeviceId: this.sensorsManager.getSelectedFTMSDeviceId(),
+      candidates,
+      machineType:
+        mapFtmsMachineTypeToRecordingMachineType(selectedCandidate?.machineType) ??
+        inferTrainerMachineType(trainer) ??
+        null,
       connectionState: trainerState.connectionState,
       dataFlowState: trainerState.dataFlowState,
       currentControlMode: controller?.getCurrentMode() ?? null,
+      selectedMode,
+      availableModes: buildFtmsAvailableModes(trainer?.ftmsFeatures, selectedMode),
       controlState: this.trainerControl.getControlState(),
       recoveryState: this.trainerControl.getRecoveryState(),
       lastCommandStatus: this.trainerControl.getLastCommandStatus(),
       lastServiceError: trainerState.lastServiceError,
     };
+  }
+
+  public selectFTMSControlTarget(deviceId: string | null): boolean {
+    const selected = this.sensorsManager.selectFTMSControlTarget(deviceId);
+    if (selected) {
+      this.publishSessionUpdate();
+    }
+    return selected;
   }
 
   private publishSnapshotUpdate(): void {
@@ -665,10 +941,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private buildCurrentMetricValue(
     metricFamily: MetricFamily,
     selection: MetricSourceSelection | undefined,
+    readings = this.getCurrentReadings(),
+    stats = this.getSessionStats(),
   ): CurrentMetricValue {
-    const readings = this.getCurrentReadings();
-    const stats = this.getSessionStats();
-
     switch (metricFamily) {
       case "heart_rate":
         return {
@@ -731,16 +1006,21 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   private buildMetricSourceCandidates(): MetricSourceCandidate[] {
     const connectedSensors = this.sensorsManager.getConnectedSensors();
+    const disabledSources = this.getSessionOverrideState().disabledSources;
     const candidates: MetricSourceCandidate[] = connectedSensors.flatMap((sensor) =>
-      this.getMetricSourceTypesForSensor(sensor).flatMap((sourceType) =>
-        this.getMetricFamiliesForSourceType(sourceType).map((metricFamily) => ({
-          metricFamily,
-          sourceId: sensor.id,
-          sourceType,
-          provenance: "actual" as const,
-          isAvailable: sensor.connectionState === "connected",
-        })),
-      ),
+      this.getMetricSourceTypesForSensor(sensor)
+        .filter((sourceType) => this.shouldUseMetricSourceType(sourceType))
+        .flatMap((sourceType) =>
+          this.getMetricFamiliesForSourceType(sourceType).map((metricFamily) => ({
+            metricFamily,
+            sourceId: sensor.id,
+            sourceType,
+            provenance: "actual" as const,
+            isAvailable:
+              sensor.connectionState === "connected" &&
+              !(disabledSources[metricFamily] ?? []).includes(sensor.id),
+          })),
+        ),
     );
 
     if (this._gpsRecordingEnabled) {
@@ -837,8 +1117,53 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     );
   }
 
+  private getMetricFamilyForSensorReading(reading: SensorReading): MetricFamily | null {
+    switch (reading.metric) {
+      case "heartrate":
+        return "heart_rate";
+      case "power":
+        return "power";
+      case "cadence":
+        return "cadence";
+      case "speed":
+        return "speed";
+      case "altitude":
+        return "elevation";
+      case "latlng":
+        return "position";
+      default:
+        return null;
+    }
+  }
+
+  private isAuthoritativeSensorReading(reading: SensorReading): boolean {
+    if (!this.shouldUseTrainerDataAndControl() && this.isTrainerReading(reading)) {
+      return false;
+    }
+
+    const deviceId = reading.metadata?.deviceId;
+
+    if (!deviceId) {
+      return true;
+    }
+
+    const metricFamily = this.getMetricFamilyForSensorReading(reading);
+    if (!metricFamily) {
+      return true;
+    }
+
+    this.syncRuntimeSourceState({ recordChanges: false });
+    const selection = this.sessionController
+      .getRuntimeSourceState()
+      .selectedSources.find((source) => source.metricFamily === metricFamily);
+
+    return selection?.sourceId === deviceId;
+  }
+
   private syncRuntimeSourceState(options: { recordChanges: boolean }): void {
     const nextSelections = this.resolveMetricSources();
+    const readings = this.getCurrentReadings();
+    const stats = this.getSessionStats();
     const currentRuntimeSourceState = this.sessionController.getRuntimeSourceState();
     const previousSelectionsByMetric = new Map(
       currentRuntimeSourceState.selectedSources.map((selection) => [
@@ -892,11 +1217,33 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         heart_rate: this.buildCurrentMetricValue(
           "heart_rate",
           nextSelectionsByMetric.get("heart_rate"),
+          readings,
+          stats,
         ),
-        power: this.buildCurrentMetricValue("power", nextSelectionsByMetric.get("power")),
-        cadence: this.buildCurrentMetricValue("cadence", nextSelectionsByMetric.get("cadence")),
-        speed: this.buildCurrentMetricValue("speed", nextSelectionsByMetric.get("speed")),
-        distance: this.buildCurrentMetricValue("distance", nextSelectionsByMetric.get("distance")),
+        power: this.buildCurrentMetricValue(
+          "power",
+          nextSelectionsByMetric.get("power"),
+          readings,
+          stats,
+        ),
+        cadence: this.buildCurrentMetricValue(
+          "cadence",
+          nextSelectionsByMetric.get("cadence"),
+          readings,
+          stats,
+        ),
+        speed: this.buildCurrentMetricValue(
+          "speed",
+          nextSelectionsByMetric.get("speed"),
+          readings,
+          stats,
+        ),
+        distance: this.buildCurrentMetricValue(
+          "distance",
+          nextSelectionsByMetric.get("distance"),
+          readings,
+          stats,
+        ),
       },
       degradedState: {
         isDegraded: degradedMetrics.length > 0,
@@ -949,6 +1296,31 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   private isTrainerManualMode(): boolean {
     return this.getSessionOverrideState().trainerMode === "manual";
+  }
+
+  private shouldUseTrainerDataAndControl(): boolean {
+    return !this._gpsRecordingEnabled;
+  }
+
+  private shouldUseMetricSourceType(sourceType: MetricSourceType): boolean {
+    return this.shouldUseTrainerDataAndControl() || !this.isTrainerMetricSourceType(sourceType);
+  }
+
+  private isTrainerMetricSourceType(sourceType: MetricSourceType): boolean {
+    return sourceType.startsWith("trainer_");
+  }
+
+  private isTrainerSensor(sensor: ConnectedSensor | undefined): boolean {
+    return Boolean(sensor?.isTrainer || sensor?.isControllable || sensor?.ftmsFeatures);
+  }
+
+  private isTrainerReading(reading: SensorReading): boolean {
+    const deviceId = reading.metadata?.deviceId;
+    return deviceId
+      ? this.isTrainerSensor(
+          this.sensorsManager.getConnectedSensors().find((sensor) => sensor.id === deviceId),
+        )
+      : false;
   }
 
   private isSessionIdentityLocked(): boolean {
@@ -1035,26 +1407,43 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   private getMetricSourceTypesForSensor(sensor: ConnectedSensor): MetricSourceType[] {
     const sourceTypes = new Set<MetricSourceType>();
+    const observedMetrics = sensor.observedMetrics ?? new Set();
 
-    if (sensor.characteristics.has("00002a37-0000-1000-8000-00805f9b34fb")) {
+    if (observedMetrics.has("heartrate")) {
       sourceTypes.add("chest_strap");
     }
-    if (sensor.characteristics.has("00002a63-0000-1000-8000-00805f9b34fb")) {
+    if (observedMetrics.has("power")) {
       sourceTypes.add("power_meter");
     }
     if (sensor.characteristics.has("00002a5b-0000-1000-8000-00805f9b34fb")) {
-      sourceTypes.add("cadence_sensor");
-      sourceTypes.add("speed_sensor");
+      if (observedMetrics.has("cadence")) {
+        sourceTypes.add("cadence_sensor");
+      }
+      if (observedMetrics.has("speed")) {
+        sourceTypes.add("speed_sensor");
+      }
     }
     if (sensor.characteristics.has("00002a53-0000-1000-8000-00805f9b34fb")) {
-      sourceTypes.add("speed_sensor");
-      sourceTypes.add("cadence_sensor");
+      if (observedMetrics.has("speed")) {
+        sourceTypes.add("speed_sensor");
+      }
+      if (observedMetrics.has("cadence")) {
+        sourceTypes.add("cadence_sensor");
+      }
     }
     if (sensor.characteristics.has("00002ad2-0000-1000-8000-00805f9b34fb")) {
-      sourceTypes.add("trainer_power");
-      sourceTypes.add("trainer_cadence");
-      sourceTypes.add("trainer_speed");
-      sourceTypes.add("trainer_passthrough");
+      if (observedMetrics.has("power")) {
+        sourceTypes.add("trainer_power");
+      }
+      if (observedMetrics.has("cadence")) {
+        sourceTypes.add("trainer_cadence");
+      }
+      if (observedMetrics.has("speed")) {
+        sourceTypes.add("trainer_speed");
+      }
+      if (observedMetrics.has("heartrate")) {
+        sourceTypes.add("trainer_passthrough");
+      }
     }
 
     return [...sourceTypes];
@@ -1137,7 +1526,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private buildConfigDevicesInput(): RecordingConfiguration["input"]["devices"] {
     const connectedSensors = this.sensorsManager.getConnectedSensors();
     const sourceTypes = connectedSensors.flatMap((sensor) =>
-      this.getMetricSourceTypesForSensor(sensor),
+      this.getMetricSourceTypesForSensor(sensor).filter((sourceType) =>
+        this.shouldUseMetricSourceType(sourceType),
+      ),
     );
     const ftmsTrainer = this.sensorsManager.getControllableTrainer();
 
@@ -1293,6 +1684,14 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return this._currentRouteDistance;
   }
 
+  get isOnRoute(): boolean {
+    return !this._gpsRecordingEnabled || this._isOnRoute;
+  }
+
+  get distanceFromRouteMeters(): number | null {
+    return this._distanceFromRouteMeters;
+  }
+
   get routeProgress(): number {
     if (!this.hasRoute || this._routeDistance === 0) return 0;
     return (this._currentRouteDistance / this._routeDistance) * 100;
@@ -1306,6 +1705,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this._currentRoute = null;
     this._routeDistance = 0;
     this._currentRouteDistance = 0;
+    this._isOnRoute = false;
+    this._distanceFromRouteMeters = null;
+    this.routeGradeSegmentIndex = 0;
+    this.routeProjectionSegmentIndex = 0;
+    this.routeProjectionUpdateCount = 0;
   }
 
   /**
@@ -1334,21 +1738,21 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     const profile = this._currentRoute.elevation_profile;
     if (!profile || profile.length < 2) return 0;
 
-    // Find the segment we're currently on
-    let segmentIndex = 0;
-    if (this._currentRouteDistance >= profile[profile.length - 1]!.distance) {
-      segmentIndex = Math.max(0, profile.length - 2);
-    } else {
-      for (let i = 0; i < profile.length - 1; i++) {
-        if (
-          this._currentRouteDistance >= profile[i].distance &&
-          this._currentRouteDistance < profile[i + 1].distance
-        ) {
-          segmentIndex = i;
-          break;
-        }
-      }
+    const maxSegmentIndex = Math.max(0, profile.length - 2);
+    let segmentIndex = Math.min(this.routeGradeSegmentIndex, maxSegmentIndex);
+
+    while (
+      segmentIndex < maxSegmentIndex &&
+      this._currentRouteDistance >= profile[segmentIndex + 1]!.distance
+    ) {
+      segmentIndex += 1;
     }
+
+    while (segmentIndex > 0 && this._currentRouteDistance < profile[segmentIndex]!.distance) {
+      segmentIndex -= 1;
+    }
+
+    this.routeGradeSegmentIndex = segmentIndex;
 
     // Calculate grade between current and next point
     const current = profile[segmentIndex];
@@ -1558,8 +1962,13 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       this._currentRoute = normalizedRoute;
 
       // Calculate total route distance
-      this._routeDistance = this.calculateRouteDistance(normalizedRoute.coordinates);
+      this._routeDistance = normalizedRoute.distanceIndex?.cumulativeDistances.at(-1) ?? 0;
       this._currentRouteDistance = 0;
+      this._isOnRoute = false;
+      this._distanceFromRouteMeters = null;
+      this.routeGradeSegmentIndex = 0;
+      this.routeProjectionSegmentIndex = 0;
+      this.routeProjectionUpdateCount = 0;
 
       console.log("[Service] Route loaded successfully:", {
         id: route.id,
@@ -1578,24 +1987,28 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   /**
    * Calculate total distance of a route from coordinates
    */
-  private calculateRouteDistance(
+  private buildRouteDistanceIndex(
     coordinates: Array<{ latitude: number; longitude: number }>,
-  ): number {
-    if (coordinates.length < 2) return 0;
+  ): NonNullable<LoadedRoute["distanceIndex"]> {
+    const segmentDistances: number[] = [];
+    const cumulativeDistances: number[] = [0];
 
     let totalDistance = 0;
     for (let i = 1; i < coordinates.length; i++) {
       const prev = coordinates[i - 1];
       const curr = coordinates[i];
-      totalDistance += this.calculateDistance(
+      const segmentDistance = this.calculateDistance(
         prev.latitude,
         prev.longitude,
         curr.latitude,
         curr.longitude,
       );
+      segmentDistances.push(segmentDistance);
+      totalDistance += segmentDistance;
+      cumulativeDistances.push(totalDistance);
     }
 
-    return totalDistance;
+    return { cumulativeDistances, segmentDistances };
   }
 
   private normalizeLoadedRoute(route: LoadedRoute): LoadedRoute {
@@ -1603,19 +2016,22 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       ...coordinate,
       elevation: coordinate.elevation ?? coordinate.altitude,
     }));
+    const distanceIndex = this.buildRouteDistanceIndex(coordinates);
 
     return {
       ...route,
       coordinates,
+      distanceIndex,
       elevation_profile:
         route.elevation_profile && route.elevation_profile.length > 1
           ? route.elevation_profile
-          : this.buildElevationProfile(coordinates),
+          : this.buildElevationProfile(coordinates, distanceIndex.cumulativeDistances),
     };
   }
 
   private buildElevationProfile(
     coordinates: Array<{ latitude: number; longitude: number; elevation?: number }>,
+    cumulativeDistances?: number[],
   ): Array<{ distance: number; elevation: number }> | undefined {
     let cumulativeDistance = 0;
     const profile: Array<{ distance: number; elevation: number }> = [];
@@ -1624,7 +2040,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       const coordinate = coordinates[index];
       if (!coordinate) continue;
 
-      if (index > 0) {
+      if (typeof cumulativeDistances?.[index] === "number") {
+        cumulativeDistance = cumulativeDistances[index]!;
+      } else if (index > 0) {
         const previous = coordinates[index - 1];
         if (previous) {
           cumulativeDistance += this.calculateDistance(
@@ -1662,6 +2080,148 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return R * c;
   }
 
+  private projectLocationOntoRoute(
+    latitude: number,
+    longitude: number,
+    route: LoadedRoute,
+  ): RouteProjection | null {
+    const coordinates = route.coordinates;
+    if (coordinates.length === 0) return null;
+    if (coordinates.length === 1) {
+      return {
+        distanceAlongRoute: 0,
+        distanceFromRoute: this.calculateDistance(
+          latitude,
+          longitude,
+          coordinates[0]!.latitude,
+          coordinates[0]!.longitude,
+        ),
+        segmentIndex: 0,
+      };
+    }
+
+    const localSearchRadius = 25;
+    const maxSegmentIndex = coordinates.length - 2;
+    const localStart = Math.max(0, this.routeProjectionSegmentIndex - localSearchRadius);
+    const localEnd = Math.min(
+      maxSegmentIndex,
+      this.routeProjectionSegmentIndex + localSearchRadius,
+    );
+    const localProjection = this.projectLocationOntoRouteSegmentRange(
+      latitude,
+      longitude,
+      route,
+      localStart,
+      localEnd,
+    );
+
+    this.routeProjectionUpdateCount += 1;
+    const shouldValidateAgainstFullRoute = this.routeProjectionUpdateCount % 20 === 0;
+
+    if (
+      localProjection &&
+      localProjection.distanceFromRoute <= 40 &&
+      !shouldValidateAgainstFullRoute
+    ) {
+      this.routeProjectionSegmentIndex = localProjection.segmentIndex;
+      return localProjection;
+    }
+
+    const fullProjection = this.projectLocationOntoRouteSegmentRange(
+      latitude,
+      longitude,
+      route,
+      0,
+      maxSegmentIndex,
+    );
+
+    if (fullProjection) {
+      this.routeProjectionSegmentIndex = fullProjection.segmentIndex;
+    }
+
+    return fullProjection;
+  }
+
+  private projectLocationOntoRouteSegmentRange(
+    latitude: number,
+    longitude: number,
+    route: LoadedRoute,
+    startIndex: number,
+    endIndex: number,
+  ): RouteProjection | null {
+    const coordinates = route.coordinates;
+    if (startIndex > endIndex || coordinates.length < 2) return null;
+
+    const anchorLatitude = latitude;
+    const metersPerDegreeLatitude = 111_320;
+    const metersPerDegreeLongitude =
+      Math.cos((anchorLatitude * Math.PI) / 180) * metersPerDegreeLatitude;
+    const toPoint = (coordinate: { latitude: number; longitude: number }) => ({
+      x: (coordinate.longitude - longitude) * metersPerDegreeLongitude,
+      y: (coordinate.latitude - latitude) * metersPerDegreeLatitude,
+    });
+
+    let bestDistanceFromRoute = Infinity;
+    let bestDistanceAlongRoute = 0;
+    let bestSegmentIndex = startIndex;
+    let fallbackCumulativeDistance = 0;
+
+    if (!route.distanceIndex) {
+      for (let index = 0; index < startIndex; index += 1) {
+        const start = coordinates[index]!;
+        const end = coordinates[index + 1]!;
+        fallbackCumulativeDistance += this.calculateDistance(
+          start.latitude,
+          start.longitude,
+          end.latitude,
+          end.longitude,
+        );
+      }
+    }
+
+    for (let index = startIndex; index <= endIndex; index += 1) {
+      const start = coordinates[index]!;
+      const end = coordinates[index + 1]!;
+      const startPoint = toPoint(start);
+      const endPoint = toPoint(end);
+      const segmentX = endPoint.x - startPoint.x;
+      const segmentY = endPoint.y - startPoint.y;
+      const segmentLengthSquared = segmentX * segmentX + segmentY * segmentY;
+      const segmentDistance =
+        route.distanceIndex?.segmentDistances[index] ??
+        this.calculateDistance(start.latitude, start.longitude, end.latitude, end.longitude);
+      const cumulativeDistance =
+        route.distanceIndex?.cumulativeDistances[index] ?? fallbackCumulativeDistance;
+      const projectionRatio =
+        segmentLengthSquared > 0
+          ? Math.min(
+              1,
+              Math.max(
+                0,
+                -(startPoint.x * segmentX + startPoint.y * segmentY) / segmentLengthSquared,
+              ),
+            )
+          : 0;
+      const projectedX = startPoint.x + segmentX * projectionRatio;
+      const projectedY = startPoint.y + segmentY * projectionRatio;
+      const distanceFromRoute = Math.sqrt(projectedX * projectedX + projectedY * projectedY);
+
+      if (distanceFromRoute < bestDistanceFromRoute) {
+        bestDistanceFromRoute = distanceFromRoute;
+        bestDistanceAlongRoute = cumulativeDistance + segmentDistance * projectionRatio;
+        bestSegmentIndex = index;
+      }
+
+      fallbackCumulativeDistance += segmentDistance;
+    }
+
+    return {
+      distanceAlongRoute: bestDistanceAlongRoute,
+      distanceFromRoute: bestDistanceFromRoute,
+      segmentIndex: bestSegmentIndex,
+    };
+  }
+
   /**
    * Update current position along route
    * Called from location updates
@@ -1670,42 +2230,27 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     if (!this.hasRoute || !this._currentRoute?.coordinates) return;
 
     const previousDistance = this._currentRouteDistance;
+    const projection = this.projectLocationOntoRoute(latitude, longitude, this._currentRoute);
+    if (!projection) return;
 
-    // Find closest point on route and calculate distance traveled
-    const coordinates = this._currentRoute.coordinates;
-    let minDistance = Infinity;
-    let closestIndex = 0;
+    const onRouteThresholdMeters = 40;
+    this._distanceFromRouteMeters = projection.distanceFromRoute;
+    this._isOnRoute = projection.distanceFromRoute <= onRouteThresholdMeters;
 
-    for (let i = 0; i < coordinates.length; i++) {
-      const distance = this.calculateDistance(
-        latitude,
-        longitude,
-        coordinates[i].latitude,
-        coordinates[i].longitude,
-      );
-      if (distance < minDistance) {
-        minDistance = distance;
-        closestIndex = i;
-      }
+    if (!this._isOnRoute) {
+      return;
     }
 
-    // Calculate distance along route up to closest point
-    let distanceAlongRoute = 0;
-    for (let i = 1; i <= closestIndex; i++) {
-      distanceAlongRoute += this.calculateDistance(
-        coordinates[i - 1].latitude,
-        coordinates[i - 1].longitude,
-        coordinates[i].latitude,
-        coordinates[i].longitude,
-      );
-    }
-
+    const distanceAlongRoute = Math.min(
+      this._routeDistance > 0 ? this._routeDistance : projection.distanceAlongRoute,
+      Math.max(0, projection.distanceAlongRoute),
+    );
     this._currentRouteDistance = distanceAlongRoute;
 
     // Apply grade-based resistance when GPS recording is disabled with FTMS
     // Only if: has trainer, recording, and NOT in manual control mode
     if (
-      !this._gpsRecordingEnabled &&
+      this.shouldUseTrainerDataAndControl() &&
       this.state === "recording" &&
       !this.isTrainerManualMode() &&
       Math.abs(distanceAlongRoute - previousDistance) > 10 // Only update every 10m
@@ -1724,9 +2269,12 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   private updateVirtualRouteDistance(distanceAlongRoute: number): void {
     const previousDistance = this._currentRouteDistance;
+    this._isOnRoute = true;
+    this._distanceFromRouteMeters = null;
     this._currentRouteDistance = distanceAlongRoute;
 
     if (
+      this.shouldUseTrainerDataAndControl() &&
       this.state === "recording" &&
       !this.isTrainerManualMode() &&
       Math.abs(distanceAlongRoute - previousDistance) > 10
@@ -1899,7 +2447,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.emit("stepChanged", this.getStepInfo());
     this.publishSessionUpdate();
 
-    if (this.state === "recording" && this.currentStep) {
+    if (this.shouldUseTrainerDataAndControl() && this.state === "recording" && this.currentStep) {
       this.trainerControl.applyStepTargets(this.currentStep, "step_change").catch(console.error);
     }
 
@@ -1930,10 +2478,12 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   public async applyManualTrainerPower(watts: number): Promise<boolean> {
+    if (!this.shouldUseTrainerDataAndControl()) return false;
     return this.trainerControl.applyManualPower(watts);
   }
 
   public async applyManualTrainerResistance(resistance: number): Promise<boolean> {
+    if (!this.shouldUseTrainerDataAndControl()) return false;
     return this.trainerControl.applyManualResistance(resistance);
   }
 
@@ -1943,18 +2493,22 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     rollingResistanceCoefficient?: number;
     aerodynamicDragCoefficient?: number;
   }): Promise<boolean> {
+    if (!this.shouldUseTrainerDataAndControl()) return false;
     return this.trainerControl.applyManualSimulation(params);
   }
 
   public async applyManualTrainerSpeed(speedKph: number): Promise<boolean> {
+    if (!this.shouldUseTrainerDataAndControl()) return false;
     return this.trainerControl.applyManualSpeed(speedKph);
   }
 
   public async applyManualTrainerIncline(inclinePercent: number): Promise<boolean> {
+    if (!this.shouldUseTrainerDataAndControl()) return false;
     return this.trainerControl.applyManualIncline(inclinePercent);
   }
 
   public async applyManualTrainerCadence(rpm: number): Promise<boolean> {
+    if (!this.shouldUseTrainerDataAndControl()) return false;
     return this.trainerControl.applyManualCadence(rpm);
   }
 
@@ -2044,6 +2598,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     const baseConfiguration = sessionSnapshot
       ? RecordingConfigResolver.resolveFromSessionSnapshot(sessionSnapshot, {
           launchSource: this.currentLaunchSource,
+          activityPlanId: this._plan?.id ?? null,
+          routeId: this.getAttachedRouteId(),
           plan: this.buildPlanConfigInput(),
           routeGeometryAvailable: this.hasCurrentRouteGeometry(),
           gpsAvailable: this._gpsAvailable,
@@ -2169,7 +2725,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     if (this.hasPlan && this.currentStep) {
       console.log("[Service] Recording started with plan, step:", this.currentStep.name);
       this.emit("stepChanged", this.getStepInfo());
-      this.trainerControl.applyStepTargets(this.currentStep, "step_change").catch(console.error);
+      if (this.shouldUseTrainerDataAndControl()) {
+        this.trainerControl.applyStepTargets(this.currentStep, "step_change").catch(console.error);
+      }
     }
 
     this.startElapsedTimeUpdates();
@@ -2291,6 +2849,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     try {
       // Finish LiveMetricsManager (flushes final data to files)
       await this.liveMetricsManager.finishRecording();
+      await this.waitForFitRecordingWritesToDrain();
 
       // Check StreamBuffer status before finalizing
       const bufferStatus = this.liveMetricsManager.streamBuffer.getBufferStatus();
@@ -2336,8 +2895,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
           });
 
           // Add file path to metadata
-          this.recordingMetadata.fitFilePath = this.fitEncoder.getFilePath();
-          console.log("[Service] FIT file finalized:", this.recordingMetadata.fitFilePath);
+          this.recordingMetadata.activityFilePath = this.fitEncoder.getFilePath();
+          console.log(
+            "[Service] Activity file finalized:",
+            this.recordingMetadata.activityFilePath,
+          );
         } catch (error) {
           console.error("[Service] Failed to finalize FIT file:", error);
           // Re-throw so UI can show proper error
@@ -2362,7 +2924,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
             distanceMeters: this.getSessionStats().distance,
             calories: this.getSessionStats().calories,
           },
-          fitFilePath: this.recordingMetadata.fitFilePath ?? null,
+          activityFilePath: this.recordingMetadata.activityFilePath ?? null,
           streamArtifactPaths: [this.liveMetricsManager.streamBuffer.getBufferStatus().storageDir],
           completedAt: this.recordingMetadata.endedAt,
           runtimeSourceState: this.getRuntimeSourceState(),
@@ -2525,7 +3087,12 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       });
     }
 
-    if (!enabled && this.state === "recording" && this.currentStep) {
+    if (
+      this.shouldUseTrainerDataAndControl() &&
+      !enabled &&
+      this.state === "recording" &&
+      this.currentStep
+    ) {
       // Re-apply plan targets when switching back to auto
       console.log("[Service] Reapplying plan targets after manual override disabled");
       this.trainerControl.applyStepTargets(this.currentStep, "step_change").catch(console.error);
@@ -2546,6 +3113,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // ================================
 
   private handleSensorData(reading: SensorReading) {
+    if (!this.isAuthoritativeSensorReading(reading)) {
+      return;
+    }
+
     // Always ingest sensor data for real-time display (even before recording starts)
     // The LiveMetricsManager will only persist data when recording is active
     this.liveMetricsManager.ingestSensorData(reading);
@@ -2588,17 +3159,23 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     }
 
     this.lastHandledLocationKey = locationKey;
+    this.liveMetricsManager.setGpsSpeedFallbackEnabled(this.isGpsAuthoritativeForMetric("speed"));
 
     // Ingest location data for real-time display (even in pending state for map preview)
     // The LiveMetricsManager will only persist data when recording is active
-    this.liveMetricsManager.ingestLocationData({
-      latitude: location.coords.latitude,
-      longitude: location.coords.longitude,
-      altitude: location.coords.altitude || undefined,
-      accuracy: location.coords.accuracy || undefined,
-      heading: location.coords.heading || undefined,
-      timestamp: timestamp,
-    });
+    this.liveMetricsManager.ingestLocationData(
+      {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+        altitude: location.coords.altitude || undefined,
+        accuracy: location.coords.accuracy || undefined,
+        heading: location.coords.heading || undefined,
+        timestamp: timestamp,
+      },
+      {
+        updateDistance: this.isGpsAuthoritativeForMetric("distance"),
+      },
+    );
 
     // Only process for recording logic when actually recording/paused
     if (this.state !== "recording" && this.state !== "paused") return;
@@ -2607,6 +3184,15 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     if (this.hasRoute) {
       this.updateRouteProgress(location.coords.latitude, location.coords.longitude);
     }
+  }
+
+  private isGpsAuthoritativeForMetric(metricFamily: MetricFamily): boolean {
+    this.syncRuntimeSourceState({ recordChanges: false });
+    const selection = this.sessionController
+      .getRuntimeSourceState()
+      .selectedSources.find((source) => source.metricFamily === metricFamily);
+
+    return selection?.sourceType === "gps";
   }
 
   // ================================
@@ -2667,41 +3253,89 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private async updateFitRecording() {
     if (!this.fitEncoder || this.state !== "recording") return;
 
+    if (this.fitRecordingUpdateInFlight) {
+      this.fitRecordingUpdatePending = true;
+      return;
+    }
+
+    this.fitRecordingUpdateInFlight = true;
+
     try {
+      do {
+        this.fitRecordingUpdatePending = false;
+        await this.writeFitRecordingRecord();
+      } while (this.fitRecordingUpdatePending && this.fitEncoder && this.state === "recording");
+    } finally {
+      this.fitRecordingUpdateInFlight = false;
+    }
+  }
+
+  private async writeFitRecordingRecord() {
+    const encoder = this.fitEncoder;
+    if (!encoder || this.state !== "recording") return;
+
+    try {
+      const initialStatus = encoder.getStatus();
+      if (!initialStatus.isInitialized || initialStatus.isFinalized) return;
+
       if (this.selectedActivityCategory === "swim") {
         // TODO: Implement swim logic
-      } else {
-        // Time-based activities
-        const readings = this.liveMetricsManager.getCurrentReadings();
-        const stats = this.liveMetricsManager.getSessionStats();
+        return;
+      }
 
-        const record: FitRecord = {
-          timestamp: Date.now(),
-          distance: stats.distance,
-          speed: readings.speed,
-          heartRate: readings.heartRate,
-          cadence: readings.cadence,
-          power: readings.power,
-          temperature: readings.temperature,
-        };
+      // Time-based activities
+      const readings = this.liveMetricsManager.getCurrentReadings();
+      const stats = this.liveMetricsManager.getSessionStats();
 
-        if (readings.position) {
-          record.latitude = readings.position.lat;
-          record.longitude = readings.position.lng;
-          record.altitude = readings.position.alt;
-        }
+      const record: FitRecord = {
+        timestamp: Date.now(),
+        distance: stats.distance,
+        speed: readings.speed,
+        heartRate: readings.heartRate,
+        cadence: readings.cadence,
+        power: readings.power,
+        temperature: readings.temperature,
+      };
 
-        await this.fitEncoder.addRecord(record);
+      if (readings.position) {
+        record.latitude = readings.position.lat;
+        record.longitude = readings.position.lng;
+        record.altitude = readings.position.alt;
+      }
 
-        // Log periodically (every 10 seconds) to track recording progress
-        const status = this.fitEncoder.getStatus();
-        if (status.recordCount % 10 === 0 && status.recordCount > 0) {
-          console.log(`[Service] FIT recording progress: ${status.recordCount} records`);
-        }
+      if (this.state !== "recording") return;
+
+      await encoder.addRecord(record);
+
+      // Log periodically (every 10 seconds) to track recording progress
+      const status = encoder.getStatus();
+      if (status.recordCount % 10 === 0 && status.recordCount > 0) {
+        console.log(`[Service] FIT recording progress: ${status.recordCount} records`);
       }
     } catch (error) {
+      if (this.isBenignFitWriteAfterFinalizeError(error)) {
+        console.warn("[Service] Skipped FIT write after encoder finalization");
+        return;
+      }
       console.error("[Service] Failed to update FIT recording:", error);
     }
+  }
+
+  private async waitForFitRecordingWritesToDrain(): Promise<void> {
+    this.fitRecordingUpdatePending = false;
+
+    const timeoutAt = Date.now() + 2000;
+    while (this.fitRecordingUpdateInFlight && Date.now() < timeoutAt) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+
+    if (this.fitRecordingUpdateInFlight) {
+      console.warn("[Service] Timed out waiting for FIT write to finish before finalization");
+    }
+  }
+
+  private isBenignFitWriteAfterFinalizeError(error: unknown): boolean {
+    return error instanceof Error && error.message.includes("already finalized");
   }
 
   /**

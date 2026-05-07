@@ -47,8 +47,8 @@ export interface WahooRepository {
     elevationGainMeters: number | null;
     externalId: string;
     finishedAt: string;
-    fitFilePath: string | null;
-    fitFileSize: number | null;
+    activityFilePath: string | null;
+    activityFileSize: number | null;
     movingSeconds: number;
     name: string;
     normalizedPower: number | null;

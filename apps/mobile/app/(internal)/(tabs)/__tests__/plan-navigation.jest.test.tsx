@@ -1,5 +1,4 @@
 import React from "react";
-import { ROUTES } from "@/lib/constants/routes";
 
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
@@ -38,6 +37,7 @@ jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
   RefreshControl: createHost("RefreshControl"),
+  Pressable: createHost("Pressable"),
   ScrollView: createHost("ScrollView"),
   TouchableOpacity: createHost("TouchableOpacity"),
   View: createHost("View"),
@@ -53,6 +53,17 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
   useAppNavigate: () => pushMock,
 }));
 
+jest.mock("@/lib/auth/auth-headers", () => ({
+  __esModule: true,
+  hasSessionAuthCredentials: () => true,
+}));
+
+jest.mock("@/lib/stores/auth-store", () => ({
+  __esModule: true,
+  useAuthStore: (selector: any) =>
+    selector({ ready: true, session: { user: { id: "profile-1" } } }),
+}));
+
 jest.mock("@/components/ErrorBoundary", () => ({
   __esModule: true,
   ErrorBoundary: ({ children }: any) => children,
@@ -62,6 +73,18 @@ jest.mock("@/components/ErrorBoundary", () => ({
 jest.mock("@/components/shared", () => ({
   __esModule: true,
   AppHeader: createHost("AppHeader"),
+  CompactInsightCard: ({ children, icon: _icon, title, value, onPress, ...props }: any) =>
+    React.createElement("TouchableOpacity", { onPress, ...props }, [
+      React.createElement("Text", { key: "title" }, title),
+      React.createElement("Text", { key: "value" }, value),
+      children,
+    ]),
+  DetailChartModal: ({ children, visible, ...props }: any) =>
+    React.createElement(
+      "DetailChartModal",
+      { visible, ...props },
+      visible ? children("90d") : null,
+    ),
 }));
 
 jest.mock("@/components/goals", () => ({
@@ -72,6 +95,11 @@ jest.mock("@/components/goals", () => ({
 jest.mock("@/components/charts/PlanVsActualChart", () => ({
   __esModule: true,
   PlanVsActualChart: createHost("PlanVsActualChart"),
+}));
+
+jest.mock("@/components/charts/PlanReadinessComparisonChart", () => ({
+  __esModule: true,
+  PlanReadinessComparisonChart: createHost("PlanReadinessComparisonChart"),
 }));
 
 jest.mock("@repo/ui/components/button", () => ({
@@ -100,7 +128,23 @@ jest.mock("@repo/ui/components/text", () => ({
 
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
+  Activity: createHost("Activity"),
+  ChevronLeft: createHost("ChevronLeft"),
+  ChevronRight: createHost("ChevronRight"),
+  Flag: createHost("Flag"),
+  Flame: createHost("Flame"),
+  Plus: createHost("Plus"),
   Settings: createHost("Settings"),
+  Sparkles: createHost("Sparkles"),
+}));
+
+jest.mock("react-native-svg", () => ({
+  __esModule: true,
+  default: createHost("Svg"),
+  Circle: createHost("Circle"),
+  Line: createHost("Line"),
+  Path: createHost("Path"),
+  Rect: createHost("Rect"),
 }));
 
 jest.mock("@/lib/hooks/useProfileGoals", () => ({
@@ -223,6 +267,251 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
         interpretation:
           "Recommended load is anchored to your dated goals and current plan context.",
       },
+      projection_dashboard: {
+        readiness_score: 72,
+        physiological_readiness_score: 70,
+        readiness_confidence: 0.68,
+        planning_confidence: 0.74,
+        planning_confidence_reasons: ["adherence_within_expected_range"],
+        readiness_rationale_codes: ["goal_projection_available"],
+        feasibility_band: "stretch",
+        risk_score: 32,
+        risk_level: "moderate",
+        risk_flags: [],
+        caps_applied: [],
+        load_resolution_summary: {
+          week_count: 2,
+          capped_weeks: 1,
+          tss_ramp_capped_weeks: 1,
+          ctl_ramp_capped_weeks: 0,
+          demand_floor_weeks: 0,
+          demand_floor_override_weeks: 0,
+          recovery_adjusted_weeks: 0,
+          recovery_weeks: 0,
+          average_baseline_to_final_delta_tss: 10,
+          average_requested_to_final_delta_tss: 5,
+          average_mpc_to_final_delta_tss: 0,
+          max_requested_to_final_delta_tss: 15,
+          limiting_constraints: ["weekly_tss_ramp_cap"],
+          confidence: "medium",
+          confidence_reasons: [],
+        },
+        dose_recommendation: {
+          recommended_weekly_load: 315,
+          recommended_weekly_duration_minutes: 365,
+          recommended_sessions_per_week: 5,
+          key_session_count: 2,
+          long_session_ceiling_minutes: 110,
+          intensity_distribution_target: { easy: 0.8, moderate: 0.15, hard: 0.05 },
+          ramp_pressure: 0.3,
+          recovery_pressure: 0.2,
+          notes: [],
+        },
+        sport_load_states: [],
+        recovery_segments: [],
+        readiness_points: [
+          { date: "2026-04-01", readiness_score: 62, predicted_fitness_ctl: 45 },
+          { date: "2026-08-01", readiness_score: 72, predicted_fitness_ctl: 55 },
+        ],
+        microcycles: [
+          {
+            week_start_date: "2026-04-06",
+            week_end_date: "2026-04-12",
+            phase: "build",
+            planned_weekly_tss: 315,
+            projected_ctl: 48,
+            constraints: ["weekly_tss_ramp_cap"],
+            recovery_active: false,
+            demand_floor_tss: null,
+            demand_gap_unmet_weekly_tss: null,
+          },
+        ],
+        goal_forecasts: [
+          {
+            profile_goal_id: "goal-1",
+            projection_goal_id: "projection-goal-1",
+            title: "Race A",
+            target_date: "2026-08-01",
+            priority: 8,
+            readiness_score: 72,
+            state_readiness_score: 70,
+            alignment_loss_0_100: 14,
+            feasibility_band: "stretch",
+            limiter_shares: {
+              timeline_pressure: 0.5,
+              capacity_pressure: 0.2,
+              evidence_weakness: 0.1,
+              recovery_strain: 0.1,
+              mechanical_stress: 0.05,
+              goal_interference: 0.05,
+            },
+            target_scores: [{ kind: "race_performance", score_0_100: 74, rationale_codes: [] }],
+            conflict_notes: [],
+            interference_notes: [],
+          },
+        ],
+      },
+      readiness_forecast: {
+        start_date: "2026-04-01",
+        end_date: "2026-08-15",
+        today: "2026-04-05",
+        current_readiness: 68,
+        current_status: "building",
+        confidence: "medium",
+        confidence_reason_codes: ["inferred_scheduled_load"],
+        series: {
+          actual: {
+            id: "actual",
+            label: "Actual",
+            points: [
+              {
+                date: "2026-04-01",
+                readiness: 62,
+                load: 38,
+                provenance: "completed_activity",
+              },
+            ],
+          },
+          scheduled: {
+            id: "scheduled",
+            label: "Scheduled",
+            points: [
+              {
+                date: "2026-04-05",
+                readiness: 66,
+                load: 42,
+                provenance: "scheduled_activity_estimate",
+                confidence: "medium",
+              },
+              {
+                date: "2026-08-01",
+                readiness: 70,
+                load: 48,
+                provenance: "scheduled_activity_estimate",
+                confidence: "medium",
+              },
+            ],
+          },
+          recommended: {
+            id: "recommended",
+            label: "Recommended",
+            points: [
+              {
+                date: "2026-04-05",
+                readiness: 68,
+                low: 60,
+                high: 76,
+                load: 44,
+                provenance: "recommendation_engine",
+              },
+              {
+                date: "2026-08-01",
+                readiness: 78,
+                low: 70,
+                high: 86,
+                load: 54,
+                provenance: "recommendation_engine",
+              },
+            ],
+          },
+        },
+        zones: [
+          { id: "underprepared", label: "Underprepared", min: 0, max: 39 },
+          { id: "building", label: "Building", min: 40, max: 69 },
+          { id: "goal_ready", label: "Goal Ready", min: 70, max: 84 },
+          { id: "peak_ready", label: "Peak Ready", min: 85, max: 100 },
+        ],
+        goals: [
+          {
+            goal_id: "goal-1",
+            title: "Race A",
+            target_date: "2026-08-01",
+            target_readiness_min: null,
+            target_readiness_max: null,
+            scheduled_readiness: 70,
+            recommended_readiness: 78,
+            gap: 8,
+            status: "on_track",
+          },
+        ],
+        gap_summary: {
+          type: "plan_gap",
+          severity: "warning",
+          title_code: "readiness_forecast.plan_gap.title",
+          message_code: "readiness_forecast.plan_gap.message",
+          primary_delta: 8,
+          recommended_action_code: "readiness_forecast.action.follow_recommendation",
+        },
+        version: "readiness_forecast.v1",
+      },
+      load_comparison: {
+        weeks: [
+          {
+            week_start: "2026-04-01",
+            week_end: "2026-04-07",
+            actual_load: 40,
+            scheduled_load: 52,
+            recommended_load: 60,
+            safety_cap: null,
+            is_recovery_week: false,
+            has_goal: false,
+          },
+        ],
+      },
+      upcoming_impact: [
+        {
+          activity_plan_id: "plan-activity-1",
+          title: "Tempo Run",
+          scheduled_at: "2026-04-06T12:00:00.000Z",
+          sport: "run",
+          estimated_load: 52,
+          short_term_readiness_delta: -1.5,
+          fitness_contribution: 4.3,
+          confidence: "medium",
+          explanation:
+            "This session contributes fitness while staying close to the recommended load path.",
+        },
+      ],
+      schedule_recommendation: {
+        type: "add_load",
+        label: "Adjust schedule",
+        description: "Add about 80 TSS this week or schedule one moderate session.",
+        target_date: "2026-04-06",
+        target_week_start: "2026-04-01",
+        target_load_delta: 80,
+      },
+      activity_plan_matches: {
+        target_date: "2026-04-06",
+        target_tss_delta: 80,
+        empty_reason: null,
+        matches: [
+          {
+            activity_plan_id: "activity-plan-80",
+            name: "Threshold Builder",
+            activity_category: "run",
+            estimated_tss: 78,
+            estimated_duration_seconds: 3600,
+            score: 114,
+            target_tss_delta: 80,
+            absolute_tss_gap: 2,
+            reason_codes: ["owned_plan", "near_target_tss", "same_activity_category"],
+          },
+        ],
+      },
+      schedule_simulation: {
+        adjustment: {
+          date: "2026-04-06",
+          tss_delta: 80,
+          resulting_scheduled_load: 132,
+        },
+        comparison_date: "2026-04-10",
+        scheduled_readiness: 70,
+        simulated_readiness: 75.5,
+        readiness_delta: 5.5,
+        scheduled_load: 52,
+        simulated_load: 132,
+        confidence: "medium",
+      },
       readiness_summary: {
         score: 68,
         interpretation: "Projection confidence is improving with better adherence.",
@@ -265,6 +554,27 @@ jest.mock("@/lib/api", () => ({
             refetch: refetchActivePlanMock,
           };
         },
+      },
+      simulateScheduleAdjustment: {
+        useQuery: (input: any, options: any) => ({
+          data: options?.enabled
+            ? {
+                adjustment: {
+                  date: input.adjustment_date,
+                  tss_delta: input.tss_delta,
+                  resulting_scheduled_load: 52 + input.tss_delta,
+                },
+                comparison_date: input.comparison_date ?? "2026-04-10",
+                scheduled_readiness: 70,
+                simulated_readiness: 75.5,
+                readiness_delta: input.tss_delta === 105 ? 6.4 : 5.5,
+                scheduled_load: 52,
+                simulated_load: 52 + input.tss_delta,
+                confidence: "medium",
+              }
+            : null,
+          isFetching: false,
+        }),
       },
       list: {
         useInfiniteQuery: () => ({
@@ -356,65 +666,65 @@ describe("plan dashboard navigation", () => {
   it("renders dashboard sections", () => {
     renderNative(<PlanScreenWithErrorBoundary />);
 
-    expect(screen.getAllByText("This Week")[0]).toBeTruthy();
-    expect(screen.getAllByText("Projection")[0]).toBeTruthy();
+    expect(screen.getByTestId("plan-calendar-card")).toBeTruthy();
+    expect(screen.getByText("activity")).toBeTruthy();
+    expect(screen.getByText("planned")).toBeTruthy();
+    expect(screen.getByText("goal")).toBeTruthy();
     expect(screen.getByText("Goals")).toBeTruthy();
-    expect(screen.getAllByText(/150% ready/)[0]).toBeTruthy();
-    expect(screen.getByText("Next session")).toBeTruthy();
-    expect(screen.getByText("Load target")).toBeTruthy();
-    expect(screen.getByTestId("plan-open-schedule-button")).toBeTruthy();
-    expect(screen.getByTestId("plan-next-goal-card")).toBeTruthy();
-  });
+    expect(screen.getByText("Race A")).toBeTruthy();
+    expect(screen.getByText("72%")).toBeTruthy();
+    expect(screen.getByText("Load Comparison")).toBeTruthy();
+    expect(screen.getByText("Readiness Forecast")).toBeTruthy();
+    expect(screen.getByText("Current 68")).toBeTruthy();
+    expect(screen.queryByText("Adjust schedule")).toBeNull();
+    expect(screen.queryByText("Recommended plans")).toBeNull();
+    expect(screen.queryByTestId("plan-schedule-simulation-controls")).toBeNull();
+    expect(screen.getByText("Upcoming")).toBeTruthy();
+    expect(screen.getByText("Tempo Run")).toBeTruthy();
+    expect(screen.getByTestId("plan-insight-card-load")).toBeTruthy();
+    expect(screen.getByTestId("plan-insight-card-readiness")).toBeTruthy();
 
-  it("navigates to goal detail when a goal card is pressed", () => {
-    renderNative(<PlanScreenWithErrorBoundary />);
+    expect(screen.queryByTestId("plan-projection-chart")).toBeNull();
+    fireEvent.press(screen.getByTestId("plan-insight-card-load"));
+    expect(screen.getByText("Weekly Load Gap")).toBeTruthy();
+    expect(
+      screen.getByText("Recommended load versus your scheduled plan and completed work."),
+    ).toBeTruthy();
+    expect(screen.getByTestId("plan-projection-chart")).toBeTruthy();
 
-    const goalCard = (screen as any).UNSAFE_getAllByType("TouchableOpacity").find((node: any) => {
-      const children = node.findAll((child: any) => child.type === "Text");
-      return children.some((child: any) => child.props.children === "Race A");
-    });
-
-    expect(goalCard).toBeTruthy();
-    fireEvent.press(goalCard!);
-
-    expect(pushMock).toHaveBeenCalledWith({
-      pathname: "/goal-detail",
-      params: { id: "goal-1" },
-    });
-  });
-
-  it("opens training preferences from projection settings icon", () => {
-    renderNative(<PlanScreenWithErrorBoundary />);
-
-    fireEvent.press(screen.getByTestId("projection-settings-button"));
-
-    expect(pushMock).toHaveBeenCalledWith({
-      pathname: ROUTES.PLAN.TRAINING_PREFERENCES,
-    });
-  });
-
-  it("opens the next goal card from the plan summary stack", () => {
-    renderNative(<PlanScreenWithErrorBoundary />);
-
-    fireEvent.press(screen.getByTestId("plan-next-goal-card"));
-
-    expect(pushMock).toHaveBeenCalledWith({
-      pathname: "/goal-detail",
-      params: { id: "goal-1" },
-    });
-  });
-
-  it("opens the schedule tab from the weekly summary card", () => {
-    renderNative(<PlanScreenWithErrorBoundary />);
-
-    fireEvent.press(screen.getByTestId("plan-open-schedule-button"));
-
-    expect(navigateMock).toHaveBeenCalledWith(ROUTES.CALENDAR);
+    fireEvent.press(screen.getByTestId("plan-insight-card-readiness"));
+    expect(screen.getByTestId("plan-readiness-comparison-chart")).toBeTruthy();
   });
 
   it("does not render active-plan navigation action", () => {
     renderNative(<PlanScreenWithErrorBoundary />);
 
     expect(screen.queryByText("Open Detailed Projection")).toBeNull();
+  });
+
+  it("does not render the generic schedule action when activity plan matches exist", () => {
+    renderNative(<PlanScreenWithErrorBoundary />);
+
+    expect(screen.queryByTestId("plan-schedule-action")).toBeNull();
+  });
+
+  it("opens the calendar day agenda from a Plan calendar date", () => {
+    renderNative(<PlanScreenWithErrorBoundary />);
+
+    fireEvent.press(screen.getByTestId("calendar-month-cell-2026-05-05"));
+
+    expect(navigateMock).toHaveBeenCalledWith({
+      pathname: "/(internal)/(standard)/calendar-day",
+      params: {
+        date: "2026-05-05",
+        trainingPlanId: "active-1",
+      },
+    });
+  });
+
+  it("does not render inline schedule simulation controls in the MVP flow", () => {
+    renderNative(<PlanScreenWithErrorBoundary />);
+
+    expect(screen.queryByTestId("plan-schedule-simulation-controls")).toBeNull();
   });
 });

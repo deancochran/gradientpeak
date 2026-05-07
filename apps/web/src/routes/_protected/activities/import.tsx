@@ -21,6 +21,7 @@ import {
   uploadFileToSignedUrl,
 } from "../../../lib/activity-route-upload";
 import { api } from "../../../lib/api/client";
+import { buildManualHistoricalImportProvenance } from "../../../lib/recording-web";
 
 export const Route = createFileRoute("/_protected/activities/import")({
   component: ActivityImportPage,
@@ -42,42 +43,47 @@ function ActivityImportPage() {
     },
     resolver: zodResolver(activityImportFormSchema),
   });
-  const getSignedUrlMutation = api.fitFiles.getSignedUploadUrl.useMutation();
-  const processFitFileMutation = api.fitFiles.processFitFile.useMutation();
+  const getSignedUrlMutation = api.activityFiles.getSignedUploadUrl.useMutation();
+  const processActivityFileMutation = api.activityFiles.processActivityFile.useMutation();
   const isSubmitting =
     form.formState.isSubmitting ||
     getSignedUrlMutation.isPending ||
-    processFitFileMutation.isPending;
+    processActivityFileMutation.isPending;
 
   return (
     <div className="container mx-auto max-w-3xl space-y-6 py-4">
       <div className="space-y-2">
         <h1 className="text-3xl font-semibold tracking-tight">Import activity history</h1>
         <p className="text-sm text-muted-foreground">
-          Browser-native FIT import for completed activities. Historical timestamps are preserved.
+          Browser-native FIT, GPX, and TCX import for completed activities. Historical timestamps
+          are preserved when present in the file.
         </p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Completed FIT activity</CardTitle>
+          <CardTitle>Completed activity file</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           <UploadFileField
-            accept=".fit"
-            description="Choose one completed FIT recording from your device."
+            accept=".fit,.gpx,.tcx,application/gpx+xml,application/vnd.garmin.tcx+xml,application/xml,text/xml,application/octet-stream"
+            description="Choose one completed FIT, GPX, or TCX recording from your device."
             error={form.formState.errors.root?.message}
             files={files}
             helperText={
-              selectedFile ? formatFileSize(selectedFile.size) : "Supported now: .fit only."
+              selectedFile
+                ? formatFileSize(selectedFile.size)
+                : "Supported now: .fit, .gpx, and .tcx."
             }
-            id="activity-fit-file"
-            label="FIT file"
+            id="activity-file"
+            label="Activity file"
             onFilesChange={(nextFiles) => {
               setFiles(nextFiles);
               const nextFile = getSingleFileSelection(nextFiles);
               if (nextFile && !form.getValues("name").trim()) {
-                form.setValue("name", nextFile.name.replace(/\.fit$/i, ""), { shouldDirty: true });
+                form.setValue("name", nextFile.name.replace(/\.(fit|gpx|tcx)$/i, ""), {
+                  shouldDirty: true,
+                });
               }
             }}
             onReset={() => setFiles([])}
@@ -90,7 +96,7 @@ function ActivityImportPage() {
               className="space-y-4"
               onSubmit={form.handleSubmit(async (values) => {
                 if (!selectedFile) {
-                  form.setError("root", { message: "Choose a FIT file to import." });
+                  form.setError("root", { message: "Choose a FIT, GPX, or TCX file to import." });
                   return;
                 }
 
@@ -102,14 +108,10 @@ function ActivityImportPage() {
 
                   await uploadFileToSignedUrl(selectedFile.file, signedUrlData.signedUrl);
 
-                  const result = await processFitFileMutation.mutateAsync({
+                  const result = await processActivityFileMutation.mutateAsync({
                     activityType: values.activityType,
-                    fitFilePath: signedUrlData.filePath,
-                    importProvenance: {
-                      import_file_type: "fit",
-                      import_original_file_name: selectedFile.name,
-                      import_source: "manual_historical",
-                    },
+                    activityFilePath: signedUrlData.filePath,
+                    importProvenance: buildManualHistoricalImportProvenance(selectedFile.name),
                     name: values.name.trim(),
                     notes: values.notes.trim() || undefined,
                   });
@@ -125,7 +127,7 @@ function ActivityImportPage() {
                   const message =
                     error instanceof Error
                       ? error.message
-                      : "The FIT activity could not be imported.";
+                      : "The activity file could not be imported.";
                   form.setError("root", { message });
                   toast.error("Activity import failed");
                 }
@@ -166,7 +168,7 @@ function ActivityImportPage() {
                 </Button>
                 <Button disabled={!selectedFile || isSubmitting} type="submit">
                   <Upload className="mr-2 h-4 w-4" />
-                  {isSubmitting ? "Importing FIT activity..." : "Import FIT activity"}
+                  {isSubmitting ? "Importing activity..." : "Import activity"}
                 </Button>
               </div>
             </form>

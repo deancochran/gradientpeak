@@ -30,8 +30,9 @@ import { z } from "zod";
 import { api } from "../../../lib/api/client";
 import {
   buildManualHistoricalImportProvenance,
+  getActivityImportFileType,
   recordingActivityOptions,
-  uploadFitFileToSignedUrl,
+  uploadActivityFileToSignedUrl,
   validateRecordingSearch,
 } from "../../../lib/recording-web";
 
@@ -58,8 +59,8 @@ function RecordSubmitPage() {
   const launcher = Route.useSearch();
   const queryClient = useQueryClient();
   const utils = api.useUtils();
-  const getSignedUploadUrl = api.fitFiles.getSignedUploadUrl.useMutation();
-  const processFitFile = api.fitFiles.processFitFile.useMutation();
+  const getSignedUploadUrl = api.activityFiles.getSignedUploadUrl.useMutation();
+  const processActivityFile = api.activityFiles.processActivityFile.useMutation();
   const [selectedFiles, setSelectedFiles] = useState<Array<{ file?: File; name: string }>>([]);
   const [activityType, setActivityType] = useState(launcher.category);
   const [phase, setPhase] = useState<"idle" | "signing" | "uploading" | "processing" | "success">(
@@ -86,7 +87,7 @@ function RecordSubmitPage() {
       return;
     }
 
-    form.setValue("name", fileName.replace(/\.fit$/i, ""), { shouldDirty: true });
+    form.setValue("name", fileName.replace(/\.(fit|gpx|tcx)$/i, ""), { shouldDirty: true });
   }, [form, selectedFiles]);
 
   const isSubmitting = phase !== "idle" && phase !== "success";
@@ -95,12 +96,12 @@ function RecordSubmitPage() {
     const file = selectedFiles[0]?.file;
 
     if (!file) {
-      setFormError("Choose a FIT file before importing.");
+      setFormError("Choose a FIT, GPX, or TCX file before importing.");
       return;
     }
 
-    if (!file.name.toLowerCase().endsWith(".fit")) {
-      setFormError("Only FIT files are supported right now.");
+    if (!getActivityImportFileType(file.name)) {
+      setFormError("Only FIT, GPX, and TCX files are supported right now.");
       return;
     }
 
@@ -114,11 +115,11 @@ function RecordSubmitPage() {
       });
 
       setPhase("uploading");
-      await uploadFitFileToSignedUrl(file, signedUpload.signedUrl);
+      await uploadActivityFileToSignedUrl(file, signedUpload.signedUrl);
 
       setPhase("processing");
-      const result = await processFitFile.mutateAsync({
-        fitFilePath: signedUpload.filePath,
+      const result = await processActivityFile.mutateAsync({
+        activityFilePath: signedUpload.filePath,
         name: values.name.trim(),
         notes: values.notes?.trim() || undefined,
         activityType,
@@ -134,12 +135,12 @@ function RecordSubmitPage() {
         name: result.activity.name,
       });
       setPhase("success");
-      toast.success("FIT activity imported");
+      toast.success("Activity imported");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown import error";
       setPhase("idle");
       setFormError(message);
-      toast.error("FIT import failed");
+      toast.error("Activity import failed");
     }
   });
 
@@ -148,14 +149,14 @@ function RecordSubmitPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <Badge>FIT ingestion</Badge>
+            <Badge>Activity ingestion</Badge>
             <Badge variant="outline">Existing backend path</Badge>
           </div>
           <h1 className="mt-3 text-3xl font-semibold tracking-tight">
-            Submit or import a FIT file
+            Submit or import an activity file
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Browser submission uses the same signed-upload plus `processFitFile` flow as mobile.
+            Browser submission uses the same signed-upload plus processing flow as mobile.
           </p>
         </div>
         <Button asChild variant="outline">
@@ -186,7 +187,7 @@ function RecordSubmitPage() {
                   form.reset({ name: "", notes: "" });
                 }}
               >
-                Import another FIT file
+                Import another activity file
               </Button>
             </div>
           </CardContent>
@@ -200,19 +201,19 @@ function RecordSubmitPage() {
             Completed activity import
           </CardTitle>
           <CardDescription>
-            Supported now: one completed `.fit` file per submission. Live browser recording still
-            lands in a later tier.
+            Supported now: one completed `.fit`, `.gpx`, or `.tcx` file per submission. Live browser
+            recording still lands in a later tier.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form className="space-y-5" onSubmit={(event) => void onSubmit(event)}>
             <FileInput
-              accept=".fit,application/octet-stream"
+              accept=".fit,.gpx,.tcx,application/gpx+xml,application/vnd.garmin.tcx+xml,application/xml,text/xml,application/octet-stream"
               files={selectedFiles}
-              helperText="Historical FIT imports keep the timestamps encoded in the file."
-              id="record-fit-upload"
-              label="FIT file"
-              name="fitFile"
+              helperText="Historical imports keep the timestamps encoded in the file when present."
+              id="record-activity-upload"
+              label="Activity file"
+              name="activityFile"
               onFilesChange={(files) => {
                 setSelectedFiles(files);
                 setFormError(null);
@@ -278,13 +279,13 @@ function RecordSubmitPage() {
                 {phase === "signing"
                   ? "Preparing upload"
                   : phase === "uploading"
-                    ? "Uploading FIT file"
+                    ? "Uploading activity file"
                     : phase === "processing"
                       ? "Processing activity"
-                      : "Import FIT activity"}
+                      : "Import activity"}
               </Button>
               <span className="text-sm text-muted-foreground">
-                {selectedFiles[0]?.name ?? "No FIT file selected yet."}
+                {selectedFiles[0]?.name ?? "No activity file selected yet."}
               </span>
             </div>
           </form>

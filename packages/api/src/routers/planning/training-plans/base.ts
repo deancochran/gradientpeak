@@ -3,9 +3,11 @@ import {
   type AthletePreferenceProfile,
   addDaysDateOnlyUtc,
   athletePreferenceProfileSchema,
+  type BuildReadinessForecastTimelineInput,
   buildDeterministicProjectionPayload,
   buildProjectionChartPayloadFromDeterministicProjection,
   buildProjectionEngineInput,
+  buildReadinessForecastTimeline,
   type CreationContextSummary,
   calculateTrainingLoadSeries,
   canonicalizeMinimalTrainingPlanCreate,
@@ -25,6 +27,7 @@ import {
   derivePlanTimeline,
   deterministicUuidFromSeed,
   diffDateOnlyUtcDays,
+  type ForecastConfidenceReasonCode,
   formatDateOnlyUtc,
   getCreationSuggestionsInputSchema,
   getFormStatus,
@@ -43,18 +46,23 @@ import {
   normalizeCreationConfig,
   normalizeProjectionSafetyConfig,
   type PreviewReadinessSnapshot,
-  type ProjectionFeasibilitySummary,
-  type ProjectionChartPayloadWithDeterministicIds,
   type ProfileGoal,
+  type ProjectionChartPayloadWithDeterministicIds,
   type ProjectionConstraintSummary,
+  type ProjectionFeasibilitySummary,
   type ProjectionRecoverySegment,
   parseDateOnlyUtc,
   parseProfileGoalRecord,
   persistedTrainingPlanStructureSchema,
   postCreateBehaviorSchema,
   previewCreationConfigInputSchema,
+  type ReadinessDailyLoadInput,
   type ReadinessDeltaDiagnostics,
+  type ReadinessForecastBaseline,
+  type ReadinessForecastGoalInput,
   resolveConstraintConflicts,
+  type ScheduledReadinessDailyLoadInput,
+  simulateReadinessScheduleAdjustment,
   type TrainingPlanCreationConfig,
   templateApplyInputSchema,
   trainingPlanCalibrationConfigSchema,
@@ -2053,6 +2061,15 @@ const insightTimelineInputSchema = z.object({
   timezone: z.string().min(1),
 });
 
+const scheduleAdjustmentSimulationInputSchema = insightTimelineInputSchema.extend({
+  adjustment_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  tss_delta: z.number().finite().min(-300).max(300),
+  comparison_date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+});
+
 const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;
 const safeFallbackHrThresholdBpm = 160;
 const projectionTargetTestDurationSeconds = 1200;
@@ -2075,6 +2092,667 @@ type ProjectionContextDiagnostics = {
   projection_floor_applied: boolean;
   confidence: ProjectionConfidenceSummary;
 };
+
+type ProjectionDashboardSummary = {
+  readiness_score: number | null;
+  physiological_readiness_score: number | null;
+  readiness_confidence: number | null;
+  planning_confidence: number | null;
+  planning_confidence_reasons: string[];
+  readiness_rationale_codes: string[];
+  feasibility_band: string | null;
+  risk_score: number | null;
+  risk_level: string | null;
+  risk_flags: string[];
+  caps_applied: string[];
+  load_resolution_summary: ProjectionChartPayload["load_resolution_summary"] | null;
+  dose_recommendation: ProjectionChartPayload["dose_recommendation"] | null;
+  sport_load_states: ProjectionChartPayload["sport_load_states"];
+  recovery_segments: ProjectionChartPayload["recovery_segments"];
+  readiness_points: Array<{
+    date: string;
+    readiness_score: number;
+    predicted_fitness_ctl: number;
+  }>;
+  microcycles: Array<{
+    week_start_date: string;
+    week_end_date: string;
+    phase: string;
+    planned_weekly_tss: number;
+    projected_ctl: number;
+    constraints: string[];
+    recovery_active: boolean;
+    demand_floor_tss: number | null;
+    demand_gap_unmet_weekly_tss: number | null;
+  }>;
+  goal_forecasts: Array<{
+    profile_goal_id: string;
+    projection_goal_id: string;
+    title: string;
+    target_date: string;
+    priority: number;
+    readiness_score: number | null;
+    state_readiness_score: number | null;
+    alignment_loss_0_100: number | null;
+    feasibility_band: string;
+    limiter_shares: NonNullable<
+      NonNullable<ProjectionChartPayload["goal_assessments"]>[number]["limiter_shares"]
+    > | null;
+    target_scores: NonNullable<ProjectionChartPayload["goal_assessments"]>[number]["target_scores"];
+    conflict_notes: string[];
+    interference_notes: string[];
+  }>;
+};
+
+type WeeklyLoadComparison = {
+  weeks: Array<{
+    week_start: string;
+    week_end: string;
+    actual_load: number | null;
+    scheduled_load: number | null;
+    recommended_load: number | null;
+    safety_cap?: number | null;
+    is_recovery_week?: boolean;
+    has_goal?: boolean;
+  }>;
+};
+
+type UpcomingActivityImpact = {
+  activity_plan_id: string;
+  title: string;
+  scheduled_at: string;
+  sport: string;
+  estimated_load: number | null;
+  short_term_readiness_delta: number | null;
+  fitness_contribution: number | null;
+  confidence: "high" | "medium" | "low";
+  explanation: string;
+};
+
+type ScheduleRecommendation = {
+  type: "add_load" | "reduce_load" | "add_schedule_detail" | "review_session" | "maintain_schedule";
+  label: string;
+  description: string;
+  target_date: string;
+  target_week_start: string | null;
+  target_load_delta: number | null;
+};
+
+type ActivityPlanMatchReasonCode =
+  | "near_target_tss"
+  | "same_activity_category"
+  | "reasonable_duration"
+  | "owned_plan"
+  | "recently_created";
+
+type ScheduleGapActivityPlanMatch = {
+  activity_plan_id: string;
+  name: string;
+  activity_category: string | null;
+  estimated_tss: number | null;
+  estimated_duration_seconds: number | null;
+  score: number;
+  target_tss_delta: number;
+  absolute_tss_gap: number | null;
+  reason_codes: ActivityPlanMatchReasonCode[];
+};
+
+type ScheduleGapActivityPlanMatches = {
+  target_date: string;
+  target_tss_delta: number;
+  matches: ScheduleGapActivityPlanMatch[];
+  empty_reason:
+    | "no_positive_gap"
+    | "no_activity_plans"
+    | "no_estimated_tss"
+    | "low_confidence"
+    | null;
+};
+
+type ScheduleSimulation = ReturnType<typeof simulateReadinessScheduleAdjustment>;
+
+function readFinitePlanNumber(...values: unknown[]) {
+  for (const value of values) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return Math.round(parsed * 10) / 10;
+    }
+  }
+
+  return null;
+}
+
+function isRecentlyCreated(value: unknown, today: string) {
+  if (!value) return false;
+  const created = new Date(String(value));
+  const reference = new Date(`${today}T12:00:00.000Z`);
+  if (Number.isNaN(created.getTime()) || Number.isNaN(reference.getTime())) return false;
+  return reference.getTime() - created.getTime() <= 30 * 24 * 60 * 60 * 1000;
+}
+
+function buildScheduleGapActivityPlanMatches(input: {
+  targetDate: string;
+  targetTssDelta: number | null | undefined;
+  primaryCategory: string | null | undefined;
+  plans: any[];
+  today: string;
+  limit?: number;
+}): ScheduleGapActivityPlanMatches {
+  const targetTssDelta = Number(input.targetTssDelta);
+  if (!Number.isFinite(targetTssDelta) || targetTssDelta <= 0) {
+    return {
+      target_date: input.targetDate,
+      target_tss_delta: 0,
+      matches: [],
+      empty_reason: "no_positive_gap",
+    };
+  }
+
+  if (input.plans.length === 0) {
+    return {
+      target_date: input.targetDate,
+      target_tss_delta: Math.round(targetTssDelta * 10) / 10,
+      matches: [],
+      empty_reason: "no_activity_plans",
+    };
+  }
+
+  const target = Math.round(targetTssDelta * 10) / 10;
+  const primaryCategory = input.primaryCategory ? String(input.primaryCategory) : null;
+  const matches = input.plans
+    .map<ScheduleGapActivityPlanMatch | null>((plan) => {
+      const estimatedTss = readFinitePlanNumber(
+        plan.authoritative_metrics?.estimated_tss,
+        plan.estimated_tss,
+      );
+      if (estimatedTss === null) return null;
+
+      const estimatedDurationSeconds = readFinitePlanNumber(
+        plan.authoritative_metrics?.estimated_duration,
+        plan.estimated_duration,
+        plan.estimated_duration_seconds,
+      );
+      const activityCategory =
+        typeof plan.activity_category === "string" && plan.activity_category.trim().length > 0
+          ? plan.activity_category
+          : null;
+      if (primaryCategory && activityCategory && activityCategory !== primaryCategory) {
+        return null;
+      }
+      const absoluteTssGap = Math.round(Math.abs(estimatedTss - target) * 10) / 10;
+      if (absoluteTssGap > Math.max(30, target * 0.5)) {
+        return null;
+      }
+      const reasonCodes: ActivityPlanMatchReasonCode[] = ["owned_plan"];
+      if (absoluteTssGap <= Math.max(10, target * 0.2)) reasonCodes.push("near_target_tss");
+      if (primaryCategory && activityCategory === primaryCategory)
+        reasonCodes.push("same_activity_category");
+      if (estimatedDurationSeconds !== null) reasonCodes.push("reasonable_duration");
+      if (isRecentlyCreated(plan.created_at, input.today)) reasonCodes.push("recently_created");
+
+      const sameCategoryBonus = primaryCategory && activityCategory === primaryCategory ? 10 : 0;
+      const ownedPlanBonus = 5;
+      const durationAvailabilityBonus = estimatedDurationSeconds !== null ? 2 : 0;
+      const score =
+        Math.round(
+          (100 -
+            Math.min(60, absoluteTssGap) +
+            sameCategoryBonus +
+            ownedPlanBonus +
+            durationAvailabilityBonus) *
+            10,
+        ) / 10;
+
+      return {
+        activity_plan_id: String(plan.id),
+        name: String(plan.name ?? "Activity plan"),
+        activity_category: activityCategory,
+        estimated_tss: estimatedTss,
+        estimated_duration_seconds: estimatedDurationSeconds,
+        score,
+        target_tss_delta: target,
+        absolute_tss_gap: absoluteTssGap,
+        reason_codes: reasonCodes,
+      };
+    })
+    .filter((match): match is ScheduleGapActivityPlanMatch => match !== null)
+    .sort((left, right) => {
+      if (right.score !== left.score) return right.score - left.score;
+      if ((left.absolute_tss_gap ?? Infinity) !== (right.absolute_tss_gap ?? Infinity)) {
+        return (left.absolute_tss_gap ?? Infinity) - (right.absolute_tss_gap ?? Infinity);
+      }
+      if ((right.estimated_tss ?? 0) !== (left.estimated_tss ?? 0)) {
+        return (right.estimated_tss ?? 0) - (left.estimated_tss ?? 0);
+      }
+      const nameCompare = left.name.localeCompare(right.name);
+      if (nameCompare !== 0) return nameCompare;
+      return left.activity_plan_id.localeCompare(right.activity_plan_id);
+    })
+    .slice(0, input.limit ?? 5);
+
+  return {
+    target_date: input.targetDate,
+    target_tss_delta: target,
+    matches,
+    empty_reason: matches.length > 0 ? null : "no_estimated_tss",
+  };
+}
+
+function clampDateOnOrAfter(value: string, minimum: string) {
+  return value < minimum ? minimum : value;
+}
+
+function resolveScheduleGapActivityPlanMatchTarget(input: {
+  today: string;
+  scheduleRecommendation: ScheduleRecommendation | null;
+  loadComparison: WeeklyLoadComparison | null;
+}) {
+  if (
+    input.scheduleRecommendation?.type === "add_load" &&
+    typeof input.scheduleRecommendation.target_load_delta === "number" &&
+    input.scheduleRecommendation.target_load_delta > 0
+  ) {
+    return {
+      targetDate: clampDateOnOrAfter(input.scheduleRecommendation.target_date, input.today),
+      targetTssDelta: input.scheduleRecommendation.target_load_delta,
+    };
+  }
+
+  const gapWeek = input.loadComparison?.weeks.find((week) => {
+    if (week.week_end < input.today) return false;
+    const recommended = week.recommended_load ?? 0;
+    const scheduled = week.scheduled_load ?? 0;
+    return recommended - scheduled > 15;
+  });
+
+  if (!gapWeek) {
+    return {
+      targetDate: input.scheduleRecommendation?.target_date ?? input.today,
+      targetTssDelta: null,
+    };
+  }
+
+  return {
+    targetDate: clampDateOnOrAfter(
+      input.scheduleRecommendation?.target_date &&
+        input.scheduleRecommendation.target_date >= gapWeek.week_start
+        ? input.scheduleRecommendation.target_date
+        : gapWeek.week_start,
+      input.today,
+    ),
+    targetTssDelta:
+      Math.round(((gapWeek.recommended_load ?? 0) - (gapWeek.scheduled_load ?? 0)) * 10) / 10,
+  };
+}
+
+async function loadOwnedActivityPlansForScheduleGap(input: {
+  db?: DbClient;
+  supabase?: LegacyPlanningReader;
+  profileId: string;
+  limit?: number;
+}) {
+  const limit = input.limit ?? 25;
+  if (input.db) {
+    const result = await input.db.execute(sql<any>`
+      select
+        activity_plans.*,
+        cached_metrics.estimated_tss,
+        cached_metrics.estimated_duration_seconds
+      from activity_plans
+      left join lateral (
+        select estimated_tss, estimated_duration_seconds
+        from activity_plan_derived_metrics_cache
+        where activity_plan_derived_metrics_cache.activity_plan_id = activity_plans.id
+          and activity_plan_derived_metrics_cache.profile_id = ${input.profileId}::uuid
+        order by computed_at desc
+        limit 1
+      ) cached_metrics on true
+      where activity_plans.profile_id = ${input.profileId}::uuid
+      order by activity_plans.created_at desc, activity_plans.id asc
+      limit ${limit}
+    `);
+    return getSqlRows<any>(result);
+  }
+
+  const { data } = await input
+    .supabase!.from("activity_plans")
+    .select("*")
+    .eq("profile_id", input.profileId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  return (data ?? []) as any[];
+}
+
+function mapDailyLoadFromDateTotals(map: Map<string, number>): ReadinessDailyLoadInput[] {
+  return [...map.entries()]
+    .filter(([, tss]) => Number.isFinite(tss) && tss > 0)
+    .map(([date, tss]) => ({ date, tss: Math.round(tss * 10) / 10 }))
+    .sort((left, right) => left.date.localeCompare(right.date));
+}
+
+function mapScheduledDailyLoadFromDateTotals(
+  map: Map<string, number>,
+): ScheduledReadinessDailyLoadInput[] {
+  return [...map.entries()]
+    .filter(([, tss]) => Number.isFinite(tss) && tss > 0)
+    .map(([date, tss]) => ({
+      date,
+      tss: Math.round(tss * 10) / 10,
+      confidence: "medium" as const,
+    }))
+    .sort((left, right) => left.date.localeCompare(right.date));
+}
+
+function mapRecommendedDailyLoadFromTimeline(
+  timeline: Array<{ date: string; ideal_tss: number }>,
+): ReadinessDailyLoadInput[] {
+  return timeline
+    .filter((point) => Number.isFinite(point.ideal_tss) && point.ideal_tss > 0)
+    .map((point) => ({ date: point.date, tss: Math.round(point.ideal_tss * 10) / 10 }))
+    .sort((left, right) => left.date.localeCompare(right.date));
+}
+
+function buildWeeklyLoadComparison(input: {
+  timeline: Array<{ date: string; actual_tss: number; scheduled_tss: number; ideal_tss: number }>;
+  goals: Array<{ target_date: string }>;
+  dashboard: ProjectionDashboardSummary | null;
+}): WeeklyLoadComparison | null {
+  if (input.timeline.length === 0) {
+    return null;
+  }
+
+  const microcycleByWeek = new Map(
+    (input.dashboard?.microcycles ?? []).map((microcycle) => [
+      microcycle.week_start_date,
+      microcycle,
+    ]),
+  );
+  const goalWeeks = new Set(input.goals.map((goal) => getWeekStartDateOnly(goal.target_date)));
+  const buckets = new Map<
+    string,
+    { actual: number; scheduled: number; recommended: number; dates: string[] }
+  >();
+
+  for (const point of input.timeline) {
+    const weekStart = getWeekStartDateOnly(point.date);
+    const bucket = buckets.get(weekStart) ?? { actual: 0, scheduled: 0, recommended: 0, dates: [] };
+    bucket.actual += point.actual_tss || 0;
+    bucket.scheduled += point.scheduled_tss || 0;
+    bucket.recommended += point.ideal_tss || 0;
+    bucket.dates.push(point.date);
+    buckets.set(weekStart, bucket);
+  }
+
+  return {
+    weeks: [...buckets.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([weekStart, bucket]) => {
+        const microcycle = microcycleByWeek.get(weekStart);
+        return {
+          week_start: weekStart,
+          week_end: addDaysDateOnlyUtc(weekStart, 6),
+          actual_load: bucket.actual > 0 ? Math.round(bucket.actual * 10) / 10 : null,
+          scheduled_load: bucket.scheduled > 0 ? Math.round(bucket.scheduled * 10) / 10 : null,
+          recommended_load:
+            bucket.recommended > 0 ? Math.round(bucket.recommended * 10) / 10 : null,
+          safety_cap: microcycle?.demand_floor_tss ?? null,
+          is_recovery_week: microcycle?.recovery_active ?? false,
+          has_goal: goalWeeks.has(weekStart),
+        };
+      }),
+  };
+}
+
+function buildUpcomingActivityImpact(input: {
+  plannedActivities: any[];
+  estimatedTssByPlanId: Map<unknown, unknown>;
+  today: string;
+  horizonEnd: string;
+  recommendedByDate: Map<string, number>;
+}): UpcomingActivityImpact[] {
+  return (input.plannedActivities ?? [])
+    .filter((planned) => {
+      const scheduledDate = planned.scheduled_date;
+      return scheduledDate >= input.today && scheduledDate <= input.horizonEnd;
+    })
+    .sort((left, right) =>
+      String(left.starts_at ?? "").localeCompare(String(right.starts_at ?? "")),
+    )
+    .slice(0, 5)
+    .map((planned) => {
+      const plan = planned.activity_plan ?? {};
+      const planId = plan.id ?? planned.id ?? planned.starts_at;
+      const scheduledDate = planned.scheduled_date ?? String(planned.starts_at ?? "").slice(0, 10);
+      const estimatedLoadRaw = plan.id ? Number(input.estimatedTssByPlanId.get(plan.id) || 0) : 0;
+      const estimatedLoad =
+        Number.isFinite(estimatedLoadRaw) && estimatedLoadRaw > 0 ? estimatedLoadRaw : null;
+      const recommendedLoad = input.recommendedByDate.get(scheduledDate) ?? 0;
+      const loadDelta = estimatedLoad === null ? null : estimatedLoad - recommendedLoad;
+      const readinessDelta =
+        loadDelta === null
+          ? null
+          : Math.round(Math.max(-12, Math.min(8, -loadDelta / 12)) * 10) / 10;
+      const fitnessContribution =
+        estimatedLoad === null ? null : Math.round(Math.min(12, estimatedLoad / 12) * 10) / 10;
+      const title = plan.name ?? plan.title ?? planned.title ?? "Scheduled session";
+      const sport = plan.activity_category ?? plan.sport ?? plan.type ?? "training";
+
+      return {
+        activity_plan_id: String(planId),
+        title: String(title),
+        scheduled_at: String(planned.starts_at ?? `${scheduledDate}T00:00:00.000Z`),
+        sport: String(sport),
+        estimated_load: estimatedLoad === null ? null : Math.round(estimatedLoad * 10) / 10,
+        short_term_readiness_delta: readinessDelta,
+        fitness_contribution: fitnessContribution,
+        confidence: estimatedLoad === null ? "low" : "medium",
+        explanation:
+          estimatedLoad === null
+            ? "Add duration and intensity to estimate this session's readiness impact."
+            : loadDelta !== null && loadDelta > 15
+              ? "This session is above the recommended daily load and may reduce short-term readiness."
+              : "This session contributes fitness while staying close to the recommended load path.",
+      };
+    });
+}
+
+function buildScheduleRecommendation(input: {
+  today: string;
+  readinessForecast: ReturnType<typeof buildReadinessForecastTimeline>;
+  loadComparison: WeeklyLoadComparison | null;
+  upcomingImpact: UpcomingActivityImpact[];
+}): ScheduleRecommendation | null {
+  const gapType = input.readinessForecast.gap_summary?.type;
+  const currentWeekStart = getWeekStartDateOnly(input.today);
+  const currentWeek =
+    input.loadComparison?.weeks.find((week) => week.week_start === currentWeekStart) ??
+    input.loadComparison?.weeks.find((week) => week.week_start >= currentWeekStart) ??
+    null;
+  const targetDate =
+    input.upcomingImpact[0]?.scheduled_at.slice(0, 10) ?? currentWeek?.week_start ?? input.today;
+  const scheduledLoad = currentWeek?.scheduled_load ?? 0;
+  const recommendedLoad = currentWeek?.recommended_load ?? 0;
+  const loadDelta = Math.round((recommendedLoad - scheduledLoad) * 10) / 10;
+
+  if (gapType === "overload_risk") {
+    return {
+      type: "reduce_load",
+      label: "Review overloaded week",
+      description:
+        "Move, shorten, or reduce intensity on scheduled sessions above the recommended path.",
+      target_date: targetDate,
+      target_week_start: currentWeek?.week_start ?? null,
+      target_load_delta: loadDelta < 0 ? loadDelta : null,
+    };
+  }
+
+  if (gapType === "plan_gap" || gapType === "goal_risk") {
+    return {
+      type: "add_load",
+      label: "Adjust schedule",
+      description:
+        loadDelta > 15
+          ? `Add about ${Math.round(loadDelta)} TSS this week or schedule one moderate session.`
+          : "Add or refine scheduled sessions to close the readiness gap before your goal.",
+      target_date: targetDate,
+      target_week_start: currentWeek?.week_start ?? null,
+      target_load_delta: loadDelta > 0 ? loadDelta : null,
+    };
+  }
+
+  if (gapType === "low_confidence") {
+    return {
+      type: "add_schedule_detail",
+      label: "Add schedule details",
+      description: "Add duration and intensity to upcoming sessions for a more reliable forecast.",
+      target_date: targetDate,
+      target_week_start: currentWeek?.week_start ?? null,
+      target_load_delta: null,
+    };
+  }
+
+  if (input.upcomingImpact.length > 0) {
+    return {
+      type: "review_session",
+      label: "View upcoming session",
+      description: "Review the next scheduled session and its expected readiness impact.",
+      target_date: targetDate,
+      target_week_start: currentWeek?.week_start ?? null,
+      target_load_delta: null,
+    };
+  }
+
+  if (gapType === "on_track") {
+    return {
+      type: "maintain_schedule",
+      label: "View schedule",
+      description:
+        "Your schedule is aligned with the recommended path. Keep upcoming sessions on track.",
+      target_date: targetDate,
+      target_week_start: currentWeek?.week_start ?? null,
+      target_load_delta: null,
+    };
+  }
+
+  return null;
+}
+
+function buildScheduleSimulation(input: {
+  forecastInput: BuildReadinessForecastTimelineInput;
+  recommendation: ScheduleRecommendation | null;
+}): ScheduleSimulation | null {
+  const recommendation = input.recommendation;
+  if (!recommendation?.target_load_delta) {
+    return null;
+  }
+
+  const boundedDelta =
+    recommendation.type === "reduce_load"
+      ? Math.max(recommendation.target_load_delta, -90)
+      : recommendation.type === "add_load"
+        ? Math.min(recommendation.target_load_delta, 90)
+        : 0;
+
+  if (Math.abs(boundedDelta) < 5) {
+    return null;
+  }
+
+  return simulateReadinessScheduleAdjustment({
+    forecastInput: input.forecastInput,
+    date: recommendation.target_date,
+    tssDelta: boundedDelta,
+  });
+}
+
+function buildReadinessForecastGoals(input: {
+  fallbackGoals: Array<{ id: string; name: string; target_date: string }>;
+  dashboard: ProjectionDashboardSummary | null;
+}): ReadinessForecastGoalInput[] {
+  const projectionGoals = input.dashboard?.goal_forecasts ?? [];
+  if (projectionGoals.length > 0) {
+    return projectionGoals.map((goal) => ({
+      goal_id: goal.profile_goal_id,
+      title: goal.title,
+      target_date: goal.target_date,
+      target_readiness_min: null,
+      target_readiness_max: null,
+    }));
+  }
+
+  return input.fallbackGoals.map((goal) => ({
+    goal_id: goal.id,
+    title: goal.name,
+    target_date: goal.target_date,
+    target_readiness_min: null,
+    target_readiness_max: null,
+  }));
+}
+
+function buildReadinessForecastBaseline(input: {
+  startDate: string;
+  today: string;
+  hasActualHistory: boolean;
+  estimatedCurrentCtl: number;
+  projectionDashboard: ProjectionDashboardSummary | null;
+  readinessSummaryScore: number;
+}): ReadinessForecastBaseline {
+  if (input.hasActualHistory) {
+    return {
+      start_date: input.startDate,
+      today: input.today,
+      initial_ctl: 0,
+      initial_atl: 0,
+      initial_readiness: 50,
+      source: "history",
+      confidence: "medium",
+      confidence_reason_codes: [],
+    };
+  }
+
+  const projectionPoint = input.projectionDashboard?.readiness_points[0];
+  const fallbackCtl =
+    projectionPoint && Number.isFinite(projectionPoint.predicted_fitness_ctl)
+      ? projectionPoint.predicted_fitness_ctl
+      : input.estimatedCurrentCtl;
+  const fallbackReadiness =
+    input.projectionDashboard?.physiological_readiness_score ??
+    input.projectionDashboard?.readiness_score ??
+    input.readinessSummaryScore;
+
+  return {
+    start_date: input.startDate,
+    today: input.today,
+    initial_ctl: Math.round(Math.max(0, fallbackCtl) * 10) / 10,
+    initial_atl: Math.round(Math.max(0, fallbackCtl) * 10) / 10,
+    initial_readiness: clampNumber(Math.round(fallbackReadiness), 0, 100),
+    today_ctl: Math.round(Math.max(0, fallbackCtl) * 10) / 10,
+    today_atl: Math.round(Math.max(0, fallbackCtl) * 10) / 10,
+    today_readiness: clampNumber(Math.round(fallbackReadiness), 0, 100),
+    source: input.projectionDashboard ? "fallback" : "profile_estimate",
+    confidence: input.projectionDashboard ? "medium" : "low",
+    confidence_reason_codes: ["projection_fallback_baseline"],
+  };
+}
+
+function buildReadinessForecastReasonCodes(input: {
+  hasActualHistory: boolean;
+  scheduledDailyLoad: ScheduledReadinessDailyLoadInput[];
+  recommendedDailyLoad: ReadinessDailyLoadInput[];
+  failedEstimations: unknown[];
+  hasDatedGoals: boolean;
+}): ForecastConfidenceReasonCode[] {
+  const codes: ForecastConfidenceReasonCode[] = [
+    ...(!input.hasActualHistory ? ["missing_recent_history" as const] : []),
+    ...(input.scheduledDailyLoad.length === 0 ? ["scheduled_path_unavailable" as const] : []),
+    ...(input.recommendedDailyLoad.length === 0 ? ["recommended_path_unavailable" as const] : []),
+    ...(input.failedEstimations.length > 0 ? ["missing_scheduled_intensity" as const] : []),
+    ...(input.scheduledDailyLoad.length > 0 ? ["inferred_scheduled_load" as const] : []),
+    ...(!input.hasDatedGoals ? ["missing_goal_specificity" as const] : []),
+  ];
+
+  return uniqueReasons(codes) as ForecastConfidenceReasonCode[];
+}
 
 function buildSafeHrThresholdFallbackTarget(input?: {
   preferredValue?: number | null;
@@ -2351,6 +3029,77 @@ function mapProjectionMicrocyclesToIdealTssByDate(
   return map;
 }
 
+function buildProjectionDashboardSummary(input: {
+  projectionChart: ProjectionChartPayload;
+  rawGoals: GoalProjectionSource[];
+}): ProjectionDashboardSummary {
+  const assessmentByGoalId = new Map(
+    (input.projectionChart.goal_assessments ?? []).map((assessment) => [
+      assessment.goal_id,
+      assessment,
+    ]),
+  );
+
+  const goalForecasts = input.rawGoals.map((source, index) => {
+    const projectionGoal = input.projectionChart.goal_markers[index];
+    const assessment = projectionGoal ? assessmentByGoalId.get(projectionGoal.id) : undefined;
+
+    return {
+      profile_goal_id: source.goal.id,
+      projection_goal_id: projectionGoal?.id ?? source.goal.id,
+      title: source.goal.title,
+      target_date: source.targetDate,
+      priority: source.goal.priority,
+      readiness_score: assessment?.goal_readiness_score ?? null,
+      state_readiness_score: assessment?.state_readiness_score ?? null,
+      alignment_loss_0_100: assessment?.goal_alignment_loss_0_100 ?? null,
+      feasibility_band:
+        assessment?.feasibility_band ?? input.projectionChart.feasibility_band ?? "stretch",
+      limiter_shares: assessment?.limiter_shares ?? null,
+      target_scores: assessment?.target_scores ?? [],
+      conflict_notes: assessment?.conflict_notes ?? [],
+      interference_notes: assessment?.interference_notes ?? [],
+    };
+  });
+
+  return {
+    readiness_score: input.projectionChart.readiness_score ?? null,
+    physiological_readiness_score: input.projectionChart.physiological_readiness_score ?? null,
+    readiness_confidence: input.projectionChart.readiness_confidence ?? null,
+    planning_confidence: input.projectionChart.planning_confidence ?? null,
+    planning_confidence_reasons: input.projectionChart.planning_confidence_reasons ?? [],
+    readiness_rationale_codes: input.projectionChart.readiness_rationale_codes ?? [],
+    feasibility_band: input.projectionChart.feasibility_band ?? null,
+    risk_score: input.projectionChart.risk_score ?? null,
+    risk_level: input.projectionChart.risk_level ?? null,
+    risk_flags: input.projectionChart.risk_flags ?? [],
+    caps_applied: input.projectionChart.caps_applied ?? [],
+    load_resolution_summary: input.projectionChart.load_resolution_summary ?? null,
+    dose_recommendation: input.projectionChart.dose_recommendation ?? null,
+    sport_load_states: input.projectionChart.sport_load_states ?? [],
+    recovery_segments: input.projectionChart.recovery_segments ?? [],
+    readiness_points: (input.projectionChart.display_points ?? input.projectionChart.points).map(
+      (point) => ({
+        date: point.date,
+        readiness_score: point.readiness_score,
+        predicted_fitness_ctl: point.predicted_fitness_ctl,
+      }),
+    ),
+    microcycles: input.projectionChart.microcycles.map((microcycle) => ({
+      week_start_date: microcycle.week_start_date,
+      week_end_date: microcycle.week_end_date,
+      phase: microcycle.phase,
+      planned_weekly_tss: microcycle.planned_weekly_tss,
+      projected_ctl: microcycle.projected_ctl,
+      constraints: microcycle.metadata.load_resolution.constraints,
+      recovery_active: microcycle.metadata.recovery.active,
+      demand_floor_tss: microcycle.metadata.load_resolution.demand_floor_tss,
+      demand_gap_unmet_weekly_tss: microcycle.metadata.tss_ramp.demand_gap_unmet_weekly_tss ?? null,
+    })),
+    goal_forecasts: goalForecasts,
+  };
+}
+
 async function deriveInsightTimelineProjectionIdealTssByDate(input: {
   db?: DbClient;
   supabase?: LegacyPlanningReader;
@@ -2362,6 +3111,7 @@ async function deriveInsightTimelineProjectionIdealTssByDate(input: {
   goalCount: number;
   datedGoalCount: number;
   diagnostics: ProjectionContextDiagnostics;
+  dashboard: ProjectionDashboardSummary | null;
 }> {
   try {
     const rawGoals = await loadProfileGoalsWithTargetDates({
@@ -2378,6 +3128,7 @@ async function deriveInsightTimelineProjectionIdealTssByDate(input: {
         idealTssByDate: null,
         goalCount,
         datedGoalCount: 0,
+        dashboard: null,
         diagnostics: {
           fallback_mode: "no_dated_goals",
           projection_curve_available: false,
@@ -2400,6 +3151,7 @@ async function deriveInsightTimelineProjectionIdealTssByDate(input: {
         idealTssByDate: null,
         goalCount,
         datedGoalCount: 0,
+        dashboard: null,
         diagnostics: {
           fallback_mode: "unsupported_goal_objective",
           projection_curve_available: false,
@@ -2428,6 +3180,7 @@ async function deriveInsightTimelineProjectionIdealTssByDate(input: {
         idealTssByDate: null,
         goalCount,
         datedGoalCount: mappedGoals.length,
+        dashboard: null,
         diagnostics: {
           fallback_mode: "invalid_projection_inputs",
           projection_curve_available: false,
@@ -2481,6 +3234,10 @@ async function deriveInsightTimelineProjectionIdealTssByDate(input: {
       idealTssByDate: idealTssByDate.size > 0 ? idealTssByDate : null,
       goalCount,
       datedGoalCount: mappedGoals.length,
+      dashboard: buildProjectionDashboardSummary({
+        projectionChart: projectionArtifacts.projectionChart,
+        rawGoals,
+      }),
       diagnostics: {
         fallback_mode: projectionArtifacts.projectionChart.no_history?.projection_floor_applied
           ? "conservative_priors"
@@ -2511,6 +3268,7 @@ async function deriveInsightTimelineProjectionIdealTssByDate(input: {
       idealTssByDate: null,
       goalCount: 0,
       datedGoalCount: 0,
+      dashboard: null,
       diagnostics: {
         fallback_mode: "projection_error",
         projection_curve_available: false,
@@ -3453,6 +4211,11 @@ export async function getPlanTabProjectionService({
     start_date: string;
     end_date: string;
     timezone: string;
+    schedule_adjustment?: {
+      date: string;
+      tss_delta: number;
+      comparison_date?: string;
+    };
   };
 }) {
   const windowDays = diffDateOnlyUtcDays(input.start_date, input.end_date) + 1;
@@ -3571,7 +4334,7 @@ export async function getPlanTabProjectionService({
     : await (async () => {
         let plannedActivitiesQuery: any = fallbackSupabase!
           .from("events")
-          .select("starts_at, training_plan_id, activity_plan:activity_plans (*)")
+          .select("id, starts_at, training_plan_id, activity_plan:activity_plans (*)")
           .eq("profile_id", profileId)
           .eq("event_type", plannedEventType)
           .gte("starts_at", toDayStartIso(input.start_date))
@@ -3801,6 +4564,88 @@ export async function getPlanTabProjectionService({
           : "Recommended load is a conservative baseline estimate because no dated goal or usable history was found.",
   };
 
+  const today = formatDateOnlyUtc(new Date());
+  const actualDailyLoad = mapDailyLoadFromDateTotals(actualByDate);
+  const scheduledDailyLoad = mapScheduledDailyLoadFromDateTotals(scheduledByDate);
+  const recommendedDailyLoad = mapRecommendedDailyLoadFromTimeline(timeline);
+  const readinessForecastInput: BuildReadinessForecastTimelineInput = {
+    startDate: input.start_date,
+    endDate: input.end_date,
+    today,
+    baseline: buildReadinessForecastBaseline({
+      startDate: input.start_date,
+      today,
+      hasActualHistory: actualDailyLoad.length > 0,
+      estimatedCurrentCtl,
+      projectionDashboard: projectionGoalContext.dashboard,
+      readinessSummaryScore: readinessSummary.score,
+    }),
+    actualDailyLoad,
+    scheduledDailyLoad,
+    recommendedDailyLoad,
+    goals: buildReadinessForecastGoals({
+      fallbackGoals: goals,
+      dashboard: projectionGoalContext.dashboard,
+    }),
+    confidenceReasonCodes: buildReadinessForecastReasonCodes({
+      hasActualHistory: actualDailyLoad.length > 0,
+      scheduledDailyLoad,
+      recommendedDailyLoad,
+      failedEstimations,
+      hasDatedGoals: projectionGoalContext.datedGoalCount > 0,
+    }),
+  };
+  const readinessForecast = buildReadinessForecastTimeline(readinessForecastInput);
+  const loadComparison = buildWeeklyLoadComparison({
+    timeline,
+    goals,
+    dashboard: projectionGoalContext.dashboard,
+  });
+  const upcomingImpact = buildUpcomingActivityImpact({
+    plannedActivities: plannedActivitiesRaw || [],
+    estimatedTssByPlanId,
+    today,
+    horizonEnd: addDaysDateOnlyUtc(today, 14),
+    recommendedByDate: new Map(timeline.map((point) => [point.date, point.ideal_tss])),
+  });
+  const scheduleRecommendation = buildScheduleRecommendation({
+    today,
+    readinessForecast,
+    loadComparison,
+    upcomingImpact,
+  });
+  const activityPlanMatchTarget = resolveScheduleGapActivityPlanMatchTarget({
+    today,
+    scheduleRecommendation,
+    loadComparison,
+  });
+  const ownedActivityPlans =
+    activityPlanMatchTarget.targetTssDelta && activityPlanMatchTarget.targetTssDelta > 0
+      ? await loadOwnedActivityPlansForScheduleGap({
+          db,
+          supabase: fallbackSupabase,
+          profileId,
+        })
+      : [];
+  const activityPlanMatches = buildScheduleGapActivityPlanMatches({
+    targetDate: activityPlanMatchTarget.targetDate,
+    targetTssDelta: activityPlanMatchTarget.targetTssDelta,
+    primaryCategory,
+    plans: ownedActivityPlans,
+    today,
+  });
+  const scheduleSimulation = input.schedule_adjustment
+    ? simulateReadinessScheduleAdjustment({
+        forecastInput: readinessForecastInput,
+        date: input.schedule_adjustment.date,
+        tssDelta: input.schedule_adjustment.tss_delta,
+        comparisonDate: input.schedule_adjustment.comparison_date,
+      })
+    : buildScheduleSimulation({
+        forecastInput: readinessForecastInput,
+        recommendation: scheduleRecommendation,
+      });
+
   return {
     window: {
       start_date: input.start_date,
@@ -3827,9 +4672,16 @@ export async function getPlanTabProjectionService({
       drivers: projectionDrivers,
       diagnostics: projectionDiagnostics,
     },
+    projection_dashboard: projectionGoalContext.dashboard,
     adherence_summary: adherenceSummary,
     readiness_summary: readinessSummary,
     load_guidance: loadGuidance,
+    readiness_forecast: readinessForecast,
+    load_comparison: loadComparison,
+    upcoming_impact: upcomingImpact,
+    schedule_recommendation: scheduleRecommendation,
+    activity_plan_matches: activityPlanMatches,
+    schedule_simulation: scheduleSimulation,
     timeline,
   };
 }
@@ -4367,6 +5219,30 @@ export const trainingPlansRouter = createTRPCRouter({
         profileId: ctx.session.user.id,
         input,
       });
+    }),
+
+  simulateScheduleAdjustment: protectedProcedure
+    .input(scheduleAdjustmentSimulationInputSchema)
+    .query(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
+      const result = await getPlanTabProjectionService({
+        db,
+        store: createActivityAnalysisStore(db),
+        profileId: ctx.session.user.id,
+        input: {
+          training_plan_id: input.training_plan_id,
+          start_date: input.start_date,
+          end_date: input.end_date,
+          timezone: input.timezone,
+          schedule_adjustment: {
+            date: input.adjustment_date,
+            tss_delta: input.tss_delta,
+            comparison_date: input.comparison_date,
+          },
+        },
+      });
+
+      return result.schedule_simulation;
     }),
 
   // ------------------------------

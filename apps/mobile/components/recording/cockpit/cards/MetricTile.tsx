@@ -13,7 +13,7 @@ export function MetricTile({
   value,
 }: {
   compact?: boolean;
-  layout?: "compact" | "default" | "half";
+  layout?: "compact" | "default" | "half" | "target";
   label: string;
   subtitle?: string | null;
   target?: string | null;
@@ -45,19 +45,22 @@ export function MetricTile({
   );
 }
 
-function getContainerClassName(layout: "compact" | "default" | "half") {
+function getContainerClassName(layout: "compact" | "default" | "half" | "target") {
   if (layout === "compact") {
     return "min-h-14 w-[31%] justify-between rounded-2xl bg-muted/70 px-2.5 py-1.5";
   }
   if (layout === "half") {
     return "min-h-28 w-[48%] justify-between self-stretch rounded-[24px] bg-muted/70 px-4 py-4";
   }
+  if (layout === "target") {
+    return "min-h-24 w-32 justify-between rounded-[24px] bg-background px-4 py-3";
+  }
   return "min-h-28 min-w-[30%] flex-1 justify-between self-stretch rounded-[28px] bg-muted/70 px-4 py-4";
 }
 
 function getValueClassName(
   tone: "neutral" | "good" | "warn" | "danger",
-  layout: "compact" | "default" | "half",
+  layout: "compact" | "default" | "half" | "target",
 ) {
   const sizeClassName = getValueSizeClassName(layout);
 
@@ -73,14 +76,16 @@ function getValueClassName(
   }
 }
 
-function getValueSizeClassName(layout: "compact" | "default" | "half") {
+function getValueSizeClassName(layout: "compact" | "default" | "half" | "target") {
   if (layout === "compact") return "text-lg font-black leading-tight";
+  if (layout === "target") return "text-2xl font-black leading-tight";
   if (layout === "half") return "text-5xl font-black leading-none";
   return "text-4xl font-black leading-tight";
 }
 
-function getUnitClassName(layout: "compact" | "default" | "half") {
+function getUnitClassName(layout: "compact" | "default" | "half" | "target") {
   if (layout === "compact") return "text-xs";
+  if (layout === "target") return "text-xs";
   if (layout === "half") return "text-base";
   return "text-sm";
 }

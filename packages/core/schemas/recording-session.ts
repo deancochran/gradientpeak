@@ -314,7 +314,7 @@ export const recordingSessionArtifactSchema = z
     snapshot: recordingSessionSnapshotSchema,
     overrides: z.array(recordingSessionOverrideSchema),
     finalStats: recordingSessionFinalStatsSchema,
-    fitFilePath: z.string().min(1).nullable(),
+    activityFilePath: z.string().min(1).nullable(),
     streamArtifactPaths: z.array(z.string().min(1)),
     completedAt: isoTimestampSchema,
   })

@@ -78,7 +78,7 @@ export function RecordControlDock({
           return {
             action,
             label: sessionContract.devices.hasTrainer ? "Trainer" : "No trainer",
-            onPress: onOpenFtms,
+            onPress: onOpenSensors,
           };
         case "sensors":
         default:

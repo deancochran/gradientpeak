@@ -10,6 +10,7 @@ const activityPlansListUseQueryMock: jest.Mock = jest.fn(() => ({
   error: null,
   refetch: jest.fn(),
 }));
+let paramsState: Record<string, string | undefined> = { mode: "create", date: "2026-03-24" };
 
 function createHost(type: string) {
   return function MockComponent(props: any) {
@@ -44,7 +45,7 @@ jest.mock("expo-router", () => ({
         typeof props.options?.headerRight === "function" ? props.options.headerRight() : null,
       ),
   },
-  useLocalSearchParams: () => ({ mode: "create", date: "2026-03-24" }),
+  useLocalSearchParams: () => paramsState,
   useRouter: () => ({
     back: jest.fn(),
     navigate: jest.fn(),
@@ -268,6 +269,7 @@ describe("event detail create mode", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    paramsState = { mode: "create", date: "2026-03-24" };
     activityPlansListUseQueryMock.mockReturnValue({
       data: { items: [] },
       isLoading: false,
@@ -336,6 +338,124 @@ describe("event detail create mode", () => {
           event_type: "planned",
           activity_plan_id: "plan-1",
           title: "Tempo Run",
+          starts_at: expect.stringMatching(/^2026-03-24T/),
+        }),
+      );
+    });
+  });
+
+  it("preselects a passed activity plan without creating until save", async () => {
+    paramsState = {
+      mode: "create",
+      date: "2026-03-24",
+      trainingPlanId: "00000000-0000-4000-8000-000000000123",
+      activityPlanId: "plan-tempo",
+      scheduleGapTssDelta: "80",
+    };
+    activityPlansListUseQueryMock.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: "plan-tempo",
+            name: "Tempo Run",
+            activity_category: "run",
+            authoritative_metrics: { estimated_duration: 3600, estimated_tss: 78 },
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+      refetch: jest.fn(),
+    });
+
+    renderNative(<EventDetailScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("event-detail-selected-activity-plan")).toBeTruthy();
+    });
+    expect(createEventMutateMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("event-detail-save-button"));
+    });
+
+    await waitFor(() => {
+      expect(createEventMutateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event_type: "planned",
+          activity_plan_id: "plan-tempo",
+          training_plan_id: "00000000-0000-4000-8000-000000000123",
+          title: "Tempo Run",
+          notes: expect.stringContaining("Schedule gap: about 80 TSS."),
+          starts_at: expect.stringMatching(/^2026-03-24T/),
+        }),
+      );
+    });
+  });
+
+  it("does not auto-select a closest activity plan for an add-load plan suggestion", async () => {
+    paramsState = {
+      mode: "create",
+      date: "2026-03-24",
+      trainingPlanId: "00000000-0000-4000-8000-000000000123",
+      planSuggestionType: "add_load",
+      planSuggestionTssDelta: "75",
+      planSuggestionDescription: "Add load to close the readiness gap.",
+    };
+    activityPlansListUseQueryMock.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: "plan-easy",
+            name: "Easy Run",
+            activity_category: "run",
+            authoritative_metrics: { estimated_duration: 2400, estimated_tss: 35 },
+          },
+          {
+            id: "plan-tempo",
+            name: "Tempo Run",
+            activity_category: "run",
+            authoritative_metrics: { estimated_duration: 3600, estimated_tss: 72 },
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+      refetch: jest.fn(),
+    });
+
+    renderNative(<EventDetailScreen />);
+
+    expect(screen.queryByTestId("event-detail-selected-activity-plan")).toBeNull();
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("event-detail-save-button"));
+    });
+
+    expect(createEventMutateMock).not.toHaveBeenCalled();
+  });
+
+  it("prefills a reduce-load plan suggestion as a custom adjustment note", async () => {
+    paramsState = {
+      mode: "create",
+      date: "2026-03-24",
+      planSuggestionType: "reduce_load",
+      planSuggestionTssDelta: "-40",
+      planSuggestionDescription: "Reduce load to protect readiness.",
+    };
+
+    renderNative(<EventDetailScreen />);
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("event-detail-save-button"));
+    });
+
+    await waitFor(() => {
+      expect(createEventMutateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event_type: "custom",
+          title: "Reduce scheduled load",
+          notes: expect.stringContaining("Reduce load to protect readiness."),
           starts_at: expect.stringMatching(/^2026-03-24T/),
         }),
       );

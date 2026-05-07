@@ -1,7 +1,7 @@
 import { createGradientPeakExpoAuthClient } from "@repo/auth/client/expo";
 import Constants from "expo-constants";
-import * as SecureStore from "expo-secure-store";
 import { getServerConfig } from "@/lib/server-config";
+import { safeSecureStore } from "@/lib/storage/safe-secure-store";
 
 let cachedClient: ReturnType<typeof createGradientPeakExpoAuthClient> | null = null;
 let cachedBaseUrl = "";
@@ -31,7 +31,7 @@ export function getAuthClient() {
       baseURL,
       scheme,
       storagePrefix: "gradientpeak",
-      storage: SecureStore,
+      storage: safeSecureStore,
     });
     cachedBaseUrl = baseURL;
     cachedScheme = scheme;

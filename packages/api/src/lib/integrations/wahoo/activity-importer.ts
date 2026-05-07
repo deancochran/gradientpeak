@@ -19,8 +19,8 @@ interface WahooRepository {
     elevationGainMeters: number | null;
     externalId: string;
     finishedAt: string;
-    fitFilePath: string | null;
-    fitFileSize: number | null;
+    activityFilePath: string | null;
+    activityFileSize: number | null;
     movingSeconds: number;
     name: string;
     normalizedPower: number | null;
@@ -56,14 +56,18 @@ export interface ImportResult {
   reason?: string;
 }
 
-export interface WahooActivityImportFitFileStorage {
-  uploadFitFile(input: { bytes: Uint8Array; contentType: string; path: string }): Promise<void>;
+export interface WahooActivityImportFileStorage {
+  uploadActivityFile(input: {
+    bytes: Uint8Array;
+    contentType: string;
+    path: string;
+  }): Promise<void>;
 }
 
 export class WahooActivityImporter {
   constructor(
     private readonly deps: {
-      fitFileStorage: WahooActivityImportFitFileStorage;
+      activityFileStorage: WahooActivityImportFileStorage;
       repository: WahooRepository;
     },
   ) {}
@@ -123,7 +127,7 @@ export class WahooActivityImporter {
       const activityType = this.inferActivityType(summary);
       const { category } = fromActivityType(activityType);
 
-      const fitFile = await this.downloadAndStoreFitFile(
+      const activityFile = await this.downloadAndStoreActivityFile(
         summary.file?.url,
         integration.profileId,
         summary.id,
@@ -174,8 +178,8 @@ export class WahooActivityImporter {
         avgHeartRate: toNullableInteger(summary.heart_rate_avg),
         avgCadence: toNullableInteger(summary.cadence_avg),
         avgSpeedMps: toNullableNumber(summary.speed_avg),
-        fitFilePath: fitFile?.path ?? null,
-        fitFileSize: fitFile?.size ?? null,
+        activityFilePath: activityFile?.path ?? null,
+        activityFileSize: activityFile?.size ?? null,
       };
 
       // 7. Create activity
@@ -224,7 +228,7 @@ export class WahooActivityImporter {
     return "other";
   }
 
-  private async downloadAndStoreFitFile(
+  private async downloadAndStoreActivityFile(
     url: string | undefined,
     profileId: string,
     workoutSummaryId: number,
@@ -237,31 +241,34 @@ export class WahooActivityImporter {
       const response = await fetch(url);
       if (!response.ok) {
         console.warn(
-          `Failed to download Wahoo FIT file for summary ${workoutSummaryId}: ${response.status}`,
+          `Failed to download Wahoo activity file for summary ${workoutSummaryId}: ${response.status}`,
         );
         return null;
       }
 
       const arrayBuffer = await response.arrayBuffer();
       const bytes = new Uint8Array(arrayBuffer);
-      const fitPath = `${profileId}/wahoo-${workoutSummaryId}.fit`;
+      const activityFilePath = `${profileId}/wahoo-${workoutSummaryId}.fit`;
 
       try {
-        await this.deps.fitFileStorage.uploadFitFile({
+        await this.deps.activityFileStorage.uploadActivityFile({
           bytes,
           contentType: "application/octet-stream",
-          path: fitPath,
+          path: activityFilePath,
         });
       } catch (uploadError) {
         console.warn(
-          `Failed to store Wahoo FIT file for summary ${workoutSummaryId}: ${uploadError instanceof Error ? uploadError.message : String(uploadError)}`,
+          `Failed to store Wahoo activity file for summary ${workoutSummaryId}: ${uploadError instanceof Error ? uploadError.message : String(uploadError)}`,
         );
         return null;
       }
 
-      return { path: fitPath, size: bytes.byteLength };
+      return { path: activityFilePath, size: bytes.byteLength };
     } catch (error) {
-      console.warn(`Failed to fetch/store Wahoo FIT file for summary ${workoutSummaryId}`, error);
+      console.warn(
+        `Failed to fetch/store Wahoo activity file for summary ${workoutSummaryId}`,
+        error,
+      );
       return null;
     }
   }
@@ -282,9 +289,9 @@ export class WahooActivityImporter {
   }
 }
 
-export function createWahooImportFitFileStorage(
-  storageClient: Pick<WahooActivityImportFitFileStorage, "uploadFitFile">,
-): WahooActivityImportFitFileStorage {
+export function createWahooImportActivityFileStorage(
+  storageClient: Pick<WahooActivityImportFileStorage, "uploadActivityFile">,
+): WahooActivityImportFileStorage {
   return storageClient;
 }
 
@@ -312,7 +319,7 @@ function toNullableInteger(value: number | string | null | undefined): number | 
 }
 
 export function createActivityImporter(deps: {
-  fitFileStorage: WahooActivityImportFitFileStorage;
+  activityFileStorage: WahooActivityImportFileStorage;
   repository: WahooRepository;
 }) {
   return new WahooActivityImporter(deps);

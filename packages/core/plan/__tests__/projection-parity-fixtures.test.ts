@@ -58,7 +58,7 @@ describe("projection parity fixtures", () => {
           },
         },
         expected: {
-          readiness_score: 62,
+          readiness_score: 39,
           weekly_tss: [
             200.1, 214.1, 229.1, 241.5, 258.4, 276.5, 276.6, 275.6, 294.9, 289.9, 272.3, 234.6,
           ],
@@ -129,7 +129,7 @@ describe("projection parity fixtures", () => {
           },
         },
         expected: {
-          readiness_score: 65,
+          readiness_score: 48,
           weekly_tss: [513.9, 529.9, 567, 489.6, 394, 421.6],
           load_resolution_summary: {
             week_count: 6,
@@ -205,7 +205,7 @@ describe("projection parity fixtures", () => {
           },
         },
         expected: {
-          readiness_score: 61,
+          readiness_score: 48,
           weekly_tss: [302.9, 278.3, 236.5, 234.4, 217.8, 173.9],
           load_resolution_summary: {
             week_count: 6,

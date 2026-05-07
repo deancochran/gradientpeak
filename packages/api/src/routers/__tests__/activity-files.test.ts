@@ -5,6 +5,7 @@ vi.mock("@repo/db", () => ({
     id: "activities.id",
     profile_id: "activities.profile_id",
     is_private: "activities.is_private",
+    activity_file_path: "activities.activity_file_path",
   },
   activityEfforts: { table: "activity_efforts" },
   profileMetrics: {
@@ -30,6 +31,10 @@ vi.mock("@repo/db", () => ({
 }));
 
 const mocks = vi.hoisted(() => ({
+  calculateBounds: vi.fn(),
+  encodePolyline: vi.fn(),
+  inferActivityFileType: vi.fn(),
+  parseActivityFile: vi.fn(),
   parseFitFileWithSDK: vi.fn(),
   calculateBestEfforts: vi.fn(),
   calculateDecouplingFromStreams: vi.fn(),
@@ -42,6 +47,7 @@ const mocks = vi.hoisted(() => ({
   estimateVO2Max: vi.fn(),
   fetchActivityTemperature: vi.fn(),
   storage: {
+    createBucket: vi.fn(),
     createSignedUploadUrl: vi.fn(),
     upload: vi.fn(),
     download: vi.fn(),
@@ -55,7 +61,12 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@repo/core", () => ({
+  calculateBounds: mocks.calculateBounds,
+  encodePolyline: mocks.encodePolyline,
+  inferActivityFileType: mocks.inferActivityFileType,
+  parseActivityFile: mocks.parseActivityFile,
   parseFitFileWithSDK: mocks.parseFitFileWithSDK,
+  simplifyCoordinates: vi.fn((coords) => coords),
 }));
 
 vi.mock("@repo/core/calculations", () => ({
@@ -78,6 +89,7 @@ vi.mock("../../utils/weather", () => ({
 vi.mock("../../storage-service", () => ({
   getApiStorageService: () => ({
     storage: {
+      createBucket: mocks.storage.createBucket,
       from: () => ({
         createSignedUploadUrl: mocks.storage.createSignedUploadUrl,
         upload: mocks.storage.upload,
@@ -100,7 +112,7 @@ vi.mock("../../utils/profile-estimation-state", () => ({
   bumpProfileEstimationState: vi.fn(async () => undefined),
 }));
 
-import { fitFilesRouter } from "../fit-files";
+import { activityFilesRouter } from "../activity-files";
 
 type MockDbPlan = {
   selectResults?: unknown[][];
@@ -172,7 +184,7 @@ function createDbMock(plan: MockDbPlan = {}) {
 function createCaller(options?: { db?: unknown; userId?: string }) {
   mocks.db.current = options?.db ?? null;
 
-  return fitFilesRouter.createCaller({
+  return activityFilesRouter.createCaller({
     session: { user: { id: options?.userId ?? "11111111-1111-4111-8111-111111111111" } },
     headers: new Headers(),
     clientType: "test",
@@ -189,6 +201,7 @@ beforeEach(() => {
     data: { path, signedUrl: `https://upload.test/${path}`, token: "upload-token" },
     error: null,
   }));
+  mocks.storage.createBucket.mockResolvedValue({ data: null, error: null });
   mocks.storage.upload.mockResolvedValue({ error: null });
   mocks.storage.download.mockResolvedValue({ data: createBlob(), error: null });
   mocks.storage.remove.mockResolvedValue({ data: null, error: null });
@@ -200,6 +213,13 @@ beforeEach(() => {
     error: null,
   }));
   mocks.functionsInvoke.mockResolvedValue({ data: { queued: true }, error: null });
+  mocks.calculateBounds.mockReturnValue({ minLat: 40, maxLat: 41, minLng: -74, maxLng: -73 });
+  mocks.encodePolyline.mockReturnValue("encoded-polyline");
+  mocks.inferActivityFileType.mockImplementation((fileName: string) => {
+    const extension = fileName.split(".").pop()?.toLowerCase();
+    if (extension === "fit" || extension === "gpx" || extension === "tcx") return extension;
+    throw new Error("Unsupported activity file type");
+  });
 
   mocks.calculateBestEfforts.mockReturnValue([{ duration: 1200, value: 300, startIndex: 0 }]);
   mocks.calculateDecouplingFromStreams.mockReturnValue(0.03);
@@ -213,8 +233,8 @@ beforeEach(() => {
   mocks.fetchActivityTemperature.mockResolvedValue(null);
 });
 
-describe("fitFilesRouter", () => {
-  it("creates signed upload URLs for FIT uploads", async () => {
+describe("activityFilesRouter", () => {
+  it("creates signed upload URLs for activity uploads", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
 
@@ -224,10 +244,27 @@ describe("fitFilesRouter", () => {
     expect(mocks.storage.createSignedUploadUrl).toHaveBeenCalledWith(
       "activities/11111111-1111-4111-8111-111111111111/uploads/1775217600000_ride.fit",
     );
+    expect(mocks.storage.createBucket).toHaveBeenCalledWith("activity-files", {
+      public: false,
+      fileSizeLimit: "50MB",
+    });
     expect(result).toMatchObject({
       filePath: "activities/11111111-1111-4111-8111-111111111111/uploads/1775217600000_ride.fit",
       token: "upload-token",
     });
+  });
+
+  it("continues signed upload URL creation when the FIT bucket already exists", async () => {
+    mocks.storage.createBucket.mockResolvedValueOnce({
+      data: null,
+      error: { message: "Bucket already exists" },
+    });
+
+    const caller = createCaller();
+    const result = await caller.getSignedUploadUrl({ fileName: "ride.fit", fileSize: 1234 });
+
+    expect(result.token).toBe("upload-token");
+    expect(mocks.storage.createSignedUploadUrl).toHaveBeenCalledTimes(1);
   });
 
   it("rejects malformed signed upload responses from storage", async () => {
@@ -243,7 +280,7 @@ describe("fitFilesRouter", () => {
     ).rejects.toThrow("Failed to generate upload URL");
   });
 
-  it("processes FIT uploads through ctx.db and records derived side effects", async () => {
+  it("processes activity uploads through ctx.db and records derived side effects", async () => {
     const startTime = new Date("2025-05-10T10:00:00.000Z");
     const finishedAt = new Date("2025-05-10T11:00:00.000Z");
     const createdActivity = {
@@ -260,7 +297,7 @@ describe("fitFilesRouter", () => {
       executeResults: [{ rows: [] }],
     });
 
-    mocks.parseFitFileWithSDK.mockReturnValue({
+    mocks.parseActivityFile.mockReturnValue({
       metadata: { type: "cycling", startTime },
       summary: {
         totalTime: 3600,
@@ -292,8 +329,8 @@ describe("fitFilesRouter", () => {
     });
 
     const caller = createCaller({ db });
-    const result = await caller.processFitFile({
-      fitFilePath: "activities/user/uploads/123_history.fit",
+    const result = await caller.processActivityFile({
+      activityFilePath: "activities/11111111-1111-4111-8111-111111111111/uploads/123_history.fit",
       name: "Morning Ride",
       notes: "Imported",
       activityType: "bike",
@@ -337,9 +374,9 @@ describe("fitFilesRouter", () => {
     expect(mocks.storage.remove).not.toHaveBeenCalled();
   });
 
-  it("uploads FIT file bytes to storage", async () => {
+  it("uploads activity file bytes to storage", async () => {
     const caller = createCaller();
-    const result = await caller.uploadFitFile({
+    const result = await caller.uploadActivityFile({
       fileName: "ride.fit",
       fileSize: 4,
       fileType: "ride.fit",
@@ -354,38 +391,53 @@ describe("fitFilesRouter", () => {
     expect(result).toMatchObject({ success: true, size: 4 });
   });
 
-  it("invokes the analyze-fit-file edge function", async () => {
+  it("rejects processing activity files owned by another user", async () => {
+    const { db } = createDbMock();
+    const caller = createCaller({ db });
+
+    await expect(
+      caller.processActivityFile({
+        activityFilePath: "activities/22222222-2222-4222-8222-222222222222/uploads/ride.fit",
+        name: "Other Ride",
+        activityType: "bike",
+      }),
+    ).rejects.toThrow("Access denied");
+
+    expect(mocks.storage.download).not.toHaveBeenCalled();
+  });
+
+  it("invokes the analyze-activity-file edge function", async () => {
     const caller = createCaller();
     const activityId = "22222222-2222-4222-8222-222222222222";
 
-    const result = await caller.analyzeFitFile({
+    const result = await caller.analyzeActivityFile({
       activityId,
       filePath: "11111111-1111-4111-8111-111111111111/ride.fit",
-      bucketName: "fit-files",
+      bucketName: "activity-files",
     });
 
-    expect(mocks.functionsInvoke).toHaveBeenCalledWith("analyze-fit-file", {
+    expect(mocks.functionsInvoke).toHaveBeenCalledWith("analyze-activity-file", {
       body: {
         activityId,
-        bucketName: "fit-files",
+        bucketName: "activity-files",
         filePath: "11111111-1111-4111-8111-111111111111/ride.fit",
       },
     });
     expect(result).toEqual({ queued: true });
   });
 
-  it("rejects malformed analyze-fit-file responses", async () => {
+  it("rejects malformed analyze-activity-file responses", async () => {
     mocks.functionsInvoke.mockResolvedValue({ data: { ok: true }, error: null });
 
     const caller = createCaller();
 
     await expect(
-      caller.analyzeFitFile({
+      caller.analyzeActivityFile({
         activityId: "22222222-2222-4222-8222-222222222222",
         filePath: "11111111-1111-4111-8111-111111111111/ride.fit",
-        bucketName: "fit-files",
+        bucketName: "activity-files",
       }),
-    ).rejects.toThrow("FIT file analysis failed");
+    ).rejects.toThrow("Activity file analysis failed");
   });
 
   it("returns serialized activity details for FIT processing status", async () => {
@@ -403,7 +455,7 @@ describe("fitFilesRouter", () => {
     });
 
     const caller = createCaller({ db });
-    const result = await caller.getFitFileStatus({ activityId });
+    const result = await caller.getActivityFileStatus({ activityId });
 
     expect(result).toEqual({
       activity: {
@@ -445,7 +497,7 @@ describe("fitFilesRouter", () => {
     });
 
     const caller = createCaller({ db });
-    const result = await caller.listFitFiles({ pageSize: 2 });
+    const result = await caller.listActivityFiles({ pageSize: 2 });
 
     expect(result).toEqual({
       files: [
@@ -468,11 +520,11 @@ describe("fitFilesRouter", () => {
     });
   });
 
-  it("rejects download URLs for another user's FIT file", async () => {
+  it("rejects download URLs for another user's activity file", async () => {
     const caller = createCaller();
 
     await expect(
-      caller.getFitFileUrl({
+      caller.getActivityFileUrl({
         filePath: "22222222-2222-4222-8222-222222222222/ride.fit",
         expiresIn: 600,
       }),
@@ -490,7 +542,7 @@ describe("fitFilesRouter", () => {
     const caller = createCaller();
 
     await expect(
-      caller.getFitFileUrl({
+      caller.getActivityFileUrl({
         filePath: "11111111-1111-4111-8111-111111111111/ride.fit",
         expiresIn: 600,
       }),
@@ -499,10 +551,10 @@ describe("fitFilesRouter", () => {
     });
   });
 
-  it("deletes an owned FIT file from storage", async () => {
+  it("deletes an owned activity file from storage", async () => {
     const caller = createCaller();
 
-    const result = await caller.deleteFitFile({
+    const result = await caller.deleteActivityFile({
       filePath: "11111111-1111-4111-8111-111111111111/ride.fit",
     });
 
@@ -512,12 +564,12 @@ describe("fitFilesRouter", () => {
     expect(result).toEqual({ success: true });
   });
 
-  it("rejects FIT stream access when the path only contains the user id", async () => {
+  it("rejects activity stream access when the path only contains the user id", async () => {
     const caller = createCaller();
 
     await expect(
       caller.getStreams({
-        fitFilePath: "tmp/11111111-1111-4111-8111-111111111111-ride.fit",
+        activityFilePath: "tmp/11111111-1111-4111-8111-111111111111-ride.fit",
       }),
     ).rejects.toThrow("Failed to retrieve streams: Access denied");
   });
@@ -528,7 +580,7 @@ describe("fitFilesRouter", () => {
       findFirstResults: [{ profile_id: "11111111-1111-4111-8111-111111111111", is_private: true }],
     });
 
-    mocks.parseFitFileWithSDK.mockReturnValue({
+    mocks.parseActivityFile.mockReturnValue({
       metadata: { type: "cycling", startTime: new Date("2026-03-01T10:00:00.000Z") },
       records: [{ timestamp: new Date("2026-03-01T10:00:00.000Z"), power: 240 }],
       laps: [{ startTime: new Date("2026-03-01T10:00:00.000Z") }],
@@ -538,7 +590,7 @@ describe("fitFilesRouter", () => {
 
     const caller = createCaller({ db });
     const result = await caller.getStreams({
-      fitFilePath: "11111111-1111-4111-8111-111111111111/ride.fit",
+      activityFilePath: "11111111-1111-4111-8111-111111111111/ride.fit",
       activityId,
     });
 
@@ -550,10 +602,10 @@ describe("fitFilesRouter", () => {
     });
   });
 
-  it("cleans up malformed parsed FIT data during processing", async () => {
+  it("cleans up malformed parsed activity data during processing", async () => {
     const { db } = createDbMock();
 
-    mocks.parseFitFileWithSDK.mockReturnValue({
+    mocks.parseActivityFile.mockReturnValue({
       metadata: { type: "cycling", startTime: "2025-05-10T10:00:00.000Z" },
       summary: { totalTime: 3600, totalDistance: 40250 },
       records: [],
@@ -564,14 +616,16 @@ describe("fitFilesRouter", () => {
     const caller = createCaller({ db });
 
     await expect(
-      caller.processFitFile({
-        fitFilePath: "activities/user/uploads/123_history.fit",
+      caller.processActivityFile({
+        activityFilePath: "activities/11111111-1111-4111-8111-111111111111/uploads/123_history.fit",
         name: "Morning Ride",
         notes: "Imported",
         activityType: "bike",
       }),
-    ).rejects.toThrow("Failed to parse FIT file");
+    ).rejects.toThrow("Failed to parse activity file");
 
-    expect(mocks.storage.remove).toHaveBeenCalledWith(["activities/user/uploads/123_history.fit"]);
+    expect(mocks.storage.remove).toHaveBeenCalledWith([
+      "activities/11111111-1111-4111-8111-111111111111/uploads/123_history.fit",
+    ]);
   });
 });

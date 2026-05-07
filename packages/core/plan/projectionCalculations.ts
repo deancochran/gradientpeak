@@ -200,10 +200,13 @@ export interface NoHistoryAnchorContext {
   intensity_model?: Partial<NoHistoryIntensityModel>;
 }
 
+type ProjectionActivityCategory = "run" | "bike" | "swim" | "other";
+
 export type NoHistoryGoalTargetInput =
   | {
       target_type: "race_performance";
       distance_m: number;
+      activity_category?: ProjectionActivityCategory;
       target_time_s?: number;
     }
   | {
@@ -703,12 +706,29 @@ export function deriveGoalDemandProfileFromTargets(input: {
     return modalityBase + modalityGrowth * horizonSupport;
   };
 
-  const smoothRaceDistanceCtl = (distanceKm: number): number => {
+  const normalizeRaceDistanceForSport = (
+    distanceKm: number,
+    activityCategory: ProjectionActivityCategory | undefined,
+  ): number => {
+    if (activityCategory === "bike") return distanceKm * 0.28;
+    if (activityCategory === "swim") return distanceKm * 7.5;
+    return distanceKm;
+  };
+
+  const smoothRaceDistanceCtl = (input: {
+    distanceKm: number;
+    activityCategory?: ProjectionActivityCategory;
+  }): number => {
+    const equivalentDistanceKm = normalizeRaceDistanceForSport(
+      input.distanceKm,
+      input.activityCategory,
+    );
     const baseCtl =
       DISTANCE_TO_CTL.DISTANCE_CTL_BASE +
-      DISTANCE_TO_CTL.DISTANCE_CTL_SCALE * Math.log(1 + distanceKm);
+      DISTANCE_TO_CTL.DISTANCE_CTL_SCALE * Math.log(1 + equivalentDistanceKm);
     const enduranceBias =
-      clamp01((distanceKm - 10) / 32) * 4 + clamp01((distanceKm - 42.2) / 57.8) * 5;
+      clamp01((equivalentDistanceKm - 10) / 32) * 4 +
+      clamp01((equivalentDistanceKm - 42.2) / 57.8) * 5;
     return baseCtl + enduranceBias;
   };
 
@@ -723,8 +743,10 @@ export function deriveGoalDemandProfileFromTargets(input: {
   for (const target of input.goalTargets) {
     if (target.target_type === "race_performance") {
       const distanceKm = Math.max(1, Math.min(100, target.distance_m / 1000));
+      const activityCategory = target.activity_category ?? "run";
 
-      const distanceCtl = smoothRaceDistanceCtl(distanceKm);
+      const distanceCtl = smoothRaceDistanceCtl({ distanceKm, activityCategory });
+      reasons.push(`race_performance_sport_${activityCategory}`);
 
       let paceCtlBoost = 0;
 
@@ -735,7 +757,7 @@ export function deriveGoalDemandProfileFromTargets(input: {
       ) {
         const speedKph = (distanceKm * 3600) / target.target_time_s;
 
-        const paceBaseline = getPaceBaseline("run", distanceKm);
+        const paceBaseline = getPaceBaseline(activityCategory, distanceKm);
 
         paceCtlBoost = smoothPaceBoostCtl({ speedKph, paceBaseline });
         hasRacePaceTarget = true;
@@ -1727,6 +1749,22 @@ function isUuidLike(value: string | undefined): value is string {
     : false;
 }
 
+function toDeterministicReferenceUuid(value: string): string {
+  let hashA = 0x811c9dc5;
+  let hashB = 0x9e3779b9;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    hashA = Math.imul(hashA ^ code, 0x01000193) >>> 0;
+    hashB = Math.imul(hashB ^ code, 0x85ebca6b) >>> 0;
+  }
+  const hex =
+    `${hashA.toString(16).padStart(8, "0")}${hashB.toString(16).padStart(8, "0")}${((hashA ^ hashB) >>> 0).toString(16).padStart(8, "0")}${(Math.imul(hashA, hashB) >>> 0).toString(16).padStart(8, "0")}`.slice(
+      0,
+      32,
+    );
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
 function createReferenceContextDiagnostics(input: {
   status: "available" | "unsupported" | "absent";
   supported_goal_count: number;
@@ -1763,20 +1801,18 @@ function computeReferenceContext(input: {
     };
   }
 
-  const supportedGoals = goalsWithTargets.flatMap((goal) =>
-    isUuidLike(goal.id)
-      ? [
-          {
-            id: goal.id,
-            name: goal.name,
-            target_date: goal.target_date,
-            priority: goal.priority,
-            targets: goal.targets ?? [],
-          },
-        ]
-      : [],
-  );
-  const unsupportedGoalCount = goalsWithTargets.length - supportedGoals.length;
+  const localGoalIdCount = goalsWithTargets.filter((goal) => !isUuidLike(goal.id)).length;
+  const supportedGoals = goalsWithTargets.map((goal, index) => {
+    const stableGoalKey = goal.id ?? `${goal.name}|${goal.target_date}|${index}`;
+    return {
+      id: isUuidLike(goal.id) ? goal.id : toDeterministicReferenceUuid(stableGoalKey),
+      name: goal.name,
+      target_date: goal.target_date,
+      priority: goal.priority,
+      targets: goal.targets ?? [],
+    };
+  });
+  const unsupportedGoalCount = 0;
 
   if (supportedGoals.length === 0) {
     return {
@@ -1785,7 +1821,7 @@ function computeReferenceContext(input: {
         status: "unsupported",
         supported_goal_count: 0,
         unsupported_goal_count: unsupportedGoalCount,
-        rationale_codes: ["reference_context_goal_ids_not_uuid"],
+        rationale_codes: ["reference_context_goal_targets_absent"],
       }),
     };
   }
@@ -1877,7 +1913,11 @@ function computeReferenceContext(input: {
       status: "available",
       supported_goal_count: normalizedGoals.length,
       unsupported_goal_count: unsupportedGoalCount,
-      rationale_codes: [...feasibility.rationale_codes, "reference_context_precomputed"],
+      rationale_codes: [
+        ...feasibility.rationale_codes,
+        "reference_context_precomputed",
+        ...(localGoalIdCount > 0 ? ["reference_context_local_goal_ids_normalized"] : []),
+      ],
     }),
   };
 }
@@ -1999,7 +2039,10 @@ function resolveWeeklyLoadSignals(input: WeeklyLoadSignalInput): WeeklyLoadSigna
   const floorOverrideApplied =
     weightedNoHistoryDemandFloor !== null &&
     aggressivenessAdjustedWeeklyTss < weightedNoHistoryDemandFloor;
-  const flooredWeeklyTss = aggressivenessAdjustedWeeklyTss;
+  const flooredWeeklyTss =
+    weightedNoHistoryDemandFloor === null
+      ? aggressivenessAdjustedWeeklyTss
+      : Math.max(aggressivenessAdjustedWeeklyTss, weightedNoHistoryDemandFloor);
 
   return {
     block,
@@ -3557,7 +3600,8 @@ function resolveRecommendedWeeklyDurationMinutes(input: {
   preferenceProfile?: AthletePreferenceProfile;
 }): number {
   const maxWeeklyDuration = input.preferenceProfile?.dose_limits.max_weekly_duration_minutes;
-  const rawMinutes = input.averageLoad * 0.58;
+  const enduranceIntensityFactor = 0.72;
+  const rawMinutes = (input.averageLoad / (enduranceIntensityFactor ** 2 * 100)) * 60;
 
   return round1(
     Math.max(
@@ -4709,7 +4753,7 @@ function buildDeterministicProjectionPayloadInternal(
 
 function simulateCtlOverWeek(startingCtl: number, weeklyTss: number, days: number): number {
   let ctl = startingCtl;
-  const dailyTss = weeklyTss / Math.max(1, days);
+  const dailyTss = weeklyTss / 7;
   for (let day = 0; day < days; day += 1) {
     ctl = calculateCTL(ctl, dailyTss);
     if (!Number.isFinite(ctl)) {
@@ -4722,7 +4766,7 @@ function simulateCtlOverWeek(startingCtl: number, weeklyTss: number, days: numbe
 
 function simulateAtlOverWeek(startingAtl: number, weeklyTss: number, days: number): number {
   let atl = startingAtl;
-  const dailyTss = weeklyTss / Math.max(1, days);
+  const dailyTss = weeklyTss / 7;
   for (let day = 0; day < days; day += 1) {
     atl = calculateATL(atl, dailyTss);
     if (!Number.isFinite(atl)) {

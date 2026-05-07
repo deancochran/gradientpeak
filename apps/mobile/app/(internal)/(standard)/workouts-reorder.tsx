@@ -10,20 +10,28 @@ import { ActivityIndicator, ScrollView, TouchableOpacity, View } from "react-nat
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
+import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
+import { useAuthStore } from "@/lib/stores/auth-store";
 import { normalizeDate } from "@/lib/utils/plan/dateGrouping";
 
 export default function WorkoutsReorder() {
   const router = useRouter();
   const utils = api.useUtils();
+  const eventsQueryEnabled = useAuthStore(
+    (state) => state.ready && !!state.session && hasSessionAuthCredentials(),
+  );
 
   // Get all planned activities
   const {
     data: plannedActivitiesData,
     isLoading,
     refetch,
-  } = api.events.list.useQuery({
-    limit: 100,
-  });
+  } = api.events.list.useQuery(
+    {
+      limit: 100,
+    },
+    { enabled: eventsQueryEnabled },
+  );
 
   const updateMutation = api.events.update.useMutation({
     onSuccess: () => {

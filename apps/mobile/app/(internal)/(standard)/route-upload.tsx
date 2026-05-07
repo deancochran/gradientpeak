@@ -49,7 +49,12 @@ export default function UploadRouteScreen() {
 
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: ["application/gpx+xml", "text/xml", "application/xml"],
+        type: [
+          "application/gpx+xml",
+          "application/vnd.garmin.tcx+xml",
+          "text/xml",
+          "application/xml",
+        ],
         copyToCacheDirectory: true,
       });
 
@@ -73,7 +78,7 @@ export default function UploadRouteScreen() {
       });
 
       if (!String(form.getValues("name") ?? "").trim() && file.name) {
-        form.setValue("name", file.name.replace(/\.gpx$/i, ""), {
+        form.setValue("name", file.name.replace(/\.(gpx|tcx|xml)$/i, ""), {
           shouldDirty: true,
           shouldTouch: true,
           shouldValidate: true,
@@ -120,7 +125,7 @@ export default function UploadRouteScreen() {
                   name="fileName"
                   render={() => (
                     <FormItem>
-                      <FormLabel>GPX File *</FormLabel>
+                      <FormLabel>GPX or TCX File *</FormLabel>
                       <FormControl>
                         {!selectedFileName ? (
                           <Button
@@ -130,7 +135,7 @@ export default function UploadRouteScreen() {
                             testID="route-upload-pick-file-button"
                           >
                             <Upload className="text-foreground" size={20} />
-                            <Text>Choose GPX File</Text>
+                            <Text>Choose GPX or TCX File</Text>
                           </Button>
                         ) : (
                           <View className="flex-row items-center gap-2 rounded-lg bg-muted p-3">
@@ -150,7 +155,7 @@ export default function UploadRouteScreen() {
                           </View>
                         )}
                       </FormControl>
-                      <FormDescription>Select a GPX file from your device</FormDescription>
+                      <FormDescription>Select a GPX or TCX file from your device</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

@@ -14,7 +14,6 @@ export function TrainerSurface({
   sessionContract: RecordingSessionContract | null;
 }) {
   const hasTrainer = sessionContract?.devices.hasTrainer ?? false;
-  const canControlTrainer = sessionContract?.devices.trainerControllable ?? false;
   const consequence = sessionContract?.validation.consequences.find((entry) =>
     entry.includes("Trainer"),
   );
@@ -26,9 +25,7 @@ export function TrainerSurface({
           <Text className="text-lg font-semibold text-foreground">Trainer</Text>
           <Text className="mt-1 text-sm text-muted-foreground">
             {hasTrainer
-              ? canControlTrainer
-                ? "Trainer controls are available for this session."
-                : "A trainer is connected, but direct control is not currently available."
+              ? "Trainer setup and source controls are available from Sensors."
               : "Connect a trainer from Sensors if you want machine-specific controls."}
           </Text>
         </View>
@@ -44,11 +41,8 @@ export function TrainerSurface({
       ) : null}
 
       <View className="mt-auto gap-3 pt-6">
-        <Button onPress={() => navigateTo("/record/ftms")} disabled={!canControlTrainer}>
-          <Text className="text-primary-foreground">Open Trainer Controls</Text>
-        </Button>
-        <Button variant="outline" onPress={() => navigateTo("/record/sensors")}>
-          <Text>Open Sensors</Text>
+        <Button onPress={() => navigateTo("/record/sensors")}>
+          <Text className="text-primary-foreground">Open Sensors</Text>
         </Button>
       </View>
     </View>

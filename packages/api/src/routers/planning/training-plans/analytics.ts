@@ -3,6 +3,7 @@ import { trainingPlansRouter as trainingPlansBaseRouter } from "./base";
 
 export const trainingPlansAnalyticsRouter = createTRPCRouter({
   getInsightTimeline: trainingPlansBaseRouter._def.procedures.getInsightTimeline,
+  simulateScheduleAdjustment: trainingPlansBaseRouter._def.procedures.simulateScheduleAdjustment,
   getCurrentStatus: trainingPlansBaseRouter._def.procedures.getCurrentStatus,
   getIdealCurve: trainingPlansBaseRouter._def.procedures.getIdealCurve,
   getActualCurve: trainingPlansBaseRouter._def.procedures.getActualCurve,

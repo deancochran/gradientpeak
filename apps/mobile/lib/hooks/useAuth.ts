@@ -7,6 +7,7 @@ import {
   updateMobileEmail,
   updateMobilePassword,
 } from "@/lib/auth/account-management";
+import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import { refreshMobileAuthSession } from "@/lib/auth/client";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { api } from "../api";
@@ -24,6 +25,7 @@ export const useAuth = () => {
   const { session, user, ready, loading } = store;
 
   const isAuthenticated = useMemo(() => !!session?.user, [session]);
+  const hasAuthCredentials = useMemo(() => hasSessionAuthCredentials(), [session]);
 
   // Compute verification status directly from user object
   // This is more reliable than the RPC for initial email verification
@@ -48,7 +50,8 @@ export const useAuth = () => {
       : ("authenticated-unverified" as const);
   }, [isAuthenticated, isEmailVerified]);
 
-  const shouldFetchProfile = ready && !!user && isAuthenticated && userStatus === "verified";
+  const shouldFetchProfile =
+    ready && !!user && isAuthenticated && hasAuthCredentials && userStatus === "verified";
 
   // Use API query for profile data - this gives you caching, refetching, etc.
   const profileQuery = api.profiles.get.useQuery(

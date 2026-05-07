@@ -22,6 +22,7 @@ import { Alert, Platform, ScrollView, TouchableOpacity, View } from "react-nativ
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
+import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import { useAuth } from "@/lib/hooks/useAuth";
 
 type HealthKitPermissions = {
@@ -611,8 +612,11 @@ export default function OnboardingScreen() {
   const [statusModal, setStatusModal] = useState<null | { title: string; description: string }>(
     null,
   );
-  const { completeOnboarding } = useAuth();
-  const { data: profile } = api.profiles.get.useQuery();
+  const { completeOnboarding, isAuthenticated, isFullyLoaded } = useAuth();
+  const profileQueryEnabled = isFullyLoaded && isAuthenticated && hasSessionAuthCredentials();
+  const { data: profile } = api.profiles.get.useQuery(undefined, {
+    enabled: profileQueryEnabled,
+  });
   const completeOnboardingMutation = api.onboarding.completeOnboarding.useMutation();
 
   const updateData = (updates: Partial<OnboardingData>) => {

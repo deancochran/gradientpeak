@@ -84,6 +84,8 @@ function buildService(overrides: any = {}) {
     currentRouteDistance: 0,
     routeProgress: 0,
     currentRouteGrade: 0,
+    isOnRoute: true,
+    isGpsRecordingEnabled: () => false,
     allSteps: [
       {
         id: "00000000-0000-4000-8000-000000000001",
@@ -168,10 +170,13 @@ jest.mock("lucide-react-native", () => ({
   Activity: createHost("Activity"),
   Bike: createHost("Bike"),
   CalendarDays: createHost("CalendarDays"),
+  ChevronLeft: createHost("ChevronLeft"),
+  ChevronRight: createHost("ChevronRight"),
   Dumbbell: createHost("Dumbbell"),
   Footprints: createHost("Footprints"),
   MapPin: createHost("MapPin"),
   Minimize2: createHost("Minimize2"),
+  Navigation: createHost("Navigation"),
   Route: createHost("Route"),
   Trash2: createHost("Trash2"),
   Waves: createHost("Waves"),
@@ -215,6 +220,43 @@ jest.mock("@/components/recording/footer", () => ({
 
 jest.mock("@/lib/hooks/useActivityRecorder", () => ({
   __esModule: true,
+  useActivityRecorderLiveData: () => ({
+    current: { power: 245, heartRate: 144, cadence: 88, speed: 3.2 },
+    plan: {
+      hasPlan: true,
+      currentStep: {
+        id: "00000000-0000-4000-8000-000000000002",
+        name: "Tempo block",
+        duration: { type: "time", seconds: 600 },
+        targets: [{ type: "%FTP", intensity: 88 }],
+      },
+      stepIndex: 1,
+      stepCount: 2,
+      progress: {
+        movingTime: 120000,
+        duration: 600000,
+        progress: 0.2,
+        requiresManualAdvance: false,
+        canAdvance: false,
+      },
+      canGoBack: true,
+      canSkip: true,
+      previous: mockPlanPrevious,
+      skip: mockPlanSkip,
+    },
+    stats: {
+      duration: 75,
+      distance: 1200,
+      normalizedPower: 241,
+      trainingStressScore: 12,
+      intensityFactor: 0.83,
+      currentHeartRateZone: 2,
+      currentPowerZone: 3,
+      currentGrade: 4.2,
+      gradeAdjustedPaceSecondsPerKm: 315,
+      verticalSpeedMetersPerHour: 640,
+    },
+  }),
   useCurrentReadings: () => ({ power: 245, heartRate: 144, cadence: 88, speed: 3.2 }),
   usePlan: () => ({
     hasPlan: true,
@@ -262,7 +304,7 @@ describe("recording cockpit", () => {
     getLastKnownLocationMock.mockResolvedValue(null);
   });
 
-  it("renders an indoor route profile in the carousel without subscribing to GPS", () => {
+  it("renders a route elevation profile in the carousel without subscribing to GPS", () => {
     const result = renderNative(
       <>
         <RecordingBackdrop
@@ -314,19 +356,18 @@ describe("recording cockpit", () => {
     expect(screen.getByTestId("route-profile-card-content")).toBeTruthy();
     expect(screen.getByTestId("route-elevation-chart")).toBeTruthy();
     expect(screen.getByTestId("route-profile-current-dot")).toBeTruthy();
-    expect(screen.getByTestId("route-profile-grade-cue")).toBeTruthy();
-    expect(screen.getByText("Indoor route")).toBeTruthy();
+    expect(screen.queryByTestId("route-profile-grade-cue")).toBeNull();
+    expect(screen.getByText("Route profile")).toBeTruthy();
     expect(screen.getByText("3.0 km / 6.0 km")).toBeTruthy();
-    expect(screen.getByText("+4.2%")).toBeTruthy();
+    expect(screen.getAllByText("+4.2%").length).toBeGreaterThan(0);
     expect(screen.queryByText("50% complete")).toBeNull();
     expect(screen.queryByText("Done")).toBeNull();
-    expect(screen.queryByText("Remaining")).toBeNull();
     expect(result.UNSAFE_queryByType("MapView" as any)).toBeNull();
     expect(result.UNSAFE_queryByType("Polyline" as any)).toBeNull();
     expect(addCallbackMock).not.toHaveBeenCalled();
   });
 
-  it("clamps virtual route progress after the route is complete", () => {
+  it("clamps route progress after the route is complete", () => {
     renderNative(
       <RecordingFloatingPanel
         bottomObstructionHeight={80}
@@ -360,11 +401,11 @@ describe("recording cockpit", () => {
 
     expect(screen.getByTestId("route-profile-current-dot")).toBeTruthy();
     expect(screen.getByText("6.0 km / 6.0 km")).toBeTruthy();
-    expect(screen.getByText("-1.8%")).toBeTruthy();
+    expect(screen.getAllByText("-1.8%").length).toBeGreaterThan(0);
     expect(screen.queryByText("120% complete")).toBeNull();
   });
 
-  it("renders distance progress fallback when virtual route elevation is unavailable", () => {
+  it("renders distance progress fallback when route elevation is unavailable", () => {
     const result = renderNative(
       <RecordingFloatingPanel
         bottomObstructionHeight={80}
@@ -397,11 +438,53 @@ describe("recording cockpit", () => {
 
     expect(screen.getByTestId("route-distance-fallback")).toBeTruthy();
     expect(screen.getByTestId("route-distance-current-dot")).toBeTruthy();
-    expect(screen.getByText("Distance route")).toBeTruthy();
+    expect(screen.getByText("Route distance")).toBeTruthy();
     expect(screen.getByText("2.5 km / 10.0 km")).toBeTruthy();
     expect(screen.queryByText("Done")).toBeNull();
-    expect(screen.queryByText("Remaining")).toBeNull();
     expect(result.UNSAFE_queryByType("MapView" as any)).toBeNull();
+  });
+
+  it("previews route elevation without a progress marker when GPS is off course", () => {
+    renderNative(
+      <RecordingFloatingPanel
+        bottomObstructionHeight={80}
+        hasPlan={false}
+        sensorCount={2}
+        service={buildService({
+          currentRoute: {
+            elevation_profile: [
+              { distance: 0, elevation: 150 },
+              { distance: 3000, elevation: 360 },
+              { distance: 6000, elevation: 260 },
+            ],
+          },
+          currentRouteDistance: 3000,
+          currentRouteGrade: 4.2,
+          isGpsRecordingEnabled: () => true,
+          isOnRoute: false,
+          routeDistance: 6000,
+          routeProgress: 50,
+        })}
+        sessionContract={buildContract({
+          guidance: { hasRoute: true, hasRouteGeometry: true, routeMode: "virtual" },
+          ui: {
+            floatingPanel: {
+              defaultCard: "route_progress",
+              availableCards: ["route_progress", "metrics"],
+              forcedExpanded: false,
+              canMinimize: true,
+            },
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByTestId("route-elevation-chart")).toBeTruthy();
+    expect(screen.queryByTestId("route-profile-current-dot")).toBeNull();
+    expect(screen.getAllByText("Distance").length).toBeGreaterThan(0);
+    expect(screen.getByText("Remaining")).toBeTruthy();
+    expect(screen.getByText("Grade")).toBeTruthy();
+    expect(screen.getAllByText("--").length).toBeGreaterThanOrEqual(3);
   });
 
   it("does not show a fake map when GPS mode has no live location yet", () => {
@@ -484,10 +567,10 @@ describe("recording cockpit", () => {
 
     expect(screen.getByTestId("recording-card-carousel")).toBeTruthy();
     expect(screen.getByText("Tempo block")).toBeTruthy();
-    expect(screen.getByTestId("activity-plan-intensity-chart")).toBeTruthy();
-    expect(screen.getByTestId("activity-plan-current-interval")).toBeTruthy();
-    expect(screen.getByText("Back")).toBeTruthy();
-    expect(screen.getByText("Skip")).toBeTruthy();
+    expect(screen.getByText("10m @ 220W")).toBeTruthy();
+    expect(screen.getByLabelText("Previous interval")).toBeTruthy();
+    expect(screen.getByLabelText("Skip interval")).toBeTruthy();
+    expect(screen.getByTestId("activity-plan-interval-progress-bar")).toBeTruthy();
     expect(screen.getAllByText("245").length).toBeGreaterThan(0);
     expect(screen.getAllByText("W").length).toBeGreaterThan(0);
     expect(screen.getByText("HR Zone")).toBeTruthy();
@@ -496,8 +579,8 @@ describe("recording cockpit", () => {
     expect(screen.getByText("Z3")).toBeTruthy();
     expect(screen.getByTestId("trainer-insight-card")).toBeTruthy();
 
-    fireEvent.press(screen.getByText("Back"));
-    fireEvent.press(screen.getByText("Skip"));
+    fireEvent.press(screen.getByLabelText("Previous interval"));
+    fireEvent.press(screen.getByLabelText("Skip interval"));
 
     expect(mockPlanPrevious).toHaveBeenCalledTimes(1);
     expect(mockPlanSkip).toHaveBeenCalledTimes(1);
@@ -575,7 +658,7 @@ describe("recording cockpit", () => {
     fireEvent.press(screen.getByTestId("recording-card-workout_interval-surface"));
 
     expect(screen.getByLabelText("Minimize recording cards")).toBeTruthy();
-    expect(screen.getByText("Skip interval")).toBeTruthy();
+    expect(screen.getByLabelText("Skip interval")).toBeTruthy();
 
     fireEvent.press(screen.getByLabelText("Minimize recording cards"));
 

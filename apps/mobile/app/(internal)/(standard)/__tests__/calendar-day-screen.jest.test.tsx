@@ -8,7 +8,13 @@ const setActiveDateMock = jest.fn();
 const fixedNow = new Date("2026-03-23T12:00:00.000Z");
 const today = fixedNow.toISOString().split("T")[0]!;
 const tomorrow = "2026-03-24";
-let paramsState: { date?: string } = { date: today };
+let paramsState: {
+  date?: string;
+  trainingPlanId?: string;
+  planSuggestionType?: string;
+  planSuggestionTssDelta?: string;
+  planSuggestionDescription?: string;
+} = { date: today };
 let eventItems: any[] = [];
 
 function createHost(type: string) {
@@ -58,6 +64,17 @@ jest.mock("lucide-react-native", () => ({
 jest.mock("@/lib/stores/calendar-store", () => ({
   __esModule: true,
   useCalendarStore: (selector: any) => selector({ setActiveDate: setActiveDateMock }),
+}));
+
+jest.mock("@/lib/stores/auth-store", () => ({
+  __esModule: true,
+  useAuthStore: (selector: any) =>
+    selector({ ready: true, session: { user: { id: "profile-1" } } }),
+}));
+
+jest.mock("@/lib/auth/auth-headers", () => ({
+  __esModule: true,
+  hasSessionAuthCredentials: () => true,
 }));
 
 jest.mock("@/lib/hooks/useProfileGoals", () => ({
@@ -221,6 +238,54 @@ describe("calendar day screen", () => {
       pathname: "/(internal)/(standard)/event-detail",
       params: { mode: "create", date: today },
     });
+  });
+
+  it("shows a plan suggestion and passes it into event creation", () => {
+    paramsState = {
+      date: tomorrow,
+      trainingPlanId: "training-plan-1",
+      planSuggestionType: "add_load",
+      planSuggestionTssDelta: "75",
+      planSuggestionDescription: "Add load to close the readiness gap.",
+    };
+
+    renderNative(<CalendarDayScreen />);
+
+    expect(screen.getByTestId("calendar-day-plan-suggestion")).toBeTruthy();
+    expect(screen.getByText("Plan suggestion")).toBeTruthy();
+    expect(screen.getByText("Add about 75 TSS")).toBeTruthy();
+    expect(screen.getByText("Add load to close the readiness gap.")).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId("calendar-day-create-from-plan-suggestion"));
+
+    expect(pushMock).toHaveBeenCalledWith({
+      pathname: "/(internal)/(standard)/event-detail",
+      params: {
+        mode: "create",
+        date: tomorrow,
+        trainingPlanId: "training-plan-1",
+        planSuggestionType: "add_load",
+        planSuggestionTssDelta: "75",
+      },
+    });
+  });
+
+  it("does not show scheduled session candidates for a reduce-load suggestion", () => {
+    paramsState = {
+      date: today,
+      trainingPlanId: "training-plan-1",
+      planSuggestionType: "reduce_load",
+      planSuggestionTssDelta: "-40",
+      planSuggestionDescription: "Reduce load to protect readiness.",
+    };
+
+    renderNative(<CalendarDayScreen />);
+
+    expect(screen.getByText("Reduce about 40 TSS")).toBeTruthy();
+    expect(screen.getByText("Reduce load to protect readiness.")).toBeTruthy();
+    expect(screen.getByText("Create adjustment note")).toBeTruthy();
+    expect(screen.queryByTestId("calendar-day-reduce-load-candidates")).toBeNull();
+    expect(screen.queryByText("Scheduled sessions to review")).toBeNull();
   });
 
   it("shows the linked activity plan card under the event details and opens event detail on tap", () => {

@@ -72,7 +72,7 @@ function RecordPage() {
                 Web recording launcher
               </CardTitle>
               <CardDescription>
-                Pick today&apos;s plan, attach a route, and import a finished FIT file without
+                Pick today&apos;s plan, attach a route, and import a finished activity file without
                 pretending browser recording hardware parity already exists.
               </CardDescription>
             </div>
@@ -145,9 +145,9 @@ function RecordPage() {
               />
               <LauncherActionCard
                 title="Submit or import"
-                description="Upload a completed FIT file through the existing ingestion pipeline."
+                description="Upload a completed activity file through the existing ingestion pipeline."
                 icon={FileUp}
-                actionLabel="Open FIT import"
+                actionLabel="Open activity import"
                 to="/record/submit"
                 search={launcher}
               />
@@ -237,8 +237,8 @@ function RecordPage() {
             <p>Choose today&apos;s planned workout and preserve it in the launcher URL.</p>
             <p>Browse saved routes, preview the route shape, and attach it before recording.</p>
             <p>
-              Import a finished FIT file using the same backend ingestion operations mobile already
-              uses.
+              Import a finished activity file using the same backend ingestion operations mobile
+              already uses.
             </p>
             <p>
               Keep live browser session controls staged until a dedicated web-safe recorder design

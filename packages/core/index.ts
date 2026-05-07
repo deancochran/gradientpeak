@@ -11,6 +11,7 @@
  * - All exports are organized for easy consumption by consuming packages
  */
 
+export * from "./ftms";
 // ============================================================================
 // FTMS (Fitness Machine Service) Types
 // ============================================================================
@@ -219,6 +220,7 @@ export * from "./detection/pace-tests";
 // ============================================================================
 // Power test detection
 export * from "./detection/power-tests";
+export * from "./lib/activity-file-parser";
 export * from "./lib/fit-sdk-parser";
 export { extractHeartRateZones, extractPowerZones } from "./lib/fit-sdk-parser";
 export type { StandardActivity } from "./types/normalization";
@@ -237,6 +239,7 @@ export * as Constants from "./constants";
 export * as Duration from "./duration";
 export * as Estimation from "./estimation";
 export * as Estimators from "./estimators/index";
+export * as Ftms from "./ftms";
 export * as Load from "./load";
 export * as Messaging from "./messaging";
 export * as Plan from "./plan";

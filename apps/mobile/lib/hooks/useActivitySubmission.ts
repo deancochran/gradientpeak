@@ -44,7 +44,7 @@ import type { RecordingSessionArtifact } from "@/lib/services/ActivityRecorder/t
 import { useCallback, useEffect, useReducer } from "react";
 import type { PreparedRecordedActivityDraft } from "@/lib/contracts/activity-submission";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { FitUploader } from "@/lib/services/fit/FitUploader";
+import { ActivityFileUploader } from "@/lib/services/fit/ActivityFileUploader";
 
 // ================================
 // Types
@@ -140,15 +140,15 @@ function buildActivityFromArtifact(args: {
   };
 }
 
-type ProcessFitFileSubmission = {
+type ProcessActivityFileSubmission = {
   activityType: PreparedRecordedActivityDraft["activityType"];
   name: string;
   notes?: string;
 };
 
-function toProcessFitFileSubmission(
+function toProcessActivityFileSubmission(
   activity: PreparedRecordedActivityDraft,
-): ProcessFitFileSubmission {
+): ProcessActivityFileSubmission {
   return {
     activityType: activity.activityType,
     name: activity.name,
@@ -239,7 +239,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     dispatch({ type: "UPDATE", updates });
   }, []);
 
-  const processFitFileMutation = api.fitFiles.processFitFile.useMutation({
+  const processActivityFileMutation = api.activityFiles.processActivityFile.useMutation({
     onSuccess: async (data) => {
       await invalidatePostActivityIngestionQueries(queryClient);
 
@@ -248,7 +248,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         queryClient.setQueryData(queryKeys.activities.detail(data.activity.id), data.activity);
       }
 
-      console.log("[useActivitySubmission] Activity processed successfully via FIT file.");
+      console.log("[useActivitySubmission] Activity processed successfully via activity file.");
     },
     onError: (error) => {
       // Don't show Alert here - let submitOnce handle it to avoid duplicate alerts
@@ -256,7 +256,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     },
   });
 
-  const getSignedUrlMutation = api.fitFiles.getSignedUploadUrl.useMutation();
+  const getSignedUrlMutation = api.activityFiles.getSignedUploadUrl.useMutation();
 
   // ================================
   // Single Upload Attempt (No Automatic Retry)
@@ -265,24 +265,24 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
   const submitOnce = useCallback(
     async (artifact: RecordingSessionArtifact, activity: PreparedRecordedActivityDraft) => {
       try {
-        console.log(`[useActivitySubmission] Uploading FIT file:`, artifact.fitFilePath);
+        console.log(`[useActivitySubmission] Uploading activity file:`, artifact.activityFilePath);
 
         // Simple file verification
         const { File } = await import("expo-file-system");
-        if (!artifact.fitFilePath) {
-          throw new Error("FIT file does not exist");
+        if (!artifact.activityFilePath) {
+          throw new Error("Activity file does not exist");
         }
 
-        const file = new File(artifact.fitFilePath);
+        const file = new File(artifact.activityFilePath);
 
         if (!file.exists) {
-          throw new Error("FIT file does not exist");
+          throw new Error("Activity file does not exist");
         }
 
         const fileSize = file.size ?? 0;
 
         if (fileSize === 0) {
-          throw new Error("FIT file is empty");
+          throw new Error("Activity file is empty");
         }
 
         console.log(`[useActivitySubmission] File verification successful: ${fileSize} bytes`);
@@ -300,19 +300,19 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         const supabaseUrl = getServerConfig().supabaseUrl;
         const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
 
-        const uploader = new FitUploader(supabaseUrl, supabaseAnonKey, "fit-files");
+        const uploader = new ActivityFileUploader(supabaseUrl, supabaseAnonKey, "activity-files");
 
         // 2. Upload to signed URL
         const uploadResult = await uploader.uploadToSignedUrl(
-          artifact.fitFilePath,
+          artifact.activityFilePath,
           signedUrlData.signedUrl,
         );
 
         if (!uploadResult.success) {
-          throw new Error(uploadResult.error || "Failed to upload FIT file");
+          throw new Error(uploadResult.error || "Failed to upload activity file");
         }
 
-        console.log("[useActivitySubmission] FIT file uploaded successfully");
+        console.log("[useActivitySubmission] Activity file uploaded successfully");
 
         // CRITICAL: Wait for storage to sync (especially on iOS/Supabase)
         // This prevents "Failed to download" errors when processing immediately after upload
@@ -322,17 +322,17 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
 
         // 3. Process the uploaded file
         console.log(
-          "[useActivitySubmission] Calling API processFitFile with path:",
+          "[useActivitySubmission] Calling API processActivityFile with path:",
           signedUrlData.filePath,
         );
 
-        const result = await processFitFileMutation.mutateAsync({
-          fitFilePath: signedUrlData.filePath,
-          ...toProcessFitFileSubmission(activity),
+        const result = await processActivityFileMutation.mutateAsync({
+          activityFilePath: signedUrlData.filePath,
+          ...toProcessActivityFileSubmission(activity),
         });
 
         if (!result.success) {
-          throw new Error("FIT file processing failed");
+          throw new Error("Activity file processing failed");
         }
 
         await clearPendingFinalizedArtifact();
@@ -355,13 +355,13 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         if (errorMessage.includes("Failed to create activity record")) {
           userMessage =
             "Failed to save activity to database. This may be a temporary issue. Please try again.";
-        } else if (errorMessage.includes("Failed to download FIT file")) {
+        } else if (errorMessage.includes("Failed to download activity file")) {
           userMessage =
             "Upload succeeded but processing failed. The file may not have synchronized yet. Please try again in a moment.";
-        } else if (errorMessage.includes("Failed to parse FIT file")) {
+        } else if (errorMessage.includes("Failed to parse activity file")) {
           userMessage =
             "The activity file appears to be corrupted. Please try recording the activity again.";
-        } else if (errorMessage.includes("FIT file does not exist")) {
+        } else if (errorMessage.includes("Activity file does not exist")) {
           userMessage = "Activity file not found. Please try recording the activity again.";
         } else if (errorMessage.includes("zero duration") || errorMessage.includes("empty")) {
           userMessage =
@@ -381,7 +381,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         throw err;
       }
     },
-    [getSignedUrlMutation, processFitFileMutation],
+    [getSignedUrlMutation, processActivityFileMutation],
   );
 
   const submit = useCallback(async () => {
@@ -392,15 +392,15 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     dispatch({ type: "UPLOADING" });
 
     try {
-      if (state.artifact.fitFilePath) {
+      if (state.artifact.activityFilePath) {
         await submitOnce(state.artifact, {
           ...state.activity,
           notes: state.activity.notes ?? undefined,
         });
         return true;
       } else {
-        // No FIT file found
-        console.error("[useActivitySubmission] No FIT file found in recording metadata");
+        // No activity file found
+        console.error("[useActivitySubmission] No activity file found in recording metadata");
         throw new Error("No activity file generated. Please try recording again.");
       }
     } catch (err) {

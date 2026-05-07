@@ -193,7 +193,7 @@ export const parityRegistry = [
   },
   {
     area: "record",
-    backendOperations: ["fitFiles.getSignedUploadUrl", "fitFiles.processFitFile"],
+    backendOperations: ["activityFiles.getSignedUploadUrl", "activityFiles.processActivityFile"],
     id: "record.submit",
     mobileRoute: "/(internal)/record/submit",
     policy: "required_on_web",
@@ -239,7 +239,7 @@ export const parityRegistry = [
     backendOperations: [
       "activities.getById",
       "profiles.getPublicById",
-      "fitFiles.getStreams",
+      "activityFiles.getStreams",
       "activities.update",
       "activities.delete",
       "social.toggleLike",
@@ -253,7 +253,7 @@ export const parityRegistry = [
   },
   {
     area: "activities",
-    backendOperations: ["fitFiles.getSignedUploadUrl", "fitFiles.processFitFile"],
+    backendOperations: ["activityFiles.getSignedUploadUrl", "activityFiles.processActivityFile"],
     id: "activities.import",
     mobileRoute: "/(internal)/(standard)/activity-import",
     policy: "required_on_web",

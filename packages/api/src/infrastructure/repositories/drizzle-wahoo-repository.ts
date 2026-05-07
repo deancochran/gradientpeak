@@ -143,8 +143,8 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
           avg_heart_rate: input.avgHeartRate,
           avg_cadence: input.avgCadence,
           avg_speed_mps: input.avgSpeedMps,
-          fit_file_path: input.fitFilePath,
-          fit_file_size: input.fitFileSize,
+          activity_file_path: input.activityFilePath,
+          activity_file_size: input.activityFileSize,
         })
         .returning({ id: schema.activities.id });
 

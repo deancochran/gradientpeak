@@ -8,6 +8,7 @@ import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { AppHeader } from "@/components/shared";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
+import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import {
   addMonthsToDateKey,
   getEndOfMonthKey,
@@ -23,6 +24,7 @@ import {
 import { ROUTES } from "@/lib/constants/routes";
 import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import { useAuthStore } from "@/lib/stores/auth-store";
 import { useCalendarStore } from "@/lib/stores/calendar-store";
 
 const CALENDAR_EVENT_QUERY_LIMIT = 500;
@@ -92,6 +94,9 @@ function CalendarScreen() {
   const persistedVisibleAnchor = useCalendarStore((state) => state.visibleAnchor);
   const setActiveDate = useCalendarStore((state) => state.setActiveDate);
   const setVisibleAnchor = useCalendarStore((state) => state.setVisibleAnchor);
+  const eventsQueryEnabled = useAuthStore(
+    (state) => state.ready && !!state.session && hasSessionAuthCredentials(),
+  );
 
   const activeDate = persistedActiveDate ?? todayKey;
   const visibleAnchor = persistedVisibleAnchor ?? getMonthAnchor(persistedActiveDate ?? todayKey);
@@ -149,6 +154,7 @@ function CalendarScreen() {
     },
     {
       ...scheduleAwareReadQueryOptions,
+      enabled: eventsQueryEnabled,
       placeholderData: keepPreviousData,
     },
   );

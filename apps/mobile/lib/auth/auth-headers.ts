@@ -16,3 +16,10 @@ export const getSessionAuthHeaders = () => {
 
   return headers;
 };
+
+export const hasSessionAuthCredentials = () => {
+  const session = useAuthStore.getState().session;
+  const cookie = (authClient as { getCookie?: () => string }).getCookie?.();
+
+  return Boolean(cookie || session?.bearerToken);
+};

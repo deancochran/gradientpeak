@@ -5,6 +5,8 @@ import {
   type RecordingSessionArtifact as CoreRecordingSessionArtifact,
   type RecordingSessionOverride as CoreRecordingSessionOverride,
   type RecordingSessionSnapshot as CoreRecordingSessionSnapshot,
+  type FtmsAvailableMode,
+  type FtmsControlMode,
   type IntervalStepV2,
   type MetricFamily,
   type MetricProvenance,
@@ -431,7 +433,7 @@ export interface RecordingMetadata {
   profile: RecorderProfileRef;
   eventId?: string;
   activityPlan?: RecordingServiceActivityPlan;
-  fitFilePath?: string;
+  activityFilePath?: string;
 }
 
 export type RecorderLifecycleState =
@@ -475,6 +477,7 @@ export interface RecordingSessionOverrideState {
   trainerMode: "auto" | "manual";
   intensityScale: number;
   preferredSources: Partial<Record<MetricFamily, string>>;
+  disabledSources: Partial<Record<MetricFamily, string[]>>;
 }
 
 export interface RecordingPlanView {
@@ -588,11 +591,15 @@ export interface RecordingServiceError {
 export interface RecordingTrainerView {
   deviceId: string | null;
   deviceName: string | null;
+  selectedDeviceId?: string | null;
+  candidates?: Array<{ deviceId: string; displayName: string; supportsControl: boolean }>;
   machineType: RecordingTrainerMachineType | null;
   connectionState: RecordingTrainerConnectionState;
   dataFlowState: RecordingTrainerDataFlowState;
   controlState: RecordingTrainerControlState;
   currentControlMode: ControlMode | null;
+  selectedMode?: FtmsControlMode | null;
+  availableModes?: FtmsAvailableMode[];
   recoveryState: RecordingTrainerRecoveryState;
   lastCommandStatus: RecordingTrainerCommandStatus | null;
   lastServiceError: RecordingServiceError | null;

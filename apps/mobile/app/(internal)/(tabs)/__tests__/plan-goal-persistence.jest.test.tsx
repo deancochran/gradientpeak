@@ -24,7 +24,18 @@ jest.mock("react-native", () => ({
 
 jest.mock("expo-router", () => ({
   __esModule: true,
-  useRouter: () => ({ push: jest.fn() }),
+  useRouter: () => ({ push: jest.fn(), navigate: jest.fn() }),
+}));
+
+jest.mock("@/lib/auth/auth-headers", () => ({
+  __esModule: true,
+  hasSessionAuthCredentials: () => true,
+}));
+
+jest.mock("@/lib/stores/auth-store", () => ({
+  __esModule: true,
+  useAuthStore: (selector: any) =>
+    selector({ ready: true, session: { user: { id: "11111111-1111-4111-8111-111111111111" } } }),
 }));
 
 jest.mock("@repo/core", () => ({
@@ -54,7 +65,22 @@ jest.mock("@/components/ErrorBoundary", () => ({
   ScreenErrorFallback: createHost("ScreenErrorFallback"),
 }));
 
-jest.mock("@/components/shared", () => ({ __esModule: true, AppHeader: createHost("AppHeader") }));
+jest.mock("@/components/shared", () => ({
+  __esModule: true,
+  AppHeader: createHost("AppHeader"),
+  CompactInsightCard: ({ children, icon: _icon, title, value, onPress, ...props }: any) =>
+    React.createElement("TouchableOpacity", { onPress, ...props }, [
+      React.createElement("Text", { key: "title" }, title),
+      React.createElement("Text", { key: "value" }, value),
+      children,
+    ]),
+  DetailChartModal: ({ children, visible, ...props }: any) =>
+    React.createElement(
+      "DetailChartModal",
+      { visible, ...props },
+      visible ? children("90d") : null,
+    ),
+}));
 jest.mock("@/components/goals", () => ({
   __esModule: true,
   GoalEditorModal: (props: any) => {
@@ -66,6 +92,10 @@ jest.mock("@/components/charts/PlanVsActualChart", () => ({
   __esModule: true,
   PlanVsActualChart: createHost("PlanVsActualChart"),
 }));
+jest.mock("@/components/charts/PlanReadinessComparisonChart", () => ({
+  __esModule: true,
+  PlanReadinessComparisonChart: createHost("PlanReadinessComparisonChart"),
+}));
 jest.mock("@repo/ui/components/button", () => ({ __esModule: true, Button: createHost("Button") }));
 jest.mock("@repo/ui/components/card", () => ({
   __esModule: true,
@@ -76,7 +106,25 @@ jest.mock("@repo/ui/components/card", () => ({
 }));
 jest.mock("@repo/ui/components/icon", () => ({ __esModule: true, Icon: createHost("Icon") }));
 jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHost("Text") }));
-jest.mock("lucide-react-native", () => ({ __esModule: true, Settings: createHost("Settings") }));
+jest.mock("lucide-react-native", () => ({
+  __esModule: true,
+  ChevronLeft: createHost("ChevronLeft"),
+  ChevronRight: createHost("ChevronRight"),
+  Flag: createHost("Flag"),
+  Flame: createHost("Flame"),
+  Plus: createHost("Plus"),
+  Settings: createHost("Settings"),
+  Sparkles: createHost("Sparkles"),
+}));
+
+jest.mock("react-native-svg", () => ({
+  __esModule: true,
+  default: createHost("Svg"),
+  Circle: createHost("Circle"),
+  Line: createHost("Line"),
+  Path: createHost("Path"),
+  Rect: createHost("Rect"),
+}));
 
 jest.mock("@/lib/hooks/useProfileGoals", () => ({
   __esModule: true,
@@ -124,6 +172,9 @@ jest.mock("@/lib/api", () => ({
           },
           refetch: jest.fn(async () => undefined),
         }),
+      },
+      simulateScheduleAdjustment: {
+        useQuery: () => ({ data: null, isFetching: false }),
       },
       list: {
         useQuery: () => ({ data: [] }),

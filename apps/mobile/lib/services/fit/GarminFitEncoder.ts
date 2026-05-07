@@ -135,7 +135,7 @@ export class GarminFitEncoder {
   private userId: string;
   private config: EncoderConfig;
   private storageUri: string;
-  private fitFilePath: string;
+  private outputFilePath: string;
   private encoder: Encoder;
   private recordCount: number = 0;
   private startTime: number = 0;
@@ -148,7 +148,7 @@ export class GarminFitEncoder {
     this.config = { ...DEFAULT_CONFIG, ...config };
     const baseDir = Paths.cache.uri || Paths.document.uri || "";
     this.storageUri = `${baseDir}fit_encoding_${recordingId}/`;
-    this.fitFilePath = `${this.storageUri}activity.fit`;
+    this.outputFilePath = `${this.storageUri}activity.fit`;
     this.encoder = new Encoder();
   }
 
@@ -676,11 +676,14 @@ export class GarminFitEncoder {
       const uint8Array = this.encoder.close();
       console.log(`[GarminFitEncoder] Encoder closed, buffer size: ${uint8Array.length} bytes`);
 
-      const file = new File(this.fitFilePath);
+      const file = new File(this.outputFilePath);
+      if (!file.exists) {
+        file.create({ intermediates: true, overwrite: true });
+      }
       // Ensure write completes before proceeding
       await file.write(uint8Array);
 
-      console.log(`[GarminFitEncoder] Wrote ${file.size ?? 0} bytes to ${this.fitFilePath}`);
+      console.log(`[GarminFitEncoder] Wrote ${file.size ?? 0} bytes to ${this.outputFilePath}`);
 
       // CRITICAL: iOS needs time to sync file to disk before reads
       if (Platform.OS === "ios") {
@@ -705,7 +708,7 @@ export class GarminFitEncoder {
       throw new Error("File not finalized");
     }
 
-    const file = new File(this.fitFilePath);
+    const file = new File(this.outputFilePath);
     const content = await file.base64();
 
     return new Uint8Array(Buffer.from(content, "base64"));
@@ -715,7 +718,7 @@ export class GarminFitEncoder {
    * Get file path for direct access
    */
   getFilePath(): string {
-    return this.fitFilePath;
+    return this.outputFilePath;
   }
 
   /**

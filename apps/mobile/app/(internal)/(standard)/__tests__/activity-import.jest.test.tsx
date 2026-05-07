@@ -6,7 +6,7 @@ const pushMock = jest.fn();
 const invalidateActivitiesMock = jest.fn();
 const invalidatePostActivityIngestionQueriesMock = jest.fn(async () => undefined);
 const getSignedUrlMock = jest.fn();
-const processFitFileMock = jest.fn();
+const processActivityFileMock = jest.fn();
 const uploadToSignedUrlMock = jest.fn();
 const getDocumentAsyncMock = jest.fn();
 
@@ -64,9 +64,9 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
   useAppNavigate: () => pushMock,
 }));
 
-jest.mock("@/lib/services/fit/FitUploader", () => ({
+jest.mock("@/lib/services/fit/ActivityFileUploader", () => ({
   __esModule: true,
-  FitUploader: jest.fn().mockImplementation(() => ({
+  ActivityFileUploader: jest.fn().mockImplementation(() => ({
     uploadToSignedUrl: uploadToSignedUrlMock,
   })),
 }));
@@ -79,16 +79,16 @@ jest.mock("@/lib/api", () => ({
         invalidate: invalidateActivitiesMock,
       },
     }),
-    fitFiles: {
+    activityFiles: {
       getSignedUploadUrl: {
         useMutation: () => ({
           mutateAsync: getSignedUrlMock,
           isPending: false,
         }),
       },
-      processFitFile: {
+      processActivityFile: {
         useMutation: () => ({
-          mutateAsync: processFitFileMock,
+          mutateAsync: processActivityFileMock,
           isPending: false,
         }),
       },
@@ -227,7 +227,7 @@ describe("activity import screen", () => {
       filePath: "activities/user/uploads/123_morning-ride.fit",
     });
     uploadToSignedUrlMock.mockResolvedValue({ success: true });
-    processFitFileMock.mockResolvedValue({
+    processActivityFileMock.mockResolvedValue({
       activity: { id: "activity-1", name: "Morning Ride" },
     });
   });
@@ -241,10 +241,10 @@ describe("activity import screen", () => {
     consoleErrorSpy.mockRestore();
   });
 
-  it("auto-fills the activity name from a selected FIT file", async () => {
+  it("auto-fills the activity name from a selected activity file", async () => {
     renderNative(<ActivityImportScreen />);
 
-    fireEvent.press(screen.getByText("Choose FIT File"));
+    fireEvent.press(screen.getByText("Choose Activity File"));
 
     await waitFor(() => {
       expect(screen.getByDisplayValue("morning-ride")).toBeTruthy();
@@ -255,17 +255,17 @@ describe("activity import screen", () => {
   it("shows an alert for unsupported files before staging an import", async () => {
     getDocumentAsyncMock.mockResolvedValueOnce({
       canceled: false,
-      assets: [{ name: "history.tcx", size: 2048, uri: "file:///history.tcx" }],
+      assets: [{ name: "history.zip", size: 2048, uri: "file:///history.zip" }],
     });
 
     renderNative(<ActivityImportScreen />);
 
-    fireEvent.press(screen.getByText("Choose FIT File"));
+    fireEvent.press(screen.getByText("Choose Activity File"));
 
     await waitFor(() => {
       expect(Alert.alert).toHaveBeenCalledWith(
         "Unsupported file",
-        "Choose a FIT file ending in .fit.",
+        "Choose a FIT, GPX, or TCX file.",
       );
     });
   });
@@ -273,7 +273,7 @@ describe("activity import screen", () => {
   it("submits manual historical provenance and lets the user open the imported activity", async () => {
     renderNative(<ActivityImportScreen />);
 
-    fireEvent.press(screen.getByText("Choose FIT File"));
+    fireEvent.press(screen.getByText("Choose Activity File"));
 
     await waitFor(() => {
       expect(screen.getByDisplayValue("morning-ride")).toBeTruthy();
@@ -284,15 +284,15 @@ describe("activity import screen", () => {
       screen.getByTestId("activity-import-notes-input"),
       "  Imported from archive  ",
     );
-    fireEvent.press(screen.getByText("Import FIT Activity"));
+    fireEvent.press(screen.getByText("Import Activity"));
 
     await act(async () => {
       jest.advanceTimersByTime(1000);
     });
 
     await waitFor(() => {
-      expect(processFitFileMock).toHaveBeenCalledWith({
-        fitFilePath: "activities/user/uploads/123_morning-ride.fit",
+      expect(processActivityFileMock).toHaveBeenCalledWith({
+        activityFilePath: "activities/user/uploads/123_morning-ride.fit",
         name: "Morning Ride",
         notes: "Imported from archive",
         activityType: "bike",

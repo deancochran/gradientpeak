@@ -37,14 +37,14 @@ export async function deleteFinalizedArtifactFiles(
     return;
   }
 
-  if (artifact.fitFilePath) {
+  if (artifact.activityFilePath) {
     try {
-      const fitFile = new File(artifact.fitFilePath);
-      if (fitFile.exists) {
-        fitFile.delete();
+      const activityFile = new File(artifact.activityFilePath);
+      if (activityFile.exists) {
+        activityFile.delete();
       }
     } catch (error) {
-      console.warn("[finalizedArtifactStorage] Failed to delete FIT file", error);
+      console.warn("[finalizedArtifactStorage] Failed to delete activity file", error);
     }
   }
 

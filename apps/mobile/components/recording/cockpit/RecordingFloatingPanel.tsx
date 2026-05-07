@@ -3,7 +3,7 @@ import { Minimize2 } from "lucide-react-native";
 import React from "react";
 import { Pressable, ScrollView, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useCurrentReadings, usePlan, useSessionStats } from "@/lib/hooks/useActivityRecorder";
+import { useActivityRecorderLiveData } from "@/lib/hooks/useActivityRecorder";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import {
   ClimbInsightCard,
@@ -20,11 +20,13 @@ export interface RecordingFloatingPanelProps {
   service: ActivityRecorderService | null;
   hasPlan: boolean;
   bottomObstructionHeight: number;
+  onExpandedChange?: (expanded: boolean) => void;
 }
 
 export function RecordingFloatingPanel({
   bottomObstructionHeight,
   hasPlan,
+  onExpandedChange,
   sensorCount,
   service,
   sessionContract,
@@ -54,9 +56,7 @@ export function RecordingFloatingPanel({
   const [expanded, setExpanded] = React.useState(model.forcedExpanded);
   const wasForcedExpanded = React.useRef(model.forcedExpanded);
   const effectiveExpanded = model.forcedExpanded || expanded;
-  const readings = useCurrentReadings(service);
-  const stats = useSessionStats(service);
-  const plan = usePlan(service);
+  const { current: readings, stats, plan } = useActivityRecorderLiveData(service);
   const insightProps = {
     mode: effectiveExpanded ? ("expanded" as const) : ("compact" as const),
     readings,
@@ -103,6 +103,10 @@ export function RecordingFloatingPanel({
   const pageWidth = effectiveExpanded ? width - expandedHorizontalInset * 2 : model.cardWidth;
   const cardGap = effectiveExpanded ? expandedCardGap : model.cardGap;
   const snapInterval = effectiveExpanded ? pageWidth + cardGap : model.snapInterval;
+
+  React.useEffect(() => {
+    onExpandedChange?.(effectiveExpanded);
+  }, [effectiveExpanded, onExpandedChange]);
 
   React.useEffect(() => {
     setSelectedCard((current) => {
@@ -268,7 +272,7 @@ export function RecordingFloatingPanel({
   );
 }
 
-function getCompactPanelMinHeight(height: number, indicatorHeight: number) {
+export function getCompactPanelMinHeight(height: number, indicatorHeight: number) {
   return Math.round(Math.max(128, Math.min(160, height * 0.17))) + indicatorHeight;
 }
 

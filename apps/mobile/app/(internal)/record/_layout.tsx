@@ -62,13 +62,6 @@ export default function RecordLayout() {
         }}
       />
       <Stack.Screen
-        name="ftms"
-        options={{
-          title: "Trainer Control",
-          gestureEnabled: true,
-        }}
-      />
-      <Stack.Screen
         name="submit"
         options={{
           title: "Submit Activity",

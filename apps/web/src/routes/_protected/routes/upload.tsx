@@ -50,19 +50,19 @@ function RouteUploadPage() {
       <div className="space-y-2">
         <h1 className="text-3xl font-semibold tracking-tight">Upload route</h1>
         <p className="text-sm text-muted-foreground">
-          Import one GPX route into your personal route library for reuse in planning and route
-          preview flows.
+          Import one GPX or TCX route into your personal route library for reuse in planning and
+          route preview flows.
         </p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>GPX route file</CardTitle>
+          <CardTitle>GPX or TCX route file</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           <UploadFileField
-            accept=".gpx,.xml,application/gpx+xml,application/xml,text/xml"
-            description="Choose a GPX export from your device."
+            accept=".gpx,.tcx,.xml,application/gpx+xml,application/vnd.garmin.tcx+xml,application/xml,text/xml"
+            description="Choose a GPX or TCX export from your device."
             error={form.formState.errors.root?.message}
             files={files}
             helperText={
@@ -70,13 +70,15 @@ function RouteUploadPage() {
                 ? formatFileSize(selectedFile.size)
                 : "The route will be parsed for distance, elevation, and map previews."
             }
-            id="route-gpx-file"
-            label="GPX file"
+            id="route-file"
+            label="GPX or TCX file"
             onFilesChange={(nextFiles) => {
               setFiles(nextFiles);
               const nextFile = getSingleFileSelection(nextFiles);
               if (nextFile && !form.getValues("name").trim()) {
-                form.setValue("name", nextFile.name.replace(/\.gpx$/i, ""), { shouldDirty: true });
+                form.setValue("name", nextFile.name.replace(/\.(gpx|tcx|xml)$/i, ""), {
+                  shouldDirty: true,
+                });
               }
             }}
             onReset={() => setFiles([])}
@@ -89,7 +91,7 @@ function RouteUploadPage() {
               className="space-y-4"
               onSubmit={form.handleSubmit(async (values) => {
                 if (!selectedFile) {
-                  form.setError("root", { message: "Choose a GPX file to upload." });
+                  form.setError("root", { message: "Choose a GPX or TCX file to upload." });
                   return;
                 }
 

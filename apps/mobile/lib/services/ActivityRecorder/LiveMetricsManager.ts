@@ -53,6 +53,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   private recordingMetricsSnapshot: RecordingMetricsSnapshot;
   private isActive = false;
   private gpsRecordingEnabled = true;
+  private gpsSpeedFallbackEnabled = true;
   private activityCategory?: RecordingActivityCategory; // Track activity type for calorie calculation
 
   // === Core Components ===
@@ -68,6 +69,8 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   private sensorUpdateTimer?: ReturnType<typeof setTimeout> | number;
   private lastStatsEmit = 0;
   private cachedStats?: SessionStats;
+  private lastAdvancedMetricsSampleAt = 0;
+  private advancedMetricsDisabledUntil = 0;
 
   // === State Tracking ===
   private startTime?: number;
@@ -133,6 +136,17 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     this.gpsRecordingEnabled = enabled;
   }
 
+  public setGpsSpeedFallbackEnabled(enabled: boolean): void {
+    if (enabled && !this.gpsSpeedFallbackEnabled) {
+      this.buffer.clearMetric("speed");
+    }
+    this.gpsSpeedFallbackEnabled = enabled;
+  }
+
+  public clearBufferedSensorMetric(metric: SensorReading["metric"]): void {
+    this.buffer.clearMetric(metric);
+  }
+
   /**
    * Set activity category (bike, run, etc.)
    * Used for improved calorie estimation
@@ -174,12 +188,13 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     // Initialize StreamBuffer storage directory
     await this.streamBuffer.initialize();
 
+    this.resetLiveSessionState();
     this.isActive = true;
     this.startTime = Date.now();
     this.metrics.startedAt = this.startTime;
     this.zoneStartTime = this.startTime;
-    this.resetRecordingMetricsAccumulator();
     this.addRecordingMetricsSample(this.startTime);
+    this.lastAdvancedMetricsSampleAt = this.startTime;
 
     // Start 1-second update timer
     this.updateTimer = setInterval(() => {
@@ -215,6 +230,9 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       this.totalPauseTime += Date.now() - this.pauseStartTime;
       this.pauseStartTime = undefined;
     }
+    this.buffer.clear();
+    this.cachedStats = undefined;
+    this.lastStatsEmit = 0;
     this.isActive = true;
     this.zoneStartTime = Date.now();
 
@@ -321,23 +339,31 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   /**
    * Ingest location data
    */
-  public ingestLocationData(location: LocationReading): void {
-    // Update lastLocation FIRST so getCurrentReadings() can access it immediately
-    // This ensures the GPS signal modal disappears as soon as location data arrives
+  public ingestLocationData(
+    location: LocationReading,
+    options: { updateDistance?: boolean } = {},
+  ): void {
+    const updateDistance = options.updateDistance ?? true;
+    const isReliableLocation = this.isLocationReliable(location);
+    // Keep current position tied to reliable fixes so FIT/location artifacts do not drift on bad GPS.
     const previousLocation = this.lastLocation;
-    this.lastLocation = location;
+    if (isReliableLocation) {
+      this.lastLocation = location;
+    }
 
     // Add to streamBuffer for persistence (only when active)
-    if (this.isActive) {
+    if (this.isActive && isReliableLocation) {
       this.streamBuffer.addLocation(location);
     }
 
     // Add lat/lng to buffer for route tracking (always, for display)
-    this.buffer.add({
-      metric: "latlng",
-      value: [location.latitude, location.longitude],
-      timestamp: location.timestamp,
-    });
+    if (isReliableLocation) {
+      this.buffer.add({
+        metric: "latlng",
+        value: [location.latitude, location.longitude],
+        timestamp: location.timestamp,
+      });
+    }
 
     // Emit sensor update immediately so UI reflects GPS acquisition
     this.emit("sensorUpdate", {
@@ -347,7 +373,13 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
 
     // Calculate distance if we have a previous location (only when active)
     // Skip GPS distance when GPS recording is disabled
-    if (this.isActive && previousLocation && this.gpsRecordingEnabled) {
+    if (
+      this.isActive &&
+      previousLocation &&
+      this.gpsRecordingEnabled &&
+      updateDistance &&
+      isReliableLocation
+    ) {
       const distance = this.calculateDistance(previousLocation, location);
 
       // Filter GPS noise
@@ -579,10 +611,23 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     this.updateZoneMetrics();
     coreDuration = Date.now() - startTime;
 
-    if (this.isActive) {
+    if (this.isActive && this.shouldSampleAdvancedMetrics(startTime)) {
       const accumulatorStart = Date.now();
       this.addRecordingMetricsSample(startTime);
       accumulatorDuration = Date.now() - accumulatorStart;
+      this.lastAdvancedMetricsSampleAt = startTime;
+
+      if (accumulatorDuration > RECORDING_CONFIG.ADVANCED_METRICS_SLOW_THRESHOLD_MS) {
+        this.advancedMetricsDisabledUntil =
+          Date.now() + RECORDING_CONFIG.ADVANCED_METRICS_COOLDOWN_MS;
+        console.warn(
+          "[LiveMetricsManager] Advanced metrics temporarily disabled after slow sample",
+          {
+            accumulatorDuration,
+            cooldownMs: RECORDING_CONFIG.ADVANCED_METRICS_COOLDOWN_MS,
+          },
+        );
+      }
     }
 
     // Update expensive calculations less frequently
@@ -652,7 +697,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
 
     // Fallback to GPS speed calculation when GPS recording is enabled
     // This ensures we always have speed/pace data even without sensors
-    if (this.gpsRecordingEnabled && this.lastLocation) {
+    if (this.gpsRecordingEnabled && this.gpsSpeedFallbackEnabled && this.lastLocation) {
       // Calculate speed from recent GPS positions
       const gpsSpeed = this.calculateGPSSpeed();
       if (gpsSpeed !== undefined) {
@@ -695,6 +740,13 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     }
 
     return undefined;
+  }
+
+  private isLocationReliable(location: LocationReading): boolean {
+    return (
+      location.accuracy === undefined ||
+      location.accuracy <= MOVEMENT_THRESHOLDS.GPS_ACCURACY_THRESHOLD_M
+    );
   }
 
   /**
@@ -1206,18 +1258,55 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     this.recordingMetricsSnapshot = this.recordingMetricsAccumulator.getSnapshot();
   }
 
-  private addRecordingMetricsSample(timestampMs: number): void {
-    const readings = this.getCurrentReadings();
+  private resetLiveSessionState(): void {
+    this.buffer.clear();
+    this.metrics = this.createInitialMetrics();
+    this.cachedStats = undefined;
+    this.lastStatsEmit = 0;
+    this.lastAdvancedMetricsSampleAt = 0;
+    this.advancedMetricsDisabledUntil = 0;
+    this.startTime = undefined;
+    this.pauseStartTime = undefined;
+    this.totalPauseTime = 0;
+    this.lastLocation = undefined;
+    this.totalDistance = 0;
+    this.totalWork = 0;
+    this.totalAscent = 0;
+    this.totalDescent = 0;
+    this.maxSpeed = 0;
+    this.maxPower = 0;
+    this.maxHeartRate = 0;
+    this.maxCadence = 0;
+    this.maxTemperature = 0;
+    this.lastPowerUpdate = undefined;
+    this.lastPowerValue = 0;
+    this.zoneStartTime = undefined;
+    this.currentHrZone = undefined;
+    this.currentPowerZone = undefined;
+    this.hrZoneTimes = [0, 0, 0, 0, 0];
+    this.powerZoneTimes = [0, 0, 0, 0, 0, 0, 0];
+    this.resetRecordingMetricsAccumulator();
+  }
 
+  private shouldSampleAdvancedMetrics(timestampMs: number): boolean {
+    if (timestampMs < this.advancedMetricsDisabledUntil) return false;
+    return (
+      this.lastAdvancedMetricsSampleAt === 0 ||
+      timestampMs - this.lastAdvancedMetricsSampleAt >=
+        RECORDING_CONFIG.ADVANCED_METRICS_SAMPLE_INTERVAL_MS
+    );
+  }
+
+  private addRecordingMetricsSample(timestampMs: number): void {
     this.recordingMetricsAccumulator.addSample({
       timestampMs,
       moving: this.isActive,
-      powerWatts: readings.power ?? null,
-      heartRateBpm: readings.heartRate ?? null,
-      cadenceRpm: readings.cadence ?? null,
-      speedMps: readings.speed ?? null,
+      powerWatts: this.buffer.getLatest("power") ?? null,
+      heartRateBpm: this.buffer.getLatest("heartrate") ?? null,
+      cadenceRpm: this.buffer.getLatest("cadence") ?? null,
+      speedMps: this.buffer.getLatest("speed") ?? null,
       distanceMeters: this.totalDistance,
-      altitudeMeters: readings.position?.altitude ?? null,
+      altitudeMeters: this.lastLocation?.altitude ?? null,
     });
     this.recordingMetricsSnapshot = this.recordingMetricsAccumulator.getSnapshot();
   }

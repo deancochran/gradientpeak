@@ -23,6 +23,7 @@ export function TrainerInsightCard({
       : undefined;
   const [resistance, setResistance] = React.useState(lastResistance ?? 30);
   const targetLabel = getPlanTargetLabel(plan);
+  const descriptorState = getDescriptorState(trainer, trainerMode, targetLabel);
   const status = getTrainerStatus({ controllable, trainer });
   const manualControlEnabled = controllable && trainerMode === "manual";
 
@@ -54,6 +55,13 @@ export function TrainerInsightCard({
     [manualControlEnabled, service],
   );
 
+  const selectTrainer = React.useCallback(
+    (deviceId: string) => {
+      service?.selectFTMSControlTarget?.(deviceId);
+    },
+    [service],
+  );
+
   if (mode === "compact") {
     return (
       <View className="h-full justify-between gap-3" testID="trainer-insight-card">
@@ -61,13 +69,18 @@ export function TrainerInsightCard({
           <MetricTile
             compact
             label="Power"
-            subtitle={trainerMode === "auto" ? targetLabel : null}
+            subtitle={descriptorState.targetDetail}
             value={readings.power ? `${Math.round(readings.power)} W` : "--"}
           />
-          <MetricTile compact label="Mode" value={trainerMode === "manual" ? "Manual" : "Auto"} />
+          <MetricTile compact label="Mode" value={descriptorState.modeLabel} />
           <MetricTile compact label="Control" tone={status.tone} value={status.label} />
         </View>
-        {trainerMode === "manual" ? (
+        {descriptorState.hasDescriptors ? (
+          <DescriptorModeSummary
+            modes={descriptorState.availableModes}
+            selectedMode={descriptorState.modeId}
+          />
+        ) : trainerMode === "manual" ? (
           <ResistanceControls
             disabled={!manualControlEnabled}
             onDecrease={() => adjustResistance(-5)}
@@ -92,13 +105,10 @@ export function TrainerInsightCard({
       <View className="flex-row gap-3">
         <MetricTile
           label="Power"
-          subtitle={trainerMode === "auto" ? targetLabel : null}
+          subtitle={descriptorState.targetDetail}
           value={readings.power ? `${Math.round(readings.power)} W` : "--"}
         />
-        <MetricTile
-          label="Cadence"
-          value={readings.cadence ? `${Math.round(readings.cadence)} rpm` : "--"}
-        />
+        <MetricTile label="Mode" value={descriptorState.modeLabel} />
         <MetricTile label="Control" tone={status.tone} value={status.label} />
       </View>
 
@@ -108,7 +118,31 @@ export function TrainerInsightCard({
         </Text>
         <Text className="mt-2 text-2xl font-black text-foreground">{status.label}</Text>
         <Text className="mt-2 text-base leading-6 text-muted-foreground">{status.detail}</Text>
+        {descriptorState.targetDetail ? (
+          <Text className="mt-3 text-sm font-semibold text-foreground">
+            Target: {descriptorState.targetDetail}
+          </Text>
+        ) : null}
       </View>
+
+      {descriptorState.candidates.length > 1 ? (
+        <View className="gap-3">
+          <Text className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+            Trainer
+          </Text>
+          <View className="flex-row flex-wrap gap-2">
+            {descriptorState.candidates.map((candidate) => (
+              <TrainerCandidateChip
+                key={candidate.deviceId}
+                active={candidate.deviceId === descriptorState.selectedDeviceId}
+                disabled={!candidate.supportsControl}
+                label={candidate.displayName}
+                onPress={() => selectTrainer(candidate.deviceId)}
+              />
+            ))}
+          </View>
+        </View>
+      ) : null}
 
       {trainer?.lastCommandStatus?.success === false ? (
         <View className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3">
@@ -134,21 +168,185 @@ export function TrainerInsightCard({
         />
       </View>
 
-      <View>
-        <ResistanceControls
-          disabled={!manualControlEnabled}
-          onDecrease={() => adjustResistance(-5)}
-          onIncrease={() => adjustResistance(5)}
-          resistance={resistance}
-        />
-        {!manualControlEnabled ? (
-          <Text className="mt-2 text-xs text-muted-foreground">
-            Switch to manual mode before sending resistance commands.
+      {descriptorState.hasDescriptors ? (
+        <View className="gap-3">
+          <Text className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+            Available FTMS modes
           </Text>
-        ) : null}
-      </View>
+          <View className="flex-row flex-wrap gap-2">
+            {descriptorState.availableModes.map((mode) => (
+              <DescriptorModeChip
+                key={mode.id}
+                mode={mode}
+                selected={mode.id === descriptorState.modeId}
+              />
+            ))}
+          </View>
+          <Text className="text-xs text-muted-foreground">
+            Mode controls come from the trainer session descriptor. Manual command inputs stay
+            hidden until the descriptor exposes safe intent actions.
+          </Text>
+        </View>
+      ) : (
+        <View>
+          <ResistanceControls
+            disabled={!manualControlEnabled}
+            onDecrease={() => adjustResistance(-5)}
+            onIncrease={() => adjustResistance(5)}
+            resistance={resistance}
+          />
+          {!manualControlEnabled ? (
+            <Text className="mt-2 text-xs text-muted-foreground">
+              Switch to manual mode before sending resistance commands.
+            </Text>
+          ) : null}
+        </View>
+      )}
     </View>
   );
+}
+
+type DescriptorTrainerView = NonNullable<
+  ReturnType<NonNullable<InsightCardProps["service"]>["getSessionView"]>["trainer"]
+> & {
+  availableModes?: DescriptorMode[];
+  selectedMode?: DescriptorModeId | DescriptorMode | null;
+  selectedTarget?: DescriptorTarget | null;
+  currentTarget?: DescriptorTarget | null;
+  target?: DescriptorTarget | null;
+  statusLabel?: string | null;
+  selectedDeviceId?: string | null;
+  candidates?: Array<{ deviceId: string; displayName: string; supportsControl: boolean }>;
+};
+
+type DescriptorModeId = string;
+
+interface DescriptorMode {
+  id: DescriptorModeId;
+  label?: string;
+  enabled?: boolean;
+  disabledReason?: string;
+  range?: { unit?: string | null };
+}
+
+interface DescriptorTarget {
+  label?: string | null;
+  value?: number | string | null;
+  unit?: string | null;
+}
+
+function getDescriptorState(
+  trainer:
+    | ReturnType<NonNullable<InsightCardProps["service"]>["getSessionView"]>["trainer"]
+    | undefined,
+  trainerMode: "auto" | "manual",
+  planTargetLabel: string | null,
+) {
+  const descriptorTrainer = trainer as DescriptorTrainerView | undefined;
+  const availableModes = Array.isArray(descriptorTrainer?.availableModes)
+    ? descriptorTrainer.availableModes.filter(isDescriptorMode)
+    : [];
+  const selectedMode = descriptorTrainer?.selectedMode as unknown;
+  const modeId =
+    typeof selectedMode === "string"
+      ? selectedMode
+      : isDescriptorMode(selectedMode)
+        ? selectedMode.id
+        : (descriptorTrainer?.currentControlMode ?? null);
+  const modeLabel =
+    isDescriptorMode(selectedMode) && selectedMode.label
+      ? selectedMode.label
+      : getModeLabel(modeId, trainer?.lastCommandStatus?.commandType, trainerMode);
+  const target =
+    descriptorTrainer?.selectedTarget ??
+    descriptorTrainer?.currentTarget ??
+    descriptorTrainer?.target;
+  const targetDetail =
+    formatDescriptorTarget(target) ?? getCommandTargetLabel(trainer) ?? planTargetLabel;
+  const candidates = Array.isArray(descriptorTrainer?.candidates)
+    ? descriptorTrainer.candidates
+    : [];
+
+  return {
+    availableModes,
+    candidates,
+    hasDescriptors: availableModes.length > 0,
+    modeId,
+    modeLabel,
+    selectedDeviceId: descriptorTrainer?.selectedDeviceId ?? trainer?.deviceId ?? null,
+    targetDetail,
+  };
+}
+
+function isDescriptorMode(mode: unknown): mode is DescriptorMode {
+  if (!mode || typeof mode !== "object") return false;
+  return typeof (mode as DescriptorMode).id === "string";
+}
+
+function formatDescriptorTarget(target: DescriptorTarget | null | undefined) {
+  if (!target || target.value === undefined || target.value === null) return null;
+  const label = target.label ? `${target.label} ` : "";
+  const unit = target.unit ? ` ${target.unit}` : "";
+  return `${label}${target.value}${unit}`;
+}
+
+function getCommandTargetLabel(
+  trainer:
+    | ReturnType<NonNullable<InsightCardProps["service"]>["getSessionView"]>["trainer"]
+    | undefined,
+) {
+  const command = trainer?.lastCommandStatus;
+  if (typeof command?.targetValue !== "number") return null;
+
+  switch (command.commandType) {
+    case "set_power":
+      return `${Math.round(command.targetValue)} W`;
+    case "set_resistance":
+      return `${Math.round(command.targetValue)}% resistance`;
+    case "set_speed":
+      return `${command.targetValue.toFixed(1)} kph`;
+    case "set_incline":
+    case "set_simulation":
+      return `${command.targetValue.toFixed(1)}% grade`;
+    case "set_heart_rate":
+      return `${Math.round(command.targetValue)} bpm`;
+    case "set_cadence":
+      return `${Math.round(command.targetValue)} rpm`;
+    default:
+      return null;
+  }
+}
+
+function getModeLabel(
+  modeId: string | null,
+  commandType?: string,
+  fallbackMode?: "auto" | "manual",
+) {
+  if (modeId) {
+    return modeId
+      .split("_")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+  }
+
+  switch (commandType) {
+    case "set_power":
+      return "Target Power";
+    case "set_resistance":
+      return "Resistance";
+    case "set_simulation":
+      return "Grade";
+    case "set_speed":
+      return "Speed";
+    case "set_incline":
+      return "Incline";
+    case "set_heart_rate":
+      return "Heart Rate";
+    case "set_cadence":
+      return "Cadence";
+    default:
+      return fallbackMode === "manual" ? "Manual" : "Auto";
+  }
 }
 
 function getPlanTargetLabel(plan: InsightCardProps["plan"]) {
@@ -171,7 +369,11 @@ function getTrainerStatus({
   trainer:
     | ReturnType<NonNullable<InsightCardProps["service"]>["getSessionView"]>["trainer"]
     | undefined;
-}): { label: string; detail: string; tone: "neutral" | "good" | "warn" | "danger" } {
+}): {
+  label: string;
+  detail: string;
+  tone: "neutral" | "good" | "warn" | "danger";
+} {
   if (trainer?.recoveryState === "applying_reconnect_recovery") {
     return {
       label: "Recovering",
@@ -212,6 +414,58 @@ function getTrainerStatus({
   };
 }
 
+function DescriptorModeSummary({
+  modes,
+  selectedMode,
+}: {
+  modes: DescriptorMode[];
+  selectedMode: string | null;
+}) {
+  const selected = modes.find((mode) => mode.id === selectedMode);
+  const enabledCount = modes.filter((mode) => mode.enabled !== false).length;
+
+  return (
+    <Text className="text-xs font-medium text-muted-foreground" numberOfLines={2}>
+      {selected?.label ?? getModeLabel(selectedMode)} selected. {enabledCount} FTMS mode
+      {enabledCount === 1 ? "" : "s"} available from session descriptors.
+    </Text>
+  );
+}
+
+function DescriptorModeChip({ mode, selected }: { mode: DescriptorMode; selected: boolean }) {
+  const enabled = mode.enabled !== false;
+  const label = mode.label ?? getModeLabel(mode.id);
+
+  return (
+    <View
+      className={
+        selected
+          ? "rounded-full bg-foreground px-3 py-2"
+          : enabled
+            ? "rounded-full border border-border bg-background px-3 py-2"
+            : "rounded-full bg-muted px-3 py-2"
+      }
+    >
+      <Text
+        className={
+          selected
+            ? "text-xs font-bold text-background"
+            : enabled
+              ? "text-xs font-bold text-foreground"
+              : "text-xs font-bold text-muted-foreground"
+        }
+      >
+        {label}
+      </Text>
+      {!enabled && mode.disabledReason ? (
+        <Text className="mt-0.5 text-[10px] font-medium text-muted-foreground" numberOfLines={1}>
+          {mode.disabledReason}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
 function ResistanceControls({
   disabled,
   onDecrease,
@@ -234,6 +488,37 @@ function ResistanceControls({
       </View>
       <TrainerControlButton disabled={disabled} label="+" onPress={onIncrease} />
     </View>
+  );
+}
+
+function TrainerCandidateChip({
+  active,
+  disabled,
+  label,
+  onPress,
+}: {
+  active: boolean;
+  disabled?: boolean;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: active, disabled: Boolean(disabled) }}
+      className={`rounded-full border px-3 py-2 ${
+        active ? "border-primary bg-primary/15" : "border-border bg-background"
+      } ${disabled ? "opacity-50" : ""}`}
+      disabled={disabled || active}
+      onPress={onPress}
+    >
+      <Text
+        className={`text-xs font-semibold ${active ? "text-primary" : "text-foreground"}`}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 

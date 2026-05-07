@@ -485,6 +485,35 @@ describe("RecordingConfigResolver", () => {
     expect(config.capabilities.primaryMetric).toBe("power");
   });
 
+  it("suppresses trainer metrics, control, cards, and quick actions while GPS is enabled", () => {
+    const config = RecordingConfigResolver.resolve(
+      buildInput({
+        activityCategory: "bike",
+        gpsRecordingEnabled: true,
+        gpsAvailable: true,
+        devices: {
+          ftmsTrainer: {
+            deviceId: "trainer-1",
+            autoControlEnabled: true,
+            controlReady: true,
+          },
+          hasPowerMeter: false,
+          hasHeartRateMonitor: false,
+          hasCadenceSensor: false,
+        },
+      }),
+    );
+
+    expect(config.capabilities.canTrackPower).toBe(false);
+    expect(config.capabilities.shouldShowTrainerControl).toBe(false);
+    expect(config.capabilities.shouldAutoFollowTargets).toBe(false);
+    expect(config.capabilities.primaryMetric).toBe("distance");
+    expect(config.session.devices.hasTrainer).toBe(false);
+    expect(config.session.devices.trainerControllable).toBe(false);
+    expect(config.session.ui.floatingPanel.availableCards).not.toContain("trainer");
+    expect(config.session.surfaces.quickActions).not.toContain("trainer");
+  });
+
   it("uses reps as primary metric for strength", () => {
     const config = RecordingConfigResolver.resolve(
       buildInput({
@@ -540,8 +569,8 @@ describe("RecordingConfigResolver", () => {
 
     expect(config.input.mode).toBe("planned");
     expect(config.input.launchSource).toBe("activity_plan");
-    expect(config.capabilities.shouldShowTrainerControl).toBe(true);
-    expect(config.capabilities.shouldAutoFollowTargets).toBe(true);
+    expect(config.capabilities.shouldShowTrainerControl).toBe(false);
+    expect(config.capabilities.shouldAutoFollowTargets).toBe(false);
     expect(config.session.surfaces.defaultPrimarySurface).toBe("workout");
   });
 
@@ -629,5 +658,17 @@ describe("RecordingConfigResolver", () => {
     expect(config.input.devices.hasPowerMeter).toBe(true);
     expect(config.capabilities.primaryMetric).toBe("power");
     expect(config.session.surfaces.availablePrimarySurfaces).toContain("trainer");
+
+    const detachedPlanConfig = RecordingConfigResolver.resolveFromSessionSnapshot(snapshot, {
+      activityPlanId: null,
+      routeId: null,
+    });
+
+    expect(detachedPlanConfig.input.activityPlanId).toBeNull();
+    expect(detachedPlanConfig.input.mode).toBe("unplanned");
+    expect(detachedPlanConfig.session.guidance.hasPlan).toBe(false);
+    expect(detachedPlanConfig.session.ui.floatingPanel.availableCards).not.toContain(
+      "workout_interval",
+    );
   });
 });

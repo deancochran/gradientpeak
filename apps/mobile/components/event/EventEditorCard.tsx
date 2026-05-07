@@ -20,7 +20,10 @@ export type ActivityPlanListItem = {
   name: string;
   activity_category?: string | null;
   description?: string | null;
-  authoritative_metrics?: { estimated_duration?: number | null } | null;
+  authoritative_metrics?: {
+    estimated_duration?: number | null;
+    estimated_tss?: number | null;
+  } | null;
 };
 
 export function toDateOnly(value: Date) {

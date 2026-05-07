@@ -113,7 +113,7 @@ function createActivityRow(overrides: ActivityOverrides = {}) {
     source: "manual",
     external_id: null,
     strava_id: null,
-    fit_file_url: null,
+    activity_file_url: null,
     route_id: null,
     perceived_effort: null,
     planned_activity_id: null,

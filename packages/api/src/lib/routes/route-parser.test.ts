@@ -46,4 +46,18 @@ describe("route-parser", () => {
 
     expect(route.coordinates[0]).toEqual({ latitude: 40.1, longitude: -74.1, altitude: 0 });
   });
+
+  it("detects TCX content when uploaded with an XML extension", () => {
+    const route = parseRoute(
+      `<?xml version="1.0" encoding="UTF-8"?>
+      <TrainingCenterDatabase>
+        <Courses><Course><Track>
+          <Trackpoint><Position><LatitudeDegrees>40.1</LatitudeDegrees><LongitudeDegrees>-74.1</LongitudeDegrees></Position></Trackpoint>
+          <Trackpoint><Position><LatitudeDegrees>40.2</LatitudeDegrees><LongitudeDegrees>-74.2</LongitudeDegrees></Position></Trackpoint>
+        </Track></Course></Courses>
+      </TrainingCenterDatabase>`,
+    );
+
+    expect(route.coordinates).toHaveLength(2);
+  });
 });
