@@ -127,7 +127,7 @@ describe("getPlanTabProjectionService", () => {
     expect(result.activity_plan_matches).toEqual(
       expect.objectContaining({
         matches: [],
-        empty_reason: "no_activity_plans",
+        empty_reason: "no_positive_gap",
       }),
     );
     expect(result.schedule_recommendation).toEqual(
@@ -218,7 +218,7 @@ describe("getPlanTabProjectionService", () => {
     );
   });
 
-  it("returns deterministic activity plan matches for a positive schedule gap", async () => {
+  it("does not match activity plans when there is no positive schedule gap", async () => {
     const mockSupabase = createSupabaseMock({
       training_plans: {
         data: {
@@ -297,21 +297,9 @@ describe("getPlanTabProjectionService", () => {
 
     expect(result.activity_plan_matches).toEqual(
       expect.objectContaining({
-        empty_reason: null,
-        target_tss_delta: expect.any(Number),
-      }),
-    );
-    expect(
-      result.activity_plan_matches.matches.map((match: any) => match.activity_plan_id),
-    ).toEqual(["plan-tempo"]);
-    expect(result.activity_plan_matches.matches[0]).toEqual(
-      expect.objectContaining({
-        reason_codes: expect.arrayContaining([
-          "near_target_tss",
-          "same_activity_category",
-          "owned_plan",
-          "reasonable_duration",
-        ]),
+        empty_reason: "no_positive_gap",
+        matches: [],
+        target_tss_delta: 0,
       }),
     );
   });
