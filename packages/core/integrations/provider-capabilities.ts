@@ -80,8 +80,10 @@ export const providerCapabilityRegistry = [
   {
     id: "trainingpeaks",
     label: "TrainingPeaks",
-    capabilities: [],
-    syncModes: {},
+    capabilities: ["planned_activity_push"],
+    syncModes: {
+      planned_activity_push: "automatic",
+    },
   },
   {
     id: "garmin",
