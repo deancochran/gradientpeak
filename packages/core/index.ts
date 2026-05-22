@@ -202,6 +202,7 @@ export * from "./zones"; // Canonical zones and threshold metadata
 // FIT File Parsing and Encoding Module
 // ============================================================================
 
+export * from "./activity-files/activity-file-parser";
 export * from "./calculations/critical-power";
 // Performance curves (power, pace, HR)
 export * from "./calculations/curves";
@@ -222,7 +223,6 @@ export * from "./detection/pace-tests";
 // ============================================================================
 // Power test detection
 export * from "./detection/power-tests";
-export * from "./lib/activity-file-parser";
 export * from "./lib/fit-sdk-parser";
 export { extractHeartRateZones, extractPowerZones } from "./lib/fit-sdk-parser";
 export type { StandardActivity } from "./types/normalization";
