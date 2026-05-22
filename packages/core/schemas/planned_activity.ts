@@ -69,10 +69,10 @@ function isValidIcalRRule(value: string): boolean {
 /**
  * Event types used by the core event domain.
  *
- * - "planned": user/programmed planned workout
+ * - "planned": user/programmed planned activity
  * - "rest_day": legacy persisted rest-day marker (read compatibility only)
  * - "race_target": race/goal target marker
- * - "custom": user-authored non-workout event
+ * - "custom": user-authored non-activity event
  * - "imported": read-only external calendar import
  */
 export const eventTypeSchema = z.enum(["planned", "rest_day", "race_target", "custom", "imported"]);
@@ -316,7 +316,42 @@ export const importedEventDomainSchema = eventDomainBaseSchema.extend({
 
 export const eventDomainSchema = z.union([editableEventDomainSchema, importedEventDomainSchema]);
 
-export const eventCreateSchema = eventDomainSchema;
+export const customEventCreateSchema = z
+  .object({
+    event_type: z.enum(["custom", "race_target"]),
+    title: z.string().min(1).max(255),
+    starts_at: dateTimeStringSchema,
+    ends_at: dateTimeStringSchema.nullable().optional(),
+    all_day: z.boolean().default(false),
+    timezone: z.string().min(1).max(120).default("UTC"),
+    notes: z.string().max(2000).nullable().optional(),
+    description: z.string().max(5000).nullable().optional(),
+    recurrence: eventRecurrenceSchema.optional(),
+    lifecycle: eventLifecycleSchema.default({ status: "scheduled" }),
+    read_only: z.boolean().optional().default(false),
+  })
+  .strict();
+
+export const plannedActivityEventCreateSchema = z
+  .object({
+    event_type: z.literal("planned"),
+    activity_plan_id: z.string().uuid(),
+    training_plan_id: z.string().uuid().nullable().optional(),
+    title: z.string().min(1).max(255),
+    scheduled_date: dateOnlyStringSchema,
+    all_day: z.literal(true).default(true),
+    timezone: z.string().min(1).max(120).default("UTC"),
+    notes: z.string().max(2000).nullable().optional(),
+    recurrence: eventRecurrenceSchema.optional(),
+    lifecycle: eventLifecycleSchema.default({ status: "scheduled" }),
+    read_only: z.boolean().optional().default(false),
+  })
+  .strict();
+
+export const eventCreateSchema = z.discriminatedUnion("event_type", [
+  customEventCreateSchema,
+  plannedActivityEventCreateSchema,
+]);
 
 export const eventUpdateSchema = z
   .object({
@@ -420,6 +455,9 @@ export const plannedActivityRescheduleSchema = z.object({
 export type PlannedActivityCreate = z.infer<typeof plannedActivityCreateSchema>;
 export type PlannedActivityUpdate = z.infer<typeof plannedActivityUpdateSchema>;
 export type PlannedActivityReschedule = z.infer<typeof plannedActivityRescheduleSchema>;
+export type CustomEventCreate = z.infer<typeof customEventCreateSchema>;
+export type PlannedActivityEventCreate = z.infer<typeof plannedActivityEventCreateSchema>;
+export type EventCreate = z.infer<typeof eventCreateSchema>;
 export type EventType = z.infer<typeof eventTypeSchema>;
 export type EventTypeInput = z.infer<typeof eventTypeInputSchema>;
 export type EventMutationScope = z.infer<typeof eventMutationScopeSchema>;

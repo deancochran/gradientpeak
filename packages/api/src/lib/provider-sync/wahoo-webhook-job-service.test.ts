@@ -10,6 +10,7 @@ function createDeps() {
       claimDueJobs: vi.fn(),
       enqueueJob: vi.fn(),
       getWebhookReceipt: vi.fn(),
+      listWebhookReceipts: vi.fn().mockResolvedValue([]),
       markJobFailed: vi.fn(),
       markJobSucceeded: vi.fn(),
       markWebhookReceiptProcessed: vi.fn(),
@@ -116,6 +117,55 @@ describe("WahooWebhookJobService", () => {
       id: "receipt-1",
       status: "processed",
     });
-    expect(deps.providerSyncRepository.markJobSucceeded).toHaveBeenCalledWith("job-1");
+    expect(deps.providerSyncRepository.markJobSucceeded).toHaveBeenCalledWith("job-1", "worker-1");
+  });
+
+  it("recovers pending receipts without jobs before processing due jobs", async () => {
+    const deps = createDeps();
+    deps.providerSyncRepository.listWebhookReceipts.mockResolvedValue([
+      {
+        eventType: "workout_summary",
+        id: "receipt-1",
+        integrationId: "integration-1",
+        jobId: null,
+        payload: {
+          event_type: "workout_summary",
+          user: { id: 42 },
+          workout_summary: { id: 99 },
+        },
+        processingStatus: "pending",
+        provider: "wahoo",
+        providerAccountId: "42",
+        providerEventId: "99",
+      },
+    ]);
+    deps.wahooRepository.findWahooIntegrationByExternalId.mockResolvedValue({
+      integrationId: "integration-1",
+      profileId: "profile-1",
+    });
+    deps.providerSyncRepository.enqueueJob.mockResolvedValue({ id: "job-1", status: "queued" });
+    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([]);
+
+    const service = new WahooWebhookJobService(deps as never);
+
+    await expect(service.processDueJobs({ workerId: "worker-1" })).resolves.toEqual({
+      completed: 0,
+      failed: 0,
+      processed: 0,
+    });
+
+    expect(deps.providerSyncRepository.enqueueJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dedupeKey: "wahoo:webhook:receipt-1",
+        integrationId: "integration-1",
+        jobType: "wahoo.process_webhook_receipt",
+        payload: { receiptId: "receipt-1" },
+        profileId: "profile-1",
+      }),
+    );
+    expect(deps.providerSyncRepository.setWebhookReceiptJob).toHaveBeenCalledWith({
+      id: "receipt-1",
+      jobId: "job-1",
+    });
   });
 });

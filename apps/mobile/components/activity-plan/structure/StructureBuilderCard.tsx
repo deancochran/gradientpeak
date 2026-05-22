@@ -6,6 +6,7 @@ import { Text } from "@repo/ui/components/text";
 import { Info, Plus, X } from "lucide-react-native";
 import { Pressable, View } from "react-native";
 import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
+import { markEstimated } from "@/lib/estimatedMetrics";
 
 interface StructureStats {
   durationMs: number;
@@ -44,10 +45,13 @@ export function StructureBuilderCard({
     distanceKm < 10 ? distanceKm.toFixed(1) : Math.round(distanceKm).toString();
 
   return (
-    <Card>
-      <CardContent className="px-4 py-0 gap-2">
+    <Card className="border-primary/20 bg-card">
+      <CardContent className="gap-3 p-3">
         <View className="flex-row items-center justify-between">
-          <Text className="font-semibold">Structure Builder</Text>
+          <View>
+            <Text className="text-lg font-semibold text-foreground">Activity intensity</Text>
+            <Text className="text-xs text-muted-foreground">Tap the chart to edit intervals.</Text>
+          </View>
           <Button variant="outline" size="sm" onPress={onAddInterval}>
             <Icon as={Plus} size={16} className="text-foreground" />
             <Text className="ml-1">Add Interval</Text>
@@ -55,8 +59,12 @@ export function StructureBuilderCard({
         </View>
 
         <View className="flex-row flex-wrap items-center gap-x-4 gap-y-1">
-          <Text className="text-sm text-muted-foreground">Duration: {durationMinutes} min</Text>
-          <Text className="text-sm text-muted-foreground">TSS: {roundedTSS}</Text>
+          <Text className="text-sm text-muted-foreground">
+            Duration: {markEstimated(`${durationMinutes} min`)}
+          </Text>
+          <Text className="text-sm text-muted-foreground">
+            TSS: {markEstimated(`${roundedTSS}`)}
+          </Text>
           {structureStats.distanceMeters > 0 ? (
             <Text className="text-sm text-muted-foreground">Distance: {formattedDistance} km</Text>
           ) : null}
@@ -67,7 +75,7 @@ export function StructureBuilderCard({
           <View className="gap-0.5">
             <TimelineChart
               structure={structure}
-              height={168}
+              height={220}
               compact
               selectedIntervalId={selectedIntervalId}
               onIntervalPress={onTimelineIntervalPress}
@@ -97,8 +105,8 @@ export function StructureBuilderCard({
         ) : null}
 
         {intervals.length === 0 ? (
-          <View className="border border-dashed border-border rounded-lg p-4">
-            <Text className="text-sm text-muted-foreground text-center">
+          <View className="rounded-lg border border-dashed border-primary/30 bg-primary/5 p-4">
+            <Text className="text-center text-sm text-muted-foreground">
               Add your first interval to start building this plan.
             </Text>
           </View>

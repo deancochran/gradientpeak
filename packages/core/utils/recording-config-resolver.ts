@@ -430,7 +430,7 @@ export class RecordingConfigResolver {
     routeMode: "none" | "preview" | "virtual" | "live_navigation" | "unavailable";
   }): RecordingPrimarySurface {
     if (params.hasStructuredPlan) {
-      return "workout";
+      return "activity";
     }
 
     if (params.hasRouteGeometry && params.routeMode !== "none") {
@@ -452,7 +452,7 @@ export class RecordingConfigResolver {
     const surfaces: RecordingPrimarySurface[] = ["metrics"];
 
     if (params.hasStructuredPlan) {
-      surfaces.unshift("workout");
+      surfaces.unshift("activity");
     }
 
     if (params.hasRouteGeometry) {
@@ -529,7 +529,7 @@ export class RecordingConfigResolver {
     const consequences: string[] = [];
 
     if (this.hasPlan(input)) {
-      consequences.push("Attached plan owns workout structure for this session.");
+      consequences.push("Attached plan owns activity structure for this session.");
     }
 
     if (this.hasPlan(input)) {

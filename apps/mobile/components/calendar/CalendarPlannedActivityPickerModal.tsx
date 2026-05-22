@@ -2,9 +2,10 @@ import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
-import { ChevronRight, Clock3, Heart, Search, Sparkles } from "lucide-react-native";
+import { Heart, Search, Sparkles } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
 import { ActivityIndicator, ScrollView, TouchableOpacity, View } from "react-native";
+import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { AppSelectionModal } from "@/components/shared/AppSelectionModal";
 import { api } from "@/lib/api";
 
@@ -53,23 +54,6 @@ function toCategoryLabel(category?: string | null): string {
       segment.length > 0 ? `${segment[0]?.toUpperCase() ?? ""}${segment.slice(1)}` : segment,
     )
     .join(" ");
-}
-
-function formatDuration(seconds?: number | null): string | null {
-  if (!seconds || seconds <= 0) return null;
-
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-
-  if (hours > 0 && minutes > 0) {
-    return `${hours}h ${minutes}m`;
-  }
-
-  if (hours > 0) {
-    return `${hours}h`;
-  }
-
-  return `${minutes}m`;
 }
 
 function toTimestamp(value?: string | null): number {
@@ -247,10 +231,6 @@ export function CalendarPlannedActivityPickerModal({
   }, [filteredPlans, searchQuery]);
 
   const renderPlanCard = (plan: ActivityPlanListItem, sectionKey: string) => {
-    const estimatedDuration = plan.authoritative_metrics?.estimated_duration;
-    const estimatedTss = plan.authoritative_metrics?.estimated_tss;
-    const durationLabel = formatDuration(estimatedDuration);
-    const categoryLabel = toCategoryLabel(plan.activity_category);
     const recommendationLabel =
       sectionKey === "suggested"
         ? "Good next pick"
@@ -259,42 +239,19 @@ export function CalendarPlannedActivityPickerModal({
           : null;
 
     return (
-      <TouchableOpacity
-        key={plan.id}
-        onPress={() => onSelectPlan(plan.id)}
-        className="rounded-xl border border-border bg-card px-4 py-4"
-        activeOpacity={0.8}
-        testID={`calendar-planned-activity-option-${plan.id}`}
-      >
-        <View className="flex-row items-start gap-3">
-          <View className="flex-1 gap-2">
-            <View className="flex-row items-center gap-2">
-              <Text className="flex-1 text-sm font-semibold text-foreground">{plan.name}</Text>
-              {recommendationLabel ? (
-                <Text className="text-[10px] font-semibold uppercase tracking-wide text-primary">
-                  {recommendationLabel}
-                </Text>
-              ) : null}
-            </View>
-
-            <Text className="text-xs text-muted-foreground">
-              {categoryLabel}
-              {durationLabel ? ` • ${durationLabel}` : ""}
-              {typeof estimatedTss === "number" ? ` • ${Math.round(estimatedTss)} TSS` : ""}
-              {plan.has_liked || (plan.likes_count ?? 0) > 0
-                ? ` • ${(plan.likes_count ?? 1) > 1 ? `${plan.likes_count} likes` : "Favorite"}`
-                : ""}
-            </Text>
-
-            <Text className="text-xs text-muted-foreground" numberOfLines={2}>
-              {plan.description ||
-                `Saved ${categoryLabel.toLowerCase()} plan ready to drop onto this day.`}
-            </Text>
-          </View>
-
-          <Icon as={ChevronRight} size={16} className="mt-0.5 text-muted-foreground" />
-        </View>
-      </TouchableOpacity>
+      <View key={plan.id} className="gap-1">
+        {recommendationLabel ? (
+          <Text className="self-start rounded-full bg-primary/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-primary">
+            {recommendationLabel}
+          </Text>
+        ) : null}
+        <ActivityPlanCard
+          activityPlan={plan as any}
+          onPress={() => onSelectPlan(plan.id)}
+          testID={`calendar-planned-activity-option-${plan.id}`}
+          variant="compact"
+        />
+      </View>
     );
   };
 

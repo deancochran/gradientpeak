@@ -7,18 +7,18 @@ describe("Toggle native", () => {
 
     const { getByLabelText } = renderNative(
       <Toggle
-        accessibilityLabel="Pin workout"
+        accessibilityLabel="Pin activity"
         onPressedChange={onPressedChange}
         pressed
-        testId="pin-workout-toggle"
+        testId="pin-activity-toggle"
       >
         Pin
       </Toggle>,
     );
 
-    const toggle = getByLabelText("Pin workout");
+    const toggle = getByLabelText("Pin activity");
 
-    expect(toggle.props.testID).toBe("pin-workout-toggle");
+    expect(toggle.props.testID).toBe("pin-activity-toggle");
     fireEvent(toggle, "onPressedChange", false);
     expect(onPressedChange).toHaveBeenCalledWith(false);
   });

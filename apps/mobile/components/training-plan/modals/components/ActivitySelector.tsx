@@ -5,6 +5,7 @@ import { Text } from "@repo/ui/components/text";
 import { Search } from "lucide-react-native";
 import { useState } from "react";
 import { FlatList, Pressable, View } from "react-native";
+import { formatEstimatedDurationSeconds, formatEstimatedTss } from "@/lib/estimatedMetrics";
 
 export interface ActivityOption {
   id: string;
@@ -132,12 +133,14 @@ export function ActivitySelector({
             <View className="flex-row mt-2 space-x-4">
               {typeof estimatedDuration === "number" ? (
                 <Text className="text-sm text-muted-foreground">
-                  ⏱️ {formatDuration(estimatedDuration)}
+                  ⏱️{" "}
+                  {formatEstimatedDurationSeconds(estimatedDuration) ??
+                    formatDuration(estimatedDuration)}
                 </Text>
               ) : null}
               {typeof estimatedTss === "number" ? (
                 <Text className="text-sm text-muted-foreground">
-                  📊 {Math.round(estimatedTss)} TSS
+                  📊 {formatEstimatedTss(estimatedTss)}
                 </Text>
               ) : null}
             </View>

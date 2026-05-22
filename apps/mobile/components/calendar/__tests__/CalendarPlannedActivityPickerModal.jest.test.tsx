@@ -1,12 +1,7 @@
 import React from "react";
 
+import { createHost } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
 
 const activityPlansState = {
   items: [] as any[],
@@ -36,6 +31,19 @@ jest.mock("lucide-react-native", () => ({
   Heart: createHost("Heart"),
   Search: createHost("Search"),
   Sparkles: createHost("Sparkles"),
+}));
+
+jest.mock("@/components/shared/ActivityPlanCard", () => ({
+  __esModule: true,
+  ActivityPlanCard: ({ activityPlan, onPress, testID }: any) => {
+    const React = require("react");
+
+    return React.createElement(
+      "Pressable",
+      { onPress, testID },
+      React.createElement("Text", null, activityPlan?.name),
+    );
+  },
 }));
 
 const { CalendarPlannedActivityPickerModal } = require("../CalendarPlannedActivityPickerModal");

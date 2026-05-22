@@ -3,17 +3,19 @@
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { Activity, Calendar, CheckCircle2, Clock, X, Zap } from "lucide-react-native";
+import { Activity, Calendar, X, Zap } from "lucide-react-native";
 import {
   ActivityIndicator,
   InteractionManager,
   Modal,
-  Pressable,
   ScrollView,
   TouchableOpacity,
   View,
 } from "react-native";
+import { ActivityCard } from "@/components/shared/ActivityCard";
 import { api } from "@/lib/api";
+import { formatEstimatedTss } from "@/lib/estimatedMetrics";
+import { useAuth } from "@/lib/hooks/useAuth";
 
 interface ActivityListModalProps {
   visible: boolean;
@@ -24,6 +26,13 @@ interface ActivityListModalProps {
   intensityZone?: string;
   onClose: () => void;
   onActivityPress?: (activityId: string) => void;
+}
+
+function getDerivedActivityMetric(
+  activity: { derived?: { tss?: number | null; intensity_factor?: number | null } | null },
+  key: "tss" | "intensity_factor",
+) {
+  return activity.derived?.[key] ?? null;
 }
 
 /**
@@ -40,6 +49,15 @@ export function ActivityListModal({
   onClose,
   onActivityPress,
 }: ActivityListModalProps) {
+  const { profile, user } = useAuth();
+  const activityOwner = user?.id
+    ? {
+        avatar_url: profile?.avatar_url ?? null,
+        id: user.id,
+        username: profile?.username ?? user.email?.split("@")[0] ?? "You",
+      }
+    : null;
+
   // Fetch activities for the date range
   const { data: activities = [], isLoading } = api.activities.list.useQuery(
     {
@@ -54,7 +72,7 @@ export function ActivityListModal({
   // Filter by intensity zone if specified
   const filteredActivities = intensityZone
     ? activities.filter((activity) => {
-        const if_value = activity.derived?.intensity_factor || 0;
+        const if_value = getDerivedActivityMetric(activity, "intensity_factor") || 0;
         // Map intensity factor to zones
         switch (intensityZone) {
           case "recovery":
@@ -93,31 +111,6 @@ export function ActivityListModal({
       return `${hours}h ${minutes}m`;
     }
     return `${minutes}m`;
-  };
-
-  const formatActivityType = (type: string) => {
-    return type
-      .split("_")
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(" ");
-  };
-
-  const getActivityIcon = (type: string) => {
-    if (type.includes("run")) return Activity;
-    if (type.includes("bike")) return Activity;
-    if (type.includes("swim")) return Activity;
-    return Activity;
-  };
-
-  const getIntensityColor = (if_value: number | null | undefined) => {
-    if (!if_value) return "text-gray-400";
-    if (if_value < 0.55) return "text-blue-500";
-    if (if_value < 0.75) return "text-green-500";
-    if (if_value < 0.85) return "text-yellow-500";
-    if (if_value < 0.95) return "text-orange-500";
-    if (if_value < 1.05) return "text-red-500";
-    if (if_value < 1.15) return "text-red-600";
-    return "text-purple-600";
   };
 
   const handleActivityPress = (activityId: string) => {
@@ -201,8 +194,12 @@ export function ActivityListModal({
                   <View className="w-px h-8 bg-blue-200" />
                   <View className="items-center">
                     <Text className="text-2xl font-bold text-blue-900">
-                      {Math.round(
-                        filteredActivities.reduce((sum, a) => sum + (a.derived?.tss || 0), 0),
+                      {formatEstimatedTss(
+                        filteredActivities.reduce(
+                          (sum, a) => sum + (getDerivedActivityMetric(a, "tss") || 0),
+                          0,
+                        ),
+                        { includeUnit: false },
                       )}
                     </Text>
                     <Text className="text-xs text-blue-600 mt-1">Total TSS</Text>
@@ -222,75 +219,14 @@ export function ActivityListModal({
               {/* Activity Cards */}
               <View className="gap-3">
                 {filteredActivities.map((activity) => (
-                  <Pressable
+                  <ActivityCard
                     key={activity.id}
+                    activity={activity as any}
+                    dateMode="absolute"
                     onPress={() => handleActivityPress(activity.id)}
-                    className="bg-card rounded-lg border border-border p-4 active:bg-muted"
-                  >
-                    {/* Header */}
-                    <View className="flex-row items-start justify-between mb-3">
-                      <View className="flex-1 mr-3">
-                        <Text
-                          className="text-base font-semibold text-foreground mb-1"
-                          numberOfLines={1}
-                        >
-                          {activity.name || "Untitled Activity"}
-                        </Text>
-                        <Text className="text-xs text-muted-foreground">
-                          {formatDate(activity.started_at)}
-                        </Text>
-                      </View>
-                      <View className="bg-green-100 rounded-full p-2">
-                        <Icon as={CheckCircle2} size={16} className="text-green-600" />
-                      </View>
-                    </View>
-
-                    {/* Activity Type */}
-                    <View className="flex-row items-center gap-2 mb-3">
-                      <Icon
-                        as={getActivityIcon(activity.type)}
-                        size={14}
-                        className="text-muted-foreground"
-                      />
-                      <Text className="text-sm text-muted-foreground">
-                        {formatActivityType(activity.type)}
-                      </Text>
-                    </View>
-
-                    {/* Metrics */}
-                    <View className="flex-row items-center gap-4">
-                      <View className="flex-row items-center gap-1">
-                        <Icon as={Clock} size={14} className="text-muted-foreground" />
-                        <Text className="text-sm text-foreground">
-                          {formatDuration(activity.duration_seconds || 0)}
-                        </Text>
-                      </View>
-
-                      <Text className="text-muted-foreground">•</Text>
-
-                      <Text className="text-sm text-foreground">
-                        {Math.round(activity.derived?.tss || 0)} TSS
-                      </Text>
-
-                      {activity.derived?.intensity_factor && (
-                        <>
-                          <Text className="text-muted-foreground">•</Text>
-                          <View className="flex-row items-center gap-1">
-                            <Icon
-                              as={Zap}
-                              size={14}
-                              className={getIntensityColor(activity.derived.intensity_factor)}
-                            />
-                            <Text
-                              className={`text-sm font-medium ${getIntensityColor(activity.derived.intensity_factor)}`}
-                            >
-                              IF {(activity.derived.intensity_factor || 0).toFixed(2)}
-                            </Text>
-                          </View>
-                        </>
-                      )}
-                    </View>
-                  </Pressable>
+                    owner={activityOwner}
+                    variant="compact"
+                  />
                 ))}
               </View>
             </View>

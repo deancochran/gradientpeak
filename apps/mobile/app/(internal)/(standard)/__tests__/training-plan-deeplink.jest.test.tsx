@@ -1,13 +1,8 @@
 import { act, waitFor } from "@testing-library/react-native";
 import React from "react";
 import { ROUTES } from "@/lib/constants/routes";
+import { createHost } from "../../../../test/mock-components";
 import { renderNative, screen } from "../../../../test/render-native";
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
 
 var mockAlert = jest.fn();
 var mockApplyTemplateMutate = jest.fn();
@@ -569,7 +564,7 @@ describe("TrainingPlanOverview deep-link routing", () => {
     expect(hasTextContaining("8 weeks")).toBe(true);
     expect(hasTextContaining("4/week")).toBe(true);
     expect(hasTextContaining("Open Calendar")).toBe(false);
-    expect(hasTextContaining("Route-backed workouts")).toBe(true);
+    expect(hasTextContaining("Route-backed activities")).toBe(true);
   });
 
   it("shows one clear schedule anchor mode instead of start plus target dates", () => {
@@ -626,12 +621,14 @@ describe("TrainingPlanOverview deep-link routing", () => {
       findButtonByTestId("training-plan-schedule-confirm").props.onPress();
     });
 
-    expect(mockApplyTemplateMutate).toHaveBeenCalledWith({
-      template_type: "training_plan",
-      template_id: "plan-owned-anchor-2",
-      start_date: undefined,
-      target_date: "2026-04-30",
-    });
+    expect(mockApplyTemplateMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        template_type: "training_plan",
+        template_id: "plan-owned-anchor-2",
+        start_date: undefined,
+        target_date: "2026-04-30",
+      }),
+    );
   });
 
   it("requires a finish date when finish-by mode is selected", async () => {
@@ -721,13 +718,15 @@ describe("TrainingPlanOverview deep-link routing", () => {
       findButtonByTestId("training-plan-replace-confirm").props.onPress();
     });
 
-    expect(mockApplyTemplateMutate).toHaveBeenCalledWith({
-      template_type: "training_plan",
-      template_id: "plan-owned-anchor-4b",
-      start_date: undefined,
-      target_date: undefined,
-      replace_existing: true,
-    });
+    expect(mockApplyTemplateMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        template_type: "training_plan",
+        template_id: "plan-owned-anchor-4b",
+        start_date: undefined,
+        target_date: undefined,
+        replace_existing: true,
+      }),
+    );
   });
 
   it("opens the current active plan from the concurrency warning CTA", async () => {

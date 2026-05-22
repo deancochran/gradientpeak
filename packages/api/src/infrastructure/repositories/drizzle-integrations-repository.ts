@@ -39,7 +39,7 @@ export function createIntegrationsRepositories(db: DrizzleDbClient): Integration
         expiresAt,
         scope,
       }) {
-        await db
+        const [row] = await db
           .insert(schema.integrations)
           .values({
             profile_id: profileId,
@@ -60,7 +60,14 @@ export function createIntegrationsRepositories(db: DrizzleDbClient): Integration
               scope,
               updated_at: new Date(),
             },
-          });
+          })
+          .returning();
+
+        if (!row) {
+          throw new Error("Failed to upsert integration");
+        }
+
+        return row as IntegrationRow;
       },
 
       async updateTokensByProfileIdAndProvider({

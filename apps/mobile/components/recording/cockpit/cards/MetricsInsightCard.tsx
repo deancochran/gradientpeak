@@ -1,6 +1,7 @@
 import type { IntensityTargetV2 } from "@repo/core/schemas";
 import React from "react";
 import { View } from "react-native";
+import { formatEstimatedIntensityFactor, formatEstimatedTss } from "@/lib/estimatedMetrics";
 import { formatSeconds } from "./format";
 import { MetricTile } from "./MetricTile";
 import type { InsightCardProps } from "./types";
@@ -285,11 +286,14 @@ function getMetricValue(
         : null;
     case "training_stress_score":
       return hasNumber(stats.trainingStressScore)
-        ? { value: `${Math.round(stats.trainingStressScore)}`, unit: null }
+        ? {
+            value: formatEstimatedTss(stats.trainingStressScore, { includeUnit: false }) ?? "--",
+            unit: null,
+          }
         : null;
     case "intensity_factor":
       return hasNumber(stats.intensityFactor)
-        ? { value: stats.intensityFactor.toFixed(2), unit: null }
+        ? { value: formatEstimatedIntensityFactor(stats.intensityFactor) ?? "--", unit: null }
         : null;
   }
 }

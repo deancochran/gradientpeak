@@ -3,6 +3,7 @@ import {
   buildDeterministicProjectionPayload,
   buildProjectionChartPayloadFromDeterministicProjection,
   buildProjectionEngineInput,
+  defaultAthletePreferenceProfile,
   normalizeCreationConfig,
 } from "@repo/core";
 import { describe, expect, it } from "vitest";
@@ -113,6 +114,23 @@ describe("computeLocalCreationPreview", () => {
 
     expect(preview.readinessDeltaDiagnostics).toBeDefined();
     expect(preview.previewSnapshotBaseline).not.toBeNull();
+  });
+
+  it("forwards profile settings into goal readiness targets", () => {
+    const preview = computeLocalCreationPreview({
+      minimalPlan,
+      creationInput: baseCreationInput,
+      contextSummary,
+      profileSettings: {
+        ...defaultAthletePreferenceProfile,
+        goal_strategy_preferences: {
+          ...defaultAthletePreferenceProfile.goal_strategy_preferences,
+          target_surplus_preference: 0.45,
+        },
+      },
+    });
+
+    expect(preview.projectionChart.goal_assessments?.[0]?.goal_readiness_target).toBe(103);
   });
 
   it("keeps local preview projection in parity with server recompute mapping across fixture histories", () => {

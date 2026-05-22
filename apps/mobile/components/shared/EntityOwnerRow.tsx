@@ -1,7 +1,9 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Text } from "@repo/ui/components/text";
+import type { ReactNode } from "react";
 import React from "react";
 import { Pressable, View } from "react-native";
+import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 export type EntityOwner = {
@@ -12,25 +14,45 @@ export type EntityOwner = {
 
 interface EntityOwnerRowProps {
   compact?: boolean;
+  displayNameOverride?: string;
+  fallbackClassName?: string;
+  fallbackInitials?: string;
   minimal?: boolean;
+  onPress?: () => void;
   owner?: EntityOwner | null;
-  subtitle?: string | null;
+  subtitle?: ReactNode;
   testID?: string;
 }
 
 export function EntityOwnerRow({
   compact = false,
+  displayNameOverride,
+  fallbackClassName,
+  fallbackInitials,
   minimal = false,
+  onPress,
   owner,
   subtitle,
   testID,
 }: EntityOwnerRowProps) {
+  const { user } = useAuth();
   const navigateTo = useAppNavigate();
-  const displayName = owner?.username?.trim() || "Unknown User";
+  const displayName = displayNameOverride?.trim() || owner?.username?.trim() || "Unknown User";
   const canOpenProfile = typeof owner?.id === "string" && owner.id.length > 0;
+  const canPress = Boolean(onPress) || canOpenProfile;
 
   const handlePress = () => {
+    if (onPress) {
+      onPress();
+      return;
+    }
+
     if (!canOpenProfile) {
+      return;
+    }
+
+    if (owner.id === user?.id) {
+      navigateTo("/profile");
       return;
     }
 
@@ -43,24 +65,13 @@ export function EntityOwnerRow({
   return (
     <Pressable
       onPress={handlePress}
-      disabled={!canOpenProfile}
+      disabled={!canPress}
       className={`flex-row items-center ${compact ? "gap-1.5" : "gap-3"}`}
       testID={testID}
     >
-      {minimal || compact ? (
-        <Text
-          className={
-            compact
-              ? "text-xs font-medium text-muted-foreground"
-              : "text-xs font-medium text-muted-foreground"
-          }
-        >
-          By
-        </Text>
-      ) : null}
       <Avatar alt={displayName} className={compact ? "h-6 w-6" : minimal ? "h-7 w-7" : "h-10 w-10"}>
         {owner?.avatar_url ? <AvatarImage source={{ uri: owner.avatar_url }} /> : null}
-        <AvatarFallback>
+        <AvatarFallback className={fallbackClassName}>
           <Text
             className={
               compact || minimal
@@ -68,7 +79,7 @@ export function EntityOwnerRow({
                 : "text-sm font-semibold text-foreground"
             }
           >
-            {displayName.charAt(0).toUpperCase() || "U"}
+            {fallbackInitials || displayName.charAt(0).toUpperCase() || "U"}
           </Text>
         </AvatarFallback>
       </Avatar>
@@ -85,7 +96,11 @@ export function EntityOwnerRow({
         >
           {displayName}
         </Text>
-        {subtitle ? <Text className="text-xs text-muted-foreground">{subtitle}</Text> : null}
+        {typeof subtitle === "string" ? (
+          <Text className="text-xs text-muted-foreground">{subtitle}</Text>
+        ) : (
+          subtitle
+        )}
       </View>
     </Pressable>
   );

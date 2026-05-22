@@ -1,7 +1,7 @@
 /**
- * Workout Surface
+ * Activity Surface
  *
- * Shows the active structured workout step, target controls, and upcoming step
+ * Shows the active structured activity step, target controls, and upcoming step
  * context for plan-led recording sessions.
  */
 
@@ -110,7 +110,7 @@ function getDurationMs(duration: IntervalStepV2["duration"]): number {
 
 /**
  * Activity Intensity Chart Component
- * Shows all workout steps with color coding based on completion state
+ * Shows all activity steps with color coding based on completion state
  */
 interface IntensityChartProps {
   allSteps: IntervalStepV2[];
@@ -226,8 +226,8 @@ export function WorkoutSurface({ service, hasPlan }: WorkoutSurfaceProps) {
   if (!service || !hasPlan || !plan.hasPlan || !plan.currentStep) {
     return (
       <SurfaceUnavailableCard
-        title="No workout plan attached"
-        description="Attach a plan to turn this into a structured workout."
+        title="No activity plan attached"
+        description="Attach a plan to turn this into a structured activity."
       />
     );
   }
@@ -244,7 +244,7 @@ export function WorkoutSurface({ service, hasPlan }: WorkoutSurfaceProps) {
         {/* Activity Intensity Chart - Larger in focused view */}
         {allSteps.length > 0 && (
           <View className="mb-6">
-            <Text className="text-xs text-muted-foreground mb-2">Workout Structure</Text>
+            <Text className="text-xs text-muted-foreground mb-2">Activity Structure</Text>
             <ActivityIntensityChart
               allSteps={allSteps}
               currentStepIndex={plan.stepIndex}

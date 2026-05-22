@@ -4,6 +4,8 @@ export interface TimeInputProps extends TestProps {
   label: string;
   value?: string;
   onChange: (value: string | undefined) => void;
+  disabled?: boolean;
+  name?: string;
   helperText?: string;
   error?: string;
   required?: boolean;

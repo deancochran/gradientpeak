@@ -104,9 +104,10 @@ describe("feedRouter", () => {
         max_heart_rate: 178,
         avg_power: 220,
         avg_cadence: 88,
-        elevation_gain_meters: 450,
+        elevation_gain_meters: "450.25",
         calories: 900,
         polyline: null,
+        activity_file_path: null,
         likes_count: 4,
         is_private: false,
         created_at: new Date("2026-04-03T11:05:00.000Z"),
@@ -130,6 +131,7 @@ describe("feedRouter", () => {
         elevation_gain_meters: 55,
         calories: 420,
         polyline: null,
+        activity_file_path: null,
         likes_count: 1,
         is_private: false,
         created_at: new Date("2026-04-02T10:35:00.000Z"),
@@ -153,6 +155,7 @@ describe("feedRouter", () => {
         elevation_gain_meters: null,
         calories: 200,
         polyline: null,
+        activity_file_path: null,
         likes_count: 0,
         is_private: false,
         created_at: new Date("2026-04-01T10:25:00.000Z"),
@@ -169,7 +172,7 @@ describe("feedRouter", () => {
     const result = await caller.getFeed({ limit: 2 });
 
     expect(result.hasMore).toBe(true);
-    expect(result.nextCursor).toBe(secondStartedAt.toISOString());
+    expect(result.nextCursor).toBe(`${secondStartedAt.toISOString()}|${ACTIVITY_ID_2}`);
     expect(result.items).toHaveLength(2);
     expect(result.items[0]).toEqual({
       id: ACTIVITY_ID,
@@ -185,9 +188,10 @@ describe("feedRouter", () => {
       max_heart_rate: 178,
       avg_power: 220,
       avg_cadence: 88,
-      elevation_gain_meters: 450,
+      elevation_gain_meters: 450.25,
       calories: 900,
       polyline: null,
+      activity_file_path: null,
       likes_count: 4,
       comments_count: 2,
       is_private: false,
@@ -207,9 +211,77 @@ describe("feedRouter", () => {
     expect(analysisMocks.buildActivityDerivedSummaryMap).toHaveBeenCalledWith(
       expect.objectContaining({
         profileId: VIEWER_ID,
-        activities: activityRows,
+        activities: expect.arrayContaining([
+          expect.objectContaining({
+            id: ACTIVITY_ID,
+            elevation_gain_meters: 450.25,
+          }),
+        ]),
       }),
     );
+  });
+
+  it("getFeed uses a stable composite cursor for activities with matching timestamps", async () => {
+    const sharedStartedAt = new Date("2026-04-03T10:00:00.000Z");
+    const activityRows = [
+      {
+        id: ACTIVITY_ID_2,
+        profile_id: VIEWER_ID,
+        name: "Lunch Run",
+        type: "run",
+        started_at: sharedStartedAt,
+        finished_at: new Date("2026-04-03T10:30:00.000Z"),
+        distance_meters: 5000,
+        duration_seconds: 1800,
+        moving_seconds: 1750,
+        avg_heart_rate: 145,
+        max_heart_rate: 170,
+        avg_power: null,
+        avg_cadence: 84,
+        elevation_gain_meters: 55,
+        calories: 420,
+        polyline: null,
+        activity_file_path: null,
+        likes_count: 1,
+        is_private: false,
+        created_at: new Date("2026-04-03T10:35:00.000Z"),
+        profile_username: "viewer",
+        profile_avatar_url: null,
+      },
+      {
+        id: ACTIVITY_ID,
+        profile_id: OWNER_ID,
+        name: "Morning Ride",
+        type: "ride",
+        started_at: sharedStartedAt,
+        finished_at: new Date("2026-04-03T11:00:00.000Z"),
+        distance_meters: 32000,
+        duration_seconds: 3600,
+        moving_seconds: 3500,
+        avg_heart_rate: 150,
+        max_heart_rate: 178,
+        avg_power: 220,
+        avg_cadence: 88,
+        elevation_gain_meters: 450,
+        calories: 900,
+        polyline: null,
+        activity_file_path: null,
+        likes_count: 4,
+        is_private: false,
+        created_at: new Date("2026-04-03T11:05:00.000Z"),
+        profile_username: "owner",
+        profile_avatar_url: "https://example.com/owner.png",
+      },
+    ];
+
+    const { caller } = createCaller({ execute: [activityRows, []] });
+
+    const result = await caller.getFeed({ limit: 1 });
+
+    expect(result.hasMore).toBe(true);
+    expect(result.nextCursor).toBe(`${sharedStartedAt.toISOString()}|${ACTIVITY_ID_2}`);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.id).toBe(ACTIVITY_ID_2);
   });
 
   it("getFeed rejects malformed SQL activity rows", async () => {
@@ -230,9 +302,10 @@ describe("feedRouter", () => {
             max_heart_rate: 178,
             avg_power: 220,
             avg_cadence: 88,
-            elevation_gain_meters: 450,
+            elevation_gain_meters: "450.25",
             calories: 900,
             polyline: null,
+            activity_file_path: null,
             likes_count: 4,
             is_private: false,
             created_at: new Date("2026-04-03T11:05:00.000Z"),
@@ -274,6 +347,7 @@ describe("feedRouter", () => {
             elevation_gain_meters: 450,
             calories: 900,
             polyline: null,
+            activity_file_path: null,
             likes_count: 4,
             is_private: false,
             created_at: new Date("2026-04-03T11:05:00.000Z"),
@@ -317,9 +391,10 @@ describe("feedRouter", () => {
             max_cadence: 105,
             normalized_power: 240,
             elevation_gain_meters: 450,
-            elevation_loss_meters: 445,
+            elevation_loss_meters: "445.75",
             calories: 900,
             polyline: null,
+            activity_file_path: null,
             map_bounds: null,
             likes_count: 4,
             is_private: false,
@@ -364,9 +439,10 @@ describe("feedRouter", () => {
       max_cadence: 105,
       normalized_power: 240,
       elevation_gain_meters: 450,
-      elevation_loss_meters: 445,
+      elevation_loss_meters: 445.75,
       calories: 900,
       polyline: null,
+      activity_file_path: null,
       map_bounds: null,
       likes_count: 4,
       is_private: false,
@@ -419,6 +495,7 @@ describe("feedRouter", () => {
             elevation_loss_meters: null,
             calories: null,
             polyline: null,
+            activity_file_path: null,
             map_bounds: null,
             likes_count: 0,
             is_private: true,
@@ -426,6 +503,51 @@ describe("feedRouter", () => {
             profile_username: "owner",
             profile_avatar_url: null,
             viewer_follows_owner: false,
+          },
+        ],
+      ],
+    });
+
+    await expect(caller.getActivity({ activityId: ACTIVITY_ID })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+      message: "You don't have permission to view this activity",
+    });
+  });
+
+  it("getActivity rejects private activities for followers", async () => {
+    const { caller } = createCaller({
+      execute: [
+        [
+          {
+            id: ACTIVITY_ID,
+            profile_id: OWNER_ID,
+            name: "Private Ride",
+            type: "ride",
+            notes: null,
+            started_at: new Date("2026-04-03T10:00:00.000Z"),
+            finished_at: new Date("2026-04-03T11:00:00.000Z"),
+            distance_meters: 32000,
+            duration_seconds: 3600,
+            moving_seconds: 3500,
+            avg_heart_rate: null,
+            max_heart_rate: null,
+            avg_power: null,
+            max_power: null,
+            avg_cadence: null,
+            max_cadence: null,
+            normalized_power: null,
+            elevation_gain_meters: null,
+            elevation_loss_meters: null,
+            calories: null,
+            polyline: null,
+            activity_file_path: null,
+            map_bounds: null,
+            likes_count: 0,
+            is_private: true,
+            created_at: new Date("2026-04-03T11:05:00.000Z"),
+            profile_username: "owner",
+            profile_avatar_url: null,
+            viewer_follows_owner: true,
           },
         ],
       ],
@@ -463,6 +585,7 @@ describe("feedRouter", () => {
             elevation_loss_meters: 445,
             calories: 900,
             polyline: null,
+            activity_file_path: null,
             map_bounds: null,
             likes_count: 4,
             is_private: false,

@@ -30,4 +30,5 @@ export const activityEffortFormSchema = z.object({
 
 export type RouteUploadFormValues = z.infer<typeof routeUploadFormSchema>;
 export type ActivityImportFormValues = z.infer<typeof activityImportFormSchema>;
+export type ActivityEffortFormInput = z.input<typeof activityEffortFormSchema>;
 export type ActivityEffortFormValues = z.infer<typeof activityEffortFormSchema>;

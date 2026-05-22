@@ -6,6 +6,7 @@ import { TouchableOpacity, View } from "react-native";
 import { AppConfirmModal, AppFormModal } from "@/components/shared/AppFormModal";
 
 type ScheduleAnchorMode = "start" | "finish";
+type ScheduleApplicationMode = "full" | "remaining";
 
 interface TrainingPlanTemplateSchedulingDialogProps {
   applyPending: boolean;
@@ -14,7 +15,9 @@ interface TrainingPlanTemplateSchedulingDialogProps {
   onOpenActivePlan: () => void;
   onReplaceScheduledPlan: () => void;
   onScheduleModalOpenChange: (open: boolean) => void;
+  onSelectScheduleApplicationMode: (mode: ScheduleApplicationMode) => void;
   onSelectScheduleAnchorMode: (mode: ScheduleAnchorMode) => void;
+  scheduleApplicationMode: ScheduleApplicationMode;
   scheduleAnchorContent: {
     fieldLabel: string;
     fieldPlaceholder: string;
@@ -46,7 +49,9 @@ export function TrainingPlanTemplateSchedulingDialog({
   onOpenActivePlan,
   onReplaceScheduledPlan,
   onScheduleModalOpenChange,
+  onSelectScheduleApplicationMode,
   onSelectScheduleAnchorMode,
+  scheduleApplicationMode,
   scheduleAnchorContent,
   scheduleAnchorMode,
   setTemplateAnchorDate,
@@ -68,7 +73,7 @@ export function TrainingPlanTemplateSchedulingDialog({
     <>
       {showScheduleModal ? (
         <AppFormModal
-          description="Choose one anchor for this schedule. You can either place week 1 on a date or finish the whole plan by a date."
+          description="Choose how this plan should be applied, then pick the date anchor for the generated schedule."
           onClose={handleClose}
           primaryAction={
             <Button
@@ -90,14 +95,53 @@ export function TrainingPlanTemplateSchedulingDialog({
           title="Schedule this plan"
         >
           <View className="gap-2 rounded-2xl border border-border bg-card p-4">
+            <Text className="text-sm font-medium text-foreground">How much of the plan?</Text>
+            <View className="gap-2">
+              <TouchableOpacity
+                onPress={() => onSelectScheduleApplicationMode("full")}
+                className={`rounded-lg border px-3 py-3 ${scheduleApplicationMode === "full" ? "border-primary bg-primary/5" : "border-border bg-background"}`}
+                activeOpacity={0.8}
+                testID="training-plan-application-full"
+              >
+                <View className="flex-row items-start gap-3">
+                  <SelectionIndicator active={scheduleApplicationMode === "full"} />
+                  <View className="flex-1">
+                    <Text className="text-sm font-semibold text-foreground">Full plan</Text>
+                    <Text className="mt-1 text-xs text-muted-foreground">
+                      Schedule every available session from the beginning of the template.
+                    </Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => onSelectScheduleApplicationMode("remaining")}
+                className={`rounded-lg border px-3 py-3 ${scheduleApplicationMode === "remaining" ? "border-primary bg-primary/5" : "border-border bg-background"}`}
+                activeOpacity={0.8}
+                testID="training-plan-application-remaining"
+              >
+                <View className="flex-row items-start gap-3">
+                  <SelectionIndicator active={scheduleApplicationMode === "remaining"} />
+                  <View className="flex-1">
+                    <Text className="text-sm font-semibold text-foreground">Remaining only</Text>
+                    <Text className="mt-1 text-xs text-muted-foreground">
+                      Keep the finish date and only schedule the sessions that still remain ahead.
+                    </Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View className="gap-2 rounded-2xl border border-border bg-card p-4">
             <Text className="text-sm font-medium text-foreground">
               How should this schedule line up?
             </Text>
             <View className="gap-2">
               <TouchableOpacity
                 onPress={() => onSelectScheduleAnchorMode("start")}
-                className={`rounded-lg border px-3 py-3 ${scheduleAnchorMode === "start" ? "border-primary bg-primary/5" : "border-border bg-background"}`}
+                className={`rounded-lg border px-3 py-3 ${scheduleAnchorMode === "start" ? "border-primary bg-primary/5" : "border-border bg-background"} ${scheduleApplicationMode === "remaining" ? "opacity-50" : ""}`}
                 activeOpacity={0.8}
+                disabled={scheduleApplicationMode === "remaining"}
                 testID="training-plan-anchor-start"
               >
                 <View className="flex-row items-start gap-3">

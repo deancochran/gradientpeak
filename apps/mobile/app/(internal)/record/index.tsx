@@ -1,16 +1,27 @@
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { AlertTriangle, ChevronLeft } from "lucide-react-native";
+import { AlertTriangle, ChevronLeft, Upload } from "lucide-react-native";
 import { Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useActivityPlanRouteUpload } from "@/components/activity-plan/useActivityPlanRouteUpload";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { RecordingLiveCockpit } from "@/components/recording/cockpit";
 import { RecordingActivityQuickEdit } from "@/components/recording/RecordingActivityQuickEdit";
+import { ResourcePickerModal } from "@/components/shared/resource-picker";
+import { usePerformanceScreenReady } from "@/lib/performance";
 import { useRecordScreenController } from "@/lib/recording/useRecordScreenController";
 
 function RecordScreen() {
   const insets = useSafeAreaInsets();
   const controller = useRecordScreenController();
+  usePerformanceScreenReady("route-record", controller.isInitialized);
+  const routeUpload = useActivityPlanRouteUpload({
+    planName: "recording session",
+    onRouteUploaded: (routeId) => {
+      controller.service?.attachRoute(routeId).catch(() => null);
+      controller.onCloseResourcePicker();
+    },
+  });
 
   if (!controller.isInitialized) {
     return (
@@ -48,6 +59,39 @@ function RecordScreen() {
         currentGpsRecordingEnabled={controller.gpsRecordingEnabled}
         canEditActivity={controller.sessionContract?.editing.canEditActivity ?? true}
         canEditGps={controller.sessionContract?.editing.canEditGps ?? true}
+      />
+
+      <ResourcePickerModal
+        visible={!!controller.resourcePickerScope}
+        scope={controller.resourcePickerScope ?? "routes"}
+        selectedId={null}
+        title={
+          controller.resourcePickerScope === "activityPlans"
+            ? "Attach Activity Plan"
+            : "Attach Route"
+        }
+        description={
+          controller.resourcePickerScope === "activityPlans"
+            ? "Search activity plans visible to your profile."
+            : "Search routes visible to your profile, or upload a new GPX route."
+        }
+        onClose={controller.onCloseResourcePicker}
+        onSelect={controller.onSelectResource}
+        footerAction={
+          controller.resourcePickerScope === "routes" ? (
+            <Pressable
+              accessibilityRole="button"
+              className="min-h-11 flex-row items-center justify-center gap-2 rounded-md border border-border px-3 py-2"
+              disabled={routeUpload.isUploadingRoute}
+              onPress={routeUpload.pickGpxFile}
+            >
+              <Icon as={Upload} size={16} className="text-foreground" />
+              <Text className="text-sm font-semibold text-foreground">
+                {routeUpload.isUploadingRoute ? "Uploading route..." : "Upload New GPX Route"}
+              </Text>
+            </Pressable>
+          ) : undefined
+        }
       />
 
       {controller.disconnectedSensors.length > 0 ? (

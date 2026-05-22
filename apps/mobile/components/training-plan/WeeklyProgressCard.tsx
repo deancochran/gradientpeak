@@ -3,6 +3,7 @@ import { Progress } from "@repo/ui/components/progress";
 import { Text } from "@repo/ui/components/text";
 import { CheckCircle2, Target } from "lucide-react-native";
 import { View } from "react-native";
+import { formatEstimatedTss } from "@/lib/estimatedMetrics";
 
 interface WeeklyProgressCardProps {
   completedTSS: number;
@@ -48,13 +49,13 @@ export function WeeklyProgressCard({
         indicatorClassName={getTSSProgressColor()}
         label="Training Stress Score"
         progress={tssProgress}
-        summary={`${Math.round(completedTSS)}`}
+        summary={formatEstimatedTss(completedTSS, { includeUnit: false }) ?? "--"}
         targetLabel={`/ ${Math.round(targetTSS)} TSS target`}
       />
 
       {plannedTSS > completedTSS ? (
         <Text className="text-xs font-medium text-blue-500">
-          {Math.round(plannedTSS - completedTSS)} TSS remaining
+          {formatEstimatedTss(plannedTSS - completedTSS)} remaining
         </Text>
       ) : null}
 

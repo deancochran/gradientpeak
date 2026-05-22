@@ -9,6 +9,20 @@ import {
 const capabilityBoundedNumber = z.number().min(0).max(1);
 const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;
 
+export const manualBaselineCtlWarningThreshold = 120;
+
+export function getManualBaselineCtlWarning(overrideCtl: number | null | undefined): string | null {
+  if (typeof overrideCtl !== "number" || !Number.isFinite(overrideCtl)) {
+    return null;
+  }
+
+  if (overrideCtl <= manualBaselineCtlWarningThreshold) {
+    return null;
+  }
+
+  return `Manual CTL above ${manualBaselineCtlWarningThreshold} is very high and can make estimated readiness look flat or inflated without completed activity history.`;
+}
+
 function normalizeDateOnlyToUtcDateTime(value: string | undefined) {
   if (!value) {
     return undefined;

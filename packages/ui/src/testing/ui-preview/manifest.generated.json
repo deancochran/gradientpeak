@@ -42,12 +42,12 @@
       "title": "Form fields"
     },
     {
-      "description": "Shared toggles and selectors for consent, channel, workout type, and sport choice.",
+      "description": "Shared toggles and selectors for consent, channel, activity type, and sport choice.",
       "key": "selectionControls",
       "selectors": [
         "accept-terms-checkbox",
         "email-notifications-switch",
-        "workout-type-select",
+        "activity-type-select",
         "preferred-sport-radio-group"
       ],
       "testId": "ui-preview-scenario-selection-controls",

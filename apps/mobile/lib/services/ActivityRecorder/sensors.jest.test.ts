@@ -274,6 +274,7 @@ describe("SensorsManager QA regressions", () => {
 
   it("reconnects both disconnected known sensors and persisted-only sensors", async () => {
     const manager = new SensorsManager();
+    manager.setAutoReconnectEnabled(true);
 
     const disconnected = createSensor({
       id: "sensor-disconnected",
@@ -370,6 +371,7 @@ describe("SensorsManager QA regressions", () => {
 
   it("suppresses auto-reconnect after an intentional disconnect", async () => {
     const manager = new SensorsManager();
+    manager.setAutoReconnectEnabled(true);
     const sensor = createSensor({
       id: "sensor-manual-off",
       name: "Manual Off Strap",
@@ -403,6 +405,7 @@ describe("SensorsManager QA regressions", () => {
 
   it("allows auto-reconnect again after the user manually reconnects", async () => {
     const manager = new SensorsManager();
+    manager.setAutoReconnectEnabled(true);
     const sensor = createSensor({
       id: "sensor-reenabled",
       name: "Reenabled Strap",
@@ -457,6 +460,7 @@ describe("SensorsManager QA regressions", () => {
 
   it("schedules another reconnect attempt when connect returns null", async () => {
     const manager = new SensorsManager();
+    manager.setAutoReconnectEnabled(true);
     const sensor = createSensor({
       id: "sensor-retry-null",
       name: "Retry Strap",
@@ -471,6 +475,50 @@ describe("SensorsManager QA regressions", () => {
     expect((manager as any).reconnectionTimers.has(sensor.id)).toBe(true);
 
     (manager as any).cancelReconnectionAttempts(sensor.id);
+    (manager as any).stopConnectionMonitoring();
+  });
+
+  it("does not reconnect persisted sensors while auto-reconnect is disabled", async () => {
+    const manager = new SensorsManager();
+    const sensor = createSensor({
+      id: "sensor-idle",
+      name: "Idle Strap",
+      connectionState: "disconnected",
+    });
+
+    (manager as any).connectedSensors = new Map([[sensor.id, sensor]]);
+    setKnownSensors(manager, [{ id: sensor.id, name: sensor.name, lastConnected: 1 }]);
+
+    const reconnectSpy = jest.spyOn(manager as any, "attemptReconnection");
+    const connectSpy = jest.spyOn(manager, "connectSensor").mockResolvedValue(null);
+
+    await manager.reconnectAll();
+
+    expect(reconnectSpy).not.toHaveBeenCalled();
+    expect(connectSpy).not.toHaveBeenCalled();
+
+    (manager as any).stopConnectionMonitoring();
+  });
+
+  it("cancels pending reconnect attempts when auto-reconnect is disabled", async () => {
+    const manager = new SensorsManager();
+    manager.setAutoReconnectEnabled(true);
+    const sensor = createSensor({
+      id: "sensor-cancel-reconnect",
+      name: "Cancel Reconnect Strap",
+      connectionState: "disconnected",
+    });
+
+    (manager as any).connectedSensors = new Map([[sensor.id, sensor]]);
+    jest.spyOn(manager, "connectSensor").mockResolvedValue(null);
+
+    await (manager as any).attemptReconnection(sensor.id, 1);
+    expect((manager as any).reconnectionTimers.has(sensor.id)).toBe(true);
+
+    manager.setAutoReconnectEnabled(false);
+
+    expect((manager as any).reconnectionTimers.has(sensor.id)).toBe(false);
+
     (manager as any).stopConnectionMonitoring();
   });
 

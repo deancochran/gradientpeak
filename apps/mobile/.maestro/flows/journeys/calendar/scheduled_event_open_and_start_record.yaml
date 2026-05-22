@@ -12,15 +12,20 @@ env:
 - runFlow:
     file: ../../reusable/open_calendar_tab.yaml
 - tapOn: "${SCHEDULED_EVENT_TITLE}"
-- tapOn:
-    id: "calendar-preview-open-detail"
-    optional: true
 - extendedWaitUntil:
     visible:
-      id: "event-detail-start-activity-button"
+      id: "event-detail-activity-plan-card"
     timeout: 10000
 - tapOn:
-    id: "event-detail-start-activity-button"
+    id: "event-detail-activity-plan-card"
+- extendedWaitUntil:
+    visible:
+      id: "activity-plan-options-trigger"
+    timeout: 10000
+- tapOn:
+    id: "activity-plan-options-trigger"
+- tapOn:
+    id: "activity-plan-options-start"
 - extendedWaitUntil:
     visible:
       id: "record-screen-ready"

@@ -15,16 +15,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@repo/ui/components/dialog";
-import { Input } from "@repo/ui/components/input";
-import { Label } from "@repo/ui/components/label";
 import { createFileRoute } from "@tanstack/react-router";
 import { CalendarDays, Flag, Target } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
+import { PlanGoalForm } from "../../components/protected/plan-goal-form";
 import { RouteFlashToast, type RouteFlashType } from "../../components/route-flash-toast";
 import { api } from "../../lib/api/client";
 import { formatShortDayLabel, getTodayDateKey, type PlanningEvent } from "../../lib/planning";
-import { createPlanGoalAction } from "../../lib/planning/server-actions";
 
 export const Route = createFileRoute("/_protected/plan")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -40,12 +38,6 @@ export const Route = createFileRoute("/_protected/plan")({
 function PlanPage() {
   const navigate = Route.useNavigate();
   const { flash, flashType } = Route.useSearch();
-  const [goalTitle, setGoalTitle] = useState("");
-  const [goalDate, setGoalDate] = useState(getTodayDateKey());
-  const [goalPriority, setGoalPriority] = useState("5");
-  const [goalActivityCategory, setGoalActivityCategory] = useState("run");
-  const [goalSessionsPerWeek, setGoalSessionsPerWeek] = useState("4");
-  const [goalWeeks, setGoalWeeks] = useState("8");
 
   const profileQuery = api.profiles.get.useQuery();
   const activePlanQuery = api.trainingPlans.getActivePlan.useQuery();
@@ -223,85 +215,7 @@ function PlanPage() {
                       This first slice creates consistency-style goals directly from the plan page.
                     </DialogDescription>
                   </DialogHeader>
-                  <form action={createPlanGoalAction.url} method="post" className="space-y-4">
-                    <input type="hidden" name="profile_id" value={profileQuery.data?.id ?? ""} />
-                    <input type="hidden" name="redirectTo" value="/plan" />
-                    <div className="space-y-2">
-                      <Label htmlFor="goal-title">Title</Label>
-                      <Input
-                        id="goal-title"
-                        name="title"
-                        value={goalTitle}
-                        onChange={(event) => setGoalTitle(event.target.value)}
-                      />
-                    </div>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="goal-date">Target date</Label>
-                        <Input
-                          id="goal-date"
-                          name="target_date"
-                          type="date"
-                          value={goalDate}
-                          onChange={(event) => setGoalDate(event.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="goal-activity">Activity</Label>
-                        <select
-                          id="goal-activity"
-                          name="activity_category"
-                          value={goalActivityCategory}
-                          onChange={(event) => setGoalActivityCategory(event.target.value)}
-                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                        >
-                          <option value="run">Run</option>
-                          <option value="bike">Bike</option>
-                          <option value="swim">Swim</option>
-                          <option value="other">Other</option>
-                        </select>
-                      </div>
-                    </div>
-                    <div className="grid gap-4 sm:grid-cols-3">
-                      <div className="space-y-2">
-                        <Label htmlFor="goal-priority">Priority</Label>
-                        <Input
-                          id="goal-priority"
-                          name="priority"
-                          type="number"
-                          min="0"
-                          max="10"
-                          value={goalPriority}
-                          onChange={(event) => setGoalPriority(event.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="goal-sessions">Sessions / week</Label>
-                        <Input
-                          id="goal-sessions"
-                          name="target_sessions_per_week"
-                          type="number"
-                          min="1"
-                          value={goalSessionsPerWeek}
-                          onChange={(event) => setGoalSessionsPerWeek(event.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="goal-weeks">Weeks</Label>
-                        <Input
-                          id="goal-weeks"
-                          name="target_weeks"
-                          type="number"
-                          min="1"
-                          value={goalWeeks}
-                          onChange={(event) => setGoalWeeks(event.target.value)}
-                        />
-                      </div>
-                    </div>
-                    <Button type="submit" disabled={!profileQuery.data?.id || !goalTitle.trim()}>
-                      Create goal
-                    </Button>
-                  </form>
+                  <PlanGoalForm profileId={profileQuery.data?.id} />
                 </DialogContent>
               </Dialog>
             </div>

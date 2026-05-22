@@ -1,5 +1,5 @@
 import { decodePolyline } from "@repo/core";
-import { Card, CardContent, CardTitle } from "@repo/ui/components/card";
+import { Card, CardContent } from "@repo/ui/components/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,13 +10,15 @@ import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { skipToken } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Activity, Clock3, Ellipsis, Timer, Zap } from "lucide-react-native";
+import { Ellipsis, Zap } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, View } from "react-native";
 import { ActivityRouteMap } from "@/components/activity/maps/ActivityRouteMap";
+import { ActivityCard } from "@/components/shared/ActivityCard";
 import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
+import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 function formatDuration(seconds: number) {
@@ -36,6 +38,7 @@ export default function ActivityEffortDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const navigateTo = useAppNavigate();
+  const { profile, user } = useAuth();
   const { Stack } = require("expo-router") as typeof import("expo-router");
   const utils = api.useUtils();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -50,7 +53,12 @@ export default function ActivityEffortDetailScreen() {
 
   const deleteMutation = api.activityEfforts.delete.useMutation({
     onSuccess: async () => {
-      await utils.activityEfforts.getForProfile.invalidate();
+      await Promise.all([
+        utils.activityEfforts.getForProfile.invalidate(),
+        utils.activities.invalidate(),
+        utils.events.invalidate(),
+        utils.trainingPlans.invalidate(),
+      ]);
       router.back();
     },
     onError: (err) => {
@@ -104,6 +112,13 @@ export default function ActivityEffortDetailScreen() {
   }
 
   const linkedActivity = activityData?.activity;
+  const activityOwner = user?.id
+    ? {
+        avatar_url: profile?.avatar_url ?? null,
+        id: user.id,
+        username: profile?.username ?? user.email?.split("@")[0] ?? "You",
+      }
+    : null;
   const derived = activityData?.derived;
 
   return (
@@ -150,87 +165,25 @@ export default function ActivityEffortDetailScreen() {
           </Card>
 
           {linkedActivity ? (
-            <Card className="rounded-3xl border border-border bg-card">
-              <CardContent className="gap-4 p-4">
-                <View className="gap-1">
-                  <Text className="text-sm font-semibold text-foreground">
-                    Performed on activity
-                  </Text>
-                  <Text className="text-xs text-muted-foreground">
-                    Open the linked activity for the full recording and analysis.
-                  </Text>
-                </View>
-                <View className="rounded-2xl border border-border bg-muted/10 px-4 py-3">
-                  <Text className="text-base font-semibold text-foreground">
-                    {linkedActivity.name}
-                  </Text>
-                  <Text className="mt-1 text-sm text-muted-foreground">
-                    {new Date(linkedActivity.started_at).toLocaleString()}
-                  </Text>
-                  <View className="mt-3 flex-row flex-wrap gap-2">
-                    <View className="rounded-full border border-border bg-background px-3 py-1.5">
-                      <Text className="text-xs font-medium text-foreground">
-                        Distance: {(linkedActivity.distance_meters / 1000).toFixed(2)} km
-                      </Text>
-                    </View>
-                    <View className="rounded-full border border-border bg-background px-3 py-1.5">
-                      <Text className="text-xs font-medium text-foreground">
-                        Duration: {formatDuration(linkedActivity.duration_seconds)}
-                      </Text>
-                    </View>
-                    {derived?.stress.tss != null ? (
-                      <View className="rounded-full border border-border bg-background px-3 py-1.5">
-                        <Text className="text-xs font-medium text-foreground">
-                          TSS: {Math.round(derived.stress.tss)}
-                        </Text>
-                      </View>
-                    ) : null}
-                  </View>
-                </View>
-                <Card className="rounded-2xl border border-border bg-background">
-                  <CardContent className="p-3">
-                    <Text
-                      className="text-sm font-medium text-primary"
-                      onPress={() => navigateTo(ROUTES.ACTIVITIES.DETAIL(linkedActivity.id) as any)}
-                    >
-                      Open Activity
-                    </Text>
-                  </CardContent>
-                </Card>
-              </CardContent>
-            </Card>
+            <ActivityCard
+              activity={{
+                ...(linkedActivity as any),
+                derived: {
+                  ...((linkedActivity as any).derived ?? {}),
+                  stress: derived?.stress ?? null,
+                },
+              }}
+              dateMode="absolute"
+              onPress={() => navigateTo(ROUTES.ACTIVITIES.DETAIL(linkedActivity.id) as any)}
+              owner={activityOwner}
+              showChevron
+              testID="activity-effort-open-activity"
+              variant="compact"
+            />
           ) : null}
 
           {routeCoordinates.length > 0 ? (
             <ActivityRouteMap coordinates={routeCoordinates} height={240} title="Route" />
-          ) : null}
-
-          {linkedActivity && effort.start_offset != null ? (
-            <Card className="rounded-3xl border border-border bg-card">
-              <CardContent className="gap-3 p-4">
-                <CardTitle>Segment context</CardTitle>
-                <View className="gap-2 rounded-2xl border border-border bg-muted/10 px-4 py-3">
-                  <View className="flex-row items-center justify-between">
-                    <View className="flex-row items-center gap-2">
-                      <Icon as={Clock3} size={16} className="text-muted-foreground" />
-                      <Text className="text-xs text-muted-foreground">Start offset</Text>
-                    </View>
-                    <Text className="text-sm font-medium text-foreground">
-                      {formatDuration(effort.start_offset)}
-                    </Text>
-                  </View>
-                  <View className="flex-row items-center justify-between">
-                    <View className="flex-row items-center gap-2">
-                      <Icon as={Timer} size={16} className="text-muted-foreground" />
-                      <Text className="text-xs text-muted-foreground">Segment duration</Text>
-                    </View>
-                    <Text className="text-sm font-medium text-foreground">
-                      {formatDuration(effort.duration_seconds)}
-                    </Text>
-                  </View>
-                </View>
-              </CardContent>
-            </Card>
           ) : null}
         </View>
       </ScrollView>

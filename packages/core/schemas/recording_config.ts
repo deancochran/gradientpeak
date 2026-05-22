@@ -25,7 +25,7 @@ export type RecordingLaunchSource =
 
 export type RecordingRouteMode = "none" | "preview" | "virtual" | "live_navigation" | "unavailable";
 
-export type RecordingPrimarySurface = "workout" | "route" | "metrics" | "trainer";
+export type RecordingPrimarySurface = "activity" | "route" | "metrics" | "trainer";
 
 export type RecordingBackdropMode =
   | "live_navigation"

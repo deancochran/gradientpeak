@@ -7,6 +7,7 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  FormTextField,
 } from "@repo/ui/components/form";
 import { Input } from "@repo/ui/components/input";
 import { cn } from "@repo/ui/lib/cn";
@@ -56,23 +57,14 @@ export function LoginForm({ className, redirectTo, ...props }: LoginFormProps) {
           <form action={signInWithEmailAction.url} method="post" onSubmit={handleLogin}>
             <input type="hidden" name="redirect" value={redirectTo ?? ""} />
             <div className="flex flex-col gap-6">
-              <FormField
+              <FormTextField
+                autoComplete="email"
                 control={form.control}
+                label="Email"
                 name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email *</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        autoComplete="email"
-                        type="email"
-                        placeholder="m@example.com"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                placeholder="m@example.com"
+                required
+                type="email"
               />
 
               <FormField

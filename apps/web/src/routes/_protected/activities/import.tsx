@@ -2,7 +2,12 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { invalidatePostActivityIngestionQueries } from "@repo/api/client";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
-import { Form, FormSelectField, FormTextareaField, FormTextField } from "@repo/ui/components/form";
+import {
+  Form,
+  FormSegmentedSelectField,
+  FormTextareaField,
+  FormTextField,
+} from "@repo/ui/components/form";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Upload } from "lucide-react";
@@ -139,12 +144,11 @@ function ActivityImportPage() {
                 name="name"
                 testId="activity-import-name-input"
               />
-              <FormSelectField
+              <FormSegmentedSelectField
                 control={form.control}
                 label="Activity type"
                 name="activityType"
                 options={activityTypeOptions.map((option) => ({ ...option }))}
-                placeholder="Choose activity type"
                 testId="activity-import-type-select"
               />
               <FormTextareaField

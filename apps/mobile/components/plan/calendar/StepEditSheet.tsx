@@ -3,6 +3,7 @@ import { Button } from "@repo/ui/components/button";
 import {
   Form,
   FormNumberField,
+  FormSegmentedSelectField,
   FormSelectField,
   FormTextareaField,
   FormTextField,
@@ -287,7 +288,7 @@ export function StepEditSheet({
               <View className="gap-3">
                 <Text className="font-semibold text-foreground">Duration</Text>
 
-                <FormSelectField
+                <FormSegmentedSelectField
                   control={form.control}
                   label="Duration Type"
                   name="durationType"
@@ -297,25 +298,25 @@ export function StepEditSheet({
                     { label: "Repetitions", value: "repetitions" },
                     { label: "Until Finished", value: "untilFinished" },
                   ]}
-                  placeholder="Select duration type"
                 />
 
                 {durationType !== "untilFinished" ? (
                   <View className="flex-row gap-2">
                     <View className="flex-1">
-                      <FormTextField
+                      <FormNumberField
                         control={form.control}
+                        emptyValue=""
                         label="Value"
                         name="durationValue"
+                        parseValue={(value) => value}
                         placeholder="e.g., 5"
                         required
-                        keyboardType="numeric"
                       />
                     </View>
 
                     {durationType !== "repetitions" ? (
                       <View className="flex-1">
-                        <FormSelectField
+                        <FormSegmentedSelectField
                           control={form.control}
                           label="Unit"
                           name="durationUnit"
@@ -331,7 +332,6 @@ export function StepEditSheet({
                                   { label: "Kilometers", value: "km" },
                                 ]
                           }
-                          placeholder="Unit"
                         />
                       </View>
                     ) : null}
@@ -359,12 +359,13 @@ export function StepEditSheet({
                   placeholder="Select target type"
                 />
 
-                <FormTextField
+                <FormNumberField
                   control={form.control}
+                  emptyValue=""
                   label="Intensity Value"
                   name="targetIntensity"
+                  parseValue={(value) => value}
                   placeholder="e.g., 85"
-                  keyboardType="numeric"
                 />
               </View>
 

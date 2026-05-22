@@ -57,6 +57,7 @@ function PercentSliderInput({
       {showNumericInput ? (
         <View className="flex-row items-center gap-2">
           <Input
+            accessibilityLabel={label}
             accessibilityHint={accessibilityHint ?? `Enter percent between ${min} and ${max}`}
             className="flex-1"
             value={draftValue}

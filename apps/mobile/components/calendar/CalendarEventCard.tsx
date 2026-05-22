@@ -12,6 +12,7 @@ import {
   getEventTitle,
 } from "@/lib/calendar/eventPresentation";
 import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
+import { formatEstimatedTss } from "@/lib/estimatedMetrics";
 import { getActivityColor } from "@/lib/utils/plan/colors";
 
 function getPlannedStepCount(event: CalendarEvent): number {
@@ -159,7 +160,7 @@ export function CalendarEventCard({
                           Intensity
                         </Text>
                         <Text className="text-[10px] font-medium text-muted-foreground">
-                          {Math.round(estimatedTss)} TSS
+                          {formatEstimatedTss(estimatedTss)}
                         </Text>
                       </View>
                       <View className="mt-2 flex-row gap-1.5">

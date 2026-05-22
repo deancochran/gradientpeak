@@ -7,9 +7,12 @@ import { Form, FormItem, FormLabel } from "../form/index.web";
 import {
   FormBoundedNumberField,
   FormDateInputField,
+  FormDateTimeField,
   FormDurationField,
   FormIntegerStepperField,
   FormPaceField,
+  FormPercentSliderField,
+  FormSegmentedSelectField,
   FormSwitchField,
   FormTextareaField,
   FormTextField,
@@ -28,10 +31,13 @@ if (typeof globalThis.ResizeObserver === "undefined") {
 const profileSchema = z.object({
   bio: z.string().nullable(),
   dob: z.string().nullable(),
+  recorded_at: z.string(),
+  activity_type: z.string(),
   duration: z.string(),
   ftp: z.number().optional(),
   max_sessions: z.number(),
   pace: z.string(),
+  recovery_priority: z.number(),
   wake_time: z.string().nullable(),
   is_public: z.boolean(),
   weight_kg: z.number().nullable(),
@@ -44,11 +50,14 @@ function FormFieldsHarness() {
     defaultValues: {
       bio: null,
       dob: null,
+      recorded_at: "2026-03-23T06:30",
+      activity_type: "run",
       duration: "0:20:00",
       ftp: 250,
       max_sessions: 3,
       is_public: false,
       pace: "4:30",
+      recovery_priority: 0.5,
       wake_time: null,
       weight_kg: 70,
       username: "Avery",
@@ -67,6 +76,16 @@ function FormFieldsHarness() {
           parseValue={(value) => value || null}
         />
         <FormDateInputField control={methods.control} label="Date of Birth" name="dob" />
+        <FormDateTimeField control={methods.control} label="Recorded At" name="recorded_at" />
+        <FormSegmentedSelectField
+          control={methods.control}
+          label="Activity Type"
+          name="activity_type"
+          options={[
+            { label: "Run", value: "run" },
+            { label: "Ride", value: "bike" },
+          ]}
+        />
         <FormTimeInputField control={methods.control} label="Wake Time" name="wake_time" />
         <FormDurationField control={methods.control} label="Duration" name="duration" />
         <FormIntegerStepperField
@@ -85,6 +104,16 @@ function FormFieldsHarness() {
         />
         <FormBoundedNumberField control={methods.control} decimals={0} label="FTP" name="ftp" />
         <FormPaceField control={methods.control} label="Pace" name="pace" />
+        <FormPercentSliderField
+          control={methods.control}
+          decimals={0}
+          label="Recovery Priority"
+          max={100}
+          min={0}
+          name="recovery_priority"
+          step={1}
+          valueMode="fraction"
+        />
         <FormWeightInputField control={methods.control} label="Weight" name="weight_kg" unit="kg" />
       </form>
       <output data-testid="values">{JSON.stringify(methods.watch())}</output>
@@ -98,11 +127,14 @@ function DetachedFormLabelHarness() {
     defaultValues: {
       bio: null,
       dob: null,
+      recorded_at: "2026-03-23T06:30",
+      activity_type: "run",
       duration: "0:20:00",
       ftp: 250,
       max_sessions: 3,
       is_public: false,
       pace: "4:30",
+      recovery_priority: 0.5,
       wake_time: null,
       weight_kg: 70,
       username: "Avery",
@@ -134,6 +166,10 @@ describe("Form fields web", () => {
     fireEvent.change(screen.getByLabelText("Wake Time"), {
       target: { value: "06:45" },
     });
+    fireEvent.change(screen.getByLabelText("Recorded At"), {
+      target: { value: "2026-03-23T07:30" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Ride" }));
     fireEvent.change(screen.getByLabelText("Duration"), {
       target: { value: "45:00" },
     });
@@ -148,6 +184,10 @@ describe("Form fields web", () => {
       target: { value: "04:05" },
     });
     fireEvent.blur(screen.getByLabelText("Pace"));
+    fireEvent.change(screen.getByLabelText("Recovery Priority"), {
+      target: { value: "75" },
+    });
+    fireEvent.blur(screen.getByLabelText("Recovery Priority"));
     fireEvent.change(screen.getByLabelText("Weight"), {
       target: { value: "72.5" },
     });
@@ -158,11 +198,14 @@ describe("Form fields web", () => {
     expect(screen.getByTestId("values").textContent).toContain('"bio":"Coach"');
     expect(screen.getByTestId("values").textContent).toContain('"dob":"1990-05-01"');
     expect(screen.getByTestId("values").textContent).toContain('"wake_time":"06:45"');
+    expect(screen.getByTestId("values").textContent).toContain('"recorded_at":"2026-03-23T07:30"');
+    expect(screen.getByTestId("values").textContent).toContain('"activity_type":"bike"');
     expect(screen.getByTestId("values").textContent).toContain('"duration":"0:45:00"');
     expect(screen.getByTestId("values").textContent).toContain('"max_sessions":4');
     expect(screen.getByTestId("values").textContent).toContain('"is_public":true');
     expect(screen.getByTestId("values").textContent).toContain('"ftp":300');
     expect(screen.getByTestId("values").textContent).toContain('"pace":"4:05"');
+    expect(screen.getByTestId("values").textContent).toContain('"recovery_priority":0.75');
     expect(screen.getByTestId("values").textContent).toContain('"weight_kg":72.5');
   });
 

@@ -306,6 +306,12 @@ export type ActivityPlanWithEstimation<
     estimated_duration: number;
     intensity_factor: number;
     estimated_distance?: number;
+    provenance: {
+      estimated_tss: "estimated";
+      estimated_duration: "estimated";
+      intensity_factor: "estimated";
+      estimated_distance: "estimated";
+    };
   };
   route: ActivityPlanRouteSummary | null;
 };
@@ -341,6 +347,12 @@ export function buildEstimatedPlan<TPlan extends EstimationActivityPlanInput>(
       estimated_duration: estimation.duration,
       intensity_factor: estimation.intensityFactor,
       estimated_distance: metrics.distance,
+      provenance: {
+        estimated_tss: "estimated",
+        estimated_duration: "estimated",
+        intensity_factor: "estimated",
+        estimated_distance: "estimated",
+      },
     },
     route: options?.route ?? null,
   };
@@ -362,6 +374,12 @@ export function buildFailedEstimationPlan<TPlan extends EstimationActivityPlanIn
       estimated_tss: 0,
       estimated_duration: 0,
       intensity_factor: 0,
+      provenance: {
+        estimated_tss: "estimated",
+        estimated_duration: "estimated",
+        intensity_factor: "estimated",
+        estimated_distance: "estimated",
+      },
     },
     route: options?.route ?? null,
   };

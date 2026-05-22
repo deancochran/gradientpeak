@@ -1,14 +1,9 @@
 import React from "react";
 
+import { createHost as mockCreateHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const pushMock = jest.fn();
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
 
 jest.mock("expo-router", () => ({
   __esModule: true,
@@ -34,7 +29,7 @@ jest.mock("react-native", () => ({
     ),
   Pressable: ({ children, onPress, ...props }: any) =>
     React.createElement("Pressable", { onPress, ...props }, children),
-  View: createHost("View"),
+  View: mockCreateHost("View"),
 }));
 
 jest.mock("@repo/core", () => ({
@@ -46,11 +41,14 @@ jest.mock("@repo/core", () => ({
 
 jest.mock("@repo/ui/components/avatar", () => ({
   __esModule: true,
-  Avatar: createHost("Avatar"),
-  AvatarFallback: createHost("AvatarFallback"),
+  Avatar: mockCreateHost("Avatar"),
+  AvatarFallback: mockCreateHost("AvatarFallback"),
 }));
-jest.mock("@repo/ui/components/badge", () => ({ __esModule: true, Badge: createHost("Badge") }));
-jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHost("Text") }));
+jest.mock("@repo/ui/components/badge", () => ({
+  __esModule: true,
+  Badge: mockCreateHost("Badge"),
+}));
+jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: mockCreateHost("Text") }));
 jest.mock("@repo/ui/lib/cn", () => ({
   __esModule: true,
   cn: (...values: string[]) => values.filter(Boolean).join(" "),

@@ -259,7 +259,7 @@ function RecordSubmitPage() {
                 id="record-import-notes"
                 {...form.register("notes")}
                 rows={6}
-                placeholder="Optional workout notes"
+                placeholder="Optional activity notes"
               />
               {form.formState.errors.notes ? (
                 <p className="text-sm text-destructive">{form.formState.errors.notes.message}</p>

@@ -10,5 +10,7 @@ export {
 } from "./lib/integrations/wahoo/activity-importer";
 export type { WahooWorkoutSummary } from "./lib/integrations/wahoo/client";
 export { createWahooRouteStorage, WahooSyncService } from "./lib/integrations/wahoo/sync-service";
+export { WahooActivityHistoryJobService } from "./lib/provider-sync/wahoo-activity-history-job-service";
 export { WahooSyncJobService } from "./lib/provider-sync/wahoo-job-service";
+export { drainDueWahooPlannedWorkoutJobs } from "./lib/provider-sync/wahoo-planned-workout-drain";
 export { WahooWebhookJobService } from "./lib/provider-sync/wahoo-webhook-job-service";

@@ -153,10 +153,22 @@ function deriveRunArchetype(name: string): SystemActivityTemplateArchetype {
   if (includesAny(name, ["threshold"])) {
     return "threshold";
   }
-  if (includesAny(name, ["5k pace", "race pace", "time trial"])) {
+  if (includesAny(name, ["5k pace", "race pace", "time trial", "yasso", "mile repeat"])) {
     return "race_pace";
   }
-  if (includesAny(name, ["speed", "vo2", "fartlek", "hill", "interval"])) {
+  if (
+    includesAny(name, [
+      "speed",
+      "vo2",
+      "fartlek",
+      "hill",
+      "interval",
+      "track",
+      "repeat",
+      "ladder",
+      "stride",
+    ])
+  ) {
     return "vo2_speed";
   }
   if (includesAny(name, ["aerobic", "endurance"])) {

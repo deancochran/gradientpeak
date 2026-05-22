@@ -28,6 +28,7 @@ export interface PlanReadinessComparisonChartProps {
   today?: string;
   accessibilitySummary?: string;
   height?: number;
+  showTitle?: boolean;
 }
 
 type SeriesKey = "actual" | "scheduled" | "recommended";
@@ -55,12 +56,12 @@ const seriesMeta: Record<SeriesKey, { label: string; color: string; hint: string
   actual: { label: "Actual", color: "rgba(15, 23, 42, 1)", hint: "Actual readiness" },
   scheduled: {
     label: "Scheduled",
-    color: "rgba(96, 165, 250, 0.95)",
+    color: "rgba(100, 116, 139, 0.95)",
     hint: "Scheduled readiness",
   },
   recommended: {
     label: "Recommended",
-    color: "rgba(34, 197, 94, 0.95)",
+    color: "rgba(37, 99, 235, 0.95)",
     hint: "Recommended readiness",
   },
 };
@@ -116,6 +117,7 @@ export function PlanReadinessComparisonChart({
   today,
   accessibilitySummary,
   height = 300,
+  showTitle = true,
 }: PlanReadinessComparisonChartProps) {
   const { width } = useWindowDimensions();
   const [chartWidth, setChartWidth] = useState(Math.max(220, width - 32));
@@ -157,6 +159,12 @@ export function PlanReadinessComparisonChart({
     () => (today ? points.findIndex((point) => point.date >= today) : -1),
     [points, today],
   );
+  const forecastStartsAtToday = Boolean(
+    today &&
+      points.length > 0 &&
+      (points[0]?.date ?? "") >= today &&
+      !points.some((point) => point.date < today && typeof point.actual === "number"),
+  );
 
   const onChartLayout = (event: LayoutChangeEvent) => {
     const measuredWidth = Math.floor(event.nativeEvent.layout.width);
@@ -179,9 +187,11 @@ export function PlanReadinessComparisonChart({
       accessibilityLabel={accessibilitySummary ?? "Readiness forecast chart"}
     >
       <View style={{ height }} onLayout={onChartLayout}>
-        <Text className="mb-1.5 text-sm font-semibold text-foreground">
-          Readiness Trajectory (0-100)
-        </Text>
+        {showTitle ? (
+          <Text className="mb-1.5 text-sm font-semibold text-foreground">
+            Readiness Trajectory (0-100)
+          </Text>
+        ) : null}
         <View style={{ width: Math.max(200, chartWidth), height: Math.max(210, height - 32) }}>
           <CartesianChart<ChartDatum, "index", ChartYKey>
             data={chartData}
@@ -227,8 +237,8 @@ export function PlanReadinessComparisonChart({
                   const color =
                     zone.id === "goal_ready" || zone.id === "peak_ready"
                       ? isDark
-                        ? "rgba(34, 197, 94, 0.08)"
-                        : "rgba(34, 197, 94, 0.1)"
+                        ? "rgba(37, 99, 235, 0.07)"
+                        : "rgba(37, 99, 235, 0.08)"
                       : zone.id === "underprepared"
                         ? isDark
                           ? "rgba(248, 113, 113, 0.06)"
@@ -261,13 +271,13 @@ export function PlanReadinessComparisonChart({
                   <>
                     <Line
                       points={plottedPoints.recommendedHigh.filter((point) => point.yValue != null)}
-                      color="rgba(34, 197, 94, 0.24)"
+                      color="rgba(37, 99, 235, 0.22)"
                       strokeWidth={1}
                       curveType="natural"
                     />
                     <Line
                       points={plottedPoints.recommendedLow.filter((point) => point.yValue != null)}
-                      color="rgba(34, 197, 94, 0.24)"
+                      color="rgba(37, 99, 235, 0.22)"
                       strokeWidth={1}
                       curveType="natural"
                     />
@@ -298,7 +308,7 @@ export function PlanReadinessComparisonChart({
                       key={`readiness-goal-${marker.id}`}
                       p1={vec(targetPoint.x, chartBounds.bottom)}
                       p2={vec(targetPoint.x, chartBounds.top)}
-                      color={marker.color ?? "rgba(34, 197, 94, 0.55)"}
+                      color={marker.color ?? "rgba(37, 99, 235, 0.5)"}
                       strokeWidth={1.5}
                     >
                       <DashPathEffect intervals={[4, 4]} />
@@ -313,6 +323,11 @@ export function PlanReadinessComparisonChart({
       {today ? (
         <Text className="mt-1 text-[10px] text-muted-foreground">
           Today marker: {compactDateLabel(today)}
+        </Text>
+      ) : null}
+      {forecastStartsAtToday ? (
+        <Text className="mt-1 text-[10px] text-muted-foreground">
+          Forecast starts at today because earlier readiness is not observed.
         </Text>
       ) : null}
       {groupedGoalMarkers.length > 0 ? (

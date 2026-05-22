@@ -1,14 +1,9 @@
 import React from "react";
+import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 import EventDetailScreen from "../event-detail";
 
 const mockNavigateTo = jest.fn();
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
 
 jest.mock("@tanstack/react-query", () => ({
   __esModule: true,
@@ -125,6 +120,7 @@ jest.mock("@/lib/hooks/useEntityCommentsController", () => ({
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
+    useUtils: () => ({ events: { invalidate: jest.fn(async () => undefined) } }),
     events: {
       getById: {
         useQuery: () => ({
@@ -149,6 +145,9 @@ jest.mock("@/lib/api", () => ({
       delete: {
         useMutation: () => ({ isPending: false, mutate: jest.fn() }),
       },
+      update: {
+        useMutation: () => ({ isPending: false, mutate: jest.fn() }),
+      },
     },
     trainingPlans: {
       getById: {
@@ -158,6 +157,15 @@ jest.mock("@/lib/api", () => ({
       },
     },
     routes: {
+      list: {
+        useInfiniteQuery: () => ({
+          data: { pages: [{ items: [] }] },
+          fetchNextPage: jest.fn(),
+          hasNextPage: false,
+          isFetchingNextPage: false,
+          isLoading: false,
+        }),
+      },
       get: {
         useQuery: () => ({ data: null }),
       },
@@ -167,6 +175,13 @@ jest.mock("@/lib/api", () => ({
     },
     activityPlans: {
       list: {
+        useInfiniteQuery: () => ({
+          data: { pages: [{ items: [] }] },
+          fetchNextPage: jest.fn(),
+          hasNextPage: false,
+          isFetchingNextPage: false,
+          isLoading: false,
+        }),
         useQuery: () => ({
           data: { items: [] },
           isLoading: false,
@@ -183,14 +198,15 @@ describe("event detail provenance", () => {
     jest.clearAllMocks();
   });
 
-  it("shows subtle training plan provenance and opens the source plan from the menu", () => {
+  it("shows tappable training plan provenance", () => {
     renderNative(<EventDetailScreen />);
 
-    expect(screen.getByText("Event details")).toBeTruthy();
+    expect(screen.queryByText("Event details")).toBeNull();
     expect(screen.getByText("Source")).toBeTruthy();
     expect(screen.getByText("Spring Build")).toBeTruthy();
+    expect(screen.queryByTestId("event-detail-options-open-training-plan")).toBeNull();
 
-    fireEvent.press(screen.getByTestId("event-detail-options-open-training-plan"));
+    fireEvent.press(screen.getByTestId("event-detail-source-training-plan"));
 
     expect(mockNavigateTo).toHaveBeenCalledWith("/training-plan-detail?id=plan-123");
   });

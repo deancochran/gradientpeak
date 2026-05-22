@@ -10,6 +10,14 @@ import {
   conversations,
   events,
   follows,
+  groupEventActivityPlans,
+  groupEventRsvps,
+  groupEventSeriesRsvps,
+  groupEvents,
+  groupInvitations,
+  groupJoinRequests,
+  groupMemberships,
+  groups,
   integrationResourceLinks,
   integrations,
   likes,
@@ -34,6 +42,13 @@ export const profilesRelations = relations(profiles, ({ many }) => ({
   conversationParticipants: many(conversationParticipants),
   conversationsStarted: many(messages, { relationName: "messageSender" }),
   events: many(events),
+  groupEventsCreated: many(groupEvents, { relationName: "groupEventCreator" }),
+  groupEventRsvps: many(groupEventRsvps),
+  groupEventSeriesRsvps: many(groupEventSeriesRsvps),
+  groupsCreated: many(groups, { relationName: "groupCreator" }),
+  groupMemberships: many(groupMemberships),
+  groupInvitations: many(groupInvitations, { relationName: "groupInvitationRecipient" }),
+  groupJoinRequests: many(groupJoinRequests),
   integrations: many(integrations),
   likes: many(likes),
   messages: many(messages, { relationName: "messageSender" }),
@@ -53,6 +68,118 @@ export const profilesRelations = relations(profiles, ({ many }) => ({
   userTrainingPlans: many(userTrainingPlans),
 }));
 
+export const groupsRelations = relations(groups, ({ one, many }) => ({
+  createdByProfile: one(profiles, {
+    relationName: "groupCreator",
+    fields: [groups.created_by_profile_id],
+    references: [profiles.id],
+  }),
+  memberships: many(groupMemberships),
+  invitations: many(groupInvitations),
+  joinRequests: many(groupJoinRequests),
+  events: many(groupEvents),
+}));
+
+export const groupMembershipsRelations = relations(groupMemberships, ({ one }) => ({
+  group: one(groups, {
+    fields: [groupMemberships.group_id],
+    references: [groups.id],
+  }),
+  profile: one(profiles, {
+    fields: [groupMemberships.profile_id],
+    references: [profiles.id],
+  }),
+}));
+
+export const groupInvitationsRelations = relations(groupInvitations, ({ one }) => ({
+  group: one(groups, {
+    fields: [groupInvitations.group_id],
+    references: [groups.id],
+  }),
+  invitedProfile: one(profiles, {
+    relationName: "groupInvitationRecipient",
+    fields: [groupInvitations.invited_profile_id],
+    references: [profiles.id],
+  }),
+}));
+
+export const groupJoinRequestsRelations = relations(groupJoinRequests, ({ one }) => ({
+  group: one(groups, {
+    fields: [groupJoinRequests.group_id],
+    references: [groups.id],
+  }),
+  profile: one(profiles, {
+    fields: [groupJoinRequests.profile_id],
+    references: [profiles.id],
+  }),
+}));
+
+export const groupEventsRelations = relations(groupEvents, ({ one, many }) => ({
+  group: one(groups, {
+    fields: [groupEvents.group_id],
+    references: [groups.id],
+  }),
+  createdByProfile: one(profiles, {
+    relationName: "groupEventCreator",
+    fields: [groupEvents.created_by_profile_id],
+    references: [profiles.id],
+  }),
+  series: one(groupEvents, {
+    relationName: "groupEventSeriesOccurrences",
+    fields: [groupEvents.series_id],
+    references: [groupEvents.id],
+  }),
+  occurrences: many(groupEvents, { relationName: "groupEventSeriesOccurrences" }),
+  route: one(activityRoutes, {
+    fields: [groupEvents.route_id],
+    references: [activityRoutes.id],
+  }),
+  activityPlans: many(groupEventActivityPlans),
+  rsvps: many(groupEventRsvps),
+  seriesRsvps: many(groupEventSeriesRsvps),
+}));
+
+export const groupEventActivityPlansRelations = relations(
+  groupEventActivityPlans,
+  ({ one, many }) => ({
+    groupEvent: one(groupEvents, {
+      fields: [groupEventActivityPlans.group_event_id],
+      references: [groupEvents.id],
+    }),
+    activityPlan: one(activityPlans, {
+      fields: [groupEventActivityPlans.activity_plan_id],
+      references: [activityPlans.id],
+    }),
+    rsvps: many(groupEventRsvps),
+  }),
+);
+
+export const groupEventRsvpsRelations = relations(groupEventRsvps, ({ one }) => ({
+  groupEvent: one(groupEvents, {
+    fields: [groupEventRsvps.group_event_id],
+    references: [groupEvents.id],
+  }),
+  profile: one(profiles, {
+    fields: [groupEventRsvps.profile_id],
+    references: [profiles.id],
+  }),
+  selectedActivityPlan: one(groupEventActivityPlans, {
+    fields: [groupEventRsvps.selected_group_event_activity_plan_id],
+    references: [groupEventActivityPlans.id],
+  }),
+}));
+
+export const groupEventSeriesRsvpsRelations = relations(groupEventSeriesRsvps, ({ one }) => ({
+  groupEventSeries: one(groupEvents, {
+    fields: [groupEventSeriesRsvps.group_event_series_id],
+    references: [groupEvents.id],
+  }),
+  profile: one(profiles, {
+    fields: [groupEventSeriesRsvps.profile_id],
+    references: [profiles.id],
+  }),
+}));
+
 export const activityRoutesRelations = relations(activityRoutes, ({ one, many }) => ({
   profile: one(profiles, {
     fields: [activityRoutes.profile_id],
@@ -60,6 +187,7 @@ export const activityRoutesRelations = relations(activityRoutes, ({ one, many })
   }),
   activityPlans: many(activityPlans),
   events: many(events),
+  groupEvents: many(groupEvents),
 }));
 
 export const activityPlansRelations = relations(activityPlans, ({ one, many }) => ({
@@ -73,6 +201,7 @@ export const activityPlansRelations = relations(activityPlans, ({ one, many }) =
   }),
   activities: many(activities),
   events: many(events),
+  groupEventActivityPlans: many(groupEventActivityPlans),
 }));
 
 export const trainingPlansRelations = relations(trainingPlans, ({ one, many }) => ({
@@ -303,6 +432,13 @@ export const commentsRelations = relations(comments, ({ one }) => ({
 
 export const relationsSchema = {
   profilesRelations,
+  groupsRelations,
+  groupMembershipsRelations,
+  groupInvitationsRelations,
+  groupJoinRequestsRelations,
+  groupEventsRelations,
+  groupEventActivityPlansRelations,
+  groupEventRsvpsRelations,
   activityRoutesRelations,
   activityPlansRelations,
   trainingPlansRelations,

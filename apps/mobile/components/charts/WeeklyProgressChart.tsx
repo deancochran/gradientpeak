@@ -3,6 +3,7 @@
 import { Text } from "@repo/ui/components/text";
 import { Dimensions, View } from "react-native";
 import { BarChart } from "react-native-chart-kit";
+import { formatEstimatedTss } from "@/lib/estimatedMetrics";
 import { useTheme } from "@/lib/stores/theme-store";
 import { getResolvedThemeScale } from "@/lib/theme";
 
@@ -174,7 +175,10 @@ export function WeeklyProgressChart({ data, height = 280 }: WeeklyProgressChartP
         <View className="items-center">
           <Text className="text-xs text-muted-foreground">Total TSS</Text>
           <Text className="text-sm font-semibold text-foreground">
-            {recentData.reduce((sum, d) => sum + d.completedTSS, 0)}
+            {formatEstimatedTss(
+              recentData.reduce((sum, d) => sum + d.completedTSS, 0),
+              { includeUnit: false },
+            )}
           </Text>
         </View>
       </View>

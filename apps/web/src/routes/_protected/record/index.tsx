@@ -126,7 +126,7 @@ function RecordPage() {
                 title="Plan"
                 description={
                   selectedEventQuery.data?.activity_plan?.name ??
-                  "Attach one of today's scheduled workouts."
+                  "Attach one of today's scheduled activities."
                 }
                 icon={Map}
                 actionLabel={launcher.eventId ? "Change plan" : "Choose plan"}
@@ -234,7 +234,7 @@ function RecordPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-muted-foreground">
-            <p>Choose today&apos;s planned workout and preserve it in the launcher URL.</p>
+            <p>Choose today&apos;s planned activity and preserve it in the launcher URL.</p>
             <p>Browse saved routes, preview the route shape, and attach it before recording.</p>
             <p>
               Import a finished activity file using the same backend ingestion operations mobile

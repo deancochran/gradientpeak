@@ -1,11 +1,6 @@
 import React from "react";
+import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
 
 const deleteMutateMock = jest.fn();
 
@@ -62,7 +57,15 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
-    useUtils: () => ({ activityEfforts: { getForProfile: { invalidate: jest.fn() } } }),
+    useUtils: () => ({
+      activityEfforts: { getForProfile: { invalidate: jest.fn() } },
+      profiles: { get: { invalidate: jest.fn() } },
+    }),
+    profiles: {
+      get: {
+        useQuery: () => ({ data: null, isError: false }),
+      },
+    },
     activityEfforts: {
       getById: {
         useQuery: () => ({
@@ -101,6 +104,11 @@ jest.mock("@/lib/api", () => ({
         }),
       },
     },
+    social: {
+      toggleLike: {
+        useMutation: () => ({ isPending: false, mutate: jest.fn() }),
+      },
+    },
   },
 }));
 
@@ -111,6 +119,7 @@ jest.mock("@tanstack/react-query", () => ({
 
 jest.mock("@repo/core", () => ({
   __esModule: true,
+  ...jest.requireActual("@repo/core"),
   decodePolyline: () => [
     { latitude: 40.0, longitude: -75.0 },
     { latitude: 40.1, longitude: -75.1 },
@@ -139,9 +148,8 @@ describe("activity effort detail screen", () => {
 
     expect(screen.getByText("run power")).toBeTruthy();
     expect(screen.getByText("Value: 400 W")).toBeTruthy();
-    expect(screen.getByText("Performed on activity")).toBeTruthy();
     expect(screen.getByText("Hill Repeats")).toBeTruthy();
-    expect(screen.getByText("Segment duration")).toBeTruthy();
+    expect(screen.queryByText("Segment duration")).toBeNull();
     expect((rendered as any).UNSAFE_getByType("ActivityRouteMap")).toBeTruthy();
   });
 

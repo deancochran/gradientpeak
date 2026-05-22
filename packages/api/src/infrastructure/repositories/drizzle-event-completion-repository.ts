@@ -1,5 +1,5 @@
 import { type DrizzleDbClient, schema } from "@repo/db";
-import { and, asc, desc, eq, gte, inArray, isNull, lt, ne } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, or } from "drizzle-orm";
 import type { EventCompletionRepository, EventDeleteScope } from "../../repositories";
 
 function applyDeleteScopeFilters(input: {
@@ -13,20 +13,20 @@ function applyDeleteScopeFilters(input: {
     return and(...baseConditions, eq(schema.events.id, input.anchorEvent.id));
   }
 
-  const seriesId = input.anchorEvent.series_id;
-  if (!seriesId) {
-    throw new Error(`Mutation scope "${input.scope}" requires an event series`);
-  }
+  const seriesId = input.anchorEvent.series_id ?? input.anchorEvent.id;
 
   if (input.scope === "future") {
     return and(
       ...baseConditions,
-      eq(schema.events.series_id, seriesId),
+      or(eq(schema.events.id, seriesId), eq(schema.events.series_id, seriesId)),
       gte(schema.events.starts_at, new Date(input.anchorEvent.starts_at)),
     );
   }
 
-  return and(...baseConditions, eq(schema.events.series_id, seriesId));
+  return and(
+    ...baseConditions,
+    or(eq(schema.events.id, seriesId), eq(schema.events.series_id, seriesId)),
+  );
 }
 
 const completionEventColumns = {
@@ -224,6 +224,7 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
     async listOwnedEventsForDeleteScope({ anchorEvent, profileId, scope }) {
       const rows = await db
         .select({
+          activity_plan_id: schema.events.activity_plan_id,
           id: schema.events.id,
           event_type: schema.events.event_type,
         })
@@ -238,6 +239,7 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
         .delete(schema.events)
         .where(applyDeleteScopeFilters({ anchorEvent, profileId, scope }))
         .returning({
+          activity_plan_id: schema.events.activity_plan_id,
           id: schema.events.id,
           event_type: schema.events.event_type,
         });

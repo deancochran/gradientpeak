@@ -2,15 +2,17 @@ import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { DateInput } from "@repo/ui/components/date-input";
 import { Form, FormSwitchField, FormTextareaField, FormTextField } from "@repo/ui/components/form";
+import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
 import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
 import { Textarea } from "@repo/ui/components/textarea";
 import { TimeInput } from "@repo/ui/components/time-input";
 import { format } from "date-fns";
+import { X } from "lucide-react-native";
 import React from "react";
 import { Pressable, TouchableOpacity, View } from "react-native";
-import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
+import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 
 export type CreateEventType = "custom" | "planned";
 export type EventRecurrenceFrequency = "none" | "daily" | "weekly" | "monthly";
@@ -121,24 +123,6 @@ function applyDateOnlyToDate(current: Date, dateOnly: string) {
     day ?? current.getDate(),
   );
   return next;
-}
-
-function formatDurationLabel(seconds?: number | null) {
-  if (!seconds || seconds <= 0) return null;
-
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  if (hours > 0 && minutes > 0) return `${hours}h ${minutes}m`;
-  if (hours > 0) return `${hours}h`;
-  return `${minutes}m`;
-}
-
-function formatActivityCategoryLabel(category?: string | null) {
-  if (!category) return "Activity";
-  return category
-    .split("_")
-    .map((segment) => (segment ? `${segment[0]?.toUpperCase() ?? ""}${segment.slice(1)}` : segment))
-    .join(" ");
 }
 
 type EventEditorCardProps = {
@@ -287,22 +271,15 @@ export function EventEditorCard({
                   />
 
                   {selectedCreateActivityPlan ? (
-                    <View
-                      className="rounded-md border border-primary bg-primary/5 px-3 py-3"
-                      testID={`${testIDPrefix}-selected-activity-plan`}
-                    >
-                      <Text className="text-sm font-medium text-foreground">
-                        {selectedCreateActivityPlan.name}
+                    <View className="gap-2" testID={`${testIDPrefix}-selected-activity-plan`}>
+                      <Text className="text-xs font-medium text-muted-foreground">
+                        Selected plan
                       </Text>
-                      <Text className="mt-1 text-xs text-muted-foreground">
-                        {formatActivityCategoryLabel(selectedCreateActivityPlan.activity_category)}
-                        {formatDurationLabel(
-                          getAuthoritativeActivityPlanMetrics(selectedCreateActivityPlan)
-                            .estimated_duration,
-                        )
-                          ? ` · ${formatDurationLabel(getAuthoritativeActivityPlanMetrics(selectedCreateActivityPlan).estimated_duration)}`
-                          : ""}
-                      </Text>
+                      <ActivityPlanCard
+                        activityPlan={selectedCreateActivityPlan as any}
+                        testID={`${testIDPrefix}-selected-activity-plan-card`}
+                        variant="compact"
+                      />
                     </View>
                   ) : null}
 
@@ -321,23 +298,19 @@ export function EventEditorCard({
                       {filteredActivityPlans?.slice(0, 8).map((plan) => {
                         const isSelected = plan.id === selectedActivityPlanId;
                         return (
-                          <TouchableOpacity
+                          <View
                             key={plan.id}
-                            onPress={() => onSelectActivityPlan(plan.id)}
-                            activeOpacity={0.85}
-                            className={`rounded-md border px-3 py-3 ${isSelected ? "border-primary bg-primary/10" : "border-border bg-card"}`}
-                            testID={`${testIDPrefix}-activity-plan-option-${plan.id}`}
+                            className={
+                              isSelected ? "rounded-2xl border-2 border-primary" : undefined
+                            }
                           >
-                            <Text className="text-sm font-medium text-foreground">{plan.name}</Text>
-                            <Text className="mt-1 text-xs text-muted-foreground">
-                              {formatActivityCategoryLabel(plan.activity_category)}
-                              {formatDurationLabel(
-                                getAuthoritativeActivityPlanMetrics(plan).estimated_duration,
-                              )
-                                ? ` · ${formatDurationLabel(getAuthoritativeActivityPlanMetrics(plan).estimated_duration)}`
-                                : ""}
-                            </Text>
-                          </TouchableOpacity>
+                            <ActivityPlanCard
+                              activityPlan={plan as any}
+                              onPress={() => onSelectActivityPlan(plan.id)}
+                              testID={`${testIDPrefix}-activity-plan-option-${plan.id}`}
+                              variant="compact"
+                            />
+                          </View>
                         );
                       })}
                     </View>
@@ -475,6 +448,17 @@ export function EventEditorCard({
                           testId={`${testIDPrefix}-recurrence-end-date-button`}
                           value={recurrenceEndDate ?? ""}
                         />
+                        {recurrenceEndDate ? (
+                          <Pressable
+                            accessibilityLabel="Clear repeat end date"
+                            onPress={() => onChangeRecurrenceEndDate(null)}
+                            className="self-start flex-row items-center gap-1 rounded-full border border-border px-2.5 py-1"
+                            testID={`${testIDPrefix}-recurrence-end-date-clear`}
+                          >
+                            <Icon as={X} size={12} className="text-muted-foreground" />
+                            <Text className="text-xs font-medium text-muted-foreground">Clear</Text>
+                          </Pressable>
+                        ) : null}
                         <Text className="text-xs text-muted-foreground">
                           Sets the last day this series appears on your calendar.
                         </Text>
@@ -594,6 +578,17 @@ export function EventEditorCard({
                           testId={`${testIDPrefix}-recurrence-end-date-button`}
                           value={recurrenceEndDate ?? ""}
                         />
+                        {recurrenceEndDate ? (
+                          <Pressable
+                            accessibilityLabel="Clear repeat end date"
+                            onPress={() => onChangeRecurrenceEndDate(null)}
+                            className="self-start flex-row items-center gap-1 rounded-full border border-border px-2.5 py-1"
+                            testID={`${testIDPrefix}-recurrence-end-date-clear`}
+                          >
+                            <Icon as={X} size={12} className="text-muted-foreground" />
+                            <Text className="text-xs font-medium text-muted-foreground">Clear</Text>
+                          </Pressable>
+                        ) : null}
                         <Text className="text-xs text-muted-foreground">
                           Sets the last day this series appears on your calendar.
                         </Text>

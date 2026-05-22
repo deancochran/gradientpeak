@@ -18,7 +18,7 @@ import {
 } from "@repo/core";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { useZodForm } from "@repo/ui/hooks";
+import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { Stack, useRouter } from "expo-router";
 import { X } from "lucide-react-native";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -1025,13 +1025,25 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
     }
   };
 
+  const submitForm = useZodFormSubmit<TrainingPlanFormData>({
+    form,
+    shouldRethrow: false,
+    onSubmit: async (validatedFormData) => {
+      const metadataIsValid = await metadataForm.trigger();
+      if (!metadataIsValid) {
+        return;
+      }
+
+      await handleSave(
+        validatedFormData,
+        metadataForm.getValues() as TrainingPlanMetadataFormValues,
+      );
+    },
+  });
+
   const handleSavePress = useCallback(() => {
-    void form.handleSubmit(async (validatedFormData) => {
-      await metadataForm.handleSubmit(async (validatedMetadata) => {
-        await handleSave(validatedFormData as TrainingPlanFormData, validatedMetadata);
-      })();
-    })();
-  }, [form, metadataForm, handleSave]);
+    void submitForm.handleSubmit();
+  }, [submitForm.handleSubmit]);
 
   if (isEditMode && editPlanQuery.isLoading) {
     return (
@@ -1105,7 +1117,7 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
                 <View className="flex-1">
                   <Text className="text-xs font-semibold text-foreground">Plan Hierarchy</Text>
                   <Text className="mt-1 text-xs text-muted-foreground">
-                    Activity plans are single workouts. Training plans arrange workouts on a
+                    Activity plans are single activities. Training plans arrange activities on a
                     timeline. Templates are reusable versions of either one.
                   </Text>
                 </View>
@@ -1153,7 +1165,7 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
             </Text>
             <Text className="mt-1 text-xs text-muted-foreground">
               Training plans stay intentionally lightweight. This screen defines timing, goals, and
-              planning constraints first. Specific activity plans and route-backed workouts can be
+              planning constraints first. Specific activity plans and route-backed activities can be
               linked from the detail screen after save.
             </Text>
             <View className="mt-3 gap-1">
@@ -1164,7 +1176,7 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
                 2. Tune availability, limits, and planner behavior.
               </Text>
               <Text className="text-xs text-muted-foreground">
-                3. Save, then refine the linked workouts on the detail page.
+                3. Save, then refine the linked activities on the detail page.
               </Text>
             </View>
           </View>

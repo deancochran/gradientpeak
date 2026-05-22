@@ -1,16 +1,20 @@
 import type { ActivityPlanStructureV2 } from "@repo/core";
-import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
-import { Calendar, Heart } from "lucide-react-native";
-import { useState } from "react";
-import { Pressable, TouchableOpacity, View } from "react-native";
+import { Calendar } from "lucide-react-native";
+import { View } from "react-native";
 import { ActivityPlanContentPreview } from "@/components/activity-plan/ActivityPlanContentPreview";
 import { api } from "@/lib/api";
-import { ActivityPlanAttributionRow } from "./ActivityPlanAttributionRow";
+import { getActivityCategoryConfig, getActivityConfig } from "@/lib/constants/activities";
+import { useResourceLike } from "@/lib/hooks/useResourceLike";
 import { ActivityPlanSummary } from "./ActivityPlanSummary";
 import type { EntityOwner } from "./EntityOwnerRow";
+import {
+  ResourceCardShell,
+  ResourceLikeButton,
+  ResourceOwnerActionRow,
+} from "./ResourceCardPrimitives";
 
 // ============================================
 // TYPES
@@ -56,6 +60,22 @@ export interface PlannedActivity {
   updated_at?: string;
 }
 
+type ActivityPlanCardRoute = {
+  id?: string | null;
+  name?: string | null;
+  polyline?: string | null;
+  total_distance?: number | null;
+  distance?: number | null;
+  total_ascent?: number | null;
+  ascent?: number | null;
+  total_descent?: number | null;
+  descent?: number | null;
+};
+
+type ActivityPlanCardFullRoute = {
+  coordinates?: Array<{ latitude: number; longitude: number; altitude?: number }>;
+};
+
 // Legacy data interface (for backwards compatibility)
 export interface ActivityPlanCardData {
   id: string;
@@ -70,6 +90,7 @@ export interface ActivityPlanCardData {
   routeId?: string;
   routeName?: string;
   notes?: string;
+  createdAt?: string;
   updatedAt?: string;
 
   // Scheduling info (optional)
@@ -90,6 +111,10 @@ interface ActivityPlanCardProps {
   activity?: ActivityPlanCardData;
 
   onPress?: () => void;
+  loadRoutePreview?: boolean;
+  route?: ActivityPlanCardRoute | null;
+  routeFull?: ActivityPlanCardFullRoute | null;
+  testID?: string;
   variant?: "default" | "compact" | "hero";
   showScheduleInfo?: boolean; // Show date/time badge
 }
@@ -102,136 +127,131 @@ export function ActivityPlanCard({
   activityPlan,
   plannedActivity,
   activity: legacyActivity,
+  loadRoutePreview = false,
   onPress,
+  route: routeProp,
+  routeFull: routeFullProp,
+  testID,
   variant = "default",
   showScheduleInfo = false,
 }: ActivityPlanCardProps) {
   // Transform database objects to internal format
   const activity = legacyActivity || transformToCardData(activityPlan, plannedActivity);
 
-  // Determine if interactive
-  const isInteractive = Boolean(onPress);
-
   // Determine card size based on variant
   const isCompact = variant === "compact";
   const isHero = variant === "hero";
+  const activityConfig = activity.activityType.includes("_")
+    ? getActivityConfig(activity.activityType)
+    : getActivityCategoryConfig(activity.activityType);
 
-  const CardWrapper = isInteractive ? TouchableOpacity : View;
-
-  const [isLiked, setIsLiked] = useState(activity.has_liked ?? false);
-  const [likesCount, setLikesCount] = useState(activity.likes_count ?? 0);
   const routeId = activity.routeId;
-  const { data: route } = api.routes.get.useQuery({ id: routeId! }, { enabled: !!routeId });
+  const { data: fetchedRoute } = api.routes.get.useQuery(
+    { id: routeId! },
+    { enabled: loadRoutePreview && !!routeId && !routeProp },
+  );
   const { data: routeFull } = api.routes.loadFull.useQuery(
     { id: routeId! },
-    { enabled: !!routeId },
+    { enabled: loadRoutePreview && !!routeId && !routeFullProp },
   );
+  const route = (routeProp ?? fetchedRoute ?? null) as ActivityPlanCardRoute | null;
+  const resolvedRouteFull = routeFullProp ?? routeFull ?? null;
 
-  const toggleLikeMutation = api.social.toggleLike.useMutation({
-    onError: () => {
-      // Revert optimistic update on error
-      setIsLiked(activity.has_liked ?? false);
-      setLikesCount(activity.likes_count ?? 0);
-    },
+  const {
+    isLiked,
+    isPending: isLikePending,
+    likeCount,
+    toggleLike,
+  } = useResourceLike({
+    entityId: activity.id,
+    entityType: "activity_plan",
+    initialCount: activity.likes_count,
+    initialLiked: activity.has_liked,
   });
 
-  const handleToggleLike = () => {
-    const newLikedState = !isLiked;
-    setIsLiked(newLikedState);
-    setLikesCount((prev) => (newLikedState ? prev + 1 : prev - 1));
-    toggleLikeMutation.mutate({
-      entity_id: activity.id,
-      entity_type: "activity_plan",
-    });
-  };
-
   return (
-    <CardWrapper
+    <ResourceCardShell
+      cardClassName={activity.isCompleted ? "opacity-60" : undefined}
+      compact={isCompact}
+      contentClassName={isCompact ? "gap-3 px-2" : "gap-3 px-3"}
+      highlighted={isHero}
       onPress={onPress}
-      activeOpacity={isInteractive ? 0.7 : 1}
-      disabled={!isInteractive}
-      testID={`activity-plan-card-${activity.id}`}
+      testID={testID ?? `activity-plan-card-${activity.id}`}
     >
-      <Card
-        className={`${isCompact ? "py-2" : "py-3"} ${isHero ? "border-2 border-primary" : ""} ${activity.isCompleted ? "opacity-60" : ""}`}
-      >
-        <CardContent className={isCompact ? "px-2" : "px-3"}>
-          <ActivityPlanSummary
-            activityCategory={activity.activityType}
-            description={activity.description || activity.notes || null}
-            estimatedDuration={activity.estimatedDuration}
-            estimatedTss={activity.estimatedTss}
-            headerAccessory={
-              <Pressable
-                onPress={(e) => {
-                  e.stopPropagation();
-                  handleToggleLike();
-                }}
-                className="flex-row items-center rounded-full bg-muted px-2.5 py-1.5"
-              >
-                <Icon
-                  as={Heart}
-                  size={14}
-                  className={isLiked ? "text-red-500 fill-red-500" : "text-muted-foreground"}
-                />
-                <Text className="ml-1 text-xs font-medium text-muted-foreground">
-                  {likesCount > 0 ? `${likesCount}` : isLiked ? "Liked" : "Like"}
-                </Text>
-              </Pressable>
-            }
-            intensityFactor={activity.intensityFactor}
-            owner={activity.owner}
-            routeName={route?.name || activity.routeName}
-            routeProvided={!!activity.routeId}
-            structure={activity.structure}
-            title={activity.name}
-            updatedAt={activity.updatedAt}
-            variant="standalone"
-            showAttribution={false}
+      <ResourceOwnerActionRow
+        actions={
+          <ResourceLikeButton
+            disabled={isLikePending}
+            isLiked={isLiked}
+            likeCount={likeCount}
+            onPress={toggleLike}
           />
+        }
+        compact={isCompact}
+        categoryIcon={activityConfig.icon}
+        categoryIconClassName={activityConfig.color}
+        categoryLabel={activityConfig.name}
+        fallbackLabel="GradientPeak"
+        owner={activity.owner}
+        timestamp={activity.createdAt ?? activity.updatedAt}
+      />
 
-          {showScheduleInfo && activity.scheduledDate && (
-            <View className="mb-2 mt-3 flex-row items-center">
-              <Icon as={Calendar} size={12} className="text-muted-foreground mr-1.5" />
-              <Text className="text-xs text-muted-foreground">
-                {formatScheduledDateTime(activity.scheduledDate)}
-              </Text>
-            </View>
-          )}
+      <ActivityPlanSummary
+        activityCategory={activity.activityType}
+        description={activity.description || activity.notes || null}
+        estimatedDuration={activity.estimatedDuration}
+        estimatedTss={activity.estimatedTss}
+        intensityFactor={activity.intensityFactor}
+        owner={activity.owner}
+        routeName={route?.name || activity.routeName}
+        routeProvided={!!activity.routeId}
+        structure={activity.structure}
+        title={activity.name}
+        variant="standalone"
+        showAttribution={false}
+      />
 
-          <ActivityPlanContentPreview
-            compact={isCompact}
-            size={isCompact ? "small" : isHero ? "large" : "medium"}
-            plan={{
-              authoritative_metrics: {
-                estimated_duration: activity.estimatedDuration,
-                estimated_tss: activity.estimatedTss,
-                intensity_factor: activity.intensityFactor,
-                estimated_distance: activity.estimatedDistance,
-              },
-              route: {
-                distance: activity.estimatedDistance,
-              },
-              route_id: activity.routeId,
-              structure: activity.structure,
-            }}
-            route={
-              route ? { ...route, total_distance: (route as any).total_distance ?? null } : null
-            }
-            routeFull={routeFull ? { coordinates: (routeFull as any).coordinates ?? [] } : null}
-            intensityFactor={activity.intensityFactor}
-            tss={activity.estimatedTss}
-            testIDPrefix={`activity-plan-card-preview-${activity.id}`}
-          />
+      {showScheduleInfo && activity.scheduledDate && (
+        <View className="mb-2 mt-3 flex-row items-center">
+          <Icon as={Calendar} size={12} className="text-muted-foreground mr-1.5" />
+          <Text className="text-xs text-muted-foreground">
+            {formatScheduledDateTime(activity.scheduledDate)}
+          </Text>
+        </View>
+      )}
 
-          <ActivityPlanAttributionRow
-            compact={isCompact}
-            owner={activity.owner}
-            updatedAt={activity.updatedAt}
-          />
-        </CardContent>
-      </Card>
-    </CardWrapper>
+      <ActivityPlanContentPreview
+        compact={isCompact}
+        size={isCompact ? "small" : isHero ? "large" : "medium"}
+        plan={{
+          authoritative_metrics: {
+            estimated_duration: activity.estimatedDuration,
+            estimated_tss: activity.estimatedTss,
+            intensity_factor: activity.intensityFactor,
+            estimated_distance: activity.estimatedDistance,
+          },
+          route: {
+            distance: activity.estimatedDistance,
+          },
+          route_id: activity.routeId,
+          structure: activity.structure,
+        }}
+        route={
+          route
+            ? {
+                ...route,
+                total_distance: route.total_distance ?? route.distance ?? null,
+                total_ascent: route.total_ascent ?? route.ascent ?? null,
+                total_descent: route.total_descent ?? route.descent ?? null,
+              }
+            : null
+        }
+        routeFull={resolvedRouteFull ? { coordinates: resolvedRouteFull.coordinates ?? [] } : null}
+        intensityFactor={activity.intensityFactor}
+        tss={activity.estimatedTss}
+        testIDPrefix={`activity-plan-card-preview-${activity.id}`}
+      />
+    </ResourceCardShell>
   );
 }
 
@@ -274,6 +294,7 @@ function transformToCardData(
     routeId: plan.route_id || undefined,
     routeName: routeInfo?.name,
     notes: plannedActivity?.notes || plan.description || plan.notes || undefined,
+    createdAt: plan.created_at || undefined,
     updatedAt: plan.updated_at || undefined,
     scheduledDate: plannedActivity?.scheduled_date,
     isCompleted: Boolean(plannedActivity?.completed_activity_id),

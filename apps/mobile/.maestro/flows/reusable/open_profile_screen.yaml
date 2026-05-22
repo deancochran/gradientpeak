@@ -8,7 +8,7 @@ appId: com.deancochran.gradientpeak.dev
 - runFlow:
     file: ./open_discover_tab.yaml
 - tapOn:
-    id: "discover-tab-users"
+    id: "discover-scope-users"
 - tapOn:
     id: "discover-search-input"
 - inputText: "${TARGET_USERNAME}"

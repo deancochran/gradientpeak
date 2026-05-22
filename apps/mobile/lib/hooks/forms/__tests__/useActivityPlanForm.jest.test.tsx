@@ -200,6 +200,106 @@ describe("useActivityPlanForm", () => {
     unmount();
   });
 
+  it("exposes required name and route-only structure errors", () => {
+    useActivityPlanCreationStore.setState({
+      name: "",
+      routeId: "route-1",
+      structure: { version: 2, intervals: [] },
+    });
+
+    const { result, unmount } = renderHook(() => useActivityPlanForm());
+
+    expect(result.current.validation.errors.name).toBe("Plan name is required.");
+    expect(result.current.validation.errors.intervals).toBe("Add at least one interval.");
+    expect(result.current.validation.errors.route_id).toBe(
+      "This route is attached for context, but you still need structure before this plan can be saved.",
+    );
+    expect(result.current.canSubmit).toBe(false);
+
+    unmount();
+  });
+
+  it("maps invalid duration and missing target to the owning step keys", () => {
+    useActivityPlanCreationStore.setState({
+      structure: {
+        version: 2,
+        intervals: [
+          {
+            id: "interval-1",
+            name: "Main",
+            repetitions: 1,
+            steps: [
+              {
+                id: "step-1",
+                name: "Broken step",
+                duration: { type: "time", seconds: 0 },
+                targets: [],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const { result, unmount } = renderHook(() => useActivityPlanForm());
+
+    expect(result.current.validation.errors["step:interval-1:step-1:duration"]).toBe(
+      "Step duration must be greater than zero (time, distance, or reps).",
+    );
+    expect(result.current.validation.errors["step:interval-1:step-1:target"]).toBe(
+      "Each saved step needs an intensity target.",
+    );
+
+    unmount();
+  });
+
+  it("submits a valid minimal structure", async () => {
+    useActivityPlanCreationStore.setState({
+      structure: {
+        version: 2,
+        intervals: [
+          {
+            id: "interval-1",
+            name: "Main",
+            repetitions: 1,
+            steps: [
+              {
+                id: "step-1",
+                name: "Steady",
+                duration: { type: "time", seconds: 300 },
+                targets: [{ type: "%FTP", intensity: 75 }],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    const { result, unmount } = renderHook(() => useActivityPlanForm());
+
+    expect(result.current.validation.isValid).toBe(true);
+    expect(result.current.canSubmit).toBe(true);
+
+    let submitResult:
+      | Awaited<ReturnType<ReturnType<typeof useActivityPlanForm>["submit"]>>
+      | undefined;
+    await act(async () => {
+      submitResult = await result.current.submit();
+    });
+
+    expect(submitResult).toEqual({ id: "created-1" });
+    expect(formMocks.createMutateAsyncMock).toHaveBeenCalledWith({
+      name: "Morning Ride",
+      description: null,
+      activity_category: "bike",
+      structure: expect.objectContaining({ version: 2 }),
+      route_id: null,
+      notes: null,
+    });
+
+    unmount();
+  });
+
   it("gates submit and exposes inline errors before submit", async () => {
     const { result, unmount } = renderHook(() => useActivityPlanForm());
 

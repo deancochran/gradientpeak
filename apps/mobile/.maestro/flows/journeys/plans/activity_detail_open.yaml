@@ -12,7 +12,7 @@ env:
 - runFlow:
     file: ../../reusable/open_discover_tab.yaml
 - tapOn:
-    id: "discover-tab-activityPlans"
+    id: "discover-scope-activityPlans"
 - tapOn:
     id: "discover-search-input"
 - inputText: "${SHARED_ACTIVITY_PLAN_NAME}"
@@ -22,7 +22,11 @@ env:
 - tapOn: "${SHARED_ACTIVITY_PLAN_NAME}"
 - extendedWaitUntil:
     visible:
-      id: "activity-plan-duplicate-button"
+      id: "activity-plan-options-trigger"
     timeout: 10000
+- tapOn:
+    id: "activity-plan-options-trigger"
 - assertVisible:
-    id: "activity-plan-record-now-button"
+    id: "activity-plan-options-duplicate"
+- assertVisible:
+    id: "activity-plan-options-start"

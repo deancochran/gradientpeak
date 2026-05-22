@@ -543,7 +543,7 @@ describe("recording cockpit", () => {
     ).toBeTruthy();
   });
 
-  it("renders live workout and metric context in the floating panel", () => {
+  it("renders live activity and metric context in the floating panel", () => {
     renderNative(
       <RecordingFloatingPanel
         bottomObstructionHeight={80}
@@ -797,7 +797,7 @@ describe("recording cockpit", () => {
 
     expect(screen.getByTestId("recording-card-carousel")).toBeTruthy();
     expect(screen.getByTestId("metrics-insight-card")).toBeTruthy();
-    expect(screen.queryByTestId("workout-interval-insight-card")).toBeNull();
+    expect(screen.queryByTestId("activity-interval-insight-card")).toBeNull();
     expect(screen.queryByTestId("trainer-insight-card")).toBeNull();
   });
 
@@ -1009,7 +1009,7 @@ describe("recording cockpit", () => {
     expect(screen.queryByTestId("recording-session-mode-button")).toBeNull();
     expect(screen.queryByText("Guidance")).toBeNull();
 
-    expect(screen.getByText("Workout")).toBeTruthy();
+    expect(screen.getByText("Activity")).toBeTruthy();
     expect(screen.getAllByText("Add")).toHaveLength(2);
 
     const disabledActions = result

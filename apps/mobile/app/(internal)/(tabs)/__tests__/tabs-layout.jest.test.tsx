@@ -64,7 +64,7 @@ jest.mock("@repo/ui/components/text", () => ({
 
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
-  Calendar: createHost("Calendar"),
+  CalendarDays: createHost("CalendarDays"),
   Circle: createHost("Circle"),
   Home: createHost("Home"),
   Target: createHost("Target"),
@@ -96,6 +96,16 @@ jest.mock("@/lib/hooks/useActivityRecorder", () => ({
 jest.mock("@/lib/providers/ActivityRecorderProvider", () => ({
   __esModule: true,
   useSharedActivityRecorder: () => ({}),
+}));
+
+jest.mock("@/lib/server-config", () => ({
+  __esModule: true,
+  getReachableSupabaseStorageUrl: (path: string) => path,
+}));
+
+jest.mock("@/lib/performance", () => ({
+  __esModule: true,
+  markNavigationStart: jest.fn(),
 }));
 
 jest.mock("@/lib/stores/activitySelectionStore", () => ({
@@ -142,6 +152,7 @@ describe("tabs layout", () => {
     expect(screen.getByText("Record")).toBeTruthy();
     expect(screen.getByText("Calendar")).toBeTruthy();
     expect(screen.getByText("Profile")).toBeTruthy();
+    expect(screen.queryByText("Groups")).toBeNull();
   });
 
   it("routes the record tab through the navigation guard", () => {

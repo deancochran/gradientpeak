@@ -1,12 +1,7 @@
 import React from "react";
+import { createHost } from "../../../test/mock-components";
 import { renderNative, screen } from "../../../test/render-native";
 import { ActivityPlanCard } from "../ActivityPlanCard";
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -95,11 +90,34 @@ describe("ActivityPlanCard", () => {
 
     expect(screen.getByText("Tempo Builder")).toBeTruthy();
     expect(screen.getByText("Progressive tempo with a strong finish.")).toBeTruthy();
-    expect(screen.getByText("System Template")).toBeTruthy();
-    expect(screen.getByText("Updated Mar 21, 2026")).toBeTruthy();
+    expect(screen.getByText("Outdoor Run")).toBeTruthy();
+    expect(screen.getByText("Mar 21, 2026 • 8:00 AM")).toBeTruthy();
+    expect(screen.getByText("GradientPeak")).toBeTruthy();
+    expect(screen.queryByText("Updated Mar 21, 2026")).toBeNull();
     expect(screen.queryByText("By")).toBeNull();
-    expect(getByTestId("activity-plan-attribution-row").props.className).toContain(
-      "justify-between",
+    expect(getByTestId("resource-owner-action-row").props.className).toContain("justify-between");
+  });
+
+  it("shows owner and last updated metadata in the footer", () => {
+    renderNative(
+      <ActivityPlanCard
+        activityPlan={{
+          id: "plan-1",
+          name: "Tempo Builder",
+          activity_category: "outdoor_run",
+          updated_at: "2026-03-21T12:00:00.000Z",
+          owner: {
+            id: "owner-1",
+            username: "Coach Kim",
+            avatar_url: null,
+          },
+        }}
+        variant="compact"
+      />,
     );
+
+    expect(screen.queryByText("By")).toBeNull();
+    expect(screen.getByText("Coach Kim")).toBeTruthy();
+    expect(screen.queryByText("Updated Mar 21, 2026")).toBeNull();
   });
 });

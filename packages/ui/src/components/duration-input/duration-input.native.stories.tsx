@@ -9,7 +9,7 @@ const meta = {
   title: "Inputs/DurationInput/Native",
   component: DurationInput,
   args: {
-    ...durationInputFixtures.workout,
+    ...durationInputFixtures.activity,
     onChange: () => {},
   },
 } satisfies Meta<typeof DurationInput>;
@@ -20,7 +20,7 @@ type Story = StoryObj<typeof meta>;
 
 export const Playground: Story = {
   render: (args) => {
-    const [value, setValue] = React.useState<string>(durationInputFixtures.workout.value);
+    const [value, setValue] = React.useState<string>(durationInputFixtures.activity.value);
 
     return (
       <View className="bg-background p-6">

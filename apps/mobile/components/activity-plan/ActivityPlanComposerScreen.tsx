@@ -7,25 +7,19 @@ import {
   type IntervalStepV2,
   type IntervalV2,
 } from "@repo/core";
-import { Button } from "@repo/ui/components/button";
-import { Card, CardContent } from "@repo/ui/components/card";
-import { Form, FormTextareaField, FormTextField } from "@repo/ui/components/form";
-import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { useZodForm } from "@repo/ui/hooks";
 import { randomUUID } from "expo-crypto";
-import * as DocumentPicker from "expo-document-picker";
 import { useNavigation, useRouter } from "expo-router";
-import { MapPin, Upload, X } from "lucide-react-native";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, View } from "react-native";
 import { NestableScrollContainer } from "react-native-draggable-flatlist";
-import { z } from "zod";
-import { ActivityCategorySelector } from "@/components/ActivityPlan/ActivityCategorySelector";
 import { StepEditorDialog } from "@/components/ActivityPlan/StepEditorDialog";
+import { ActivityPlanBasicsSection } from "@/components/activity-plan/ActivityPlanBasicsSection";
+import { ActivityPlanRouteSection } from "@/components/activity-plan/ActivityPlanRouteSection";
 import { StructureBuilderCard } from "@/components/activity-plan/structure/StructureBuilderCard";
 import { StructureIntervalSheet } from "@/components/activity-plan/structure/StructureIntervalSheet";
-import { StaticRouteMapPreview } from "@/components/shared/StaticRouteMapPreview";
+import { useActivityPlanComposerProcess } from "@/components/activity-plan/useActivityPlanComposerProcess";
+import { useActivityPlanRouteUpload } from "@/components/activity-plan/useActivityPlanRouteUpload";
 import { api } from "@/lib/api";
 import { buildPlanRoute } from "@/lib/constants/routes";
 import { useActivityPlanForm } from "@/lib/hooks/forms/useActivityPlanForm";
@@ -68,24 +62,16 @@ const createDefaultInterval = (category: ActivityCategory, index: number): Inter
   steps: [createDefaultStep(category)],
 });
 
-const basicsSchema = z.object({
-  name: z.string(),
-  description: z.string(),
-  notes: z.string(),
-});
-
 export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContract) {
   const isEditMode = props.mode === "edit";
   const router = useRouter();
   const navigation = useNavigation();
   const allowNavigationRef = useRef(false);
-  const initialSignatureRef = useRef<string | null>(null);
   const structureStepSheetRef = useRef<BottomSheet>(null);
 
   const [editingIntervalId, setEditingIntervalId] = useState<string | null>(null);
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [isUploadingRoute, setIsUploadingRoute] = useState(false);
   const [selectedIntervalId, setSelectedIntervalId] = useState<string | null>(null);
   const [showChartCoachmark, setShowChartCoachmark] = useState(false);
   const [undoState, setUndoState] = useState<{
@@ -105,27 +91,12 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     setStructure,
   } = useActivityPlanCreationStore();
 
-  const utils = api.useUtils();
-
-  const uploadRouteMutation = api.routes.upload.useMutation({
-    onSuccess: (data) => {
-      setRouteId(data.id);
-      setIsUploadingRoute(false);
-      utils.routes.invalidate();
-    },
-    onError: () => {
-      Alert.alert("Error", "Failed to upload route. Please try again.");
-      setIsUploadingRoute(false);
-    },
-  });
-
   const {
     form,
     setName,
     setDescription,
     setActivityCategory,
     setRouteId,
-    setNotes,
     submit,
     validation,
     canSubmit,
@@ -192,43 +163,6 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
   };
 
   const intervals = form.structure.intervals || [];
-  const basicsForm = useZodForm({
-    schema: basicsSchema,
-    defaultValues: {
-      name: form.name,
-      description: form.description,
-      notes: form.notes,
-    },
-  });
-  const basicsName = basicsForm.watch("name") || "";
-  const basicsDescription = basicsForm.watch("description") || "";
-  const basicsNotes = basicsForm.watch("notes") || "";
-
-  useEffect(() => {
-    basicsForm.reset({
-      name: form.name,
-      description: form.description,
-      notes: form.notes,
-    });
-  }, [basicsForm, form.description, form.name, form.notes]);
-
-  useEffect(() => {
-    if (basicsName !== form.name) {
-      setName(basicsName);
-    }
-  }, [basicsName, form.name, setName]);
-
-  useEffect(() => {
-    if (basicsDescription !== form.description) {
-      setDescription(basicsDescription);
-    }
-  }, [basicsDescription, form.description, setDescription]);
-
-  useEffect(() => {
-    if (basicsNotes !== form.notes) {
-      setNotes(basicsNotes);
-    }
-  }, [basicsNotes, form.notes, setNotes]);
 
   const stepBeingEdited = useMemo(() => {
     if (!editingIntervalId || !editingStepId) {
@@ -240,6 +174,10 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
   }, [editingIntervalId, editingStepId, intervals]);
 
   const routeQuery = api.routes.get.useQuery({ id: form.routeId! }, { enabled: !!form.routeId });
+  const { isUploadingRoute, pickGpxFile } = useActivityPlanRouteUpload({
+    planName: form.name,
+    onRouteUploaded: setRouteId,
+  });
 
   const structureStats = useMemo(() => {
     if (intervals.length === 0) {
@@ -280,28 +218,21 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     : -1;
   const structureStepSheetSnapPoints = useMemo(() => ["68%", "92%"], []);
 
-  const formSignature = useMemo(
-    () =>
-      JSON.stringify({
-        name: form.name,
-        description: form.description,
-        activityCategory: form.activityCategory,
-        structure: form.structure,
-        routeId: form.routeId,
-        notes: form.notes,
-      }),
-    [form],
-  );
-
-  useEffect(() => {
-    if (isLoading || initialSignatureRef.current) {
-      return;
-    }
-    initialSignatureRef.current = formSignature;
-  }, [isLoading, formSignature]);
-
-  const isDirty =
-    initialSignatureRef.current !== null && initialSignatureRef.current !== formSignature;
+  useActivityPlanComposerProcess({
+    activityCategory: form.activityCategory,
+    allowNavigationRef,
+    canSubmit,
+    description: form.description,
+    isEditMode,
+    isLoading,
+    isSubmitting,
+    name: form.name,
+    navigation,
+    notes: form.notes,
+    routeId: form.routeId,
+    structure: form.structure,
+    submit,
+  });
 
   useEffect(() => {
     AsyncStorage.getItem(STRUCTURE_CHART_HINT_KEY)
@@ -322,45 +253,6 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
   }, []);
 
   useEffect(() => {
-    const unsubscribe = navigation.addListener("beforeRemove", (event) => {
-      if (allowNavigationRef.current || !isDirty || isSubmitting) {
-        return;
-      }
-
-      event.preventDefault();
-      Alert.alert("Discard changes?", "Your edits will be lost.", [
-        { text: "Keep Editing", style: "cancel" },
-        {
-          text: "Discard",
-          style: "destructive",
-          onPress: () => {
-            allowNavigationRef.current = true;
-            navigation.dispatch(event.data.action);
-          },
-        },
-      ]);
-    });
-
-    return unsubscribe;
-  }, [navigation, isDirty, isSubmitting]);
-
-  useEffect(() => {
-    navigation.setOptions({
-      title: isEditMode ? "Edit Activity Plan" : "Create Activity Plan",
-      headerRight: () => (
-        <Button
-          variant="ghost"
-          size="sm"
-          onPress={submit}
-          disabled={!canSubmit || isLoading || isSubmitting}
-        >
-          <Text className="text-primary font-semibold">{isSubmitting ? "Saving..." : "Save"}</Text>
-        </Button>
-      ),
-    });
-  }, [navigation, isEditMode, submit, canSubmit, isLoading, isSubmitting]);
-
-  useEffect(() => {
     if (!selectedInterval) {
       structureStepSheetRef.current?.close();
     }
@@ -374,35 +266,6 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     requestAnimationFrame(() => {
       structureStepSheetRef.current?.snapToIndex(1);
     });
-  };
-
-  const handlePickGpxFile = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ["application/gpx+xml", "text/xml", "application/xml"],
-        copyToCacheDirectory: true,
-      });
-
-      if (result.canceled || !result.assets[0]) {
-        return;
-      }
-
-      const file = result.assets[0];
-      const response = await fetch(file.uri);
-      const content = await response.text();
-      const fileName = file.name.replace(/\.gpx$/i, "");
-
-      setIsUploadingRoute(true);
-      uploadRouteMutation.mutate({
-        name: fileName,
-        description: `Uploaded for ${form.name || "activity plan"}`,
-        fileContent: content,
-        fileName: file.name,
-      });
-    } catch {
-      Alert.alert("Error", "Failed to read GPX file");
-      setIsUploadingRoute(false);
-    }
   };
 
   const handleAddInterval = () => {
@@ -485,7 +348,6 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     ? decodePolyline(routeQuery.data.polyline)
     : null;
 
-  const firstBlockingError = Object.values(validation.errors)[0];
   const issueMaps = (() => {
     const intervalIssues: Record<string, { interval: number; step: number; total: number }> = {};
     const stepIssueCountsByInterval: Record<string, Record<string, number>> = {};
@@ -537,120 +399,28 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     <View className="flex-1 bg-background">
       <NestableScrollContainer className="flex-1 p-4" showsVerticalScrollIndicator={false}>
         <View className="gap-4 pb-10">
-          <Card>
-            <CardContent className="p-4 gap-3">
-              <Text className="font-semibold">Basics</Text>
+          <ActivityPlanBasicsSection
+            activityCategory={form.activityCategory}
+            description={form.description}
+            errors={validation.errors}
+            name={form.name}
+            onChangeActivityCategory={(category) =>
+              setActivityCategory(category as ActivityCategory)
+            }
+            onChangeDescription={setDescription}
+            onChangeName={setName}
+          />
 
-              <View className="flex-row gap-3">
-                <ActivityCategorySelector
-                  value={form.activityCategory}
-                  onChange={(category) => setActivityCategory(category as ActivityCategory)}
-                  compact
-                />
-                <View className="flex-1">
-                  <Form {...basicsForm}>
-                    <FormTextField
-                      control={basicsForm.control}
-                      label="Plan name"
-                      name="name"
-                      placeholder="Plan name"
-                    />
-                  </Form>
-                </View>
-              </View>
-              {validation.errors.name ? (
-                <Text className="text-xs text-destructive">{validation.errors.name}</Text>
-              ) : null}
-
-              {validation.errors.activity_category ? (
-                <Text className="text-xs text-destructive">
-                  {validation.errors.activity_category}
-                </Text>
-              ) : null}
-
-              <Form {...basicsForm}>
-                <FormTextareaField
-                  control={basicsForm.control}
-                  label="Description"
-                  name="description"
-                  placeholder="Description (optional)"
-                  className="min-h-[64px]"
-                />
-                <FormTextareaField
-                  control={basicsForm.control}
-                  label="Notes"
-                  name="notes"
-                  placeholder="Notes (optional)"
-                  className="min-h-[64px]"
-                />
-              </Form>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-4 gap-3">
-              <View className="flex-row items-center justify-between">
-                <Text className="font-semibold">Route (Optional)</Text>
-                {!!form.routeId && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onPress={() => setRouteId(null)}
-                    disabled={isUploadingRoute}
-                  >
-                    <Icon as={X} size={16} className="text-muted-foreground" />
-                  </Button>
-                )}
-              </View>
-
-              <Text className="text-xs text-muted-foreground">
-                Route attachment is optional context. Saved IF/TSS still comes from the workout
-                structure.
-              </Text>
-
-              {!form.routeId ? (
-                <Button variant="outline" onPress={handlePickGpxFile} disabled={isUploadingRoute}>
-                  <Icon as={Upload} size={16} className="text-foreground" />
-                  <Text className="text-foreground ml-2">
-                    {isUploadingRoute ? "Uploading..." : "Upload GPX File"}
-                  </Text>
-                </Button>
-              ) : routeQuery.data ? (
-                <View className="border border-border rounded-lg overflow-hidden">
-                  {routeCoordinates && routeCoordinates.length > 0 ? (
-                    <View className="h-28">
-                      <StaticRouteMapPreview
-                        coordinates={routeCoordinates}
-                        strokeColor="#3b82f6"
-                        strokeWidth={3}
-                      />
-                    </View>
-                  ) : null}
-                  <View className="p-3">
-                    <Text className="font-medium">{routeQuery.data.name}</Text>
-                    <View className="flex-row items-center gap-3 mt-1">
-                      <View className="flex-row items-center gap-1">
-                        <Icon as={MapPin} size={12} className="text-muted-foreground" />
-                        <Text className="text-xs text-muted-foreground">
-                          {((routeQuery.data.total_distance ?? 0) / 1000).toFixed(1)} km
-                        </Text>
-                      </View>
-                    </View>
-                    <Text className="text-xs text-muted-foreground mt-2">
-                      Route distance and elevation stay informational here. They do not define saved
-                      training load by themselves.
-                    </Text>
-                  </View>
-                </View>
-              ) : (
-                <Text className="text-xs text-muted-foreground">Loading route...</Text>
-              )}
-
-              {validation.errors.route_id ? (
-                <Text className="text-xs text-destructive">{validation.errors.route_id}</Text>
-              ) : null}
-            </CardContent>
-          </Card>
+          <ActivityPlanRouteSection
+            coordinates={routeCoordinates}
+            error={validation.errors.route_id}
+            isUploadingRoute={isUploadingRoute}
+            onClearRoute={() => setRouteId(null)}
+            onPickRoute={pickGpxFile}
+            onSelectRoute={setRouteId}
+            route={routeQuery.data}
+            routeId={form.routeId}
+          />
 
           <StructureBuilderCard
             structure={form.structure}
@@ -663,16 +433,6 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
             onDismissChartCoachmark={dismissChartCoachmark}
             onTimelineIntervalPress={openIntervalSheet}
           />
-
-          {firstBlockingError ? (
-            <Text className="text-xs text-destructive">{firstBlockingError}</Text>
-          ) : null}
-
-          <Button onPress={submit} disabled={!canSubmit || isLoading || isSubmitting}>
-            <Text className="text-primary-foreground font-semibold">
-              {isSubmitting ? "Saving..." : isEditMode ? "Save changes" : "Create activity plan"}
-            </Text>
-          </Button>
         </View>
       </NestableScrollContainer>
 

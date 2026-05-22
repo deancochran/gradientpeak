@@ -30,7 +30,7 @@ export const Playground: Story = {
         <CommandList>
           <CommandEmpty>No results found.</CommandEmpty>
           <CommandGroup heading="Actions">
-            <CommandItem value="create workout">Create workout</CommandItem>
+            <CommandItem value="create activity">Create activity</CommandItem>
             <CommandItem value="open calendar">Open calendar</CommandItem>
           </CommandGroup>
         </CommandList>

@@ -1,12 +1,17 @@
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
-import { Icon } from "@repo/ui/components/icon";
-import { ListSkeleton } from "@repo/ui/components/loading-skeletons";
 import { Text } from "@repo/ui/components/text";
 import { Stack } from "expo-router";
-import { ChevronRight } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
-import { RefreshControl, ScrollView, TouchableOpacity, View } from "react-native";
+import { TouchableOpacity, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { IndexFilterSheet } from "@/components/shared/IndexFilterSheet";
+import {
+  FilterChip,
+  FilterSection,
+  IndexResultsSummary,
+  IndexSearchBar,
+} from "@/components/shared/IndexSearchBar";
+import { ResourceList } from "@/components/shared/ResourceList";
 import { TrainingPlanCard } from "@/components/shared/TrainingPlanCard";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
@@ -15,6 +20,10 @@ import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 function TrainingPlansListScreen() {
   const navigateTo = useAppNavigate();
   const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [visibilityFilter, setVisibilityFilter] = useState<"private" | "public" | null>(null);
+  const [draftVisibilityFilter, setDraftVisibilityFilter] = useState<typeof visibilityFilter>(null);
+  const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
 
   const { data, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage, refetch } =
     api.trainingPlans.list.useInfiniteQuery(
@@ -22,6 +31,8 @@ function TrainingPlansListScreen() {
         ownerScope: "own",
         includeOwnOnly: true,
         includeSystemTemplates: false,
+        search: searchQuery.trim() || undefined,
+        visibility: visibilityFilter ?? undefined,
         limit: 25,
       },
       {
@@ -38,16 +49,6 @@ function TrainingPlansListScreen() {
     setRefreshing(false);
   };
 
-  if (isLoading) {
-    return (
-      <ScrollView className="flex-1 bg-background" testID="training-plans-list-loading">
-        <View className="p-4">
-          <ListSkeleton count={6} />
-        </View>
-      </ScrollView>
-    );
-  }
-
   return (
     <View className="flex-1 bg-background" testID="training-plans-list-screen">
       <Stack.Screen
@@ -63,62 +64,91 @@ function TrainingPlansListScreen() {
           ),
         }}
       />
-      <ScrollView
-        className="flex-1"
-        contentContainerClassName="gap-4 px-4 py-4"
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
-        onScroll={({ nativeEvent }) => {
-          const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
-          if (
-            layoutMeasurement.height + contentOffset.y >= contentSize.height - 160 &&
-            hasNextPage &&
-            !isFetchingNextPage
-          ) {
-            void fetchNextPage();
-          }
+      <IndexSearchBar
+        value={searchQuery}
+        placeholder="Search training plans"
+        hasActiveFilters={visibilityFilter !== null}
+        onChangeText={setSearchQuery}
+        onClear={() => setSearchQuery("")}
+        onFilterPress={() => {
+          setDraftVisibilityFilter(visibilityFilter);
+          setIsFilterSheetOpen(true);
         }}
-        scrollEventThrottle={16}
-      >
-        {planCount > 0 ? (
-          <View
-            className="rounded-2xl border border-border bg-muted/20 px-4 py-3"
-            testID="training-plans-list-summary"
-          >
-            <Text className="text-sm text-muted-foreground">
-              {planCount} {planCount === 1 ? "plan" : "plans"}
-            </Text>
-          </View>
-        ) : null}
-
-        {planCount === 0 ? (
+        testIDPrefix="training-plans-list"
+      />
+      <ResourceList
+        testID="training-plans-list-content"
+        data={sortedPlans}
+        contentContainerClassName="gap-4 p-4 pb-6"
+        emptyComponent={
           <View testID="training-plans-list-empty-state">
             <EmptyStateCard
               title="No training plans yet"
               description="Your saved training plans will appear here."
             />
           </View>
-        ) : (
-          sortedPlans.map((plan) => {
-            return (
-              <View key={plan.id} testID={`training-plans-list-item-${plan.id}`}>
-                <TrainingPlanCard
-                  plan={plan as any}
-                  onPress={() => navigateTo(ROUTES.PLAN.TRAINING_PLAN.DETAIL(plan.id) as any)}
-                  variant="default"
-                  headerAccessory={
-                    <Icon as={ChevronRight} size={18} className="mt-1 text-muted-foreground" />
-                  }
-                />
-              </View>
-            );
-          })
-        )}
-        {isFetchingNextPage ? (
-          <View className="items-center py-4">
-            <Text className="text-xs text-muted-foreground">Loading more plans...</Text>
+        }
+        hasNextPage={hasNextPage}
+        isFetchingNextPage={isFetchingNextPage}
+        isLoading={isLoading}
+        keyExtractor={(plan) => plan.id}
+        ListHeaderComponent={
+          <IndexResultsSummary
+            count={planCount}
+            singularLabel="plan"
+            testID="training-plans-list-summary"
+          />
+        }
+        loadingMoreLabel="Loading more plans..."
+        onLoadMore={() => void fetchNextPage()}
+        onRefresh={handleRefresh}
+        refreshing={refreshing}
+        renderItem={(plan) => (
+          <View testID={`training-plans-list-item-${plan.id}`}>
+            <TrainingPlanCard
+              plan={plan as any}
+              onPress={() => navigateTo(ROUTES.PLAN.TRAINING_PLAN.DETAIL(plan.id) as any)}
+              variant="default"
+            />
           </View>
-        ) : null}
-      </ScrollView>
+        )}
+      />
+      <IndexFilterSheet
+        visible={isFilterSheetOpen}
+        title="Training Plan Filters"
+        description="Refine your training plans list."
+        isResetDisabled={draftVisibilityFilter === null}
+        onReset={() => setDraftVisibilityFilter(null)}
+        onApply={() => {
+          setVisibilityFilter(draftVisibilityFilter);
+          setIsFilterSheetOpen(false);
+        }}
+        onClose={() => setIsFilterSheetOpen(false)}
+        testID="training-plans-list-filter-sheet"
+      >
+        <FilterSection title="Visibility">
+          <View className="flex-row flex-wrap gap-2">
+            {[
+              { id: "private", label: "Private" },
+              { id: "public", label: "Public" },
+            ].map((option) => (
+              <FilterChip
+                key={option.id}
+                label={option.label}
+                isActive={draftVisibilityFilter === option.id}
+                onPress={() =>
+                  setDraftVisibilityFilter(
+                    draftVisibilityFilter === option.id
+                      ? null
+                      : (option.id as typeof visibilityFilter),
+                  )
+                }
+                testID={`training-plans-list-filter-visibility-${option.id}`}
+              />
+            ))}
+          </View>
+        </FilterSection>
+      </IndexFilterSheet>
     </View>
   );
 }

@@ -19,7 +19,7 @@ import {
 } from "./estimation-helpers";
 import { getProfileEstimationState } from "./profile-estimation-state";
 
-export const ESTIMATOR_VERSION = "2026-04-derived-metrics-v1";
+export const ESTIMATOR_VERSION = "2026-05-estimated-provenance-v1";
 export const ACTIVITY_PLAN_CACHE_STALE_AFTER_MS = 6 * 60 * 60 * 1000;
 export const ACTIVITY_PLAN_CACHE_HOT_ACCESS_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -188,6 +188,12 @@ function buildCachedEstimatedPlan<TPlan extends EstimationActivityPlanInput>(
       estimated_duration: projection.estimated_duration_seconds ?? 0,
       intensity_factor: projection.intensity_factor ?? 0,
       estimated_distance: projection.estimated_distance_meters ?? undefined,
+      provenance: {
+        estimated_tss: "estimated",
+        estimated_duration: "estimated",
+        intensity_factor: "estimated",
+        estimated_distance: "estimated",
+      },
     },
     route: routeSummary,
   };

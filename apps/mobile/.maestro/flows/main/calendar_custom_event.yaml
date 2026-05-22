@@ -24,9 +24,10 @@ env:
 - tapOn:
     id: "manual-create-title-input"
 - inputText: "Maestro Custom Session"
+- hideKeyboard
 - assertVisible:
     id: "manual-create-submit"
 - tapOn:
-    id: "close-manual-create"
+    text: "Cancel"
 - assertNotVisible:
-    id: "manual-create-modal"
+    id: "manual-create-title-input"

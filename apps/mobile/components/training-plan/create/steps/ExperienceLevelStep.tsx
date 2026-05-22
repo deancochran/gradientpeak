@@ -44,7 +44,7 @@ const EXPERIENCE_LEVELS = [
     bullets: [
       "Established training routine",
       "Some race experience",
-      "Ready for structured workouts",
+      "Ready for structured activities",
       "Focus on performance gains",
     ],
   },

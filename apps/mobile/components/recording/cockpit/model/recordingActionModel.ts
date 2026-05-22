@@ -60,7 +60,7 @@ function resolveRecordingAction(
         disabled,
         hint: disabled
           ? "Plan changes are locked after recording starts."
-          : "Open workout plan adjustments.",
+          : "Open activity plan adjustments.",
         id: action,
         label: disabled ? "Plan locked" : contract?.guidance.hasPlan ? "Plan attached" : "Plan",
         onPress: context.onOpenPlan,

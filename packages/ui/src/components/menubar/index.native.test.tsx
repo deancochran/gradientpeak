@@ -8,7 +8,7 @@ describe("Menubar native", () => {
         <MenubarMenu value="file">
           <MenubarTrigger testID="file-menu-trigger">File</MenubarTrigger>
           <MenubarContent testID="file-menu-content">
-            <MenubarItem testID="new-workout-item">New workout</MenubarItem>
+            <MenubarItem testID="new-activity-item">New activity</MenubarItem>
           </MenubarContent>
         </MenubarMenu>
       </Menubar>,
@@ -16,6 +16,6 @@ describe("Menubar native", () => {
 
     expect(getByTestId("file-menu-trigger")).toBeTruthy();
     expect(getByTestId("file-menu-content")).toBeTruthy();
-    expect(getByTestId("new-workout-item")).toBeTruthy();
+    expect(getByTestId("new-activity-item")).toBeTruthy();
   });
 });

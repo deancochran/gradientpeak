@@ -1,7 +1,7 @@
 export const tableFixtures = {
   weeklyWorkouts: {
-    caption: "Weekly workouts",
-    columns: ["Day", "Workout", "Duration"],
+    caption: "Weekly activities",
+    columns: ["Day", "Activity", "Duration"],
     rows: [
       ["Monday", "Threshold intervals", "45 min"],
       ["Wednesday", "Endurance ride", "90 min"],

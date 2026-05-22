@@ -4,6 +4,7 @@ export interface DateInputProps extends TestProps {
   label: string;
   value?: string;
   onChange: (value: string | undefined) => void;
+  name?: string;
   helperText?: string;
   error?: string;
   required?: boolean;

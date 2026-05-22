@@ -73,6 +73,7 @@ export const ROUTES = {
   CALENDAR: "/(internal)/(tabs)/calendar" as const,
 
   // Profile
+  PROFILE_SETTINGS: "/(internal)/(tabs)/profile" as const,
   USER_DETAIL: (userId: string) => `/user/${userId}` as const,
   PROFILE_EDIT: "/profile-edit" as const,
   INTEGRATIONS: "/integrations" as const,
@@ -83,8 +84,8 @@ export const ROUTES = {
   // Activity Recording
   RECORD: "/record" as const,
 
-  // Workout Management
-  WORKOUTS_REORDER: "/workouts-reorder" as const,
+  // Activity Management
+  ACTIVITIES_REORDER: "/activities-reorder" as const,
 } as const;
 
 /**

@@ -7,7 +7,7 @@ import {
 } from "@repo/core";
 import { profileGoals } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { count, desc, eq } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
@@ -45,6 +45,10 @@ const goalDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const goalsListInputSchema = z
   .object({
     profile_id: z.string().uuid(),
+    search: z.string().trim().max(80).optional(),
+    activity_category: canonicalGoalActivityCategorySchema.optional(),
+    sort_by: z.enum(["created_at", "target_date", "priority"]).default("created_at"),
+    sort_order: z.enum(["asc", "desc"]).default("desc"),
     limit: z.number().int().min(1).max(50).default(25),
     cursor: indexCursorSchema.optional(),
     direction: z.enum(["forward", "backward"]).optional(),
@@ -83,12 +87,44 @@ const profileGoalUpdateInputSchema = z
 
 type ProfileGoalRecord = z.infer<typeof profileGoalRecordSchema>;
 
+function buildGoalListConditions(input: {
+  profileId: string;
+  search?: string;
+  activityCategory?: z.infer<typeof canonicalGoalActivityCategorySchema>;
+}) {
+  const conditions = [eq(profileGoals.profile_id, input.profileId)];
+
+  if (input.search) {
+    conditions.push(ilike(profileGoals.title, `%${input.search}%`));
+  }
+
+  if (input.activityCategory) {
+    conditions.push(eq(profileGoals.activity_category, input.activityCategory));
+  }
+
+  return conditions;
+}
+
 async function listProfileGoals(input: {
   db: ReturnType<typeof getRequiredDb>;
   profileId: string;
+  search?: string;
+  activityCategory?: z.infer<typeof canonicalGoalActivityCategorySchema>;
+  sortBy: "created_at" | "target_date" | "priority";
+  sortOrder: "asc" | "desc";
   limit: number;
   offset: number;
 }): Promise<ProfileGoalRecord[]> {
+  const conditions = buildGoalListConditions(input);
+
+  const sortColumn =
+    input.sortBy === "target_date"
+      ? profileGoals.target_date
+      : input.sortBy === "priority"
+        ? profileGoals.priority
+        : profileGoals.created_at;
+  const orderBy = input.sortOrder === "asc" ? asc(sortColumn) : desc(sortColumn);
+
   const rows = await input.db
     .select({
       id: profileGoals.id,
@@ -100,8 +136,8 @@ async function listProfileGoals(input: {
       target_payload: profileGoals.target_payload,
     })
     .from(profileGoals)
-    .where(eq(profileGoals.profile_id, input.profileId))
-    .orderBy(desc(profileGoals.created_at))
+    .where(and(...conditions))
+    .orderBy(orderBy)
     .limit(input.limit)
     .offset(input.offset);
 
@@ -208,18 +244,28 @@ export const goalsRouter = createTRPCRouter({
       profileId: input.profile_id,
     });
 
+    const conditions = buildGoalListConditions({
+      profileId: input.profile_id,
+      search: input.search,
+      activityCategory: input.activity_category,
+    });
+
     try {
       const [items, totalRows] = await Promise.all([
         listProfileGoals({
           db,
           profileId: input.profile_id,
+          search: input.search,
+          activityCategory: input.activity_category,
+          sortBy: input.sort_by,
+          sortOrder: input.sort_order,
           limit: input.limit,
           offset,
         }),
         db
           .select({ total: count() })
           .from(profileGoals)
-          .where(eq(profileGoals.profile_id, input.profile_id)),
+          .where(and(...conditions)),
       ]);
 
       const total = Number(totalRows[0]?.total ?? 0);

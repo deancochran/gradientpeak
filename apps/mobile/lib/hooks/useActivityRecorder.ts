@@ -640,7 +640,7 @@ export function useGpsTracking(service: ActivityRecorderService | null) {
 }
 
 /**
- * Hook to track and control workout intensity scaling (FTP scale)
+ * Hook to track and control activity intensity scaling (FTP scale)
  */
 export function useIntensityScale(service: ActivityRecorderService | null) {
   const [scale, setScale] = useState(service?.getIntensityScale() ?? 1.0);
@@ -753,7 +753,7 @@ export function useRecorderActions(service: ActivityRecorderService | null): Rec
   const connectDevice = useCallback(
     async (deviceId: string) => {
       if (!service) return;
-      await service.sensorsManager.connectSensor(deviceId);
+      await service.connectSensorForRecording(deviceId);
     },
     [service],
   );

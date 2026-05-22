@@ -33,6 +33,11 @@ const createActivityEffortInputSchema = z
   })
   .strict();
 
+const updateActivityEffortInputSchema = createActivityEffortInputSchema
+  .partial()
+  .extend({ id: z.string().uuid() })
+  .strict();
+
 const deleteActivityEffortInputSchema = z
   .object({
     id: z.string().uuid(),
@@ -99,6 +104,30 @@ export const activityEffortsRouter = createTRPCRouter({
       await bumpProfileEstimationState(db, ctx.session.user.id, ["performance"]);
 
       return activityEffortRowSchema.parse(data);
+    }),
+
+  update: protectedProcedure
+    .input(updateActivityEffortInputSchema)
+    .output(activityEffortRowSchema.nullable())
+    .mutation(async ({ input, ctx }) => {
+      const db = getRequiredDb(ctx);
+      const { id, recorded_at, ...values } = input;
+
+      const [data] = await db
+        .update(activityEfforts)
+        .set({
+          ...values,
+          recorded_at: recorded_at ? new Date(recorded_at) : undefined,
+          updated_at: new Date(),
+        })
+        .where(and(eq(activityEfforts.id, id), eq(activityEfforts.profile_id, ctx.session.user.id)))
+        .returning();
+
+      if (data) {
+        await bumpProfileEstimationState(db, ctx.session.user.id, ["performance"]);
+      }
+
+      return data ? activityEffortRowSchema.parse(data) : null;
     }),
 
   delete: protectedProcedure

@@ -172,6 +172,8 @@ export * from "./contracts"; // Shared API contracts
 export * from "./duration"; // Canonical duration helpers
 export * from "./estimation"; // TSS estimation system
 export * from "./goals"; // Goal draft/payload helpers
+export * from "./groups"; // Group contracts, permissions, and display state
+export * from "./integrations"; // Provider capability registry and sync action helpers
 export * from "./load"; // Canonical load-domain helpers
 export * from "./messaging"; // Shared messaging adapters
 export * from "./notifications"; // Shared notification normalization helpers

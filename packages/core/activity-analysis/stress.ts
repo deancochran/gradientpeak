@@ -10,12 +10,14 @@ export type ActivityAnalysisContext = {
     max_hr?: number | null;
     resting_hr?: number | null;
     weight_kg?: number | null;
+    threshold_speed_mps?: number | null;
   };
   recentEfforts: Array<{
     recorded_at: string;
     effort_type: "power" | "speed";
     duration_seconds: number;
     value: number;
+    unit?: string | null;
     activity_category?: string | null;
   }>;
   profile: {
@@ -104,6 +106,45 @@ function resolveIntensityFactor(input: {
   return roundToTwoDecimals(referencePower / ftp);
 }
 
+function resolveHeartRateIntensityFactor(input: {
+  avgHeartRate?: number | null;
+  maxHr?: number | null;
+  restingHr?: number | null;
+}): number | null {
+  const { avgHeartRate, maxHr, restingHr } = input;
+  if (!avgHeartRate || !maxHr || !restingHr || maxHr <= restingHr) {
+    return null;
+  }
+
+  const reserveRatio = (avgHeartRate - restingHr) / (maxHr - restingHr);
+  if (!Number.isFinite(reserveRatio) || reserveRatio <= 0) {
+    return null;
+  }
+
+  return roundToTwoDecimals(Math.max(0, Math.min(1.5, reserveRatio)));
+}
+
+function resolvePaceIntensityFactor(input: {
+  activityType: string;
+  normalizedSpeed?: number | null;
+  normalizedGradedSpeed?: number | null;
+  avgSpeed?: number | null;
+  thresholdSpeedMps?: number | null;
+}): number | null {
+  const { activityType, normalizedSpeed, normalizedGradedSpeed, avgSpeed, thresholdSpeedMps } =
+    input;
+  if (activityType !== "run" || !thresholdSpeedMps || thresholdSpeedMps <= 0) {
+    return null;
+  }
+
+  const referenceSpeed = normalizedGradedSpeed ?? normalizedSpeed ?? avgSpeed;
+  if (!referenceSpeed || referenceSpeed <= 0) {
+    return null;
+  }
+
+  return roundToTwoDecimals(Math.max(0, Math.min(1.5, referenceSpeed / thresholdSpeedMps)));
+}
+
 function resolveTrainingEffect(
   intensityFactor: number | null,
 ): ActivityDerivedMetrics["stress"]["training_effect"] {
@@ -153,12 +194,26 @@ export function analyzeActivityDerivedMetrics(
   const lthr = context.profileMetrics.lthr ?? null;
   const maxHr = context.profileMetrics.max_hr ?? null;
   const restingHr = context.profileMetrics.resting_hr ?? null;
+  const thresholdSpeedMps = context.profileMetrics.threshold_speed_mps ?? null;
 
-  const intensityFactor = resolveIntensityFactor({
+  const powerIntensityFactor = resolveIntensityFactor({
     normalizedPower: activity.normalized_power,
     avgPower: activity.avg_power,
     ftp,
   });
+  const heartRateIntensityFactor = resolveHeartRateIntensityFactor({
+    avgHeartRate: activity.avg_heart_rate,
+    maxHr,
+    restingHr,
+  });
+  const paceIntensityFactor = resolvePaceIntensityFactor({
+    activityType: activity.type,
+    normalizedSpeed: activity.normalized_speed_mps,
+    normalizedGradedSpeed: activity.normalized_graded_speed_mps,
+    avgSpeed: activity.avg_speed_mps,
+    thresholdSpeedMps,
+  });
+  const intensityFactor = powerIntensityFactor ?? paceIntensityFactor ?? heartRateIntensityFactor;
 
   const tss =
     intensityFactor !== null

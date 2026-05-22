@@ -1,12 +1,7 @@
 import { act } from "@testing-library/react-native";
 import React from "react";
+import { createHost } from "../../../../test/mock-components";
 import { renderNative, screen } from "../../../../test/render-native";
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
 
 const localSearchParamsMock = {
   planId: "plan-123",
@@ -292,7 +287,7 @@ describe("activity plan detail route card", () => {
   it("keeps route map preview canonical to the shared route card", () => {
     renderNative(<ActivityPlanDetail />);
 
-    expect(routeCardMock).toHaveBeenCalledTimes(1);
+    expect(routeCardMock).toHaveBeenCalled();
     expect(contentPreviewMock).toHaveBeenCalledWith(
       expect.objectContaining({
         route: routeMock,

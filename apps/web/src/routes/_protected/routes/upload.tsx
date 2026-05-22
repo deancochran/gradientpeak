@@ -1,22 +1,8 @@
-import { zodResolver } from "@hookform/resolvers/zod";
-import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
-import { Form, FormTextareaField, FormTextField } from "@repo/ui/components/form";
 import { createFileRoute } from "@tanstack/react-router";
-import { Upload } from "lucide-react";
-import { useState } from "react";
-import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { UploadFileField } from "../../../components/protected/upload-file-field";
-import {
-  type RouteUploadFormValues,
-  routeUploadFormSchema,
-} from "../../../lib/activity-route-form-schemas";
-import {
-  formatFileSize,
-  getSingleFileSelection,
-  readTextFile,
-} from "../../../lib/activity-route-upload";
+import { RouteUploadForm } from "../../../components/protected/route-upload-form";
+import { readTextFile } from "../../../lib/activity-route-upload";
 import { api } from "../../../lib/api/client";
 
 export const Route = createFileRoute("/_protected/routes/upload")({
@@ -26,17 +12,6 @@ export const Route = createFileRoute("/_protected/routes/upload")({
 function RouteUploadPage() {
   const navigate = Route.useNavigate();
   const utils = api.useUtils();
-  const [files, setFiles] = useState<
-    Array<{ file?: File; name: string; size?: number | null; type?: string | null }>
-  >([]);
-  const selectedFile = getSingleFileSelection(files);
-  const form = useForm<RouteUploadFormValues>({
-    defaultValues: {
-      description: "",
-      name: "",
-    },
-    resolver: zodResolver(routeUploadFormSchema),
-  });
   const uploadMutation = api.routes.upload.useMutation({
     onSuccess: async (route) => {
       await utils.routes.invalidate();
@@ -59,89 +34,25 @@ function RouteUploadPage() {
         <CardHeader>
           <CardTitle>GPX or TCX route file</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <UploadFileField
-            accept=".gpx,.tcx,.xml,application/gpx+xml,application/vnd.garmin.tcx+xml,application/xml,text/xml"
-            description="Choose a GPX or TCX export from your device."
-            error={form.formState.errors.root?.message}
-            files={files}
-            helperText={
-              selectedFile
-                ? formatFileSize(selectedFile.size)
-                : "The route will be parsed for distance, elevation, and map previews."
-            }
-            id="route-file"
-            label="GPX or TCX file"
-            onFilesChange={(nextFiles) => {
-              setFiles(nextFiles);
-              const nextFile = getSingleFileSelection(nextFiles);
-              if (nextFile && !form.getValues("name").trim()) {
-                form.setValue("name", nextFile.name.replace(/\.(gpx|tcx|xml)$/i, ""), {
-                  shouldDirty: true,
-                });
+        <CardContent>
+          <RouteUploadForm
+            onCancel={() => void navigate({ to: "/routes" })}
+            onSubmit={async (values, selectedFile) => {
+              if (!selectedFile.file) {
+                throw new Error("Choose a GPX or TCX file to upload.");
               }
+
+              const fileContent = await readTextFile(selectedFile.file);
+              await uploadMutation.mutateAsync({
+                description: values.description.trim() || undefined,
+                fileContent,
+                fileName: selectedFile.name,
+                name: values.name.trim(),
+              });
             }}
-            onReset={() => setFiles([])}
-            required
-            testId="route-upload-file-input"
+            onSubmitError={() => toast.error("Route upload failed")}
+            pending={uploadMutation.isPending}
           />
-
-          <Form {...form}>
-            <form
-              className="space-y-4"
-              onSubmit={form.handleSubmit(async (values) => {
-                if (!selectedFile) {
-                  form.setError("root", { message: "Choose a GPX or TCX file to upload." });
-                  return;
-                }
-
-                try {
-                  const fileContent = await readTextFile(selectedFile.file);
-                  await uploadMutation.mutateAsync({
-                    description: values.description.trim() || undefined,
-                    fileContent,
-                    fileName: selectedFile.name,
-                    name: values.name.trim(),
-                  });
-                } catch (error) {
-                  form.setError("root", {
-                    message: error instanceof Error ? error.message : "Route upload failed.",
-                  });
-                  toast.error("Route upload failed");
-                }
-              })}
-            >
-              <FormTextField
-                control={form.control}
-                label="Route name"
-                name="name"
-                testId="route-upload-name-input"
-              />
-              <FormTextareaField
-                className="min-h-28"
-                control={form.control}
-                label="Description"
-                name="description"
-                placeholder="Add notes about this route"
-              />
-              {form.formState.errors.root?.message ? (
-                <p className="text-sm text-destructive">{form.formState.errors.root.message}</p>
-              ) : null}
-              <div className="flex flex-wrap justify-end gap-3">
-                <Button
-                  onClick={() => void navigate({ to: "/routes" })}
-                  type="button"
-                  variant="outline"
-                >
-                  Cancel
-                </Button>
-                <Button disabled={!selectedFile || uploadMutation.isPending} type="submit">
-                  <Upload className="mr-2 h-4 w-4" />
-                  {uploadMutation.isPending ? "Uploading route..." : "Upload route"}
-                </Button>
-              </div>
-            </form>
-          </Form>
         </CardContent>
       </Card>
     </div>

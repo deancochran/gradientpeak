@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import {
+  type ActivityTargetCategory,
   activityPlanCreateSchema,
   activityPlanStructureSchemaV2,
   activityPlanUpdateSchema,
+  getActivityTargetCompatibilityIssues,
   saveableActivityPlanStructureSchemaV2,
 } from "@repo/core";
 import {
@@ -14,7 +16,7 @@ import {
   publicActivityPlansRowSchema,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, asc, count, desc, eq, gt, ilike, inArray, lt, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, ilike, inArray, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
 import { createEventReadRepository } from "../infrastructure/repositories";
@@ -110,8 +112,24 @@ const serializedActivityPlanSchema = activityPlanRowSchema.transform((row) => ({
   updated_at: row.updated_at.toISOString(),
 }));
 
-function validateStructure(structure: unknown): void {
-  saveableActivityPlanStructureSchemaV2.parse(structure);
+function validateStructure(structure: unknown, activityCategory?: ActivityTargetCategory): void {
+  const parsed = saveableActivityPlanStructureSchemaV2.parse(structure);
+  if (!activityCategory) return;
+
+  const issues = getActivityTargetCompatibilityIssues({
+    activityCategory,
+    pathPrefix: ["structure"],
+    structure: parsed,
+  });
+  if (issues.length > 0) {
+    throw new z.ZodError(
+      issues.map((issue) => ({
+        code: z.ZodIssueCode.custom,
+        path: issue.path,
+        message: issue.message,
+      })),
+    );
+  }
 }
 
 function getEstimationStore(ctx: { db?: unknown }) {
@@ -143,7 +161,7 @@ const importedTemplateInput = z
     external_id: z.string().min(1).max(255),
     name: z.string().min(1, "Plan name is required"),
     activity_category: publicActivityCategorySchema,
-    description: z.string().max(1000).optional(),
+    description: z.string().max(1000).nullable().optional(),
     notes: z.string().max(2000).optional(),
     structure: activityPlanStructureSchemaV2,
   })
@@ -177,6 +195,16 @@ function buildAccessiblePlanCondition(userId: string) {
     eq(activityPlans.profile_id, userId),
     eq(activityPlans.is_system_template, true),
     eq(activityPlans.template_visibility, "public"),
+    sql`exists (
+      select 1
+      from content_access_grants cag
+      where cag.content_type = 'activity_plan'
+        and cag.content_id = ${activityPlans.id}
+        and cag.grantee_profile_id = ${userId}::uuid
+        and cag.access_level = 'read'
+        and cag.revoked_at is null
+        and (cag.expires_at is null or cag.expires_at > now())
+    )`,
   );
 }
 
@@ -270,7 +298,7 @@ function buildCreateValues(
     profile_id: profileId,
     route_id: input.route_id ?? null,
     name: input.name,
-    description: input.description || "",
+    description: input.description?.trim() ? input.description.trim() : null,
     notes: input.notes ?? null,
     activity_category: input.activity_category,
     structure: input.structure,
@@ -461,7 +489,7 @@ export const activityPlansRouter = createTRPCRouter({
 
     try {
       if (plan.structure) {
-        validateStructure(plan.structure);
+        validateStructure(plan.structure, plan.activity_category as ActivityTargetCategory);
       }
     } catch (validationError) {
       console.error("Invalid V2 structure in database for plan", input.id, validationError);
@@ -577,7 +605,7 @@ export const activityPlansRouter = createTRPCRouter({
     const estimationStore = createEventReadRepository(db);
 
     try {
-      validateStructure(input.structure);
+      validateStructure(input.structure, input.activity_category as ActivityTargetCategory);
     } catch (validationError) {
       throw new TRPCError({
         code: "BAD_REQUEST",
@@ -648,7 +676,10 @@ export const activityPlansRouter = createTRPCRouter({
 
       if (updates.structure) {
         try {
-          validateStructure(updates.structure);
+          validateStructure(
+            updates.structure,
+            (updates.activity_category || existingRow.activity_category) as ActivityTargetCategory,
+          );
         } catch (validationError) {
           throw new TRPCError({
             code: "BAD_REQUEST",
@@ -674,7 +705,12 @@ export const activityPlansRouter = createTRPCRouter({
       const updateValues: Partial<ActivityPlanInsert> = {
         updated_at: new Date(),
         name: updates.name,
-        description: updates.description === undefined ? undefined : (updates.description ?? ""),
+        description:
+          updates.description === undefined
+            ? undefined
+            : updates.description?.trim()
+              ? updates.description.trim()
+              : null,
         notes: updates.notes,
         activity_category: updates.activity_category,
         structure: updates.structure,
@@ -756,7 +792,10 @@ export const activityPlansRouter = createTRPCRouter({
 
       try {
         if (originalPlan.structure) {
-          validateStructure(originalPlan.structure);
+          validateStructure(
+            originalPlan.structure,
+            originalPlan.activity_category as ActivityTargetCategory,
+          );
         }
       } catch (validationError) {
         throw new TRPCError({
@@ -850,7 +889,7 @@ export const activityPlansRouter = createTRPCRouter({
       const payload: Partial<ActivityPlanInsert> = {
         updated_at: new Date(),
         name: input.name,
-        description: input.description ?? "",
+        description: input.description?.trim() ? input.description.trim() : null,
         notes: input.notes ?? null,
         activity_category: input.activity_category,
         structure: input.structure,
@@ -935,7 +974,7 @@ export const activityPlansRouter = createTRPCRouter({
       const payload: Partial<ActivityPlanInsert> = {
         updated_at: new Date(),
         name: input.name,
-        description: input.description ?? "",
+        description: input.description?.trim() ? input.description.trim() : null,
         notes: input.notes ?? null,
         activity_category: input.activity_category,
         structure: input.structure,

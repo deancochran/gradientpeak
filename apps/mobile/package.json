@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "scripts": {
     "dev": "pnpm exec expo start -c --lan",
-    "dev:e2e": "EXPO_NO_DOTENV=1 EXPO_PUBLIC_MAESTRO_E2E=1 pnpm exec dotenv -e .env.e2e -- pnpm exec expo start -c --localhost --dev-client --port 8081",
+    "dev:e2e": "EXPO_NO_DOTENV=1 EXPO_PUBLIC_MAESTRO_E2E=1 sh -c 'if [ -f .env.e2e ]; then pnpm exec dotenv -e .env.e2e -- pnpm exec expo start -c --localhost --dev-client --port ${EXPO_PORT:-8081}; else pnpm exec expo start -c --localhost --dev-client --port ${EXPO_PORT:-8081}; fi'",
+    "dev:e2e:perf": "EXPO_NO_DOTENV=1 EXPO_PUBLIC_MAESTRO_E2E=1 EXPO_PUBLIC_PERF_TEST=1 sh -c 'if [ -f .env.e2e ]; then pnpm exec dotenv -e .env.e2e -- pnpm exec expo start -c --localhost --dev-client --port ${EXPO_PORT:-8081}; else pnpm exec expo start -c --localhost --dev-client --port ${EXPO_PORT:-8081}; fi'",
     "storybook": "EXPO_PUBLIC_STORYBOOK_ENABLED=1 pnpm exec expo start -c --lan",
     "storybook:generate": "EXPO_PUBLIC_STORYBOOK_ENABLED=1 pnpm exec sb-rn-get-stories --config-path ./.rnstorybook",
     "storybook:watch": "pnpm run storybook:generate && pnpm exec chokidar \"**/*.stories.{ts,tsx,js,jsx,mdx}\" \".rnstorybook/**/*.{ts,tsx,js,jsx}\" -c \"pnpm run storybook:generate\"",
@@ -22,7 +23,14 @@
     "test:jest:watch": "jest --config ./jest.config.mjs --watch",
     "check-types": "tsc --noEmit",
     "watch": "pnpm exec concurrently \"tsc --noEmit --watch --preserveWatchOutput\" \"pnpm exec chokidar '**/*.{ts,tsx,js,jsx,json,css}' -c 'biome lint .'\"",
-    "android:gui": "pnpm exec expo run:android"
+    "android:gui": "pnpm exec expo run:android",
+    "android:launch": "node ./scripts/maestro.mjs launch",
+    "maestro:prepare": "node ./scripts/maestro.mjs prepare",
+    "maestro": "node ./scripts/maestro.mjs test",
+    "test:e2e": "node ./scripts/maestro.mjs test .maestro/flows/main",
+    "test:e2e:perf": "EXPO_PUBLIC_PERF_TEST=1 node ./scripts/maestro.mjs test .maestro/flows/performance",
+    "test:e2e:flow": "node ./scripts/maestro.mjs test",
+    "test:e2e:clean": "node ./scripts/maestro.mjs clean"
   },
   "dependencies": {
     "@garmin/fitsdk": "^21.188.0",

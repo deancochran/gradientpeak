@@ -209,7 +209,7 @@ export class PredictiveResistanceCalculator {
   }
 
   /**
-   * Reset calculator state (call when starting new workout or changing devices)
+   * Reset calculator state (call when starting new activity or changing devices)
    */
   reset(): void {
     this.cadenceBuffer.clear();

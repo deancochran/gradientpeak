@@ -1,14 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@repo/ui/components/button";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@repo/ui/components/form";
-import { Input } from "@repo/ui/components/input";
+import { Form, FormTextField } from "@repo/ui/components/form";
 import { cn } from "@repo/ui/lib/cn";
 import { useServerFn } from "@tanstack/react-start";
 import { useForm } from "react-hook-form";
@@ -68,48 +60,25 @@ export function UpdatePasswordForm({
           <form action={resetPasswordAction.url} method="post" onSubmit={handleSubmit}>
             <input type="hidden" name="token" value={token ?? ""} />
             <div className="flex flex-col gap-6">
-              <FormField
+              <FormTextField
+                autoComplete="new-password"
                 control={form.control}
+                description="Password must contain: At least 8 characters. One uppercase letter. One number."
+                label="New password"
                 name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>New password *</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        autoComplete="new-password"
-                        type="password"
-                        placeholder="New password"
-                      />
-                    </FormControl>
-                    <div className="space-y-1 text-xs text-muted-foreground">
-                      <p>Password must contain:</p>
-                      <p>At least 8 characters</p>
-                      <p>One uppercase letter</p>
-                      <p>One number</p>
-                    </div>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                placeholder="New password"
+                required
+                type="password"
               />
 
-              <FormField
+              <FormTextField
+                autoComplete="new-password"
                 control={form.control}
+                label="Confirm password"
                 name="confirmPassword"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Confirm password *</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        autoComplete="new-password"
-                        type="password"
-                        placeholder="Confirm new password"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                placeholder="Confirm new password"
+                required
+                type="password"
               />
 
               {form.formState.errors.root ? (

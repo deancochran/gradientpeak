@@ -56,6 +56,12 @@ import {
   type PlanExecutionStepInfo,
 } from "./planExecution";
 import { type PlanValidationResult, validatePlanRequirements } from "./planValidation";
+import {
+  getTrainerSensorIdsToDisconnect,
+  isFtmsModeAllowedForMachine,
+  isKnownTrainerDevice as isPersistedTrainerDevice,
+  isTrainerLikeSensor,
+} from "./recordingTrainerPolicy";
 import type { SimplifiedMetrics } from "./SimplifiedMetrics";
 import { type ConnectedSensor, SensorsManager } from "./sensors";
 import { RecordingSessionController } from "./sessionController";
@@ -133,39 +139,64 @@ function deepFreeze<T>(value: T): T {
 
 function getFtmsSelectedMode(
   features: FTMSFeatures | undefined,
+  machineType: FtmsMachineType | undefined,
   currentMode: unknown,
 ): FtmsControlMode | null {
   if (!features) return null;
 
   if (typeof currentMode === "string") {
-    switch (currentMode) {
-      case "erg":
-        return "erg";
-      case "sim":
-        return "grade";
-      case "resistance":
-        return "resistance";
-      case "speed":
-        return "speed";
-      case "inclination":
-        return "inclination";
-      case "heart_rate":
-        return "target_heart_rate";
-      case "cadence":
-        return "target_cadence";
+    const currentFtmsMode = (() => {
+      switch (currentMode) {
+        case "erg":
+          return "erg";
+        case "sim":
+          return "grade";
+        case "resistance":
+          return "resistance";
+        case "speed":
+          return "speed";
+        case "inclination":
+          return "inclination";
+        case "heart_rate":
+          return "target_heart_rate";
+        case "cadence":
+          return "target_cadence";
+      }
+      return null;
+    })();
+
+    if (currentFtmsMode && isFtmsModeAllowedForMachine(currentFtmsMode, machineType)) {
+      return currentFtmsMode;
     }
   }
 
-  if (features.powerTargetSettingSupported) return "erg";
-  if (features.resistanceTargetSettingSupported) return "resistance";
-  if (features.indoorBikeSimulationSupported) return "grade";
-  if (features.speedTargetSettingSupported) return "speed";
-  if (features.inclinationTargetSettingSupported) return "inclination";
+  if (features.powerTargetSettingSupported && isFtmsModeAllowedForMachine("erg", machineType)) {
+    return "erg";
+  }
+  if (
+    features.resistanceTargetSettingSupported &&
+    isFtmsModeAllowedForMachine("resistance", machineType)
+  ) {
+    return "resistance";
+  }
+  if (features.indoorBikeSimulationSupported && isFtmsModeAllowedForMachine("grade", machineType)) {
+    return "grade";
+  }
+  if (features.speedTargetSettingSupported && isFtmsModeAllowedForMachine("speed", machineType)) {
+    return "speed";
+  }
+  if (
+    features.inclinationTargetSettingSupported &&
+    isFtmsModeAllowedForMachine("inclination", machineType)
+  ) {
+    return "inclination";
+  }
   return "status";
 }
 
 function buildFtmsAvailableModes(
   features: FTMSFeatures | undefined,
+  machineType: FtmsMachineType | undefined,
   selectedMode: FtmsControlMode | null,
 ): FtmsAvailableMode[] {
   if (!features) return [];
@@ -179,7 +210,7 @@ function buildFtmsAvailableModes(
     },
   ];
 
-  if (features.powerTargetSettingSupported) {
+  if (features.powerTargetSettingSupported && isFtmsModeAllowedForMachine("erg", machineType)) {
     modes.push({
       id: "erg",
       label: "Target Power",
@@ -189,7 +220,10 @@ function buildFtmsAvailableModes(
     });
   }
 
-  if (features.resistanceTargetSettingSupported) {
+  if (
+    features.resistanceTargetSettingSupported &&
+    isFtmsModeAllowedForMachine("resistance", machineType)
+  ) {
     modes.push({
       id: "resistance",
       label: "Resistance",
@@ -199,7 +233,7 @@ function buildFtmsAvailableModes(
     });
   }
 
-  if (features.indoorBikeSimulationSupported) {
+  if (features.indoorBikeSimulationSupported && isFtmsModeAllowedForMachine("grade", machineType)) {
     modes.push({
       id: "grade",
       label: "Grade",
@@ -208,7 +242,10 @@ function buildFtmsAvailableModes(
     });
   }
 
-  if (features.inclinationTargetSettingSupported) {
+  if (
+    features.inclinationTargetSettingSupported &&
+    isFtmsModeAllowedForMachine("inclination", machineType)
+  ) {
     modes.push({
       id: "inclination",
       label: "Inclination",
@@ -218,7 +255,7 @@ function buildFtmsAvailableModes(
     });
   }
 
-  if (features.speedTargetSettingSupported) {
+  if (features.speedTargetSettingSupported && isFtmsModeAllowedForMachine("speed", machineType)) {
     modes.push({
       id: "speed",
       label: "Speed",
@@ -228,7 +265,10 @@ function buildFtmsAvailableModes(
     });
   }
 
-  if (features.heartRateTargetSettingSupported) {
+  if (
+    features.heartRateTargetSettingSupported &&
+    isFtmsModeAllowedForMachine("target_heart_rate", machineType)
+  ) {
     modes.push({
       id: "target_heart_rate",
       label: "Target Heart Rate",
@@ -238,7 +278,10 @@ function buildFtmsAvailableModes(
     });
   }
 
-  if (features.targetedCadenceSupported) {
+  if (
+    features.targetedCadenceSupported &&
+    isFtmsModeAllowedForMachine("target_cadence", machineType)
+  ) {
     modes.push({
       id: "target_cadence",
       label: "Target Cadence",
@@ -645,7 +688,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   /**
-   * Scale the workout intensity for this session.
+   * Scale the activity intensity for this session.
    * Affects FTP and Threshold Pace reactively.
    */
   public setIntensityScale(scale: number): void {
@@ -872,22 +915,28 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         displayName: candidate.deviceName,
         supportsControl: candidate.supportsControl,
       }));
-    const selectedMode = getFtmsSelectedMode(trainer?.ftmsFeatures, controller?.getCurrentMode());
+    const ftmsMachineType = selectedCandidate?.machineType;
+    const recordingMachineType =
+      mapFtmsMachineTypeToRecordingMachineType(ftmsMachineType) ??
+      inferTrainerMachineType(trainer) ??
+      null;
+    const selectedMode = getFtmsSelectedMode(
+      trainer?.ftmsFeatures,
+      ftmsMachineType,
+      controller?.getCurrentMode(),
+    );
 
     return {
       deviceId: trainerState.deviceId,
       deviceName: trainerState.deviceName,
       selectedDeviceId: this.sensorsManager.getSelectedFTMSDeviceId(),
       candidates,
-      machineType:
-        mapFtmsMachineTypeToRecordingMachineType(selectedCandidate?.machineType) ??
-        inferTrainerMachineType(trainer) ??
-        null,
+      machineType: recordingMachineType,
       connectionState: trainerState.connectionState,
       dataFlowState: trainerState.dataFlowState,
       currentControlMode: controller?.getCurrentMode() ?? null,
       selectedMode,
-      availableModes: buildFtmsAvailableModes(trainer?.ftmsFeatures, selectedMode),
+      availableModes: buildFtmsAvailableModes(trainer?.ftmsFeatures, ftmsMachineType, selectedMode),
       controlState: this.trainerControl.getControlState(),
       recoveryState: this.trainerControl.getRecoveryState(),
       lastCommandStatus: this.trainerControl.getLastCommandStatus(),
@@ -896,6 +945,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   public selectFTMSControlTarget(deviceId: string | null): boolean {
+    if (!this.shouldUseTrainerDataAndControl() && deviceId) {
+      this.emit("error", "Trainer control is unavailable while GPS recording is enabled.");
+      return false;
+    }
+
     const selected = this.sensorsManager.selectFTMSControlTarget(deviceId);
     if (selected) {
       this.publishSessionUpdate();
@@ -1306,12 +1360,38 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return this.shouldUseTrainerDataAndControl() || !this.isTrainerMetricSourceType(sourceType);
   }
 
+  private isActiveGpsSession(): boolean {
+    return this.recordingLifecycle === "active" && this._gpsRecordingEnabled;
+  }
+
+  private isKnownTrainerDevice(deviceId: string): boolean {
+    return isPersistedTrainerDevice(deviceId, this.sensorsManager.getPersistedSensors());
+  }
+
   private isTrainerMetricSourceType(sourceType: MetricSourceType): boolean {
     return sourceType.startsWith("trainer_");
   }
 
   private isTrainerSensor(sensor: ConnectedSensor | undefined): boolean {
-    return Boolean(sensor?.isTrainer || sensor?.isControllable || sensor?.ftmsFeatures);
+    return isTrainerLikeSensor(sensor);
+  }
+
+  private async disconnectTrainerSensors(options: { exceptDeviceId?: string } = {}): Promise<void> {
+    const trainerSensorIds = getTrainerSensorIdsToDisconnect(
+      this.sensorsManager.getConnectedSensors(),
+      options,
+    );
+
+    if (trainerSensorIds.length === 0) {
+      return;
+    }
+
+    await Promise.allSettled(
+      trainerSensorIds.map((sensorId) =>
+        this.sensorsManager.disconnectSensor(sensorId, { suppressAutoReconnect: true }),
+      ),
+    );
+    this.emit("sensorsChanged", this.sensorsManager.getConnectedSensors());
   }
 
   private isTrainerReading(reading: SensorReading): boolean {
@@ -1573,6 +1653,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   private async reconnectDisconnectedSensors() {
+    if (this.state !== "recording" && this.state !== "paused" && this.state !== "finishing") {
+      return;
+    }
+
     await this.sensorsManager.reconnectAll();
   }
 
@@ -2472,18 +2556,76 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return this.sensorsManager.getBleState();
   }
 
+  public async connectSensorForRecording(deviceId: string): Promise<ConnectedSensor | null> {
+    if (this.isActiveGpsSession() && this.isKnownTrainerDevice(deviceId)) {
+      this.emit("error", "Trainer devices cannot be connected during a GPS recording.");
+      return null;
+    }
+
+    if (this.isKnownTrainerDevice(deviceId)) {
+      await this.disconnectTrainerSensors({ exceptDeviceId: deviceId });
+    }
+
+    const sensor = await this.sensorsManager.connectSensor(deviceId);
+    if (!sensor) {
+      return null;
+    }
+
+    if (!this.isTrainerSensor(sensor)) {
+      this.publishSessionUpdate();
+      return sensor;
+    }
+
+    if (this.isActiveGpsSession()) {
+      await this.sensorsManager.disconnectSensor(sensor.id, { suppressAutoReconnect: true });
+      this.emit("error", "Trainer devices cannot be connected during a GPS recording.");
+      this.publishSessionUpdate();
+      return null;
+    }
+
+    await this.disconnectTrainerSensors({ exceptDeviceId: sensor.id });
+
+    if (this._gpsRecordingEnabled) {
+      await this.disableGpsRecording();
+    } else {
+      this.publishSessionUpdate();
+    }
+
+    return sensor;
+  }
+
   public async resetAllSensors(): Promise<void> {
     await this.sensorsManager.resetAllSensors();
     this.publishSessionUpdate();
   }
 
+  private isSelectedFtmsModeAllowed(mode: FtmsControlMode): boolean {
+    const selectedDeviceId = this.sensorsManager.getSelectedFTMSDeviceId();
+    const machineType = selectedDeviceId
+      ? this.sensorsManager.getFTMSCandidates().get(selectedDeviceId)?.machineType
+      : undefined;
+
+    return isFtmsModeAllowedForMachine(mode, machineType);
+  }
+
+  private rejectUnsupportedTrainerMode(modeLabel: string): false {
+    this.emit("error", `${modeLabel} is not supported by this trainer type.`);
+    return false;
+  }
+
   public async applyManualTrainerPower(watts: number): Promise<boolean> {
     if (!this.shouldUseTrainerDataAndControl()) return false;
+    if (!this.isSelectedFtmsModeAllowed("erg")) {
+      return this.rejectUnsupportedTrainerMode("Power target");
+    }
     return this.trainerControl.applyManualPower(watts);
   }
 
   public async applyManualTrainerResistance(resistance: number): Promise<boolean> {
     if (!this.shouldUseTrainerDataAndControl()) return false;
+    if (!this.isSelectedFtmsModeAllowed("resistance")) {
+      return this.rejectUnsupportedTrainerMode("Resistance control");
+    }
     return this.trainerControl.applyManualResistance(resistance);
   }
 
@@ -2494,21 +2636,33 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     aerodynamicDragCoefficient?: number;
   }): Promise<boolean> {
     if (!this.shouldUseTrainerDataAndControl()) return false;
+    if (!this.isSelectedFtmsModeAllowed("grade")) {
+      return this.rejectUnsupportedTrainerMode("Grade simulation");
+    }
     return this.trainerControl.applyManualSimulation(params);
   }
 
   public async applyManualTrainerSpeed(speedKph: number): Promise<boolean> {
     if (!this.shouldUseTrainerDataAndControl()) return false;
+    if (!this.isSelectedFtmsModeAllowed("speed")) {
+      return this.rejectUnsupportedTrainerMode("Speed target");
+    }
     return this.trainerControl.applyManualSpeed(speedKph);
   }
 
   public async applyManualTrainerIncline(inclinePercent: number): Promise<boolean> {
     if (!this.shouldUseTrainerDataAndControl()) return false;
+    if (!this.isSelectedFtmsModeAllowed("inclination")) {
+      return this.rejectUnsupportedTrainerMode("Incline target");
+    }
     return this.trainerControl.applyManualIncline(inclinePercent);
   }
 
   public async applyManualTrainerCadence(rpm: number): Promise<boolean> {
     if (!this.shouldUseTrainerDataAndControl()) return false;
+    if (!this.isSelectedFtmsModeAllowed("target_cadence")) {
+      return this.rejectUnsupportedTrainerMode("Cadence target");
+    }
     return this.trainerControl.applyManualCadence(rpm);
   }
 
@@ -2529,6 +2683,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       return;
     }
 
+    await this.disconnectTrainerSensors();
     this._gpsRecordingEnabled = true;
     this.emit("gpsTrackingChanged", true);
     this.emit("activitySelected", {
@@ -2706,6 +2861,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     this.state = "recording";
     this.sessionController.setLifecycle(this.state);
+    this.sensorsManager.setAutoReconnectEnabled(true);
+    void this.sensorsManager.reconnectAll();
 
     // Configure LiveMetricsManager before starting
     this.liveMetricsManager.setGpsRecordingEnabled(this._gpsRecordingEnabled);
@@ -2781,6 +2938,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     const pauseTimestamp = Date.now();
     this.state = "paused";
     this.sessionController.setLifecycle(this.state);
+    this.sensorsManager.setAutoReconnectEnabled(true);
     this.lastPauseTime = pauseTimestamp;
 
     // Pause LiveMetricsManager
@@ -2807,6 +2965,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     const resumeTimestamp = Date.now();
     this.state = "recording";
     this.sessionController.setLifecycle(this.state);
+    this.sensorsManager.setAutoReconnectEnabled(true);
 
     // Resume LiveMetricsManager
     this.liveMetricsManager.resumeRecording();
@@ -2937,6 +3096,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       // Update state
       this.state = "finished";
       this.sessionController.setLifecycle(this.state);
+      this.sensorsManager.setAutoReconnectEnabled(false);
       this.emit("stateChanged", this.state);
       this.publishSessionUpdate();
 
@@ -2973,6 +3133,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     }
 
     this.selectedActivityCategory = category;
+    if (gpsRecordingEnabled && !this._gpsRecordingEnabled) {
+      void this.disconnectTrainerSensors();
+    }
     this._gpsRecordingEnabled = gpsRecordingEnabled;
     this.syncGpsTrackingForCurrentState().catch(console.error);
     this.emit("gpsTrackingChanged", gpsRecordingEnabled);
@@ -2987,6 +3150,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     this.hasConfiguredSetup = true;
     this.selectedActivityCategory = category;
+    if (gpsRecordingEnabled && !this._gpsRecordingEnabled) {
+      void this.disconnectTrainerSensors();
+    }
     this._gpsRecordingEnabled = gpsRecordingEnabled;
     this.clearPlan();
     this.syncGpsTrackingForCurrentState().catch(console.error);
@@ -3024,6 +3190,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
           route_id: payload.plan.route_id || null,
         };
 
+        if (payload.gpsRecordingEnabled && !this._gpsRecordingEnabled) {
+          void this.disconnectTrainerSensors();
+        }
         this._gpsRecordingEnabled = payload.gpsRecordingEnabled;
         this.syncGpsTrackingForCurrentState().catch(console.error);
         this.emit("gpsTrackingChanged", payload.gpsRecordingEnabled);

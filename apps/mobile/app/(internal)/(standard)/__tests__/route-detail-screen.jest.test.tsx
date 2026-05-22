@@ -1,5 +1,5 @@
 import React from "react";
-import { createButtonComponent } from "../../../../test/mock-components";
+import { createButtonComponent, createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const routeData = {
@@ -12,18 +12,13 @@ const routeData = {
   description: "Flat start, climb home.",
   polyline: "encoded",
   has_liked: false,
+  likes_count: 4,
 };
 
 const backMock = jest.fn();
 const deleteMutateMock = jest.fn();
 const toggleLikeMutateMock = jest.fn();
 const authState = { user: { id: "profile-1" } };
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
 
 jest.mock("expo-router", () => ({
   __esModule: true,
@@ -176,8 +171,7 @@ describe("route detail screen", () => {
     expect(screen.getByText("180m")).toBeTruthy();
     expect(screen.getByText("Descent")).toBeTruthy();
     expect(screen.getByText("175m")).toBeTruthy();
-    expect(screen.getByText("System Template")).toBeTruthy();
-    expect(screen.getByText("Comments (0)")).toBeTruthy();
+    expect(screen.getByText("4")).toBeTruthy();
   });
 
   it("moves delete into the header overflow menu", () => {
@@ -187,12 +181,13 @@ describe("route detail screen", () => {
     expect(screen.getByTestId("route-detail-options-delete")).toBeTruthy();
   });
 
-  it("hides route overflow actions for non-owners", () => {
+  it("hides owner-only delete action for non-owners", () => {
     authState.user.id = "profile-2";
 
     renderNative(<RouteDetailScreen />);
 
-    expect(screen.queryByTestId("route-detail-options-trigger")).toBeNull();
+    expect(screen.getByTestId("route-detail-options-trigger")).toBeTruthy();
+    expect(screen.queryByTestId("route-detail-options-delete")).toBeNull();
   });
 
   it("uses a confirm modal before deleting a route", () => {

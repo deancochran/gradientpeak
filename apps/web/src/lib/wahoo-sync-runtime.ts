@@ -4,6 +4,7 @@ import {
   createWahooImportActivityFileStorage,
   createWahooRepository,
   createWahooRouteStorage,
+  WahooActivityHistoryJobService,
   WahooSyncJobService,
   WahooSyncService,
   WahooWebhookJobService,
@@ -49,6 +50,11 @@ export function createWahooSyncRuntime() {
   });
 
   return {
+    activityHistoryJobs: new WahooActivityHistoryJobService({
+      importer,
+      providerSyncRepository,
+      wahooRepository,
+    }),
     syncJobs: new WahooSyncJobService({
       providerSyncRepository,
       syncService,

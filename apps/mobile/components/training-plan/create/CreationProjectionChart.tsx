@@ -115,7 +115,7 @@ const formatCompactAxisNumber = (value: number) => {
   return `${Math.round(value)}`;
 };
 
-const formatWeeklyTss = (value: number) => value.toFixed(1);
+const formatWeeklyTss = (value: number) => `~${value.toFixed(1)}`;
 
 const asRecord = (value: unknown): UnknownRecord | undefined => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -1113,7 +1113,7 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
           </Text>
           <Text className="text-[11px] text-muted-foreground">
             Readiness: {readinessBand ?? "n/a"}
-            {unmetDemand !== undefined ? ` | Demand gap: ${Math.round(unmetDemand)} TSS` : ""}
+            {unmetDemand !== undefined ? ` | Demand gap: ~${Math.round(unmetDemand)} TSS` : ""}
           </Text>
           <Text className="text-[11px] text-muted-foreground">
             Demand floor enabled: {noHistoryFloorEnabledLabel}

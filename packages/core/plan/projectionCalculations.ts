@@ -29,6 +29,7 @@ import {
   resolveNoHistoryStartingPrior,
 } from "./calibration-constants";
 import { addDaysDateOnlyUtc, diffDateOnlyUtcDays } from "./dateOnlyUtc";
+import { resolveGoalReadinessTarget } from "./goalReadinessTrajectory";
 import {
   assessFeasibility,
   buildPeriodizedObjectiveComponents,
@@ -1408,6 +1409,7 @@ export interface DeterministicProjectionPayload {
   goal_assessments?: Array<{
     goal_id: string;
     priority: number;
+    goal_readiness_target?: number;
     goal_readiness_score: number;
     state_readiness_score?: number;
     goal_alignment_loss_0_100?: number;
@@ -4570,16 +4572,16 @@ function buildDeterministicProjectionPayloadInternal(
     timeline_calibration: calibration.readiness_timeline,
     athlete_gender: input.no_history_context?.gender,
   });
-  const physiologicalReadinessScore = round1(
-    computeWeightedGoalDateReadiness({
-      points: pointsForScoring,
-      goals: goalMarkers,
-    }),
-  );
   const pointsWithReadiness = pointsForScoring.map((point, i) => ({
     ...point,
     readiness_score: finalPointReadinessScores[i] ?? point.readiness_score,
   }));
+  const physiologicalReadinessScore = round1(
+    computeWeightedGoalDateReadiness({
+      points: pointsWithReadiness,
+      goals: goalMarkers,
+    }),
+  );
   const cappedProjectionFeasibility: ReadinessProjectionFeasibilityMetadata = {
     ...projectionFeasibility,
     readiness_score: compositeReadiness.readiness_score,
@@ -4600,6 +4602,9 @@ function buildDeterministicProjectionPayloadInternal(
   const readinessRationaleCodes = cappedProjectionFeasibility.readiness_rationale_codes;
 
   const goalFeasibilityById = new Map(goalGdi.map((goal) => [goal.goal_id, goal.feasibility_band]));
+  const goalReadinessTarget = resolveGoalReadinessTarget(
+    input.preference_profile?.goal_strategy_preferences,
+  );
   const goalAssessments = goalAssessmentsRaw.map((goal) => {
     const goalContext = goalContextById.get(goal.goal_id);
     const timelinePressure = clamp01(1 - (goalContext?.weeksToGoal ?? 0) / 24);
@@ -4630,6 +4635,7 @@ function buildDeterministicProjectionPayloadInternal(
     return {
       goal_id: goal.goal_id,
       priority: goal.priority,
+      goal_readiness_target: goalReadinessTarget,
       goal_readiness_score: blendedReadiness,
       state_readiness_score: stateReadinessScore,
       goal_alignment_loss_0_100: alignmentLoss,

@@ -11,7 +11,7 @@ env:
 - runFlow:
     file: ../../reusable/open_plan_tab.yaml
 - tapOn:
-    id: "projection-settings-button"
+    id: "plan-signals-settings-button"
 - extendedWaitUntil:
     visible:
       id: "training-preferences-screen"

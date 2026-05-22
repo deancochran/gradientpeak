@@ -59,7 +59,7 @@ function calculateStepIntensityFactor(step: IntervalStepV2, userSettings: UserSe
 // ==============================
 
 /**
- * Estimate metrics from a structured workout plan
+ * Estimate metrics from a structured activity plan
  * Highest accuracy for activities with defined step structure
  * Accuracy: 90-95% for power-based, 80-85% for HR-based
  */
@@ -401,7 +401,7 @@ export function estimateFromTemplate(context: EstimationContext): EstimationResu
 
   const warnings = [
     "No structure or route provided - using default estimates.",
-    "Add workout structure or select a route for better accuracy.",
+    "Add activity structure or select a route for better accuracy.",
   ];
   if (!template) {
     throw new Error("Assumed template, not found");

@@ -74,7 +74,6 @@
 
 import { plannedActivityScheduleFormSchema } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
-import { Card, CardContent } from "@repo/ui/components/card";
 import {
   Form,
   FormDateInputField,
@@ -87,13 +86,13 @@ import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Calendar, ChevronDown, ChevronUp, X } from "lucide-react-native";
+import { ChevronDown, ChevronUp } from "lucide-react-native";
 import React, { useEffect, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
-import { ActivityIndicator, Alert, Pressable, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Pressable, View } from "react-native";
 import { z } from "zod";
-import { ActivityPlanContentPreview } from "@/components/activity-plan/ActivityPlanContentPreview";
-import { AppConfirmModal, AppFormModal } from "@/components/shared/AppFormModal";
+import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { AppFormModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
 import { refreshScheduleWithCallbacks } from "@/lib/scheduling/refreshScheduleViews";
 import { applyServerFormErrors, getErrorMessage } from "@/lib/utils/formErrors";
@@ -105,6 +104,7 @@ const scheduleActivityModalFormSchema = plannedActivityScheduleFormSchema.extend
   all_day: z.boolean(),
   scheduled_time: z.string().nullable().optional(),
 });
+type ScheduleActivityModalFormInput = z.input<typeof scheduleActivityModalFormSchema>;
 type ScheduleActivityModalFormOutput = z.output<typeof scheduleActivityModalFormSchema>;
 
 interface ScheduleActivityModalProps {
@@ -209,6 +209,18 @@ function buildAllDayStartIso(value: Date) {
   return `${toDateOnlyString(value)}T00:00:00.000Z`;
 }
 
+function getRRuleWeekday(dateKey: string): string {
+  const day = new Date(`${dateKey}T00:00:00.000Z`).getUTCDay();
+  return ["SU", "MO", "TU", "WE", "TH", "FR", "SA"][day] ?? "MO";
+}
+
+function buildWeeklyRecurrence(dateKey: string, occurrenceCount: number) {
+  return {
+    rule: `FREQ=WEEKLY;INTERVAL=1;COUNT=${occurrenceCount};BYDAY=${getRRuleWeekday(dateKey)}`,
+    timezone: "UTC",
+  };
+}
+
 function buildStartsAtFromEditorValues(input: {
   scheduledDate: string;
   scheduledTime: string | null;
@@ -255,7 +267,11 @@ export function ScheduleActivityModal({
     );
   }
 
-  const form = useZodForm({
+  const form = useZodForm<
+    ScheduleActivityModalFormInput,
+    undefined,
+    ScheduleActivityModalFormOutput
+  >({
     schema: scheduleActivityModalFormSchema,
     defaultValues: {
       scheduled_date: preselectedDate || toDateOnlyString(new Date()),
@@ -271,7 +287,8 @@ export function ScheduleActivityModal({
   const [showEditScopeModal, setShowEditScopeModal] = useState(false);
   const [pendingEditValues, setPendingEditValues] =
     useState<ScheduleActivityModalFormOutput | null>(null);
-  const [successState, setSuccessState] = useState<null | { message: string; title: string }>(null);
+  const [repeatWeekly, setRepeatWeekly] = useState(false);
+  const [repeatOccurrenceCount, setRepeatOccurrenceCount] = useState(4);
 
   const scheduledDateString = form.watch("scheduled_date");
   const scheduledTimeString = form.watch("scheduled_time");
@@ -325,7 +342,8 @@ export function ScheduleActivityModal({
       setShowConstraintDetails(false);
       setShowEditScopeModal(false);
       setPendingEditValues(null);
-      setSuccessState(null);
+      setRepeatWeekly(false);
+      setRepeatOccurrenceCount(4);
     }
   }, [visible, form]);
 
@@ -362,15 +380,13 @@ export function ScheduleActivityModal({
 
   const updateMutation = api.events.update.useMutation();
 
-  const handleMutationSuccess = async (message: string) => {
+  const handleMutationSuccess = async () => {
     await refreshScheduleWithCallbacks({
       queryClient,
       callbacks: [],
     });
-    setSuccessState({
-      title: isEditMode ? "Schedule updated" : "Activity scheduled",
-      message,
-    });
+    onClose();
+    await onSuccess?.();
   };
 
   const submitEditWithScope = async (
@@ -392,7 +408,7 @@ export function ScheduleActivityModal({
         },
       });
 
-      await handleMutationSuccess("Activity updated!");
+      await handleMutationSuccess();
     } catch (error) {
       setRootFormError(form, error, "Failed to update activity. Please try again.");
     }
@@ -430,9 +446,12 @@ export function ScheduleActivityModal({
         scheduled_date: data.scheduled_date,
         notes: data.notes || undefined,
         training_plan_id: data.training_plan_id || undefined,
+        recurrence: repeatWeekly
+          ? buildWeeklyRecurrence(data.scheduled_date, repeatOccurrenceCount)
+          : undefined,
       });
 
-      await handleMutationSuccess("Activity scheduled!");
+      await handleMutationSuccess();
     } catch (error) {
       setRootFormError(form, error, "Failed to schedule activity. Please try again.");
     }
@@ -442,18 +461,6 @@ export function ScheduleActivityModal({
     form,
     onSubmit,
   });
-
-  const getActivityTypeIcon = (type: string): string => {
-    const iconMap: Record<string, string> = {
-      outdoor_run: "🏃",
-      outdoor_bike: "🚴",
-      indoor_treadmill: "🏃‍♂️",
-      indoor_bike_trainer: "🚴‍♀️",
-      indoor_strength: "💪",
-      indoor_swim: "🏊",
-    };
-    return iconMap[type] || "🏋️";
-  };
 
   const isSubmitting =
     submitForm.isSubmitting || createMutation.isPending || updateMutation.isPending;
@@ -507,12 +514,6 @@ export function ScheduleActivityModal({
             };
 
   const minimumScheduleDate = isEditMode ? undefined : new Date();
-
-  const handleAcknowledgeSuccess = async () => {
-    setSuccessState(null);
-    onClose();
-    await onSuccess?.();
-  };
 
   return (
     <>
@@ -571,42 +572,20 @@ export function ScheduleActivityModal({
             </View>
           ) : displayPlan ? (
             <>
-              {/* Activity Plan Summary */}
-              <Card>
-                <CardContent className="p-4 gap-4">
-                  <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    Selected activity
-                  </Text>
-                  <View className="flex-row items-start gap-3">
-                    <View className="h-10 w-10 items-center justify-center rounded-full bg-muted">
-                      <Text className="text-xl">
-                        {getActivityTypeIcon(displayPlan.activity_category)}
-                      </Text>
-                    </View>
-                    <View className="flex-1 gap-1">
-                      <Text className="text-lg font-semibold text-foreground">
-                        {displayPlan.name}
-                      </Text>
-                      {displayPlan.description ? (
-                        <Text className="text-sm leading-5 text-muted-foreground" numberOfLines={3}>
-                          {displayPlan.description}
-                        </Text>
-                      ) : null}
-                    </View>
-                  </View>
-
-                  <Text className="text-sm text-muted-foreground">
-                    Review the session shape before you save the activity.
-                  </Text>
-                  <View testID="schedule-preview-details">
-                    <ActivityPlanContentPreview
-                      size="medium"
-                      plan={displayPlan}
-                      route={displayRoute}
-                    />
-                  </View>
-                </CardContent>
-              </Card>
+              <View className="gap-2" testID="schedule-preview-details">
+                <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Selected activity
+                </Text>
+                <ActivityPlanCard
+                  activityPlan={displayPlan as any}
+                  route={displayRoute as any}
+                  testID="schedule-selected-activity-card"
+                  variant="compact"
+                />
+                <Text className="text-sm text-muted-foreground">
+                  Review the session shape before you save the activity.
+                </Text>
+              </View>
 
               <Form {...form}>
                 {isEditMode ? (
@@ -647,16 +626,73 @@ export function ScheduleActivityModal({
                     ) : null}
                   </View>
                 ) : (
-                  <FormDateInputField
-                    accessibilityHint="Choose when this activity should be scheduled"
-                    control={form.control}
-                    disabled={isSubmitting}
-                    label="Scheduled Date"
-                    minimumDate={minimumScheduleDate}
-                    name="scheduled_date"
-                    placeholder="Choose a date"
-                    testId="scheduled-date-field"
-                  />
+                  <View className="gap-3">
+                    <FormDateInputField
+                      accessibilityHint="Choose when this activity should be scheduled"
+                      control={form.control}
+                      disabled={isSubmitting}
+                      label="Scheduled Date"
+                      minimumDate={minimumScheduleDate}
+                      name="scheduled_date"
+                      placeholder="Choose a date"
+                      testId="scheduled-date-field"
+                    />
+
+                    <View className="rounded-xl border border-border bg-card px-3 py-3">
+                      <View className="flex-row items-center justify-between gap-3">
+                        <View className="flex-1 gap-1">
+                          <Text className="text-sm font-medium text-foreground">Repeat weekly</Text>
+                          <Text className="text-xs text-muted-foreground">
+                            Schedule this activity every week on the selected day.
+                          </Text>
+                        </View>
+                        <Pressable
+                          accessibilityRole="switch"
+                          accessibilityState={{ checked: repeatWeekly }}
+                          className={`rounded-full px-3 py-2 ${repeatWeekly ? "bg-primary" : "bg-muted"}`}
+                          disabled={isSubmitting}
+                          onPress={() => setRepeatWeekly((current) => !current)}
+                          testID="schedule-repeat-weekly-toggle"
+                        >
+                          <Text
+                            className={`text-xs font-semibold ${repeatWeekly ? "text-primary-foreground" : "text-foreground"}`}
+                          >
+                            {repeatWeekly ? "On" : "Off"}
+                          </Text>
+                        </Pressable>
+                      </View>
+
+                      {repeatWeekly ? (
+                        <View className="mt-3 gap-2 border-t border-border pt-3">
+                          <Text className="text-xs font-medium text-muted-foreground">
+                            Ends after {repeatOccurrenceCount} occurrences
+                          </Text>
+                          <View className="flex-row gap-2">
+                            <Pressable
+                              className="rounded-md border border-border px-3 py-2"
+                              disabled={isSubmitting || repeatOccurrenceCount <= 2}
+                              onPress={() =>
+                                setRepeatOccurrenceCount((current) => Math.max(2, current - 1))
+                              }
+                              testID="schedule-repeat-count-decrement"
+                            >
+                              <Text className="text-sm text-foreground">-</Text>
+                            </Pressable>
+                            <Pressable
+                              className="rounded-md border border-border px-3 py-2"
+                              disabled={isSubmitting || repeatOccurrenceCount >= 52}
+                              onPress={() =>
+                                setRepeatOccurrenceCount((current) => Math.min(52, current + 1))
+                              }
+                              testID="schedule-repeat-count-increment"
+                            >
+                              <Text className="text-sm text-foreground">+</Text>
+                            </Pressable>
+                          </View>
+                        </View>
+                      ) : null}
+                    </View>
+                  </View>
                 )}
               </Form>
 
@@ -789,24 +825,6 @@ export function ScheduleActivityModal({
             </Button>
           </View>
         </AppFormModal>
-      ) : null}
-
-      {successState ? (
-        <AppConfirmModal
-          description={successState.message}
-          onClose={() => {
-            void handleAcknowledgeSuccess();
-          }}
-          primaryAction={{
-            label: "Done",
-            onPress: () => {
-              void handleAcknowledgeSuccess();
-            },
-            testID: "schedule-success-confirm",
-          }}
-          testID="schedule-success-modal"
-          title={successState.title}
-        />
       ) : null}
     </>
   );

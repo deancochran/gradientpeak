@@ -1,0 +1,7 @@
+appId: com.deancochran.gradientpeak.dev
+---
+- tapOn:
+    id: "tab-button-groups"
+- extendedWaitUntil:
+    visible: "Groups"
+    timeout: 10000

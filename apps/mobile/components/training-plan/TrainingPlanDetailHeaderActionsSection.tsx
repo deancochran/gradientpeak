@@ -1,10 +1,12 @@
-import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { Heart } from "lucide-react-native";
 import React, { useMemo } from "react";
-import { Pressable, View } from "react-native";
-import { EntityOwnerRow } from "@/components/shared/EntityOwnerRow";
+import { View } from "react-native";
+import {
+  ResourceLikeButton,
+  ResourceOwnerActionRow,
+} from "@/components/shared/ResourceCardPrimitives";
 import { TrainingPlanPeriodizationPreview } from "@/components/shared/TrainingPlanPeriodizationPreview";
+import { markEstimated } from "@/lib/estimatedMetrics";
 import {
   deriveTrainingPlanSummaryMetrics,
   deriveTrainingPlanVisual,
@@ -40,6 +42,21 @@ export function TrainingPlanDetailHeaderActionsSection({
 
   return (
     <View className="gap-4 rounded-3xl border border-border bg-card p-4">
+      <ResourceOwnerActionRow
+        actions={
+          <ResourceLikeButton
+            isLiked={isLiked}
+            likeCount={likesCount}
+            onPress={handleToggleLike}
+            testID="training-plan-like-button"
+          />
+        }
+        categoryLabel={isCurrentScheduledPlan ? "Current scheduled plan" : "Template"}
+        fallbackLabel="GradientPeak"
+        owner={plan?.owner ?? null}
+        timestamp={plan.created_at}
+      />
+
       <TrainingPlanSummaryHeader
         title={plan.name}
         description={plan.description || undefined}
@@ -55,28 +72,7 @@ export function TrainingPlanDetailHeaderActionsSection({
             year: "numeric",
           })
         }
-        rightAccessory={
-          <Pressable
-            onPress={handleToggleLike}
-            className="rounded-full border border-border bg-background px-3 py-2"
-            testID="training-plan-like-button"
-          >
-            <View className="flex-row items-center gap-1.5">
-              <Icon
-                as={Heart}
-                size={16}
-                className={isLiked ? "text-red-500 fill-red-500" : "text-muted-foreground"}
-              />
-              <Text
-                className={
-                  isLiked ? "text-red-500 text-sm font-medium" : "text-muted-foreground text-sm"
-                }
-              >
-                {likesCount > 0 ? `${likesCount}` : isLiked ? "Liked" : "Like"}
-              </Text>
-            </View>
-          </Pressable>
-        }
+        showMeta={false}
       />
 
       {isCurrentScheduledPlan ? (
@@ -110,14 +106,16 @@ export function TrainingPlanDetailHeaderActionsSection({
           <View className="flex-row flex-wrap gap-2">
             <SummaryMetricCard label="Microcycles" value={`${overview.microcycles}`} />
             <SummaryMetricCard label="Sessions" value={`${overview.sessions}`} />
-            <SummaryMetricCard label="Linked workouts" value={`${overview.linkedWorkouts}`} />
-            <SummaryMetricCard label="Route-backed workouts" value={`${overview.routeBacked}`} />
-            <SummaryMetricCard label="Planned TSS" value={`${overview.plannedTss}`} />
+            <SummaryMetricCard label="Linked activities" value={`${overview.linkedWorkouts}`} />
+            <SummaryMetricCard label="Route-backed activities" value={`${overview.routeBacked}`} />
+            <SummaryMetricCard
+              label="Planned TSS"
+              value={markEstimated(`${overview.plannedTss}`) ?? "0"}
+            />
             <SummaryMetricCard label="Planned time" value={overview.plannedTime} />
           </View>
         </View>
       ) : null}
-      {plan?.owner ? <EntityOwnerRow owner={plan.owner} subtitle="Plan owner" /> : null}
     </View>
   );
 }

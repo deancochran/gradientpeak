@@ -15,14 +15,14 @@ describe("DropdownMenu web", () => {
       <DropdownMenu modal={false} open>
         <DropdownMenuTrigger>Open menu</DropdownMenuTrigger>
         <DropdownMenuContent>
-          <DropdownMenuItem>Pin workout</DropdownMenuItem>
+          <DropdownMenuItem>Pin activity</DropdownMenuItem>
           <DropdownMenuShortcut>Shift+P</DropdownMenuShortcut>
         </DropdownMenuContent>
       </DropdownMenu>,
     );
 
     expect(await screen.findByRole("menu")).toBeInTheDocument();
-    expect(await screen.findByRole("menuitem", { name: "Pin workout" })).toBeVisible();
+    expect(await screen.findByRole("menuitem", { name: "Pin activity" })).toBeVisible();
     expect(screen.getByText("Shift+P")).toBeInTheDocument();
   });
 });

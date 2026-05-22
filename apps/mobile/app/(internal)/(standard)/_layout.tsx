@@ -43,6 +43,17 @@ import { TouchableOpacity } from "react-native";
  * - goal-create - Create a goal
  * - goal-edit - Edit a goal
  *
+ * GROUPS:
+ * - group-detail - Group profile and viewer actions
+ * - group-create - Create a group
+ * - group-edit - Edit group details
+ * - group-members - View and manage members
+ * - group-invites - Manage pending invitations
+ * - group-join-requests - Review join requests
+ * - group-event-detail - Group event details and RSVP
+ * - group-event-create - Create a one-off group event
+ * - group-event-edit - Edit a one-off group event
+ *
  * TRAINING PLANS:
  * - training-plans-list - Training plan management
  * - training-plan-detail - Training plan overview
@@ -211,6 +222,68 @@ export default function StandardLayout() {
         }}
       />
 
+      {/* GROUPS */}
+      <Stack.Screen
+        name="group-detail"
+        options={{
+          title: "Group",
+        }}
+      />
+      <Stack.Screen
+        name="group-create"
+        options={{
+          title: "Create Group",
+        }}
+      />
+      <Stack.Screen
+        name="group-edit"
+        options={{
+          title: "Edit Group",
+        }}
+      />
+      <Stack.Screen
+        name="group-members"
+        options={{
+          title: "Members",
+        }}
+      />
+      <Stack.Screen
+        name="group-requests"
+        options={{
+          title: "Requests",
+        }}
+      />
+      <Stack.Screen
+        name="group-invites"
+        options={{
+          title: "Requests",
+        }}
+      />
+      <Stack.Screen
+        name="group-join-requests"
+        options={{
+          title: "Requests",
+        }}
+      />
+      <Stack.Screen
+        name="group-event-detail"
+        options={{
+          title: "Group Event",
+        }}
+      />
+      <Stack.Screen
+        name="group-event-create"
+        options={{
+          title: "Create Event",
+        }}
+      />
+      <Stack.Screen
+        name="group-event-edit"
+        options={{
+          title: "Edit Event",
+        }}
+      />
+
       {/* TRAINING PLANS */}
       <Stack.Screen
         name="training-plans-list"
@@ -237,9 +310,9 @@ export default function StandardLayout() {
         }}
       />
       <Stack.Screen
-        name="workouts-reorder"
+        name="activities-reorder"
         options={{
-          title: "Reorder Workouts",
+          title: "Reorder Activities",
         }}
       />
 

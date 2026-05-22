@@ -15,7 +15,7 @@ describe("Table web", () => {
   it("renders semantic table structure", () => {
     renderWeb(
       <Table>
-        <TableCaption>Weekly workouts</TableCaption>
+        <TableCaption>Weekly activities</TableCaption>
         <TableHeader>
           <TableRow>
             <TableHead>Day</TableHead>
@@ -32,6 +32,6 @@ describe("Table web", () => {
     expect(screen.getByRole("table")).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Day" })).toBeInTheDocument();
     expect(screen.getByRole("cell", { name: "Monday" })).toBeInTheDocument();
-    expect(screen.getByText("Weekly workouts")).toBeInTheDocument();
+    expect(screen.getByText("Weekly activities")).toBeInTheDocument();
   });
 });

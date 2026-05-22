@@ -1,3 +1,4 @@
+import type { AthletePreferenceProfile } from "../schemas/settings/profile_settings";
 import type {
   GoalTargetV2,
   InferredStateSnapshot,
@@ -36,6 +37,7 @@ export interface BuildProjectionEngineInputShape {
   starting_ctl?: number;
   starting_atl?: number;
   prior_inferred_snapshot?: InferredStateSnapshot;
+  preference_profile?: AthletePreferenceProfile;
   no_history_context?: NoHistoryAnchorContext;
   disable_weekly_tss_optimizer?: boolean;
 }
@@ -71,6 +73,7 @@ export function buildProjectionEngineInput(
     starting_ctl: input.starting_ctl,
     starting_atl: input.starting_atl,
     prior_inferred_snapshot: input.prior_inferred_snapshot,
+    preference_profile: input.preference_profile,
     no_history_context: input.no_history_context,
     creation_config: input.normalized_creation_config
       ? {

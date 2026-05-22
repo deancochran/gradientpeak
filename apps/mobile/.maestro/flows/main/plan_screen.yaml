@@ -10,6 +10,7 @@ appId: com.deancochran.gradientpeak.dev
       password: "${STANDARD_USER_PASS}"
 - tapOn: "Plan"
 - extendedWaitUntil:
-    visible: "Forecasted Projection"
+    visible:
+      id: "plan-screen"
     timeout: 10000
 - takeScreenshot: reports/plan_screen_after_login.png

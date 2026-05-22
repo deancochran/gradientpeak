@@ -17,6 +17,7 @@ import {
 } from "react-native-css/components/react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AppBootstrapGate } from "@/components/auth/AppBootstrapGate";
+import { PerformanceBeacon } from "@/lib/performance";
 import { QueryProvider } from "@/lib/providers/QueryProvider";
 import { initializeServerConfig, useServerConfig } from "@/lib/server-config";
 import { LocationManager } from "@/lib/services/ActivityRecorder/location";
@@ -96,6 +97,7 @@ function AppShell() {
                   <Slot />
                   <PortalHost />
                   <E2ERuntimeErrorStatus />
+                  <PerformanceBeacon />
                 </View>
               </SafeAreaView>
             </View>

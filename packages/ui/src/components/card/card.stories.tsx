@@ -65,7 +65,7 @@ export const WithAction: Story = {
       </CardContent>
       <CardFooter className="justify-end gap-2">
         <Button variant="ghost">Skip</Button>
-        <Button>Open workout</Button>
+        <Button>Open activity</Button>
       </CardFooter>
     </Card>
   ),

@@ -27,7 +27,7 @@ export const uiPreviewContract = {
     },
     selectionControls: {
       description:
-        "Shared toggles and selectors for consent, channel, workout type, and sport choice.",
+        "Shared toggles and selectors for consent, channel, activity type, and sport choice.",
       testId: "ui-preview-scenario-selection-controls",
       title: "Selection controls",
     },

@@ -13,12 +13,15 @@ import { useLocalSearchParams } from "expo-router";
 import { ChevronRight, Search, SlidersHorizontal, X } from "lucide-react-native";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ScrollView, TouchableOpacity, View } from "react-native";
+import { GroupCard } from "@/components/groups";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { RouteCard as SharedRouteCard } from "@/components/shared/RouteCard";
 import { TrainingPlanCard as SharedTrainingPlanCard } from "@/components/shared/TrainingPlanCard";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
+import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import { usePerformanceScreenReady } from "@/lib/performance";
 import { useTheme } from "@/lib/stores/theme-store";
 
 const PAGE_SIZE = 25;
@@ -50,10 +53,11 @@ const SCOPE_OPTIONS = [
   { id: "activityPlans", label: "Activity Plans" },
   { id: "routes", label: "Routes" },
   { id: "trainingPlans", label: "Training Plans" },
+  { id: "groups", label: "Groups" },
   { id: "users", label: "Profiles" },
 ] as const;
 
-type TabType = "activityPlans" | "trainingPlans" | "routes" | "users";
+type TabType = "activityPlans" | "trainingPlans" | "routes" | "groups" | "users";
 type DiscoverScope = TabType;
 type DiscoverCategoryId = (typeof ACTIVITY_CATEGORY_OPTIONS)[number]["id"];
 
@@ -65,6 +69,7 @@ type ActivityPlanSortField =
   | "intensity_factor";
 type RouteSortField = "created_at" | "distance" | "ascent";
 type TrainingPlanSortField = "created_at" | "duration_weeks" | "sessions_per_week";
+type GroupSortField = "created_at";
 type ProfileSortField = "created_at" | "username";
 
 type ActivityPlanFilters = {
@@ -164,6 +169,10 @@ const DEFAULT_TRAINING_PLAN_SORT: SortState<TrainingPlanSortField> = {
   field: "created_at",
   direction: "desc",
 };
+const DEFAULT_GROUP_SORT: SortState<GroupSortField> = {
+  field: "created_at",
+  direction: "desc",
+};
 const DEFAULT_PROFILE_SORT: SortState<ProfileSortField> = {
   field: "created_at",
   direction: "desc",
@@ -252,6 +261,7 @@ function scoreSearchFeedItem(type: TabType, query: string, item: any) {
     activityPlans: 34,
     trainingPlans: 30,
     routes: 32,
+    groups: 28,
     users: 24,
   };
 
@@ -281,6 +291,13 @@ function scoreSearchFeedItem(type: TabType, query: string, item: any) {
         scoreSearchTextMatch(query, item.name) +
         scoreSearchTextMatch(query, item.description) * 0.65 +
         scoreSearchTextMatch(query, item.activity_category) * 0.4 +
+        typeWeight[type]
+      );
+    case "groups":
+      return (
+        scoreSearchTextMatch(query, item.name) +
+        scoreSearchTextMatch(query, item.description) * 0.65 +
+        scoreSearchTextMatch(query, item.slug) * 0.35 +
         typeWeight[type]
       );
     case "users":
@@ -328,6 +345,8 @@ function getSearchPlaceholder(scope: DiscoverScope) {
       return "Search routes";
     case "trainingPlans":
       return "Search training plans";
+    case "groups":
+      return "Search groups";
     case "users":
       return "Search profiles";
   }
@@ -341,6 +360,8 @@ function getScopeNoun(scope: DiscoverScope) {
       return "routes";
     case "trainingPlans":
       return "training plans";
+    case "groups":
+      return "groups";
     case "users":
       return "profiles";
   }
@@ -502,15 +523,20 @@ function toProfileSortParam(sort: SortState<ProfileSortField>) {
 }
 
 export default function DiscoverPage() {
+  const { user: signedInUser } = useAuth();
   const navigateTo = useAppNavigate();
+  usePerformanceScreenReady("route-discover");
   const params = useLocalSearchParams<{
+    q?: string;
     scope?: DiscoverScope;
   }>();
   const initialScope = SCOPE_OPTIONS.some((option) => option.id === params.scope)
     ? params.scope
     : "activityPlans";
   const [activeScope, setActiveScope] = useState<DiscoverScope>(initialScope ?? "activityPlans");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(
+    sanitizeSearchInput(typeof params.q === "string" ? params.q : ""),
+  );
   const debouncedSearch = useDebounce(searchQuery, 300);
   const [activityPlanSort, setActivityPlanSort] = useState<SortState<ActivityPlanSortField>>(
     DEFAULT_ACTIVITY_PLAN_SORT,
@@ -572,6 +598,7 @@ export default function DiscoverPage() {
   const shouldLoadActivityPlans = activeScope === "activityPlans";
   const shouldLoadTrainingPlans = activeScope === "trainingPlans";
   const shouldLoadRoutes = activeScope === "routes";
+  const shouldLoadGroups = activeScope === "groups";
   const shouldLoadUsers = activeScope === "users";
   const activityPlansInfiniteQuery = api.activityPlans.list.useInfiniteQuery(
     {
@@ -643,6 +670,17 @@ export default function DiscoverPage() {
     },
   );
 
+  const groupsInfiniteQuery = api.groups.listDiscoverable.useInfiniteQuery(
+    {
+      search: validatedSearchQuery || undefined,
+      limit: PAGE_SIZE,
+    },
+    {
+      enabled: shouldLoadGroups,
+      getNextPageParam: (lastPage: any) => lastPage.nextCursor,
+    },
+  );
+
   const activityPlans = useMemo(() => {
     return shouldLoadActivityPlans
       ? activityPlansInfiniteQuery.data?.pages.flatMap((page: any) => page.items) || []
@@ -666,6 +704,12 @@ export default function DiscoverPage() {
       ? usersInfiniteQuery.data?.pages.flatMap((page: any) => page.users) || []
       : [];
   }, [shouldLoadUsers, usersInfiniteQuery.data]);
+
+  const groupsList = useMemo(() => {
+    return shouldLoadGroups
+      ? groupsInfiniteQuery.data?.pages.flatMap((page: any) => page.items) || []
+      : [];
+  }, [groupsInfiniteQuery.data, shouldLoadGroups]);
 
   const hasSubFilters =
     (activeScope === "activityPlans" && hasActivityPlanFilters(activityPlanFilters)) ||
@@ -734,10 +778,22 @@ export default function DiscoverPage() {
     } as any);
   };
 
-  const handleUserPress = (user: any) => {
+  const handleUserPress = (profile: any) => {
+    if (profile.id === signedInUser?.id) {
+      navigateTo("/profile");
+      return;
+    }
+
     navigateTo({
       pathname: "/(internal)/(standard)/user/[userId]",
-      params: { userId: user.id },
+      params: { userId: profile.id },
+    } as any);
+  };
+
+  const handleGroupPress = (group: any) => {
+    navigateTo({
+      pathname: "/(internal)/(standard)/group-detail",
+      params: { groupId: group.id },
     } as any);
   };
 
@@ -765,7 +821,7 @@ export default function DiscoverPage() {
     } else if (activeScope === "routes") {
       setRouteSort(draftRouteSort);
       setRouteFilters(draftRouteFilters);
-    } else {
+    } else if (activeScope === "users") {
       setProfileSort(draftProfileSort);
     }
     setIsFilterSheetOpen(false);
@@ -781,7 +837,7 @@ export default function DiscoverPage() {
     } else if (activeScope === "routes") {
       setDraftRouteSort(DEFAULT_ROUTE_SORT);
       setDraftRouteFilters(DEFAULT_ROUTE_FILTERS);
-    } else {
+    } else if (activeScope === "users") {
       setDraftProfileSort(DEFAULT_PROFILE_SORT);
     }
   };
@@ -796,7 +852,7 @@ export default function DiscoverPage() {
     } else if (activeScope === "routes") {
       setRouteSort(DEFAULT_ROUTE_SORT);
       setRouteFilters(DEFAULT_ROUTE_FILTERS);
-    } else {
+    } else if (activeScope === "users") {
       setProfileSort(DEFAULT_PROFILE_SORT);
     }
   }, [activeScope]);
@@ -815,11 +871,13 @@ export default function DiscoverPage() {
     (shouldLoadActivityPlans && activityPlansInfiniteQuery.hasNextPage) ||
     (shouldLoadTrainingPlans && trainingPlansInfiniteQuery.hasNextPage) ||
     (shouldLoadRoutes && routesInfiniteQuery.hasNextPage) ||
+    (shouldLoadGroups && groupsInfiniteQuery.hasNextPage) ||
     (shouldLoadUsers && usersInfiniteQuery.hasNextPage);
   const isFetchingNextPage =
     (shouldLoadActivityPlans && activityPlansInfiniteQuery.isFetchingNextPage) ||
     (shouldLoadTrainingPlans && trainingPlansInfiniteQuery.isFetchingNextPage) ||
     (shouldLoadRoutes && routesInfiniteQuery.isFetchingNextPage) ||
+    (shouldLoadGroups && groupsInfiniteQuery.isFetchingNextPage) ||
     (shouldLoadUsers && usersInfiniteQuery.isFetchingNextPage);
 
   const handleLoadNextPage = useCallback(() => {
@@ -842,10 +900,16 @@ export default function DiscoverPage() {
       return;
     }
 
+    if (activeScope === "groups") {
+      void groupsInfiniteQuery.fetchNextPage();
+      return;
+    }
+
     void usersInfiniteQuery.fetchNextPage();
   }, [
     activeScope,
     activityPlansInfiniteQuery,
+    groupsInfiniteQuery,
     hasNextPage,
     isFetchingNextPage,
     routesInfiniteQuery,
@@ -881,13 +945,21 @@ export default function DiscoverPage() {
                 sortDate: getSortDate(item),
                 score: scoreSearchFeedItem("routes", normalizedSearchQuery, item),
               }))
-            : users.map((item: any) => ({
-                id: `users-${item.id}`,
-                type: "users" as const,
-                item,
-                sortDate: getSortDate(item),
-                score: scoreSearchFeedItem("users", normalizedSearchQuery, item),
-              }));
+            : activeScope === "groups"
+              ? groupsList.map((item: any) => ({
+                  id: `groups-${item.id}`,
+                  type: "groups" as const,
+                  item,
+                  sortDate: getSortDate(item),
+                  score: scoreSearchFeedItem("groups", normalizedSearchQuery, item),
+                }))
+              : users.map((item: any) => ({
+                  id: `users-${item.id}`,
+                  type: "users" as const,
+                  item,
+                  sortDate: getSortDate(item),
+                  score: scoreSearchFeedItem("users", normalizedSearchQuery, item),
+                }));
 
     const currentSort =
       activeScope === "activityPlans"
@@ -896,7 +968,9 @@ export default function DiscoverPage() {
           ? safeTrainingPlanSort
           : activeScope === "routes"
             ? safeRouteSort
-            : safeProfileSort;
+            : activeScope === "groups"
+              ? DEFAULT_GROUP_SORT
+              : safeProfileSort;
 
     return items.sort((left, right) => {
       const leftTimestamp = getTimestampValue(left.sortDate);
@@ -970,6 +1044,7 @@ export default function DiscoverPage() {
     activityPlans,
     activityPlanFilters,
     activityPlanSort,
+    groupsList,
     hasSearchQuery,
     normalizedSearchQuery,
     safeActivityPlanSort,
@@ -989,6 +1064,7 @@ export default function DiscoverPage() {
       trainingPlansInfiniteQuery.isLoading &&
       trainingPlans.length === 0) ||
     (shouldLoadRoutes && routesInfiniteQuery.isLoading && routes.length === 0) ||
+    (shouldLoadGroups && groupsInfiniteQuery.isLoading && groupsList.length === 0) ||
     (shouldLoadUsers && usersInfiniteQuery.isLoading && users.length === 0);
 
   const resultCountLabel = `${feedItems.length} item${feedItems.length === 1 ? "" : "s"}`;
@@ -997,7 +1073,8 @@ export default function DiscoverPage() {
     : resultCountLabel;
 
   const renderSearchInput = () => {
-    const clearButtonRight = 52;
+    const showFilterButton = activeScope !== "groups";
+    const clearButtonRight = showFilterButton ? 52 : 16;
 
     return (
       <View className="border-b border-border bg-background px-4 pb-3 pt-4">
@@ -1029,27 +1106,29 @@ export default function DiscoverPage() {
             </TouchableOpacity>
           ) : null}
 
-          <TouchableOpacity
-            className={`absolute right-2 top-1/2 h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border ${
-              hasAnyFilters ? "border-primary bg-primary" : "border-border bg-background"
-            }`}
-            onPress={handleOpenFilterSheet}
-            activeOpacity={0.85}
-            testID="discover-filter-button"
-            accessibilityState={{ selected: hasAnyFilters }}
-          >
-            <Icon
-              as={SlidersHorizontal}
-              size={16}
-              className={hasAnyFilters ? "text-primary-foreground" : "text-foreground"}
-            />
-            {hasAnyFilters ? (
-              <View
-                className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-background"
-                testID="discover-filter-button-dot"
+          {showFilterButton ? (
+            <TouchableOpacity
+              className={`absolute right-2 top-1/2 h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border ${
+                hasAnyFilters ? "border-primary bg-primary" : "border-border bg-background"
+              }`}
+              onPress={handleOpenFilterSheet}
+              activeOpacity={0.85}
+              testID="discover-filter-button"
+              accessibilityState={{ selected: hasAnyFilters }}
+            >
+              <Icon
+                as={SlidersHorizontal}
+                size={16}
+                className={hasAnyFilters ? "text-primary-foreground" : "text-foreground"}
               />
-            ) : null}
-          </TouchableOpacity>
+              {hasAnyFilters ? (
+                <View
+                  className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-background"
+                  testID="discover-filter-button-dot"
+                />
+              ) : null}
+            </TouchableOpacity>
+          ) : null}
         </View>
       </View>
     );
@@ -1164,6 +1243,9 @@ export default function DiscoverPage() {
       ) : null}
       {result.type === "routes" ? (
         <RouteCard route={result.item} onPress={() => handleRoutePress(result.item)} />
+      ) : null}
+      {result.type === "groups" ? (
+        <GroupCard group={result.item} onPress={() => handleGroupPress(result.item)} />
       ) : null}
       {result.type === "users" ? (
         <UserCard user={result.item} onPress={() => handleUserPress(result.item)} />
@@ -1351,6 +1433,7 @@ function DiscoverFilterSheet({
     (scope === "routes" &&
       areSortStatesEqual(routeSort, DEFAULT_ROUTE_SORT) &&
       !hasRouteFilters(routeFilters)) ||
+    scope === "groups" ||
     (scope === "users" && areSortStatesEqual(profileSort, DEFAULT_PROFILE_SORT));
 
   if (!visible) {
@@ -1409,17 +1492,17 @@ function DiscoverFilterSheet({
                       testID: "discover-filter-sort-field-created-at",
                     },
                     {
-                      label: "Duration",
+                      label: "Estimated duration",
                       value: "estimated_duration",
                       testID: "discover-filter-sort-field-duration",
                     },
                     {
-                      label: "TSS",
+                      label: "Estimated TSS",
                       value: "estimated_tss",
                       testID: "discover-filter-sort-field-tss",
                     },
                     {
-                      label: "IF",
+                      label: "Estimated IF",
                       value: "intensity_factor",
                       testID: "discover-filter-sort-field-if",
                     },

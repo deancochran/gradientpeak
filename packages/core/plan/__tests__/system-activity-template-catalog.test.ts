@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { ALL_SAMPLE_PLANS, SYSTEM_TEMPLATES, type SystemTrainingPlanTemplate } from "../../samples";
-import { persistedTrainingPlanStructureSchema, trainingPlanCreateSchema } from "../../schemas";
+import {
+  ALL_SAMPLE_PLANS,
+  SYSTEM_TEMPLATES,
+  SYSTEM_TRACK_RUN_WORKOUTS,
+  type SystemTrainingPlanTemplate,
+} from "../../samples";
+import {
+  activityPlanCreateSchema,
+  persistedTrainingPlanStructureSchema,
+  trainingPlanCreateSchema,
+} from "../../schemas";
 import {
   buildSystemActivityTemplateCatalog,
   normalizeActivityTemplateStructureForAudit,
@@ -52,6 +61,34 @@ describe("system activity-template catalog", () => {
   it("keeps every shipped system training plan current-schema compatible", () => {
     for (const plan of ALL_SAMPLE_PLANS) {
       expect(() => trainingPlanCreateSchema.parse(plan.structure)).not.toThrow();
+    }
+  });
+
+  it("keeps every shipped system activity template current-schema compatible", () => {
+    for (const template of SYSTEM_TEMPLATES) {
+      const createInput = {
+        activity_category: template.activity_category,
+        description: template.description,
+        name: template.name,
+        notes: template.notes,
+        route_id: template.route_id,
+        structure: template.structure,
+        version: template.version,
+      };
+
+      expect(() => activityPlanCreateSchema.parse(createInput)).not.toThrow();
+    }
+  });
+
+  it("keeps shipped track run workouts distance-based", () => {
+    expect(SYSTEM_TRACK_RUN_WORKOUTS.length).toBeGreaterThan(0);
+
+    for (const template of SYSTEM_TRACK_RUN_WORKOUTS) {
+      for (const interval of template.structure.intervals) {
+        for (const step of interval.steps) {
+          expect(step.duration.type).toBe("distance");
+        }
+      }
     }
   });
 

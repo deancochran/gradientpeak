@@ -1,20 +1,479 @@
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { format } from "date-fns";
 import { Stack } from "expo-router";
-import { Activity, ChevronRight, Timer, Zap } from "lucide-react-native";
+import { CheckCircle2, Timer, Zap } from "lucide-react-native";
 import React from "react";
-import { FlatList, Pressable, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
+import Svg, { Circle, Line, Path, Text as SvgText } from "react-native-svg";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { CompactInsightCard, type DateRange, DetailChartModal } from "@/components/shared";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
+import { getActivityInsightVisualPolicy } from "@/lib/insights/visualPolicy";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+
+type ActivityEffortRow = {
+  id: string;
+  activity_category: string;
+  duration_seconds: number;
+  effort_type: string;
+  recorded_at: string | Date;
+  unit: string;
+  value: number;
+};
+
+type EffortPoint = {
+  effortId: string;
+  label: string;
+  duration: number;
+  value: number;
+};
+
+type ActivityEffortCurve = {
+  id: string;
+  title: string;
+  unit: string;
+  records: ActivityEffortRow[];
+  points: EffortPoint[];
+};
+
+type ChartPoint = { x: number; y: number };
+
+type EffortChartBounds = {
+  maxDuration: number;
+  maxValue: number;
+};
+
+const EFFORT_CURVE_OPTIONS = ["power", "speed"] as const;
+const MIN_EFFORT_CURVE_DURATION_SECONDS = 3600;
+const EFFORT_CURVE_DURATION_TICKS = [0, 15, 60, 300, 1200, 3600, 7200];
+
+function getCurveTitle(effortType: string) {
+  if (effortType === "power") return "Power curve";
+  if (effortType === "speed") return "Pace / speed curve";
+  return `${effortType.replace(/_/g, " ")} curve`;
+}
+
+function formatDate(value: string | Date) {
+  return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function formatValue(effort: ActivityEffortRow) {
+  return `${Number(effort.value).toLocaleString(undefined, { maximumFractionDigits: 1 })} ${effort.unit}`;
+}
+
+function formatDuration(seconds: number) {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+  return `${Number(seconds / 3600).toLocaleString(undefined, { maximumFractionDigits: 1 })}h`;
+}
+
+function buildPath(points: Array<{ x: number; y: number }>) {
+  return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
+}
+
+function scaleDuration(duration: number, maxDuration: number) {
+  if (duration <= 0) return 0;
+  return Math.log1p(duration) / Math.log1p(maxDuration);
+}
+
+function getDurationTicks(maxDuration: number) {
+  const ticks = EFFORT_CURVE_DURATION_TICKS.filter((tick) => tick <= maxDuration);
+  const lastTick = ticks.at(-1);
+
+  if (lastTick !== maxDuration) {
+    ticks.push(maxDuration);
+  }
+
+  return ticks;
+}
+
+function getCoordinates(points: EffortPoint[], width: number, height: number, padding: number) {
+  const values = points.map((point) => point.value);
+  const max = Math.max(...values, 1);
+  const maxDuration = Math.max(
+    ...points.map((point) => point.duration),
+    MIN_EFFORT_CURVE_DURATION_SECONDS,
+  );
+  const chartWidth = width - padding * 2;
+  const chartHeight = height - padding * 2;
+
+  return points.map((point) => ({
+    x: padding + scaleDuration(point.duration, maxDuration) * chartWidth,
+    y: padding + (1 - point.value / max) * chartHeight,
+  }));
+}
+
+function getEffortChartBounds(points: EffortPoint[]): EffortChartBounds {
+  return {
+    maxDuration: Math.max(
+      ...points.map((point) => point.duration),
+      MIN_EFFORT_CURVE_DURATION_SECONDS,
+    ),
+    maxValue: Math.max(...points.map((point) => point.value), 1),
+  };
+}
+
+function getEffortChartCoordinates(
+  points: EffortPoint[],
+  width: number,
+  height: number,
+  padding: { top: number; right: number; bottom: number; left: number },
+  bounds: EffortChartBounds,
+): ChartPoint[] {
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+
+  return points.map((point) => ({
+    x: padding.left + scaleDuration(point.duration, bounds.maxDuration) * chartWidth,
+    y: padding.top + (1 - point.value / bounds.maxValue) * chartHeight,
+  }));
+}
+
+function formatAxisValue(value: number, unit: string) {
+  return `${Number(value).toLocaleString(undefined, { maximumFractionDigits: value >= 10 ? 0 : 1 })}${unit ? ` ${unit}` : ""}`;
+}
+
+function filterRecordsByRange(records: ActivityEffortRow[], dateRange: DateRange) {
+  if (dateRange === "all") return records;
+
+  const days = dateRange === "7d" ? 7 : dateRange === "30d" ? 30 : 90;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  cutoff.setHours(0, 0, 0, 0);
+
+  return records.filter((record) => new Date(record.recorded_at) >= cutoff);
+}
+
+function buildBestCurve(records: ActivityEffortRow[]) {
+  const bestByDuration = new Map<number, ActivityEffortRow>();
+
+  for (const record of records) {
+    const current = bestByDuration.get(record.duration_seconds);
+    if (!current || record.value > current.value) {
+      bestByDuration.set(record.duration_seconds, record);
+    }
+  }
+
+  return [...bestByDuration.entries()]
+    .sort(([durationA], [durationB]) => durationA - durationB)
+    .map(([duration, record]) => ({
+      duration,
+      effortId: record.id,
+      label: formatDuration(duration),
+      value: Number(record.value),
+    }));
+}
+
+function buildEarliestComparableCurve(records: ActivityEffortRow[]) {
+  if (records.length === 0) return [];
+
+  const chronological = [...records].sort(
+    (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime(),
+  );
+  const earliestDay = new Date(chronological[0]!.recorded_at);
+  earliestDay.setHours(23, 59, 59, 999);
+
+  return buildBestCurve(
+    chronological.filter(
+      (record) => new Date(record.recorded_at).getTime() <= earliestDay.getTime(),
+    ),
+  );
+}
+
+function getCurveBest(records: ActivityEffortRow[]) {
+  return records.reduce<ActivityEffortRow | null>((best, record) => {
+    if (!best || record.value > best.value) return record;
+    return best;
+  }, null);
+}
+
+function getCurveEffortIds(records: ActivityEffortRow[]) {
+  return new Set([
+    ...buildEarliestComparableCurve(records).map((point) => point.effortId),
+    ...buildBestCurve(records).map((point) => point.effortId),
+  ]);
+}
+
+function MiniEffortVisual({ points }: { points: EffortPoint[] }) {
+  if (points.length === 0) return <View className="h-12 rounded-2xl bg-muted/30" />;
+  const width = 120;
+  const height = 52;
+  const coordinates = getCoordinates(points.slice(-12), width, height, 8);
+
+  return (
+    <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
+      <Path
+        d={buildPath(coordinates)}
+        stroke="#f97316"
+        strokeWidth={4}
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      {coordinates.at(-1) ? (
+        <Circle cx={coordinates.at(-1)!.x} cy={coordinates.at(-1)!.y} r={4} fill="#f97316" />
+      ) : null}
+    </Svg>
+  );
+}
+
+function EffortDetailChart({
+  curve,
+  records,
+}: {
+  curve: ActivityEffortCurve;
+  records: ActivityEffortRow[];
+}) {
+  const width = 340;
+  const height = 260;
+  const presentPoints = buildBestCurve(records);
+  const earliestPoints = buildEarliestComparableCurve(records);
+  const allPoints = [...presentPoints, ...earliestPoints];
+  const padding = { top: 20, right: 18, bottom: 44, left: 54 };
+  const bounds = getEffortChartBounds(allPoints);
+  const presentCoordinates = getEffortChartCoordinates(
+    presentPoints,
+    width,
+    height,
+    padding,
+    bounds,
+  );
+  const earliestCoordinates = getEffortChartCoordinates(
+    earliestPoints,
+    width,
+    height,
+    padding,
+    bounds,
+  );
+  const chartLeft = padding.left;
+  const chartRight = width - padding.right;
+  const chartTop = padding.top;
+  const chartBottom = height - padding.bottom;
+  const valueTicks = [bounds.maxValue, bounds.maxValue / 2, 0];
+  const durationTicks = getDurationTicks(bounds.maxDuration);
+  const best = getCurveBest(records);
+
+  return (
+    <Card className="rounded-3xl border border-border bg-card">
+      <CardContent className="gap-4 p-4">
+        <View className="flex-row items-start justify-between gap-3">
+          <View className="gap-1">
+            <Text className="text-lg font-semibold capitalize text-foreground">{curve.title}</Text>
+            <Text className="text-sm text-muted-foreground">
+              Earliest comparable curve vs current best curve from {records.length} records.
+            </Text>
+          </View>
+          <Text className="text-lg font-semibold text-foreground">
+            {best ? `Best ${formatValue(best)}` : "No data"}
+          </Text>
+        </View>
+        {presentPoints.length < 2 ? (
+          <View className="h-[260px] items-center justify-center rounded-2xl bg-muted/20">
+            <Text className="text-center text-sm font-medium text-foreground">
+              Not enough data to draw this curve yet.
+            </Text>
+            <Text className="mt-2 px-6 text-center text-xs text-muted-foreground">
+              Save efforts at two or more durations to compute a curve. Available efforts are listed
+              below.
+            </Text>
+          </View>
+        ) : (
+          <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
+            {valueTicks.map((tick) => {
+              const y = chartTop + (1 - tick / bounds.maxValue) * (chartBottom - chartTop);
+              return (
+                <React.Fragment key={`value-${tick}`}>
+                  <Line
+                    x1={chartLeft}
+                    x2={chartRight}
+                    y1={y}
+                    y2={y}
+                    stroke="#e2e8f0"
+                    strokeWidth={1}
+                  />
+                  <SvgText
+                    x={chartLeft - 8}
+                    y={y + 4}
+                    fill="#64748b"
+                    fontSize={10}
+                    textAnchor="end"
+                  >
+                    {formatAxisValue(tick, curve.unit)}
+                  </SvgText>
+                </React.Fragment>
+              );
+            })}
+            <Line
+              x1={chartLeft}
+              x2={chartLeft}
+              y1={chartTop}
+              y2={chartBottom}
+              stroke="#94a3b8"
+              strokeWidth={1.5}
+            />
+            <Line
+              x1={chartLeft}
+              x2={chartRight}
+              y1={chartBottom}
+              y2={chartBottom}
+              stroke="#94a3b8"
+              strokeWidth={1.5}
+            />
+            {durationTicks.map((tick) => {
+              const x =
+                chartLeft + scaleDuration(tick, bounds.maxDuration) * (chartRight - chartLeft);
+              return (
+                <React.Fragment key={`duration-${tick}`}>
+                  <Line
+                    x1={x}
+                    x2={x}
+                    y1={chartBottom}
+                    y2={chartBottom + 4}
+                    stroke="#94a3b8"
+                    strokeWidth={1}
+                  />
+                  <SvgText
+                    x={x}
+                    y={chartBottom + 18}
+                    fill="#64748b"
+                    fontSize={10}
+                    textAnchor="middle"
+                  >
+                    {formatDuration(Math.round(tick))}
+                  </SvgText>
+                </React.Fragment>
+              );
+            })}
+            <SvgText
+              x={(chartLeft + chartRight) / 2}
+              y={height - 4}
+              fill="#64748b"
+              fontSize={11}
+              textAnchor="middle"
+            >
+              Duration
+            </SvgText>
+            <Path
+              d={buildPath(earliestCoordinates)}
+              stroke="#94a3b8"
+              strokeWidth={3}
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <Path
+              d={buildPath(presentCoordinates)}
+              stroke="#f97316"
+              strokeWidth={4}
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            {presentCoordinates.map((point, index) => (
+              <Circle
+                key={`${curve.id}-${index}`}
+                cx={point.x}
+                cy={point.y}
+                r={3.5}
+                fill="#f97316"
+              />
+            ))}
+          </Svg>
+        )}
+        <View className="flex-row gap-4">
+          <View className="flex-row items-center gap-2">
+            <View className="h-2 w-5 rounded-full bg-slate-400" />
+            <Text className="text-xs text-muted-foreground">Earliest</Text>
+          </View>
+          <View className="flex-row items-center gap-2">
+            <View className="h-2 w-5 rounded-full bg-orange-500" />
+            <Text className="text-xs text-muted-foreground">Current</Text>
+          </View>
+        </View>
+      </CardContent>
+    </Card>
+  );
+}
+
+function EffortRecords({
+  onOpenRecord,
+  records,
+}: {
+  onOpenRecord: (recordId: string) => void;
+  records: ActivityEffortRow[];
+}) {
+  const curveEffortIds = React.useMemo(() => getCurveEffortIds(records), [records]);
+
+  return (
+    <Card className="rounded-3xl border border-border bg-card">
+      <CardContent className="gap-3 p-4">
+        <Text className="text-base font-semibold text-foreground">Effort records</Text>
+        {records.length === 0 ? (
+          <Text className="text-sm text-muted-foreground">No records in this range.</Text>
+        ) : null}
+        {records.map((record) => (
+          <Pressable
+            key={record.id}
+            onPress={() => onOpenRecord(record.id)}
+            className="flex-row items-center justify-between gap-3 rounded-2xl border border-border bg-muted/10 px-4 py-3"
+            testID={`activity-effort-record-${record.id}`}
+          >
+            <View className="flex-1 gap-1">
+              <View className="flex-row items-center gap-2">
+                <Text className="text-sm font-semibold text-foreground">{formatValue(record)}</Text>
+                {curveEffortIds.has(record.id) ? (
+                  <Icon as={CheckCircle2} size={14} className="text-primary" />
+                ) : null}
+              </View>
+              <Text className="text-xs text-muted-foreground">
+                {formatDate(record.recorded_at)} • {record.duration_seconds}s
+              </Text>
+            </View>
+            <Text className="text-xs font-medium text-primary">Open</Text>
+          </Pressable>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
 
 function ActivityEffortsList() {
   const navigateTo = useAppNavigate();
+  const { data: effortsData, isLoading, error } = api.activityEfforts.getForProfile.useQuery();
+  const efforts = (effortsData ?? []) as ActivityEffortRow[];
+  const effortCurves = React.useMemo(() => {
+    const curves = new Map<string, ActivityEffortRow[]>();
+    for (const effort of efforts) {
+      curves.set(effort.effort_type, [...(curves.get(effort.effort_type) ?? []), effort]);
+    }
 
-  const { data: efforts, isLoading, error } = api.activityEfforts.getForProfile.useQuery();
+    return EFFORT_CURVE_OPTIONS.map((id) => {
+      const records = curves.get(id) ?? [];
+      const sorted = [...records].sort(
+        (a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime(),
+      );
+      return {
+        id,
+        title: getCurveTitle(id),
+        unit: sorted[0]?.unit ?? (id === "power" ? "W" : "speed"),
+        records: sorted,
+        points: buildBestCurve(sorted),
+      } satisfies ActivityEffortCurve;
+    });
+  }, [efforts]);
+  const [selectedCurveId, setSelectedCurveId] = React.useState<string | null>(null);
+  const selectedCurve = effortCurves.find((curve) => curve.id === selectedCurveId) ?? null;
+  const handleOpenRecord = React.useCallback(
+    (recordId: string) => {
+      setSelectedCurveId(null);
+      requestAnimationFrame(() => {
+        navigateTo(ROUTES.ACTIVITIES.EFFORT_DETAIL(recordId) as any);
+      });
+    },
+    [navigateTo],
+  );
 
   if (isLoading) {
     return (
@@ -48,64 +507,59 @@ function ActivityEffortsList() {
           ),
         }}
       />
-      <FlatList
-        data={efforts}
-        keyExtractor={(item) => item.id}
-        contentContainerClassName="p-4 gap-4"
-        ListHeaderComponent={
-          efforts && efforts.length > 0 ? (
-            <View className="rounded-2xl border border-border bg-muted/20 px-4 py-3">
-              <Text className="text-sm text-muted-foreground">
-                {efforts.length} {efforts.length === 1 ? "effort" : "efforts"}
-              </Text>
-            </View>
-          ) : null
-        }
-        ListEmptyComponent={
-          <View className="items-center justify-center py-10">
-            <Icon as={Activity} size={48} className="text-muted-foreground mb-4" />
-            <Text className="text-lg font-medium text-foreground">No activity efforts yet</Text>
-            <Text className="text-sm text-muted-foreground text-center mt-2">
-              Your recorded activity efforts will appear here.
-            </Text>
-          </View>
-        }
-        renderItem={({ item }) => (
-          <Pressable
-            onPress={() => navigateTo(ROUTES.ACTIVITIES.EFFORT_DETAIL(item.id) as any)}
-            testID={`activity-effort-list-item-${item.id}`}
-          >
-            <Card className="rounded-3xl border border-border bg-card">
-              <CardContent className="gap-3 p-4">
-                <View className="flex-row items-start justify-between gap-3">
-                  <View className="flex-1 gap-1">
-                    <Text className="text-base font-semibold capitalize text-foreground">
-                      {item.activity_category} • {item.effort_type}
-                    </Text>
-                    <Text className="text-sm text-muted-foreground">
-                      {format(new Date(item.recorded_at), "MMM d, yyyy")}
-                    </Text>
-                  </View>
-                  <Icon as={ChevronRight} size={16} className="text-muted-foreground" />
-                </View>
+      <ScrollView contentContainerClassName="gap-5 p-4 pb-8">
+        <View className="gap-1">
+          <Text className="text-xl font-semibold text-foreground">Activity effort trends</Text>
+          <Text className="text-sm text-muted-foreground">
+            Open power curves, pace/speed curves, and other effort trends from your saved efforts.
+          </Text>
+        </View>
 
-                <View className="flex-row items-center justify-between">
-                  <View className="flex-row items-center gap-2">
-                    <Icon as={Timer} size={16} className="text-muted-foreground" />
-                    <Text className="font-medium text-foreground">{item.duration_seconds}s</Text>
-                  </View>
-                  <View className="flex-row items-center gap-2">
-                    <Icon as={Zap} size={16} className="text-primary" />
-                    <Text className="text-lg font-bold text-foreground">
-                      {item.value} {item.unit}
-                    </Text>
-                  </View>
-                </View>
-              </CardContent>
-            </Card>
-          </Pressable>
-        )}
-      />
+        <View className="flex-row flex-wrap gap-4">
+          {effortCurves.map((curve) => {
+            const policy = getActivityInsightVisualPolicy("activityEfforts");
+            const best = getCurveBest(curve.records);
+            return (
+              <CompactInsightCard
+                key={curve.id}
+                title={curve.title}
+                value={best ? `Best ${formatValue(best)}` : "--"}
+                icon={curve.id === "power" ? Zap : Timer}
+                hasData={Boolean(best)}
+                layout={policy.compactLayout}
+                summary={
+                  curve.records.length === 0
+                    ? "No efforts yet"
+                    : `${curve.records.length} efforts across ${curve.points.length} durations`
+                }
+                visualPolicy={{ source: policy.source, visualType: policy.visualType }}
+                onPress={() => setSelectedCurveId(curve.id)}
+                testID={`activity-effort-curve-${curve.id}`}
+              >
+                <MiniEffortVisual points={curve.points} />
+              </CompactInsightCard>
+            );
+          })}
+        </View>
+
+        <DetailChartModal
+          visible={!!selectedCurve}
+          onClose={() => setSelectedCurveId(null)}
+          title={selectedCurve ? selectedCurve.title : "Activity effort"}
+          defaultDateRange="all"
+        >
+          {(dateRange) => {
+            if (!selectedCurve) return null;
+            const rangeRecords = filterRecordsByRange(selectedCurve.records, dateRange);
+            return (
+              <View className="gap-4">
+                <EffortDetailChart curve={selectedCurve} records={rangeRecords} />
+                <EffortRecords onOpenRecord={handleOpenRecord} records={rangeRecords} />
+              </View>
+            );
+          }}
+        </DetailChartModal>
+      </ScrollView>
     </View>
   );
 }

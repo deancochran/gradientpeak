@@ -1,4 +1,3 @@
-import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import Constants from "expo-constants";
@@ -26,6 +25,38 @@ type IntegrationConfig = {
   name: string;
 };
 
+type IntegrationOverviewItem = {
+  actions: Array<"refresh_setup_data" | "sync_now" | "disconnect">;
+  activityHistory: {
+    lastError: string | null;
+    lastFailedAt: string | null;
+    lastSucceededAt: string | null;
+    queuedJobId: string | null;
+    status: "idle" | "queued" | "importing" | "synced" | "failed" | "unsupported";
+  };
+  plannedWorkouts: {
+    lastError: string | null;
+    lastFailedAt: string | null;
+    lastSucceededAt: string | null;
+    queuedJobId: string | null;
+    status: "automatic" | "queued" | "syncing" | "failed" | "unsupported";
+  };
+  providerHealth: {
+    lastError: string | null;
+    status: "connected" | "needs_reconnect" | "unsupported";
+  };
+  setupData: {
+    lastError: string | null;
+    lastFailedAt: string | null;
+    lastSucceededAt: string | null;
+    status: "idle" | "refreshing" | "refreshed" | "failed" | "unsupported";
+  };
+  connected: boolean;
+  integrationId: string | null;
+  label: string;
+  provider: IntegrationProvider;
+};
+
 const INTEGRATIONS: IntegrationConfig[] = [
   { provider: "strava", name: "Strava" },
   { provider: "wahoo", name: "Wahoo" },
@@ -34,10 +65,105 @@ const INTEGRATIONS: IntegrationConfig[] = [
   { provider: "zwift", name: "Zwift" },
 ];
 
-function getConnectedSummary(integrations: Array<{ provider: string }> | undefined) {
-  const count = integrations?.length ?? 0;
+function getConnectedSummary(overview: IntegrationOverviewItem[] | undefined) {
+  const count = overview?.filter((provider) => provider.connected).length ?? 0;
   if (count === 0) return "No services connected";
   return `${count} connected ${count === 1 ? "service" : "services"}`;
+}
+
+function getSetupDataCopy(status: IntegrationOverviewItem["setupData"]["status"]) {
+  switch (status) {
+    case "refreshing":
+      return "Setup data: Refreshing from provider.";
+    case "refreshed":
+      return "Setup data: Refreshed safely.";
+    case "failed":
+      return "Setup data: Needs attention.";
+    case "idle":
+      return "Setup data: Ready to refresh missing values.";
+    case "unsupported":
+      return "Setup data: Not available.";
+  }
+}
+
+function getProviderMetricSummary(fields: string[] | undefined) {
+  const labels = (fields ?? []).map((field) => {
+    switch (field) {
+      case "weight_kg":
+        return "weight";
+      case "ftp":
+        return "FTP";
+      case "dob":
+        return "date of birth";
+      case "gender":
+        return "gender";
+      default:
+        return field;
+    }
+  });
+
+  if (labels.length === 0) return null;
+  if (labels.length === 1) return labels[0];
+  return `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}`;
+}
+
+function getSyncCompleteDescription(result: {
+  queued: boolean;
+  setupRefresh?: {
+    fieldsKept?: string[];
+    fieldsUpdated?: string[];
+    keptExistingValues?: boolean;
+  } | null;
+}) {
+  const updatedSummary = getProviderMetricSummary(result.setupRefresh?.fieldsUpdated);
+  const keptSummary = getProviderMetricSummary(result.setupRefresh?.fieldsKept);
+  const historyCopy = result.queued
+    ? "Recent history sync has been queued."
+    : "Recent history sync was not queued; check the status above or try again shortly.";
+
+  if (updatedSummary) {
+    return keptSummary
+      ? `Updated ${updatedSummary} from Wahoo. Kept your existing GradientPeak ${keptSummary} because Wahoo differs. ${historyCopy}`
+      : `Updated ${updatedSummary} from Wahoo. ${historyCopy}`;
+  }
+
+  if (keptSummary) {
+    return `Wahoo differs for ${keptSummary}; kept your existing GradientPeak values. ${historyCopy}`;
+  }
+
+  return `Wahoo sync ran. ${historyCopy}`;
+}
+
+function getPlannedWorkoutCopy(status: IntegrationOverviewItem["plannedWorkouts"]["status"]) {
+  switch (status) {
+    case "queued":
+      return "Planned workouts: Sync queued.";
+    case "syncing":
+      return "Planned workouts: Syncing.";
+    case "failed":
+      return "Planned workouts: Needs attention.";
+    case "automatic":
+      return "Planned workouts: Automatic when connected.";
+    case "unsupported":
+      return "Planned workouts: Not available.";
+  }
+}
+
+function getActivityHistoryCopy(status: IntegrationOverviewItem["activityHistory"]["status"]) {
+  switch (status) {
+    case "queued":
+      return "Recent activity history is queued for import.";
+    case "importing":
+      return "Importing recent activity history.";
+    case "synced":
+      return "Recent activity history is up to date.";
+    case "failed":
+      return "Recent activity history needs attention. Try Sync now.";
+    case "idle":
+      return "Recent activity history will import automatically.";
+    case "unsupported":
+      return "Activity history import is not available for this provider.";
+  }
 }
 
 function getMobileRedirectUri(): string {
@@ -51,7 +177,7 @@ function getMobileRedirectUri(): string {
 export default function IntegrationsScreen() {
   const router = useRouter();
   const [pendingByProvider, setPendingByProvider] = useState<
-    Partial<Record<IntegrationProvider, "connect" | "disconnect">>
+    Partial<Record<IntegrationProvider, "connect" | "disconnect" | "sync">>
   >({});
   const [disconnectingProvider, setDisconnectingProvider] = useState<IntegrationProvider | null>(
     null,
@@ -62,15 +188,23 @@ export default function IntegrationsScreen() {
 
   const utils = api.useUtils();
   const {
-    data: integrations,
-    refetch,
+    data: syncOverview,
+    refetch: refetchSyncOverview,
     isLoading: integrationsLoading,
-  } = api.integrations.list.useQuery();
+  } = api.integrations.getSyncOverview.useQuery();
   const getAuthUrlMutation = useReliableMutation(api.integrations.getAuthUrl, {
     silent: true,
   });
+  const invalidateIntegrations = [
+    () => utils.integrations.getSyncOverview.invalidate(),
+    () => utils.integrations.list.invalidate(),
+  ];
+  const syncNowMutation = useReliableMutation(api.integrations.syncNow, {
+    invalidate: invalidateIntegrations,
+    success: "Sync queued",
+  });
   const disconnectMutation = useReliableMutation(api.integrations.disconnect, {
-    invalidate: [utils.integrations],
+    invalidate: invalidateIntegrations,
     success: "Integration disconnected",
   });
 
@@ -86,11 +220,11 @@ export default function IntegrationsScreen() {
         if (success === "true") {
           setStatusModal({
             title: "Success",
-            description: `Successfully connected to ${provider}!`,
+            description: `Successfully connected to ${provider}. Recent history imports automatically when supported.`,
           });
-          refetch();
+          refetchSyncOverview();
         } else if (error) {
-          refetch();
+          refetchSyncOverview();
           let errorMessage = "Failed to connect";
           switch (error) {
             case "invalid_state":
@@ -124,7 +258,7 @@ export default function IntegrationsScreen() {
         console.error("Failed to parse deep link:", err);
       }
     },
-    [refetch],
+    [refetchSyncOverview],
   );
 
   const handleClose = useCallback(() => {
@@ -133,9 +267,9 @@ export default function IntegrationsScreen() {
 
   useEffect(() => {
     const subscription = Linking.addEventListener("url", handleDeepLink);
-    refetch();
+    refetchSyncOverview();
     return () => subscription.remove();
-  }, [handleDeepLink, refetch]);
+  }, [handleDeepLink, refetchSyncOverview]);
 
   useEffect(() => {
     const backHandler = BackHandler?.addEventListener?.("hardwareBackPress", () => {
@@ -182,7 +316,7 @@ export default function IntegrationsScreen() {
     setPendingByProvider((prev) => ({ ...prev, [provider]: "disconnect" }));
     try {
       await disconnectMutation.mutateAsync({ provider });
-      refetch();
+      refetchSyncOverview();
       setDisconnectingProvider(null);
       setStatusModal({ title: "Success", description: "Integration disconnected successfully" });
     } catch (error) {
@@ -193,8 +327,25 @@ export default function IntegrationsScreen() {
     }
   };
 
-  const isConnected = (provider: IntegrationProvider) => {
-    return integrations?.some((integration) => integration.provider === provider);
+  const handleSyncNow = async (provider: IntegrationProvider) => {
+    setPendingByProvider((prev) => ({ ...prev, [provider]: "sync" }));
+    try {
+      const result = await syncNowMutation.mutateAsync({ provider });
+      await refetchSyncOverview();
+      setStatusModal({
+        title: result.queued ? "Sync queued" : "Sync complete",
+        description: getSyncCompleteDescription(result),
+      });
+    } catch (error) {
+      console.error("Sync now error:", error);
+      setStatusModal({ title: "Error", description: "Failed to queue sync. Please try again." });
+    } finally {
+      setPendingByProvider((prev) => ({ ...prev, [provider]: undefined }));
+    }
+  };
+
+  const getProviderOverview = (provider: IntegrationProvider) => {
+    return syncOverview?.find((item) => item.provider === provider);
   };
 
   const getProviderDisplayName = (provider: IntegrationProvider) => {
@@ -230,58 +381,133 @@ export default function IntegrationsScreen() {
         </View>
 
         <View className="mb-4 rounded-2xl border border-border bg-muted/20 px-4 py-3">
-          <Text className="text-sm text-muted-foreground">{getConnectedSummary(integrations)}</Text>
+          <Text className="text-sm text-muted-foreground">{getConnectedSummary(syncOverview)}</Text>
         </View>
 
         {INTEGRATIONS.map((integration) => {
-          const connected = isConnected(integration.provider);
+          const overview = getProviderOverview(integration.provider);
+          const connected = overview?.connected ?? false;
           const pendingAction = pendingByProvider[integration.provider];
           const isPending = pendingAction !== undefined;
+          const canSyncNow = connected && overview?.actions.includes("sync_now");
+          const needsReconnect = overview?.providerHealth.status === "needs_reconnect";
+          const activityHistoryCopy = overview
+            ? getActivityHistoryCopy(overview.activityHistory.status)
+            : "Checking sync status...";
+          const setupCopy = overview ? getSetupDataCopy(overview.setupData.status) : null;
+          const plannedCopy = overview
+            ? getPlannedWorkoutCopy(overview.plannedWorkouts.status)
+            : null;
 
           return (
-            <TouchableOpacity
+            <View
               key={integration.provider}
-              onPress={() =>
-                connected
-                  ? handleDisconnect(integration.provider)
-                  : handleConnect(integration.provider)
-              }
-              disabled={isPending}
-              activeOpacity={0.7}
               testID={`integration-provider-${integration.provider}`}
-              className={`mb-2 flex-row items-center justify-between rounded-xl border px-4 py-3 ${
+              className={`mb-2 rounded-xl border px-4 py-3 ${
                 connected ? "border-green-500 bg-green-500/10" : "border-border bg-card"
               } ${isPending ? "opacity-70" : ""}`}
             >
-              <View>
-                <Text className="text-base font-semibold text-foreground">{integration.name}</Text>
-                <Text className="mt-0.5 text-xs text-muted-foreground">
-                  {connected ? "Connected - tap to disconnect" : "Not connected - tap to connect"}
-                </Text>
+              <View className="flex-row items-start justify-between gap-3">
+                <View className="flex-1">
+                  <Text className="text-base font-semibold text-foreground">
+                    {integration.name}
+                  </Text>
+                  <Text className="mt-0.5 text-xs text-muted-foreground">
+                    {needsReconnect ? "Needs reconnect" : connected ? "Connected" : "Not connected"}
+                  </Text>
+                  <Text className="mt-2 text-xs text-muted-foreground">{activityHistoryCopy}</Text>
+                  {setupCopy ? (
+                    <Text className="mt-1 text-xs text-muted-foreground">{setupCopy}</Text>
+                  ) : null}
+                  {plannedCopy ? (
+                    <Text className="mt-1 text-xs text-muted-foreground">{plannedCopy}</Text>
+                  ) : null}
+                  {overview?.activityHistory.lastError ? (
+                    <Text className="mt-1 text-xs text-destructive">
+                      {overview.activityHistory.lastError}
+                    </Text>
+                  ) : null}
+                  {overview?.providerHealth.status === "needs_reconnect" ? (
+                    <Text className="mt-1 text-xs text-destructive">
+                      GradientPeak can no longer access this provider. Reconnect to continue
+                      syncing.
+                    </Text>
+                  ) : null}
+                </View>
+
+                {isPending ? (
+                  <ActivityIndicator size="small" />
+                ) : connected ? (
+                  <Icon as={Check} className="text-green-600" size={20} />
+                ) : (
+                  <Icon as={ChevronRight} className="text-muted-foreground" size={20} />
+                )}
               </View>
 
-              {isPending ? (
-                <ActivityIndicator size="small" />
-              ) : connected ? (
-                <Icon as={Check} className="text-green-600" size={20} />
-              ) : (
-                <Icon as={ChevronRight} className="text-muted-foreground" size={20} />
-              )}
-            </TouchableOpacity>
+              <View className="mt-3 flex-row gap-2">
+                {connected ? (
+                  <>
+                    {needsReconnect ? (
+                      <TouchableOpacity
+                        disabled={isPending}
+                        onPress={() => {
+                          void handleConnect(integration.provider);
+                        }}
+                        testID={`integration-reconnect-${integration.provider}`}
+                        className="rounded-full border border-border bg-background px-3 py-2"
+                      >
+                        <Text className="text-xs font-semibold text-foreground">Reconnect</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                    {!needsReconnect && canSyncNow ? (
+                      <TouchableOpacity
+                        disabled={isPending}
+                        onPress={() => {
+                          void handleSyncNow(integration.provider);
+                        }}
+                        testID={`integration-sync-now-${integration.provider}`}
+                        className="rounded-full border border-border bg-background px-3 py-2"
+                      >
+                        <Text className="text-xs font-semibold text-foreground">Sync now</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                    <TouchableOpacity
+                      disabled={isPending}
+                      onPress={() => handleDisconnect(integration.provider)}
+                      testID={`integration-disconnect-${integration.provider}`}
+                      className="rounded-full border border-destructive/40 bg-background px-3 py-2"
+                    >
+                      <Text className="text-xs font-semibold text-destructive">Disconnect</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <TouchableOpacity
+                    disabled={isPending}
+                    onPress={() => {
+                      void handleConnect(integration.provider);
+                    }}
+                    testID={`integration-connect-${integration.provider}`}
+                    className="rounded-full border border-border bg-background px-3 py-2"
+                  >
+                    <Text className="text-xs font-semibold text-foreground">Connect</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
           );
         })}
 
         <View className="mt-6 rounded-2xl border border-border bg-muted/20 p-4">
-          <Text className="text-sm font-medium text-foreground">Need to import data?</Text>
+          <Text className="text-sm font-medium text-foreground">Automatic history import</Text>
           <Text className="mt-1 text-xs text-muted-foreground">
-            Use `My Activities` to import FIT activity history and `My Routes` to upload route
-            files.
+            Supported providers import recent activity history automatically after connection.
+            Manual FIT uploads remain available from My Activities.
           </Text>
         </View>
       </ScrollView>
       {disconnectingProvider ? (
         <AppConfirmModal
-          description={`Are you sure you want to disconnect from ${getProviderDisplayName(disconnectingProvider)}?`}
+          description={`Disconnect ${getProviderDisplayName(disconnectingProvider)}? Existing GradientPeak activities, files, plans, and metrics stay in your account. Future provider sync will stop until you reconnect.`}
           onClose={() => setDisconnectingProvider(null)}
           primaryAction={{
             label: "Disconnect",

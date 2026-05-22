@@ -104,10 +104,10 @@ function buildSetupItem(
       return {
         ...action,
         detail: contract?.guidance.hasPlan
-          ? "Workout structure attached."
-          : "No structured workout.",
+          ? "Activity structure attached."
+          : "No structured activity.",
         section: "guidance",
-        title: "Workout",
+        title: "Activity",
         tone: action.disabled ? "locked" : contract?.guidance.hasPlan ? "active" : "idle",
       };
     case "route":

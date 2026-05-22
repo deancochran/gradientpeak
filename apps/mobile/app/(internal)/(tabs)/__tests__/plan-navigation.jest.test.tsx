@@ -1,5 +1,6 @@
 import React from "react";
 
+import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const pushMock = jest.fn();
@@ -12,14 +13,40 @@ const goalsUpdatedAtRef = { current: 1 };
 const activePlanQueryOptionsRef = { current: null as any };
 const eventQueryOptionsRef = { current: [] as any[] };
 let mockDetailDateRange: "7d" | "30d" | "90d" | "all" = "90d";
+let mockNewUserNoActivities = false;
 const readinessChartPropsMock = jest.fn();
 const projectionChartPropsMock = jest.fn();
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
+const defaultMockGoals = [
+  {
+    id: "goal-1",
+    title: "Race A",
+    priority: 8,
+    target_date: "2026-08-01",
+    profile_id: "profile-1",
+    activity_category: "run",
+    objective: {
+      type: "event_performance",
+      activity_category: "run",
+      distance_m: 5000,
+      target_time_s: 1400,
+    },
+  },
+  {
+    id: "goal-2",
+    title: "Race B",
+    priority: 6,
+    target_date: "2026-09-01",
+    profile_id: "profile-1",
+    activity_category: "run",
+    objective: {
+      type: "event_performance",
+      activity_category: "run",
+      distance_m: 10000,
+      target_time_s: 3200,
+    },
+  },
+];
+let mockGoals = defaultMockGoals;
 
 function getTextContent(children: any): string {
   if (typeof children === "string" || typeof children === "number") {
@@ -50,6 +77,12 @@ jest.mock("react-native", () => ({
 jest.mock("expo-router", () => ({
   __esModule: true,
   useRouter: () => ({ push: pushMock, navigate: navigateMock }),
+}));
+
+jest.mock("@react-navigation/native", () => ({
+  __esModule: true,
+  ...jest.requireActual("@react-navigation/native"),
+  useFocusEffect: (callback: () => void) => callback(),
 }));
 
 jest.mock("@/lib/navigation/useAppNavigate", () => ({
@@ -96,8 +129,34 @@ jest.mock("@/components/goals", () => ({
   GoalEditorModal: createHost("GoalEditorModal"),
 }));
 
+jest.mock("@/components/plan/GoalListItem", () => ({
+  __esModule: true,
+  formatGoalTargetDate: (date: string | null | undefined) => {
+    if (!date) return "No date";
+    const parsed = new Date(`${date}T00:00:00.000Z`);
+    return parsed.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  },
+  GoalListItem: ({ goal, label, onPress, readinessPercent, status, testID }: any) =>
+    React.createElement("TouchableOpacity", { onPress, testID }, [
+      React.createElement("Text", { key: "label" }, label),
+      React.createElement("Text", { key: "title" }, goal.title),
+      React.createElement(
+        "Text",
+        { key: "summary" },
+        `${new Date(`${goal.target_date}T00:00:00.000Z`).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          timeZone: "UTC",
+        })} · ${status}`,
+      ),
+      React.createElement("Text", { key: "readiness" }, `${Math.round(readinessPercent)}%`),
+      React.createElement("View", { key: "ring", testID: "goal-readiness-ring" }),
+    ]),
+}));
+
 jest.mock("@/components/charts/PlanVsActualChart", () => ({
   __esModule: true,
+  FitnessFatigueFormChart: createHost("FitnessFatigueFormChart"),
   PlanVsActualChart: (props: any) => {
     projectionChartPropsMock(props);
     return React.createElement("PlanVsActualChart", props, props.children);
@@ -139,13 +198,17 @@ jest.mock("@repo/ui/components/text", () => ({
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
   Activity: createHost("Activity"),
+  Bike: createHost("Bike"),
   ChevronLeft: createHost("ChevronLeft"),
   ChevronRight: createHost("ChevronRight"),
+  Dumbbell: createHost("Dumbbell"),
   Flag: createHost("Flag"),
   Flame: createHost("Flame"),
+  Footprints: createHost("Footprints"),
   Plus: createHost("Plus"),
   Settings: createHost("Settings"),
   Sparkles: createHost("Sparkles"),
+  Waves: createHost("Waves"),
 }));
 
 jest.mock("react-native-svg", () => ({
@@ -161,37 +224,8 @@ jest.mock("@/lib/hooks/useProfileGoals", () => ({
   __esModule: true,
   useProfileGoals: () => ({
     profileId: "profile-1",
-    goals: [
-      {
-        id: "goal-1",
-        title: "Race A",
-        priority: 8,
-        target_date: "2026-08-01",
-        profile_id: "profile-1",
-        activity_category: "run",
-        objective: {
-          type: "event_performance",
-          activity_category: "run",
-          distance_m: 5000,
-          target_time_s: 1400,
-        },
-      },
-      {
-        id: "goal-2",
-        title: "Race B",
-        priority: 6,
-        target_date: "2026-09-01",
-        profile_id: "profile-1",
-        activity_category: "run",
-        objective: {
-          type: "event_performance",
-          activity_category: "run",
-          distance_m: 10000,
-          target_time_s: 3200,
-        },
-      },
-    ],
-    goalsCount: 2,
+    goals: mockGoals,
+    goalsCount: mockGoals.length,
     dataUpdatedAt: goalsUpdatedAtRef.current,
     refetch: jest.fn(async () => undefined),
   }),
@@ -374,14 +408,16 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
           actual: {
             id: "actual",
             label: "Actual",
-            points: [
-              {
-                date: "2026-04-01",
-                readiness: 62,
-                load: 38,
-                provenance: "completed_activity",
-              },
-            ],
+            points: mockNewUserNoActivities
+              ? []
+              : [
+                  {
+                    date: "2026-04-01",
+                    readiness: 62,
+                    load: 38,
+                    provenance: "completed_activity",
+                  },
+                ],
           },
           scheduled: {
             id: "scheduled",
@@ -446,8 +482,8 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
           },
         ],
         gap_summary: {
-          type: "plan_gap",
-          severity: "warning",
+          type: mockNewUserNoActivities ? "low_confidence" : "plan_gap",
+          severity: mockNewUserNoActivities ? "info" : "warning",
           title_code: "readiness_forecast.plan_gap.title",
           message_code: "readiness_forecast.plan_gap.message",
           primary_delta: 8,
@@ -494,20 +530,22 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
       activity_plan_matches: {
         target_date: "2026-04-06",
         target_tss_delta: 80,
-        empty_reason: null,
-        matches: [
-          {
-            activity_plan_id: "activity-plan-80",
-            name: "Threshold Builder",
-            activity_category: "run",
-            estimated_tss: 78,
-            estimated_duration_seconds: 3600,
-            score: 114,
-            target_tss_delta: 80,
-            absolute_tss_gap: 2,
-            reason_codes: ["owned_plan", "near_target_tss", "same_activity_category"],
-          },
-        ],
+        empty_reason: mockNewUserNoActivities ? "no_activity_plans" : null,
+        matches: mockNewUserNoActivities
+          ? []
+          : [
+              {
+                activity_plan_id: "activity-plan-80",
+                name: "Threshold Builder",
+                activity_category: "run",
+                estimated_tss: 78,
+                estimated_duration_seconds: 3600,
+                score: 114,
+                target_tss_delta: 80,
+                absolute_tss_gap: 2,
+                reason_codes: ["owned_plan", "near_target_tss", "same_activity_category"],
+              },
+            ],
       },
       schedule_simulation: {
         adjustment: {
@@ -541,6 +579,22 @@ jest.mock("@repo/core", () => ({
   createEmptyGoalDraft: jest.fn(() => ({ title: "", objective: null })),
   formatGoalTypeLabel: jest.fn(() => "Race"),
   getGoalObjectiveSummary: jest.fn(() => "5K target"),
+  resolveGoalReadinessTarget: jest.fn(({ target_surplus_preference }: any = {}) =>
+    typeof target_surplus_preference === "number"
+      ? Math.max(94, Math.min(110, Math.round(96 + target_surplus_preference * 16)))
+      : 100,
+  ),
+  resolveGoalReadinessViewModel: jest.fn(({ value, target }: any) => {
+    if (typeof value !== "number")
+      return { label: "Estimating", value: null, target: target ?? 100 };
+    if (value > (target ?? 100) + 2)
+      return { label: "Above target range", value, target: target ?? 100 };
+    if (value >= (target ?? 100) - 5)
+      return { label: "In target range", value, target: target ?? 100 };
+    if (value >= (target ?? 100) * 0.45)
+      return { label: "Building toward target", value, target: target ?? 100 };
+    return { label: "Below target range", value, target: target ?? 100 };
+  }),
 }));
 
 jest.mock("@/lib/api", () => ({
@@ -626,6 +680,18 @@ jest.mock("@/lib/api", () => ({
       create: { useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }) },
       update: { useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }) },
     },
+    groups: {
+      events: {
+        myCalendarGroupEvents: {
+          useQuery: () => ({ data: { items: [] }, refetch: jest.fn(async () => undefined) }),
+        },
+      },
+    },
+    activityPlans: {
+      getManyByIds: {
+        useQuery: () => ({ data: { items: [] }, refetch: jest.fn(async () => undefined) }),
+      },
+    },
     profileSettings: { upsert: { useMutation: () => ({ isPending: false, mutate: jest.fn() }) } },
     goals: {
       create: { useMutation: () => ({ isPending: false, mutate: jest.fn() }) },
@@ -646,6 +712,8 @@ describe("plan dashboard navigation", () => {
     readinessChartPropsMock.mockClear();
     projectionChartPropsMock.mockClear();
     mockDetailDateRange = "90d";
+    mockNewUserNoActivities = false;
+    mockGoals = defaultMockGoals;
     goalsUpdatedAtRef.current = 1;
     activePlanQueryOptionsRef.current = null;
     eventQueryOptionsRef.current = [];
@@ -695,60 +763,105 @@ describe("plan dashboard navigation", () => {
   it("renders dashboard sections", () => {
     renderNative(<PlanScreenWithErrorBoundary />);
 
-    expect(screen.getByTestId("plan-calendar-card")).toBeTruthy();
-    expect(screen.getByText("activity")).toBeTruthy();
-    expect(screen.getByText("planned")).toBeTruthy();
-    expect(screen.getByText("goal")).toBeTruthy();
+    expect(screen.queryByTestId("plan-calendar-card")).toBeNull();
+    expect(screen.getByTestId("plan-goal-outlook")).toBeTruthy();
     expect(screen.getByText("Goals")).toBeTruthy();
+    expect(screen.getByText("View all")).toBeTruthy();
+    expect(screen.getByText("Next goal")).toBeTruthy();
+    expect(screen.getByText("Top priority")).toBeTruthy();
     expect(screen.getByText("Race A")).toBeTruthy();
+    expect(screen.getByText("Aug 1 · Building toward target")).toBeTruthy();
     expect(screen.getByText("72%")).toBeTruthy();
-    expect(screen.getByText("Load Comparison")).toBeTruthy();
-    expect(screen.getByText("Readiness Forecast")).toBeTruthy();
-    expect(screen.getByText("Current 68")).toBeTruthy();
+    expect(screen.getByText("Race B")).toBeTruthy();
+    expect(screen.getByText("Sep 1 · Above target range")).toBeTruthy();
+    expect(screen.getByText("150%")).toBeTruthy();
+    expect(screen.getAllByTestId("goal-readiness-ring")).toHaveLength(2);
+    expect(screen.queryByTestId("plan-additional-goals")).toBeNull();
+    expect(screen.queryByTestId("plan-add-goal-button")).toBeNull();
+    expect(screen.getByTestId("plan-analysis-section")).toBeTruthy();
+    expect(screen.getByText("Plan analysis")).toBeTruthy();
+    expect(screen.getByTestId("plan-today-agenda-button")).toBeTruthy();
+    expect(screen.getByText("Today")).toBeTruthy();
+    expect(screen.getByTestId("plan-state-card")).toBeTruthy();
+    expect(screen.getByText("Apr 6 is ~80 TSS short")).toBeTruthy();
+    expect(screen.getByTestId("plan-analysis-week-range")).toBeTruthy();
+    expect(screen.getByText("Apr 1 - Apr 7")).toBeTruthy();
+    expect(screen.getByText("Below goal path")).toBeTruthy();
+    expect(screen.getByText("Completed")).toBeTruthy();
+    expect(screen.getByText("0 TSS")).toBeTruthy();
+    expect(screen.getByText("Scheduled")).toBeTruthy();
+    expect(screen.getByText("~38 TSS")).toBeTruthy();
+    expect(screen.getByText("Recommended")).toBeTruthy();
+    expect(screen.getByText("~42 TSS")).toBeTruthy();
+    expect(screen.queryByText("Review Apr 6")).toBeNull();
+    expect(screen.queryByTestId("plan-activity-matches")).toBeNull();
+    expect(screen.queryByText("Saved activities")).toBeNull();
+    expect(screen.queryByText("Threshold Builder")).toBeNull();
+    expect(screen.queryByText("Schedule this plan")).toBeNull();
+    expect(screen.queryByTestId("plan-planner-style-button")).toBeNull();
+    expect(screen.queryByText("Planner style")).toBeNull();
+    expect(screen.queryByText("Tune planner")).toBeNull();
+    expect(screen.queryByTestId("plan-training-preferences-button")).toBeNull();
+    expect(screen.getByTestId("plan-signals")).toBeTruthy();
+    expect(screen.getByTestId("plan-signals-settings-button")).toBeTruthy();
+    expect(screen.getByText("Weekly training load (TSS)")).toBeTruthy();
+    expect(screen.getByTestId("plan-load-range-selector")).toBeTruthy();
+    expect(screen.getByTestId("plan-load-range-30d")).toBeTruthy();
+    expect(screen.getByTestId("plan-load-range-60d")).toBeTruthy();
+    expect(screen.getByTestId("plan-load-range-90d")).toBeTruthy();
+    expect(screen.getByTestId("plan-load-range-all")).toBeTruthy();
+    expect(screen.queryByText("40/60")).toBeNull();
+    expect(screen.queryByText("Readiness")).toBeNull();
+    expect(screen.queryByText("Current 68")).toBeNull();
     expect(screen.queryByText("Adjust schedule")).toBeNull();
     expect(screen.queryByText("Recommended plans")).toBeNull();
     expect(screen.queryByTestId("plan-schedule-simulation-controls")).toBeNull();
-    expect(screen.getByText("Upcoming")).toBeTruthy();
-    expect(screen.getByText("Tempo Run")).toBeTruthy();
+    expect(screen.queryByText("Upcoming")).toBeNull();
+    expect(screen.queryByText("Tempo Run")).toBeNull();
     expect(screen.getByTestId("plan-insight-card-load")).toBeTruthy();
-    expect(screen.getByTestId("plan-insight-card-readiness")).toBeTruthy();
-
-    expect(screen.queryByTestId("plan-projection-chart")).toBeNull();
-    fireEvent.press(screen.getByTestId("plan-insight-card-load"));
-    expect(screen.getByText("Weekly Load Gap")).toBeTruthy();
-    expect(
-      screen.getByText("Recommended load versus your scheduled plan and completed work."),
-    ).toBeTruthy();
+    expect(screen.queryByTestId("plan-insight-card-readiness")).toBeNull();
     expect(screen.getByTestId("plan-projection-chart")).toBeTruthy();
-
-    fireEvent.press(screen.getByTestId("plan-insight-card-readiness"));
-    expect(screen.getByTestId("plan-readiness-comparison-chart")).toBeTruthy();
+    expect(screen.queryByTestId("plan-readiness-comparison-chart")).toBeNull();
+    expect(screen.queryByText("Weekly Load Gap")).toBeNull();
+    expect(
+      screen.queryByText("Recommended load versus your scheduled plan and completed work."),
+    ).toBeNull();
   });
 
-  it("filters fullscreen analytics to the selected date range", () => {
-    mockDetailDateRange = "7d";
+  it("filters inline load analytics from the selected date range", () => {
     renderNative(<PlanScreenWithErrorBoundary />);
 
-    fireEvent.press(screen.getByTestId("plan-insight-card-readiness"));
-
-    expect(readinessChartPropsMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        points: expect.arrayContaining([expect.objectContaining({ date: "2026-04-05" })]),
-        goalMarkers: [],
-      }),
+    expect(projectionChartPropsMock.mock.calls.at(-1)?.[0].timeline).toEqual(
+      expect.arrayContaining([expect.objectContaining({ date: "2026-04-01" })]),
     );
-    expect(readinessChartPropsMock.mock.calls.at(-1)?.[0].points).not.toEqual(
-      expect.arrayContaining([expect.objectContaining({ date: "2026-08-01" })]),
+    expect(projectionChartPropsMock.mock.calls.at(-1)?.[0].goalMarkers).toEqual(
+      expect.arrayContaining([expect.objectContaining({ targetDate: "2026-08-01" })]),
     );
 
-    fireEvent.press(screen.getByTestId("plan-insight-card-load"));
+    fireEvent.press(screen.getByTestId("plan-load-range-all"));
 
     expect(projectionChartPropsMock).toHaveBeenCalledWith(
       expect.objectContaining({
         timeline: expect.arrayContaining([expect.objectContaining({ date: "2026-04-01" })]),
-        goalMarkers: [],
+        goalMarkers: expect.arrayContaining([
+          expect.objectContaining({ targetDate: "2026-08-01" }),
+        ]),
       }),
     );
+  });
+
+  it("shows a baseline plan estimate instead of missing-data copy for new users with goals", () => {
+    mockNewUserNoActivities = true;
+
+    renderNative(<PlanScreenWithErrorBoundary />);
+
+    expect(screen.getByText("Baseline plan estimate")).toBeTruthy();
+    expect(screen.getByText("~315 TSS/week · 5 sessions/week · ~6 hr 5 min")).toBeTruthy();
+    expect(screen.getByText("Built from your goals and training preferences.")).toBeTruthy();
+    expect(screen.queryByText("Plan confidence is limited")).toBeNull();
+    expect(screen.queryByText("Missing session load")).toBeNull();
+    expect(screen.queryByText("No saved activities match this gap")).toBeNull();
+    expect(screen.queryByText("Create saved activity")).toBeNull();
   });
 
   it("does not render active-plan navigation action", () => {
@@ -763,17 +876,114 @@ describe("plan dashboard navigation", () => {
     expect(screen.queryByTestId("plan-schedule-action")).toBeNull();
   });
 
-  it("opens the calendar day agenda from a Plan calendar date", () => {
+  it("opens a goal detail from the Plan goal outlook", () => {
     renderNative(<PlanScreenWithErrorBoundary />);
 
-    fireEvent.press(screen.getByTestId("calendar-month-cell-2026-05-05"));
+    fireEvent.press(screen.getByTestId("plan-goal-outlook-card-goal-1"));
+
+    expect(navigateMock).toHaveBeenCalledWith("/goal-detail?id=goal-1");
+  });
+
+  it("opens a distinct top-priority goal detail from the Plan goal outlook", () => {
+    renderNative(<PlanScreenWithErrorBoundary />);
+
+    fireEvent.press(screen.getByTestId("plan-goal-outlook-card-goal-2"));
+
+    expect(navigateMock).toHaveBeenCalledWith("/goal-detail?id=goal-2");
+  });
+
+  it("opens the goals index from the goal outlook header", () => {
+    renderNative(<PlanScreenWithErrorBoundary />);
+
+    fireEvent.press(screen.getByTestId("plan-view-goals-button"));
+
+    expect(navigateMock).toHaveBeenCalledWith("/goals-list");
+  });
+
+  it("shows all goals on the next target day before a separate top priority", () => {
+    mockGoals = [
+      ...defaultMockGoals,
+      {
+        ...defaultMockGoals[0],
+        id: "goal-3",
+        title: "Race A Relay",
+        priority: 4,
+        target_date: "2026-08-01",
+      },
+      {
+        ...defaultMockGoals[1],
+        id: "goal-4",
+        title: "Race C",
+        priority: 10,
+        target_date: "2026-10-01",
+      },
+    ];
+
+    renderNative(<PlanScreenWithErrorBoundary />);
+
+    expect(screen.getByTestId("plan-goal-outlook-card-goal-1")).toBeTruthy();
+    expect(screen.getByTestId("plan-goal-outlook-card-goal-3")).toBeTruthy();
+    expect(screen.getByTestId("plan-goal-outlook-card-goal-4")).toBeTruthy();
+    expect(screen.getByText("Race A Relay")).toBeTruthy();
+    expect(screen.getByText("Race C")).toBeTruthy();
+  });
+
+  it("caps crowded next-day goals and links to all goals", () => {
+    mockGoals = Array.from({ length: 5 }, (_, index) => ({
+      ...defaultMockGoals[0],
+      id: `goal-${index + 1}`,
+      title: `Race ${index + 1}`,
+      priority: 10 - index,
+      target_date: "2026-08-01",
+    }));
+
+    renderNative(<PlanScreenWithErrorBoundary />);
+
+    expect(screen.getByTestId("plan-goal-outlook-card-goal-1")).toBeTruthy();
+    expect(screen.getByTestId("plan-goal-outlook-card-goal-4")).toBeTruthy();
+    expect(screen.queryByTestId("plan-goal-outlook-card-goal-5")).toBeNull();
+    expect(screen.getByText("1 more goal on Aug 1")).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId("plan-hidden-next-day-goals"));
+    expect(navigateMock).toHaveBeenCalledWith("/goals-list");
+  });
+
+  it("shows add-goal action when only one goal is visible", () => {
+    mockGoals = [defaultMockGoals[0]];
+
+    renderNative(<PlanScreenWithErrorBoundary />);
+
+    expect(screen.getByText("Add another goal")).toBeTruthy();
+    fireEvent.press(screen.getByTestId("plan-add-goal-button"));
+    expect(navigateMock).toHaveBeenCalledWith("/goal-create");
+  });
+
+  it("shows add-goal action when no goals are available", () => {
+    mockGoals = [];
+
+    renderNative(<PlanScreenWithErrorBoundary />);
+
+    expect(screen.getByText("No goals yet")).toBeTruthy();
+    fireEvent.press(screen.getByTestId("plan-add-goal-button"));
+    expect(navigateMock).toHaveBeenCalledWith("/goal-create");
+  });
+
+  it("opens training preferences from the Plan signals settings action", () => {
+    renderNative(<PlanScreenWithErrorBoundary />);
+
+    fireEvent.press(screen.getByTestId("plan-signals-settings-button"));
+
+    expect(navigateMock).toHaveBeenCalledWith("/training-preferences");
+  });
+
+  it("opens today's agenda from the Plan analysis header", () => {
+    renderNative(<PlanScreenWithErrorBoundary />);
+
+    fireEvent.press(screen.getByTestId("plan-today-agenda-button"));
 
     expect(navigateMock).toHaveBeenCalledWith({
-      pathname: "/(internal)/(standard)/calendar-day",
-      params: {
-        date: "2026-05-05",
-        trainingPlanId: "active-1",
-      },
+      pathname: "/calendar-day",
+      params: { date: new Date().toISOString().split("T")[0] },
     });
   });
 

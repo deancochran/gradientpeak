@@ -36,11 +36,13 @@ function formatTimeValue(value: Date) {
 function TimeInput({
   accessibilityHint,
   clearable = false,
+  disabled = false,
   error,
   helperText,
   id,
   is24Hour,
   label,
+  name: _name,
   onChange,
   pickerPresentation = "inline",
   placeholder = "Select time",
@@ -78,6 +80,10 @@ function TimeInput({
   };
 
   const handleOpenPicker = () => {
+    if (disabled) {
+      return;
+    }
+
     if (usesModalPresentation && Platform.OS === "android") {
       DateTimePickerAndroid.open({
         value: selectedTime,
@@ -110,7 +116,9 @@ function TimeInput({
       <Pressable
         accessibilityHint={accessibilityHint ?? "Opens time picker. Format hh:mm"}
         accessibilityRole="button"
+        accessibilityState={{ disabled }}
         className={`rounded-md border px-3 py-3 ${error ? "border-destructive bg-destructive/5" : "border-input bg-background"}`}
+        disabled={disabled}
         onPress={handleOpenPicker}
         {...nativeTestProps}
       >

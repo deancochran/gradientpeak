@@ -1,14 +1,9 @@
 import { format } from "date-fns";
 import React from "react";
 import { ROUTES } from "@/lib/constants/routes";
-import { fireEvent, renderNative, screen } from "../../../../test/render-native";
+import { createHost } from "../../../../test/mock-components";
+import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 import EventDetailScreen from "../event-detail";
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
 
 const eventDetailData = {
   id: "event-1",
@@ -27,6 +22,15 @@ const eventDetailData = {
     estimated_tss: 72,
   },
   recurrence_rule: null as string | null,
+  series_id: null as string | null,
+  occurrence_key: null as string | null,
+  original_starts_at: null as string | null,
+};
+
+const eventQueryState = {
+  data: eventDetailData as typeof eventDetailData | null,
+  error: null as any,
+  isLoading: false,
 };
 
 const routerNavigateMock = jest.fn();
@@ -80,6 +84,11 @@ jest.mock("@/components/ScheduleActivityModal", () => ({
 jest.mock("@/components/shared/ActivityPlanCard", () => ({
   __esModule: true,
   ActivityPlanCard: createHost("ActivityPlanCard"),
+}));
+
+jest.mock("@/components/shared/resource-picker", () => ({
+  __esModule: true,
+  ResourcePickerModal: createHost("ResourcePickerModal"),
 }));
 
 jest.mock("@/components/activity/charts/ElevationProfileChart", () => ({
@@ -154,12 +163,15 @@ jest.mock("lucide-react-native", () => ({
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
+    useUtils: () => ({
+      events: { invalidate: jest.fn() },
+    }),
     events: {
       getById: {
         useQuery: () => ({
-          data: eventDetailData,
-          error: null,
-          isLoading: false,
+          data: eventQueryState.data,
+          error: eventQueryState.error,
+          isLoading: eventQueryState.isLoading,
           refetch: jest.fn(),
         }),
       },
@@ -225,23 +237,54 @@ jest.mock("@/lib/api", () => ({
 describe("event detail fallback screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    eventQueryState.data = eventDetailData;
+    eventQueryState.error = null;
+    eventQueryState.isLoading = false;
     eventDetailData.recurrence_rule = null;
+    eventDetailData.series_id = null;
+    eventDetailData.occurrence_key = null;
+    eventDetailData.original_starts_at = null;
+    eventDetailData.event_type = "planned";
+    eventDetailData.activity_plan = {
+      id: "plan-1",
+      name: "Tempo Builder",
+      description: "Progressive tempo with a strong finish.",
+      activity_category: "outdoor_run",
+      estimated_duration: 3600,
+      estimated_tss: 72,
+    };
   });
 
   it("renders planned activity content directly instead of the fallback note", () => {
     const rendered = renderNative(<EventDetailScreen />);
 
     expect(screen.queryByText("Advanced event detail")).toBeNull();
-    expect(screen.getByText("Scheduled activity")).toBeTruthy();
     expect((rendered as any).UNSAFE_getByType("ActivityPlanCard").props.activityPlan).toEqual(
       expect.objectContaining({ id: "plan-1", name: "Tempo Builder" }),
+    );
+    expect((rendered as any).UNSAFE_getByType("ActivityPlanCard").props.onPress).toEqual(
+      expect.any(Function),
     );
     expect(screen.getByText("Monday, March 23, 2026")).toBeTruthy();
     expect(screen.getByText(format(new Date(eventDetailData.starts_at), "h:mm a"))).toBeTruthy();
     expect(screen.queryByText("Event details")).toBeNull();
-    expect(screen.getByText("Linked activity plan")).toBeTruthy();
+    expect(screen.queryByText("Linked activity plan")).toBeNull();
+    expect(screen.queryByTestId("event-detail-options-open-activity-plan")).toBeNull();
     expect(screen.getByTestId("event-detail-options-trigger")).toBeTruthy();
     expect(screen.getByText("Comments (0)")).toBeTruthy();
+  });
+
+  it("hides cached event details when profile access is denied", () => {
+    eventQueryState.error = { data: { code: "FORBIDDEN" }, message: "Forbidden" };
+
+    renderNative(<EventDetailScreen />);
+
+    expect(screen.getByText("Event unavailable")).toBeTruthy();
+    expect(screen.getByText("You do not have permission to view this event.")).toBeTruthy();
+    expect(screen.queryByText("Tempo Builder")).toBeNull();
+    expect(screen.queryByText("Bring gels")).toBeNull();
+    expect(screen.queryByTestId("event-detail-options-trigger")).toBeNull();
+    expect(screen.queryByText("Comments (0)")).toBeNull();
   });
 
   it("routes the overflow edit action to the dedicated update screen", () => {
@@ -257,7 +300,7 @@ describe("event detail fallback screen", () => {
 
     renderNative(<EventDetailScreen />);
 
-    expect(screen.getByText("Event details")).toBeTruthy();
+    expect(screen.getByText("Recurring")).toBeTruthy();
     expect(screen.getByText("Repeats")).toBeTruthy();
     expect(screen.getByText("Every week until May 30, 2026")).toBeTruthy();
 
@@ -268,5 +311,54 @@ describe("event detail fallback screen", () => {
     fireEvent.press(screen.getByTestId("event-detail-delete-confirm"));
 
     expect(deleteEventMutateMock).toHaveBeenCalledWith({ id: "event-1", scope: "single" });
+  });
+
+  it("requires an explicit delete scope for recurring custom events", () => {
+    eventDetailData.event_type = "custom";
+    eventDetailData.activity_plan = null as any;
+    eventDetailData.recurrence_rule = "FREQ=WEEKLY;UNTIL=20260530T235959Z";
+
+    renderNative(<EventDetailScreen />);
+
+    fireEvent.press(screen.getByTestId("event-detail-options-delete"));
+
+    expect(screen.getByTestId("event-detail-delete-scope-modal")).toBeTruthy();
+    expect(deleteEventMutateMock).not.toHaveBeenCalled();
+
+    fireEvent.press(screen.getByTestId("event-detail-delete-scope-series"));
+    fireEvent.press(screen.getByTestId("event-detail-delete-confirm"));
+
+    expect(deleteEventMutateMock).toHaveBeenCalledWith({ id: "event-1", scope: "series" });
+  });
+
+  it("treats series-backed occurrence overrides as recurring even without a rule on the row", () => {
+    eventDetailData.series_id = "series-1";
+    eventDetailData.occurrence_key = "2026-03-23";
+    eventDetailData.original_starts_at = "2026-03-23T09:00:00.000Z";
+
+    renderNative(<EventDetailScreen />);
+
+    expect(screen.getByText("Recurring")).toBeTruthy();
+    expect(screen.getAllByText("Repeats")).toHaveLength(2);
+
+    fireEvent.press(screen.getByTestId("event-detail-options-delete"));
+    fireEvent.press(screen.getByTestId("event-detail-delete-confirm"));
+
+    expect(deleteEventMutateMock).toHaveBeenCalledWith({ id: "event-1", scope: "single" });
+  });
+
+  it("redirects inaccessible event details without rendering private event content", async () => {
+    eventQueryState.data = null;
+    eventQueryState.error = { data: { code: "NOT_FOUND" }, message: "Event not found" };
+
+    renderNative(<EventDetailScreen />);
+
+    expect(screen.queryByText("Tempo Builder")).toBeNull();
+    expect(screen.queryByText("Bring gels")).toBeNull();
+    expect(screen.queryByTestId("event-detail-options-trigger")).toBeNull();
+
+    await waitFor(() => {
+      expect(routerNavigateMock).toHaveBeenCalledWith(ROUTES.PLAN.CALENDAR);
+    });
   });
 });

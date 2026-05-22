@@ -46,6 +46,7 @@ export const genderEnum = pgEnum("gender", ["male", "female", "other"]);
 
 export const profileMetricTypeEnum = pgEnum("profile_metric_type", [
   "weight_kg",
+  "ftp",
   "resting_hr",
   "sleep_hours",
   "hrv_rmssd",

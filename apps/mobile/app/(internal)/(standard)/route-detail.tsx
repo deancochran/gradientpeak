@@ -1,18 +1,13 @@
-import { Button } from "@repo/ui/components/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@repo/ui/components/dropdown-menu";
-import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Ellipsis, Heart } from "lucide-react-native";
 import React, { useEffect, useMemo, useState } from "react";
-import { Alert, Pressable, ScrollView, View } from "react-native";
+import { ActivityIndicator, Alert, InteractionManager, View } from "react-native";
 import { ElevationProfileChart } from "@/components/activity/charts/ElevationProfileChart";
-import { AppConfirmModal } from "@/components/shared/AppFormModal";
+import {
+  DetailDeleteConfirmModal,
+  DetailOverflowMenu,
+  DetailScaffold,
+} from "@/components/shared/detail";
 import { RouteCard } from "@/components/shared/RouteCard";
 import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
 import { api } from "@/lib/api";
@@ -20,6 +15,7 @@ import { useRecordingLifecycle } from "@/lib/hooks/useActivityRecorder";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useEntityCommentsController } from "@/lib/hooks/useEntityCommentsController";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
+import { useResourceLike } from "@/lib/hooks/useResourceLike";
 import { returnToRecordScreen } from "@/lib/navigation/recordingNavigation";
 import { useOptionalSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
 import {
@@ -94,13 +90,29 @@ export default function RouteDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const utils = api.useUtils();
-  const { Stack } = require("expo-router") as typeof import("expo-router");
   const { user } = useAuth();
   const recorderService = useOptionalSharedActivityRecorder();
   const recordingLifecycle = useRecordingLifecycle(recorderService);
+  const [shouldLoadGeometry, setShouldLoadGeometry] = useState(false);
 
   const { data: route, isLoading } = api.routes.get.useQuery({ id: id! }, { enabled: !!id });
-  const { data: routeFull } = api.routes.loadFull.useQuery({ id: id! }, { enabled: !!id });
+  const { data: routeFull, isFetching: isFetchingRouteFull } = api.routes.loadFull.useQuery(
+    { id: id! },
+    { enabled: !!id && shouldLoadGeometry },
+  );
+
+  useEffect(() => {
+    setShouldLoadGeometry(false);
+    if (!id) {
+      return;
+    }
+
+    const task = InteractionManager.runAfterInteractions(() => {
+      setShouldLoadGeometry(true);
+    });
+
+    return () => task.cancel();
+  }, [id]);
 
   const deleteMutation = useReliableMutation(api.routes.delete, {
     invalidate: [utils.routes],
@@ -108,16 +120,13 @@ export default function RouteDetailScreen() {
     onSuccess: () => router.back(),
   });
 
-  const [isLiked, setIsLiked] = useState(route?.has_liked ?? false);
-  const [likesCount, setLikesCount] = useState(route?.has_liked ? 1 : 0);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const comments = useEntityCommentsController({ entityId: route?.id, entityType: "route" });
-
-  const toggleLikeMutation = api.social.toggleLike.useMutation({
-    onError: () => {
-      setIsLiked(route?.has_liked ?? false);
-      setLikesCount(route?.has_liked ? 1 : 0);
-    },
+  const routeLike = useResourceLike({
+    entityId: route?.id ?? "",
+    entityType: "route",
+    initialCount: route?.likes_count,
+    initialLiked: route?.has_liked,
   });
 
   const handleToggleLike = () => {
@@ -128,21 +137,8 @@ export default function RouteDetailScreen() {
       return;
     }
 
-    const nextLikedState = !isLiked;
-    setIsLiked(nextLikedState);
-    setLikesCount((prev) => (nextLikedState ? prev + 1 : Math.max(0, prev - 1)));
-    toggleLikeMutation.mutate({
-      entity_id: route.id,
-      entity_type: "route",
-    });
+    routeLike.toggleLike();
   };
-
-  React.useEffect(() => {
-    if (route) {
-      setIsLiked(route.has_liked ?? false);
-      setLikesCount(route.has_liked ? 1 : 0);
-    }
-  }, [route?.has_liked]);
 
   const isOwner = !!user?.id && user.id === route?.profile_id;
 
@@ -186,136 +182,112 @@ export default function RouteDetailScreen() {
     setShowDeleteConfirm(true);
   };
 
-  if (isLoading) {
-    return (
-      <View
-        className="flex-1 bg-background items-center justify-center"
-        testID="route-detail-loading"
-      >
-        <Text>Loading...</Text>
-      </View>
-    );
-  }
-
-  if (!route) {
-    return (
-      <View
-        className="flex-1 bg-background items-center justify-center px-6"
-        testID="route-detail-not-found"
-      >
-        <Text className="text-lg font-semibold text-foreground">Route not found</Text>
-        <Text className="mt-2 text-center text-sm text-muted-foreground">
-          This route may have been removed.
-        </Text>
-        <Button className="mt-4" onPress={() => router.back()}>
-          <Text className="text-primary-foreground">Go Back</Text>
-        </Button>
-      </View>
-    );
-  }
-
   const renderOptionsMenu = () => {
     return (
-      <DropdownMenu>
-        <DropdownMenuTrigger testID="route-detail-options-trigger">
-          <View className="rounded-full p-2">
-            <Icon as={Ellipsis} size={18} className="text-foreground" />
-          </View>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" sideOffset={6}>
-          <DropdownMenuItem
-            onPress={handleRecordingAction}
-            disabled={recordingAction?.primaryAction === "disabled" || !recordingAction?.command}
-            testID="route-detail-options-recording"
-          >
-            <Text>{recordingAction?.label ?? "Start Activity"}</Text>
-          </DropdownMenuItem>
-          {isOwner ? (
-            <DropdownMenuItem
-              onPress={handleDelete}
-              variant="destructive"
-              testID="route-detail-options-delete"
-            >
-              <Text>Delete Route</Text>
-            </DropdownMenuItem>
-          ) : null}
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <DetailOverflowMenu
+        actions={[
+          {
+            disabled: recordingAction?.primaryAction === "disabled" || !recordingAction?.command,
+            label: recordingAction?.label ?? "Start Activity",
+            onPress: handleRecordingAction,
+            testID: "route-detail-options-recording",
+          },
+          ...(isOwner
+            ? [
+                {
+                  label: "Delete Route",
+                  onPress: handleDelete,
+                  testID: "route-detail-options-delete",
+                  variant: "destructive" as const,
+                },
+              ]
+            : []),
+        ]}
+        testID="route-detail-options-trigger"
+      />
     );
   };
 
+  if (isLoading || !route) {
+    return (
+      <DetailScaffold
+        headerRight={renderOptionsMenu}
+        isLoading={isLoading}
+        loadingLabel="Loading route..."
+        loadingTestID="route-detail-loading"
+        notFound={!route}
+        notFoundDescription="This route may have been removed."
+        notFoundOnActionPress={() => router.back()}
+        notFoundTestID="route-detail-not-found"
+        notFoundTitle="Route not found"
+      >
+        {null}
+      </DetailScaffold>
+    );
+  }
+
   return (
-    <View className="flex-1 bg-background" testID="route-detail-screen">
-      <Stack.Screen options={{ headerRight: renderOptionsMenu }} />
-      <ScrollView className="flex-1">
-        <View className="p-4 gap-4 pb-6">
-          <RouteCard route={route} routeFull={routeFull} />
-
-          <Pressable
-            onPress={handleToggleLike}
-            className="self-start rounded-full border border-border bg-background px-3 py-2"
-            testID="route-detail-like-button"
-          >
-            <View className="flex-row items-center gap-1.5">
-              <Icon
-                as={Heart}
-                size={16}
-                className={isLiked ? "text-red-500 fill-red-500" : "text-muted-foreground"}
-              />
-              <Text
-                className={
-                  isLiked ? "text-red-500 text-sm font-medium" : "text-muted-foreground text-sm"
-                }
-              >
-                {likesCount > 0 ? `${likesCount}` : isLiked ? "Liked" : "Like"}
-              </Text>
-            </View>
-          </Pressable>
-
-          {elevationStreams ? (
-            <ElevationProfileChart
-              elevationStream={elevationStreams.elevationStream}
-              distanceStream={elevationStreams.distanceStream}
-              height={150}
-              showStats={false}
-              showHeader={false}
-            />
-          ) : null}
-
-          <EntityCommentsSection
-            addCommentPending={comments.addCommentPending}
-            commentCount={comments.commentCount}
-            comments={comments.comments}
-            helperText="Discuss the route and share notes before reusing it elsewhere."
-            hasMoreComments={comments.hasMoreComments}
-            isLoadingMoreComments={comments.isLoadingMoreComments}
-            newComment={comments.newComment}
-            onAddComment={comments.handleAddComment}
-            onChangeNewComment={comments.setNewComment}
-            onLoadMoreComments={comments.loadMoreComments}
+    <DetailScaffold
+      contentContainerClassName="p-4 gap-4 pb-6"
+      headerRight={renderOptionsMenu}
+      modals={
+        showDeleteConfirm ? (
+          <DetailDeleteConfirmModal
+            entityLabel="Route"
+            entityName={route.name}
+            onClose={() => setShowDeleteConfirm(false)}
+            onConfirm={() => deleteMutation.mutate({ id: route.id })}
+            pending={deleteMutation.isPending}
             testIDPrefix="route-detail"
           />
-        </View>
-      </ScrollView>
-      {showDeleteConfirm ? (
-        <AppConfirmModal
-          description={`Are you sure you want to delete "${route.name}"? This cannot be undone.`}
-          onClose={() => setShowDeleteConfirm(false)}
-          primaryAction={{
-            label: "Delete Route",
-            onPress: () => deleteMutation.mutate({ id: route.id }),
-            testID: "route-detail-delete-confirm",
-            variant: "destructive",
-          }}
-          secondaryAction={{
-            label: "Cancel",
-            onPress: () => setShowDeleteConfirm(false),
-            variant: "outline",
-          }}
-          testID="route-detail-delete-modal"
-          title="Delete Route"
+        ) : null
+      }
+      screenTestID="route-detail-screen"
+    >
+      <RouteCard
+        route={route}
+        routeFull={routeFull}
+        isLiked={routeLike.isLiked}
+        likeCount={routeLike.likeCount}
+        likePending={routeLike.isPending}
+        onLikePress={handleToggleLike}
+        variant="detail"
+      />
+
+      {elevationStreams ? (
+        <ElevationProfileChart
+          elevationStream={elevationStreams.elevationStream}
+          distanceStream={elevationStreams.distanceStream}
+          height={150}
+          showStats={false}
+          showHeader={false}
         />
-      ) : null}
-    </View>
+      ) : !shouldLoadGeometry || isFetchingRouteFull ? (
+        <View className="items-center gap-3 rounded-2xl border border-border bg-muted/20 px-4 py-6">
+          <ActivityIndicator size="small" className="text-primary" />
+          <Text className="text-sm text-muted-foreground">Loading route geometry...</Text>
+        </View>
+      ) : (
+        <View className="items-center gap-2 rounded-2xl border border-border bg-muted/20 px-4 py-6">
+          <Text className="text-sm font-medium text-foreground">No elevation profile</Text>
+          <Text className="text-center text-sm text-muted-foreground">
+            This route does not have enough elevation data to draw a profile.
+          </Text>
+        </View>
+      )}
+
+      <EntityCommentsSection
+        addCommentPending={comments.addCommentPending}
+        commentCount={comments.commentCount}
+        comments={comments.comments}
+        hasMoreComments={comments.hasMoreComments}
+        isLoadingMoreComments={comments.isLoadingMoreComments}
+        newComment={comments.newComment}
+        onAddComment={comments.handleAddComment}
+        onChangeNewComment={comments.setNewComment}
+        onLoadMoreComments={comments.loadMoreComments}
+        testIDPrefix="route-detail"
+      />
+    </DetailScaffold>
   );
 }

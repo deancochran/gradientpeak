@@ -224,7 +224,7 @@ function UiPreviewSurface() {
             </div>
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor={uiPreviewFixtures.select.id}>Workout type</Label>
+                <Label htmlFor={uiPreviewFixtures.select.id}>Activity type</Label>
                 <Select
                   onValueChange={(nextValue) => setSelectedWorkoutType(nextValue)}
                   value={selectedWorkoutType}

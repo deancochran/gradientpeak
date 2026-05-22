@@ -13,14 +13,14 @@ env:
       TARGET_USERNAME: "${TARGET_USERNAME}"
       TARGET_USER_ID: "${TARGET_USER_ID}"
 - tapOn:
-    id: "routes-list-upload-button"
-    optional: true
-- tapOn:
-    id: "routes-list-fab-upload-button"
+    id: "routes-list-upload-trigger"
     optional: true
 - extendedWaitUntil:
-    visible: "GPX File"
+    visible:
+      id: "route-upload-screen"
     timeout: 10000
+- assertVisible: "GPX or TCX File *"
 - assertVisible: "Route Name *"
-- assertVisible: "Upload Route"
+- assertVisible:
+    text: "Upload Route"
     optional: true

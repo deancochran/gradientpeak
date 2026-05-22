@@ -1,25 +1,23 @@
 import { act } from "@testing-library/react-native";
 import React from "react";
+import { createHost as mockCreateHost } from "../../../test/mock-components";
 import { renderNative, screen } from "../../../test/render-native";
 import { TrainingPlanDetailHeaderActionsSection } from "../TrainingPlanDetailHeaderActionsSection";
 
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
-
-jest.mock("@repo/ui/components/button", () => ({ __esModule: true, Button: createHost("Button") }));
+jest.mock("@repo/ui/components/button", () => ({
+  __esModule: true,
+  Button: mockCreateHost("Button"),
+}));
 jest.mock("@repo/ui/components/card", () => ({
   __esModule: true,
-  Card: createHost("Card"),
-  CardContent: createHost("CardContent"),
+  Card: mockCreateHost("Card"),
+  CardContent: mockCreateHost("CardContent"),
 }));
-jest.mock("@repo/ui/components/icon", () => ({ __esModule: true, Icon: createHost("Icon") }));
-jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHost("Text") }));
+jest.mock("@repo/ui/components/icon", () => ({ __esModule: true, Icon: mockCreateHost("Icon") }));
+jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: mockCreateHost("Text") }));
 jest.mock("@/components/shared/EntityOwnerRow", () => ({
   __esModule: true,
-  EntityOwnerRow: createHost("EntityOwnerRow"),
+  EntityOwnerRow: mockCreateHost("EntityOwnerRow"),
 }));
 jest.mock("../TrainingPlanSummaryHeader", () => ({
   __esModule: true,

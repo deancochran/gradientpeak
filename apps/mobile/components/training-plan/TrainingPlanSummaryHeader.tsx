@@ -16,6 +16,7 @@ interface TrainingPlanSummaryHeaderProps {
   showStatusDot?: boolean;
   rightAccessory?: React.ReactNode;
   formatStartedDate?: (date: Date) => string;
+  showMeta?: boolean;
 }
 
 const titleClassByVariant: Record<TrainingPlanSummaryVariant, string> = {
@@ -39,6 +40,7 @@ export function TrainingPlanSummaryHeader({
   showStatusDot = false,
   rightAccessory,
   formatStartedDate,
+  showMeta = true,
 }: TrainingPlanSummaryHeaderProps) {
   const startedAt = new Date(createdAt);
   const startedDate = formatStartedDate
@@ -54,7 +56,7 @@ export function TrainingPlanSummaryHeader({
           <Text className={descriptionClassByVariant[variant]}>{description}</Text>
         ) : null}
 
-        {showStatusDot ? (
+        {showMeta && showStatusDot ? (
           <View className="flex-row items-center gap-4 mb-2">
             <View className="flex-row items-center gap-1.5">
               <View
@@ -64,11 +66,11 @@ export function TrainingPlanSummaryHeader({
             </View>
             <Text className="text-sm text-muted-foreground">Started {startedDate}</Text>
           </View>
-        ) : (
+        ) : showMeta ? (
           <Text className="text-xs text-muted-foreground">
             {statusLabel} • Started {startedDate}
           </Text>
-        )}
+        ) : null}
       </View>
 
       {rightAccessory}

@@ -200,6 +200,33 @@ export function applyServerFormErrors<TFieldValues extends FieldValues>(
   return true;
 }
 
+export function setRootFormError<TFieldValues extends FieldValues>(
+  form: Pick<UseFormReturn<TFieldValues>, "setError">,
+  error: unknown,
+) {
+  form.setError("root" as Path<TFieldValues>, {
+    type: "server",
+    message: getErrorMessage(error),
+  });
+}
+
+export function handleSubmitFormError<TFieldValues extends FieldValues>(
+  form: Pick<UseFormReturn<TFieldValues>, "setError">,
+  error: unknown,
+  options: { alertTitle?: string; preferRootError?: boolean } = {},
+) {
+  if (applyServerFormErrors(form, error)) {
+    return;
+  }
+
+  if (options.preferRootError) {
+    setRootFormError(form, error);
+    return;
+  }
+
+  showErrorAlert(error, options.alertTitle);
+}
+
 /**
  * Gets the first error message from React Hook Form errors
  */
@@ -219,83 +246,4 @@ export function showFormErrorAlert(errors: FieldErrors, title = "Please check yo
   if (message) {
     Alert.alert(title, message, [{ text: "OK" }]);
   }
-}
-
-/**
- * Handles form submission errors with smart error detection
- * Shows appropriate error messages for validation vs submission errors
- */
-export function handleFormSubmissionError(error: unknown, formErrors?: FieldErrors) {
-  // If we have form validation errors, show those first
-  if (formErrors && Object.keys(formErrors).length > 0) {
-    showFormErrorAlert(formErrors);
-    return;
-  }
-
-  // Otherwise show the submission error
-  showErrorAlert(error, "Submission Failed");
-}
-
-/**
- * React Hook Form onError handler
- * Usage: form.handleSubmit(onSubmit, formErrorHandler)
- */
-export function formErrorHandler(errors: FieldErrors) {
-  showFormErrorAlert(errors);
-}
-
-/**
- * Wraps an async form submission with automatic error handling
- * Returns a safe version that catches and displays errors
- */
-export function withFormErrorHandling<T extends any[]>(
-  submitFn: (...args: T) => Promise<void>,
-  options: {
-    onError?: (error: unknown) => void;
-    errorTitle?: string;
-    suppressAlert?: boolean;
-  } = {},
-) {
-  return async (...args: T) => {
-    try {
-      await submitFn(...args);
-    } catch (error) {
-      // Call custom error handler if provided
-      options.onError?.(error);
-
-      // Show alert unless suppressed
-      if (!options.suppressAlert) {
-        showErrorAlert(error, options.errorTitle);
-      }
-
-      // Don't re-throw - we've handled it
-    }
-  };
-}
-
-/**
- * Validates if an error is a network error
- */
-export function isNetworkError(error: unknown): boolean {
-  if (error instanceof Error) {
-    return (
-      error.message.includes("fetch") ||
-      error.message.includes("network") ||
-      error.message.includes("Network") ||
-      error.message.includes("connection")
-    );
-  }
-  return false;
-}
-
-/**
- * Validates if an error is an auth error
- */
-export function isAuthError(error: unknown): boolean {
-  const message = getErrorMessage(error);
-  return (
-    message.includes("sign in") ||
-    message.includes("permission") ||
-    message.includes("unauthorized")
-  );
 }

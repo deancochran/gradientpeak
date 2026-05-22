@@ -1,13 +1,8 @@
 import { act } from "@testing-library/react-native";
 import React from "react";
+import { createHost } from "../../../test/mock-components";
 import { renderNative, screen } from "../../../test/render-native";
 import { TrainingPlanStructureSection } from "../TrainingPlanStructureSection";
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
 
 jest.mock("@repo/ui/components/button", () => ({ __esModule: true, Button: createHost("Button") }));
 jest.mock("@repo/ui/components/card", () => ({
@@ -100,9 +95,11 @@ describe("TrainingPlanStructureSection", () => {
       />,
     );
 
-    const dialog = getAllByTypeOrEmpty("Dialog")[0];
+    const closeButton = getAllByTypeOrEmpty("Button").find(
+      (node: any) => getNodeText(node.props?.children) === "Close",
+    );
     act(() => {
-      dialog.props.onOpenChange(false);
+      closeButton.props.onPress();
     });
 
     expect(onActivityPickerOpenChange).toHaveBeenCalledWith(false);
@@ -114,7 +111,7 @@ describe("TrainingPlanStructureSection", () => {
     renderNative(
       <TrainingPlanStructureSection
         activityPlanItems={[]}
-        activityPlanNameById={new Map([["activity-1", "Workout"]])}
+        activityPlanNameById={new Map([["activity-1", "Activity"]])}
         formatCompactDayLabel={() => "Mon · Day 1"}
         groupedStructureSessions={[
           {
@@ -125,7 +122,7 @@ describe("TrainingPlanStructureSection", () => {
                 sessions: [
                   {
                     key: "session-1",
-                    title: "Workout",
+                    title: "Activity",
                     activityPlanId: "activity-1",
                     dayOffset: 0,
                     sourcePath: [],

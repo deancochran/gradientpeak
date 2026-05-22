@@ -37,7 +37,7 @@ export type EventCompletionEventRecord = EventCompletionBase & {
   activity_plan: SerializedEventActivityPlan | null;
 };
 
-export type EventDeleteCandidateRecord = Pick<EventRow, "id" | "event_type">;
+export type EventDeleteCandidateRecord = Pick<EventRow, "activity_plan_id" | "id" | "event_type">;
 
 export type EventDeleteScope = "single" | "future" | "series";
 

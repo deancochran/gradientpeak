@@ -292,7 +292,7 @@ function ActivityDetailPage() {
       <EntityCommentsCard
         entityId={activity.id}
         entityType="activity"
-        helperText="Discuss the workout, ask follow-up questions, or leave coaching notes."
+        helperText="Discuss the activity, ask follow-up questions, or leave coaching notes."
         testId="activity-comments"
       />
     </div>

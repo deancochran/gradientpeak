@@ -4,7 +4,6 @@
  */
 
 export { GhostCard } from "./GhostCard";
-export { PlanCard, type PlanCardData } from "./PlanCard";
 export { usePlanDashboardViewModel } from "./usePlanDashboardViewModel";
 export { WeeklyLedger } from "./WeeklyLedger";
 export { WeekStrip } from "./WeekStrip";

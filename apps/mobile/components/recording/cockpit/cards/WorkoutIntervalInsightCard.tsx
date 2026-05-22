@@ -33,7 +33,7 @@ type PlanProgressView =
   | undefined;
 
 export function WorkoutIntervalInsightCard({ mode, plan, readings, service }: InsightCardProps) {
-  const currentStepName = plan.currentStep?.name ?? "Workout cue";
+  const currentStepName = plan.currentStep?.name ?? "Activity cue";
   const progress = plan.progress?.progress;
   const allSteps = service?.allSteps ?? [];
   const stepIndex = plan.hasPlan && typeof plan.stepIndex === "number" ? plan.stepIndex : 0;
@@ -58,7 +58,7 @@ export function WorkoutIntervalInsightCard({ mode, plan, readings, service }: In
 
   if (mode === "compact") {
     return (
-      <View className="h-full justify-between gap-2" testID="workout-interval-insight-card">
+      <View className="h-full justify-between gap-2" testID="activity-interval-insight-card">
         <View>
           <View className="flex-row items-baseline justify-between gap-3">
             <Text className="flex-1 text-lg font-black text-foreground" numberOfLines={1}>
@@ -130,7 +130,7 @@ export function WorkoutIntervalInsightCard({ mode, plan, readings, service }: In
   }
 
   return (
-    <View className="flex-1 gap-4" testID="workout-interval-insight-card">
+    <View className="flex-1 gap-4" testID="activity-interval-insight-card">
       <View>
         <ActivityPlanIntensityChart allSteps={allSteps} currentStepIndex={stepIndex} height={140} />
       </View>

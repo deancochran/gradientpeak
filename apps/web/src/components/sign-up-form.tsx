@@ -1,14 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@repo/ui/components/button";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@repo/ui/components/form";
-import { Input } from "@repo/ui/components/input";
+import { Form, FormTextField } from "@repo/ui/components/form";
 import { cn } from "@repo/ui/lib/cn";
 import { Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
@@ -52,67 +44,35 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
         <Form {...form}>
           <form action={signUpWithEmailAction.url} method="post" onSubmit={handleSignUp}>
             <div className="flex flex-col gap-6">
-              <FormField
+              <FormTextField
+                autoComplete="email"
                 control={form.control}
+                label="Email"
                 name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email *</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        autoComplete="email"
-                        type="email"
-                        placeholder="m@example.com"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                placeholder="m@example.com"
+                required
+                type="email"
               />
 
-              <FormField
+              <FormTextField
+                autoComplete="new-password"
                 control={form.control}
+                description="Password must contain: At least 8 characters. One uppercase letter. One number."
+                label="Password"
                 name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Password *</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        autoComplete="new-password"
-                        type="password"
-                        placeholder="Enter your password"
-                      />
-                    </FormControl>
-                    <div className="space-y-1 text-xs text-muted-foreground">
-                      <p>Password must contain:</p>
-                      <p>At least 8 characters</p>
-                      <p>One uppercase letter</p>
-                      <p>One number</p>
-                    </div>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                placeholder="Enter your password"
+                required
+                type="password"
               />
 
-              <FormField
+              <FormTextField
+                autoComplete="new-password"
                 control={form.control}
+                label="Repeat Password"
                 name="repeatPassword"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Repeat Password *</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        autoComplete="new-password"
-                        type="password"
-                        placeholder="Confirm your password"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                placeholder="Confirm your password"
+                required
+                type="password"
               />
 
               {form.formState.errors.root ? (

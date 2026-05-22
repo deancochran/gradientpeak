@@ -197,6 +197,7 @@ const processActivityFileInput = z
     name: z.string().trim().min(1, "Activity name is required"),
     notes: z.string().trim().optional(),
     activityType: z.string().trim().min(1, "Activity type is required"),
+    is_private: z.boolean().optional(),
     importProvenance: manualHistoricalImportProvenanceSchema.optional(),
   })
   .strict();
@@ -284,6 +285,7 @@ async function createActivityRecord(
     name: string;
     notes: string | null;
     activityType: string;
+    isPrivate: boolean;
     startedAt: Date;
     finishedAt: Date;
     durationSeconds: number;
@@ -366,7 +368,7 @@ async function createActivityRecord(
       ${input.name},
       ${input.notes},
       ${input.activityType},
-      ${true},
+      ${input.isPrivate},
       ${input.startedAt},
       ${input.finishedAt},
       ${input.durationSeconds},
@@ -408,9 +410,14 @@ async function createActivityRecord(
   });
 }
 
-async function canAccessActivityStreams(db: DbClient, activityId: string, userId: string) {
+async function canAccessActivityStreams(
+  db: DbClient,
+  activityId: string,
+  userId: string,
+): Promise<string | null> {
   const activity = await db.query.activities.findFirst({
     columns: {
+      activity_file_path: true,
       profile_id: true,
       is_private: true,
     },
@@ -421,27 +428,14 @@ async function canAccessActivityStreams(db: DbClient, activityId: string, userId
     throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
   }
 
-  if (activity.profile_id === userId || !activity.is_private) {
-    return;
+  if (activity.profile_id === userId) {
+    return activity.activity_file_path ?? null;
   }
 
-  const followResult = await db.execute(sql<{ has_access: boolean }>`
-    select exists(
-      select 1
-      from follows
-      where follower_id = ${userId}::uuid
-        and following_id = ${activity.profile_id}::uuid
-        and status = 'accepted'
-    ) as has_access
-  `);
-
-  if (!followResult.rows[0]?.has_access) {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message:
-        "Access denied: You can only access your own activities or public activities from users you follow",
-    });
-  }
+  throw new TRPCError({
+    code: "FORBIDDEN",
+    message: "Access denied: Detailed activity streams are only available to the activity owner",
+  });
 }
 
 function serializeActivityDates<T extends Record<string, unknown>>(activity: T): T {
@@ -549,7 +543,7 @@ export const activityFilesRouter = createTRPCRouter({
   processActivityFile: protectedProcedure
     .input(processActivityFileInput)
     .mutation(async ({ ctx, input }) => {
-      const { activityFilePath, name, notes, activityType, importProvenance } = input;
+      const { activityFilePath, name, notes, activityType, is_private, importProvenance } = input;
       const userId = ctx.session?.user?.id;
       const supabase = storageService;
       const db = getRequiredDb(ctx);
@@ -904,6 +898,7 @@ export const activityFilesRouter = createTRPCRouter({
             name,
             notes: notes || null,
             activityType,
+            isPrivate: is_private ?? true,
             startedAt: startTime,
             finishedAt: endTime,
             durationSeconds: Math.round(duration),
@@ -1410,13 +1405,23 @@ export const activityFilesRouter = createTRPCRouter({
       }
 
       try {
+        let resolvedActivityFilePath = activityFilePath.trim();
+
         // If activityId is provided, use proper database-driven authorization
         if (activityId) {
-          await canAccessActivityStreams(db, activityId, userId);
+          const authorizedActivityFilePath = await canAccessActivityStreams(db, activityId, userId);
+
+          if (!authorizedActivityFilePath) {
+            throw new TRPCError({
+              code: "NOT_FOUND",
+              message: "Activity does not have an associated activity file",
+            });
+          }
+
+          resolvedActivityFilePath = authorizedActivityFilePath;
         } else {
           // Fallback: legacy behavior - check file path ownership directly
-          const cleanPath = activityFilePath.trim();
-          const isOwnFile = isOwnedActivityFilePath(userId, cleanPath);
+          const isOwnFile = isOwnedActivityFilePath(userId, resolvedActivityFilePath);
 
           if (!isOwnFile) {
             throw new Error("Access denied: You can only access your own files");
@@ -1426,7 +1431,7 @@ export const activityFilesRouter = createTRPCRouter({
         // Download activity file from storage
         const { data: activityFile, error: downloadError } = await supabase.storage
           .from(ACTIVITY_FILE_BUCKET)
-          .download(activityFilePath.trim());
+          .download(resolvedActivityFilePath);
 
         if (downloadError || !activityFile) {
           throw new TRPCError({
@@ -1440,7 +1445,7 @@ export const activityFilesRouter = createTRPCRouter({
         const activityFileBlob = requireBlobLike(activityFile);
         const buffer = await toBufferFromBlobLike(activityFileBlob);
         const parsedData = parsedActivitySchema.parse(
-          parseActivityFile({ data: buffer, fileName: activityFilePath }),
+          parseActivityFile({ data: buffer, fileName: resolvedActivityFilePath }),
         );
 
         // Extract streams in a format suitable for frontend charting

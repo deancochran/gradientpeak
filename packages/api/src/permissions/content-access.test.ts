@@ -48,4 +48,28 @@ describe("content access row helpers", () => {
       }),
     ).resolves.toEqual(rows);
   });
+
+  it("does not treat geometry-only grants as full read grants", async () => {
+    const selectResults = [
+      [{ id: "route-1", ownerProfileId: "profile-2", isPublic: false, isSystem: false }],
+      [],
+      [{ id: "route-1", ownerProfileId: "profile-2", isPublic: false, isSystem: false }],
+      [{ accessLevel: "read_geometry", sourceType: "event", sourceId: "event-1" }],
+    ];
+    const builder = {
+      from: () => builder,
+      where: () => builder,
+      limit: async () => selectResults.shift() ?? [],
+    };
+    const db = { select: () => builder } as any;
+    const permissions = createContentAccessPermissions(db);
+
+    await expect(
+      permissions.canRead("profile-1", { type: "activity_route", id: "route-1" }),
+    ).resolves.toMatchObject({ allowed: false });
+    await expect(permissions.requireRouteGeometry("profile-1", "route-1")).resolves.toMatchObject({
+      allowed: true,
+      reason: "grant",
+    });
+  });
 });

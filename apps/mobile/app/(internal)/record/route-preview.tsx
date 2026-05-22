@@ -51,7 +51,7 @@ export default function RoutePreviewScreen() {
     if (!route?.id) return;
 
     if (!canEditRoute) {
-      Alert.alert("Route Setup Locked", "Finish this workout to attach a different route.");
+      Alert.alert("Route Setup Locked", "Finish this activity to attach a different route.");
       return;
     }
 

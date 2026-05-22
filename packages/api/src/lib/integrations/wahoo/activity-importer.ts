@@ -3,38 +3,27 @@
  * Processes webhook events and imports completed activities from Wahoo
  */
 
-import { type ActivityType, fromActivityType } from "./activity-type-utils";
+import { parseActivityFile, type StandardActivity } from "@repo/core";
+import {
+  buildImportedActivityCreateInput,
+  type ImportedActivityCreateInput,
+} from "../../provider-sync/imported-activity";
+import type { ActivityType } from "./activity-type-utils";
 import type { WahooWorkoutSummary } from "./client";
 
 interface WahooRepository {
-  createImportedActivity(input: {
-    activityPlanId: string | null;
-    avgCadence: number | null;
-    avgHeartRate: number | null;
-    avgPower: number | null;
-    avgSpeedMps: number | null;
-    calories: number | null;
-    distanceMeters: number;
-    durationSeconds: number;
-    elevationGainMeters: number | null;
+  createImportedActivity(input: ImportedActivityCreateInput): Promise<{ id: string }>;
+  findImportedActivityLinkByExternalId(input: {
     externalId: string;
-    finishedAt: string;
-    activityFilePath: string | null;
-    activityFileSize: number | null;
-    movingSeconds: number;
-    name: string;
-    normalizedPower: number | null;
-    profileId: string;
-    provider: "wahoo";
-    startedAt: string;
-    type: string;
-  }): Promise<{ id: string }>;
-  findImportedActivityByExternalId(externalId: string): Promise<{ id: string } | null>;
+    integrationId: string;
+  }): Promise<{ activityId: string; linkId: string } | null>;
   findLinkedPlannedEventId(input: {
     externalWorkoutId: string;
     profileId: string;
   }): Promise<string | null>;
-  findWahooIntegrationByExternalId(externalId: string): Promise<{ profileId: string } | null>;
+  findWahooIntegrationByExternalId(
+    externalId: string,
+  ): Promise<{ integrationId: string; profileId: string } | null>;
   getEventActivityPlanId(input: { eventId: string; profileId: string }): Promise<string | null>;
 }
 
@@ -64,10 +53,16 @@ export interface WahooActivityImportFileStorage {
   }): Promise<void>;
 }
 
+export type WahooActivityFileParser = (input: {
+  bytes: Uint8Array;
+  fileName: string;
+}) => StandardActivity;
+
 export class WahooActivityImporter {
   constructor(
     private readonly deps: {
       activityFileStorage: WahooActivityImportFileStorage;
+      activityFileParser?: WahooActivityFileParser;
       repository: WahooRepository;
     },
   ) {}
@@ -95,10 +90,11 @@ export class WahooActivityImporter {
         };
       }
 
-      // 2. Check for duplicate (unique constraint on provider + external_id)
-      const existing = await this.deps.repository.findImportedActivityByExternalId(
-        summary.id.toString(),
-      );
+      // 2. Check for duplicate provider resource before file download or parsing.
+      const existing = await this.deps.repository.findImportedActivityLinkByExternalId({
+        externalId: summary.id.toString(),
+        integrationId: integration.integrationId,
+      });
 
       if (existing) {
         console.log(`Activity ${summary.id} already imported, skipping`);
@@ -106,7 +102,7 @@ export class WahooActivityImporter {
           success: true,
           skipped: true,
           reason: "Activity already imported",
-          activityId: existing.id,
+          activityId: existing.activityId,
         };
       }
 
@@ -121,25 +117,24 @@ export class WahooActivityImporter {
           })
         : null;
 
-      // 4. Fetch the workout to get activity type
-      // Note: In a real implementation, you'd fetch this from Wahoo API
-      // For now, we'll infer from the workout_type_id in the summary
-      const activityType = this.inferActivityType(summary);
-      const { category } = fromActivityType(activityType);
-
       const activityFile = await this.downloadAndStoreActivityFile(
         summary.file?.url,
         integration.profileId,
         summary.id,
       );
 
-      // 5. Calculate start time from duration
-      const startedAt = this.calculateStartTime(summary);
+      if (!activityFile) {
+        return {
+          success: false,
+          error: `Failed to fetch/store Wahoo FIT file for summary ${summary.id}`,
+        };
+      }
 
-      // 6. Map Wahoo metrics to GradientPeak schema
-      const finishedAt = new Date(
-        new Date(startedAt).getTime() + (summary.duration_total_accum || 0) * 1000,
-      ).toISOString();
+      const parsedActivity = this.parseActivityFile(
+        activityFile.bytes,
+        activityFile.path,
+        summary.id,
+      );
 
       // 4a. If we have an event_id, get the associated activity_plan_id
       let activityPlanId: string | null = null;
@@ -151,36 +146,35 @@ export class WahooActivityImporter {
           })) ?? null;
       }
 
-      const activity = {
+      const resolvedCategory = this.resolveActivityType(summary, parsedActivity);
+      const activity = buildImportedActivityCreateInput({
+        activityFile: {
+          path: activityFile.path,
+          size: activityFile.size,
+        },
+        activityPlanId,
+        externalId: summary.id.toString(),
+        fallback: {
+          avgCadence: summary.cadence_avg,
+          avgHeartRate: summary.heart_rate_avg,
+          avgPower: summary.power_avg,
+          avgSpeedMps: summary.speed_avg,
+          calories: summary.calories_accum,
+          distanceMeters: summary.distance_accum,
+          durationSeconds: summary.duration_total_accum,
+          elevationGainMeters: summary.ascent_accum,
+          movingSeconds: summary.duration_active_accum,
+          normalizedPower: summary.power_bike_np_last,
+          providerUpdatedAt: summary.updated_at ?? summary.created_at ?? null,
+          startedAt: this.calculateStartTime(summary),
+        },
+        integrationId: integration.integrationId,
         profileId: integration.profileId,
         provider: "wahoo" as const,
-        externalId: summary.id.toString(),
-        activityPlanId,
-
-        // Timestamps
-        startedAt,
-        finishedAt,
-
-        // Activity type (new schema)
-        type: category,
-        name: `${category} Activity`,
-
-        // Core metrics
-        distanceMeters: toInteger(summary.distance_accum),
-        durationSeconds: toInteger(summary.duration_total_accum),
-        movingSeconds: toInteger(summary.duration_active_accum),
-
-        // Additional metrics mapped to concrete DB columns
-        elevationGainMeters: toInteger(summary.ascent_accum),
-        calories: toInteger(summary.calories_accum),
-        avgPower: toNullableNumber(summary.power_avg),
-        normalizedPower: toNullableNumber(summary.power_bike_np_last),
-        avgHeartRate: toNullableInteger(summary.heart_rate_avg),
-        avgCadence: toNullableInteger(summary.cadence_avg),
-        avgSpeedMps: toNullableNumber(summary.speed_avg),
-        activityFilePath: activityFile?.path ?? null,
-        activityFileSize: activityFile?.size ?? null,
-      };
+        parsedActivity,
+        title: `${resolvedCategory} Activity`,
+        type: resolvedCategory,
+      });
 
       // 7. Create activity
       let newActivity;
@@ -228,11 +222,42 @@ export class WahooActivityImporter {
     return "other";
   }
 
+  private parseActivityFile(
+    bytes: Uint8Array,
+    path: string,
+    workoutSummaryId: number,
+  ): StandardActivity | null {
+    try {
+      const parser = this.deps.activityFileParser ?? defaultActivityFileParser;
+      return parser({ bytes, fileName: path });
+    } catch (error) {
+      console.warn(
+        `Failed to parse Wahoo FIT file for summary ${workoutSummaryId}; falling back to summary metadata`,
+        error,
+      );
+      return null;
+    }
+  }
+
+  private resolveActivityType(
+    summary: WahooWorkoutSummary,
+    parsedActivity: StandardActivity | null,
+  ): ActivityType {
+    const fitType = parsedActivity?.metadata.type.toLowerCase();
+    if (fitType) {
+      if (fitType.includes("cycling") || fitType.includes("bike")) return "bike";
+      if (fitType.includes("running") || fitType.includes("run")) return "run";
+      if (fitType.includes("swimming") || fitType.includes("swim")) return "swim";
+    }
+
+    return this.inferActivityType(summary);
+  }
+
   private async downloadAndStoreActivityFile(
     url: string | undefined,
     profileId: string,
     workoutSummaryId: number,
-  ): Promise<{ path: string; size: number } | null> {
+  ): Promise<{ bytes: Uint8Array; path: string; size: number } | null> {
     if (!url) {
       return null;
     }
@@ -248,7 +273,7 @@ export class WahooActivityImporter {
 
       const arrayBuffer = await response.arrayBuffer();
       const bytes = new Uint8Array(arrayBuffer);
-      const activityFilePath = `${profileId}/wahoo-${workoutSummaryId}.fit`;
+      const activityFilePath = `activities/${profileId}/providers/wahoo/${workoutSummaryId}.fit`;
 
       try {
         await this.deps.activityFileStorage.uploadActivityFile({
@@ -263,7 +288,7 @@ export class WahooActivityImporter {
         return null;
       }
 
-      return { path: activityFilePath, size: bytes.byteLength };
+      return { bytes, path: activityFilePath, size: bytes.byteLength };
     } catch (error) {
       console.warn(
         `Failed to fetch/store Wahoo activity file for summary ${workoutSummaryId}`,
@@ -300,26 +325,16 @@ function toNumber(value: number | string | null | undefined): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function toNullableNumber(value: number | string | null | undefined): number | null {
-  if (value === null || value === undefined || value === "") {
-    return null;
-  }
-
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function toInteger(value: number | string | null | undefined): number {
-  return Math.round(toNumber(value));
-}
-
-function toNullableInteger(value: number | string | null | undefined): number | null {
-  const parsed = toNullableNumber(value);
-  return parsed === null ? null : Math.round(parsed);
+function defaultActivityFileParser(input: {
+  bytes: Uint8Array;
+  fileName: string;
+}): StandardActivity {
+  return parseActivityFile({ data: input.bytes, fileName: input.fileName, fileType: "fit" });
 }
 
 export function createActivityImporter(deps: {
   activityFileStorage: WahooActivityImportFileStorage;
+  activityFileParser?: WahooActivityFileParser;
   repository: WahooRepository;
 }) {
   return new WahooActivityImporter(deps);

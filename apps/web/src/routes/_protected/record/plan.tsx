@@ -82,7 +82,7 @@ function RecordPlanPage() {
           <h1 className="text-3xl font-semibold tracking-tight">Choose today&apos;s plan</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             This mirrors the mobile plan picker with a browser-safe list of today&apos;s scheduled
-            workouts.
+            activities.
           </p>
         </div>
         <Button asChild variant="outline">
@@ -149,7 +149,7 @@ function RecordPlanPage() {
             <div>
               <p className="font-medium text-foreground">No matching plans for today</p>
               <p className="text-sm text-muted-foreground">
-                Adjust the search or come back after scheduling a workout in the planning flow.
+                Adjust the search or come back after scheduling a activity in the planning flow.
               </p>
             </div>
           </CardContent>
@@ -173,7 +173,8 @@ function RecordPlanPage() {
                   <div className="space-y-2">
                     <CardTitle className="text-xl">{plan.name}</CardTitle>
                     <CardDescription>
-                      {plan.description || "Planned workout ready to attach from today's calendar."}
+                      {plan.description ||
+                        "Planned activity ready to attach from today's calendar."}
                     </CardDescription>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -186,8 +187,8 @@ function RecordPlanPage() {
               <CardContent className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-sm text-muted-foreground">
                   {isSelected
-                    ? "Attached to the launcher. Choosing it again keeps this workout selected."
-                    : "Attach this workout to carry its category and linked route back to the launcher."}
+                    ? "Attached to the launcher. Choosing it again keeps this activity selected."
+                    : "Attach this activity to carry its category and linked route back to the launcher."}
                 </p>
                 <Button onClick={() => attachPlan(event.id)}>
                   {isSelected ? <Check className="mr-2 h-4 w-4" /> : null}

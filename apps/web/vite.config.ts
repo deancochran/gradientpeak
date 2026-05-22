@@ -16,6 +16,7 @@ const config = defineConfig(({ mode }) => {
 
   return {
     server: {
+      allowedHosts: ["outgoing-ape-repeatedly.ngrok-free.app"],
       host: "0.0.0.0",
       port: Number(process.env.PORT ?? 3000),
     },

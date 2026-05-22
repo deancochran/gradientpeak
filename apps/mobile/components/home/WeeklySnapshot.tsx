@@ -3,7 +3,7 @@ import { Text, TouchableOpacity, View } from "react-native";
 
 interface WeeklySnapshotProps {
   distance: number;
-  workouts: number;
+  activities: number;
   totalTSS: number;
   plannedTSS?: number;
   plannedDistance?: number;
@@ -13,7 +13,7 @@ interface WeeklySnapshotProps {
 
 const WeeklySnapshot: React.FC<WeeklySnapshotProps> = ({
   distance,
-  workouts,
+  activities,
   totalTSS,
   plannedTSS,
   plannedDistance,
@@ -38,7 +38,7 @@ const WeeklySnapshot: React.FC<WeeklySnapshotProps> = ({
             value={`${distance}`}
           />
           <View className="h-12 w-px bg-border" />
-          <MetricColumn label="Workouts" planned={plannedWorkouts} value={`${workouts}`} />
+          <MetricColumn label="Activities" planned={plannedWorkouts} value={`${activities}`} />
         </View>
       </View>
     </CardWrapper>

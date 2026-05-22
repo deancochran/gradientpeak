@@ -26,6 +26,7 @@ type CreateManualEventInput = {
   notes: string;
   startsAt: Date;
   allDay: boolean;
+  recurrence?: { rule: string; timezone: string };
 };
 
 type UseCalendarScreenControllerParams = {
@@ -55,6 +56,7 @@ type UseCalendarScreenControllerParams = {
     all_day: boolean;
     timezone: string;
     notes?: string;
+    recurrence?: { rule: string; timezone: string };
     lifecycle: { status: "scheduled" };
     read_only: boolean;
   }) => void;
@@ -299,7 +301,7 @@ export function useCalendarScreenController({
   );
 
   const submitManualCreate = useCallback(
-    ({ createType, title, notes, startsAt, allDay }: CreateManualEventInput) => {
+    ({ createType, title, notes, startsAt, allDay, recurrence }: CreateManualEventInput) => {
       const trimmedTitle = title.trim();
       const fallbackTitle = createType === "race_target" ? "Race target" : "Custom event";
 
@@ -310,6 +312,7 @@ export function useCalendarScreenController({
         all_day: allDay,
         timezone: "UTC",
         notes: notes.trim() || undefined,
+        recurrence,
         lifecycle: { status: "scheduled" },
         read_only: false,
       });

@@ -238,8 +238,11 @@ export function ActivityPlanContentPreview({
   const timelineStructure = useMemo(() => getTimelineStructure(plan?.structure), [plan?.structure]);
   const steps = useMemo(() => flattenSteps(plan?.structure), [plan?.structure]);
   const routeCoordinates = useMemo(
-    () => (route?.polyline ? decodePolyline(route.polyline) : null),
-    [route?.polyline],
+    () =>
+      showRoutePreview && resolvedSize !== "small" && route?.polyline
+        ? decodePolyline(route.polyline)
+        : null,
+    [resolvedSize, route?.polyline, showRoutePreview],
   );
   const routeStreams = useMemo(
     () => buildRouteStreams(routeFull?.coordinates),

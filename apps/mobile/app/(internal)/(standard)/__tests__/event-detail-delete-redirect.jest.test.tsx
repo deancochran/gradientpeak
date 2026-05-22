@@ -1,13 +1,8 @@
 import { waitFor } from "@testing-library/react-native";
 import React from "react";
+import { createHost } from "../../../../test/mock-components";
 import { renderNative, screen } from "../../../../test/render-native";
 import EventDetailScreen from "../event-detail";
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
 
 var mockRouterNavigate = jest.fn();
 var mockQuery = jest.fn((_input?: any, _options?: any) => ({

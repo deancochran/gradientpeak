@@ -1,14 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@repo/ui/components/button";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@repo/ui/components/form";
-import { Input } from "@repo/ui/components/input";
+import { Form, FormTextField } from "@repo/ui/components/form";
 import { cn } from "@repo/ui/lib/cn";
 import { Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
@@ -58,23 +50,14 @@ export function ForgotPasswordForm({ className, ...props }: ForgotPasswordFormPr
             onSubmit={handleForgotPassword}
           >
             <div className="flex flex-col gap-6">
-              <FormField
+              <FormTextField
+                autoComplete="email"
                 control={form.control}
+                label="Email"
                 name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email *</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        autoComplete="email"
-                        type="email"
-                        placeholder="m@example.com"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                placeholder="m@example.com"
+                required
+                type="email"
               />
 
               {form.formState.errors.root ? (

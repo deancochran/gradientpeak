@@ -166,12 +166,18 @@ describe("estimation-helpers", () => {
         estimated_zones: ["Z2", "Z3"],
         confidence: "moderate",
         confidence_score: 82,
-        authoritative_metrics: {
+        authoritative_metrics: expect.objectContaining({
           estimated_tss: 42,
           estimated_duration: 4200,
           intensity_factor: 0.82,
           estimated_distance: 42000,
-        },
+          provenance: expect.objectContaining({
+            estimated_tss: "estimated",
+            estimated_duration: "estimated",
+            intensity_factor: "estimated",
+            estimated_distance: "estimated",
+          }),
+        }),
         route: {
           distance: 42000,
           ascent: 350,

@@ -49,6 +49,7 @@ function createProfileRow(overrides: Partial<Record<string, unknown>> = {}) {
     email: "athlete@example.com",
     full_name: "Athlete Example",
     avatar_url: "https://example.com/avatar.png",
+    cover_url: "https://example.com/cover.png",
     bio: "Climber",
     dob: new Date("1990-01-01T00:00:00.000Z"),
     gender: "male",
@@ -258,6 +259,7 @@ describe("profilesRouter", () => {
     const result = await caller.update({
       bio: "Updated bio",
       avatar_url: null,
+      cover_url: "https://example.com/updated-cover.png",
       is_public: false,
       dob: "1991-02-03T00:00:00.000Z",
       username: "updated_athlete",
@@ -275,6 +277,7 @@ describe("profilesRouter", () => {
       table: "profiles",
       values: {
         avatar_url: null,
+        cover_url: "https://example.com/updated-cover.png",
         bio: "Updated bio",
         is_public: false,
       },

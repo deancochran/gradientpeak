@@ -1,12 +1,17 @@
-import { type ActivityPlanStructureV2, formatDurationSec } from "@repo/core";
-import { Icon } from "@repo/ui/components/icon";
+import type { ActivityPlanStructureV2 } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import type { ReactNode } from "react";
 import React from "react";
 import { View } from "react-native";
-import { getActivityCategoryConfig, getActivityConfig } from "@/lib/constants/activities";
+import {
+  formatEstimatedDurationMinutes,
+  formatEstimatedDurationSeconds,
+  formatEstimatedIntensityFactor,
+  formatEstimatedTss,
+} from "@/lib/estimatedMetrics";
 import { ActivityPlanAttributionRow } from "./ActivityPlanAttributionRow";
 import type { EntityOwner } from "./EntityOwnerRow";
+import { ResourceMetricsRow } from "./ResourceCardPrimitives";
 
 type ActivityPlanSummaryProps = {
   activityCategory?: string | null;
@@ -60,11 +65,11 @@ export function formatActivityPlanDuration(params: {
   const { estimatedDuration, estimatedDurationMinutes } = params;
 
   if (typeof estimatedDuration === "number" && estimatedDuration > 0) {
-    return formatDurationSec(Math.round(estimatedDuration));
+    return formatEstimatedDurationSeconds(estimatedDuration);
   }
 
   if (typeof estimatedDurationMinutes === "number" && estimatedDurationMinutes > 0) {
-    return `${Math.round(estimatedDurationMinutes)} min`;
+    return formatEstimatedDurationMinutes(estimatedDurationMinutes);
   }
 
   return null;
@@ -101,35 +106,26 @@ export function ActivityPlanMetricsRow({
   }
 
   return (
-    <View className="rounded-lg bg-muted/30 px-2.5 py-2">
-      <View className="flex-row justify-between gap-2">
-        <MetricCell label="Duration" value={durationLabel || "--"} />
-        <MetricCell
-          label="TSS"
-          value={
-            typeof estimatedTss === "number" && Number.isFinite(estimatedTss) && estimatedTss > 0
-              ? `${Math.round(estimatedTss)}`
-              : "--"
-          }
-        />
-        <MetricCell
-          label="Intensity"
-          value={
-            typeof intensityFactor === "number" &&
-            Number.isFinite(intensityFactor) &&
-            intensityFactor > 0
-              ? intensityFactor.toFixed(2)
-              : "--"
-          }
-        />
-        <MetricCell label="Steps" value={`${stepCount}`} />
-      </View>
-    </View>
+    <ResourceMetricsRow
+      metrics={[
+        { label: "Duration", value: durationLabel || "--" },
+        {
+          label: "TSS",
+          value: formatEstimatedTss(estimatedTss, { includeUnit: false }) ?? "--",
+          tone: "primary",
+        },
+        {
+          label: "Intensity",
+          value: formatEstimatedIntensityFactor(intensityFactor) ?? "--",
+          tone: "primary",
+        },
+        { label: "Steps", value: `${stepCount}` },
+      ]}
+    />
   );
 }
 
 export function ActivityPlanSummary({
-  activityCategory,
   description,
   estimatedDuration,
   estimatedDurationMinutes,
@@ -148,11 +144,6 @@ export function ActivityPlanSummary({
   showAttribution = true,
 }: ActivityPlanSummaryProps) {
   const routeLabel = routeName?.trim() || (routeProvided ? "Route included" : null);
-  const activityConfig = activityCategory
-    ? activityCategory.includes("_")
-      ? getActivityConfig(activityCategory)
-      : getActivityCategoryConfig(activityCategory)
-    : getActivityCategoryConfig("other");
 
   return (
     <View
@@ -170,12 +161,9 @@ export function ActivityPlanSummary({
               {subtitle}
             </Text>
           ) : null}
-          <View className="flex-row items-center gap-2">
-            <Icon as={activityConfig.icon} size={14} className={activityConfig.color} />
-            <Text className="flex-1 text-base font-semibold text-foreground">
-              {title || "Untitled activity plan"}
-            </Text>
-          </View>
+          <Text className="text-base font-semibold text-foreground">
+            {title || "Untitled activity plan"}
+          </Text>
           {description?.trim() ? (
             <Text className="text-xs leading-5 text-muted-foreground">{description.trim()}</Text>
           ) : null}
@@ -203,17 +191,6 @@ export function ActivityPlanSummary({
           updatedAt={updatedAt}
         />
       ) : null}
-    </View>
-  );
-}
-
-function MetricCell({ label, value }: { label: string; value: string }) {
-  return (
-    <View className="flex-1 items-center gap-0.5">
-      <Text className="text-[10px] text-muted-foreground">{label}</Text>
-      <Text className="text-[11px] font-semibold text-foreground" numberOfLines={1}>
-        {value}
-      </Text>
     </View>
   );
 }

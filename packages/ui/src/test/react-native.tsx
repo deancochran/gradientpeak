@@ -75,6 +75,13 @@ export const Alert = {
   alert: jest.fn(),
 };
 
+export const InteractionManager = {
+  runAfterInteractions: jest.fn((callback: () => void) => {
+    callback();
+    return { cancel: jest.fn() };
+  }),
+};
+
 export const Platform = {
   OS: "ios",
   select: (values: Record<string, unknown>) =>

@@ -37,7 +37,7 @@ export interface IntegrationsRepository {
     profileId: string;
     provider: PublicIntegrationProvider;
   }): Promise<IntegrationRow | null>;
-  upsertByProfileIdAndProvider(input: IntegrationUpsertFields): Promise<void>;
+  upsertByProfileIdAndProvider(input: IntegrationUpsertFields): Promise<IntegrationRow>;
   updateTokensByProfileIdAndProvider(input: IntegrationTokenUpdateFields): Promise<void>;
   deleteByProfileIdAndProvider(input: {
     profileId: string;

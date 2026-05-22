@@ -9,16 +9,22 @@ env:
       STANDARD_USER_EMAIL: "${STANDARD_USER_EMAIL}"
       STANDARD_USER_PASS: "${STANDARD_USER_PASS}"
 - tapOn:
-    id: "integrations"
+    id: "my-activities"
 - extendedWaitUntil:
     visible:
-      id: "integrations-screen"
+      id: "activities-list-screen"
+    timeout: 10000
+- tapOn:
+    id: "activities-list-import-trigger"
+- extendedWaitUntil:
+    visible:
+      id: "activity-import-screen"
     timeout: 10000
 - assertVisible:
-    id: "integrations-pick-fit-file-button"
+    id: "activity-import-pick-fit-file-button"
 - assertVisible:
-    id: "integrations-historical-name-input"
+    id: "activity-import-name-input"
 - assertVisible:
-    id: "integrations-historical-notes-input"
+    id: "activity-import-notes-input"
 - assertVisible:
-    id: "integrations-import-fit-button"
+    id: "activity-import-submit-button"

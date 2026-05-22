@@ -13,6 +13,7 @@ import type { DateInputProps } from "../date-input/shared";
 import type { DurationInputProps } from "../duration-input/shared";
 import type { IntegerStepperProps } from "../integer-stepper/shared";
 import type { PaceInputProps } from "../pace-input/shared";
+import type { PercentSliderInputProps } from "../percent-slider-input/shared";
 import type { Option } from "../select/shared";
 import type { TimeInputProps } from "../time-input/shared";
 import type { WeightInputFieldProps } from "../weight-input-field/shared";
@@ -72,6 +73,7 @@ export type FormNumberFieldProps<
   TName extends FieldPath<TFieldValues>,
 > = ControlledFieldProps<TFieldValues, TName> & {
   allowDecimal?: boolean;
+  emptyValue?: FieldPathValue<TFieldValues, TName>;
   formatValue?: (value: FieldPathValue<TFieldValues, TName>) => string;
   max?: number;
   min?: number;
@@ -133,11 +135,32 @@ export type FormSelectFieldProps<
   placeholder?: string;
 };
 
+export type FormSegmentedSelectFieldProps<
+  TFieldValues extends FieldValues,
+  TName extends FieldPath<TFieldValues>,
+> = ControlledFieldProps<TFieldValues, TName> & {
+  formatValue?: (value: FieldPathValue<TFieldValues, TName>) => string | undefined;
+  options: Option[];
+  parseValue?: (value: string) => FieldPathValue<TFieldValues, TName>;
+};
+
 export type FormDateInputFieldProps<
   TFieldValues extends FieldValues,
   TName extends FieldPath<TFieldValues>,
 > = ControlledFieldProps<TFieldValues, TName> &
   Omit<DateInputProps, "error" | "helperText" | "id" | "label" | "onChange" | "required" | "value">;
+
+export type FormDateTimeFieldProps<
+  TFieldValues extends FieldValues,
+  TName extends FieldPath<TFieldValues>,
+> = ControlledFieldProps<TFieldValues, TName> & {
+  dateLabel?: string;
+  max?: string;
+  min?: string;
+  placeholder?: string;
+  step?: number | string;
+  timeLabel?: string;
+};
 
 export type FormTimeInputFieldProps<
   TFieldValues extends FieldValues,
@@ -176,6 +199,14 @@ export type FormPaceFieldProps<
     | "required"
     | "value"
   >;
+
+export type FormPercentSliderFieldProps<
+  TFieldValues extends FieldValues,
+  TName extends FieldPath<TFieldValues>,
+> = ControlledFieldProps<TFieldValues, TName> &
+  Omit<PercentSliderInputProps, "error" | "helperText" | "id" | "label" | "onChange" | "value"> & {
+    valueMode?: "percent" | "fraction";
+  };
 
 export type FormWeightInputFieldProps<
   TFieldValues extends FieldValues,

@@ -104,9 +104,9 @@ describe("extracted inputs web", () => {
   it("DurationInput forwards typed values", () => {
     const onChange = vi.fn();
 
-    renderWeb(<DurationInput {...durationInputFixtures.workout} onChange={onChange} />);
+    renderWeb(<DurationInput {...durationInputFixtures.activity} onChange={onChange} />);
 
-    fireEvent.change(screen.getByLabelText(durationInputFixtures.workout.label), {
+    fireEvent.change(screen.getByLabelText(durationInputFixtures.activity.label), {
       currentTarget: { value: "1:45:00" },
       target: { value: "1:45:00" },
     });

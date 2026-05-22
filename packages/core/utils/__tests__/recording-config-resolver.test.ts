@@ -95,7 +95,7 @@ describe("RecordingConfigResolver", () => {
     expect(withoutGpsTracking.session.guidance.routeMode).toBe("virtual");
   });
 
-  it("defaults structured planned sessions to the workout surface", () => {
+  it("defaults structured planned sessions to the activity surface", () => {
     const config = RecordingConfigResolver.resolve(
       buildInput({
         mode: "planned",
@@ -113,8 +113,8 @@ describe("RecordingConfigResolver", () => {
     );
 
     expect(config.session.authority.category).toBe("plan");
-    expect(config.session.surfaces.defaultPrimarySurface).toBe("workout");
-    expect(config.session.surfaces.availablePrimarySurfaces).toContain("workout");
+    expect(config.session.surfaces.defaultPrimarySurface).toBe("activity");
+    expect(config.session.surfaces.availablePrimarySurfaces).toContain("activity");
     expect(config.session.surfaces.availablePrimarySurfaces).toContain("route");
     expect(config.session.surfaces.quickActions).toContain("sensors");
     expect(config.session.surfaces.quickActions).not.toContain("sources" as any);
@@ -340,7 +340,7 @@ describe("RecordingConfigResolver", () => {
     expect(routeDetachedGpsOff.session.ui.floatingPanel.availableCards).toEqual(["metrics"]);
   });
 
-  it("orders insight cards around workout, route, trainer, then metrics fallback", () => {
+  it("orders insight cards around activity, route, trainer, then metrics fallback", () => {
     const plannedRouteTrainer = RecordingConfigResolver.resolve(
       buildInput({
         mode: "planned",
@@ -571,7 +571,7 @@ describe("RecordingConfigResolver", () => {
     expect(config.input.launchSource).toBe("activity_plan");
     expect(config.capabilities.shouldShowTrainerControl).toBe(false);
     expect(config.capabilities.shouldAutoFollowTargets).toBe(false);
-    expect(config.session.surfaces.defaultPrimarySurface).toBe("workout");
+    expect(config.session.surfaces.defaultPrimarySurface).toBe("activity");
   });
 
   it("resolves configuration from a session snapshot", () => {

@@ -117,7 +117,7 @@ export const FULL_BODY_CIRCUIT: RecordingServiceActivityPlan = {
     .step({
       name: "Movement Prep",
       duration: Duration.minutes(5),
-      targets: [Target.thresholdHR(65)],
+      targets: [Target.rpe(4)],
       notes: "Dynamic movements to prepare entire body",
     })
     .interval({
@@ -126,13 +126,13 @@ export const FULL_BODY_CIRCUIT: RecordingServiceActivityPlan = {
         {
           name: "Circuit Round",
           duration: Duration.minutes(6),
-          targets: [Target.thresholdHR(85)],
+          targets: [Target.rpe(8)],
           notes: "Burpees, mountain climbers, squat jumps, push-ups - 45s work, 15s rest",
         },
         {
           name: "Active Recovery",
           duration: Duration.minutes(2),
-          targets: [Target.thresholdHR(60)],
+          targets: [Target.rpe(3)],
           notes: "Light movement, breathing exercises",
         },
       ],
@@ -140,7 +140,7 @@ export const FULL_BODY_CIRCUIT: RecordingServiceActivityPlan = {
     .step({
       name: "Recovery Stretch",
       duration: Duration.minutes(5),
-      targets: [Target.thresholdHR(50)],
+      targets: [Target.rpe(2)],
       notes: "Static stretches for all major muscle groups",
     })
     .build(),
@@ -162,7 +162,7 @@ export const CORE_STABILITY: RecordingServiceActivityPlan = {
     .step({
       name: "Core Activation",
       duration: Duration.minutes(5),
-      targets: [Target.thresholdHR(55)],
+      targets: [Target.rpe(2)],
       notes: "Breathing exercises, gentle core engagement",
     })
     .interval({
@@ -171,19 +171,19 @@ export const CORE_STABILITY: RecordingServiceActivityPlan = {
         {
           name: "Plank Variations",
           duration: Duration.minutes(4),
-          targets: [Target.thresholdHR(70)],
+          targets: [Target.rpe(5)],
           notes: "Front plank, side planks, plank variations - 30-60s holds",
         },
         {
           name: "Dynamic Core",
           duration: Duration.minutes(4),
-          targets: [Target.thresholdHR(75)],
+          targets: [Target.rpe(6)],
           notes: "Dead bugs, bird dogs, bicycle crunches, leg raises",
         },
         {
           name: "Recovery",
           duration: Duration.minutes(1),
-          targets: [Target.thresholdHR(60)],
+          targets: [Target.rpe(2)],
           notes: "Light movement and breathing",
         },
       ],
@@ -191,7 +191,7 @@ export const CORE_STABILITY: RecordingServiceActivityPlan = {
     .step({
       name: "Hip and Spine Mobility",
       duration: Duration.minutes(5),
-      targets: [Target.thresholdHR(50)],
+      targets: [Target.rpe(1)],
       notes: "Cat-cow, hip circles, spinal twists",
     })
     .build(),
@@ -213,7 +213,7 @@ export const FUNCTIONAL_MOVEMENT: RecordingServiceActivityPlan = {
     .step({
       name: "Movement Preparation",
       duration: Duration.minutes(5),
-      targets: [Target.thresholdHR(60)],
+      targets: [Target.rpe(3)],
       notes: "Joint mobility, activation exercises",
     })
     .interval({
@@ -222,25 +222,25 @@ export const FUNCTIONAL_MOVEMENT: RecordingServiceActivityPlan = {
         {
           name: "Squat Patterns",
           duration: Duration.minutes(3),
-          targets: [Target.thresholdHR(70)],
+          targets: [Target.rpe(5)],
           notes: "Goblet squats, squat to press, jump squats",
         },
         {
           name: "Hinge Patterns",
           duration: Duration.minutes(3),
-          targets: [Target.thresholdHR(70)],
+          targets: [Target.rpe(5)],
           notes: "Kettlebell swings, Romanian deadlifts, good mornings",
         },
         {
           name: "Push/Pull Patterns",
           duration: Duration.minutes(3),
-          targets: [Target.thresholdHR(70)],
+          targets: [Target.rpe(5)],
           notes: "Push-ups, rows, carries, throws",
         },
         {
           name: "Transition",
           duration: Duration.minutes(1),
-          targets: [Target.thresholdHR(60)],
+          targets: [Target.rpe(3)],
           notes: "Light movement, setup for next round",
         },
       ],
@@ -248,7 +248,7 @@ export const FUNCTIONAL_MOVEMENT: RecordingServiceActivityPlan = {
     .step({
       name: "Movement Integration",
       duration: Duration.minutes(5),
-      targets: [Target.thresholdHR(55)],
+      targets: [Target.rpe(2)],
       notes: "Complex movements, stretching, relaxation",
     })
     .build(),
@@ -258,12 +258,13 @@ export const SYSTEM_UPPER_BODY_STRENGTH: RecordingServiceActivityPlan = {
   id: "e9f5a8b7-2c6d-1e0f-5a4b-6c3d9e8f7a0b",
   version: "2.0",
   name: "Upper Body Strength",
-  description: "Bench press, rows, and overhead press - Complete upper body workout",
+  description: "Bench press, rows, and overhead press - Complete upper body activity",
   activity_category: "strength",
   gps_recording_enabled: false,
   structure: createPlan()
     .warmup({
       duration: Duration.minutes(5),
+      targets: [Target.rpe(3)],
       notes: "Dynamic stretching and mobility",
     })
     .interval({
@@ -279,6 +280,7 @@ export const SYSTEM_UPPER_BODY_STRENGTH: RecordingServiceActivityPlan = {
         {
           name: "Rest",
           duration: Duration.seconds(90),
+          targets: [Target.rpe(2)],
         },
       ],
     })
@@ -294,6 +296,7 @@ export const SYSTEM_UPPER_BODY_STRENGTH: RecordingServiceActivityPlan = {
         {
           name: "Rest",
           duration: Duration.seconds(90),
+          targets: [Target.rpe(2)],
         },
       ],
     })
@@ -309,11 +312,13 @@ export const SYSTEM_UPPER_BODY_STRENGTH: RecordingServiceActivityPlan = {
         {
           name: "Rest",
           duration: Duration.seconds(90),
+          targets: [Target.rpe(2)],
         },
       ],
     })
     .cooldown({
       duration: Duration.minutes(5),
+      targets: [Target.rpe(1)],
       notes: "Static stretching",
     })
     .build(),
@@ -323,12 +328,13 @@ export const SYSTEM_LOWER_BODY_STRENGTH: RecordingServiceActivityPlan = {
   id: "f0a6b9c8-3d7e-2f1a-6b5c-7d4e0f9a8b1c",
   version: "2.0",
   name: "Lower Body Strength",
-  description: "Squats, deadlifts, and lunges - Complete lower body workout",
+  description: "Squats, deadlifts, and lunges - Complete lower body activity",
   activity_category: "strength",
   gps_recording_enabled: false,
   structure: createPlan()
     .warmup({
       duration: Duration.minutes(5),
+      targets: [Target.rpe(3)],
       notes: "Dynamic leg swings and mobility",
     })
     .interval({
@@ -344,6 +350,7 @@ export const SYSTEM_LOWER_BODY_STRENGTH: RecordingServiceActivityPlan = {
         {
           name: "Rest",
           duration: Duration.minutes(3),
+          targets: [Target.rpe(2)],
           notes: "Full recovery",
         },
       ],
@@ -360,6 +367,7 @@ export const SYSTEM_LOWER_BODY_STRENGTH: RecordingServiceActivityPlan = {
         {
           name: "Rest",
           duration: Duration.minutes(2),
+          targets: [Target.rpe(2)],
         },
       ],
     })
@@ -376,11 +384,13 @@ export const SYSTEM_LOWER_BODY_STRENGTH: RecordingServiceActivityPlan = {
         {
           name: "Rest",
           duration: Duration.seconds(90),
+          targets: [Target.rpe(2)],
         },
       ],
     })
     .cooldown({
       duration: Duration.minutes(5),
+      targets: [Target.rpe(1)],
       notes: "Foam rolling and stretching",
     })
     .build(),

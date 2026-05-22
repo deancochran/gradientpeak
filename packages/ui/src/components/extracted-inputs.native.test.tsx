@@ -27,11 +27,11 @@ import { WeightInputField } from "./weight-input-field/index.native";
 describe("extracted inputs native", () => {
   it("DateInput clears a selected value", () => {
     const onChange = jest.fn();
-    const { getByText } = renderNative(
+    const { getByLabelText } = renderNative(
       <DateInput {...dateInputFixtures.raceDay} clearable onChange={onChange} />,
     );
 
-    fireEvent.press(getByText("Clear date"));
+    fireEvent.press(getByLabelText("Clear date"));
 
     expect(onChange).toHaveBeenCalledWith(undefined);
   });
@@ -83,10 +83,10 @@ describe("extracted inputs native", () => {
   it("DurationInput forwards typed values", () => {
     const onChange = jest.fn();
     const { getByDisplayValue } = renderNative(
-      <DurationInput {...durationInputFixtures.workout} onChange={onChange} />,
+      <DurationInput {...durationInputFixtures.activity} onChange={onChange} />,
     );
 
-    fireEvent(getByDisplayValue(durationInputFixtures.workout.value), "changeText", "1:45:00");
+    fireEvent(getByDisplayValue(durationInputFixtures.activity.value), "changeText", "1:45:00");
 
     expect(onChange).toHaveBeenCalledWith("1:45:00");
   });

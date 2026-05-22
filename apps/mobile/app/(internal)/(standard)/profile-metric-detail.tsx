@@ -9,12 +9,14 @@ import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { skipToken } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Activity, Ellipsis, HeartPulse, Scale, TrendingUp } from "lucide-react-native";
+import { Ellipsis, HeartPulse, Scale, TrendingUp } from "lucide-react-native";
 import React from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native";
+import { ActivityCard } from "@/components/shared/ActivityCard";
 import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
+import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 function getMetricLabel(metricType: string) {
@@ -39,9 +41,17 @@ export default function ProfileMetricDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const navigateTo = useAppNavigate();
+  const { profile, user } = useAuth();
   const { Stack } = require("expo-router") as typeof import("expo-router");
   const utils = api.useUtils();
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
+  const activityOwner = user?.id
+    ? {
+        avatar_url: profile?.avatar_url ?? null,
+        id: user.id,
+        username: profile?.username ?? user.email?.split("@")[0] ?? "You",
+      }
+    : null;
 
   const { data: metric, isLoading } = api.profileMetrics.getById.useQuery(
     { id: id! },
@@ -149,33 +159,23 @@ export default function ProfileMetricDetailScreen() {
           ) : null}
 
           {metric.reference_activity_id && activityData?.activity ? (
-            <Card className="rounded-3xl border border-border bg-card">
-              <CardContent className="gap-4 p-4">
-                <View className="gap-1">
-                  <Text className="text-sm font-semibold text-foreground">Reference activity</Text>
-                  <Text className="text-xs text-muted-foreground">
-                    This metric is linked to an activity where it was observed or derived.
-                  </Text>
-                </View>
-                <Pressable
-                  onPress={() =>
-                    navigateTo(ROUTES.ACTIVITIES.DETAIL(metric.reference_activity_id!) as any)
-                  }
-                  className="rounded-2xl border border-border bg-muted/10 px-4 py-3"
-                  testID="profile-metric-open-activity"
-                >
-                  <View className="flex-row items-center gap-2">
-                    <Icon as={Activity} size={16} className="text-muted-foreground" />
-                    <Text className="text-base font-semibold text-foreground">
-                      {activityData.activity.name}
-                    </Text>
-                  </View>
-                  <Text className="mt-1 text-sm text-muted-foreground">
-                    {new Date(activityData.activity.started_at).toLocaleString()}
-                  </Text>
-                </Pressable>
-              </CardContent>
-            </Card>
+            <ActivityCard
+              activity={{
+                ...(activityData.activity as any),
+                derived: {
+                  ...((activityData.activity as any).derived ?? {}),
+                  stress: activityData.derived?.stress ?? null,
+                },
+              }}
+              dateMode="absolute"
+              onPress={() =>
+                navigateTo(ROUTES.ACTIVITIES.DETAIL(metric.reference_activity_id!) as any)
+              }
+              owner={activityOwner}
+              showChevron
+              testID="profile-metric-open-activity"
+              variant="compact"
+            />
           ) : null}
         </View>
       </ScrollView>

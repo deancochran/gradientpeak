@@ -1,5 +1,6 @@
 import { format } from "date-fns";
 import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
+import { formatEstimatedDurationSeconds, formatEstimatedTss } from "@/lib/estimatedMetrics";
 import { isActivityCompleted } from "@/lib/utils/plan/dateGrouping";
 import type { CalendarEvent } from "./normalizeEvents";
 
@@ -10,17 +11,6 @@ function readMetric(value: unknown): number | null {
     if (Number.isFinite(parsed)) return parsed;
   }
   return null;
-}
-
-function formatEstimatedDuration(seconds: number | null): string | null {
-  if (seconds === null || seconds <= 0) return null;
-
-  const totalMinutes = Math.round(seconds / 60);
-  if (totalMinutes < 60) return `${totalMinutes} min`;
-
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
 }
 
 function formatCategoryLabel(value: string | null | undefined): string | null {
@@ -67,12 +57,12 @@ export function getEventTimeLabel(event: CalendarEvent): string {
 export function getEventPrimaryMeta(event: CalendarEvent): string[] {
   if (event.event_type === "planned") {
     const metrics = getAuthoritativeActivityPlanMetrics(event.activity_plan);
-    const duration = formatEstimatedDuration(readMetric(metrics.estimated_duration));
+    const duration = formatEstimatedDurationSeconds(readMetric(metrics.estimated_duration));
     const tss = readMetric(metrics.estimated_tss);
     return [
       formatCategoryLabel(event.activity_plan?.activity_category),
       duration,
-      duration ? null : typeof tss === "number" ? `${Math.round(tss)} TSS` : null,
+      duration ? null : formatEstimatedTss(tss),
     ].filter(Boolean) as string[];
   }
 

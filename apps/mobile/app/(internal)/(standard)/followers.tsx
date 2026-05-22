@@ -1,6 +1,6 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Text } from "@repo/ui/components/text";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import { Loader2 } from "lucide-react-native";
 import React from "react";
 import { FlatList, TouchableOpacity, View } from "react-native";
@@ -9,7 +9,6 @@ import { api } from "@/lib/api";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 function FollowersScreen() {
-  const router = useRouter();
   const navigateTo = useAppNavigate();
   const { userId } = useLocalSearchParams<{ userId: string }>();
 
@@ -21,6 +20,7 @@ function FollowersScreen() {
     data: followersData,
     isLoading,
     isFetching,
+    error,
     hasNextPage,
     fetchNextPage,
   } = api.social.getFollowers.useInfiniteQuery(
@@ -107,6 +107,23 @@ function FollowersScreen() {
     return (
       <View className="flex-1 items-center justify-center bg-background p-6">
         <Text className="text-sm text-muted-foreground">Invalid user id.</Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    const isPrivate = error.data?.code === "FORBIDDEN";
+
+    return (
+      <View className="flex-1 items-center justify-center bg-background p-6">
+        <Text className="text-base font-semibold text-foreground">
+          {isPrivate ? "Followers are private" : "Unable to load followers"}
+        </Text>
+        <Text className="mt-2 text-center text-sm text-muted-foreground">
+          {isPrivate
+            ? "Follow requests must be accepted before you can see who follows this profile."
+            : "Please try again."}
+        </Text>
       </View>
     );
   }

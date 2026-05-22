@@ -43,7 +43,10 @@ export const updateSettingsProfileAction = createServerFn({ method: "POST" })
       const caller = await createServerActionCaller();
 
       await caller.profiles.update({
+        bio: data.bio?.trim() ? data.bio.trim() : null,
         is_public: data.is_public,
+        language: data.language?.trim() ? data.language.trim() : null,
+        preferred_units: data.preferred_units,
         username: data.username.trim() === "" ? null : data.username.trim(),
       });
     } catch (error) {

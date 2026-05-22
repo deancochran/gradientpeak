@@ -1,5 +1,6 @@
 import React from "react";
 
+import { createHost as mockCreateHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const pushMock = jest.fn();
@@ -16,19 +17,14 @@ let paramsState: {
   planSuggestionDescription?: string;
 } = { date: today };
 let eventItems: any[] = [];
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
+let groupEventItems: any[] = [];
 
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
-  ScrollView: createHost("ScrollView"),
-  TouchableOpacity: createHost("TouchableOpacity"),
-  View: createHost("View"),
+  ScrollView: mockCreateHost("ScrollView"),
+  TouchableOpacity: mockCreateHost("TouchableOpacity"),
+  View: mockCreateHost("View"),
 }));
 
 jest.mock("expo-router", () => ({
@@ -49,16 +45,16 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
   useAppNavigate: () => pushMock,
 }));
 
-jest.mock("@repo/ui/components/icon", () => ({ __esModule: true, Icon: createHost("Icon") }));
-jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHost("Text") }));
+jest.mock("@repo/ui/components/icon", () => ({ __esModule: true, Icon: mockCreateHost("Icon") }));
+jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: mockCreateHost("Text") }));
 
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
-  ArrowUpRight: createHost("ArrowUpRight"),
-  Lock: createHost("Lock"),
-  Play: createHost("Play"),
-  Target: createHost("Target"),
-  Zap: createHost("Zap"),
+  ArrowUpRight: mockCreateHost("ArrowUpRight"),
+  Lock: mockCreateHost("Lock"),
+  Play: mockCreateHost("Play"),
+  Target: mockCreateHost("Target"),
+  Zap: mockCreateHost("Zap"),
 }));
 
 jest.mock("@/lib/stores/calendar-store", () => ({
@@ -113,7 +109,7 @@ jest.mock("@/lib/constants/routes", () => ({
 
 jest.mock("@/components/shared/ActivityPlanCard", () => ({
   __esModule: true,
-  ActivityPlanCard: createHost("ActivityPlanCard"),
+  ActivityPlanCard: mockCreateHost("ActivityPlanCard"),
 }));
 
 jest.mock("@/lib/utils/plan/colors", () => ({
@@ -149,6 +145,27 @@ jest.mock("@/lib/api", () => ({
           error: null,
           refetch: jest.fn(async () => undefined),
         }),
+      },
+    },
+    activityPlans: {
+      getManyByIds: {
+        useQuery: () => ({
+          data: { items: [] },
+          isLoading: false,
+          error: null,
+        }),
+      },
+    },
+    groups: {
+      events: {
+        myCalendarGroupEvents: {
+          useQuery: () => ({
+            data: { items: groupEventItems },
+            isLoading: false,
+            error: null,
+            refetch: jest.fn(async () => undefined),
+          }),
+        },
       },
     },
   },
@@ -204,6 +221,7 @@ describe("calendar day screen", () => {
         all_day: false,
       },
     ];
+    groupEventItems = [];
     pushMock.mockReset();
   });
 
@@ -253,7 +271,7 @@ describe("calendar day screen", () => {
 
     expect(screen.getByTestId("calendar-day-plan-suggestion")).toBeTruthy();
     expect(screen.getByText("Plan suggestion")).toBeTruthy();
-    expect(screen.getByText("Add about 75 TSS")).toBeTruthy();
+    expect(screen.getByText("Add about ~75 TSS")).toBeTruthy();
     expect(screen.getByText("Add load to close the readiness gap.")).toBeTruthy();
 
     fireEvent.press(screen.getByTestId("calendar-day-create-from-plan-suggestion"));
@@ -281,7 +299,7 @@ describe("calendar day screen", () => {
 
     renderNative(<CalendarDayScreen />);
 
-    expect(screen.getByText("Reduce about 40 TSS")).toBeTruthy();
+    expect(screen.getByText("Reduce about ~40 TSS")).toBeTruthy();
     expect(screen.getByText("Reduce load to protect readiness.")).toBeTruthy();
     expect(screen.getByText("Create adjustment note")).toBeTruthy();
     expect(screen.queryByTestId("calendar-day-reduce-load-candidates")).toBeNull();

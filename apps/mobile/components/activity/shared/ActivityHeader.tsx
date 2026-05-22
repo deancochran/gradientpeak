@@ -5,10 +5,10 @@ import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
 import { Textarea } from "@repo/ui/components/textarea";
 import { format } from "date-fns";
-import { useRouter } from "expo-router";
 import { Activity, Bike, Dumbbell, Footprints, Waves } from "lucide-react-native";
 import React from "react";
 import { Pressable, View } from "react-native";
+import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 interface ActivityHeaderProps {
@@ -49,7 +49,7 @@ export function ActivityHeader({
   onNotesChange,
   variant = "card",
 }: ActivityHeaderProps) {
-  const router = useRouter();
+  const { user: signedInUser } = useAuth();
   const navigateTo = useAppNavigate();
   const deviceInfo = [activity.device_manufacturer, activity.device_product]
     .filter(Boolean)
@@ -59,6 +59,11 @@ export function ActivityHeader({
 
   const handleUserPress = () => {
     if (!user.id) return;
+    if (user.id === signedInUser?.id) {
+      navigateTo("/profile");
+      return;
+    }
+
     navigateTo({
       pathname: "/user/[userId]",
       params: { userId: user.id },

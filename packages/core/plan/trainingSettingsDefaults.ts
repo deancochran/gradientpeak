@@ -45,6 +45,12 @@ export function mapAthletePreferencesToCreationDefaults(
       ...baseline.behavior_controls_v1,
       aggressiveness: preferences.training_style.progression_pace,
       variability: preferences.training_style.week_pattern_preference,
+      spike_frequency: preferences.training_style.week_pattern_preference,
+      shape_target: (preferences.training_style.week_pattern_preference - 0.5) * 2,
+      shape_strength: Math.max(
+        0.25,
+        Math.abs(preferences.training_style.week_pattern_preference - 0.5) * 2,
+      ),
       recovery_priority: preferences.recovery_preferences.recovery_priority,
     },
   };

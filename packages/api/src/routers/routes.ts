@@ -7,7 +7,7 @@ import {
   publicActivityRoutesRowSchema,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, asc, count, desc, eq, gt, gte, ilike, inArray, lt, lte, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, ilike, inArray, lt, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
 import {
@@ -122,6 +122,16 @@ function buildAccessibleRouteCondition(userId: string) {
     eq(activityRoutes.profile_id, userId),
     eq(activityRoutes.is_public, true),
     eq(activityRoutes.is_system_template, true),
+    sql`exists (
+      select 1
+      from content_access_grants cag
+      where cag.content_type = 'activity_route'
+        and cag.content_id = ${activityRoutes.id}
+        and cag.grantee_profile_id = ${userId}::uuid
+        and cag.access_level = 'read'
+        and cag.revoked_at is null
+        and (cag.expires_at is null or cag.expires_at > now())
+    )`,
   );
 }
 

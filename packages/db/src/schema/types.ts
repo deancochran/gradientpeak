@@ -15,6 +15,14 @@ import {
   conversations,
   events,
   follows,
+  groupEventActivityPlans,
+  groupEventRsvps,
+  groupEventSeriesRsvps,
+  groupEvents,
+  groupInvitations,
+  groupJoinRequests,
+  groupMemberships,
+  groups,
   integrationResourceLinks,
   integrations,
   likes,
@@ -35,6 +43,30 @@ import {
 
 export type ProfileRow = InferSelectModel<typeof profiles>;
 export type ProfileInsert = InferInsertModel<typeof profiles>;
+
+export type GroupRow = InferSelectModel<typeof groups>;
+export type GroupInsert = InferInsertModel<typeof groups>;
+
+export type GroupMembershipRow = InferSelectModel<typeof groupMemberships>;
+export type GroupMembershipInsert = InferInsertModel<typeof groupMemberships>;
+
+export type GroupInvitationRow = InferSelectModel<typeof groupInvitations>;
+export type GroupInvitationInsert = InferInsertModel<typeof groupInvitations>;
+
+export type GroupJoinRequestRow = InferSelectModel<typeof groupJoinRequests>;
+export type GroupJoinRequestInsert = InferInsertModel<typeof groupJoinRequests>;
+
+export type GroupEventRow = InferSelectModel<typeof groupEvents>;
+export type GroupEventInsert = InferInsertModel<typeof groupEvents>;
+
+export type GroupEventActivityPlanRow = InferSelectModel<typeof groupEventActivityPlans>;
+export type GroupEventActivityPlanInsert = InferInsertModel<typeof groupEventActivityPlans>;
+
+export type GroupEventRsvpRow = InferSelectModel<typeof groupEventRsvps>;
+export type GroupEventRsvpInsert = InferInsertModel<typeof groupEventRsvps>;
+
+export type GroupEventSeriesRsvpRow = InferSelectModel<typeof groupEventSeriesRsvps>;
+export type GroupEventSeriesRsvpInsert = InferInsertModel<typeof groupEventSeriesRsvps>;
 
 export type ActivityRouteRow = InferSelectModel<typeof activityRoutes>;
 export type ActivityRouteInsert = InferInsertModel<typeof activityRoutes>;

@@ -12,7 +12,7 @@ env:
 - runFlow:
     file: ../../reusable/open_discover_tab.yaml
 - tapOn:
-    id: "discover-tab-routes"
+    id: "discover-scope-routes"
 - tapOn:
     id: "discover-search-input"
 - inputText: "${SHARED_ROUTE_NAME}"

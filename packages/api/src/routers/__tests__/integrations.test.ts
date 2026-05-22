@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 const SESSION_USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -26,12 +26,18 @@ const mocks = vi.hoisted(() => {
       deleteByState: vi.fn(),
     },
   };
+  const providerSyncRepository = {
+    enqueueJob: vi.fn(),
+    listJobs: vi.fn(),
+    listSyncStateByIntegrationIds: vi.fn(),
+  };
 
   return {
     repositories,
+    providerSyncRepository,
     createIntegrationsRepositories: vi.fn(() => repositories),
     createIcalFeedRepository: vi.fn((input) => ({ kind: "ical-repository", input })),
-    createProviderSyncRepository: vi.fn((input) => ({ kind: "provider-sync-repository", input })),
+    createProviderSyncRepository: vi.fn(() => providerSyncRepository),
     createWahooRepository: vi.fn((input) => ({ kind: "wahoo-repository", input })),
     createWahooRouteStorage: vi.fn((storage) => storage),
     getApiStorageService: vi.fn(() => ({
@@ -56,6 +62,10 @@ const mocks = vi.hoisted(() => {
       unsyncEvent: vi.fn(),
       getEventSyncStatus: vi.fn(),
     },
+    setupRefresh: {
+      refreshSetupData: vi.fn(),
+      instances: [] as Array<{ deps: unknown }>,
+    },
   };
 });
 
@@ -64,6 +74,18 @@ vi.mock("../../infrastructure/repositories", () => ({
   createIcalFeedRepository: mocks.createIcalFeedRepository,
   createProviderSyncRepository: mocks.createProviderSyncRepository,
   createWahooRepository: mocks.createWahooRepository,
+}));
+
+vi.mock("../../application/onboarding-provider-enrichment", () => ({
+  OnboardingProviderEnrichmentService: class MockOnboardingProviderEnrichmentService {
+    constructor(deps: unknown) {
+      mocks.setupRefresh.instances.push({ deps });
+    }
+
+    refreshSetupData(...args: Parameters<typeof mocks.setupRefresh.refreshSetupData>) {
+      return mocks.setupRefresh.refreshSetupData(...args);
+    }
+  },
 }));
 
 vi.mock("@repo/db", () => {
@@ -201,6 +223,7 @@ describe("integrationsRouter", () => {
     mocks.ical.instances.length = 0;
     mocks.wahoo.instances.length = 0;
     mocks.wahoo.jobInstances.length = 0;
+    mocks.setupRefresh.instances.length = 0;
 
     process.env.OAUTH_CALLBACK_BASE_URL = "https://app.example.com";
     process.env.NEXT_PUBLIC_MOBILE_REDIRECT_URI = "gradientpeak://integrations";
@@ -218,6 +241,10 @@ describe("integrationsRouter", () => {
 
   afterAll(() => {
     process.env = originalEnv;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("list removes expired states before returning integrations", async () => {
@@ -247,6 +274,371 @@ describe("integrationsRouter", () => {
       now: expect.any(Date),
     });
     expect(mocks.repositories.integrations.listByProfileId).toHaveBeenCalledWith(SESSION_USER_ID);
+  });
+
+  it("getSyncOverview returns connected provider actions and activity history status", async () => {
+    const caller = createCaller();
+    mocks.repositories.integrations.listByProfileId.mockResolvedValue([
+      {
+        id: "77777777-7777-4777-8777-777777777777",
+        idx: 1,
+        profile_id: SESSION_USER_ID,
+        provider: "wahoo",
+        external_id: "77",
+        access_token: "access-1",
+        refresh_token: "refresh-1",
+        expires_at: null,
+        scope: "workouts_read",
+        created_at: new Date("2026-04-01T10:00:00.000Z"),
+        updated_at: new Date("2026-04-01T11:00:00.000Z"),
+      },
+    ]);
+    mocks.providerSyncRepository.listSyncStateByIntegrationIds.mockResolvedValue([
+      {
+        consecutiveFailures: 0,
+        cursor: null,
+        highWatermark: null,
+        id: "88888888-8888-4888-8888-888888888888",
+        integrationId: "77777777-7777-4777-8777-777777777777",
+        lastError: null,
+        lastSyncFailedAt: null,
+        lastSyncStartedAt: "2026-04-01T12:00:00.000Z",
+        lastSyncSucceededAt: "2026-04-01T12:01:00.000Z",
+        metadata: {},
+        nextSyncAt: null,
+        provider: "wahoo",
+        publishHorizonDays: null,
+        resource: "historical_activities",
+        syncMode: "automatic",
+      },
+      {
+        consecutiveFailures: 0,
+        cursor: null,
+        highWatermark: null,
+        id: "99999999-9999-4999-8999-999999999999",
+        integrationId: "77777777-7777-4777-8777-777777777777",
+        lastError: null,
+        lastSyncFailedAt: null,
+        lastSyncStartedAt: "2026-04-01T12:00:00.000Z",
+        lastSyncSucceededAt: "2026-04-01T12:02:00.000Z",
+        metadata: { status: "succeeded" },
+        nextSyncAt: null,
+        provider: "wahoo",
+        publishHorizonDays: null,
+        resource: "profile_enrichment",
+        syncMode: "manual_refresh",
+      },
+    ]);
+    mocks.providerSyncRepository.listJobs.mockResolvedValue([
+      {
+        attempt: 0,
+        dedupeKey: "provider-history-reconcile:77777777-7777-4777-8777-777777777777:activity",
+        id: SYNC_ID,
+        integrationId: "77777777-7777-4777-8777-777777777777",
+        internalResourceId: null,
+        jobType: "wahoo.activity_history_reconcile",
+        maxAttempts: 8,
+        payload: { trigger: "manual" },
+        profileId: SESSION_USER_ID,
+        provider: "wahoo",
+        resourceKind: "activity",
+        runAt: "2026-04-01T12:05:00.000Z",
+        status: "queued",
+      },
+    ]);
+
+    const result = await caller.getSyncOverview();
+
+    expect(result).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          actions: ["disconnect", "sync_now"],
+          activityHistory: expect.objectContaining({
+            queuedJobId: SYNC_ID,
+            status: "queued",
+          }),
+          plannedWorkouts: expect.objectContaining({ status: "automatic" }),
+          providerHealth: expect.objectContaining({ status: "connected" }),
+          setupData: expect.objectContaining({ status: "refreshed" }),
+          connected: true,
+          integrationId: "77777777-7777-4777-8777-777777777777",
+          label: "Wahoo",
+          provider: "wahoo",
+        }),
+        expect.objectContaining({
+          actions: [],
+          activityHistory: expect.objectContaining({ status: "unsupported" }),
+          plannedWorkouts: expect.objectContaining({ status: "unsupported" }),
+          setupData: expect.objectContaining({ status: "unsupported" }),
+          connected: false,
+          provider: "strava",
+        }),
+      ]),
+    );
+    expect(mocks.providerSyncRepository.listSyncStateByIntegrationIds).toHaveBeenCalledWith([
+      "77777777-7777-4777-8777-777777777777",
+    ]);
+    expect(mocks.providerSyncRepository.listJobs).toHaveBeenCalledWith({
+      limit: 50,
+      profileId: SESSION_USER_ID,
+      statuses: ["queued", "running"],
+    });
+  });
+
+  it("getSyncOverview still renders when sync state tables are unavailable locally", async () => {
+    const caller = createCaller();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    mocks.repositories.integrations.listByProfileId.mockResolvedValue([
+      {
+        id: "77777777-7777-4777-8777-777777777777",
+        idx: 1,
+        profile_id: SESSION_USER_ID,
+        provider: "wahoo",
+        external_id: "77",
+        access_token: "access-1",
+        refresh_token: "refresh-1",
+        expires_at: null,
+        scope: "workouts_read",
+        created_at: new Date("2026-04-01T10:00:00.000Z"),
+        updated_at: new Date("2026-04-01T11:00:00.000Z"),
+      },
+    ]);
+    mocks.providerSyncRepository.listSyncStateByIntegrationIds.mockRejectedValue(
+      new Error("column provider_sync_state.cursor does not exist"),
+    );
+    mocks.providerSyncRepository.listJobs.mockRejectedValue(
+      new Error("relation provider_sync_jobs does not exist"),
+    );
+
+    await expect(caller.getSyncOverview()).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          activityHistory: expect.objectContaining({ status: "idle" }),
+          connected: true,
+          provider: "wahoo",
+        }),
+      ]),
+    );
+  });
+
+  it("syncNow enqueues manual Wahoo history reconciliation", async () => {
+    const caller = createCaller();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-02T09:30:00.000Z"));
+    mocks.repositories.integrations.findByProfileIdAndProvider.mockResolvedValue({
+      id: "77777777-7777-4777-8777-777777777777",
+      idx: 1,
+      profile_id: SESSION_USER_ID,
+      provider: "wahoo",
+      external_id: "77",
+      access_token: "access-1",
+      refresh_token: "refresh-1",
+      expires_at: null,
+      scope: "workouts_read",
+      created_at: new Date("2026-04-01T10:00:00.000Z"),
+      updated_at: new Date("2026-04-01T11:00:00.000Z"),
+    });
+    mocks.providerSyncRepository.enqueueJob.mockResolvedValue({ id: SYNC_ID, status: "queued" });
+    mocks.setupRefresh.refreshSetupData.mockResolvedValue({
+      fieldsFilled: ["weight_kg"],
+      fieldsKept: ["dob"],
+      fieldsUpdated: ["weight_kg", "ftp"],
+      keptExistingValues: true,
+      provider: "wahoo",
+      status: "succeeded",
+    });
+
+    await expect(caller.syncNow({ provider: "wahoo" })).resolves.toEqual({
+      jobId: SYNC_ID,
+      queued: true,
+      setupRefresh: {
+        fieldsFilled: ["weight_kg"],
+        fieldsKept: ["dob"],
+        fieldsUpdated: ["weight_kg", "ftp"],
+        keptExistingValues: true,
+        status: "succeeded",
+      },
+    });
+    expect(mocks.setupRefresh.refreshSetupData).toHaveBeenCalledWith(SESSION_USER_ID, "wahoo");
+
+    expect(mocks.providerSyncRepository.enqueueJob).toHaveBeenCalledWith({
+      dedupeKey: "provider-history-reconcile:77777777-7777-4777-8777-777777777777:activity",
+      integrationId: "77777777-7777-4777-8777-777777777777",
+      jobType: "wahoo.activity_history_reconcile",
+      payload: {
+        trigger: "manual",
+        windowMonths: 12,
+      },
+      profileId: SESSION_USER_ID,
+      provider: "wahoo",
+      resourceKind: "activity",
+      runAt: "2026-04-02T09:30:00.000Z",
+    });
+  });
+
+  it("getSyncOverview surfaces reconnect and failed resource states", async () => {
+    const caller = createCaller();
+    mocks.repositories.integrations.listByProfileId.mockResolvedValue([
+      {
+        id: "77777777-7777-4777-8777-777777777777",
+        idx: 1,
+        profile_id: SESSION_USER_ID,
+        provider: "wahoo",
+        external_id: "77",
+        access_token: "access-1",
+        refresh_token: null,
+        expires_at: new Date("2026-04-01T10:00:00.000Z"),
+        scope: "workouts_read",
+        created_at: new Date("2026-04-01T10:00:00.000Z"),
+        updated_at: new Date("2026-04-01T11:00:00.000Z"),
+      },
+    ]);
+    mocks.providerSyncRepository.listSyncStateByIntegrationIds.mockResolvedValue([
+      {
+        consecutiveFailures: 1,
+        cursor: null,
+        highWatermark: null,
+        id: "88888888-8888-4888-8888-888888888888",
+        integrationId: "77777777-7777-4777-8777-777777777777",
+        lastError: "401 unauthorized",
+        lastSyncFailedAt: "2026-04-01T12:01:00.000Z",
+        lastSyncStartedAt: "2026-04-01T12:00:00.000Z",
+        lastSyncSucceededAt: null,
+        metadata: {},
+        nextSyncAt: null,
+        provider: "wahoo",
+        publishHorizonDays: null,
+        resource: "historical_activities",
+        syncMode: "automatic",
+      },
+      {
+        consecutiveFailures: 1,
+        cursor: null,
+        highWatermark: null,
+        id: "99999999-9999-4999-8999-999999999999",
+        integrationId: "77777777-7777-4777-8777-777777777777",
+        lastError: "Power zones unavailable",
+        lastSyncFailedAt: "2026-04-01T12:01:00.000Z",
+        lastSyncStartedAt: "2026-04-01T12:00:00.000Z",
+        lastSyncSucceededAt: null,
+        metadata: { status: "failed" },
+        nextSyncAt: null,
+        provider: "wahoo",
+        publishHorizonDays: null,
+        resource: "profile_enrichment",
+        syncMode: "manual_refresh",
+      },
+    ]);
+    mocks.providerSyncRepository.listJobs.mockResolvedValue([]);
+
+    const result = await caller.getSyncOverview();
+
+    expect(result).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          activityHistory: expect.objectContaining({ status: "failed" }),
+          provider: "wahoo",
+          providerHealth: expect.objectContaining({ status: "needs_reconnect" }),
+          setupData: expect.objectContaining({ status: "failed" }),
+        }),
+      ]),
+    );
+  });
+
+  it("syncNow degrades when provider sync jobs are unavailable locally", async () => {
+    const caller = createCaller();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    mocks.repositories.integrations.findByProfileIdAndProvider.mockResolvedValue({
+      id: "77777777-7777-4777-8777-777777777777",
+      idx: 1,
+      profile_id: SESSION_USER_ID,
+      provider: "wahoo",
+      external_id: "77",
+      access_token: "access-1",
+      refresh_token: "refresh-1",
+      expires_at: null,
+      scope: "workouts_read",
+      created_at: new Date("2026-04-01T10:00:00.000Z"),
+      updated_at: new Date("2026-04-01T11:00:00.000Z"),
+    });
+    mocks.providerSyncRepository.enqueueJob.mockRejectedValue(
+      new Error('Failed query: select "id", "status" from "provider_sync_jobs"'),
+    );
+    mocks.setupRefresh.refreshSetupData.mockResolvedValue({
+      fieldsFilled: [],
+      fieldsKept: ["gender"],
+      fieldsUpdated: [],
+      keptExistingValues: true,
+      provider: "wahoo",
+      status: "succeeded",
+    });
+
+    await expect(caller.syncNow({ provider: "wahoo" })).resolves.toEqual({
+      jobId: null,
+      queued: false,
+      setupRefresh: {
+        fieldsFilled: [],
+        fieldsKept: ["gender"],
+        fieldsUpdated: [],
+        keptExistingValues: true,
+        status: "succeeded",
+      },
+    });
+  });
+
+  it("syncNow rejects providers without file-first history import", async () => {
+    const caller = createCaller();
+    mocks.repositories.integrations.findByProfileIdAndProvider.mockResolvedValue({
+      id: "77777777-7777-4777-8777-777777777777",
+      idx: 1,
+      profile_id: SESSION_USER_ID,
+      provider: "strava",
+      external_id: "strava-1",
+      access_token: "access-1",
+      refresh_token: "refresh-1",
+      expires_at: null,
+      scope: "activity:read_all",
+      created_at: new Date("2026-04-01T10:00:00.000Z"),
+      updated_at: new Date("2026-04-01T11:00:00.000Z"),
+    });
+
+    await expect(caller.syncNow({ provider: "strava" })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Activity history sync is not available for this provider",
+    } satisfies Partial<TRPCError>);
+    expect(mocks.providerSyncRepository.enqueueJob).not.toHaveBeenCalled();
+  });
+
+  it("refreshSetupData delegates to the provider setup refresh service", async () => {
+    const caller = createCaller();
+    mocks.setupRefresh.refreshSetupData.mockResolvedValue({
+      fieldsFilled: ["dob", "gender", "weight_kg"],
+      fieldsKept: [],
+      fieldsUpdated: ["dob", "gender", "weight_kg", "ftp"],
+      keptExistingValues: true,
+      provider: "wahoo",
+      status: "succeeded",
+    });
+
+    await expect(caller.refreshSetupData({ provider: "wahoo" })).resolves.toEqual({
+      fieldsFilled: ["dob", "gender", "weight_kg"],
+      fieldsKept: [],
+      fieldsUpdated: ["dob", "gender", "weight_kg", "ftp"],
+      keptExistingValues: true,
+      provider: "wahoo",
+      status: "succeeded",
+    });
+    expect(mocks.setupRefresh.refreshSetupData).toHaveBeenCalledWith(SESSION_USER_ID, "wahoo");
+  });
+
+  it("refreshSetupData maps missing integrations to not found", async () => {
+    const caller = createCaller();
+    mocks.setupRefresh.refreshSetupData.mockRejectedValue(new Error("Integration not found"));
+
+    await expect(caller.refreshSetupData({ provider: "wahoo" })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Integration not found",
+    } satisfies Partial<TRPCError>);
   });
 
   it("getAuthUrl stores oauth state and builds the provider auth url", async () => {
@@ -456,7 +848,19 @@ describe("integrationsRouter", () => {
 
   it("storeIntegration upserts the integration and deletes the consumed state", async () => {
     const caller = createCaller();
-    mocks.repositories.integrations.upsertByProfileIdAndProvider.mockResolvedValue(undefined);
+    mocks.repositories.integrations.upsertByProfileIdAndProvider.mockResolvedValue({
+      id: "77777777-7777-4777-8777-777777777777",
+      idx: 1,
+      profile_id: OTHER_USER_ID,
+      provider: "trainingpeaks",
+      external_id: "ext-42",
+      access_token: "access-42",
+      refresh_token: "refresh-42",
+      expires_at: new Date("2026-04-02T12:00:00.000Z"),
+      scope: "activities:read",
+      created_at: new Date("2026-04-01T10:00:00.000Z"),
+      updated_at: new Date("2026-04-01T10:00:00.000Z"),
+    });
     mocks.repositories.oauthStates.deleteByState.mockResolvedValue(undefined);
 
     await expect(
@@ -480,6 +884,56 @@ describe("integrationsRouter", () => {
       refreshToken: "refresh-42",
       expiresAt: new Date("2026-04-02T12:00:00.000Z"),
       scope: "activities:read",
+    });
+    expect(mocks.providerSyncRepository.enqueueJob).not.toHaveBeenCalled();
+    expect(mocks.repositories.oauthStates.deleteByState).toHaveBeenCalledWith(STATE_ID);
+  });
+
+  it("storeIntegration enqueues Wahoo activity history reconciliation", async () => {
+    const caller = createCaller();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-02T09:30:00.000Z"));
+    mocks.repositories.integrations.upsertByProfileIdAndProvider.mockResolvedValue({
+      id: "77777777-7777-4777-8777-777777777777",
+      idx: 1,
+      profile_id: OTHER_USER_ID,
+      provider: "wahoo",
+      external_id: "wahoo-user-42",
+      access_token: "access-42",
+      refresh_token: "refresh-42",
+      expires_at: new Date("2026-04-02T12:00:00.000Z"),
+      scope: "user_read workouts_read",
+      created_at: new Date("2026-04-01T10:00:00.000Z"),
+      updated_at: new Date("2026-04-01T10:00:00.000Z"),
+    });
+    mocks.providerSyncRepository.enqueueJob.mockResolvedValue({ id: SYNC_ID, status: "queued" });
+    mocks.repositories.oauthStates.deleteByState.mockResolvedValue(undefined);
+
+    await expect(
+      caller.storeIntegration({
+        userId: OTHER_USER_ID,
+        provider: "wahoo",
+        externalId: "wahoo-user-42",
+        accessToken: "access-42",
+        refreshToken: "refresh-42",
+        expiresAt: "2026-04-02T12:00:00.000Z",
+        scope: "user_read workouts_read",
+        state: STATE_ID,
+      }),
+    ).resolves.toEqual({ success: true });
+
+    expect(mocks.providerSyncRepository.enqueueJob).toHaveBeenCalledWith({
+      dedupeKey: "provider-history-reconcile:77777777-7777-4777-8777-777777777777:activity",
+      integrationId: "77777777-7777-4777-8777-777777777777",
+      jobType: "wahoo.activity_history_reconcile",
+      payload: {
+        trigger: "connect",
+        windowMonths: 12,
+      },
+      profileId: OTHER_USER_ID,
+      provider: "wahoo",
+      resourceKind: "activity",
+      runAt: "2026-04-02T09:30:00.000Z",
     });
     expect(mocks.repositories.oauthStates.deleteByState).toHaveBeenCalledWith(STATE_ID);
   });
@@ -614,14 +1068,14 @@ describe("integrationsRouter", () => {
     const caller = createCaller();
     mocks.wahoo.getEventSyncStatus.mockResolvedValue({
       id: SYNC_ID,
-      externalId: "workout-1",
+      externalId: "activity-1",
       updatedAt: new Date("2026-04-03T09:15:00.000Z"),
     });
 
     await expect(caller.wahoo.getEventSyncStatus({ eventId: EVENT_ID })).resolves.toEqual({
       synced: true,
       provider: "wahoo",
-      externalId: "workout-1",
+      externalId: "activity-1",
       id: SYNC_ID,
       updatedAt: "2026-04-03T09:15:00.000Z",
       syncedAt: null,
@@ -649,7 +1103,7 @@ describe("integrationsRouter", () => {
     mocks.wahoo.syncEvent.mockResolvedValue({
       success: true,
       action: "updated",
-      workoutId: "workout-9",
+      workoutId: "activity-9",
       warnings: ["Route omitted"],
       error: undefined,
     });
@@ -657,7 +1111,7 @@ describe("integrationsRouter", () => {
     await expect(caller.wahoo.testSync({ eventId: EVENT_ID })).resolves.toEqual({
       success: true,
       action: "updated",
-      workoutId: "workout-9",
+      workoutId: "activity-9",
       error: undefined,
       warnings: ["Route omitted"],
       timestamp: "2026-04-03T09:15:00.000Z",

@@ -786,13 +786,13 @@ describe("training plan projection fallbacks", () => {
             sessions: [
               {
                 offset_days: 0,
-                title: "Workout A",
+                title: "Activity A",
                 session_type: "planned",
                 activity_plan_id: "22222222-2222-4222-8222-222222222222",
               },
               {
                 offset_days: 2,
-                title: "Workout B",
+                title: "Activity B",
                 session_type: "planned",
                 activity_plan_id: "33333333-3333-4333-8333-333333333333",
               },
@@ -807,7 +807,7 @@ describe("training plan projection fallbacks", () => {
             id: "22222222-2222-4222-8222-222222222222",
             profile_id: null,
             route_id: null,
-            name: "Workout A",
+            name: "Activity A",
             activity_category: "run",
             structure: { mock_estimated_tss: 120 },
           },
@@ -815,7 +815,7 @@ describe("training plan projection fallbacks", () => {
             id: "33333333-3333-4333-8333-333333333333",
             profile_id: null,
             route_id: null,
-            name: "Workout B",
+            name: "Activity B",
             activity_category: "run",
             structure: { mock_estimated_tss: 150 },
           },

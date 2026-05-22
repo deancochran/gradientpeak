@@ -142,6 +142,7 @@ function buildActivityFromArtifact(args: {
 
 type ProcessActivityFileSubmission = {
   activityType: PreparedRecordedActivityDraft["activityType"];
+  is_private?: boolean;
   name: string;
   notes?: string;
 };
@@ -151,6 +152,7 @@ function toProcessActivityFileSubmission(
 ): ProcessActivityFileSubmission {
   return {
     activityType: activity.activityType,
+    is_private: activity.is_private,
     name: activity.name,
     notes: activity.notes ?? undefined,
   };
@@ -235,7 +237,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
   // Actions
   // ================================
 
-  const update = useCallback((updates: { name?: string; notes?: string }) => {
+  const update = useCallback((updates: { name?: string; notes?: string; is_private?: boolean }) => {
     dispatch({ type: "UPDATE", updates });
   }, []);
 

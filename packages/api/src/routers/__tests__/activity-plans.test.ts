@@ -17,7 +17,7 @@ const { estimationState } = vi.hoisted(() => ({
       confidence_score: 82,
       estimate_source: "cache",
       estimate_computed_at: "2026-03-01T10:00:00.000Z",
-      estimator_version: "2026-04-derived-metrics-v1",
+      estimator_version: "2026-05-estimated-provenance-v1",
     })),
     getActivityPlansDerivedMetrics: vi.fn(async (plans: any[]) =>
       plans.map((plan) => ({
@@ -33,7 +33,7 @@ const { estimationState } = vi.hoisted(() => ({
         confidence_score: 82,
         estimate_source: "cache",
         estimate_computed_at: "2026-03-01T10:00:00.000Z",
-        estimator_version: "2026-04-derived-metrics-v1",
+        estimator_version: "2026-05-estimated-provenance-v1",
       })),
     ),
     computePlanMetrics: vi.fn(async () => ({
@@ -112,7 +112,7 @@ function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
     profile_id: USER_ID,
     route_id: null,
     name: "Tempo Builder",
-    description: "Structured workout",
+    description: "Structured activity",
     notes: "Bring bottles",
     activity_category: "bike",
     structure: sampleStructure,
@@ -430,7 +430,7 @@ describe("activityPlansRouter", () => {
     await expect(caller.getUserPlansCount()).resolves.toBe(3);
   });
 
-  it("create stores computed metrics and returns identity fields", async () => {
+  it("create stores computed metrics and allows missing description", async () => {
     const createdRow = createActivityPlanRow({
       id: "55555555-5555-4555-8555-555555555555",
       name: "Created Plan",
@@ -446,7 +446,6 @@ describe("activityPlansRouter", () => {
     const result = await caller.create({
       name: "Created Plan",
       activity_category: "bike",
-      description: "Built from test",
       notes: "Hydrate",
       structure: sampleStructure,
       template_visibility: "public",
@@ -455,6 +454,7 @@ describe("activityPlansRouter", () => {
     const insertCall = callLog.find((call) => call.operation === "insert");
     expect(insertCall?.payload).toMatchObject({
       name: "Created Plan",
+      description: null,
       profile_id: USER_ID,
       template_visibility: "public",
       is_public: true,
@@ -530,12 +530,12 @@ describe("activityPlansRouter", () => {
       profile_id: OTHER_USER_ID,
       template_visibility: "public",
       is_public: true,
-      name: "Shared Workout",
+      name: "Shared Activity",
     });
     const duplicatedRow = createActivityPlanRow({
       id: "99999999-8888-4888-8888-888888888888",
       profile_id: USER_ID,
-      name: "Shared Workout (Copy)",
+      name: "Shared Activity (Copy)",
       template_visibility: "private",
       is_public: false,
     });
@@ -550,7 +550,7 @@ describe("activityPlansRouter", () => {
 
     const insertCall = callLog.find((call) => call.operation === "insert");
     expect(insertCall?.payload).toMatchObject({
-      name: "Shared Workout (Copy)",
+      name: "Shared Activity (Copy)",
       profile_id: USER_ID,
       template_visibility: "private",
       import_provider: null,

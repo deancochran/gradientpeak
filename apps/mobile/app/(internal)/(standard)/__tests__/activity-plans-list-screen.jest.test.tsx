@@ -1,13 +1,8 @@
 import React from "react";
+import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const pushMock = jest.fn();
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -26,6 +21,19 @@ jest.mock("expo-router", () => ({
   Stack: {
     Screen: createHost("StackScreen"),
   },
+}));
+
+jest.mock("@gorhom/bottom-sheet", () => ({
+  __esModule: true,
+  default: createHost("BottomSheet"),
+  BottomSheetBackdrop: createHost("BottomSheetBackdrop"),
+  BottomSheetScrollView: createHost("BottomSheetScrollView"),
+  BottomSheetView: createHost("BottomSheetView"),
+}));
+
+jest.mock("@/lib/stores/theme-store", () => ({
+  __esModule: true,
+  useTheme: () => ({ resolvedTheme: "light" }),
 }));
 
 jest.mock("@repo/ui/components/card", () => ({

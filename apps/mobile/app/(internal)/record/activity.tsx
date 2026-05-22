@@ -68,7 +68,7 @@ export default function ActivitySelectionScreen() {
         {isSetupLocked ? (
           <View className="bg-muted/50 p-3 rounded-lg mb-4 border border-border">
             <Text className="text-xs text-muted-foreground">
-              Activity identity is locked after recording starts. Finish this workout to change the
+              Activity identity is locked after recording starts. Finish this activity to change the
               category for a new session.
             </Text>
           </View>

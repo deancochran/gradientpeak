@@ -73,7 +73,7 @@ export function predictFatigue(
 
   if (plannedTSS > currentState.ctl * 0.8) {
     warnings.push(
-      `This single workout (${Math.round(plannedTSS)} TSS) is very high compared to your fitness level`,
+      `This single activity (${Math.round(plannedTSS)} TSS) is very high compared to your fitness level`,
     );
   }
 
@@ -171,7 +171,7 @@ function generateRecommendation(
   }
 
   if (formStatus === "optimal") {
-    return "Perfect balance of fitness and freshness. Great time for key workouts.";
+    return "Perfect balance of fitness and freshness. Great time for key activities.";
   }
 
   if (formStatus === "tired") {

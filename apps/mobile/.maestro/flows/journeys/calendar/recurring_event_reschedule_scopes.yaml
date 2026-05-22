@@ -12,25 +12,27 @@ env:
 - runFlow:
     file: ../../reusable/open_calendar_tab.yaml
 - tapOn: "${SCHEDULED_EVENT_TITLE}"
-- tapOn:
-    id: "calendar-preview-open-detail"
-    optional: true
 - extendedWaitUntil:
     visible:
-      id: "event-detail-reschedule-button"
+      id: "event-detail-options-trigger"
     timeout: 10000
 - tapOn:
-    id: "event-detail-reschedule-button"
+    id: "event-detail-options-trigger"
+- tapOn:
+    id: "event-detail-options-edit"
 - extendedWaitUntil:
     visible:
-      id: "schedule-modal"
+      id: "event-detail-update-save-button"
     timeout: 10000
 - assertVisible:
-    id: "scheduled-date-button"
+    id: "event-detail-update-repeat-row"
 - assertVisible:
-    id: "schedule-submit-button"
+    id: "event-detail-update-save-button"
 - tapOn:
-    id: "schedule-submit-button"
-- assertVisible: "Recurring Schedule"
+    id: "event-detail-update-save-button"
+- assertVisible: "Recurring Event"
+- assertVisible: "This event only"
 - assertVisible: "This and future events"
-- tapOn: "Cancel"
+- assertVisible: "Entire series"
+- tapOn:
+    id: "event-detail-update-scope-single"

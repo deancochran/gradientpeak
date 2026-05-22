@@ -74,7 +74,7 @@ function activeGrantCondition(now = new Date()) {
 
 function readGrantLevels(action: PermissionAction): AccessLevel[] {
   if (action === "read") {
-    return ["read", "read_geometry"];
+    return ["read"];
   }
 
   if (action === "read_geometry") {

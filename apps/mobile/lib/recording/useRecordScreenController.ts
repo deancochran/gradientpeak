@@ -2,6 +2,7 @@ import type { ActivityPayload, RecordingActivityCategory, RecordingState } from 
 import { useRouter } from "expo-router";
 import React from "react";
 import { Alert } from "react-native";
+import type { ResourcePickerItem, ResourcePickerScope } from "@/components/shared/resource-picker";
 import { api } from "@/lib/api";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import {
@@ -32,6 +33,10 @@ export function useRecordScreenController() {
   const [isInitialized, setIsInitialized] = React.useState(false);
   const [activityQuickEditVisible, setActivityQuickEditVisible] = React.useState(false);
   const [isFinishing, setIsFinishing] = React.useState(false);
+  const [resourcePickerScope, setResourcePickerScope] = React.useState<ResourcePickerScope | null>(
+    null,
+  );
+  const [pendingPlanId, setPendingPlanId] = React.useState<string | null>(null);
 
   const state = useRecordingState(service);
   const recordingLifecycle = useRecordingLifecycle(service);
@@ -47,6 +52,38 @@ export function useRecordScreenController() {
     enabled: !!user && !!service && hasSessionAuthCredentials(),
     staleTime: 1000 * 60 * 5,
   });
+
+  const pendingPlanQuery = api.activityPlans.getById.useQuery(
+    { id: pendingPlanId ?? "" },
+    { enabled: !!pendingPlanId && !!service },
+  );
+
+  React.useEffect(() => {
+    if (!pendingPlanId || !pendingPlanQuery.data || !service) {
+      return;
+    }
+
+    try {
+      service.selectPlan(pendingPlanQuery.data as any);
+      setPendingPlanId(null);
+      setResourcePickerScope(null);
+    } catch (error) {
+      Alert.alert(
+        "Plan Attachment Failed",
+        error instanceof Error ? error.message : "Unable to attach this activity plan.",
+      );
+      setPendingPlanId(null);
+    }
+  }, [pendingPlanId, pendingPlanQuery.data, service]);
+
+  React.useEffect(() => {
+    if (!pendingPlanId || !pendingPlanQuery.error) {
+      return;
+    }
+
+    Alert.alert("Plan Attachment Failed", "Unable to load this activity plan.");
+    setPendingPlanId(null);
+  }, [pendingPlanId, pendingPlanQuery.error]);
 
   React.useEffect(() => {
     if (!service || !zones?.profile) return;
@@ -246,16 +283,12 @@ export function useRecordScreenController() {
 
         Alert.alert(
           "Profile Setup Required",
-          `This workout requires the following metrics:\n\n${metricDetails}\n\nWithout these, automatic trainer control (ERG mode) and accurate targets will not be available.\n\nSet these in Settings > Profile.`,
+          `This activity requires the following metrics:\n\n${metricDetails}\n\nWithout these, automatic trainer control (ERG mode) and accurate targets will not be available.\n\nSet these in Settings > Profile.`,
           [
             {
               text: "Go to Profile",
               onPress: () => {
-                if (!user?.id) return;
-                navigateTo({
-                  pathname: "/user/[userId]",
-                  params: { userId: user.id },
-                } as any);
+                navigateTo("/profile");
               },
             },
             {
@@ -347,22 +380,38 @@ export function useRecordScreenController() {
   }, [navigateTo]);
 
   const onOpenPlan = React.useCallback(() => {
-    router.replace({
-      pathname: "/search" as never,
-      params: {
-        scope: "activityPlans",
-      },
-    });
-  }, [router]);
+    setResourcePickerScope("activityPlans");
+  }, []);
 
   const onOpenRoute = React.useCallback(() => {
-    router.replace({
-      pathname: "/search" as never,
-      params: {
-        scope: "routes",
-      },
-    });
-  }, [router]);
+    setResourcePickerScope("routes");
+  }, []);
+
+  const onCloseResourcePicker = React.useCallback(() => {
+    setResourcePickerScope(null);
+  }, []);
+
+  const onSelectResource = React.useCallback(
+    (item: ResourcePickerItem) => {
+      if (!service || !resourcePickerScope) {
+        return;
+      }
+
+      if (resourcePickerScope === "routes") {
+        service.attachRoute(item.id).catch((error) => {
+          Alert.alert(
+            "Route Attachment Failed",
+            error instanceof Error ? error.message : "Unable to attach this route.",
+          );
+        });
+        setResourcePickerScope(null);
+        return;
+      }
+
+      setPendingPlanId(item.id);
+    },
+    [resourcePickerScope, service],
+  );
 
   const onOpenSensors = React.useCallback(() => {
     navigateTo("/record/sensors");
@@ -413,11 +462,14 @@ export function useRecordScreenController() {
       onOpenPlan,
       onOpenRoute,
       onOpenSensors,
+      onCloseResourcePicker,
       onRemovePlan,
       onRemoveRoute,
+      onSelectResource,
       onPause: pause,
       onResume: resume,
       recordingState,
+      resourcePickerScope,
       sensorCount,
       service,
       serviceState: state,
@@ -442,11 +494,14 @@ export function useRecordScreenController() {
       onOpenPlan,
       onOpenRoute,
       onOpenSensors,
+      onCloseResourcePicker,
       onRemovePlan,
       onRemoveRoute,
+      onSelectResource,
       pause,
       plan.hasPlan,
       recordingState,
+      resourcePickerScope,
       resume,
       sensorCount,
       service,

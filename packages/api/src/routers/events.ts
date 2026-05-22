@@ -24,22 +24,19 @@ import {
   createEventCompletionRepository,
   createEventReadRepository,
   createEventWriteRepository,
-  createProviderSyncRepository,
-  createWahooRepository,
 } from "../infrastructure/repositories";
-import { createWahooRouteStorage, WahooSyncService } from "../lib/integrations/wahoo/sync-service";
-import { WahooSyncJobService } from "../lib/provider-sync/wahoo-job-service";
-import { ROUTES_BUCKET } from "../lib/routes/route-file-helpers";
+import {
+  enqueuePlannedWorkoutSyncAfterCalendarMutation,
+  getEventPlannedWorkoutProviderStatuses,
+  type PlannedWorkoutQueueResult,
+} from "../lib/provider-sync/planned-workouts";
 import { createContentAccessPermissions } from "../permissions/content-access";
-import { getApiStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import {
   getActivityPlanDerivedMetrics,
   getActivityPlansDerivedMetrics,
 } from "../utils/activity-plan-derived-metrics";
 import { loadProfileIdentityMap, type ProfileIdentity } from "../utils/profile-identity";
-
-const storageService = getApiStorageService();
 
 type EventLifecycleStatus =
   | "scheduled"
@@ -49,76 +46,16 @@ type EventLifecycleStatus =
   | "rescheduled"
   | "expired";
 
-function getWahooSyncService(ctx: any) {
-  return new WahooSyncService({
-    repository: createWahooRepository({ db: getRequiredDb(ctx) }),
-    storage: createWahooRouteStorage({
-      async downloadRouteGpx(filePath) {
-        const { data, error } = await storageService.storage.from(ROUTES_BUCKET).download(filePath);
-        if (error || !data) return null;
-        return data.text();
-      },
-    }),
-  });
-}
-
-function getWahooSyncJobService(ctx: any) {
-  return new WahooSyncJobService({
-    providerSyncRepository: createProviderSyncRepository({ db: getRequiredDb(ctx) }),
-    syncService: getWahooSyncService(ctx),
-    wahooRepository: createWahooRepository({ db: getRequiredDb(ctx) }),
-  });
-}
-
-type WahooQueueResult = {
-  affectedCount: number;
-  error?: string;
-  jobId?: string | null;
-  operation: "publish" | "unsync";
-  queued: boolean;
-  success: boolean;
-};
-
-async function enqueueWahooEventJobs(
+async function enqueueProviderPlannedActivityJobs(
   ctx: any,
-  input: { eventIds: string[]; operation: "publish" | "unsync" },
-): Promise<WahooQueueResult | null> {
-  const eventIds = [...new Set(input.eventIds)];
-  if (eventIds.length === 0) {
-    return null;
-  }
-
-  const integration = await createWahooRepository({
+  input: { eventIds: string[]; operation: "publish" | "unsync"; profileId?: string },
+): Promise<PlannedWorkoutQueueResult | null> {
+  return enqueuePlannedWorkoutSyncAfterCalendarMutation({
     db: getRequiredDb(ctx),
-  }).findWahooIntegrationByProfileId(ctx.session.user.id);
-
-  if (!integration) {
-    return null;
-  }
-
-  const jobService = getWahooSyncJobService(ctx);
-  let firstJobId: string | null = null;
-  let queued = false;
-
-  for (const eventId of eventIds) {
-    const result =
-      input.operation === "publish"
-        ? await jobService.enqueuePublishEvent({ eventId, profileId: ctx.session.user.id })
-        : await jobService.enqueueUnsyncEvent({ eventId, profileId: ctx.session.user.id });
-
-    if (!firstJobId) {
-      firstJobId = result.jobId;
-    }
-    queued = queued || result.queued;
-  }
-
-  return {
-    affectedCount: eventIds.length,
-    jobId: firstJobId,
+    eventIds: input.eventIds,
     operation: input.operation,
-    queued,
-    success: true,
-  };
+    profileId: input.profileId ?? ctx.session.user.id,
+  });
 }
 
 function getEventCompletionRepository(ctx: { session: { user: { id: string } } }) {
@@ -162,8 +99,30 @@ type LegacyPlannedCreateInput = z.infer<typeof plannedActivityCreateSchema>;
 type EventCreateInput = z.infer<typeof eventCreateSchema>;
 type EventUpdateInput = z.infer<typeof eventUpdateSchema>;
 type EventCreateMutationInput = LegacyPlannedCreateInput | EventCreateInput;
+type NormalizedEventCreateInput = {
+  activityPlanId: string | null;
+  allDay: boolean;
+  description: string | null;
+  endsAt: string | null;
+  eventType: CoreEventType;
+  notes: string | null;
+  recurrence: LegacyPlannedCreateInput["recurrence"] | null;
+  sourceProvider: string | null;
+  startsAt: string;
+  status: PublicEventStatus;
+  timezone: string;
+  title: string;
+  trainingPlanId: string | null;
+};
+
+type MaterializedRecurrenceOccurrence = {
+  startsAt: string;
+  endsAt: string | null;
+  occurrenceKey: string;
+};
 
 const plannedEventType = "planned_activity" as const;
+const weekdayToRRuleDay = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"] as const;
 
 const eventTypeToDbMap: Record<CoreEventType, DbEventType> = {
   planned: "planned_activity",
@@ -287,20 +246,18 @@ const validateConstraintsSchema = z
 
 const plannedActivityCreateInputSchema = plannedActivityCreateSchema.strict();
 const eventCreateInputSchema = z.unknown().transform((value, ctx): EventCreateMutationInput => {
-  const schema =
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    "scheduled_date" in value
-      ? plannedActivityCreateInputSchema
-      : eventCreateSchema;
+  const parsedEventCreate = eventCreateSchema.safeParse(value);
+  if (parsedEventCreate.success) return parsedEventCreate.data;
 
-  const parsed = schema.safeParse(value);
-  if (parsed.success) return parsed.data;
+  const parsedLegacyPlannedCreate = plannedActivityCreateInputSchema.safeParse(value);
+  if (parsedLegacyPlannedCreate.success) return parsedLegacyPlannedCreate.data;
 
   ctx.addIssue({
     code: "custom",
-    message: parsed.error.issues[0]?.message ?? "Invalid event create payload",
+    message:
+      parsedEventCreate.error.issues[0]?.message ??
+      parsedLegacyPlannedCreate.error.issues[0]?.message ??
+      "Invalid event create payload",
   });
 
   return z.NEVER;
@@ -337,7 +294,7 @@ const eventUpdateInputSchema = z.unknown().transform((value, ctx): EventUpdateMu
 function isLegacyPlannedCreateInput(
   input: EventCreateMutationInput,
 ): input is LegacyPlannedCreateInput {
-  return "scheduled_date" in input;
+  return !("title" in input) && "scheduled_date" in input;
 }
 
 function isLegacyPlannedUpdateInput(
@@ -468,6 +425,102 @@ function toNextDayStartIso(dateValue: string): string {
   const day = new Date(toDayStartIso(dateValue));
   day.setUTCDate(day.getUTCDate() + 1);
   return day.toISOString();
+}
+
+function parseRRule(rule: string): Map<string, string> {
+  const body = rule.trim().startsWith("RRULE:") ? rule.trim().slice(6) : rule.trim();
+  return new Map(
+    body.split(";").map((part) => {
+      const [key, value] = part.split("=");
+      return [key ?? "", value ?? ""];
+    }),
+  );
+}
+
+function parseRRuleUntilDateKey(value: string): string {
+  if (/^\d{8}$/.test(value)) {
+    return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
+  }
+
+  if (/^\d{8}T\d{6}Z$/.test(value)) {
+    return new Date(
+      `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}T${value.slice(9, 11)}:${value.slice(11, 13)}:${value.slice(13, 15)}.000Z`,
+    )
+      .toISOString()
+      .slice(0, 10);
+  }
+
+  throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid recurrence UNTIL value" });
+}
+
+function buildMaterializedRecurrenceOccurrences(input: {
+  startsAt: string;
+  endsAt: string | null;
+  recurrence: NonNullable<NormalizedEventCreateInput["recurrence"]>;
+}): MaterializedRecurrenceOccurrence[] {
+  const tokens = parseRRule(input.recurrence.rule);
+  const frequency = tokens.get("FREQ");
+  if (frequency !== "WEEKLY") {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "Only weekly recurrence is supported" });
+  }
+
+  const countToken = tokens.get("COUNT");
+  const untilToken = tokens.get("UNTIL");
+  if (!countToken && !untilToken) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Recurring events must end with COUNT or UNTIL",
+    });
+  }
+
+  const interval = Number(tokens.get("INTERVAL") ?? "1");
+  if (!Number.isInteger(interval) || interval < 1) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "Recurrence interval must be positive" });
+  }
+
+  const start = new Date(input.startsAt);
+  const end = input.endsAt ? new Date(input.endsAt) : null;
+  const durationMs = end ? end.getTime() - start.getTime() : null;
+  const startDay = weekdayToRRuleDay[start.getUTCDay()];
+  const byDay = tokens.get("BYDAY") ?? startDay;
+  if (byDay !== startDay) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Weekly recurrence day must match the event start date",
+    });
+  }
+
+  const maxOccurrences = 366;
+  const count = countToken ? Number(countToken) : maxOccurrences;
+  if (!Number.isInteger(count) || count < 1 || count > maxOccurrences) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Recurring events support 1-${maxOccurrences} occurrences`,
+    });
+  }
+
+  const untilDateKey = untilToken ? parseRRuleUntilDateKey(untilToken) : null;
+  const occurrences: MaterializedRecurrenceOccurrence[] = [];
+
+  for (let index = 0; index < count; index++) {
+    const occurrenceStart = new Date(start);
+    occurrenceStart.setUTCDate(start.getUTCDate() + index * interval * 7);
+    const occurrenceKey = occurrenceStart.toISOString().slice(0, 10);
+    if (untilDateKey && occurrenceKey > untilDateKey) break;
+
+    occurrences.push({
+      startsAt: occurrenceStart.toISOString(),
+      endsAt:
+        durationMs === null ? null : new Date(occurrenceStart.getTime() + durationMs).toISOString(),
+      occurrenceKey,
+    });
+  }
+
+  if (occurrences.length === 0) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "Recurrence creates no occurrences" });
+  }
+
+  return occurrences;
 }
 
 function normalizeInstantForComparison(value: string): string {
@@ -826,6 +879,63 @@ function toPersistableEventStatus(
   return status;
 }
 
+function normalizeEventCreateInput(input: EventCreateMutationInput): NormalizedEventCreateInput {
+  const eventType: CoreEventType = input.event_type ?? "planned";
+  const status = toPersistableEventStatus(input.lifecycle);
+
+  if (isLegacyPlannedCreateInput(input)) {
+    return {
+      activityPlanId: input.activity_plan_id,
+      allDay: true,
+      description: null,
+      endsAt: toNextDayStartIso(input.scheduled_date),
+      eventType,
+      notes: input.notes ?? null,
+      recurrence: input.recurrence ?? null,
+      sourceProvider: "source" in input ? (input.source?.provider ?? null) : null,
+      startsAt: toDayStartIso(input.scheduled_date),
+      status,
+      timezone: "UTC",
+      title: defaultTitleForEventType(eventType),
+      trainingPlanId: input.training_plan_id ?? null,
+    };
+  }
+
+  if (input.event_type === "planned") {
+    return {
+      activityPlanId: input.activity_plan_id,
+      allDay: true,
+      description: null,
+      endsAt: toNextDayStartIso(input.scheduled_date),
+      eventType: input.event_type,
+      notes: input.notes ?? null,
+      recurrence: input.recurrence ?? null,
+      sourceProvider: null,
+      startsAt: toDayStartIso(input.scheduled_date),
+      status,
+      timezone: input.timezone,
+      title: input.title,
+      trainingPlanId: input.training_plan_id ?? null,
+    };
+  }
+
+  return {
+    activityPlanId: null,
+    allDay: input.all_day,
+    description: input.description ?? null,
+    endsAt: typeof input.ends_at === "string" ? toCanonicalInstantIso(input.ends_at) : null,
+    eventType: input.event_type,
+    notes: input.notes ?? null,
+    recurrence: input.recurrence ?? null,
+    sourceProvider: null,
+    startsAt: toCanonicalInstantIso(input.starts_at),
+    status,
+    timezone: input.timezone,
+    title: input.title,
+    trainingPlanId: null,
+  };
+}
+
 function applyScopeFilters(
   query: any,
   existingEvent: PlannedEventRecord,
@@ -936,6 +1046,32 @@ export const eventsRouter = createTRPCRouter({
       return event;
     }),
 
+  getProviderSyncStatus: protectedProcedure
+    .input(z.object({ eventId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const eventReadRepository = getEventReadRepository(ctx);
+      const event = await eventReadRepository.getOwnedEventById({
+        eventId: input.eventId,
+        profileId: ctx.session.user.id,
+      });
+
+      if (!event) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Event not found",
+        });
+      }
+
+      return {
+        eventId: input.eventId,
+        plannedWorkoutSync: await getEventPlannedWorkoutProviderStatuses({
+          db: getRequiredDb(ctx),
+          eventId: input.eventId,
+          profileId: ctx.session.user.id,
+        }),
+      };
+    }),
+
   getToday: protectedProcedure.query(async ({ ctx }) => {
     const eventReadRepository = getEventReadRepository(ctx);
     const today = toDateKey(new Date().toISOString());
@@ -998,8 +1134,8 @@ export const eventsRouter = createTRPCRouter({
   create: protectedProcedure.input(eventCreateInputSchema).mutation(async ({ ctx, input }) => {
     const eventWriteRepository = getEventWriteRepository(ctx);
     const permissions = getContentPermissions(ctx);
-    const legacyInput = isLegacyPlannedCreateInput(input) ? input : null;
-    const normalizedEventType: CoreEventType = input.event_type ?? "planned";
+    const normalizedCreate = normalizeEventCreateInput(input);
+    const normalizedEventType = normalizedCreate.eventType;
 
     assertRestDayWritesBlocked(normalizedEventType, "create");
 
@@ -1010,27 +1146,26 @@ export const eventsRouter = createTRPCRouter({
       });
     }
 
-    const recurrence = input.recurrence;
+    const recurrence = normalizedCreate.recurrence;
     ensurePersistableRecurrence(recurrence);
-    const status = toPersistableEventStatus(input.lifecycle);
 
-    if (normalizedEventType === "planned" && !input.activity_plan_id) {
+    if (normalizedEventType === "planned" && !normalizedCreate.activityPlanId) {
       throw new TRPCError({
         code: "BAD_REQUEST",
         message: 'activity_plan_id is required when event_type is "planned"',
       });
     }
 
-    if (input.activity_plan_id) {
+    if (normalizedCreate.activityPlanId) {
       if (permissions) {
         await permissions.requireRead(
           ctx.session.user.id,
-          { type: "activity_plan", id: input.activity_plan_id },
+          { type: "activity_plan", id: normalizedCreate.activityPlanId },
           "Activity plan not found or not accessible",
         );
       } else {
         const activityPlan = await eventWriteRepository.getAccessibleActivityPlan({
-          activityPlanId: input.activity_plan_id,
+          activityPlanId: normalizedCreate.activityPlanId,
           profileId: ctx.session.user.id,
         });
 
@@ -1043,8 +1178,7 @@ export const eventsRouter = createTRPCRouter({
       }
     }
 
-    const trainingPlanId =
-      "training_plan_id" in input ? (input.training_plan_id ?? null) : (null as string | null);
+    const trainingPlanId = normalizedCreate.trainingPlanId;
 
     if (trainingPlanId) {
       if (permissions) {
@@ -1068,43 +1202,68 @@ export const eventsRouter = createTRPCRouter({
       }
     }
 
-    let startsAt: string;
-    let endsAt: string | null;
-
-    if (legacyInput) {
-      startsAt = toDayStartIso(legacyInput.scheduled_date);
-      endsAt = toNextDayStartIso(legacyInput.scheduled_date);
-    } else {
-      const domainInput = input as EventCreateInput;
-      startsAt = toCanonicalInstantIso(domainInput.starts_at);
-      endsAt =
-        typeof domainInput.ends_at === "string" ? toCanonicalInstantIso(domainInput.ends_at) : null;
-    }
-    const title = "title" in input ? input.title : defaultTitleForEventType(normalizedEventType);
-    const allDay = "all_day" in input ? input.all_day : true;
-    const timezone = "timezone" in input ? input.timezone : "UTC";
-    const description = "description" in input ? (input.description ?? null) : null;
-    const sourceProvider = "source" in input ? (input.source?.provider ?? null) : null;
-
     let data;
+    let createdEvents: PlannedEventRecord[] = [];
     try {
+      const occurrences = recurrence
+        ? buildMaterializedRecurrenceOccurrences({
+            startsAt: normalizedCreate.startsAt,
+            endsAt: normalizedCreate.endsAt,
+            recurrence,
+          })
+        : [
+            {
+              startsAt: normalizedCreate.startsAt,
+              endsAt: normalizedCreate.endsAt,
+              occurrenceKey: "",
+            },
+          ];
+
       data = await eventWriteRepository.createOwnedEvent({
         profileId: ctx.session.user.id,
         eventType: toDbEventType(normalizedEventType),
-        title,
-        allDay,
-        timezone,
-        startsAt,
-        endsAt,
-        status,
-        activityPlanId: input.activity_plan_id ?? null,
+        title: normalizedCreate.title,
+        allDay: normalizedCreate.allDay,
+        timezone: normalizedCreate.timezone,
+        startsAt: occurrences[0]?.startsAt ?? normalizedCreate.startsAt,
+        endsAt: occurrences[0]?.endsAt ?? normalizedCreate.endsAt,
+        status: normalizedCreate.status,
+        activityPlanId: normalizedCreate.activityPlanId,
         trainingPlanId,
-        notes: input.notes ?? null,
-        description,
+        notes: normalizedCreate.notes,
+        description: normalizedCreate.description,
         recurrenceRule: recurrence?.rule ?? null,
         recurrenceTimezone: recurrence?.timezone ?? null,
-        sourceProvider,
+        seriesId: null,
+        occurrenceKey: recurrence ? (occurrences[0]?.occurrenceKey ?? null) : null,
+        originalStartsAt: recurrence ? (occurrences[0]?.startsAt ?? null) : null,
+        sourceProvider: normalizedCreate.sourceProvider,
       });
+      createdEvents = [data as PlannedEventRecord];
+
+      for (const occurrence of occurrences.slice(1)) {
+        const occurrenceData = await eventWriteRepository.createOwnedEvent({
+          profileId: ctx.session.user.id,
+          eventType: toDbEventType(normalizedEventType),
+          title: normalizedCreate.title,
+          allDay: normalizedCreate.allDay,
+          timezone: normalizedCreate.timezone,
+          startsAt: occurrence.startsAt,
+          endsAt: occurrence.endsAt,
+          status: normalizedCreate.status,
+          activityPlanId: normalizedCreate.activityPlanId,
+          trainingPlanId,
+          notes: normalizedCreate.notes,
+          description: normalizedCreate.description,
+          recurrenceRule: recurrence?.rule ?? null,
+          recurrenceTimezone: recurrence?.timezone ?? null,
+          seriesId: (data as PlannedEventRecord).id,
+          occurrenceKey: occurrence.occurrenceKey,
+          originalStartsAt: occurrence.startsAt,
+          sourceProvider: normalizedCreate.sourceProvider,
+        });
+        createdEvents.push(occurrenceData as PlannedEventRecord);
+      }
     } catch (error) {
       throw new TRPCError({
         code: "BAD_REQUEST",
@@ -1115,38 +1274,43 @@ export const eventsRouter = createTRPCRouter({
     const event = mapEvent(data as PlannedEventRecord);
 
     if (permissions) {
-      await permissions.grantEventContentAccess({
-        actorProfileId: ctx.session.user.id,
-        granteeProfileId: event.profile_id,
-        eventId: event.id,
-        activityPlanId: event.activity_plan_id,
-        trainingPlanId: event.training_plan_id,
-      });
+      for (const createdEvent of createdEvents) {
+        await permissions.grantEventContentAccess({
+          actorProfileId: ctx.session.user.id,
+          granteeProfileId: createdEvent.profile_id,
+          eventId: createdEvent.id,
+          activityPlanId: createdEvent.activity_plan_id,
+          trainingPlanId: createdEvent.training_plan_id,
+        });
+      }
     }
 
-    let wahooSyncResult: WahooQueueResult | null = null;
+    let plannedWorkoutSyncResult: PlannedWorkoutQueueResult | null = null;
     if (event.legacy_event_type === plannedEventType) {
       try {
-        wahooSyncResult = await enqueueWahooEventJobs(ctx, {
-          eventIds: [event.id],
+        plannedWorkoutSyncResult = await enqueueProviderPlannedActivityJobs(ctx, {
+          eventIds: createdEvents.map((createdEvent) => createdEvent.id),
           operation: "publish",
         });
       } catch (error) {
-        console.error("Failed to enqueue Wahoo sync:", error);
-        wahooSyncResult = {
+        console.error("Failed to enqueue planned workout sync:", error);
+        plannedWorkoutSyncResult = {
           affectedCount: 1,
           operation: "publish",
           queued: false,
           success: false,
           error:
-            error instanceof Error ? error.message : "Unknown error during Wahoo sync queueing",
+            error instanceof Error
+              ? error.message
+              : "Unknown error during planned workout sync queueing",
         };
       }
     }
 
     return {
       ...event,
-      wahooSync: wahooSyncResult,
+      plannedWorkoutSync: plannedWorkoutSyncResult,
+      wahooSync: plannedWorkoutSyncResult,
       insight_refresh_hint: buildInsightRefreshHint({
         trainingPlanId: event.training_plan_id,
         changedDate: event.scheduled_date,
@@ -1333,6 +1497,54 @@ export const eventsRouter = createTRPCRouter({
         message: "No matching events found for update scope",
       });
     }
+
+    if (patch.recurrence) {
+      try {
+        const existingSeriesRows = await eventWriteRepository.listOwnedEventsForSeries({
+          anchorEvent: representative,
+          profileId: ctx.session.user.id,
+        });
+
+        if (existingSeriesRows.length <= 1) {
+          const occurrences = buildMaterializedRecurrenceOccurrences({
+            startsAt: representative.starts_at,
+            endsAt: representative.ends_at,
+            recurrence: patch.recurrence,
+          });
+
+          for (const occurrence of occurrences.slice(1)) {
+            const occurrenceData = await eventWriteRepository.createOwnedEvent({
+              profileId: ctx.session.user.id,
+              eventType: representative.event_type,
+              title: representative.title,
+              allDay: representative.all_day,
+              timezone: representative.timezone,
+              startsAt: occurrence.startsAt,
+              endsAt: occurrence.endsAt,
+              status: representative.status,
+              activityPlanId: representative.activity_plan_id,
+              trainingPlanId: representative.training_plan_id,
+              notes: representative.notes,
+              description: representative.description,
+              recurrenceRule: representative.recurrence_rule,
+              recurrenceTimezone: representative.recurrence_timezone,
+              seriesId: representative.series_id ?? representative.id,
+              occurrenceKey: occurrence.occurrenceKey,
+              originalStartsAt: occurrence.startsAt,
+              sourceProvider: representative.source_provider,
+            });
+            updatedRows.push(occurrenceData as PlannedEventRecord);
+          }
+        }
+      } catch (error) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message:
+            error instanceof Error ? error.message : "Failed to materialize recurring events",
+        });
+      }
+    }
+
     const event = mapEvent(representative);
 
     if (permissions) {
@@ -1350,43 +1562,48 @@ export const eventsRouter = createTRPCRouter({
       );
     }
 
-    let wahooSyncResult: WahooQueueResult | null = null;
+    let plannedWorkoutSyncResult: PlannedWorkoutQueueResult | null = null;
     const updatedPlannedEventIds = updatedRows
-      .filter((row) => row.event_type === plannedEventType)
+      .filter((row) => row.event_type === plannedEventType && row.activity_plan_id)
       .map((row) => row.id);
     const removedPlannedEventIds =
-      existingEvent.event_type === plannedEventType && event.legacy_event_type !== plannedEventType
+      existingEvent.event_type === plannedEventType &&
+      existingEvent.activity_plan_id &&
+      (event.legacy_event_type !== plannedEventType || event.activity_plan_id === null)
         ? updatedRows.map((row) => row.id)
         : [];
 
     if (updatedPlannedEventIds.length > 0 || removedPlannedEventIds.length > 0) {
       try {
-        wahooSyncResult =
+        plannedWorkoutSyncResult =
           updatedPlannedEventIds.length > 0
-            ? await enqueueWahooEventJobs(ctx, {
+            ? await enqueueProviderPlannedActivityJobs(ctx, {
                 eventIds: updatedPlannedEventIds,
                 operation: "publish",
               })
-            : await enqueueWahooEventJobs(ctx, {
+            : await enqueueProviderPlannedActivityJobs(ctx, {
                 eventIds: removedPlannedEventIds,
                 operation: "unsync",
               });
       } catch (error) {
-        console.error("Failed to enqueue Wahoo update jobs:", error);
-        wahooSyncResult = {
+        console.error("Failed to enqueue planned workout update jobs:", error);
+        plannedWorkoutSyncResult = {
           affectedCount: updatedPlannedEventIds.length || removedPlannedEventIds.length,
           operation: updatedPlannedEventIds.length > 0 ? "publish" : "unsync",
           queued: false,
           success: false,
           error:
-            error instanceof Error ? error.message : "Unknown error during Wahoo sync queueing",
+            error instanceof Error
+              ? error.message
+              : "Unknown error during planned workout sync queueing",
         };
       }
     }
 
     return {
       ...event,
-      wahooSync: wahooSyncResult,
+      plannedWorkoutSync: plannedWorkoutSyncResult,
+      wahooSync: plannedWorkoutSyncResult,
       mutation_scope: scope,
       affected_count: updatedRows.length,
       affected_event_ids: updatedRows.map((row: any) => row.id),
@@ -1440,17 +1657,17 @@ export const eventsRouter = createTRPCRouter({
 
     try {
       const plannedEventIds = rowsToDelete
-        .filter((row) => row.event_type === plannedEventType)
+        .filter((row) => row.event_type === plannedEventType && row.activity_plan_id)
         .map((row) => row.id);
 
       if (plannedEventIds.length > 0) {
-        await enqueueWahooEventJobs(ctx, {
+        await enqueueProviderPlannedActivityJobs(ctx, {
           eventIds: plannedEventIds,
           operation: "unsync",
         });
       }
     } catch (error) {
-      console.error("Failed to enqueue Wahoo unsync jobs:", error);
+      console.error("Failed to enqueue planned workout unsync jobs:", error);
     }
 
     try {

@@ -3,6 +3,7 @@ import type {
   ReferenceTrajectory,
   TrajectoryMode,
 } from "../schemas/planning";
+import { deterministicUuidFromSeed } from "./normalizeGoalInput";
 import type {
   DeterministicProjectionMicrocycle,
   DeterministicProjectionPayload,
@@ -14,7 +15,6 @@ import type {
   ProjectionSafetyConfig,
   ProjectionSportLoadState,
 } from "./projectionCalculations";
-import { deterministicUuidFromSeed } from "./normalizeGoalInput";
 
 export interface ProjectionPeriodizationPhase {
   id: string;
@@ -210,6 +210,7 @@ export interface ProjectionChartPayload {
   goal_assessments?: Array<{
     goal_id: string;
     priority: number;
+    goal_readiness_target?: number;
     goal_readiness_score?: number;
     state_readiness_score?: number;
     goal_alignment_loss_0_100?: number;

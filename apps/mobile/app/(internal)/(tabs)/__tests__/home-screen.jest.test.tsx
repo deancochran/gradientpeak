@@ -24,6 +24,11 @@ jest.mock("@/components/shared", () => ({
   AppHeader: ({ title }: any) => React.createElement("Text", null, `Header:${title}`),
 }));
 
+jest.mock("@/lib/performance", () => ({
+  __esModule: true,
+  usePerformanceScreenReady: jest.fn(),
+}));
+
 jest.mock("@repo/ui/components/text", () => ({
   __esModule: true,
   Text: createHost("Text"),

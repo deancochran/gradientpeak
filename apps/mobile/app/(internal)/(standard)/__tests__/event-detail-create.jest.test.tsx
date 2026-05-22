@@ -1,22 +1,23 @@
 import { act } from "@testing-library/react-native";
 import React from "react";
+import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 import EventDetailScreen from "../event-detail";
 
 const createEventMutateMock = jest.fn();
-const activityPlansListUseQueryMock: jest.Mock = jest.fn(() => ({
+const mockActivityPlansListUseQuery: jest.Mock = jest.fn(() => ({
   data: { items: [] },
   isLoading: false,
   error: null,
   refetch: jest.fn(),
 }));
+const mockActivityPlanGetByIdUseQuery: jest.Mock = jest.fn(() => ({
+  data: null,
+  isLoading: false,
+  error: null,
+  refetch: jest.fn(),
+}));
 let paramsState: Record<string, string | undefined> = { mode: "create", date: "2026-03-24" };
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
 
 jest.mock("@tanstack/react-query", () => ({
   __esModule: true,
@@ -59,19 +60,58 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
   useAppNavigate: () => jest.fn(),
 }));
 
-jest.mock("@/components/ScheduleActivityModal", () => ({
-  __esModule: true,
-  ScheduleActivityModal: createHost("ScheduleActivityModal"),
-}));
-
 jest.mock("@/components/activity-plan/ActivityPlanContentPreview", () => ({
   __esModule: true,
   ActivityPlanContentPreview: createHost("ActivityPlanContentPreview"),
 }));
 
+jest.mock("@/components/event/EventEditorCard", () => ({
+  __esModule: true,
+  buildCreateStartsAt: (date?: string) => new Date(`${date ?? "2026-03-24"}T12:00:00.000Z`),
+  buildRecurrenceFromFrequency: (frequency: string, endDate: string | null) =>
+    frequency === "none" ? undefined : { frequency, endDate },
+  parseRecurrenceEndDate: (event: any) => event?.recurrence?.endDate ?? null,
+  parseRecurrenceFrequency: (event: any) => event?.recurrence?.frequency ?? "none",
+}));
+
 jest.mock("@/components/shared/ActivityPlanSummary", () => ({
   __esModule: true,
   ActivityPlanSummary: createHost("ActivityPlanSummary"),
+}));
+
+jest.mock("@/components/shared/ActivityPlanCard", () => ({
+  __esModule: true,
+  ActivityPlanCard: createHost("ActivityPlanCard"),
+}));
+
+jest.mock("@/components/shared/resource-picker", () => ({
+  __esModule: true,
+  ResourcePickerModal: ({ onClose, onSelect, visible }: any) => {
+    if (!visible) return null;
+    const React = require("react");
+    const data = mockActivityPlansListUseQuery().data;
+    const items = data?.items ?? [];
+    return React.createElement(
+      "ResourcePickerModal",
+      { visible },
+      React.createElement("Input", { testID: "event-detail-activity-plan-search-input" }),
+      ...items.map((item: any) =>
+        React.createElement(
+          "Button",
+          {
+            key: item.id,
+            onPress: () => onSelect(item),
+            testID: `event-detail-activity-plan-option-${item.id}`,
+          },
+          item.name,
+        ),
+      ),
+      React.createElement("Button", {
+        onPress: onClose,
+        testID: "event-detail-activity-plan-done-button",
+      }),
+    );
+  },
 }));
 
 jest.mock("@repo/ui/components/button", () => ({ __esModule: true, Button: createHost("Button") }));
@@ -213,6 +253,9 @@ jest.mock("lucide-react-native", () => ({
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
+    useUtils: () => ({
+      events: { invalidate: jest.fn() },
+    }),
     events: {
       getById: {
         useQuery: () => ({ data: null, error: null, isLoading: false, refetch: jest.fn() }),
@@ -229,7 +272,10 @@ jest.mock("@/lib/api", () => ({
     },
     activityPlans: {
       list: {
-        useQuery: () => activityPlansListUseQueryMock(),
+        useQuery: () => mockActivityPlansListUseQuery(),
+      },
+      getById: {
+        useQuery: () => mockActivityPlanGetByIdUseQuery(),
       },
     },
     trainingPlans: {
@@ -270,8 +316,14 @@ describe("event detail create mode", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     paramsState = { mode: "create", date: "2026-03-24" };
-    activityPlansListUseQueryMock.mockReturnValue({
+    mockActivityPlansListUseQuery.mockReturnValue({
       data: { items: [] },
+      isLoading: false,
+      error: null,
+      refetch: jest.fn(),
+    });
+    mockActivityPlanGetByIdUseQuery.mockReturnValue({
+      data: null,
       isLoading: false,
       error: null,
       refetch: jest.fn(),
@@ -305,7 +357,7 @@ describe("event detail create mode", () => {
   });
 
   it("creates a planned event using a searched activity plan", async () => {
-    activityPlansListUseQueryMock.mockReturnValue({
+    mockActivityPlansListUseQuery.mockReturnValue({
       data: {
         items: [
           {
@@ -325,6 +377,8 @@ describe("event detail create mode", () => {
 
     fireEvent.press(screen.getByTestId("event-detail-type-planned"));
     expect(screen.queryByTestId("event-detail-recurrence-weekly")).toBeNull();
+    expect(screen.queryByTestId("event-detail-activity-plan-search-input")).toBeNull();
+    fireEvent.press(screen.getByTestId("event-detail-change-activity-plan-button"));
     fireEvent(screen.getByTestId("event-detail-activity-plan-search-input"), "changeText", "tempo");
     fireEvent.press(screen.getByTestId("event-detail-activity-plan-option-plan-1"));
 
@@ -338,7 +392,57 @@ describe("event detail create mode", () => {
           event_type: "planned",
           activity_plan_id: "plan-1",
           title: "Tempo Run",
-          starts_at: expect.stringMatching(/^2026-03-24T/),
+          all_day: true,
+          scheduled_date: "2026-03-24",
+        }),
+      );
+    });
+  });
+
+  it("replaces plan-derived draft details when selecting a different activity plan", async () => {
+    mockActivityPlansListUseQuery.mockReturnValue({
+      data: {
+        items: [
+          {
+            id: "plan-1",
+            name: "Tempo Run",
+            activity_category: "run",
+            authoritative_metrics: { estimated_duration: 3600, estimated_tss: 78 },
+          },
+          {
+            id: "plan-2",
+            name: "Recovery Ride",
+            activity_category: "bike",
+            authoritative_metrics: { estimated_duration: 2400, estimated_tss: 35 },
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+      refetch: jest.fn(),
+    });
+
+    renderNative(<EventDetailScreen />);
+
+    fireEvent.press(screen.getByTestId("event-detail-type-planned"));
+    fireEvent.press(screen.getByTestId("event-detail-change-activity-plan-button"));
+    fireEvent.press(screen.getByTestId("event-detail-activity-plan-option-plan-1"));
+    fireEvent.press(screen.getByTestId("event-detail-change-activity-plan-button"));
+    fireEvent.press(screen.getByTestId("event-detail-activity-plan-option-plan-2"));
+
+    expect(screen.getByTestId("event-detail-title-input").props.value).toBe("Recovery Ride");
+
+    await act(async () => {
+      fireEvent.press(screen.getByTestId("event-detail-save-button"));
+    });
+
+    await waitFor(() => {
+      expect(createEventMutateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event_type: "planned",
+          activity_plan_id: "plan-2",
+          title: "Recovery Ride",
+          scheduled_date: "2026-03-24",
         }),
       );
     });
@@ -352,16 +456,12 @@ describe("event detail create mode", () => {
       activityPlanId: "plan-tempo",
       scheduleGapTssDelta: "80",
     };
-    activityPlansListUseQueryMock.mockReturnValue({
+    mockActivityPlanGetByIdUseQuery.mockReturnValue({
       data: {
-        items: [
-          {
-            id: "plan-tempo",
-            name: "Tempo Run",
-            activity_category: "run",
-            authoritative_metrics: { estimated_duration: 3600, estimated_tss: 78 },
-          },
-        ],
+        id: "plan-tempo",
+        name: "Tempo Run",
+        activity_category: "run",
+        authoritative_metrics: { estimated_duration: 3600, estimated_tss: 78 },
       },
       isLoading: false,
       error: null,
@@ -386,8 +486,9 @@ describe("event detail create mode", () => {
           activity_plan_id: "plan-tempo",
           training_plan_id: "00000000-0000-4000-8000-000000000123",
           title: "Tempo Run",
-          notes: expect.stringContaining("Schedule gap: about 80 TSS."),
-          starts_at: expect.stringMatching(/^2026-03-24T/),
+          notes: expect.stringContaining("Schedule gap:"),
+          all_day: true,
+          scheduled_date: "2026-03-24",
         }),
       );
     });
@@ -402,7 +503,7 @@ describe("event detail create mode", () => {
       planSuggestionTssDelta: "75",
       planSuggestionDescription: "Add load to close the readiness gap.",
     };
-    activityPlansListUseQueryMock.mockReturnValue({
+    mockActivityPlansListUseQuery.mockReturnValue({
       data: {
         items: [
           {

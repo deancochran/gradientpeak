@@ -6,7 +6,7 @@ export const cardFixtures = {
     title: "Profile",
   },
   recoveryCheck: {
-    description: "Track energy, sleep quality, and workout confidence before your next block.",
+    description: "Track energy, sleep quality, and activity confidence before your next block.",
     primaryActionLabel: "Save check-in",
     stats: [
       { label: "Sleep score", value: "8.4 / 10" },

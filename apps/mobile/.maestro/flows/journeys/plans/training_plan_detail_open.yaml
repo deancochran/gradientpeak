@@ -12,7 +12,7 @@ env:
 - runFlow:
     file: ../../reusable/open_discover_tab.yaml
 - tapOn:
-    id: "discover-tab-trainingPlans"
+    id: "discover-scope-trainingPlans"
 - tapOn:
     id: "discover-search-input"
 - inputText: "${SHARED_TRAINING_PLAN_NAME}"
@@ -22,9 +22,11 @@ env:
 - tapOn: "${SHARED_TRAINING_PLAN_NAME}"
 - extendedWaitUntil:
     visible:
-      id: "training-plan-schedule-button"
+      id: "training-plan-options-trigger"
     timeout: 10000
+- tapOn:
+    id: "training-plan-options-trigger"
 - assertVisible:
-    id: "training-plan-duplicate-button"
+    id: "training-plan-options-schedule"
 - assertVisible:
-    id: "training-plan-open-calendar-button"
+    id: "training-plan-options-duplicate"

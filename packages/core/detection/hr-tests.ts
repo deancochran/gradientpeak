@@ -284,14 +284,14 @@ export function detectThresholdEfforts(
 }
 
 /**
- * Detects interval workout pattern based on HR.
+ * Detects interval activity pattern based on HR.
  *
  * Identifies repeated high-HR efforts with recovery periods.
  *
  * @param hrStream - Array of HR values
  * @param timestamps - Array of timestamps
  * @param maxHR - Known maximum heart rate
- * @returns Interval workout metadata or null
+ * @returns Interval activity metadata or null
  */
 export function detectHRIntervals(
   hrStream: number[],
@@ -352,7 +352,7 @@ export function detectHRIntervals(
   }
 
   if (intervals.length < 3) {
-    return null; // Not an interval workout
+    return null; // Not an interval activity
   }
 
   const avgIntervalHR = intervals.reduce((sum, int) => sum + int.avgHR, 0) / intervals.length;

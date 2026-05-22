@@ -42,7 +42,7 @@ export function estimateMetrics(
   // Estimate average speed
   const avgSpeed = distance ? distance / duration : undefined;
 
-  // Estimate moving time (typically 95-98% of duration for structured workouts)
+  // Estimate moving time (typically 95-98% of duration for structured activities)
   const movingTime = Math.round(duration * 0.96);
 
   // Elevation gain from route
@@ -217,7 +217,7 @@ export function estimateZoneDistribution(
   powerZones?: number[]; // [z1-z7] in seconds
   hrZones?: number[]; // [z1-z5] in seconds
 } {
-  // For structured workouts, zones are calculated in strategies.ts
+  // For structured activities, zones are calculated in strategies.ts
   // This is a fallback for template-based estimates
 
   if (activityCategory === "bike") {

@@ -1,9 +1,9 @@
 export const durationInputFixtures = {
-  workout: {
-    id: "workout-duration",
-    label: "Workout duration",
+  activity: {
+    id: "activity-duration",
+    label: "Activity duration",
     value: "1:35:00",
     placeholder: "e.g., 1:35:00",
-    testId: "workout-duration-input",
+    testId: "activity-duration-input",
   },
 } as const;

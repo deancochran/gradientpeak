@@ -9,6 +9,10 @@ const GOALS_PAGE_SIZE = 25;
 
 interface UseProfileGoalsOptions {
   loadAllPages?: boolean;
+  search?: string;
+  activityCategory?: "run" | "bike" | "swim" | "other";
+  sortBy?: "created_at" | "target_date" | "priority";
+  sortOrder?: "asc" | "desc";
 }
 
 export function useProfileGoals(options: UseProfileGoalsOptions = {}) {
@@ -17,6 +21,10 @@ export function useProfileGoals(options: UseProfileGoalsOptions = {}) {
   const query = api.goals.list.useInfiniteQuery(
     {
       profile_id: profileId ?? "",
+      search: options.search || undefined,
+      activity_category: options.activityCategory,
+      sort_by: options.sortBy ?? "created_at",
+      sort_order: options.sortOrder ?? "desc",
       limit: GOALS_PAGE_SIZE,
     },
     {

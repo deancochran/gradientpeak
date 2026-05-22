@@ -1,14 +1,9 @@
 import React from "react";
+import { createHost } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
 import { UpcomingActivitiesCard } from "../UpcomingActivitiesCard";
 
 const navigateToMock = jest.fn();
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -24,6 +19,23 @@ jest.mock("@repo/core", () => ({
 
 jest.mock("@repo/ui/components/icon", () => ({ __esModule: true, Icon: createHost("Icon") }));
 jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHost("Text") }));
+
+jest.mock("@/components/shared/ActivityPlanCard", () => ({
+  __esModule: true,
+  ActivityPlanCard: ({ plannedActivity, onPress, testID, showScheduleInfo }: any) => {
+    const React = require("react");
+    const activityPlan = plannedActivity?.activity_plan;
+
+    return React.createElement(
+      "Pressable",
+      { onPress, testID },
+      React.createElement("Text", { onPress }, activityPlan?.name),
+      showScheduleInfo && plannedActivity?.training_plan_id
+        ? React.createElement("Text", null, "From training plan")
+        : null,
+    );
+  },
+}));
 
 jest.mock("@/lib/navigation/useAppNavigate", () => ({
   __esModule: true,

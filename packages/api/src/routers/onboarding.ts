@@ -25,10 +25,11 @@ import {
   estimateMetricsInputSchema,
   estimateMetricsOutputSchema,
 } from "@repo/core/schemas/onboarding";
-import { activities, profiles } from "@repo/db";
+import { activities, profiles, publicIntegrationProviderSchema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
+import { OnboardingProviderEnrichmentService } from "../application/onboarding-provider-enrichment";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import {
@@ -57,7 +58,160 @@ const estimateMetricsQueryInputSchema = estimateMetricsInputSchema.strict();
 
 const estimateMetricsQueryOutputSchema = estimateMetricsOutputSchema.strict();
 
+const providerEnrichmentOverallStatusSchema = z.enum([
+  "idle",
+  "queued",
+  "running",
+  "succeeded",
+  "partial",
+  "failed",
+  "timed_out",
+]);
+
+const providerEnrichmentItemStatusSchema = z.enum([
+  "queued",
+  "running",
+  "succeeded",
+  "partial",
+  "failed",
+  "timed_out",
+  "skipped_unsupported",
+  "requirement_cleared",
+]);
+
+const providerEnrichmentStatusOutputSchema = z
+  .object({
+    status: providerEnrichmentOverallStatusSchema,
+    canContinue: z.boolean(),
+    providers: z.array(
+      z
+        .object({
+          provider: publicIntegrationProviderSchema,
+          status: providerEnrichmentItemStatusSchema,
+          blocking: z.boolean(),
+          connected: z.boolean(),
+          message: z.string().optional(),
+          lastSyncStartedAt: z.string().datetime().nullable(),
+          lastSyncSucceededAt: z.string().datetime().nullable(),
+          lastSyncFailedAt: z.string().datetime().nullable(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+const providerEnrichmentStartInputSchema = z
+  .object({
+    providers: z.array(publicIntegrationProviderSchema).min(1).max(5).optional(),
+  })
+  .strict()
+  .optional();
+
+const clearProviderRequirementInputSchema = z
+  .object({
+    provider: publicIntegrationProviderSchema,
+  })
+  .strict();
+
+const importedOnboardingValuesOutputSchema = z
+  .object({
+    profile: z
+      .object({
+        dob: z.string().nullable(),
+        gender: z.enum(["male", "female", "other"]).nullable(),
+        onboarded: z.boolean().nullable(),
+      })
+      .strict(),
+    values: z
+      .object({
+        dob: z.string().optional(),
+        gender: z.enum(["male", "female", "other"]).optional(),
+        weight_kg: z.number().optional(),
+        ftp: z.number().optional(),
+      })
+      .strict(),
+    sources: z
+      .object({
+        dob: z
+          .object({
+            provider: publicIntegrationProviderSchema,
+            label: z.string(),
+            sourceRecordedAt: z.string().datetime().nullable(),
+          })
+          .strict()
+          .optional(),
+        gender: z
+          .object({
+            provider: publicIntegrationProviderSchema,
+            label: z.string(),
+            sourceRecordedAt: z.string().datetime().nullable(),
+          })
+          .strict()
+          .optional(),
+        weight_kg: z
+          .object({
+            provider: publicIntegrationProviderSchema,
+            label: z.string(),
+            sourceRecordedAt: z.string().datetime().nullable(),
+          })
+          .strict()
+          .optional(),
+        ftp: z
+          .object({
+            provider: publicIntegrationProviderSchema,
+            label: z.string(),
+            sourceRecordedAt: z.string().datetime().nullable(),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict(),
+  })
+  .strict();
+
+function getOnboardingProviderEnrichmentService(ctx: { db?: unknown }) {
+  return new OnboardingProviderEnrichmentService({ db: getRequiredDb(ctx as any) });
+}
+
 export const onboardingRouter = createTRPCRouter({
+  startProviderEnrichment: protectedProcedure
+    .input(providerEnrichmentStartInputSchema)
+    .output(providerEnrichmentStatusOutputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const service = getOnboardingProviderEnrichmentService(ctx);
+      return service.start(ctx.session.user.id, input?.providers);
+    }),
+
+  getProviderEnrichmentStatus: protectedProcedure
+    .output(providerEnrichmentStatusOutputSchema)
+    .query(async ({ ctx }) => {
+      const service = getOnboardingProviderEnrichmentService(ctx);
+      return service.getStatus(ctx.session.user.id);
+    }),
+
+  getImportedOnboardingValues: protectedProcedure
+    .output(importedOnboardingValuesOutputSchema)
+    .query(async ({ ctx }) => {
+      const service = getOnboardingProviderEnrichmentService(ctx);
+      return service.getImportedOnboardingValues(ctx.session.user.id);
+    }),
+
+  /** @deprecated Use getImportedOnboardingValues. */
+  getDraft: protectedProcedure
+    .output(importedOnboardingValuesOutputSchema)
+    .query(async ({ ctx }) => {
+      const service = getOnboardingProviderEnrichmentService(ctx);
+      return service.getImportedOnboardingValues(ctx.session.user.id);
+    }),
+
+  clearProviderRequirement: protectedProcedure
+    .input(clearProviderRequirementInputSchema)
+    .output(providerEnrichmentStatusOutputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const service = getOnboardingProviderEnrichmentService(ctx);
+      return service.clearProviderRequirement(ctx.session.user.id, input.provider);
+    }),
+
   /**
    * Complete onboarding with smart derivations.
    *
@@ -96,6 +250,15 @@ export const onboardingRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       const userId = ctx.session.user.id;
+
+      try {
+        await new OnboardingProviderEnrichmentService({ db }).assertCanComplete(userId);
+      } catch (error) {
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message: error instanceof Error ? error.message : "Provider enrichment is still required",
+        });
+      }
 
       // Calculate age from DOB (default to 30 if missing for calculations ONLY)
       // DO NOT use this default for saving to the profile.

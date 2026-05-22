@@ -11,6 +11,10 @@
 
 import { z } from "zod";
 import { saveableActivityPlanStructureSchemaV2 } from "./activity_plan_v2";
+import {
+  type ActivityTargetCategory,
+  addActivityTargetCompatibilityIssuesToZodContext,
+} from "./activity_target_capabilities";
 import { profileGoalTargetSchema } from "./goals/profile_goals";
 import {
   eventLifecycleSchema,
@@ -94,7 +98,7 @@ const activityInsertShapeSchema = z.object({
 
 const activityPlanInsertShapeSchema = z.object({
   activity_category: canonicalSportSchema,
-  description: z.string(),
+  description: z.string().nullable().optional(),
   name: z.string(),
   notes: z.string().nullable().optional(),
   route_id: z.string().uuid().nullable().optional(),
@@ -449,7 +453,7 @@ export const optionalBioSchema = z.preprocess(emptyStringToNull, bioSchema.nulla
 /**
  * Profile Settings Form Schema
  * Matches the actual database schema (public.profiles table)
- * Fields: username, bio, weight_kg, ftp, threshold_hr, dob, avatar_url, preferred_units, language, onboarded
+ * Fields: username, bio, weight_kg, ftp, threshold_hr, dob, avatar_url, cover_url, preferred_units, language, onboarded
  */
 export const profileSettingsFormSchema = z
   .object({
@@ -460,6 +464,7 @@ export const profileSettingsFormSchema = z
     threshold_hr: optionalThresholdHrSchema,
     dob: optionalDobSchema,
     avatar_url: optionalUrlSchema,
+    cover_url: optionalUrlSchema,
     preferred_units: z.enum(["metric", "imperial"]).optional().nullable(),
     language: z.string().max(10).optional().nullable(),
     onboarded: z.boolean().optional().nullable(),
@@ -500,6 +505,7 @@ export type ProfileQuickUpdateData = z.infer<typeof profileQuickUpdateSchema>;
  */
 export const profileAvatarUpdateSchema = z.object({
   avatar_url: z.string().url("Invalid avatar URL").nullable(),
+  cover_url: z.string().url("Invalid cover URL").nullable().optional(),
 });
 
 export type ProfileAvatarUpdateData = z.infer<typeof profileAvatarUpdateSchema>;
@@ -693,7 +699,7 @@ export const activityCategorySchema = canonicalSportSchema;
  *
  * Fields from the shared insert shape:
  * - name: required string (enhanced: 1-100 chars)
- * - description: required string (enhanced: max 1000 chars)
+ * - description: optional nullable string (enhanced: max 1000 chars)
  * - notes: optional nullable string (enhanced: max 2000 chars)
  * - activity_category: enum ["run", "bike", "swim", "strength", "other"]
  * - route_id: optional nullable UUID
@@ -715,14 +721,20 @@ const activityPlanFormFieldsSchema = activityPlanInsertShapeSchema
   .extend({
     // Override with stricter validations
     name: activityPlanNameSchema,
-    // Description is required by database but can be empty string
-    // Form allows it to be optional, defaulting to empty string
     description: z.preprocess(
       trimString,
-      z.string().max(1000, "Description must be less than 1000 characters").default(""),
+      z.string().max(1000, "Description must be less than 1000 characters").nullable().optional(),
     ),
     notes: activityPlanNotesSchema,
     structure: saveableActivityPlanStructureSchemaV2,
+  })
+  .superRefine((plan, ctx) => {
+    addActivityTargetCompatibilityIssuesToZodContext({
+      activityCategory: plan.activity_category as ActivityTargetCategory,
+      ctx,
+      pathPrefix: ["structure"],
+      structure: plan.structure,
+    });
   });
 
 export const activityPlanCreateFormSchema = activityPlanFormFieldsSchema;
@@ -732,9 +744,21 @@ export type ActivityPlanCreateFormData = z.infer<typeof activityPlanCreateFormSc
 /**
  * Activity Plan Update Form Schema
  */
-export const activityPlanUpdateFormSchema = activityPlanFormFieldsSchema.partial().safeExtend({
-  id: z.string().uuid("Invalid activity plan ID"),
-});
+export const activityPlanUpdateFormSchema = activityPlanFormFieldsSchema
+  .partial()
+  .safeExtend({
+    id: z.string().uuid("Invalid activity plan ID"),
+  })
+  .superRefine((plan, ctx) => {
+    if (plan.structure && plan.activity_category) {
+      addActivityTargetCompatibilityIssuesToZodContext({
+        activityCategory: plan.activity_category as ActivityTargetCategory,
+        ctx,
+        pathPrefix: ["structure"],
+        structure: plan.structure,
+      });
+    }
+  });
 
 export type ActivityPlanUpdateFormData = z.infer<typeof activityPlanUpdateFormSchema>;
 
@@ -973,9 +997,9 @@ export const trainingPlanWeeklyTargetsFormSchema = z.object({
     stringToNumber,
     z
       .number()
-      .int("Workouts per week must be a whole number")
-      .min(1, "At least 1 workout per week")
-      .max(14, "Maximum 14 workouts per week")
+      .int("Activities per week must be a whole number")
+      .min(1, "At least 1 activity per week")
+      .max(14, "Maximum 14 activities per week")
       .positive(),
   ),
 });

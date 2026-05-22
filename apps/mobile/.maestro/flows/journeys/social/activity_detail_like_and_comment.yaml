@@ -16,11 +16,3 @@ env:
 - tapOn:
     id: "activity-detail-like-button"
     optional: true
-- tapOn:
-    id: "activity-detail-comment-input"
-- inputText: "${ACTIVITY_COMMENT_TEXT}"
-- tapOn:
-    id: "activity-detail-comment-submit"
-- assertVisible:
-    text: "${ACTIVITY_COMMENT_TEXT}"
-    optional: true

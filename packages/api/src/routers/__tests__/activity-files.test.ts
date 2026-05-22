@@ -577,7 +577,14 @@ describe("activityFilesRouter", () => {
   it("returns parsed streams for an owned activity", async () => {
     const activityId = "66666666-6666-4666-8666-666666666666";
     const { db } = createDbMock({
-      findFirstResults: [{ profile_id: "11111111-1111-4111-8111-111111111111", is_private: true }],
+      findFirstResults: [
+        {
+          activity_file_path:
+            "activities/11111111-1111-4111-8111-111111111111/uploads/authorized.fit",
+          profile_id: "11111111-1111-4111-8111-111111111111",
+          is_private: true,
+        },
+      ],
     });
 
     mocks.parseActivityFile.mockReturnValue({
@@ -590,16 +597,64 @@ describe("activityFilesRouter", () => {
 
     const caller = createCaller({ db });
     const result = await caller.getStreams({
-      activityFilePath: "11111111-1111-4111-8111-111111111111/ride.fit",
+      activityFilePath: "11111111-1111-4111-8111-111111111111/ignored.fit",
       activityId,
     });
 
+    expect(mocks.storage.download).toHaveBeenCalledWith(
+      "activities/11111111-1111-4111-8111-111111111111/uploads/authorized.fit",
+    );
     expect(result).toEqual({
       records: [{ timestamp: new Date("2026-03-01T10:00:00.000Z"), power: 240 }],
       laps: [{ startTime: new Date("2026-03-01T10:00:00.000Z") }],
       lengths: [],
       summary: { totalTime: 1800, totalDistance: 20000 },
     });
+  });
+
+  it("rejects stream access when an authorized activity has no activity file", async () => {
+    const activityId = "77777777-7777-4777-8777-777777777777";
+    const { db } = createDbMock({
+      findFirstResults: [
+        {
+          activity_file_path: null,
+          profile_id: "11111111-1111-4111-8111-111111111111",
+          is_private: true,
+        },
+      ],
+    });
+
+    const caller = createCaller({ db });
+
+    await expect(
+      caller.getStreams({
+        activityFilePath: "11111111-1111-4111-8111-111111111111/ignored.fit",
+        activityId,
+      }),
+    ).rejects.toThrow("Activity does not have an associated activity file");
+  });
+
+  it("rejects stream access for non-owners even when the activity is public", async () => {
+    const activityId = "88888888-8888-4888-8888-888888888888";
+    const { db } = createDbMock({
+      findFirstResults: [
+        {
+          activity_file_path: "activities/22222222-2222-4222-8222-222222222222/uploads/public.fit",
+          profile_id: "22222222-2222-4222-8222-222222222222",
+          is_private: false,
+        },
+      ],
+    });
+
+    const caller = createCaller({ db });
+
+    await expect(
+      caller.getStreams({
+        activityFilePath: "activities/11111111-1111-4111-8111-111111111111/uploads/ignored.fit",
+        activityId,
+      }),
+    ).rejects.toThrow("Detailed activity streams are only available to the activity owner");
+    expect(mocks.storage.download).not.toHaveBeenCalled();
   });
 
   it("cleans up malformed parsed activity data during processing", async () => {

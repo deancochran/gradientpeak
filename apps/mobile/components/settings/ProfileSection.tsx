@@ -1,4 +1,3 @@
-import { type ProfileQuickUpdateData, profileQuickUpdateSchema } from "@repo/core";
 import { Alert, AlertDescription } from "@repo/ui/components/alert";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -8,21 +7,25 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import { Form, FormBoundedNumberField, FormTextField } from "@repo/ui/components/form";
+import { Form, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { AlertCircle } from "lucide-react-native";
 import { useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
+import { z } from "zod";
 import { api } from "@/lib/api";
-import { getErrorMessage } from "@/lib/utils/formErrors";
+import { handleSubmitFormError } from "@/lib/utils/formErrors";
+
+const profileSectionSchema = z.object({
+  username: z.string().optional(),
+});
+
+type ProfileSectionFormData = z.infer<typeof profileSectionSchema>;
 
 interface ProfileSectionProps {
   profile: {
     username?: string | null;
-    weight_kg?: number | null;
-    ftp?: number | null;
-    threshold_hr?: number | null;
   } | null;
   onRefreshProfile: () => Promise<void>;
 }
@@ -33,11 +36,8 @@ export function ProfileSection({ profile, onRefreshProfile }: ProfileSectionProp
   const defaultValues = useMemo(
     () => ({
       username: profile?.username || "",
-      weight_kg: profile?.weight_kg || undefined,
-      ftp: profile?.ftp || undefined,
-      threshold_hr: profile?.threshold_hr || undefined,
     }),
-    [profile?.username, profile?.weight_kg, profile?.ftp, profile?.threshold_hr],
+    [profile?.username],
   );
 
   const updateProfileMutation = api.profiles.update.useMutation({
@@ -49,7 +49,7 @@ export function ProfileSection({ profile, onRefreshProfile }: ProfileSectionProp
   });
 
   const form = useZodForm({
-    schema: profileQuickUpdateSchema,
+    schema: profileSectionSchema,
     defaultValues,
   });
 
@@ -57,24 +57,16 @@ export function ProfileSection({ profile, onRefreshProfile }: ProfileSectionProp
     form.reset(defaultValues);
   }, [defaultValues, form]);
 
-  const submitForm = useZodFormSubmit<ProfileQuickUpdateData>({
+  const submitForm = useZodFormSubmit<ProfileSectionFormData>({
     form,
+    shouldRethrow: false,
     onSubmit: async (data) => {
       form.clearErrors("root");
-
-      try {
-        await updateProfileMutation.mutateAsync({
-          username: data.username || undefined,
-          weight_kg: data.weight_kg || undefined,
-          ftp: data.ftp || undefined,
-          threshold_hr: data.threshold_hr || undefined,
-        });
-      } catch (error) {
-        form.setError("root", {
-          message: getErrorMessage(error),
-        });
-      }
+      await updateProfileMutation.mutateAsync({
+        username: data.username || undefined,
+      });
     },
+    onError: (error) => handleSubmitFormError(form, error, { preferRootError: true }),
   });
 
   const isSubmitting = updateProfileMutation.isPending || submitForm.isSubmitting;
@@ -97,7 +89,7 @@ export function ProfileSection({ profile, onRefreshProfile }: ProfileSectionProp
           <View className="flex-1">
             <CardTitle className="text-card-foreground">Profile Information</CardTitle>
             <CardDescription className="text-muted-foreground">
-              Manage your personal information and training metrics
+              Manage your profile information
             </CardDescription>
           </View>
           {!isEditing ? (
@@ -138,42 +130,6 @@ export function ProfileSection({ profile, onRefreshProfile }: ProfileSectionProp
               name="username"
               placeholder="Enter username"
               testId="username-input"
-            />
-
-            <FormBoundedNumberField
-              control={form.control}
-              decimals={1}
-              disabled={!isEditing}
-              label="Weight (kg)"
-              min={0}
-              name="weight_kg"
-              placeholder="Enter weight"
-              testId="weight-input"
-              unitLabel="kg"
-            />
-
-            <FormBoundedNumberField
-              control={form.control}
-              decimals={0}
-              disabled={!isEditing}
-              label="FTP (watts)"
-              min={0}
-              name="ftp"
-              placeholder="Enter FTP"
-              testId="ftp-input"
-              unitLabel="W"
-            />
-
-            <FormBoundedNumberField
-              control={form.control}
-              decimals={0}
-              disabled={!isEditing}
-              label="Threshold HR (bpm)"
-              min={0}
-              name="threshold_hr"
-              placeholder="Enter threshold HR"
-              testId="threshold-hr-input"
-              unitLabel="bpm"
             />
           </View>
         </Form>

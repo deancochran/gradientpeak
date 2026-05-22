@@ -3,6 +3,7 @@
 import { Text } from "@repo/ui/components/text";
 import { Dimensions, Pressable, View } from "react-native";
 import Svg, { Circle, G, Path } from "react-native-svg";
+import { formatEstimatedTss } from "@/lib/estimatedMetrics";
 import { useTheme } from "@/lib/stores/theme-store";
 import { getResolvedThemeScale } from "@/lib/theme";
 
@@ -244,7 +245,7 @@ export function IntensityDistributionChart({
               <Text className="text-sm font-semibold text-foreground">
                 {zone.percentage.toFixed(1)}%
               </Text>
-              <Text className="text-xs text-muted-foreground">{zone.tss} TSS</Text>
+              <Text className="text-xs text-muted-foreground">{formatEstimatedTss(zone.tss)}</Text>
             </View>
           </Pressable>
         ))}

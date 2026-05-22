@@ -11,7 +11,7 @@ const meta = {
   component: DurationInput,
   tags: ["autodocs"],
   args: {
-    ...durationInputFixtures.workout,
+    ...durationInputFixtures.activity,
     onChange: fn(),
   },
 } satisfies Meta<typeof DurationInput>;
@@ -22,7 +22,7 @@ type Story = StoryObj<typeof meta>;
 
 export const Playground: Story = {
   render: (args) => {
-    const [value, setValue] = useState<string>(durationInputFixtures.workout.value);
+    const [value, setValue] = useState<string>(durationInputFixtures.activity.value);
     return (
       <DurationInput
         {...args}
@@ -37,7 +37,7 @@ export const Playground: Story = {
   play: async ({ args, canvasElement }) => {
     await exerciseDurationInputStory({
       canvasElement,
-      expectedLabel: durationInputFixtures.workout.label,
+      expectedLabel: durationInputFixtures.activity.label,
       nextValue: "2:05:30",
     });
 

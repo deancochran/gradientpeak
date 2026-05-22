@@ -310,7 +310,7 @@ export class LocationManager {
         // Foreground service keeps the app running in background on Android
         foregroundService: {
           notificationTitle: "Recording Activity",
-          notificationBody: "GradientPeak is tracking your workout",
+          notificationBody: "GradientPeak is tracking your activity",
           notificationColor: "#4CAF50",
           killServiceOnDestroy: false, // Keep service alive even if notification is dismissed
         },

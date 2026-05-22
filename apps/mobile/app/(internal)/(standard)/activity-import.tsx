@@ -1,7 +1,13 @@
 import { invalidatePostActivityIngestionQueries } from "@repo/api/client";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
-import { Form, FormSelectField, FormTextareaField, FormTextField } from "@repo/ui/components/form";
+import {
+  Form,
+  FormSegmentedSelectField,
+  FormTextareaField,
+  FormTextField,
+} from "@repo/ui/components/form";
+import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useQueryClient } from "@tanstack/react-query";
@@ -224,7 +230,7 @@ export default function ActivityImportScreen() {
           <CardContent className="gap-4 p-4">
             <View className="flex-row items-start gap-3">
               <View className="h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                <History size={18} className="text-primary" />
+                <Icon as={History} size={18} className="text-primary" />
               </View>
               <View className="flex-1 gap-1">
                 <Text className="text-sm font-medium text-foreground">Completed Activity File</Text>
@@ -243,17 +249,17 @@ export default function ActivityImportScreen() {
                 disabled={isImporting}
                 testID="activity-import-pick-fit-file-button"
               >
-                <Upload className="text-foreground" size={18} />
+                <Icon as={Upload} className="text-foreground" size={18} />
                 <Text>Choose Activity File</Text>
               </Button>
             ) : (
               <View className="gap-2 rounded-xl border border-border bg-muted/40 p-3">
                 <View className="flex-row items-center gap-2">
-                  <FileText className="text-foreground" size={18} />
+                  <Icon as={FileText} className="text-foreground" size={18} />
                   <Text className="flex-1 text-sm text-foreground" numberOfLines={1}>
                     {selectedActivityFile.name}
                   </Text>
-                  <CheckCircle className="text-green-600" size={18} />
+                  <Icon as={CheckCircle} className="text-green-600" size={18} />
                 </View>
                 <Text className="text-xs text-muted-foreground">
                   {(selectedActivityFile.size / (1024 * 1024)).toFixed(2)} MB
@@ -281,14 +287,13 @@ export default function ActivityImportScreen() {
                   testId="activity-import-name-input"
                 />
 
-                <FormSelectField
+                <FormSegmentedSelectField
                   control={form.control}
                   label="Activity type"
                   name="historicalActivityType"
                   options={ACTIVITY_TYPES.map((activityType) =>
                     createOption(activityType.value, activityType.label),
                   )}
-                  placeholder="Choose activity type"
                   testId="activity-import-type-select"
                 />
 

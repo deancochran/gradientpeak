@@ -550,4 +550,152 @@ describe("trainingPlansRouter.applyTemplate", () => {
       vi.useRealTimers();
     }
   });
+
+  it("supports scheduling only the remaining sessions toward a target date", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-03-15T12:00:00.000Z"));
+
+    try {
+      const { caller, callLog } = createCaller({
+        events: [
+          { data: [], error: null },
+          { data: [{ id: "event-1" }], error: null },
+        ],
+        training_plans: [
+          {
+            data: {
+              id: "11111111-1111-4111-8111-111111111111",
+              name: "Template Plan",
+              description: null,
+              profile_id: "template-owner",
+              is_system_template: false,
+              template_visibility: "public",
+              sessions_per_week_target: 4,
+              duration_hours: 9,
+              structure: {
+                sessions: [
+                  { offset_days: 0, title: "Session A" },
+                  { offset_days: 7, title: "Session B" },
+                  { offset_days: 14, title: "Session C" },
+                ],
+              },
+            },
+            error: null,
+          },
+        ],
+      });
+
+      const result = await caller.applyTemplate({
+        template_type: "training_plan",
+        template_id: "11111111-1111-4111-8111-111111111111",
+        application_mode: "remaining",
+        target_date: "2026-03-20",
+      });
+
+      const eventInsertCall = callLog.find(
+        (call) => call.table === "events" && call.operation === "insert",
+      );
+      const insertedRows = (eventInsertCall?.payload as Array<Record<string, unknown>>) ?? [];
+
+      expect(result.scheduled_sessions_created).toBe(1);
+      expect(result.scheduled_sessions_skipped).toBe(2);
+      expect(insertedRows).toHaveLength(1);
+      expect(insertedRows[0]?.starts_at).toBe("2026-03-20T00:00:00.000Z");
+      expect(insertedRows[0]?.user_training_plan_id).toBe(result.user_training_plan_id);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shifts a grouped scheduled application and updates the application dates", async () => {
+    const { caller, callLog } = createCaller({
+      user_training_plans: [
+        {
+          data: [
+            {
+              id: "44444444-4444-4444-8444-444444444444",
+              profile_id: "profile-123",
+              training_plan_id: "11111111-1111-4111-8111-111111111111",
+              status: "active",
+              start_date: "2026-03-10",
+              target_date: "2026-03-31",
+              snapshot_structure: {},
+              created_at: "2026-03-01T00:00:00.000Z",
+              updated_at: "2026-03-01T00:00:00.000Z",
+            },
+          ],
+          error: null,
+        },
+      ],
+      events: {
+        data: [
+          {
+            id: "event-1",
+            starts_at: "2026-03-18T00:00:00.000Z",
+            ends_at: "2026-03-19T00:00:00.000Z",
+          },
+          {
+            id: "event-2",
+            starts_at: "2026-03-20T00:00:00.000Z",
+            ends_at: "2026-03-21T00:00:00.000Z",
+          },
+        ],
+        error: null,
+      },
+    });
+
+    const result = await caller.shiftAppliedSchedule({
+      user_training_plan_id: "44444444-4444-4444-8444-444444444444",
+      days: 7,
+    });
+
+    const eventUpdates = callLog.filter(
+      (call) => call.table === "events" && call.operation === "update",
+    );
+    const applicationUpdate = callLog.find(
+      (call) => call.table === "user_training_plans" && call.operation === "update",
+    );
+
+    expect(result.affected_count).toBe(2);
+    expect(eventUpdates).toHaveLength(2);
+    expect((eventUpdates[0]?.payload as Record<string, unknown>)?.starts_at).toEqual(
+      new Date("2026-03-25T00:00:00.000Z"),
+    );
+    expect((applicationUpdate?.payload as Record<string, unknown>)?.start_date).toBe("2026-03-17");
+    expect((applicationUpdate?.payload as Record<string, unknown>)?.target_date).toBe("2026-04-07");
+  });
+
+  it("removes a grouped scheduled application without touching completed history", async () => {
+    const { caller, callLog } = createCaller({
+      user_training_plans: {
+        data: [
+          {
+            id: "44444444-4444-4444-8444-444444444444",
+            profile_id: "profile-123",
+            training_plan_id: "11111111-1111-4111-8111-111111111111",
+            status: "active",
+            start_date: "2026-03-10",
+            target_date: null,
+            snapshot_structure: {},
+            created_at: "2026-03-01T00:00:00.000Z",
+            updated_at: "2026-03-01T00:00:00.000Z",
+          },
+        ],
+        error: null,
+      },
+      events: {
+        data: [{ id: "event-1" }, { id: "event-2" }],
+        error: null,
+      },
+    });
+
+    const result = await caller.removeAppliedSchedule({
+      user_training_plan_id: "44444444-4444-4444-8444-444444444444",
+    });
+
+    expect(result.scheduled_sessions_removed).toBe(2);
+    expect(
+      callLog.some((call) => call.table === "user_training_plans" && call.operation === "update"),
+    ).toBe(true);
+  });
 });

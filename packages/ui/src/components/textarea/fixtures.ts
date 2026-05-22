@@ -1,9 +1,9 @@
 export const textareaFixtures = {
   notes: {
-    accessibilityLabel: "Workout notes",
-    id: "workout-notes",
+    accessibilityLabel: "Activity notes",
+    id: "activity-notes",
     placeholder: "How did it feel?",
-    testId: "workout-notes-textarea",
+    testId: "activity-notes-textarea",
   },
   value: "Steady effort with a strong finish.",
 } as const;

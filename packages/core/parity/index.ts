@@ -459,9 +459,9 @@ export const parityRegistry = [
     area: "training_plans",
     backendOperations: ["events.list", "events.update"],
     id: "training_plans.reorder_workouts",
-    mobileRoute: "/(internal)/(standard)/workouts-reorder",
+    mobileRoute: "/(internal)/(standard)/activities-reorder",
     policy: "required_on_web",
-    title: "Training plan workout reorder",
+    title: "Training plan activity reorder",
   },
   {
     area: "profile",

@@ -157,7 +157,7 @@ async function getCount(resultPromise: Promise<{ rows: unknown[] }>) {
 
 /**
  * Check if a user has access to view an activity.
- * Returns true if: user owns the activity, OR activity is public, OR user follows the owner.
+ * Returns true if: user owns the activity, OR activity is public.
  */
 async function checkActivityAccess(
   db: DbClient,
@@ -184,17 +184,7 @@ async function checkActivityAccess(
     return true;
   }
 
-  const followResult = await db.execute(sql<{ has_access: boolean }>`
-    select exists(
-      select 1
-      from follows
-      where follower_id = ${userId}::uuid
-        and following_id = ${activity.profile_id}::uuid
-        and status = 'accepted'
-    ) as has_access
-  `);
-
-  return Boolean(followResult.rows[0]?.has_access);
+  return false;
 }
 
 async function checkPlanAccess(
@@ -311,9 +301,10 @@ export const socialRouter = createTRPCRouter({
 
       const status = targetProfile.is_public ? "accepted" : "pending";
 
+      const now = new Date();
       const insertResult = await db.execute(sql`
-        insert into follows (follower_id, following_id, status)
-        values (${ctx.session.user.id}::uuid, ${input.target_user_id}::uuid, ${status})
+        insert into follows (follower_id, following_id, status, created_at, updated_at)
+        values (${ctx.session.user.id}::uuid, ${input.target_user_id}::uuid, ${status}, ${now}, ${now})
         returning follower_id, following_id, status
       `);
 

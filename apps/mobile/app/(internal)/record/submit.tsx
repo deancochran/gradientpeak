@@ -1,6 +1,11 @@
 import { type ActivitySubmissionFormData, activitySubmissionFormSchema } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
-import { Form, FormSelectField, FormTextareaField, FormTextField } from "@repo/ui/components/form";
+import {
+  Form,
+  FormSegmentedSelectField,
+  FormTextareaField,
+  FormTextField,
+} from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
@@ -104,7 +109,7 @@ function SubmitScreen() {
       <View className="bg-background border-b border-border px-6 py-4 pt-14">
         <View className="flex-1 items-center mb-4">
           <Text className="text-2xl font-bold">Save Activity</Text>
-          <Text className="text-sm text-muted-foreground">Add details for your workout</Text>
+          <Text className="text-sm text-muted-foreground">Add details for your activity</Text>
         </View>
       </View>
 
@@ -128,7 +133,7 @@ function SubmitScreen() {
 
               <FormTextareaField
                 control={form.control}
-                description="Add notes about how the workout felt (optional)"
+                description="Add notes about how the activity felt (optional)"
                 disabled={submission.isUploading}
                 formatValue={(value) => value ?? ""}
                 label="Description"
@@ -140,7 +145,7 @@ function SubmitScreen() {
                 className="min-h-32"
               />
 
-              <FormSelectField
+              <FormSegmentedSelectField
                 control={form.control}
                 description="Choose whether this activity is only visible to you or visible on your profile."
                 disabled={submission.isUploading}
@@ -152,7 +157,6 @@ function SubmitScreen() {
                   { label: "Private activity", value: "private" },
                 ]}
                 parseValue={(value: string) => value === "private"}
-                placeholder="Select visibility"
                 testId="activity-visibility-select"
               />
 

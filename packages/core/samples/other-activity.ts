@@ -17,31 +17,31 @@ export const YOGA_FLOW: RecordingServiceActivityPlan = {
     .step({
       name: "Centering & Breath",
       duration: Duration.minutes(10),
-      targets: [Target.thresholdHR(50)],
+      targets: [Target.maxHR(50)],
       notes: "Focus on breathing, gentle movements to center yourself",
     })
     .step({
       name: "Sun Salutations",
       duration: Duration.minutes(20),
-      targets: [Target.thresholdHR(60)],
+      targets: [Target.maxHR(60)],
       notes: "5-8 rounds of sun salutation A and B, link breath with movement",
     })
     .step({
       name: "Standing Poses",
       duration: Duration.minutes(15),
-      targets: [Target.thresholdHR(55)],
+      targets: [Target.maxHR(55)],
       notes: "Warrior poses, triangle, tree pose - hold for 5-8 breaths each",
     })
     .step({
       name: "Floor Sequence",
       duration: Duration.minutes(10),
-      targets: [Target.thresholdHR(45)],
+      targets: [Target.maxHR(45)],
       notes: "Hip openers, twists, gentle backbends",
     })
     .step({
       name: "Relaxation",
       duration: Duration.minutes(5),
-      targets: [Target.thresholdHR(40)],
+      targets: [Target.maxHR(40)],
       notes: "Complete stillness, body scan, deep relaxation",
     })
     .build(),
@@ -63,13 +63,13 @@ export const ROCK_CLIMBING_SESSION: RecordingServiceActivityPlan = {
     .step({
       name: "Dynamic Warm-up",
       duration: Duration.minutes(15),
-      targets: [Target.thresholdHR(60)],
+      targets: [Target.maxHR(60)],
       notes: "Arm circles, finger/wrist mobility, easy traversing or easy routes",
     })
     .step({
       name: "Easy Routes",
       duration: Duration.minutes(20),
-      targets: [Target.thresholdHR(65)],
+      targets: [Target.maxHR(65)],
       notes: "Climb 3-5 easy routes to get movement patterns flowing",
     })
     .interval({
@@ -78,13 +78,13 @@ export const ROCK_CLIMBING_SESSION: RecordingServiceActivityPlan = {
         {
           name: "Challenging Route",
           duration: Duration.minutes(5),
-          targets: [Target.thresholdHR(80)],
+          targets: [Target.maxHR(80)],
           notes: "Project routes, work specific moves, push your grade",
         },
         {
           name: "Rest & Recovery",
           duration: Duration.minutes(3),
-          targets: [Target.thresholdHR(55)],
+          targets: [Target.maxHR(55)],
           notes: "Complete rest, hydrate, chalk up, visualize next attempt",
         },
       ],
@@ -92,13 +92,13 @@ export const ROCK_CLIMBING_SESSION: RecordingServiceActivityPlan = {
     .step({
       name: "Volume Climbing",
       duration: Duration.minutes(15),
-      targets: [Target.thresholdHR(70)],
+      targets: [Target.maxHR(70)],
       notes: "Climb continuously on moderate routes for endurance",
     })
     .step({
       name: "Cool-down & Stretch",
       duration: Duration.minutes(10),
-      targets: [Target.thresholdHR(50)],
+      targets: [Target.maxHR(50)],
       notes: "Easy traversing, forearm stretches, shoulder mobility",
     })
     .build(),
@@ -120,25 +120,25 @@ export const HIKING_ADVENTURE: RecordingServiceActivityPlan = {
     .step({
       name: "Trail Approach",
       duration: Duration.minutes(30),
-      targets: [Target.thresholdHR(65)],
+      targets: [Target.maxHR(65)],
       notes: "Steady pace on relatively flat or gently rolling terrain",
     })
     .step({
       name: "Uphill Section",
       duration: Duration.minutes(40),
-      targets: [Target.thresholdHR(75)],
+      targets: [Target.maxHR(75)],
       notes: "Steady uphill hiking, adjust pace to maintain breathing rhythm",
     })
     .step({
       name: "Summit Break",
       duration: Duration.minutes(10),
-      targets: [Target.thresholdHR(50)],
+      targets: [Target.maxHR(50)],
       notes: "Hydrate, fuel, take photos, enjoy the accomplishment",
     })
     .step({
       name: "Trail Descent",
       duration: Duration.minutes(40),
-      targets: [Target.thresholdHR(60)],
+      targets: [Target.maxHR(60)],
       notes: "Control pace on downhill, focus on foot placement and knee impact",
     })
     .build(),
@@ -160,25 +160,25 @@ export const CROSSFIT_WOD: RecordingServiceActivityPlan = {
     .step({
       name: "General Warm-up",
       duration: Duration.minutes(10),
-      targets: [Target.thresholdHR(65)],
+      targets: [Target.maxHR(65)],
       notes: "Row/bike, dynamic stretching, movement prep",
     })
     .step({
       name: "Specific Warm-up",
       duration: Duration.minutes(10),
-      targets: [Target.thresholdHR(70)],
+      targets: [Target.maxHR(70)],
       notes: "Practice WOD movements at light weight/modified versions",
     })
     .step({
       name: "Main WOD",
       duration: Duration.minutes(15),
-      targets: [Target.thresholdHR(88)],
+      targets: [Target.maxHR(88)],
       notes: "AMRAP, EMOM, or time-based activity - push hard but maintain form",
     })
     .step({
       name: "Cool-down & Mobility",
       duration: Duration.minutes(10),
-      targets: [Target.thresholdHR(50)],
+      targets: [Target.maxHR(50)],
       notes: "Easy movement, static stretching, foam rolling",
     })
     .build(),
@@ -200,19 +200,19 @@ export const WALKING_RECOVERY: RecordingServiceActivityPlan = {
     .step({
       name: "Easy Start",
       duration: Duration.minutes(15),
-      targets: [Target.thresholdHR(55)],
+      targets: [Target.maxHR(55)],
       notes: "Very comfortable walking pace, focus on posture and breathing",
     })
     .step({
       name: "Steady Walk",
       duration: Duration.minutes(20),
-      targets: [Target.thresholdHR(60)],
+      targets: [Target.maxHR(60)],
       notes: "Slightly brisker pace but still conversational",
     })
     .step({
       name: "Easy Finish",
       duration: Duration.minutes(10),
-      targets: [Target.thresholdHR(55)],
+      targets: [Target.maxHR(55)],
       notes: "Return to gentle pace, enjoy the surroundings",
     })
     .build(),

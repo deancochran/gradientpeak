@@ -1,15 +1,10 @@
 import React from "react";
 
+import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const navigateMock = jest.fn();
 const goalsFixture: any[] = [];
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -24,6 +19,12 @@ jest.mock("react-native", () => ({
 jest.mock("expo-router", () => ({
   __esModule: true,
   useRouter: () => ({ push: jest.fn(), navigate: navigateMock }),
+}));
+
+jest.mock("@react-navigation/native", () => ({
+  __esModule: true,
+  ...jest.requireActual("@react-navigation/native"),
+  useFocusEffect: (callback: () => void) => callback(),
 }));
 
 jest.mock("@/lib/auth/auth-headers", () => ({
@@ -56,6 +57,20 @@ jest.mock("@repo/core", () => ({
   buildGoalUpdatePayload: jest.fn(),
   formatGoalTypeLabel: jest.fn(() => "Race"),
   getGoalObjectiveSummary: jest.fn(() => "5K target"),
+  resolveGoalReadinessTarget: jest.fn(() => 100),
+  resolveGoalReadinessViewModel: jest.fn(() => ({
+    label: "Building toward target",
+    target: 100,
+    value: 50,
+  })),
+  defaultAthletePreferenceProfile: {
+    availability: { weekly_windows: [], hard_rest_days: [] },
+    dose_limits: { min_sessions_per_week: 2, max_sessions_per_week: 6 },
+    training_style: {},
+    recovery_preferences: {},
+    adaptation_preferences: {},
+    goal_strategy_preferences: {},
+  },
 }));
 
 jest.mock("@/components/ErrorBoundary", () => ({
@@ -82,6 +97,7 @@ jest.mock("@/components/shared", () => ({
 }));
 jest.mock("@/components/charts/PlanVsActualChart", () => ({
   __esModule: true,
+  FitnessFatigueFormChart: createHost("FitnessFatigueFormChart"),
   PlanVsActualChart: createHost("PlanVsActualChart"),
 }));
 jest.mock("@/components/charts/PlanReadinessComparisonChart", () => ({
@@ -175,6 +191,23 @@ jest.mock("@/lib/api", () => ({
     },
     events: {
       list: { useQuery: () => ({ data: { items: [] }, refetch: jest.fn() }) },
+    },
+    profileSettings: {
+      getForProfile: {
+        useQuery: () => ({ data: null, refetch: jest.fn(async () => undefined), isLoading: false }),
+      },
+    },
+    groups: {
+      events: {
+        myCalendarGroupEvents: {
+          useQuery: () => ({ data: { items: [] }, refetch: jest.fn(async () => undefined) }),
+        },
+      },
+    },
+    activityPlans: {
+      getManyByIds: {
+        useQuery: () => ({ data: { items: [] }, refetch: jest.fn(async () => undefined) }),
+      },
     },
     goals: {
       create: { useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }) },

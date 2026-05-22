@@ -15,7 +15,7 @@ import {
   publicActivityPlansRowSchema,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, count, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
 import { createActivityAnalysisStore } from "../infrastructure/repositories";
@@ -84,6 +84,7 @@ const listPaginatedInputSchema = z
     cursor: indexCursorSchema.optional(),
     direction: z.enum(["forward", "backward"]).optional(),
     activity_category: publicActivityCategorySchema.optional(),
+    search: z.string().trim().max(80).optional(),
     date_from: isoDatetimeSchema.optional(),
     date_to: isoDatetimeSchema.optional(),
     sort_by: z.enum(["date", "distance", "duration", "tss"]).default("date"),
@@ -137,7 +138,7 @@ function toIsoString(value: Date | string) {
 
 /**
  * Check if a user has access to view an activity
- * Returns true if: user owns the activity, OR activity is public, OR user follows the owner
+ * Returns true if: user owns the activity, OR activity is public.
  */
 async function checkActivityAccess(
   db: ReturnType<typeof getRequiredDb>,
@@ -166,18 +167,7 @@ async function checkActivityAccess(
     return true;
   }
 
-  // Activity is private - check if user follows the owner
-  const followResult = await db.execute(sql<{ has_access: boolean }>`
-    select exists(
-      select 1
-      from follows
-      where follower_id = ${userId}::uuid
-        and following_id = ${activity.profile_id}::uuid
-        and status = 'accepted'
-    ) as has_access
-  `);
-
-  return Boolean(followResult.rows[0]?.has_access);
+  return false;
 }
 
 export const activitiesRouter = createTRPCRouter({
@@ -243,6 +233,17 @@ export const activitiesRouter = createTRPCRouter({
 
       if (input.activity_category) {
         conditions.push(eq(activities.type, input.activity_category));
+      }
+
+      if (input.search) {
+        const pattern = `%${input.search}%`;
+        const searchCondition = or(
+          ilike(activities.name, pattern),
+          ilike(activities.notes, pattern),
+        );
+        if (searchCondition) {
+          conditions.push(searchCondition);
+        }
       }
 
       if (input.date_from) {

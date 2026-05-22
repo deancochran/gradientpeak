@@ -1,4 +1,5 @@
 import React from "react";
+import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const activityData = {
@@ -11,6 +12,7 @@ const activityData = {
     distance_meters: 10400,
     duration_seconds: 3120,
     avg_heart_rate: 162,
+    max_heart_rate: 181,
     avg_speed_mps: 3.33,
     avg_power: 278,
     likes_count: 0,
@@ -40,13 +42,15 @@ const activityData = {
 
 const toggleLikeMutateMock = jest.fn();
 const deleteMutateMock = jest.fn();
-const authState = { user: { id: "profile-1" } };
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
+const authState = { profile: { threshold_hr: 170 }, user: { id: "profile-1" } };
+const streamsData = {
+  records: [
+    { timestamp: "2026-03-23T09:00:00.000Z", heartRate: 142 },
+    { timestamp: "2026-03-23T09:01:00.000Z", heartRate: 158 },
+    { timestamp: "2026-03-23T09:02:00.000Z", heartRate: 171 },
+  ],
+  laps: [] as Array<{ totalDistance: number; totalTimerTime: number }>,
+};
 
 jest.mock("expo-router", () => ({
   __esModule: true,
@@ -75,6 +79,12 @@ jest.mock("react-native-maps", () => ({
 }));
 
 jest.mock("@repo/ui/components/button", () => ({ __esModule: true, Button: createHost("Button") }));
+jest.mock("@repo/ui/components/avatar", () => ({
+  __esModule: true,
+  Avatar: createHost("Avatar"),
+  AvatarFallback: createHost("AvatarFallback"),
+  AvatarImage: createHost("AvatarImage"),
+}));
 jest.mock("@repo/ui/components/card", () => ({
   __esModule: true,
   Card: createHost("Card"),
@@ -155,7 +165,7 @@ jest.mock("@/lib/api", () => ({
     },
     activityFiles: {
       getStreams: {
-        useQuery: () => ({ data: null, isLoading: false, error: null }),
+        useQuery: () => ({ data: streamsData, isLoading: false, error: null }),
       },
     },
     social: {
@@ -184,15 +194,23 @@ jest.mock("@repo/core", () => ({
     { latitude: 40.0, longitude: -75.0 },
     { latitude: 40.1, longitude: -75.1 },
   ],
+  formatDurationSec: (seconds: number) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+  },
 }));
 
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
   Activity: createHost("Activity"),
+  ChevronRight: createHost("ChevronRight"),
   Clock: createHost("Clock"),
   Ellipsis: createHost("Ellipsis"),
   Heart: createHost("Heart"),
   MapPin: createHost("MapPin"),
+  MessageCircle: createHost("MessageCircle"),
+  Route: createHost("Route"),
   Timer: createHost("Timer"),
   TrendingUp: createHost("TrendingUp"),
   Waves: createHost("Waves"),
@@ -206,6 +224,7 @@ describe("activity detail screen", () => {
     deleteMutateMock.mockReset();
     toggleLikeMutateMock.mockReset();
     authState.user.id = "profile-1";
+    streamsData.laps = [];
   });
 
   it("shows the new identity-first activity layout", () => {
@@ -213,24 +232,53 @@ describe("activity detail screen", () => {
 
     expect(screen.getByTestId("activity-detail-options-delete")).toBeTruthy();
     expect(screen.getByTestId("activity-detail-like-button")).toBeTruthy();
-    expect(screen.getByText("Distance: 10.40 km")).toBeTruthy();
-    expect(screen.getByText("Duration: 52:00")).toBeTruthy();
-    expect(screen.getByText("TSS: 84")).toBeTruthy();
-    expect(screen.getByText("IF: 0.88")).toBeTruthy();
-    expect((rendered as any).UNSAFE_getByType("ActivityPlanComparison")).toBeTruthy();
+    expect(screen.getByText("Distance")).toBeTruthy();
+    expect(screen.getAllByText("10.40 km").length).toBeGreaterThan(0);
+    expect(screen.getByText("Duration")).toBeTruthy();
+    expect(screen.getAllByText("52:00").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("TSS").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("~84").length).toBeGreaterThan(0);
+    expect(screen.getByText("IF")).toBeTruthy();
+    expect(screen.getAllByText("~0.88").length).toBeGreaterThan(0);
+    expect((rendered as any).UNSAFE_getAllByType("ZoneDistributionCard")[0].props.zones).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: "Zone 2 (Endurance)" }),
+        expect.objectContaining({ label: "Zone 3 (Tempo)" }),
+        expect.objectContaining({ label: "Zone 5 (VO2 Max)" }),
+      ]),
+    );
+    expect((rendered as any).UNSAFE_getByType("ActivityPlanComparison").props.onPress).toEqual(
+      expect.any(Function),
+    );
     expect((rendered as any).UNSAFE_getByType("ActivityRouteMap")).toBeTruthy();
-    expect(screen.getByText("Comments (0)")).toBeTruthy();
   });
 
   it("routes likes through the social mutation", () => {
     renderNative(<ActivityDetailScreen />);
 
-    screen.getByTestId("activity-detail-like-button").props.onPress();
+    fireEvent.press(screen.getByTestId("activity-detail-like-button"));
 
     expect(toggleLikeMutateMock).toHaveBeenCalledWith({
       entity_id: "11111111-1111-4111-8111-111111111111",
       entity_type: "activity",
     });
+  });
+
+  it("shows lap splits as a comparative visualization", () => {
+    streamsData.laps = [
+      { totalDistance: 1000, totalTimerTime: 310 },
+      { totalDistance: 1000, totalTimerTime: 295 },
+      { totalDistance: 1000, totalTimerTime: 322 },
+    ];
+
+    renderNative(<ActivityDetailScreen />);
+
+    expect(screen.getByTestId("lap-visualization-card")).toBeTruthy();
+    expect(screen.queryByText("Fastest")).toBeNull();
+    expect(screen.queryByText("Lap 2")).toBeNull();
+    expect(screen.queryByText("1.00 km")).toBeNull();
+    expect(screen.getByText("Pace")).toBeTruthy();
+    expect(screen.getAllByText("4:55").length).toBeGreaterThan(0);
   });
 
   it("hides owner-only overflow actions for non-owners", () => {

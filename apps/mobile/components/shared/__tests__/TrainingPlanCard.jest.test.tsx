@@ -1,13 +1,8 @@
 import { fireEvent } from "@testing-library/react-native";
 import React from "react";
+import { createHost } from "../../../test/mock-components";
 import { renderNative, screen } from "../../../test/render-native";
 import { TrainingPlanCard } from "../TrainingPlanCard";
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
 
 const toggleLikeMutateMock = jest.fn();
 
@@ -84,6 +79,28 @@ describe("TrainingPlanCard", () => {
     expect(screen.getByTestId("training-plan-visual-recovery-9")).toBeTruthy();
     expect(screen.queryByTestId("training-plan-visual-segment-10")).toBeNull();
     expect(screen.getByText("System Template")).toBeTruthy();
+    expect(screen.getByText("Updated Mar 21, 2026")).toBeTruthy();
+  });
+
+  it("shows owner and last updated metadata in the footer", () => {
+    renderNative(
+      <TrainingPlanCard
+        plan={{
+          id: "training-plan-1",
+          name: "Half Marathon Build",
+          updated_at: "2026-03-21T12:00:00.000Z",
+          owner: {
+            id: "owner-1",
+            username: "Coach Kim",
+            avatar_url: null,
+          },
+        }}
+        variant="compact"
+      />,
+    );
+
+    expect(screen.queryByText("By")).toBeNull();
+    expect(screen.getByText("Coach Kim")).toBeTruthy();
     expect(screen.getByText("Updated Mar 21, 2026")).toBeTruthy();
   });
 

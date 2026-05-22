@@ -17,10 +17,7 @@ env:
 - assertVisible:
     id: "routes-list-content"
 - tapOn:
-    id: "routes-list-upload-button"
-    optional: true
-- tapOn:
-    id: "routes-list-fab-upload-button"
+    id: "routes-list-upload-trigger"
     optional: true
 - extendedWaitUntil:
     visible:

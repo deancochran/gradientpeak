@@ -69,7 +69,7 @@ const sessionContract = {
   },
   surfaces: {
     defaultPrimarySurface: "route",
-    availablePrimarySurfaces: ["route", "workout", "trainer", "metrics"],
+    availablePrimarySurfaces: ["route", "activity", "trainer", "metrics"],
     quickActions: ["activity", "gps", "plan", "route", "trainer", "sensors"],
   },
   validation: {
@@ -138,10 +138,10 @@ describe("RecordControlDock", () => {
 
     renderDock({ onChangeSurface });
 
-    fireEvent.press(screen.getByTestId("record-dock-surface-workout"));
+    fireEvent.press(screen.getByTestId("record-dock-surface-activity"));
     fireEvent.press(screen.getByTestId("record-dock-surface-metrics"));
 
-    expect(onChangeSurface).toHaveBeenNthCalledWith(1, "workout");
+    expect(onChangeSurface).toHaveBeenNthCalledWith(1, "activity");
     expect(onChangeSurface).toHaveBeenNthCalledWith(2, "metrics");
   });
 

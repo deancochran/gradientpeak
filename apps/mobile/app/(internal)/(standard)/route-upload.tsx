@@ -19,7 +19,7 @@ import { useRouter } from "expo-router";
 import { AlertCircle, CheckCircle, FileText, Upload } from "lucide-react-native";
 import { ScrollView, View } from "react-native";
 import { api } from "@/lib/api";
-import { getErrorMessage } from "@/lib/utils/formErrors";
+import { getErrorMessage, handleSubmitFormError } from "@/lib/utils/formErrors";
 import { type RouteUploadFormValues, routeUploadFormSchema } from "@/lib/validation/route-upload";
 
 export default function UploadRouteScreen() {
@@ -93,21 +93,18 @@ export default function UploadRouteScreen() {
 
   const submitForm = useZodFormSubmit<RouteUploadFormValues>({
     form,
+    shouldRethrow: false,
     onSubmit: async (values) => {
       form.clearErrors("root");
-
-      try {
-        await uploadMutation.mutateAsync({
-          name: values.name,
-          description: values.description || undefined,
-          fileContent: values.fileContent,
-          fileName: values.fileName,
-        });
-      } catch (error) {
-        form.setError("root", {
-          message: getErrorMessage(error),
-        });
-      }
+      await uploadMutation.mutateAsync({
+        name: values.name,
+        description: values.description || undefined,
+        fileContent: values.fileContent,
+        fileName: values.fileName,
+      });
+    },
+    onError: (error) => {
+      handleSubmitFormError(form, error, { preferRootError: true });
     },
   });
 

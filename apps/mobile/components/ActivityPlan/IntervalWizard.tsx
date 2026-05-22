@@ -181,7 +181,7 @@ export function IntervalWizard({
 
   return (
     <AppFormModal
-      description="Configure the interval pattern, work/rest durations, and intensity before adding it to the workout."
+      description="Configure the interval pattern, work/rest durations, and intensity before adding it to the activity."
       onClose={() => onOpenChange(false)}
       primaryAction={
         <Button onPress={submitForm.handleSubmit} testID="interval-wizard-save-button">

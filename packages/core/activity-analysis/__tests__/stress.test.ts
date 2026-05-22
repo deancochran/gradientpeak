@@ -57,6 +57,59 @@ describe("activity analysis", () => {
     expect(derived.stress.trimp).toBeNull();
   });
 
+  it("estimates TSS and IF from heart-rate reserve when power threshold data is unavailable", () => {
+    const derived = analyzeActivityDerivedMetrics({
+      activity: {
+        id: "activity-hr-only",
+        type: "run",
+        started_at: "2026-03-01T10:00:00.000Z",
+        finished_at: "2026-03-01T11:00:00.000Z",
+        duration_seconds: 3600,
+        avg_heart_rate: 150,
+      },
+      context: {
+        profileMetrics: {
+          max_hr: 190,
+          resting_hr: 50,
+        },
+        recentEfforts: [],
+        profile: {},
+      },
+    });
+
+    expect(derived.stress.intensity_factor).toBe(0.71);
+    expect(derived.stress.tss).toBe(50);
+    expect(derived.stress.trimp).toBeGreaterThan(0);
+    expect(derived.stress.training_effect).toBe("base");
+  });
+
+  it("derives running TSS and IF from effort-based threshold speed before heart-rate fallback", () => {
+    const derived = analyzeActivityDerivedMetrics({
+      activity: {
+        id: "activity-run-speed",
+        type: "run",
+        started_at: "2026-03-01T10:00:00.000Z",
+        finished_at: "2026-03-01T11:00:00.000Z",
+        duration_seconds: 3600,
+        avg_heart_rate: 120,
+        normalized_graded_speed_mps: 4,
+      },
+      context: {
+        profileMetrics: {
+          max_hr: 190,
+          resting_hr: 50,
+          threshold_speed_mps: 5,
+        },
+        recentEfforts: [],
+        profile: {},
+      },
+    });
+
+    expect(derived.stress.intensity_factor).toBe(0.8);
+    expect(derived.stress.tss).toBe(64);
+    expect(derived.stress.training_effect).toBe("tempo");
+  });
+
   it("derives TSS and IF from as-of threshold context", () => {
     const activity = {
       id: "activity-3",

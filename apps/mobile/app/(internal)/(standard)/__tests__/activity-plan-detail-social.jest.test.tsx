@@ -1,12 +1,7 @@
 import { act, waitFor } from "@testing-library/react-native";
 import React from "react";
+import { createHost } from "../../../../test/mock-components";
 import { renderNative, screen } from "../../../../test/render-native";
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
 
 const localSearchParamsMock = {} as Record<string, string | undefined>;
 const routerMock = { back: jest.fn(), push: jest.fn(), replace: jest.fn() };

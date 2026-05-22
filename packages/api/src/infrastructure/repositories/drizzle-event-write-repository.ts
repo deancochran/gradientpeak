@@ -56,21 +56,47 @@ function applyWriteScopeFilters(input: {
     return and(...baseConditions, eq(schema.events.id, input.anchorEvent.id));
   }
 
-  const seriesId = input.anchorEvent.series_id;
-  if (!seriesId) {
-    throw new Error(`Mutation scope "${input.scope}" requires an event series`);
-  }
+  const seriesId = input.anchorEvent.series_id ?? input.anchorEvent.id;
 
   if (input.scope === "future") {
     return and(
       ...baseConditions,
-      eq(schema.events.series_id, seriesId),
+      or(eq(schema.events.id, seriesId), eq(schema.events.series_id, seriesId)),
       gte(schema.events.starts_at, new Date(input.anchorEvent.starts_at)),
     );
   }
 
-  return and(...baseConditions, eq(schema.events.series_id, seriesId));
+  return and(
+    ...baseConditions,
+    or(eq(schema.events.id, seriesId), eq(schema.events.series_id, seriesId)),
+  );
 }
+
+const eventReturningColumns = {
+  id: schema.events.id,
+  idx: schema.events.idx,
+  profile_id: schema.events.profile_id,
+  event_type: schema.events.event_type,
+  title: schema.events.title,
+  description: schema.events.description,
+  all_day: schema.events.all_day,
+  timezone: schema.events.timezone,
+  activity_plan_id: schema.events.activity_plan_id,
+  training_plan_id: schema.events.training_plan_id,
+  recurrence_rule: schema.events.recurrence_rule,
+  recurrence_timezone: schema.events.recurrence_timezone,
+  series_id: schema.events.series_id,
+  source_provider: schema.events.source_provider,
+  occurrence_key: schema.events.occurrence_key,
+  original_starts_at: schema.events.original_starts_at,
+  notes: schema.events.notes,
+  status: schema.events.status,
+  linked_activity_id: schema.events.linked_activity_id,
+  created_at: schema.events.created_at,
+  updated_at: schema.events.updated_at,
+  starts_at: schema.events.starts_at,
+  ends_at: schema.events.ends_at,
+};
 
 export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepository {
   return {
@@ -128,39 +154,33 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
           description: input.description,
           recurrence_rule: input.recurrenceRule,
           recurrence_timezone: input.recurrenceTimezone,
+          series_id: input.seriesId ?? null,
+          occurrence_key: input.occurrenceKey ?? "",
+          original_starts_at: input.originalStartsAt ? new Date(input.originalStartsAt) : null,
           source_provider: input.sourceProvider,
         })
-        .returning({
-          id: schema.events.id,
-          idx: schema.events.idx,
-          profile_id: schema.events.profile_id,
-          event_type: schema.events.event_type,
-          title: schema.events.title,
-          description: schema.events.description,
-          all_day: schema.events.all_day,
-          timezone: schema.events.timezone,
-          activity_plan_id: schema.events.activity_plan_id,
-          training_plan_id: schema.events.training_plan_id,
-          recurrence_rule: schema.events.recurrence_rule,
-          recurrence_timezone: schema.events.recurrence_timezone,
-          series_id: schema.events.series_id,
-          source_provider: schema.events.source_provider,
-          occurrence_key: schema.events.occurrence_key,
-          original_starts_at: schema.events.original_starts_at,
-          notes: schema.events.notes,
-          status: schema.events.status,
-          linked_activity_id: schema.events.linked_activity_id,
-          created_at: schema.events.created_at,
-          updated_at: schema.events.updated_at,
-          starts_at: schema.events.starts_at,
-          ends_at: schema.events.ends_at,
-        });
+        .returning(eventReturningColumns);
 
       if (!row) {
         throw new Error("Failed to create event");
       }
 
       return serializeCreatedEvent(row);
+    },
+
+    async listOwnedEventsForSeries({ anchorEvent, profileId }) {
+      const seriesId = anchorEvent.series_id ?? anchorEvent.id;
+      const rows = await db
+        .select(eventReturningColumns)
+        .from(schema.events)
+        .where(
+          and(
+            eq(schema.events.profile_id, profileId),
+            or(eq(schema.events.id, seriesId), eq(schema.events.series_id, seriesId)),
+          ),
+        );
+
+      return rows.map(serializeCreatedEvent);
     },
 
     async updateOwnedEventsForScope({ anchorEvent, eventUpdates, profileId, scope }) {
@@ -179,31 +199,7 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
           updated_at: new Date(),
         })
         .where(applyWriteScopeFilters({ anchorEvent, profileId, scope }))
-        .returning({
-          id: schema.events.id,
-          idx: schema.events.idx,
-          profile_id: schema.events.profile_id,
-          event_type: schema.events.event_type,
-          title: schema.events.title,
-          description: schema.events.description,
-          all_day: schema.events.all_day,
-          timezone: schema.events.timezone,
-          activity_plan_id: schema.events.activity_plan_id,
-          training_plan_id: schema.events.training_plan_id,
-          recurrence_rule: schema.events.recurrence_rule,
-          recurrence_timezone: schema.events.recurrence_timezone,
-          series_id: schema.events.series_id,
-          source_provider: schema.events.source_provider,
-          occurrence_key: schema.events.occurrence_key,
-          original_starts_at: schema.events.original_starts_at,
-          notes: schema.events.notes,
-          status: schema.events.status,
-          linked_activity_id: schema.events.linked_activity_id,
-          created_at: schema.events.created_at,
-          updated_at: schema.events.updated_at,
-          starts_at: schema.events.starts_at,
-          ends_at: schema.events.ends_at,
-        });
+        .returning(eventReturningColumns);
 
       return rows.map(serializeCreatedEvent);
     },

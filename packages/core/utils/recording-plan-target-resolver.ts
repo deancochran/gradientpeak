@@ -73,7 +73,7 @@ function resolveTargetToIntent(
 }
 
 /**
- * Resolves a structured workout step into canonical trainer control intents.
+ * Resolves a structured activity step into canonical trainer control intents.
  *
  * The resolver is intentionally machine-agnostic. It emits trainer intents that
  * mobile device adaptation can later translate into FTMS commands based on

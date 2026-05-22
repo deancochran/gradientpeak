@@ -9,14 +9,20 @@ import {
   GoalAgendaCard,
   PlannedAgendaEventCard,
 } from "@/components/calendar/AgendaCards";
+import { GroupEventCard } from "@/components/groups/GroupEventCards";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import { parseDateKey, toDateKey } from "@/lib/calendar/dateMath";
 import { buildOpenEventRoute } from "@/lib/calendar/eventRouting";
+import {
+  attachSelectedGroupEventActivityPlans,
+  getSelectedGroupEventActivityPlanIds,
+} from "@/lib/calendar/groupEventPlans";
 import { buildEventsByDate, type CalendarEvent } from "@/lib/calendar/normalizeEvents";
 import { buildTimelineEvents, buildTimelineEventsByDate } from "@/lib/calendar/timelineEvents";
 import { ROUTES } from "@/lib/constants/routes";
+import { markEstimated } from "@/lib/estimatedMetrics";
 import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useAuthStore } from "@/lib/stores/auth-store";
@@ -72,7 +78,7 @@ function formatPlanSuggestion(input: { type?: string; tssDelta?: string; descrip
   const absoluteDelta = Math.abs(Math.round(delta));
   const direction = input.type === "reduce_load" || delta < 0 ? "Reduce" : "Add";
   return {
-    title: `${direction} about ${absoluteDelta} TSS`,
+    title: `${direction} about ${markEstimated(`${absoluteDelta} TSS`)}`,
     description:
       input.description?.trim() ||
       (direction === "Reduce"
@@ -139,6 +145,40 @@ export default function CalendarDayScreen() {
   );
 
   const events = useMemo(() => (data?.items ?? []) as CalendarEvent[], [data?.items]);
+  const groupEventsQuery = api.groups.events.myCalendarGroupEvents.useQuery(
+    {
+      includeCancelled: false,
+      startsAfter: `${dateKey}T00:00:00.000Z`,
+      startsBefore: `${dateKey}T23:59:59.999Z`,
+      limit: CALENDAR_DAY_QUERY_LIMIT,
+    },
+    {
+      ...scheduleAwareReadQueryOptions,
+      enabled: eventsQueryEnabled,
+      placeholderData: keepPreviousData,
+    },
+  );
+  const groupEvents = useMemo(
+    () => groupEventsQuery.data?.items ?? [],
+    [groupEventsQuery.data?.items],
+  );
+  const selectedGroupActivityPlanIds = useMemo(
+    () => getSelectedGroupEventActivityPlanIds(groupEvents),
+    [groupEvents],
+  );
+  const groupActivityPlansQuery = api.activityPlans.getManyByIds.useQuery(
+    { ids: selectedGroupActivityPlanIds },
+    {
+      ...scheduleAwareReadQueryOptions,
+      enabled: eventsQueryEnabled && selectedGroupActivityPlanIds.length > 0,
+      placeholderData: keepPreviousData,
+    },
+  );
+  const visibleGroupEvents = useMemo(
+    () =>
+      attachSelectedGroupEventActivityPlans(groupEvents, groupActivityPlansQuery.data?.items ?? []),
+    [groupActivityPlansQuery.data?.items, groupEvents],
+  );
   const eventsByDate = useMemo(() => buildEventsByDate(events), [events]);
   const profileGoals = useProfileGoals();
   const timelineEvents = useMemo(
@@ -165,7 +205,15 @@ export default function CalendarDayScreen() {
     () => profileGoals.goals.filter((goal) => goal.target_date === dateKey),
     [dateKey, profileGoals.goals],
   );
-  const isRestDay = visibleTimelineEvents.length === 0;
+  const isRestDay =
+    visibleGroupEvents.length === 0 &&
+    !visibleTimelineEvents.some(
+      (event) =>
+        event.type === "planned_activity" ||
+        event.type === "completed_activity" ||
+        event.type === "goal" ||
+        event.type === "race",
+    );
   const title = useMemo(() => formatCalendarDayTitle(dateKey, todayKey), [dateKey, todayKey]);
 
   const handleOpenEvent = (event: CalendarEvent) => {
@@ -210,6 +258,13 @@ export default function CalendarDayScreen() {
     navigateTo(ROUTES.PLAN.GOAL_DETAIL(primaryGoal.id) as never);
   };
 
+  const handleOpenGroupEvent = (eventId: string) => {
+    navigateTo({ pathname: "/group-event-detail", params: { groupEventId: eventId } } as never);
+  };
+
+  const hasAgendaEvents = visibleEvents.length > 0 || visibleGroupEvents.length > 0;
+  const agendaEventCount = visibleEvents.length + visibleGroupEvents.length;
+
   return (
     <View className="flex-1 bg-background">
       <Stack.Screen
@@ -228,16 +283,19 @@ export default function CalendarDayScreen() {
         }}
       />
 
-      {isLoading && !data ? (
+      {(isLoading || groupEventsQuery.isLoading) && !data && !groupEventsQuery.data ? (
         <View className="flex-1 items-center justify-center px-6">
           <Text className="text-sm text-muted-foreground">Loading day agenda...</Text>
         </View>
-      ) : error && !data ? (
+      ) : (error || groupEventsQuery.error) && !data && !groupEventsQuery.data ? (
         <View className="flex-1 items-center justify-center gap-3 px-6">
           <Text className="text-center text-sm text-muted-foreground">
             Unable to load this day right now.
           </Text>
-          <Text className="text-sm font-medium text-foreground" onPress={() => void refetch()}>
+          <Text
+            className="text-sm font-medium text-foreground"
+            onPress={() => void Promise.all([refetch(), groupEventsQuery.refetch()])}
+          >
             Retry
           </Text>
         </View>
@@ -288,19 +346,28 @@ export default function CalendarDayScreen() {
             <GoalAgendaCard onPress={handleOpenGoal} title={goalsOnDate[0]?.title ?? "Goal"} />
           ) : null}
 
-          {visibleEvents.length > 0 ? (
+          {hasAgendaEvents ? (
             <>
               <View className="rounded-3xl border border-border bg-card px-4 py-4">
                 <Text className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   Day agenda
                 </Text>
                 <Text className="mt-2 text-2xl font-semibold text-foreground">
-                  {visibleEvents.length === 1 ? "1 event" : `${visibleEvents.length} events`}
+                  {agendaEventCount === 1 ? "1 event" : `${agendaEventCount} events`}
                 </Text>
                 <Text className="mt-1 text-sm text-muted-foreground">
                   Events scheduled for this day, in chronological order.
                 </Text>
               </View>
+
+              {visibleGroupEvents.map((event) => (
+                <GroupEventCard
+                  key={event.id}
+                  event={event}
+                  onPress={() => handleOpenGroupEvent(event.id)}
+                  testID={`calendar-day-group-event-${event.id}`}
+                />
+              ))}
 
               {visibleEvents.map((event) =>
                 event.event_type === "planned" && event.activity_plan ? (

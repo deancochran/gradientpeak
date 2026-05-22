@@ -1,33 +1,26 @@
-import { calculateCriticalPower } from "@repo/core";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@repo/ui/components/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import {
   Form,
   FormDateInputField,
-  FormSelectField,
+  FormSegmentedSelectField,
   FormSwitchField,
   FormTextareaField,
   FormTextField,
-  FormWeightInputField,
 } from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { File as ExpoFile } from "expo-file-system";
 import * as ImagePicker from "expo-image-picker";
-import { useRouter } from "expo-router";
-import { Camera, Loader2 } from "lucide-react-native";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Stack, useRouter } from "expo-router";
+import { Camera, ImagePlus, X } from "lucide-react-native";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -42,15 +35,12 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
-import { applyServerFormErrors, showErrorAlert } from "@/lib/utils/formErrors";
+import { handleSubmitFormError } from "@/lib/utils/formErrors";
 
 const profileEditSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters").nullable(),
   bio: z.string().max(500, "Bio must be 500 characters or less").nullable(),
   dob: z.string().nullable(), // Format: YYYY-MM-DD
-  weight_kg: z.number().min(1).max(500).nullable(),
-  // ftp: z.number().min(1).max(1000).nullable(), // Deprecated: FTP is now calculated
-  // threshold_hr: z.number().min(1).max(250).nullable(), // Deprecated: LTHR is now in profile_metrics
   preferred_units: z.enum(["metric", "imperial"]).nullable(),
   language: z.string().nullable(),
   is_public: z.boolean().nullable(),
@@ -67,6 +57,7 @@ const AVATAR_MIME_TYPES = {
 } as const;
 
 type AvatarMimeType = (typeof AVATAR_MIME_TYPES)[keyof typeof AVATAR_MIME_TYPES];
+type ProfileImageFieldName = "avatar_url" | "cover_url";
 
 function isAbsoluteUrl(value: string) {
   return /^https?:\/\//i.test(value);
@@ -75,36 +66,16 @@ function isAbsoluteUrl(value: string) {
 function ProfileEditScreen() {
   const router = useRouter();
   const { profile, refreshProfile } = useAuth();
-  const [avatarUploadLoading, setAvatarUploadLoading] = useState(false);
-  const [showAvatarSourceModal, setShowAvatarSourceModal] = useState(false);
+  const [uploadingImageField, setUploadingImageField] = useState<ProfileImageFieldName | null>(
+    null,
+  );
+  const [imageSourceField, setImageSourceField] = useState<ProfileImageFieldName | null>(null);
   const [statusModal, setStatusModal] = useState<null | {
     title: string;
     description: string;
     onClose?: () => void;
   }>(null);
-  const avatarSourceActionsRef = useRef<{
-    launchCamera: () => Promise<void>;
-    launchImageLibrary: () => Promise<void>;
-  }>({
-    launchCamera: async () => undefined,
-    launchImageLibrary: async () => undefined,
-  });
   const utils = api.useUtils();
-
-  const { data: powerCurve } = api.analytics.getSeasonBestCurve.useQuery({
-    activity_category: "bike",
-    effort_type: "power",
-    days: 90,
-  });
-
-  // Use stable date reference to prevent infinite refetch loops
-  const [now] = useState(() => new Date());
-
-  // Fetch LTHR from profile metrics
-  const { data: lthrMetric } = api.profileMetrics.getAtDate.useQuery({
-    metric_type: "lthr",
-    date: now,
-  });
 
   const updateProfileMutation = api.profiles.update.useMutation();
   const createAvatarUploadUrlMutation = api.storage.createSignedUploadUrl.useMutation();
@@ -114,149 +85,89 @@ function ProfileEditScreen() {
     { filePath: avatarFilePath || "" },
     { enabled: Boolean(avatarFilePath) },
   );
+  const coverFilePath =
+    profile?.cover_url && !isAbsoluteUrl(profile.cover_url) ? profile.cover_url : null;
+  const { data: coverUrlData } = api.storage.getSignedUrl.useQuery(
+    { filePath: coverFilePath || "" },
+    { enabled: Boolean(coverFilePath) },
+  );
 
   const avatarUrl = avatarFilePath
-    ? (avatarUrlData?.signedUrl ?? null)
-    : (profile?.avatar_url ?? null);
-  const estimatedFTP = useMemo(() => {
-    const model = calculateCriticalPower(powerCurve ?? []);
-
-    if (!model) {
-      return null;
-    }
-
-    return Math.round(model.cp + model.wPrime / 3600);
-  }, [powerCurve]);
-
+    ? avatarUrlData?.signedUrl
+      ? getReachableSupabaseStorageUrl(avatarUrlData.signedUrl)
+      : null
+    : profile?.avatar_url
+      ? getReachableSupabaseStorageUrl(profile.avatar_url)
+      : null;
+  const coverUrl = coverFilePath
+    ? coverUrlData?.signedUrl
+      ? getReachableSupabaseStorageUrl(coverUrlData.signedUrl)
+      : null
+    : profile?.cover_url
+      ? getReachableSupabaseStorageUrl(profile.cover_url)
+      : null;
   const form = useZodForm({
     schema: profileEditSchema,
     defaultValues: {
       username: profile?.username || null,
       bio: profile?.bio || null,
       dob: profile?.dob || null,
-      weight_kg: profile?.weight_kg || null,
       preferred_units: profile?.preferred_units || "metric",
       language: profile?.language || "en",
       is_public: profile?.is_public ?? true,
     },
   });
+  const watchedUsername = form.watch("username");
+  const watchedIsPublic = form.watch("is_public");
+  const profileInitial = watchedUsername?.charAt(0)?.toUpperCase() || "U";
 
   useEffect(() => {
     form.reset({
       username: profile?.username || null,
       bio: profile?.bio || null,
       dob: profile?.dob || null,
-      weight_kg: profile?.weight_kg || null,
       preferred_units: profile?.preferred_units || "metric",
       language: profile?.language || "en",
       is_public: profile?.is_public ?? true,
     });
   }, [form, profile]);
 
-  const preferredWeightUnit = form.watch("preferred_units") === "imperial" ? "lbs" : "kg";
-
   const submitForm = useZodFormSubmit<ProfileEditForm>({
     form,
+    shouldRethrow: false,
     onSubmit: async (data) => {
-      try {
-        await updateProfileMutation.mutateAsync({
-          username: data.username || null,
-          bio: data.bio || null,
-          dob: data.dob || null,
-          weight_kg: data.weight_kg || null,
-          preferred_units: data.preferred_units || null,
-          language: data.language || null,
-          is_public: data.is_public ?? undefined,
-        });
+      await updateProfileMutation.mutateAsync({
+        username: data.username || null,
+        bio: data.bio || null,
+        dob: data.dob || null,
+        preferred_units: data.preferred_units || null,
+        language: data.language || null,
+        is_public: data.is_public ?? undefined,
+      });
 
-        await Promise.all([utils.profiles.invalidate(), refreshProfile()]);
-        setStatusModal({
-          title: "Success",
-          description: "Profile updated successfully!",
-          onClose: () => {
-            if (!avatarUploadLoading) {
-              router.back();
-            }
-          },
-        });
-      } catch (error) {
-        if (applyServerFormErrors(form, error)) {
-          return;
-        }
-
-        throw error;
-      }
+      await Promise.all([utils.profiles.invalidate(), refreshProfile()]);
+      router.back();
     },
+    onError: (error) =>
+      handleSubmitFormError(form, error, { alertTitle: "Failed to update profile" }),
   });
 
-  useEffect(() => {
-    if (submitForm.submitError) {
-      showErrorAlert(submitForm.submitError, "Failed to update profile");
-    }
-  }, [submitForm.submitError]);
+  const isSavingProfile =
+    submitForm.isSubmitting || updateProfileMutation.isPending || Boolean(uploadingImageField);
 
-  const isSavingProfile = submitForm.isSubmitting || updateProfileMutation.isPending;
+  const syncProfileImage = async (fieldName: ProfileImageFieldName, value: string | null) => {
+    const updatedProfile = await updateProfileMutation.mutateAsync({ [fieldName]: value });
 
-  const handleAvatarUpload = async () => {
-    // Request permissions
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== "granted") {
-      Alert.alert(
-        "Permission Required",
-        "Please grant permission to access your photos to upload an avatar.",
-        [{ text: "OK" }],
-      );
-      return;
-    }
-
-    const launchCamera = async () => {
-      setShowAvatarSourceModal(false);
-      const { status: cameraStatus } = await ImagePicker.requestCameraPermissionsAsync();
-      if (cameraStatus !== "granted") {
-        Alert.alert("Permission Required", "Camera permission is required to take photos.");
-        return;
-      }
-
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: "images",
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        await uploadAvatar(result.assets[0].uri);
-      }
-    };
-
-    const launchImageLibrary = async () => {
-      setShowAvatarSourceModal(false);
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: "images",
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets[0]) {
-        await uploadAvatar(result.assets[0].uri);
-      }
-    };
-
-    setShowAvatarSourceModal(true);
-    avatarSourceActionsRef.current = {
-      launchCamera,
-      launchImageLibrary,
-    };
+    useAuthStore.getState().setProfile(updatedProfile);
+    await Promise.all([utils.profiles.invalidate(), refreshProfile()]);
   };
 
-  const uploadAvatar = async (uri: string) => {
+  const uploadProfileImage = async (fieldName: ProfileImageFieldName, uri: string) => {
     try {
-      setAvatarUploadLoading(true);
+      setUploadingImageField(fieldName);
 
-      // Get file extension
       const ext = uri.split(".").pop()?.toLowerCase() || "jpg";
-      const fileName = `${Date.now()}.${ext}`;
+      const fileName = `profile-${fieldName.replace("_url", "")}-${Date.now()}.${ext}`;
       const fileType: AvatarMimeType =
         AVATAR_MIME_TYPES[ext as keyof typeof AVATAR_MIME_TYPES] ?? "image/jpeg";
 
@@ -265,6 +176,7 @@ function ProfileEditScreen() {
         fileType,
       });
       const reachableSignedUrl = getReachableSupabaseStorageUrl(signedUrl);
+      const reachablePublicUrl = getReachableSupabaseStorageUrl(publicUrl);
 
       // Create ExpoFile instance and ensure it exists before upload
       const file = new ExpoFile(uri);
@@ -288,22 +200,77 @@ function ProfileEditScreen() {
         throw new Error(`Upload failed: ${uploadResponse.statusText}`);
       }
 
-      // Update profile with new avatar URL
-      const updatedProfile = await updateProfileMutation.mutateAsync({
-        avatar_url: publicUrl,
-      });
-
-      useAuthStore.getState().setProfile(updatedProfile);
-
-      await Promise.all([utils.profiles.invalidate(), refreshProfile()]);
+      await syncProfileImage(fieldName, reachablePublicUrl);
     } catch (error) {
-      console.error("Avatar upload error:", error);
+      console.error("Profile image upload error:", error);
       setStatusModal({
         title: "Upload Failed",
-        description: error instanceof Error ? error.message : "Failed to upload avatar",
+        description: error instanceof Error ? error.message : "Failed to upload image",
       });
     } finally {
-      setAvatarUploadLoading(false);
+      setUploadingImageField(null);
+    }
+  };
+
+  const pickProfileImage = async (
+    fieldName: ProfileImageFieldName,
+    source: "camera" | "library",
+  ) => {
+    try {
+      setImageSourceField(null);
+      const aspect: [number, number] = fieldName === "avatar_url" ? [1, 1] : [16, 9];
+      const permission =
+        source === "camera"
+          ? await ImagePicker.requestCameraPermissionsAsync()
+          : await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (permission.status !== "granted") {
+        Alert.alert(
+          "Permission Required",
+          source === "camera"
+            ? "Camera permission is required to take photos."
+            : "Please grant permission to access your photos.",
+        );
+        return;
+      }
+
+      const result =
+        source === "camera"
+          ? await ImagePicker.launchCameraAsync({
+              mediaTypes: "images",
+              allowsEditing: true,
+              aspect,
+              quality: 0.8,
+            })
+          : await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: "images",
+              allowsEditing: true,
+              aspect,
+              quality: 0.8,
+            });
+
+      if (!result.canceled && result.assets[0]?.uri) {
+        await uploadProfileImage(fieldName, result.assets[0].uri);
+      }
+    } catch (error) {
+      setStatusModal({
+        title: "Upload Failed",
+        description: error instanceof Error ? error.message : "Failed to upload image",
+      });
+    }
+  };
+
+  const clearProfileImage = async (fieldName: ProfileImageFieldName) => {
+    try {
+      setUploadingImageField(fieldName);
+      await syncProfileImage(fieldName, null);
+    } catch (error) {
+      setStatusModal({
+        title: "Update Failed",
+        description: error instanceof Error ? error.message : "Failed to remove image",
+      });
+    } finally {
+      setUploadingImageField(null);
     }
   };
 
@@ -313,74 +280,137 @@ function ProfileEditScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       testID="profile-edit-screen"
     >
+      <Stack.Screen
+        options={{
+          headerRight: () => (
+            <Button
+              disabled={isSavingProfile}
+              onPress={submitForm.handleSubmit}
+              size="sm"
+              testID="profile-edit-save-button"
+              variant="ghost"
+            >
+              <Text className="text-sm font-semibold text-primary">
+                {isSavingProfile ? "Saving..." : "Save"}
+              </Text>
+            </Button>
+          ),
+        }}
+      />
       <ScrollView
         className="flex-1"
         contentContainerClassName="p-6 gap-6"
         showsVerticalScrollIndicator={false}
       >
-        {/* Avatar Section */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Profile Picture</CardTitle>
-            <CardDescription>Upload or change your profile avatar</CardDescription>
-          </CardHeader>
-          <CardContent className="items-center">
-            <View className="relative mb-4">
-              <Avatar alt={profile?.username || "User"} className="w-32 h-32">
-                {avatarUrl ? <AvatarImage source={{ uri: avatarUrl }} /> : null}
-                <AvatarFallback>
-                  <Text className="text-4xl">
-                    {profile?.username?.charAt(0)?.toUpperCase() || "U"}
-                  </Text>
-                </AvatarFallback>
-              </Avatar>
-
-              <TouchableOpacity
-                onPress={handleAvatarUpload}
-                className="absolute bottom-0 right-0 bg-primary rounded-full p-2"
-                disabled={avatarUploadLoading}
-                testID="profile-edit-avatar-button"
-              >
-                {avatarUploadLoading ? (
-                  <ActivityIndicator size="small" color="white" />
-                ) : (
-                  <Icon as={Camera} size={20} className="text-primary-foreground" />
-                )}
-              </TouchableOpacity>
+        <Card className="overflow-hidden rounded-3xl border border-border bg-card">
+          <TouchableOpacity
+            accessibilityLabel={coverUrl ? "Change profile cover photo" : "Add profile cover photo"}
+            activeOpacity={0.9}
+            className="relative bg-muted/40"
+            disabled={Boolean(uploadingImageField)}
+            onPress={() => setImageSourceField("cover_url")}
+            testID="profile-edit-cover-button"
+          >
+            {coverUrl ? (
+              <Image
+                accessibilityLabel="Profile cover preview"
+                className="h-36 w-full"
+                resizeMode="cover"
+                source={{ uri: coverUrl }}
+              />
+            ) : (
+              <View className="h-36 items-center justify-center gap-2">
+                <Icon as={ImagePlus} className="text-muted-foreground" size={24} />
+                <Text className="text-center text-sm font-medium text-muted-foreground">
+                  Add cover photo
+                </Text>
+              </View>
+            )}
+            <View className="absolute bottom-3 right-3 rounded-full bg-background/95 px-3 py-2 shadow-sm">
+              {uploadingImageField === "cover_url" ? (
+                <ActivityIndicator size="small" />
+              ) : (
+                <Text className="text-xs font-semibold text-foreground">
+                  {coverUrl ? "Change" : "Add"}
+                </Text>
+              )}
             </View>
+            {coverUrl && uploadingImageField !== "cover_url" ? (
+              <TouchableOpacity
+                accessibilityLabel="Remove profile cover photo"
+                activeOpacity={0.85}
+                className="absolute right-3 top-3 h-9 w-9 items-center justify-center rounded-full bg-background/95 shadow-sm"
+                disabled={Boolean(uploadingImageField)}
+                onPress={() => void clearProfileImage("cover_url")}
+              >
+                <Icon as={X} size={16} className="text-destructive" />
+              </TouchableOpacity>
+            ) : null}
+          </TouchableOpacity>
 
-            <Button
-              variant="outline"
-              size="sm"
-              onPress={handleAvatarUpload}
-              disabled={avatarUploadLoading}
-              testID="profile-edit-change-avatar-button"
-            >
-              <Text>{avatarUploadLoading ? "Uploading..." : "Change Avatar"}</Text>
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* Personal Information */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Personal Information</CardTitle>
-            <CardDescription>Your basic profile information</CardDescription>
-          </CardHeader>
-          <CardContent>
+          <CardContent className="gap-5 p-6">
             <Form {...form}>
-              <View className="gap-4">
-                <FormTextField
-                  control={form.control}
-                  label="Username"
-                  name="username"
-                  parseValue={(value) => value || null}
-                  placeholder="Enter username"
-                />
+              <View className="gap-5">
+                <View className="flex-row items-start gap-4">
+                  <View className="items-start">
+                    <TouchableOpacity
+                      accessibilityLabel={
+                        avatarUrl ? "Change profile picture" : "Add profile picture"
+                      }
+                      activeOpacity={0.85}
+                      className="relative"
+                      disabled={Boolean(uploadingImageField)}
+                      onPress={() => setImageSourceField("avatar_url")}
+                      testID="profile-edit-avatar-button"
+                    >
+                      <Avatar alt={watchedUsername || "User"} className="h-24 w-24">
+                        {avatarUrl ? <AvatarImage source={{ uri: avatarUrl }} /> : null}
+                        <AvatarFallback>
+                          <Text className="text-3xl font-semibold text-foreground">
+                            {profileInitial}
+                          </Text>
+                        </AvatarFallback>
+                      </Avatar>
+                      <View className="absolute bottom-0 right-0 rounded-full bg-primary p-2">
+                        {uploadingImageField === "avatar_url" ? (
+                          <ActivityIndicator color="white" size="small" />
+                        ) : (
+                          <Icon as={Camera} size={18} className="text-primary-foreground" />
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                    {avatarUrl && uploadingImageField !== "avatar_url" ? (
+                      <TouchableOpacity
+                        accessibilityLabel="Remove profile picture"
+                        activeOpacity={0.85}
+                        className="mt-2 self-center rounded-full px-3 py-1.5"
+                        disabled={Boolean(uploadingImageField)}
+                        onPress={() => void clearProfileImage("avatar_url")}
+                      >
+                        <Text className="text-xs font-semibold text-destructive">Remove</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+
+                  <View className="min-w-0 flex-1 gap-3">
+                    <FormTextField
+                      control={form.control}
+                      label="Username"
+                      name="username"
+                      parseValue={(value) => value || null}
+                      placeholder="Enter username"
+                    />
+                    <View className="self-start rounded-full border border-border bg-muted/20 px-3 py-1.5">
+                      <Text className="text-xs font-medium text-foreground">
+                        {watchedIsPublic ? "Public profile" : "Private profile"}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
 
                 <FormTextareaField
                   control={form.control}
-                  description="Brief description about yourself (max 500 characters)"
+                  description="Max 500 characters. This appears below your profile identity."
                   formatValue={(value) => value ?? ""}
                   label="Bio"
                   name="bio"
@@ -393,7 +423,6 @@ function ProfileEditScreen() {
                 <FormDateInputField
                   control={form.control}
                   clearable
-                  description="Used to estimate age-based training metrics."
                   label="Date of Birth"
                   maximumDate={new Date()}
                   name="dob"
@@ -406,68 +435,15 @@ function ProfileEditScreen() {
           </CardContent>
         </Card>
 
-        {/* Training Metrics */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Training Metrics</CardTitle>
-            <CardDescription>Your physical and training zone information</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Form {...form}>
-              <View className="gap-4">
-                <FormWeightInputField
-                  control={form.control}
-                  description={`Shown in ${preferredWeightUnit}. Used for calorie, W/kg, and readiness estimates. This stays saved as kilograms behind the scenes so existing analytics keep working.`}
-                  label="Weight"
-                  name="weight_kg"
-                  placeholder={preferredWeightUnit === "kg" ? "70.0" : "154.3"}
-                  unit={preferredWeightUnit}
-                  testId="profile-edit-weight"
-                />
-
-                <View>
-                  <Text className="text-sm font-medium mb-1">Estimated FTP</Text>
-                  <View className="bg-muted p-3 rounded-md">
-                    <Text className="text-foreground">
-                      {estimatedFTP ? `${estimatedFTP} W` : "Not enough data"}
-                    </Text>
-                    <Text className="text-xs text-muted-foreground mt-1">
-                      Read-only estimate from your best recent ride efforts (last 90 days).
-                    </Text>
-                  </View>
-                </View>
-
-                <View>
-                  <Text className="text-sm font-medium mb-1">Threshold HR</Text>
-                  <View className="bg-muted p-3 rounded-md">
-                    {(() => {
-                      const lthrValue = lthrMetric?.value == null ? null : Number(lthrMetric.value);
-                      return (
-                        <Text className="text-foreground">
-                          {lthrValue != null ? `${Math.round(lthrValue)} bpm` : "Not detected yet"}
-                        </Text>
-                      );
-                    })()}
-                    <Text className="text-xs text-muted-foreground mt-1">
-                      Read-only estimate from your strongest recent 20-minute heart rate effort.
-                    </Text>
-                  </View>
-                </View>
-              </View>
-            </Form>
-          </CardContent>
-        </Card>
-
         {/* Preferences */}
         <Card>
           <CardHeader>
             <CardTitle>Preferences</CardTitle>
-            <CardDescription>App and display preferences</CardDescription>
           </CardHeader>
           <CardContent>
             <Form {...form}>
               <View className="gap-4">
-                <FormSelectField
+                <FormSegmentedSelectField
                   control={form.control}
                   description="Choose between km/kg or miles/lbs"
                   label="Preferred Units"
@@ -476,7 +452,6 @@ function ProfileEditScreen() {
                     { label: "Metric", value: "metric" },
                     { label: "Imperial", value: "imperial" },
                   ]}
-                  placeholder="Choose units"
                 />
 
                 <FormSwitchField
@@ -484,51 +459,23 @@ function ProfileEditScreen() {
                   description="Allow anyone to view your profile and activities"
                   label="Public Account"
                   name="is_public"
-                  switchLabel="Public account visibility"
                 />
               </View>
             </Form>
           </CardContent>
         </Card>
-
-        {/* Action Buttons */}
-        <View className="flex-row gap-3">
-          <Button
-            variant="outline"
-            className="flex-1"
-            onPress={() => router.back()}
-            disabled={isSavingProfile}
-          >
-            <Text>Cancel</Text>
-          </Button>
-          <Button
-            className="flex-1"
-            onPress={submitForm.handleSubmit}
-            disabled={isSavingProfile}
-            testID="profile-edit-save-button"
-          >
-            {isSavingProfile ? (
-              <>
-                <ActivityIndicator size="small" color="white" className="mr-2" />
-                <Text>Saving...</Text>
-              </>
-            ) : (
-              <Text>Save Changes</Text>
-            )}
-          </Button>
-        </View>
       </ScrollView>
-      {showAvatarSourceModal ? (
+      {imageSourceField ? (
         <AppSelectionModal
-          description="Choose how you want to update your profile photo."
-          onClose={() => setShowAvatarSourceModal(false)}
+          description={`Choose how you want to update your ${imageSourceField === "avatar_url" ? "profile picture" : "cover photo"}.`}
+          onClose={() => setImageSourceField(null)}
           testID="profile-avatar-source-modal"
-          title="Select Avatar"
+          title={imageSourceField === "avatar_url" ? "Profile Picture" : "Cover Photo"}
         >
           <View className="gap-3">
             <TouchableOpacity
               onPress={() => {
-                void avatarSourceActionsRef.current.launchCamera();
+                void pickProfileImage(imageSourceField, "camera");
               }}
               className="rounded-xl border border-border bg-card px-4 py-4"
               activeOpacity={0.8}
@@ -538,7 +485,7 @@ function ProfileEditScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => {
-                void avatarSourceActionsRef.current.launchImageLibrary();
+                void pickProfileImage(imageSourceField, "library");
               }}
               className="rounded-xl border border-border bg-card px-4 py-4"
               activeOpacity={0.8}

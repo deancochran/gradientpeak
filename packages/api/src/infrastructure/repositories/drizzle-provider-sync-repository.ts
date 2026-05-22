@@ -10,11 +10,84 @@ function toIsoString(value: Date | null): string | null {
   return value ? value.toISOString() : null;
 }
 
+function getSqlRows<T>(result: unknown) {
+  return ((result as { rows?: T[] }).rows ?? []) as T[];
+}
+
+type ProviderSyncJobSqlRow = {
+  attempt: number;
+  dedupeKey: string | null;
+  id: string;
+  integrationId: string;
+  internalResourceId: string | null;
+  jobType: string;
+  lastError: string | null;
+  maxAttempts: number;
+  operation: string | null;
+  payload: unknown;
+  payloadHash: string | null;
+  profileId: string;
+  provider: ProviderSyncJobRecord["provider"];
+  resourceKind: ProviderSyncJobRecord["resourceKind"];
+  runAt: Date | string;
+  status: ProviderSyncJobRecord["status"];
+  supersedesJobId: string | null;
+  syncLaneKey: string | null;
+};
+
+function mapProviderSyncJobRow(row: ProviderSyncJobSqlRow): ProviderSyncJobRecord {
+  return {
+    ...row,
+    runAt: row.runAt instanceof Date ? row.runAt.toISOString() : row.runAt,
+    status: row.status as ProviderSyncJobRecord["status"],
+  };
+}
+
 export function createProviderSyncRepository({
   db,
 }: CreateProviderSyncRepositoryOptions): ProviderSyncRepository {
   return {
     async enqueueJob(input) {
+      if (input.syncLaneKey) {
+        const [existingLaneJob] = await db
+          .select({ id: schema.providerSyncJobs.id, status: schema.providerSyncJobs.status })
+          .from(schema.providerSyncJobs)
+          .where(
+            and(
+              eq(schema.providerSyncJobs.sync_lane_key, input.syncLaneKey),
+              eq(schema.providerSyncJobs.status, "queued"),
+            ),
+          )
+          .orderBy(asc(schema.providerSyncJobs.run_at))
+          .limit(1);
+
+        if (existingLaneJob) {
+          await db
+            .update(schema.providerSyncJobs)
+            .set({
+              dedupe_key: input.dedupeKey,
+              integration_id: input.integrationId,
+              internal_resource_id: input.internalResourceId,
+              job_type: input.jobType,
+              max_attempts: input.maxAttempts,
+              operation: input.operation,
+              payload: input.payload,
+              payload_hash: input.payloadHash,
+              profile_id: input.profileId,
+              resource_kind: input.resourceKind,
+              run_at: new Date(input.runAt),
+              supersedes_job_id: input.supersedesJobId,
+              updated_at: new Date(),
+            })
+            .where(eq(schema.providerSyncJobs.id, existingLaneJob.id));
+
+          return {
+            id: existingLaneJob.id,
+            status: existingLaneJob.status as ProviderSyncJobRecord["status"],
+          };
+        }
+      }
+
       if (input.dedupeKey) {
         const [existing] = await db
           .select({ id: schema.providerSyncJobs.id, status: schema.providerSyncJobs.status })
@@ -31,6 +104,25 @@ export function createProviderSyncRepository({
           .limit(1);
 
         if (existing) {
+          if (existing.status === "queued") {
+            await db
+              .update(schema.providerSyncJobs)
+              .set({
+                integration_id: input.integrationId,
+                internal_resource_id: input.internalResourceId,
+                operation: input.operation,
+                payload: input.payload,
+                payload_hash: input.payloadHash,
+                profile_id: input.profileId,
+                resource_kind: input.resourceKind,
+                run_at: new Date(input.runAt),
+                supersedes_job_id: input.supersedesJobId,
+                sync_lane_key: input.syncLaneKey,
+                updated_at: new Date(),
+              })
+              .where(eq(schema.providerSyncJobs.id, existing.id));
+          }
+
           return {
             id: existing.id,
             status: existing.status as ProviderSyncJobRecord["status"],
@@ -46,12 +138,16 @@ export function createProviderSyncRepository({
           internal_resource_id: input.internalResourceId,
           job_type: input.jobType,
           max_attempts: input.maxAttempts,
+          operation: input.operation,
           payload: input.payload,
+          payload_hash: input.payloadHash,
           profile_id: input.profileId,
           provider: input.provider,
           resource_kind: input.resourceKind,
           run_at: new Date(input.runAt),
           status: "queued",
+          supersedes_job_id: input.supersedesJobId,
+          sync_lane_key: input.syncLaneKey,
         })
         .returning({ id: schema.providerSyncJobs.id, status: schema.providerSyncJobs.status });
 
@@ -67,64 +163,82 @@ export function createProviderSyncRepository({
 
     async claimDueJobs({ jobTypes, limit, now, workerId, lockExpiresAt, provider }) {
       return db.transaction(async (tx) => {
-        const dueJobs = await tx
-          .select({
-            attempt: schema.providerSyncJobs.attempt,
-            dedupeKey: schema.providerSyncJobs.dedupe_key,
-            id: schema.providerSyncJobs.id,
-            integrationId: schema.providerSyncJobs.integration_id,
-            internalResourceId: schema.providerSyncJobs.internal_resource_id,
-            jobType: schema.providerSyncJobs.job_type,
-            maxAttempts: schema.providerSyncJobs.max_attempts,
-            payload: schema.providerSyncJobs.payload,
-            profileId: schema.providerSyncJobs.profile_id,
-            provider: schema.providerSyncJobs.provider,
-            resourceKind: schema.providerSyncJobs.resource_kind,
-            runAt: schema.providerSyncJobs.run_at,
-            status: schema.providerSyncJobs.status,
-          })
-          .from(schema.providerSyncJobs)
-          .where(
-            and(
-              provider ? eq(schema.providerSyncJobs.provider, provider) : undefined,
-              jobTypes?.length ? inArray(schema.providerSyncJobs.job_type, jobTypes) : undefined,
-              or(
-                eq(schema.providerSyncJobs.status, "queued"),
-                eq(schema.providerSyncJobs.status, "failed"),
-              ),
-              lte(schema.providerSyncJobs.run_at, new Date(now)),
-              or(
-                isNull(schema.providerSyncJobs.lock_expires_at),
-                lte(schema.providerSyncJobs.lock_expires_at, new Date(now)),
-              ),
-            ),
+        const result = await tx.execute(sql<ProviderSyncJobSqlRow>`
+          with candidate_rows as (
+            select provider_sync_jobs.*
+            from provider_sync_jobs
+            where (${provider ?? null}::text is null or provider = ${provider ?? null}::integration_provider)
+              and ${
+                jobTypes?.length
+                  ? sql`job_type = any(array[${sql.join(jobTypes, sql`, `)}]::text[])`
+                  : sql`true`
+              }
+              and status in ('queued', 'failed', 'running')
+              and run_at <= ${new Date(now)}
+              and (lock_expires_at is null or lock_expires_at <= ${new Date(now)})
+              and (
+                sync_lane_key is null
+                or not exists (
+                  select 1
+                  from provider_sync_jobs running_provider_sync_jobs
+                  where running_provider_sync_jobs.sync_lane_key = provider_sync_jobs.sync_lane_key
+                    and running_provider_sync_jobs.status = 'running'
+                    and running_provider_sync_jobs.lock_expires_at > ${new Date(now)}
+                )
+              )
+            order by priority asc, run_at asc
+            limit ${Math.max(limit * 4, limit)}
+            for update skip locked
+          ), ranked_rows as (
+            select
+              candidate_rows.id,
+              row_number() over (
+                partition by coalesce(candidate_rows.sync_lane_key, candidate_rows.id::text)
+                order by candidate_rows.priority asc, candidate_rows.run_at asc
+              ) as lane_rank
+            from candidate_rows
+          ), selected_rows as (
+            select id
+            from ranked_rows
+            where lane_rank = 1
+            limit ${limit}
           )
-          .orderBy(asc(schema.providerSyncJobs.priority), asc(schema.providerSyncJobs.run_at))
-          .limit(limit);
+          update provider_sync_jobs
+          set
+            attempt = provider_sync_jobs.attempt + 1,
+            lock_expires_at = ${new Date(lockExpiresAt)},
+            locked_at = ${new Date(now)},
+            locked_by = ${workerId},
+            status = 'running',
+            updated_at = ${new Date(now)}
+          from selected_rows
+          where provider_sync_jobs.id = selected_rows.id
+          returning
+            provider_sync_jobs.attempt,
+            provider_sync_jobs.dedupe_key as "dedupeKey",
+            provider_sync_jobs.id,
+            provider_sync_jobs.integration_id as "integrationId",
+            provider_sync_jobs.internal_resource_id as "internalResourceId",
+            provider_sync_jobs.job_type as "jobType",
+            provider_sync_jobs.last_error as "lastError",
+            provider_sync_jobs.max_attempts as "maxAttempts",
+            provider_sync_jobs.operation,
+            provider_sync_jobs.payload,
+            provider_sync_jobs.payload_hash as "payloadHash",
+            provider_sync_jobs.profile_id as "profileId",
+            provider_sync_jobs.provider,
+            provider_sync_jobs.resource_kind as "resourceKind",
+            provider_sync_jobs.run_at as "runAt",
+            provider_sync_jobs.status,
+            provider_sync_jobs.supersedes_job_id as "supersedesJobId",
+            provider_sync_jobs.sync_lane_key as "syncLaneKey"
+        `);
 
-        for (const job of dueJobs) {
-          await tx
-            .update(schema.providerSyncJobs)
-            .set({
-              attempt: job.attempt + 1,
-              lock_expires_at: new Date(lockExpiresAt),
-              locked_at: new Date(now),
-              locked_by: workerId,
-              status: "running",
-              updated_at: new Date(now),
-            })
-            .where(eq(schema.providerSyncJobs.id, job.id));
-        }
-
-        return dueJobs.map((job) => ({
-          ...job,
-          runAt: job.runAt.toISOString(),
-          status: "running" as const,
-        }));
+        return getSqlRows<ProviderSyncJobSqlRow>(result).map(mapProviderSyncJobRow);
       });
     },
 
-    async markJobSucceeded(id) {
+    async markJobSucceeded(id, workerId) {
       await db
         .update(schema.providerSyncJobs)
         .set({
@@ -135,7 +249,13 @@ export function createProviderSyncRepository({
           status: "completed",
           updated_at: new Date(),
         })
-        .where(eq(schema.providerSyncJobs.id, id));
+        .where(
+          and(
+            eq(schema.providerSyncJobs.id, id),
+            eq(schema.providerSyncJobs.status, "running"),
+            workerId ? eq(schema.providerSyncJobs.locked_by, workerId) : undefined,
+          ),
+        );
     },
 
     async storeWebhookReceipt(input) {
@@ -216,7 +336,7 @@ export function createProviderSyncRepository({
         : null;
     },
 
-    async listJobs({ limit, provider, statuses }) {
+    async listJobs({ limit, profileId, provider, statuses }) {
       const rows = await db
         .select({
           attempt: schema.providerSyncJobs.attempt,
@@ -225,18 +345,24 @@ export function createProviderSyncRepository({
           integrationId: schema.providerSyncJobs.integration_id,
           internalResourceId: schema.providerSyncJobs.internal_resource_id,
           jobType: schema.providerSyncJobs.job_type,
+          lastError: schema.providerSyncJobs.last_error,
           maxAttempts: schema.providerSyncJobs.max_attempts,
+          operation: schema.providerSyncJobs.operation,
           payload: schema.providerSyncJobs.payload,
+          payloadHash: schema.providerSyncJobs.payload_hash,
           profileId: schema.providerSyncJobs.profile_id,
           provider: schema.providerSyncJobs.provider,
           resourceKind: schema.providerSyncJobs.resource_kind,
           runAt: schema.providerSyncJobs.run_at,
           status: schema.providerSyncJobs.status,
+          supersedesJobId: schema.providerSyncJobs.supersedes_job_id,
+          syncLaneKey: schema.providerSyncJobs.sync_lane_key,
         })
         .from(schema.providerSyncJobs)
         .where(
           and(
             provider ? eq(schema.providerSyncJobs.provider, provider) : undefined,
+            profileId ? eq(schema.providerSyncJobs.profile_id, profileId) : undefined,
             statuses?.length ? inArray(schema.providerSyncJobs.status, statuses) : undefined,
           ),
         )
@@ -247,6 +373,40 @@ export function createProviderSyncRepository({
         ...row,
         runAt: row.runAt.toISOString(),
         status: row.status as ProviderSyncJobRecord["status"],
+      }));
+    },
+
+    async listSyncStateByIntegrationIds(integrationIds) {
+      if (integrationIds.length === 0) return [];
+
+      const rows = await db
+        .select({
+          consecutiveFailures: schema.providerSyncState.consecutive_failures,
+          cursor: schema.providerSyncState.cursor,
+          highWatermark: schema.providerSyncState.high_watermark,
+          id: schema.providerSyncState.id,
+          integrationId: schema.providerSyncState.integration_id,
+          lastError: schema.providerSyncState.last_error,
+          lastSyncFailedAt: schema.providerSyncState.last_sync_failed_at,
+          lastSyncStartedAt: schema.providerSyncState.last_sync_started_at,
+          lastSyncSucceededAt: schema.providerSyncState.last_sync_succeeded_at,
+          metadata: schema.providerSyncState.metadata,
+          nextSyncAt: schema.providerSyncState.next_sync_at,
+          provider: schema.providerSyncState.provider,
+          publishHorizonDays: schema.providerSyncState.publish_horizon_days,
+          resource: schema.providerSyncState.resource,
+          syncMode: schema.providerSyncState.sync_mode,
+        })
+        .from(schema.providerSyncState)
+        .where(inArray(schema.providerSyncState.integration_id, integrationIds));
+
+      return rows.map((row) => ({
+        ...row,
+        highWatermark: toIsoString(row.highWatermark),
+        lastSyncFailedAt: toIsoString(row.lastSyncFailedAt),
+        lastSyncStartedAt: toIsoString(row.lastSyncStartedAt),
+        lastSyncSucceededAt: toIsoString(row.lastSyncSucceededAt),
+        nextSyncAt: toIsoString(row.nextSyncAt),
       }));
     },
 
@@ -304,6 +464,7 @@ export function createProviderSyncRepository({
           locked_at: null,
           locked_by: null,
           run_at: new Date(),
+          attempt: 0,
           status: "queued",
           updated_at: new Date(),
         })
@@ -344,6 +505,7 @@ export function createProviderSyncRepository({
             locked_at: null,
             locked_by: null,
             run_at: new Date(),
+            attempt: 0,
             status: "queued",
             updated_at: new Date(),
           })
@@ -364,7 +526,7 @@ export function createProviderSyncRepository({
         .where(eq(schema.providerWebhookReceipts.id, id));
     },
 
-    async markJobFailed({ id, lastError, nextRunAt, status }) {
+    async markJobFailed({ id, lastError, nextRunAt, status, workerId }) {
       await db
         .update(schema.providerSyncJobs)
         .set({
@@ -376,7 +538,13 @@ export function createProviderSyncRepository({
           status,
           updated_at: new Date(),
         })
-        .where(eq(schema.providerSyncJobs.id, id));
+        .where(
+          and(
+            eq(schema.providerSyncJobs.id, id),
+            eq(schema.providerSyncJobs.status, "running"),
+            workerId ? eq(schema.providerSyncJobs.locked_by, workerId) : undefined,
+          ),
+        );
     },
 
     async touchSyncState({

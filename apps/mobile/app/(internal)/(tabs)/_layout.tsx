@@ -2,14 +2,16 @@ import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar"
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { Tabs } from "expo-router";
-import { CalendarDays, Circle, Home } from "lucide-react-native";
+import { CalendarDays, Circle, Home, Target } from "lucide-react-native";
 import React from "react";
 import { TouchableOpacity, View } from "react-native";
 import { useRecordingLifecycle } from "@/lib/hooks/useActivityRecorder";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useNavigationActionGuard } from "@/lib/navigation/useNavigationActionGuard";
+import { markNavigationStart } from "@/lib/performance";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 import {
   activitySelectionStore,
   defaultRecordLaunchPayload,
@@ -17,9 +19,22 @@ import {
 import { useTheme } from "@/lib/stores/theme-store";
 import { getNavigationTheme, getResolvedThemeScale } from "@/lib/theme";
 
+function MeasuredTabButton({ routeKey, testID, ...props }: any) {
+  return (
+    <TouchableOpacity
+      {...props}
+      testID={testID}
+      onPress={(event) => {
+        markNavigationStart(routeKey);
+        props.onPress?.(event);
+      }}
+    />
+  );
+}
+
 function ProfileTabIcon({ color }: { color: string }) {
-  const { user, profile } = useAuth();
-  const avatarUri = profile?.avatar_url;
+  const { profile, user } = useAuth();
+  const avatarUri = profile?.avatar_url ? getReachableSupabaseStorageUrl(profile.avatar_url) : null;
   const fallback =
     profile?.username?.charAt(0)?.toUpperCase() || user?.email?.charAt(0)?.toUpperCase() || "A";
 
@@ -68,16 +83,22 @@ export default function InternalLayout() {
           options={{
             title: "Home",
             tabBarIcon: ({ color }) => <Icon as={Home} size={28} color={color} />,
-            tabBarButtonTestID: "tab-button-home",
+            tabBarButton: (props) => (
+              <MeasuredTabButton {...props} routeKey="route-home" testID="tab-button-home" />
+            ),
           }}
         />
         <Tabs.Screen name="discover" options={{ href: null }} />
+        <Tabs.Screen name="trends" options={{ href: null }} />
+        <Tabs.Screen name="groups" options={{ href: null }} />
         <Tabs.Screen
           name="plan"
           options={{
             title: "Plan",
-            tabBarIcon: ({ color }) => <Icon as={CalendarDays} size={28} color={color} />,
-            tabBarButtonTestID: "tab-button-plan",
+            tabBarIcon: ({ color }) => <Icon as={Target} size={28} color={color} />,
+            tabBarButton: (props) => (
+              <MeasuredTabButton {...props} routeKey="route-plan" testID="tab-button-plan" />
+            ),
           }}
         />
         <Tabs.Screen
@@ -91,6 +112,7 @@ export default function InternalLayout() {
                 testID="tab-button-record"
                 onPress={() =>
                   guardNavigation(() => {
+                    markNavigationStart("route-record");
                     if (recordingLifecycle === "idle") {
                       activitySelectionStore.setSelection(defaultRecordLaunchPayload());
                     }
@@ -104,13 +126,15 @@ export default function InternalLayout() {
         <Tabs.Screen
           name="calendar"
           options={{
-            href: null,
-          }}
-        />
-        <Tabs.Screen
-          name="trends"
-          options={{
-            href: null,
+            title: "Calendar",
+            tabBarIcon: ({ color }) => <Icon as={CalendarDays} size={28} color={color} />,
+            tabBarButton: (props) => (
+              <MeasuredTabButton
+                {...props}
+                routeKey="route-calendar"
+                testID="tab-button-calendar"
+              />
+            ),
           }}
         />
         <Tabs.Screen
@@ -118,7 +142,9 @@ export default function InternalLayout() {
           options={{
             title: "Profile",
             tabBarIcon: ({ color }) => <ProfileTabIcon color={color} />,
-            tabBarButtonTestID: "tab-button-profile",
+            tabBarButton: (props) => (
+              <MeasuredTabButton {...props} routeKey="route-profile" testID="tab-button-profile" />
+            ),
           }}
         />
       </Tabs>

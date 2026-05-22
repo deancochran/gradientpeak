@@ -157,10 +157,13 @@ function FormMessage({ className, children, ...props }: FormMessageProps) {
 export {
   FormBoundedNumberField,
   FormDateInputField,
+  FormDateTimeField,
   FormDurationField,
   FormIntegerStepperField,
   FormNumberField,
   FormPaceField,
+  FormPercentSliderField,
+  FormSegmentedSelectField,
   FormSelectField,
   FormSwitchField,
   FormTextareaField,

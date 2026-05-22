@@ -1,7 +1,8 @@
+import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
+import { Gauge, Minus, Plus, RotateCcw, SlidersHorizontal, Zap } from "lucide-react-native";
 import React from "react";
 import { Pressable, View } from "react-native";
-import { MetricTile } from "./MetricTile";
 import type { InsightCardProps } from "./types";
 
 export function TrainerInsightCard({
@@ -25,13 +26,40 @@ export function TrainerInsightCard({
   const targetLabel = getPlanTargetLabel(plan);
   const descriptorState = getDescriptorState(trainer, trainerMode, targetLabel);
   const status = getTrainerStatus({ controllable, trainer });
+  const autoTarget = React.useMemo(
+    () => buildAutoTargetSummary(plan, descriptorState, trainer),
+    [descriptorState, plan, trainer],
+  );
   const manualControlEnabled = controllable && trainerMode === "manual";
+  const remoteModes = React.useMemo(
+    () => buildRemoteModes(descriptorState.availableModes),
+    [descriptorState.availableModes],
+  );
+  const [remoteModeId, setRemoteModeId] = React.useState<RemoteModeId>(() =>
+    getInitialRemoteModeId(descriptorState.modeId, remoteModes),
+  );
+  const activeRemoteMode = remoteModes.find((entry) => entry.id === remoteModeId) ?? remoteModes[0];
+  const [remoteTargets, setRemoteTargets] = React.useState<Record<RemoteModeId, number>>(() =>
+    buildInitialRemoteTargets(remoteModes, resistance),
+  );
 
   React.useEffect(() => {
     if (typeof lastResistance === "number") {
       setResistance(lastResistance);
     }
   }, [lastResistance]);
+
+  React.useEffect(() => {
+    setRemoteModeId((current) =>
+      remoteModes.some((mode) => mode.id === current)
+        ? current
+        : getInitialRemoteModeId(descriptorState.modeId, remoteModes),
+    );
+    setRemoteTargets((current) => ({
+      ...buildInitialRemoteTargets(remoteModes, resistance),
+      ...current,
+    }));
+  }, [descriptorState.modeId, remoteModes, resistance]);
 
   const setMode = React.useCallback(
     (nextMode: "auto" | "manual") => {
@@ -40,19 +68,26 @@ export function TrainerInsightCard({
     [service],
   );
 
-  const adjustResistance = React.useCallback(
+  const adjustRemoteTarget = React.useCallback(
     (delta: number) => {
-      setResistance((current) => {
-        const next = Math.max(0, Math.min(100, current + delta));
+      if (!activeRemoteMode) return;
+
+      setRemoteTargets((current) => {
+        const previous = current[activeRemoteMode.id] ?? activeRemoteMode.defaultValue;
+        const next = clampToMode(previous + delta, activeRemoteMode);
 
         if (manualControlEnabled) {
-          service?.applyManualTrainerResistance(next).catch(console.error);
+          applyRemoteTarget(service, activeRemoteMode.id, next);
         }
 
-        return next;
+        if (activeRemoteMode.id === "resistance") {
+          setResistance(next);
+        }
+
+        return { ...current, [activeRemoteMode.id]: next };
       });
     },
-    [manualControlEnabled, service],
+    [activeRemoteMode, manualControlEnabled, service],
   );
 
   const selectTrainer = React.useCallback(
@@ -65,36 +100,22 @@ export function TrainerInsightCard({
   if (mode === "compact") {
     return (
       <View className="h-full justify-between gap-3" testID="trainer-insight-card">
-        <View className="flex-1 flex-row items-stretch gap-2">
-          <MetricTile
-            compact
-            label="Power"
-            subtitle={descriptorState.targetDetail}
-            value={readings.power ? `${Math.round(readings.power)} W` : "--"}
-          />
-          <MetricTile compact label="Mode" value={descriptorState.modeLabel} />
-          <MetricTile compact label="Control" tone={status.tone} value={status.label} />
-        </View>
-        {descriptorState.hasDescriptors ? (
-          <DescriptorModeSummary
-            modes={descriptorState.availableModes}
-            selectedMode={descriptorState.modeId}
-          />
-        ) : trainerMode === "manual" ? (
-          <ResistanceControls
-            disabled={!manualControlEnabled}
-            onDecrease={() => adjustResistance(-5)}
-            onIncrease={() => adjustResistance(5)}
-            resistance={resistance}
-          />
+        <CompactModeHeader
+          mode={trainerMode}
+          status={status.label}
+          targetTitle={autoTarget.title}
+        />
+        {trainerMode === "auto" ? (
+          <CompactAutoTargetSummary summary={autoTarget} />
         ) : (
-          <Text className="text-xs font-medium text-muted-foreground" numberOfLines={2}>
-            {controllable
-              ? targetLabel
-                ? `Auto control follows ${targetLabel}.`
-                : "Auto control is ready for plan or route targets."
-              : status.detail}
-          </Text>
+          <CompactRemoteSummary
+            disabled={!manualControlEnabled}
+            mode={activeRemoteMode}
+            onDecrease={() => adjustRemoteTarget(-(activeRemoteMode?.step ?? 5))}
+            onIncrease={() => adjustRemoteTarget(activeRemoteMode?.step ?? 5)}
+            status={status.detail}
+            target={activeRemoteMode ? remoteTargets[activeRemoteMode.id] : resistance}
+          />
         )}
       </View>
     );
@@ -102,28 +123,7 @@ export function TrainerInsightCard({
 
   return (
     <View className="gap-5" testID="trainer-insight-card">
-      <View className="flex-row gap-3">
-        <MetricTile
-          label="Power"
-          subtitle={descriptorState.targetDetail}
-          value={readings.power ? `${Math.round(readings.power)} W` : "--"}
-        />
-        <MetricTile label="Mode" value={descriptorState.modeLabel} />
-        <MetricTile label="Control" tone={status.tone} value={status.label} />
-      </View>
-
-      <View className="rounded-[32px] bg-muted/45 p-5">
-        <Text className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-          Trainer Control
-        </Text>
-        <Text className="mt-2 text-2xl font-black text-foreground">{status.label}</Text>
-        <Text className="mt-2 text-base leading-6 text-muted-foreground">{status.detail}</Text>
-        {descriptorState.targetDetail ? (
-          <Text className="mt-3 text-sm font-semibold text-foreground">
-            Target: {descriptorState.targetDetail}
-          </Text>
-        ) : null}
-      </View>
+      <TrainerControlHeader mode={trainerMode} status={status} summary={autoTarget} />
 
       {descriptorState.candidates.length > 1 ? (
         <View className="gap-3">
@@ -168,39 +168,23 @@ export function TrainerInsightCard({
         />
       </View>
 
-      {descriptorState.hasDescriptors ? (
-        <View className="gap-3">
-          <Text className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-            Available FTMS modes
-          </Text>
-          <View className="flex-row flex-wrap gap-2">
-            {descriptorState.availableModes.map((mode) => (
-              <DescriptorModeChip
-                key={mode.id}
-                mode={mode}
-                selected={mode.id === descriptorState.modeId}
-              />
-            ))}
-          </View>
-          <Text className="text-xs text-muted-foreground">
-            Mode controls come from the trainer session descriptor. Manual command inputs stay
-            hidden until the descriptor exposes safe intent actions.
-          </Text>
-        </View>
+      {trainerMode === "auto" ? (
+        <AutoTargetPanel
+          readings={readings}
+          status={status}
+          summary={autoTarget}
+          trainerModeId={descriptorState.modeId}
+        />
       ) : (
-        <View>
-          <ResistanceControls
-            disabled={!manualControlEnabled}
-            onDecrease={() => adjustResistance(-5)}
-            onIncrease={() => adjustResistance(5)}
-            resistance={resistance}
-          />
-          {!manualControlEnabled ? (
-            <Text className="mt-2 text-xs text-muted-foreground">
-              Switch to manual mode before sending resistance commands.
-            </Text>
-          ) : null}
-        </View>
+        <TrainerRemoteControl
+          disabled={!manualControlEnabled || !activeRemoteMode}
+          mode={activeRemoteMode}
+          modes={remoteModes}
+          onDecrease={() => adjustRemoteTarget(-(activeRemoteMode?.step ?? 5))}
+          onIncrease={() => adjustRemoteTarget(activeRemoteMode?.step ?? 5)}
+          onModeChange={setRemoteModeId}
+          target={activeRemoteMode ? remoteTargets[activeRemoteMode.id] : resistance}
+        />
       )}
     </View>
   );
@@ -226,13 +210,294 @@ interface DescriptorMode {
   label?: string;
   enabled?: boolean;
   disabledReason?: string;
-  range?: { unit?: string | null };
+  range?: { min?: number; max?: number; increment?: number; unit?: string | null };
 }
 
 interface DescriptorTarget {
   label?: string | null;
   value?: number | string | null;
   unit?: string | null;
+}
+
+interface AutoTargetMetric {
+  label: string;
+  value: string;
+}
+
+interface AutoTargetSummary {
+  detail: string;
+  metrics: AutoTargetMetric[];
+  subtitle: string;
+  title: string;
+}
+
+function buildAutoTargetSummary(
+  plan: InsightCardProps["plan"],
+  descriptorState: ReturnType<typeof getDescriptorState>,
+  trainer:
+    | ReturnType<NonNullable<InsightCardProps["service"]>["getSessionView"]>["trainer"]
+    | undefined,
+): AutoTargetSummary {
+  const currentStep = plan.hasPlan ? plan.currentStep : undefined;
+  const planMetrics =
+    currentStep?.targets?.map(formatPlanTargetMetric).filter(isTargetMetric) ?? [];
+  const descriptorMetric = descriptorState.targetDetail
+    ? [{ label: "Active Target", value: descriptorState.targetDetail }]
+    : [];
+  const commandMetric = getCommandTargetLabel(trainer)
+    ? [{ label: "Last Command", value: getCommandTargetLabel(trainer) as string }]
+    : [];
+  const metrics =
+    planMetrics.length > 0
+      ? planMetrics
+      : descriptorMetric.length > 0
+        ? descriptorMetric
+        : commandMetric;
+
+  if (currentStep) {
+    return {
+      title: currentStep.name ?? "Current interval",
+      subtitle: plan.name ?? "Activity target",
+      detail: "Auto mode follows this step and updates the trainer when the target changes.",
+      metrics: metrics.length > 0 ? metrics : [{ label: "Target", value: "Follow step" }],
+    };
+  }
+
+  if (descriptorState.targetDetail) {
+    return {
+      title: "Active trainer target",
+      subtitle: descriptorState.modeLabel,
+      detail: "Auto mode is holding the active trainer target from the session descriptor.",
+      metrics,
+    };
+  }
+
+  return {
+    title: "Waiting for target",
+    subtitle: "Auto mode",
+    detail: "Attach a structured activity or route to send automatic trainer targets.",
+    metrics: [{ label: "Target", value: "None" }],
+  };
+}
+
+function formatPlanTargetMetric(target: unknown): AutoTargetMetric | null {
+  if (!target || typeof target !== "object") return null;
+  const entry = target as { type?: string; intensity?: number; min?: number; max?: number };
+  const type = entry.type;
+  if (!type) return null;
+
+  const value = formatTargetValue(entry);
+  if (!value) return null;
+
+  return { label: formatTargetLabel(type), value };
+}
+
+function isTargetMetric(metric: AutoTargetMetric | null): metric is AutoTargetMetric {
+  return Boolean(metric);
+}
+
+function formatTargetLabel(type: string) {
+  switch (type) {
+    case "%FTP":
+      return "Power";
+    case "watts":
+      return "Power";
+    case "%THR":
+      return "Heart Rate";
+    case "%TPace":
+      return "Pace";
+    case "rpm":
+      return "Cadence";
+    default:
+      return type.replace(/_/g, " ");
+  }
+}
+
+function formatTargetValue(target: {
+  type?: string;
+  intensity?: number;
+  min?: number;
+  max?: number;
+}) {
+  const unit = getTargetUnit(target.type);
+  if (typeof target.intensity === "number") {
+    return `${Math.round(target.intensity)}${unit}`;
+  }
+
+  if (typeof target.min === "number" && typeof target.max === "number") {
+    return `${Math.round(target.min)}-${Math.round(target.max)}${unit}`;
+  }
+
+  return null;
+}
+
+function getTargetUnit(type?: string) {
+  switch (type) {
+    case "%FTP":
+    case "%THR":
+    case "%TPace":
+      return "%";
+    case "watts":
+      return " W";
+    case "rpm":
+      return " rpm";
+    default:
+      return "";
+  }
+}
+
+type RemoteModeId = "erg" | "resistance" | "grade" | "speed" | "inclination" | "cadence";
+
+interface RemoteMode {
+  id: RemoteModeId;
+  label: string;
+  unit: string;
+  defaultValue: number;
+  min: number;
+  max: number;
+  step: number;
+  icon: typeof Zap;
+}
+
+const fallbackRemoteModes: RemoteMode[] = [
+  {
+    id: "resistance",
+    label: "Resistance",
+    unit: "%",
+    defaultValue: 30,
+    min: 0,
+    max: 100,
+    step: 5,
+    icon: SlidersHorizontal,
+  },
+];
+
+function buildRemoteModes(descriptorModes: DescriptorMode[]): RemoteMode[] {
+  const modes = descriptorModes
+    .filter((mode) => mode.enabled !== false)
+    .map(mapDescriptorModeToRemoteMode)
+    .filter((mode): mode is RemoteMode => Boolean(mode));
+
+  return descriptorModes.length > 0 ? modes : fallbackRemoteModes;
+}
+
+function mapDescriptorModeToRemoteMode(mode: DescriptorMode): RemoteMode | null {
+  const range = mode.range;
+
+  switch (mode.id) {
+    case "erg":
+      return {
+        id: "erg",
+        label: "Power",
+        unit: mode.range?.unit ?? "W",
+        defaultValue: 180,
+        min: range?.min ?? 0,
+        max: range?.max ?? 800,
+        step: range?.increment ?? 5,
+        icon: Zap,
+      };
+    case "resistance":
+      return {
+        id: "resistance",
+        label: "Resistance",
+        unit: mode.range?.unit ?? "%",
+        defaultValue: 30,
+        min: range?.min ?? 0,
+        max: range?.max ?? 100,
+        step: range?.increment ?? 5,
+        icon: SlidersHorizontal,
+      };
+    case "grade":
+      return {
+        id: "grade",
+        label: "Grade",
+        unit: "%",
+        defaultValue: 0,
+        min: -15,
+        max: 20,
+        step: 0.5,
+        icon: Gauge,
+      };
+    case "speed":
+      return {
+        id: "speed",
+        label: "Speed",
+        unit: mode.range?.unit ?? "kph",
+        defaultValue: 10,
+        min: range?.min ?? 0,
+        max: range?.max ?? 30,
+        step: range?.increment ?? 0.5,
+        icon: Gauge,
+      };
+    case "inclination":
+      return {
+        id: "inclination",
+        label: "Incline",
+        unit: mode.range?.unit ?? "%",
+        defaultValue: 0,
+        min: range?.min ?? -5,
+        max: range?.max ?? 20,
+        step: range?.increment ?? 0.5,
+        icon: Gauge,
+      };
+    case "target_cadence":
+      return {
+        id: "cadence",
+        label: "Cadence",
+        unit: "rpm",
+        defaultValue: 85,
+        min: 40,
+        max: 130,
+        step: 5,
+        icon: RotateCcw,
+      };
+    default:
+      return null;
+  }
+}
+
+function getInitialRemoteModeId(modeId: string | null, modes: RemoteMode[]): RemoteModeId {
+  const mappedModeId = modeId === "target_cadence" ? "cadence" : modeId;
+  return modes.find((mode) => mode.id === mappedModeId)?.id ?? modes[0]?.id ?? "resistance";
+}
+
+function buildInitialRemoteTargets(modes: RemoteMode[], resistance: number) {
+  return Object.fromEntries(
+    modes.map((mode) => [mode.id, mode.id === "resistance" ? resistance : mode.defaultValue]),
+  ) as Record<RemoteModeId, number>;
+}
+
+function clampToMode(value: number, mode: RemoteMode) {
+  return Math.max(mode.min, Math.min(mode.max, Number(value.toFixed(1))));
+}
+
+function applyRemoteTarget(
+  service: InsightCardProps["service"],
+  modeId: RemoteModeId,
+  target: number,
+) {
+  switch (modeId) {
+    case "erg":
+      service?.applyManualTrainerPower(Math.round(target)).catch(console.error);
+      break;
+    case "resistance":
+      service?.applyManualTrainerResistance(target).catch(console.error);
+      break;
+    case "grade":
+      service
+        ?.applyManualTrainerSimulation({ gradePercent: target, windSpeedMps: 0 })
+        .catch(console.error);
+      break;
+    case "speed":
+      service?.applyManualTrainerSpeed(target).catch(console.error);
+      break;
+    case "inclination":
+      service?.applyManualTrainerIncline(target).catch(console.error);
+      break;
+    case "cadence":
+      service?.applyManualTrainerCadence(Math.round(target)).catch(console.error);
+      break;
+  }
 }
 
 function getDescriptorState(
@@ -394,7 +659,7 @@ function getTrainerStatus({
     return {
       label: "Ready",
       detail:
-        "Trainer control is available. Auto mode follows workout or route targets; manual mode sends direct commands.",
+        "Trainer control is available. Auto mode follows activity or route targets; manual mode sends direct commands.",
       tone: "good",
     };
   }
@@ -414,81 +679,296 @@ function getTrainerStatus({
   };
 }
 
-function DescriptorModeSummary({
-  modes,
-  selectedMode,
+function CompactModeHeader({
+  mode,
+  status,
+  targetTitle,
 }: {
-  modes: DescriptorMode[];
-  selectedMode: string | null;
+  mode: "auto" | "manual";
+  status: string;
+  targetTitle: string;
 }) {
-  const selected = modes.find((mode) => mode.id === selectedMode);
-  const enabledCount = modes.filter((mode) => mode.enabled !== false).length;
-
   return (
-    <Text className="text-xs font-medium text-muted-foreground" numberOfLines={2}>
-      {selected?.label ?? getModeLabel(selectedMode)} selected. {enabledCount} FTMS mode
-      {enabledCount === 1 ? "" : "s"} available from session descriptors.
-    </Text>
+    <View>
+      <Text className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+        {mode === "auto" ? "Auto Target" : "Manual Remote"}
+      </Text>
+      <Text className="mt-1 text-base font-black text-foreground" numberOfLines={1}>
+        {mode === "auto" ? targetTitle : status}
+      </Text>
+    </View>
   );
 }
 
-function DescriptorModeChip({ mode, selected }: { mode: DescriptorMode; selected: boolean }) {
-  const enabled = mode.enabled !== false;
-  const label = mode.label ?? getModeLabel(mode.id);
+function TrainerControlHeader({
+  mode,
+  status,
+  summary,
+}: {
+  mode: "auto" | "manual";
+  status: ReturnType<typeof getTrainerStatus>;
+  summary: AutoTargetSummary;
+}) {
+  return (
+    <View>
+      <Text className="text-2xl font-black text-foreground">Trainer Control</Text>
+      <Text className="mt-1 text-sm leading-5 text-muted-foreground">
+        {mode === "auto" ? summary.detail : status.detail}
+      </Text>
+    </View>
+  );
+}
+
+function CompactAutoTargetSummary({ summary }: { summary: AutoTargetSummary }) {
+  const primaryMetric = summary.metrics[0];
 
   return (
-    <View
-      className={
-        selected
-          ? "rounded-full bg-foreground px-3 py-2"
-          : enabled
-            ? "rounded-full border border-border bg-background px-3 py-2"
-            : "rounded-full bg-muted px-3 py-2"
-      }
-    >
-      <Text
-        className={
-          selected
-            ? "text-xs font-bold text-background"
-            : enabled
-              ? "text-xs font-bold text-foreground"
-              : "text-xs font-bold text-muted-foreground"
-        }
-      >
-        {label}
-      </Text>
-      {!enabled && mode.disabledReason ? (
-        <Text className="mt-0.5 text-[10px] font-medium text-muted-foreground" numberOfLines={1}>
-          {mode.disabledReason}
+    <View className="flex-row items-center gap-2">
+      <View className="flex-1 rounded-2xl bg-muted/60 px-3 py-2">
+        <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          {primaryMetric?.label ?? summary.subtitle}
         </Text>
+        <Text className="mt-0.5 text-base font-bold text-foreground" numberOfLines={1}>
+          {primaryMetric?.value ?? summary.title}
+        </Text>
+      </View>
+      {summary.metrics.slice(1, 2).map((metric) => (
+        <View key={`${metric.label}-${metric.value}`} className="rounded-2xl bg-muted/60 px-3 py-2">
+          <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            {metric.label}
+          </Text>
+          <Text className="mt-0.5 text-base font-bold text-foreground">{metric.value}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function AutoTargetPanel({
+  readings,
+  status,
+  summary,
+  trainerModeId,
+}: {
+  readings: InsightCardProps["readings"];
+  status: ReturnType<typeof getTrainerStatus>;
+  summary: AutoTargetSummary;
+  trainerModeId: string | null;
+}) {
+  const showLiveContext = trainerModeId !== "erg";
+
+  return (
+    <View className="gap-4">
+      <View className="rounded-[32px] border border-border bg-card p-5">
+        <Text className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+          {summary.subtitle}
+        </Text>
+        <Text className="mt-2 text-2xl font-black text-foreground">{summary.title}</Text>
+        <View className="mt-4 flex-row flex-wrap gap-3">
+          {summary.metrics.map((metric) => (
+            <TargetMetricPill key={`${metric.label}-${metric.value}`} metric={metric} />
+          ))}
+        </View>
+      </View>
+
+      {showLiveContext ? (
+        <View className="flex-row gap-3">
+          <LiveTrainerMetric label="Live Power" value={formatOptionalMetric(readings.power, "W")} />
+          <LiveTrainerMetric label="Control" value={status.label} />
+        </View>
       ) : null}
     </View>
   );
 }
 
-function ResistanceControls({
-  disabled,
-  onDecrease,
-  onIncrease,
-  resistance,
-}: {
-  disabled: boolean;
-  onDecrease: () => void;
-  onIncrease: () => void;
-  resistance: number;
-}) {
+function TargetMetricPill({ metric }: { metric: AutoTargetMetric }) {
   return (
-    <View className="flex-row items-center gap-2">
-      <TrainerControlButton disabled={disabled} label="-" onPress={onDecrease} />
-      <View className="flex-1 rounded-2xl bg-muted/60 px-3 py-2">
-        <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          Resistance
-        </Text>
-        <Text className="mt-0.5 text-base font-bold text-foreground">{resistance}%</Text>
-      </View>
-      <TrainerControlButton disabled={disabled} label="+" onPress={onIncrease} />
+    <View className="min-w-24 rounded-2xl bg-background px-3 py-2">
+      <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {metric.label}
+      </Text>
+      <Text className="mt-1 text-lg font-black text-foreground">{metric.value}</Text>
     </View>
   );
+}
+
+function LiveTrainerMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <View className="flex-1 rounded-2xl bg-muted/50 px-3 py-3">
+      <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </Text>
+      <Text className="mt-1 text-base font-bold text-foreground">{value}</Text>
+    </View>
+  );
+}
+
+function formatOptionalMetric(value: number | undefined, unit: string) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${Math.round(value)} ${unit}`
+    : "--";
+}
+
+function CompactRemoteSummary({
+  disabled,
+  mode,
+  onDecrease,
+  onIncrease,
+  status,
+  target,
+}: {
+  disabled: boolean;
+  mode: RemoteMode | undefined;
+  onDecrease: () => void;
+  onIncrease: () => void;
+  status: string;
+  target: number | undefined;
+}) {
+  if (!mode) {
+    return (
+      <Text className="text-xs font-medium text-muted-foreground" numberOfLines={2}>
+        {status}
+      </Text>
+    );
+  }
+
+  return (
+    <View className="flex-row items-center gap-2">
+      <TrainerControlButton disabled={disabled} icon="minus" label="-" onPress={onDecrease} />
+      <View className="flex-1 rounded-2xl bg-muted/60 px-3 py-2">
+        <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          {mode.label}
+        </Text>
+        <Text className="mt-0.5 text-base font-bold text-foreground">
+          {formatRemoteTarget(target ?? mode.defaultValue, mode)}
+        </Text>
+      </View>
+      <TrainerControlButton disabled={disabled} icon="plus" label="+" onPress={onIncrease} />
+    </View>
+  );
+}
+
+function TrainerRemoteControl({
+  disabled,
+  mode,
+  modes,
+  onDecrease,
+  onIncrease,
+  onModeChange,
+  target,
+}: {
+  disabled: boolean;
+  mode: RemoteMode | undefined;
+  modes: RemoteMode[];
+  onDecrease: () => void;
+  onIncrease: () => void;
+  onModeChange: (modeId: RemoteModeId) => void;
+  target: number | undefined;
+}) {
+  if (!mode || modes.length === 0) {
+    return (
+      <View className="rounded-[32px] border border-border bg-card p-5">
+        <Text className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+          Manual Control
+        </Text>
+        <Text className="mt-2 text-xl font-black text-foreground">No direct controls</Text>
+        <Text className="mt-2 text-sm leading-5 text-muted-foreground">
+          This trainer is connected for data, but it does not expose manual targets that match its
+          machine type.
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View className="overflow-hidden rounded-[32px] border border-border bg-background">
+      <View className="bg-card px-5 py-4">
+        <View className="flex-row items-center justify-between gap-3">
+          <View>
+            <Text className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+              Remote
+            </Text>
+            <Text className="mt-1 text-lg font-black text-foreground">
+              {mode ? mode.label : "Trainer"}
+            </Text>
+          </View>
+          {mode ? (
+            <View className="h-12 w-12 items-center justify-center rounded-full bg-primary/15">
+              <Icon as={mode.icon} size={22} className="text-primary" />
+            </View>
+          ) : null}
+        </View>
+
+        <View className="mt-5 flex-row items-center justify-between gap-4">
+          <TrainerControlButton disabled={disabled} icon="minus" label="-" onPress={onDecrease} />
+          <View className="flex-1 items-center">
+            <Text className="text-5xl font-black text-foreground">
+              {mode ? formatRemoteTargetValue(target ?? mode.defaultValue, mode) : "--"}
+            </Text>
+            <Text className="mt-1 text-sm font-bold text-muted-foreground">
+              {mode?.unit ?? "target"}
+            </Text>
+          </View>
+          <TrainerControlButton disabled={disabled} icon="plus" label="+" onPress={onIncrease} />
+        </View>
+      </View>
+
+      <View className="flex-row flex-wrap gap-2 p-3">
+        {modes.map((entry) => (
+          <RemoteModeButton
+            key={entry.id}
+            active={mode?.id === entry.id}
+            mode={entry}
+            onPress={() => onModeChange(entry.id)}
+          />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function RemoteModeButton({
+  active,
+  mode,
+  onPress,
+}: {
+  active: boolean;
+  mode: RemoteMode;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      className={
+        active
+          ? "flex-row items-center gap-2 rounded-full bg-foreground px-3 py-2 active:opacity-80"
+          : "flex-row items-center gap-2 rounded-full border border-border bg-card px-3 py-2 active:opacity-80"
+      }
+      onPress={onPress}
+    >
+      <Icon as={mode.icon} size={14} className={active ? "text-background" : "text-foreground"} />
+      <Text
+        className={
+          active ? "text-xs font-bold text-background" : "text-xs font-bold text-foreground"
+        }
+      >
+        {mode.label}
+      </Text>
+    </Pressable>
+  );
+}
+
+function formatRemoteTarget(target: number, mode: RemoteMode) {
+  return `${formatRemoteTargetValue(target, mode)} ${mode.unit}`;
+}
+
+function formatRemoteTargetValue(target: number, mode: RemoteMode) {
+  if (mode.step < 1) {
+    return target.toFixed(1);
+  }
+
+  return `${Math.round(target)}`;
 }
 
 function TrainerCandidateChip({
@@ -560,13 +1040,17 @@ function ModeChip({
 
 function TrainerControlButton({
   disabled,
+  icon,
   label,
   onPress,
 }: {
   disabled: boolean;
+  icon?: "minus" | "plus";
   label: string;
   onPress: () => void;
 }) {
+  const IconComponent = icon === "minus" ? Minus : icon === "plus" ? Plus : null;
+
   return (
     <Pressable
       accessibilityRole="button"
@@ -579,13 +1063,23 @@ function TrainerControlButton({
           : "h-11 w-11 items-center justify-center rounded-full bg-foreground active:opacity-80"
       }
     >
-      <Text
-        className={
-          disabled ? "text-lg font-bold text-muted-foreground" : "text-lg font-bold text-background"
-        }
-      >
-        {label}
-      </Text>
+      {IconComponent ? (
+        <Icon
+          as={IconComponent}
+          size={20}
+          className={disabled ? "text-muted-foreground" : "text-background"}
+        />
+      ) : (
+        <Text
+          className={
+            disabled
+              ? "text-lg font-bold text-muted-foreground"
+              : "text-lg font-bold text-background"
+          }
+        >
+          {label}
+        </Text>
+      )}
     </Pressable>
   );
 }

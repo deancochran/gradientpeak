@@ -145,7 +145,7 @@ function getBackdropCopy(mode: RecordingBackdropModel["mode"]) {
     default:
       return {
         label: "Indoor focus",
-        description: "No route or GPS map is needed, so metrics and workout cues take the lead.",
+        description: "No route or GPS map is needed, so metrics and activity cues take the lead.",
       };
   }
 }

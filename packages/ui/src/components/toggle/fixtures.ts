@@ -1,7 +1,7 @@
 export const toggleFixtures = {
   pin: {
-    accessibilityLabel: "Pin workout",
+    accessibilityLabel: "Pin activity",
     children: "Pin",
-    testId: "pin-workout-toggle",
+    testId: "pin-activity-toggle",
   },
 } as const;

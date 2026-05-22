@@ -12,7 +12,7 @@ function createEventRow(overrides: Record<string, unknown> = {}) {
     idx: 1,
     profile_id: "profile-1",
     event_type: "planned_activity",
-    title: "Tempo workout",
+    title: "Tempo activity",
     description: "Midweek threshold session",
     all_day: false,
     timezone: "UTC",

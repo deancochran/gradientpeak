@@ -270,7 +270,7 @@ export function createVO2MaxPlan(): ActivityPlanStructureV2 {
 }
 
 /**
- * Create a strength workout plan
+ * Create a strength activity plan
  */
 export function createStrengthPlan(): ActivityPlanStructureV2 {
   return createPlan()

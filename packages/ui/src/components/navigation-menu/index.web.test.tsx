@@ -16,7 +16,7 @@ describe("NavigationMenu web", () => {
       <NavigationMenu viewport={false}>
         <NavigationMenuList>
           <NavigationMenuItem>
-            <NavigationMenuTrigger>Workouts</NavigationMenuTrigger>
+            <NavigationMenuTrigger>Activities</NavigationMenuTrigger>
             <NavigationMenuContent forceMount>
               <NavigationMenuLink href="/plans">Plan library</NavigationMenuLink>
             </NavigationMenuContent>
@@ -25,7 +25,7 @@ describe("NavigationMenu web", () => {
       </NavigationMenu>,
     );
 
-    expect(screen.getByRole("button", { name: "Workouts" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Activities" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Plan library" })).toHaveAttribute("href", "/plans");
   });
 });

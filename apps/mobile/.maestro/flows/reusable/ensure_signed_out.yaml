@@ -1,0 +1,35 @@
+appId: com.deancochran.gradientpeak.dev
+---
+- runFlow: bootstrap.yaml
+- runFlow:
+    when:
+      visible:
+        id: "verify-screen"
+    commands:
+      - tapOn:
+          id: "back-to-sign-in-button"
+- runFlow:
+    when:
+      visible:
+        id: "search-header-button"
+    commands:
+      - tapOn:
+          id: "app-header-avatar-button"
+      - extendedWaitUntil:
+          visible:
+            id: "user-detail-screen"
+          timeout: 10000
+      - tapOn:
+          id: "sign-out"
+      - tapOn:
+          text: "Sign Out"
+          optional: true
+      - extendedWaitUntil:
+          visible:
+            id: "sign-in-screen"
+          timeout: 10000
+- tapOn:
+    id: "login-button"
+    optional: true
+- assertVisible:
+    id: "sign-in-screen"

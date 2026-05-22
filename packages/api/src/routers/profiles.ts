@@ -45,6 +45,7 @@ const trainingZonesUpdateSchema = z
 
 const uuidSchema = z.string().uuid();
 const nullableAvatarUrlSchema = z.string().nullable();
+const nullableCoverUrlSchema = z.string().nullable();
 const nullableUsernameSchema = z.string().nullable();
 const nullableBioSchema = z.string().nullable();
 const nullableGenderSchema = z.string().nullable();
@@ -57,6 +58,7 @@ const publicProfileSchema = z
     id: uuidSchema,
     username: nullableUsernameSchema,
     avatar_url: nullableAvatarUrlSchema,
+    cover_url: nullableCoverUrlSchema,
     bio: nullableBioSchema,
     gender: nullableGenderSchema,
     preferred_units: nullablePreferredUnitsSchema,
@@ -73,6 +75,7 @@ const publicProfileRowSchema = z
     id: uuidSchema,
     username: nullableUsernameSchema,
     avatar_url: nullableAvatarUrlSchema,
+    cover_url: nullableCoverUrlSchema,
     bio: nullableBioSchema,
     gender: nullableGenderSchema,
     preferred_units: nullablePreferredUnitsSchema,
@@ -85,6 +88,7 @@ const profileUpdateInputSchema = profileQuickUpdateSchema
   .partial()
   .extend({
     avatar_url: z.string().nullable().optional(),
+    cover_url: z.string().nullable().optional(),
     bio: z.string().max(500).nullable().optional(),
     dob: z.string().nullable().optional(),
     preferred_units: z.enum(["metric", "imperial"]).nullable().optional(),
@@ -103,6 +107,7 @@ const profileBaseSelect = {
   email: profiles.email,
   full_name: profiles.full_name,
   avatar_url: profiles.avatar_url,
+  cover_url: profiles.cover_url,
   bio: profiles.bio,
   dob: profiles.dob,
   gender: profiles.gender,
@@ -129,6 +134,7 @@ type ProfileBaseRow = Pick<
   | "email"
   | "full_name"
   | "avatar_url"
+  | "cover_url"
   | "bio"
   | "dob"
   | "gender"
@@ -274,6 +280,7 @@ async function ensureProfileExists(db: DbClient, user: SessionUser) {
     full_name: null,
     username: null,
     avatar_url: null,
+    cover_url: null,
     bio: null,
     dob: null,
     gender: null,
@@ -451,6 +458,7 @@ export const profilesRouter = createTRPCRouter({
             id: profiles.id,
             username: profiles.username,
             avatar_url: profiles.avatar_url,
+            cover_url: profiles.cover_url,
             bio: profiles.bio,
             gender: profiles.gender,
             preferred_units: profiles.preferred_units,
@@ -472,6 +480,7 @@ export const profilesRouter = createTRPCRouter({
           id: profile.id,
           username: profile.username,
           avatar_url: profile.avatar_url,
+          cover_url: profile.cover_url,
           bio: profile.bio,
           gender: profile.gender,
           preferred_units: profile.preferred_units,
@@ -519,6 +528,7 @@ export const profilesRouter = createTRPCRouter({
     try {
       const profileUpdate = {
         avatar_url: input.avatar_url,
+        cover_url: input.cover_url,
         bio: input.bio,
         dob: input.dob === undefined ? undefined : input.dob === null ? null : new Date(input.dob),
         is_public: input.is_public,

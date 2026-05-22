@@ -10,7 +10,7 @@ import { z } from "zod";
  * Duration Types V2
  *
  * NOTE: Step completion is evaluated at runtime based on actual performance.
- * - If user changes pace mid-workout or GPS drifts, completion dynamically adjusts
+ * - If user changes pace mid-activity or GPS drifts, completion dynamically adjusts
  * - When paused, distance/duration tracking stops until resumed
  * - All evaluation happens in real-time during recording
  */

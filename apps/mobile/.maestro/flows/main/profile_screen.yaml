@@ -1,5 +1,8 @@
 # Main Test: Verify Profile Screen after Login
 appId: com.deancochran.gradientpeak.dev
+env:
+  TARGET_USERNAME: "coachcasey"
+  TARGET_USER_ID: "2f3c344a-a44d-4541-8833-3b52bcefb130"
 ---
 - runFlow:
     file: ../reusable/bootstrap.yaml
@@ -8,14 +11,24 @@ appId: com.deancochran.gradientpeak.dev
     env:
       email: "${STANDARD_USER_EMAIL}"
       password: "${STANDARD_USER_PASS}"
-- tapOn: "Discover"
-- tapOn: "Users"
-- tapOn: "Search users, activities, plans..."
-- inputText: "${TARGET_USERNAME}"
+- tapOn:
+    id: "search-header-button"
 - extendedWaitUntil:
-    visible: "${TARGET_USERNAME}"
+    visible:
+      id: "discover-screen"
     timeout: 10000
-- tapOn: "${TARGET_USERNAME}"
+- tapOn:
+    id: "discover-scope-users"
+- tapOn:
+    id: "discover-search-input"
+- inputText: "${TARGET_USERNAME}"
+- hideKeyboard
+- extendedWaitUntil:
+    visible:
+      id: "discover-user-${TARGET_USER_ID}"
+    timeout: 10000
+- tapOn:
+    id: "discover-user-${TARGET_USER_ID}"
 - extendedWaitUntil:
     visible:
       id: "user-detail-screen"

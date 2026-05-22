@@ -1,20 +1,15 @@
 import React from "react";
 
+import { createHost } from "../../../../test/mock-components";
 import { renderNative, screen } from "../../../../test/render-native";
 
 const pushMock = jest.fn();
 const navigateMock = jest.fn();
 const eventsListUseQueryMock = jest.fn(() => ({
-  data: { items: [] },
+  data: { items: [] as Array<{ id: string }> },
   isLoading: false,
   refetch: jest.fn(async () => undefined),
 }));
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -94,6 +89,12 @@ describe("scheduled activities list", () => {
   });
 
   it("switches to the calendar tab for schedule actions", () => {
+    eventsListUseQueryMock.mockReturnValueOnce({
+      data: { items: [{ id: "event-1" }] },
+      isLoading: false,
+      refetch: jest.fn(async () => undefined),
+    });
+
     renderNative(<ScheduledActivitiesListScreen />);
 
     screen.getByTestId("scheduled-activities-list-calendar-trigger").props.onPress();

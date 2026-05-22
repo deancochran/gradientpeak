@@ -1,42 +1,39 @@
 import { Text } from "@repo/ui/components/text";
 import { Stack } from "expo-router";
-import React from "react";
-import { ActivityIndicator, FlatList, Pressable, View } from "react-native";
+import React, { useState } from "react";
+import { Pressable, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { IndexFilterSheet } from "@/components/shared/IndexFilterSheet";
+import {
+  FilterChip,
+  FilterSection,
+  IndexResultsSummary,
+  IndexSearchBar,
+} from "@/components/shared/IndexSearchBar";
+import { ResourceList } from "@/components/shared/ResourceList";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 function ActivityPlansListScreen() {
   const navigateTo = useAppNavigate();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<
+    "run" | "bike" | "swim" | "strength" | "other" | null
+  >(null);
+  const [draftCategoryFilter, setDraftCategoryFilter] = useState<typeof categoryFilter>(null);
+  const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const { data, isLoading, error } = api.activityPlans.list.useQuery({
     ownerScope: "own",
     includeOwnOnly: true,
     includeSystemTemplates: false,
+    search: searchQuery.trim() || undefined,
+    activityCategories: categoryFilter ? [categoryFilter] : undefined,
     limit: 100,
   });
 
   const plans = data?.items ?? [];
-
-  if (isLoading) {
-    return (
-      <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator />
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View className="flex-1 items-center justify-center bg-background px-6">
-        <Text className="text-base font-semibold text-foreground">
-          Unable to load activity plans
-        </Text>
-        <Text className="mt-2 text-sm text-muted-foreground">{error.message}</Text>
-      </View>
-    );
-  }
 
   return (
     <View className="flex-1 bg-background" testID="activity-plans-list-screen">
@@ -53,20 +50,30 @@ function ActivityPlansListScreen() {
           ),
         }}
       />
-      <FlatList
+      <IndexSearchBar
+        value={searchQuery}
+        placeholder="Search activity plans"
+        hasActiveFilters={categoryFilter !== null}
+        onChangeText={setSearchQuery}
+        onClear={() => setSearchQuery("")}
+        onFilterPress={() => {
+          setDraftCategoryFilter(categoryFilter);
+          setIsFilterSheetOpen(true);
+        }}
+        testIDPrefix="activity-plans-list"
+      />
+      <ResourceList
         data={plans}
         keyExtractor={(item) => item.id}
         contentContainerClassName="gap-4 p-4 pb-6"
         ListHeaderComponent={
-          plans.length > 0 ? (
-            <View className="rounded-2xl border border-border bg-muted/20 px-4 py-3">
-              <Text className="text-sm text-muted-foreground">
-                {plans.length} {plans.length === 1 ? "activity plan" : "activity plans"}
-              </Text>
-            </View>
-          ) : null
+          <IndexResultsSummary
+            count={plans.length}
+            singularLabel="activity plan"
+            pluralLabel="activity plans"
+          />
         }
-        ListEmptyComponent={
+        emptyComponent={
           <View className="items-center justify-center py-12">
             <Text className="text-lg font-medium text-foreground">No activity plans yet</Text>
             <Text className="mt-2 text-center text-sm text-muted-foreground">
@@ -74,24 +81,56 @@ function ActivityPlansListScreen() {
             </Text>
           </View>
         }
-        renderItem={({ item }) => {
-          return (
-            <Pressable
-              onPress={() => navigateTo(ROUTES.PLAN.PLAN_DETAIL(item.id) as any)}
-              testID={`activity-plan-list-item-${item.id}`}
-            >
-              <View className="gap-3 rounded-3xl border border-border bg-card p-4">
-                <ActivityPlanCard activityPlan={item as any} variant="default" />
-                <View className="flex-row items-center justify-between gap-3">
-                  <Text className="text-xs text-muted-foreground">
-                    {item.template_visibility === "public" ? "Public template" : "Private plan"}
-                  </Text>
-                </View>
-              </View>
-            </Pressable>
-          );
-        }}
+        errorDescription={error?.message}
+        errorTitle="Unable to load activity plans"
+        isError={Boolean(error)}
+        isLoading={isLoading}
+        renderItem={(item) => (
+          <ActivityPlanCard
+            activityPlan={item as any}
+            onPress={() => navigateTo(ROUTES.PLAN.PLAN_DETAIL(item.id) as any)}
+            testID={`activity-plan-list-item-${item.id}`}
+            variant="compact"
+          />
+        )}
       />
+      <IndexFilterSheet
+        visible={isFilterSheetOpen}
+        title="Activity Plan Filters"
+        description="Refine your activity plans list."
+        isResetDisabled={draftCategoryFilter === null}
+        onReset={() => setDraftCategoryFilter(null)}
+        onApply={() => {
+          setCategoryFilter(draftCategoryFilter);
+          setIsFilterSheetOpen(false);
+        }}
+        onClose={() => setIsFilterSheetOpen(false)}
+        testID="activity-plans-list-filter-sheet"
+      >
+        <FilterSection title="Activity plan type">
+          <View className="flex-row flex-wrap gap-2">
+            {[
+              { id: "run", label: "Running" },
+              { id: "bike", label: "Cycling" },
+              { id: "swim", label: "Swimming" },
+              { id: "strength", label: "Strength" },
+              { id: "other", label: "Other" },
+            ].map((option) => (
+              <FilterChip
+                key={option.id}
+                label={option.label}
+                isActive={draftCategoryFilter === option.id}
+                onPress={() =>
+                  setDraftCategoryFilter(
+                    draftCategoryFilter === option.id ? null : (option.id as any),
+                  )
+                }
+                testID={`activity-plans-list-filter-category-${option.id}`}
+              />
+            ))}
+          </View>
+        </FilterSection>
+      </IndexFilterSheet>
     </View>
   );
 }

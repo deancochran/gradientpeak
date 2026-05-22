@@ -45,9 +45,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         NSLocationWhenInUseUsageDescription: "This app needs your location to track activities.",
         NSMotionUsageDescription: "This app needs motion access to track your activity.",
         NSHealthShareUsageDescription:
-          "This app needs access to your health data to sync your workouts and biometrics.",
+          "This app needs access to your health data to sync your activities and biometrics.",
         NSHealthUpdateUsageDescription:
-          "This app needs access to update your health data with your workouts.",
+          "This app needs access to update your health data with your activities.",
         UNNotificationAlertStyle: "alert",
         ...getDevelopmentTransportSecurity(environment),
       },

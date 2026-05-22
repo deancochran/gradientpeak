@@ -5,10 +5,12 @@ import type { TimeInputProps } from "./shared";
 
 function TimeInput({
   clearable = false,
+  disabled = false,
   error,
   helperText,
   id,
   label,
+  name,
   onChange,
   placeholder,
   required = false,
@@ -24,7 +26,9 @@ function TimeInput({
         {required ? <span className="text-destructive"> *</span> : null}
       </Label>
       <Input
+        disabled={disabled}
         id={inputId}
+        name={name}
         onChange={(event) => onChange(event.currentTarget.value || undefined)}
         placeholder={placeholder}
         testId={testId}

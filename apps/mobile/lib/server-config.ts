@@ -6,10 +6,16 @@ const useLocalE2EHost = process.env.EXPO_PUBLIC_MAESTRO_E2E === "1";
 const appEnvironment = process.env.APP_ENV ?? "development";
 
 const hostedApiUrl = useLocalE2EHost
-  ? "http://127.0.0.1:3000"
+  ? requireUrl(
+      process.env.EXPO_PUBLIC_MAESTRO_E2E_API_URL ?? "http://127.0.0.1:3000",
+      "EXPO_PUBLIC_MAESTRO_E2E_API_URL",
+    )
   : requireUrl(process.env.EXPO_PUBLIC_API_URL, "EXPO_PUBLIC_API_URL");
 const hostedSupabaseUrl = useLocalE2EHost
-  ? "http://127.0.0.1:54321"
+  ? requireUrl(
+      process.env.EXPO_PUBLIC_MAESTRO_E2E_SUPABASE_URL ?? "http://127.0.0.1:54321",
+      "EXPO_PUBLIC_MAESTRO_E2E_SUPABASE_URL",
+    )
   : requireUrl(process.env.EXPO_PUBLIC_SUPABASE_URL, "EXPO_PUBLIC_SUPABASE_URL");
 
 type ServerConfigState = {

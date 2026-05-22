@@ -1,5 +1,5 @@
 /**
- * Compatibility surface for V2 structured-workout helpers.
+ * Compatibility surface for V2 structured-activity helpers.
  *
  * Canonical duration and zone ownership lives in `duration/` and `zones/`.
  * Keep this file as a thin adapter while callers migrate.

@@ -175,7 +175,7 @@ export class TrainerControl {
     }
 
     for (const unresolved of resolution.unresolvedTargets) {
-      this.deps.onError(`Unable to resolve workout target: ${unresolved.type}`);
+      this.deps.onError(`Unable to resolve activity target: ${unresolved.type}`);
     }
 
     for (const intent of resolution.intents) {

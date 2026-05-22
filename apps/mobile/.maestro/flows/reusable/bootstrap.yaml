@@ -4,9 +4,10 @@ appId: com.deancochran.gradientpeak.dev
 - extendedWaitUntil:
     visible:
       id: "sign-in-screen"
-    timeout: 20000
+    timeout: 3000
     optional: true
 - extendedWaitUntil:
-    visible: "Discover"
-    timeout: 20000
+    visible:
+      id: "search-header-button"
+    timeout: 10000
     optional: true

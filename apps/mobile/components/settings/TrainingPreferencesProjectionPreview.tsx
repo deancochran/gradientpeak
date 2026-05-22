@@ -1,134 +1,77 @@
-import { canonicalizeMinimalTrainingPlanCreate } from "@repo/core/plan/canonicalization";
-import type { ProjectionChartPayload } from "@repo/core/plan/projectionTypes";
-import type { PreviewReadinessSnapshot } from "@repo/core/plan/trainingPlanPreview";
-import { athleteTrainingSettingsFormSchema } from "@repo/core/schemas/settings/profile_settings";
-import type { GoalTargetV2 } from "@repo/core/schemas/training_plan_structure";
-import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
 import React, { useMemo } from "react";
-import { ActivityIndicator, View } from "react-native";
+import { ActivityIndicator, Pressable, View } from "react-native";
 import { PlanVsActualChart } from "@/components/charts/PlanVsActualChart";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
-import { computeLocalCreationPreview } from "@/lib/training-plan-form/localPreview";
+import {
+  buildTrainingPreferencesLoadTimeline,
+  buildTrainingPreferencesProjectionPreview,
+  type TrainingPreferencesValues,
+} from "@/lib/training-plan-form/projectionPreview";
 
-type TrainingPreferencesValues =
-  | import("@repo/core/schemas/settings/profile_settings").AthleteTrainingSettings
-  | import("@repo/core/schemas/settings/profile_settings").AthleteTrainingSettingsFormInput;
+type LoadDateRange = "30d" | "60d" | "90d" | "all";
+
+const loadDateRanges: { label: string; value: LoadDateRange }[] = [
+  { label: "30d", value: "30d" },
+  { label: "60d", value: "60d" },
+  { label: "90d", value: "90d" },
+  { label: "All", value: "all" },
+];
 
 function toDateKey(value: Date) {
   return value.toISOString().split("T")[0] ?? "";
 }
 
-function toPreviewMinimalPlan(snapshot: ReturnType<typeof useTrainingPlanSnapshot>) {
-  const datedGoals = snapshot.profileGoals
-    .filter(
-      (goal): goal is typeof goal & { target_date: string } =>
-        typeof goal.target_date === "string" && goal.target_date.length > 0,
-    )
-    .flatMap((goal) => {
-      const targets = toGoalTargets(goal);
-      if (targets.length === 0) {
-        return [];
-      }
-
-      return [
-        {
-          name: goal.title,
-          target_date: goal.target_date,
-          priority: goal.priority,
-          targets,
-        },
-      ];
-    });
-
-  if (datedGoals.length === 0) {
-    return null;
-  }
-
-  const planStartDate =
-    snapshot.actualCurveData?.dataPoints?.[0]?.date ??
-    snapshot.plan?.created_at?.slice(0, 10) ??
-    toDateKey(new Date());
-
-  return canonicalizeMinimalTrainingPlanCreate({
-    goals: datedGoals,
-    plan_start_date: planStartDate,
-  });
+function getDateRangeStartKey(dateRange: LoadDateRange, referenceDateKey?: string | null) {
+  if (dateRange === "all" || !referenceDateKey) return null;
+  const parsed = new Date(`${referenceDateKey}T12:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  parsed.setDate(parsed.getDate() - 30);
+  return toDateKey(parsed);
 }
 
-function toGoalTargets(
-  goal: ReturnType<typeof useTrainingPlanSnapshot>["profileGoals"][number],
-): GoalTargetV2[] {
-  const objective = goal.objective;
-  switch (objective.type) {
-    case "event_performance": {
-      if (typeof objective.distance_m !== "number") {
-        return [];
-      }
+function getDateRangeEndKey(dateRange: LoadDateRange, referenceDateKey?: string | null) {
+  if (dateRange === "all" || !referenceDateKey) return null;
+  const parsed = new Date(`${referenceDateKey}T12:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const days = dateRange === "30d" ? 30 : dateRange === "60d" ? 60 : 90;
+  parsed.setDate(parsed.getDate() + days);
+  return toDateKey(parsed);
+}
 
-      const targetTime =
-        typeof objective.target_time_s === "number"
-          ? objective.target_time_s
-          : typeof objective.target_speed_mps === "number" && objective.target_speed_mps > 0
-            ? Math.round(objective.distance_m / objective.target_speed_mps)
-            : null;
-
-      if (targetTime === null) {
-        return [];
-      }
-
-      return [
-        {
-          target_type: "race_performance",
-          distance_m: objective.distance_m,
-          target_time_s: targetTime,
-          activity_category: objective.activity_category,
-        },
-      ];
-    }
-    case "threshold": {
-      switch (objective.metric) {
-        case "pace":
-          return objective.activity_category
-            ? [
-                {
-                  target_type: "pace_threshold",
-                  target_speed_mps: objective.value,
-                  test_duration_s: objective.test_duration_s ?? 1200,
-                  activity_category: objective.activity_category,
-                },
-              ]
-            : [];
-        case "power":
-          return objective.activity_category
-            ? [
-                {
-                  target_type: "power_threshold",
-                  target_watts: objective.value,
-                  test_duration_s: objective.test_duration_s ?? 1200,
-                  activity_category: objective.activity_category,
-                },
-              ]
-            : [];
-        case "hr":
-          return [{ target_type: "hr_threshold", target_lthr_bpm: objective.value }];
-      }
-    }
-    default:
-      return [];
-  }
+function filterByDateRange<T>(
+  items: T[],
+  dateRange: LoadDateRange,
+  referenceDateKey: string | null | undefined,
+  getItemDate: (item: T) => string | null | undefined,
+) {
+  const startKey = getDateRangeStartKey(dateRange, referenceDateKey);
+  const endKey = getDateRangeEndKey(dateRange, referenceDateKey);
+  if (!startKey || !endKey) return items;
+  return items.filter((item) => {
+    const itemDate = getItemDate(item);
+    return !!itemDate && itemDate >= startKey && itemDate <= endKey;
+  });
 }
 
 interface TrainingPreferencesProjectionPreviewProps {
   draft: TrainingPreferencesValues;
+  loadDateRange?: LoadDateRange;
+  onLoadDateRangeChange?: (dateRange: LoadDateRange) => void;
+  planId?: string;
 }
 
 export function TrainingPreferencesProjectionPreview({
   draft,
+  loadDateRange = "90d",
+  onLoadDateRangeChange,
+  planId,
 }: TrainingPreferencesProjectionPreviewProps) {
   const snapshot = useTrainingPlanSnapshot({
     includeStatus: false,
     includeWeeklySummaries: false,
+    planId,
+    curveWindow: "overview",
   });
 
   const fitnessHistory = useMemo(
@@ -142,66 +85,49 @@ export function TrainingPreferencesProjectionPreview({
   );
 
   const previewResult = useMemo(() => {
-    const minimalPlan = toPreviewMinimalPlan(snapshot);
-    if (!minimalPlan) {
-      return {
-        previewIdealCurve: [],
-        previewSnapshot: null as PreviewReadinessSnapshot | null,
-        projectionChart: null as ProjectionChartPayload | null,
-      };
-    }
-
-    const lastActualPoint = fitnessHistory[fitnessHistory.length - 1] ?? null;
-    const parsedDraft = athleteTrainingSettingsFormSchema.safeParse(draft);
-    if (!parsedDraft.success) {
-      return {
-        previewIdealCurve: [],
-        previewSnapshot: null as PreviewReadinessSnapshot | null,
-        projectionChart: null as ProjectionChartPayload | null,
-      };
-    }
-
-    const resolvedDraft = parsedDraft.data;
-    const startingCtl =
-      resolvedDraft.baseline_fitness?.is_enabled &&
-      typeof resolvedDraft.baseline_fitness.override_ctl === "number"
-        ? resolvedDraft.baseline_fitness.override_ctl
-        : lastActualPoint?.ctl;
-    const startingAtl =
-      resolvedDraft.baseline_fitness?.is_enabled &&
-      typeof resolvedDraft.baseline_fitness.override_atl === "number"
-        ? resolvedDraft.baseline_fitness.override_atl
-        : undefined;
-
-    try {
-      const preview = computeLocalCreationPreview({
-        minimalPlan,
-        creationInput: {},
-        profileSettings: resolvedDraft,
-        profileGoals: snapshot.profileGoals,
-        startingCtlOverride: startingCtl,
-        startingAtlOverride: startingAtl,
-      });
-
-      return {
-        previewIdealCurve:
-          preview.projectionChart.display_points?.map((point) => ({
-            date: point.date,
-            ctl: point.predicted_fitness_ctl,
-          })) ?? [],
-        previewSnapshot: preview.previewSnapshotBaseline,
-        projectionChart: preview.projectionChart,
-      };
-    } catch {
-      return {
-        previewIdealCurve: [],
-        previewSnapshot: null as PreviewReadinessSnapshot | null,
-        projectionChart: null as ProjectionChartPayload | null,
-      };
-    }
+    return buildTrainingPreferencesProjectionPreview({ draft, fitnessHistory, snapshot });
   }, [draft, fitnessHistory, snapshot]);
 
   const previewIdealCurve = previewResult.previewIdealCurve;
+
+  const previewLoadTimeline = useMemo(() => {
+    return buildTrainingPreferencesLoadTimeline({
+      projectionChart: previewResult.projectionChart,
+      snapshot,
+    });
+  }, [previewResult.projectionChart, snapshot.insightTimeline?.timeline]);
+
+  const loadRangeReferenceKey = toDateKey(new Date());
+  const rangedPreviewLoadTimeline = filterByDateRange(
+    previewLoadTimeline,
+    loadDateRange,
+    loadRangeReferenceKey,
+    (point) => point.date,
+  );
+  const rangedFitnessHistory = filterByDateRange(
+    fitnessHistory,
+    loadDateRange,
+    loadRangeReferenceKey,
+    (point) => point.date,
+  );
+  const goalMarkers = useMemo(() => {
+    const projectionMarkers = previewResult.projectionChart?.goal_markers ?? [];
+    if (projectionMarkers.length > 0) {
+      return projectionMarkers.map((marker) => ({
+        id: marker.id,
+        targetDate: marker.target_date,
+        label: marker.name,
+      }));
+    }
+
+    return snapshot.profileGoals
+      .filter((goal): goal is typeof goal & { target_date: string } => !!goal.target_date)
+      .map((goal) => ({
+        id: goal.id,
+        targetDate: goal.target_date,
+        label: goal.title,
+      }));
+  }, [previewResult.projectionChart?.goal_markers, snapshot.profileGoals]);
 
   const goalMetrics = useMemo(() => {
     if (!snapshot.idealCurveData?.targetCTL || !snapshot.idealCurveData?.targetDate) {
@@ -215,59 +141,20 @@ export function TrainingPreferencesProjectionPreview({
     };
   }, [snapshot.idealCurveData]);
 
-  const projectionPreviewSummary = useMemo(() => {
-    if (previewIdealCurve.length < 2) {
-      return "Projection preview unavailable.";
-    }
-
-    if (idealFitnessCurve.length < 2) {
-      return "Draft preview ready. Add or activate a training plan if you want a baseline comparison line too.";
-    }
-
-    const baselinePoint = idealFitnessCurve[idealFitnessCurve.length - 1];
-    const draftPoint = previewIdealCurve[previewIdealCurve.length - 1];
-    if (!baselinePoint || !draftPoint) {
-      return "Projection preview unavailable.";
-    }
-
-    const delta = Math.round((draftPoint.ctl - baselinePoint.ctl) * 10) / 10;
-    const sign = delta > 0 ? "+" : "";
-    return `Draft vs baseline at the latest checkpoint: ${sign}${delta} CTL.`;
-  }, [idealFitnessCurve, previewIdealCurve]);
-
-  const compactGuidance = useMemo(() => {
-    const summary = previewResult.projectionChart?.load_resolution_summary;
-    if (!summary) {
-      return null;
-    }
-
-    if (summary.capped_weeks > 0) {
-      return `${summary.capped_weeks} capped week${summary.capped_weeks === 1 ? "" : "s"}; the planner is protecting your ramp while applying this draft.`;
-    }
-
-    if (summary.recovery_weeks > 0) {
-      return `${summary.recovery_weeks} recovery week${summary.recovery_weeks === 1 ? "" : "s"} preserved around goals.`;
-    }
-
-    return summary.confidence === "high"
-      ? "This draft is stable against the current plan context."
-      : "This draft is usable, but confidence is limited by available plan context.";
-  }, [previewResult.projectionChart]);
-
   const projectionPreviewState = useMemo(() => {
     if (snapshot.loading.plan || snapshot.loading.actualCurve || snapshot.loading.idealCurve) {
       return {
         tone: "loading" as const,
-        title: "Loading projection preview",
-        body: "Pulling your current training context and deterministic draft preview so this screen can compare today's settings with the best baseline available.",
+        title: "Loading load analysis",
+        body: "Loading current training context.",
       };
     }
 
     if (snapshot.errors.idealCurve) {
       return {
         tone: "unavailable" as const,
-        title: "Preview unavailable",
-        body: "The baseline projection could not be loaded right now. Draft preview is still based on your goals and recent training history.",
+        title: "Chart unavailable",
+        body: "Chart data is unavailable right now.",
       };
     }
 
@@ -275,39 +162,32 @@ export function TrainingPreferencesProjectionPreview({
       return {
         tone: "empty" as const,
         title: "Goal data required",
-        body: "Add a dated goal with a target to preview how these preferences change the planner output.",
+        body: "Add a dated target goal to view load analysis.",
       };
     }
 
     if (idealFitnessCurve.length < 2) {
       return {
         tone: "ready" as const,
-        title: "Draft preview",
-        body:
-          snapshot.profileGoals.length > 0
-            ? "Your deterministic draft preview is ready. Activate or build a training plan later if you want to compare against a plan baseline."
-            : "Add a goal with a target date to give the planner enough information for a projection preview.",
+        title: "Weekly training load (TSS)",
+        body: "",
       };
     }
 
     if (previewIdealCurve.length < 2) {
       return {
         tone: "unavailable" as const,
-        title: "Preview unavailable",
-        body: "The deterministic draft preview could not be computed for the current plan context.",
+        title: "Chart unavailable",
+        body: "Chart data is unavailable right now.",
       };
     }
 
     return {
       tone: "ready" as const,
-      title: "Baseline vs draft preview",
-      body:
-        fitnessHistory.length > 0
-          ? "Recommended shows the current baseline, Planned shows the deterministic draft preview, and Completed shows your recent training when available."
-          : "Recommended shows the current baseline and Planned shows the deterministic draft preview. Completed training will appear here after local history syncs in.",
+      title: "Weekly training load (TSS)",
+      body: "",
     };
   }, [
-    fitnessHistory.length,
     idealFitnessCurve.length,
     previewIdealCurve.length,
     snapshot.loading.actualCurve,
@@ -318,49 +198,54 @@ export function TrainingPreferencesProjectionPreview({
   ]);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Projection Preview</CardTitle>
-      </CardHeader>
-      <CardContent className="gap-3">
-        {projectionPreviewState.tone === "ready" ? (
-          <PlanVsActualChart
-            actualData={fitnessHistory}
-            projectedData={previewIdealCurve}
-            idealData={idealFitnessCurve.length >= 2 ? idealFitnessCurve : []}
-            goalMetrics={idealFitnessCurve.length >= 2 ? goalMetrics : null}
-            height={220}
-            showLegend
-          />
-        ) : (
-          <View className="gap-2 rounded-md border border-dashed border-border bg-muted/20 px-4 py-5">
-            {projectionPreviewState.tone === "loading" ? <ActivityIndicator size="small" /> : null}
-            <Text className="text-sm font-semibold text-foreground">
-              {projectionPreviewState.title}
-            </Text>
-            <Text className="text-sm text-muted-foreground">{projectionPreviewState.body}</Text>
-          </View>
-        )}
-        <View className="gap-1 rounded-md bg-muted/20 px-3 py-2">
-          <Text className="text-sm font-medium text-foreground">
+    <View className="gap-3" testID="training-preferences-load-analysis">
+      <View className="flex-row items-center justify-between gap-3">
+        <Text className="text-sm font-semibold text-foreground">Weekly training load (TSS)</Text>
+        <View
+          className="flex-row rounded-full border border-border bg-card p-0.5"
+          testID="training-preferences-load-range-selector"
+        >
+          {loadDateRanges.map((range) => {
+            const isSelected = loadDateRange === range.value;
+            return (
+              <Pressable
+                key={range.value}
+                accessibilityRole="button"
+                className={`rounded-full px-2 py-1 ${isSelected ? "bg-primary" : "bg-transparent"}`}
+                onPress={() => onLoadDateRangeChange?.(range.value)}
+                testID={`training-preferences-load-range-${range.value}`}
+              >
+                <Text
+                  className={`text-[10px] font-semibold ${
+                    isSelected ? "text-primary-foreground" : "text-muted-foreground"
+                  }`}
+                >
+                  {range.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+      {projectionPreviewState.tone === "ready" ? (
+        <PlanVsActualChart
+          timeline={rangedPreviewLoadTimeline}
+          actualData={rangedFitnessHistory}
+          projectedData={[]}
+          idealData={[]}
+          goalMarkers={goalMarkers}
+          goalMetrics={idealFitnessCurve.length >= 2 ? goalMetrics : null}
+          height={260}
+          showLegend
+        />
+      ) : (
+        <View className="gap-2 rounded-md border border-dashed border-border bg-muted/20 px-4 py-5">
+          {projectionPreviewState.tone === "loading" ? <ActivityIndicator size="small" /> : null}
+          <Text className="text-sm font-semibold text-foreground">
             {projectionPreviewState.title}
           </Text>
-          <Text className="text-sm text-muted-foreground">
-            {projectionPreviewState.tone === "ready"
-              ? projectionPreviewSummary
-              : projectionPreviewState.body}
-          </Text>
-          {compactGuidance ? (
-            <Text className="text-xs text-muted-foreground">{compactGuidance}</Text>
-          ) : null}
         </View>
-        {previewResult.previewSnapshot ? (
-          <Text className="text-xs text-muted-foreground">
-            Draft readiness: {Math.round(previewResult.previewSnapshot.readiness_score)}. Load:{" "}
-            {Math.round(previewResult.previewSnapshot.predicted_load_tss)} TSS.
-          </Text>
-        ) : null}
-      </CardContent>
-    </Card>
+      )}
+    </View>
   );
 }

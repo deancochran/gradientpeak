@@ -194,6 +194,7 @@ export class SensorsManager {
   private reconnectionTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private readonly MAX_RECONNECTION_ATTEMPTS = 8; // Increased from 5 for better reliability
   private readonly RECONNECTION_BACKOFF_BASE_MS = 1000; // Increased from 500ms to 1s
+  private autoReconnectEnabled = false;
 
   private knownSensorRegistry = new KnownSensorRegistry();
   private sensorSetupResetVersion = 0;
@@ -263,7 +264,11 @@ export class SensorsManager {
       if (state === "PoweredOn") {
         console.log("BLE ready");
         // Attempt to reconnect to persisted sensors when BLE is ready
-        if (this.knownSensorRegistry.initialized && this.knownSensorRegistry.size > 0) {
+        if (
+          this.autoReconnectEnabled &&
+          this.knownSensorRegistry.initialized &&
+          this.knownSensorRegistry.size > 0
+        ) {
           console.log(
             `[SensorsManager] BLE powered on, attempting to reconnect ${this.knownSensorRegistry.size} persisted sensors`,
           );
@@ -596,6 +601,18 @@ export class SensorsManager {
     return this.knownSensorRegistry.subscribe(cb);
   }
 
+  public setAutoReconnectEnabled(enabled: boolean): void {
+    if (this.autoReconnectEnabled === enabled) {
+      return;
+    }
+
+    this.autoReconnectEnabled = enabled;
+
+    if (!enabled) {
+      this.cancelReconnectionAttempts();
+    }
+  }
+
   /** Start monitoring sensor connection health */
   private startConnectionMonitoring() {
     if (this.connectionMonitorTimer) {
@@ -617,6 +634,10 @@ export class SensorsManager {
 
   /** Check health of all connected sensors */
   private async checkSensorHealth() {
+    if (!this.autoReconnectEnabled) {
+      return;
+    }
+
     const now = Date.now();
     const sensors = Array.from(this.connectedSensors.values());
 
@@ -661,6 +682,11 @@ export class SensorsManager {
    * @param attempt - Current attempt number (1-indexed)
    */
   private async attemptReconnection(sensorId: string, attempt: number = 1): Promise<void> {
+    if (!this.autoReconnectEnabled) {
+      this.reconnectionAttempts.delete(sensorId);
+      return;
+    }
+
     if (this.knownSensorRegistry.isAutoReconnectSuppressed(sensorId)) {
       this.reconnectionAttempts.delete(sensorId);
       return;
@@ -674,7 +700,7 @@ export class SensorsManager {
 
     // Check if max attempts reached
     if (attempt > this.MAX_RECONNECTION_ATTEMPTS) {
-      console.error(
+      console.warn(
         `[SensorsManager] Max reconnection attempts (${this.MAX_RECONNECTION_ATTEMPTS}) reached for ${sensor.name}`,
       );
       this.transitionSensorState(sensor, "failed", true);
@@ -742,6 +768,11 @@ export class SensorsManager {
   }
 
   private scheduleReconnectionAttempt(sensorId: string, nextAttempt: number): void {
+    if (!this.autoReconnectEnabled) {
+      this.reconnectionAttempts.delete(sensorId);
+      return;
+    }
+
     if (this.knownSensorRegistry.isAutoReconnectSuppressed(sensorId)) {
       this.reconnectionAttempts.delete(sensorId);
       return;
@@ -1010,6 +1041,10 @@ export class SensorsManager {
 
   /** Public method to reconnect all sensors (to be called on AppState "active") */
   public async reconnectAll(): Promise<void> {
+    if (!this.autoReconnectEnabled) {
+      return;
+    }
+
     const knownSensorIds = new Set<string>([
       ...this.connectedSensors.keys(),
       ...this.knownSensorRegistry.getAll().map((sensor) => sensor.id),

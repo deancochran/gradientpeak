@@ -8,6 +8,7 @@ import { Text } from "@repo/ui/components/text";
 import { Activity, Clock, TrendingUp, Zap } from "lucide-react-native";
 import { memo } from "react";
 import { View } from "react-native";
+import { formatEstimatedTss } from "@/lib/estimatedMetrics";
 
 interface ActivityMetricsGridProps {
   structure: ActivityPlanStructureV2;
@@ -55,7 +56,7 @@ export const ActivityMetricsGrid = memo<ActivityMetricsGridProps>(function Activ
           <MetricCard
             icon={TrendingUp}
             label="Est. TSS"
-            value={`${Math.round(stats.estimatedTSS)}`}
+            value={formatEstimatedTss(stats.estimatedTSS, { includeUnit: false }) ?? "--"}
             subtitle={`~${Math.round(stats.estimatedCalories)} cal`}
             color="text-purple-500"
           />

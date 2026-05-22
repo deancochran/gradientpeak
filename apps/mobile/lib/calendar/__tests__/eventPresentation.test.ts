@@ -28,7 +28,7 @@ describe("calendar event presentation", () => {
     };
 
     expect(getEventTimeLabel(event)).not.toBe("Scheduled");
-    expect(getEventPrimaryMeta(event)).toEqual(["Outdoor Run", "1h"]);
+    expect(getEventPrimaryMeta(event)).toEqual(["Outdoor Run", "~1h"]);
     expect(getEventSupportingLine(event)).toBe("Progressive tempo with a strong finish.");
     expect(getEventStatusLabel(event)).toBeNull();
   });
@@ -47,7 +47,7 @@ describe("calendar event presentation", () => {
       },
     };
 
-    expect(getEventPrimaryMeta(event)).toEqual(["Indoor Bike", "88 TSS"]);
+    expect(getEventPrimaryMeta(event)).toEqual(["Indoor Bike", "~88 TSS"]);
     expect(getEventStatusLabel(event)).toBe("Completed");
   });
 

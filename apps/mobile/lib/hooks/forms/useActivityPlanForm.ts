@@ -255,7 +255,7 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
 
       return errors;
     },
-    [name, activityCategory, structure],
+    [name, activityCategory, structure, routeId],
   );
 
   // Validation

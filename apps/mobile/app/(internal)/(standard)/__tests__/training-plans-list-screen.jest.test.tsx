@@ -1,5 +1,6 @@
 import React from "react";
 import { ROUTES } from "@/lib/constants/routes";
+import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const pushMock = jest.fn();
@@ -23,17 +24,24 @@ const plansState = [
   },
 ] as any[];
 
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
-
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: (props: any) => React.createElement("StackScreen", props),
+    Screen: createHost("StackScreen"),
   },
+}));
+
+jest.mock("@gorhom/bottom-sheet", () => ({
+  __esModule: true,
+  default: createHost("BottomSheet"),
+  BottomSheetBackdrop: createHost("BottomSheetBackdrop"),
+  BottomSheetScrollView: createHost("BottomSheetScrollView"),
+  BottomSheetView: createHost("BottomSheetView"),
+}));
+
+jest.mock("@/lib/stores/theme-store", () => ({
+  __esModule: true,
+  useTheme: () => ({ resolvedTheme: "light" }),
 }));
 
 jest.mock("@/components/ErrorBoundary", () => ({

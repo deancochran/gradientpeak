@@ -1,7 +1,15 @@
 appId: com.deancochran.gradientpeak.dev
 ---
+- runFlow:
+    when:
+      visible:
+        id: "discover-screen"
+    commands:
+      - hideKeyboard
+      - back
 - tapOn:
     id: "tab-button-home"
 - extendedWaitUntil:
-    visible: "Discover"
+    visible:
+      id: "search-header-button"
     timeout: 10000

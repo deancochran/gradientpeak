@@ -46,7 +46,7 @@ export { estimateMetricsInternal as estimateMetrics, estimateWeeklyLoad, predict
  * Main estimation function - automatically selects best strategy
  *
  * Strategy priority:
- * 1. Structure-based (highest accuracy) - if workout has steps
+ * 1. Structure-based (highest accuracy) - if activity has steps
  * 2. Route-based (medium accuracy) - if route data is provided
  * 3. Template-based (lowest accuracy) - fallback using activity type defaults
  *

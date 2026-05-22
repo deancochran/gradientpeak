@@ -1,21 +1,21 @@
 import React from "react";
 
-import { fireEvent, renderNative, screen } from "../../../../test/render-native";
+import { createHost } from "../../../../test/mock-components";
+import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 
 const pushMock = jest.fn();
 const createDMMutateMock = jest.fn();
 const createConversationMutateMock = jest.fn();
 
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
-
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: createHost("StackScreen"),
+    Screen: (props: any) =>
+      React.createElement(
+        "StackScreen",
+        props,
+        typeof props.options?.headerRight === "function" ? props.options.headerRight() : null,
+      ),
   },
 }));
 
@@ -42,7 +42,12 @@ jest.mock("@repo/ui/components/avatar", () => ({
 jest.mock("@repo/ui/components/input", () => ({
   __esModule: true,
   Input: ({ value, onChangeText, ...props }: any) =>
-    React.createElement("TextInput", { value, onChangeText, ...props }),
+    React.createElement("TextInput", {
+      value,
+      onChangeText,
+      testID: props.testID ?? props.testId,
+      ...props,
+    }),
 }));
 jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHost("Text") }));
 
@@ -109,14 +114,16 @@ describe("new message screen", () => {
     createConversationMutateMock.mockReset();
   });
 
-  it("creates or opens a DM when starting a single-recipient conversation", () => {
+  it("creates or opens a DM when starting a single-recipient conversation", async () => {
     renderNative(<NewMessageScreen />);
 
     fireEvent.press(screen.getByTestId("messages-new-user-user-1"));
     fireEvent.press(screen.getByTestId("messages-new-next-trigger"));
 
     expect(createDMMutateMock).toHaveBeenCalledWith({ target_user_id: "user-1" });
-    expect(pushMock).toHaveBeenCalledWith("/messages/conversation-1");
+    await waitFor(() => {
+      expect(pushMock).toHaveBeenCalledWith("/messages/conversation-1");
+    });
   });
 
   it("creates a group conversation when multiple recipients are selected", () => {

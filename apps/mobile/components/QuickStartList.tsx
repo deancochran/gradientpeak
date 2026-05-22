@@ -72,7 +72,7 @@ export function QuickStartList({ onActivitySelect }: QuickStartListProps) {
   return (
     <View className="gap-3">
       {ACTIVITY_CONFIGS.map((config, index) => (
-        <ActivityCard
+        <QuickStartActivityOption
           key={`${config.category}-${config.gpsRecordingEnabled}-${index}`}
           config={config}
           onSelect={() => onActivitySelect(config.category, config.gpsRecordingEnabled)}
@@ -82,12 +82,12 @@ export function QuickStartList({ onActivitySelect }: QuickStartListProps) {
   );
 }
 
-interface ActivityCardProps {
+interface QuickStartActivityOptionProps {
   config: (typeof ACTIVITY_CONFIGS)[0];
   onSelect: () => void;
 }
 
-function ActivityCard({ config, onSelect }: ActivityCardProps) {
+function QuickStartActivityOption({ config, onSelect }: QuickStartActivityOptionProps) {
   return (
     <Button
       variant="outline"

@@ -1,10 +1,11 @@
 import { invalidateGoalQueries } from "@repo/api/react";
 import { buildGoalCreatePayload, createEmptyGoalDraft, type GoalEditorDraft } from "@repo/core";
+import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
-import { useRouter } from "expo-router";
-import React, { useMemo } from "react";
-import { Alert, ScrollView, View } from "react-native";
-import { GoalEditorForm } from "@/components/goals";
+import { Stack, useRouter } from "expo-router";
+import React, { useMemo, useRef } from "react";
+import { Alert, KeyboardAvoidingView, Platform, View } from "react-native";
+import { GoalEditorForm, type GoalEditorFormHandle } from "@/components/goals";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAuthStore } from "@/lib/stores/auth-store";
@@ -12,6 +13,7 @@ import { useAuthStore } from "@/lib/stores/auth-store";
 export default function GoalCreateScreen() {
   const router = useRouter();
   const utils = api.useUtils();
+  const formRef = useRef<GoalEditorFormHandle>(null);
   const profileId = useAuthStore((state) => state.profile?.id ?? null);
   const initialDraft = useMemo(() => createEmptyGoalDraft(), []);
   const createGoalMutation = api.goals.create.useMutation({
@@ -38,25 +40,40 @@ export default function GoalCreateScreen() {
   };
 
   return (
-    <View className="flex-1 bg-background" testID="goal-create-screen">
-      <ScrollView
-        className="flex-1"
-        contentContainerClassName="gap-4 p-4 pb-8"
-        keyboardShouldPersistTaps="handled"
-      >
-        <View className="gap-1">
-          <Text className="text-2xl font-semibold text-foreground">Create Goal</Text>
-          <Text className="text-sm text-muted-foreground">
-            Define the outcome the plan and calendar should organize around.
-          </Text>
-        </View>
-        <GoalEditorForm
-          initialValue={initialDraft}
-          submitLabel="Create Goal"
-          isSubmitting={createGoalMutation.isPending}
-          onSubmit={handleSubmit}
-        />
-      </ScrollView>
-    </View>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      className="flex-1 gap-3 bg-background p-3"
+      keyboardVerticalOffset={80}
+      testID="goal-create-screen"
+    >
+      <Stack.Screen
+        options={{
+          headerRight: () => (
+            <Button
+              disabled={createGoalMutation.isPending}
+              onPress={() => formRef.current?.submit()}
+              size="sm"
+              variant="ghost"
+            >
+              <Text className="text-sm font-semibold text-primary">
+                {createGoalMutation.isPending ? "Creating..." : "Create"}
+              </Text>
+            </Button>
+          ),
+        }}
+      />
+      <View className="gap-0.5">
+        <Text className="text-xl font-semibold text-foreground">Create Goal</Text>
+        <Text className="text-xs text-muted-foreground">Pick a focus, date, and target.</Text>
+      </View>
+      <GoalEditorForm
+        ref={formRef}
+        initialValue={initialDraft}
+        submitLabel="Create Goal"
+        isSubmitting={createGoalMutation.isPending}
+        showSubmitAction={false}
+        onSubmit={handleSubmit}
+      />
+    </KeyboardAvoidingView>
   );
 }

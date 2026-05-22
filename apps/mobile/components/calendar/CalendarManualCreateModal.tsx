@@ -10,8 +10,8 @@ import {
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { format } from "date-fns";
-import React, { useEffect } from "react";
-import { Modal, ScrollView, TouchableOpacity, View } from "react-native";
+import React, { useEffect, useState } from "react";
+import { Modal, Pressable, ScrollView, TouchableOpacity, View } from "react-native";
 import { z } from "zod";
 
 export type ManualEventCreateType = "race_target" | "custom";
@@ -48,8 +48,21 @@ type CalendarManualCreateModalProps = {
     notes: string;
     startsAt: Date;
     allDay: boolean;
+    recurrence?: { rule: string; timezone: string };
   }) => void;
 };
+
+function getRRuleWeekday(dateKey: string): string {
+  const day = new Date(`${dateKey}T00:00:00.000Z`).getUTCDay();
+  return ["SU", "MO", "TU", "WE", "TH", "FR", "SA"][day] ?? "MO";
+}
+
+function buildWeeklyRecurrence(dateKey: string, occurrenceCount: number) {
+  return {
+    rule: `FREQ=WEEKLY;INTERVAL=1;COUNT=${occurrenceCount};BYDAY=${getRRuleWeekday(dateKey)}`,
+    timezone: "UTC",
+  };
+}
 
 function buildInitialValues(
   activeDate: string,
@@ -117,6 +130,8 @@ export function CalendarManualCreateModal({
   onClose,
   onSubmit,
 }: CalendarManualCreateModalProps) {
+  const [repeatWeekly, setRepeatWeekly] = useState(false);
+  const [repeatOccurrenceCount, setRepeatOccurrenceCount] = useState(4);
   const form = useZodForm({
     schema: calendarManualCreateSchema,
     defaultValues: buildInitialValues(activeDate, createType ?? "custom"),
@@ -131,6 +146,8 @@ export function CalendarManualCreateModal({
     }
 
     form.reset(buildInitialValues(activeDate, createType));
+    setRepeatWeekly(false);
+    setRepeatOccurrenceCount(4);
   }, [activeDate, createType, form, visible]);
 
   const submitForm = useZodFormSubmit<CalendarManualCreateFormValues>({
@@ -148,6 +165,9 @@ export function CalendarManualCreateModal({
           allDay: data.all_day,
         }),
         allDay: data.all_day,
+        recurrence: repeatWeekly
+          ? buildWeeklyRecurrence(data.scheduled_date, repeatOccurrenceCount)
+          : undefined,
       });
     },
   });
@@ -227,6 +247,61 @@ export function CalendarManualCreateModal({
                   placeholder="Add notes"
                   testId="manual-create-notes-input"
                 />
+
+                <View className="rounded-xl border border-border bg-card px-3 py-3">
+                  <View className="flex-row items-center justify-between gap-3">
+                    <View className="flex-1 gap-1">
+                      <Text className="text-sm font-medium text-foreground">Repeat weekly</Text>
+                      <Text className="text-xs text-muted-foreground">
+                        Create this event every week on the selected day.
+                      </Text>
+                    </View>
+                    <Pressable
+                      accessibilityRole="switch"
+                      accessibilityState={{ checked: repeatWeekly }}
+                      className={`rounded-full px-3 py-2 ${repeatWeekly ? "bg-primary" : "bg-muted"}`}
+                      disabled={submitting}
+                      onPress={() => setRepeatWeekly((current) => !current)}
+                      testID="manual-create-repeat-weekly-toggle"
+                    >
+                      <Text
+                        className={`text-xs font-semibold ${repeatWeekly ? "text-primary-foreground" : "text-foreground"}`}
+                      >
+                        {repeatWeekly ? "On" : "Off"}
+                      </Text>
+                    </Pressable>
+                  </View>
+
+                  {repeatWeekly ? (
+                    <View className="mt-3 gap-2 border-t border-border pt-3">
+                      <Text className="text-xs font-medium text-muted-foreground">
+                        Ends after {repeatOccurrenceCount} occurrences
+                      </Text>
+                      <View className="flex-row gap-2">
+                        <Pressable
+                          className="rounded-md border border-border px-3 py-2"
+                          disabled={submitting || repeatOccurrenceCount <= 2}
+                          onPress={() =>
+                            setRepeatOccurrenceCount((current) => Math.max(2, current - 1))
+                          }
+                          testID="manual-create-repeat-count-decrement"
+                        >
+                          <Text className="text-sm text-foreground">-</Text>
+                        </Pressable>
+                        <Pressable
+                          className="rounded-md border border-border px-3 py-2"
+                          disabled={submitting || repeatOccurrenceCount >= 52}
+                          onPress={() =>
+                            setRepeatOccurrenceCount((current) => Math.min(52, current + 1))
+                          }
+                          testID="manual-create-repeat-count-increment"
+                        >
+                          <Text className="text-sm text-foreground">+</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  ) : null}
+                </View>
               </View>
             </Form>
 

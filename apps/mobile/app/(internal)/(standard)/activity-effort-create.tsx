@@ -2,23 +2,19 @@ import { Button } from "@repo/ui/components/button";
 import {
   Form,
   FormBoundedNumberField,
-  FormControl,
-  FormField,
   FormIntegerStepperField,
-  FormItem,
-  FormLabel,
-  FormMessage,
+  FormSegmentedSelectField,
   FormTextField,
 } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useRouter } from "expo-router";
-import React, { useEffect } from "react";
+import React from "react";
 import { Alert, ScrollView, View } from "react-native";
 import { z } from "zod";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { api } from "@/lib/api";
-import { applyServerFormErrors, showErrorAlert } from "@/lib/utils/formErrors";
+import { handleSubmitFormError } from "@/lib/utils/formErrors";
 
 const effortSchema = z.object({
   activity_category: z.enum(["run", "bike", "swim", "strength", "other"]),
@@ -50,30 +46,22 @@ function ActivityEffortCreate() {
   const createMutation = api.activityEfforts.create.useMutation();
   const submitForm = useZodFormSubmit<FormValues>({
     form,
+    shouldRethrow: false,
     onSubmit: async (data) => {
-      try {
-        await createMutation.mutateAsync(data);
-        await utils.activityEfforts.invalidate();
-        Alert.alert("Success", "Effort created successfully");
-        router.back();
-      } catch (error) {
-        if (applyServerFormErrors(form, error)) {
-          return;
-        }
-
-        throw error;
-      }
+      await createMutation.mutateAsync(data);
+      await Promise.all([
+        utils.activityEfforts.invalidate(),
+        utils.activities.invalidate(),
+        utils.events.invalidate(),
+        utils.trainingPlans.invalidate(),
+      ]);
+      Alert.alert("Success", "Effort created successfully");
+      router.back();
     },
+    onError: (error) =>
+      handleSubmitFormError(form, error, { alertTitle: "Failed to create effort" }),
   });
 
-  useEffect(() => {
-    if (submitForm.submitError) {
-      showErrorAlert(submitForm.submitError, "Failed to create effort");
-    }
-  }, [submitForm.submitError]);
-
-  const categories = ["run", "bike", "swim", "strength", "other"] as const;
-  const effortTypes = ["power", "speed"] as const;
   const isSubmitting = submitForm.isSubmitting || createMutation.isPending;
 
   return (
@@ -84,72 +72,31 @@ function ActivityEffortCreate() {
     >
       <Form {...form}>
         <View className="gap-6">
-          <FormField
+          <FormSegmentedSelectField
             control={form.control}
+            disabled={isSubmitting}
+            label="Activity Category"
             name="activity_category"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Activity Category</FormLabel>
-                <FormControl>
-                  <View className="flex-row flex-wrap gap-2">
-                    {categories.map((category) => (
-                      <Button
-                        key={category}
-                        variant={field.value === category ? "default" : "outline"}
-                        onPress={() => field.onChange(category)}
-                        className="flex-1 min-w-[30%]"
-                        disabled={isSubmitting}
-                      >
-                        <Text
-                          className={
-                            field.value === category
-                              ? "text-primary-foreground capitalize"
-                              : "text-foreground capitalize"
-                          }
-                        >
-                          {category}
-                        </Text>
-                      </Button>
-                    ))}
-                  </View>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
+            options={[
+              { label: "Run", value: "run" },
+              { label: "Bike", value: "bike" },
+              { label: "Swim", value: "swim" },
+              { label: "Strength", value: "strength" },
+              { label: "Other", value: "other" },
+            ]}
+            testId="activity-category-segments"
           />
 
-          <FormField
+          <FormSegmentedSelectField
             control={form.control}
+            disabled={isSubmitting}
+            label="Effort Type"
             name="effort_type"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Effort Type</FormLabel>
-                <FormControl>
-                  <View className="flex-row gap-2">
-                    {effortTypes.map((effortType) => (
-                      <Button
-                        key={effortType}
-                        variant={field.value === effortType ? "default" : "outline"}
-                        onPress={() => field.onChange(effortType)}
-                        className="flex-1"
-                        disabled={isSubmitting}
-                      >
-                        <Text
-                          className={
-                            field.value === effortType
-                              ? "text-primary-foreground capitalize"
-                              : "text-foreground capitalize"
-                          }
-                        >
-                          {effortType}
-                        </Text>
-                      </Button>
-                    ))}
-                  </View>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
+            options={[
+              { label: "Power", value: "power" },
+              { label: "Speed", value: "speed" },
+            ]}
+            testId="effort-type-segments"
           />
 
           <FormIntegerStepperField

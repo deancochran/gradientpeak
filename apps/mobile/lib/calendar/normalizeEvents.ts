@@ -12,6 +12,10 @@ export interface CalendarEventActivityPlan {
     intensity_factor?: number | null;
     estimated_distance?: number | null;
   } | null;
+  estimated_duration?: number | null;
+  estimated_tss?: number | null;
+  intensity_factor?: number | null;
+  estimated_distance?: number | null;
   route?: {
     distance?: number | null;
     ascent?: number | null;

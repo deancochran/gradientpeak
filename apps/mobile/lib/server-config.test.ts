@@ -19,6 +19,9 @@ describe("server-config", () => {
     vi.clearAllMocks();
     delete process.env.APP_ENV;
     delete process.env.EXPO_PUBLIC_ENABLE_SERVER_OVERRIDE;
+    delete process.env.EXPO_PUBLIC_MAESTRO_E2E;
+    delete process.env.EXPO_PUBLIC_MAESTRO_E2E_API_URL;
+    delete process.env.EXPO_PUBLIC_MAESTRO_E2E_SUPABASE_URL;
   });
 
   it("loads hosted defaults when no override exists", async () => {
@@ -30,6 +33,22 @@ describe("server-config", () => {
       initialized: true,
       apiUrl: "https://api.gradientpeak.app",
       supabaseUrl: "https://db.gradientpeak.app",
+      overrideUrl: null,
+    });
+  });
+
+  it("uses configurable Maestro E2E server defaults", async () => {
+    process.env.EXPO_PUBLIC_MAESTRO_E2E = "1";
+    process.env.EXPO_PUBLIC_MAESTRO_E2E_API_URL = "http://10.0.2.2:3000/";
+    process.env.EXPO_PUBLIC_MAESTRO_E2E_SUPABASE_URL = "http://10.0.2.2:54321/";
+    const { module } = await loadServerConfigModule();
+
+    await module.initializeServerConfig();
+
+    expect(module.getServerConfig()).toMatchObject({
+      initialized: true,
+      apiUrl: "http://10.0.2.2:3000",
+      supabaseUrl: "http://10.0.2.2:54321",
       overrideUrl: null,
     });
   });

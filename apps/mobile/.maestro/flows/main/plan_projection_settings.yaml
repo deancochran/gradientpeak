@@ -15,7 +15,7 @@ env:
     visible: "Goals"
     timeout: 10000
 - tapOn:
-    id: "projection-settings-button"
+    id: "plan-signals-settings-button"
 - extendedWaitUntil:
     visible: "Training Preferences"
     timeout: 10000

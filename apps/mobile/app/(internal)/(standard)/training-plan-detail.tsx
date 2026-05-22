@@ -37,6 +37,7 @@ import {
   normalizeTrainingPlanNextStep,
   TPV_NEXT_STEP_INTENTS,
 } from "@/lib/constants/trainingPlanIntents";
+import { markEstimated } from "@/lib/estimatedMetrics";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useEntityCommentsController } from "@/lib/hooks/useEntityCommentsController";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
@@ -965,7 +966,7 @@ export default function TrainingPlanOverview() {
             overview={{
               linkedWorkouts: linkedWorkoutCards.length,
               microcycles: groupedStructureSessions.length || 0,
-              plannedTime: formatMinutesLabel(totalPlannedMinutes),
+              plannedTime: markEstimated(formatMinutesLabel(totalPlannedMinutes)) ?? "0 min",
               plannedTss: Math.round(totalPlannedTss),
               routeBacked: routeBackedWorkoutCards.length,
               sessions: structureSessionRows.length,
@@ -1022,7 +1023,7 @@ export default function TrainingPlanOverview() {
                       value={`${selectedMicrocycleSessionCount}`}
                     />
                     <SummaryMetricCard
-                      label="Linked workouts"
+                      label="Linked activities"
                       value={`${selectedMicrocycleWorkoutCards.length}`}
                     />
                     <SummaryMetricCard
@@ -1031,17 +1032,18 @@ export default function TrainingPlanOverview() {
                     />
                     <SummaryMetricCard
                       label="Planned TSS"
-                      value={`${Math.round(selectedMicrocycleLoad)}`}
+                      value={markEstimated(`${Math.round(selectedMicrocycleLoad)}`) ?? "0"}
                     />
                     <SummaryMetricCard
                       label="Planned time"
-                      value={formatMinutesLabel(selectedMicrocycleMinutes * 60)}
+                      value={
+                        markEstimated(formatMinutesLabel(selectedMicrocycleMinutes * 60)) ?? "0 min"
+                      }
                     />
                   </View>
                   <TrainingPlanStructureSection
                     activityPlanItems={activityPlanItems}
                     activityPlanNameById={activityPlanNameById}
-                    description="Session placement stays visible here so the full microcycle remains easy to scan."
                     embedded
                     formatCompactDayLabel={formatCompactDayLabel}
                     groupedStructureSessions={[selectedMicrocycleGroup]}
@@ -1109,7 +1111,9 @@ export default function TrainingPlanOverview() {
             onOpenActivePlan={scheduling.handleOpenActivePlan}
             onReplaceScheduledPlan={scheduling.handleReplaceScheduledPlan}
             onScheduleModalOpenChange={scheduling.setShowApplyModal}
+            onSelectScheduleApplicationMode={scheduling.handleSelectScheduleApplicationMode}
             onSelectScheduleAnchorMode={scheduling.handleSelectScheduleAnchorMode}
+            scheduleApplicationMode={scheduling.scheduleApplicationMode}
             scheduleAnchorContent={scheduling.scheduleAnchorContent}
             scheduleAnchorMode={scheduling.scheduleAnchorMode}
             setTemplateAnchorDate={scheduling.setTemplateAnchorDate}
@@ -1122,7 +1126,6 @@ export default function TrainingPlanOverview() {
             addCommentPending={comments.addCommentPending}
             commentCount={comments.commentCount}
             comments={comments.comments}
-            helperText="Discuss the template before duplicating or scheduling it."
             hasMoreComments={comments.hasMoreComments}
             isLoadingMoreComments={comments.isLoadingMoreComments}
             newComment={comments.newComment}

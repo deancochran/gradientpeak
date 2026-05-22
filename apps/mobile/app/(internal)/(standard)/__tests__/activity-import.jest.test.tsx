@@ -1,5 +1,6 @@
 import React, { act } from "react";
 
+import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 
 const pushMock = jest.fn();
@@ -21,12 +22,6 @@ const expectedImportProvenance = {
   import_file_type: "fit",
   import_original_file_name: "morning-ride.fit",
 };
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -132,6 +127,19 @@ jest.mock("@repo/ui/components/form", () => ({
     });
   },
   FormSelectField: ({ control, name, testId }: any) => {
+    const { Controller } = require("react-hook-form");
+    return React.createElement(Controller, {
+      control,
+      name,
+      render: ({ field }: any) =>
+        React.createElement("TextInput", {
+          testID: testId,
+          value: field.value,
+          onChangeText: field.onChange,
+        }),
+    });
+  },
+  FormSegmentedSelectField: ({ control, name, testId }: any) => {
     const { Controller } = require("react-hook-form");
     return React.createElement(Controller, {
       control,

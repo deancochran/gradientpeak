@@ -12,6 +12,7 @@ import {
   activityFilesRouter,
   routesRouter,
 } from "./activity";
+import { groupsRouter } from "./groups";
 import { analyticsRouter, homeRouter, trendsRouter } from "./insights";
 import { activityPlansRouter, eventsRouter, goalsRouter, trainingPlansRouter } from "./planning";
 import { integrationsRouter, storageRouter } from "./platform";
@@ -47,6 +48,7 @@ export const appRouter = createTRPCRouter({
   home: homeRouter,
   feed: feedRouter,
   profileSettings: profileSettingsRouter,
+  groups: groupsRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -33,6 +33,7 @@ import { Route as ProtectedCoachingRouteImport } from './routes/_protected/coach
 import { Route as ProtectedCalendarRouteImport } from './routes/_protected/calendar'
 import { Route as ProtectedRoutesIndexRouteImport } from './routes/_protected/routes/index'
 import { Route as ProtectedRecordIndexRouteImport } from './routes/_protected/record/index'
+import { Route as ProtectedProfileMetricsIndexRouteImport } from './routes/_protected/profile-metrics/index'
 import { Route as ProtectedCalendarIndexRouteImport } from './routes/_protected/calendar/index'
 import { Route as ProtectedActivityEffortsIndexRouteImport } from './routes/_protected/activity-efforts/index'
 import { Route as ProtectedActivitiesIndexRouteImport } from './routes/_protected/activities/index'
@@ -180,6 +181,12 @@ const ProtectedRecordIndexRoute = ProtectedRecordIndexRouteImport.update({
   path: '/',
   getParentRoute: () => ProtectedRecordRoute,
 } as any)
+const ProtectedProfileMetricsIndexRoute =
+  ProtectedProfileMetricsIndexRouteImport.update({
+    id: '/profile-metrics/',
+    path: '/profile-metrics/',
+    getParentRoute: () => ProtectedRoute,
+  } as any)
 const ProtectedCalendarIndexRoute = ProtectedCalendarIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -369,6 +376,7 @@ export interface FileRoutesByFullPath {
   '/activities/': typeof ProtectedActivitiesIndexRoute
   '/activity-efforts/': typeof ProtectedActivityEffortsIndexRoute
   '/calendar/': typeof ProtectedCalendarIndexRoute
+  '/profile-metrics/': typeof ProtectedProfileMetricsIndexRoute
   '/record/': typeof ProtectedRecordIndexRoute
   '/routes/': typeof ProtectedRoutesIndexRoute
   '/calendar/day/$date': typeof ProtectedCalendarDayDateRoute
@@ -419,6 +427,7 @@ export interface FileRoutesByTo {
   '/activities': typeof ProtectedActivitiesIndexRoute
   '/activity-efforts': typeof ProtectedActivityEffortsIndexRoute
   '/calendar': typeof ProtectedCalendarIndexRoute
+  '/profile-metrics': typeof ProtectedProfileMetricsIndexRoute
   '/record': typeof ProtectedRecordIndexRoute
   '/routes': typeof ProtectedRoutesIndexRoute
   '/calendar/day/$date': typeof ProtectedCalendarDayDateRoute
@@ -473,6 +482,7 @@ export interface FileRoutesById {
   '/_protected/activities/': typeof ProtectedActivitiesIndexRoute
   '/_protected/activity-efforts/': typeof ProtectedActivityEffortsIndexRoute
   '/_protected/calendar/': typeof ProtectedCalendarIndexRoute
+  '/_protected/profile-metrics/': typeof ProtectedProfileMetricsIndexRoute
   '/_protected/record/': typeof ProtectedRecordIndexRoute
   '/_protected/routes/': typeof ProtectedRoutesIndexRoute
   '/_protected/calendar/day/$date': typeof ProtectedCalendarDayDateRoute
@@ -527,6 +537,7 @@ export interface FileRouteTypes {
     | '/activities/'
     | '/activity-efforts/'
     | '/calendar/'
+    | '/profile-metrics/'
     | '/record/'
     | '/routes/'
     | '/calendar/day/$date'
@@ -577,6 +588,7 @@ export interface FileRouteTypes {
     | '/activities'
     | '/activity-efforts'
     | '/calendar'
+    | '/profile-metrics'
     | '/record'
     | '/routes'
     | '/calendar/day/$date'
@@ -630,6 +642,7 @@ export interface FileRouteTypes {
     | '/_protected/activities/'
     | '/_protected/activity-efforts/'
     | '/_protected/calendar/'
+    | '/_protected/profile-metrics/'
     | '/_protected/record/'
     | '/_protected/routes/'
     | '/_protected/calendar/day/$date'
@@ -843,6 +856,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/record/'
       preLoaderRoute: typeof ProtectedRecordIndexRouteImport
       parentRoute: typeof ProtectedRecordRoute
+    }
+    '/_protected/profile-metrics/': {
+      id: '/_protected/profile-metrics/'
+      path: '/profile-metrics'
+      fullPath: '/profile-metrics/'
+      preLoaderRoute: typeof ProtectedProfileMetricsIndexRouteImport
+      parentRoute: typeof ProtectedRoute
     }
     '/_protected/calendar/': {
       id: '/_protected/calendar/'
@@ -1103,6 +1123,7 @@ interface ProtectedRouteChildren {
   ProtectedRoutesUploadRoute: typeof ProtectedRoutesUploadRoute
   ProtectedActivitiesIndexRoute: typeof ProtectedActivitiesIndexRoute
   ProtectedActivityEffortsIndexRoute: typeof ProtectedActivityEffortsIndexRoute
+  ProtectedProfileMetricsIndexRoute: typeof ProtectedProfileMetricsIndexRoute
   ProtectedRoutesIndexRoute: typeof ProtectedRoutesIndexRoute
   ProtectedUserUserIdFollowersRoute: typeof ProtectedUserUserIdFollowersRoute
   ProtectedUserUserIdFollowingRoute: typeof ProtectedUserUserIdFollowingRoute
@@ -1127,6 +1148,7 @@ const ProtectedRouteChildren: ProtectedRouteChildren = {
   ProtectedRoutesUploadRoute: ProtectedRoutesUploadRoute,
   ProtectedActivitiesIndexRoute: ProtectedActivitiesIndexRoute,
   ProtectedActivityEffortsIndexRoute: ProtectedActivityEffortsIndexRoute,
+  ProtectedProfileMetricsIndexRoute: ProtectedProfileMetricsIndexRoute,
   ProtectedRoutesIndexRoute: ProtectedRoutesIndexRoute,
   ProtectedUserUserIdFollowersRoute: ProtectedUserUserIdFollowersRoute,
   ProtectedUserUserIdFollowingRoute: ProtectedUserUserIdFollowingRoute,

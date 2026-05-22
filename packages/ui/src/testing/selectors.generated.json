@@ -72,13 +72,13 @@
   },
   "dialog": {
     "workoutDetails": {
-      "testId": "workout-details-dialog"
+      "testId": "activity-details-dialog"
     }
   },
   "duration-input": {
-    "workout": {
-      "id": "workout-duration",
-      "testId": "workout-duration-input"
+    "activity": {
+      "id": "activity-duration",
+      "testId": "activity-duration-input"
     }
   },
   "empty-state-card": {
@@ -141,13 +141,13 @@
   },
   "number-slider-input": {
     "intensity": {
-      "id": "workout-intensity-range",
+      "id": "activity-intensity-range",
       "value": 0.75,
       "min": 0.5,
       "max": 1.25,
       "step": 0.05,
       "decimals": 2,
-      "testId": "workout-intensity-range-input"
+      "testId": "activity-intensity-range-input"
     }
   },
   "pace-input": {
@@ -182,8 +182,8 @@
   },
   "select": {
     "workoutType": {
-      "id": "workout-type",
-      "testId": "workout-type-select"
+      "id": "activity-type",
+      "testId": "activity-type-select"
     }
   },
   "separator": {
@@ -195,17 +195,17 @@
   },
   "sheet": {
     "filters": {
-      "testId": "workout-filters-sheet"
+      "testId": "activity-filters-sheet"
     }
   },
   "slider": {
     "effort": {
-      "accessibilityLabel": "Workout intensity",
-      "id": "workout-intensity",
+      "accessibilityLabel": "Activity intensity",
+      "id": "activity-intensity",
       "maximumValue": 10,
       "minimumValue": 0,
       "step": 0.5,
-      "testId": "workout-intensity-slider",
+      "testId": "activity-intensity-slider",
       "value": 6.5
     }
   },
@@ -244,15 +244,15 @@
   },
   "textarea": {
     "notes": {
-      "accessibilityLabel": "Workout notes",
-      "id": "workout-notes",
-      "testId": "workout-notes-textarea"
+      "accessibilityLabel": "Activity notes",
+      "id": "activity-notes",
+      "testId": "activity-notes-textarea"
     }
   },
   "toggle": {
     "pin": {
-      "accessibilityLabel": "Pin workout",
-      "testId": "pin-workout-toggle"
+      "accessibilityLabel": "Pin activity",
+      "testId": "pin-activity-toggle"
     }
   },
   "toggle-group": {

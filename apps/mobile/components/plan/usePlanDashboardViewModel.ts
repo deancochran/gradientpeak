@@ -1,5 +1,11 @@
+import {
+  type AthleteTrainingSettings,
+  resolveGoalReadinessTarget,
+  resolveGoalReadinessViewModel,
+} from "@repo/core";
 import { useMemo } from "react";
 import { buildGoalOverlays } from "@/lib/analytics/goalOverlays";
+import { resolveGoalSpecificFallbackReadiness } from "@/lib/analytics/goalReadiness";
 import { type useProfileGoals } from "@/lib/hooks/useProfileGoals";
 import { type useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 
@@ -32,6 +38,7 @@ export type PlanReadinessGoalMarker = {
 
 export type PlanWeeklyLoadBar = {
   weekStart: string;
+  weekEnd: string | null;
   label: string;
   actual: number;
   scheduled: number;
@@ -70,6 +77,43 @@ export type PlanActivityMatch = {
   reasonLabels: string[];
 };
 
+export type PlanActivityMatchEmptyReason =
+  | "no_positive_gap"
+  | "no_activity_plans"
+  | "no_estimated_tss"
+  | "low_confidence"
+  | null;
+
+export type PlanBaselineEstimate = {
+  weeklyLoad: number | null;
+  weeklyDurationMinutes: number | null;
+  sessionsPerWeek: number | null;
+  source: "forecast" | "preferences";
+};
+
+export type PlanGoalReadinessStatus =
+  | "Above target range"
+  | "In target range"
+  | "Building toward target"
+  | "Below target range"
+  | "Estimating";
+
+export type PlanGoalReadinessItem = {
+  goal: PlanGoals["goals"][number];
+  forecast: NonNullable<PlanProjectionDashboard>["goal_forecasts"][number] | null;
+  readinessPercent: number | null;
+  readinessTarget: number;
+  projectedCtl: number | null;
+  targetCtl: number | null;
+  status: PlanGoalReadinessStatus;
+};
+
+export type PlanGoalOutlookCard = PlanGoalReadinessItem & {
+  label: "Next goal" | "Top priority";
+};
+
+const GOAL_OUTLOOK_MAX_VISIBLE = 4;
+
 type ActivePlanInput = {
   id?: string | null;
   next_event_at?: string | null;
@@ -92,6 +136,7 @@ type UsePlanDashboardViewModelParams = {
   activePlan: ActivePlanInput | undefined;
   ownPlans: OwnPlanInput[] | null | undefined;
   goals: PlanGoals;
+  profileSettings: AthleteTrainingSettings;
   snapshot: PlanSnapshot;
   upcomingPlannedEvents: PlannedEventInput[] | null | undefined;
   recentPlannedEvents: PlannedEventInput[] | null | undefined;
@@ -231,10 +276,24 @@ function gapMessage(type?: string | null, delta?: number | null) {
   }
 }
 
+function goalReadinessStatus(
+  readinessPercent: number | null,
+  forecast: NonNullable<PlanProjectionDashboard>["goal_forecasts"][number] | null,
+  readinessTarget: number,
+): PlanGoalReadinessStatus {
+  const band = forecast?.feasibility_band;
+  if (band === "unsafe" || band === "infeasible") return "Below target range";
+  return resolveGoalReadinessViewModel({
+    value: readinessPercent,
+    target: readinessTarget,
+  }).label as PlanGoalReadinessStatus;
+}
+
 export function usePlanDashboardViewModel({
   activePlan,
   ownPlans,
   goals,
+  profileSettings,
   snapshot,
   upcomingPlannedEvents,
   recentPlannedEvents,
@@ -304,24 +363,105 @@ export function usePlanDashboardViewModel({
   const projectionDashboard = snapshot.insightTimeline?.projection_dashboard ?? null;
   const readinessForecast = snapshot.insightTimeline?.readiness_forecast ?? null;
 
+  const hasCompletedActivityHistory = useMemo(() => {
+    if (fitnessHistory.length > 0) {
+      return true;
+    }
+
+    return (readinessForecast?.series.actual.points ?? []).some(
+      (point) => typeof point.load === "number" && Number.isFinite(point.load) && point.load > 0,
+    );
+  }, [fitnessHistory.length, readinessForecast?.series.actual.points]);
+
+  const baselineEstimate = useMemo<PlanBaselineEstimate | null>(() => {
+    const dose = projectionDashboard?.dose_recommendation;
+    const forecastEstimate: PlanBaselineEstimate = {
+      weeklyLoad:
+        typeof dose?.recommended_weekly_load === "number"
+          ? Math.round(dose.recommended_weekly_load)
+          : null,
+      weeklyDurationMinutes:
+        typeof dose?.recommended_weekly_duration_minutes === "number"
+          ? Math.round(dose.recommended_weekly_duration_minutes)
+          : null,
+      sessionsPerWeek:
+        typeof dose?.recommended_sessions_per_week === "number"
+          ? Math.round(dose.recommended_sessions_per_week)
+          : null,
+      source: "forecast",
+    };
+
+    if (
+      forecastEstimate.weeklyLoad !== null ||
+      forecastEstimate.weeklyDurationMinutes !== null ||
+      forecastEstimate.sessionsPerWeek !== null
+    ) {
+      return forecastEstimate;
+    }
+
+    const minSessions = profileSettings.dose_limits.min_sessions_per_week;
+    const maxSessions = profileSettings.dose_limits.max_sessions_per_week;
+    const sessionsPerWeek =
+      typeof minSessions === "number" && typeof maxSessions === "number"
+        ? Math.round((minSessions + maxSessions) / 2)
+        : typeof maxSessions === "number"
+          ? maxSessions
+          : typeof minSessions === "number"
+            ? minSessions
+            : null;
+    const weeklyDurationMinutes =
+      typeof profileSettings.dose_limits.max_weekly_duration_minutes === "number"
+        ? profileSettings.dose_limits.max_weekly_duration_minutes
+        : null;
+
+    if (sessionsPerWeek === null && weeklyDurationMinutes === null) {
+      return null;
+    }
+
+    return {
+      weeklyLoad: null,
+      weeklyDurationMinutes,
+      sessionsPerWeek,
+      source: "preferences",
+    };
+  }, [profileSettings.dose_limits, projectionDashboard?.dose_recommendation]);
+
+  const forecastReadinessStartsAtToday = useMemo(() => {
+    if (!readinessForecast) {
+      return false;
+    }
+
+    const hasObservedPreTodayReadiness = readinessForecast.series.actual.points.some(
+      (point) => point.date < readinessForecast.today && typeof point.readiness === "number",
+    );
+    const isDefaultOrSparseForecast = readinessForecast.confidence_reason_codes.some(
+      (code) => code === "missing_recent_history" || code === "projection_fallback_baseline",
+    );
+
+    return isDefaultOrSparseForecast && !hasObservedPreTodayReadiness;
+  }, [readinessForecast]);
+
   const visibleReadinessWindow = useMemo(() => {
     if (!readinessForecast) {
       return null;
     }
 
-    const nextGoal = readinessForecast.goals.find(
-      (goal) => goal.target_date >= readinessForecast.today,
-    );
-    const startDate =
-      readinessForecast.start_date > addDays(readinessForecast.today, -45)
+    const latestUpcomingGoal = readinessForecast.goals
+      .filter((goal) => goal.target_date >= readinessForecast.today)
+      .sort((left, right) => right.target_date.localeCompare(left.target_date))[0];
+    const startDate = forecastReadinessStartsAtToday
+      ? readinessForecast.today
+      : readinessForecast.start_date > addDays(readinessForecast.today, -45)
         ? readinessForecast.start_date
         : addDays(readinessForecast.today, -45);
-    const goalEndDate = nextGoal ? addDays(nextGoal.target_date, 14) : readinessForecast.end_date;
+    const goalEndDate = latestUpcomingGoal
+      ? addDays(latestUpcomingGoal.target_date, 14)
+      : readinessForecast.end_date;
     const endDate =
       goalEndDate < readinessForecast.end_date ? goalEndDate : readinessForecast.end_date;
 
     return { startDate, endDate };
-  }, [readinessForecast]);
+  }, [forecastReadinessStartsAtToday, readinessForecast]);
 
   const readinessComparisonPoints = useMemo<PlanReadinessComparisonPoint[]>(() => {
     const pointsByDate = new Map<string, PlanReadinessComparisonPoint>();
@@ -352,11 +492,13 @@ export function usePlanDashboardViewModel({
     }
 
     for (const point of readinessForecast?.series.scheduled.points ?? []) {
+      if (forecastReadinessStartsAtToday && point.date < readinessForecast!.today) continue;
       if (!point.date || !isVisible(point.date) || typeof point.readiness !== "number") continue;
       ensurePoint(point.date).scheduled = point.readiness;
     }
 
     for (const point of readinessForecast?.series.recommended.points ?? []) {
+      if (forecastReadinessStartsAtToday && point.date < readinessForecast!.today) continue;
       if (!point.date || !isVisible(point.date) || typeof point.readiness !== "number") continue;
       const chartPoint = ensurePoint(point.date);
       chartPoint.recommended = point.readiness;
@@ -365,7 +507,7 @@ export function usePlanDashboardViewModel({
     }
 
     return [...pointsByDate.values()].sort((left, right) => left.date.localeCompare(right.date));
-  }, [readinessForecast, visibleReadinessWindow]);
+  }, [forecastReadinessStartsAtToday, readinessForecast, visibleReadinessWindow]);
 
   const readinessGoalMarkers = useMemo<PlanReadinessGoalMarker[]>(() => {
     const forecastMarkers = readinessForecast?.goals ?? [];
@@ -436,7 +578,10 @@ export function usePlanDashboardViewModel({
     return `${readiness} Forecast confidence is ${confidence}. ${gap}.`;
   }, [readinessForecast]);
 
-  const goalReadiness = useMemo(() => {
+  const goalReadiness = useMemo<PlanGoalReadinessItem[]>(() => {
+    const fallbackReadinessTarget = resolveGoalReadinessTarget(
+      profileSettings.goal_strategy_preferences,
+    );
     const idealCurve = snapshot.idealCurveData;
     const dataPoints = idealCurve?.dataPoints ?? [];
     const startCtl =
@@ -449,10 +594,10 @@ export function usePlanDashboardViewModel({
         forecast,
       ]),
     );
-
     return goals.goals.map((goal) => {
       const forecast = forecastByGoalId.get(goal.id) ?? null;
       const goalTargetDate = goal.target_date;
+      const readinessTarget = forecast?.readiness_target ?? fallbackReadinessTarget;
 
       const projectedAtGoal = goalTargetDate
         ? (dataPoints.find(
@@ -472,16 +617,81 @@ export function usePlanDashboardViewModel({
               : 0
             : Math.max(0, (numerator / denominator) * 100);
       }
+      readinessPercent ??= resolveGoalSpecificFallbackReadiness({
+        goal,
+        currentReadiness: readinessForecast?.current_readiness,
+        todayKey,
+      });
 
       return {
         goal,
         forecast,
         readinessPercent,
+        readinessTarget,
         projectedCtl: projectedAtGoal?.ctl ?? null,
         targetCtl,
+        status: goalReadinessStatus(readinessPercent, forecast, readinessTarget),
       };
     });
-  }, [goals.goals, projectionDashboard?.goal_forecasts, snapshot.idealCurveData]);
+  }, [
+    goals.goals,
+    profileSettings.goal_strategy_preferences,
+    projectionDashboard?.goal_forecasts,
+    readinessForecast?.goals,
+    snapshot.idealCurveData,
+  ]);
+
+  const goalOutlook = useMemo(() => {
+    const todayKey = today.toISOString().split("T")[0] ?? "";
+    const upcoming = goalReadiness
+      .filter((item) => item.goal.target_date && item.goal.target_date >= todayKey)
+      .sort((left, right) => {
+        const dateComparison = left.goal.target_date!.localeCompare(right.goal.target_date!);
+        if (dateComparison !== 0) return dateComparison;
+        const priorityComparison = (right.goal.priority ?? 0) - (left.goal.priority ?? 0);
+        if (priorityComparison !== 0) return priorityComparison;
+        return left.goal.title.localeCompare(right.goal.title);
+      });
+
+    const nextTargetDate = upcoming[0]?.goal.target_date ?? null;
+    const nextDayGoals = nextTargetDate
+      ? upcoming.filter((item) => item.goal.target_date === nextTargetDate)
+      : [];
+
+    const visibleNextDayGoals = nextDayGoals.slice(0, GOAL_OUTLOOK_MAX_VISIBLE);
+    const featured: PlanGoalOutlookCard[] = visibleNextDayGoals.map((item) => ({
+      ...item,
+      label: "Next goal",
+    }));
+    const featuredIds = new Set(featured.map((item) => item.goal.id));
+
+    const topPriority =
+      [...upcoming]
+        .filter((item) => !featuredIds.has(item.goal.id))
+        .sort((left, right) => {
+          const priorityComparison = (right.goal.priority ?? 0) - (left.goal.priority ?? 0);
+          if (priorityComparison !== 0) return priorityComparison;
+          const dateComparison = left.goal.target_date!.localeCompare(right.goal.target_date!);
+          if (dateComparison !== 0) return dateComparison;
+          return left.goal.title.localeCompare(right.goal.title);
+        })[0] ?? null;
+
+    if (topPriority && featured.length < GOAL_OUTLOOK_MAX_VISIBLE) {
+      featured.push({ ...topPriority, label: "Top priority" });
+    }
+
+    const hiddenNextDayGoalCount = Math.max(0, nextDayGoals.length - visibleNextDayGoals.length);
+
+    return {
+      featured,
+      hiddenNextDayGoalCount,
+      totalUpcomingGoalCount: upcoming.length,
+      canAddGoal: featured.length <= 1,
+      nextGoal: nextDayGoals[0] ?? null,
+      nextTargetDate,
+      topPriorityGoal: topPriority,
+    };
+  }, [goalReadiness, today]);
 
   const insightTimelinePoints = useMemo(
     () => snapshot.insightTimeline?.timeline ?? [],
@@ -550,15 +760,17 @@ export function usePlanDashboardViewModel({
     const apiWeeks = snapshot.insightTimeline?.load_comparison?.weeks ?? [];
     if (apiWeeks.length > 0) {
       const todayKey = today.toISOString().split("T")[0] ?? "";
-      const currentWeekStart = getWeekStartDateKey(todayKey);
       const bars = apiWeeks
         .map((week) => ({
           weekStart: week.week_start,
+          weekEnd: week.week_end ?? null,
           label: compactDateLabel(week.week_start),
           actual: Math.round(week.actual_load ?? 0),
           scheduled: Math.round(week.scheduled_load ?? 0),
           recommended: Math.round(week.recommended_load ?? 0),
-          isCurrentWeek: week.week_start === currentWeekStart,
+          isCurrentWeek:
+            todayKey >= week.week_start &&
+            todayKey <= (week.week_end ?? addDays(week.week_start, 6)),
         }))
         .sort((left, right) => left.weekStart.localeCompare(right.weekStart));
       const currentIndex = Math.max(
@@ -588,6 +800,7 @@ export function usePlanDashboardViewModel({
     const sorted = [...buckets.entries()]
       .map(([weekStart, bucket]) => ({
         weekStart,
+        weekEnd: addDays(weekStart, 6),
         label: compactDateLabel(weekStart),
         actual: Math.round(bucket.actual),
         scheduled: Math.round(bucket.scheduled),
@@ -708,6 +921,26 @@ export function usePlanDashboardViewModel({
     }));
   }, [snapshot.insightTimeline?.activity_plan_matches]);
 
+  const activityPlanMatchSummary = useMemo(() => {
+    const payload = snapshot.insightTimeline?.activity_plan_matches;
+    if (!payload) {
+      return {
+        emptyReason: null as PlanActivityMatchEmptyReason,
+        targetDate: null as string | null,
+        targetTssDelta: null as number | null,
+        hasPositiveGap: false,
+      };
+    }
+
+    return {
+      emptyReason: payload.empty_reason as PlanActivityMatchEmptyReason,
+      targetDate: payload.target_date ?? null,
+      targetTssDelta:
+        typeof payload.target_tss_delta === "number" ? payload.target_tss_delta : null,
+      hasPositiveGap: payload.empty_reason !== "no_positive_gap",
+    };
+  }, [snapshot.insightTimeline?.activity_plan_matches]);
+
   const nextGoal = useMemo(
     () =>
       [...goalReadiness]
@@ -721,11 +954,14 @@ export function usePlanDashboardViewModel({
     fitnessHistory,
     goalMarkers: profileGoalMarkers,
     goalMetrics,
+    goalOutlook,
     goalReadiness,
     insightTimelinePoints,
     loadGuidance,
     readinessComparisonPoints,
     readinessForecast,
+    hasCompletedActivityHistory,
+    baselineEstimate,
     readinessGoalMarkers,
     readinessConfidenceSummary,
     readinessGapInsight,
@@ -739,6 +975,7 @@ export function usePlanDashboardViewModel({
     currentWeekLoadDetail,
     upcomingImpact,
     activityPlanMatches,
+    activityPlanMatchSummary,
     scheduleAction,
     idealFitnessCurve,
   };

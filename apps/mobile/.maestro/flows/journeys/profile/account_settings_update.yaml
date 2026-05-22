@@ -13,8 +13,6 @@ env:
 - assertVisible:
     id: "account-email-input"
 - assertVisible:
-    id: "account-email-password-input"
-- assertVisible:
     id: "account-email-submit-button"
 - tapOn:
     id: "change-password"
@@ -27,7 +25,9 @@ env:
 - assertVisible:
     id: "account-password-submit-button"
 - tapOn:
-    id: "edit-profile-action"
+    id: "user-detail-options-trigger"
+- tapOn:
+    id: "user-detail-options-edit"
 - extendedWaitUntil:
     visible:
       id: "profile-edit-screen"

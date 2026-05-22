@@ -141,13 +141,13 @@ function detectTempoRuns(
 }
 
 /**
- * Detects interval workout pattern.
+ * Detects interval activity pattern.
  *
  * Identifies repeated fast efforts with recovery periods.
  *
  * @param paceStream - Array of pace values
  * @param timestamps - Array of timestamps
- * @returns Interval workout metadata or null
+ * @returns Interval activity metadata or null
  */
 export function detectRunningIntervals(
   paceStream: number[],
@@ -208,7 +208,7 @@ export function detectRunningIntervals(
   }
 
   if (intervals.length < 3) {
-    return null; // Not an interval workout
+    return null; // Not an interval activity
   }
 
   const avgIntervalPace = intervals.reduce((sum, int) => sum + int.pace, 0) / intervals.length;

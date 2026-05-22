@@ -21,6 +21,7 @@ function DateInput({
   label,
   maximumDate,
   minimumDate,
+  name: _name,
   onChange,
   pickerPresentation = "inline",
   placeholder = "Select date",
@@ -88,15 +89,27 @@ function DateInput({
           {required ? <Text className="text-destructive"> *</Text> : null}
         </Text>
       </Label>
-      <Pressable
-        accessibilityHint={accessibilityHint ?? "Opens date picker. Format yyyy-mm-dd"}
-        accessibilityRole="button"
-        className={`rounded-md border px-3 py-3 ${error ? "border-destructive bg-destructive/5" : "border-input bg-background"}`}
-        onPress={handleOpenPicker}
-        {...nativeTestProps}
-      >
-        <Text className="text-foreground">{formattedValue}</Text>
-      </Pressable>
+      <View className="flex-row items-center gap-2">
+        <Pressable
+          accessibilityHint={accessibilityHint ?? "Opens date picker. Format yyyy-mm-dd"}
+          accessibilityRole="button"
+          className={`flex-1 rounded-md border px-3 py-3 ${error ? "border-destructive bg-destructive/5" : "border-input bg-background"}`}
+          onPress={handleOpenPicker}
+          {...nativeTestProps}
+        >
+          <Text className="text-foreground">{formattedValue}</Text>
+        </Pressable>
+        {clearable && value ? (
+          <Button
+            accessibilityLabel="Clear date"
+            variant="ghost"
+            size="sm"
+            onPress={() => onChange(undefined)}
+          >
+            <Text className="text-muted-foreground">Clear</Text>
+          </Button>
+        ) : null}
+      </View>
       {isPickerVisible && !usesModalPresentation ? (
         <DateTimePicker
           display="default"
@@ -146,11 +159,6 @@ function DateInput({
         </Modal>
       ) : null}
       {helperText ? <Text className="text-xs text-muted-foreground">{helperText}</Text> : null}
-      {clearable && value ? (
-        <Button variant="outline" size="sm" onPress={() => onChange(undefined)}>
-          <Text>Clear date</Text>
-        </Button>
-      ) : null}
       {error ? <Text className="text-xs text-destructive">Adjust this field: {error}</Text> : null}
     </View>
   );

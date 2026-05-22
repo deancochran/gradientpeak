@@ -60,6 +60,19 @@ jest.mock("@/components/recording/RecordingActivityQuickEdit", () => ({
   RecordingActivityQuickEdit: createHost("RecordingActivityQuickEdit"),
 }));
 
+jest.mock("@/components/shared/resource-picker", () => ({
+  __esModule: true,
+  ResourcePickerModal: createHost("ResourcePickerModal"),
+}));
+
+jest.mock("@/components/activity-plan/useActivityPlanRouteUpload", () => ({
+  __esModule: true,
+  useActivityPlanRouteUpload: () => ({
+    isUploadingRoute: false,
+    pickGpxFile: jest.fn(),
+  }),
+}));
+
 jest.mock("@/components/ErrorBoundary", () => ({
   __esModule: true,
   ErrorBoundary: ({ children }: any) => children,
@@ -116,6 +129,18 @@ jest.mock("@/lib/hooks/useAuth", () => ({
   useAuth: () => ({ user: { id: "user-1" } }),
 }));
 
+jest.mock("@/lib/auth/auth-headers", () => ({
+  __esModule: true,
+  hasSessionAuthCredentials: () => true,
+}));
+
+jest.mock("@/lib/performance", () => ({
+  __esModule: true,
+  markNavigationStart: jest.fn(),
+  toPerformanceRouteKey: () => "mock-route",
+  usePerformanceScreenReady: jest.fn(),
+}));
+
 jest.mock("@/lib/hooks/useRecordingConfig", () => ({
   __esModule: true,
   useRecordingSessionContract: () => ({
@@ -133,8 +158,8 @@ jest.mock("@/lib/hooks/useRecordingConfig", () => ({
       controls: { quickActions: ["plan", "sensors"] },
     },
     surfaces: {
-      defaultPrimarySurface: "workout",
-      availablePrimarySurfaces: ["workout", "metrics"],
+      defaultPrimarySurface: "activity",
+      availablePrimarySurfaces: ["activity", "metrics"],
       quickActions: ["plan", "sensors"],
     },
     validation: { consequences: [] },
@@ -169,9 +194,20 @@ jest.mock("@/lib/stores/activitySelectionStore", () => ({
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
+    useUtils: () => ({ routes: { invalidate: jest.fn() } }),
+    activityPlans: {
+      getById: {
+        useQuery: () => ({ data: null }),
+      },
+    },
     profiles: {
       getZones: {
         useQuery: () => ({ data: { profile: null } }),
+      },
+    },
+    routes: {
+      upload: {
+        useMutation: () => ({ mutate: jest.fn() }),
       },
     },
   },
@@ -348,10 +384,7 @@ describe("record screen", () => {
     const goToProfile = alertButtons.find((button) => button.text === "Go to Profile");
     goToProfile?.onPress?.();
 
-    expect(pushMock).toHaveBeenCalledWith({
-      pathname: "/user/[userId]",
-      params: { userId: "user-1" },
-    });
+    expect(pushMock).toHaveBeenCalledWith("/profile");
     expect(startMock).not.toHaveBeenCalled();
   });
 

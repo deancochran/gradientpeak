@@ -42,7 +42,7 @@ export const ActivityTypeSelector = memo<ActivityTypeSelectorProps>(function Act
 
         {open ? (
           <AppSelectionModal
-            description="Choose the activity type for this workout."
+            description="Choose the activity type for this activity."
             onClose={() => setOpen(false)}
             testID="activity-type-selector-modal"
             title="Select Activity Type"
@@ -162,7 +162,7 @@ export const ActivityCategorySelector = memo<ActivityCategorySelectorProps>(
 
           {open ? (
             <AppSelectionModal
-              description="Choose the activity category for this workout."
+              description="Choose the activity category for this activity."
               onClose={() => setOpen(false)}
               testID="activity-category-selector-modal"
               title="Select Activity Category"
