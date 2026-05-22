@@ -1,70 +1,126 @@
-import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { keepPreviousData } from "@tanstack/react-query";
-import { format } from "date-fns";
 import { useRouter } from "expo-router";
-import { ChevronLeft, ChevronRight, Flag, Flame, Plus, Sparkles } from "lucide-react-native";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, Flag, Plus, Settings } from "lucide-react-native";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshControl, ScrollView, TouchableOpacity, View } from "react-native";
-import Svg, { Circle, Line, Path, Rect } from "react-native-svg";
-import { CalendarMonthList } from "@/components/calendar/CalendarMonthList";
-import { PlanReadinessComparisonChart } from "@/components/charts/PlanReadinessComparisonChart";
-import { PlanVsActualChart } from "@/components/charts/PlanVsActualChart";
+import { FitnessFatigueFormChart, PlanVsActualChart } from "@/components/charts/PlanVsActualChart";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { formatGoalTargetDate, GoalListItem } from "@/components/plan/GoalListItem";
 import { usePlanDashboardViewModel } from "@/components/plan/usePlanDashboardViewModel";
-import {
-  AppHeader,
-  CompactInsightCard,
-  type DateRange,
-  DetailChartModal,
-} from "@/components/shared";
+import { AppHeader } from "@/components/shared";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import {
-  addMonthsToDateKey,
-  getEndOfMonthKey,
-  getMonthAnchor,
-  getStartOfMonthKey,
-  parseDateKey,
-} from "@/lib/calendar/dateMath";
-import { buildEventsByDate, type CalendarEvent } from "@/lib/calendar/normalizeEvents";
+  attachSelectedGroupEventActivityPlans,
+  getSelectedGroupEventActivityPlanIds,
+  toGroupEventScheduledActivityPlanEvent,
+} from "@/lib/calendar/groupEventPlans";
 import { ROUTES } from "@/lib/constants/routes";
+import { markEstimated } from "@/lib/estimatedMetrics";
 import { useAutoPaginateInfiniteQuery } from "@/lib/hooks/useAutoPaginateInfiniteQuery";
 import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
+import { useProfileSettings } from "@/lib/hooks/useProfileSettings";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
-import {
-  type CompactInsightLayout,
-  getPlanInsightVisualPolicy,
-  type InsightSource,
-  type InsightVisualType,
-} from "@/lib/insights/visualPolicy";
+import { usePerformanceScreenReady } from "@/lib/performance";
 import { refreshPlanTabData } from "@/lib/scheduling/refreshScheduleViews";
 import { useAuthStore } from "@/lib/stores/auth-store";
+import {
+  buildTrainingPreferencesLoadTimeline,
+  buildTrainingPreferencesProjectionPreview,
+} from "@/lib/training-plan-form/projectionPreview";
 
 function getDateKey(value: Date) {
   return value.toISOString().split("T")[0] ?? "";
 }
 
-function loadBarWidth(value: number, max: number): `${number}%` {
-  if (max <= 0) return "0%";
-  return `${Math.max(4, Math.min(100, Math.round((value / max) * 100)))}%`;
+function isPresent<T>(value: T | null | undefined): value is T {
+  return value != null;
 }
 
-function readinessBarWidth(value: number | null): `${number}%` {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "0%";
-  return `${Math.max(4, Math.min(100, Math.round(value)))}%`;
+function formatMinutes(minutes: number | null | undefined) {
+  if (typeof minutes !== "number" || !Number.isFinite(minutes) || minutes <= 0) return null;
+  if (minutes < 60) return `${Math.round(minutes)} min`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = Math.round(minutes % 60);
+  return remainder === 0 ? `${hours} hr` : `${hours} hr ${remainder} min`;
 }
 
-function formatReadinessPercent(value: number | null) {
-  if (typeof value !== "number" || !Number.isFinite(value)) return "--";
-  return `${Math.round(value)}%`;
+function formatBaselineEstimate(dashboard: ReturnType<typeof usePlanDashboardViewModel>) {
+  const estimate = dashboard.baselineEstimate;
+  if (!estimate) return null;
+
+  const parts = [
+    typeof estimate.weeklyLoad === "number"
+      ? markEstimated(`${estimate.weeklyLoad} TSS/week`)
+      : null,
+    typeof estimate.sessionsPerWeek === "number"
+      ? `${estimate.sessionsPerWeek} sessions/week`
+      : null,
+    markEstimated(formatMinutes(estimate.weeklyDurationMinutes)),
+  ].filter(Boolean);
+
+  return parts.length > 0 ? parts.join(" · ") : null;
 }
 
-function formatGoalTargetDate(value: string | null | undefined) {
-  if (!value) return "No target date";
-  return compactDateTime(value);
+function getPlanningStateCopy(dashboard: ReturnType<typeof usePlanDashboardViewModel>) {
+  const gapType = dashboard.readinessForecast?.gap_summary?.type;
+  const baselineEstimate = formatBaselineEstimate(dashboard);
+  const targetDelta = dashboard.activityPlanMatchSummary.targetTssDelta;
+  const targetDate =
+    dashboard.activityPlanMatchSummary.targetDate ?? dashboard.scheduleAction?.date ?? null;
+  const dateLabel = targetDate ? formatGoalTargetDate(targetDate) : "This week";
+  const targetMetric =
+    typeof targetDelta === "number" && Number.isFinite(targetDelta)
+      ? markEstimated(`${Math.round(targetDelta)} TSS short`)
+      : null;
+
+  if (gapType === "low_confidence") {
+    if (
+      !dashboard.hasCompletedActivityHistory &&
+      dashboard.goalOutlook.totalUpcomingGoalCount > 0
+    ) {
+      return {
+        title: "Baseline plan estimate",
+        body: baselineEstimate ?? "Built from your goals and training preferences",
+        actionLabel: targetDate ? `View ${dateLabel}` : "Open calendar",
+        supportingText: "Built from your goals and training preferences.",
+      };
+    }
+
+    return {
+      title: "Plan confidence is limited",
+      body: "Missing session load",
+      actionLabel: targetDate ? `Review ${dateLabel}` : "Review schedule",
+      supportingText: null,
+    };
+  }
+
+  if (gapType === "overload_risk") {
+    return {
+      title: `${dateLabel} load looks high`,
+      body: "Above readiness path",
+      actionLabel: targetDate ? `Review ${dateLabel}` : "Review schedule",
+      supportingText: null,
+    };
+  }
+
+  if (gapType === "plan_gap" || gapType === "goal_risk") {
+    return {
+      title: targetMetric ? `${dateLabel} is ${targetMetric}` : `${dateLabel} needs review`,
+      body: "Below goal path",
+      actionLabel: targetDate ? `Review ${dateLabel}` : "Review schedule",
+      supportingText: null,
+    };
+  }
+
+  return {
+    title: "Schedule is aligned",
+    body: "Tracking goal path",
+    actionLabel: targetDate ? `View ${dateLabel}` : "Open calendar",
+    supportingText: null,
+  };
 }
 
 function compactDateTime(value: string) {
@@ -73,315 +129,142 @@ function compactDateTime(value: string) {
   return parsed.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-function getDateRangeStartKey(dateRange: DateRange, referenceDateKey?: string | null) {
+function formatDateRangeLabel(startValue: string | null | undefined, endValue?: string | null) {
+  if (!startValue) return "Current microcycle";
+  const start = new Date(`${startValue}T12:00:00.000Z`);
+  if (Number.isNaN(start.getTime())) return "Current microcycle";
+  const end = endValue ? new Date(`${endValue}T12:00:00.000Z`) : new Date(start);
+  if (!endValue) {
+    end.setUTCDate(end.getUTCDate() + 6);
+  }
+  if (Number.isNaN(end.getTime())) return compactDateTime(startValue);
+  return `${compactDateTime(startValue)} - ${end.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  })}`;
+}
+
+function getWeekStartDateKey(date: string) {
+  const parsed = new Date(`${date}T12:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return date;
+  const day = parsed.getUTCDay();
+  const daysFromMonday = (day + 6) % 7;
+  parsed.setUTCDate(parsed.getUTCDate() - daysFromMonday);
+  return getDateKey(parsed);
+}
+
+function addWeeks(dateKey: string, weekOffset: number) {
+  const parsed = new Date(`${dateKey}T12:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return dateKey;
+  parsed.setUTCDate(parsed.getUTCDate() + weekOffset * 7);
+  return getDateKey(parsed);
+}
+
+function getWeekEndDateKey(weekStart: string) {
+  const parsed = new Date(`${weekStart}T12:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return weekStart;
+  parsed.setUTCDate(parsed.getUTCDate() + 6);
+  return getDateKey(parsed);
+}
+
+type LoadDateRange = "30d" | "60d" | "90d" | "all";
+
+const loadDateRanges: { label: string; value: LoadDateRange }[] = [
+  { label: "30d", value: "30d" },
+  { label: "60d", value: "60d" },
+  { label: "90d", value: "90d" },
+  { label: "All", value: "all" },
+];
+
+function getDateRangeStartKey(dateRange: LoadDateRange, referenceDateKey?: string | null) {
   if (dateRange === "all" || !referenceDateKey) return null;
-  const days = dateRange === "7d" ? 6 : dateRange === "30d" ? 29 : 89;
   const parsed = new Date(`${referenceDateKey}T12:00:00.000Z`);
   if (Number.isNaN(parsed.getTime())) return null;
+  const days = dateRange === "30d" ? 30 : dateRange === "60d" ? 60 : 90;
   parsed.setDate(parsed.getDate() - days);
+  return getDateKey(parsed);
+}
+
+function getDateRangeEndKey(dateRange: LoadDateRange, referenceDateKey?: string | null) {
+  if (dateRange === "all" || !referenceDateKey) return null;
+  const parsed = new Date(`${referenceDateKey}T12:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const days = dateRange === "30d" ? 30 : dateRange === "60d" ? 60 : 90;
+  parsed.setDate(parsed.getDate() + days);
   return getDateKey(parsed);
 }
 
 function filterByDateRange<T>(
   items: T[],
-  dateRange: DateRange,
+  dateRange: LoadDateRange,
   referenceDateKey: string | null | undefined,
   getItemDate: (item: T) => string | null | undefined,
 ) {
   const startKey = getDateRangeStartKey(dateRange, referenceDateKey);
-  if (!startKey || !referenceDateKey) return items;
+  const endKey = getDateRangeEndKey(dateRange, referenceDateKey);
+  if (!startKey || !endKey) return items;
   return items.filter((item) => {
     const itemDate = getItemDate(item);
-    return !!itemDate && itemDate >= startKey && itemDate <= referenceDateKey;
+    return !!itemDate && itemDate >= startKey && itemDate <= endKey;
   });
 }
 
-type PlanInsightKind = "load" | "readiness";
-
-const PLAN_INSIGHT_VISUAL_POLICIES = {
-  load: getPlanInsightVisualPolicy("loadComparison"),
-  readiness: getPlanInsightVisualPolicy("readinessForecast"),
-} satisfies Record<
-  PlanInsightKind,
-  { source: InsightSource; visualType: InsightVisualType; compactLayout: CompactInsightLayout }
->;
-
-function getPlanToneClass(tone: "orange" | "green") {
-  return tone === "orange"
-    ? "bg-orange-500/10 border-orange-500/25"
-    : "bg-green-500/10 border-green-500/25";
-}
-
-function buildMiniPath(points: { x: number; y: number }[]) {
-  return points
-    .map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(1)} ${point.y.toFixed(1)}`)
-    .join(" ");
-}
-
-function MiniLoadTrend({
-  weeks,
-}: {
-  weeks: Array<{
-    actual: number;
-    scheduled: number;
-    recommended: number;
-    weekStart: string;
-    isCurrentWeek?: boolean;
-  }>;
-}) {
-  const visibleWeeks = weeks.slice(0, 6);
-  const maxLoad = Math.max(
-    1,
-    ...visibleWeeks.flatMap((week) => [week.actual, week.scheduled, week.recommended]),
-  );
-
-  if (visibleWeeks.length === 0) {
-    return <View className="h-24 rounded-2xl bg-muted/40" />;
-  }
-
-  const width = 150;
-  const height = 104;
-  const padding = 10;
-  const chartWidth = width - padding * 2;
-  const chartHeight = height - padding * 2;
-  const toPoints = (key: "actual" | "scheduled" | "recommended") =>
-    visibleWeeks.map((week, index) => ({
-      x:
-        padding +
-        (visibleWeeks.length <= 1 ? chartWidth : (index / (visibleWeeks.length - 1)) * chartWidth),
-      y: padding + (1 - Math.max(0, Math.min(1, week[key] / maxLoad))) * chartHeight,
-    }));
-  const currentIndex = visibleWeeks.findIndex((week) => week.isCurrentWeek);
-  const currentX =
-    currentIndex >= 0
-      ? padding + (currentIndex / Math.max(visibleWeeks.length - 1, 1)) * chartWidth
-      : null;
-
-  return (
-    <View className="h-24 overflow-hidden rounded-2xl bg-muted/30">
-      <Svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`}>
-        {currentX !== null ? (
-          <Line
-            x1={currentX}
-            y1={padding}
-            x2={currentX}
-            y2={height - padding}
-            stroke="#94a3b8"
-            strokeWidth={1}
-            opacity={0.28}
-          />
-        ) : null}
-        <Path
-          d={buildMiniPath(toPoints("recommended"))}
-          stroke="#22c55e"
-          strokeWidth={2.5}
-          fill="none"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          opacity={0.9}
-        />
-        <Path
-          d={buildMiniPath(toPoints("scheduled"))}
-          stroke="#60a5fa"
-          strokeWidth={2.5}
-          fill="none"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          opacity={0.86}
-        />
-        <Path
-          d={buildMiniPath(toPoints("actual"))}
-          stroke="#64748b"
-          strokeWidth={3}
-          fill="none"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </Svg>
-    </View>
-  );
-}
-
-function MiniReadinessTrend({
-  points,
-}: {
-  points: Array<{
-    actual: number | null;
-    scheduled: number | null;
-    recommended: number | null;
+function getLoadTotalsForWeek(
+  timeline: Array<{
     date: string;
-  }>;
-}) {
-  const visiblePoints = points.slice(-12);
+    completed_load_tss?: number | null;
+    scheduled_load_tss?: number | null;
+    recommended_load_tss?: number | null;
+    ideal_tss?: number | null;
+  }>,
+  weekStart: string,
+  weekEnd: string,
+) {
+  return timeline.reduce(
+    (totals, point) => {
+      if (point.date < weekStart || point.date > weekEnd) {
+        return totals;
+      }
 
-  if (visiblePoints.length === 0) {
-    return <View className="h-24 rounded-2xl bg-muted/40" />;
+      return {
+        completed: totals.completed + (point.completed_load_tss ?? 0),
+        scheduled: totals.scheduled + (point.scheduled_load_tss ?? 0),
+        recommended: totals.recommended + (point.recommended_load_tss ?? point.ideal_tss ?? 0),
+      };
+    },
+    { completed: 0, scheduled: 0, recommended: 0 },
+  );
+}
+
+function getWeeklyLoadInsight(input: {
+  completed: number;
+  scheduled: number;
+  recommended: number;
+  weekEnd: string;
+  todayKey: string;
+}) {
+  const scheduledGap = Math.round(input.scheduled - input.recommended);
+  const completedGap = Math.round(input.completed - input.scheduled);
+  const isPastOrCurrent = input.weekEnd <= input.todayKey;
+
+  if (isPastOrCurrent && Math.abs(completedGap) >= 10) {
+    return completedGap < 0
+      ? `${Math.abs(completedGap)} TSS behind schedule`
+      : `${completedGap} TSS ahead of schedule`;
   }
 
-  const width = 150;
-  const height = 104;
-  const padding = 10;
-  const chartWidth = width - padding * 2;
-  const chartHeight = height - padding * 2;
-  const toPoints = (key: "actual" | "scheduled" | "recommended") =>
-    visiblePoints
-      .map((point, index) => {
-        const value = point[key];
-        if (typeof value !== "number") return null;
-        return {
-          x:
-            padding +
-            (visiblePoints.length <= 1
-              ? chartWidth
-              : (index / (visiblePoints.length - 1)) * chartWidth),
-          y: padding + (1 - Math.max(0, Math.min(100, value)) / 100) * chartHeight,
-        };
-      })
-      .filter((point): point is { x: number; y: number } => point !== null);
-  const actualPoints = toPoints("actual");
-  const scheduledPoints = toPoints("scheduled");
-  const recommendedPoints = toPoints("recommended");
+  if (Math.abs(scheduledGap) < 10) {
+    return "Aligned with recommended load";
+  }
 
-  return (
-    <View className="h-24 overflow-hidden rounded-2xl bg-muted/30">
-      <Svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`}>
-        <Rect
-          x={padding}
-          y={padding + chartHeight * 0.15}
-          width={chartWidth}
-          height={chartHeight * 0.3}
-          rx={8}
-          fill="#22c55e"
-          opacity={0.13}
-        />
-        {scheduledPoints.length > 1 ? (
-          <Path
-            d={buildMiniPath(scheduledPoints)}
-            stroke="#60a5fa"
-            strokeWidth={2.5}
-            fill="none"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            opacity={0.86}
-          />
-        ) : null}
-        {recommendedPoints.length > 1 ? (
-          <Path
-            d={buildMiniPath(recommendedPoints)}
-            stroke="#22c55e"
-            strokeWidth={2.5}
-            fill="none"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            opacity={0.92}
-          />
-        ) : null}
-        {actualPoints.length > 1 ? (
-          <Path
-            d={buildMiniPath(actualPoints)}
-            stroke="#64748b"
-            strokeWidth={3}
-            fill="none"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        ) : null}
-        {actualPoints.at(-1) ? (
-          <Circle cx={actualPoints.at(-1)!.x} cy={actualPoints.at(-1)!.y} r={3.5} fill="#64748b" />
-        ) : null}
-      </Svg>
-    </View>
-  );
-}
-
-function PlanInsightCard({
-  title,
-  value,
-  icon,
-  children,
-  visualPolicy,
-  onPress,
-  testID,
-}: {
-  title: string;
-  value: string;
-  icon: React.ComponentType<any>;
-  children: React.ReactNode;
-  visualPolicy: {
-    source: InsightSource;
-    visualType: InsightVisualType;
-    compactLayout: CompactInsightLayout;
-  };
-  onPress: () => void;
-  testID: string;
-}) {
-  return (
-    <CompactInsightCard
-      title={title}
-      value={value}
-      icon={icon}
-      layout={visualPolicy.compactLayout}
-      visualPolicy={visualPolicy}
-      onPress={onPress}
-      testID={testID}
-    >
-      {children}
-    </CompactInsightCard>
-  );
-}
-
-function PlanInsightDetailHero({
-  category,
-  value,
-  detail,
-  tone,
-  children,
-}: {
-  category: string;
-  value: string;
-  detail: string;
-  tone: "orange" | "green";
-  children: React.ReactNode;
-}) {
-  return (
-    <Card className={`rounded-3xl border bg-card ${getPlanToneClass(tone)}`}>
-      <CardContent className="gap-4 p-5">
-        <View>
-          <Text className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
-            {category}
-          </Text>
-          <Text className="text-4xl font-semibold text-foreground">{value}</Text>
-          <Text className="mt-2 text-sm text-muted-foreground">{detail}</Text>
-        </View>
-        {children}
-      </CardContent>
-    </Card>
-  );
-}
-
-function PlanKeyReadings({ rows }: { rows: Array<{ label: string; value: string }> }) {
-  return (
-    <Card className="rounded-3xl border border-border bg-card">
-      <CardContent className="gap-3 p-5">
-        <Text className="text-base font-semibold text-foreground">Key readings</Text>
-        {rows.map((row) => (
-          <View
-            key={row.label}
-            className="flex-row justify-between gap-4 border-b border-border/50 pb-2 last:border-b-0 last:pb-0"
-          >
-            <Text className="flex-1 text-sm text-muted-foreground">{row.label}</Text>
-            <Text className="flex-1 text-right text-sm font-medium text-foreground">
-              {row.value}
-            </Text>
-          </View>
-        ))}
-      </CardContent>
-    </Card>
-  );
+  return scheduledGap < 0
+    ? `${Math.abs(scheduledGap)} TSS under recommended`
+    : `${scheduledGap} TSS over recommended`;
 }
 
 function PlanDashboardScreen() {
   const router = useRouter();
+  usePerformanceScreenReady("route-plan");
   const [refreshing, setRefreshing] = useState(false);
   const eventsQueryEnabled = useAuthStore(
     (state) => state.ready && !!state.session && hasSessionAuthCredentials(),
@@ -418,22 +301,8 @@ function PlanDashboardScreen() {
 
   const today = useMemo(() => new Date(), []);
   const todayKey = useMemo(() => getDateKey(today), [today]);
-  const currentMonthAnchor = useMemo(() => getMonthAnchor(todayKey), [todayKey]);
-  const [visibleCalendarMonth, setVisibleCalendarMonth] = useState(currentMonthAnchor);
-  const [selectedPlanInsight, setSelectedPlanInsight] = useState<PlanInsightKind | null>(null);
-
-  const calendarRangeStart = useMemo(
-    () => getStartOfMonthKey(visibleCalendarMonth),
-    [visibleCalendarMonth],
-  );
-  const calendarRangeEnd = useMemo(
-    () => getEndOfMonthKey(visibleCalendarMonth),
-    [visibleCalendarMonth],
-  );
-  const calendarMonthTitle = useMemo(
-    () => format(parseDateKey(visibleCalendarMonth), "MMMM yyyy"),
-    [visibleCalendarMonth],
-  );
+  const [loadDateRange, setLoadDateRange] = useState<LoadDateRange>("90d");
+  const [loadAnalysisWeekOffset, setLoadAnalysisWeekOffset] = useState(0);
 
   const recentWindowStart = useMemo(() => {
     const start = new Date(today);
@@ -452,7 +321,7 @@ function PlanDashboardScreen() {
       include_adhoc: false,
       date_from: todayKey,
       date_to: upcomingWindowEnd,
-      limit: 500,
+      limit: 100,
     },
     {
       ...scheduleAwareReadQueryOptions,
@@ -470,18 +339,42 @@ function PlanDashboardScreen() {
     scheduleAwareReadQueryOptions,
   );
 
-  const calendarEventsQuery = api.events.list.useQuery(
+  const groupCalendarEventsQuery = api.groups.events.myCalendarGroupEvents.useQuery(
     {
-      include_adhoc: true,
-      date_from: calendarRangeStart,
-      date_to: calendarRangeEnd,
-      limit: 500,
+      includeCancelled: false,
+      startsAfter: `${recentWindowStart}T00:00:00.000Z`,
+      startsBefore: `${upcomingWindowEnd}T23:59:59.999Z`,
+      limit: 100,
     },
     {
       ...scheduleAwareReadQueryOptions,
       enabled: eventsQueryEnabled,
-      placeholderData: keepPreviousData,
     },
+  );
+  const groupCalendarEvents = useMemo(
+    () => groupCalendarEventsQuery.data?.items ?? [],
+    [groupCalendarEventsQuery.data?.items],
+  );
+  const selectedGroupActivityPlanIds = useMemo(
+    () => getSelectedGroupEventActivityPlanIds(groupCalendarEvents),
+    [groupCalendarEvents],
+  );
+  const selectedGroupActivityPlansQuery = api.activityPlans.getManyByIds.useQuery(
+    { ids: selectedGroupActivityPlanIds },
+    {
+      ...scheduleAwareReadQueryOptions,
+      enabled: eventsQueryEnabled && selectedGroupActivityPlanIds.length > 0,
+    },
+  );
+  const groupScheduledActivityPlanEvents = useMemo(
+    () =>
+      attachSelectedGroupEventActivityPlans(
+        groupCalendarEvents,
+        selectedGroupActivityPlansQuery.data?.items ?? [],
+      )
+        .map(toGroupEventScheduledActivityPlanEvent)
+        .filter(isPresent),
+    [groupCalendarEvents, selectedGroupActivityPlansQuery.data?.items],
   );
 
   const snapshot = useTrainingPlanSnapshot({
@@ -491,64 +384,115 @@ function PlanDashboardScreen() {
     curveWindow: "overview",
   });
   const goals = useProfileGoals({ loadAllPages: true });
+  const profileSettings = useProfileSettings();
   const lastProjectionRefreshKeyRef = useRef<string | null>(null);
-  const calendarEvents = useMemo(
-    () => (calendarEventsQuery.data?.items ?? []) as CalendarEvent[],
-    [calendarEventsQuery.data?.items],
-  );
-  const calendarEventsByDate = useMemo(() => buildEventsByDate(calendarEvents), [calendarEvents]);
-  const calendarGoalDates = useMemo(
-    () => new Set(goals.goals.map((goal) => goal.target_date).filter(Boolean) as string[]),
-    [goals.goals],
-  );
   const dashboard = usePlanDashboardViewModel({
     activePlan,
     ownPlans,
     goals,
+    profileSettings: profileSettings.settings,
     snapshot,
     upcomingPlannedEvents: upcomingPlannedEventsQuery.data?.items,
     recentPlannedEvents: recentPlannedEventsQuery.data?.items,
     today,
   });
-  const loadCardValue = dashboard.currentWeekLoadDetail
-    ? `${dashboard.currentWeekLoadDetail.actual}/${dashboard.currentWeekLoadDetail.recommended}`
-    : dashboard.weeklyLoadBars.length > 0
-      ? `${dashboard.weeklyLoadBars.length}w`
-      : "--";
-  const readinessCardValue =
-    typeof dashboard.readinessForecast?.current_readiness === "number"
-      ? `Current ${Math.round(dashboard.readinessForecast.current_readiness)}`
-      : "--";
+  const localProjectionPreview = useMemo(
+    () =>
+      buildTrainingPreferencesProjectionPreview({
+        draft: profileSettings.settings,
+        fitnessHistory: dashboard.fitnessHistory,
+        snapshot,
+      }),
+    [dashboard.fitnessHistory, profileSettings.settings, snapshot],
+  );
+  const loadTimelinePoints = useMemo(
+    () =>
+      buildTrainingPreferencesLoadTimeline({
+        projectionChart: localProjectionPreview.projectionChart,
+        snapshot,
+        scheduledEvents: [
+          ...(recentPlannedEventsQuery.data?.items ?? []),
+          ...(upcomingPlannedEventsQuery.data?.items ?? []),
+          ...groupScheduledActivityPlanEvents,
+        ],
+        scheduledWindowStart: recentWindowStart,
+        scheduledWindowEnd: upcomingWindowEnd,
+      }),
+    [
+      localProjectionPreview.projectionChart,
+      groupScheduledActivityPlanEvents,
+      recentPlannedEventsQuery.data?.items,
+      recentWindowStart,
+      snapshot,
+      upcomingPlannedEventsQuery.data?.items,
+      upcomingWindowEnd,
+    ],
+  );
+  const planningStateCopy = getPlanningStateCopy(dashboard);
+  const baseLoadAnalysisWeekStart =
+    dashboard.currentWeekLoadDetail?.weekStart ?? getWeekStartDateKey(todayKey);
+  const loadAnalysisWeekStart = addWeeks(baseLoadAnalysisWeekStart, loadAnalysisWeekOffset);
+  const loadAnalysisWeekEnd = getWeekEndDateKey(loadAnalysisWeekStart);
+  const loadRangeReferenceKey = loadAnalysisWeekStart;
+  const rangedTimelinePoints = filterByDateRange(
+    loadTimelinePoints,
+    loadDateRange,
+    loadRangeReferenceKey,
+    (point) => point.date,
+  );
+  const rangedFitnessHistory = filterByDateRange(
+    dashboard.fitnessHistory,
+    loadDateRange,
+    loadRangeReferenceKey,
+    (point) => point.date,
+  );
+  const rangedProjectedFitness = filterByDateRange(
+    dashboard.projectedFitness,
+    loadDateRange,
+    loadRangeReferenceKey,
+    (point) => point.date,
+  );
+  const rangedIdealFitnessCurve = filterByDateRange(
+    dashboard.idealFitnessCurve,
+    loadDateRange,
+    loadRangeReferenceKey,
+    (point) => point.date,
+  );
+  const selectedWeekLoadTotals = getLoadTotalsForWeek(
+    loadTimelinePoints,
+    loadAnalysisWeekStart,
+    loadAnalysisWeekEnd,
+  );
+  const weeklyLoadInsight = getWeeklyLoadInsight({
+    ...selectedWeekLoadTotals,
+    weekEnd: loadAnalysisWeekEnd,
+    todayKey,
+  });
   const loadDetailRows = [
     {
       label: "Completed",
-      value: dashboard.currentWeekLoadDetail
-        ? `${dashboard.currentWeekLoadDetail.actual} TSS`
-        : "--",
+      value: `${Math.round(selectedWeekLoadTotals.completed)} TSS`,
     },
     {
       label: "Scheduled",
-      value: dashboard.currentWeekLoadDetail
-        ? `${dashboard.currentWeekLoadDetail.scheduled} TSS`
-        : "--",
+      value: markEstimated(`${Math.round(selectedWeekLoadTotals.scheduled)} TSS`),
     },
     {
       label: "Recommended",
-      value: dashboard.currentWeekLoadDetail
-        ? `${dashboard.currentWeekLoadDetail.recommended} TSS`
-        : "--",
+      value: markEstimated(`${Math.round(selectedWeekLoadTotals.recommended)} TSS`),
     },
   ];
-  const readinessDetailRows = [
-    { label: "Current", value: readinessCardValue },
-    { label: "Confidence", value: dashboard.readinessConfidenceSummary?.label ?? "--" },
-    { label: "Goal markers", value: String(dashboard.readinessGoalMarkers.length) },
-  ];
+  const planAnalysisDateRangeLabel = formatDateRangeLabel(
+    loadAnalysisWeekStart,
+    loadAnalysisWeekEnd,
+  );
   useEffect(() => {
     const refreshKey = [
       activePlan?.id ?? "",
       String(upcomingPlannedEventsQuery.dataUpdatedAt ?? 0),
       String(recentPlannedEventsQuery.dataUpdatedAt ?? 0),
+      String(groupCalendarEventsQuery.dataUpdatedAt ?? 0),
+      String(selectedGroupActivityPlansQuery.dataUpdatedAt ?? 0),
       String(goals.dataUpdatedAt ?? 0),
     ].join(":");
 
@@ -557,7 +501,11 @@ function PlanDashboardScreen() {
       return;
     }
 
-    if (!upcomingPlannedEventsQuery.dataUpdatedAt && !recentPlannedEventsQuery.dataUpdatedAt) {
+    if (
+      !upcomingPlannedEventsQuery.dataUpdatedAt &&
+      !recentPlannedEventsQuery.dataUpdatedAt &&
+      !groupCalendarEventsQuery.dataUpdatedAt
+    ) {
       return;
     }
 
@@ -575,8 +523,10 @@ function PlanDashboardScreen() {
   }, [
     activePlan?.id,
     goals.dataUpdatedAt,
+    groupCalendarEventsQuery.dataUpdatedAt,
     recentPlannedEventsQuery.dataUpdatedAt,
     refetchActivePlan,
+    selectedGroupActivityPlansQuery.dataUpdatedAt,
     snapshot.refetchAll,
     upcomingPlannedEventsQuery.dataUpdatedAt,
   ]);
@@ -591,33 +541,13 @@ function PlanDashboardScreen() {
         refetchUpcomingEvents: upcomingPlannedEventsQuery.refetch,
         refetchRecentEvents: recentPlannedEventsQuery.refetch,
       }),
-      calendarEventsQuery.refetch(),
+      groupCalendarEventsQuery.refetch(),
+      selectedGroupActivityPlanIds.length > 0
+        ? selectedGroupActivityPlansQuery.refetch()
+        : Promise.resolve(null),
     ]);
     setRefreshing(false);
   };
-
-  const handleCalendarDatePress = useCallback(
-    (dateKey: string) => {
-      const params: Record<string, string> = { date: dateKey };
-      if (activePlan?.id) {
-        params.trainingPlanId = activePlan.id;
-      }
-
-      router.navigate({
-        pathname: "/(internal)/(standard)/calendar-day",
-        params,
-      } as never);
-    },
-    [activePlan?.id, router],
-  );
-
-  const handleChangeCalendarMonth = useCallback(
-    (monthDelta: number) => {
-      const nextMonth = getMonthAnchor(addMonthsToDateKey(visibleCalendarMonth, monthDelta));
-      setVisibleCalendarMonth(nextMonth);
-    },
-    [visibleCalendarMonth],
-  );
 
   return (
     <View className="flex-1 bg-background" testID="plan-screen">
@@ -627,132 +557,80 @@ function PlanDashboardScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
       >
         <View className="gap-5 px-4 pb-6 pt-3">
-          <View className="gap-2" testID="plan-calendar-card">
+          <View className="gap-3" testID="plan-goal-outlook">
             <View className="flex-row items-center justify-between">
+              <Text className="text-sm font-semibold text-foreground">Goals</Text>
               <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel="Previous month"
-                activeOpacity={0.7}
-                className="h-8 w-8 items-center justify-center rounded-full bg-muted/50"
-                onPress={() => handleChangeCalendarMonth(-1)}
-                testID="plan-calendar-previous-month"
-              >
-                <Icon as={ChevronLeft} size={16} className="text-foreground" />
-              </TouchableOpacity>
-              <Text
-                className="text-sm font-semibold text-foreground"
-                testID="plan-calendar-month-title"
-              >
-                {calendarMonthTitle}
-              </Text>
-              <TouchableOpacity
-                accessibilityRole="button"
-                accessibilityLabel="Next month"
-                activeOpacity={0.7}
-                className="h-8 w-8 items-center justify-center rounded-full bg-muted/50"
-                onPress={() => handleChangeCalendarMonth(1)}
-                testID="plan-calendar-next-month"
-              >
-                <Icon as={ChevronRight} size={16} className="text-foreground" />
-              </TouchableOpacity>
-            </View>
-            <CalendarMonthList
-              activeDate=""
-              rangeStart={calendarRangeStart}
-              rangeEnd={calendarRangeEnd}
-              visibleMonthAnchor={visibleCalendarMonth}
-              todayKey={todayKey}
-              eventsByDate={calendarEventsByDate}
-              goalDates={calendarGoalDates}
-              compact
-              scrollEnabled={false}
-              showMonthTitle={false}
-              showSurface={false}
-              onVisibleMonthChange={setVisibleCalendarMonth}
-              onReachStart={() => undefined}
-              onReachEnd={() => undefined}
-              onSelectDay={handleCalendarDatePress}
-            />
-            <View className="flex-row items-center gap-3 px-0.5">
-              <View className="flex-row items-center gap-1.5">
-                <View className="h-2.5 w-2.5 rounded-full bg-green-500" />
-                <Text className="text-[10px] font-medium text-muted-foreground">activity</Text>
-              </View>
-              <View className="flex-row items-center gap-1.5">
-                <View className="h-2.5 w-2.5 rounded-full bg-primary/70" />
-                <Text className="text-[10px] font-medium text-muted-foreground">planned</Text>
-              </View>
-              <View className="flex-row items-center gap-1.5">
-                <View className="h-2.5 w-2.5 rounded-full border border-amber-500" />
-                <Text className="text-[10px] font-medium text-muted-foreground">goal</Text>
-              </View>
-            </View>
-          </View>
-
-          <View className="gap-2" testID="plan-goals-card">
-            <View className="flex-row items-center justify-between">
-              <TouchableOpacity
-                accessibilityRole="button"
+                className="rounded-full border border-border px-3 py-1.5"
                 activeOpacity={0.85}
                 onPress={() => router.navigate(ROUTES.GOALS.LIST as never)}
                 testID="plan-view-goals-button"
-              >
-                <Text className="text-sm font-semibold text-foreground">Goals</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                className="h-8 w-8 items-center justify-center rounded-full bg-primary"
-                activeOpacity={0.85}
-                onPress={() => router.navigate(ROUTES.GOALS.CREATE as never)}
-                testID="plan-add-goal-button"
                 accessibilityRole="button"
-                accessibilityLabel="Add goal"
               >
-                <Icon as={Plus} size={15} className="text-primary-foreground" />
+                <Text className="text-xs font-semibold text-foreground">View all</Text>
               </TouchableOpacity>
             </View>
-            {dashboard.goalReadiness.length > 0 ? (
-              <View className="gap-2">
-                {dashboard.goalReadiness.slice(0, 3).map(({ goal, readinessPercent }) => (
+            {dashboard.goalOutlook.featured.length > 0 ? (
+              <View className="gap-3">
+                {dashboard.goalOutlook.featured.map(
+                  ({ goal, label, readinessPercent, readinessTarget, status }) => (
+                    <GoalListItem
+                      key={goal.id}
+                      goal={goal}
+                      label={label}
+                      readinessPercent={readinessPercent}
+                      readinessTarget={readinessTarget}
+                      status={status}
+                      onPress={() => router.navigate(ROUTES.GOALS.DETAIL(goal.id) as never)}
+                      testID={`plan-goal-outlook-card-${goal.id}`}
+                    />
+                  ),
+                )}
+                {dashboard.goalOutlook.hiddenNextDayGoalCount > 0 ? (
                   <TouchableOpacity
-                    key={goal.id}
-                    className="flex-row items-center gap-3 rounded-2xl bg-muted/30 px-3 py-2.5"
+                    accessibilityRole="button"
                     activeOpacity={0.85}
-                    onPress={() => router.navigate(ROUTES.GOALS.DETAIL(goal.id) as never)}
-                    testID={`plan-goal-row-${goal.id}`}
+                    className="flex-row items-center justify-between rounded-2xl border border-border px-3 py-2.5"
+                    onPress={() => router.navigate(ROUTES.GOALS.LIST as never)}
+                    testID="plan-hidden-next-day-goals"
                   >
-                    <View className="h-8 w-8 items-center justify-center rounded-full border border-amber-500/70 bg-amber-500/10">
-                      <Icon as={Flag} size={14} className="text-foreground" />
+                    <Text className="flex-1 text-xs font-medium text-muted-foreground">
+                      {dashboard.goalOutlook.hiddenNextDayGoalCount} more goal
+                      {dashboard.goalOutlook.hiddenNextDayGoalCount === 1 ? "" : "s"} on{" "}
+                      {formatGoalTargetDate(dashboard.goalOutlook.nextTargetDate)}
+                    </Text>
+                    <Icon as={ChevronRight} size={14} className="text-muted-foreground" />
+                  </TouchableOpacity>
+                ) : null}
+                {dashboard.goalOutlook.canAddGoal ? (
+                  <TouchableOpacity
+                    className="flex-row items-center gap-3 rounded-2xl border border-dashed border-border px-3 py-3"
+                    activeOpacity={0.85}
+                    accessibilityRole="button"
+                    accessibilityLabel="Add another goal"
+                    onPress={() => router.navigate(ROUTES.GOALS.CREATE as never)}
+                    testID="plan-add-goal-button"
+                  >
+                    <View className="h-8 w-8 items-center justify-center rounded-full bg-muted">
+                      <Icon as={Plus} size={14} className="text-muted-foreground" />
                     </View>
-                    <View className="min-w-0 flex-1 gap-1">
-                      <View className="flex-row items-center justify-between gap-2">
-                        <Text
-                          className="flex-1 text-xs font-semibold text-foreground"
-                          numberOfLines={1}
-                        >
-                          {goal.title}
-                        </Text>
-                        <Text className="text-[10px] font-semibold text-primary">
-                          {formatReadinessPercent(readinessPercent)}
-                        </Text>
-                      </View>
-                      <View className="h-1.5 overflow-hidden rounded-full bg-muted">
-                        <View
-                          className="h-1.5 rounded-full bg-primary"
-                          style={{ width: readinessBarWidth(readinessPercent) }}
-                        />
-                      </View>
-                      <Text className="text-[10px] text-muted-foreground">
-                        {formatGoalTargetDate(goal.target_date)}
+                    <View className="flex-1">
+                      <Text className="text-sm font-medium text-foreground">Add another goal</Text>
+                      <Text className="text-xs text-muted-foreground">
+                        Plan for targets beyond what is already scheduled.
                       </Text>
                     </View>
                   </TouchableOpacity>
-                ))}
+                ) : null}
               </View>
             ) : (
               <TouchableOpacity
                 className="flex-row items-center gap-3 rounded-2xl border border-dashed border-border px-3 py-3"
                 activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel="Add goal"
                 onPress={() => router.navigate(ROUTES.GOALS.CREATE as never)}
+                testID="plan-add-goal-button"
               >
                 <View className="h-8 w-8 items-center justify-center rounded-full bg-muted">
                   <Icon as={Flag} size={14} className="text-muted-foreground" />
@@ -760,222 +638,176 @@ function PlanDashboardScreen() {
                 <View className="flex-1">
                   <Text className="text-sm font-medium text-foreground">No goals yet</Text>
                   <Text className="text-xs text-muted-foreground">
-                    Add a target date to mark the calendar.
+                    Add a goal to shape the plan around what you're training for.
                   </Text>
                 </View>
               </TouchableOpacity>
             )}
           </View>
 
-          <View className="gap-3">
-            <View className="gap-1">
-              <Text className="text-lg font-semibold text-foreground">Insights</Text>
+          <View className="gap-3" testID="plan-analysis-section">
+            <View className="flex-row items-center justify-between">
+              <Text className="text-sm font-semibold text-foreground">Plan analysis</Text>
+              <TouchableOpacity
+                className="rounded-full border border-border px-3 py-1.5"
+                activeOpacity={0.85}
+                onPress={() => router.navigate(ROUTES.PLAN.CALENDAR_DAY(todayKey) as never)}
+                testID="plan-today-agenda-button"
+                accessibilityRole="button"
+                accessibilityLabel="View today's agenda"
+              >
+                <Text className="text-xs font-semibold text-foreground">Today</Text>
+              </TouchableOpacity>
             </View>
-            <View className="flex-row flex-wrap gap-4">
-              <PlanInsightCard
-                title="Load Comparison"
-                value={loadCardValue}
-                icon={Flame}
-                visualPolicy={PLAN_INSIGHT_VISUAL_POLICIES.load}
-                onPress={() => setSelectedPlanInsight("load")}
-                testID="plan-insight-card-load"
+            <View
+              className="gap-4 rounded-2xl border border-border bg-card p-4"
+              testID="plan-state-card"
+            >
+              <View className="gap-1">
+                <Text className="text-lg font-semibold text-foreground" numberOfLines={2}>
+                  {planningStateCopy.title}
+                </Text>
+                <View className="flex-row items-center gap-2">
+                  <TouchableOpacity
+                    accessibilityLabel="Show previous load analysis week"
+                    accessibilityRole="button"
+                    activeOpacity={0.85}
+                    className="h-7 w-7 items-center justify-center rounded-full border border-border bg-background"
+                    onPress={() => setLoadAnalysisWeekOffset((offset) => offset - 1)}
+                    testID="plan-analysis-week-previous"
+                  >
+                    <Icon as={ChevronLeft} size={14} className="text-muted-foreground" />
+                  </TouchableOpacity>
+                  <Text
+                    className="text-xs font-semibold text-muted-foreground"
+                    testID="plan-analysis-week-range"
+                  >
+                    {planAnalysisDateRangeLabel}
+                  </Text>
+                  <TouchableOpacity
+                    accessibilityLabel="Show next load analysis week"
+                    accessibilityRole="button"
+                    activeOpacity={0.85}
+                    className="h-7 w-7 items-center justify-center rounded-full border border-border bg-background"
+                    onPress={() => setLoadAnalysisWeekOffset((offset) => offset + 1)}
+                    testID="plan-analysis-week-next"
+                  >
+                    <Icon as={ChevronRight} size={14} className="text-muted-foreground" />
+                  </TouchableOpacity>
+                </View>
+                <Text className="text-xs font-medium text-muted-foreground">
+                  {planningStateCopy.body}
+                </Text>
+                {planningStateCopy.supportingText ? (
+                  <Text className="text-xs text-muted-foreground">
+                    {planningStateCopy.supportingText}
+                  </Text>
+                ) : null}
+              </View>
+              <View className="flex-row flex-wrap gap-2">
+                {loadDetailRows.map((stat) => (
+                  <View key={stat.label} className="min-w-[92px] flex-1">
+                    <Text
+                      className="text-[10px] font-medium text-muted-foreground"
+                      numberOfLines={1}
+                    >
+                      {stat.label}
+                    </Text>
+                    <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
+                      {stat.value}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+              <Text
+                className="text-xs font-semibold text-muted-foreground"
+                testID="plan-analysis-load-insight"
               >
-                <MiniLoadTrend weeks={dashboard.weeklyLoadBars} />
-              </PlanInsightCard>
-              <PlanInsightCard
-                title="Readiness Forecast"
-                value={readinessCardValue}
-                icon={Sparkles}
-                visualPolicy={PLAN_INSIGHT_VISUAL_POLICIES.readiness}
-                onPress={() => setSelectedPlanInsight("readiness")}
-                testID="plan-insight-card-readiness"
-              >
-                <MiniReadinessTrend points={dashboard.readinessComparisonPoints} />
-              </PlanInsightCard>
+                {weeklyLoadInsight}
+              </Text>
             </View>
           </View>
 
-          {dashboard.upcomingImpact.length > 0 ? (
-            <View className="gap-2" testID="plan-upcoming-impact">
-              <Text className="text-sm font-semibold text-foreground">Upcoming</Text>
-              {dashboard.upcomingImpact.slice(0, 3).map((impact) => (
+          <View className="gap-3" testID="plan-signals">
+            <View className="flex-row items-center justify-between gap-3">
+              <Text className="text-sm font-semibold text-foreground">
+                Weekly training load (TSS)
+              </Text>
+              <View className="flex-row items-center gap-2">
                 <View
-                  key={`${impact.id}-${impact.scheduledAt}`}
-                  className="flex-row items-center gap-3 py-1.5"
+                  className="flex-row rounded-full border border-border bg-card p-0.5"
+                  testID="plan-load-range-selector"
                 >
-                  <View className="h-8 w-1 rounded-full bg-primary/40" />
-                  <View className="min-w-0 flex-1">
-                    <View className="flex-row items-center justify-between gap-2">
-                      <Text
-                        className="flex-1 text-xs font-semibold text-foreground"
-                        numberOfLines={1}
+                  {loadDateRanges.map((range) => {
+                    const isSelected = loadDateRange === range.value;
+                    return (
+                      <TouchableOpacity
+                        key={range.value}
+                        accessibilityRole="button"
+                        activeOpacity={0.85}
+                        className={`rounded-full px-2 py-1 ${isSelected ? "bg-primary" : "bg-transparent"}`}
+                        onPress={() => setLoadDateRange(range.value)}
+                        testID={`plan-load-range-${range.value}`}
                       >
-                        {impact.title}
-                      </Text>
-                      <Text className="text-[10px] text-muted-foreground">
-                        {compactDateTime(impact.scheduledAt)}
-                      </Text>
-                    </View>
-                    <Text className="text-[10px] text-muted-foreground" numberOfLines={1}>
-                      {impact.estimatedLoad === null
-                        ? "Load TBD"
-                        : `${Math.round(impact.estimatedLoad)} TSS`}{" "}
-                      ·{" "}
-                      {impact.readinessDelta === null
-                        ? "readiness impact TBD"
-                        : `${impact.readinessDelta > 0 ? "+" : ""}${impact.readinessDelta} readiness`}
-                    </Text>
-                  </View>
+                        <Text
+                          className={`text-[10px] font-semibold ${
+                            isSelected ? "text-primary-foreground" : "text-muted-foreground"
+                          }`}
+                        >
+                          {range.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
-              ))}
+                <TouchableOpacity
+                  accessibilityLabel="Edit training preferences"
+                  accessibilityRole="button"
+                  activeOpacity={0.85}
+                  className="h-8 w-8 items-center justify-center rounded-full border border-border bg-card"
+                  onPress={() => router.navigate(ROUTES.PLAN.TRAINING_PREFERENCES as never)}
+                  testID="plan-signals-settings-button"
+                >
+                  <Icon as={Settings} size={15} className="text-muted-foreground" />
+                </TouchableOpacity>
+              </View>
             </View>
-          ) : null}
+            <View testID="plan-insight-card-load">
+              <View testID="plan-projection-chart">
+                <PlanVsActualChart
+                  timeline={rangedTimelinePoints}
+                  actualData={rangedFitnessHistory}
+                  projectedData={rangedProjectedFitness}
+                  idealData={rangedIdealFitnessCurve}
+                  goalMarkers={dashboard.goalMarkers}
+                  goalMetrics={dashboard.goalMetrics}
+                  highlightedRange={{ start: loadAnalysisWeekStart, end: loadAnalysisWeekEnd }}
+                  height={260}
+                  showLegend
+                />
+              </View>
+            </View>
+            <View className="gap-2" testID="plan-fitness-fatigue-card">
+              <View className="gap-1">
+                <Text className="text-sm font-semibold text-foreground">
+                  Fitness, fatigue & form
+                </Text>
+                <Text className="text-xs text-muted-foreground">
+                  TrainingPeaks-style trend of CTL, ATL, and TSB across the selected range.
+                </Text>
+              </View>
+              <View testID="plan-fitness-fatigue-chart">
+                <FitnessFatigueFormChart
+                  actualData={rangedFitnessHistory}
+                  projectedData={rangedProjectedFitness}
+                  height={260}
+                  showLegend
+                />
+              </View>
+            </View>
+          </View>
         </View>
       </ScrollView>
-
-      <DetailChartModal
-        visible={!!selectedPlanInsight}
-        onClose={() => setSelectedPlanInsight(null)}
-        title={selectedPlanInsight === "readiness" ? "Readiness Forecast" : "Load Comparison"}
-        defaultDateRange="90d"
-      >
-        {(dateRange: DateRange) => {
-          const rangeEndKey = dashboard.readinessForecast?.today ?? todayKey;
-          const rangedReadinessPoints = filterByDateRange(
-            dashboard.readinessComparisonPoints,
-            dateRange,
-            rangeEndKey,
-            (point) => point.date,
-          );
-          const rangedReadinessGoalMarkers = filterByDateRange(
-            dashboard.readinessGoalMarkers,
-            dateRange,
-            rangeEndKey,
-            (marker) => marker.targetDate,
-          );
-          const rangedWeeklyLoadBars = filterByDateRange(
-            dashboard.weeklyLoadBars,
-            dateRange,
-            rangeEndKey,
-            (week) => week.weekStart,
-          );
-          const rangedTimelinePoints = filterByDateRange(
-            dashboard.insightTimelinePoints,
-            dateRange,
-            rangeEndKey,
-            (point) => point.date,
-          );
-          const rangedGoalMarkers = filterByDateRange(
-            dashboard.goalMarkers,
-            dateRange,
-            rangeEndKey,
-            (marker) => marker.targetDate,
-          );
-
-          return selectedPlanInsight === "readiness" ? (
-            <View className="gap-4">
-              <PlanInsightDetailHero
-                category="Trajectory"
-                value={readinessCardValue}
-                detail={
-                  dashboard.readinessConfidenceSummary?.reasons.join(" ") ||
-                  "Actual readiness versus scheduled and recommended trajectories across your goal window."
-                }
-                tone="green"
-              >
-                <MiniReadinessTrend points={rangedReadinessPoints} />
-              </PlanInsightDetailHero>
-              <Card className="rounded-3xl border border-border bg-card">
-                <CardContent className="p-5">
-                  <View testID="plan-readiness-comparison-chart">
-                    <PlanReadinessComparisonChart
-                      points={rangedReadinessPoints}
-                      goalMarkers={rangedReadinessGoalMarkers}
-                      zones={dashboard.readinessForecast?.zones}
-                      today={dashboard.readinessForecast?.today}
-                      accessibilitySummary={dashboard.readinessAccessibilitySummary}
-                      height={360}
-                    />
-                  </View>
-                </CardContent>
-              </Card>
-              <PlanKeyReadings rows={readinessDetailRows} />
-            </View>
-          ) : (
-            <View className="gap-4">
-              <PlanInsightDetailHero
-                category="Training plan"
-                value={loadCardValue}
-                detail={
-                  dashboard.estimationWarning ??
-                  "Recommended load versus your scheduled plan and completed work."
-                }
-                tone="orange"
-              >
-                <MiniLoadTrend weeks={rangedWeeklyLoadBars} />
-              </PlanInsightDetailHero>
-              <Card className="rounded-3xl border border-border bg-card">
-                <CardContent className="p-5">
-                  <View testID="plan-projection-chart">
-                    <PlanVsActualChart
-                      timeline={rangedTimelinePoints}
-                      actualData={dashboard.fitnessHistory}
-                      projectedData={dashboard.projectedFitness}
-                      idealData={dashboard.idealFitnessCurve}
-                      goalMarkers={rangedGoalMarkers}
-                      goalMetrics={dashboard.goalMetrics}
-                      height={360}
-                      showLegend
-                    />
-                  </View>
-                </CardContent>
-              </Card>
-              <PlanKeyReadings rows={loadDetailRows} />
-              {rangedWeeklyLoadBars.length > 0 ? (
-                <Card
-                  className="rounded-3xl border border-border bg-card"
-                  testID="plan-weekly-load-bars"
-                >
-                  <CardContent className="gap-3 p-5">
-                    <Text className="text-base font-semibold text-foreground">Weekly Load Gap</Text>
-                    {rangedWeeklyLoadBars.slice(0, 6).map((week) => {
-                      const maxLoad = Math.max(1, week.actual, week.scheduled, week.recommended);
-                      return (
-                        <View key={week.weekStart} className="gap-1">
-                          <Text className="text-[10px] font-medium text-muted-foreground">
-                            {week.label}
-                            {week.isCurrentWeek ? " · current" : ""}
-                          </Text>
-                          <View className="gap-1">
-                            <View className="h-2 rounded-full bg-muted">
-                              <View
-                                className="h-2 rounded-full bg-slate-900 dark:bg-slate-100"
-                                style={{ width: loadBarWidth(week.actual, maxLoad) }}
-                              />
-                            </View>
-                            <View className="h-2 rounded-full bg-muted">
-                              <View
-                                className="h-2 rounded-full bg-blue-400"
-                                style={{ width: loadBarWidth(week.scheduled, maxLoad) }}
-                              />
-                            </View>
-                            <View className="h-2 rounded-full bg-muted">
-                              <View
-                                className="h-2 rounded-full bg-green-500"
-                                style={{ width: loadBarWidth(week.recommended, maxLoad) }}
-                              />
-                            </View>
-                          </View>
-                        </View>
-                      );
-                    })}
-                  </CardContent>
-                </Card>
-              ) : null}
-            </View>
-          );
-        }}
-      </DetailChartModal>
     </View>
   );
 }
