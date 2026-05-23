@@ -5,10 +5,15 @@ import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { TrainingPathSection } from "@/components/plan/training-path/TrainingPathSection";
 import type {
   TrainingPathCompletedActivity,
-  TrainingPathRange,
   TrainingPathScheduledItem,
   TrainingPathSelectedGoal,
+  TrainingPathWeekWindow,
 } from "@/components/plan/training-path/trainingPathTypes";
+import {
+  addDays,
+  buildScheduledFitnessTrend,
+  buildScrollableTrainingPathWindow,
+} from "@/components/plan/training-path/trainingPathUtils";
 import { useTrainingPathViewModel } from "@/components/plan/training-path/useTrainingPathViewModel";
 import { usePlanDashboardViewModel } from "@/components/plan/usePlanDashboardViewModel";
 import { AppHeader } from "@/components/shared";
@@ -224,8 +229,8 @@ function PlanDashboardScreen() {
   );
   const today = useMemo(() => new Date(), []);
   const todayKey = useMemo(() => getDateKey(today), [today]);
-  const [trainingPathRange, setTrainingPathRange] = useState<TrainingPathRange>("goal");
   const [selectedWeekStart, setSelectedWeekStart] = useState<string | null>(null);
+  const [trainingPathWindow, setTrainingPathWindow] = useState<TrainingPathWeekWindow | null>(null);
 
   const recentWindowStart = useMemo(() => {
     const start = new Date(today);
@@ -262,7 +267,7 @@ function PlanDashboardScreen() {
     scheduleAwareReadQueryOptions,
   );
 
-  const groupCalendarEventsQuery = api.groups.events.myCalendarGroupEvents.useQuery(
+  const groupCalendarEventsQuery = api.groups.events.myUpcomingGroupEvents.useQuery(
     {
       includeCancelled: false,
       startsAfter: `${recentWindowStart}T00:00:00.000Z`,
@@ -367,14 +372,35 @@ function PlanDashboardScreen() {
         : dashboard.idealFitnessCurve,
     [dashboard.idealFitnessCurve, localProjectionPreview.previewIdealCurve],
   );
+  const scheduledFitnessTrend = useMemo(
+    () =>
+      buildScheduledFitnessTrend({
+        fitnessHistory: dashboard.fitnessHistory,
+        idealFitnessCurve,
+        timeline: loadTimelinePoints,
+        todayKey,
+      }),
+    [dashboard.fitnessHistory, idealFitnessCurve, loadTimelinePoints, todayKey],
+  );
+  const initialTrainingPathWindow = useMemo(
+    () => buildScrollableTrainingPathWindow({ goalMarkers: dashboard.goalMarkers, todayKey }),
+    [dashboard.goalMarkers, todayKey],
+  );
+
+  useEffect(() => {
+    setTrainingPathWindow(initialTrainingPathWindow);
+  }, [initialTrainingPathWindow]);
+
+  const resolvedTrainingPathWindow = trainingPathWindow ?? initialTrainingPathWindow;
   const trainingPath = useTrainingPathViewModel({
     timeline: loadTimelinePoints,
     fitnessHistory: dashboard.fitnessHistory,
-    projectedFitness: dashboard.projectedFitness,
+    projectedFitness: scheduledFitnessTrend,
     idealFitnessCurve,
     goalMarkers: dashboard.goalMarkers,
     selectedWeekStart,
-    range: trainingPathRange,
+    range: "season",
+    weekWindow: resolvedTrainingPathWindow,
     todayKey,
   });
   const selectedWeekRangeStart = trainingPath.selectedWeekSummary?.weekStart ?? null;
@@ -398,6 +424,10 @@ function PlanDashboardScreen() {
       .map(toTrainingPathScheduledItem)
       .filter(isPresent);
     const groupEvents = groupCalendarEvents
+      .filter(
+        (event) =>
+          event.viewerRsvp?.status !== "declined" && event.viewerSeriesRsvp?.status !== "declined",
+      )
       .map((event, index) => {
         const date = event.starts_at.split("T")[0] ?? null;
         if (!date) return null;
@@ -458,12 +488,30 @@ function PlanDashboardScreen() {
     );
   }, [completedReviewActivities, selectedWeekRangeEnd, selectedWeekRangeStart]);
 
-  const handleRangeChange = useCallback((range: TrainingPathRange) => {
+  const extendTrainingPathWindowStart = useCallback(() => {
     startTransition(() => {
-      setTrainingPathRange(range);
+      setTrainingPathWindow((current) => {
+        const window = current ?? initialTrainingPathWindow;
+        return { ...window, start: addDays(window.start, -56) };
+      });
+    });
+  }, [initialTrainingPathWindow]);
+
+  const extendTrainingPathWindowEnd = useCallback(() => {
+    startTransition(() => {
+      setTrainingPathWindow((current) => {
+        const window = current ?? initialTrainingPathWindow;
+        return { ...window, end: addDays(window.end, 56) };
+      });
+    });
+  }, [initialTrainingPathWindow]);
+
+  const resetTrainingPathChart = useCallback(() => {
+    startTransition(() => {
+      setTrainingPathWindow(initialTrainingPathWindow);
       setSelectedWeekStart(null);
     });
-  }, []);
+  }, [initialTrainingPathWindow]);
 
   const handleSelectedWeekChange = useCallback((weekStart: string) => {
     startTransition(() => {
@@ -582,11 +630,12 @@ function PlanDashboardScreen() {
         <View className="gap-5 px-2 pb-6 pt-3">
           <TrainingPathSection
             model={trainingPath}
-            range={trainingPathRange}
             selectedWeekGoals={selectedWeekGoals}
             selectedWeekScheduledItems={selectedWeekScheduledItems}
             selectedWeekCompletedActivities={selectedWeekCompletedActivities}
-            onRangeChange={handleRangeChange}
+            onResetChart={resetTrainingPathChart}
+            onScrollNearEnd={extendTrainingPathWindowEnd}
+            onScrollNearStart={extendTrainingPathWindowStart}
             onOpenActivity={navigateToActivity}
             onOpenActivityPlan={navigateToActivityPlan}
             onOpenGoal={navigateToGoal}

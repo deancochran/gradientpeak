@@ -21,6 +21,7 @@ type ScheduledEventInput = {
   recurrence_rule?: string | null;
   recurrence?: { rule?: string | null } | null;
   activity_plan?: unknown;
+  tentative?: boolean | null;
 };
 
 const weekdayToRRuleDay = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"] as const;
@@ -283,6 +284,7 @@ export function buildTrainingPreferencesLoadTimeline(input: {
   const dateSource = baselineTimeline.length > 0 ? baselineTimeline : [...previewByDate.values()];
   const dates = new Set(dateSource.map((point) => point.date));
   const scheduledLoadByDate = new Map<string, number>();
+  const tentativeScheduledLoadByDate = new Map<string, number>();
 
   for (const event of input.scheduledEvents ?? []) {
     const tss = getAuthoritativeActivityPlanMetrics(
@@ -296,7 +298,8 @@ export function buildTrainingPreferencesLoadTimeline(input: {
       windowEnd: input.scheduledWindowEnd,
     })) {
       dates.add(date);
-      scheduledLoadByDate.set(date, (scheduledLoadByDate.get(date) ?? 0) + tss);
+      const loadByDate = event.tentative ? tentativeScheduledLoadByDate : scheduledLoadByDate;
+      loadByDate.set(date, (loadByDate.get(date) ?? 0) + tss);
     }
   }
 
@@ -314,6 +317,9 @@ export function buildTrainingPreferencesLoadTimeline(input: {
       const scheduledLoad = hasCalendarScheduleForDate(date)
         ? (scheduledLoadByDate.get(date) ?? 0)
         : (baseline?.scheduled_tss ?? 0);
+      const tentativeScheduledLoad = hasCalendarScheduleForDate(date)
+        ? (tentativeScheduledLoadByDate.get(date) ?? 0)
+        : 0;
 
       return withLegacyTrainingLoadAliases({
         date,
@@ -321,6 +327,7 @@ export function buildTrainingPreferencesLoadTimeline(input: {
           previewPoint?.predicted_load_tss ?? baseline?.ideal_tss ?? 0,
         ),
         scheduled_load_tss: Math.round(scheduledLoad),
+        tentative_scheduled_load_tss: Math.round(tentativeScheduledLoad),
         completed_load_tss: baseline?.actual_tss ?? 0,
         adherence_score: baseline?.adherence_score ?? 0,
         boundary_state: baseline?.boundary_state,

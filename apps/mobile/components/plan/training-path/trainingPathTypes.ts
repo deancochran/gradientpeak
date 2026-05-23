@@ -5,6 +5,11 @@ import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
 
 export type TrainingPathRange = "goal" | "season" | "all";
 
+export type TrainingPathWeekWindow = {
+  start: string;
+  end: string;
+};
+
 export type TrainingPathRiskZone = "fresh" | "moderate" | "high" | "veryHigh";
 
 export type TrainingPathEmptyState =
@@ -19,8 +24,10 @@ export type TrainingPathWeek = {
   label: string;
   completedLoad: number | null;
   plannedLoad: number | null;
+  tentativePlannedLoad: number | null;
   targetLoad: number | null;
   fitness: number | null;
+  scheduledFitness: number | null;
   targetFitness: number | null;
   fatigue: number | null;
   form: number | null;
@@ -38,6 +45,7 @@ export type TrainingPathWeekSummary = {
   body: string;
   completedLoad: number;
   plannedLoad: number;
+  tentativePlannedLoad: number;
   targetLoad: number;
   fitness: number | null;
   targetFitness: number | null;
@@ -102,6 +110,7 @@ export type TrainingPathLoadPoint = {
   date: string;
   completed_load_tss?: number | null;
   scheduled_load_tss?: number | null;
+  tentative_scheduled_load_tss?: number | null;
   recommended_load_tss?: number | null;
   ideal_tss?: number | null;
   actual_tss?: number | null;

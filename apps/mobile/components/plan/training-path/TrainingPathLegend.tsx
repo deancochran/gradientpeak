@@ -9,7 +9,8 @@ const loadItems = [
 ];
 
 const pathItems = [
-  { label: "Fitness Trend", color: "#020617", shape: "line" },
+  { label: "Fitness Trend", color: "rgba(22, 163, 74, 0.95)", shape: "line" },
+  { label: "Scheduled Fitness", color: "rgba(37, 99, 235, 0.95)", shape: "line" },
   { label: "Ideal Fitness", color: "rgba(15, 23, 42, 0.42)", shape: "line" },
   { label: "Today", color: "#020617", shape: "line" },
   { label: "Goal", color: "#020617", shape: "line" },

@@ -1,3 +1,4 @@
+import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core";
 import type {
   TrainingPathEmptyState,
   TrainingPathFitnessPoint,
@@ -9,6 +10,7 @@ import type {
   TrainingPathViewModel,
   TrainingPathWeek,
   TrainingPathWeekSummary,
+  TrainingPathWeekWindow,
 } from "./trainingPathTypes";
 
 type BuildTrainingPathInput = {
@@ -19,12 +21,14 @@ type BuildTrainingPathInput = {
   goalMarkers?: TrainingPathSourceGoalMarker[] | null;
   selectedWeekStart?: string | null;
   range: TrainingPathRange;
+  weekWindow?: TrainingPathWeekWindow | null;
   todayKey: string;
 };
 
 type WeekBucket = {
   completedLoad: number;
   plannedLoad: number;
+  tentativePlannedLoad: number;
   targetLoad: number;
 };
 
@@ -36,13 +40,14 @@ type NormalizedTrainingPathInput = {
   goalMarkers: TrainingPathSourceGoalMarker[];
   selectedWeekStart?: string | null;
   range: TrainingPathRange;
+  weekWindow?: TrainingPathWeekWindow | null;
   todayKey: string;
 };
 
 type TrainingPathSourceMaps = {
   loadByWeek: Map<string, WeekBucket>;
   actualFitnessByWeek: Map<string, TrainingPathFitnessPoint>;
-  projectedFitnessByWeek: Map<string, TrainingPathFitnessPoint>;
+  scheduledFitnessByWeek: Map<string, TrainingPathFitnessPoint>;
   idealFitnessByWeek: Map<string, TrainingPathFitnessPoint>;
   goalMarkers: TrainingPathGoalMarker[];
 };
@@ -137,9 +142,15 @@ function aggregateLoadByWeek(timeline: TrainingPathLoadPoint[]) {
   for (const point of timeline) {
     if (!point.date) continue;
     const weekStart = getWeekStartDateKey(point.date);
-    const bucket = buckets.get(weekStart) ?? { completedLoad: 0, plannedLoad: 0, targetLoad: 0 };
+    const bucket = buckets.get(weekStart) ?? {
+      completedLoad: 0,
+      plannedLoad: 0,
+      tentativePlannedLoad: 0,
+      targetLoad: 0,
+    };
     bucket.completedLoad += getNumericLoad(point.completed_load_tss ?? point.actual_tss);
     bucket.plannedLoad += getNumericLoad(point.scheduled_load_tss ?? point.scheduled_tss);
+    bucket.tentativePlannedLoad += getNumericLoad(point.tentative_scheduled_load_tss);
     bucket.targetLoad += getNumericLoad(point.recommended_load_tss ?? point.ideal_tss);
     buckets.set(weekStart, bucket);
   }
@@ -159,6 +170,112 @@ function latestFitnessByWeek(points: TrainingPathFitnessPoint[]) {
   return byWeek;
 }
 
+function scheduledFitnessByWeek(points: TrainingPathFitnessPoint[], todayKey: string) {
+  const byWeek = latestFitnessByWeek(points);
+  const todayPoint = points.find((point) => point.date === todayKey);
+  if (todayPoint) {
+    byWeek.set(getWeekStartDateKey(todayKey), todayPoint);
+  }
+  return byWeek;
+}
+
+function actualFitnessByWeek(points: TrainingPathFitnessPoint[], todayKey: string) {
+  const byWeek = latestFitnessByWeek(points);
+  const todayPoint = resolveTodayFitnessState(points, todayKey);
+  if (todayPoint) {
+    byWeek.set(getWeekStartDateKey(todayKey), todayPoint);
+  }
+  return byWeek;
+}
+
+function latestFitnessAtOrBefore(points: TrainingPathFitnessPoint[], date: string) {
+  return (
+    points
+      .filter((point) => point.date <= date && typeof point.ctl === "number")
+      .sort((left, right) => right.date.localeCompare(left.date))[0] ?? null
+  );
+}
+
+function resolveTodayFitnessState(points: TrainingPathFitnessPoint[], todayKey: string) {
+  const currentFitness = latestFitnessAtOrBefore(points, todayKey);
+  if (!currentFitness) return null;
+  if (currentFitness.date === todayKey) return currentFitness;
+
+  const replayed = replayTrainingLoadByDate({
+    dailyTss: buildDailyTssByDateSeries({
+      startDate: addDays(currentFitness.date, 1),
+      endDate: todayKey,
+      tssByDate: new Map<string, number>(),
+    }),
+    initialATL: currentFitness.atl ?? currentFitness.ctl,
+    initialCTL: currentFitness.ctl,
+  });
+  const todayFitness = replayed.at(-1);
+
+  return todayFitness
+    ? {
+        date: todayKey,
+        ctl: Math.round(todayFitness.ctl * 10) / 10,
+        atl: Math.round(todayFitness.atl * 10) / 10,
+        tsb: Math.round(todayFitness.tsb * 10) / 10,
+      }
+    : {
+        date: todayKey,
+        ctl: currentFitness.ctl,
+        atl: currentFitness.atl ?? null,
+        tsb: currentFitness.tsb ?? null,
+      };
+}
+
+export function buildScheduledFitnessTrend(input: {
+  fitnessHistory?: TrainingPathFitnessPoint[] | null;
+  idealFitnessCurve?: TrainingPathFitnessPoint[] | null;
+  timeline?: TrainingPathLoadPoint[] | null;
+  todayKey: string;
+}) {
+  const currentFitness = resolveTodayFitnessState(input.fitnessHistory ?? [], input.todayKey);
+  const idealEndDate = (input.idealFitnessCurve ?? [])
+    .map((point) => point.date)
+    .filter(Boolean)
+    .sort((left, right) => right.localeCompare(left))[0];
+
+  if (!currentFitness || !idealEndDate || idealEndDate < input.todayKey) return [];
+
+  const scheduledTssByDate = new Map<string, number>();
+  for (const point of input.timeline ?? []) {
+    if (!point.date) continue;
+    const scheduledLoad =
+      getNumericLoad(point.scheduled_load_tss ?? point.scheduled_tss) +
+      getNumericLoad(point.tentative_scheduled_load_tss);
+    if (scheduledLoad <= 0) continue;
+    scheduledTssByDate.set(point.date, (scheduledTssByDate.get(point.date) ?? 0) + scheduledLoad);
+  }
+
+  const tomorrow = addDays(input.todayKey, 1);
+  const replayed =
+    tomorrow <= idealEndDate
+      ? replayTrainingLoadByDate({
+          dailyTss: buildDailyTssByDateSeries({
+            startDate: tomorrow,
+            endDate: idealEndDate,
+            tssByDate: scheduledTssByDate,
+          }),
+          initialATL: currentFitness.atl ?? currentFitness.ctl,
+          initialCTL: currentFitness.ctl,
+        })
+      : [];
+
+  return [
+    currentFitness,
+    ...replayed.map((point) => ({
+      date: point.date,
+      ctl: Math.round(point.ctl * 10) / 10,
+      atl: Math.round(point.atl * 10) / 10,
+      tsb: Math.round(point.tsb * 10) / 10,
+    })),
+  ];
+}
+
 export function buildTrainingPathGoalMarkers(
   goalMarkers: TrainingPathSourceGoalMarker[],
 ): TrainingPathGoalMarker[] {
@@ -171,6 +288,24 @@ export function buildTrainingPathGoalMarkers(
       weekStart: getWeekStartDateKey(marker.targetDate),
     }))
     .sort((left, right) => left.targetDate.localeCompare(right.targetDate));
+}
+
+export function buildScrollableTrainingPathWindow(input: {
+  goalMarkers?: TrainingPathSourceGoalMarker[] | TrainingPathGoalMarker[] | null;
+  todayKey: string;
+  pastWeeks?: number;
+  futureWeeksAfterLastGoal?: number;
+  fallbackFutureWeeks?: number;
+}): TrainingPathWeekWindow {
+  const currentWeekStart = getWeekStartDateKey(input.todayKey);
+  const markers = buildTrainingPathGoalMarkers(input.goalMarkers ?? []);
+  const lastGoal = markers[markers.length - 1] ?? null;
+  return {
+    start: addDays(currentWeekStart, -(input.pastWeeks ?? 4) * 7),
+    end: lastGoal
+      ? addDays(lastGoal.weekStart, (input.futureWeeksAfterLastGoal ?? 4) * 7)
+      : addDays(currentWeekStart, (input.fallbackFutureWeeks ?? 26) * 7),
+  };
 }
 
 function chooseSelectedWeek(
@@ -193,8 +328,9 @@ export function buildTrainingPathWeekSummary(input: {
 }): TrainingPathWeekSummary {
   const completedLoad = Math.round(input.week.completedLoad ?? 0);
   const plannedLoad = Math.round(input.week.plannedLoad ?? 0);
+  const tentativePlannedLoad = Math.round(input.week.tentativePlannedLoad ?? 0);
   const targetLoad = Math.round(input.week.targetLoad ?? 0);
-  const loadDelta = Math.round(completedLoad + plannedLoad - targetLoad);
+  const loadDelta = Math.round(completedLoad + plannedLoad + tentativePlannedLoad - targetLoad);
   const fitnessGapToIdeal =
     typeof input.week.fitness === "number" && typeof input.week.targetFitness === "number"
       ? Math.round(input.week.fitness - input.week.targetFitness)
@@ -229,6 +365,7 @@ export function buildTrainingPathWeekSummary(input: {
     body,
     completedLoad,
     plannedLoad,
+    tentativePlannedLoad,
     targetLoad,
     fitness: input.week.fitness,
     targetFitness: input.week.targetFitness,
@@ -248,7 +385,7 @@ function computeDomain(values: Array<number | null>, fallback: [number, number])
   const max = Math.max(...observed);
   const padding = Math.max(10, (max - min) * 0.12);
   return [
-    Math.floor(Math.min(0, min - padding) / 10) * 10,
+    Math.max(0, Math.floor((min - padding) / 10) * 10),
     Math.ceil((max + padding) / 10) * 10,
   ] as [number, number];
 }
@@ -281,6 +418,7 @@ function normalizeTrainingPathInput(input: BuildTrainingPathInput): NormalizedTr
     goalMarkers: input.goalMarkers ?? [],
     selectedWeekStart: input.selectedWeekStart,
     range: input.range,
+    weekWindow: input.weekWindow,
     todayKey: input.todayKey,
   };
 }
@@ -288,8 +426,18 @@ function normalizeTrainingPathInput(input: BuildTrainingPathInput): NormalizedTr
 function buildSourceMaps(input: NormalizedTrainingPathInput): TrainingPathSourceMaps {
   return {
     loadByWeek: aggregateLoadByWeek(input.timeline),
-    actualFitnessByWeek: latestFitnessByWeek(input.fitnessHistory),
-    projectedFitnessByWeek: latestFitnessByWeek(input.projectedFitness),
+    actualFitnessByWeek: actualFitnessByWeek(input.fitnessHistory, input.todayKey),
+    scheduledFitnessByWeek: scheduledFitnessByWeek(
+      input.projectedFitness.length > 0
+        ? input.projectedFitness
+        : buildScheduledFitnessTrend({
+            fitnessHistory: input.fitnessHistory,
+            idealFitnessCurve: input.idealFitnessCurve,
+            timeline: input.timeline,
+            todayKey: input.todayKey,
+          }),
+      input.todayKey,
+    ),
     idealFitnessByWeek: latestFitnessByWeek(input.idealFitnessCurve),
     goalMarkers: buildTrainingPathGoalMarkers(input.goalMarkers),
   };
@@ -304,11 +452,21 @@ function collectVisibleWeekStarts(
 
   for (const weekStart of sources.loadByWeek.keys()) weekStarts.add(weekStart);
   for (const weekStart of sources.actualFitnessByWeek.keys()) weekStarts.add(weekStart);
-  for (const weekStart of sources.projectedFitnessByWeek.keys()) weekStarts.add(weekStart);
+  for (const weekStart of sources.scheduledFitnessByWeek.keys()) weekStarts.add(weekStart);
   for (const weekStart of sources.idealFitnessByWeek.keys()) weekStarts.add(weekStart);
   for (const marker of sources.goalMarkers) weekStarts.add(marker.weekStart);
 
-  const rangeBounds = getRangeBounds(input.range, input.todayKey, sources.goalMarkers);
+  const rangeBounds =
+    input.weekWindow ?? getRangeBounds(input.range, input.todayKey, sources.goalMarkers);
+  if (rangeBounds) {
+    let cursor = getWeekStartDateKey(rangeBounds.start);
+    const end = getWeekStartDateKey(rangeBounds.end);
+    for (let weekCount = 0; cursor <= end && weekCount < 260; weekCount += 1) {
+      weekStarts.add(cursor);
+      cursor = addDays(cursor, 7);
+    }
+  }
+
   return [...weekStarts]
     .filter(
       (weekStart) =>
@@ -319,13 +477,9 @@ function collectVisibleWeekStarts(
 
 function pickFitnessPoint(
   weekStart: string,
-  sources: Pick<TrainingPathSourceMaps, "actualFitnessByWeek" | "projectedFitnessByWeek">,
+  sources: Pick<TrainingPathSourceMaps, "actualFitnessByWeek">,
 ) {
-  return (
-    sources.actualFitnessByWeek.get(weekStart) ??
-    sources.projectedFitnessByWeek.get(weekStart) ??
-    null
-  );
+  return sources.actualFitnessByWeek.get(weekStart) ?? null;
 }
 
 function buildWeeks(input: NormalizedTrainingPathInput, sources: TrainingPathSourceMaps) {
@@ -340,6 +494,7 @@ function buildWeeks(input: NormalizedTrainingPathInput, sources: TrainingPathSou
   return sortedWeekStarts.map<TrainingPathWeek>((weekStart) => {
     const load = sources.loadByWeek.get(weekStart);
     const fitnessPoint = pickFitnessPoint(weekStart, sources);
+    const scheduledFitnessPoint = sources.scheduledFitnessByWeek.get(weekStart);
     const idealFitnessPoint = sources.idealFitnessByWeek.get(weekStart);
     const weekEnd = addDays(weekStart, 6);
     const form = fitnessPoint?.tsb ?? null;
@@ -349,8 +504,13 @@ function buildWeeks(input: NormalizedTrainingPathInput, sources: TrainingPathSou
       label: compactDateLabel(weekStart),
       completedLoad: load ? Math.round(load.completedLoad) : null,
       plannedLoad: load ? Math.round(load.plannedLoad) : null,
+      tentativePlannedLoad: load ? Math.round(load.tentativePlannedLoad) : null,
       targetLoad: load ? Math.round(load.targetLoad) : null,
       fitness: typeof fitnessPoint?.ctl === "number" ? Math.round(fitnessPoint.ctl) : null,
+      scheduledFitness:
+        typeof scheduledFitnessPoint?.ctl === "number"
+          ? Math.round(scheduledFitnessPoint.ctl)
+          : null,
       targetFitness:
         typeof idealFitnessPoint?.ctl === "number" ? Math.round(idealFitnessPoint.ctl) : null,
       fatigue: typeof fitnessPoint?.atl === "number" ? Math.round(fitnessPoint.atl) : null,
@@ -372,7 +532,7 @@ export function buildTrainingPathViewModel(input: BuildTrainingPathInput): Train
     ? buildTrainingPathWeekSummary({
         week: selectedWeek,
         goalMarkers: sources.goalMarkers,
-        projectedFitnessByWeek: sources.projectedFitnessByWeek,
+        projectedFitnessByWeek: sources.scheduledFitnessByWeek,
         targetFitnessByWeek: sources.idealFitnessByWeek,
       })
     : null;
@@ -389,11 +549,17 @@ export function buildTrainingPathViewModel(input: BuildTrainingPathInput): Train
     todayKey: normalizedInput.todayKey,
     domains: {
       load: computePositiveDomain(
-        weeks.flatMap((week) => [week.completedLoad, week.plannedLoad, week.targetLoad]),
+        weeks.flatMap((week) => [
+          week.completedLoad,
+          typeof week.plannedLoad === "number" || typeof week.tentativePlannedLoad === "number"
+            ? (week.plannedLoad ?? 0) + (week.tentativePlannedLoad ?? 0)
+            : null,
+          week.targetLoad,
+        ]),
         [0, 200],
       ),
       fitness: computeDomain(
-        weeks.flatMap((week) => [week.fitness, week.targetFitness]),
+        weeks.flatMap((week) => [week.fitness, week.scheduledFitness, week.targetFitness]),
         [0, 100],
       ),
     },

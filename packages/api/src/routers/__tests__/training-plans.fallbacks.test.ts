@@ -598,7 +598,7 @@ describe("training plan projection fallbacks", () => {
     expect(result.timeline.map((point) => point.scheduled_tss)).toEqual([0, 42, 0]);
   });
 
-  it("marks the load guidance as goal-driven when dated profile goals exist", async () => {
+  it("tracks dated goals without aggregating them into recommended load", async () => {
     const result = await getPlanTabProjectionService({
       supabase: createSupabaseMock({
         training_plans: {
@@ -662,15 +662,18 @@ describe("training plan projection fallbacks", () => {
     });
 
     expect(result.load_guidance).toMatchObject({
-      mode: "goal_driven",
+      mode: "baseline",
       goal_count: 1,
       dated_goal_count: 1,
-      weekly_cap_tss: null,
+      weekly_cap_tss: 140,
+      interpretation:
+        "Goals are evaluated separately; recommended load remains a baseline estimate instead of aggregating goal-derived planned load.",
     });
+    expect(result.timeline.map((point) => point.ideal_tss)).toEqual([20, 20, 20]);
     expect(result.projection.diagnostics).toMatchObject({
       fallback_mode: "conservative_priors",
       load_provenance: {
-        source: "canonical_goal_projection",
+        source: "conservative_baseline",
         projection_curve_available: true,
         projection_floor_applied: true,
       },

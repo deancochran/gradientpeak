@@ -1,16 +1,14 @@
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { HelpCircle, Settings } from "lucide-react-native";
+import { HelpCircle, RotateCcw, Settings } from "lucide-react-native";
 import { useState } from "react";
 import { TouchableOpacity, View } from "react-native";
 import { AppFormModal } from "@/components/shared/AppFormModal";
 import { TrainingPathChart } from "./TrainingPathChart";
-import { TrainingPathControls } from "./TrainingPathControls";
 import { TrainingPathLegend } from "./TrainingPathLegend";
 import { TrainingPathWeekSummaryCard } from "./TrainingPathWeekSummaryCard";
 import type {
   TrainingPathCompletedActivity,
-  TrainingPathRange,
   TrainingPathScheduledItem,
   TrainingPathSelectedGoal,
   TrainingPathViewModel,
@@ -18,11 +16,12 @@ import type {
 
 type TrainingPathSectionProps = {
   model: TrainingPathViewModel;
-  range: TrainingPathRange;
   selectedWeekGoals: TrainingPathSelectedGoal[];
   selectedWeekScheduledItems: TrainingPathScheduledItem[];
   selectedWeekCompletedActivities: TrainingPathCompletedActivity[];
-  onRangeChange: (range: TrainingPathRange) => void;
+  onResetChart: () => void;
+  onScrollNearEnd?: () => void;
+  onScrollNearStart?: () => void;
   onOpenActivity: (activityId: string) => void;
   onOpenActivityPlan: (activityPlanId: string) => void;
   onOpenGoal: (goalId: string) => void;
@@ -71,11 +70,12 @@ function TrainingPathDateMetric({ value }: { value: string }) {
 
 export function TrainingPathSection({
   model,
-  range,
   selectedWeekGoals,
   selectedWeekScheduledItems,
   selectedWeekCompletedActivities,
-  onRangeChange,
+  onResetChart,
+  onScrollNearEnd,
+  onScrollNearStart,
   onOpenActivity,
   onOpenActivityPlan,
   onOpenGoal,
@@ -105,7 +105,16 @@ export function TrainingPathSection({
             </TouchableOpacity>
           </View>
           <View className="flex-row items-center gap-2">
-            <TrainingPathControls range={range} onRangeChange={onRangeChange} />
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Reset training path chart"
+              activeOpacity={0.85}
+              className="h-9 w-9 items-center justify-center rounded-full border border-border bg-background"
+              onPress={onResetChart}
+              testID="training-path-reset-button"
+            >
+              <Icon as={RotateCcw} size={14} className="text-muted-foreground" />
+            </TouchableOpacity>
             <TouchableOpacity
               accessibilityRole="button"
               accessibilityLabel="Edit training preferences"
@@ -142,7 +151,10 @@ export function TrainingPathSection({
         ) : (
           <TrainingPathChart
             model={model}
-            range={range}
+            range="season"
+            scrollX
+            onScrollNearEnd={onScrollNearEnd}
+            onScrollNearStart={onScrollNearStart}
             onSelectedWeekChange={onSelectedWeekChange}
           />
         )}
@@ -166,7 +178,7 @@ export function TrainingPathSection({
           title="Chart Legend"
         >
           <View className="gap-4 rounded-2xl border border-border bg-card p-4">
-            <TrainingPathLegend range={range} />
+            <TrainingPathLegend range="season" />
           </View>
         </AppFormModal>
       ) : null}

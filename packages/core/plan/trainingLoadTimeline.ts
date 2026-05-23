@@ -9,6 +9,7 @@ export type TrainingLoadTimelinePoint = {
   date: string;
   recommended_load_tss: number;
   scheduled_load_tss: number;
+  tentative_scheduled_load_tss?: number;
   completed_load_tss: number;
   adherence_score?: number;
   boundary_state?: "safe" | "caution" | "exceeded";
@@ -40,6 +41,7 @@ type TrainingLoadTimelineInputPoint = {
   date: string;
   recommended_load_tss?: number | null;
   scheduled_load_tss?: number | null;
+  tentative_scheduled_load_tss?: number | null;
   completed_load_tss?: number | null;
   ideal_tss?: number | null;
   scheduled_tss?: number | null;
@@ -83,12 +85,14 @@ export function normalizeTrainingLoadTimelinePoint(
 ): TrainingLoadTimelinePointWithLegacyAliases {
   const recommendedLoad = roundLoad(point.recommended_load_tss ?? point.ideal_tss);
   const scheduledLoad = roundLoad(point.scheduled_load_tss ?? point.scheduled_tss);
+  const tentativeScheduledLoad = roundLoad(point.tentative_scheduled_load_tss);
   const completedLoad = roundLoad(point.completed_load_tss ?? point.actual_tss);
 
   return {
     date: point.date,
     recommended_load_tss: recommendedLoad,
     scheduled_load_tss: scheduledLoad,
+    tentative_scheduled_load_tss: tentativeScheduledLoad,
     completed_load_tss: completedLoad,
     adherence_score: roundLoad(point.adherence_score),
     boundary_state: point.boundary_state,

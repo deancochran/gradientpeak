@@ -40,6 +40,10 @@ function WeekReviewSection({ children, title }: { children: React.ReactNode; tit
   );
 }
 
+function WeekReviewEmptyRow({ children }: { children: string }) {
+  return <Text className="text-xs text-muted-foreground">{children}</Text>;
+}
+
 export function TrainingPathWeekSummaryCard({
   summary,
   goals,
@@ -55,10 +59,6 @@ export function TrainingPathWeekSummaryCard({
     return null;
   }
 
-  const showProjection =
-    typeof summary.projectedFitnessAtGoal === "number" &&
-    typeof summary.targetFitnessAtGoal === "number";
-
   return (
     <View className="gap-4" testID="training-path-week-summary">
       <View className="gap-1">
@@ -72,9 +72,9 @@ export function TrainingPathWeekSummaryCard({
           <Text className="text-xs leading-5 text-muted-foreground">{summary.body}</Text>
         ) : null}
       </View>
-      <WeekReviewSection title="Goals this week">
-        {goals.length > 0 ? (
-          goals.map((goal) => (
+      {goals.length > 0 ? (
+        <WeekReviewSection title="Goals this week">
+          {goals.map((goal) => (
             <GoalListItem
               key={goal.id}
               goal={{
@@ -89,14 +89,14 @@ export function TrainingPathWeekSummaryCard({
               onPress={() => onOpenGoal(goal.id)}
               testID={`training-path-week-goal-${goal.id}`}
             />
-          ))
-        ) : (
-          <Text className="text-xs text-muted-foreground">No goals found for this week.</Text>
-        )}
-      </WeekReviewSection>
-      <WeekReviewSection title="Scheduled this week">
-        {scheduledItems.length > 0 ? (
-          scheduledItems.map((item) =>
+          ))}
+        </WeekReviewSection>
+      ) : (
+        <WeekReviewEmptyRow>No goals this week.</WeekReviewEmptyRow>
+      )}
+      {scheduledItems.length > 0 ? (
+        <WeekReviewSection title="Scheduled this week">
+          {scheduledItems.map((item) =>
             item.groupEvent ? (
               <GroupEventCard
                 key={item.id}
@@ -133,14 +133,14 @@ export function TrainingPathWeekSummaryCard({
                 </Text>
               </View>
             ),
-          )
-        ) : (
-          <Text className="text-xs text-muted-foreground">No scheduled sessions found.</Text>
-        )}
-      </WeekReviewSection>
-      <WeekReviewSection title="Activities this week">
-        {completedActivities.length > 0 ? (
-          completedActivities.map((activity) =>
+          )}
+        </WeekReviewSection>
+      ) : (
+        <WeekReviewEmptyRow>No scheduled events this week.</WeekReviewEmptyRow>
+      )}
+      {completedActivities.length > 0 ? (
+        <WeekReviewSection title="Activities this week">
+          {completedActivities.map((activity) =>
             activity.activity ? (
               <ActivityCard
                 key={activity.id}
@@ -161,21 +161,11 @@ export function TrainingPathWeekSummaryCard({
                 </Text>
               </View>
             ),
-          )
-        ) : summary.completedLoad > 0 ? (
-          <Text className="text-xs font-semibold text-foreground">
-            {formatLoad(summary.completedLoad)} completed this week
-          </Text>
-        ) : (
-          <Text className="text-xs text-muted-foreground">No completed activities found.</Text>
-        )}
-      </WeekReviewSection>
-      {showProjection ? (
-        <Text className="text-xs font-medium text-muted-foreground">
-          Fitness at goal: {Math.round(summary.projectedFitnessAtGoal ?? 0)} / ideal{" "}
-          {Math.round(summary.targetFitnessAtGoal ?? 0)}
-        </Text>
-      ) : null}
+          )}
+        </WeekReviewSection>
+      ) : (
+        <WeekReviewEmptyRow>No activities this week.</WeekReviewEmptyRow>
+      )}
     </View>
   );
 }

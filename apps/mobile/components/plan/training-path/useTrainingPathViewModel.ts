@@ -4,6 +4,7 @@ import type {
   TrainingPathLoadPoint,
   TrainingPathRange,
   TrainingPathSourceGoalMarker,
+  TrainingPathWeekWindow,
 } from "./trainingPathTypes";
 import { buildTrainingPathViewModel } from "./trainingPathUtils";
 
@@ -15,6 +16,7 @@ type UseTrainingPathViewModelParams = {
   goalMarkers?: TrainingPathSourceGoalMarker[] | null;
   selectedWeekStart?: string | null;
   range: TrainingPathRange;
+  weekWindow?: TrainingPathWeekWindow | null;
   todayKey: string;
 };
 
@@ -38,6 +40,7 @@ export function useTrainingPathViewModel(params: UseTrainingPathViewModelParams)
       params.selectedWeekStart,
       params.timeline,
       params.todayKey,
+      params.weekWindow,
     ],
   );
 }

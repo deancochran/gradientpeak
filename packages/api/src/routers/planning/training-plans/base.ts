@@ -955,7 +955,7 @@ type InsightSummary = {
   interpretation: string;
 };
 
-type LoadGuidanceMode = "baseline" | "goal_driven";
+type LoadGuidanceMode = "baseline";
 
 type LoadGuidanceSummary = {
   mode: LoadGuidanceMode;
@@ -967,7 +967,6 @@ type LoadGuidanceSummary = {
 };
 
 type ProjectionLoadProvenanceSource =
-  | "canonical_goal_projection"
   | "plan_structure"
   | "scheduled_sessions"
   | "conservative_baseline";
@@ -1972,33 +1971,6 @@ async function estimateWeeklyTssFromStructuredActivities(input: {
     weeklyTss: estimateWeeklyTssFromDailyMap(dailyTss),
     latestScheduledDate,
   };
-}
-
-function resolveIdealDailyTss(input: {
-  date: string;
-  projectedIdealTss?: number;
-  blocks: Array<{
-    start_date: string;
-    end_date: string;
-    target_weekly_tss_range?: { min: number; max: number };
-  }>;
-  structure: Record<string, unknown> | null | undefined;
-}): number {
-  if (typeof input.projectedIdealTss === "number" && Number.isFinite(input.projectedIdealTss)) {
-    return Math.round(Math.max(0, input.projectedIdealTss) * 10) / 10;
-  }
-
-  const structureWeeklyTss = deriveStructureWeeklyTssTarget(input.structure, input.date);
-  if (structureWeeklyTss !== null) {
-    return Math.round((structureWeeklyTss / 7) * 10) / 10;
-  }
-
-  const blockDailyTss = estimateIdealDailyTss(input.date, input.blocks);
-  if (blockDailyTss > 0) {
-    return blockDailyTss;
-  }
-
-  return conservativeStarterDailyTss;
 }
 
 function resolveBaselineDailyTss(input: {
@@ -4613,8 +4585,7 @@ export async function getPlanTabProjectionService({
   const projectionIdealTssByDate = projectionGoalContext.idealTssByDate;
   const hasActivityHistory = (actualActivities?.length || 0) > 0;
   const hasGoalProjectionCurve = (projectionIdealTssByDate?.size ?? 0) > 0;
-  const loadGuidanceMode: LoadGuidanceMode =
-    projectionGoalContext.datedGoalCount > 0 ? "goal_driven" : "baseline";
+  const loadGuidanceMode: LoadGuidanceMode = "baseline";
   const hasPlanStructureTargets = hasPlanStructureProjectionAnchor(
     looseStructure as Record<string, unknown>,
     input.start_date,
@@ -4622,22 +4593,13 @@ export async function getPlanTabProjectionService({
 
   const timelineDates = buildDateRange(input.start_date, input.end_date);
   const timeline = timelineDates.map((date) => {
-    const projectedIdealTss = projectionIdealTssByDate?.get(date);
     const scheduled_tss = Math.round((scheduledByDate.get(date) || 0) * 10) / 10;
-    const ideal_tss =
-      loadGuidanceMode === "goal_driven"
-        ? resolveIdealDailyTss({
-            date,
-            projectedIdealTss,
-            blocks,
-            structure: looseStructure as Record<string, unknown>,
-          })
-        : resolveBaselineDailyTss({
-            date,
-            structure: looseStructure as Record<string, unknown>,
-            blocks,
-            hasActivityHistory,
-          });
+    const ideal_tss = resolveBaselineDailyTss({
+      date,
+      structure: looseStructure as Record<string, unknown>,
+      blocks,
+      hasActivityHistory,
+    });
     const actual_tss = Math.round((actualByDate.get(date) || 0) * 10) / 10;
     const boundary = classifyBoundaryState(ideal_tss, scheduled_tss, actual_tss);
 
@@ -4693,11 +4655,9 @@ export async function getPlanTabProjectionService({
     adherenceScore: adherenceSummary.score,
   });
 
-  const loadProvenanceSource: ProjectionLoadProvenanceSource = hasGoalProjectionCurve
-    ? "canonical_goal_projection"
-    : hasPlanStructureTargets
-      ? "plan_structure"
-      : "conservative_baseline";
+  const loadProvenanceSource: ProjectionLoadProvenanceSource = hasPlanStructureTargets
+    ? "plan_structure"
+    : "conservative_baseline";
 
   const projectionDiagnostics: ProjectionInsightDiagnostics = {
     fallback_mode:
@@ -4734,10 +4694,9 @@ export async function getPlanTabProjectionService({
     has_activity_history: hasActivityHistory,
     weekly_cap_tss:
       loadGuidanceMode === "baseline" && !hasActivityHistory ? conservativeStarterWeeklyTss : null,
-    interpretation: hasGoalProjectionCurve
-      ? "Recommended load is anchored to your canonical dated goals and current plan context."
-      : loadGuidanceMode === "goal_driven"
-        ? "Recommended load falls back to baseline guidance because canonical goal projection was unavailable for this window."
+    interpretation:
+      projectionGoalContext.datedGoalCount > 0
+        ? "Goals are evaluated separately; recommended load remains a baseline estimate instead of aggregating goal-derived planned load."
         : hasActivityHistory
           ? "Recommended load is a baseline estimate from your recent training and active plan, not a dated goal."
           : "Recommended load is a conservative baseline estimate because no dated goal or usable history was found.",

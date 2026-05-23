@@ -19,17 +19,9 @@ import {
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { Stack } from "expo-router";
-import React, {
-  startTransition,
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useWatch } from "react-hook-form";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
-import type { TrainingPathRange } from "@/components/plan/training-path/trainingPathTypes";
 import { TrainingPreferencesProjectionPreview } from "@/components/settings/TrainingPreferencesProjectionPreview";
 import { api } from "@/lib/api";
 import { useProfileSettings } from "@/lib/hooks/useProfileSettings";
@@ -161,7 +153,6 @@ export default function TrainingPreferencesScreen() {
   const settingsQuery = useProfileSettings();
   const activePlanQuery = api.trainingPlans.getActivePlan.useQuery(undefined);
   const [activeTab, setActiveTab] = useState<PreferencesTabKey>("preferences");
-  const [trainingPathRange, setTrainingPathRange] = useState<TrainingPathRange>("goal");
   const [showAdvancedBaselineControls, setShowAdvancedBaselineControls] = useState(false);
 
   const formDefaults = useMemo(
@@ -269,12 +260,6 @@ export default function TrainingPreferencesScreen() {
     ? getManualBaselineCtlWarning(draft.baseline_fitness.override_ctl)
     : null;
 
-  const handleTrainingPathRangeChange = useCallback((nextRange: TrainingPathRange) => {
-    startTransition(() => {
-      setTrainingPathRange(nextRange);
-    });
-  }, []);
-
   const applyPreferencePreset = useCallback(
     (presetKey: Exclude<PreferencePresetKey, "custom">) => {
       const preset = preferencePresets.find((item) => item.key === presetKey);
@@ -363,8 +348,6 @@ export default function TrainingPreferencesScreen() {
         <ScrollView className="flex-1" contentContainerClassName="p-3 gap-3">
           <TrainingPreferencesProjectionPreview
             draft={deferredDraft}
-            range={trainingPathRange}
-            onRangeChange={handleTrainingPathRangeChange}
             planId={activePlanQuery.data?.id}
           />
 
