@@ -306,11 +306,11 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
         },
       },
       load_guidance: {
-        mode: "goal_driven",
+        mode: "baseline",
         goal_count: 2,
         dated_goal_count: 2,
         interpretation:
-          "Recommended load is anchored to your dated goals and current plan context.",
+          "Goals are evaluated separately; recommended load remains a baseline estimate instead of aggregating goal-derived planned load.",
       },
       projection_dashboard: {
         readiness_score: 72,

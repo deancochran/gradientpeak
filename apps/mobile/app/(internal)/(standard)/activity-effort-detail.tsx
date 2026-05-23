@@ -176,9 +176,8 @@ export default function ActivityEffortDetailScreen() {
               dateMode="absolute"
               onPress={() => navigateTo(ROUTES.ACTIVITIES.DETAIL(linkedActivity.id) as any)}
               owner={activityOwner}
-              showChevron
               testID="activity-effort-open-activity"
-              variant="compact"
+              variant="list"
             />
           ) : null}
 

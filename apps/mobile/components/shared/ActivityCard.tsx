@@ -1,7 +1,7 @@
 import { decodePolyline, formatDurationSec } from "@repo/core";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { ChevronRight, MessageCircle, Route } from "lucide-react-native";
+import { MessageCircle, Route } from "lucide-react-native";
 import type { ReactNode } from "react";
 import { useMemo } from "react";
 import { Pressable, View } from "react-native";
@@ -73,13 +73,12 @@ type ActivityCardProps = {
   onOwnerPress?: () => void;
   onPress?: () => void;
   owner?: ActivityCardOwner | null;
-  showChevron?: boolean;
   showNotes?: boolean;
   showLike?: boolean;
   showRouteIndicator?: boolean;
   showVisualPreview?: boolean;
   testID?: string;
-  variant?: "compact" | "default" | "detail" | "feed" | "list";
+  variant?: "detail" | "list";
 };
 
 function formatDistance(meters: number) {
@@ -166,19 +165,16 @@ export function ActivityCard({
   onOwnerPress,
   onPress,
   owner: ownerProp,
-  showChevron = false,
   showLike,
   showNotes = true,
   showRouteIndicator = true,
   showVisualPreview,
   testID,
-  variant = "default",
+  variant = "list",
 }: ActivityCardProps) {
-  const compact = variant === "compact";
-  const feed = variant === "feed";
   const detail = variant === "detail";
   const list = variant === "list";
-  const resolvedShowLike = showLike ?? (feed || list);
+  const resolvedShowLike = showLike ?? list;
   const activityType = activity.type || "other";
   const activityConfig = getActivityCategoryConfig(activityType);
   const owner = ownerProp ?? activity.profile ?? null;
@@ -198,7 +194,7 @@ export function ActivityCard({
   const displayLiked = isLiked ?? internalLiked;
   const displayLikeCount = likeCount ?? internalLikeCount;
   const displayLikePending = likePending || internalLikePending;
-  const shouldShowVisualPreview = showVisualPreview ?? (!compact && !detail && !list);
+  const shouldShowVisualPreview = showVisualPreview ?? false;
   const shouldShowCompactRoutePreview = list && showVisualPreview !== false;
   const attributionOwner = owner
     ? {
@@ -219,19 +215,14 @@ export function ActivityCard({
   const routeCoordinates = decodedPolylineCoordinates;
 
   return (
-    <ResourceCardShell
-      compact={compact}
-      contentClassName={compact ? "gap-3 px-2" : "gap-3 px-3"}
-      onPress={onPress}
-      testID={testID}
-    >
+    <ResourceCardShell contentClassName="gap-3 px-3" onPress={onPress} testID={testID}>
       <ResourceOwnerActionRow
         actions={
           onCommentPress ||
           footerAccessory ||
           resolvedShowLike ||
           headerAccessory ||
-          showChevron ? (
+          headerAccessory ? (
             <>
               {onCommentPress ? (
                 <Pressable
@@ -258,17 +249,13 @@ export function ActivityCard({
                 />
               ) : null}
 
-              {headerAccessory ??
-                (showChevron ? (
-                  <Icon as={ChevronRight} size={18} className="text-muted-foreground" />
-                ) : null)}
+              {headerAccessory}
             </>
           ) : null
         }
         categoryIcon={activityConfig.icon}
         categoryIconClassName={activityConfig.color}
         categoryLabel={activityConfig.name}
-        compact={compact}
         fallbackLabel="GradientPeak"
         onOwnerPress={onOwnerPress}
         owner={attributionOwner}
@@ -276,16 +263,15 @@ export function ActivityCard({
       />
 
       <ResourceCardHeader
-        compact={compact}
         description={showNotes ? activity.notes : null}
         descriptionNumberOfLines={detail ? undefined : 2}
         detail={detail}
         title={activity.name}
-        titleClassName={`${detail ? "text-xl" : compact || list ? "text-base" : "text-lg"} font-semibold text-foreground`}
+        titleClassName={`${detail ? "text-xl" : "text-base"} font-semibold text-foreground`}
         titleFallback="Untitled Activity"
       />
 
-      <ActivityMetricsRow activity={activity} compact={compact} />
+      <ActivityMetricsRow activity={activity} compact={false} />
 
       {shouldShowVisualPreview && routeCoordinates.length > 0 ? (
         <View

@@ -172,9 +172,8 @@ export default function ProfileMetricDetailScreen() {
                 navigateTo(ROUTES.ACTIVITIES.DETAIL(metric.reference_activity_id!) as any)
               }
               owner={activityOwner}
-              showChevron
               testID="profile-metric-open-activity"
-              variant="compact"
+              variant="list"
             />
           ) : null}
         </View>

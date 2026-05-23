@@ -13,6 +13,7 @@ export const ROUTES = {
     CREATE: "/create-activity-plan" as const,
     SCHEDULED: "/scheduled-activities-list" as const,
     CALENDAR_DAY: (date: string) => ({ pathname: "/calendar-day", params: { date } }) as const,
+    AGENDA_CREATE: (date: string) => ({ pathname: "/agenda-create", params: { date } }) as const,
     EVENT_CREATE: (date: string) =>
       ({ pathname: "/event-detail", params: { mode: "create", date } }) as const,
 

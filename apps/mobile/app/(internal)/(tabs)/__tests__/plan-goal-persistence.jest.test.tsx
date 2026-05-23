@@ -157,7 +157,7 @@ jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
       ],
     },
     insightTimeline: {
-      load_guidance: { mode: "goal_driven", goal_count: 0, dated_goal_count: 0 },
+      load_guidance: { mode: "baseline", goal_count: 0, dated_goal_count: 0 },
       timeline: [],
     },
     refetchAll: jest.fn(async () => undefined),

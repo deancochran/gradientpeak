@@ -122,11 +122,6 @@ type ActivePlanInput = {
   } | null;
 } | null;
 
-type OwnPlanInput = {
-  id: string;
-  name?: string | null;
-};
-
 type PlannedEventInput = {
   training_plan_id?: string | null;
   starts_at: string;
@@ -134,7 +129,6 @@ type PlannedEventInput = {
 
 type UsePlanDashboardViewModelParams = {
   activePlan: ActivePlanInput | undefined;
-  ownPlans: OwnPlanInput[] | null | undefined;
   goals: PlanGoals;
   profileSettings: AthleteTrainingSettings;
   snapshot: PlanSnapshot;
@@ -291,7 +285,6 @@ function goalReadinessStatus(
 
 export function usePlanDashboardViewModel({
   activePlan,
-  ownPlans,
   goals,
   profileSettings,
   snapshot,

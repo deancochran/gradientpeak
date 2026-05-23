@@ -72,7 +72,6 @@ function GoalsListScreen() {
   });
   const dashboard = usePlanDashboardViewModel({
     activePlan,
-    ownPlans: [],
     goals,
     profileSettings: profileSettings.settings,
     snapshot,

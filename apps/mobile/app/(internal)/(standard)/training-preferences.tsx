@@ -19,9 +19,17 @@ import {
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { Stack } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import React, {
+  startTransition,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useWatch } from "react-hook-form";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
+import type { TrainingPathRange } from "@/components/plan/training-path/trainingPathTypes";
 import { TrainingPreferencesProjectionPreview } from "@/components/settings/TrainingPreferencesProjectionPreview";
 import { api } from "@/lib/api";
 import { useProfileSettings } from "@/lib/hooks/useProfileSettings";
@@ -36,8 +44,6 @@ type PreferencesTabKey =
   | "baseline-fitness";
 
 type TrainingPreferencesValues = AthleteTrainingSettings | AthleteTrainingSettingsFormInput;
-
-type LoadDateRange = "30d" | "60d" | "90d" | "all";
 
 type PreferencePresetKey = "custom" | "conservative" | "balanced" | "performance";
 
@@ -155,7 +161,7 @@ export default function TrainingPreferencesScreen() {
   const settingsQuery = useProfileSettings();
   const activePlanQuery = api.trainingPlans.getActivePlan.useQuery(undefined);
   const [activeTab, setActiveTab] = useState<PreferencesTabKey>("preferences");
-  const [loadDateRange, setLoadDateRange] = useState<LoadDateRange>("90d");
+  const [trainingPathRange, setTrainingPathRange] = useState<TrainingPathRange>("goal");
   const [showAdvancedBaselineControls, setShowAdvancedBaselineControls] = useState(false);
 
   const formDefaults = useMemo(
@@ -176,6 +182,7 @@ export default function TrainingPreferencesScreen() {
 
   const draft = (useWatch({ control: form.control }) ??
     form.getValues()) as AthleteTrainingSettingsFormInput;
+  const deferredDraft = useDeferredValue(draft);
 
   const upsertMutation = api.profileSettings.upsert.useMutation();
   const submitForm = useZodFormSubmit<AthleteTrainingSettings>({
@@ -262,41 +269,54 @@ export default function TrainingPreferencesScreen() {
     ? getManualBaselineCtlWarning(draft.baseline_fitness.override_ctl)
     : null;
 
-  const applyPreferencePreset = (presetKey: Exclude<PreferencePresetKey, "custom">) => {
-    const preset = preferencePresets.find((item) => item.key === presetKey);
-    if (!preset) {
-      return;
-    }
+  const handleTrainingPathRangeChange = useCallback((nextRange: TrainingPathRange) => {
+    startTransition(() => {
+      setTrainingPathRange(nextRange);
+    });
+  }, []);
 
-    form.setValue("training_style.progression_pace", preset.values.progression_pace, {
-      shouldDirty: true,
-      shouldValidate: true,
-    });
-    form.setValue("training_style.week_pattern_preference", preset.values.week_pattern_preference, {
-      shouldDirty: true,
-      shouldValidate: true,
-    });
-    form.setValue("recovery_preferences.recovery_priority", preset.values.recovery_priority, {
-      shouldDirty: true,
-      shouldValidate: true,
-    });
-    form.setValue(
-      "recovery_preferences.systemic_fatigue_tolerance",
-      preset.values.systemic_fatigue_tolerance,
-      {
+  const applyPreferencePreset = useCallback(
+    (presetKey: Exclude<PreferencePresetKey, "custom">) => {
+      const preset = preferencePresets.find((item) => item.key === presetKey);
+      if (!preset) {
+        return;
+      }
+
+      form.setValue("training_style.progression_pace", preset.values.progression_pace, {
         shouldDirty: true,
         shouldValidate: true,
-      },
-    );
-    form.setValue(
-      "goal_strategy_preferences.target_surplus_preference",
-      preset.values.target_surplus_preference,
-      {
+      });
+      form.setValue(
+        "training_style.week_pattern_preference",
+        preset.values.week_pattern_preference,
+        {
+          shouldDirty: true,
+          shouldValidate: true,
+        },
+      );
+      form.setValue("recovery_preferences.recovery_priority", preset.values.recovery_priority, {
         shouldDirty: true,
         shouldValidate: true,
-      },
-    );
-  };
+      });
+      form.setValue(
+        "recovery_preferences.systemic_fatigue_tolerance",
+        preset.values.systemic_fatigue_tolerance,
+        {
+          shouldDirty: true,
+          shouldValidate: true,
+        },
+      );
+      form.setValue(
+        "goal_strategy_preferences.target_surplus_preference",
+        preset.values.target_surplus_preference,
+        {
+          shouldDirty: true,
+          shouldValidate: true,
+        },
+      );
+    },
+    [form],
+  );
 
   if (settingsQuery.isLoading) {
     return (
@@ -342,9 +362,9 @@ export default function TrainingPreferencesScreen() {
       <Form {...form}>
         <ScrollView className="flex-1" contentContainerClassName="p-3 gap-3">
           <TrainingPreferencesProjectionPreview
-            draft={draft}
-            loadDateRange={loadDateRange}
-            onLoadDateRangeChange={setLoadDateRange}
+            draft={deferredDraft}
+            range={trainingPathRange}
+            onRangeChange={handleTrainingPathRangeChange}
             planId={activePlanQuery.data?.id}
           />
 

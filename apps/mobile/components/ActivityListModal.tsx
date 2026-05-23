@@ -225,7 +225,7 @@ export function ActivityListModal({
                     dateMode="absolute"
                     onPress={() => handleActivityPress(activity.id)}
                     owner={activityOwner}
-                    variant="compact"
+                    variant="list"
                   />
                 ))}
               </View>
