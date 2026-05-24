@@ -157,7 +157,7 @@ const athletePreferenceSportDoseLimitOverrideSchema = z
     }
   });
 
-export const athletePreferenceDoseLimitsSchema = z
+const athletePreferenceDoseLimitsBaseSchema = z
   .object({
     min_sessions_per_week: z.number().int().min(0).max(21).optional(),
     max_sessions_per_week: z.number().int().min(0).max(21).optional(),
@@ -167,8 +167,10 @@ export const athletePreferenceDoseLimitsSchema = z
       .partialRecord(canonicalSportSchema, athletePreferenceSportDoseLimitOverrideSchema)
       .optional(),
   })
-  .strict()
-  .superRefine((value, ctx) => {
+  .strict();
+
+export const athletePreferenceDoseLimitsSchema = athletePreferenceDoseLimitsBaseSchema.superRefine(
+  (value, ctx) => {
     if (
       value.min_sessions_per_week !== undefined &&
       value.max_sessions_per_week !== undefined &&
@@ -180,7 +182,8 @@ export const athletePreferenceDoseLimitsSchema = z
         message: "Minimum sessions per week cannot exceed maximum sessions",
       });
     }
-  });
+  },
+);
 
 export const athletePreferenceTrainingStyleSchema = z
   .object({
@@ -309,7 +312,7 @@ export const athletePreferenceAvailabilityPatchSchema = z
 export const athletePreferenceProfilePatchSchema = z
   .object({
     availability: athletePreferenceAvailabilityPatchSchema.optional(),
-    dose_limits: athletePreferenceDoseLimitsSchema.partial().optional(),
+    dose_limits: athletePreferenceDoseLimitsBaseSchema.partial().optional(),
     training_style: athletePreferenceTrainingStyleSchema.partial().optional(),
     recovery_preferences: athletePreferenceRecoverySchema.partial().optional(),
     adaptation_preferences: athletePreferenceAdaptationSchema.partial().optional(),

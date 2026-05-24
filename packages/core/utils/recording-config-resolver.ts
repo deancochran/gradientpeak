@@ -13,6 +13,7 @@ import {
   isStepBasedActivity,
   shouldUseFollowAlong,
 } from "../schemas/activity_payload";
+import type { ActivityPlanStructureV2, IntensityTargetV2 } from "../schemas/activity_plan_v2";
 import type {
   RecordingBackdropMode,
   RecordingCapabilities,
@@ -180,6 +181,17 @@ export class RecordingConfigResolver {
     const trainerControlReady = canUseTrainer && Boolean(input.devices.ftmsTrainer?.controlReady);
     const _hasRoute = RecordingConfigResolver.hasRoute(input);
     const hasRouteGeometry = RecordingConfigResolver.hasRouteGeometry(input);
+    const autoFollowPriority = RecordingConfigResolver.determineAutoFollowPriority(input, {
+      hasStructuredPlan,
+      hasRouteGeometry,
+    });
+    const autoFollowConflict =
+      autoFollowPriority === "plan_targets" &&
+      hasRouteGeometry &&
+      RecordingConfigResolver.hasTrainerControllablePlanTargets(input.plan?.structure);
+    const autoFollowConflictReason = autoFollowConflict
+      ? "Structured plan targets take priority over route simulation for automatic trainer control."
+      : null;
 
     // Data collection capabilities - straightforward hardware checks
     const canTrackLocation = input.gpsRecordingEnabled && input.gpsAvailable;
@@ -214,7 +226,7 @@ export class RecordingConfigResolver {
     const shouldAutoFollowTargets =
       canUseTrainer &&
       trainerControlReady &&
-      (hasStructuredPlan || hasRouteGeometry) && // Plan provides power targets, route provides grade
+      autoFollowPriority !== "none" &&
       (input.devices.ftmsTrainer?.autoControlEnabled ?? false);
 
     // Primary metric
@@ -236,8 +248,67 @@ export class RecordingConfigResolver {
       shouldShowTrainerControl,
       canAutoAdvanceSteps,
       shouldAutoFollowTargets,
+      autoFollowPriority,
+      autoFollowConflict,
+      autoFollowConflictReason,
       primaryMetric,
     };
+  }
+
+  private static determineAutoFollowPriority(
+    input: RecordingConfigInput,
+    context: {
+      hasStructuredPlan: boolean;
+      hasRouteGeometry: boolean;
+    },
+  ): RecordingCapabilities["autoFollowPriority"] {
+    if (!input.devices.ftmsTrainer?.autoControlEnabled) {
+      return "none";
+    }
+
+    if (
+      context.hasStructuredPlan &&
+      RecordingConfigResolver.hasTrainerControllablePlanTargets(input.plan?.structure)
+    ) {
+      return "plan_targets";
+    }
+
+    if (context.hasStructuredPlan && !input.plan?.structure) {
+      return "plan_targets";
+    }
+
+    if (context.hasRouteGeometry) {
+      return "route_simulation";
+    }
+
+    return "none";
+  }
+
+  private static hasTrainerControllablePlanTargets(
+    structure: ActivityPlanStructureV2 | null | undefined,
+  ): boolean {
+    if (!structure) return false;
+
+    return structure.intervals.some((interval) =>
+      interval.steps.some((step) =>
+        step.targets?.some((target) => RecordingConfigResolver.isTrainerControllableTarget(target)),
+      ),
+    );
+  }
+
+  private static isTrainerControllableTarget(target: IntensityTargetV2): boolean {
+    switch (target.type) {
+      case "%FTP":
+      case "watts":
+      case "speed":
+      case "cadence":
+        return true;
+      case "%MaxHR":
+      case "%ThresholdHR":
+      case "bpm":
+      case "RPE":
+        return false;
+    }
   }
 
   private static buildSessionContract(
@@ -658,6 +729,10 @@ export class RecordingConfigResolver {
       warnings.push(
         "Auto ERG requires a structured plan or route with grade data. You can still manually control the trainer.",
       );
+    }
+
+    if (capabilities.autoFollowConflict && capabilities.autoFollowConflictReason) {
+      warnings.push(capabilities.autoFollowConflictReason);
     }
 
     // Warn if planned but no structure

@@ -4,6 +4,7 @@ import {
   creationBehaviorControlsV1Schema,
   creationCalibrationCompositeLocksSchema,
   creationConfigLocksSchema,
+  creationConstraintsBaseSchema,
   creationConstraintsSchema,
   creationOptimizationProfileEnum,
   creationProvenanceSchema,
@@ -91,7 +92,7 @@ export const getCreationSuggestionsInputSchema = z
         calibration_composite_locks:
           creationConfigCoreFields.calibration_composite_locks.optional(),
         calibration: trainingPlanCalibrationInputSchema.optional(),
-        constraints: creationConstraintsSchema.partial().optional(),
+        constraints: creationConstraintsBaseSchema.partial().optional(),
       })
       .strict()
       .optional(),

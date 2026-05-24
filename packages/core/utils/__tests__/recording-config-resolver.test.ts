@@ -442,6 +442,107 @@ describe("RecordingConfigResolver", () => {
     expect(config.session.ui.floatingPanel.availableCards).not.toContain("trainer");
   });
 
+  it("prioritizes structured plan targets over route simulation for automatic trainer control", () => {
+    const config = RecordingConfigResolver.resolve(
+      buildInput({
+        activityCategory: "bike",
+        mode: "planned",
+        activityPlanId: "plan-1",
+        routeId: "route-1",
+        plan: {
+          hasStructure: true,
+          hasRoute: true,
+          stepCount: 1,
+          requiresManualAdvance: false,
+          structure: {
+            version: 2,
+            intervals: [
+              {
+                id: "11111111-1111-4111-8111-111111111111",
+                name: "Main",
+                repetitions: 1,
+                steps: [
+                  {
+                    id: "22222222-2222-4222-8222-222222222222",
+                    name: "Tempo",
+                    duration: { type: "time", seconds: 600 },
+                    targets: [{ type: "watts", intensity: 250 }],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        devices: {
+          ftmsTrainer: {
+            deviceId: "trainer-1",
+            autoControlEnabled: true,
+            controlReady: true,
+          },
+          hasPowerMeter: false,
+          hasHeartRateMonitor: false,
+          hasCadenceSensor: false,
+        },
+      }),
+    );
+
+    expect(config.capabilities.shouldAutoFollowTargets).toBe(true);
+    expect(config.capabilities.autoFollowPriority).toBe("plan_targets");
+    expect(config.capabilities.autoFollowConflict).toBe(true);
+    expect(config.capabilities.warnings).toContain(
+      "Structured plan targets take priority over route simulation for automatic trainer control.",
+    );
+  });
+
+  it("uses route simulation auto-follow when the structured plan has no trainer-controllable targets", () => {
+    const config = RecordingConfigResolver.resolve(
+      buildInput({
+        activityCategory: "bike",
+        mode: "planned",
+        activityPlanId: "plan-1",
+        routeId: "route-1",
+        plan: {
+          hasStructure: true,
+          hasRoute: true,
+          stepCount: 1,
+          requiresManualAdvance: false,
+          structure: {
+            version: 2,
+            intervals: [
+              {
+                id: "33333333-3333-4333-8333-333333333333",
+                name: "Main",
+                repetitions: 1,
+                steps: [
+                  {
+                    id: "44444444-4444-4444-8444-444444444444",
+                    name: "Steady",
+                    duration: { type: "time", seconds: 600 },
+                    targets: [{ type: "bpm", intensity: 150 }],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        devices: {
+          ftmsTrainer: {
+            deviceId: "trainer-1",
+            autoControlEnabled: true,
+            controlReady: true,
+          },
+          hasPowerMeter: false,
+          hasHeartRateMonitor: true,
+          hasCadenceSensor: false,
+        },
+      }),
+    );
+
+    expect(config.capabilities.shouldAutoFollowTargets).toBe(true);
+    expect(config.capabilities.autoFollowPriority).toBe("route_simulation");
+    expect(config.capabilities.autoFollowConflict).toBe(false);
+  });
+
   it("adds plain-language consequences for virtual route sessions", () => {
     const config = RecordingConfigResolver.resolve(
       buildInput({
@@ -631,6 +732,9 @@ describe("RecordingConfigResolver", () => {
         shouldShowTrainerControl: true,
         canAutoAdvanceSteps: true,
         shouldAutoFollowTargets: true,
+        autoFollowPriority: "plan_targets",
+        autoFollowConflict: false,
+        autoFollowConflictReason: null,
         primaryMetric: "power",
         isValid: true,
         errors: [],
