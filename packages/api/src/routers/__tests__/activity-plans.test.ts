@@ -1,5 +1,5 @@
 import { activityPlans, contentAccessGrants, likes, profiles } from "@repo/db";
-import { TRPCError } from "@trpc/server";
+import type { TRPCError } from "@trpc/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { estimationState } = vi.hoisted(() => ({
@@ -498,6 +498,16 @@ describe("activityPlansRouter", () => {
       is_public: true,
     });
     expect(result).toMatchObject({ id: existingRow.id, visibility: "public" });
+  });
+
+  it("update rejects id-only no-op payloads before hitting the database", async () => {
+    const { caller, callLog } = createCaller();
+
+    await expect(caller.update({ id: "66666666-6666-4666-8666-666666666666" })).rejects.toThrow(
+      "At least one activity plan update field is required",
+    );
+
+    expect(callLog).toHaveLength(0);
   });
 
   it("delete removes an owned plan", async () => {

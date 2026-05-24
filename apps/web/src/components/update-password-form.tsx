@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button } from "@repo/ui/components/button";
 import { Form, FormTextField } from "@repo/ui/components/form";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { cn } from "@repo/ui/lib/cn";
 import { useServerFn } from "@tanstack/react-start";
 import { useForm } from "react-hook-form";
@@ -85,9 +85,14 @@ export function UpdatePasswordForm({
                 <p className="text-destructive text-sm">{form.formState.errors.root.message}</p>
               ) : null}
 
-              <Button type="submit" disabled={form.formState.isSubmitting || !token}>
-                {form.formState.isSubmitting ? "Saving..." : "Save new password"}
-              </Button>
+              <LoadingButton
+                disabled={form.formState.isSubmitting || !token}
+                loading={form.formState.isSubmitting}
+                loadingLabel="Saving..."
+                type="submit"
+              >
+                Save new password
+              </LoadingButton>
             </div>
           </form>
         </Form>

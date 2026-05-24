@@ -1,4 +1,5 @@
 import { Button } from "@repo/ui/components/button";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { View } from "react-native";
 import { type DisplayGroupViewerState, getGroupPrimaryAction } from "@/lib/groups";
@@ -44,11 +45,14 @@ export function GroupPrimaryActionBar({
 
   return (
     <View className="rounded-2xl border border-border bg-card p-3">
-      <Button disabled={isLoading} onPress={actionConfig.onPress}>
-        <Text className="text-sm font-semibold text-primary-foreground">
-          {isLoading ? "Working..." : actionConfig.label}
-        </Text>
-      </Button>
+      <LoadingButton
+        disabled={isLoading}
+        loading={isLoading}
+        loadingLabel="Working..."
+        onPress={actionConfig.onPress}
+      >
+        <Text className="text-sm font-semibold text-primary-foreground">{actionConfig.label}</Text>
+      </LoadingButton>
     </View>
   );
 }

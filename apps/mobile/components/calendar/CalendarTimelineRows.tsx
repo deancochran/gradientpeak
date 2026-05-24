@@ -472,6 +472,7 @@ export const CalendarScheduleObjectCard = memo(function CalendarScheduleObjectCa
     const subtitle = [object.groupEvent.group?.name, planLabel, metrics.join(" · ")]
       .filter((label): label is string => Boolean(label))
       .join(" · ");
+    const rsvpLabel = object.groupEvent.viewerRsvp?.status === "accepted" ? "Going" : "Tentative";
 
     return (
       <View
@@ -486,7 +487,7 @@ export const CalendarScheduleObjectCard = memo(function CalendarScheduleObjectCa
               {formatGroupEventTime(object.groupEvent)}
             </Text>
             <Text className="mt-1 text-xs text-muted-foreground" numberOfLines={1}>
-              Going
+              {rsvpLabel}
             </Text>
           </View>
           <AgendaEventAccent />

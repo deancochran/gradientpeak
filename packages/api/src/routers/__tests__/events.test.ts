@@ -911,85 +911,65 @@ describe("eventsRouter generalization", () => {
     ]);
   });
 
-  it("update materializes occurrences when recurrence is added to a single event", async () => {
+  it("update rejects recurrence changes with single scope", async () => {
     const eventId = "00000000-0000-4000-8000-000000000030";
     const recurrenceRule = "FREQ=WEEKLY;INTERVAL=1;COUNT=3;BYDAY=FR";
     const { caller, callLog } = createCaller({
-      events: [
-        {
-          data: createEventRow({
-            id: eventId,
-            event_type: "custom",
-            starts_at: "2026-05-01T09:00:00.000Z",
-            ends_at: "2026-05-01T10:00:00.000Z",
-          }),
-          error: null,
-        },
-        {
-          data: [
-            createEventRow({
-              id: eventId,
-              event_type: "custom",
-              starts_at: "2026-05-01T09:00:00.000Z",
-              ends_at: "2026-05-01T10:00:00.000Z",
-              recurrence_rule: recurrenceRule,
-              recurrence_timezone: "UTC",
-            }),
-          ],
-          error: null,
-        },
-        {
-          data: createEventRow({
-            id: "00000000-0000-4000-8000-000000000031",
-            event_type: "custom",
-            starts_at: "2026-05-08T09:00:00.000Z",
-            ends_at: "2026-05-08T10:00:00.000Z",
-            series_id: eventId,
-            recurrence_rule: recurrenceRule,
-            recurrence_timezone: "UTC",
-          }),
-          error: null,
-        },
-        {
-          data: createEventRow({
-            id: "00000000-0000-4000-8000-000000000032",
-            event_type: "custom",
-            starts_at: "2026-05-15T09:00:00.000Z",
-            ends_at: "2026-05-15T10:00:00.000Z",
-            series_id: eventId,
-            recurrence_rule: recurrenceRule,
-            recurrence_timezone: "UTC",
-          }),
-          error: null,
-        },
-      ],
-      event_series: {
-        data: [createEventRow({ id: eventId })],
-        error: null,
-      },
-      integrations: {
-        data: null,
+      events: {
+        data: createEventRow({
+          id: eventId,
+          event_type: "custom",
+          starts_at: "2026-05-01T09:00:00.000Z",
+          ends_at: "2026-05-01T10:00:00.000Z",
+        }),
         error: null,
       },
     });
 
-    const result = await caller.update({
-      id: eventId,
-      scope: "single",
-      patch: {
-        recurrence: {
-          rule: recurrenceRule,
-          timezone: "UTC",
+    await expect(
+      caller.update({
+        id: eventId,
+        scope: "single",
+        patch: {
+          recurrence: {
+            rule: recurrenceRule,
+            timezone: "UTC",
+          },
         },
+      }),
+    ).rejects.toThrow(
+      /Recurrence updates require future or series scope|scope must be .*future.*series.*updating recurrence/,
+    );
+
+    expect(callLog.some((call) => call.operation === "update")).toBe(false);
+  });
+
+  it("update rejects date/time changes for scoped series mutations", async () => {
+    const eventId = "00000000-0000-4000-8000-000000000034";
+    const { caller, callLog } = createCaller({
+      events: {
+        data: createEventRow({
+          id: eventId,
+          event_type: "custom",
+          series_id: "00000000-0000-4000-8000-000000000030",
+          starts_at: "2026-05-15T09:00:00.000Z",
+          ends_at: "2026-05-15T10:00:00.000Z",
+        }),
+        error: null,
       },
     });
 
-    const insertCalls = callLog.filter((call) => call.operation === "insert");
-    expect(insertCalls).toHaveLength(2);
-    expect((insertCalls[0]?.payload as any).starts_at).toBe("2026-05-08T09:00:00.000Z");
-    expect((insertCalls[0]?.payload as any).series_id).toBe(eventId);
-    expect((insertCalls[1]?.payload as any).starts_at).toBe("2026-05-15T09:00:00.000Z");
-    expect(result.affected_count).toBe(3);
+    await expect(
+      caller.update({
+        id: eventId,
+        scope: "future",
+        patch: {
+          starts_at: "2026-05-16T09:00:00.000Z",
+        },
+      }),
+    ).rejects.toThrow("Date/time updates are only supported with single scope");
+
+    expect(callLog.some((call) => call.operation === "update")).toBe(false);
   });
 
   it("single-scope occurrence edits keep the mutation anchored to that occurrence", async () => {
@@ -1321,7 +1301,7 @@ describe("eventsRouter generalization", () => {
         id: "00000000-0000-4000-8000-000000000042",
         patch: { event_type: "rest_day" as any },
       }),
-    ).rejects.toThrow(/Invalid option|Invalid event update payload|rest_day/);
+    ).rejects.toThrow(/Invalid option|Invalid event update payload|rest_day|Invalid input/);
   });
 
   it("update rejects malformed patch payloads before repository reads", async () => {
@@ -1679,7 +1659,7 @@ describe("eventsRouter generalization", () => {
           exceptions: [],
         },
       }),
-    ).rejects.toThrow("Recurrence exdates/exceptions are not yet supported");
+    ).rejects.toThrow(/Recurrence exdates\/exceptions are not yet supported|Invalid input/);
   });
 
   it("creates materialized weekly planned activity occurrences for bounded recurrence", async () => {

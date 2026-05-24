@@ -16,10 +16,11 @@ import {
   FormPercentSliderField,
   FormSwitchField,
 } from "@repo/ui/components/form";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { Stack } from "expo-router";
-import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useWatch } from "react-hook-form";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { TrainingPreferencesProjectionPreview } from "@/components/settings/TrainingPreferencesProjectionPreview";
@@ -253,6 +254,11 @@ export default function TrainingPreferencesScreen() {
     !hasUnsavedChanges ||
     scheduleValidation.issues.length > 0 ||
     isSaving;
+  const saveButtonState = submitForm.getSubmitButtonState({
+    disabled: saveDisabled,
+    label: "Save",
+    submittingLabel: "Saving...",
+  });
 
   const preferenceDirectionSummary = useMemo(() => getPreferenceDirectionSummary(draft), [draft]);
   const selectedPreferencePreset = useMemo(() => getSelectedPreferencePreset(draft), [draft]);
@@ -329,17 +335,18 @@ export default function TrainingPreferencesScreen() {
               >
                 <Text className="text-sm font-semibold text-muted-foreground">Reset</Text>
               </Button>
-              <Button
-                disabled={saveDisabled}
+              <LoadingButton
+                disabled={saveButtonState.disabled}
+                loading={isSaving || saveButtonState.loading}
+                loadingLabel={saveButtonState.loadingLabel}
+                loadingTextClassName="text-primary"
                 onPress={submitForm.handleSubmit}
                 size="sm"
                 variant="ghost"
                 testID="training-preferences-save-button"
               >
-                <Text className="text-sm font-semibold text-primary">
-                  {isSaving ? "Saving..." : "Save"}
-                </Text>
-              </Button>
+                <Text className="text-sm font-semibold text-primary">{saveButtonState.label}</Text>
+              </LoadingButton>
             </View>
           ),
         }}

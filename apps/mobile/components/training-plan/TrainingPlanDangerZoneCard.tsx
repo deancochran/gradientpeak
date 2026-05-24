@@ -2,7 +2,6 @@ import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { Trash2 } from "lucide-react-native";
-import React from "react";
 import { View } from "react-native";
 
 interface TrainingPlanDangerZoneCardProps {

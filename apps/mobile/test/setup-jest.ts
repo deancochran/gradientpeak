@@ -4,6 +4,22 @@ import "@repo/ui/test/setup-native";
 
 (globalThis as { __DEV__?: boolean }).__DEV__ = false;
 
+type HostProps = Record<string, unknown> & { children?: React.ReactNode };
+type CartesianChartProps = Record<string, unknown> & {
+  children?: React.ReactNode | ((context: Record<string, unknown>) => React.ReactNode);
+  data?: unknown;
+};
+
+const createHost = (type: string) =>
+  function HostComponent({ children, ...props }: HostProps) {
+    return React.createElement(type, props, children);
+  };
+
+const createLeafHost = (type: string) =>
+  function LeafHostComponent(props: Record<string, unknown>) {
+    return React.createElement(type, props);
+  };
+
 process.env.EXPO_PUBLIC_API_URL ??= "http://localhost:3000";
 process.env.EXPO_PUBLIC_SUPABASE_URL ??= "http://localhost:54321";
 
@@ -42,26 +58,23 @@ jest.mock("expo-haptics", () => ({
 
 jest.mock("react-native-gesture-handler", () => ({
   __esModule: true,
-  GestureHandlerRootView: ({ children, ...props }: any) =>
-    React.createElement("GestureHandlerRootView", props, children),
+  GestureHandlerRootView: createHost("GestureHandlerRootView"),
 }));
 
 jest.mock("react-native-maps", () => ({
   __esModule: true,
-  default: ({ children, ...props }: any) => React.createElement("MapView", props, children),
-  Marker: ({ children, ...props }: any) => React.createElement("Marker", props, children),
-  Polyline: (props: any) => React.createElement("Polyline", props),
+  default: createHost("MapView"),
+  Marker: createHost("Marker"),
+  Polyline: createLeafHost("Polyline"),
   PROVIDER_DEFAULT: "default",
 }));
 
 jest.mock("@gorhom/bottom-sheet", () => ({
   __esModule: true,
-  default: ({ children, ...props }: any) => React.createElement("BottomSheet", props, children),
-  BottomSheetBackdrop: (props: any) => React.createElement("BottomSheetBackdrop", props),
-  BottomSheetScrollView: ({ children, ...props }: any) =>
-    React.createElement("BottomSheetScrollView", props, children),
-  BottomSheetView: ({ children, ...props }: any) =>
-    React.createElement("BottomSheetView", props, children),
+  default: createHost("BottomSheet"),
+  BottomSheetBackdrop: createLeafHost("BottomSheetBackdrop"),
+  BottomSheetScrollView: createHost("BottomSheetScrollView"),
+  BottomSheetView: createHost("BottomSheetView"),
 }));
 
 jest.mock("@better-auth/expo", () => ({
@@ -103,7 +116,7 @@ jest.mock("better-auth/tanstack-start", () => ({
 jest.mock("nativewind", () => ({
   __esModule: true,
   vars: jest.fn((value: unknown) => value),
-  VariableContextProvider: ({ children }: any) => children,
+  VariableContextProvider: ({ children }: Pick<HostProps, "children">) => children,
 }));
 
 jest.mock("react-native-css/native", () => ({
@@ -117,10 +130,8 @@ jest.mock("react-native-css/native", () => ({
 
 jest.mock("react-native-css/components/react-native-safe-area-context", () => ({
   __esModule: true,
-  SafeAreaProvider: ({ children, ...props }: any) =>
-    React.createElement("SafeAreaProvider", props, children),
-  SafeAreaView: ({ children, ...props }: any) =>
-    React.createElement("SafeAreaView", props, children),
+  SafeAreaProvider: createHost("SafeAreaProvider"),
+  SafeAreaView: createHost("SafeAreaView"),
 }));
 
 jest.mock("@garmin/fitsdk", () => ({
@@ -147,6 +158,10 @@ jest.mock("@garmin/fitsdk", () => ({
   },
   Profile: { MesgNum: {}, types: { mesgNum: {} } },
   Stream: class MockStream {
+    read() {
+      return new Uint8Array();
+    }
+
     static fromArrayBuffer() {
       return new MockStream();
     }
@@ -167,27 +182,27 @@ jest.mock("@garmin/fitsdk", () => ({
 
 jest.mock("@shopify/react-native-skia", () => ({
   __esModule: true,
-  Canvas: ({ children, ...props }: any) => React.createElement("Canvas", props, children),
-  Circle: (props: any) => React.createElement("Circle", props),
-  DashPathEffect: (props: any) => React.createElement("DashPathEffect", props),
-  Group: ({ children, ...props }: any) => React.createElement("Group", props, children),
-  LinearGradient: (props: any) => React.createElement("LinearGradient", props),
-  Line: (props: any) => React.createElement("SkiaLine", props),
-  Path: (props: any) => React.createElement("Path", props),
-  Rect: (props: any) => React.createElement("Rect", props),
+  Canvas: createHost("Canvas"),
+  Circle: createLeafHost("Circle"),
+  DashPathEffect: createLeafHost("DashPathEffect"),
+  Group: createHost("Group"),
+  LinearGradient: createLeafHost("LinearGradient"),
+  Line: createLeafHost("SkiaLine"),
+  Path: createLeafHost("Path"),
+  Rect: createLeafHost("Rect"),
   Skia: {
     Path: { Make: () => ({ lineTo: jest.fn(), moveTo: jest.fn() }) },
   },
-  Text: (props: any) => React.createElement("SkiaText", props),
+  Text: createLeafHost("SkiaText"),
   useFont: jest.fn(() => ({ getTextWidth: () => 24 })),
   vec: jest.fn((x: number, y: number) => ({ x, y })),
 }));
 
 jest.mock("victory-native", () => ({
   __esModule: true,
-  Area: (props: any) => React.createElement("Area", props),
-  Bar: (props: any) => React.createElement("Bar", props),
-  CartesianChart: ({ children, data }: any) =>
+  Area: createLeafHost("Area"),
+  Bar: createLeafHost("Bar"),
+  CartesianChart: ({ children, data }: CartesianChartProps) =>
     React.createElement(
       "CartesianChart",
       { data },
@@ -204,15 +219,14 @@ jest.mock("victory-native", () => ({
           })
         : children,
     ),
-  Line: (props: any) => React.createElement("Line", props),
-  Scatter: (props: any) => React.createElement("Scatter", props),
+  Line: createLeafHost("Line"),
+  Scatter: createLeafHost("Scatter"),
   useChartPressState: jest.fn(() => ({ isActive: false, state: {} })),
 }));
 
 jest.mock("react-native-svg", () => {
-  const MockSvg = ({ children, ...props }: any) => React.createElement("svg", props, children);
-  const MockCircle = ({ children, ...props }: any) =>
-    React.createElement("circle", props, children);
+  const MockSvg = createHost("svg");
+  const MockCircle = createHost("circle");
 
   return {
     __esModule: true,

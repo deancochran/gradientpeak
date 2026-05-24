@@ -10,10 +10,9 @@ import { Text } from "@repo/ui/components/text";
 import { skipToken, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ellipsis } from "lucide-react-native";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -331,7 +330,7 @@ export default function TrainingPlanOverview() {
     activityId?: string;
   }>();
 
-  const isSystemTemplateId = id?.startsWith("00000000-0000-0000-0000-00000000") ? true : false;
+  const isSystemTemplateId = !!id?.startsWith("00000000-0000-0000-0000-00000000");
 
   const { data: templatePlan, isLoading: isLoadingTemplate } =
     api.trainingPlans.getTemplate.useQuery(isSystemTemplateId && id ? { id } : skipToken, {
@@ -515,7 +514,7 @@ export default function TrainingPlanOverview() {
   const handleDeletePlan = useCallback(() => {
     if (!plan) return;
     setShowDeleteConfirm(true);
-  }, [deletePlanMutation, plan]);
+  }, [plan]);
 
   const handleRemoveScheduledSessions = useCallback(() => {
     if (!plan?.id) {
@@ -523,7 +522,7 @@ export default function TrainingPlanOverview() {
     }
 
     setShowRemoveScheduledConfirm(true);
-  }, [plan?.id, removeScheduledPlanMutation]);
+  }, [plan?.id]);
 
   const handleOpenLinkedActivityPlan = useCallback(
     (activityPlanId: string) => {
@@ -1005,96 +1004,91 @@ export default function TrainingPlanOverview() {
             </ScrollView>
 
             {selectedMicrocycleGroup ? (
-              <>
-                <View className="rounded-3xl border border-border bg-card p-4 gap-4">
-                  <View className="gap-1">
-                    <Text className="text-base font-semibold text-foreground">
-                      Week {selectedMicrocycleGroup.microcycle}
-                    </Text>
-                    {periodizationTargetDate ? (
-                      <Text className="text-xs text-muted-foreground">
-                        Building toward {periodizationTargetDate}
-                      </Text>
-                    ) : null}
-                  </View>
-                  <View className="flex-row flex-wrap gap-2">
-                    <SummaryMetricCard
-                      label="Sessions"
-                      value={`${selectedMicrocycleSessionCount}`}
-                    />
-                    <SummaryMetricCard
-                      label="Linked activities"
-                      value={`${selectedMicrocycleWorkoutCards.length}`}
-                    />
-                    <SummaryMetricCard
-                      label="Route-backed"
-                      value={`${selectedMicrocycleRouteCount}`}
-                    />
-                    <SummaryMetricCard
-                      label="Planned TSS"
-                      value={markEstimated(`${Math.round(selectedMicrocycleLoad)}`) ?? "0"}
-                    />
-                    <SummaryMetricCard
-                      label="Planned time"
-                      value={
-                        markEstimated(formatMinutesLabel(selectedMicrocycleMinutes * 60)) ?? "0 min"
-                      }
-                    />
-                  </View>
-                  <TrainingPlanStructureSection
-                    activityPlanItems={activityPlanItems}
-                    activityPlanNameById={activityPlanNameById}
-                    embedded
-                    formatCompactDayLabel={formatCompactDayLabel}
-                    groupedStructureSessions={[selectedMicrocycleGroup]}
-                    hideMicrocycleHeaders
-                    isLoadingActivityPlans={isLoadingActivityPlans}
-                    isOwnedByUser={isOwnedByUser}
-                    onActivityPickerOpenChange={(open) => {
-                      setShowActivityPicker(open);
-                      if (!open) {
-                        setSelectedSessionRow(null);
-                      }
-                    }}
-                    onOpenActivityPickerForSession={handleOpenActivityPickerForSession}
-                    onRefreshActivityPlans={() => {
-                      void refetchActivityPlans();
-                    }}
-                    onRemoveActivityFromSession={handleRemoveActivityFromSession}
-                    renderSessionActivityContent={(session) => {
-                      if (!session.activityPlanId) {
-                        return null;
-                      }
-
-                      const linkedPlan = selectedMicrocycleWorkoutById.get(session.activityPlanId);
-                      if (!linkedPlan) {
-                        return null;
-                      }
-
-                      return (
-                        <View className="pt-1">
-                          <TrainingPlanCompactActivityPlanCard
-                            linkedPlan={linkedPlan}
-                            onPress={() => handleOpenLinkedActivityPlan(linkedPlan.id)}
-                          />
-                        </View>
-                      );
-                    }}
-                    onSelectActivityForSession={(activityPlan) => {
-                      void handleSelectActivityForSession(activityPlan);
-                    }}
-                    selectedSessionRow={selectedSessionRow}
-                    showActivityPicker={showActivityPicker}
-                    title="Sessions"
-                    updatePlanStructurePending={updatePlanStructureMutation.isPending}
-                  />
-                  {isLoadingLinkedPlans ? (
-                    <Text className="text-sm text-muted-foreground">
-                      Loading linked activity plans...
+              <View className="rounded-3xl border border-border bg-card p-4 gap-4">
+                <View className="gap-1">
+                  <Text className="text-base font-semibold text-foreground">
+                    Week {selectedMicrocycleGroup.microcycle}
+                  </Text>
+                  {periodizationTargetDate ? (
+                    <Text className="text-xs text-muted-foreground">
+                      Building toward {periodizationTargetDate}
                     </Text>
                   ) : null}
                 </View>
-              </>
+                <View className="flex-row flex-wrap gap-2">
+                  <SummaryMetricCard label="Sessions" value={`${selectedMicrocycleSessionCount}`} />
+                  <SummaryMetricCard
+                    label="Linked activities"
+                    value={`${selectedMicrocycleWorkoutCards.length}`}
+                  />
+                  <SummaryMetricCard
+                    label="Route-backed"
+                    value={`${selectedMicrocycleRouteCount}`}
+                  />
+                  <SummaryMetricCard
+                    label="Planned TSS"
+                    value={markEstimated(`${Math.round(selectedMicrocycleLoad)}`) ?? "0"}
+                  />
+                  <SummaryMetricCard
+                    label="Planned time"
+                    value={
+                      markEstimated(formatMinutesLabel(selectedMicrocycleMinutes * 60)) ?? "0 min"
+                    }
+                  />
+                </View>
+                <TrainingPlanStructureSection
+                  activityPlanItems={activityPlanItems}
+                  activityPlanNameById={activityPlanNameById}
+                  embedded
+                  formatCompactDayLabel={formatCompactDayLabel}
+                  groupedStructureSessions={[selectedMicrocycleGroup]}
+                  hideMicrocycleHeaders
+                  isLoadingActivityPlans={isLoadingActivityPlans}
+                  isOwnedByUser={isOwnedByUser}
+                  onActivityPickerOpenChange={(open) => {
+                    setShowActivityPicker(open);
+                    if (!open) {
+                      setSelectedSessionRow(null);
+                    }
+                  }}
+                  onOpenActivityPickerForSession={handleOpenActivityPickerForSession}
+                  onRefreshActivityPlans={() => {
+                    void refetchActivityPlans();
+                  }}
+                  onRemoveActivityFromSession={handleRemoveActivityFromSession}
+                  renderSessionActivityContent={(session) => {
+                    if (!session.activityPlanId) {
+                      return null;
+                    }
+
+                    const linkedPlan = selectedMicrocycleWorkoutById.get(session.activityPlanId);
+                    if (!linkedPlan) {
+                      return null;
+                    }
+
+                    return (
+                      <View className="pt-1">
+                        <TrainingPlanCompactActivityPlanCard
+                          linkedPlan={linkedPlan}
+                          onPress={() => handleOpenLinkedActivityPlan(linkedPlan.id)}
+                        />
+                      </View>
+                    );
+                  }}
+                  onSelectActivityForSession={(activityPlan) => {
+                    void handleSelectActivityForSession(activityPlan);
+                  }}
+                  selectedSessionRow={selectedSessionRow}
+                  showActivityPicker={showActivityPicker}
+                  title="Sessions"
+                  updatePlanStructurePending={updatePlanStructureMutation.isPending}
+                />
+                {isLoadingLinkedPlans ? (
+                  <Text className="text-sm text-muted-foreground">
+                    Loading linked activity plans...
+                  </Text>
+                ) : null}
+              </View>
             ) : (
               <View className="rounded-3xl border border-border bg-card p-4">
                 <Text className="text-sm text-muted-foreground">

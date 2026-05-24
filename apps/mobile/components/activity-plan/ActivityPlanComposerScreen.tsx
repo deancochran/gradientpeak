@@ -10,16 +10,16 @@ import {
 import { Text } from "@repo/ui/components/text";
 import { randomUUID } from "expo-crypto";
 import { useNavigation, useRouter } from "expo-router";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, View } from "react-native";
 import { NestableScrollContainer } from "react-native-draggable-flatlist";
-import { StepEditorDialog } from "@/components/ActivityPlan/StepEditorDialog";
 import { ActivityPlanBasicsSection } from "@/components/activity-plan/ActivityPlanBasicsSection";
 import { ActivityPlanRouteSection } from "@/components/activity-plan/ActivityPlanRouteSection";
 import { StructureBuilderCard } from "@/components/activity-plan/structure/StructureBuilderCard";
 import { StructureIntervalSheet } from "@/components/activity-plan/structure/StructureIntervalSheet";
 import { useActivityPlanComposerProcess } from "@/components/activity-plan/useActivityPlanComposerProcess";
 import { useActivityPlanRouteUpload } from "@/components/activity-plan/useActivityPlanRouteUpload";
+import { StepEditorDialog } from "@/components/activity-plan/workout/StepEditorDialog";
 import { api } from "@/lib/api";
 import { buildPlanRoute } from "@/lib/constants/routes";
 import { useActivityPlanForm } from "@/lib/hooks/forms/useActivityPlanForm";

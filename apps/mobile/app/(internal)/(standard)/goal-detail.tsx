@@ -15,7 +15,8 @@ import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Activity, Bike, CalendarDays, Dumbbell, Footprints, Waves } from "lucide-react-native";
-import React, { useMemo, useState } from "react";
+import type React from "react";
+import { useMemo, useState } from "react";
 import { View } from "react-native";
 import { PlanReadinessComparisonChart } from "@/components/charts/PlanReadinessComparisonChart";
 import { GoalReadinessRing } from "@/components/plan/GoalReadinessRing";
@@ -366,8 +367,6 @@ export default function GoalDetailScreen() {
         targetGoalReadiness,
       }),
     [
-      goalId,
-      goalRecord?.id,
       goalReadinessPercent,
       snapshot.insightTimeline?.projection_dashboard?.readiness_points,
       snapshot.insightTimeline?.readiness_forecast,

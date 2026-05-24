@@ -16,6 +16,7 @@ import {
   type EstimationReadStore,
   getEstimationProfileInputsFromStore,
   getRoutesMapFromStore,
+  toEstimationActivityPlan,
 } from "./estimation-helpers";
 import { getProfileEstimationState } from "./profile-estimation-state";
 
@@ -166,7 +167,7 @@ function buildCachedEstimatedPlan<TPlan extends EstimationActivityPlanInput>(
   plan: TPlan,
   projection: ProjectionRow,
   routeSummary: ActivityPlanRouteSummary | null,
-  options?: { isStale?: boolean },
+  _options?: { isStale?: boolean },
 ): ActivityPlanWithDerivedMetrics<TPlan> {
   return {
     ...plan,
@@ -347,7 +348,6 @@ export async function getActivityPlansDerivedMetrics<TPlan extends SupportedActi
   const normalizedPlans = plans.filter((plan): plan is TPlan => !!plan && typeof plan === "object");
   if (normalizedPlans.length === 0) return [];
 
-  const estimationState = await getProfileEstimationState(db, userId);
   const routeIds = Array.from(
     new Set(
       normalizedPlans
@@ -355,7 +355,12 @@ export async function getActivityPlansDerivedMetrics<TPlan extends SupportedActi
         .filter((routeId): routeId is string => typeof routeId === "string" && routeId.length > 0),
     ),
   );
-  const routesMap = await getRoutesMapFromStore(estimationStore, userId, routeIds);
+  const planIds = normalizedPlans.map((plan) => plan.id);
+  const [estimationState, routesMap, cachedRows] = await Promise.all([
+    getProfileEstimationState(db, userId),
+    getRoutesMapFromStore(estimationStore, userId, routeIds),
+    listCachedActivityPlanProjections(db, userId, planIds),
+  ]);
 
   const planFingerprints = new Map<string, string>();
   for (const plan of normalizedPlans) {
@@ -366,11 +371,6 @@ export async function getActivityPlansDerivedMetrics<TPlan extends SupportedActi
     );
   }
 
-  const cachedRows = await listCachedActivityPlanProjections(
-    db,
-    userId,
-    normalizedPlans.map((plan) => plan.id),
-  );
   const cachedProjectionMap = new Map(
     cachedRows.map((row) => [
       buildProjectionLookupKey(row.activity_plan_id, row.input_fingerprint),
@@ -416,11 +416,7 @@ export async function getActivityPlansDerivedMetrics<TPlan extends SupportedActi
 
       const context = buildEstimationContext({
         userProfile: profileInputs,
-        activityPlan: {
-          activity_category: plan.activity_category,
-          structure: plan.structure,
-          route_id: plan.route_id ?? undefined,
-        },
+        activityPlan: toEstimationActivityPlan(plan),
         route,
       });
 

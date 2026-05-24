@@ -1,9 +1,8 @@
 import { Card, CardContent } from "@repo/ui/components/card";
-import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { HeartPulse, Scale, TrendingUp } from "lucide-react-native";
 import React from "react";
-import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, useColorScheme, View } from "react-native";
 import Svg, { Circle, Line, Path, Text as SvgText } from "react-native-svg";
 import { CompactInsightCard, type DateRange, DetailChartModal } from "@/components/shared";
 import { api } from "@/lib/api";
@@ -67,6 +66,15 @@ const PROFILE_METRIC_OPTIONS = [
 
 type PolicyMetricType = "weight_kg" | "vo2_max" | "resting_hr" | "hrv_rmssd" | "sleep_hours";
 
+function getProfileMetricChartColors(isDark: boolean) {
+  return {
+    axis: isDark ? "#64748b" : "#64748b",
+    grid: isDark ? "#334155" : "#94a3b8",
+    label: isDark ? "#94a3b8" : "#64748b",
+    line: isDark ? "#93c5fd" : "#60a5fa",
+  };
+}
+
 function isPolicyMetricType(metricType: string): metricType is PolicyMetricType {
   return ["weight_kg", "vo2_max", "resting_hr", "hrv_rmssd", "sleep_hours"].includes(metricType);
 }
@@ -116,10 +124,7 @@ function buildPath(points: Array<{ x: number; y: number }>) {
 }
 
 function getCoordinates(points: MetricPoint[], width: number, height: number, padding: number) {
-  const values = points.map((point) => point.value);
-  const min = Math.min(...values, 0);
-  const max = Math.max(...values, 1);
-  const range = max - min || 1;
+  const { min, range } = getValueBounds(points);
   const chartWidth = width - padding * 2;
   const chartHeight = height - padding * 2;
 
@@ -131,8 +136,14 @@ function getCoordinates(points: MetricPoint[], width: number, height: number, pa
 
 function getValueBounds(points: MetricPoint[]) {
   const values = points.map((point) => point.value).filter(Number.isFinite);
-  const min = Math.min(...values, 0);
-  const max = Math.max(...values, 1);
+  if (values.length === 0) return { min: 0, max: 1, range: 1 };
+
+  const valueMin = Math.min(...values);
+  const valueMax = Math.max(...values);
+  const valueRange = valueMax - valueMin;
+  const padding = valueRange === 0 ? Math.max(Math.abs(valueMax) * 0.05, 1) : valueRange * 0.05;
+  const min = valueMin - padding;
+  const max = valueMax + padding;
   return { min, max, range: max - min || 1 };
 }
 
@@ -165,6 +176,8 @@ function buildPoints(records: ProfileMetricRow[]) {
 }
 
 function MiniTrendVisual({ points }: { points: MetricPoint[] }) {
+  const colors = getProfileMetricChartColors(useColorScheme() === "dark");
+
   if (points.length === 0) {
     return <View className="h-12 rounded-2xl bg-muted/30" />;
   }
@@ -177,14 +190,14 @@ function MiniTrendVisual({ points }: { points: MetricPoint[] }) {
     <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
       <Path
         d={buildPath(coordinates)}
-        stroke="#60a5fa"
+        stroke={colors.line}
         strokeWidth={4}
         fill="none"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
       {coordinates.at(-1) ? (
-        <Circle cx={coordinates.at(-1)!.x} cy={coordinates.at(-1)!.y} r={4} fill="#60a5fa" />
+        <Circle cx={coordinates.at(-1)?.x} cy={coordinates.at(-1)?.y} r={4} fill={colors.line} />
       ) : null}
     </Svg>
   );
@@ -198,9 +211,11 @@ function DetailTrendChart({
   records: ProfileMetricRow[];
 }) {
   const frame = DETAIL_CHART_FRAME;
+  const colors = getProfileMetricChartColors(useColorScheme() === "dark");
   const points = buildPoints(records);
   const coordinates = getDetailCoordinates(points, frame);
   const bounds = getValueBounds(points);
+  const latestRecord = records[0];
   const chartRight = frame.width - frame.paddingRight;
   const chartBottom = frame.height - frame.paddingBottom;
   const chartHeight = frame.height - frame.paddingTop - frame.paddingBottom;
@@ -219,7 +234,7 @@ function DetailTrendChart({
             </Text>
           </View>
           <Text className="text-lg font-semibold text-foreground">
-            {formatMetricValue(group.latest)}
+            {formatMetricValue(latestRecord)}
           </Text>
         </View>
         {points.length < 2 ? (
@@ -242,14 +257,14 @@ function DetailTrendChart({
                     y1={y}
                     x2={chartRight}
                     y2={y}
-                    stroke="#94a3b8"
+                    stroke={colors.grid}
                     strokeWidth={1}
                     opacity={0.18}
                   />
                   <SvgText
                     x={frame.paddingLeft - 8}
                     y={y + 4}
-                    fill="#64748b"
+                    fill={colors.label}
                     fontSize="10"
                     fontWeight="600"
                     textAnchor="end"
@@ -264,7 +279,7 @@ function DetailTrendChart({
               y1={frame.paddingTop}
               x2={frame.paddingLeft}
               y2={chartBottom}
-              stroke="#64748b"
+              stroke={colors.axis}
               strokeWidth={1.2}
               opacity={0.5}
             />
@@ -273,13 +288,13 @@ function DetailTrendChart({
               y1={chartBottom}
               x2={chartRight}
               y2={chartBottom}
-              stroke="#64748b"
+              stroke={colors.axis}
               strokeWidth={1.2}
               opacity={0.5}
             />
             <Path
               d={buildPath(coordinates)}
-              stroke="#60a5fa"
+              stroke={colors.line}
               strokeWidth={4}
               fill="none"
               strokeLinecap="round"
@@ -291,13 +306,13 @@ function DetailTrendChart({
                 cx={point.x}
                 cy={point.y}
                 r={3.5}
-                fill="#60a5fa"
+                fill={colors.line}
               />
             ))}
             <SvgText
               x={frame.paddingLeft}
               y={frame.height - 14}
-              fill="#64748b"
+              fill={colors.label}
               fontSize="10"
               fontWeight="600"
             >
@@ -306,15 +321,21 @@ function DetailTrendChart({
             <SvgText
               x={chartRight}
               y={frame.height - 14}
-              fill="#64748b"
+              fill={colors.label}
               fontSize="10"
               fontWeight="600"
               textAnchor="end"
             >
               {points.at(-1)?.label}
             </SvgText>
-            <SvgText x={frame.paddingLeft} y={12} fill="#64748b" fontSize="10" fontWeight="700">
-              {group.latest?.unit ?? "Value"}
+            <SvgText
+              x={frame.paddingLeft}
+              y={12}
+              fill={colors.label}
+              fontSize="10"
+              fontWeight="700"
+            >
+              {latestRecord?.unit ?? group.latest?.unit ?? "Value"}
             </SvgText>
           </Svg>
         )}
@@ -369,13 +390,16 @@ export default function ProfileMetricsListScreen() {
     );
   const metrics = (data?.pages.flatMap((page) => page.items) ?? []) as ProfileMetricRow[];
   const metricGroups = React.useMemo(() => {
-    const groups = new Map<string, ProfileMetricRow[]>();
+    const recordsByType = new Map<string, ProfileMetricRow[]>();
     for (const metric of metrics) {
-      groups.set(metric.metric_type, [...(groups.get(metric.metric_type) ?? []), metric]);
+      recordsByType.set(metric.metric_type, [
+        ...(recordsByType.get(metric.metric_type) ?? []),
+        metric,
+      ]);
     }
 
-    return PROFILE_METRIC_OPTIONS.map((metricType) => {
-      const records = groups.get(metricType) ?? [];
+    const groups = PROFILE_METRIC_OPTIONS.map((metricType) => {
+      const records = recordsByType.get(metricType) ?? [];
       const sorted = [...records].sort(
         (a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime(),
       );
@@ -391,6 +415,8 @@ export default function ProfileMetricsListScreen() {
         })),
       } satisfies ProfileMetricGroup;
     });
+
+    return groups.sort((a, b) => Number(Boolean(b.latest)) - Number(Boolean(a.latest)));
   }, [metrics]);
   const [selectedMetricType, setSelectedMetricType] = React.useState<string | null>(null);
   const selectedGroup = metricGroups.find((group) => group.id === selectedMetricType) ?? null;

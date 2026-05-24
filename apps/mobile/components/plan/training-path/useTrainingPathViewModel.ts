@@ -24,12 +24,15 @@ export function useTrainingPathViewModel(params: UseTrainingPathViewModelParams)
   return useMemo(
     () =>
       buildTrainingPathViewModel({
-        ...params,
         timeline: params.timeline ?? [],
         fitnessHistory: params.fitnessHistory ?? [],
         projectedFitness: params.projectedFitness ?? [],
         idealFitnessCurve: params.idealFitnessCurve ?? [],
         goalMarkers: params.goalMarkers ?? [],
+        selectedWeekStart: params.selectedWeekStart,
+        range: params.range,
+        weekWindow: params.weekWindow,
+        todayKey: params.todayKey,
       }),
     [
       params.fitnessHistory,

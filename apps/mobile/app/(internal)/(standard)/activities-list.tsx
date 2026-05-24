@@ -2,7 +2,7 @@ import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Text } from "@repo/ui/components/text";
 import { Stack } from "expo-router";
 import { Activity } from "lucide-react-native";
-import React, { useState } from "react";
+import { useState } from "react";
 import { TouchableOpacity, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { ActivityCard } from "@/components/shared/ActivityCard";

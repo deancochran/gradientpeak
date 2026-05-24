@@ -1,6 +1,6 @@
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { CalendarDays, Target, Users } from "lucide-react-native";
+import { CalendarDays, Route, Users } from "lucide-react-native";
 import { useCallback } from "react";
 import { Pressable, View } from "react-native";
 import { ActivityCard } from "@/components/shared/ActivityCard";
@@ -18,7 +18,7 @@ function FeedShortcuts() {
   const navigateTo = useAppNavigate();
   const shortcuts = [
     { label: "Groups", icon: Users, onPress: () => navigateTo("/groups" as any) },
-    { label: "Plan", icon: Target, onPress: () => navigateTo("/plan" as any) },
+    { label: "Plan", icon: Route, onPress: () => navigateTo("/plan" as any) },
     { label: "Calendar", icon: CalendarDays, onPress: () => navigateTo("/calendar" as any) },
   ];
 

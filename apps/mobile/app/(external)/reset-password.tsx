@@ -1,7 +1,7 @@
 import { AlertDescription, Alert as UiAlert } from "@repo/ui/components/alert";
-import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Form, FormTextField } from "@repo/ui/components/form";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -157,16 +157,18 @@ export default function ResetPasswordScreen() {
               </View>
             </Form>
 
-            <Button
+            <LoadingButton
               variant="default"
               size="lg"
               onPress={submitForm.handleSubmit}
               disabled={submitForm.isSubmitting || !token}
+              loading={submitForm.isSubmitting}
+              loadingLabel="Updating password..."
               testID="update-password-button"
               className="w-full"
             >
-              <Text>{submitForm.isSubmitting ? "Updating Password..." : "Update Password"}</Text>
-            </Button>
+              <Text>Update Password</Text>
+            </LoadingButton>
 
             <View className="pt-4" testID="help-container">
               <Text variant="muted" className="text-center text-xs">

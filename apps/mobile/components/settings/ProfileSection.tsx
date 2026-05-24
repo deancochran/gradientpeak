@@ -8,6 +8,7 @@ import {
   CardTitle,
 } from "@repo/ui/components/card";
 import { Form, FormTextField } from "@repo/ui/components/form";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { AlertCircle } from "lucide-react-native";
@@ -70,6 +71,11 @@ export function ProfileSection({ profile, onRefreshProfile }: ProfileSectionProp
   });
 
   const isSubmitting = updateProfileMutation.isPending || submitForm.isSubmitting;
+  const submitButtonState = submitForm.getSubmitButtonState({
+    disabled: isSubmitting,
+    label: "Save",
+    submittingLabel: "Saving...",
+  });
 
   const onCancel = () => {
     form.reset(defaultValues);
@@ -101,15 +107,17 @@ export function ProfileSection({ profile, onRefreshProfile }: ProfileSectionProp
               <Button variant="outline" size="sm" onPress={onCancel} testId="cancel-button">
                 <Text>Cancel</Text>
               </Button>
-              <Button
+              <LoadingButton
                 variant="default"
                 size="sm"
                 onPress={submitForm.handleSubmit}
-                disabled={isSubmitting}
+                disabled={submitButtonState.disabled}
+                loading={isSubmitting || submitButtonState.loading}
+                loadingLabel={submitButtonState.loadingLabel}
                 testId="save-button"
               >
-                <Text>{isSubmitting ? "Saving..." : "Save"}</Text>
-              </Button>
+                <Text>{submitButtonState.label}</Text>
+              </LoadingButton>
             </View>
           )}
         </View>

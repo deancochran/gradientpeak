@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   copySeriesActivityPlansToOccurrenceInputSchema,
   createOneOffGroupEventInputSchema,
@@ -11,12 +12,15 @@ import {
   updateOneOffGroupEventInputSchema,
 } from "@repo/core/groups";
 import {
+  activityPlans,
+  activityRoutes,
   groupEventActivityPlans,
   groupEventRsvps,
   groupEventSeriesRsvps,
   groupEvents,
   groupMemberships,
   groups,
+  notifications,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, asc, eq, gt, gte, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
@@ -26,6 +30,7 @@ import { createTRPCRouter, protectedProcedure } from "../../trpc";
 import {
   GROUP_ACCESS_LEVEL_PUBLIC,
   GROUP_MEMBERSHIP_STATUS_ACTIVE,
+  getActiveGroupMembership,
   getCurrentProfileId,
   requireGroupAdmin,
   requireGroupViewAccess,
@@ -52,6 +57,7 @@ const currentEventPlanOptionsInputSchema = z.object({
 
 const GROUP_EVENT_RSVP_STATUS_ACCEPTED = GROUP_EVENT_RSVP_STATUSES[0];
 const GROUP_EVENT_RSVP_STATUS_DECLINED = GROUP_EVENT_RSVP_STATUSES[1];
+const GROUP_EVENT_RSVP_STATUS_TENTATIVE = GROUP_EVENT_RSVP_STATUSES[2];
 
 type GroupEventRow = typeof groupEvents.$inferSelect;
 type GroupEventActivityPlanRow = typeof groupEventActivityPlans.$inferSelect;
@@ -216,6 +222,7 @@ function serializeGroupEvent(
   event: GroupEventRow,
   input: {
     activityPlanOptions: GroupEventActivityPlanRow[];
+    acceptedRsvpCount: number;
     group?: GroupEventSummaryGroupRow | null;
     viewerRsvp: GroupEventRsvpRow | null;
     series?: GroupEventRow | null;
@@ -270,6 +277,7 @@ function serializeGroupEvent(
     is_recurring_series: event.series_id === null && event.recurrence_rule !== null,
     is_recurring_occurrence: event.series_id !== null,
     activityPlanOptions: input.activityPlanOptions.map(serializeActivityPlanOption),
+    acceptedRsvpCount: input.acceptedRsvpCount,
     viewerRsvp: serializeRsvp(input.viewerRsvp),
     viewerSeriesRsvp: serializeSeriesRsvp(input.viewerSeriesRsvp ?? null),
   };
@@ -295,6 +303,151 @@ function assertUniqueActivityPlanIds(activityPlans: { activityPlanId: string }[]
   if (uniqueIds.size !== activityPlans.length) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "Activity plan options must be unique" });
   }
+}
+
+function canUseActivityPlanForGroupEvent(
+  activityPlan: Pick<
+    typeof activityPlans.$inferSelect,
+    "profile_id" | "template_visibility" | "is_system_template"
+  >,
+  profileId: string,
+) {
+  return (
+    activityPlan.profile_id === profileId ||
+    activityPlan.template_visibility === "public" ||
+    activityPlan.is_system_template
+  );
+}
+
+function canUseRouteForGroupEvent(
+  route: Pick<
+    typeof activityRoutes.$inferSelect,
+    "profile_id" | "is_public" | "is_system_template"
+  >,
+  profileId: string,
+) {
+  return route.profile_id === profileId || route.is_public || route.is_system_template;
+}
+
+async function assertActivityPlansAvailableForGroupEvent(
+  db: Pick<ReturnType<typeof getRequiredDb>, "select">,
+  activityPlanInputs: { activityPlanId: string }[] | undefined,
+  profileId: string,
+) {
+  if (!activityPlanInputs?.length) return;
+
+  const activityPlanIds = activityPlanInputs.map((option) => option.activityPlanId);
+  const rows = await db
+    .select({
+      id: activityPlans.id,
+      profile_id: activityPlans.profile_id,
+      template_visibility: activityPlans.template_visibility,
+      is_system_template: activityPlans.is_system_template,
+    })
+    .from(activityPlans)
+    .where(inArray(activityPlans.id, activityPlanIds));
+
+  const accessibleIds = new Set(
+    rows
+      .filter((activityPlan) => canUseActivityPlanForGroupEvent(activityPlan, profileId))
+      .map((activityPlan) => activityPlan.id),
+  );
+
+  if (accessibleIds.size !== activityPlanIds.length) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Activity plan is not available for this group event",
+    });
+  }
+}
+
+async function assertRouteAvailableForGroupEvent(
+  db: Pick<ReturnType<typeof getRequiredDb>, "select">,
+  routeId: string | null | undefined,
+  profileId: string,
+) {
+  if (!routeId) return;
+
+  const [route] = await db
+    .select({
+      id: activityRoutes.id,
+      profile_id: activityRoutes.profile_id,
+      is_public: activityRoutes.is_public,
+      is_system_template: activityRoutes.is_system_template,
+    })
+    .from(activityRoutes)
+    .where(eq(activityRoutes.id, routeId))
+    .limit(1);
+
+  if (!route || !canUseRouteForGroupEvent(route, profileId)) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Route is not available for this group event",
+    });
+  }
+}
+
+async function assertGroupEventResourcesAvailable(
+  db: Pick<ReturnType<typeof getRequiredDb>, "select">,
+  input: {
+    activityPlans?: { activityPlanId: string }[];
+    profileId: string;
+    routeId?: string | null;
+  },
+) {
+  await assertActivityPlansAvailableForGroupEvent(db, input.activityPlans, input.profileId);
+  await assertRouteAvailableForGroupEvent(db, input.routeId, input.profileId);
+}
+
+async function requireGroupEventRsvpAccess(
+  db: ReturnType<typeof getRequiredDb>,
+  groupId: string,
+  profileId: string,
+) {
+  const membership = await getActiveGroupMembership(db, groupId, profileId);
+
+  if (!membership) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Active group membership required to RSVP",
+    });
+  }
+
+  return membership;
+}
+
+async function notifyActiveGroupMembersOfCancellation(
+  db: Pick<ReturnType<typeof getRequiredDb>, "insert" | "select">,
+  input: {
+    actorProfileId: string;
+    cancelledAt: Date;
+    groupEventId: string;
+    groupId: string;
+  },
+) {
+  const members = await db
+    .select({ profile_id: groupMemberships.profile_id })
+    .from(groupMemberships)
+    .where(
+      and(
+        eq(groupMemberships.group_id, input.groupId),
+        eq(groupMemberships.status, GROUP_MEMBERSHIP_STATUS_ACTIVE),
+      ),
+    );
+  const recipients = members.filter((member) => member.profile_id !== input.actorProfileId);
+
+  if (recipients.length === 0) return;
+
+  await db.insert(notifications).values(
+    recipients.map((recipient) => ({
+      id: randomUUID(),
+      user_id: recipient.profile_id,
+      actor_id: input.actorProfileId,
+      type: "group_event_cancelled" as const,
+      entity_id: input.groupEventId,
+      created_at: input.cancelledAt,
+    })),
+  );
 }
 
 async function getActiveGroup(db: ReturnType<typeof getRequiredDb>, groupId: string) {
@@ -367,7 +520,7 @@ async function serializeGroupEventsForViewer(
     .map((event) => event.id);
   const seriesRsvpIds = Array.from(new Set([...seriesIds, ...recurringSeriesRootIds]));
   const allOptionEventIds = Array.from(new Set([...eventIds, ...seriesIds]));
-  const [seriesRows, activityPlanOptions, rsvps, seriesRsvps] = await Promise.all([
+  const [seriesRows, activityPlanOptions, rsvps, seriesRsvps, acceptedRsvps] = await Promise.all([
     seriesIds.length > 0
       ? db.select().from(groupEvents).where(inArray(groupEvents.id, seriesIds))
       : Promise.resolve([]),
@@ -396,6 +549,15 @@ async function serializeGroupEventsForViewer(
             ),
           )
       : Promise.resolve([]),
+    db
+      .select()
+      .from(groupEventRsvps)
+      .where(
+        and(
+          inArray(groupEventRsvps.group_event_id, eventIds),
+          eq(groupEventRsvps.status, GROUP_EVENT_RSVP_STATUS_ACCEPTED),
+        ),
+      ),
   ]);
 
   const optionsByEventId = new Map<string, GroupEventActivityPlanRow[]>();
@@ -406,6 +568,13 @@ async function serializeGroupEventsForViewer(
   }
 
   const rsvpByEventId = new Map(rsvps.map((rsvp) => [rsvp.group_event_id, rsvp]));
+  const acceptedRsvpCountByEventId = new Map<string, number>();
+  for (const rsvp of acceptedRsvps) {
+    acceptedRsvpCountByEventId.set(
+      rsvp.group_event_id,
+      (acceptedRsvpCountByEventId.get(rsvp.group_event_id) ?? 0) + 1,
+    );
+  }
   const seriesById = new Map(seriesRows.map((series) => [series.id, series]));
   const seriesRsvpBySeriesId = new Map(
     seriesRsvps.map((rsvp) => [rsvp.group_event_series_id, rsvp]),
@@ -418,6 +587,7 @@ async function serializeGroupEventsForViewer(
     const seriesOptions = event.series_id ? (optionsByEventId.get(event.series_id) ?? []) : [];
 
     return serializeGroupEvent(event, {
+      acceptedRsvpCount: acceptedRsvpCountByEventId.get(event.id) ?? 0,
       activityPlanOptions: occurrenceOptions.length > 0 ? occurrenceOptions : seriesOptions,
       group: input.groupById?.get(event.group_id) ?? null,
       viewerRsvp: rsvpByEventId.get(event.id) ?? null,
@@ -465,6 +635,20 @@ async function getResolvedActivityPlanOptions(
   return options.filter((option) => option.group_event_id === event.series_id);
 }
 
+async function getAcceptedRsvpCount(db: ReturnType<typeof getRequiredDb>, groupEventId: string) {
+  const rsvps = await db
+    .select()
+    .from(groupEventRsvps)
+    .where(
+      and(
+        eq(groupEventRsvps.group_event_id, groupEventId),
+        eq(groupEventRsvps.status, GROUP_EVENT_RSVP_STATUS_ACCEPTED),
+      ),
+    );
+
+  return rsvps.length;
+}
+
 function assertSeriesRoot(event: GroupEventRow) {
   if (event.series_id !== null || event.recurrence_rule === null) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "Group event is not a recurring series" });
@@ -499,6 +683,8 @@ export const groupEventsRouter = createTRPCRouter({
         and(
           eq(groupEvents.group_id, group.id),
           input.includeCancelled ? undefined : isNull(groupEvents.cancelled_at),
+          // Series roots are scheduling templates; lists should show only concrete events.
+          or(isNull(groupEvents.recurrence_rule), isNotNull(groupEvents.series_id)),
           input.startsAfter ? gte(groupEvents.starts_at, new Date(input.startsAfter)) : undefined,
           input.startsBefore ? lte(groupEvents.starts_at, new Date(input.startsBefore)) : undefined,
           cursorFilter,
@@ -529,6 +715,8 @@ export const groupEventsRouter = createTRPCRouter({
             eq(groupMemberships.status, GROUP_MEMBERSHIP_STATUS_ACTIVE),
             isNull(groups.deleted_at),
             input.includeCancelled ? undefined : isNull(groupEvents.cancelled_at),
+            // Series roots are scheduling templates; lists should show only concrete events.
+            or(isNull(groupEvents.recurrence_rule), isNotNull(groupEvents.series_id)),
             input.startsAfter
               ? gte(groupEvents.starts_at, new Date(input.startsAfter))
               : gte(groupEvents.starts_at, new Date()),
@@ -565,7 +753,9 @@ export const groupEventsRouter = createTRPCRouter({
       accessLevel: group.access_level,
     });
 
-    const [serializedEvent] = await serializeGroupEventsForViewer(db, [event], profileId);
+    const [serializedEvent] = await serializeGroupEventsForViewer(db, [event], profileId, {
+      groupById: new Map([[group.id, group]]),
+    });
     return { event: serializedEvent };
   }),
 
@@ -576,8 +766,13 @@ export const groupEventsRouter = createTRPCRouter({
 
       const db = getRequiredDb(ctx);
       const profileId = await getCurrentProfileId(db, ctx.session.user.id);
-      await getActiveGroup(db, input.groupId);
+      const group = await getActiveGroup(db, input.groupId);
       await requireGroupAdmin(db, input.groupId, profileId);
+      await assertGroupEventResourcesAvailable(db, {
+        activityPlans: input.activityPlans,
+        profileId,
+        routeId: input.routeId,
+      });
 
       const event = await db.transaction(async (tx) => {
         const [createdEvent] = await tx
@@ -606,7 +801,9 @@ export const groupEventsRouter = createTRPCRouter({
         return createdEvent;
       });
 
-      const [serializedEvent] = await serializeGroupEventsForViewer(db, [event], profileId);
+      const [serializedEvent] = await serializeGroupEventsForViewer(db, [event], profileId, {
+        groupById: new Map([[group.id, group]]),
+      });
       return { event: serializedEvent };
     }),
 
@@ -619,6 +816,11 @@ export const groupEventsRouter = createTRPCRouter({
       const profileId = await getCurrentProfileId(db, ctx.session.user.id);
       await getActiveGroup(db, input.groupId);
       await requireGroupAdmin(db, input.groupId, profileId);
+      await assertGroupEventResourcesAvailable(db, {
+        activityPlans: input.activityPlans,
+        profileId,
+        routeId: input.routeId,
+      });
 
       const event = await db.transaction(async (tx) => {
         const [createdEvent] = await tx
@@ -731,6 +933,11 @@ export const groupEventsRouter = createTRPCRouter({
       const profileId = await getCurrentProfileId(db, ctx.session.user.id);
       const { event: existingEvent } = await getGroupEventWithActiveGroup(db, input.groupEventId);
       await requireGroupAdmin(db, existingEvent.group_id, profileId);
+      await assertGroupEventResourcesAvailable(db, {
+        activityPlans: input.activityPlans,
+        profileId,
+        routeId: input.routeId,
+      });
 
       const event = await db.transaction(async (tx) => {
         const [updatedEvent] = await tx
@@ -776,6 +983,7 @@ export const groupEventsRouter = createTRPCRouter({
       const { event: existingEvent } = await getGroupEventWithActiveGroup(db, input.groupEventId);
       assertSeriesOccurrence(existingEvent);
       await requireGroupAdmin(db, existingEvent.group_id, profileId);
+      await assertRouteAvailableForGroupEvent(db, input.routeId, profileId);
 
       const [event] = await db
         .update(groupEvents)
@@ -885,6 +1093,13 @@ export const groupEventsRouter = createTRPCRouter({
           .where(or(eq(groupEvents.id, seriesId), eq(groupEvents.series_id, seriesId)));
       }
 
+      await notifyActiveGroupMembersOfCancellation(tx, {
+        actorProfileId: profileId,
+        cancelledAt,
+        groupEventId: input.groupEventId,
+        groupId: existingEvent.group_id,
+      });
+
       return [cancelledEvent];
     });
 
@@ -902,11 +1117,24 @@ export const groupEventsRouter = createTRPCRouter({
       const db = getRequiredDb(ctx);
       const profileId = await getCurrentProfileId(db, ctx.session.user.id);
       const { event, group } = await getGroupEventWithActiveGroup(db, input.groupEventId);
-      await requireGroupViewAccess(db, {
-        groupId: group.id,
-        profileId,
-        accessLevel: group.access_level,
-      });
+      await requireGroupEventRsvpAccess(db, group.id, profileId);
+
+      if (input.status === null) {
+        await db
+          .delete(groupEventRsvps)
+          .where(
+            and(
+              eq(groupEventRsvps.group_event_id, input.groupEventId),
+              eq(groupEventRsvps.profile_id, profileId),
+            ),
+          );
+
+        const [serializedEvent] = await serializeGroupEventsForViewer(db, [event], profileId);
+        return {
+          event: serializedEvent,
+          rsvp: null,
+        };
+      }
 
       const activityPlanOptions = await getResolvedActivityPlanOptions(db, event);
 
@@ -926,11 +1154,14 @@ export const groupEventsRouter = createTRPCRouter({
       if (
         input.status === GROUP_EVENT_RSVP_STATUS_ACCEPTED &&
         !selectedGroupEventActivityPlanId &&
-        activityPlanOptions.length === 1
+        activityPlanOptions.length > 0
       ) {
         selectedGroupEventActivityPlanId = activityPlanOptions[0]?.id ?? null;
       }
-      if (input.status === GROUP_EVENT_RSVP_STATUS_DECLINED) {
+      if (
+        input.status === GROUP_EVENT_RSVP_STATUS_DECLINED ||
+        input.status === GROUP_EVENT_RSVP_STATUS_TENTATIVE
+      ) {
         selectedGroupEventActivityPlanId = null;
       }
 
@@ -966,11 +1197,30 @@ export const groupEventsRouter = createTRPCRouter({
       const profileId = await getCurrentProfileId(db, ctx.session.user.id);
       const { event, group } = await getGroupEventWithActiveGroup(db, input.groupEventSeriesId);
       assertSeriesRoot(event);
-      await requireGroupViewAccess(db, {
-        groupId: group.id,
-        profileId,
-        accessLevel: group.access_level,
-      });
+      await requireGroupEventRsvpAccess(db, group.id, profileId);
+
+      if (input.status === null) {
+        await db
+          .delete(groupEventSeriesRsvps)
+          .where(
+            and(
+              eq(groupEventSeriesRsvps.group_event_series_id, input.groupEventSeriesId),
+              eq(groupEventSeriesRsvps.profile_id, profileId),
+            ),
+          );
+
+        const activityPlanOptions = await getResolvedActivityPlanOptions(db, event);
+        const acceptedRsvpCount = await getAcceptedRsvpCount(db, event.id);
+        return {
+          event: serializeGroupEvent(event, {
+            acceptedRsvpCount,
+            activityPlanOptions,
+            viewerRsvp: null,
+            viewerSeriesRsvp: null,
+          }),
+          rsvp: null,
+        };
+      }
 
       const [rsvp] = await db
         .insert(groupEventSeriesRsvps)
@@ -986,8 +1236,10 @@ export const groupEventsRouter = createTRPCRouter({
         .returning();
 
       const activityPlanOptions = await getResolvedActivityPlanOptions(db, event);
+      const acceptedRsvpCount = await getAcceptedRsvpCount(db, event.id);
       return {
         event: serializeGroupEvent(event, {
+          acceptedRsvpCount,
           activityPlanOptions,
           viewerRsvp: null,
           viewerSeriesRsvp: rsvp as GroupEventSeriesRsvpRow,
@@ -1068,6 +1320,8 @@ export const groupEventsRouter = createTRPCRouter({
               eq(groupMemberships.status, GROUP_MEMBERSHIP_STATUS_ACTIVE),
             ),
             input.includeCancelled ? undefined : isNull(groupEvents.cancelled_at),
+            // Series roots are scheduling templates; calendar lists should show concrete events.
+            or(isNull(groupEvents.recurrence_rule), isNotNull(groupEvents.series_id)),
             input.startsAfter ? gte(groupEvents.starts_at, new Date(input.startsAfter)) : undefined,
             input.startsBefore
               ? lte(groupEvents.starts_at, new Date(input.startsBefore))
@@ -1107,7 +1361,7 @@ export const groupEventsRouter = createTRPCRouter({
               eq(groups.access_level, GROUP_ACCESS_LEVEL_PUBLIC),
               eq(groupMemberships.status, GROUP_MEMBERSHIP_STATUS_ACTIVE),
             ),
-            // A declined occurrence RSVP overrides an accepted series RSVP for calendar inclusion.
+            // A declined or tentative occurrence RSVP overrides accepted series RSVP calendar inclusion.
             or(
               isNull(groupEventRsvps.profile_id),
               eq(groupEventRsvps.status, GROUP_EVENT_RSVP_STATUS_ACCEPTED),

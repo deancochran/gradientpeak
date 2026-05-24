@@ -126,7 +126,6 @@ function buildSetupItem(
         title: "Trainer",
         tone: contract?.devices.trainerControllable ? "active" : "warning",
       };
-    case "sensors":
     default:
       return {
         ...action,

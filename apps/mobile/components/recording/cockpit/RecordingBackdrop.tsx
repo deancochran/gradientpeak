@@ -9,7 +9,6 @@ import MapView, { type Camera, Polyline, PROVIDER_DEFAULT } from "react-native-m
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import {
   buildRecordingBackdropModel,
-  getBackdropTint,
   type RecordingBackdropModel,
 } from "./model/recordingBackdropModel";
 
@@ -43,7 +42,7 @@ export function RecordingBackdrop({
   React.useEffect(() => {
     setMapReady(false);
     setTrackingEnabled(true);
-  }, [model.mapKey]);
+  }, []);
 
   const followCurrentLocation = React.useCallback(
     (location: LocationObject, duration = 500) => {
@@ -152,7 +151,7 @@ export function RecordingBackdrop({
       ) : showMapPending ? (
         <MapPendingBackdrop mode={model.mode} />
       ) : (
-        <AtmosphericBackdrop mode={model.mode} />
+        <MinimalBackdrop />
       )}
 
       {model.shouldRenderMap && !trackingEnabled && currentLocation && !trackingControlHidden ? (
@@ -174,19 +173,7 @@ export function RecordingBackdrop({
         </View>
       ) : null}
 
-      {showBackdropCopy ? (
-        <View className="absolute inset-x-0 top-0 px-6 pt-24">
-          <Text className="text-xs font-semibold uppercase tracking-[3px] text-white/65">
-            {formatServiceStateLabel(recordingState)} cockpit
-          </Text>
-          <Text className="mt-3 text-4xl font-black capitalize leading-tight text-white">
-            {model.copy.label}
-          </Text>
-          <Text className="mt-3 max-w-[280px] text-base leading-6 text-white/75">
-            {model.copy.description}
-          </Text>
-        </View>
-      ) : null}
+      {showBackdropCopy ? <BackdropCopy model={model} recordingState={recordingState} /> : null}
     </View>
   );
 }
@@ -205,37 +192,64 @@ function isMapPendingMode(mode: RecordingBackdropModel["mode"]) {
 
 function MapPendingBackdrop({ mode }: { mode: RecordingBackdropModel["mode"] }) {
   const isNavigation = mode === "live_navigation";
+  const isUnavailable = mode === "gps_unavailable";
 
   return (
     <View
       className="absolute inset-0 items-center justify-center bg-background px-8"
       testID="recording-map-pending-backdrop"
     >
-      <View className="w-full max-w-[320px] rounded-[32px] border border-border bg-card/95 px-6 py-7 shadow-sm">
-        <Text className="text-xs font-semibold uppercase tracking-[2.5px] text-muted-foreground">
+      <View className="w-full max-w-[300px] items-center">
+        <View className="mb-5 h-1 w-16 rounded-full bg-muted" />
+        <Text className="text-center text-xs font-semibold uppercase tracking-[2.5px] text-muted-foreground">
           {isNavigation ? "Route map" : "Location"}
         </Text>
-        <Text className="mt-3 text-2xl font-black text-foreground">
-          {isNavigation ? "Preparing map" : "Acquiring GPS"}
+        <Text className="mt-3 text-center text-2xl font-black text-foreground">
+          {isUnavailable ? "GPS unavailable" : isNavigation ? "Preparing map" : "Acquiring GPS"}
         </Text>
-        <Text className="mt-3 text-sm leading-6 text-muted-foreground">
-          {isNavigation
-            ? "The route is attached. The map appears as soon as route geometry or a real location is available."
-            : "The map appears as soon as a real location is available."}
+        <Text className="mt-3 text-center text-sm leading-6 text-muted-foreground">
+          {isUnavailable
+            ? "Location is off or unavailable. You can keep recording with metrics only."
+            : isNavigation
+              ? "The route is attached. The map appears as soon as route geometry or a real location is available."
+              : "The map appears as soon as a real location is available."}
         </Text>
       </View>
     </View>
   );
 }
 
-function AtmosphericBackdrop({ mode }: { mode: RecordingBackdropModel["mode"] }) {
+function MinimalBackdrop() {
   return (
     <>
-      <View className={`absolute inset-0 ${getBackdropTint(mode)}`} />
-      <View className="absolute -left-20 top-16 h-72 w-72 rounded-full bg-white/10" />
-      <View className="absolute -right-24 top-44 h-80 w-80 rounded-full bg-white/5" />
-      <View className="absolute bottom-28 left-8 right-8 h-32 rounded-[40px] border border-white/15 bg-white/5" />
+      <View className="absolute inset-0 bg-background" />
+      <View className="absolute bottom-0 left-0 right-0 h-px bg-border" />
     </>
+  );
+}
+
+function BackdropCopy({
+  model,
+  recordingState,
+}: {
+  model: RecordingBackdropModel;
+  recordingState: string;
+}) {
+  return (
+    <View className="absolute inset-x-0 top-0 px-6 pt-24">
+      <View className="max-w-[300px]">
+        <View className="mb-5 h-1 w-16 rounded-full bg-muted" />
+        <Text className="text-xs font-semibold uppercase tracking-[3px] text-muted-foreground">
+          {formatServiceStateLabel(recordingState)} cockpit
+        </Text>
+        <Text className="mt-3 text-4xl font-black capitalize leading-tight text-foreground">
+          {model.copy.label}
+        </Text>
+        <Text className="mt-3 text-base leading-6 text-muted-foreground">
+          {model.copy.description}
+        </Text>
+      </View>
+    </View>
   );
 }
 

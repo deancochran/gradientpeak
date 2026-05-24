@@ -215,7 +215,7 @@ jest.mock("@/components/training-plan/TrainingPlanSummaryHeader", () => ({
   __esModule: true,
   TrainingPlanSummaryHeader: createHost("TrainingPlanSummaryHeader"),
 }));
-jest.mock("@/components/ActivityPlan/TimelineChart", () => ({
+jest.mock("@/components/activity-plan/workout/TimelineChart", () => ({
   __esModule: true,
   TimelineChart: createHost("TimelineChart"),
 }));

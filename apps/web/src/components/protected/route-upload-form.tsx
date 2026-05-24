@@ -1,5 +1,6 @@
 import { Button } from "@repo/ui/components/button";
 import { Form, FormTextareaField, FormTextField } from "@repo/ui/components/form";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { useZodForm } from "@repo/ui/hooks";
 import { Upload } from "lucide-react";
 import { useState } from "react";
@@ -108,10 +109,15 @@ export function RouteUploadForm({
             <Button onClick={onCancel} type="button" variant="outline">
               Cancel
             </Button>
-            <Button disabled={!selectedFile || pending} type="submit">
+            <LoadingButton
+              disabled={!selectedFile || pending}
+              loading={pending}
+              loadingLabel="Uploading route..."
+              type="submit"
+            >
               <Upload className="mr-2 h-4 w-4" />
-              {pending ? "Uploading route..." : "Upload route"}
-            </Button>
+              Upload route
+            </LoadingButton>
           </div>
         </form>
       </Form>

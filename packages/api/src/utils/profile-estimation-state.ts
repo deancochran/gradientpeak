@@ -17,6 +17,7 @@ export async function getProfileEstimationState(db: DrizzleDbClient, profileId: 
       metrics_revision: 0,
       performance_revision: 0,
       fitness_revision: 0,
+      dirty_since: null,
       updated_at: new Date(0),
     }
   );
@@ -27,10 +28,26 @@ export async function bumpProfileEstimationState(
   profileId: string,
   kinds: ProfileEstimationRevisionKind[],
 ) {
+  await markProfileAnalysisDirty(db, { profileId, kinds });
+}
+
+export async function markProfileAnalysisDirty(
+  db: DrizzleDbClient,
+  input: {
+    profileId: string;
+    kinds: ProfileEstimationRevisionKind[];
+    dirtySince?: Date | string | null;
+  },
+) {
+  const { profileId, kinds } = input;
   if (kinds.length === 0) return;
 
   const uniqueKinds = [...new Set(kinds)];
   const now = new Date();
+  const dirtySince = input.dirtySince ? new Date(input.dirtySince) : null;
+  const dirtySinceUpdate = dirtySince
+    ? sql`least(coalesce(${profileEstimationState.dirty_since}, ${dirtySince}), ${dirtySince})`
+    : profileEstimationState.dirty_since;
 
   await db
     .insert(profileEstimationState)
@@ -39,6 +56,7 @@ export async function bumpProfileEstimationState(
       metrics_revision: uniqueKinds.includes("metrics") ? 1 : 0,
       performance_revision: uniqueKinds.includes("performance") ? 1 : 0,
       fitness_revision: uniqueKinds.includes("fitness") ? 1 : 0,
+      dirty_since: dirtySince,
       updated_at: now,
     })
     .onConflictDoUpdate({
@@ -53,6 +71,7 @@ export async function bumpProfileEstimationState(
         fitness_revision: uniqueKinds.includes("fitness")
           ? sql`${profileEstimationState.fitness_revision} + 1`
           : profileEstimationState.fitness_revision,
+        dirty_since: dirtySinceUpdate,
         updated_at: now,
       },
     });

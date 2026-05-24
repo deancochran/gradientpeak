@@ -30,8 +30,8 @@ function GroupAvatar({
         <Text
           className={
             size === "sm"
-              ? "text-sm font-semibold text-foreground"
-              : "text-base font-semibold text-foreground"
+              ? "text-sm font-semibold text-muted-foreground"
+              : "text-base font-semibold text-muted-foreground"
           }
         >
           {displayName.charAt(0).toUpperCase() || "G"}

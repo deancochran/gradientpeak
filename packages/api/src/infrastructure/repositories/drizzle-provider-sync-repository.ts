@@ -1,5 +1,5 @@
-import { type DrizzleDbClient, schema } from "@repo/db";
-import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
+import { schema } from "@repo/db";
+import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
 import type {
   CreateProviderSyncRepositoryOptions,
   ProviderSyncJobRecord,

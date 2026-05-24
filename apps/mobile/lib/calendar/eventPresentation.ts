@@ -29,6 +29,10 @@ function trimText(value: string | null | undefined): string | null {
   return trimmed ? trimmed : null;
 }
 
+function hasActivityPlan(event: CalendarEvent): boolean {
+  return Boolean(event.activity_plan?.id);
+}
+
 export function isEditableEvent(event: CalendarEvent): boolean {
   return event.event_type !== "imported" && event.event_type !== "rest_day";
 }
@@ -38,7 +42,7 @@ export function isRecurringEvent(event: CalendarEvent): boolean {
 }
 
 export function getEventTitle(event: CalendarEvent): string {
-  if (event.event_type === "planned") {
+  if (event.event_type === "planned" && hasActivityPlan(event)) {
     return event.activity_plan?.name || event.title || "Planned activity";
   }
 
@@ -55,7 +59,7 @@ export function getEventTimeLabel(event: CalendarEvent): string {
 }
 
 export function getEventPrimaryMeta(event: CalendarEvent): string[] {
-  if (event.event_type === "planned") {
+  if (event.event_type === "planned" && hasActivityPlan(event)) {
     const metrics = getAuthoritativeActivityPlanMetrics(event.activity_plan);
     const duration = formatEstimatedDurationSeconds(readMetric(metrics.estimated_duration));
     const tss = readMetric(metrics.estimated_tss);
@@ -70,7 +74,7 @@ export function getEventPrimaryMeta(event: CalendarEvent): string[] {
 }
 
 export function getEventSupportingLine(event: CalendarEvent): string | null {
-  if (event.event_type === "planned") {
+  if (event.event_type === "planned" && hasActivityPlan(event)) {
     return (
       trimText(event.activity_plan?.description) ||
       trimText(event.notes) ||
@@ -83,7 +87,8 @@ export function getEventSupportingLine(event: CalendarEvent): string | null {
 }
 
 export function getEventStatusLabel(event: CalendarEvent): string | null {
-  const completed = event.event_type === "planned" ? isActivityCompleted(event) : false;
+  const completed =
+    event.event_type === "planned" && hasActivityPlan(event) ? isActivityCompleted(event) : false;
 
   if (completed) {
     return "Completed";

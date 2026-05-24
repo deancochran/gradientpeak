@@ -70,7 +70,7 @@ function createTrainingPlansCaller(results: QueryMap = {}) {
   } as any);
 }
 
-function createTrainingPlansCreateHarness() {
+function _createTrainingPlansCreateHarness() {
   const { db, callLog } = createQueryMapDbMock({
     training_plans: {
       data: {
@@ -1256,11 +1256,15 @@ describe("trainingPlansRouter plan_start_date support", () => {
     expect(previewStartingState).toBeDefined();
     expect(createStartingState).toBeDefined();
     expect(createStartingState).toEqual(previewStartingState);
-    if (!previewStartingState!.starting_state_is_prior) {
-      expect(previewStartingState!.starting_atl).not.toBe(previewStartingState!.starting_ctl);
+    if (!previewStartingState) {
+      throw new Error("Expected preview starting state");
     }
-    expect(previewStartingState!.starting_tsb).toBe(
-      Number((previewStartingState!.starting_ctl - previewStartingState!.starting_atl).toFixed(1)),
+
+    if (!previewStartingState.starting_state_is_prior) {
+      expect(previewStartingState.starting_atl).not.toBe(previewStartingState.starting_ctl);
+    }
+    expect(previewStartingState.starting_tsb).toBe(
+      Number((previewStartingState.starting_ctl - previewStartingState.starting_atl).toFixed(1)),
     );
   });
 
@@ -2050,7 +2054,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
 
     const points = result.projection_chart.points;
     expect(points.length).toBeGreaterThan(0);
-    expect(points[0]!.predicted_fitness_ctl).toBeGreaterThanOrEqual(0);
+    expect(points[0]?.predicted_fitness_ctl).toBeGreaterThanOrEqual(0);
     expect(result.projection_chart.no_history).toMatchObject({
       projection_floor_applied: true,
       floor_clamped_by_availability: expect.any(Boolean),
@@ -2115,8 +2119,12 @@ describe("trainingPlansRouter plan_start_date support", () => {
     const points = result.projection_chart.points;
     expect(points.length).toBeGreaterThan(1);
 
-    const startFitness = points[0]!.predicted_fitness_ctl;
-    const endFitness = points[points.length - 1]!.predicted_fitness_ctl;
+    const startFitness = points[0]?.predicted_fitness_ctl;
+    const endFitness = points[points.length - 1]?.predicted_fitness_ctl;
+
+    if (startFitness === undefined || endFitness === undefined) {
+      throw new Error("Expected projection fitness points");
+    }
 
     expect(endFitness).toBeGreaterThanOrEqual(startFitness);
   });

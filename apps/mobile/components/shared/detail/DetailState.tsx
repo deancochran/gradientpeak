@@ -1,6 +1,5 @@
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
-import React from "react";
 import { ActivityIndicator, View } from "react-native";
 
 type DetailLoadingStateProps = {

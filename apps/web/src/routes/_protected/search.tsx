@@ -8,6 +8,8 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
+import { InlineLoadingStatus, LoadingButton } from "@repo/ui/components/loading";
+import { keepPreviousData } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   Calendar,
@@ -80,11 +82,15 @@ function SearchPage() {
             section.title.toLowerCase().includes(normalizedQuery) ||
             section.description.toLowerCase().includes(normalizedQuery),
         );
-  const { data, isLoading } = api.social.searchUsers.useQuery({
-    query: query || undefined,
-    limit: 12,
-  });
+  const { data, isFetching, isLoading } = api.social.searchUsers.useQuery(
+    {
+      query: query || undefined,
+      limit: 12,
+    },
+    { placeholderData: keepPreviousData },
+  );
   const users = data?.users ?? [];
+  const isUpdatingProfiles = isFetching && !isLoading;
 
   return (
     <div className="space-y-8">
@@ -100,7 +106,9 @@ function SearchPage() {
             placeholder="Search profiles, plans, routes, or actions"
             className="flex h-11 w-full rounded-xl border bg-background px-4 text-sm outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
           />
-          <Button type="submit">Search</Button>
+          <LoadingButton loading={isFetching} loadingLabel="Searching..." type="submit">
+            Search
+          </LoadingButton>
         </form>
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">
@@ -122,6 +130,7 @@ function SearchPage() {
                 ? "Search uses live social profile data."
                 : "Start with real athlete profiles while broader discover parity lands."}
             </p>
+            <InlineLoadingStatus loading={isUpdatingProfiles} label="Updating profiles..." />
           </div>
           <Button asChild variant="outline">
             <Link

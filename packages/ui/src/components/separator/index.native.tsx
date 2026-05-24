@@ -1,4 +1,4 @@
-import * as React from "react";
+import type * as React from "react";
 import { getNativeTestProps } from "../../lib/test-props";
 import { Separator as RegistrySeparator } from "../../registry/native/separator";
 import type { SeparatorTestProps } from "./shared";

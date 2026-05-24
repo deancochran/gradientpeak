@@ -1,7 +1,7 @@
 import { Text } from "@repo/ui/components/text";
 import { DashPathEffect, Rect, Line as SkiaLine, useFont, vec } from "@shopify/react-native-skia";
 import { useMemo, useState } from "react";
-import { LayoutChangeEvent, useWindowDimensions, View } from "react-native";
+import { type LayoutChangeEvent, useWindowDimensions, View } from "react-native";
 import { CartesianChart, Line } from "victory-native";
 import { useTheme } from "@/lib/stores/theme-store";
 
@@ -259,8 +259,8 @@ export function PlanReadinessComparisonChart({
                 })}
                 {todayIndex >= 0 && plottedPoints.recommended[todayIndex] ? (
                   <SkiaLine
-                    p1={vec(plottedPoints.recommended[todayIndex]!.x, chartBounds.bottom)}
-                    p2={vec(plottedPoints.recommended[todayIndex]!.x, chartBounds.top)}
+                    p1={vec(plottedPoints.recommended[todayIndex]?.x, chartBounds.bottom)}
+                    p2={vec(plottedPoints.recommended[todayIndex]?.x, chartBounds.top)}
                     color={isDark ? "rgba(226, 232, 240, 0.55)" : "rgba(51, 65, 85, 0.5)"}
                     strokeWidth={1.5}
                   >

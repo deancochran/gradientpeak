@@ -21,7 +21,7 @@ import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { Stack, useRouter } from "expo-router";
 import { X } from "lucide-react-native";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type FieldError, type FieldErrors, useWatch } from "react-hook-form";
 import {
   ActivityIndicator,
@@ -649,7 +649,7 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
       });
       setIsPreviewPending(previewPendingRequestCountRef.current > 0);
     }
-  }, [buildCreationInput, configData, contextSummary, effectiveFormData]);
+  }, [configData, contextSummary, effectiveFormData, resolveStartingAtlOverride]);
 
   useEffect(() => {
     if (!isEditMode) {
@@ -750,7 +750,6 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
     configData.locks,
     configData.behaviorControlsV1,
     configData.recentInfluenceScore,
-    configData.recentInfluenceAction,
     hasSeededDefaults,
     mergeSuggestionsIntoConfig,
     recomputeNonce,
@@ -780,7 +779,7 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
         scheduledPreviewTimerRef.current = null;
       }
     };
-  }, [configData, hasSeededDefaults, refreshPreview]);
+  }, [hasSeededDefaults, refreshPreview]);
 
   useEffect(() => {
     return () => {

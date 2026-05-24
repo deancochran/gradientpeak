@@ -2,7 +2,7 @@ import { Card, CardContent } from "@repo/ui/components/card";
 import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
 import { View } from "react-native";
-import { ActivityCategorySelector } from "@/components/ActivityPlan/ActivityCategorySelector";
+import { ActivityCategorySelector } from "@/components/activity-plan/workout/ActivityCategorySelector";
 
 type ActivityPlanBasicsSectionProps = {
   activityCategory: string;

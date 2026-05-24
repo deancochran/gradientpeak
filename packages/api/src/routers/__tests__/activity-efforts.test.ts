@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { randomUuidState } = vi.hoisted(() => ({
   randomUuidState: {
@@ -12,11 +12,14 @@ vi.mock("node:crypto", () => ({
 
 vi.mock("../../utils/profile-estimation-state", () => ({
   bumpProfileEstimationState: vi.fn(async () => undefined),
+  markProfileAnalysisDirty: vi.fn(async () => undefined),
 }));
 
+import { markProfileAnalysisDirty } from "../../utils/profile-estimation-state";
 import { activityEffortsRouter } from "../activity-efforts";
 
 const userId = "11111111-1111-4111-8111-111111111111";
+const markProfileAnalysisDirtyMock = vi.mocked(markProfileAnalysisDirty);
 
 function buildEffortRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -38,15 +41,18 @@ function buildEffortRow(overrides: Record<string, unknown> = {}) {
 
 function createCaller(options?: {
   selectResult?: unknown;
+  selectOneResult?: unknown[];
   insertResult?: unknown[];
   deleteResult?: unknown;
 }) {
   const selectResult = options?.selectResult ?? [];
+  const selectOneResult = options?.selectOneResult ?? [];
   const insertResult = options?.insertResult ?? [];
   const deleteResult = options?.deleteResult ?? [];
 
+  const limit = vi.fn(async () => selectOneResult);
   const orderBy = vi.fn(async () => selectResult);
-  const whereForSelect = vi.fn(() => ({ orderBy }));
+  const whereForSelect = vi.fn(() => ({ limit, orderBy }));
   const from = vi.fn(() => ({ where: whereForSelect }));
   const select = vi.fn(() => ({ from }));
 
@@ -78,6 +84,7 @@ function createCaller(options?: {
       select,
       from,
       whereForSelect,
+      limit,
       orderBy,
       insert,
       values,
@@ -89,6 +96,10 @@ function createCaller(options?: {
 }
 
 describe("activityEffortsRouter", () => {
+  beforeEach(() => {
+    markProfileAnalysisDirtyMock.mockClear();
+  });
+
   it("gets the current profile's efforts", async () => {
     const efforts = [buildEffortRow()];
     const { caller, spies } = createCaller({ selectResult: efforts });
@@ -128,7 +139,7 @@ describe("activityEffortsRouter", () => {
     expect(spies.values).toHaveBeenCalledOnce();
     expect(spies.returning).toHaveBeenCalledOnce();
 
-    const insertedPayload = (spies.values.mock.calls as any[][])[0]![0];
+    const insertedPayload = (spies.values.mock.calls as any[][])[0]?.[0];
     expect(insertedPayload).toMatchObject({
       id: randomUuidState.next,
       profile_id: userId,
@@ -143,17 +154,30 @@ describe("activityEffortsRouter", () => {
     expect(insertedPayload.created_at).toBeInstanceOf(Date);
     expect(insertedPayload.recorded_at).toBeInstanceOf(Date);
     expect(insertedPayload.recorded_at.toISOString()).toBe(input.recorded_at);
+    expect(markProfileAnalysisDirtyMock).toHaveBeenCalledWith(expect.anything(), {
+      profileId: userId,
+      kinds: ["performance"],
+      dirtySince: insertedRow.recorded_at,
+    });
   });
 
   it("returns a success payload after deleting an owned effort", async () => {
-    const { caller, spies } = createCaller();
+    const existing = buildEffortRow();
+    const { caller, spies } = createCaller({ selectOneResult: [existing] });
     const id = "22222222-2222-4222-8222-222222222222";
 
     const result = await caller.delete({ id });
 
     expect(result).toEqual({ success: true, deletedId: id });
+    expect(spies.select).toHaveBeenCalledOnce();
+    expect(spies.limit).toHaveBeenCalledOnce();
     expect(spies.delete).toHaveBeenCalledOnce();
     expect(spies.whereForDelete).toHaveBeenCalledOnce();
+    expect(markProfileAnalysisDirtyMock).toHaveBeenCalledWith(expect.anything(), {
+      profileId: userId,
+      kinds: ["performance"],
+      dirtySince: existing.recorded_at,
+    });
   });
 
   it("rejects unexpected create input keys at the router boundary", async () => {

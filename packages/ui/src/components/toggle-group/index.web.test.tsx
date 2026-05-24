@@ -7,6 +7,8 @@ import { ToggleGroup, ToggleGroupItem } from "./index.web";
 describe("ToggleGroup web", () => {
   it("maps normalized test props for the root and items", () => {
     const onValueChange = vi.fn();
+    const firstOption = toggleGroupFixtures.viewMode.options[0]!;
+    const secondOption = toggleGroupFixtures.viewMode.options[1]!;
 
     renderWeb(
       <ToggleGroup
@@ -16,28 +18,21 @@ describe("ToggleGroup web", () => {
         type="single"
         value={toggleGroupFixtures.viewMode.value}
       >
-        <ToggleGroupItem
-          testId={toggleGroupFixtures.viewMode.options[0]!.testId}
-          value={toggleGroupFixtures.viewMode.options[0]!.value}
-        >
-          {toggleGroupFixtures.viewMode.options[0]!.label}
+        <ToggleGroupItem testId={firstOption.testId} value={firstOption.value}>
+          {firstOption.label}
         </ToggleGroupItem>
-        <ToggleGroupItem
-          testId={toggleGroupFixtures.viewMode.options[1]!.testId}
-          value={toggleGroupFixtures.viewMode.options[1]!.value}
-        >
-          {toggleGroupFixtures.viewMode.options[1]!.label}
+        <ToggleGroupItem testId={secondOption.testId} value={secondOption.value}>
+          {secondOption.label}
         </ToggleGroupItem>
       </ToggleGroup>,
     );
 
     expect(screen.getByTestId(toggleGroupFixtures.viewMode.rootTestId)).toBeInTheDocument();
-    expect(
-      screen.getByRole("radio", { name: toggleGroupFixtures.viewMode.options[0]!.label }),
-    ).toHaveAttribute("aria-checked", "true");
-    fireEvent.click(
-      screen.getByRole("radio", { name: toggleGroupFixtures.viewMode.options[1]!.label }),
+    expect(screen.getByRole("radio", { name: firstOption.label })).toHaveAttribute(
+      "aria-checked",
+      "true",
     );
-    expect(onValueChange).toHaveBeenCalledWith(toggleGroupFixtures.viewMode.options[1]!.value);
+    fireEvent.click(screen.getByRole("radio", { name: secondOption.label }));
+    expect(onValueChange).toHaveBeenCalledWith(secondOption.value);
   });
 });

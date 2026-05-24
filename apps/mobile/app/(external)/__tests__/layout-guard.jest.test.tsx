@@ -1,4 +1,3 @@
-import React from "react";
 import { renderNative, waitFor } from "../../../test/render-native";
 
 const replaceMock = jest.fn();

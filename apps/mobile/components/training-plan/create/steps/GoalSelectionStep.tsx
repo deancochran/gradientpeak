@@ -2,7 +2,7 @@ import { createEmptyGoalDraft, type WizardGoalInput } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { View } from "react-native";
 import { GoalEditorModal } from "@/components/goals";
 import { WizardStep } from "../WizardStep";
@@ -32,7 +32,7 @@ export function GoalSelectionStep({
     }
 
     return Math.ceil(
-      (new Date(goal.target_date).getTime() - new Date().getTime()) / (7 * 24 * 60 * 60 * 1000),
+      (new Date(goal.target_date).getTime() - Date.now()) / (7 * 24 * 60 * 60 * 1000),
     );
   }, [goal.target_date]);
 

@@ -114,10 +114,10 @@ function extractTableName(table: unknown): string {
 function createSelectCaptureDb(rowsByTable: Record<string, unknown[]>) {
   const selects: Array<{
     leftJoinArgs: unknown[][];
-    limitArg?: number;
+    limitArg: number | undefined;
     orderByArgs: unknown[];
     table: string;
-    whereArg?: unknown;
+    whereArg: unknown;
   }> = [];
 
   const db: any = {
@@ -216,7 +216,10 @@ describe("drizzle-event-read-repository", () => {
   it("serializes estimation inputs and skips route lookup when no route ids are provided", async () => {
     const withRoutes = createEventReadRepository(
       createQueryMapDbMock({
-        profiles: { data: [{ dob: new Date("1992-03-04T00:00:00.000Z") }], error: null },
+        profiles: {
+          data: [{ dob: new Date("1992-03-04T00:00:00.000Z") }],
+          error: null,
+        },
         activity_efforts: {
           data: [
             {
@@ -499,6 +502,49 @@ describe("drizzle-event-read-repository", () => {
     });
   });
 
+  it("prefers split schedule-link values over legacy event links", async () => {
+    const scheduleLink = {
+      event_id: "event-1",
+      profile_id: "profile-1",
+      training_plan_id: "split-training-plan",
+      activity_plan_id: "split-activity-plan",
+      linked_activity_id: "split-activity",
+      route_id: "split-route",
+      schedule_batch_id: "split-batch",
+      user_training_plan_id: "split-user-training-plan",
+      created_at: new Date("2026-04-01T00:00:00.000Z"),
+      updated_at: new Date("2026-04-01T00:00:00.000Z"),
+    };
+    const repository = createEventReadRepository(
+      createQueryMapDbMock({
+        events: {
+          data: [
+            {
+              ...createEventRow({
+                training_plan_id: "legacy-training-plan",
+                activity_plan_id: "legacy-activity-plan",
+                linked_activity_id: "legacy-activity",
+              }),
+              schedule_link: scheduleLink,
+            },
+          ],
+          error: null,
+        },
+      }).db,
+    );
+
+    await expect(
+      repository.getOwnedEventById({
+        eventId: "event-1",
+        profileId: "profile-1",
+      }),
+    ).resolves.toMatchObject({
+      training_plan_id: "split-training-plan",
+      activity_plan_id: "split-activity-plan",
+      linked_activity_id: "split-activity",
+    });
+  });
+
   it("builds listOwnedEvents filters, cursor, ordering, and limit on the seam query", async () => {
     const { db, selects } = createSelectCaptureDb({
       events: [createEventRow()],
@@ -522,7 +568,7 @@ describe("drizzle-event-read-repository", () => {
 
     expect(selects).toHaveLength(1);
     expect(selects[0]?.table).toBe("events");
-    expect(selects[0]?.leftJoinArgs).toHaveLength(1);
+    expect(selects[0]?.leftJoinArgs).toHaveLength(4);
     expect(selects[0]?.limitArg).toBe(25);
     expect(selects[0]?.orderByArgs.map(toSql)).toEqual([
       '"events"."starts_at" asc',
@@ -532,8 +578,8 @@ describe("drizzle-event-read-repository", () => {
     const whereSql = toSql(selects[0]?.whereArg);
     expect(whereSql).toContain('"events"."profile_id" = $1');
     expect(whereSql).toContain('"events"."event_type" in ($2, $3)');
-    expect(whereSql).toContain('"events"."training_plan_id" is not null');
-    expect(whereSql).toContain('"events"."activity_plan_id" = $4');
+    expect(whereSql).toContain('"event_schedule_links"."training_plan_id" is not null');
+    expect(whereSql).toContain('"event_schedule_links"."activity_plan_id" = $4');
     expect(whereSql).toContain('"events"."starts_at" >= $5');
     expect(whereSql).toContain('"events"."starts_at" < $6');
     expect(whereSql).toContain('"events"."starts_at" > $7');

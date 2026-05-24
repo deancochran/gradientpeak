@@ -14,7 +14,7 @@
  */
 
 import { Text } from "@repo/ui/components/text";
-import React, { useCallback, useState } from "react";
+import { useCallback, useState } from "react";
 import { Alert, Pressable, View } from "react-native";
 import { usePlan } from "@/lib/hooks/useActivityRecorder";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
@@ -32,7 +32,7 @@ export function RowerControlUI({ service, controlMode, hasPlan }: RowerControlUI
   const [damper, setDamper] = useState<number>(5); // 1-10
   const [resistanceLevel, setResistanceLevel] = useState<number>(5); // Variable
   const [targetStrokeRate, setTargetStrokeRate] = useState<number>(20); // strokes per minute
-  const [dragFactor, setDragFactor] = useState<number>(120); // Read-only, example value
+  const [dragFactor, _setDragFactor] = useState<number>(120); // Read-only, example value
 
   // Get trainer features
   const features = service.getTrainerFeatures();
@@ -60,7 +60,7 @@ export function RowerControlUI({ service, controlMode, hasPlan }: RowerControlUI
     } else {
       Alert.alert("Error", "Failed to set resistance. Check rower connection.");
     }
-  }, [resistanceLevel, controlMode, supportsResistance]);
+  }, [resistanceLevel, controlMode, supportsResistance, service.applyManualTrainerResistance]);
 
   const isDisabled = controlMode === "auto";
 

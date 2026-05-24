@@ -10,7 +10,7 @@ import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { Clock, Ellipsis, MessageCircle, UserMinus, UserPlus } from "lucide-react-native";
-import React, { useEffect, useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { Alert, ScrollView, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { ProfileGroupsSection } from "@/components/profile/ProfileGroupsSection";

@@ -1,15 +1,9 @@
-import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { RotateCcw } from "lucide-react-native";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, TouchableOpacity, View } from "react-native";
+import React, { useMemo } from "react";
+import { ActivityIndicator, View } from "react-native";
 import { TrainingPathChart } from "@/components/plan/training-path/TrainingPathChart";
-import type { TrainingPathWeekWindow } from "@/components/plan/training-path/trainingPathTypes";
-import {
-  addDays,
-  buildScrollableTrainingPathWindow,
-  buildTrainingPathViewModel,
-} from "@/components/plan/training-path/trainingPathUtils";
+import { buildTrainingPathViewModel } from "@/components/plan/training-path/trainingPathUtils";
+import { useScrollableTrainingPathWindow } from "@/components/plan/training-path/useScrollableTrainingPathWindow";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 import {
   buildTrainingPreferencesLoadTimeline,
@@ -31,8 +25,6 @@ export const TrainingPreferencesProjectionPreview = React.memo(
     draft,
     planId,
   }: TrainingPreferencesProjectionPreviewProps) {
-    const [selectedWeekStart, setSelectedWeekStart] = useState<string | null>(null);
-    const [weekWindow, setWeekWindow] = useState<TrainingPathWeekWindow | null>(null);
     const snapshot = useTrainingPlanSnapshot({
       includeStatus: false,
       includeWeeklySummaries: false,
@@ -52,7 +44,7 @@ export const TrainingPreferencesProjectionPreview = React.memo(
 
     const previewSnapshot = useMemo(
       () => ({ ...snapshot, plan: snapshot.plan, profileGoals: snapshot.profileGoals }),
-      [snapshot.plan, snapshot.profileGoals],
+      [snapshot.plan, snapshot.profileGoals, snapshot],
     );
 
     const previewResult = useMemo(() => {
@@ -70,7 +62,7 @@ export const TrainingPreferencesProjectionPreview = React.memo(
         projectionChart: previewResult.projectionChart,
         snapshot,
       });
-    }, [previewResult.projectionChart, snapshot.insightTimeline?.timeline]);
+    }, [previewResult.projectionChart, snapshot.insightTimeline?.timeline, snapshot]);
 
     const todayKey = toDateKey(new Date());
     const goalMarkers = useMemo(() => {
@@ -91,34 +83,7 @@ export const TrainingPreferencesProjectionPreview = React.memo(
           label: goal.title,
         }));
     }, [previewResult.projectionChart?.goal_markers, snapshot.profileGoals]);
-    const initialWeekWindow = useMemo(
-      () => buildScrollableTrainingPathWindow({ goalMarkers, todayKey }),
-      [goalMarkers, todayKey],
-    );
-
-    useEffect(() => {
-      setWeekWindow(initialWeekWindow);
-    }, [initialWeekWindow]);
-
-    const resolvedWeekWindow = weekWindow ?? initialWeekWindow;
-    const extendWindowStart = useCallback(() => {
-      setWeekWindow((current) => {
-        const window = current ?? initialWeekWindow;
-        return { ...window, start: addDays(window.start, -56) };
-      });
-    }, [initialWeekWindow]);
-
-    const extendWindowEnd = useCallback(() => {
-      setWeekWindow((current) => {
-        const window = current ?? initialWeekWindow;
-        return { ...window, end: addDays(window.end, 56) };
-      });
-    }, [initialWeekWindow]);
-
-    const resetChart = useCallback(() => {
-      setWeekWindow(initialWeekWindow);
-      setSelectedWeekStart(null);
-    }, [initialWeekWindow]);
+    const trainingPathWindow = useScrollableTrainingPathWindow({ goalMarkers, todayKey });
 
     const trainingPathModel = useMemo(
       () =>
@@ -128,9 +93,9 @@ export const TrainingPreferencesProjectionPreview = React.memo(
           projectedFitness: [],
           idealFitnessCurve: previewIdealCurve.length > 0 ? previewIdealCurve : idealFitnessCurve,
           goalMarkers,
-          selectedWeekStart,
+          selectedWeekStart: null,
           range: "season",
-          weekWindow: resolvedWeekWindow,
+          weekWindow: trainingPathWindow.resolvedWeekWindow,
           todayKey,
         }),
       [
@@ -139,8 +104,7 @@ export const TrainingPreferencesProjectionPreview = React.memo(
         idealFitnessCurve,
         previewIdealCurve,
         previewLoadTimeline,
-        resolvedWeekWindow,
-        selectedWeekStart,
+        trainingPathWindow.resolvedWeekWindow,
         todayKey,
       ],
     );
@@ -155,7 +119,7 @@ export const TrainingPreferencesProjectionPreview = React.memo(
           goalMarkers,
           selectedWeekStart: null,
           range: "all",
-          weekWindow: initialWeekWindow,
+          weekWindow: trainingPathWindow.initialWeekWindow,
           todayKey,
         }),
       [
@@ -164,7 +128,7 @@ export const TrainingPreferencesProjectionPreview = React.memo(
         idealFitnessCurve,
         previewIdealCurve,
         previewLoadTimeline,
-        initialWeekWindow,
+        trainingPathWindow.initialWeekWindow,
         todayKey,
       ],
     );
@@ -227,29 +191,20 @@ export const TrainingPreferencesProjectionPreview = React.memo(
 
     return (
       <View className="gap-3" testID="training-preferences-load-analysis">
-        <View className="flex-row items-center justify-between gap-3">
-          <Text className="text-sm font-semibold text-foreground">Weekly Training Path</Text>
-          <TouchableOpacity
-            accessibilityRole="button"
-            accessibilityLabel="Reset training path chart"
-            activeOpacity={0.85}
-            className="h-9 w-9 items-center justify-center rounded-full border border-border bg-background"
-            onPress={resetChart}
-            testID="training-preferences-chart-reset-button"
-          >
-            <Icon as={RotateCcw} size={14} className="text-muted-foreground" />
-          </TouchableOpacity>
-        </View>
+        <Text className="text-sm font-semibold text-foreground">Training Load Preview</Text>
         {projectionPreviewState.tone === "ready" ? (
           <TrainingPathChart
             height={300}
             domains={fixedDomainModel.domains}
             model={trainingPathModel}
-            onSelectedWeekChange={setSelectedWeekStart}
-            onScrollNearEnd={extendWindowEnd}
-            onScrollNearStart={extendWindowStart}
+            onScrollNearEnd={trainingPathWindow.extendWindowEnd}
+            onScrollNearStart={trainingPathWindow.extendWindowStart}
             range="season"
+            reviewWeeks={false}
             scrollX
+            showCompletedLoad={false}
+            showPlannedLoad={false}
+            showScheduledFitness={false}
           />
         ) : (
           <View className="gap-2 rounded-md border border-dashed border-border bg-muted/20 px-4 py-5">

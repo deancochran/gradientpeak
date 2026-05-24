@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   canonicalGoalActivityCategorySchema,
   canonicalGoalObjectiveSchema,
-  profileGoalCreateSchema,
+  type profileGoalCreateSchema,
   profileGoalRecordSchema,
 } from "@repo/core";
 import { profileGoals } from "@repo/db";
@@ -33,7 +33,7 @@ function toSafeDbErrorMessage(error: unknown): string {
   return `${code}${message}`;
 }
 
-function rethrowTrpcError(error: unknown): never | void {
+function rethrowTrpcError(error: unknown): never | undefined {
   if (error instanceof TRPCError) {
     throw error;
   }

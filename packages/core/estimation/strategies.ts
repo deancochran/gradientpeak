@@ -29,9 +29,10 @@ function calculateStepIntensityFactor(step: IntervalStepV2, userSettings: UserSe
     case "%FTP":
       return target.intensity / 100;
 
-    case "watts":
+    case "watts": {
       const ftp = userSettings.ftp ?? 250; // Default FTP
       return target.intensity / ftp;
+    }
 
     case "%MaxHR":
       // Convert %MaxHR to rough IF equivalent
@@ -41,9 +42,10 @@ function calculateStepIntensityFactor(step: IntervalStepV2, userSettings: UserSe
     case "%ThresholdHR":
       return target.intensity / 100;
 
-    case "bpm":
+    case "bpm": {
       const thresholdHR = userSettings.thresholdHR ?? 170; // Default threshold HR
       return target.intensity / thresholdHR;
+    }
 
     case "RPE":
       // RPE 6-7 ≈ threshold ≈ IF 1.0
@@ -104,7 +106,7 @@ export function estimateFromStructure(context: EstimationContext): EstimationRes
         );
 
         const stepIF = calculateStepIntensityFactor(step, userSettings);
-        const stepTSS = (stepDurationWithCategory / 3600) * Math.pow(stepIF, 2) * 100;
+        const stepTSS = (stepDurationWithCategory / 3600) * stepIF ** 2 * 100;
 
         totalTSS += stepTSS;
         totalDuration += stepDurationWithCategory;
@@ -265,7 +267,7 @@ export function estimateFromRoute(context: EstimationContext): EstimationResult 
     IF = 0.7 + Math.min(0.25, climbingFactor * 10); // More climbing = higher effort
   }
 
-  const tss = (duration / 3600) * Math.pow(IF, 2) * 100;
+  const tss = (duration / 3600) * IF ** 2 * 100;
 
   const warnings: string[] = [];
   const factors = ["route-based", "terrain-adjusted"];
@@ -360,7 +362,7 @@ function estimatePowerFromElevation(
   totalAscent: number,
   distanceMeters: number,
   weightKg: number,
-  ftp?: number | null,
+  _ftp?: number | null,
   activityCategory?: CanonicalSport,
 ): number | undefined {
   if (activityCategory !== "bike") return undefined;

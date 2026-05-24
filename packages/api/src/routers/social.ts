@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { activities, events, likes, profiles, publicNotificationTypeSchema } from "@repo/db";
+import { activities, events, likes, profiles, type publicNotificationTypeSchema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";

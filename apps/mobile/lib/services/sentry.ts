@@ -51,11 +51,10 @@ function shouldEnableSentry(): boolean {
  */
 export function initSentry() {
   if (!shouldEnableSentry()) {
-    console.log("Sentry disabled in development mode");
     return;
   }
 
-  const dsn = Constants.expoConfig?.extra?.sentryDsn;
+  const _dsn = Constants.expoConfig?.extra?.sentryDsn;
   const environment = __DEV__ ? "development" : "production";
 
   console.log(`Initializing Sentry for ${environment} environment`);
@@ -135,7 +134,7 @@ export function captureMessage(
 /**
  * Set user context for error tracking
  */
-export function setUser(user: { id: string; email?: string; username?: string }) {
+export function setUser(_user: { id: string; email?: string; username?: string }) {
   if (!shouldEnableSentry()) {
     return;
   }
@@ -167,7 +166,7 @@ export function clearUser() {
 /**
  * Add breadcrumb for debugging context
  */
-export function addBreadcrumb(category: string, message: string, data?: Record<string, any>) {
+export function addBreadcrumb(_category: string, _message: string, _data?: Record<string, any>) {
   if (!shouldEnableSentry()) {
     return;
   }
@@ -210,7 +209,7 @@ export function withErrorBoundary<T extends (...args: any[]) => any>(fn: T, cont
 /**
  * Performance monitoring utility
  */
-export function startTransaction(name: string, operation: string) {
+export function startTransaction(_name: string, _operation: string) {
   if (!shouldEnableSentry()) {
     return null;
   }

@@ -70,7 +70,7 @@ jest.mock("@repo/ui/hooks", () => {
   };
 });
 
-jest.mock("@/components/ActivityPlan/TimelineChart", () => ({
+jest.mock("@/components/activity-plan/workout/TimelineChart", () => ({
   __esModule: true,
   TimelineChart: createHost("TimelineChart"),
 }));
@@ -352,12 +352,11 @@ describe("ScheduleActivityModal", () => {
 
     renderNative(<ScheduleActivityModal visible onClose={jest.fn()} eventId="event-1" />);
 
-    fireEvent.press(screen.getByTestId("schedule-submit-button"));
-
-    expect(screen.getByTestId("schedule-edit-scope-modal")).toBeTruthy();
+    expect(screen.getByTestId("schedule-submit-button").props["disabled"]).toBe(true);
     expect(updateMutateMock).not.toHaveBeenCalled();
 
     fireEvent.press(screen.getByTestId("schedule-edit-scope-future"));
+    fireEvent.press(screen.getByTestId("schedule-submit-button"));
 
     expect(updateMutateMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -386,7 +385,7 @@ describe("ScheduleActivityModal", () => {
 
     fireEvent.press(screen.getByTestId("schedule-submit-button"));
 
-    expect(screen.queryByTestId("schedule-edit-scope-modal")).toBeNull();
+    expect(screen.queryByTestId("schedule-edit-scope-single")).toBeNull();
     expect(updateMutateMock).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "event-1",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createQueryMapDbMock, type QueryMap } from "../../test/mock-query-db";
+import { createQueryMapDbMock } from "../../test/mock-query-db";
 import { trainingPlansRouter } from "../planning/training-plans";
 
 describe("trainingPlansRouter.duplicate", () => {

@@ -21,10 +21,10 @@ import { createAuthMailer, type SendAuthEmailInput } from "./mailer";
 export interface CreateGradientPeakAuthOptions {
   appUrl: string;
   databaseUrl: string;
-  secret?: string;
+  secret?: string | undefined;
   mobileScheme: string;
-  trustedOrigins?: string[];
-  plugins?: any[];
+  trustedOrigins?: string[] | undefined;
+  plugins?: Parameters<typeof betterAuth>[0]["plugins"] | undefined;
 }
 
 let poolSingleton: Pool | null = null;
@@ -45,7 +45,7 @@ function createTrustedOrigins(appUrl: string, mobileScheme: string, trustedOrigi
       appUrl,
       `${mobileScheme}://`,
       `${mobileScheme}://*`,
-      ...(process.env.NODE_ENV === "development" ? ["exp://", "exp://**"] : []),
+      ...(process.env["NODE_ENV"] === "development" ? ["exp://", "exp://**"] : []),
       ...(trustedOrigins ?? []),
     ]),
   );
@@ -69,8 +69,8 @@ function resolveAuthSecret(explicitSecret?: string) {
     return explicitSecret;
   }
 
-  const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
-  const isDevelopment = process.env.NODE_ENV === "development";
+  const isBuildPhase = process.env["NEXT_PHASE"] === "phase-production-build";
+  const isDevelopment = process.env["NODE_ENV"] === "development";
 
   if (isBuildPhase || isDevelopment) {
     if (isDevelopment && !authSecretWarningLogged) {
@@ -80,7 +80,7 @@ function resolveAuthSecret(explicitSecret?: string) {
       );
     }
 
-    return `gradientpeak-${process.env.NODE_ENV ?? "unknown"}-fallback-auth-secret`;
+    return `gradientpeak-${process.env["NODE_ENV"] ?? "unknown"}-fallback-auth-secret`;
   }
 
   return undefined;
@@ -93,15 +93,17 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
     loginPath: "/auth/login",
     webCallbackPath: "/auth/confirm",
     mobileCallbackPath: "callback",
-    emailMode: authRuntimeEnvSchema.shape.emailMode.parse(process.env.AUTH_EMAIL_MODE ?? "log"),
-    emailFrom: process.env.AUTH_EMAIL_FROM,
-    emailReplyTo: process.env.AUTH_EMAIL_REPLY_TO,
-    smtpHost: process.env.AUTH_SMTP_HOST,
-    smtpPort: process.env.AUTH_SMTP_PORT ? Number(process.env.AUTH_SMTP_PORT) : undefined,
-    smtpUser: process.env.AUTH_SMTP_USER,
-    smtpPass: process.env.AUTH_SMTP_PASS,
+    emailMode: authRuntimeEnvSchema.shape.emailMode.parse(process.env["AUTH_EMAIL_MODE"] ?? "log"),
+    emailFrom: process.env["AUTH_EMAIL_FROM"],
+    emailReplyTo: process.env["AUTH_EMAIL_REPLY_TO"],
+    smtpHost: process.env["AUTH_SMTP_HOST"],
+    smtpPort: process.env["AUTH_SMTP_PORT"] ? Number(process.env["AUTH_SMTP_PORT"]) : undefined,
+    smtpUser: process.env["AUTH_SMTP_USER"],
+    smtpPass: process.env["AUTH_SMTP_PASS"],
     smtpSecure:
-      process.env.AUTH_SMTP_SECURE == null ? undefined : process.env.AUTH_SMTP_SECURE === "true",
+      process.env["AUTH_SMTP_SECURE"] == null
+        ? undefined
+        : process.env["AUTH_SMTP_SECURE"] === "true",
   });
 
   const mailer = createAuthMailer(env);
@@ -190,10 +192,12 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
 export function getGradientPeakAuth() {
   if (!authSingleton) {
     authSingleton = createGradientPeakAuth({
-      appUrl: process.env.APP_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+      appUrl:
+        process.env["APP_URL"] ?? process.env["NEXT_PUBLIC_APP_URL"] ?? "http://localhost:3000",
       databaseUrl: resolveDatabaseUrl(process.env),
-      secret: process.env.BETTER_AUTH_SECRET,
-      mobileScheme: process.env.EXPO_PUBLIC_APP_SCHEME ?? process.env.APP_SCHEME ?? "gradientpeak",
+      ...(process.env["BETTER_AUTH_SECRET"] ? { secret: process.env["BETTER_AUTH_SECRET"] } : {}),
+      mobileScheme:
+        process.env["EXPO_PUBLIC_APP_SCHEME"] ?? process.env["APP_SCHEME"] ?? "gradientpeak",
     });
   }
 

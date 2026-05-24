@@ -2,7 +2,7 @@
 
 import { readFileSync } from "node:fs";
 
-import { prepareDbEnv, runSupabaseCli, supabaseCliRoot } from "./_helpers";
+import { dbPackageRoot, prepareDbEnv, runSupabaseCli, supabaseCliRoot } from "./_helpers";
 
 function getSupabaseProjectId() {
   const configToml = readFileSync(`${supabaseCliRoot}/config.toml`, "utf8");
@@ -72,7 +72,9 @@ prepareDbEnv();
 const args = process.argv.slice(2);
 const command = args[0];
 
-if (command === "start") {
+if (command === "migration") {
+  runSupabaseCli(args, dbPackageRoot);
+} else if (command === "start") {
   runSupabaseCli(args);
 } else if (command === "stop") {
   runSupabaseCli(args);

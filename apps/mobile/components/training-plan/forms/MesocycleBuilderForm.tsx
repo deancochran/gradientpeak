@@ -1,6 +1,5 @@
-import React from "react";
 import { View } from "react-native";
 
-export function MesocycleBuilderForm(props: any) {
+export function MesocycleBuilderForm(_props: any) {
   return <View />;
 }

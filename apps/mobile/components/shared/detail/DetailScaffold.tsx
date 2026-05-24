@@ -1,5 +1,5 @@
-import React from "react";
-import { RefreshControl, ScrollView, type ScrollViewProps, View } from "react-native";
+import type React from "react";
+import { type RefreshControl, ScrollView, type ScrollViewProps, View } from "react-native";
 import { DetailLoadingState, DetailNotFoundState } from "./DetailState";
 
 type DetailScaffoldProps = {

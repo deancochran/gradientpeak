@@ -7,10 +7,11 @@ import {
   FormTextField,
   FormTimeInputField,
 } from "@repo/ui/components/form";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { format } from "date-fns";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Modal, Pressable, ScrollView, TouchableOpacity, View } from "react-native";
 import { z } from "zod";
 
@@ -66,7 +67,7 @@ function buildWeeklyRecurrence(dateKey: string, occurrenceCount: number) {
 
 function buildInitialValues(
   activeDate: string,
-  createType: ManualEventCreateType,
+  _createType: ManualEventCreateType,
 ): CalendarManualCreateFormValues {
   const startsAt = new Date(`${activeDate}T09:00:00.000Z`);
 
@@ -173,6 +174,11 @@ export function CalendarManualCreateModal({
   });
 
   const canSubmit = !!createType && !submitting && title.trim().length > 0;
+  const submitButtonState = submitForm.getSubmitButtonState({
+    disabled: !canSubmit,
+    label: "Create Event",
+    submittingLabel: "Creating...",
+  });
 
   if (!visible || !createType) {
     return null;
@@ -318,16 +324,16 @@ export function CalendarManualCreateModal({
             <Button variant="outline" className="flex-1" onPress={onClose} disabled={submitting}>
               <Text>Cancel</Text>
             </Button>
-            <Button
+            <LoadingButton
               className="flex-1"
               onPress={submitForm.handleSubmit}
-              disabled={!canSubmit}
+              disabled={submitButtonState.disabled}
+              loading={submitting || submitButtonState.loading}
+              loadingLabel={submitButtonState.loadingLabel}
               testID="manual-create-submit"
             >
-              <Text className="text-primary-foreground">
-                {submitting ? "Creating..." : "Create Event"}
-              </Text>
-            </Button>
+              <Text className="text-primary-foreground">{submitButtonState.label}</Text>
+            </LoadingButton>
           </View>
         </View>
       </View>

@@ -2,9 +2,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/ca
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { CheckCircle, XCircle } from "lucide-react-native";
-import React from "react";
 import { Pressable, View } from "react-native";
-import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
+import { TimelineChart } from "@/components/activity-plan/workout/TimelineChart";
 import {
   formatEstimatedIntensityFactor,
   formatEstimatedTss,

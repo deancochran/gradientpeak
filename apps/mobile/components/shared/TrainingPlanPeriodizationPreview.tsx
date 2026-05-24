@@ -1,4 +1,4 @@
-import React, { Fragment } from "react";
+import { Fragment } from "react";
 import { View } from "react-native";
 import type { TrainingPlanVisualModel, TrainingPlanVisualPhase } from "@/lib/trainingPlanVisual";
 

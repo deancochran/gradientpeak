@@ -91,7 +91,7 @@ export function RecordingControlSheet({
         sessionContract,
         actionHandlers,
       }),
-    [actionHandlers, height, insets.bottom, recordingState, sensorCount, sessionContract],
+    [actionHandlers, insets.bottom, recordingState, sensorCount, sessionContract],
   );
 
   return (
@@ -302,7 +302,6 @@ function getSetupIcon(id: RecordingQuickAction) {
       return Route;
     case "trainer":
       return Bike;
-    case "sensors":
     default:
       return Watch;
   }
@@ -325,7 +324,6 @@ function getSetupStatusLabel(
       return params.sessionContract?.guidance.hasRoute ? "Attached" : "Add";
     case "trainer":
       return params.sessionContract?.devices.trainerControllable ? "Ready" : "Connect";
-    case "sensors":
     default:
       return params.sensorCount > 0 ? `${params.sensorCount} linked` : "None";
   }

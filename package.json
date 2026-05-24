@@ -19,6 +19,7 @@
     "build": "turbo run build",
     "audit:forms": "node tooling/forms/audit-forms.mjs",
     "check": "biome check apps packages tooling .github README.md package.json pnpm-workspace.yaml turbo.json biome.json",
+    "check:ci": "biome ci apps packages tooling .github README.md package.json pnpm-workspace.yaml turbo.json biome.json",
     "dev": "pnpm --filter web dev",
     "dev:all": "turbo run dev",
     "dev:clean": "pnpm exec k 3000 3100 8081 8082 || true && pnpm run self-host:down >/dev/null 2>&1 || true && printf '[dev-clean] local web/mobile dev servers and Supabase stopped\n'",
@@ -56,6 +57,7 @@
     "test": "turbo run test",
     "test:parity": "pnpm exec vitest run --config vitest.parity.config.ts",
     "test:e2e:web": "pnpm --filter web test:e2e",
+    "quality:agent": "pnpm check && pnpm check-types && pnpm test && pnpm knip",
     "self-host:up": "pnpm --filter @repo/db self-host:up",
     "self-host:down": "pnpm --filter @repo/db self-host:down"
   },

@@ -1,7 +1,7 @@
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { ActivityIndicator, View } from "react-native";
 import {
   CreateEventFlow,

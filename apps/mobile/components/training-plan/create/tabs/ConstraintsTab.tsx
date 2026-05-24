@@ -4,7 +4,7 @@ import { Form, FormIntegerStepperField, FormSegmentedSelectField } from "@repo/u
 import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
 import { ChevronDown, ChevronUp } from "lucide-react-native";
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import { Pressable, View } from "react-native";
 import { z } from "zod";
 import type { TrainingPlanConfigFormData } from "../SinglePageForm";

@@ -14,7 +14,8 @@
 
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
-import React, { Component, ReactNode } from "react";
+import type React from "react";
+import { Component, type ReactNode } from "react";
 import { View } from "react-native";
 
 export interface RecordingErrorBoundaryProps {

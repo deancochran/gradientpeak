@@ -71,7 +71,7 @@ export function CalendarWeekStrip({
 
   useEffect(() => {
     listRef.current?.scrollToIndex({ animated: false, index: WEEK_PAGE_RADIUS });
-  }, [selectedWeekStartKey]);
+  }, []);
 
   const renderWeek = ({ item }: ListRenderItemInfo<WeekPage>) => (
     <View

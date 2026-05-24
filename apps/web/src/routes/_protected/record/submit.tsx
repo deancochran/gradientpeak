@@ -12,6 +12,7 @@ import {
 import { FileInput } from "@repo/ui/components/file-input";
 import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
+import { LoadingButton } from "@repo/ui/components/loading";
 import {
   Select,
   SelectContent,
@@ -22,7 +23,7 @@ import {
 import { Textarea } from "@repo/ui/components/textarea";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { CheckCircle2, FileUp, Loader2 } from "lucide-react";
+import { CheckCircle2, FileUp } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -274,8 +275,20 @@ function RecordSubmitPage() {
             {formError ? <p className="text-sm text-destructive">{formError}</p> : null}
 
             <div className="flex flex-wrap items-center gap-3">
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              <LoadingButton
+                type="submit"
+                disabled={isSubmitting}
+                loading={isSubmitting}
+                loadingLabel={
+                  phase === "signing"
+                    ? "Preparing upload"
+                    : phase === "uploading"
+                      ? "Uploading activity file"
+                      : phase === "processing"
+                        ? "Processing activity"
+                        : "Import activity"
+                }
+              >
                 {phase === "signing"
                   ? "Preparing upload"
                   : phase === "uploading"
@@ -283,7 +296,7 @@ function RecordSubmitPage() {
                     : phase === "processing"
                       ? "Processing activity"
                       : "Import activity"}
-              </Button>
+              </LoadingButton>
               <span className="text-sm text-muted-foreground">
                 {selectedFiles[0]?.name ?? "No activity file selected yet."}
               </span>

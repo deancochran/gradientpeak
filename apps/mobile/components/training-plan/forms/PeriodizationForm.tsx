@@ -48,8 +48,8 @@ export function PeriodizationForm({
   // Calculate progression preview
   const progressionPreview = React.useMemo(() => {
     const startCtl = startingCtl;
-    const targetCtl = parseInt(targetCtlText) || 0;
-    const rampRate = (parseInt(rampRateText) || 5) / 100;
+    const targetCtl = parseInt(targetCtlText, 10) || 0;
+    const rampRate = (parseInt(rampRateText, 10) || 5) / 100;
 
     const now = new Date();
     const daysToTarget = Math.floor((targetDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
@@ -81,8 +81,8 @@ export function PeriodizationForm({
     } else {
       onChange({
         starting_ctl: startingCtl,
-        target_ctl: parseInt(targetCtlText) || 85,
-        ramp_rate: (parseInt(rampRateText) || 5) / 100,
+        target_ctl: parseInt(targetCtlText, 10) || 85,
+        ramp_rate: (parseInt(rampRateText, 10) || 5) / 100,
         target_date: targetDate.toISOString().split("T")[0] || "",
       });
     }
@@ -90,12 +90,12 @@ export function PeriodizationForm({
 
   const handleTargetCtlChange = (text: string) => {
     setTargetCtlText(text);
-    const value = parseInt(text);
-    if (!isNaN(value) && isEnabled) {
+    const value = parseInt(text, 10);
+    if (!Number.isNaN(value) && isEnabled) {
       onChange({
         starting_ctl: startingCtl,
         target_ctl: value,
-        ramp_rate: (parseInt(rampRateText) || 5) / 100,
+        ramp_rate: (parseInt(rampRateText, 10) || 5) / 100,
         target_date: targetDate.toISOString().split("T")[0] || "",
       });
     }
@@ -103,11 +103,11 @@ export function PeriodizationForm({
 
   const handleRampRateChange = (text: string) => {
     setRampRateText(text);
-    const value = parseInt(text);
-    if (!isNaN(value) && isEnabled) {
+    const value = parseInt(text, 10);
+    if (!Number.isNaN(value) && isEnabled) {
       onChange({
         starting_ctl: startingCtl,
-        target_ctl: parseInt(targetCtlText) || 85,
+        target_ctl: parseInt(targetCtlText, 10) || 85,
         ramp_rate: value / 100,
         target_date: targetDate.toISOString().split("T")[0] || "",
       });
@@ -180,7 +180,7 @@ export function PeriodizationForm({
             </Text>
             <IntegerStepper
               id="periodization-target-ctl"
-              value={parseInt(targetCtlText) || 85}
+              value={parseInt(targetCtlText, 10) || 85}
               min={0}
               max={250}
               onChange={(nextCtl) => handleTargetCtlChange(String(nextCtl))}
@@ -197,7 +197,7 @@ export function PeriodizationForm({
             </Text>
             <IntegerStepper
               id="periodization-ramp-rate"
-              value={parseInt(rampRateText) || 5}
+              value={parseInt(rampRateText, 10) || 5}
               min={1}
               max={20}
               onChange={(nextRate) => handleRampRateChange(String(nextRate))}
@@ -227,8 +227,8 @@ export function PeriodizationForm({
                 if (isEnabled) {
                   onChange({
                     starting_ctl: startingCtl,
-                    target_ctl: parseInt(targetCtlText) || 85,
-                    ramp_rate: (parseInt(rampRateText) || 5) / 100,
+                    target_ctl: parseInt(targetCtlText, 10) || 85,
+                    ramp_rate: (parseInt(rampRateText, 10) || 5) / 100,
                     target_date: value,
                   });
                 }
@@ -242,7 +242,7 @@ export function PeriodizationForm({
           </View>
 
           {/* Progression Preview */}
-          {startingCtl > 0 && parseInt(targetCtlText) > 0 && parseInt(rampRateText) > 0 && (
+          {startingCtl > 0 && parseInt(targetCtlText, 10) > 0 && parseInt(rampRateText, 10) > 0 && (
             <Card className="bg-primary/5 border-primary/20">
               <CardContent className="p-4 gap-3">
                 <View className="flex-row items-center gap-2">
@@ -317,7 +317,7 @@ export function PeriodizationForm({
           </Card>
 
           {/* Warning for aggressive ramp rate */}
-          {parseInt(rampRateText) > 10 && (
+          {parseInt(rampRateText, 10) > 10 && (
             <Alert icon={AlertCircle} iconClassName="text-amber-500">
               <AlertTitle className="text-amber-500">Warning: Very Aggressive Ramp Rate</AlertTitle>
               <AlertDescription className="text-amber-500">

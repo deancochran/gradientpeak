@@ -255,7 +255,7 @@ export function calculateRunningTSS(params: RunningTSSParams): RunningTSSResult 
   const intensityFactor = thresholdPace / normalizedPace;
   const durationSeconds = getDurationSecondsFromTimestamps(timestamps);
   const hours = durationSeconds / 3600;
-  const tss = hours * Math.pow(intensityFactor, 2) * 100;
+  const tss = hours * intensityFactor ** 2 * 100;
 
   return {
     tss: Math.round(tss),
@@ -282,7 +282,7 @@ export function calculateSwimmingTSS(params: SwimmingTSSParams): SwimmingTSSResu
   const intensityFactor = thresholdPace / normalizedPace;
   const durationSeconds = getDurationSecondsFromTimestamps(timestamps);
   const hours = durationSeconds / 3600;
-  const tss = hours * Math.pow(intensityFactor, 2) * 100;
+  const tss = hours * intensityFactor ** 2 * 100;
 
   return {
     tss: Math.round(tss),
@@ -386,7 +386,7 @@ export function getTrainingIntensityZone(
 }
 
 export function calculateTrainingTSS(durationSeconds: number, intensityFactor: number): number {
-  return (durationSeconds * Math.pow(intensityFactor, 2) * 100) / 3600;
+  return (durationSeconds * intensityFactor ** 2 * 100) / 3600;
 }
 
 export function estimateTSS(

@@ -1,5 +1,5 @@
 import React from "react";
-import { createButtonComponent, createHost } from "../../../../test/mock-components";
+import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 
 const replaceMock = jest.fn();

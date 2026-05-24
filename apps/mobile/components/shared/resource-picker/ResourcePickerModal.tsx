@@ -1,6 +1,8 @@
 import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
+import { InlineLoadingStatus } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
+import { keepPreviousData } from "@tanstack/react-query";
 import { Search } from "lucide-react-native";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
@@ -73,6 +75,7 @@ export function ResourcePickerModal({
     {
       enabled: visible && scope === "routes",
       getNextPageParam: (lastPage) => lastPage.nextCursor,
+      placeholderData: keepPreviousData,
     },
   );
 
@@ -87,10 +90,12 @@ export function ResourcePickerModal({
     {
       enabled: visible && scope === "activityPlans",
       getNextPageParam: (lastPage: any) => lastPage.nextCursor,
+      placeholderData: keepPreviousData,
     },
   );
 
   const query = scope === "routes" ? routeQuery : activityPlanQuery;
+  const isUpdatingItems = query.isFetching && !query.isLoading && !query.isFetchingNextPage;
   const items = useMemo<ResourcePickerItem[]>(() => {
     if (scope === "routes") {
       return (
@@ -128,9 +133,12 @@ export function ResourcePickerModal({
             value={searchQuery}
           />
         </View>
-        <Text className="text-xs text-muted-foreground">
-          {items.length} {scope === "routes" ? "routes" : "activity plans"} available
-        </Text>
+        <View className="flex-row items-center justify-between gap-3">
+          <Text className="text-xs text-muted-foreground">
+            {items.length} {scope === "routes" ? "routes" : "activity plans"} available
+          </Text>
+          <InlineLoadingStatus loading={isUpdatingItems} label="Updating..." />
+        </View>
       </View>
 
       {query.isLoading ? (

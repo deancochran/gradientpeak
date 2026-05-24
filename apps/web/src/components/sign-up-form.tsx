@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button } from "@repo/ui/components/button";
 import { Form, FormTextField } from "@repo/ui/components/form";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { cn } from "@repo/ui/lib/cn";
 import { Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
@@ -79,9 +79,14 @@ export function SignUpForm({ className, ...props }: React.ComponentPropsWithoutR
                 <p className="text-destructive text-sm">{form.formState.errors.root.message}</p>
               ) : null}
 
-              <Button type="submit" disabled={form.formState.isSubmitting}>
-                {form.formState.isSubmitting ? "Creating an account..." : "Sign up"}
-              </Button>
+              <LoadingButton
+                disabled={form.formState.isSubmitting}
+                loading={form.formState.isSubmitting}
+                loadingLabel="Creating an account..."
+                type="submit"
+              >
+                Sign up
+              </LoadingButton>
             </div>
 
             <div className="mt-4 text-center text-sm">

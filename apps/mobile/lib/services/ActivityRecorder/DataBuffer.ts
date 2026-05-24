@@ -82,7 +82,9 @@ export class DataBuffer {
   private trimMetric(metric: string, readings: BufferedReading[]): void {
     if (readings.length === 0) return;
 
-    const newestTimestamp = this.newestTimestampByMetric.get(metric) ?? readings.at(-1)!.timestamp;
+    const newestTimestamp = this.newestTimestampByMetric.get(metric) ?? readings.at(-1)?.timestamp;
+    if (newestTimestamp === undefined) return;
+
     const cutoff = newestTimestamp - this.windowMs;
     let firstRetainedIndex = readings.findIndex((reading) => reading.timestamp > cutoff);
 
@@ -288,7 +290,10 @@ export class DataBuffer {
         // Remove old readings
         const newReadings = readings.slice(firstValidIndex);
         this.stores.set(metric, newReadings);
-        this.newestTimestampByMetric.set(metric, newReadings.at(-1)!.timestamp);
+        const newestTimestamp = newReadings.at(-1)?.timestamp;
+        if (newestTimestamp !== undefined) {
+          this.newestTimestampByMetric.set(metric, newestTimestamp);
+        }
         totalRemoved += firstValidIndex;
         totalRemaining += newReadings.length;
       } else {

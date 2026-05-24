@@ -10,7 +10,8 @@
  * that don't share state.
  */
 
-import React, { createContext, useContext, useEffect, useMemo, useRef } from "react";
+import type React from "react";
+import { createContext, useContext, useEffect, useMemo, useRef } from "react";
 import type { ActivityRecorderService } from "../services/ActivityRecorder";
 import type { RecorderProfileRef } from "../services/ActivityRecorder/types";
 
@@ -102,7 +103,7 @@ export function ActivityRecorderProvider({
     profileIdRef.current = null;
     return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile?.id]); // Only recreate when profile ID changes (intentionally not full profile object)
+  }, [profile?.id, profile]); // Only recreate when profile ID changes (intentionally not full profile object)
 
   // Cleanup on unmount
   useEffect(() => {

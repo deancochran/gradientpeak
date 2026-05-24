@@ -57,8 +57,8 @@ export class RecordingConfigResolver {
    * Main entry point - converts input to full configuration
    */
   static resolve(input: RecordingConfigInput): RecordingConfiguration {
-    const capabilities = this.computeCapabilities(input);
-    const validation = this.validate(input, capabilities);
+    const capabilities = RecordingConfigResolver.computeCapabilities(input);
+    const validation = RecordingConfigResolver.validate(input, capabilities);
     const fullCapabilities = {
       ...capabilities,
       ...validation,
@@ -67,7 +67,7 @@ export class RecordingConfigResolver {
     return {
       input,
       capabilities: fullCapabilities,
-      session: this.buildSessionContract(input, fullCapabilities),
+      session: RecordingConfigResolver.buildSessionContract(input, fullCapabilities),
     };
   }
 
@@ -78,7 +78,9 @@ export class RecordingConfigResolver {
     intent: RecordingLaunchIntent,
     context: RecordingConfigLaunchContext,
   ): RecordingConfiguration {
-    return this.resolve(this.buildInputFromLaunchIntent(intent, context));
+    return RecordingConfigResolver.resolve(
+      RecordingConfigResolver.buildInputFromLaunchIntent(intent, context),
+    );
   }
 
   /**
@@ -88,7 +90,9 @@ export class RecordingConfigResolver {
     snapshot: RecordingSessionSnapshot,
     context: RecordingConfigSnapshotContext = {},
   ): RecordingConfiguration {
-    return this.resolve(this.buildInputFromSessionSnapshot(snapshot, context));
+    return RecordingConfigResolver.resolve(
+      RecordingConfigResolver.buildInputFromSessionSnapshot(snapshot, context),
+    );
   }
 
   static buildInputFromLaunchIntent(
@@ -174,8 +178,8 @@ export class RecordingConfigResolver {
     const hasFtmsTrainer = !!input.devices.ftmsTrainer;
     const canUseTrainer = hasFtmsTrainer && !input.gpsRecordingEnabled;
     const trainerControlReady = canUseTrainer && Boolean(input.devices.ftmsTrainer?.controlReady);
-    const hasRoute = this.hasRoute(input);
-    const hasRouteGeometry = this.hasRouteGeometry(input);
+    const _hasRoute = RecordingConfigResolver.hasRoute(input);
+    const hasRouteGeometry = RecordingConfigResolver.hasRouteGeometry(input);
 
     // Data collection capabilities - straightforward hardware checks
     const canTrackLocation = input.gpsRecordingEnabled && input.gpsAvailable;
@@ -214,7 +218,7 @@ export class RecordingConfigResolver {
       (input.devices.ftmsTrainer?.autoControlEnabled ?? false);
 
     // Primary metric
-    const primaryMetric = this.determinePrimaryMetric(input, {
+    const primaryMetric = RecordingConfigResolver.determinePrimaryMetric(input, {
       canTrackLocation,
       canTrackPower,
     });
@@ -240,36 +244,41 @@ export class RecordingConfigResolver {
     input: RecordingConfigInput,
     capabilities: RecordingCapabilities,
   ): RecordingSessionContract {
-    const hasPlan = this.hasPlan(input);
+    const hasPlan = RecordingConfigResolver.hasPlan(input);
     const hasStructuredPlan = input.plan?.hasStructure ?? false;
-    const hasRoute = this.hasRoute(input);
-    const hasRouteGeometry = this.hasRouteGeometry(input);
+    const hasRoute = RecordingConfigResolver.hasRoute(input);
+    const hasRouteGeometry = RecordingConfigResolver.hasRouteGeometry(input);
     const hasTrainer = Boolean(input.devices.ftmsTrainer) && !input.gpsRecordingEnabled;
     const trainerControllable = hasTrainer && Boolean(input.devices.ftmsTrainer?.controlReady);
-    const routeMode = this.determineRouteMode(input, capabilities);
-    const backdropMode = this.determineBackdropMode(input, capabilities, routeMode);
-    const degraded = this.determineDegradedState(input);
-    const insightCards = this.determineInsightCards({
+    const routeMode = RecordingConfigResolver.determineRouteMode(input, capabilities);
+    const backdropMode = RecordingConfigResolver.determineBackdropMode(
+      input,
+      capabilities,
+      routeMode,
+    );
+    const degraded = RecordingConfigResolver.determineDegradedState(input);
+    const insightCards = RecordingConfigResolver.determineInsightCards({
       hasStructuredPlan,
       hasRouteGeometry,
       trainerControllable,
     });
-    const quickActions = this.determineQuickActions({
+    const quickActions = RecordingConfigResolver.determineQuickActions({
       hasPlan,
       hasRoute,
     });
-    const defaultPrimarySurface = this.determinePrimarySurface({
+    const defaultPrimarySurface = RecordingConfigResolver.determinePrimarySurface({
       hasStructuredPlan,
       hasRouteGeometry,
       trainerControllable,
       routeMode,
     });
-    const availablePrimarySurfaces = this.determineAvailableSurfaces({
+    const availablePrimarySurfaces = RecordingConfigResolver.determineAvailableSurfaces({
       hasStructuredPlan,
       hasRouteGeometry,
       hasTrainer,
     });
     const identityLocked = input.session?.identityLocked ?? false;
+    const canUseGpsSurface = input.gpsRecordingEnabled && capabilities.canTrackLocation;
 
     return {
       authority: {
@@ -301,8 +310,8 @@ export class RecordingConfigResolver {
         floatingPanel: {
           defaultCard: insightCards[0] ?? "metrics",
           availableCards: insightCards,
-          forcedExpanded: !input.gpsRecordingEnabled,
-          canMinimize: input.gpsRecordingEnabled,
+          forcedExpanded: !canUseGpsSurface,
+          canMinimize: canUseGpsSurface,
         },
         controls: {
           quickActions,
@@ -317,7 +326,7 @@ export class RecordingConfigResolver {
       },
       metrics: {
         primaryMetric: capabilities.primaryMetric,
-        emphasizedMetrics: this.determineEmphasizedMetrics(input, capabilities),
+        emphasizedMetrics: RecordingConfigResolver.determineEmphasizedMetrics(input, capabilities),
       },
       surfaces: {
         defaultPrimarySurface,
@@ -325,7 +334,7 @@ export class RecordingConfigResolver {
         quickActions,
       },
       validation: {
-        consequences: this.determineConsequences(input, capabilities, routeMode),
+        consequences: RecordingConfigResolver.determineConsequences(input, capabilities, routeMode),
       },
     };
   }
@@ -348,11 +357,11 @@ export class RecordingConfigResolver {
     input: RecordingConfigInput,
     capabilities: Pick<RecordingCapabilities, "canTrackLocation">,
   ) {
-    if (!this.hasRoute(input)) {
+    if (!RecordingConfigResolver.hasRoute(input)) {
       return "none" as const;
     }
 
-    if (!this.hasRouteGeometry(input)) {
+    if (!RecordingConfigResolver.hasRouteGeometry(input)) {
       return "unavailable" as const;
     }
 
@@ -528,11 +537,11 @@ export class RecordingConfigResolver {
   ): string[] {
     const consequences: string[] = [];
 
-    if (this.hasPlan(input)) {
+    if (RecordingConfigResolver.hasPlan(input)) {
       consequences.push("Attached plan owns activity structure for this session.");
     }
 
-    if (this.hasPlan(input)) {
+    if (RecordingConfigResolver.hasPlan(input)) {
       consequences.push("Activity identity locks after recording starts.");
     }
 
@@ -588,7 +597,7 @@ export class RecordingConfigResolver {
   }
 
   private static hasRouteGeometry(input: RecordingConfigInput) {
-    const hasRoute = this.hasRoute(input);
+    const hasRoute = RecordingConfigResolver.hasRoute(input);
     if (!hasRoute) return false;
 
     return input.routeGeometryAvailable ?? true;
@@ -599,7 +608,10 @@ export class RecordingConfigResolver {
   ): RecordingSessionContract["degraded"] {
     const degraded: RecordingSessionContract["degraded"] = {};
 
-    if (this.hasRoute(input) && !this.hasRouteGeometry(input)) {
+    if (
+      RecordingConfigResolver.hasRoute(input) &&
+      !RecordingConfigResolver.hasRouteGeometry(input)
+    ) {
       degraded.route = "missing_geometry";
     }
 

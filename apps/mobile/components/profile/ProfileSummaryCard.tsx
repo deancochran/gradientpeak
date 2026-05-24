@@ -101,7 +101,7 @@ export function ProfileSummaryCard({
           <Avatar alt={profile.username || "User profile"} className="h-24 w-24">
             {avatarUri ? <AvatarImage source={{ uri: avatarUri }} key={avatarUri} /> : null}
             <AvatarFallback>
-              <Text className="text-3xl font-semibold text-foreground">
+              <Text className="text-3xl font-semibold text-muted-foreground">
                 {formatProfileFallback(profile, emailFallback)}
               </Text>
             </AvatarFallback>

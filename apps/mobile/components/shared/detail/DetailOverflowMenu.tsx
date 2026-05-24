@@ -7,7 +7,6 @@ import {
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { Ellipsis } from "lucide-react-native";
-import React from "react";
 import { View } from "react-native";
 
 export type DetailOverflowMenuAction = {

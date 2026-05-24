@@ -2,7 +2,6 @@ import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { DateInput } from "@repo/ui/components/date-input";
 import { Text } from "@repo/ui/components/text";
-import React from "react";
 import { Pressable, View } from "react-native";
 import type { EventRecurrenceFrequency } from "../EventEditorCard";
 

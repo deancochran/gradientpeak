@@ -43,7 +43,7 @@ jest.mock("react-native-maps", () => ({
   PROVIDER_DEFAULT: "default",
 }));
 
-jest.mock("@/components/ActivityPlan/TimelineChart", () => ({
+jest.mock("@/components/activity-plan/workout/TimelineChart", () => ({
   __esModule: true,
   TimelineChart: createHost("TimelineChart"),
 }));
@@ -212,7 +212,7 @@ const getAllByTypeOrEmpty = (type: string) => {
   }
 };
 
-const findButton = (matcher: (label: string) => boolean) =>
+const _findButton = (matcher: (label: string) => boolean) =>
   getAllByTypeOrEmpty("Button").find((node: any) => matcher(getTextContent(node.props?.children)));
 
 describe("activity plan detail social orchestration", () => {

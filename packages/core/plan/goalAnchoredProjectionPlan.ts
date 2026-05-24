@@ -494,7 +494,7 @@ export function buildGoalAnchoredProjectionPlan(
 
   return {
     plan_type: "periodized",
-    name: goals.length === 1 ? `${goals[0]!.name} Plan` : "Multi-goal Training Plan",
+    name: goals.length === 1 ? `${goals[0]?.name} Plan` : "Multi-goal Training Plan",
     start_date: timeline.start_date,
     end_date: timelineEndDate,
     fitness_progression: {

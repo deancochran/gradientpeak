@@ -9,7 +9,6 @@ import { Textarea } from "@repo/ui/components/textarea";
 import { TimeInput } from "@repo/ui/components/time-input";
 import { format } from "date-fns";
 import { X } from "lucide-react-native";
-import React from "react";
 import { Pressable, View } from "react-native";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import type { ActivityPlanListItem, EventRecurrenceFrequency } from "../EventEditorCard";

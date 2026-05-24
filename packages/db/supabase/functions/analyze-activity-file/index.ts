@@ -149,7 +149,7 @@ function mapFitSportType(sport?: number): string {
 
 // Convert semicircles to degrees
 function semicirclesToDegrees(semicircles: number): number {
-  return semicircles * (180 / Math.pow(2, 31));
+  return semicircles * (180 / 2 ** 31);
 }
 
 // Generate polyline from GPS coordinates
@@ -190,10 +190,10 @@ function calculateNormalizedPower(powerReadings: number[]): number {
   if (powerReadings.length === 0) return 0;
 
   // 4th power average (simplified NP calculation)
-  const fourthPowerSum = powerReadings.reduce((sum, power) => sum + Math.pow(power, 4), 0);
+  const fourthPowerSum = powerReadings.reduce((sum, power) => sum + power ** 4, 0);
   const fourthPowerAvg = fourthPowerSum / powerReadings.length;
 
-  return Math.round(Math.pow(fourthPowerAvg, 0.25));
+  return Math.round(fourthPowerAvg ** 0.25);
 }
 
 // Calculate intensity factor

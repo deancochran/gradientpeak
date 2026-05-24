@@ -8,6 +8,7 @@ import { Button } from "@repo/ui/components/button";
 import { DateInput } from "@repo/ui/components/date-input";
 import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { Textarea } from "@repo/ui/components/textarea";
 import { TimeInput } from "@repo/ui/components/time-input";
@@ -493,11 +494,15 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
                 <Text className="text-sm font-semibold text-foreground">Cancel</Text>
               </Button>
             ) : null}
-            <Button className="flex-1" disabled={isSubmitting} onPress={handleSubmit}>
-              <Text className="text-sm font-semibold text-primary-foreground">
-                {isSubmitting ? "Saving..." : submitLabel}
-              </Text>
-            </Button>
+            <LoadingButton
+              className="flex-1"
+              disabled={isSubmitting}
+              loading={isSubmitting}
+              loadingLabel="Saving..."
+              onPress={handleSubmit}
+            >
+              <Text className="text-sm font-semibold text-primary-foreground">{submitLabel}</Text>
+            </LoadingButton>
           </View>
         ) : null}
         <ResourcePickerModal

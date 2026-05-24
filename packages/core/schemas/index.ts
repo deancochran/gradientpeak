@@ -1,7 +1,6 @@
 import { z } from "zod";
 import {
   type ActivityPlanStructureV2,
-  activityPlanStructureSchemaV2,
   saveableActivityPlanStructureSchemaV2,
 } from "./activity_plan_v2";
 import {
@@ -9,7 +8,7 @@ import {
   addActivityTargetCompatibilityIssuesToZodContext,
 } from "./activity_target_capabilities";
 import { profileGoalLegacySchema, profileGoalTargetSchema } from "./goals/profile_goals";
-import { canonicalSportSchema } from "./sport";
+import type { canonicalSportSchema } from "./sport";
 import {
   minimalTrainingPlanCreateSchema,
   trainingPlanCreateSchema,
@@ -17,6 +16,7 @@ import {
 
 // Export from activity_payload (includes ActivityType)
 export * from "./activity_payload";
+export * from "./activity_streams";
 export * from "./activity_target_capabilities";
 
 // ============================================================================

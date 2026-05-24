@@ -1,4 +1,3 @@
-import React from "react";
 import { createHost as mockCreateHost } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
 import { GroupJoinRequestRow, GroupMemberRow } from "../GroupRows";

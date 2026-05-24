@@ -1,4 +1,4 @@
-import { TRPCError } from "@trpc/server";
+import type { TRPCError } from "@trpc/server";
 import { describe, expect, it } from "vitest";
 import { requireGroupAdmin, requireGroupOwner, requireGroupViewAccess } from "../groups";
 import { requireGroupMemberListAccess } from "../groups/access";

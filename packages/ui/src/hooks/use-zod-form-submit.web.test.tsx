@@ -23,12 +23,17 @@ function SubmitHarness({
     onSubmit,
     onValidationError,
     shouldRethrow: false,
+    submittingLabel: "Saving...",
   });
+  const buttonState = submit.getSubmitButtonState({ label: "Save" });
 
   return (
     <form onSubmit={submit.handleSubmit}>
       <input aria-label="Name" {...form.register("name", { required: "Name is required" })} />
       <span data-testid="pending-state">{submit.isSubmitting ? "submitting" : "idle"}</span>
+      <span data-testid="button-state">
+        {buttonState.loading ? buttonState.loadingLabel : buttonState.label}
+      </span>
       <span data-testid="error-state">{submit.submitError?.message ?? "none"}</span>
       <button type="submit">Save</button>
     </form>
@@ -56,11 +61,13 @@ describe("useZodFormSubmit", () => {
     await waitFor(() =>
       expect(screen.getByTestId("pending-state")).toHaveTextContent("submitting"),
     );
+    expect(screen.getByTestId("button-state")).toHaveTextContent("Saving...");
     expect(onSubmit).toHaveBeenCalledWith({ name: "Ada" });
 
     resolveSubmit();
 
     await waitFor(() => expect(screen.getByTestId("pending-state")).toHaveTextContent("idle"));
+    expect(screen.getByTestId("button-state")).toHaveTextContent("Save");
   });
 
   it("stores submit errors and calls onError without rethrowing when disabled", async () => {

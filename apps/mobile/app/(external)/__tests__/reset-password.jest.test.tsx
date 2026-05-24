@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, renderNative, screen, waitFor } from "../../../test/render-native";
+import { renderNative, screen } from "../../../test/render-native";
 
 const replaceMock = jest.fn();
 const resetPasswordMock = jest.fn();

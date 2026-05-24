@@ -2,6 +2,7 @@ import { Alert, AlertDescription } from "@repo/ui/components/alert";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Form, FormTextField } from "@repo/ui/components/form";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useRouter } from "expo-router";
@@ -79,7 +80,7 @@ export default function SignUpScreen() {
         await useAuthStore.getState().refreshSession();
 
         if (session?.user.emailVerified) {
-          router.replace("/" as any);
+          router.replace("/");
           return;
         }
 
@@ -117,27 +118,21 @@ export default function SignUpScreen() {
       testID="sign-up-screen"
     >
       <ScrollView
-        contentContainerClassName="flex-grow justify-center p-6"
+        contentContainerClassName="flex-grow justify-center p-5"
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         <Card className="w-full max-w-sm mx-auto bg-card border-border shadow-sm">
-          <CardHeader className="items-center pb-6">
-            <CardTitle>
-              <Text variant="h2" className="text-center">
-                Create Account
-              </Text>
-            </CardTitle>
-            <Text variant="muted" className="text-center">
+          <CardHeader className="items-center gap-2 pb-4">
+            <CardTitle className="text-center text-3xl leading-tight">Create Account</CardTitle>
+            <Text variant="muted" className="text-center text-base leading-6">
               Start tracking your fitness progress today
             </Text>
           </CardHeader>
 
-          <CardContent className="gap-6">
-            {/* Form */}
+          <CardContent className="gap-5">
             <Form {...form}>
               <View className="gap-4" testID="sign-up-form">
-                {/* Email Input */}
                 <FormTextField
                   control={form.control}
                   autoCapitalize="none"
@@ -149,7 +144,6 @@ export default function SignUpScreen() {
                   testId="email-input"
                 />
 
-                {/* Password Input */}
                 <FormTextField
                   control={form.control}
                   label="Password"
@@ -159,7 +153,6 @@ export default function SignUpScreen() {
                   testId="password-input"
                 />
 
-                {/* Password Requirements */}
                 <View className="mt-2 gap-1" testID="password-hints">
                   <Text variant="muted" className="text-xs">
                     Password must contain:
@@ -175,7 +168,6 @@ export default function SignUpScreen() {
                   </Text>
                 </View>
 
-                {/* Repeat Password Input */}
                 <FormTextField
                   control={form.control}
                   label="Repeat Password"
@@ -185,7 +177,6 @@ export default function SignUpScreen() {
                   testId="repeat-password-input"
                 />
 
-                {/* Root Error */}
                 {form.formState.errors.root && (
                   <Alert icon={AlertCircle} variant="destructive" testID="form-error">
                     <AlertDescription className="text-center">
@@ -196,17 +187,18 @@ export default function SignUpScreen() {
               </View>
             </Form>
 
-            {/* Sign Up Button */}
-            <Button
+            <LoadingButton
               variant="default"
               size="lg"
               onPress={submitForm.handleSubmit}
               disabled={isLoading}
+              loading={isLoading}
+              loadingLabel="Creating account..."
               testID="sign-up-button"
               className="w-full"
             >
-              <Text>{isLoading ? "Creating Account..." : "Create Account"}</Text>
-            </Button>
+              <Text>Create Account</Text>
+            </LoadingButton>
 
             {serverOverrideEnabled ? (
               <ServerUrlOverride
@@ -218,7 +210,6 @@ export default function SignUpScreen() {
               />
             ) : null}
 
-            {/* Sign In Link */}
             <View className="border-t border-border pt-4">
               <Button
                 variant="outline"
@@ -230,7 +221,6 @@ export default function SignUpScreen() {
               </Button>
             </View>
 
-            {/* Terms */}
             <View className="pt-4" testID="terms-container">
               <Text variant="muted" className="text-center text-xs" testID="terms-text">
                 By creating an account, you agree to our{"\n"}Terms of Service and Privacy Policy

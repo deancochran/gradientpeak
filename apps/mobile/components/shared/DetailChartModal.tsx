@@ -1,6 +1,7 @@
 import { Text } from "@repo/ui/components/text";
 import { X } from "lucide-react-native";
-import React, { useState } from "react";
+import type React from "react";
+import { useState } from "react";
 import { Modal, type ModalProps, ScrollView, TouchableOpacity, View } from "react-native";
 
 export type DateRange = "7d" | "30d" | "90d" | "all";
@@ -25,11 +26,11 @@ export function DetailChartModal({
 }: DetailChartModalProps) {
   const [selectedRange, setSelectedRange] = useState<DateRange>(defaultDateRange);
 
-  const dateRanges: { label: string; value: DateRange }[] = [
-    { label: "7D", value: "7d" },
-    { label: "30D", value: "30d" },
-    { label: "90D", value: "90d" },
-    { label: "All", value: "all" },
+  const dateRanges: { accessibilityLabel: string; label: string; value: DateRange }[] = [
+    { accessibilityLabel: "Last 7 days", label: "7D", value: "7d" },
+    { accessibilityLabel: "Last 30 days", label: "30D", value: "30d" },
+    { accessibilityLabel: "Last 90 days", label: "90D", value: "90d" },
+    { accessibilityLabel: "All dates", label: "All", value: "all" },
   ];
 
   return (
@@ -47,6 +48,8 @@ export function DetailChartModal({
             <Text className="text-lg font-semibold text-foreground">{title}</Text>
             <TouchableOpacity
               onPress={onClose}
+              accessibilityRole="button"
+              accessibilityLabel="Close chart details"
               className="p-2 -mr-2"
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
@@ -56,27 +59,31 @@ export function DetailChartModal({
 
           {/* Date Range Selector */}
           {showDateRangeSelector && (
-            <View className="px-4 pb-3">
-              <View className="flex-row gap-2">
-                {dateRanges.map((range) => (
-                  <TouchableOpacity
-                    key={range.value}
-                    onPress={() => setSelectedRange(range.value)}
-                    className={`px-4 py-2 rounded-lg ${
-                      selectedRange === range.value ? "bg-primary" : "bg-muted"
-                    }`}
-                  >
-                    <Text
-                      className={`text-sm font-medium ${
-                        selectedRange === range.value
-                          ? "text-primary-foreground"
-                          : "text-muted-foreground"
-                      }`}
+            <View className="px-4 pb-2">
+              <View className="self-start flex-row rounded-full border border-border/70 bg-muted/20 p-0.5">
+                {dateRanges.map((range) => {
+                  const isSelected = selectedRange === range.value;
+
+                  return (
+                    <TouchableOpacity
+                      key={range.value}
+                      onPress={() => setSelectedRange(range.value)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${range.accessibilityLabel} range`}
+                      accessibilityHint="Updates the chart date range."
+                      accessibilityState={{ selected: isSelected }}
+                      className={`rounded-full px-3 py-1.5 ${isSelected ? "bg-background" : "bg-transparent"}`}
                     >
-                      {range.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                      <Text
+                        className={`text-xs font-semibold ${
+                          isSelected ? "text-foreground" : "text-muted-foreground"
+                        }`}
+                      >
+                        {range.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
           )}

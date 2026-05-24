@@ -22,7 +22,7 @@ export function inferActivityFileType(fileName?: string, content?: string): Acti
 }
 
 export function parseActivityFile(input: {
-  data: Buffer | Uint8Array | string;
+  data: Uint8Array | string;
   fileName?: string;
   fileType?: ActivityFileType;
 }): StandardActivity {
@@ -36,8 +36,7 @@ export function parseActivityFile(input: {
     return parseFitFileWithSDK(input.data);
   }
 
-  const xml =
-    typeof input.data === "string" ? input.data : Buffer.from(input.data).toString("utf8");
+  const xml = typeof input.data === "string" ? input.data : new TextDecoder().decode(input.data);
   return fileType === "gpx" ? parseGpxActivity(xml) : parseTcxActivity(xml);
 }
 

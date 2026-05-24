@@ -14,13 +14,13 @@
  * - Better for long recordings (automatic memory management)
  */
 
-import {
+import type {
   AggregatedStream,
-  type PublicActivityMetric,
-  type PublicActivityMetricDataType,
+  PublicActivityMetric,
+  PublicActivityMetricDataType,
 } from "@repo/core";
 import { Directory, File, Paths } from "expo-file-system";
-import { LocationReading, SensorReading } from "./types";
+import type { LocationReading, SensorReading } from "./types";
 
 // ================================
 // Types
@@ -82,7 +82,7 @@ export class StreamBuffer {
       this.readings.set(metric, []);
     }
 
-    this.readings.get(metric)!.push({
+    this.readings.get(metric)?.push({
       value: reading.value,
       timestamp: reading.timestamp || Date.now(),
     });
@@ -228,7 +228,7 @@ export class StreamBuffer {
         if (!filesByMetric.has(metric)) {
           filesByMetric.set(metric, []);
         }
-        filesByMetric.get(metric)!.push(file);
+        filesByMetric.get(metric)?.push(file);
       }
 
       // Aggregate each metric
@@ -237,8 +237,8 @@ export class StreamBuffer {
       for (const [metric, files] of filesByMetric.entries()) {
         // Sort files by chunk index
         files.sort((a, b) => {
-          const indexA = parseInt(a.split("_")[1]);
-          const indexB = parseInt(b.split("_")[1]);
+          const indexA = parseInt(a.split("_")[1], 10);
+          const indexB = parseInt(b.split("_")[1], 10);
           return indexA - indexB;
         });
 

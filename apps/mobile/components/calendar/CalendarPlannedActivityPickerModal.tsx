@@ -3,7 +3,7 @@ import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
 import { Heart, Search, Sparkles } from "lucide-react-native";
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ActivityIndicator, ScrollView, TouchableOpacity, View } from "react-native";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { AppSelectionModal } from "@/components/shared/AppSelectionModal";

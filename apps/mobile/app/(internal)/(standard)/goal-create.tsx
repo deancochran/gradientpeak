@@ -1,9 +1,9 @@
 import { invalidateGoalQueries } from "@repo/api/react";
 import { buildGoalCreatePayload, createEmptyGoalDraft, type GoalEditorDraft } from "@repo/core";
-import { Button } from "@repo/ui/components/button";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { Stack, useRouter } from "expo-router";
-import React, { useMemo, useRef } from "react";
+import { useMemo, useRef } from "react";
 import { Alert, KeyboardAvoidingView, Platform, View } from "react-native";
 import { GoalEditorForm, type GoalEditorFormHandle } from "@/components/goals";
 import { api } from "@/lib/api";
@@ -49,16 +49,17 @@ export default function GoalCreateScreen() {
       <Stack.Screen
         options={{
           headerRight: () => (
-            <Button
+            <LoadingButton
               disabled={createGoalMutation.isPending}
+              loading={createGoalMutation.isPending}
+              loadingLabel="Creating..."
+              loadingTextClassName="text-primary"
               onPress={() => formRef.current?.submit()}
               size="sm"
               variant="ghost"
             >
-              <Text className="text-sm font-semibold text-primary">
-                {createGoalMutation.isPending ? "Creating..." : "Create"}
-              </Text>
-            </Button>
+              <Text className="text-sm font-semibold text-primary">Create</Text>
+            </LoadingButton>
           ),
         }}
       />

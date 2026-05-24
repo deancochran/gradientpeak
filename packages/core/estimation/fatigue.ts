@@ -52,7 +52,7 @@ export function predictFatigue(
 
   // Form assessment
   const formStatus = getFormStatus(newTSB);
-  const formChange = getFormChange(currentState.tsb, newTSB);
+  const _formChange = getFormChange(currentState.tsb, newTSB);
 
   // Generate warnings
   const warnings: string[] = [];

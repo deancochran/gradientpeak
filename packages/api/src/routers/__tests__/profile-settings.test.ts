@@ -1,6 +1,6 @@
 import { defaultAthletePreferenceProfile } from "@repo/core";
 import { profileTrainingSettings } from "@repo/db";
-import { TRPCError } from "@trpc/server";
+import type { TRPCError } from "@trpc/server";
 import { describe, expect, it } from "vitest";
 
 import { profileSettingsRouter } from "../profile-settings";

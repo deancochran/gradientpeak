@@ -39,9 +39,9 @@ export function prepareDbEnv() {
   return databaseUrl;
 }
 
-export function runSupabaseCli(args: string[]) {
-  execFileSync("pnpm", ["dlx", "supabase", "--workdir", supabaseCliRoot, ...args], {
-    cwd: repoRoot,
+export function runSupabaseCli(args: string[], workdir = supabaseCliRoot) {
+  execFileSync("pnpm", ["dlx", "supabase", "--workdir", workdir, ...args], {
+    cwd: supabaseCliRoot,
     env: process.env,
     stdio: "inherit",
   });

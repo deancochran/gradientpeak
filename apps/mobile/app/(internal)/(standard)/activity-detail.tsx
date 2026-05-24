@@ -1,11 +1,17 @@
-import { Button } from "@repo/ui/components/button";
+import {
+  type ActivityLapRecord,
+  type ActivityStreamRecord,
+  parseActivityLapRecords,
+  parseActivityStreamRecords,
+} from "@repo/core/schemas";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Skeleton } from "@repo/ui/components/skeleton";
 import { Text } from "@repo/ui/components/text";
+import { skipToken } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Activity, Heart, Lock, TrendingUp, Waves } from "lucide-react-native";
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -32,6 +38,11 @@ import { formatEstimatedIntensityFactor, formatEstimatedTss } from "@/lib/estima
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useEntityCommentsController } from "@/lib/hooks/useEntityCommentsController";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
+
+type ThresholdProfile = {
+  lthr?: number | null;
+  threshold_hr?: number | null;
+};
 
 function formatDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
@@ -125,12 +136,12 @@ function getHrZoneIndexFromThresholdPercent(thresholdPercent: number): number {
   return 4;
 }
 
-function readRecordHeartRate(record: any): number | null {
+function readRecordHeartRate(record: ActivityStreamRecord): number | null {
   const value = record?.heartRate ?? record?.heart_rate ?? record?.heart_rate_bpm;
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
 }
 
-function readRecordTimestampSeconds(record: any): number | null {
+function readRecordTimestampSeconds(record: ActivityStreamRecord): number | null {
   const value = record?.timestamp ?? record?.time ?? record?.startTime;
   if (typeof value === "number" && Number.isFinite(value)) {
     return value > 1_000_000 ? value / 1000 : value;
@@ -145,11 +156,11 @@ function readRecordTimestampSeconds(record: any): number | null {
 }
 
 function buildHeartRateZonesFromRecords(input: {
-  records?: any[] | null;
+  records?: unknown;
   thresholdHr?: number | null;
   maxHeartRate?: number | null;
 }): ZoneDisplayEntry[] {
-  const samples = (input.records ?? [])
+  const samples = parseActivityStreamRecords(input.records)
     .map((record, index) => ({
       heartRate: readRecordHeartRate(record),
       timestampSeconds: readRecordTimestampSeconds(record) ?? index,
@@ -196,12 +207,12 @@ function buildHeartRateZonesFromRecords(input: {
   })).filter((zone) => zone.time > 0);
 }
 
-function readLapDistance(lap: any): number {
+function readLapDistance(lap: ActivityLapRecord): number {
   const value = lap?.totalDistance ?? lap?.distance ?? lap?.distanceMeters ?? lap?.distance_meters;
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
 }
 
-function readLapDuration(lap: any): number {
+function readLapDuration(lap: ActivityLapRecord): number {
   const value =
     lap?.totalTimerTime ??
     lap?.totalElapsedTime ??
@@ -211,7 +222,7 @@ function readLapDuration(lap: any): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
 }
 
-function readLapSpeed(lap: any, distance: number, duration: number): number {
+function readLapSpeed(lap: ActivityLapRecord, distance: number, duration: number): number {
   const value = lap?.avgSpeed ?? lap?.averageSpeed ?? lap?.avg_speed;
   if (typeof value === "number" && Number.isFinite(value) && value > 0) {
     return value;
@@ -259,7 +270,7 @@ function getLapMetricLabel(activityType: string | null | undefined): string {
 }
 
 function buildLapDisplayEntries(
-  laps: any[],
+  laps: ActivityLapRecord[],
   activityType: string | null | undefined,
 ): LapDisplayEntry[] {
   const baseEntries = laps
@@ -291,7 +302,7 @@ function LapVisualizationCard({
   laps,
 }: {
   activityType?: string | null;
-  laps: any[];
+  laps: ActivityLapRecord[];
 }) {
   const displayLaps = useMemo(
     () => buildLapDisplayEntries(laps, activityType),
@@ -348,11 +359,11 @@ function ActivityDetailScreen() {
 
   // Fetch activity data
   const { data: activityData, isLoading: isLoadingActivity } = api.activities.getById.useQuery(
-    { id: id! },
+    id ? { id } : skipToken,
     { enabled: !!id },
   );
 
-  const activity = activityData?.activity as any;
+  const activity = activityData?.activity;
   const derived = activityData?.derived;
 
   // Get current user to check ownership
@@ -361,7 +372,7 @@ function ActivityDetailScreen() {
 
   // Fetch profile for header
   const { data: profile } = api.profiles.getPublicById.useQuery(
-    { id: activity?.profile_id },
+    activity?.profile_id ? { id: activity.profile_id } : skipToken,
     { enabled: !!activity?.profile_id },
   );
 
@@ -389,10 +400,12 @@ function ActivityDetailScreen() {
     isLoading: isLoadingStreams,
     error: streamsError,
   } = api.activityFiles.getStreams.useQuery(
-    {
-      activityFilePath: activityFilePath!,
-      activityId: activityId,
-    },
+    canLoadDetailedStreams
+      ? {
+          activityFilePath: activityFilePath,
+          activityId: activityId,
+        }
+      : skipToken,
     {
       enabled: shouldLoadDetailedStreams && canLoadDetailedStreams,
       staleTime: 5 * 60 * 1000,
@@ -473,7 +486,10 @@ function ActivityDetailScreen() {
     }));
     const streamHrZones = buildHeartRateZonesFromRecords({
       records: streamsData?.records,
-      thresholdHr: (authProfile as any)?.lthr ?? (authProfile as any)?.threshold_hr ?? null,
+      thresholdHr:
+        (authProfile as ThresholdProfile | null)?.lthr ??
+        (authProfile as ThresholdProfile | null)?.threshold_hr ??
+        null,
       maxHeartRate: activity?.max_heart_rate ?? null,
     });
 
@@ -498,7 +514,7 @@ function ActivityDetailScreen() {
   }, [activity?.max_heart_rate, authProfile, derived, streamsData?.records]);
 
   // Get laps
-  const laps = streamsData?.laps || (activity as any)?.laps;
+  const laps = parseActivityLapRecords(streamsData?.laps ?? activity?.laps);
 
   // Loading skeleton
   if (isLoadingActivity || !activity) {
@@ -551,7 +567,6 @@ function ActivityDetailScreen() {
             activity={{
               ...activity,
               derived: {
-                ...(activity.derived ?? {}),
                 stress: derived?.stress ?? null,
               },
             }}
@@ -617,7 +632,7 @@ function ActivityDetailScreen() {
             <VisualStateCard title="Laps" state="loading" message="Loading lap data..." />
           ) : shouldShowPrivateStreamMessage ? (
             <VisualStateCard title="Laps" state="private" message={detailedContentPrivateMessage} />
-          ) : laps && laps.length > 0 ? (
+          ) : laps.length > 0 ? (
             <LapVisualizationCard activityType={activity.type} laps={laps} />
           ) : (
             <VisualStateCard title="Laps" message="No lap data is available for this activity." />
@@ -651,14 +666,18 @@ function ActivityDetailScreen() {
 
           {activity.activity_plan_id && activity.activity_plans && (
             <ActivityPlanComparison
-              activityPlan={activity.activity_plans as any}
+              activityPlan={activity.activity_plans}
               actualMetrics={{
                 duration: activity.duration_seconds,
                 tss: derived?.stress.tss ?? undefined,
                 intensity_factor: derived?.stress.intensity_factor ?? undefined,
                 adherence_score: undefined,
               }}
-              onPress={() => router.navigate(ROUTES.PLAN.PLAN_DETAIL(activity.activity_plan_id))}
+              onPress={() => {
+                if (activity.activity_plan_id) {
+                  router.navigate(ROUTES.PLAN.PLAN_DETAIL(activity.activity_plan_id));
+                }
+              }}
             />
           )}
 
@@ -771,42 +790,40 @@ function ActivityDetailScreen() {
               message={detailedContentPrivateMessage}
             />
           ) : chartStreams.length > 0 ? (
-            <>
-              {chartStreams.map((s) => {
-                const stats = getStreamStats(s.stream.values);
-                return (
-                  <View key={s.type}>
-                    <StreamChart
-                      title={s.label}
-                      streams={[s]}
-                      xAxisType="time"
-                      height={200}
-                      showLegend={false}
-                    />
-                    <View className="flex-row justify-between px-2 mt-2 mb-4">
-                      <View className="items-center">
-                        <Text className="text-xs text-muted-foreground">Max</Text>
-                        <Text className="font-semibold">
-                          {Math.round(stats.max)} {s.unit}
-                        </Text>
-                      </View>
-                      <View className="items-center">
-                        <Text className="text-xs text-muted-foreground">Avg</Text>
-                        <Text className="font-semibold">
-                          {Math.round(stats.avg)} {s.unit}
-                        </Text>
-                      </View>
-                      <View className="items-center">
-                        <Text className="text-xs text-muted-foreground">Min</Text>
-                        <Text className="font-semibold">
-                          {Math.round(stats.min)} {s.unit}
-                        </Text>
-                      </View>
+            chartStreams.map((s) => {
+              const stats = getStreamStats(s.stream.values);
+              return (
+                <View key={s.type}>
+                  <StreamChart
+                    title={s.label}
+                    streams={[s]}
+                    xAxisType="time"
+                    height={200}
+                    showLegend={false}
+                  />
+                  <View className="flex-row justify-between px-2 mt-2 mb-4">
+                    <View className="items-center">
+                      <Text className="text-xs text-muted-foreground">Max</Text>
+                      <Text className="font-semibold">
+                        {Math.round(stats.max)} {s.unit}
+                      </Text>
+                    </View>
+                    <View className="items-center">
+                      <Text className="text-xs text-muted-foreground">Avg</Text>
+                      <Text className="font-semibold">
+                        {Math.round(stats.avg)} {s.unit}
+                      </Text>
+                    </View>
+                    <View className="items-center">
+                      <Text className="text-xs text-muted-foreground">Min</Text>
+                      <Text className="font-semibold">
+                        {Math.round(stats.min)} {s.unit}
+                      </Text>
                     </View>
                   </View>
-                );
-              })}
-            </>
+                </View>
+              );
+            })
           ) : (
             <VisualStateCard
               title="Analysis Charts"

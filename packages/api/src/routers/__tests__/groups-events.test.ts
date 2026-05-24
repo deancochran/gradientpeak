@@ -1,5 +1,11 @@
-import { groupEventActivityPlans, groupEventRsvps, groupEvents } from "@repo/db";
-import { TRPCError } from "@trpc/server";
+import {
+  groupEventActivityPlans,
+  groupEventRsvps,
+  groupEventSeriesRsvps,
+  groupEvents,
+  notifications,
+} from "@repo/db";
+import type { TRPCError } from "@trpc/server";
 import { describe, expect, it } from "vitest";
 import {
   buildGroupEventActivityPlanRow,
@@ -18,7 +24,54 @@ const EVENT_ID = GROUP_TEST_IDS.eventId;
 const OPTION_ID = GROUP_TEST_IDS.optionId;
 const OTHER_OPTION_ID = GROUP_TEST_IDS.otherOptionId;
 const ACTIVITY_PLAN_ID = GROUP_TEST_IDS.activityPlanId;
+const ROUTE_ID = "77777777-7777-4777-8777-777777777777";
 const NOW = GROUP_TEST_NOW;
+
+function buildActivityPlanRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: ACTIVITY_PLAN_ID,
+    idx: 0,
+    created_at: NOW,
+    updated_at: NOW,
+    profile_id: VIEWER_ID,
+    route_id: null,
+    name: "Workout Option",
+    description: null,
+    notes: null,
+    activity_category: "ride",
+    structure: null,
+    version: "1.0",
+    template_visibility: "private",
+    import_provider: null,
+    import_external_id: null,
+    is_system_template: false,
+    is_public: false,
+    likes_count: null,
+    ...overrides,
+  };
+}
+
+function buildActivityRouteRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: ROUTE_ID,
+    idx: 0,
+    created_at: NOW,
+    updated_at: NOW,
+    profile_id: VIEWER_ID,
+    name: "Club Loop",
+    description: null,
+    file_path: "routes/club-loop.fit",
+    total_distance: 42000,
+    total_ascent: 500,
+    total_descent: 500,
+    elevation_polyline: null,
+    polyline: "abc",
+    is_system_template: false,
+    is_public: false,
+    likes_count: null,
+    ...overrides,
+  };
+}
 
 type DbPlan = {
   select?: unknown[][];
@@ -102,6 +155,10 @@ describe("groups.events router", () => {
         [{ event: buildGroupEventRow(), group: buildGroupRow() }],
         [],
         [buildGroupEventRsvpRow()],
+        [
+          buildGroupEventRsvpRow(),
+          buildGroupEventRsvpRow({ profile_id: "99999999-9999-4999-8999-999999999999" }),
+        ],
       ],
     });
     const caller = createCaller(mock.db);
@@ -116,6 +173,7 @@ describe("groups.events router", () => {
         name: "Gradient Peak Club",
         slug: "gradient-peak-club",
       },
+      acceptedRsvpCount: 2,
       viewerRsvp: { status: "accepted" },
     });
   });
@@ -161,6 +219,11 @@ describe("groups.events router", () => {
 
     expect(result.event).toMatchObject({
       id: EVENT_ID,
+      group: {
+        id: GROUP_ID,
+        name: "Gradient Peak Club",
+        slug: "gradient-peak-club",
+      },
       is_recurring_occurrence: true,
       title: "Saturday Ride",
       activityPlanOptions: [{ id: OPTION_ID, activity_plan_id: ACTIVITY_PLAN_ID }],
@@ -175,6 +238,7 @@ describe("groups.events router", () => {
         [{ id: VIEWER_ID }],
         [buildGroupRow()],
         [{ role: "admin", status: "active" }],
+        [buildActivityPlanRow()],
         [createdOption],
         [],
       ],
@@ -254,6 +318,67 @@ describe("groups.events router", () => {
       message: "Group admin access required",
     } satisfies Partial<TRPCError>);
     expect(mock.insertCalls).toHaveLength(0);
+  });
+
+  it("rejects event creation with activity plans the admin cannot use", async () => {
+    const mock = createDbMock({
+      select: [[{ id: VIEWER_ID }], [buildGroupRow()], [{ role: "admin", status: "active" }], []],
+    });
+    const caller = createCaller(mock.db);
+
+    await expect(
+      caller.events.create({
+        groupId: GROUP_ID,
+        title: "Saturday Ride",
+        startsAt: NOW.toISOString(),
+        activityPlans: [{ activityPlanId: ACTIVITY_PLAN_ID }],
+      }),
+    ).rejects.toMatchObject({
+      code: "FORBIDDEN",
+      message: "Activity plan is not available for this group event",
+    } satisfies Partial<TRPCError>);
+    expect(mock.insertCalls).toHaveLength(0);
+  });
+
+  it("allows event creation with public/system resources or resources owned by the admin", async () => {
+    const createdEvent = buildGroupEventRow({ route_id: ROUTE_ID });
+    const mock = createDbMock({
+      select: [
+        [{ id: VIEWER_ID }],
+        [buildGroupRow()],
+        [{ role: "admin", status: "active" }],
+        [
+          buildActivityPlanRow({
+            profile_id: "99999999-9999-4999-8999-999999999999",
+            template_visibility: "public",
+          }),
+        ],
+        [
+          buildActivityRouteRow({
+            profile_id: "99999999-9999-4999-8999-999999999999",
+            is_system_template: true,
+          }),
+        ],
+        [buildGroupEventActivityPlanRow()],
+        [],
+      ],
+      insertReturning: [[createdEvent]],
+    });
+    const caller = createCaller(mock.db);
+
+    await caller.events.create({
+      groupId: GROUP_ID,
+      title: "Saturday Ride",
+      startsAt: NOW.toISOString(),
+      routeId: ROUTE_ID,
+      activityPlans: [{ activityPlanId: ACTIVITY_PLAN_ID }],
+    });
+
+    expect(mock.insertCalls[0]).toMatchObject({ table: groupEvents });
+    expect(mock.insertCalls[0]?.values).toMatchObject({
+      route_id: ROUTE_ID,
+    });
+    expect(mock.insertCalls[1]).toMatchObject({ table: groupEventActivityPlans });
   });
 
   it("materializes bounded recurring event occurrences on series creation", async () => {
@@ -511,6 +636,21 @@ describe("groups.events router", () => {
     expect(mock.insertCalls).toHaveLength(0);
   });
 
+  it("rejects public group RSVPs from viewers who are not active members", async () => {
+    const mock = createDbMock({
+      select: [[{ id: VIEWER_ID }], [{ event: buildGroupEventRow(), group: buildGroupRow() }], []],
+    });
+    const caller = createCaller(mock.db);
+
+    await expect(
+      caller.events.rsvp({ groupEventId: EVENT_ID, status: "accepted" }),
+    ).rejects.toMatchObject({
+      code: "FORBIDDEN",
+      message: "Active group membership required to RSVP",
+    } satisfies Partial<TRPCError>);
+    expect(mock.insertCalls).toHaveLength(0);
+  });
+
   it("defaults accepted RSVP to the only attached activity plan option", async () => {
     const option = buildGroupEventActivityPlanRow();
     const acceptedRsvp = buildGroupEventRsvpRow();
@@ -640,6 +780,49 @@ describe("groups.events router", () => {
     });
   });
 
+  it("clears an occurrence RSVP when status is null", async () => {
+    const mock = createDbMock({
+      select: [
+        [{ id: VIEWER_ID }],
+        [{ event: buildGroupEventRow(), group: buildGroupRow() }],
+        [{ role: "member", status: "active" }],
+        [],
+      ],
+    });
+    const caller = createCaller(mock.db);
+
+    const result = await caller.events.rsvp({ groupEventId: EVENT_ID, status: null });
+
+    expect(result.rsvp).toBeNull();
+    expect(result.event).toBeDefined();
+    expect(result.event?.viewerRsvp).toBeNull();
+    expect(mock.deleteCalls[0]).toMatchObject({ table: groupEventRsvps });
+    expect(mock.insertCalls).toHaveLength(0);
+  });
+
+  it("clears a series RSVP when status is null", async () => {
+    const series = buildGroupEventRow({ recurrence_rule: "FREQ=WEEKLY;COUNT=3" });
+    const mock = createDbMock({
+      select: [
+        [{ id: VIEWER_ID }],
+        [{ event: series, group: buildGroupRow() }],
+        [{ role: "member", status: "active" }],
+        [],
+      ],
+    });
+    const caller = createCaller(mock.db);
+
+    const result = await caller.events.rsvpEventSeries({
+      groupEventSeriesId: EVENT_ID,
+      status: null,
+    });
+
+    expect(result.rsvp).toBeNull();
+    expect(result.event.viewerSeriesRsvp).toBeNull();
+    expect(mock.deleteCalls[0]).toMatchObject({ table: groupEventSeriesRsvps });
+    expect(mock.insertCalls).toHaveLength(0);
+  });
+
   it("rejects series RSVP attempts against concrete occurrences", async () => {
     const occurrence = buildGroupEventRow({
       series_id: "88888888-8888-4888-8888-888888888888",
@@ -761,6 +944,7 @@ describe("groups.events router", () => {
         [{ id: VIEWER_ID }],
         [{ event: series, group: buildGroupRow() }],
         [{ role: "admin", status: "active" }],
+        [{ profile_id: VIEWER_ID }, { profile_id: "99999999-9999-4999-8999-999999999999" }],
         [],
         [],
       ],
@@ -775,6 +959,15 @@ describe("groups.events router", () => {
     expect(mock.updateCalls).toHaveLength(2);
     expect(mock.updateCalls[0]).toMatchObject({ table: groupEvents });
     expect(mock.updateCalls[1]).toMatchObject({ table: groupEvents });
+    expect(mock.insertCalls[0]).toMatchObject({ table: notifications });
+    expect(mock.insertCalls[0]?.values).toEqual([
+      expect.objectContaining({
+        actor_id: VIEWER_ID,
+        entity_id: EVENT_ID,
+        type: "group_event_cancelled",
+        user_id: "99999999-9999-4999-8999-999999999999",
+      }),
+    ]);
   });
 
   it("rejects occurrence override updates against recurring series roots", async () => {

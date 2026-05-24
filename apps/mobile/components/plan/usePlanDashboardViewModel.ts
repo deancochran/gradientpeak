@@ -6,8 +6,8 @@ import {
 import { useMemo } from "react";
 import { buildGoalOverlays } from "@/lib/analytics/goalOverlays";
 import { resolveGoalSpecificFallbackReadiness } from "@/lib/analytics/goalReadiness";
-import { type useProfileGoals } from "@/lib/hooks/useProfileGoals";
-import { type useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
+import type { useProfileGoals } from "@/lib/hooks/useProfileGoals";
+import type { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 
 type PlanGoals = Pick<ReturnType<typeof useProfileGoals>, "goals" | "goalsCount">;
 type PlanSnapshot = ReturnType<typeof useTrainingPlanSnapshot>;
@@ -322,7 +322,7 @@ export function usePlanDashboardViewModel({
 
     const nextGoal = [...goals.goals]
       .filter((goal) => goal.target_date)
-      .sort((left, right) => left.target_date!.localeCompare(right.target_date!))[0];
+      .sort((left, right) => left.target_date?.localeCompare(right.target_date!))[0];
 
     if (nextGoal?.target_date) {
       return {
@@ -484,14 +484,16 @@ export function usePlanDashboardViewModel({
       ensurePoint(point.date).actual = point.readiness;
     }
 
+    const forecastToday = readinessForecast?.today;
+
     for (const point of readinessForecast?.series.scheduled.points ?? []) {
-      if (forecastReadinessStartsAtToday && point.date < readinessForecast!.today) continue;
+      if (forecastReadinessStartsAtToday && forecastToday && point.date < forecastToday) continue;
       if (!point.date || !isVisible(point.date) || typeof point.readiness !== "number") continue;
       ensurePoint(point.date).scheduled = point.readiness;
     }
 
     for (const point of readinessForecast?.series.recommended.points ?? []) {
-      if (forecastReadinessStartsAtToday && point.date < readinessForecast!.today) continue;
+      if (forecastReadinessStartsAtToday && forecastToday && point.date < forecastToday) continue;
       if (!point.date || !isVisible(point.date) || typeof point.readiness !== "number") continue;
       const chartPoint = ensurePoint(point.date);
       chartPoint.recommended = point.readiness;
@@ -630,8 +632,9 @@ export function usePlanDashboardViewModel({
     goals.goals,
     profileSettings.goal_strategy_preferences,
     projectionDashboard?.goal_forecasts,
-    readinessForecast?.goals,
     snapshot.idealCurveData,
+    readinessForecast?.current_readiness,
+    todayKey,
   ]);
 
   const goalOutlook = useMemo(() => {
@@ -639,7 +642,7 @@ export function usePlanDashboardViewModel({
     const upcoming = goalReadiness
       .filter((item) => item.goal.target_date && item.goal.target_date >= todayKey)
       .sort((left, right) => {
-        const dateComparison = left.goal.target_date!.localeCompare(right.goal.target_date!);
+        const dateComparison = left.goal.target_date?.localeCompare(right.goal.target_date!);
         if (dateComparison !== 0) return dateComparison;
         const priorityComparison = (right.goal.priority ?? 0) - (left.goal.priority ?? 0);
         if (priorityComparison !== 0) return priorityComparison;
@@ -664,7 +667,7 @@ export function usePlanDashboardViewModel({
         .sort((left, right) => {
           const priorityComparison = (right.goal.priority ?? 0) - (left.goal.priority ?? 0);
           if (priorityComparison !== 0) return priorityComparison;
-          const dateComparison = left.goal.target_date!.localeCompare(right.goal.target_date!);
+          const dateComparison = left.goal.target_date?.localeCompare(right.goal.target_date!);
           if (dateComparison !== 0) return dateComparison;
           return left.goal.title.localeCompare(right.goal.title);
         })[0] ?? null;
@@ -938,7 +941,7 @@ export function usePlanDashboardViewModel({
     () =>
       [...goalReadiness]
         .filter((item) => item.goal.target_date)
-        .sort((left, right) => left.goal.target_date!.localeCompare(right.goal.target_date!))[0] ??
+        .sort((left, right) => left.goal.target_date?.localeCompare(right.goal.target_date!))[0] ??
       null,
     [goalReadiness],
   );

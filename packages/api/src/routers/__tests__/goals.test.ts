@@ -1,4 +1,4 @@
-import { TRPCError } from "@trpc/server";
+import type { TRPCError } from "@trpc/server";
 import { describe, expect, it } from "vitest";
 import { goalsRouter } from "../goals";
 
@@ -80,7 +80,7 @@ function createGoalRow(overrides: Partial<GoalRow> = {}): GoalRow {
 function createDbMock(queryMap: QueryMap = {}) {
   const selectCounters = new Map<string, number>();
   const callLog: CallLogEntry[] = [];
-  let activeTable: "profile_goals" | "training_plans" = "profile_goals";
+  let _activeTable: "profile_goals" | "training_plans" = "profile_goals";
 
   const nextSelectResult = (isCountSelect = false): any[] => {
     if (isCountSelect) {
@@ -108,7 +108,7 @@ function createDbMock(queryMap: QueryMap = {}) {
   const createSelectBuilder = (isCountSelect = false) => {
     const builder: any = {
       from: (table: any) => {
-        activeTable = getTableName(table);
+        _activeTable = getTableName(table);
         return builder;
       },
       where: () => builder,

@@ -1,7 +1,6 @@
 import { Icon } from "@repo/ui/components/icon";
 import { Stack, useRouter } from "expo-router";
 import { ChevronLeft } from "lucide-react-native";
-import React from "react";
 import { TouchableOpacity } from "react-native";
 
 /**
@@ -198,9 +197,15 @@ export default function StandardLayout() {
         }}
       />
       <Stack.Screen
+        name="agenda-create"
+        options={{
+          title: "Create",
+        }}
+      />
+      <Stack.Screen
         name="goals-list"
         options={{
-          title: "Goals",
+          title: "My Goals",
         }}
       />
       <Stack.Screen

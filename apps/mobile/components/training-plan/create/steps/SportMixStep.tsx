@@ -1,15 +1,9 @@
 import { Button } from "@repo/ui/components/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@repo/ui/components/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Label } from "@repo/ui/components/label";
 import { Slider } from "@repo/ui/components/slider";
 import { Text } from "@repo/ui/components/text";
-import React, { useState } from "react";
+import { useState } from "react";
 import { Pressable, View } from "react-native";
 import { WizardStep } from "../WizardStep";
 

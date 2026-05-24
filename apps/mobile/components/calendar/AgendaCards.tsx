@@ -1,6 +1,5 @@
 import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
-import React from "react";
 import { Pressable, TouchableOpacity, View } from "react-native";
 import {
   parseRecurrenceEndDate,

@@ -1,10 +1,11 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "rules": {
-    "files": "warn",
-    "exports": "warn",
-    "types": "warn"
+    "files": "error",
+    "exports": "error",
+    "types": "error"
   },
+  "treatConfigHintsAsErrors": true,
   "ignoreBinaries": ["ngrok", "printf"],
   "ignoreFiles": ["apps/web/src/routeTree.gen.ts"],
   "ignoreUnresolved": ["vite/client"],
@@ -51,8 +52,7 @@
         "tailwindcss",
         "@tailwindcss/typography",
         "@testing-library/dom",
-        "@testing-library/react",
-        "dotenv-cli"
+        "@testing-library/react"
       ]
     },
     "packages/core": {

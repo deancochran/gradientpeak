@@ -77,11 +77,14 @@ export default function GroupsScreen() {
   const startsAfter = useMemo(() => new Date().toISOString(), []);
   const groupsVm = useGroupListViewModel({ kind: "mine" });
   const upcomingEventsVm = useMyUpcomingGroupEventsViewModel({
-    enabled: activeTab === "events",
     startsAfter,
   });
 
   const openGroup = (group: GroupListItem) => {
+    router.push({ pathname: "/group-detail", params: { groupId: group.id } });
+  };
+
+  const openEventGroup = (group: NonNullable<GroupEventListItem["group"]>) => {
     router.push({ pathname: "/group-detail", params: { groupId: group.id } });
   };
 
@@ -137,6 +140,7 @@ export default function GroupsScreen() {
           isLoading={upcomingEventsVm.isLoading}
           ListHeaderComponent={header}
           onEventPress={openEvent}
+          onGroupPress={openEventGroup}
           onLoadMore={() => upcomingEventsVm.fetchNextPage()}
           onRefresh={upcomingEventsVm.refetch}
           refreshing={upcomingEventsVm.isFetching && !upcomingEventsVm.isFetchingNextPage}

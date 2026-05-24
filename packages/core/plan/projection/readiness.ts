@@ -13,6 +13,17 @@ import { computeEventRecoveryProfile, computePostEventFatiguePenalty } from "./e
 
 type ProjectionMicrocyclePattern = "ramp" | "deload" | "taper" | "event" | "recovery";
 
+function optionalProperty<Key extends string, Value>(
+  key: Key,
+  value: Value | undefined,
+): { [Property in Key]?: Value } {
+  if (value === undefined) {
+    return {};
+  }
+
+  return { [key]: value } as { [Property in Key]?: Value };
+}
+
 export type ReadinessBand = "low" | "medium" | "high";
 export type LowReadinessLimiterMode = "timeline_limited" | "capacity_limited" | "mixed_limiters";
 
@@ -191,7 +202,7 @@ export function computeCompositeReadiness(
   const evidenceWeight = compositeWeights?.evidence_weight ?? 0.1;
   const evidenceSupport = resolveEvidenceSupportLevel({
     evidence_score: evidenceScore,
-    evidence_state: input.evidence_state,
+    ...optionalProperty("evidence_state", input.evidence_state),
   });
   const effectiveEvidenceContribution = evidenceScore * (0.3 + evidenceSupport * 0.4);
 
@@ -242,7 +253,7 @@ export function computePlanningConfidence(
   const evidenceScore = clampScore(input.evidence_score);
   const evidenceSupport = resolveEvidenceSupportLevel({
     evidence_score: evidenceScore,
-    evidence_state: input.evidence_state,
+    ...optionalProperty("evidence_state", input.evidence_state),
   });
   const unmetRatio = clamp01(input.unmet_ratio);
   const clampPressure = clamp01(input.clamp_pressure);
@@ -552,7 +563,7 @@ export function computeProjectionPointReadinessScores(input: {
   const feasibilityBlendWeight =
     timelineCalibration?.feasibility_blend_weight ?? READINESS_TIMELINE.FEASIBILITY_BLEND_WEIGHT;
 
-  const rawScores = input.points.map((point, idx) => {
+  const rawScores = input.points.map((point, _idx) => {
     const ctl = Math.max(0, point.predicted_fitness_ctl);
     const atl = Math.max(0, point.predicted_fatigue_atl);
     const tsb = point.predicted_form_tsb;
@@ -561,7 +572,7 @@ export function computeProjectionPointReadinessScores(input: {
       (ctl - startingProjectedCtl) / Math.max(1, peakProjectedCtl - startingProjectedCtl),
     );
     const progressiveFitnessSignal = clamp01(
-      Math.pow(ctlProgress, READINESS_TIMELINE.PROGRESSIVE_FITNESS_EXPONENT),
+      ctlProgress ** READINESS_TIMELINE.PROGRESSIVE_FITNESS_EXPONENT,
     );
     const absoluteFitnessSignal = clamp01(
       ctl / Math.max(1, peakProjectedCtl * READINESS_TIMELINE.PEAK_CTL_SCALING),
@@ -625,7 +636,7 @@ export function computeProjectionPointReadinessScores(input: {
           targets: goal.targets,
           projected_ctl: eventPoint.predicted_fitness_ctl,
           projected_atl: eventPoint.predicted_fatigue_atl,
-          athlete_gender: input.athlete_gender,
+          ...optionalProperty("athlete_gender", input.athlete_gender),
         },
       });
 
@@ -652,7 +663,7 @@ export function computeProjectionPointReadinessScores(input: {
         target: primaryTarget,
         projected_ctl_at_event: goalPoint?.predicted_fitness_ctl ?? 50,
         projected_atl_at_event: goalPoint?.predicted_fatigue_atl ?? 50,
-        athlete_gender: input.athlete_gender,
+        ...optionalProperty("athlete_gender", input.athlete_gender),
       });
     }
 
@@ -844,10 +855,10 @@ export function computeProjectionPointReadinessScores(input: {
     );
     const anchored = optimized.map((value, index) => {
       const progress = terminalIndex <= 0 ? 1 : index / terminalIndex;
-      const easedProgress = Math.pow(clamp01(progress), 1.35);
+      const easedProgress = clamp01(progress) ** 1.35;
       const adjusted = (value ?? 0) + terminalAdjustment * easedProgress;
       const progressCeiling =
-        startingCeiling + (planReadinessCap - startingCeiling) * Math.pow(clamp01(progress), 1.15);
+        startingCeiling + (planReadinessCap - startingCeiling) * clamp01(progress) ** 1.15;
 
       return clampScore(Math.min(adjusted, progressCeiling, planReadinessCap));
     });
@@ -857,8 +868,7 @@ export function computeProjectionPointReadinessScores(input: {
       const anchor = goalAnchors.find((item) => item.goalIndex === goalIndex);
       const goalProgress = terminalIndex <= 0 ? 1 : goalIndex / terminalIndex;
       const goalCeiling =
-        startingCeiling +
-        (planReadinessCap - startingCeiling) * Math.pow(clamp01(goalProgress), 1.15);
+        startingCeiling + (planReadinessCap - startingCeiling) * clamp01(goalProgress) ** 1.15;
 
       if (anchor?.allowNaturalFatigue) {
         anchored[goalIndex] = clampScore(

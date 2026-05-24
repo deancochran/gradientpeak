@@ -1,5 +1,5 @@
+import crypto from "node:crypto";
 import { createFileRoute } from "@tanstack/react-router";
-import crypto from "crypto";
 import { createWahooSyncRuntime } from "../../../lib/wahoo-sync-runtime";
 
 const WAHOO_WEBHOOK_TOKEN = process.env.WAHOO_WEBHOOK_TOKEN;

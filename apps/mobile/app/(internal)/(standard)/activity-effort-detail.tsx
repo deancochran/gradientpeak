@@ -11,7 +11,7 @@ import { Text } from "@repo/ui/components/text";
 import { skipToken } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ellipsis, Zap } from "lucide-react-native";
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ActivityIndicator, Alert, ScrollView, View } from "react-native";
 import { ActivityRouteMap } from "@/components/activity/maps/ActivityRouteMap";
 import { ActivityCard } from "@/components/shared/ActivityCard";

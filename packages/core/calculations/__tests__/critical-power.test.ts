@@ -25,7 +25,7 @@ describe("calculateSeasonBestCurve", () => {
     ];
     const result = calculateSeasonBestCurve(efforts);
     expect(result).toHaveLength(1);
-    expect(result[0]!.value).toBe(300);
+    expect(result[0]?.value).toBe(300);
   });
 
   it("should filter out non-power efforts", () => {
@@ -35,7 +35,7 @@ describe("calculateSeasonBestCurve", () => {
     ];
     const result = calculateSeasonBestCurve(efforts);
     expect(result).toHaveLength(1);
-    expect(result[0]!.value).toBe(300);
+    expect(result[0]?.value).toBe(300);
   });
 
   it("should filter out old efforts", () => {
@@ -50,7 +50,7 @@ describe("calculateSeasonBestCurve", () => {
 
     const result = calculateSeasonBestCurve(efforts, { now, days: 90 });
     expect(result).toHaveLength(1);
-    expect(result[0]!.value).toBe(300);
+    expect(result[0]?.value).toBe(300);
   });
 
   it("should find the max value for each duration", () => {
@@ -67,8 +67,8 @@ describe("calculateSeasonBestCurve", () => {
     const best1Min = result.find((e) => e.duration_seconds === 60);
     const best5Min = result.find((e) => e.duration_seconds === 300);
 
-    expect(best1Min!.value).toBe(350);
-    expect(best5Min!.value).toBe(250);
+    expect(best1Min?.value).toBe(350);
+    expect(best5Min?.value).toBe(250);
   });
 });
 
@@ -92,9 +92,9 @@ describe("calculateCriticalPower", () => {
 
     const result = calculateCriticalPower(curve);
     expect(result).not.toBeNull();
-    expect(result!.cp).toBe(250);
-    expect(result!.wPrime).toBe(15000);
-    expect(result!.error).toBeGreaterThan(0.99); // Should be perfect fit
+    expect(result?.cp).toBe(250);
+    expect(result?.wPrime).toBe(15000);
+    expect(result?.error).toBeGreaterThan(0.99); // Should be perfect fit
   });
 
   it("should ignore efforts outside the 3m-30m range", () => {
@@ -109,7 +109,7 @@ describe("calculateCriticalPower", () => {
     const result = calculateCriticalPower(curve);
     expect(result).not.toBeNull();
     // Should match the 3m and 5m points exactly
-    expect(result!.cp).toBe(250);
-    expect(result!.wPrime).toBe(15000);
+    expect(result?.cp).toBe(250);
+    expect(result?.wPrime).toBe(15000);
   });
 });

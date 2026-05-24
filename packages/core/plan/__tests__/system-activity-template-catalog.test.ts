@@ -119,8 +119,9 @@ describe("system activity-template catalog", () => {
     const template = SYSTEM_TEMPLATES[0]!;
     const modifiedStructure = structuredClone(template.structure);
 
-    modifiedStructure.intervals[0]!.id = "11111111-1111-4111-8111-111111111111";
-    modifiedStructure.intervals[0]!.steps[0]!.id = "22222222-2222-4222-8222-222222222222";
+    const firstInterval = modifiedStructure.intervals[0]!;
+    firstInterval.id = "11111111-1111-4111-8111-111111111111";
+    firstInterval.steps[0]!.id = "22222222-2222-4222-8222-222222222222";
 
     expect(normalizeActivityTemplateStructureForAudit(modifiedStructure)).toEqual(
       normalizeActivityTemplateStructureForAudit(template.structure),
@@ -129,7 +130,7 @@ describe("system activity-template catalog", () => {
 
   it("throws explicitly when a shipped system plan has unresolved linked templates", () => {
     const templateIndex = buildSystemTemplateIndex();
-    const validTemplateId = SYSTEM_TEMPLATES[0]!.id;
+    const validTemplateId = SYSTEM_TEMPLATES[0]?.id;
     const partialPlan: SystemTrainingPlanTemplate = {
       id: "00000000-0000-4000-8000-000000000001",
       name: "Partial Missing Plan",

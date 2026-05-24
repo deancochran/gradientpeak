@@ -1,7 +1,7 @@
 // apps/mobile/components/ErrorBoundary.tsx
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
-import { router, useRouter } from "expo-router";
+import { router } from "expo-router";
 import * as React from "react";
 import { ScrollView, View } from "react-native";
 import { captureException } from "@/lib/services/sentry";

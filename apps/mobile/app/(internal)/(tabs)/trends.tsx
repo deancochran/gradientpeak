@@ -1,22 +1,12 @@
-import BottomSheet, { BottomSheetBackdrop, BottomSheetView } from "@gorhom/bottom-sheet";
+import BottomSheet, {
+  BottomSheetBackdrop,
+  type BottomSheetBackdropProps,
+  BottomSheetView,
+} from "@gorhom/bottom-sheet";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import {
-  Activity,
-  BarChart3,
-  CalendarDays,
-  Flame,
-  Gauge,
-  HeartPulse,
-  Moon,
-  Scale,
-  Sparkles,
-  TrendingDown,
-  TrendingUp,
-  X,
-  Zap,
-} from "lucide-react-native";
+import { CalendarDays, X } from "lucide-react-native";
 import React from "react";
 import {
   ActivityIndicator,
@@ -31,122 +21,14 @@ import Svg, { Circle, Line, Path } from "react-native-svg";
 import { AppHeader, CompactInsightCard } from "@/components/shared";
 import { api } from "@/lib/api";
 import {
-  type CompactInsightLayout,
-  getActivityInsightVisualPolicy,
-  getProfileMetricVisualPolicy,
-  type InsightSource,
-  type InsightVisualType,
-} from "@/lib/insights/visualPolicy";
-
-type TrendDirection = "up" | "down" | "flat" | "empty";
-type Tone = "blue" | "green" | "orange" | "pink" | "purple" | "red" | "slate";
-
-type InsightPoint = {
-  label: string;
-  value: number;
-  date?: Date;
-};
-
-type InsightSeries = {
-  label: string;
-  tone: Tone;
-  points: InsightPoint[];
-};
-
-type Insight = {
-  id: string;
-  title: string;
-  category: string;
-  source: InsightSource;
-  value: string;
-  summary: string;
-  detail: string;
-  direction: TrendDirection;
-  tone: Tone;
-  icon: React.ComponentType<any>;
-  visualType: InsightVisualType;
-  compactLayout: CompactInsightLayout;
-  points: InsightPoint[];
-  series?: InsightSeries[];
-  rows: { label: string; value: string }[];
-};
-
-const PROFILE_METRICS = [
-  {
-    type: "weight_kg",
-    title: "Weight",
-    unit: "kg",
-    icon: Scale,
-    tone: "blue" as const,
-    lowerIsBetter: false,
-  },
-  {
-    type: "vo2_max",
-    title: "VO2 Max",
-    unit: "",
-    icon: Gauge,
-    tone: "purple" as const,
-    lowerIsBetter: false,
-  },
-  {
-    type: "resting_hr",
-    title: "Resting HR",
-    unit: "bpm",
-    icon: HeartPulse,
-    tone: "red" as const,
-    lowerIsBetter: true,
-  },
-  {
-    type: "hrv_rmssd",
-    title: "HRV",
-    unit: "ms",
-    icon: Sparkles,
-    tone: "green" as const,
-    lowerIsBetter: false,
-  },
-  {
-    type: "sleep_hours",
-    title: "Sleep",
-    unit: "h",
-    icon: Moon,
-    tone: "slate" as const,
-    lowerIsBetter: false,
-  },
-] as const;
-
-const ZONE_KEYS = ["recovery", "endurance", "tempo", "threshold", "vo2max", "anaerobic"];
-
-function toIsoDate(date: Date) {
-  return date.toISOString().split("T")[0] ?? "";
-}
-
-function formatNumber(value: number, digits = 0) {
-  return new Intl.NumberFormat(undefined, {
-    maximumFractionDigits: digits,
-    minimumFractionDigits: digits,
-  }).format(value);
-}
-
-function formatDuration(seconds: number) {
-  const hours = seconds / 3600;
-  return `${formatNumber(hours, hours >= 10 ? 0 : 1)}h`;
-}
-
-function formatDistance(meters: number) {
-  const kilometers = meters / 1000;
-  return `${formatNumber(kilometers, kilometers >= 10 ? 0 : 1)} km`;
-}
-
-function formatDate(value: string | Date) {
-  return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-function getDirection(current: number | null, previous: number | null): TrendDirection {
-  if (current === null || previous === null) return "empty";
-  const delta = current - previous;
-  if (Math.abs(delta) < 0.01) return "flat";
-  return delta > 0 ? "up" : "down";
-}
+  buildActivityInsights,
+  buildProfileInsights,
+  formatNumber,
+  type Insight,
+  type InsightPoint,
+  type Tone,
+  toIsoDate,
+} from "@/lib/trends/insights";
 
 function getToneAccentClass(tone: Tone) {
   switch (tone) {
@@ -184,304 +66,6 @@ function getToneBarClass(tone: Tone) {
     case "slate":
       return "bg-slate-500/70";
   }
-}
-
-function trendSummary(direction: TrendDirection, lowerIsBetter: boolean) {
-  if (direction === "empty") return "No data";
-  if (direction === "flat") return "Holding steady";
-  const favorable = lowerIsBetter ? direction === "down" : direction === "up";
-  return favorable ? "Moving in a good direction" : "Watch this trend";
-}
-
-function buildProfileInsights(metrics: any[]): Insight[] {
-  return PROFILE_METRICS.map((definition) => {
-    const policy = getProfileMetricVisualPolicy(definition.type);
-    const items = metrics
-      .filter((metric) => metric.metric_type === definition.type)
-      .map((metric) => ({
-        id: metric.id as string,
-        value: Number(metric.value),
-        recordedAt: metric.recorded_at as Date | string,
-      }))
-      .filter((metric) => Number.isFinite(metric.value))
-      .sort((a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime());
-    const latest = items.at(-1) ?? null;
-    const previous = items.at(-2) ?? null;
-    const direction = getDirection(latest?.value ?? null, previous?.value ?? null);
-    const delta = latest && previous ? latest.value - previous.value : null;
-
-    return {
-      id: `profile-${definition.type}`,
-      title: definition.title,
-      category: "Profile metric",
-      source: policy.source,
-      value: latest
-        ? `${formatNumber(latest.value, definition.unit === "kg" ? 1 : 0)}${definition.unit ? ` ${definition.unit}` : ""}`
-        : "--",
-      summary:
-        delta === null
-          ? trendSummary(direction, definition.lowerIsBetter)
-          : `${delta > 0 ? "+" : ""}${formatNumber(delta, definition.unit === "kg" ? 1 : 0)}${definition.unit ? ` ${definition.unit}` : ""} since last entry`,
-      detail: trendSummary(direction, definition.lowerIsBetter),
-      direction,
-      tone: definition.tone,
-      icon: definition.icon,
-      visualType: policy.visualType,
-      compactLayout: policy.compactLayout,
-      points: items.slice(-60).map((item) => ({
-        label: formatDate(item.recordedAt),
-        value: item.value,
-        date: new Date(item.recordedAt),
-      })),
-      rows: [
-        { label: "Latest", value: latest ? formatDate(latest.recordedAt) : "No entries" },
-        { label: "Entries", value: String(items.length) },
-        {
-          label: "Last change",
-          value: delta === null ? "--" : `${delta > 0 ? "+" : ""}${formatNumber(delta, 1)}`,
-        },
-      ],
-    } satisfies Insight;
-  });
-}
-
-function buildActivityInsights({
-  volume,
-  load,
-  consistency,
-  performance,
-  zones,
-  peakPower,
-}: {
-  volume: any;
-  load: any;
-  consistency: any;
-  performance: any;
-  zones: any;
-  peakPower: any;
-}): Insight[] {
-  const volumePoints = volume?.dataPoints ?? [];
-  const currentVolume = volumePoints.at(-1)?.totalTime ?? null;
-  const previousVolume = volumePoints.at(-2)?.totalTime ?? null;
-  const loadPoints = load?.dataPoints ?? [];
-  const latestLoad = loadPoints.at(-1) ?? null;
-  const previousLoad = loadPoints.at(-2) ?? null;
-  const performancePoints = (performance?.dataPoints ?? []).filter(
-    (point: any) => typeof point.avgPower === "number" || typeof point.avgSpeed === "number",
-  );
-  const latestPerformance = performancePoints.at(-1) ?? null;
-  const previousPerformance = performancePoints.at(-2) ?? null;
-  const weeklyZones = zones?.weeklyData?.at(-1) ?? null;
-  const hardZonePercent = weeklyZones
-    ? (weeklyZones.zones.threshold ?? 0) +
-      (weeklyZones.zones.vo2max ?? 0) +
-      (weeklyZones.zones.anaerobic ?? 0)
-    : 0;
-  const topPower = peakPower?.performances?.[0] ?? null;
-
-  return [
-    {
-      id: "training-load",
-      title: "Training Load",
-      category: "Training",
-      ...getActivityInsightVisualPolicy("trainingLoad"),
-      value: load?.currentStatus ? formatNumber(load.currentStatus.ctl, 1) : "--",
-      summary: load?.currentStatus
-        ? `${load.currentStatus.form} form`
-        : "Record activities to build load",
-      detail: "CTL, ATL, and TSB summarize accumulated training stress and recovery balance.",
-      direction: getDirection(latestLoad?.ctl ?? null, previousLoad?.ctl ?? null),
-      tone: "orange",
-      icon: Flame,
-      points: loadPoints.slice(-60).map((point: any) => ({
-        label: formatDate(point.date),
-        value: point.ctl,
-        date: new Date(point.date),
-      })),
-      series: [
-        {
-          label: "CTL",
-          tone: "orange",
-          points: loadPoints.slice(-60).map((point: any) => ({
-            label: formatDate(point.date),
-            value: point.ctl,
-            date: new Date(point.date),
-          })),
-        },
-        {
-          label: "ATL",
-          tone: "blue",
-          points: loadPoints.slice(-60).map((point: any) => ({
-            label: formatDate(point.date),
-            value: point.atl,
-            date: new Date(point.date),
-          })),
-        },
-        {
-          label: "TSB",
-          tone: "green",
-          points: loadPoints.slice(-60).map((point: any) => ({
-            label: formatDate(point.date),
-            value: point.tsb,
-            date: new Date(point.date),
-          })),
-        },
-      ],
-      rows: [
-        {
-          label: "CTL",
-          value: load?.currentStatus ? formatNumber(load.currentStatus.ctl, 1) : "--",
-        },
-        {
-          label: "ATL",
-          value: load?.currentStatus ? formatNumber(load.currentStatus.atl, 1) : "--",
-        },
-        {
-          label: "TSB",
-          value: load?.currentStatus ? formatNumber(load.currentStatus.tsb, 1) : "--",
-        },
-      ],
-    },
-    {
-      id: "consistency",
-      title: "Consistency",
-      category: "Activity rhythm",
-      ...getActivityInsightVisualPolicy("consistency"),
-      value: consistency ? `${consistency.currentStreak}d` : "--",
-      summary: consistency
-        ? `${formatNumber(consistency.weeklyAvg, 1)} activities per week`
-        : "No activity rhythm yet",
-      detail: "Consistency looks at recent activity days, streaks, and average weekly frequency.",
-      direction: consistency?.currentStreak > 0 ? "up" : "empty",
-      tone: "green",
-      icon: Activity,
-      points: (consistency?.activityDays ?? []).slice(-60).map((date: string) => ({
-        label: formatDate(date),
-        value: 1,
-        date: new Date(date),
-      })),
-      rows: [
-        {
-          label: "Current streak",
-          value: consistency ? `${consistency.currentStreak} days` : "--",
-        },
-        {
-          label: "Longest streak",
-          value: consistency ? `${consistency.longestStreak} days` : "--",
-        },
-        { label: "Activities", value: consistency ? String(consistency.totalActivities) : "--" },
-      ],
-    },
-    {
-      id: "volume",
-      title: "Volume",
-      category: "Work done",
-      ...getActivityInsightVisualPolicy("volume"),
-      value: volume?.totals ? formatDuration(volume.totals.totalTime) : "--",
-      summary: volume?.totals
-        ? `${formatDistance(volume.totals.totalDistance)} across ${volume.totals.totalActivities} activities`
-        : "No volume in this range",
-      detail: "Volume summarizes total moving time, distance, and completed sessions.",
-      direction: getDirection(currentVolume, previousVolume),
-      tone: "blue",
-      icon: BarChart3,
-      points: volumePoints.map((point: any) => ({
-        label: formatDate(point.date),
-        value: point.totalTime / 3600,
-        date: new Date(point.date),
-      })),
-      rows: [
-        { label: "Time", value: volume?.totals ? formatDuration(volume.totals.totalTime) : "--" },
-        {
-          label: "Distance",
-          value: volume?.totals ? formatDistance(volume.totals.totalDistance) : "--",
-        },
-        {
-          label: "Activities",
-          value: volume?.totals ? String(volume.totals.totalActivities) : "--",
-        },
-      ],
-    },
-    {
-      id: "performance",
-      title: "Activity Efforts",
-      category: "Recent outputs",
-      ...getActivityInsightVisualPolicy("activityEfforts"),
-      value: latestPerformance?.avgPower
-        ? `${formatNumber(latestPerformance.avgPower)} W`
-        : latestPerformance?.avgSpeed
-          ? `${formatNumber(latestPerformance.avgSpeed * 3.6, 1)} km/h`
-          : "--",
-      summary: latestPerformance ? latestPerformance.activityName : "No power or speed samples yet",
-      detail: "Recent effort trends compare average power or speed across completed activities.",
-      direction: getDirection(
-        latestPerformance?.avgPower ?? latestPerformance?.avgSpeed ?? null,
-        previousPerformance?.avgPower ?? previousPerformance?.avgSpeed ?? null,
-      ),
-      tone: "purple",
-      icon: Zap,
-      points: performancePoints.slice(-12).map((point: any) => ({
-        label: formatDate(point.date),
-        value: point.avgPower ?? point.avgSpeed * 3.6,
-        date: new Date(point.date),
-      })),
-      rows: [
-        { label: "Latest", value: latestPerformance?.activityName ?? "--" },
-        {
-          label: "Avg power",
-          value: latestPerformance?.avgPower
-            ? `${formatNumber(latestPerformance.avgPower)} W`
-            : "--",
-        },
-        {
-          label: "Avg speed",
-          value: latestPerformance?.avgSpeed
-            ? `${formatNumber(latestPerformance.avgSpeed * 3.6, 1)} km/h`
-            : "--",
-        },
-      ],
-    },
-    {
-      id: "zones",
-      title: "Intensity Mix",
-      category: "Distribution",
-      ...getActivityInsightVisualPolicy("intensityMix"),
-      value: weeklyZones ? `${formatNumber(hardZonePercent)}%` : "--",
-      summary: weeklyZones ? "High-intensity share this week" : "No zone data yet",
-      detail: "Zone mix estimates how much weekly stress landed in easy, moderate, and hard work.",
-      direction: hardZonePercent > 35 ? "up" : weeklyZones ? "flat" : "empty",
-      tone: "pink",
-      icon: HeartPulse,
-      points: ZONE_KEYS.map((zone) => ({ label: zone, value: weeklyZones?.zones?.[zone] ?? 0 })),
-      rows: ZONE_KEYS.map((zone) => ({
-        label: zone.replace(/\b\w/g, (char) => char.toUpperCase()),
-        value: weeklyZones ? `${formatNumber(weeklyZones.zones[zone] ?? 0, 1)}%` : "--",
-      })),
-    },
-    {
-      id: "peak-power",
-      title: "Peak Power",
-      category: "Best effort",
-      ...getActivityInsightVisualPolicy("peakPower"),
-      value: topPower ? `${formatNumber(topPower.value)} ${topPower.unit}` : "--",
-      summary: topPower ? topPower.activityName : "No power peak recorded",
-      detail: "Peak cards surface the strongest recorded efforts available from activity history.",
-      direction: topPower ? "up" : "empty",
-      tone: "orange",
-      icon: TrendingUp,
-      points: (peakPower?.performances ?? [])
-        .slice(0, 8)
-        .reverse()
-        .map((point: any) => ({
-          label: `#${point.rank}`,
-          value: point.value,
-        })),
-      rows: (peakPower?.performances ?? []).slice(0, 5).map((point: any) => ({
-        label: `#${point.rank} ${point.activityName}`,
-        value: `${formatNumber(point.value)} ${point.unit}`,
-      })),
-    },
-  ];
 }
 
 function getPointBounds(points: InsightPoint[]) {
@@ -547,7 +131,7 @@ function MiniLineVisual({
           strokeLinejoin="round"
         />
         {coordinates.at(-1) ? (
-          <Circle cx={coordinates.at(-1)!.x} cy={coordinates.at(-1)!.y} r={4} fill={accent} />
+          <Circle cx={coordinates.at(-1)?.x} cy={coordinates.at(-1)?.y} r={4} fill={accent} />
         ) : null}
       </Svg>
     </View>
@@ -904,8 +488,8 @@ function DetailBarVisual({ points, tone }: { points: InsightPoint[]; tone: Tone 
         )
           .filter(Boolean)
           .map((point, index) => (
-            <Text key={`${point!.label}-${index}`} className="text-[10px] text-muted-foreground">
-              {point!.label}
+            <Text key={`${point?.label}-${index}`} className="text-[10px] text-muted-foreground">
+              {point?.label}
             </Text>
           ))}
       </View>
@@ -1257,7 +841,7 @@ function CustomRangeSheet({
   const [endValue, setEndValue] = React.useState(toInputDate(end));
   const snapPoints = React.useMemo(() => ["42%"], []);
   const renderBackdrop = React.useCallback(
-    (props: any) => (
+    (props: BottomSheetBackdropProps) => (
       <BottomSheetBackdrop
         {...props}
         appearsOnIndex={0}

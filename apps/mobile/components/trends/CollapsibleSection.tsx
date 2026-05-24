@@ -1,6 +1,7 @@
 import { Text } from "@repo/ui/components/text";
-import { ChevronDown, ChevronRight, LucideIcon } from "lucide-react-native";
-import React, { useState } from "react";
+import { ChevronDown, ChevronRight, type LucideIcon } from "lucide-react-native";
+import type React from "react";
+import { useState } from "react";
 import { Pressable, View } from "react-native";
 
 interface CollapsibleSectionProps {

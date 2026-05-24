@@ -241,4 +241,43 @@ describe("FTMSController queue", () => {
       success: true,
     });
   });
+
+  it("rejects unsupported trainer commands without requesting control", async () => {
+    const device = new MockFtmsDevice();
+    const controller = createController(device, createFeatures());
+
+    await expect(controller.setPowerTarget(220, { source: "manual" })).resolves.toBe(false);
+
+    expect(device.writeOpcodes).toEqual([]);
+    expect(controller.getLastCommandStatus()).toMatchObject({
+      source: "manual",
+      commandType: "set_power",
+      controlMode: "erg",
+      targetValue: 220,
+      outcome: "unsupported",
+      success: false,
+    });
+  });
+
+  it("clamps power targets to the advertised FTMS range before writing", async () => {
+    const device = new MockFtmsDevice();
+    const controller = createController(
+      device,
+      createFeatures({
+        powerTargetSettingSupported: true,
+        powerRange: { min: 100, max: 400, increment: 5 },
+      }),
+    );
+
+    const command = controller.setPowerTarget(650, { source: "manual" });
+
+    await device.flushAll();
+
+    await expect(command).resolves.toBe(true);
+    expect(controller.getLastCommandStatus()).toMatchObject({
+      commandType: "set_power",
+      targetValue: 400,
+      success: true,
+    });
+  });
 });

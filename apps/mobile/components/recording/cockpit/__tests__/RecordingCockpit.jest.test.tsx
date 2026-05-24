@@ -165,6 +165,11 @@ jest.mock("@repo/ui/components/text", () => ({
   Text: createHost("Text"),
 }));
 
+jest.mock("@repo/ui/components/icon", () => ({
+  __esModule: true,
+  Icon: createHost("Icon"),
+}));
+
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
   Activity: createHost("Activity"),
@@ -174,13 +179,19 @@ jest.mock("lucide-react-native", () => ({
   ChevronRight: createHost("ChevronRight"),
   Dumbbell: createHost("Dumbbell"),
   Footprints: createHost("Footprints"),
+  Gauge: createHost("Gauge"),
   MapPin: createHost("MapPin"),
+  Minus: createHost("Minus"),
   Minimize2: createHost("Minimize2"),
   Navigation: createHost("Navigation"),
+  Plus: createHost("Plus"),
+  RotateCcw: createHost("RotateCcw"),
   Route: createHost("Route"),
+  SlidersHorizontal: createHost("SlidersHorizontal"),
   Trash2: createHost("Trash2"),
   Waves: createHost("Waves"),
   Watch: createHost("Watch"),
+  Zap: createHost("Zap"),
 }));
 
 jest.mock("@shopify/react-native-skia", () => ({
@@ -297,6 +308,7 @@ jest.mock("@/lib/hooks/useActivityRecorder", () => ({
 const { RecordingBackdrop } = require("../RecordingBackdrop");
 const { RecordingControlSheet } = require("../RecordingControlSheet");
 const { RecordingFloatingPanel } = require("../RecordingFloatingPanel");
+const { TrainerInsightCard } = require("../cards/TrainerInsightCard");
 
 describe("recording cockpit", () => {
   beforeEach(() => {
@@ -566,7 +578,7 @@ describe("recording cockpit", () => {
     );
 
     expect(screen.getByTestId("recording-card-carousel")).toBeTruthy();
-    expect(screen.getByText("Tempo block")).toBeTruthy();
+    expect(screen.getAllByText("Tempo block").length).toBeGreaterThan(0);
     expect(screen.getByText("10m @ 220W")).toBeTruthy();
     expect(screen.getByLabelText("Previous interval")).toBeTruthy();
     expect(screen.getByLabelText("Skip interval")).toBeTruthy();
@@ -727,10 +739,112 @@ describe("recording cockpit", () => {
       />,
     );
 
-    expect(screen.getByText("Tempo block")).toBeTruthy();
+    expect(screen.getAllByText("Tempo block").length).toBeGreaterThan(0);
     expect(screen.getByTestId("metrics-insight-card")).toBeTruthy();
-    expect(screen.getByText("Auto control follows 88% FTP.")).toBeTruthy();
+    expect(screen.getByText("Auto Target")).toBeTruthy();
+    expect(screen.getByText("88%")).toBeTruthy();
     expect(screen.getByTestId("route-progress-insight-card")).toBeTruthy();
+  });
+
+  it("does not re-notify expansion when live trainer updates rebuild parent callbacks", () => {
+    const firstExpandedChange = jest.fn();
+    const secondExpandedChange = jest.fn();
+    const result = renderNative(
+      <RecordingFloatingPanel
+        bottomObstructionHeight={80}
+        hasPlan
+        sensorCount={2}
+        service={buildService()}
+        sessionContract={buildContract({
+          guidance: { hasPlan: true, hasStructuredSteps: true },
+          devices: { hasTrainer: true, trainerControllable: true },
+          ui: {
+            floatingPanel: {
+              defaultCard: "workout_interval",
+              availableCards: ["workout_interval", "metrics", "trainer"],
+              forcedExpanded: false,
+              canMinimize: true,
+            },
+          },
+        })}
+        onExpandedChange={firstExpandedChange}
+      />,
+    );
+
+    expect(firstExpandedChange).toHaveBeenCalledTimes(1);
+
+    result.rerender(
+      <RecordingFloatingPanel
+        bottomObstructionHeight={80}
+        hasPlan
+        sensorCount={2}
+        service={buildService()}
+        sessionContract={buildContract({
+          guidance: { hasPlan: true, hasStructuredSteps: true },
+          devices: { hasTrainer: true, trainerControllable: true },
+          ui: {
+            floatingPanel: {
+              defaultCard: "workout_interval",
+              availableCards: ["workout_interval", "metrics", "trainer"],
+              forcedExpanded: false,
+              canMinimize: true,
+            },
+          },
+        })}
+        onExpandedChange={secondExpandedChange}
+      />,
+    );
+
+    expect(secondExpandedChange).not.toHaveBeenCalled();
+  });
+
+  it("keeps trainer remote controls stable when BLE descriptors are rebuilt", () => {
+    const service = {
+      getSessionView: () => ({
+        overrideState: { trainerMode: "manual" },
+        trainer: {
+          controlState: "controllable",
+          dataFlowState: "flowing",
+          recoveryState: "idle",
+          lastCommandStatus: null,
+          selectedMode: "erg",
+          availableModes: [
+            {
+              id: "erg",
+              label: "Target Power",
+              enabled: true,
+              range: { min: 80, max: 500, increment: 5, unit: "W" },
+            },
+            {
+              id: "resistance",
+              label: "Resistance",
+              enabled: true,
+              range: { min: 0, max: 100, increment: 5, unit: "%" },
+            },
+          ],
+        },
+      }),
+      applyManualTrainerPower: jest.fn(async () => true),
+      applyManualTrainerResistance: jest.fn(async () => true),
+    };
+    const props = {
+      mode: "expanded",
+      plan: { hasPlan: false, select: jest.fn(), clear: jest.fn() },
+      readings: { power: 210 },
+      sensorCount: 1,
+      service,
+      sessionContract: buildContract({ devices: { hasTrainer: true, trainerControllable: true } }),
+      stats: {},
+    };
+
+    const result = renderNative(<TrainerInsightCard {...(props as any)} />);
+
+    expect(screen.getByTestId("trainer-insight-card")).toBeTruthy();
+    expect(screen.getAllByText("Power").length).toBeGreaterThan(0);
+
+    result.rerender(<TrainerInsightCard {...(props as any)} />);
+
+    expect(screen.getAllByText("Power").length).toBeGreaterThan(0);
   });
 
   it("centers expanded recording cards with interval momentum disabled", () => {

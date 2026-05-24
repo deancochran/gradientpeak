@@ -1,7 +1,6 @@
 import type { ActivityPlanStructureV2 } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import type { ReactNode } from "react";
-import React from "react";
 import { View } from "react-native";
 import {
   formatEstimatedDurationMinutes,

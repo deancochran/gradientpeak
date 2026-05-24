@@ -98,7 +98,7 @@ export function useGroupEventActions() {
       copySeriesActivityPlansToOccurrenceMutation.mutateAsync(input),
     rsvp: (
       groupEventId: string,
-      status: GroupEventRsvpStatus,
+      status: GroupEventRsvpStatus | null,
       selectedGroupEventActivityPlanId?: string | null,
     ) => rsvpMutation.mutateAsync({ groupEventId, status, selectedGroupEventActivityPlanId }),
     rsvpEventSeries: (input: RsvpEventSeriesInput) => rsvpEventSeriesMutation.mutateAsync(input),

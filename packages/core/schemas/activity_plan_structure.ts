@@ -409,10 +409,11 @@ export function getIntensityColor(intensity: number, type?: string): string {
       if (intensity >= 56) return "#16a34a"; // Z2 - Green
       return "#06b6d4"; // Z1 - Light Blue
 
-    case "watts":
+    case "watts": {
       // Assuming 250W FTP for color coding
       const ftpPercent = (intensity / 250) * 100;
       return getIntensityColor(ftpPercent, "%FTP");
+    }
 
     case "%MaxHR":
     case "%ThresholdHR":
@@ -613,7 +614,7 @@ export function calculateTotalDuration(steps: FlattenedStep[]): number {
  * Check if an activity type can have a route
  * Note: All activity types can optionally have a route attached
  */
-export function canHaveRoute(activityType: string): boolean {
+export function canHaveRoute(_activityType: string): boolean {
   return true; // Routes are optional for all activity types
 }
 

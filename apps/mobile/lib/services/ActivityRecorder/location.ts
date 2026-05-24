@@ -342,8 +342,7 @@ export class LocationManager {
       // Ignore "task not found" errors as this happens during cleanup/restart
 
       if (
-        (error as Error).message &&
-        (error as Error).message.includes("Task") &&
+        (error as Error).message?.includes("Task") &&
         (error as Error).message.includes("not found")
       ) {
         console.log("Background location task already cleaned up");
@@ -441,8 +440,7 @@ export class LocationManager {
     } catch (error) {
       // Ignore task not found errors during cleanup
       if (
-        (error as Error).message &&
-        (error as Error).message.includes("Task") &&
+        (error as Error).message?.includes("Task") &&
         (error as Error).message.includes("not found")
       ) {
         console.log("Background location task already unregistered");
@@ -462,8 +460,7 @@ export class LocationManager {
       await AsyncStorage.removeItem("background_location_session_id");
     } catch (error) {
       if (
-        (error as Error).message &&
-        (error as Error).message.includes("Task") &&
+        (error as Error).message?.includes("Task") &&
         (error as Error).message.includes("not found")
       ) {
         return;
@@ -482,8 +479,7 @@ export class LocationManager {
     } catch (error) {
       // Task not found errors are expected during cleanup
       if (
-        (error as Error).message &&
-        (error as Error).message.includes("Task") &&
+        (error as Error).message?.includes("Task") &&
         (error as Error).message.includes("not found")
       ) {
         return false;

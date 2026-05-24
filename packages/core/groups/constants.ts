@@ -36,7 +36,7 @@ export const GROUP_JOIN_REQUEST_STATUSES = [
 ] as const;
 export type GroupJoinRequestStatus = (typeof GROUP_JOIN_REQUEST_STATUSES)[number];
 
-export const GROUP_EVENT_RSVP_STATUSES = ["accepted", "declined"] as const;
+export const GROUP_EVENT_RSVP_STATUSES = ["accepted", "declined", "tentative"] as const;
 export type GroupEventRsvpStatus = (typeof GROUP_EVENT_RSVP_STATUSES)[number];
 export const GROUP_EVENT_SERIES_RSVP_STATUSES = GROUP_EVENT_RSVP_STATUSES;
 export type GroupEventSeriesRsvpStatus = (typeof GROUP_EVENT_SERIES_RSVP_STATUSES)[number];

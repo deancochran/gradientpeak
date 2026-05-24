@@ -6,7 +6,7 @@
  * callers migrate to narrower imports.
  */
 import { calculateNormalizedPower as calculateNormalizedPowerFromStream } from "./calculations/normalized-power";
-import { type TrainingQualityProfile } from "./calculations/training-quality";
+import type { TrainingQualityProfile } from "./calculations/training-quality";
 import {
   getFormStatusColor as getFormStatusColorFromLoad,
   getFormStatus as getFormStatusFromLoad,

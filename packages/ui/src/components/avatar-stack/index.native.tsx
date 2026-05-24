@@ -41,14 +41,14 @@ function AvatarStack({ avatars, className, maxAvatarsAmount = 3, orientation }: 
         <Avatar alt={name} key={`${name}-${image}-${index}`} className="border-background border-2">
           <AvatarImage source={{ uri: image }} />
           <AvatarFallback>
-            <Text className="text-xs font-medium">{getInitials(name)}</Text>
+            <Text className="text-xs font-medium text-muted-foreground">{getInitials(name)}</Text>
           </AvatarFallback>
         </Avatar>
       ))}
       {hiddenCount ? (
         <Avatar alt={`${hiddenCount} more avatars`} className="border-background border-2">
           <AvatarFallback>
-            <Text className="text-xs font-medium">+{hiddenCount}</Text>
+            <Text className="text-xs font-medium text-muted-foreground">+{hiddenCount}</Text>
           </AvatarFallback>
         </Avatar>
       ) : null}

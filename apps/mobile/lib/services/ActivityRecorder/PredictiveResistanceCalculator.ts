@@ -173,7 +173,7 @@ export class PredictiveResistanceCalculator {
     const standardCadence = constants.standardCadence;
 
     const requiredTorque = (targetPower * 60) / (2 * Math.PI * standardCadence);
-    let resistance = this.torqueToResistance(requiredTorque, deviceType);
+    const resistance = this.torqueToResistance(requiredTorque, deviceType);
 
     return this.applyDeviceLimits(resistance, deviceFeatures);
   }

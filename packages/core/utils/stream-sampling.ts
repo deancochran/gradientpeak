@@ -27,7 +27,6 @@ export function downsampleStream(
       case "min":
         sampledValue = Math.min(...windowValues);
         break;
-      case "avg":
       default:
         sampledValue = windowValues.reduce((sum, value) => sum + value, 0) / windowValues.length;
         break;

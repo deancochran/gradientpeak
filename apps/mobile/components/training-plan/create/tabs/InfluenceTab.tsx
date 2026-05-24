@@ -3,7 +3,6 @@ import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import { ChevronDown, ChevronUp } from "lucide-react-native";
-import React from "react";
 import { Pressable, View } from "react-native";
 import { parseNumberOrUndefined } from "@/lib/training-plan-form/input-parsers";
 import type { TrainingPlanConfigFormData } from "../SinglePageForm";

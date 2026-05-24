@@ -1,8 +1,9 @@
 import {
-  editableEventPatchSchema,
+  type EventLifecycle,
+  type EventRecurrence,
   eventCreateSchema,
   eventMutationScopeSchema,
-  eventTypeInputSchema,
+  type eventTypeInputSchema,
   eventUpdateSchema,
   plannedActivityCreateSchema,
   plannedActivityUpdateSchema,
@@ -10,15 +11,14 @@ import {
 import type {
   ActivityRow,
   EventRow,
-  PublicActivityCategory,
   PublicActivityPlansRow,
-  PublicEffortType,
   PublicEventStatus,
   PublicEventType,
-  PublicProfileMetricType,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { createEventUseCase, enqueueProviderPlannedActivityJobs } from "../application/events";
+import type { Context } from "../context";
 import { getRequiredDb } from "../db";
 import {
   createEventCompletionRepository,
@@ -26,7 +26,6 @@ import {
   createEventWriteRepository,
 } from "../infrastructure/repositories";
 import {
-  enqueuePlannedWorkoutSyncAfterCalendarMutation,
   getEventPlannedWorkoutProviderStatuses,
   type PlannedWorkoutQueueResult,
 } from "../lib/provider-sync/planned-workouts";
@@ -46,32 +45,20 @@ type EventLifecycleStatus =
   | "rescheduled"
   | "expired";
 
-async function enqueueProviderPlannedActivityJobs(
-  ctx: any,
-  input: { eventIds: string[]; operation: "publish" | "unsync"; profileId?: string },
-): Promise<PlannedWorkoutQueueResult | null> {
-  return enqueuePlannedWorkoutSyncAfterCalendarMutation({
-    db: getRequiredDb(ctx),
-    eventIds: input.eventIds,
-    operation: input.operation,
-    profileId: input.profileId ?? ctx.session.user.id,
-  });
+function getEventCompletionRepository(ctx: Context) {
+  return createEventCompletionRepository(getRequiredDb(ctx));
 }
 
-function getEventCompletionRepository(ctx: { session: { user: { id: string } } }) {
-  return createEventCompletionRepository(getRequiredDb(ctx as any));
+function getEventWriteRepository(ctx: Context) {
+  return createEventWriteRepository(getRequiredDb(ctx));
 }
 
-function getEventWriteRepository(ctx: { session: { user: { id: string } } }) {
-  return createEventWriteRepository(getRequiredDb(ctx as any));
+function getEventReadRepository(ctx: Context) {
+  return createEventReadRepository(getRequiredDb(ctx));
 }
 
-function getEventReadRepository(ctx: { session: { user: { id: string } } }) {
-  return createEventReadRepository(getRequiredDb(ctx as any));
-}
-
-function getContentPermissions(ctx: { db?: unknown }) {
-  const db = getRequiredDb(ctx as any);
+function getContentPermissions(ctx: Context) {
+  const db = getRequiredDb(ctx);
 
   if (!("select" in db) || !("insert" in db) || !("update" in db)) {
     return null;
@@ -148,7 +135,7 @@ function toCoreEventType(eventType: DbEventType): CoreEventType {
   return dbEventTypeToCoreMap[eventType];
 }
 
-const plannedEventSelect = `
+const _plannedEventSelect = `
   id,
   idx,
   profile_id,
@@ -271,7 +258,6 @@ const plannedActivityUpdateWithIdInputSchema = plannedActivityUpdateSchema
   .strict();
 
 type LegacyPlannedUpdateInput = z.infer<typeof plannedActivityUpdateWithIdInputSchema>;
-type EventUpdatePatchInput = z.infer<typeof editableEventPatchSchema>;
 type EventUpdateMutationInput = LegacyPlannedUpdateInput | EventUpdateInput;
 
 const eventUpdateInputSchema = z.unknown().transform((value, ctx): EventUpdateMutationInput => {
@@ -308,8 +294,8 @@ type NormalizedEventUpdatePatch = {
   training_plan_id?: string | null;
   notes?: string | null;
   event_type?: CoreEventType;
-  recurrence?: EventUpdatePatchInput["recurrence"];
-  lifecycle?: EventUpdatePatchInput["lifecycle"];
+  recurrence?: EventRecurrence | null;
+  lifecycle?: EventLifecycle;
   title?: string;
   description?: string | null;
   all_day?: boolean;
@@ -936,7 +922,7 @@ function normalizeEventCreateInput(input: EventCreateMutationInput): NormalizedE
   };
 }
 
-function applyScopeFilters(
+function _applyScopeFilters(
   query: any,
   existingEvent: PlannedEventRecord,
   scope: EventMutationScope,
@@ -951,7 +937,7 @@ function applyScopeFilters(
     // for non-materialized series. Current DB contract relies on series_id.
     throw new TRPCError({
       code: "BAD_REQUEST",
-      message: `Mutation scope \"${scope}\" requires an event series`,
+      message: `Mutation scope "${scope}" requires an event series`,
     });
   }
 
@@ -978,10 +964,10 @@ function compareActivitiesForReconciliation(
   a: ReconciliationActivityCandidate,
   b: ReconciliationActivityCandidate,
 ): number {
-  const aStartedAt = typeof a.started_at == "string" ? a.started_at : "";
-  const bStartedAt = typeof b.started_at == "string" ? b.started_at : "";
-  const aId = typeof a.id == "string" ? a.id : "";
-  const bId = typeof b.id == "string" ? b.id : "";
+  const aStartedAt = typeof a.started_at === "string" ? a.started_at : "";
+  const bStartedAt = typeof b.started_at === "string" ? b.started_at : "";
+  const aId = typeof a.id === "string" ? a.id : "";
+  const bId = typeof b.id === "string" ? b.id : "";
   const aMs = Date.parse(aStartedAt);
   const bMs = Date.parse(bStartedAt);
 
@@ -1132,191 +1118,23 @@ export const eventsRouter = createTRPCRouter({
   }),
 
   create: protectedProcedure.input(eventCreateInputSchema).mutation(async ({ ctx, input }) => {
-    const eventWriteRepository = getEventWriteRepository(ctx);
-    const permissions = getContentPermissions(ctx);
-    const normalizedCreate = normalizeEventCreateInput(input);
-    const normalizedEventType = normalizedCreate.eventType;
-
-    assertRestDayWritesBlocked(normalizedEventType, "create");
-
-    if (normalizedEventType === "imported") {
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: "Imported events are managed by integrations",
-      });
-    }
-
-    const recurrence = normalizedCreate.recurrence;
-    ensurePersistableRecurrence(recurrence);
-
-    if (normalizedEventType === "planned" && !normalizedCreate.activityPlanId) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: 'activity_plan_id is required when event_type is "planned"',
-      });
-    }
-
-    if (normalizedCreate.activityPlanId) {
-      if (permissions) {
-        await permissions.requireRead(
-          ctx.session.user.id,
-          { type: "activity_plan", id: normalizedCreate.activityPlanId },
-          "Activity plan not found or not accessible",
-        );
-      } else {
-        const activityPlan = await eventWriteRepository.getAccessibleActivityPlan({
-          activityPlanId: normalizedCreate.activityPlanId,
-          profileId: ctx.session.user.id,
-        });
-
-        if (!activityPlan) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Activity plan not found or not accessible",
-          });
-        }
-      }
-    }
-
-    const trainingPlanId = normalizedCreate.trainingPlanId;
-
-    if (trainingPlanId) {
-      if (permissions) {
-        await permissions.requireRead(
-          ctx.session.user.id,
-          { type: "training_plan", id: trainingPlanId },
-          "Training plan not found or not accessible",
-        );
-      } else {
-        const trainingPlan = await eventWriteRepository.getOwnedTrainingPlan({
-          profileId: ctx.session.user.id,
-          trainingPlanId,
-        });
-
-        if (!trainingPlan) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Training plan not found or not accessible",
-          });
-        }
-      }
-    }
-
-    let data;
-    let createdEvents: PlannedEventRecord[] = [];
-    try {
-      const occurrences = recurrence
-        ? buildMaterializedRecurrenceOccurrences({
-            startsAt: normalizedCreate.startsAt,
-            endsAt: normalizedCreate.endsAt,
-            recurrence,
-          })
-        : [
-            {
-              startsAt: normalizedCreate.startsAt,
-              endsAt: normalizedCreate.endsAt,
-              occurrenceKey: "",
-            },
-          ];
-
-      data = await eventWriteRepository.createOwnedEvent({
-        profileId: ctx.session.user.id,
-        eventType: toDbEventType(normalizedEventType),
-        title: normalizedCreate.title,
-        allDay: normalizedCreate.allDay,
-        timezone: normalizedCreate.timezone,
-        startsAt: occurrences[0]?.startsAt ?? normalizedCreate.startsAt,
-        endsAt: occurrences[0]?.endsAt ?? normalizedCreate.endsAt,
-        status: normalizedCreate.status,
-        activityPlanId: normalizedCreate.activityPlanId,
-        trainingPlanId,
-        notes: normalizedCreate.notes,
-        description: normalizedCreate.description,
-        recurrenceRule: recurrence?.rule ?? null,
-        recurrenceTimezone: recurrence?.timezone ?? null,
-        seriesId: null,
-        occurrenceKey: recurrence ? (occurrences[0]?.occurrenceKey ?? null) : null,
-        originalStartsAt: recurrence ? (occurrences[0]?.startsAt ?? null) : null,
-        sourceProvider: normalizedCreate.sourceProvider,
-      });
-      createdEvents = [data as PlannedEventRecord];
-
-      for (const occurrence of occurrences.slice(1)) {
-        const occurrenceData = await eventWriteRepository.createOwnedEvent({
-          profileId: ctx.session.user.id,
-          eventType: toDbEventType(normalizedEventType),
-          title: normalizedCreate.title,
-          allDay: normalizedCreate.allDay,
-          timezone: normalizedCreate.timezone,
-          startsAt: occurrence.startsAt,
-          endsAt: occurrence.endsAt,
-          status: normalizedCreate.status,
-          activityPlanId: normalizedCreate.activityPlanId,
-          trainingPlanId,
-          notes: normalizedCreate.notes,
-          description: normalizedCreate.description,
-          recurrenceRule: recurrence?.rule ?? null,
-          recurrenceTimezone: recurrence?.timezone ?? null,
-          seriesId: (data as PlannedEventRecord).id,
-          occurrenceKey: occurrence.occurrenceKey,
-          originalStartsAt: occurrence.startsAt,
-          sourceProvider: normalizedCreate.sourceProvider,
-        });
-        createdEvents.push(occurrenceData as PlannedEventRecord);
-      }
-    } catch (error) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: error instanceof Error ? error.message : "Failed to create event",
-      });
-    }
-
-    const event = mapEvent(data as PlannedEventRecord);
-
-    if (permissions) {
-      for (const createdEvent of createdEvents) {
-        await permissions.grantEventContentAccess({
-          actorProfileId: ctx.session.user.id,
-          granteeProfileId: createdEvent.profile_id,
-          eventId: createdEvent.id,
-          activityPlanId: createdEvent.activity_plan_id,
-          trainingPlanId: createdEvent.training_plan_id,
-        });
-      }
-    }
-
-    let plannedWorkoutSyncResult: PlannedWorkoutQueueResult | null = null;
-    if (event.legacy_event_type === plannedEventType) {
-      try {
-        plannedWorkoutSyncResult = await enqueueProviderPlannedActivityJobs(ctx, {
-          eventIds: createdEvents.map((createdEvent) => createdEvent.id),
-          operation: "publish",
-        });
-      } catch (error) {
-        console.error("Failed to enqueue planned workout sync:", error);
-        plannedWorkoutSyncResult = {
-          affectedCount: 1,
-          operation: "publish",
-          queued: false,
-          success: false,
-          error:
-            error instanceof Error
-              ? error.message
-              : "Unknown error during planned workout sync queueing",
-        };
-      }
-    }
-
-    return {
-      ...event,
-      plannedWorkoutSync: plannedWorkoutSyncResult,
-      wahooSync: plannedWorkoutSyncResult,
-      insight_refresh_hint: buildInsightRefreshHint({
-        trainingPlanId: event.training_plan_id,
-        changedDate: event.scheduled_date,
-        changeAt: event.updated_at,
-      }),
-    };
+    return createEventUseCase({
+      ctx,
+      input,
+      dependencies: {
+        assertRestDayWritesBlocked,
+        buildInsightRefreshHint,
+        buildMaterializedRecurrenceOccurrences,
+        enqueueProviderPlannedActivityJobs,
+        ensurePersistableRecurrence,
+        getContentPermissions,
+        getEventWriteRepository,
+        mapEvent: (event) => mapEvent(event as PlannedEventRecord),
+        normalizeEventCreateInput,
+        plannedEventType,
+        toDbEventType,
+      },
+    });
   }),
 
   update: protectedProcedure.input(eventUpdateInputSchema).mutation(async ({ ctx, input }) => {
@@ -1366,6 +1184,34 @@ export const eventsRouter = createTRPCRouter({
       existingEvent.linked_activity_id !== null || existingEvent.status === "completed";
 
     ensurePersistableRecurrence(patch.recurrence);
+
+    if (patch.recurrence !== undefined && scope === "single") {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Recurrence updates require future or series scope",
+      });
+    }
+
+    if (scope !== "single") {
+      if (!existingEvent.series_id) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Mutation scope "${scope}" requires an event series`,
+        });
+      }
+
+      if (
+        scheduledDate !== undefined ||
+        patch.starts_at !== undefined ||
+        patch.ends_at !== undefined
+      ) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Date/time updates are only supported with single scope",
+        });
+      }
+    }
+
     const nextActivityPlanId =
       patch.activity_plan_id !== undefined
         ? patch.activity_plan_id
@@ -1740,7 +1586,7 @@ export const eventsRouter = createTRPCRouter({
         });
       }
 
-      const eventUpdates: Record<string, unknown> = {
+      const _eventUpdates: Record<string, unknown> = {
         // TODO(events-router): Once dedicated completion lifecycle columns
         // (completed_activity_id/completed_at) are available in the events
         // table, migrate this canonical linkage to those fields.

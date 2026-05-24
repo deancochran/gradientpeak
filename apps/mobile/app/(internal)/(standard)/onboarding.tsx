@@ -700,7 +700,7 @@ export default function OnboardingScreen() {
     if (Object.keys(updates).length > 0) {
       updateData(updates, { source: "imported" });
     }
-  }, [importedValuesQuery.data, touchedFields]);
+  }, [importedValuesQuery.data, touchedFields, updateData]);
 
   const fieldSources = useMemo(() => {
     const sources: Partial<Record<keyof OnboardingData, string>> = {};
@@ -931,7 +931,7 @@ export default function OnboardingScreen() {
         css_seconds_per_hundred_meters: data.css ?? undefined,
       };
 
-      const result = await completeOnboardingMutation.mutateAsync(input);
+      const _result = await completeOnboardingMutation.mutateAsync(input);
       await completeOnboarding();
 
       // Hand control back to the global auth gate.

@@ -14,7 +14,6 @@
 
 import type { RecordingState } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
-import React from "react";
 import { Pressable, View } from "react-native";
 
 export interface RecordingControlsProps {

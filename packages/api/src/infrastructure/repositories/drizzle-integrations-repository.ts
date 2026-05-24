@@ -1,4 +1,4 @@
-import type { DrizzleDbClient, IntegrationRow } from "@repo/db";
+import type { DrizzleDbClient } from "@repo/db";
 import { schema } from "@repo/db";
 import { and, eq, gt, lt } from "drizzle-orm";
 import type { IntegrationsRepositories } from "../../repositories";
@@ -7,12 +7,10 @@ export function createIntegrationsRepositories(db: DrizzleDbClient): Integration
   return {
     integrations: {
       async listByProfileId(profileId) {
-        const rows = await db
+        return db
           .select()
           .from(schema.integrations)
           .where(eq(schema.integrations.profile_id, profileId));
-
-        return rows as IntegrationRow[];
       },
 
       async findByProfileIdAndProvider({ profileId, provider }) {
@@ -30,6 +28,25 @@ export function createIntegrationsRepositories(db: DrizzleDbClient): Integration
         return row ?? null;
       },
 
+      async findCredentialsByProfileIdAndProvider({ profileId, provider }) {
+        const [row] = await db
+          .select({ credentials: schema.integrationCredentials })
+          .from(schema.integrations)
+          .innerJoin(
+            schema.integrationCredentials,
+            eq(schema.integrationCredentials.integration_id, schema.integrations.id),
+          )
+          .where(
+            and(
+              eq(schema.integrations.profile_id, profileId),
+              eq(schema.integrations.provider, provider),
+            ),
+          )
+          .limit(1);
+
+        return row?.credentials ?? null;
+      },
+
       async upsertByProfileIdAndProvider({
         profileId,
         provider,
@@ -45,19 +62,11 @@ export function createIntegrationsRepositories(db: DrizzleDbClient): Integration
             profile_id: profileId,
             provider,
             external_id: externalId,
-            access_token: accessToken,
-            refresh_token: refreshToken,
-            expires_at: expiresAt,
-            scope,
           })
           .onConflictDoUpdate({
             target: [schema.integrations.profile_id, schema.integrations.provider],
             set: {
               external_id: externalId,
-              access_token: accessToken,
-              refresh_token: refreshToken,
-              expires_at: expiresAt,
-              scope,
               updated_at: new Date(),
             },
           })
@@ -67,7 +76,32 @@ export function createIntegrationsRepositories(db: DrizzleDbClient): Integration
           throw new Error("Failed to upsert integration");
         }
 
-        return row as IntegrationRow;
+        const [credentials] = await db
+          .insert(schema.integrationCredentials)
+          .values({
+            integration_id: row.id,
+            access_token: accessToken,
+            refresh_token: refreshToken,
+            expires_at: expiresAt,
+            scope,
+          })
+          .onConflictDoUpdate({
+            target: schema.integrationCredentials.integration_id,
+            set: {
+              access_token: accessToken,
+              refresh_token: refreshToken,
+              expires_at: expiresAt,
+              scope,
+              updated_at: new Date(),
+            },
+          })
+          .returning();
+
+        if (!credentials) {
+          throw new Error("Failed to upsert integration credentials");
+        }
+
+        return row;
       },
 
       async updateTokensByProfileIdAndProvider({
@@ -77,20 +111,38 @@ export function createIntegrationsRepositories(db: DrizzleDbClient): Integration
         refreshToken,
         expiresAt,
       }) {
-        await db
+        const [integration] = await db
           .update(schema.integrations)
-          .set({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-            expires_at: expiresAt,
-            updated_at: new Date(),
-          })
+          .set({ updated_at: new Date() })
           .where(
             and(
               eq(schema.integrations.profile_id, profileId),
               eq(schema.integrations.provider, provider),
             ),
-          );
+          )
+          .returning({ id: schema.integrations.id });
+
+        if (!integration) {
+          return;
+        }
+
+        await db
+          .insert(schema.integrationCredentials)
+          .values({
+            integration_id: integration.id,
+            access_token: accessToken,
+            refresh_token: refreshToken,
+            expires_at: expiresAt,
+          })
+          .onConflictDoUpdate({
+            target: schema.integrationCredentials.integration_id,
+            set: {
+              access_token: accessToken,
+              refresh_token: refreshToken,
+              expires_at: expiresAt,
+              updated_at: new Date(),
+            },
+          });
       },
 
       async deleteByProfileIdAndProvider({ profileId, provider }) {

@@ -101,13 +101,13 @@ describe("target attainment calibration", () => {
       predictions.reduce((sum, sample) => sum + sample.observed, 0) / predictions.length;
 
     const brierScore = mean(
-      predictions.map(({ predictedProbability, observed }) =>
-        Math.pow(predictedProbability - observed, 2),
+      predictions.map(
+        ({ predictedProbability, observed }) => (predictedProbability - observed) ** 2,
       ),
     );
 
     const baselineBrierScore = mean(
-      predictions.map(({ observed }) => Math.pow(observedRate - observed, 2)),
+      predictions.map(({ observed }) => (observedRate - observed) ** 2),
     );
 
     expect(brierScore).toBeLessThan(baselineBrierScore);

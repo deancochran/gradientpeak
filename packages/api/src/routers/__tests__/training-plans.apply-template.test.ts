@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createQueryMapDbMock, type QueryCall, type QueryMap } from "../../test/mock-query-db";
+import { createQueryMapDbMock, type QueryMap } from "../../test/mock-query-db";
 import { trainingPlansRouter } from "../planning/training-plans";
 
 function createCaller(queryMap: QueryMap) {

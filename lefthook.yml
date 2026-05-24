@@ -8,6 +8,8 @@ pre-commit:
 
 pre-push:
   jobs:
+    - name: biome
+      run: pnpm check
     - name: typecheck
       run: pnpm check-types
     - name: test

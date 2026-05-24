@@ -1,6 +1,6 @@
 import { Text } from "@repo/ui/components/text";
 import { Stack } from "expo-router";
-import React, { useState } from "react";
+import { useState } from "react";
 import { Pressable, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";

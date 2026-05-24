@@ -22,10 +22,7 @@ import {
   useSessionView,
 } from "@/lib/hooks/useActivityRecorder";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
-import {
-  type ConnectedSensor,
-  type PersistedSensor,
-} from "@/lib/services/ActivityRecorder/sensors";
+import type { ConnectedSensor, PersistedSensor } from "@/lib/services/ActivityRecorder/sensors";
 import {
   type AllPermissionsStatus,
   checkAllPermissions,

@@ -7,7 +7,7 @@ import { Label } from "@repo/ui/components/label";
 import { Slider } from "@repo/ui/components/slider";
 import { Text } from "@repo/ui/components/text";
 import { Activity, ChevronDown, ChevronUp, Clock, Trash2 } from "lucide-react-native";
-import React, { useState } from "react";
+import { useState } from "react";
 import { Pressable, View } from "react-native";
 
 interface MesocycleCardProps {

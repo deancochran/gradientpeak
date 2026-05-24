@@ -1,5 +1,4 @@
 import type * as React from "react";
-import type { ComponentProps } from "react";
 import type {
   Control,
   FieldPath,

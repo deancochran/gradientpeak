@@ -3,7 +3,7 @@ import DateTimePicker, {
   type DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
 import { format } from "date-fns";
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { formatDateOnly, parseDateOnlyToDate } from "../../lib/fitness-inputs";
 import { Modal, Platform, Pressable, View } from "../../lib/react-native";
 import { getNativeTestProps } from "../../lib/test-props";

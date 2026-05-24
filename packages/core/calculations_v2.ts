@@ -184,7 +184,7 @@ export function calculateActivityStatsV2(
   // TSS = (duration in hours) × (avg intensity as FTP decimal)² × 100
   const durationHours = stats.totalDuration / 3600;
   const avgIntensityDecimal = stats.avgPower / 100;
-  stats.estimatedTSS = durationHours * Math.pow(avgIntensityDecimal, 2) * 100;
+  stats.estimatedTSS = durationHours * avgIntensityDecimal ** 2 * 100;
 
   // Rough calorie estimate (1 TSS ≈ 4 calories)
   stats.estimatedCalories = Math.round(stats.estimatedTSS * 4);

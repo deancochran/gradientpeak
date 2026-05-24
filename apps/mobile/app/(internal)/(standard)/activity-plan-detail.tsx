@@ -1,5 +1,4 @@
 import { useLocalSearchParams } from "expo-router";
-import React from "react";
 import { ActivityPlanDetailScreen } from "@/components/activity-plan/ActivityPlanDetailScreen";
 
 export default function ActivityPlanDetailPage() {

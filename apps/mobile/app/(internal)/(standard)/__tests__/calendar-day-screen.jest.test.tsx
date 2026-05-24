@@ -96,10 +96,7 @@ jest.mock("@/lib/constants/routes", () => ({
   ROUTES: {
     RECORD: "/record",
     PLAN: {
-      EVENT_CREATE: (date: string) => ({
-        pathname: "/event-detail",
-        params: { mode: "create", date },
-      }),
+      AGENDA_CREATE: (date: string) => ({ pathname: "/agenda-create", params: { date } }),
       PLAN_DETAIL: (id: string) => `/activity-plan-detail?id=${id}`,
       EVENT_DETAIL: (id: string) => `/event-detail?id=${id}`,
       GOAL_DETAIL: (id: string) => `/goal-detail?id=${id}`,
@@ -247,14 +244,14 @@ describe("calendar day screen", () => {
     expect(stackScreen.props.options.title).toBe("Today, March 23");
   });
 
-  it("opens create event with the selected day prefilled", () => {
+  it("opens agenda creation with the selected day prefilled", () => {
     renderNative(<CalendarDayScreen />);
 
     fireEvent.press(screen.getByTestId("calendar-day-create-event-button"));
 
     expect(pushMock).toHaveBeenCalledWith({
-      pathname: "/(internal)/(standard)/event-detail",
-      params: { mode: "create", date: today },
+      pathname: "/(internal)/(standard)/agenda-create",
+      params: { date: today },
     });
   });
 
@@ -277,9 +274,8 @@ describe("calendar day screen", () => {
     fireEvent.press(screen.getByTestId("calendar-day-create-from-plan-suggestion"));
 
     expect(pushMock).toHaveBeenCalledWith({
-      pathname: "/(internal)/(standard)/event-detail",
+      pathname: "/(internal)/(standard)/agenda-create",
       params: {
-        mode: "create",
         date: tomorrow,
         trainingPlanId: "training-plan-1",
         planSuggestionType: "add_load",

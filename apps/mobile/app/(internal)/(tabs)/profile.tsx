@@ -2,7 +2,7 @@ import { Button } from "@repo/ui/components/button";
 import { Input } from "@repo/ui/components/input";
 import { SettingItem, SettingsGroup } from "@repo/ui/components/settings-group";
 import { Text } from "@repo/ui/components/text";
-import React, { useState } from "react";
+import { useState } from "react";
 import { Alert, ScrollView, View } from "react-native";
 import { ProfileGroupsSection } from "@/components/profile/ProfileGroupsSection";
 import { ProfileSummaryCard } from "@/components/profile/ProfileSummaryCard";
@@ -13,8 +13,16 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { usePerformanceScreenReady } from "@/lib/performance";
 import { useAuthStore } from "@/lib/stores/auth-store";
+import { useTheme } from "@/lib/stores/theme-store";
 
 const contentLinks = [
+  {
+    label: "My Goals",
+    description: "Personal targets, goal readiness, and event milestones.",
+    buttonLabel: "Open",
+    route: ROUTES.GOALS.LIST,
+    testID: "profile-tab-goals",
+  },
   {
     label: "Activities",
     description: "Completed activity history and imported sessions.",
@@ -58,6 +66,7 @@ export default function ProfileTabScreen() {
     updateEmailUnavailableReason,
   } = useAuth();
   const authStore = useAuthStore();
+  const { resolvedTheme, setTheme } = useTheme();
   const [emailFormVisible, setEmailFormVisible] = useState(false);
   const [passwordFormVisible, setPasswordFormVisible] = useState(false);
   const [newEmail, setNewEmail] = useState("");
@@ -245,6 +254,14 @@ export default function ProfileTabScreen() {
             variant="outline"
             onPress={() => navigateTo(ROUTES.INTEGRATIONS as any)}
             testID="profile-tab-integrations"
+          />
+          <SettingItem
+            type="toggle"
+            label="Dark Mode"
+            description="Use the dark app appearance."
+            value={resolvedTheme === "dark"}
+            onValueChange={(enabled) => setTheme(enabled ? "dark" : "light")}
+            testID="profile-tab-dark-mode"
           />
           <SettingItem
             type="button"

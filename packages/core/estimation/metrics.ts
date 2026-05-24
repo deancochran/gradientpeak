@@ -76,7 +76,7 @@ function estimateCalories(
   // Method 1: Power-based (most accurate for cycling)
   if (ftp && activityCategory === "bike") {
     const avgPower = ftp * intensityFactor;
-    const durationHours = duration / 3600;
+    const _durationHours = duration / 3600;
     // kJ = watts * seconds / 1000, roughly 1 kJ = 1 kcal for cycling
     return (avgPower * duration) / 1000;
   }

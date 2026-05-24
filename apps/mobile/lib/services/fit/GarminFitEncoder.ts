@@ -62,15 +62,15 @@ export interface DrillData {
  * Formula: semicircles = degrees × (2³¹ / 180)
  */
 function degreesToSemicircles(degrees: number): number {
-  return Math.round(degrees * (Math.pow(2, 31) / 180));
+  return Math.round(degrees * (2 ** 31 / 180));
 }
 
 /**
  * Convert semicircles to degrees
  * Formula: degrees = semicircles × (180 / 2³¹)
  */
-function semicirclesToDegrees(semicircles: number): number {
-  return semicircles * (180 / Math.pow(2, 31));
+function _semicirclesToDegrees(semicircles: number): number {
+  return semicircles * (180 / 2 ** 31);
 }
 
 export interface FitRecord {
@@ -133,10 +133,10 @@ const DEFAULT_CONFIG: EncoderConfig = {
 export class GarminFitEncoder {
   private recordingId: string;
   private userId: string;
-  private config: EncoderConfig;
   private storageUri: string;
   private outputFilePath: string;
   private encoder: Encoder;
+  private config: EncoderConfig;
   private recordCount: number = 0;
   private startTime: number = 0;
   private isInitialized: boolean = false;
@@ -527,7 +527,7 @@ export class GarminFitEncoder {
           event: 0, // timer
           eventType: 4, // stopAll
         });
-      } catch (e) {
+      } catch (_e) {
         console.warn("[GarminFitEncoder] Failed to write stopAll event, trying stop...");
         this.encoder.writeMesg({
           mesgNum: Profile.MesgNum.EVENT,

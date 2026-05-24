@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react";
 import { Bell, CircleAlert, Info, LayoutGrid, Settings2 } from "lucide-react";
 import { ThemeProvider } from "next-themes";
-import * as React from "react";
+import type * as React from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 

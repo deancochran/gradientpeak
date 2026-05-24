@@ -1,6 +1,7 @@
 import { Avatar, AvatarFallback } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { Textarea } from "@repo/ui/components/textarea";
 import { useState } from "react";
 import { formatDateTime } from "../../lib/activity-route-helpers";
@@ -107,8 +108,10 @@ export function EntityCommentsCard({
             value={newComment}
           />
           <div className="flex justify-end">
-            <Button
+            <LoadingButton
               disabled={!enabled || !newComment.trim() || addCommentMutation.isPending}
+              loading={addCommentMutation.isPending}
+              loadingLabel="Posting..."
               onClick={() => {
                 if (!enabled || !entityId || !newComment.trim()) {
                   return;
@@ -122,8 +125,8 @@ export function EntityCommentsCard({
               }}
               type="button"
             >
-              {addCommentMutation.isPending ? "Posting..." : "Post comment"}
-            </Button>
+              Post comment
+            </LoadingButton>
           </div>
         </div>
       </CardContent>

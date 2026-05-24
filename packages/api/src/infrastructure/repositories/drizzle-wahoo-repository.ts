@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { type DrizzleDbClient, schema } from "@repo/db";
+import { schema } from "@repo/db";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type {
   CreateWahooRepositoryOptions,
@@ -16,13 +16,13 @@ function toWahooEventResourceProviderMetadata(
 ): WahooEventResourceProviderMetadata | null {
   if (!value || typeof value !== "object" || !("wahoo" in value)) return null;
 
-  const wahoo = (value as Record<string, unknown>).wahoo;
+  const wahoo = (value as Record<string, unknown>)["wahoo"];
   if (!wahoo || typeof wahoo !== "object") return null;
 
   const wahooValue = wahoo as Record<string, unknown>;
   const metadata: NonNullable<WahooEventResourceProviderMetadata["wahoo"]> = {};
-  if (typeof wahooValue.planId === "number") metadata.planId = wahooValue.planId;
-  if (typeof wahooValue.routeId === "number") metadata.routeId = wahooValue.routeId;
+  if (typeof wahooValue["planId"] === "number") metadata.planId = wahooValue["planId"];
+  if (typeof wahooValue["routeId"] === "number") metadata.routeId = wahooValue["routeId"];
 
   return Object.keys(metadata).length > 0 ? { wahoo: metadata } : null;
 }
@@ -54,14 +54,18 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
     async findWahooIntegrationByProfileId(profileId) {
       const [row] = await db
         .select({
-          accessToken: schema.integrations.access_token,
-          expiresAt: schema.integrations.expires_at,
+          accessToken: schema.integrationCredentials.access_token,
+          expiresAt: schema.integrationCredentials.expires_at,
           externalId: schema.integrations.external_id,
           id: schema.integrations.id,
           profileId: schema.integrations.profile_id,
-          refreshToken: schema.integrations.refresh_token,
+          refreshToken: schema.integrationCredentials.refresh_token,
         })
         .from(schema.integrations)
+        .innerJoin(
+          schema.integrationCredentials,
+          eq(schema.integrationCredentials.integration_id, schema.integrations.id),
+        )
         .where(
           and(
             eq(schema.integrations.profile_id, profileId),
@@ -129,8 +133,12 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
 
     async getEventActivityPlanId({ eventId, profileId }) {
       const [row] = await db
-        .select({ activityPlanId: schema.events.activity_plan_id })
+        .select({ activityPlanId: schema.eventScheduleLinks.activity_plan_id })
         .from(schema.events)
+        .leftJoin(
+          schema.eventScheduleLinks,
+          eq(schema.events.id, schema.eventScheduleLinks.event_id),
+        )
         .where(
           and(
             eq(schema.events.id, eventId),
@@ -153,31 +161,54 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
             updated_at: new Date(),
             is_private: false,
             profile_id: input.profileId,
-            provider: input.provider,
-            external_id: input.externalId,
             activity_plan_id: input.activityPlanId,
             started_at: new Date(input.startedAt),
             finished_at: new Date(input.finishedAt),
             type: input.type,
             name: input.name,
-            distance_meters: input.distanceMeters,
-            duration_seconds: input.durationSeconds,
-            moving_seconds: input.movingSeconds,
-            elevation_gain_meters: input.elevationGainMeters,
-            calories: input.calories,
-            avg_power: input.avgPower,
-            normalized_power: input.normalizedPower,
-            polyline: input.polyline,
-            avg_heart_rate: input.avgHeartRate,
-            avg_cadence: input.avgCadence,
-            avg_speed_mps: input.avgSpeedMps,
-            activity_file_path: input.activityFilePath,
-            activity_file_size: input.activityFileSize,
           })
           .returning({ id: schema.activities.id });
 
         if (!activity) {
           throw new Error("Failed to create imported Wahoo activity");
+        }
+
+        await tx.insert(schema.activitySummaries).values({
+          activity_id: activity.id,
+          profile_id: input.profileId,
+          duration_seconds: input.durationSeconds,
+          moving_seconds: input.movingSeconds,
+          distance_meters: input.distanceMeters,
+          elevation_gain_meters: input.elevationGainMeters,
+          calories: input.calories,
+          avg_heart_rate: input.avgHeartRate,
+          avg_power: input.avgPower,
+          normalized_power: input.normalizedPower,
+          avg_cadence: input.avgCadence,
+          avg_speed_mps: input.avgSpeedMps,
+          created_at: new Date(),
+          updated_at: new Date(),
+        });
+
+        await tx.insert(schema.activityImports).values({
+          activity_id: activity.id,
+          profile_id: input.profileId,
+          provider: input.provider,
+          external_id: input.externalId,
+          activity_file_path: input.activityFilePath,
+          activity_file_size: input.activityFileSize,
+          created_at: new Date(),
+          updated_at: new Date(),
+        });
+
+        if (input.polyline) {
+          await tx.insert(schema.activityGeometry).values({
+            activity_id: activity.id,
+            profile_id: input.profileId,
+            polyline: input.polyline,
+            created_at: new Date(),
+            updated_at: new Date(),
+          });
         }
 
         await tx.insert(schema.integrationResourceLinks).values({
@@ -248,7 +279,14 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
           },
         })
         .from(schema.events)
-        .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
+        .leftJoin(
+          schema.eventScheduleLinks,
+          eq(schema.events.id, schema.eventScheduleLinks.event_id),
+        )
+        .leftJoin(
+          schema.activityPlans,
+          eq(schema.eventScheduleLinks.activity_plan_id, schema.activityPlans.id),
+        )
         .where(
           and(
             eq(schema.events.id, eventId),
@@ -373,13 +411,27 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
 
     async updateWahooIntegrationTokens({ accessToken, expiresAt, id, refreshToken }) {
       await db
-        .update(schema.integrations)
-        .set({
+        .insert(schema.integrationCredentials)
+        .values({
           access_token: accessToken,
           expires_at: expiresAt ? new Date(expiresAt) : null,
+          integration_id: id,
           refresh_token: refreshToken,
           updated_at: new Date(),
         })
+        .onConflictDoUpdate({
+          target: schema.integrationCredentials.integration_id,
+          set: {
+            access_token: accessToken,
+            expires_at: expiresAt ? new Date(expiresAt) : null,
+            refresh_token: refreshToken,
+            updated_at: new Date(),
+          },
+        });
+
+      await db
+        .update(schema.integrations)
+        .set({ updated_at: new Date() })
         .where(and(eq(schema.integrations.id, id), eq(schema.integrations.provider, "wahoo")));
     },
   };

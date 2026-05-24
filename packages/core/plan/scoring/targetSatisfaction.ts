@@ -108,7 +108,7 @@ function resolveDemandPenalty(demandRatio: number): number {
     return 1;
   }
 
-  return 1 / (1 + Math.pow(demandRatio - 1, 2) * 4);
+  return 1 / (1 + (demandRatio - 1) ** 2 * 4);
 }
 
 function resolveProjectionInferencePenalty(input: {

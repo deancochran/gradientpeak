@@ -650,14 +650,14 @@ describe("calendar day timeline screen", () => {
     expect(list.props.onScrollToIndexFailed).toBeDefined();
   });
 
-  it("opens event creation for the visible agenda day", () => {
+  it("opens agenda creation for the visible agenda day", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 
     fireEvent.press(screen.getByTestId("create-event-entry"));
 
     expect(pushMock).toHaveBeenCalledWith({
-      pathname: "/(internal)/(standard)/event-detail",
-      params: { mode: "create", date: today },
+      pathname: "/(internal)/(standard)/agenda-create",
+      params: { date: today },
     });
   });
 

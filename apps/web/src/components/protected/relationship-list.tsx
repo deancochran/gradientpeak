@@ -1,5 +1,4 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
-import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Link } from "@tanstack/react-router";
 import { Loader2, Lock, UserRound } from "lucide-react";

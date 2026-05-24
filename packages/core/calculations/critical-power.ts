@@ -141,8 +141,8 @@ export function calculateCriticalPower(seasonBestCurve: BestEffort[]): CriticalP
 
     const yPred = slope * x + intercept;
 
-    ssTotal += Math.pow(y - meanY, 2);
-    ssRes += Math.pow(y - yPred, 2);
+    ssTotal += (y - meanY) ** 2;
+    ssRes += (y - yPred) ** 2;
   }
 
   const rSquared = 1 - ssRes / ssTotal;

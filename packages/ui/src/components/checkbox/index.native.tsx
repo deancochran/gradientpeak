@@ -1,4 +1,4 @@
-import * as React from "react";
+import type * as React from "react";
 import { getNativeTestProps } from "../../lib/test-props";
 import { Checkbox as RegistryCheckbox } from "../../registry/native/checkbox";
 import type { CheckboxClassNameOverrides, CheckboxTestProps } from "./shared";

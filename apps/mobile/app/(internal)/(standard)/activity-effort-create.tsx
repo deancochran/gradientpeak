@@ -1,4 +1,3 @@
-import { Button } from "@repo/ui/components/button";
 import {
   Form,
   FormBoundedNumberField,
@@ -6,10 +5,10 @@ import {
   FormSegmentedSelectField,
   FormTextField,
 } from "@repo/ui/components/form";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useRouter } from "expo-router";
-import React from "react";
 import { Alert, ScrollView, View } from "react-native";
 import { z } from "zod";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
@@ -63,6 +62,11 @@ function ActivityEffortCreate() {
   });
 
   const isSubmitting = submitForm.isSubmitting || createMutation.isPending;
+  const submitButtonState = submitForm.getSubmitButtonState({
+    disabled: isSubmitting,
+    label: "Save Effort",
+    submittingLabel: "Saving...",
+  });
 
   return (
     <ScrollView
@@ -131,11 +135,15 @@ function ActivityEffortCreate() {
         </View>
       </Form>
 
-      <Button className="mt-4" onPress={submitForm.handleSubmit} disabled={isSubmitting}>
-        <Text className={isSubmitting ? "text-muted-foreground" : "text-primary-foreground"}>
-          {isSubmitting ? "Saving..." : "Save Effort"}
-        </Text>
-      </Button>
+      <LoadingButton
+        className="mt-4"
+        disabled={submitButtonState.disabled}
+        loading={isSubmitting || submitButtonState.loading}
+        loadingLabel={submitButtonState.loadingLabel}
+        onPress={submitForm.handleSubmit}
+      >
+        <Text className="text-primary-foreground">{submitButtonState.label}</Text>
+      </LoadingButton>
     </ScrollView>
   );
 }

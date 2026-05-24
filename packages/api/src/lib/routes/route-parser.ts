@@ -223,7 +223,7 @@ function parseTrackPoint(element: Element): LatLngAlt | null {
   const lat = parseFloat(element.getAttribute("lat") || "");
   const lon = parseFloat(element.getAttribute("lon") || "");
 
-  if (isNaN(lat) || isNaN(lon)) {
+  if (Number.isNaN(lat) || Number.isNaN(lon)) {
     return null;
   }
 
@@ -235,7 +235,7 @@ function parseTrackPoint(element: Element): LatLngAlt | null {
   return {
     latitude: lat,
     longitude: lon,
-    altitude: typeof altitude === "number" && !isNaN(altitude) ? altitude : undefined,
+    altitude: typeof altitude === "number" && !Number.isNaN(altitude) ? altitude : undefined,
   };
 }
 

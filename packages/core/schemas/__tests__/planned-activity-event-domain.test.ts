@@ -9,6 +9,7 @@ import {
   eventUpdateSchema,
   importedEventLifecycleMutationSchema,
   importedEventSourceMetadataSchema,
+  persistableEventRecurrenceSchema,
   plannedActivityCreateSchema,
   plannedActivityEventCreateSchema,
   plannedActivityRescheduleSchema,
@@ -69,6 +70,41 @@ describe("planned activity event domain schemas", () => {
     expect(parsed.success).toBe(false);
   });
 
+  it("rejects non-empty persisted recurrence exclusions until persistence supports them", () => {
+    const valid = persistableEventRecurrenceSchema.safeParse({
+      rule: "FREQ=WEEKLY;INTERVAL=1",
+      timezone: "UTC",
+    });
+
+    const withExdates = persistableEventRecurrenceSchema.safeParse({
+      rule: "FREQ=WEEKLY;INTERVAL=1",
+      timezone: "UTC",
+      exdates: ["2026-05-10"],
+    });
+
+    const withExceptions = customEventCreateSchema.safeParse({
+      event_type: "custom",
+      title: "Team meeting",
+      starts_at: "2026-03-12T16:30:00.000Z",
+      timezone: "UTC",
+      recurrence: {
+        rule: "FREQ=WEEKLY;INTERVAL=1",
+        timezone: "UTC",
+        exceptions: [
+          {
+            occurrence_date: "2026-05-10",
+            action: "modified",
+            starts_at: "2026-05-10T07:00:00.000Z",
+          },
+        ],
+      },
+    });
+
+    expect(valid.success).toBe(true);
+    expect(withExdates.success).toBe(false);
+    expect(withExceptions.success).toBe(false);
+  });
+
   it("enforces source metadata and read-only rules for imported events", () => {
     expect(
       importedEventSourceMetadataSchema.safeParse({
@@ -126,6 +162,53 @@ describe("planned activity event domain schemas", () => {
     const parsed = eventUpdateSchema.safeParse({
       id: "e4e9d401-49dc-4f14-b8ab-2da517f7db1b",
       patch: {},
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
+  it("requires recurrence updates to target future or series scope only", () => {
+    const recurrence = {
+      rule: "FREQ=WEEKLY;INTERVAL=1",
+      timezone: "UTC",
+    };
+
+    expect(
+      eventUpdateSchema.safeParse({
+        id: "e4e9d401-49dc-4f14-b8ab-2da517f7db1b",
+        scope: "future",
+        patch: { recurrence },
+      }).success,
+    ).toBe(true);
+
+    expect(
+      eventUpdateSchema.safeParse({
+        id: "e4e9d401-49dc-4f14-b8ab-2da517f7db1b",
+        scope: "series",
+        patch: { recurrence: null },
+      }).success,
+    ).toBe(true);
+
+    expect(
+      eventUpdateSchema.safeParse({
+        id: "e4e9d401-49dc-4f14-b8ab-2da517f7db1b",
+        scope: "single",
+        patch: { recurrence },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("keeps recurrence patches separate from details and schedule patches", () => {
+    const parsed = eventUpdateSchema.safeParse({
+      id: "e4e9d401-49dc-4f14-b8ab-2da517f7db1b",
+      scope: "future",
+      patch: {
+        title: "Updated title",
+        recurrence: {
+          rule: "FREQ=WEEKLY;INTERVAL=1",
+          timezone: "UTC",
+        },
+      },
     });
 
     expect(parsed.success).toBe(false);

@@ -1,4 +1,4 @@
-import { type DurationV2, type IntensityTargetV2, type PlanStepV2 } from "@repo/core";
+import type { DurationV2, IntensityTargetV2, PlanStepV2 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import {
   Form,
@@ -9,7 +9,6 @@ import {
   FormTextField,
 } from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
-import { Label } from "@repo/ui/components/label";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { Copy, Trash2 } from "lucide-react-native";
@@ -161,7 +160,7 @@ export function StepEditSheet({
         targetIntensity: "",
       });
     }
-  }, [form, isVisible, step]);
+  }, [form, step]);
 
   useEffect(() => {
     if (durationType === "time") {

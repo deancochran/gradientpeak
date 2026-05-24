@@ -1,4 +1,4 @@
-import * as React from "react";
+import type * as React from "react";
 import { getWebTestProps } from "../../lib/test-props";
 import { Textarea as RegistryTextarea } from "../../registry/web/textarea";
 import type { TextareaTestProps } from "./shared";

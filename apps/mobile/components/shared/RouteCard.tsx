@@ -1,7 +1,7 @@
 import { decodePolyline } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import type { ReactNode } from "react";
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 import { View } from "react-native";
 import {
   ResourceCardHeader,

@@ -86,7 +86,6 @@ function resolveRecordingAction(
         label: contract?.devices.hasTrainer ? "Trainer connected" : "Connect trainer",
         onPress: context.onOpenSensors,
       };
-    case "sensors":
     default:
       return {
         disabled: false,

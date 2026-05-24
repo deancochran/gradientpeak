@@ -4,7 +4,7 @@ import { Text } from "@repo/ui/components/text";
 import { Stack } from "expo-router";
 import { CheckCircle2, Timer, Zap } from "lucide-react-native";
 import React from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Pressable, ScrollView, useColorScheme, View } from "react-native";
 import Svg, { Circle, Line, Path, Text as SvgText } from "react-native-svg";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { CompactInsightCard, type DateRange, DetailChartModal } from "@/components/shared";
@@ -41,13 +41,24 @@ type ActivityEffortCurve = {
 type ChartPoint = { x: number; y: number };
 
 type EffortChartBounds = {
+  minDuration: number;
   maxDuration: number;
+  minValue: number;
   maxValue: number;
 };
 
 const EFFORT_CURVE_OPTIONS = ["power", "speed"] as const;
-const MIN_EFFORT_CURVE_DURATION_SECONDS = 3600;
-const EFFORT_CURVE_DURATION_TICKS = [0, 15, 60, 300, 1200, 3600, 7200];
+const EFFORT_CURVE_DURATION_TICKS = [5, 15, 30, 60, 120, 300, 600, 1200, 1800, 3600, 7200, 14400];
+
+function getEffortChartColors(isDark: boolean) {
+  return {
+    axis: isDark ? "#64748b" : "#94a3b8",
+    current: isDark ? "#fb923c" : "#f97316",
+    grid: isDark ? "#334155" : "#e2e8f0",
+    label: isDark ? "#94a3b8" : "#64748b",
+    previous: isDark ? "#94a3b8" : "#94a3b8",
+  };
+}
 
 function getCurveTitle(effortType: string) {
   if (effortType === "power") return "Power curve";
@@ -73,45 +84,59 @@ function buildPath(points: Array<{ x: number; y: number }>) {
   return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
 }
 
-function scaleDuration(duration: number, maxDuration: number) {
-  if (duration <= 0) return 0;
-  return Math.log1p(duration) / Math.log1p(maxDuration);
+function scaleDuration(duration: number, minDuration: number, maxDuration: number) {
+  const safeDuration = Math.max(duration, 1);
+  const safeMin = Math.max(minDuration, 1);
+  const safeMax = Math.max(maxDuration, safeMin + 1);
+  const minLog = Math.log1p(safeMin);
+  const maxLog = Math.log1p(safeMax);
+
+  return (Math.log1p(safeDuration) - minLog) / (maxLog - minLog || 1);
 }
 
-function getDurationTicks(maxDuration: number) {
-  const ticks = EFFORT_CURVE_DURATION_TICKS.filter((tick) => tick <= maxDuration);
-  const lastTick = ticks.at(-1);
+function getDurationTicks(minDuration: number, maxDuration: number) {
+  const ticks = EFFORT_CURVE_DURATION_TICKS.filter(
+    (tick) => tick >= minDuration && tick <= maxDuration,
+  );
 
-  if (lastTick !== maxDuration) {
-    ticks.push(maxDuration);
-  }
+  ticks.unshift(minDuration);
+  ticks.push(maxDuration);
 
-  return ticks;
+  return [...new Set(ticks)].sort((a, b) => a - b);
 }
 
 function getCoordinates(points: EffortPoint[], width: number, height: number, padding: number) {
   const values = points.map((point) => point.value);
-  const max = Math.max(...values, 1);
-  const maxDuration = Math.max(
-    ...points.map((point) => point.duration),
-    MIN_EFFORT_CURVE_DURATION_SECONDS,
-  );
+  const minValue = values.length > 0 ? Math.min(...values) : 0;
+  const maxValue = values.length > 0 ? Math.max(...values) : 1;
+  const valueRange = maxValue - minValue || Math.max(maxValue * 0.1, 1);
+  const minDuration = Math.max(Math.min(...points.map((point) => point.duration)), 1);
+  const maxDuration = Math.max(...points.map((point) => point.duration), minDuration + 1);
   const chartWidth = width - padding * 2;
   const chartHeight = height - padding * 2;
 
   return points.map((point) => ({
-    x: padding + scaleDuration(point.duration, maxDuration) * chartWidth,
-    y: padding + (1 - point.value / max) * chartHeight,
+    x: padding + scaleDuration(point.duration, minDuration, maxDuration) * chartWidth,
+    y: padding + (1 - (point.value - minValue) / valueRange) * chartHeight,
   }));
 }
 
 function getEffortChartBounds(points: EffortPoint[]): EffortChartBounds {
+  const durations = points.map((point) => point.duration).filter(Number.isFinite);
+  const values = points.map((point) => point.value).filter(Number.isFinite);
+  const rawMinDuration = durations.length > 0 ? Math.min(...durations) : 1;
+  const minDuration = Math.max(rawMinDuration, 1);
+  const maxDuration = durations.length > 0 ? Math.max(...durations, minDuration + 1) : 2;
+  const rawMinValue = values.length > 0 ? Math.min(...values) : 0;
+  const rawMaxValue = values.length > 0 ? Math.max(...values) : 1;
+  const valueRange = rawMaxValue - rawMinValue || Math.max(rawMaxValue * 0.1, 1);
+  const valuePadding = valueRange * 0.08;
+
   return {
-    maxDuration: Math.max(
-      ...points.map((point) => point.duration),
-      MIN_EFFORT_CURVE_DURATION_SECONDS,
-    ),
-    maxValue: Math.max(...points.map((point) => point.value), 1),
+    minDuration,
+    maxDuration,
+    minValue: Math.max(0, rawMinValue - valuePadding),
+    maxValue: rawMaxValue + valuePadding,
   };
 }
 
@@ -124,10 +149,13 @@ function getEffortChartCoordinates(
 ): ChartPoint[] {
   const chartWidth = width - padding.left - padding.right;
   const chartHeight = height - padding.top - padding.bottom;
+  const valueRange = bounds.maxValue - bounds.minValue || 1;
 
   return points.map((point) => ({
-    x: padding.left + scaleDuration(point.duration, bounds.maxDuration) * chartWidth,
-    y: padding.top + (1 - point.value / bounds.maxValue) * chartHeight,
+    x:
+      padding.left +
+      scaleDuration(point.duration, bounds.minDuration, bounds.maxDuration) * chartWidth,
+    y: padding.top + (1 - (point.value - bounds.minValue) / valueRange) * chartHeight,
   }));
 }
 
@@ -172,7 +200,7 @@ function buildEarliestComparableCurve(records: ActivityEffortRow[]) {
   const chronological = [...records].sort(
     (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime(),
   );
-  const earliestDay = new Date(chronological[0]!.recorded_at);
+  const earliestDay = new Date(chronological[0]?.recorded_at);
   earliestDay.setHours(23, 59, 59, 999);
 
   return buildBestCurve(
@@ -197,6 +225,7 @@ function getCurveEffortIds(records: ActivityEffortRow[]) {
 }
 
 function MiniEffortVisual({ points }: { points: EffortPoint[] }) {
+  const colors = getEffortChartColors(useColorScheme() === "dark");
   if (points.length === 0) return <View className="h-12 rounded-2xl bg-muted/30" />;
   const width = 120;
   const height = 52;
@@ -206,14 +235,14 @@ function MiniEffortVisual({ points }: { points: EffortPoint[] }) {
     <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
       <Path
         d={buildPath(coordinates)}
-        stroke="#f97316"
+        stroke={colors.current}
         strokeWidth={4}
         fill="none"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
       {coordinates.at(-1) ? (
-        <Circle cx={coordinates.at(-1)!.x} cy={coordinates.at(-1)!.y} r={4} fill="#f97316" />
+        <Circle cx={coordinates.at(-1)?.x} cy={coordinates.at(-1)?.y} r={4} fill={colors.current} />
       ) : null}
     </Svg>
   );
@@ -228,6 +257,7 @@ function EffortDetailChart({
 }) {
   const width = 340;
   const height = 260;
+  const colors = getEffortChartColors(useColorScheme() === "dark");
   const presentPoints = buildBestCurve(records);
   const earliestPoints = buildEarliestComparableCurve(records);
   const allPoints = [...presentPoints, ...earliestPoints];
@@ -251,8 +281,12 @@ function EffortDetailChart({
   const chartRight = width - padding.right;
   const chartTop = padding.top;
   const chartBottom = height - padding.bottom;
-  const valueTicks = [bounds.maxValue, bounds.maxValue / 2, 0];
-  const durationTicks = getDurationTicks(bounds.maxDuration);
+  const valueTicks = [
+    bounds.maxValue,
+    bounds.minValue + (bounds.maxValue - bounds.minValue) / 2,
+    bounds.minValue,
+  ];
+  const durationTicks = getDurationTicks(bounds.minDuration, bounds.maxDuration);
   const best = getCurveBest(records);
 
   return (
@@ -262,7 +296,7 @@ function EffortDetailChart({
           <View className="gap-1">
             <Text className="text-lg font-semibold capitalize text-foreground">{curve.title}</Text>
             <Text className="text-sm text-muted-foreground">
-              Earliest comparable curve vs current best curve from {records.length} records.
+              Your best curve compared with your first recorded curve from {records.length} records.
             </Text>
           </View>
           <Text className="text-lg font-semibold text-foreground">
@@ -282,7 +316,9 @@ function EffortDetailChart({
         ) : (
           <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
             {valueTicks.map((tick) => {
-              const y = chartTop + (1 - tick / bounds.maxValue) * (chartBottom - chartTop);
+              const valueRange = bounds.maxValue - bounds.minValue || 1;
+              const y =
+                chartTop + (1 - (tick - bounds.minValue) / valueRange) * (chartBottom - chartTop);
               return (
                 <React.Fragment key={`value-${tick}`}>
                   <Line
@@ -290,13 +326,13 @@ function EffortDetailChart({
                     x2={chartRight}
                     y1={y}
                     y2={y}
-                    stroke="#e2e8f0"
+                    stroke={colors.grid}
                     strokeWidth={1}
                   />
                   <SvgText
                     x={chartLeft - 8}
                     y={y + 4}
-                    fill="#64748b"
+                    fill={colors.label}
                     fontSize={10}
                     textAnchor="end"
                   >
@@ -310,7 +346,7 @@ function EffortDetailChart({
               x2={chartLeft}
               y1={chartTop}
               y2={chartBottom}
-              stroke="#94a3b8"
+              stroke={colors.axis}
               strokeWidth={1.5}
             />
             <Line
@@ -318,12 +354,14 @@ function EffortDetailChart({
               x2={chartRight}
               y1={chartBottom}
               y2={chartBottom}
-              stroke="#94a3b8"
+              stroke={colors.axis}
               strokeWidth={1.5}
             />
             {durationTicks.map((tick) => {
               const x =
-                chartLeft + scaleDuration(tick, bounds.maxDuration) * (chartRight - chartLeft);
+                chartLeft +
+                scaleDuration(tick, bounds.minDuration, bounds.maxDuration) *
+                  (chartRight - chartLeft);
               return (
                 <React.Fragment key={`duration-${tick}`}>
                   <Line
@@ -331,13 +369,13 @@ function EffortDetailChart({
                     x2={x}
                     y1={chartBottom}
                     y2={chartBottom + 4}
-                    stroke="#94a3b8"
+                    stroke={colors.axis}
                     strokeWidth={1}
                   />
                   <SvgText
                     x={x}
                     y={chartBottom + 18}
-                    fill="#64748b"
+                    fill={colors.label}
                     fontSize={10}
                     textAnchor="middle"
                   >
@@ -349,7 +387,7 @@ function EffortDetailChart({
             <SvgText
               x={(chartLeft + chartRight) / 2}
               y={height - 4}
-              fill="#64748b"
+              fill={colors.label}
               fontSize={11}
               textAnchor="middle"
             >
@@ -357,7 +395,7 @@ function EffortDetailChart({
             </SvgText>
             <Path
               d={buildPath(earliestCoordinates)}
-              stroke="#94a3b8"
+              stroke={colors.previous}
               strokeWidth={3}
               fill="none"
               strokeLinecap="round"
@@ -365,7 +403,7 @@ function EffortDetailChart({
             />
             <Path
               d={buildPath(presentCoordinates)}
-              stroke="#f97316"
+              stroke={colors.current}
               strokeWidth={4}
               fill="none"
               strokeLinecap="round"
@@ -377,7 +415,7 @@ function EffortDetailChart({
                 cx={point.x}
                 cy={point.y}
                 r={3.5}
-                fill="#f97316"
+                fill={colors.current}
               />
             ))}
           </Svg>
@@ -385,11 +423,11 @@ function EffortDetailChart({
         <View className="flex-row gap-4">
           <View className="flex-row items-center gap-2">
             <View className="h-2 w-5 rounded-full bg-slate-400" />
-            <Text className="text-xs text-muted-foreground">Earliest</Text>
+            <Text className="text-xs text-muted-foreground">First records</Text>
           </View>
           <View className="flex-row items-center gap-2">
             <View className="h-2 w-5 rounded-full bg-orange-500" />
-            <Text className="text-xs text-muted-foreground">Current</Text>
+            <Text className="text-xs text-muted-foreground">Best so far</Text>
           </View>
         </View>
       </CardContent>

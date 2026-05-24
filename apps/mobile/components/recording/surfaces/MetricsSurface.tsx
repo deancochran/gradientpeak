@@ -275,7 +275,7 @@ export function MetricsSurface({ service }: MetricsSurfaceProps) {
 
       // Extract numeric value from target string
       const targetNumeric = parseFloat(target);
-      if (isNaN(targetNumeric)) return { target, status: null };
+      if (Number.isNaN(targetNumeric)) return { target, status: null };
 
       const status = getTargetStatus(currentValue, targetNumeric);
       return { target, status };

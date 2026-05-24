@@ -11,23 +11,23 @@ import {
   parseCyclingPowerMeasurement,
   parseHeartRateMeasurement,
 } from "@repo/core";
-import { BleError, BleManager, Characteristic, Device } from "react-native-ble-plx";
+import { type BleError, BleManager, type Characteristic, type Device } from "react-native-ble-plx";
 import { BleScanController } from "./BleScanController";
 import { decodeBase64ToBytes, toDataView } from "./ble-bytes";
 import { DeviceGattQueueRegistry } from "./DeviceGattQueue";
 import {
-  ControlMode,
+  type ControlMode,
   type FTMSCommandContext,
   FTMSController,
   type FTMSFeatures,
 } from "./FTMSController";
 import { KnownSensorRegistry, type PersistedSensor } from "./KnownSensorRegistry";
-import {
-  type RecordingServiceError,
-  type RecordingServiceErrorCategory,
-  type RecordingTrainerConnectionState,
-  type RecordingTrainerControlState,
-  type RecordingTrainerDataFlowState,
+import type {
+  RecordingServiceError,
+  RecordingServiceErrorCategory,
+  RecordingTrainerConnectionState,
+  RecordingTrainerControlState,
+  RecordingTrainerDataFlowState,
   SensorReading,
 } from "./types";
 
@@ -783,7 +783,7 @@ export class SensorsManager {
       clearTimeout(existingTimer);
     }
 
-    const delayMs = this.RECONNECTION_BACKOFF_BASE_MS * Math.pow(2, nextAttempt - 2);
+    const delayMs = this.RECONNECTION_BACKOFF_BASE_MS * 2 ** (nextAttempt - 2);
     console.log(`[SensorsManager] Retrying in ${delayMs}ms...`);
 
     const timer = setTimeout(() => {
@@ -1468,7 +1468,7 @@ export class SensorsManager {
         { timeoutMs: 5000 },
       );
       this.addMonitorSubscription(sensor.id, subscription);
-    } catch (error) {
+    } catch (_error) {
       // Battery monitoring errors are non-critical - sensor continues to provide data
       // Log as info rather than error to avoid alerting error tracking systems
       console.log(

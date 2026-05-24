@@ -4,13 +4,7 @@
  */
 
 import type { ActivityPlanStructureV2 } from "@repo/core";
-import type {
-  PublicActivityCategory,
-  PublicEffortType,
-  PublicEventStatus,
-  PublicEventType,
-  PublicProfileMetricType,
-} from "@repo/db";
+import type { PublicActivityCategory } from "@repo/db";
 import { toActivityType, toWahooWorkoutTypeId } from "./activity-type-utils";
 import { createWahooClient, refreshWahooAccessToken, supportsRoutes } from "./client";
 import {
@@ -703,7 +697,7 @@ export class WahooSyncService {
     structure: ActivityPlanStructureV2,
     profile: any,
     wahooClient: any,
-    profileId: string,
+    _profileId: string,
     activityType: string,
     warnings?: string[],
   ): Promise<SyncResult> {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { normalizePaceInput, parseMmSsToSeconds } from "../../lib/fitness-inputs";
 import { View } from "../../lib/react-native";
 import { Input } from "../input/index.native";

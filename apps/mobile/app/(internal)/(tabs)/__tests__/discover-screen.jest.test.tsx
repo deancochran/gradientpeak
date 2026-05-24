@@ -43,6 +43,15 @@ const usersUseInfiniteQueryMock = jest.fn((_input?: unknown, _options?: unknown)
   fetchNextPage: jest.fn(),
   refetch: jest.fn(),
 }));
+const groupsUseInfiniteQueryMock = jest.fn((_input?: unknown, _options?: unknown) => ({
+  data: { pages: [{ items: groups, total: groups.length, hasMore: false, nextCursor: undefined }] },
+  isLoading: false,
+  isRefetching: false,
+  hasNextPage: false,
+  isFetchingNextPage: false,
+  fetchNextPage: jest.fn(),
+  refetch: jest.fn(),
+}));
 
 const activityPlans = [
   {
@@ -86,6 +95,17 @@ const users = [
     is_public: true,
     created_at: "2026-04-04T10:00:00.000Z",
     updated_at: "2026-04-04T10:00:00.000Z",
+  },
+];
+
+const groups = [
+  {
+    id: "group-1",
+    name: "Morning Climbers",
+    description: "Early starts and steady ascents.",
+    slug: "morning-climbers",
+    created_at: "2026-04-05T10:00:00.000Z",
+    updated_at: "2026-04-05T10:00:00.000Z",
   },
 ];
 
@@ -246,6 +266,12 @@ jest.mock("@/lib/api", () => ({
           usersUseInfiniteQueryMock(input, options),
       },
     },
+    groups: {
+      listDiscoverable: {
+        useInfiniteQuery: (input?: unknown, options?: unknown) =>
+          groupsUseInfiniteQueryMock(input, options),
+      },
+    },
   },
 }));
 
@@ -275,7 +301,7 @@ describe("discover screen", () => {
     expect(screen.queryByTestId("discover-feed-item-routes-route-1")).toBeNull();
   });
 
-  it("limits queries to the selected scope", async () => {
+  it("fetches all scopes in parallel while rendering the selected scope", async () => {
     renderNative(<DiscoverScreen />);
 
     fireEvent.press(screen.getByTestId("discover-scope-routes"));
@@ -296,15 +322,19 @@ describe("discover screen", () => {
       );
       expect(activityPlansUseInfiniteQueryMock).toHaveBeenLastCalledWith(
         expect.anything(),
-        expect.objectContaining({ enabled: false, getNextPageParam: expect.any(Function) }),
+        expect.objectContaining({ enabled: true, getNextPageParam: expect.any(Function) }),
       );
       expect(trainingPlansUseInfiniteQueryMock).toHaveBeenLastCalledWith(
         expect.anything(),
-        expect.objectContaining({ enabled: false, getNextPageParam: expect.any(Function) }),
+        expect.objectContaining({ enabled: true, getNextPageParam: expect.any(Function) }),
       );
       expect(usersUseInfiniteQueryMock).toHaveBeenLastCalledWith(
         expect.anything(),
-        expect.objectContaining({ enabled: false, getNextPageParam: expect.any(Function) }),
+        expect.objectContaining({ enabled: true, getNextPageParam: expect.any(Function) }),
+      );
+      expect(groupsUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({ enabled: true, getNextPageParam: expect.any(Function) }),
       );
       expect(screen.getByTestId("discover-feed-item-routes-route-1")).toBeTruthy();
       expect(screen.queryByTestId("discover-feed-item-users-user-1")).toBeNull();
@@ -333,16 +363,20 @@ describe("discover screen", () => {
         expect.objectContaining({ enabled: true, getNextPageParam: expect.any(Function) }),
       );
       expect(trainingPlansUseInfiniteQueryMock).toHaveBeenLastCalledWith(
-        expect.anything(),
-        expect.objectContaining({ enabled: false, getNextPageParam: expect.any(Function) }),
+        expect.objectContaining({ search: "river" }),
+        expect.objectContaining({ enabled: true, getNextPageParam: expect.any(Function) }),
       );
       expect(routesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
-        expect.anything(),
-        expect.objectContaining({ enabled: false, getNextPageParam: expect.any(Function) }),
+        expect.objectContaining({ search: "river" }),
+        expect.objectContaining({ enabled: true, getNextPageParam: expect.any(Function) }),
       );
       expect(usersUseInfiniteQueryMock).toHaveBeenLastCalledWith(
-        expect.anything(),
-        expect.objectContaining({ enabled: false, getNextPageParam: expect.any(Function) }),
+        expect.objectContaining({ query: "river" }),
+        expect.objectContaining({ enabled: true, getNextPageParam: expect.any(Function) }),
+      );
+      expect(groupsUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ search: "river" }),
+        expect.objectContaining({ enabled: true, getNextPageParam: expect.any(Function) }),
       );
     });
   });

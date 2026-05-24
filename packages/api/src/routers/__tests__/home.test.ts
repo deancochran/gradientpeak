@@ -90,6 +90,7 @@ function createDbMock(plan: DbPlan = {}) {
           tableName = getTableName(table);
           return builder;
         },
+        innerJoin: () => builder,
         leftJoin: () => builder,
         where: () => builder,
         orderBy: () => builder,

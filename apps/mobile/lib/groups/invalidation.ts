@@ -1,4 +1,4 @@
-import { api } from "@/lib/api";
+import type { api } from "@/lib/api";
 
 type GroupApiUtils = ReturnType<typeof api.useUtils>;
 

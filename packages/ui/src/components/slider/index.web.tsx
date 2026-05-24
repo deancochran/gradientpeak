@@ -1,7 +1,5 @@
 "use client";
 
-import * as React from "react";
-
 import { cn } from "../../lib/cn";
 import { getWebTestProps } from "../../lib/test-props";
 import { Slider as RegistrySlider } from "../../registry/web/slider";

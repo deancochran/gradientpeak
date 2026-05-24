@@ -1,4 +1,3 @@
-import React from "react";
 import { createButtonComponent, createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 

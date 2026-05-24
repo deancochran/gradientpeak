@@ -42,7 +42,7 @@ export default function ExternalLayout() {
   return (
     <Stack
       screenOptions={{
-        headerShown: true,
+        headerShown: false,
         headerBackTitle: "Back",
         animation: "slide_from_right",
         gestureEnabled: true,

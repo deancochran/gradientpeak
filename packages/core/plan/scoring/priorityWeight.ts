@@ -28,7 +28,7 @@ export function mapGoalPriorityToWeight(priority: number, options?: PriorityWeig
   const gamma = options?.gamma ?? DEFAULT_GAMMA;
   const normalized = normalizeGoalPriority(priority) / 10;
 
-  return epsilon + Math.pow(normalized, gamma);
+  return epsilon + normalized ** gamma;
 }
 
 export function mapGoalPriorityToNormalizedInfluence(

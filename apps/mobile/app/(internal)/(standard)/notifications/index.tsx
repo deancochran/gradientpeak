@@ -10,7 +10,6 @@ import { Text } from "@repo/ui/components/text";
 import { cn } from "@repo/ui/lib/cn";
 import { Stack, useRouter } from "expo-router";
 import { Bell, Mail, UserPlus } from "lucide-react-native";
-import React from "react";
 import { FlatList, Pressable, View } from "react-native";
 import { api } from "@/lib/api";
 

@@ -1,6 +1,6 @@
 import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
-import React, { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { FlatList, TouchableOpacity, useWindowDimensions, View } from "react-native";
 import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
 import {
@@ -158,7 +158,7 @@ export function getVisibleMonthIndex(months: string[], visibleMonthAnchor: strin
     0,
     months.findIndex(
       (monthStart) =>
-        monthStart === visibleMonthAnchor || monthStart === visibleMonthAnchor.slice(0, 8) + "01",
+        monthStart === visibleMonthAnchor || monthStart === `${visibleMonthAnchor.slice(0, 8)}01`,
     ),
   );
 }

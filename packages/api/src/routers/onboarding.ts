@@ -27,9 +27,10 @@ import {
 } from "@repo/core/schemas/onboarding";
 import { activities, profiles, publicIntegrationProviderSchema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { OnboardingProviderEnrichmentService } from "../application/onboarding-provider-enrichment";
+import type { Context } from "../context";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import {
@@ -169,8 +170,8 @@ const importedOnboardingValuesOutputSchema = z
   })
   .strict();
 
-function getOnboardingProviderEnrichmentService(ctx: { db?: unknown }) {
-  return new OnboardingProviderEnrichmentService({ db: getRequiredDb(ctx as any) });
+function getOnboardingProviderEnrichmentService(ctx: Context) {
+  return new OnboardingProviderEnrichmentService({ db: getRequiredDb(ctx) });
 }
 
 export const onboardingRouter = createTRPCRouter({

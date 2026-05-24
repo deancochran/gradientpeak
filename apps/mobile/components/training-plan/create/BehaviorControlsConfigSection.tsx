@@ -1,12 +1,14 @@
 import { type CreationBehaviorControlsV1, creationBehaviorControlsV1Schema } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
-import { NumberSliderInput } from "@repo/ui/components/number-slider-input";
-import { PercentSliderInput } from "@repo/ui/components/percent-slider-input";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
-import React, { useEffect, useMemo, useRef } from "react";
-import { Controller, useWatch } from "react-hook-form";
+import { useEffect, useMemo, useRef } from "react";
+import { useWatch } from "react-hook-form";
 import { View } from "react-native";
+import {
+  ConfigNumberSliderField,
+  ConfigPercentSliderField,
+} from "./fields/TrainingPlanConfigSliderFields";
 
 interface BehaviorControlsConfigSectionProps {
   behaviorControls: CreationBehaviorControlsV1;
@@ -94,140 +96,85 @@ export function BehaviorControlsConfigSection({
         </Button>
       </View>
 
-      <Controller
+      <ConfigPercentSliderField
         control={form.control}
         name="aggressiveness"
-        render={({ field }) => (
-          <PercentSliderInput
-            id="behavior-aggressiveness"
-            label="Aggressiveness"
-            value={field.value * 100}
-            min={0}
-            max={100}
-            step={1}
-            helperText="Higher values push progression harder."
-            onChange={(percent) => {
-              field.onChange(Number((percent / 100).toFixed(2)));
-            }}
-            showNumericInput={false}
-          />
-        )}
+        id="behavior-aggressiveness"
+        label="Aggressiveness"
+        min={0}
+        max={100}
+        step={1}
+        helperText="Higher values push progression harder."
       />
-      <Controller
+      <ConfigPercentSliderField
         control={form.control}
         name="variability"
-        render={({ field }) => (
-          <PercentSliderInput
-            id="behavior-variability"
-            label="Variability"
-            value={field.value * 100}
-            min={0}
-            max={100}
-            step={1}
-            helperText="Higher values allow more week-to-week variation."
-            onChange={(percent) => {
-              field.onChange(Number((percent / 100).toFixed(2)));
-            }}
-            showNumericInput={false}
-          />
-        )}
+        id="behavior-variability"
+        label="Variability"
+        min={0}
+        max={100}
+        step={1}
+        helperText="Higher values allow more week-to-week variation."
       />
-      <Controller
+      <ConfigPercentSliderField
         control={form.control}
         name="spike_frequency"
-        render={({ field }) => (
-          <PercentSliderInput
-            id="behavior-spike-frequency"
-            label="Spike frequency"
-            value={field.value * 100}
-            min={0}
-            max={100}
-            step={1}
-            helperText="Higher values allow bigger peak weeks more often."
-            onChange={(percent) => {
-              field.onChange(Number((percent / 100).toFixed(2)));
-            }}
-            showNumericInput={false}
-          />
-        )}
+        id="behavior-spike-frequency"
+        label="Spike frequency"
+        min={0}
+        max={100}
+        step={1}
+        helperText="Higher values allow bigger peak weeks more often."
       />
-      <Controller
+      <ConfigNumberSliderField
         control={form.control}
         name="shape_target"
-        render={({ field }) => (
-          <NumberSliderInput
-            id="behavior-shape-target"
-            label="Load shape target"
-            value={field.value}
-            min={-1}
-            max={1}
-            decimals={2}
-            step={0.05}
-            helperText="Negative values bias early load, positive values bias later load."
-            onChange={(value) => {
-              field.onChange(Number(value.toFixed(2)));
-            }}
-          />
-        )}
+        id="behavior-shape-target"
+        label="Load shape target"
+        min={-1}
+        max={1}
+        decimals={2}
+        step={0.05}
+        helperText="Negative values bias early load, positive values bias later load."
+        toFieldValue={(value) => Number(value.toFixed(2))}
       />
-      <Controller
+      <ConfigPercentSliderField
         control={form.control}
         name="shape_strength"
-        render={({ field }) => (
-          <PercentSliderInput
-            id="behavior-shape-strength"
-            label="Load shape strength"
-            value={field.value * 100}
-            min={0}
-            max={100}
-            step={1}
-            helperText="Higher values enforce the selected load shape more strongly."
-            onChange={(percent) => {
-              field.onChange(Number((percent / 100).toFixed(2)));
-            }}
-            showNumericInput={false}
-          />
-        )}
+        id="behavior-shape-strength"
+        label="Load shape strength"
+        min={0}
+        max={100}
+        step={1}
+        helperText="Higher values enforce the selected load shape more strongly."
       />
-      <Controller
+      <ConfigNumberSliderField
         control={form.control}
         name="recovery_priority"
-        render={({ field }) => (
-          <NumberSliderInput
-            id="behavior-recovery-priority"
-            label="Recovery priority"
-            value={field.value * 100}
-            min={0}
-            max={100}
-            decimals={0}
-            step={1}
-            unitLabel="%"
-            helperText="Higher values prioritize recovery over risk-taking."
-            onChange={(value) => {
-              field.onChange(Number((value / 100).toFixed(2)));
-            }}
-          />
-        )}
+        id="behavior-recovery-priority"
+        label="Recovery priority"
+        min={0}
+        max={100}
+        decimals={0}
+        step={1}
+        unitLabel="%"
+        helperText="Higher values prioritize recovery over risk-taking."
+        toSliderValue={(value) => value * 100}
+        toFieldValue={(value) => Number((value / 100).toFixed(2))}
       />
-      <Controller
+      <ConfigNumberSliderField
         control={form.control}
         name="starting_fitness_confidence"
-        render={({ field }) => (
-          <NumberSliderInput
-            id="behavior-starting-fitness-confidence"
-            label="Starting fitness confidence"
-            value={field.value * 100}
-            min={0}
-            max={100}
-            decimals={0}
-            step={1}
-            unitLabel="%"
-            helperText="Lower values anchor early weeks more conservatively."
-            onChange={(value) => {
-              field.onChange(Number((value / 100).toFixed(2)));
-            }}
-          />
-        )}
+        id="behavior-starting-fitness-confidence"
+        label="Starting fitness confidence"
+        min={0}
+        max={100}
+        decimals={0}
+        step={1}
+        unitLabel="%"
+        helperText="Lower values anchor early weeks more conservatively."
+        toSliderValue={(value) => value * 100}
+        toFieldValue={(value) => Number((value / 100).toFixed(2))}
       />
     </View>
   );

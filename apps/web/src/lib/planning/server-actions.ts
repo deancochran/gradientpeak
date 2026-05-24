@@ -50,7 +50,7 @@ function buildAllDayStartIso(dateKey: string) {
   return new Date(`${dateKey}T00:00:00.000Z`).toISOString();
 }
 
-function buildTimedStartIso(dateKey: string, time: string) {
+function _buildTimedStartIso(dateKey: string, time: string) {
   return new Date(`${dateKey}T${time}:00`).toISOString();
 }
 

@@ -5,7 +5,7 @@ import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { Info, Plus, X } from "lucide-react-native";
 import { Pressable, View } from "react-native";
-import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
+import { TimelineChart } from "@/components/activity-plan/workout/TimelineChart";
 import { markEstimated } from "@/lib/estimatedMetrics";
 
 interface StructureStats {

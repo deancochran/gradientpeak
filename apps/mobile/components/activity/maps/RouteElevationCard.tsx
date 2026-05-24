@@ -1,5 +1,4 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
-import React from "react";
 import { View } from "react-native";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 import { ElevationProfileChart } from "../charts/ElevationProfileChart";

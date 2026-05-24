@@ -1,7 +1,6 @@
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import { Flag, Gauge, Heart, Pencil, Trash2, Zap } from "lucide-react-native";
-import React from "react";
 import { Pressable, View } from "react-native";
 import { getActivityCategoryLabel, getTargetTypeLabel } from "./GoalTargetEditorModal";
 import type { GoalFormData, GoalTargetFormData, GoalTargetType } from "./SinglePageForm";

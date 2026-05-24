@@ -1,6 +1,6 @@
 import { Text } from "@repo/ui/components/text";
 import { cn } from "@repo/ui/lib/cn";
-import React from "react";
+import type React from "react";
 import { View } from "react-native";
 
 type TrainingPlanSummaryVariant = "compact" | "default";

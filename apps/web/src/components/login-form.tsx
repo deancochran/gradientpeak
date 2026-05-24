@@ -1,5 +1,4 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button } from "@repo/ui/components/button";
 import {
   Form,
   FormControl,
@@ -10,6 +9,7 @@ import {
   FormTextField,
 } from "@repo/ui/components/form";
 import { Input } from "@repo/ui/components/input";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { cn } from "@repo/ui/lib/cn";
 import { Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
@@ -94,9 +94,14 @@ export function LoginForm({ className, redirectTo, ...props }: LoginFormProps) {
                 <p className="text-destructive text-sm">{form.formState.errors.root.message}</p>
               ) : null}
 
-              <Button disabled={form.formState.isSubmitting} type="submit">
-                {form.formState.isSubmitting ? "Logging in..." : "Login"}
-              </Button>
+              <LoadingButton
+                disabled={form.formState.isSubmitting}
+                loading={form.formState.isSubmitting}
+                loadingLabel="Logging in..."
+                type="submit"
+              >
+                Login
+              </LoadingButton>
             </div>
             <div className="mt-4 text-center text-sm">
               Don&apos;t have an account?{" "}

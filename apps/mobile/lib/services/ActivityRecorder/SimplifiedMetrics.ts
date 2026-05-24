@@ -250,7 +250,7 @@ export function getSpeedDisplay(speedMPS: number | undefined): {
  * @returns Formatted string like "5:30"
  */
 export function formatPace(paceMinPerKm: number): string {
-  if (!paceMinPerKm || paceMinPerKm === 0 || !isFinite(paceMinPerKm)) {
+  if (!paceMinPerKm || paceMinPerKm === 0 || !Number.isFinite(paceMinPerKm)) {
     return "--:--";
   }
   const minutes = Math.floor(paceMinPerKm);

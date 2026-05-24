@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react";
-import * as React from "react";
+import type * as React from "react";
 import { useForm } from "react-hook-form";
 import { View } from "react-native";
 

@@ -14,7 +14,6 @@ import {
   simplifyCoordinates,
 } from "@repo/core";
 import {
-  calculateAerobicDecoupling,
   calculateBestEfforts,
   calculateDecouplingFromStreams,
   calculateEfficiencyFactor,
@@ -25,14 +24,23 @@ import {
   detectLTHR,
   estimateVO2Max,
 } from "@repo/core/calculations";
-import { activities, activityEfforts, profileMetrics } from "@repo/db";
+import {
+  activities,
+  activityEfforts,
+  activityGeometry,
+  activityImports,
+  activityLaps,
+  activitySummaries,
+  profileMetrics,
+} from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, isNotNull, lt, lte, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, lt, lte } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
+import { logger } from "../lib/logger";
 import { getApiStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
-import { bumpProfileEstimationState } from "../utils/profile-estimation-state";
+import { markProfileAnalysisDirty } from "../utils/profile-estimation-state";
 import { fetchActivityTemperature } from "../utils/weather";
 
 const storageService = getApiStorageService();
@@ -82,7 +90,9 @@ const blobLikeSchema = z
   })
   .passthrough();
 
-const activityRecordSchema = z
+// Activity file parser output is a compatibility boundary. Keep passthrough so newly
+// emitted parser fields do not break uploads while required fields stay typed.
+const activityFileParserRecordCompatibilitySchema = z
   .object({
     timestamp: z.date().optional(),
     power: z.number().finite().optional(),
@@ -96,7 +106,7 @@ const activityRecordSchema = z
   })
   .passthrough();
 
-const activitySummarySchema = z
+const activityFileParserSummaryCompatibilitySchema = z
   .object({
     totalTime: z.number().finite(),
     totalDistance: z.number().finite(),
@@ -113,7 +123,7 @@ const activitySummarySchema = z
   })
   .passthrough();
 
-const parsedActivitySchema = z
+const parsedActivityFileCompatibilitySchema = z
   .object({
     metadata: z
       .object({
@@ -121,8 +131,8 @@ const parsedActivitySchema = z
         startTime: z.date(),
       })
       .passthrough(),
-    summary: activitySummarySchema,
-    records: z.array(activityRecordSchema),
+    summary: activityFileParserSummaryCompatibilitySchema,
+    records: z.array(activityFileParserRecordCompatibilitySchema),
     laps: z.array(z.unknown()).optional().default([]),
     lengths: z.array(z.unknown()).optional().default([]),
   })
@@ -216,6 +226,13 @@ function getErrorMessage(error: unknown): string {
   }
 
   return "Unknown error";
+}
+
+function throwUnauthorizedActivityFileAccess(): never {
+  throw new TRPCError({
+    code: "UNAUTHORIZED",
+    message: "User not authenticated",
+  });
 }
 
 function getErrorDetails(error: unknown) {
@@ -321,89 +338,86 @@ async function createActivityRecord(
 ) {
   const activityId = randomUUID();
 
-  await db.execute(sql`
-    insert into activities (
-      id,
-      profile_id,
-      name,
-      notes,
-      type,
-      is_private,
-      started_at,
-      finished_at,
-      duration_seconds,
-      moving_seconds,
-      distance_meters,
-      activity_file_path,
-      activity_file_size,
-      import_source,
-      import_file_type,
-      import_original_file_name,
-      calories,
-      elevation_gain_meters,
-      avg_heart_rate,
-      max_heart_rate,
-      avg_power,
-      max_power,
-      normalized_power,
-      avg_cadence,
-      max_cadence,
-      avg_speed_mps,
-      max_speed_mps,
-      normalized_speed_mps,
-      normalized_graded_speed_mps,
-      efficiency_factor,
-      aerobic_decoupling,
-      avg_temperature,
-      device_manufacturer,
-      device_product,
-      laps,
-      map_bounds,
-      polyline,
-      created_at,
-      updated_at
-    ) values (
-      ${activityId}::uuid,
-      ${input.profileId}::uuid,
-      ${input.name},
-      ${input.notes},
-      ${input.activityType},
-      ${input.isPrivate},
-      ${input.startedAt},
-      ${input.finishedAt},
-      ${input.durationSeconds},
-      ${input.movingSeconds},
-      ${input.distanceMeters},
-      ${input.activityFilePath},
-      ${input.activityFileSize},
-      ${input.importSource},
-      ${input.importFileType},
-      ${input.importOriginalFileName},
-      ${input.calories},
-      ${input.elevationGainMeters},
-      ${input.avgHeartRate},
-      ${input.maxHeartRate},
-      ${input.avgPower},
-      ${input.maxPower},
-      ${input.normalizedPower},
-      ${input.avgCadence},
-      ${input.maxCadence},
-      ${input.avgSpeedMps},
-      ${input.maxSpeedMps},
-      ${input.normalizedSpeedMps},
-      ${input.normalizedGradedSpeedMps},
-      ${input.efficiencyFactor},
-      ${input.aerobicDecoupling},
-      ${input.avgTemperature},
-      ${input.deviceManufacturer},
-      ${input.deviceProduct},
-      ${input.laps === null ? null : JSON.stringify(input.laps)}::jsonb,
-      ${input.mapBounds === null ? null : JSON.stringify(input.mapBounds)}::jsonb,
-      ${input.polyline},
-      now(),
-      now()
-    )
-  `);
+  await db.transaction(async (tx) => {
+    const now = new Date();
+    await tx.insert(activities).values({
+      id: activityId,
+      profile_id: input.profileId,
+      name: input.name,
+      notes: input.notes,
+      type: input.activityType,
+      is_private: input.isPrivate,
+      started_at: input.startedAt,
+      finished_at: input.finishedAt,
+      created_at: now,
+      updated_at: now,
+    });
+
+    await tx.insert(activitySummaries).values({
+      activity_id: activityId,
+      profile_id: input.profileId,
+      duration_seconds: input.durationSeconds,
+      moving_seconds: input.movingSeconds,
+      distance_meters: input.distanceMeters,
+      elevation_gain_meters: input.elevationGainMeters,
+      calories: input.calories,
+      avg_heart_rate: input.avgHeartRate,
+      max_heart_rate: input.maxHeartRate,
+      avg_power: input.avgPower,
+      max_power: input.maxPower,
+      normalized_power: input.normalizedPower,
+      avg_cadence: input.avgCadence,
+      max_cadence: input.maxCadence,
+      avg_speed_mps: input.avgSpeedMps,
+      max_speed_mps: input.maxSpeedMps,
+      normalized_speed_mps: input.normalizedSpeedMps,
+      normalized_graded_speed_mps: input.normalizedGradedSpeedMps,
+      efficiency_factor: input.efficiencyFactor,
+      aerobic_decoupling: input.aerobicDecoupling,
+      avg_temperature: input.avgTemperature,
+      created_at: now,
+      updated_at: now,
+    });
+
+    await tx.insert(activityImports).values({
+      activity_id: activityId,
+      profile_id: input.profileId,
+      activity_file_path: input.activityFilePath,
+      activity_file_size: input.activityFileSize,
+      import_source: input.importSource,
+      import_file_type: input.importFileType,
+      import_original_file_name: input.importOriginalFileName,
+      device_manufacturer: input.deviceManufacturer,
+      device_product: input.deviceProduct,
+      created_at: now,
+      updated_at: now,
+    });
+
+    if (input.mapBounds || input.polyline) {
+      await tx.insert(activityGeometry).values({
+        activity_id: activityId,
+        profile_id: input.profileId,
+        map_bounds: input.mapBounds,
+        polyline: input.polyline,
+        created_at: now,
+        updated_at: now,
+      });
+    }
+
+    if (input.laps) {
+      await tx.insert(activityLaps).values(
+        input.laps.map((lap, index) => ({
+          id: randomUUID(),
+          activity_id: activityId,
+          profile_id: input.profileId,
+          lap_index: index,
+          payload: lap,
+          created_at: now,
+          updated_at: now,
+        })),
+      );
+    }
+  });
 
   return db.query.activities.findFirst({
     where: eq(activities.id, activityId),
@@ -415,14 +429,16 @@ async function canAccessActivityStreams(
   activityId: string,
   userId: string,
 ): Promise<string | null> {
-  const activity = await db.query.activities.findFirst({
-    columns: {
-      activity_file_path: true,
-      profile_id: true,
-      is_private: true,
-    },
-    where: eq(activities.id, activityId),
-  });
+  const [activity] = await db
+    .select({
+      activity_file_path: activityImports.activity_file_path,
+      profile_id: activities.profile_id,
+      is_private: activities.is_private,
+    })
+    .from(activities)
+    .leftJoin(activityImports, eq(activities.id, activityImports.activity_id))
+    .where(eq(activities.id, activityId))
+    .limit(1);
 
   if (!activity) {
     throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
@@ -498,7 +514,10 @@ export const activityFilesRouter = createTRPCRouter({
       const supabase = storageService;
 
       if (!userId) {
-        throw new Error("User not authenticated");
+        throw new TRPCError({
+          code: "UNAUTHORIZED",
+          message: "User not authenticated",
+        });
       }
 
       try {
@@ -520,7 +539,11 @@ export const activityFilesRouter = createTRPCRouter({
           .createSignedUploadUrl(filePath);
 
         if (error) {
-          throw new Error(`Failed to create signed upload URL: ${error.message}`);
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: `Failed to create signed upload URL: ${error.message}`,
+            cause: error,
+          });
         }
 
         const signedUploadData = signedUploadUrlDataSchema.parse(data);
@@ -532,8 +555,16 @@ export const activityFilesRouter = createTRPCRouter({
           filePath: filePath, // Return the full path so the client knows where it went
         };
       } catch (error) {
-        console.error("Get signed upload URL error:", error);
-        throw new Error(`Failed to generate upload URL: ${getErrorMessage(error)}`);
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+
+        logger.error("Get signed upload URL error", getErrorDetails(error));
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Failed to generate upload URL: ${getErrorMessage(error)}`,
+          cause: error,
+        });
       }
     }),
 
@@ -556,7 +587,7 @@ export const activityFilesRouter = createTRPCRouter({
       }
 
       try {
-        console.log("[processActivityFile] Starting activity file processing:", {
+        logger.debug("[processActivityFile] Starting activity file processing", {
           activityFilePath,
           userId,
           name,
@@ -573,10 +604,9 @@ export const activityFilesRouter = createTRPCRouter({
         // ========================================================================
         // T-302, T-303: Download activity file from storage
         // ========================================================================
-        console.log(
-          "[processActivityFile] Downloading activity file from storage:",
+        logger.debug("[processActivityFile] Downloading activity file from storage", {
           activityFilePath,
-        );
+        });
 
         const { data: activityFile, error: downloadError } = await supabase.storage
           .from(ACTIVITY_FILE_BUCKET)
@@ -584,8 +614,7 @@ export const activityFilesRouter = createTRPCRouter({
 
         if (downloadError || !activityFile) {
           // Log error and notify admins
-          console.error("[processActivityFile] Failed to download activity file:", {
-            error: downloadError,
+          logger.error("[processActivityFile] Failed to download activity file", {
             errorMessage: downloadError?.message,
             activityFilePath,
             userId,
@@ -602,7 +631,7 @@ export const activityFilesRouter = createTRPCRouter({
           });
         }
 
-        console.log("[processActivityFile] Activity file downloaded successfully:", {
+        logger.debug("[processActivityFile] Activity file downloaded successfully", {
           size: activityFile.size,
           type: activityFile.type,
         });
@@ -610,20 +639,20 @@ export const activityFilesRouter = createTRPCRouter({
         // ========================================================================
         // T-304, T-305: Parse activity file using @repo/core
         // ========================================================================
-        let parsedData: z.infer<typeof parsedActivitySchema>;
+        let parsedData: z.infer<typeof parsedActivityFileCompatibilitySchema>;
         const activityFileType = getActivityFileTypeFromPath(activityFilePath);
         try {
-          console.log("[processActivityFile] Parsing activity file...", { activityFileType });
+          logger.debug("[processActivityFile] Parsing activity file", { activityFileType });
           const activityFileBlob = requireBlobLike(activityFile);
           const buffer = await toBufferFromBlobLike(activityFileBlob);
-          parsedData = parsedActivitySchema.parse(
+          parsedData = parsedActivityFileCompatibilitySchema.parse(
             parseActivityFile({
               data: buffer,
               fileName: activityFilePath,
               fileType: activityFileType,
             }),
           );
-          console.log("[processActivityFile] Activity file parsed successfully:", {
+          logger.debug("[processActivityFile] Activity file parsed successfully", {
             sport: parsedData.metadata.type,
             duration: parsedData.summary.totalTime,
             distance: parsedData.summary.totalDistance,
@@ -632,8 +661,7 @@ export const activityFilesRouter = createTRPCRouter({
           });
         } catch (parseError) {
           // Log error and notify admins
-          console.error("[processActivityFile] Failed to parse activity file:", {
-            error: parseError,
+          logger.error("[processActivityFile] Failed to parse activity file", {
             ...getErrorDetails(parseError),
             activityFilePath,
             fileSize: activityFile.size,
@@ -658,7 +686,7 @@ export const activityFilesRouter = createTRPCRouter({
         const startTime = parsedData.metadata.startTime;
         const duration = summary.totalTime;
 
-        console.log("[processActivityFile] Activity summary extracted:", {
+        logger.debug("[processActivityFile] Activity summary extracted", {
           startTime: startTime.toISOString(),
           duration,
           distance: summary.totalDistance,
@@ -667,9 +695,10 @@ export const activityFilesRouter = createTRPCRouter({
         });
 
         if (duration <= 0) {
-          console.error(
-            `[processActivityFile] Invalid activity file: duration is ${duration}. Deleting file: ${activityFilePath}`,
-          );
+          logger.error("[processActivityFile] Invalid activity file duration", {
+            duration,
+            activityFilePath,
+          });
           await supabase.storage.from(ACTIVITY_FILE_BUCKET).remove([activityFilePath]);
           throw new TRPCError({
             code: "BAD_REQUEST",
@@ -769,7 +798,7 @@ export const activityFilesRouter = createTRPCRouter({
           })) ?? 170;
 
         // Cold Start: Default to 190bpm if no Max HR found
-        const maxHR =
+        const _maxHR =
           maxHeartRate ??
           (await getLatestProfileMetricValue(db, {
             profileId: userId,
@@ -882,7 +911,7 @@ export const activityFilesRouter = createTRPCRouter({
         // ========================================================================
         const endTime = new Date(activityCompletedAtIso);
 
-        console.log("[processActivityFile] Attempting to insert activity record:", {
+        logger.debug("[processActivityFile] Attempting to insert activity record", {
           profile_id: userId,
           name,
           type: activityType,
@@ -933,8 +962,7 @@ export const activityFilesRouter = createTRPCRouter({
           });
         } catch (insertError) {
           // T-316: Cleanup uploaded file on failure
-          console.error("[processActivityFile] Failed to insert activity record:", {
-            error: insertError,
+          logger.error("[processActivityFile] Failed to insert activity record", {
             errorMessage: getErrorMessage(insertError),
             activityData: {
               profile_id: userId,
@@ -965,10 +993,15 @@ export const activityFilesRouter = createTRPCRouter({
           });
         }
 
-        console.log(
-          "[processActivityFile] Activity record created successfully:",
-          createdActivity.id,
-        );
+        logger.debug("[processActivityFile] Activity record created successfully", {
+          activityId: createdActivity.id,
+        });
+
+        await markProfileAnalysisDirty(db, {
+          profileId: userId,
+          kinds: ["fitness"],
+          dirtySince: activityCompletedAtIso,
+        });
 
         // ========================================================================
         // T-5.4, T-5.5, T-5.6: Post-Processing (Best Efforts, Profile Metrics, Notifications)
@@ -1043,9 +1076,13 @@ export const activityFilesRouter = createTRPCRouter({
                 value: effort.value,
               })),
             );
-            await bumpProfileEstimationState(db, userId, ["performance"]);
+            await markProfileAnalysisDirty(db, {
+              profileId: userId,
+              kinds: ["performance"],
+              dirtySince: activityCompletedAtIso,
+            });
           } catch (effortsError) {
-            console.error("Failed to insert best efforts:", effortsError);
+            logger.error("Failed to insert best efforts", getErrorDetails(effortsError));
           }
         }
 
@@ -1062,7 +1099,11 @@ export const activityFilesRouter = createTRPCRouter({
               unit: "bpm",
               recorded_at: new Date(activityCompletedAtIso),
             });
-            await bumpProfileEstimationState(db, userId, ["metrics"]);
+            await markProfileAnalysisDirty(db, {
+              profileId: userId,
+              kinds: ["metrics"],
+              dirtySince: activityCompletedAtIso,
+            });
           }
         }
 
@@ -1078,17 +1119,15 @@ export const activityFilesRouter = createTRPCRouter({
       } catch (error) {
         // T-316: Handle errors with proper TRPCError types
         if (error instanceof TRPCError) {
-          console.error("[processActivityFile] TRPCError caught:", {
+          logger.error("[processActivityFile] TRPCError caught", {
             code: error.code,
             message: error.message,
-            cause: error.cause,
           });
           throw error;
         }
 
         // Log unexpected errors with full context
-        console.error("[processActivityFile] Unexpected error:", {
-          error,
+        logger.error("[processActivityFile] Unexpected error", {
           ...getErrorDetails(error),
           activityFilePath,
           userId,
@@ -1099,12 +1138,14 @@ export const activityFilesRouter = createTRPCRouter({
         // Cleanup file on unexpected errors
         try {
           await supabase.storage.from(ACTIVITY_FILE_BUCKET).remove([activityFilePath]);
-          console.log(
-            "[processActivityFile] Cleaned up activity file after error:",
+          logger.debug("[processActivityFile] Cleaned up activity file after error", {
             activityFilePath,
-          );
+          });
         } catch (cleanupError) {
-          console.error("[processActivityFile] Failed to cleanup file after error:", cleanupError);
+          logger.error(
+            "[processActivityFile] Failed to cleanup file after error",
+            getErrorDetails(cleanupError),
+          );
         }
 
         throw new TRPCError({
@@ -1126,7 +1167,7 @@ export const activityFilesRouter = createTRPCRouter({
       const supabase = storageService;
 
       if (!userId) {
-        throw new Error("User not authenticated");
+        throwUnauthorizedActivityFileAccess();
       }
 
       try {
@@ -1167,7 +1208,11 @@ export const activityFilesRouter = createTRPCRouter({
           size: fileSize,
         };
       } catch (error) {
-        console.error("Activity file upload error:", error);
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+
+        logger.error("Activity file upload error", getErrorDetails(error));
         throw new Error(`Activity file upload failed: ${getErrorMessage(error)}`);
       }
     }),
@@ -1183,7 +1228,7 @@ export const activityFilesRouter = createTRPCRouter({
       const supabase = storageService;
 
       if (!userId) {
-        throw new Error("User not authenticated");
+        throwUnauthorizedActivityFileAccess();
       }
 
       try {
@@ -1201,7 +1246,11 @@ export const activityFilesRouter = createTRPCRouter({
 
         return analyzeActivityFileResponseSchema.parse(data);
       } catch (error) {
-        console.error("Activity file analysis error:", error);
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+
+        logger.error("Activity file analysis error", getErrorDetails(error));
         throw new Error(`Activity file analysis failed: ${getErrorMessage(error)}`);
       }
     }),
@@ -1217,7 +1266,7 @@ export const activityFilesRouter = createTRPCRouter({
       const db = getRequiredDb(ctx);
 
       if (!userId) {
-        throw new Error("User not authenticated");
+        throwUnauthorizedActivityFileAccess();
       }
 
       // Note: This will work once the migration is applied
@@ -1246,7 +1295,11 @@ export const activityFilesRouter = createTRPCRouter({
           activity: serializeActivityDates(activity), // Basic activity info
         };
       } catch (error) {
-        console.error("Activity file status error:", error);
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+
+        logger.error("Activity file status error", getErrorDetails(error));
         throw new Error(`Failed to get activity file status: ${getErrorMessage(error)}`);
       }
     }),
@@ -1267,13 +1320,13 @@ export const activityFilesRouter = createTRPCRouter({
       const db = getRequiredDb(ctx);
 
       if (!userId) {
-        throw new Error("User not authenticated");
+        throwUnauthorizedActivityFileAccess();
       }
 
       try {
         const conditions = [
           eq(activities.profile_id, userId),
-          isNotNull(activities.activity_file_path),
+          isNotNull(activityImports.activity_file_path),
         ];
 
         if (cursor) {
@@ -1289,6 +1342,7 @@ export const activityFilesRouter = createTRPCRouter({
             created_at: activities.created_at,
           })
           .from(activities)
+          .innerJoin(activityImports, eq(activities.id, activityImports.activity_id))
           .where(and(...conditions))
           .orderBy(desc(activities.created_at))
           .limit(pageSize);
@@ -1299,7 +1353,11 @@ export const activityFilesRouter = createTRPCRouter({
             data.length === pageSize ? data[data.length - 1]?.created_at.toISOString() : null,
         };
       } catch (error) {
-        console.error("List activity files error:", error);
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+
+        logger.error("List activity files error", getErrorDetails(error));
         throw new Error(`Failed to list activity files: ${getErrorMessage(error)}`);
       }
     }),
@@ -1320,13 +1378,16 @@ export const activityFilesRouter = createTRPCRouter({
       const supabase = storageService;
 
       if (!userId) {
-        throw new Error("User not authenticated");
+        throwUnauthorizedActivityFileAccess();
       }
 
       try {
         // Verify user owns this file (check file path starts with user ID)
         if (!isOwnedActivityFilePath(userId, filePath)) {
-          throw new Error("Access denied: You can only access your own files");
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Access denied: You can only access your own files",
+          });
         }
 
         // Generate signed URL
@@ -1340,7 +1401,11 @@ export const activityFilesRouter = createTRPCRouter({
 
         return signedDownloadUrlDataSchema.parse(data);
       } catch (error) {
-        console.error("Get activity file URL error:", error);
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+
+        logger.error("Get activity file URL error", getErrorDetails(error));
         throw new Error(`Failed to generate download URL: ${getErrorMessage(error)}`);
       }
     }),
@@ -1360,13 +1425,16 @@ export const activityFilesRouter = createTRPCRouter({
       const supabase = storageService;
 
       if (!userId) {
-        throw new Error("User not authenticated");
+        throwUnauthorizedActivityFileAccess();
       }
 
       try {
         // Verify user owns this file
         if (!isOwnedActivityFilePath(userId, filePath)) {
-          throw new Error("Access denied: You can only delete your own files");
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "Access denied: You can only delete your own files",
+          });
         }
 
         // Delete from storage
@@ -1378,7 +1446,11 @@ export const activityFilesRouter = createTRPCRouter({
 
         return { success: true };
       } catch (error) {
-        console.error("Activity file deletion error:", error);
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+
+        logger.error("Activity file deletion error", getErrorDetails(error));
         throw new Error(`Activity file deletion failed: ${getErrorMessage(error)}`);
       }
     }),
@@ -1401,7 +1473,7 @@ export const activityFilesRouter = createTRPCRouter({
       const db = getRequiredDb(ctx);
 
       if (!userId) {
-        throw new Error("User not authenticated");
+        throwUnauthorizedActivityFileAccess();
       }
 
       try {
@@ -1424,7 +1496,10 @@ export const activityFilesRouter = createTRPCRouter({
           const isOwnFile = isOwnedActivityFilePath(userId, resolvedActivityFilePath);
 
           if (!isOwnFile) {
-            throw new Error("Access denied: You can only access your own files");
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: "Access denied: You can only access your own files",
+            });
           }
         }
 
@@ -1444,7 +1519,7 @@ export const activityFilesRouter = createTRPCRouter({
         // Parse activity file
         const activityFileBlob = requireBlobLike(activityFile);
         const buffer = await toBufferFromBlobLike(activityFileBlob);
-        const parsedData = parsedActivitySchema.parse(
+        const parsedData = parsedActivityFileCompatibilitySchema.parse(
           parseActivityFile({ data: buffer, fileName: resolvedActivityFilePath }),
         );
 
@@ -1461,7 +1536,7 @@ export const activityFilesRouter = createTRPCRouter({
           throw error;
         }
 
-        console.error("Get streams error:", error);
+        logger.error("Get streams error", getErrorDetails(error));
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: `Failed to retrieve streams: ${getErrorMessage(error)}`,

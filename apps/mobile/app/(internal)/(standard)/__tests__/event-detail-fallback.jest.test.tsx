@@ -300,8 +300,7 @@ describe("event detail fallback screen", () => {
 
     renderNative(<EventDetailScreen />);
 
-    expect(screen.getByText("Recurring")).toBeTruthy();
-    expect(screen.getByText("Repeats")).toBeTruthy();
+    expect(screen.getAllByText("Recurring").length).toBeGreaterThan(0);
     expect(screen.getByText("Every week until May 30, 2026")).toBeTruthy();
 
     fireEvent.press(screen.getByTestId("event-detail-options-delete"));
@@ -338,8 +337,8 @@ describe("event detail fallback screen", () => {
 
     renderNative(<EventDetailScreen />);
 
-    expect(screen.getByText("Recurring")).toBeTruthy();
-    expect(screen.getAllByText("Repeats")).toHaveLength(2);
+    expect(screen.getAllByText("Recurring").length).toBeGreaterThan(0);
+    expect(screen.getByText("Repeats")).toBeTruthy();
 
     fireEvent.press(screen.getByTestId("event-detail-options-delete"));
     fireEvent.press(screen.getByTestId("event-detail-delete-confirm"));

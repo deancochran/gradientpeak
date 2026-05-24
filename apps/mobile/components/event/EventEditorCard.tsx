@@ -10,7 +10,6 @@ import { Textarea } from "@repo/ui/components/textarea";
 import { TimeInput } from "@repo/ui/components/time-input";
 import { format } from "date-fns";
 import { X } from "lucide-react-native";
-import React from "react";
 import { Pressable, TouchableOpacity, View } from "react-native";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 
@@ -211,37 +210,219 @@ export function EventEditorCard({
   ];
 
   return (
-    <>
-      <Card className="rounded-3xl border border-border bg-card">
-        <CardContent className="p-4 gap-4">
-          <View className="gap-1">
-            <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Schedule details
-            </Text>
-            <Text className="text-2xl font-semibold text-foreground">{title}</Text>
-            <Text className="text-sm text-muted-foreground capitalize">{subtitle}</Text>
+    <Card className="rounded-3xl border border-border bg-card">
+      <CardContent className="p-4 gap-4">
+        <View className="gap-1">
+          <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Schedule details
+          </Text>
+          <Text className="text-2xl font-semibold text-foreground">{title}</Text>
+          <Text className="text-sm text-muted-foreground capitalize">{subtitle}</Text>
+        </View>
+
+        <View className="gap-3">
+          <View className="gap-2">
+            {mode === "create" && onChangeCreateEventType ? (
+              <View className="gap-2">
+                <Text className="text-xs text-muted-foreground">Type</Text>
+                <View className="flex-row gap-2">
+                  {[
+                    ["custom", "Custom event"],
+                    ["planned", "Activity plan"],
+                  ].map(([value, label]) => {
+                    const isSelected = createEventType === value;
+                    return (
+                      <Pressable
+                        key={value}
+                        onPress={() => onChangeCreateEventType(value as CreateEventType)}
+                        className={`flex-1 rounded-md border px-3 py-3 ${isSelected ? "border-primary bg-primary/10" : "border-border bg-card"}`}
+                        testID={`${testIDPrefix}-type-${value}`}
+                      >
+                        <Text
+                          className={`text-sm font-medium ${isSelected ? "text-primary" : "text-foreground"}`}
+                        >
+                          {label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <Text className="text-xs text-muted-foreground">
+                  Custom events cover vacation, work, birthdays, holidays, and other non-plan
+                  scheduling. Activity plan events schedule a training session from one of your
+                  saved plans.
+                </Text>
+              </View>
+            ) : null}
+
+            {mode === "create" &&
+            createEventType === "planned" &&
+            onChangeActivityPlanSearchQuery &&
+            onSelectActivityPlan ? (
+              <View className="gap-3">
+                <Text className="text-xs text-muted-foreground">Search activity plans</Text>
+                <Input
+                  value={activityPlanSearchQuery}
+                  onChangeText={onChangeActivityPlanSearchQuery}
+                  placeholder="Search your activity plans"
+                  testID={`${testIDPrefix}-activity-plan-search-input`}
+                />
+
+                {selectedCreateActivityPlan ? (
+                  <View className="gap-2" testID={`${testIDPrefix}-selected-activity-plan`}>
+                    <Text className="text-xs font-medium text-muted-foreground">Selected plan</Text>
+                    <ActivityPlanCard
+                      activityPlan={selectedCreateActivityPlan as any}
+                      testID={`${testIDPrefix}-selected-activity-plan-card`}
+                      variant="compact"
+                    />
+                  </View>
+                ) : null}
+
+                {isLoadingActivityPlans ? (
+                  <Text className="text-xs text-muted-foreground">Loading activity plans...</Text>
+                ) : activityPlansError ? (
+                  <TouchableOpacity
+                    onPress={onRetryActivityPlans}
+                    activeOpacity={0.85}
+                    testID={`${testIDPrefix}-activity-plan-retry`}
+                  >
+                    <Text className="text-xs text-primary">Retry loading activity plans</Text>
+                  </TouchableOpacity>
+                ) : (filteredActivityPlans?.length ?? 0) > 0 ? (
+                  <View className="gap-2">
+                    {filteredActivityPlans?.slice(0, 8).map((plan) => {
+                      const isSelected = plan.id === selectedActivityPlanId;
+                      return (
+                        <View
+                          key={plan.id}
+                          className={isSelected ? "rounded-2xl border-2 border-primary" : undefined}
+                        >
+                          <ActivityPlanCard
+                            activityPlan={plan as any}
+                            onPress={() => onSelectActivityPlan(plan.id)}
+                            testID={`${testIDPrefix}-activity-plan-option-${plan.id}`}
+                            variant="compact"
+                          />
+                        </View>
+                      );
+                    })}
+                  </View>
+                ) : (
+                  <Text className="text-xs text-muted-foreground">
+                    No activity plans match that search yet.
+                  </Text>
+                )}
+              </View>
+            ) : null}
+
+            {useSharedFields ? (
+              <Form {...(form as any)}>
+                <FormTextField
+                  control={form?.control}
+                  disabled={isPending}
+                  label="Title"
+                  name="title"
+                  placeholder="Event title"
+                  testId={`${testIDPrefix}-title-input`}
+                />
+              </Form>
+            ) : (
+              <>
+                <Text className="text-xs text-muted-foreground">Title</Text>
+                <Input
+                  value={eventTitle}
+                  onChangeText={onChangeEventTitle}
+                  placeholder="Event title"
+                  testID={`${testIDPrefix}-title-input`}
+                />
+              </>
+            )}
+            {mode === "create" && createEventType === "planned" ? (
+              <Text className="text-xs text-muted-foreground">
+                Leave the title as-is to use the selected activity plan name, or customize it.
+              </Text>
+            ) : null}
+            {titleErrorMessage ? (
+              <Text className="text-xs text-destructive">{titleErrorMessage}</Text>
+            ) : null}
           </View>
 
-          <View className="gap-3">
-            <View className="gap-2">
-              {mode === "create" && onChangeCreateEventType ? (
+          {useSharedFields ? (
+            <Form {...(form as any)}>
+              <FormSwitchField
+                control={form?.control}
+                description="Hide time for this event"
+                label="All day"
+                name="all_day"
+                switchLabel="All day"
+                testId={`${testIDPrefix}-all-day-switch`}
+              />
+
+              <View className="gap-2">
+                <DateInput
+                  accessibilityHint="Choose when this event starts"
+                  id={`${testIDPrefix}-start-date`}
+                  label="Starts"
+                  onChange={(value) => {
+                    if (!value) {
+                      return;
+                    }
+
+                    onChangeStartsAt(applyDateOnlyToDate(startsAt, value));
+                  }}
+                  pickerPresentation="modal"
+                  testId={`${testIDPrefix}-start-date-button`}
+                  value={toDateOnly(startsAt)}
+                />
+
+                {!allDay ? (
+                  <TimeInput
+                    accessibilityHint="Choose when this event starts"
+                    id={`${testIDPrefix}-start-time`}
+                    label="Start time"
+                    onChange={(value) => {
+                      if (!value) {
+                        return;
+                      }
+
+                      const [hours, minutes] = value.split(":").map(Number);
+                      const next = new Date(startsAt);
+                      next.setHours(
+                        hours ?? startsAt.getHours(),
+                        minutes ?? startsAt.getMinutes(),
+                        0,
+                        0,
+                      );
+                      onChangeStartsAt(next);
+                    }}
+                    pickerPresentation="modal"
+                    testId={`${testIDPrefix}-start-time-button`}
+                    value={format(startsAt, "HH:mm")}
+                  />
+                ) : null}
+              </View>
+
+              <Text className="text-xs text-muted-foreground">
+                Sets when this event starts
+                {recurrenceFrequency !== "none" ? " each time it repeats" : ""}.
+              </Text>
+
+              {onChangeRecurrenceFrequency ? (
                 <View className="gap-2">
-                  <Text className="text-xs text-muted-foreground">Type</Text>
-                  <View className="flex-row gap-2">
-                    {[
-                      ["custom", "Custom event"],
-                      ["planned", "Activity plan"],
-                    ].map(([value, label]) => {
-                      const isSelected = createEventType === value;
+                  <Text className="text-xs text-muted-foreground">Repeat</Text>
+                  <View className="flex-row flex-wrap gap-2">
+                    {recurrenceOptions.map(([value, label]) => {
+                      const isSelected = recurrenceFrequency === value;
                       return (
                         <Pressable
                           key={value}
-                          onPress={() => onChangeCreateEventType(value as CreateEventType)}
-                          className={`flex-1 rounded-md border px-3 py-3 ${isSelected ? "border-primary bg-primary/10" : "border-border bg-card"}`}
-                          testID={`${testIDPrefix}-type-${value}`}
+                          onPress={() => onChangeRecurrenceFrequency(value)}
+                          className={`rounded-md border px-3 py-2 ${isSelected ? "border-primary bg-primary/10" : "border-border bg-card"}`}
+                          testID={`${testIDPrefix}-recurrence-${value}`}
                         >
                           <Text
-                            className={`text-sm font-medium ${isSelected ? "text-primary" : "text-foreground"}`}
+                            className={`text-sm ${isSelected ? "font-medium text-primary" : "text-foreground"}`}
                           >
                             {label}
                           </Text>
@@ -249,396 +430,208 @@ export function EventEditorCard({
                       );
                     })}
                   </View>
-                  <Text className="text-xs text-muted-foreground">
-                    Custom events cover vacation, work, birthdays, holidays, and other non-plan
-                    scheduling. Activity plan events schedule a training session from one of your
-                    saved plans.
-                  </Text>
-                </View>
-              ) : null}
-
-              {mode === "create" &&
-              createEventType === "planned" &&
-              onChangeActivityPlanSearchQuery &&
-              onSelectActivityPlan ? (
-                <View className="gap-3">
-                  <Text className="text-xs text-muted-foreground">Search activity plans</Text>
-                  <Input
-                    value={activityPlanSearchQuery}
-                    onChangeText={onChangeActivityPlanSearchQuery}
-                    placeholder="Search your activity plans"
-                    testID={`${testIDPrefix}-activity-plan-search-input`}
-                  />
-
-                  {selectedCreateActivityPlan ? (
-                    <View className="gap-2" testID={`${testIDPrefix}-selected-activity-plan`}>
-                      <Text className="text-xs font-medium text-muted-foreground">
-                        Selected plan
-                      </Text>
-                      <ActivityPlanCard
-                        activityPlan={selectedCreateActivityPlan as any}
-                        testID={`${testIDPrefix}-selected-activity-plan-card`}
-                        variant="compact"
+                  {recurrenceFrequency !== "none" && onChangeRecurrenceEndDate ? (
+                    <View className="gap-2">
+                      <DateInput
+                        accessibilityHint="Choose when this series should end"
+                        id={`${testIDPrefix}-recurrence-end-date`}
+                        label="Repeat until"
+                        minimumDate={new Date()}
+                        onChange={(value) => onChangeRecurrenceEndDate(value ?? null)}
+                        pickerPresentation="modal"
+                        testId={`${testIDPrefix}-recurrence-end-date-button`}
+                        value={recurrenceEndDate ?? ""}
                       />
+                      {recurrenceEndDate ? (
+                        <Pressable
+                          accessibilityLabel="Clear repeat end date"
+                          onPress={() => onChangeRecurrenceEndDate(null)}
+                          className="self-start flex-row items-center gap-1 rounded-full border border-border px-2.5 py-1"
+                          testID={`${testIDPrefix}-recurrence-end-date-clear`}
+                        >
+                          <Icon as={X} size={12} className="text-muted-foreground" />
+                          <Text className="text-xs font-medium text-muted-foreground">Clear</Text>
+                        </Pressable>
+                      ) : null}
+                      <Text className="text-xs text-muted-foreground">
+                        Sets the last day this series appears on your calendar.
+                      </Text>
                     </View>
                   ) : null}
-
-                  {isLoadingActivityPlans ? (
-                    <Text className="text-xs text-muted-foreground">Loading activity plans...</Text>
-                  ) : activityPlansError ? (
-                    <TouchableOpacity
-                      onPress={onRetryActivityPlans}
-                      activeOpacity={0.85}
-                      testID={`${testIDPrefix}-activity-plan-retry`}
-                    >
-                      <Text className="text-xs text-primary">Retry loading activity plans</Text>
-                    </TouchableOpacity>
-                  ) : (filteredActivityPlans?.length ?? 0) > 0 ? (
-                    <View className="gap-2">
-                      {filteredActivityPlans?.slice(0, 8).map((plan) => {
-                        const isSelected = plan.id === selectedActivityPlanId;
-                        return (
-                          <View
-                            key={plan.id}
-                            className={
-                              isSelected ? "rounded-2xl border-2 border-primary" : undefined
-                            }
-                          >
-                            <ActivityPlanCard
-                              activityPlan={plan as any}
-                              onPress={() => onSelectActivityPlan(plan.id)}
-                              testID={`${testIDPrefix}-activity-plan-option-${plan.id}`}
-                              variant="compact"
-                            />
-                          </View>
-                        );
-                      })}
-                    </View>
-                  ) : (
-                    <Text className="text-xs text-muted-foreground">
-                      No activity plans match that search yet.
-                    </Text>
-                  )}
+                  {recurrenceErrorMessage ? (
+                    <Text className="text-xs text-destructive">{recurrenceErrorMessage}</Text>
+                  ) : null}
                 </View>
               ) : null}
 
-              {useSharedFields ? (
-                <Form {...(form as any)}>
-                  <FormTextField
-                    control={form!.control}
-                    disabled={isPending}
-                    label="Title"
-                    name="title"
-                    placeholder="Event title"
-                    testId={`${testIDPrefix}-title-input`}
-                  />
-                </Form>
-              ) : (
-                <>
-                  <Text className="text-xs text-muted-foreground">Title</Text>
-                  <Input
-                    value={eventTitle}
-                    onChangeText={onChangeEventTitle}
-                    placeholder="Event title"
-                    testID={`${testIDPrefix}-title-input`}
-                  />
-                </>
-              )}
-              {mode === "create" && createEventType === "planned" ? (
-                <Text className="text-xs text-muted-foreground">
-                  Leave the title as-is to use the selected activity plan name, or customize it.
-                </Text>
-              ) : null}
-              {titleErrorMessage ? (
-                <Text className="text-xs text-destructive">{titleErrorMessage}</Text>
-              ) : null}
-            </View>
+              <FormTextareaField
+                control={form?.control}
+                disabled={isPending}
+                formatValue={(value) => value ?? ""}
+                label="Notes"
+                name="notes"
+                parseValue={(value) => value}
+                placeholder="Optional notes"
+                testId={`${testIDPrefix}-notes-input`}
+              />
+            </Form>
+          ) : (
+            <>
+              <View className="gap-2">
+                <DateInput
+                  accessibilityHint="Choose when this event starts"
+                  id={`${testIDPrefix}-start-date`}
+                  label="Starts"
+                  onChange={(value) => {
+                    if (!value) {
+                      return;
+                    }
 
-            {useSharedFields ? (
-              <Form {...(form as any)}>
-                <FormSwitchField
-                  control={form!.control}
-                  description="Hide time for this event"
-                  label="All day"
-                  name="all_day"
-                  switchLabel="All day"
+                    onChangeStartsAt(applyDateOnlyToDate(startsAt, value));
+                  }}
+                  pickerPresentation="modal"
+                  testId={`${testIDPrefix}-start-date-button`}
+                  value={toDateOnly(startsAt)}
+                />
+
+                {!allDay ? (
+                  <TimeInput
+                    accessibilityHint="Choose when this event starts"
+                    id={`${testIDPrefix}-start-time`}
+                    label="Start time"
+                    onChange={(value) => {
+                      if (!value) {
+                        return;
+                      }
+
+                      const [hours, minutes] = value.split(":").map(Number);
+                      const next = new Date(startsAt);
+                      next.setHours(
+                        hours ?? startsAt.getHours(),
+                        minutes ?? startsAt.getMinutes(),
+                        0,
+                        0,
+                      );
+                      onChangeStartsAt(next);
+                    }}
+                    pickerPresentation="modal"
+                    testId={`${testIDPrefix}-start-time-button`}
+                    value={format(startsAt, "HH:mm")}
+                  />
+                ) : null}
+              </View>
+
+              <View className="flex-row items-center justify-between rounded-md border border-border bg-card px-3 py-3">
+                <View>
+                  <Text className="text-sm font-medium text-foreground">All day</Text>
+                  <Text className="text-xs text-muted-foreground">Hide time for this event</Text>
+                </View>
+                <Switch
+                  checked={allDay}
+                  onCheckedChange={onChangeAllDay}
                   testId={`${testIDPrefix}-all-day-switch`}
                 />
+              </View>
 
+              <Text className="text-xs text-muted-foreground">
+                Sets when this event starts
+                {recurrenceFrequency !== "none" ? " each time it repeats" : ""}.
+              </Text>
+
+              {onChangeRecurrenceFrequency ? (
                 <View className="gap-2">
-                  <DateInput
-                    accessibilityHint="Choose when this event starts"
-                    id={`${testIDPrefix}-start-date`}
-                    label="Starts"
-                    onChange={(value) => {
-                      if (!value) {
-                        return;
-                      }
-
-                      onChangeStartsAt(applyDateOnlyToDate(startsAt, value));
-                    }}
-                    pickerPresentation="modal"
-                    testId={`${testIDPrefix}-start-date-button`}
-                    value={toDateOnly(startsAt)}
-                  />
-
-                  {!allDay ? (
-                    <TimeInput
-                      accessibilityHint="Choose when this event starts"
-                      id={`${testIDPrefix}-start-time`}
-                      label="Start time"
-                      onChange={(value) => {
-                        if (!value) {
-                          return;
-                        }
-
-                        const [hours, minutes] = value.split(":").map(Number);
-                        const next = new Date(startsAt);
-                        next.setHours(
-                          hours ?? startsAt.getHours(),
-                          minutes ?? startsAt.getMinutes(),
-                          0,
-                          0,
-                        );
-                        onChangeStartsAt(next);
-                      }}
-                      pickerPresentation="modal"
-                      testId={`${testIDPrefix}-start-time-button`}
-                      value={format(startsAt, "HH:mm")}
-                    />
+                  <Text className="text-xs text-muted-foreground">Repeat</Text>
+                  <View className="flex-row flex-wrap gap-2">
+                    {recurrenceOptions.map(([value, label]) => {
+                      const isSelected = recurrenceFrequency === value;
+                      return (
+                        <Pressable
+                          key={value}
+                          onPress={() => onChangeRecurrenceFrequency(value)}
+                          className={`rounded-md border px-3 py-2 ${isSelected ? "border-primary bg-primary/10" : "border-border bg-card"}`}
+                          testID={`${testIDPrefix}-recurrence-${value}`}
+                        >
+                          <Text
+                            className={`text-sm ${isSelected ? "font-medium text-primary" : "text-foreground"}`}
+                          >
+                            {label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                  {recurrenceFrequency !== "none" && onChangeRecurrenceEndDate ? (
+                    <View className="gap-2">
+                      <DateInput
+                        accessibilityHint="Choose when this series should end"
+                        id={`${testIDPrefix}-recurrence-end-date`}
+                        label="Repeat until"
+                        minimumDate={new Date()}
+                        onChange={(value) => onChangeRecurrenceEndDate(value ?? null)}
+                        pickerPresentation="modal"
+                        testId={`${testIDPrefix}-recurrence-end-date-button`}
+                        value={recurrenceEndDate ?? ""}
+                      />
+                      {recurrenceEndDate ? (
+                        <Pressable
+                          accessibilityLabel="Clear repeat end date"
+                          onPress={() => onChangeRecurrenceEndDate(null)}
+                          className="self-start flex-row items-center gap-1 rounded-full border border-border px-2.5 py-1"
+                          testID={`${testIDPrefix}-recurrence-end-date-clear`}
+                        >
+                          <Icon as={X} size={12} className="text-muted-foreground" />
+                          <Text className="text-xs font-medium text-muted-foreground">Clear</Text>
+                        </Pressable>
+                      ) : null}
+                      <Text className="text-xs text-muted-foreground">
+                        Sets the last day this series appears on your calendar.
+                      </Text>
+                    </View>
+                  ) : null}
+                  {recurrenceErrorMessage ? (
+                    <Text className="text-xs text-destructive">{recurrenceErrorMessage}</Text>
                   ) : null}
                 </View>
+              ) : null}
 
-                <Text className="text-xs text-muted-foreground">
-                  Sets when this event starts
-                  {recurrenceFrequency !== "none" ? " each time it repeats" : ""}.
-                </Text>
-
-                {onChangeRecurrenceFrequency ? (
-                  <View className="gap-2">
-                    <Text className="text-xs text-muted-foreground">Repeat</Text>
-                    <View className="flex-row flex-wrap gap-2">
-                      {recurrenceOptions.map(([value, label]) => {
-                        const isSelected = recurrenceFrequency === value;
-                        return (
-                          <Pressable
-                            key={value}
-                            onPress={() => onChangeRecurrenceFrequency(value)}
-                            className={`rounded-md border px-3 py-2 ${isSelected ? "border-primary bg-primary/10" : "border-border bg-card"}`}
-                            testID={`${testIDPrefix}-recurrence-${value}`}
-                          >
-                            <Text
-                              className={`text-sm ${isSelected ? "font-medium text-primary" : "text-foreground"}`}
-                            >
-                              {label}
-                            </Text>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                    {recurrenceFrequency !== "none" && onChangeRecurrenceEndDate ? (
-                      <View className="gap-2">
-                        <DateInput
-                          accessibilityHint="Choose when this series should end"
-                          id={`${testIDPrefix}-recurrence-end-date`}
-                          label="Repeat until"
-                          minimumDate={new Date()}
-                          onChange={(value) => onChangeRecurrenceEndDate(value ?? null)}
-                          pickerPresentation="modal"
-                          testId={`${testIDPrefix}-recurrence-end-date-button`}
-                          value={recurrenceEndDate ?? ""}
-                        />
-                        {recurrenceEndDate ? (
-                          <Pressable
-                            accessibilityLabel="Clear repeat end date"
-                            onPress={() => onChangeRecurrenceEndDate(null)}
-                            className="self-start flex-row items-center gap-1 rounded-full border border-border px-2.5 py-1"
-                            testID={`${testIDPrefix}-recurrence-end-date-clear`}
-                          >
-                            <Icon as={X} size={12} className="text-muted-foreground" />
-                            <Text className="text-xs font-medium text-muted-foreground">Clear</Text>
-                          </Pressable>
-                        ) : null}
-                        <Text className="text-xs text-muted-foreground">
-                          Sets the last day this series appears on your calendar.
-                        </Text>
-                      </View>
-                    ) : null}
-                    {recurrenceErrorMessage ? (
-                      <Text className="text-xs text-destructive">{recurrenceErrorMessage}</Text>
-                    ) : null}
-                  </View>
-                ) : null}
-
-                <FormTextareaField
-                  control={form!.control}
-                  disabled={isPending}
-                  formatValue={(value) => value ?? ""}
-                  label="Notes"
-                  name="notes"
-                  parseValue={(value) => value}
+              <View className="gap-2">
+                <Text className="text-xs text-muted-foreground">Notes</Text>
+                <Textarea
+                  value={notes}
+                  onChangeText={onChangeNotes}
                   placeholder="Optional notes"
-                  testId={`${testIDPrefix}-notes-input`}
+                  testID={`${testIDPrefix}-notes-input`}
                 />
-              </Form>
-            ) : (
-              <>
-                <View className="gap-2">
-                  <DateInput
-                    accessibilityHint="Choose when this event starts"
-                    id={`${testIDPrefix}-start-date`}
-                    label="Starts"
-                    onChange={(value) => {
-                      if (!value) {
-                        return;
-                      }
+              </View>
+            </>
+          )}
+        </View>
 
-                      onChangeStartsAt(applyDateOnlyToDate(startsAt, value));
-                    }}
-                    pickerPresentation="modal"
-                    testId={`${testIDPrefix}-start-date-button`}
-                    value={toDateOnly(startsAt)}
-                  />
+        {formErrorMessage ? (
+          <Text className="text-xs text-destructive">{formErrorMessage}</Text>
+        ) : null}
+        {helperText ? <Text className="text-xs text-muted-foreground">{helperText}</Text> : null}
 
-                  {!allDay ? (
-                    <TimeInput
-                      accessibilityHint="Choose when this event starts"
-                      id={`${testIDPrefix}-start-time`}
-                      label="Start time"
-                      onChange={(value) => {
-                        if (!value) {
-                          return;
-                        }
-
-                        const [hours, minutes] = value.split(":").map(Number);
-                        const next = new Date(startsAt);
-                        next.setHours(
-                          hours ?? startsAt.getHours(),
-                          minutes ?? startsAt.getMinutes(),
-                          0,
-                          0,
-                        );
-                        onChangeStartsAt(next);
-                      }}
-                      pickerPresentation="modal"
-                      testId={`${testIDPrefix}-start-time-button`}
-                      value={format(startsAt, "HH:mm")}
-                    />
-                  ) : null}
-                </View>
-
-                <View className="flex-row items-center justify-between rounded-md border border-border bg-card px-3 py-3">
-                  <View>
-                    <Text className="text-sm font-medium text-foreground">All day</Text>
-                    <Text className="text-xs text-muted-foreground">Hide time for this event</Text>
-                  </View>
-                  <Switch
-                    checked={allDay}
-                    onCheckedChange={onChangeAllDay}
-                    testId={`${testIDPrefix}-all-day-switch`}
-                  />
-                </View>
-
-                <Text className="text-xs text-muted-foreground">
-                  Sets when this event starts
-                  {recurrenceFrequency !== "none" ? " each time it repeats" : ""}.
-                </Text>
-
-                {onChangeRecurrenceFrequency ? (
-                  <View className="gap-2">
-                    <Text className="text-xs text-muted-foreground">Repeat</Text>
-                    <View className="flex-row flex-wrap gap-2">
-                      {recurrenceOptions.map(([value, label]) => {
-                        const isSelected = recurrenceFrequency === value;
-                        return (
-                          <Pressable
-                            key={value}
-                            onPress={() => onChangeRecurrenceFrequency(value)}
-                            className={`rounded-md border px-3 py-2 ${isSelected ? "border-primary bg-primary/10" : "border-border bg-card"}`}
-                            testID={`${testIDPrefix}-recurrence-${value}`}
-                          >
-                            <Text
-                              className={`text-sm ${isSelected ? "font-medium text-primary" : "text-foreground"}`}
-                            >
-                              {label}
-                            </Text>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                    {recurrenceFrequency !== "none" && onChangeRecurrenceEndDate ? (
-                      <View className="gap-2">
-                        <DateInput
-                          accessibilityHint="Choose when this series should end"
-                          id={`${testIDPrefix}-recurrence-end-date`}
-                          label="Repeat until"
-                          minimumDate={new Date()}
-                          onChange={(value) => onChangeRecurrenceEndDate(value ?? null)}
-                          pickerPresentation="modal"
-                          testId={`${testIDPrefix}-recurrence-end-date-button`}
-                          value={recurrenceEndDate ?? ""}
-                        />
-                        {recurrenceEndDate ? (
-                          <Pressable
-                            accessibilityLabel="Clear repeat end date"
-                            onPress={() => onChangeRecurrenceEndDate(null)}
-                            className="self-start flex-row items-center gap-1 rounded-full border border-border px-2.5 py-1"
-                            testID={`${testIDPrefix}-recurrence-end-date-clear`}
-                          >
-                            <Icon as={X} size={12} className="text-muted-foreground" />
-                            <Text className="text-xs font-medium text-muted-foreground">Clear</Text>
-                          </Pressable>
-                        ) : null}
-                        <Text className="text-xs text-muted-foreground">
-                          Sets the last day this series appears on your calendar.
-                        </Text>
-                      </View>
-                    ) : null}
-                    {recurrenceErrorMessage ? (
-                      <Text className="text-xs text-destructive">{recurrenceErrorMessage}</Text>
-                    ) : null}
-                  </View>
-                ) : null}
-
-                <View className="gap-2">
-                  <Text className="text-xs text-muted-foreground">Notes</Text>
-                  <Textarea
-                    value={notes}
-                    onChangeText={onChangeNotes}
-                    placeholder="Optional notes"
-                    testID={`${testIDPrefix}-notes-input`}
-                  />
-                </View>
-              </>
-            )}
-          </View>
-
-          {formErrorMessage ? (
-            <Text className="text-xs text-destructive">{formErrorMessage}</Text>
-          ) : null}
-          {helperText ? <Text className="text-xs text-muted-foreground">{helperText}</Text> : null}
-
-          <View className="flex-row gap-2">
-            <Button
-              variant="outline"
-              className="flex-1"
-              onPress={onCancel}
-              disabled={isPending}
-              testID={`${testIDPrefix}-cancel-button`}
-            >
-              <Text>Cancel</Text>
-            </Button>
-            <Button
-              className="flex-1"
-              onPress={onSubmit}
-              disabled={isPending}
-              testID={`${testIDPrefix}-save-button`}
-            >
-              <Text className="text-primary-foreground">{submitLabel}</Text>
-            </Button>
-          </View>
-        </CardContent>
-      </Card>
-    </>
+        <View className="flex-row gap-2">
+          <Button
+            variant="outline"
+            className="flex-1"
+            onPress={onCancel}
+            disabled={isPending}
+            testID={`${testIDPrefix}-cancel-button`}
+          >
+            <Text>Cancel</Text>
+          </Button>
+          <Button
+            className="flex-1"
+            onPress={onSubmit}
+            disabled={isPending}
+            testID={`${testIDPrefix}-save-button`}
+          >
+            <Text className="text-primary-foreground">{submitLabel}</Text>
+          </Button>
+        </View>
+      </CardContent>
+    </Card>
   );
 }

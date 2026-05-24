@@ -1,7 +1,6 @@
 import { Button } from "@repo/ui/components/button";
 import { DateInput as DateField } from "@repo/ui/components/date-input";
 import { Text } from "@repo/ui/components/text";
-import React from "react";
 import { TouchableOpacity, View } from "react-native";
 import { AppConfirmModal, AppFormModal } from "@/components/shared/AppFormModal";
 

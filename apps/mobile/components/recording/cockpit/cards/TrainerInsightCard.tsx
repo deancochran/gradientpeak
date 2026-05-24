@@ -31,9 +31,10 @@ export function TrainerInsightCard({
     [descriptorState, plan, trainer],
   );
   const manualControlEnabled = controllable && trainerMode === "manual";
+  const remoteModesKey = getRemoteModesKey(descriptorState.availableModes);
   const remoteModes = React.useMemo(
     () => buildRemoteModes(descriptorState.availableModes),
-    [descriptorState.availableModes],
+    [remoteModesKey],
   );
   const [remoteModeId, setRemoteModeId] = React.useState<RemoteModeId>(() =>
     getInitialRemoteModeId(descriptorState.modeId, remoteModes),
@@ -55,10 +56,14 @@ export function TrainerInsightCard({
         ? current
         : getInitialRemoteModeId(descriptorState.modeId, remoteModes),
     );
-    setRemoteTargets((current) => ({
-      ...buildInitialRemoteTargets(remoteModes, resistance),
-      ...current,
-    }));
+    setRemoteTargets((current) => {
+      const next = {
+        ...buildInitialRemoteTargets(remoteModes, resistance),
+        ...current,
+      };
+
+      return areRemoteTargetsEqual(current, next) ? current : next;
+    });
   }, [descriptorState.modeId, remoteModes, resistance]);
 
   const setMode = React.useCallback(
@@ -372,6 +377,15 @@ const fallbackRemoteModes: RemoteMode[] = [
   },
 ];
 
+function getRemoteModesKey(modes: DescriptorMode[]) {
+  return modes
+    .map(
+      (mode) =>
+        `${mode.id}:${mode.enabled !== false}:${mode.range?.min ?? ""}:${mode.range?.max ?? ""}:${mode.range?.increment ?? ""}:${mode.range?.unit ?? ""}`,
+    )
+    .join("|");
+}
+
 function buildRemoteModes(descriptorModes: DescriptorMode[]): RemoteMode[] {
   const modes = descriptorModes
     .filter((mode) => mode.enabled !== false)
@@ -465,6 +479,16 @@ function buildInitialRemoteTargets(modes: RemoteMode[], resistance: number) {
   return Object.fromEntries(
     modes.map((mode) => [mode.id, mode.id === "resistance" ? resistance : mode.defaultValue]),
   ) as Record<RemoteModeId, number>;
+}
+
+function areRemoteTargetsEqual(
+  left: Record<RemoteModeId, number>,
+  right: Record<RemoteModeId, number>,
+) {
+  const leftKeys = Object.keys(left) as RemoteModeId[];
+  const rightKeys = Object.keys(right) as RemoteModeId[];
+
+  return leftKeys.length === rightKeys.length && leftKeys.every((key) => left[key] === right[key]);
 }
 
 function clampToMode(value: number, mode: RemoteMode) {

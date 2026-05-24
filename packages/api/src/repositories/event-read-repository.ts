@@ -5,7 +5,6 @@ import type {
   ActivityRow,
   EventRow,
   ProfileMetricRow,
-  ProfileRow,
   TrainingPlanRow,
 } from "@repo/db";
 import type { EventCompletionEventRecord } from "./event-completion-repository";
@@ -24,7 +23,9 @@ export interface EventListOwnedInput {
 }
 
 type SerializedProfileDob = { dob: string | null };
-type SerializedActivityTime = Pick<ActivityRow, "id"> & { started_at: string };
+type SerializedActivityTime = Pick<ActivityRow, "activity_plan_id" | "id"> & {
+  started_at: string;
+};
 type SerializedEventDate = { starts_at: string };
 type ConstraintActivityPlan = Pick<
   ActivityPlanRow,
@@ -37,7 +38,9 @@ type EstimationEffort = Pick<
   ActivityEffortRow,
   "activity_category" | "duration_seconds" | "effort_type" | "unit" | "value"
 >;
-type EstimationMetric = Pick<ProfileMetricRow, "metric_type" | "value"> & { recorded_at: string };
+type EstimationMetric = Pick<ProfileMetricRow, "metric_type" | "value"> & {
+  recorded_at: string;
+};
 type EstimationRoute = {
   id: ActivityRouteRow["id"];
   distance_meters: number | null;

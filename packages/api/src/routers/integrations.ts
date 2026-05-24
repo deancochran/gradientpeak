@@ -22,6 +22,7 @@ import {
 } from "../infrastructure/repositories";
 import { IcalSyncError, IcalSyncService } from "../lib/integrations/ical/sync-service";
 import { createWahooRouteStorage, WahooSyncService } from "../lib/integrations/wahoo/sync-service";
+import { logger } from "../lib/logger";
 import { WahooSyncJobService } from "../lib/provider-sync/wahoo-job-service";
 import { ROUTES_BUCKET } from "../lib/routes/route-file-helpers";
 import { getApiStorageService } from "../storage-service";
@@ -340,7 +341,9 @@ async function readProviderSyncOverviewState(
   try {
     return await providerSyncRepository.listSyncStateByIntegrationIds(integrationIds);
   } catch (error) {
-    console.warn("Failed to read provider sync state for integrations overview", error);
+    logger.warn("Failed to read provider sync state for integrations overview", {
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
     return [];
   }
 }
@@ -356,7 +359,9 @@ async function readActiveProviderSyncJobs(
       statuses: ["queued", "running"],
     });
   } catch (error) {
-    console.warn("Failed to read provider sync jobs for integrations overview", error);
+    logger.warn("Failed to read provider sync jobs for integrations overview", {
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
     return [];
   }
 }
@@ -428,17 +433,6 @@ function looksLikeReconnectError(error: string | null | undefined): boolean {
   );
 }
 
-function isIntegrationExpiredWithoutRefresh(integration: {
-  expires_at: Date | null;
-  refresh_token: string | null;
-}) {
-  return Boolean(
-    integration.expires_at &&
-      integration.expires_at.getTime() <= Date.now() &&
-      !integration.refresh_token,
-  );
-}
-
 async function enqueueActivityHistoryReconcile(input: {
   integrationId: string;
   profileId: string;
@@ -473,7 +467,9 @@ async function enqueueActivityHistoryReconcile(input: {
       throw error;
     }
 
-    console.warn("Provider sync jobs are unavailable; skipping activity history enqueue", error);
+    logger.warn("Provider sync jobs are unavailable; skipping activity history enqueue", {
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
     return {
       jobId: null,
       queued: false,
@@ -634,8 +630,7 @@ export const integrationsRouter = createTRPCRouter({
         activityState?.lastError ?? setupState?.lastError ?? plannedState?.lastError ?? null;
       const providerHealthStatus = !integration
         ? "unsupported"
-        : isIntegrationExpiredWithoutRefresh(integration) ||
-            looksLikeReconnectError(providerHealthLastError)
+        : looksLikeReconnectError(providerHealthLastError)
           ? "needs_reconnect"
           : "connected";
 
@@ -766,14 +761,6 @@ export const integrationsRouter = createTRPCRouter({
     // Build OAuth URL based on provider
     const authUrl = buildOAuthUrl(input.provider, state, callbackUrl);
 
-    // Debug logging
-    console.log("OAuth URL generated:", {
-      provider: input.provider,
-      state: state,
-      callbackUrl: callbackUrl,
-      authUrl: authUrl,
-    });
-
     return parseBoundaryValue(
       authUrlResultSchema,
       { url: authUrl, state },
@@ -810,16 +797,21 @@ export const integrationsRouter = createTRPCRouter({
         });
       }
 
-      if (!integration.refresh_token) {
+      const credentials = await repositories.integrations.findCredentialsByProfileIdAndProvider({
+        profileId: ctx.session.user.id,
+        provider: input.provider,
+      });
+
+      if (!credentials?.refresh_token) {
         throw new TRPCError({
           code: "BAD_REQUEST",
           message: "No refresh token available",
         });
       }
 
-      let newTokens;
+      let newTokens: Awaited<ReturnType<typeof refreshProviderToken>>;
       try {
-        newTokens = await refreshProviderToken(input.provider, integration.refresh_token);
+        newTokens = await refreshProviderToken(input.provider, credentials.refresh_token);
       } catch (error) {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
@@ -845,17 +837,17 @@ export const integrationsRouter = createTRPCRouter({
       return strictSuccessSchema.parse({ success: true });
     }),
 
-  // Cleanup expired OAuth states (optionally for specific user)
-  cleanupExpiredStates: publicProcedure
+  // Cleanup expired OAuth states for the signed-in user
+  cleanupExpiredStates: protectedProcedure
     .input(cleanupExpiredStatesInputSchema)
-    .mutation(async ({ ctx, input }) => {
+    .mutation(async ({ ctx }) => {
       const repositories = getIntegrationsRepositories(ctx);
       const expiredCount = await repositories.oauthStates.deleteExpired({
-        profileId: input?.userId,
+        profileId: ctx.session.user.id,
         now: new Date(),
       });
       const oldCount = await repositories.oauthStates.deleteCreatedBefore({
-        profileId: input?.userId,
+        profileId: ctx.session.user.id,
         before: new Date(Date.now() - 24 * 60 * 60 * 1000),
       });
 
@@ -908,6 +900,37 @@ export const integrationsRouter = createTRPCRouter({
     .input(storeIntegrationInputSchema)
     .mutation(async ({ ctx, input }) => {
       const repositories = getIntegrationsRepositories(ctx);
+      const now = new Date();
+
+      await repositories.oauthStates.deleteExpired({ now });
+
+      const oauthState = await repositories.oauthStates.findValidByState({
+        state: input.state,
+        now,
+      });
+
+      if (!oauthState) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Invalid or expired OAuth state",
+        });
+      }
+
+      const validatedOAuthState = parseBoundaryValue(
+        oauthStateRepositoryRowSchema,
+        oauthState,
+        "OAuth state repository returned invalid data",
+      );
+
+      if (
+        validatedOAuthState.profile_id !== input.userId ||
+        validatedOAuthState.provider !== input.provider
+      ) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "OAuth state does not match integration request",
+        });
+      }
 
       const integration = await repositories.integrations.upsertByProfileIdAndProvider({
         profileId: input.userId,
@@ -1184,14 +1207,14 @@ export const integrationsRouter = createTRPCRouter({
       .mutation(async ({ ctx, input }) => {
         const syncService = getWahooSyncService(ctx);
 
-        console.log(`[Wahoo Test Sync] Starting test sync for event: ${input.eventId}`);
+        logger.debug("[Wahoo Test Sync] Starting test sync", { eventId: input.eventId });
 
         const result = normalizeWahooSyncResult(
           await syncService.syncEvent(input.eventId, ctx.session.user.id),
           "Wahoo sync service returned invalid test-sync data",
         );
 
-        console.log("[Wahoo Test Sync] Sync result:", result);
+        logger.debug("[Wahoo Test Sync] Sync result", result);
 
         // Return detailed result including warnings
         return parseBoundaryValue(

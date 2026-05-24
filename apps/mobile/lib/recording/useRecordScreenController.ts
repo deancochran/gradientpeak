@@ -324,7 +324,7 @@ export function useRecordScreenController() {
       console.error("[RecordModal] Error starting recording:", error);
       Alert.alert("Error", "Failed to start recording. Please try again.");
     }
-  }, [allPermissionsGranted, gpsRecordingEnabled, navigateTo, start, service, user?.id]);
+  }, [allPermissionsGranted, gpsRecordingEnabled, navigateTo, start, service]);
 
   const handleFinish = React.useCallback(async () => {
     if (isFinishing) return;

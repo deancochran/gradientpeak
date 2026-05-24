@@ -6,7 +6,6 @@ import {
   getGoalDraftQualityFeedback,
 } from "@repo/core";
 import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
-import { Button } from "@repo/ui/components/button";
 import { DurationInput } from "@repo/ui/components/duration-input";
 import {
   Form,
@@ -15,6 +14,7 @@ import {
   FormTextField,
 } from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { PaceInput } from "@repo/ui/components/pace-input";
 import {
   NativeSelectScrollView,
@@ -35,7 +35,8 @@ import {
   Target,
   Trophy,
 } from "lucide-react-native";
-import React, { forwardRef, useEffect, useImperativeHandle, useMemo } from "react";
+import type React from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo } from "react";
 import { Pressable, View } from "react-native";
 import { z } from "zod";
 import { AppFormModal } from "@/components/shared/AppFormModal";
@@ -832,11 +833,14 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
           ) : null}
 
           {showSubmitAction ? (
-            <Button onPress={submitCurrentDraft} disabled={!canSubmit}>
-              <Text className="text-primary-foreground">
-                {isSubmitting ? "Saving..." : submitLabel}
-              </Text>
-            </Button>
+            <LoadingButton
+              disabled={!canSubmit}
+              loading={isSubmitting}
+              loadingLabel="Saving..."
+              onPress={submitCurrentDraft}
+            >
+              <Text className="text-primary-foreground">{submitLabel}</Text>
+            </LoadingButton>
           ) : null}
         </View>
       </Form>

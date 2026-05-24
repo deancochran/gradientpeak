@@ -103,7 +103,7 @@ function MemberAvatarStack({
       <View className="flex-row-reverse items-center">
         {hasMore || additionalCount > 0 ? (
           <View className="-ml-2 h-8 min-w-8 items-center justify-center rounded-full border-2 border-card bg-muted px-2">
-            <Text className="text-[10px] font-semibold text-foreground">
+            <Text className="text-[10px] font-semibold text-muted-foreground">
               +{additionalCount}
               {hasMore ? "+" : ""}
             </Text>
@@ -121,7 +121,7 @@ function MemberAvatarStack({
                 <AvatarImage source={{ uri: member.profile.avatar_url }} />
               ) : null}
               <AvatarFallback>
-                <Text className="text-[10px] font-semibold text-foreground">
+                <Text className="text-[10px] font-semibold text-muted-foreground">
                   {displayName.charAt(0).toUpperCase() || "A"}
                 </Text>
               </AvatarFallback>
@@ -172,12 +172,24 @@ export default function GroupDetailScreen() {
   });
   const pastEvents = useMemo(
     () =>
-      [...pastEventsVm.events].sort(
-        (left, right) => new Date(right.starts_at).getTime() - new Date(left.starts_at).getTime(),
-      ),
+      pastEventsVm.events
+        .filter((event) => !event.is_recurring_series)
+        .sort(
+          (left, right) => new Date(right.starts_at).getTime() - new Date(left.starts_at).getTime(),
+        ),
     [pastEventsVm.events],
   );
-  const visibleEvents = eventTab === "upcoming" ? upcomingEventsVm.events : pastEvents;
+  const currentEvent = detailVm.currentEventPlanOptions?.event ?? null;
+  const showCurrentEvent = Boolean(
+    !detailVm.currentEventPlanOptionsQuery.isLoading && currentEvent && eventTab === "upcoming",
+  );
+  const visibleEvents = useMemo(() => {
+    if (eventTab !== "upcoming") return pastEvents;
+    const concreteEvents = upcomingEventsVm.events.filter((event) => !event.is_recurring_series);
+    if (!showCurrentEvent || !currentEvent) return concreteEvents;
+
+    return concreteEvents.filter((event) => event.id !== currentEvent.id);
+  }, [currentEvent, eventTab, pastEvents, showCurrentEvent, upcomingEventsVm.events]);
   const visibleEventsVm = eventTab === "upcoming" ? upcomingEventsVm : pastEventsVm;
   const emptyTitle = eventTab === "upcoming" ? "No upcoming events" : "No past events";
   const emptyDescription =
@@ -320,7 +332,7 @@ export default function GroupDetailScreen() {
                 <Avatar alt={group.name} className="h-14 w-14">
                   {groupAvatarUrl ? <AvatarImage source={{ uri: groupAvatarUrl }} /> : null}
                   <AvatarFallback>
-                    <Text className="text-base font-semibold text-foreground">
+                    <Text className="text-base font-semibold text-muted-foreground">
                       {groupInitials(group.name)}
                     </Text>
                   </AvatarFallback>
@@ -390,10 +402,12 @@ export default function GroupDetailScreen() {
                   </Pressable>
                 ) : null}
               </View>
-              {detailVm.currentEventPlanOptionsQuery.isLoading ? null : detailVm
-                  .currentEventPlanOptions?.event && eventTab === "upcoming" ? (
+              {showCurrentEvent && currentEvent ? (
                 <CurrentGroupEventPlanCard
-                  event={detailVm.currentEventPlanOptions.event}
+                  event={currentEvent}
+                  onGroupPress={(eventGroup) =>
+                    router.push({ pathname: "/group-detail", params: { groupId: eventGroup.id } })
+                  }
                   onPress={(event) => handleOpenEvent(event.id)}
                 />
               ) : null}
@@ -405,11 +419,17 @@ export default function GroupDetailScreen() {
                     <GroupEventCard
                       event={event}
                       key={event.id}
+                      onGroupPress={(eventGroup) =>
+                        router.push({
+                          pathname: "/group-detail",
+                          params: { groupId: eventGroup.id },
+                        })
+                      }
                       onPress={() => handleOpenEvent(event.id)}
                     />
                   ))}
                 </View>
-              ) : (
+              ) : showCurrentEvent ? null : (
                 <GroupEventEmptyState description={emptyDescription} title={emptyTitle} />
               )}
             </View>

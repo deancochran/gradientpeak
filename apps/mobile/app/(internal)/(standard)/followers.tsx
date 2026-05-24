@@ -2,7 +2,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar"
 import { Text } from "@repo/ui/components/text";
 import { useLocalSearchParams } from "expo-router";
 import { Loader2 } from "lucide-react-native";
-import React from "react";
 import { FlatList, TouchableOpacity, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { api } from "@/lib/api";

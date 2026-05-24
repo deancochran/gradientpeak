@@ -32,12 +32,12 @@ import {
   FormTextField,
 } from "@repo/ui/components/form";
 import { Label } from "@repo/ui/components/label";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { Switch } from "@repo/ui/components/switch";
 import { createFileRoute } from "@tanstack/react-router";
 import { Calendar, Camera, Loader2, Mail, Trash2, UserRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { type UseFormReturn, useForm } from "react-hook-form";
-import { toast } from "sonner";
 import { useAuth } from "../../components/providers/auth-provider";
 import { RouteFlashToast, type RouteFlashType } from "../../components/route-flash-toast";
 import { api } from "../../lib/api/client";
@@ -83,7 +83,7 @@ function SettingsPage() {
 
   const [avatarBlobUrl, setAvatarBlobUrl] = useState<string | null>(null);
   const [avatarFiles, setAvatarFiles] = useState<Array<{ file?: File; name: string }>>([]);
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [uploadingAvatar, _setUploadingAvatar] = useState(false);
   const profileSubmitValidatedRef = useRef(false);
   const loading = authLoading || profileLoading;
   const avatarFilePath =
@@ -334,27 +334,27 @@ function ProfileInformationCard({
                     </p>
                   </div>
                   <FormControl>
-                    <>
-                      <input
-                        type="hidden"
-                        name="is_public"
-                        value={field.value === true || field.value === "true" ? "true" : "false"}
-                      />
-                      <Switch
-                        checked={field.value === true || field.value === "true"}
-                        onCheckedChange={field.onChange}
-                      />
-                    </>
+                    <input
+                      type="hidden"
+                      name="is_public"
+                      value={field.value === true || field.value === "true" ? "true" : "false"}
+                    />
+                    <Switch
+                      checked={field.value === true || field.value === "true"}
+                      onCheckedChange={field.onChange}
+                    />
                   </FormControl>
                 </FormItem>
               )}
             />
-            <Button type="submit" disabled={form.formState.isSubmitting || !form.formState.isDirty}>
-              {form.formState.isSubmitting ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
+            <LoadingButton
+              type="submit"
+              disabled={form.formState.isSubmitting || !form.formState.isDirty}
+              loading={form.formState.isSubmitting}
+              loadingLabel="Updating..."
+            >
               Update Profile
-            </Button>
+            </LoadingButton>
           </form>
         </Form>
       </CardContent>

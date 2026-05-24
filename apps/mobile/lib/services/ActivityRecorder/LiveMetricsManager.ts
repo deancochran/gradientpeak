@@ -24,13 +24,17 @@ import {
 import { EventEmitter } from "expo";
 import { MOVEMENT_THRESHOLDS, RECORDING_CONFIG } from "./config";
 import { DataBuffer, type LatLngBufferedReading } from "./DataBuffer";
-import { convertToSimplifiedMetrics, getSensorModel, SimplifiedMetrics } from "./SimplifiedMetrics";
-import { StreamBuffer } from "./StreamBuffer";
 import {
+  convertToSimplifiedMetrics,
+  getSensorModel,
+  type SimplifiedMetrics,
+} from "./SimplifiedMetrics";
+import { StreamBuffer } from "./StreamBuffer";
+import type {
   LiveMetricsState,
   LocationReading,
   ProfileMetrics,
-  type RecorderProfileRef,
+  RecorderProfileRef,
   SensorReading,
   SessionStats,
   ZoneConfig,
@@ -727,7 +731,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       let speed = 0;
       for (let v = 0; v < 20; v += 0.1) {
         const rollingResistance = CRR * totalMassKg * 9.81 * v;
-        const airResistance = 0.5 * AIR_DENSITY * CDA * Math.pow(v, 3);
+        const airResistance = 0.5 * AIR_DENSITY * CDA * v ** 3;
         const requiredPower = rollingResistance + airResistance;
 
         if (requiredPower >= effectivePower) {
@@ -1102,7 +1106,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
 
     // TIER 3: Heart Rate + Activity Type
     if (this.metrics.avgHeartRate > 0 && this.activityCategory) {
-      const age = this.profile.age || 35;
+      const _age = this.profile.age || 35;
 
       // Activity-specific MET multipliers (at moderate intensity)
       const activityMETs: Record<string, number> = {
@@ -1344,7 +1348,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   /**
    * Update elevation tracking
    */
-  private updateElevation(altitude: number): void {
+  private updateElevation(_altitude: number): void {
     const recentAltitudes = this.buffer.getRecent("altitude", 10);
 
     if (recentAltitudes.length < 2) return;
@@ -1494,7 +1498,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       speed = (min + max) / 2;
 
       const rollingResistance = CRR * totalMassKg * 9.81 * speed;
-      const airResistance = 0.5 * AIR_DENSITY * CDA * Math.pow(speed, 3);
+      const airResistance = 0.5 * AIR_DENSITY * CDA * speed ** 3;
       const requiredPower = rollingResistance + airResistance;
 
       if (requiredPower < effectivePower) {
@@ -1559,7 +1563,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
    * Extract profile metrics
    */
   private extractProfileMetrics(
-    profile: RecorderProfileRef,
+    _profile: RecorderProfileRef,
     metrics?: {
       ftp?: number;
       thresholdHr?: number;

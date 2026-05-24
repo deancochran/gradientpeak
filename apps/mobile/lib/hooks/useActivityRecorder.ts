@@ -341,7 +341,7 @@ export function useKnownSensors(service: ActivityRecorderService | null): Persis
 /**
  * Helper hook to subscribe to service events and trigger re-renders
  */
-function useServiceEvent(service: ActivityRecorderService | null, event: string): void {
+function _useServiceEvent(service: ActivityRecorderService | null, event: string): void {
   const [, forceUpdate] = useReducer((x) => x + 1, 0);
 
   useEffect(() => {

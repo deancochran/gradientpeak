@@ -204,7 +204,7 @@ export type ListOneOffGroupEventsInput = z.infer<typeof listOneOffGroupEventsInp
 
 export const rsvpOneOffGroupEventInputSchema = z.object({
   groupEventId: groupEventIdSchema,
-  status: groupEventRsvpStatusSchema,
+  status: groupEventRsvpStatusSchema.nullable(),
   selectedGroupEventActivityPlanId: groupEventActivityPlanIdSchema.nullable().optional(),
 });
 export type RsvpOneOffGroupEventInput = z.infer<typeof rsvpOneOffGroupEventInputSchema>;
@@ -254,7 +254,7 @@ export type UpdateEventOccurrenceInput = z.infer<typeof updateEventOccurrenceInp
 
 export const rsvpEventSeriesInputSchema = z.object({
   groupEventSeriesId: groupEventIdSchema,
-  status: groupEventSeriesRsvpStatusSchema,
+  status: groupEventSeriesRsvpStatusSchema.nullable(),
 });
 export type RsvpEventSeriesInput = z.infer<typeof rsvpEventSeriesInputSchema>;
 

@@ -2,8 +2,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar"
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { Tabs } from "expo-router";
-import { CalendarDays, Circle, Home, Target } from "lucide-react-native";
-import React from "react";
+import { CalendarDays, Circle, Home, Route } from "lucide-react-native";
 import { TouchableOpacity, View } from "react-native";
 import { useRecordingLifecycle } from "@/lib/hooks/useActivityRecorder";
 import { useAuth } from "@/lib/hooks/useAuth";
@@ -95,7 +94,7 @@ export default function InternalLayout() {
           name="plan"
           options={{
             title: "Plan",
-            tabBarIcon: ({ color }) => <Icon as={Target} size={28} color={color} />,
+            tabBarIcon: ({ color }) => <Icon as={Route} size={28} color={color} />,
             tabBarButton: (props) => (
               <MeasuredTabButton {...props} routeKey="route-plan" testID="tab-button-plan" />
             ),

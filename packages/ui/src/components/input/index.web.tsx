@@ -1,4 +1,4 @@
-import * as React from "react";
+import type * as React from "react";
 import { getWebTestProps } from "../../lib/test-props";
 import { Input as RegistryInput } from "../../registry/web/input";
 import type { InputTestProps } from "./shared";

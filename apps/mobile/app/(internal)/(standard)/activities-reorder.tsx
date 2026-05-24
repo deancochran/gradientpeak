@@ -81,7 +81,7 @@ export default function WorkoutsReorder() {
   }, [activities]);
 
   // Handle moving activity to different date
-  const handleMoveActivity = (activityId: string, direction: "up" | "down") => {
+  const _handleMoveActivity = (activityId: string, direction: "up" | "down") => {
     const currentIndex = activities.findIndex((a) => a.id === activityId);
     if (currentIndex === -1) return;
 
@@ -148,7 +148,7 @@ export default function WorkoutsReorder() {
           refetch();
         },
       });
-    } catch (error) {
+    } catch (_error) {
       setStatusModal({ title: "Error", description: "Failed to save changes. Please try again." });
     } finally {
       setSaving(false);
@@ -243,7 +243,7 @@ export default function WorkoutsReorder() {
 
                 {/* Activities for this date */}
                 <View className="gap-2 mb-4">
-                  {dayActivities.map((activity, index) => (
+                  {dayActivities.map((activity, _index) => (
                     <View
                       key={activity.id}
                       className="bg-card border border-border rounded-lg overflow-hidden"

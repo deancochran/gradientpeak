@@ -3,7 +3,6 @@ import { Text } from "@repo/ui/components/text";
 import { cn } from "@repo/ui/lib/cn";
 import { useRouter } from "expo-router";
 import { Bell, MessageSquare, Search } from "lucide-react-native";
-import React from "react";
 import { TouchableOpacity, View } from "react-native";
 import { api } from "@/lib/api";
 

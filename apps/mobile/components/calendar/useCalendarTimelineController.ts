@@ -1,4 +1,4 @@
-import { type ProfileGoal } from "@repo/core";
+import type { ProfileGoal } from "@repo/core";
 import { keepPreviousData } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -352,9 +352,8 @@ export function useCalendarTimelineController() {
 
   const handleCreateEvent = useCallback(() => {
     navigateTo({
-      pathname: "/(internal)/(standard)/event-detail",
+      pathname: "/(internal)/(standard)/agenda-create",
       params: {
-        mode: "create",
         date: visibleDateKey,
       },
     } as never);

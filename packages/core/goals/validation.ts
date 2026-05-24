@@ -1,11 +1,7 @@
 import { z } from "zod";
 import { parseMmSsToSeconds } from "../utils/fitness-inputs";
 import { parseDateOnly, parseDistanceKmToMeters, parseGoalDurationSeconds } from "./parsers";
-import type {
-  GoalForValidation,
-  GoalTargetForValidation,
-  TrainingPlanFormForValidation,
-} from "./types";
+import type { GoalTargetForValidation, TrainingPlanFormForValidation } from "./types";
 
 export const MIN_PREP_DAYS_BETWEEN_GOALS = 21;
 export const MAX_SAFE_WEEKLY_TSS_RAMP_PCT = 20;

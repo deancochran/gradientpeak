@@ -1829,8 +1829,8 @@ describe("no-history anchor orchestration", () => {
       },
     });
 
-    expect(projection.microcycles[0]!.metadata.tss_ramp.seed_source).toBe("dynamic_seed");
-    expect(projection.microcycles[0]!.metadata.tss_ramp.seed_weekly_tss).toBe(135);
+    expect(projection.microcycles[0]?.metadata.tss_ramp.seed_source).toBe("dynamic_seed");
+    expect(projection.microcycles[0]?.metadata.tss_ramp.seed_weekly_tss).toBe(135);
   });
 });
 

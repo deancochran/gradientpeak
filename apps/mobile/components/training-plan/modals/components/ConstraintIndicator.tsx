@@ -2,7 +2,6 @@
 
 import { Text } from "@repo/ui/components/text";
 import { AlertTriangle, Check, X } from "lucide-react-native";
-import React from "react";
 import { View } from "react-native";
 
 export type ConstraintStatus = "satisfied" | "warning" | "violated" | "not_applicable";

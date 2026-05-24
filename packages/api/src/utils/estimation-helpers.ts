@@ -2,8 +2,10 @@
  * Helper functions for integrating TSS estimation into tRPC endpoints
  */
 
+import type { CanonicalSport } from "@repo/core";
+import type { EstimationActivityPlanInput as CoreEstimationActivityPlanInput } from "@repo/core/estimation";
 import { buildEstimationContext, estimateActivity, estimateMetrics } from "@repo/core/estimation";
-import type { ActivityPlanRow, PublicActivityRoutesRow } from "@repo/db";
+import type { ActivityPlanRow } from "@repo/db";
 import type { EventReadRepository } from "../repositories";
 
 function shouldUseRouteForSavedPlanMetrics(structure: unknown): boolean {
@@ -42,6 +44,18 @@ type PlannedActivityEstimationStore = EstimationReadStore & {
     tsb: number | null;
   } | null>;
 };
+
+export function toEstimationActivityPlan(input: {
+  activity_category: unknown;
+  route_id?: string | null;
+  structure: unknown;
+}): CoreEstimationActivityPlanInput {
+  return {
+    activity_category: input.activity_category as CanonicalSport,
+    structure: input.structure as CoreEstimationActivityPlanInput["structure"],
+    route_id: input.route_id ?? undefined,
+  };
+}
 
 export type ActivityPlanRouteSummary = {
   distance?: number;
@@ -141,7 +155,6 @@ export async function getEstimationProfileInputsFromStore(
     }
     if (metric.metric_type === "lthr" && lthr === null) {
       lthr = Number(metric.value);
-      continue;
     }
   }
 
@@ -273,7 +286,6 @@ async function getEstimationProfileInputs(
     }
     if (metric.metric_type === "lthr" && lthr === null) {
       lthr = metric.value;
-      continue;
     }
   }
 
@@ -398,7 +410,7 @@ export async function addEstimationToPlan<TPlan extends EstimationActivityPlanIn
     : await getEstimationProfileInputsFromStore(estimationReader, userId);
 
   // Fetch route if referenced
-  let route: any = undefined;
+  let route: any;
   if (plan.route_id && shouldUseRouteForSavedPlanMetrics(plan.structure)) {
     if (isLegacyEstimationReadClient(estimationReader)) {
       const { data: routeData } = await estimationReader
@@ -417,11 +429,7 @@ export async function addEstimationToPlan<TPlan extends EstimationActivityPlanIn
   // Build estimation context
   const context = buildEstimationContext({
     userProfile: profile || {},
-    activityPlan: {
-      activity_category: plan.activity_category,
-      structure: plan.structure,
-      route_id: plan.route_id ?? undefined,
-    },
+    activityPlan: toEstimationActivityPlan(plan),
     route,
   });
 
@@ -453,7 +461,7 @@ export async function computePlanMetrics(
     ? await getEstimationProfileInputs(estimationReader, userId)
     : await getEstimationProfileInputsFromStore(estimationReader, userId);
 
-  let route: any = undefined;
+  let route: any;
   if (planInput.route_id && shouldUseRouteForSavedPlanMetrics(planInput.structure)) {
     route = isLegacyEstimationReadClient(estimationReader)
       ? await estimationReader
@@ -551,11 +559,7 @@ export async function addEstimationToPlans<TPlan extends EstimationActivityPlanI
 
       const context = buildEstimationContext({
         userProfile: profile || {},
-        activityPlan: {
-          activity_category: plan.activity_category,
-          structure: plan.structure,
-          route_id: plan.route_id ?? undefined,
-        },
+        activityPlan: toEstimationActivityPlan(plan),
         route: authoritativeRoute,
       });
 
@@ -638,9 +642,7 @@ export async function estimatePlannedActivity(
           }
         : undefined,
     activityPlan: {
-      activity_category: plan.activity_category,
-      structure: plan.structure,
-      route_id: plan.route_id ?? undefined,
+      ...toEstimationActivityPlan(plan),
     },
     route,
     scheduledDate,

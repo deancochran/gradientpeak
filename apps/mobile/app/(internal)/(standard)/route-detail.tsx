@@ -1,6 +1,6 @@
 import { Text } from "@repo/ui/components/text";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, InteractionManager, View } from "react-native";
 import { ElevationProfileChart } from "@/components/activity/charts/ElevationProfileChart";
 import {
@@ -88,6 +88,7 @@ function buildRouteStreams(
 
 export default function RouteDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const routeId = id ?? "";
   const router = useRouter();
   const utils = api.useUtils();
   const { user } = useAuth();
@@ -95,15 +96,18 @@ export default function RouteDetailScreen() {
   const recordingLifecycle = useRecordingLifecycle(recorderService);
   const [shouldLoadGeometry, setShouldLoadGeometry] = useState(false);
 
-  const { data: route, isLoading } = api.routes.get.useQuery({ id: id! }, { enabled: !!id });
+  const { data: route, isLoading } = api.routes.get.useQuery(
+    { id: routeId },
+    { enabled: routeId.length > 0 },
+  );
   const { data: routeFull, isFetching: isFetchingRouteFull } = api.routes.loadFull.useQuery(
-    { id: id! },
-    { enabled: !!id && shouldLoadGeometry },
+    { id: routeId },
+    { enabled: routeId.length > 0 && shouldLoadGeometry },
   );
 
   useEffect(() => {
     setShouldLoadGeometry(false);
-    if (!id) {
+    if (!routeId) {
       return;
     }
 
@@ -112,7 +116,7 @@ export default function RouteDetailScreen() {
     });
 
     return () => task.cancel();
-  }, [id]);
+  }, [routeId]);
 
   const deleteMutation = useReliableMutation(api.routes.delete, {
     invalidate: [utils.routes],

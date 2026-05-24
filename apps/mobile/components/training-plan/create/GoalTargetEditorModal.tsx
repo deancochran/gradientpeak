@@ -11,7 +11,6 @@ import {
   SelectValue,
 } from "@repo/ui/components/select";
 import { Text } from "@repo/ui/components/text";
-import React from "react";
 import { ScrollView, View } from "react-native";
 import { AppFormModal } from "@/components/shared/AppFormModal";
 import { parseNumberOrUndefined } from "../../../lib/training-plan-form/input-parsers";

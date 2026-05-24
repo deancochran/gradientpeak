@@ -2,7 +2,7 @@ import type { ProfileGoal } from "@repo/core";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { FlatList, type ListRenderItemInfo, View, type ViewToken } from "react-native";
 import type { CalendarGroupEvent } from "@/lib/calendar/groupEventPlans";
-import { type CalendarEvent } from "@/lib/calendar/normalizeEvents";
+import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
 import {
   buildCalendarTimelineRows,
   type CalendarActivity,
@@ -218,7 +218,7 @@ export function CalendarDayList(props: CalendarDayListProps) {
     if (!scrollToDate(props.scrollTargetDateKey, true)) {
       lastScrollRequestRef.current = { dateKey: props.scrollTargetDateKey, animated: true };
     }
-  }, [props.scrollTargetDateKey, props.scrollTargetVersion, scrollToDate]);
+  }, [props.scrollTargetDateKey, scrollToDate]);
 
   return (
     <View className="flex-1">

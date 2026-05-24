@@ -1,4 +1,4 @@
-import { activities, likes, profiles, trainingPlans } from "@repo/db";
+import { likes, profiles, trainingPlans } from "@repo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { socialRouter } from "../social";

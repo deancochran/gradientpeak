@@ -3,6 +3,53 @@ import { createHost as mockCreateHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const pushMock = jest.fn();
+let mockActivityEfforts = [
+  {
+    id: "effort-1",
+    activity_category: "run",
+    effort_type: "power",
+    recorded_at: "2026-03-01T00:00:00.000Z",
+    duration_seconds: 15,
+    value: 800,
+    unit: "W",
+  },
+  {
+    id: "effort-2",
+    activity_category: "run",
+    effort_type: "power",
+    recorded_at: "2026-03-02T00:00:00.000Z",
+    duration_seconds: 60,
+    value: 500,
+    unit: "W",
+  },
+  {
+    id: "effort-3",
+    activity_category: "run",
+    effort_type: "power",
+    recorded_at: "2026-03-03T00:00:00.000Z",
+    duration_seconds: 300,
+    value: 350,
+    unit: "W",
+  },
+  {
+    id: "effort-4",
+    activity_category: "run",
+    effort_type: "power",
+    recorded_at: "2026-03-04T00:00:00.000Z",
+    duration_seconds: 1200,
+    value: 280,
+    unit: "W",
+  },
+  {
+    id: "effort-5",
+    activity_category: "run",
+    effort_type: "power",
+    recorded_at: "2026-03-05T00:00:00.000Z",
+    duration_seconds: 3600,
+    value: 220,
+    unit: "W",
+  },
+];
 
 jest.mock("expo-router", () => ({
   __esModule: true,
@@ -65,53 +112,7 @@ jest.mock("@/lib/api", () => ({
     activityEfforts: {
       getForProfile: {
         useQuery: () => ({
-          data: [
-            {
-              id: "effort-1",
-              activity_category: "run",
-              effort_type: "power",
-              recorded_at: "2026-03-01T00:00:00.000Z",
-              duration_seconds: 15,
-              value: 800,
-              unit: "W",
-            },
-            {
-              id: "effort-2",
-              activity_category: "run",
-              effort_type: "power",
-              recorded_at: "2026-03-02T00:00:00.000Z",
-              duration_seconds: 60,
-              value: 500,
-              unit: "W",
-            },
-            {
-              id: "effort-3",
-              activity_category: "run",
-              effort_type: "power",
-              recorded_at: "2026-03-03T00:00:00.000Z",
-              duration_seconds: 300,
-              value: 350,
-              unit: "W",
-            },
-            {
-              id: "effort-4",
-              activity_category: "run",
-              effort_type: "power",
-              recorded_at: "2026-03-04T00:00:00.000Z",
-              duration_seconds: 1200,
-              value: 280,
-              unit: "W",
-            },
-            {
-              id: "effort-5",
-              activity_category: "run",
-              effort_type: "power",
-              recorded_at: "2026-03-05T00:00:00.000Z",
-              duration_seconds: 3600,
-              value: 220,
-              unit: "W",
-            },
-          ],
+          data: mockActivityEfforts,
           isLoading: false,
           error: null,
         }),
@@ -133,6 +134,53 @@ const ActivityEffortsList = require("../activity-efforts-list").default;
 describe("activity efforts list", () => {
   beforeEach(() => {
     pushMock.mockReset();
+    mockActivityEfforts = [
+      {
+        id: "effort-1",
+        activity_category: "run",
+        effort_type: "power",
+        recorded_at: "2026-03-01T00:00:00.000Z",
+        duration_seconds: 15,
+        value: 800,
+        unit: "W",
+      },
+      {
+        id: "effort-2",
+        activity_category: "run",
+        effort_type: "power",
+        recorded_at: "2026-03-02T00:00:00.000Z",
+        duration_seconds: 60,
+        value: 500,
+        unit: "W",
+      },
+      {
+        id: "effort-3",
+        activity_category: "run",
+        effort_type: "power",
+        recorded_at: "2026-03-03T00:00:00.000Z",
+        duration_seconds: 300,
+        value: 350,
+        unit: "W",
+      },
+      {
+        id: "effort-4",
+        activity_category: "run",
+        effort_type: "power",
+        recorded_at: "2026-03-04T00:00:00.000Z",
+        duration_seconds: 1200,
+        value: 280,
+        unit: "W",
+      },
+      {
+        id: "effort-5",
+        activity_category: "run",
+        effort_type: "power",
+        recorded_at: "2026-03-05T00:00:00.000Z",
+        duration_seconds: 3600,
+        value: 220,
+        unit: "W",
+      },
+    ];
   });
 
   it("opens a power curve sheet when tapping the curve card", () => {
@@ -152,5 +200,35 @@ describe("activity efforts list", () => {
     expect(screen.getByText("5m")).toBeTruthy();
     expect(screen.getByText("20m")).toBeTruthy();
     expect(screen.getByText("1h")).toBeTruthy();
+  });
+
+  it("does not force beginner-length efforts onto a one-hour x-axis", () => {
+    mockActivityEfforts = [
+      {
+        id: "effort-short-1",
+        activity_category: "run",
+        effort_type: "power",
+        recorded_at: "2026-03-01T00:00:00.000Z",
+        duration_seconds: 60,
+        value: 180,
+        unit: "W",
+      },
+      {
+        id: "effort-short-2",
+        activity_category: "run",
+        effort_type: "power",
+        recorded_at: "2026-03-02T00:00:00.000Z",
+        duration_seconds: 300,
+        value: 140,
+        unit: "W",
+      },
+    ];
+
+    renderNative(<ActivityEffortsList />);
+    fireEvent.press(screen.getByTestId("activity-effort-curve-power"));
+
+    expect(screen.getByText("1m")).toBeTruthy();
+    expect(screen.getByText("5m")).toBeTruthy();
+    expect(screen.queryByText("1h")).toBeNull();
   });
 });

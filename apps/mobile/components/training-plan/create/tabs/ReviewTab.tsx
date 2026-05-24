@@ -7,7 +7,7 @@ import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import { ShieldAlert } from "lucide-react-native";
-import React from "react";
+import type React from "react";
 import { View } from "react-native";
 
 interface ReviewTabProps {

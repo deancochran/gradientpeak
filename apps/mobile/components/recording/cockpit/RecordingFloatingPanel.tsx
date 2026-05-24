@@ -50,7 +50,7 @@ export function RecordingFloatingPanel({
       }),
     [bottomObstructionHeight, hasClimbData, hasPlan, height, insets.bottom, sessionContract, width],
   );
-  const availableCardsKey = model.availableCards.join("|");
+  const _availableCardsKey = model.availableCards.join("|");
   const showPageIndicator = model.availableCards.length > 1;
   const [selectedCard, setSelectedCard] = React.useState<RecordingInsightCard>(model.defaultCard);
   const [expanded, setExpanded] = React.useState(model.forcedExpanded);
@@ -103,20 +103,25 @@ export function RecordingFloatingPanel({
   const pageWidth = effectiveExpanded ? width - expandedHorizontalInset * 2 : model.cardWidth;
   const cardGap = effectiveExpanded ? expandedCardGap : model.cardGap;
   const snapInterval = effectiveExpanded ? pageWidth + cardGap : model.snapInterval;
+  const availableCardsRef = React.useRef(model.availableCards);
+  const onExpandedChangeRef = React.useRef(onExpandedChange);
+
+  availableCardsRef.current = model.availableCards;
+  onExpandedChangeRef.current = onExpandedChange;
 
   React.useEffect(() => {
-    onExpandedChange?.(effectiveExpanded);
-  }, [effectiveExpanded, onExpandedChange]);
+    onExpandedChangeRef.current?.(effectiveExpanded);
+  }, [effectiveExpanded]);
 
   React.useEffect(() => {
     setSelectedCard((current) => {
-      if (model.availableCards.includes(current)) {
+      if (availableCardsRef.current.includes(current)) {
         return current;
       }
 
       return model.defaultCard;
     });
-  }, [availableCardsKey, model.availableCards, model.defaultCard]);
+  }, [model.defaultCard]);
 
   React.useEffect(() => {
     if (model.forcedExpanded) {
@@ -292,7 +297,6 @@ function InsightCard({
       return <ClimbInsightCard {...props} />;
     case "trainer":
       return <TrainerInsightCard {...props} />;
-    case "metrics":
     default:
       return <MetricsInsightCard {...props} />;
   }

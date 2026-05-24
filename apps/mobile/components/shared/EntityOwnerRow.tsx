@@ -1,7 +1,6 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Text } from "@repo/ui/components/text";
 import type { ReactNode } from "react";
-import React from "react";
 import { Pressable, View } from "react-native";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
@@ -75,8 +74,8 @@ export function EntityOwnerRow({
           <Text
             className={
               compact || minimal
-                ? "text-xs font-semibold text-foreground"
-                : "text-sm font-semibold text-foreground"
+                ? "text-xs font-semibold text-muted-foreground"
+                : "text-sm font-semibold text-muted-foreground"
             }
           >
             {fallbackInitials || displayName.charAt(0).toUpperCase() || "U"}

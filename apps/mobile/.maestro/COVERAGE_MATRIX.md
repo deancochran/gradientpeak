@@ -63,6 +63,8 @@ Status meanings:
 | Calendar custom-event CRUD | `flows/journeys/calendar/custom_event_create_edit_delete.yaml` | validated |
 | Calendar recurring reschedule scopes | `flows/journeys/calendar/recurring_event_reschedule_scopes.yaml` | scaffold |
 | Calendar scheduled-event to record | `flows/journeys/calendar/scheduled_event_open_and_start_record.yaml` | scaffold |
+| Calendar inaccessible event deep link | `flows/journeys/calendar/inaccessible_event_detail_blocked.yaml` | scaffold |
+| Group event visibility and series overrides | `flows/journeys/groups/group_event_visibility_and_series_overrides.yaml`, `flows/journeys/groups/private_group_event_detail_blocked.yaml` | scaffold |
 
 ## Recording, routes, and submission
 

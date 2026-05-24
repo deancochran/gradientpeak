@@ -96,7 +96,7 @@ export default function ChatScreen() {
     if (id && messages.length > 0) {
       markAsReadMutation.mutate({ conversation_id: id });
     }
-  }, [id]);
+  }, [id, markAsReadMutation.mutate, messages.length]);
 
   const sendMessageMutation = api.messaging.sendMessage.useMutation({
     onSuccess: async () => {

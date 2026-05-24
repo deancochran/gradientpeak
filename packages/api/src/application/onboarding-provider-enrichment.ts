@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import type { DrizzleDbClient, IntegrationRow, PublicIntegrationProvider } from "@repo/db";
+import type {
+  DrizzleDbClient,
+  IntegrationCredentialRow,
+  IntegrationRow,
+  PublicIntegrationProvider,
+} from "@repo/db";
 import { schema } from "@repo/db";
 import { and, desc, eq, gte, inArray, isNotNull } from "drizzle-orm";
 import {
@@ -306,9 +311,28 @@ export class OnboardingProviderEnrichmentService {
 
     await this.writeSetupRefreshState(integration, "running", { fields_imported: [] });
 
+    const credentials = await this.getIntegrationCredentials(integration.id);
+    if (!credentials) {
+      await this.writeSetupRefreshState(
+        integration,
+        "failed",
+        { fields_imported: [], provider_error_code: "missing_credentials" },
+        "Integration credentials are unavailable.",
+      );
+
+      return {
+        fieldsFilled: [],
+        fieldsKept: [],
+        fieldsUpdated: [],
+        keptExistingValues: false,
+        provider,
+        status: "failed",
+      };
+    }
+
     const client = createWahooClient({
-      accessToken: integration.access_token,
-      refreshToken: integration.refresh_token ?? undefined,
+      accessToken: credentials.access_token,
+      refreshToken: credentials.refresh_token ?? undefined,
     });
     const fieldsFilled: ImportedOnboardingField[] = [];
     const fieldsKept: ImportedOnboardingField[] = [];
@@ -417,10 +441,21 @@ export class OnboardingProviderEnrichmentService {
   private async enrichWahoo(integration: IntegrationRow) {
     await this.writeSyncState(integration, "running", { blocking: true });
 
+    const credentials = await this.getIntegrationCredentials(integration.id);
+    if (!credentials) {
+      await this.writeSyncState(
+        integration,
+        "failed",
+        { blocking: true, provider_error_code: "missing_credentials" },
+        "Integration credentials are unavailable.",
+      );
+      return;
+    }
+
     const fieldsImported: ImportedOnboardingField[] = [];
     const client = createWahooClient({
-      accessToken: integration.access_token,
-      refreshToken: integration.refresh_token ?? undefined,
+      accessToken: credentials.access_token,
+      refreshToken: credentials.refresh_token ?? undefined,
     });
 
     try {
@@ -861,6 +896,18 @@ export class OnboardingProviderEnrichmentService {
       .limit(1);
 
     return integration ?? null;
+  }
+
+  private async getIntegrationCredentials(
+    integrationId: string,
+  ): Promise<IntegrationCredentialRow | null> {
+    const [credentials] = await this.db
+      .select()
+      .from(schema.integrationCredentials)
+      .where(eq(schema.integrationCredentials.integration_id, integrationId))
+      .limit(1);
+
+    return credentials ?? null;
   }
 }
 

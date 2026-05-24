@@ -125,7 +125,7 @@ export function detectPowerRampTest(
 
   // Look for progressive power increase
   for (let i = 0; i < powerStream.length; i++) {
-    const startPower = powerStream[i];
+    const _startPower = powerStream[i];
     const startTime = timestamps[i];
     if (startTime === undefined) continue;
 

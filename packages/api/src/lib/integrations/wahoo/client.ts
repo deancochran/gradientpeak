@@ -553,7 +553,7 @@ export class WahooClient {
         }
 
         // Exponential backoff: 1s, 2s, 4s
-        const delay = Math.pow(2, i) * 1000;
+        const delay = 2 ** i * 1000;
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }

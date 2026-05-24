@@ -1,4 +1,4 @@
-import React from "react";
+import type React from "react";
 import { Pressable } from "react-native";
 
 import { createButtonComponent, createHost } from "../../../../test/mock-components";

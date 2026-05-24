@@ -27,7 +27,7 @@ export default function Avatar({ url, size = 150, onUpload }: Props) {
 
   useEffect(() => {
     if (url) downloadImage(url);
-  }, [url]);
+  }, [url, downloadImage]);
 
   const utils = api.useUtils();
 

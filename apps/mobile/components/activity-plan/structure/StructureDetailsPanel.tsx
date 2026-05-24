@@ -6,7 +6,7 @@ import { Text } from "@repo/ui/components/text";
 import { ChevronDown, ChevronRight, Copy, GripVertical, Minus, Plus, X } from "lucide-react-native";
 import { Pressable, View } from "react-native";
 import { NestableDraggableFlatList, type RenderItemParams } from "react-native-draggable-flatlist";
-import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
+import { TimelineChart } from "@/components/activity-plan/workout/TimelineChart";
 import { getDurationMs } from "@/lib/utils/durationConversion";
 
 interface StructureDetailsPanelProps {

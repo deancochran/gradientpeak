@@ -1,4 +1,3 @@
-import React from "react";
 import { AppConfirmModal } from "@/components/shared/AppFormModal";
 
 type DetailDeleteConfirmModalProps = {

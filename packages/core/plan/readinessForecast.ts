@@ -417,7 +417,7 @@ function nearestPointOnOrBefore(
   return [...series.points].reverse().find((point) => point.date <= date);
 }
 
-function nearestPointOnOrAfter(
+function _nearestPointOnOrAfter(
   series: ReadinessSeries,
   date: string,
 ): ReadinessSeriesPoint | undefined {

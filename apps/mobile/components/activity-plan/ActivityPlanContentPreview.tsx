@@ -4,10 +4,10 @@ import type {
   IntensityTargetV2,
 } from "@repo/core/schemas/activity_plan_v2";
 import { Text } from "@repo/ui/components/text";
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 import { Pressable, View } from "react-native";
-import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
 import { ElevationProfileChart } from "@/components/activity/charts/ElevationProfileChart";
+import { TimelineChart } from "@/components/activity-plan/workout/TimelineChart";
 import { StaticRouteMapPreview } from "@/components/shared/StaticRouteMapPreview";
 import {
   getActivityPlanRoute,

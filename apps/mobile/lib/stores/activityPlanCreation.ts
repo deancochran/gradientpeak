@@ -1,7 +1,7 @@
-import {
-  type ActivityPlanStructureV2,
-  type IntervalStepV2,
-  type IntervalV2,
+import type {
+  ActivityPlanStructureV2,
+  IntervalStepV2,
+  IntervalV2,
 } from "@repo/core/schemas/activity_plan_v2";
 import { randomUUID } from "expo-crypto";
 import { create } from "zustand";

@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from "react";
-import { LayoutChangeEvent, View } from "react-native";
-import MapView, { Marker, Polyline, PROVIDER_DEFAULT, Region } from "react-native-maps";
+import { useMemo, useState } from "react";
+import { type LayoutChangeEvent, View } from "react-native";
+import MapView, { Marker, Polyline, PROVIDER_DEFAULT, type Region } from "react-native-maps";
 
 type RouteCoordinate = {
   latitude: number;
@@ -30,10 +30,10 @@ function getRegionForCoordinates(
     return null;
   }
 
-  let minLatitude = coordinates[0]!.latitude;
-  let maxLatitude = coordinates[0]!.latitude;
-  let minLongitude = coordinates[0]!.longitude;
-  let maxLongitude = coordinates[0]!.longitude;
+  let minLatitude = coordinates[0]?.latitude;
+  let maxLatitude = coordinates[0]?.latitude;
+  let minLongitude = coordinates[0]?.longitude;
+  let maxLongitude = coordinates[0]?.longitude;
 
   for (const coordinate of coordinates) {
     minLatitude = Math.min(minLatitude, coordinate.latitude);

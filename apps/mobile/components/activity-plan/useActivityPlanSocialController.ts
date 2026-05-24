@@ -1,4 +1,3 @@
-import { skipToken } from "@tanstack/react-query";
 import { Alert } from "react-native";
 import { api } from "@/lib/api";
 import { useEntityCommentsController } from "@/lib/hooks/useEntityCommentsController";

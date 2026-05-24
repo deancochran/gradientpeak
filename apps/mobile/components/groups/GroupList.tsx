@@ -15,7 +15,7 @@ type GroupListProps = {
   ListHeaderComponent?: ReactElement | null;
   onGroupPress?: (group: GroupListItem) => void;
   onLoadMore?: () => void;
-  onRefresh?: () => Promise<unknown> | void;
+  onRefresh?: () => Promise<unknown> | undefined;
   refreshing?: boolean;
   variant?: "default" | "compact";
   viewerByGroupId?: Record<string, DisplayGroupViewerState | null | undefined>;

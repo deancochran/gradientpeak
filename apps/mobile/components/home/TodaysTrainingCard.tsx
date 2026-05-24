@@ -1,5 +1,5 @@
 import { Activity, Calendar } from "lucide-react-native";
-import React from "react";
+import type React from "react";
 import { Text, TouchableOpacity, View } from "react-native";
 
 interface TodaysTrainingCardProps {

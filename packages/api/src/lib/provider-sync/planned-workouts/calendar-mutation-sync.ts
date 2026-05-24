@@ -96,6 +96,19 @@ export async function getEventPlannedWorkoutProviderStatuses(input: {
     eventId: input.eventId,
     profileId: input.profileId,
   });
+  const credentialEntries = await Promise.all(
+    providers.map(
+      async (provider) =>
+        [
+          provider,
+          await repositories.integrations.findCredentialsByProfileIdAndProvider({
+            profileId: input.profileId,
+            provider,
+          }),
+        ] as const,
+    ),
+  );
+  const credentialsByProvider = new Map(credentialEntries);
   const now = Date.now();
 
   return providers.map((provider) => {
@@ -112,10 +125,11 @@ export async function getEventPlannedWorkoutProviderStatuses(input: {
       };
     }
 
+    const credentials = credentialsByProvider.get(provider);
     if (
-      integration.expires_at &&
-      integration.expires_at.getTime() <= now &&
-      !integration.refresh_token
+      credentials?.expires_at &&
+      credentials.expires_at.getTime() <= now &&
+      !credentials.refresh_token
     ) {
       return {
         provider,

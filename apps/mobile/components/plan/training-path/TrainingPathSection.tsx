@@ -1,7 +1,7 @@
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { HelpCircle, RotateCcw, Settings } from "lucide-react-native";
-import { useState } from "react";
+import { HelpCircle, Settings } from "lucide-react-native";
+import { useEffect, useRef, useState } from "react";
 import { TouchableOpacity, View } from "react-native";
 import { AppFormModal } from "@/components/shared/AppFormModal";
 import { TrainingPathChart } from "./TrainingPathChart";
@@ -17,17 +17,19 @@ import type {
 type TrainingPathSectionProps = {
   model: TrainingPathViewModel;
   selectedWeekGoals: TrainingPathSelectedGoal[];
-  selectedWeekScheduledItems: TrainingPathScheduledItem[];
+  selectedWeekEvents: TrainingPathScheduledItem[];
+  selectedWeekGroupEvents: TrainingPathScheduledItem[];
   selectedWeekCompletedActivities: TrainingPathCompletedActivity[];
-  onResetChart: () => void;
+  selectedWeekLoading?: boolean;
   onScrollNearEnd?: () => void;
   onScrollNearStart?: () => void;
   onOpenActivity: (activityId: string) => void;
-  onOpenActivityPlan: (activityPlanId: string) => void;
   onOpenGoal: (goalId: string) => void;
+  onOpenGroup?: (groupId: string) => void;
   onOpenGroupEvent: (eventId: string) => void;
   onOpenScheduledEvent: (eventId: string) => void;
   onOpenSettings: () => void;
+  onWeekScrollStart?: () => void;
   onSelectedWeekChange: (weekStart: string) => void;
 };
 
@@ -42,27 +44,35 @@ function formatLoad(value: number) {
   return `${Math.round(value)} TSS`;
 }
 
-function TrainingPathMetric({ label, value }: { label: string; value: number }) {
+function TrainingPathMetric({
+  label,
+  loading,
+  value,
+}: {
+  label: string;
+  loading?: boolean;
+  value: number;
+}) {
   return (
     <View className="flex-1 rounded-2xl bg-muted/40 px-2.5 py-2">
       <Text className="text-[10px] font-medium text-muted-foreground" numberOfLines={1}>
         {label}
       </Text>
       <Text className="text-xs font-semibold text-foreground" numberOfLines={1}>
-        {formatLoad(value)}
+        {loading ? "--" : formatLoad(value)}
       </Text>
     </View>
   );
 }
 
-function TrainingPathDateMetric({ value }: { value: string }) {
+function TrainingPathDateMetric({ loading, value }: { loading?: boolean; value: string }) {
   return (
     <View className="flex-[1.25] rounded-2xl bg-muted/40 px-2.5 py-2">
       <Text className="text-[10px] font-medium text-muted-foreground" numberOfLines={1}>
         Week
       </Text>
       <Text className="text-xs font-semibold text-foreground" numberOfLines={1}>
-        {value}
+        {loading ? "Loading" : value}
       </Text>
     </View>
   );
@@ -71,21 +81,54 @@ function TrainingPathDateMetric({ value }: { value: string }) {
 export function TrainingPathSection({
   model,
   selectedWeekGoals,
-  selectedWeekScheduledItems,
+  selectedWeekEvents,
+  selectedWeekGroupEvents,
   selectedWeekCompletedActivities,
-  onResetChart,
+  selectedWeekLoading = false,
   onScrollNearEnd,
   onScrollNearStart,
   onOpenActivity,
-  onOpenActivityPlan,
   onOpenGoal,
+  onOpenGroup,
   onOpenGroupEvent,
   onOpenScheduledEvent,
   onOpenSettings,
+  onWeekScrollStart,
   onSelectedWeekChange,
 }: TrainingPathSectionProps) {
   const selectedWeek = model.selectedWeekSummary;
   const [legendOpen, setLegendOpen] = useState(false);
+  const [chartScrolling, setChartScrolling] = useState(false);
+  const lastSelectedWeekStartRef = useRef<string | null>(selectedWeek?.weekStart ?? null);
+  const [displayedWeekStart, setDisplayedWeekStart] = useState<string | null>(
+    selectedWeek?.weekStart ?? null,
+  );
+  const displayedWeek = displayedWeekStart
+    ? (model.weeks.find((week) => week.weekStart === displayedWeekStart) ?? null)
+    : null;
+  const displayedWeekLabel = displayedWeek?.label ?? selectedWeek?.dateLabel;
+  const weekReviewLoading = selectedWeekLoading || chartScrolling;
+
+  useEffect(() => {
+    const previousSelectedWeekStart = lastSelectedWeekStartRef.current;
+    lastSelectedWeekStartRef.current = selectedWeek?.weekStart ?? null;
+    if (selectedWeekLoading) return;
+    if (
+      chartScrolling &&
+      selectedWeek?.weekStart !== previousSelectedWeekStart &&
+      selectedWeek?.weekStart === displayedWeekStart
+    ) {
+      setChartScrolling(false);
+    }
+    if (chartScrolling) return;
+    setDisplayedWeekStart(selectedWeek?.weekStart ?? null);
+  }, [chartScrolling, displayedWeekStart, selectedWeek?.weekStart, selectedWeekLoading]);
+
+  const beginWeekProgress = (weekStart?: string) => {
+    if (weekStart) setDisplayedWeekStart(weekStart);
+    setChartScrolling(true);
+    onWeekScrollStart?.();
+  };
 
   return (
     <View className="gap-4" testID="training-path-section">
@@ -107,16 +150,6 @@ export function TrainingPathSection({
           <View className="flex-row items-center gap-2">
             <TouchableOpacity
               accessibilityRole="button"
-              accessibilityLabel="Reset training path chart"
-              activeOpacity={0.85}
-              className="h-9 w-9 items-center justify-center rounded-full border border-border bg-background"
-              onPress={onResetChart}
-              testID="training-path-reset-button"
-            >
-              <Icon as={RotateCcw} size={14} className="text-muted-foreground" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              accessibilityRole="button"
               accessibilityLabel="Edit training preferences"
               activeOpacity={0.85}
               className="h-9 w-9 items-center justify-center rounded-full border border-border bg-background"
@@ -130,10 +163,25 @@ export function TrainingPathSection({
         {selectedWeek ? (
           <View className="gap-2">
             <View className="flex-row gap-1.5">
-              <TrainingPathDateMetric value={selectedWeek.dateLabel} />
-              <TrainingPathMetric label="Completed" value={selectedWeek.completedLoad} />
-              <TrainingPathMetric label="Planned" value={selectedWeek.plannedLoad} />
-              <TrainingPathMetric label="Recommended" value={selectedWeek.targetLoad} />
+              <TrainingPathDateMetric
+                loading={weekReviewLoading}
+                value={displayedWeekLabel ?? selectedWeek.dateLabel}
+              />
+              <TrainingPathMetric
+                label="Completed"
+                loading={weekReviewLoading}
+                value={selectedWeek.completedLoad}
+              />
+              <TrainingPathMetric
+                label="Planned"
+                loading={weekReviewLoading}
+                value={selectedWeek.plannedLoad}
+              />
+              <TrainingPathMetric
+                label="Recommended"
+                loading={weekReviewLoading}
+                value={selectedWeek.targetLoad}
+              />
             </View>
           </View>
         ) : null}
@@ -155,18 +203,29 @@ export function TrainingPathSection({
             scrollX
             onScrollNearEnd={onScrollNearEnd}
             onScrollNearStart={onScrollNearStart}
-            onSelectedWeekChange={onSelectedWeekChange}
+            onScrollInteractionSettled={() => setChartScrolling(false)}
+            onScrollInteractionStart={() => {
+              beginWeekProgress();
+            }}
+            onDisplayedWeekChange={setDisplayedWeekStart}
+            onSelectedWeekChange={(weekStart) => {
+              beginWeekProgress(weekStart);
+              onSelectedWeekChange(weekStart);
+            }}
           />
         )}
       </View>
       <TrainingPathWeekSummaryCard
+        loading={weekReviewLoading}
+        loadingDateLabel={displayedWeekLabel}
         summary={model.selectedWeekSummary}
         goals={selectedWeekGoals}
-        scheduledItems={selectedWeekScheduledItems}
+        events={selectedWeekEvents}
+        groupEvents={selectedWeekGroupEvents}
         completedActivities={selectedWeekCompletedActivities}
         onOpenActivity={onOpenActivity}
-        onOpenActivityPlan={onOpenActivityPlan}
         onOpenGoal={onOpenGoal}
+        onOpenGroup={onOpenGroup}
         onOpenGroupEvent={onOpenGroupEvent}
         onOpenScheduledEvent={onOpenScheduledEvent}
       />

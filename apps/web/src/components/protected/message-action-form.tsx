@@ -1,4 +1,4 @@
-import { Button } from "@repo/ui/components/button";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { useServerFn } from "@tanstack/react-start";
 import { MessageSquare } from "lucide-react";
 import { useState } from "react";
@@ -33,10 +33,17 @@ export function MessageActionForm({
     <form action={startDirectMessageAction.url} method="post" onSubmit={handleSubmit}>
       <input type="hidden" name="target_user_id" value={targetUserId} />
       <input type="hidden" name="redirectTo" value={redirectTo} />
-      <Button variant="outline" type="submit" disabled={isPending} className="w-32">
+      <LoadingButton
+        variant="outline"
+        type="submit"
+        disabled={isPending}
+        loading={isPending}
+        loadingLabel="Opening..."
+        className="w-32"
+      >
         <MessageSquare className="mr-2 h-4 w-4" />
         Message
-      </Button>
+      </LoadingButton>
     </form>
   );
 }

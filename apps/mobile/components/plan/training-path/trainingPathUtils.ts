@@ -52,12 +52,6 @@ type TrainingPathSourceMaps = {
   goalMarkers: TrainingPathGoalMarker[];
 };
 
-export const trainingPathRangeOptions: { label: string; value: TrainingPathRange }[] = [
-  { label: "Next Goal", value: "goal" },
-  { label: "Season", value: "season" },
-  { label: "All", value: "all" },
-];
-
 export function getWeekStartDateKey(value: string) {
   const parsed = new Date(`${value}T12:00:00.000Z`);
   if (Number.isNaN(parsed.getTime())) return value;

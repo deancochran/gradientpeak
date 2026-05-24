@@ -287,7 +287,7 @@ export const sendVerificationEmailAction = createServerFn({ method: "POST" })
           callbackURL: getEmailVerificationCallbackUrl(),
         },
       });
-    } catch (error) {
+    } catch (_error) {
       const message = "Unable to resend verification email";
 
       if (data._native) {

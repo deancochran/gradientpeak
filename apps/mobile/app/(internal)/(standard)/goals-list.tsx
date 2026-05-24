@@ -1,6 +1,6 @@
 import { Text } from "@repo/ui/components/text";
 import { Stack } from "expo-router";
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { GoalListItem } from "@/components/plan/GoalListItem";

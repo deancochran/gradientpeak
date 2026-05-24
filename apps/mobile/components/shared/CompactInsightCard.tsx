@@ -36,6 +36,25 @@ function getVisualPolicyHint(visualPolicy?: {
   return `${insightSourceLabels[visualPolicy.source]} shown as ${insightVisualLabels[visualPolicy.visualType]}.`;
 }
 
+function getAccessibilityLabel({
+  title,
+  value,
+  hasData,
+  summary,
+  visualPolicy,
+}: {
+  title: string;
+  value: string;
+  hasData: boolean;
+  summary?: string;
+  visualPolicy?: { source: InsightSource; visualType: InsightVisualType };
+}) {
+  const details = hasData ? (summary ?? value) : "No data";
+  const visualHint = getVisualPolicyHint(visualPolicy);
+
+  return [title, details, visualHint].filter(Boolean).join(". ");
+}
+
 function CompactInsightFooter({
   value,
   hasData,
@@ -98,7 +117,8 @@ export function CompactInsightCard({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityHint={getVisualPolicyHint(visualPolicy)}
+      accessibilityLabel={getAccessibilityLabel({ title, value, hasData, summary, visualPolicy })}
+      accessibilityHint="Opens insight details."
       onPress={onPress}
       style={{ width: COMPACT_INSIGHT_CARD_SIZE, height: COMPACT_INSIGHT_CARD_SIZE }}
       testID={testID}

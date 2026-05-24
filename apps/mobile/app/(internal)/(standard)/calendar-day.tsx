@@ -2,7 +2,7 @@ import { Text } from "@repo/ui/components/text";
 import { keepPreviousData } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Stack, useLocalSearchParams } from "expo-router";
-import React, { useEffect, useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { Alert, ScrollView, TouchableOpacity, View } from "react-native";
 import {
   EventAgendaCard,
@@ -197,7 +197,7 @@ export default function CalendarDayScreen() {
     () => (timelineEventsByDate.get(dateKey) ?? []).filter((event) => event.type !== "rest_day"),
     [dateKey, timelineEventsByDate],
   );
-  const plannedEventsOnDate = useMemo(
+  const _plannedEventsOnDate = useMemo(
     () => visibleEvents.filter((event) => event.event_type === "planned" && event.activity_plan),
     [visibleEvents],
   );
@@ -232,9 +232,8 @@ export default function CalendarDayScreen() {
 
   const handleCreateEvent = () => {
     navigateTo({
-      pathname: "/(internal)/(standard)/event-detail",
+      pathname: "/(internal)/(standard)/agenda-create",
       params: {
-        mode: "create",
         date: dateKey,
         ...(typeof params.trainingPlanId === "string"
           ? { trainingPlanId: params.trainingPlanId }
@@ -364,6 +363,12 @@ export default function CalendarDayScreen() {
                 <GroupEventCard
                   key={event.id}
                   event={event}
+                  onGroupPress={(group) =>
+                    navigateTo({
+                      pathname: "/group-detail",
+                      params: { groupId: group.id },
+                    } as never)
+                  }
                   onPress={() => handleOpenGroupEvent(event.id)}
                   testID={`calendar-day-group-event-${event.id}`}
                 />

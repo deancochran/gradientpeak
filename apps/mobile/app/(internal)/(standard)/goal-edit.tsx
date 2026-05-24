@@ -7,9 +7,10 @@ import {
   parseProfileGoalRecord,
 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useMemo, useRef } from "react";
+import { useMemo, useRef } from "react";
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, View } from "react-native";
 import { GoalEditorForm, type GoalEditorFormHandle } from "@/components/goals";
 import { api } from "@/lib/api";
@@ -99,16 +100,17 @@ export default function GoalEditScreen() {
       <Stack.Screen
         options={{
           headerRight: () => (
-            <Button
+            <LoadingButton
               disabled={updateGoalMutation.isPending}
+              loading={updateGoalMutation.isPending}
+              loadingLabel="Saving..."
+              loadingTextClassName="text-primary"
               onPress={() => formRef.current?.submit()}
               size="sm"
               variant="ghost"
             >
-              <Text className="text-sm font-semibold text-primary">
-                {updateGoalMutation.isPending ? "Saving..." : "Save"}
-              </Text>
-            </Button>
+              <Text className="text-sm font-semibold text-primary">Save</Text>
+            </LoadingButton>
           ),
         }}
       />

@@ -2,7 +2,7 @@ import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
 import { Search, SlidersHorizontal, X } from "lucide-react-native";
-import React from "react";
+import type React from "react";
 import { TouchableOpacity, View } from "react-native";
 
 interface IndexSearchBarProps {

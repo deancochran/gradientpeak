@@ -13,8 +13,8 @@ import {
   vec,
 } from "@shopify/react-native-skia";
 import React, { useMemo, useState } from "react";
-import { LayoutChangeEvent, Pressable, useWindowDimensions, View } from "react-native";
-import { Area, CartesianChart, Line, Scatter } from "victory-native";
+import { type LayoutChangeEvent, useWindowDimensions, View } from "react-native";
+import { Area, CartesianChart, Line } from "victory-native";
 import { useTheme } from "@/lib/stores/theme-store";
 
 export interface FitnessDataPoint {
@@ -391,7 +391,7 @@ export function PlanVsActualChart({
     null;
 
   const framedPoints = useMemo<NormalizedPoint[]>(() => {
-    let base =
+    const base =
       useInsightTimeline && timeline
         ? aggregateTimelineByWeek(timeline)
         : buildFallbackPoints({
@@ -401,7 +401,7 @@ export function PlanVsActualChart({
           });
 
     const todayStr = new Date().toISOString().split("T")[0];
-    const todayWeek = getWeekStartDateKey(todayStr);
+    const _todayWeek = getWeekStartDateKey(todayStr);
 
     let startIndex = 0;
     let endIndex = base.length - 1;
@@ -468,7 +468,7 @@ export function PlanVsActualChart({
   const hasAnyVisibleSeries = true;
 
   const labels = useMemo(() => buildSparseLabels(framedPoints), [framedPoints]);
-  const todayLabel = useMemo(
+  const _todayLabel = useMemo(
     () =>
       new Date().toLocaleDateString(undefined, {
         month: "short",
@@ -517,7 +517,7 @@ export function PlanVsActualChart({
     const plannedValues = fillSeries(framedPoints.map((point) => point.planned));
     const actualValues = framedPoints.map((point) => point.actual ?? 0);
 
-    return framedPoints.map((point, index) => ({
+    return framedPoints.map((_point, index) => ({
       index,
       projection: projectionValues[index] ?? 0,
       planned: plannedValues[index] ?? 0,
@@ -567,7 +567,7 @@ export function PlanVsActualChart({
         shouldShowLabel,
       };
     });
-  }, [framedPoints, groupedGoalMarkers]);
+  }, [groupedGoalMarkers]);
 
   return (
     <View className="py-1">

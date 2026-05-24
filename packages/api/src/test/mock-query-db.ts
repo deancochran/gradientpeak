@@ -1,7 +1,7 @@
 import { vi } from "vitest";
 
 export type QueryResult = {
-  data: any;
+  data: unknown;
   error: { message: string } | null;
   count?: number | null;
 };
@@ -13,6 +13,65 @@ export type QueryCall = {
   operation: "delete" | "execute" | "insert" | "select" | "update";
   payload?: unknown;
 };
+
+type DrizzleTableMetadata = {
+  baseName?: unknown;
+  name?: unknown;
+  tableName?: unknown;
+};
+
+type DrizzleTableLike = {
+  _?: DrizzleTableMetadata;
+  config?: DrizzleTableMetadata;
+  name?: unknown;
+  tableName?: unknown;
+};
+
+type SqlChunkLike = {
+  value?: unknown;
+};
+
+type SqlQueryLike = {
+  queryChunks?: unknown;
+};
+
+type QueryBuilder = {
+  from?: ReturnType<typeof vi.fn>;
+  innerJoin?: ReturnType<typeof vi.fn>;
+  leftJoin?: ReturnType<typeof vi.fn>;
+  limit?: ReturnType<typeof vi.fn>;
+  orderBy?: ReturnType<typeof vi.fn>;
+  returning?: ReturnType<typeof vi.fn>;
+  set?: ReturnType<typeof vi.fn>;
+  then?: (onFulfilled: (value: unknown[]) => unknown) => Promise<unknown>;
+  values?: ReturnType<typeof vi.fn>;
+  where?: ReturnType<typeof vi.fn>;
+};
+
+type QueryMapDbMock = {
+  delete: ReturnType<typeof vi.fn>;
+  execute: ReturnType<typeof vi.fn>;
+  insert: ReturnType<typeof vi.fn>;
+  query: {
+    profiles: {
+      findFirst: ReturnType<typeof vi.fn>;
+    };
+  };
+  select: ReturnType<typeof vi.fn>;
+  transaction: ReturnType<typeof vi.fn>;
+  update: ReturnType<typeof vi.fn>;
+};
+
+function attachThenable(
+  builder: Omit<QueryBuilder, "then">,
+  onResolve: () => unknown[],
+): QueryBuilder {
+  // biome-ignore lint/suspicious/noThenProperty: Drizzle query builders are intentionally thenable.
+  return Object.defineProperty(builder, "then", {
+    value: (onFulfilled: (value: unknown[]) => unknown) =>
+      Promise.resolve(onResolve()).then(onFulfilled),
+  }) as QueryBuilder;
+}
 
 function normalizeTemporalFields(table: string, row: Record<string, unknown>) {
   if (table === "activities") {
@@ -82,25 +141,28 @@ function toRows(table: string, result: QueryResult) {
 function extractTableName(table: unknown): string {
   if (typeof table === "string") return table;
   if (table && typeof table === "object") {
+    const tableLike = table as DrizzleTableLike;
     const candidate =
-      (table as any)?._?.name ??
-      (table as any)?._?.baseName ??
-      (table as any)?._?.tableName ??
-      (table as any).config?.name ??
-      (table as any).tableName ??
-      (table as any).name;
+      tableLike._?.name ??
+      tableLike._?.baseName ??
+      tableLike._?.tableName ??
+      tableLike.config?.name ??
+      tableLike.tableName ??
+      tableLike.name;
 
     if (typeof candidate === "string") {
       return candidate;
     }
 
     for (const symbol of Object.getOwnPropertySymbols(table)) {
-      const value = (table as any)[symbol];
+      const value = (table as Record<symbol, unknown>)[symbol];
       if (typeof value === "string" && /^[a-z_]+$/i.test(value)) {
         return value;
       }
       if (value && typeof value === "object") {
-        const symbolName = value.name ?? value.baseName ?? value.tableName;
+        const symbolMetadata = value as DrizzleTableMetadata;
+        const symbolName =
+          symbolMetadata.name ?? symbolMetadata.baseName ?? symbolMetadata.tableName;
         if (typeof symbolName === "string") {
           return symbolName;
         }
@@ -112,17 +174,19 @@ function extractTableName(table: unknown): string {
 }
 
 function extractSqlText(query: unknown): string {
-  const chunks = (query as any)?.queryChunks;
+  const chunks = (query as SqlQueryLike).queryChunks;
   if (!Array.isArray(chunks)) return "";
 
   return chunks
     .map((chunk) => {
+      if (chunk == null) return "";
       if (typeof chunk === "string") return chunk;
-      if (Array.isArray((chunk as any)?.value)) {
-        return (chunk as any).value.join("");
+      const chunkLike = chunk as SqlChunkLike;
+      if (Array.isArray(chunkLike.value)) {
+        return chunkLike.value.join("");
       }
-      if (typeof (chunk as any)?.value === "string") {
-        return (chunk as any).value;
+      if (typeof chunkLike.value === "string") {
+        return chunkLike.value;
       }
       return "?";
     })
@@ -164,77 +228,81 @@ export function createQueryMapDbMock(queryMap: QueryMap = {}) {
   };
 
   const createSelectBuilder = (tableName: string) => {
-    const builder: any = {
-      from: vi.fn((table: unknown) => {
-        const resolvedTable = extractTableName(table);
-        return createSelectBuilder(resolvedTable);
-      }),
-      leftJoin: vi.fn(() => builder),
-      where: vi.fn(() => builder),
-      orderBy: vi.fn(() => builder),
-      limit: vi.fn(() => builder),
-      then: (onFulfilled: (value: unknown[]) => unknown) => {
-        callLog.push({ table: tableName, operation: "select" });
-        return Promise.resolve(toRows(tableName, nextResult(tableName))).then(onFulfilled);
+    const builder = attachThenable(
+      {
+        from: vi.fn((table: unknown) => {
+          const resolvedTable = extractTableName(table);
+          return createSelectBuilder(resolvedTable);
+        }),
+        innerJoin: vi.fn(() => builder),
+        leftJoin: vi.fn(() => builder),
+        where: vi.fn(() => builder),
+        orderBy: vi.fn(() => builder),
+        limit: vi.fn(() => builder),
       },
-    };
+      () => {
+        callLog.push({ table: tableName, operation: "select" });
+        return toRows(tableName, nextResult(tableName));
+      },
+    );
 
     return builder;
   };
 
   const createWriteBuilder = (tableName: string, operation: QueryCall["operation"]) => {
-    let payloadForReturn: unknown = undefined;
+    let payloadForReturn: unknown;
 
-    const builder: any = {
-      values: vi.fn((payload: unknown) => {
-        payloadForReturn = payload;
-        callLog.push({ table: tableName, operation, payload });
-        return builder;
-      }),
-      set: vi.fn((payload: unknown) => {
-        payloadForReturn = payload;
-        callLog.push({ table: tableName, operation, payload });
-        return builder;
-      }),
-      where: vi.fn(() => builder),
-      returning: vi.fn(async () => {
-        const rows = toRows(tableName, nextResult(tableName));
-        if (rows.length > 0) {
-          return rows;
-        }
-
-        if (operation === "insert") {
-          if (Array.isArray(payloadForReturn)) {
-            return payloadForReturn.map((row, index) => ({
-              id: `${tableName}-row-${index + 1}`,
-              ...(row as Record<string, unknown>),
-            }));
+    const builder = attachThenable(
+      {
+        values: vi.fn((payload: unknown) => {
+          payloadForReturn = payload;
+          callLog.push({ table: tableName, operation, payload });
+          return builder;
+        }),
+        set: vi.fn((payload: unknown) => {
+          payloadForReturn = payload;
+          callLog.push({ table: tableName, operation, payload });
+          return builder;
+        }),
+        where: vi.fn(() => builder),
+        returning: vi.fn(async () => {
+          const rows = toRows(tableName, nextResult(tableName));
+          if (rows.length > 0) {
+            return rows;
           }
 
-          if (payloadForReturn && typeof payloadForReturn === "object") {
-            return [
-              {
-                id: `${tableName}-row-1`,
-                ...(payloadForReturn as Record<string, unknown>),
-              },
-            ];
+          if (operation === "insert") {
+            if (Array.isArray(payloadForReturn)) {
+              return payloadForReturn.map((row, index) => ({
+                id: `${tableName}-row-${index + 1}`,
+                ...(row as Record<string, unknown>),
+              }));
+            }
+
+            if (payloadForReturn && typeof payloadForReturn === "object") {
+              return [
+                {
+                  id: `${tableName}-row-1`,
+                  ...(payloadForReturn as Record<string, unknown>),
+                },
+              ];
+            }
           }
-        }
 
-        if (operation === "update" && payloadForReturn && typeof payloadForReturn === "object") {
-          return [payloadForReturn as Record<string, unknown>];
-        }
+          if (operation === "update" && payloadForReturn && typeof payloadForReturn === "object") {
+            return [payloadForReturn as Record<string, unknown>];
+          }
 
-        return [];
-      }),
-      then: (onFulfilled: (value: unknown[]) => unknown) =>
-        Promise.resolve(toRows(tableName, nextResult(tableName))).then(onFulfilled),
-    };
+          return [];
+        }),
+      },
+      () => toRows(tableName, nextResult(tableName)),
+    );
 
     return builder;
   };
 
-  const db: any = {
+  const db: QueryMapDbMock = {
     query: {
       profiles: {
         findFirst: vi.fn(async () => toRows("profiles", nextResult("profiles"))[0] ?? null),
@@ -253,6 +321,7 @@ export function createQueryMapDbMock(queryMap: QueryMap = {}) {
     insert: vi.fn((table: unknown) => createWriteBuilder(extractTableName(table), "insert")),
     update: vi.fn((table: unknown) => createWriteBuilder(extractTableName(table), "update")),
     delete: vi.fn((table: unknown) => createWriteBuilder(extractTableName(table), "delete")),
+    transaction: vi.fn(async (callback: (tx: QueryMapDbMock) => unknown) => callback(db)),
   };
 
   return { db, callLog, nextResult };

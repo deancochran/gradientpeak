@@ -1,9 +1,9 @@
 import {
   type CreationContextSummary,
   deriveCreationSuggestions,
-  getCreationSuggestionsInputSchema,
+  type getCreationSuggestionsInputSchema,
 } from "@repo/core";
-import { z } from "zod";
+import type { z } from "zod";
 
 type GetCreationSuggestionsInput = z.infer<typeof getCreationSuggestionsInputSchema>;
 

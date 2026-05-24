@@ -7,12 +7,12 @@
 import { Text } from "@repo/ui/components/text";
 import { useMemo } from "react";
 import { View } from "react-native";
-import { ActivityPlanCard, ActivityPlanCardData } from "@/components/shared/ActivityPlanCard";
+import { ActivityPlanCard, type ActivityPlanCardData } from "@/components/shared/ActivityPlanCard";
 import {
   getActivityPlanRoute,
   getAuthoritativeActivityPlanMetrics,
 } from "@/lib/activityPlanMetrics";
-import { GroupedActivities, groupActivitiesByDate } from "@/lib/utils/plan/dateGrouping";
+import { type GroupedActivities, groupActivitiesByDate } from "@/lib/utils/plan/dateGrouping";
 
 export interface ActivityListProps {
   activities: any[];

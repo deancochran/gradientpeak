@@ -154,7 +154,7 @@ export function TrainingLoadChart({ data, timeline, height = 250 }: TrainingLoad
               {useTimeline ? "Actual Today" : "Current CTL"}
             </Text>
             <Text className="text-sm font-semibold text-blue-600">
-              {Math.round(recentData[recentData.length - 1]!.ctl)}
+              {Math.round(recentData[recentData.length - 1]?.ctl)}
             </Text>
           </View>
           <View className="items-center">
@@ -162,7 +162,7 @@ export function TrainingLoadChart({ data, timeline, height = 250 }: TrainingLoad
               {useTimeline ? "Scheduled Today" : "Current ATL"}
             </Text>
             <Text className="text-sm font-semibold text-yellow-600">
-              {Math.round(recentData[recentData.length - 1]!.atl)}
+              {Math.round(recentData[recentData.length - 1]?.atl)}
             </Text>
           </View>
           <View className="items-center">
@@ -171,11 +171,11 @@ export function TrainingLoadChart({ data, timeline, height = 250 }: TrainingLoad
             </Text>
             <Text
               className={`text-sm font-semibold ${
-                recentData[recentData.length - 1]!.tsb > 0 ? "text-green-600" : "text-red-600"
+                recentData[recentData.length - 1]?.tsb > 0 ? "text-green-600" : "text-red-600"
               }`}
             >
-              {recentData[recentData.length - 1]!.tsb > 0 ? "+" : ""}
-              {Math.round(recentData[recentData.length - 1]!.tsb)}
+              {recentData[recentData.length - 1]?.tsb > 0 ? "+" : ""}
+              {Math.round(recentData[recentData.length - 1]?.tsb)}
             </Text>
           </View>
         </View>

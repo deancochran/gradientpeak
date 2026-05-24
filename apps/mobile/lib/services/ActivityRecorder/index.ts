@@ -30,15 +30,15 @@ import {
   RecordingConfigResolver,
   type RecordingConfiguration,
   type RecordingLaunchIntent,
-  RecordingServiceActivityPlan,
+  type RecordingServiceActivityPlan,
   type RecordingSessionContract,
   type RecordingTrainerMachineType,
   resolveMetricSources as resolveCoreMetricSources,
 } from "@repo/core";
 import { EventEmitter } from "expo";
-import { LocationObject } from "expo-location";
-import { AppState, AppStateStatus } from "react-native";
-import { FitRecord, GarminFitEncoder } from "../fit/GarminFitEncoder";
+import type { LocationObject } from "expo-location";
+import { AppState, type AppStateStatus } from "react-native";
+import { type FitRecord, GarminFitEncoder } from "../fit/GarminFitEncoder";
 import {
   type AllPermissionsStatus,
   areAllPermissionsGranted,
@@ -50,11 +50,7 @@ import { getNextGpsRecordingEnabled, shouldStartGpsTracking } from "./gpsRuntime
 import { LiveMetricsManager } from "./LiveMetricsManager";
 import { LocationManager } from "./location";
 import { NotificationsManager } from "./notification";
-import {
-  PlanExecution,
-  type PlanExecutionProgress,
-  type PlanExecutionStepInfo,
-} from "./planExecution";
+import { PlanExecution } from "./planExecution";
 import { type PlanValidationResult, validatePlanRequirements } from "./planValidation";
 import {
   getTrainerSensorIdsToDisconnect,
@@ -62,22 +58,28 @@ import {
   isKnownTrainerDevice as isPersistedTrainerDevice,
   isTrainerLikeSensor,
 } from "./recordingTrainerPolicy";
+import {
+  type LoadedRoute,
+  type RecordingRouteAttachmentSource,
+  type RecordingRouteAttachmentView,
+  RouteController,
+} from "./routeController";
 import type { SimplifiedMetrics } from "./SimplifiedMetrics";
 import { type ConnectedSensor, SensorsManager } from "./sensors";
 import { RecordingSessionController } from "./sessionController";
 import { inferTrainerMachineType, TrainerControl } from "./trainerControl";
-import {
-  type RecorderProfileRef,
-  type RecordingMetadata,
-  type RecordingPlanView,
-  type RecordingRuntimeSourceState,
-  type RecordingSessionArtifact,
-  type RecordingSessionOverride,
-  type RecordingSessionOverrideState,
-  type RecordingSessionSnapshot,
-  type RecordingSessionView,
-  type RecordingSourceChangeEvent,
-  type RecordingTrainerView,
+import type {
+  RecorderProfileRef,
+  RecordingMetadata,
+  RecordingPlanView,
+  RecordingRuntimeSourceState,
+  RecordingSessionArtifact,
+  RecordingSessionOverride,
+  RecordingSessionOverrideState,
+  RecordingSessionSnapshot,
+  RecordingSessionView,
+  RecordingSourceChangeEvent,
+  RecordingTrainerView,
   SensorReading,
 } from "./types";
 
@@ -96,13 +98,7 @@ export type RecordingState =
   | "finished";
 
 export type RecordingLifecycle = "idle" | "setup" | "active";
-export type RecordingRouteAttachmentSource = "none" | "plan_route" | "explicit_route";
-
-export interface RecordingRouteAttachmentView {
-  routeId: string | null;
-  source: RecordingRouteAttachmentSource;
-  suppressedPlanRouteId: string | null;
-}
+export type { RecordingRouteAttachmentSource, RecordingRouteAttachmentView };
 
 export interface StepProgress {
   movingTime: number;
@@ -390,32 +386,6 @@ export interface ServiceEvents {
   [key: string]: (...args: any[]) => void;
 }
 
-type LoadedRoute = {
-  id: string;
-  name: string;
-  coordinates: Array<{
-    latitude: number;
-    longitude: number;
-    altitude?: number;
-    elevation?: number;
-  }>;
-  polyline?: string | null;
-  elevation_profile?: Array<{
-    distance: number;
-    elevation: number;
-  }>;
-  distanceIndex?: {
-    segmentDistances: number[];
-    cumulativeDistances: number[];
-  };
-};
-
-type RouteProjection = {
-  distanceAlongRoute: number;
-  distanceFromRoute: number;
-  segmentIndex: number;
-};
-
 // ================================
 // Activity Recorder Service
 // ================================
@@ -450,19 +420,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // === GPS Availability Cache ===
   private _gpsAvailable: boolean = false;
 
-  // === Route State ===
-  private _currentRoute: LoadedRoute | null = null;
-  private _routeOverrideId: string | null | undefined = undefined;
-  private suppressedPlanRouteId: string | null = null;
-  private _routeDistance: number = 0; // Total route distance in meters
-  private _currentRouteDistance: number = 0; // User's current distance along route
-  private _isOnRoute: boolean = false;
-  private _distanceFromRouteMeters: number | null = null;
-  private routeAttachmentOperationId = 0;
+  private readonly routeController = new RouteController();
   private lastHandledLocationKey: string | null = null;
-  private routeGradeSegmentIndex = 0;
-  private routeProjectionSegmentIndex = 0;
-  private routeProjectionUpdateCount = 0;
 
   // === Private Managers ===
   private notificationsManager?: NotificationsManager;
@@ -1647,7 +1606,6 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     // Returning to foreground - reconnect sensors
     if (prevState.match(/inactive|background/) && nextState === "active") {
-      console.log("[Service] App foregrounded - reconnecting sensors");
       this.reconnectDisconnectedSensors();
     }
   }
@@ -1657,6 +1615,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       return;
     }
 
+    console.log("[Service] App foregrounded - reconnecting sensors");
     await this.sensorsManager.reconnectAll();
   }
 
@@ -1721,15 +1680,15 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   // ================================
 
   get hasRoute(): boolean {
-    return this._currentRoute !== null;
+    return this.routeController.hasRoute;
   }
 
   get currentRoute(): LoadedRoute | null {
-    return this._currentRoute;
+    return this.routeController.currentRoute;
   }
 
   private hasCurrentRouteGeometry(): boolean {
-    return Boolean(this._currentRoute?.coordinates?.length);
+    return this.routeController.hasCurrentRouteGeometry();
   }
 
   get attachedRouteId(): string | null {
@@ -1737,63 +1696,35 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   get routeAttachment(): RecordingRouteAttachmentView {
-    if (this._routeOverrideId) {
-      return {
-        routeId: this._routeOverrideId,
-        source: "explicit_route",
-        suppressedPlanRouteId: this.suppressedPlanRouteId,
-      };
-    }
-
-    if (this._plan?.route_id && this._routeOverrideId === undefined) {
-      return {
-        routeId: this._plan.route_id,
-        source: "plan_route",
-        suppressedPlanRouteId: null,
-      };
-    }
-
-    return {
-      routeId: null,
-      source: "none",
-      suppressedPlanRouteId: this.suppressedPlanRouteId,
-    };
+    return this.routeController.getRouteAttachment(this._plan?.route_id);
   }
 
   get routeDistance(): number {
-    return this._routeDistance;
+    return this.routeController.routeDistance;
   }
 
   get currentRouteDistance(): number {
-    return this._currentRouteDistance;
+    return this.routeController.currentRouteDistance;
   }
 
   get isOnRoute(): boolean {
-    return !this._gpsRecordingEnabled || this._isOnRoute;
+    return this.routeController.isOnRoute(this._gpsRecordingEnabled);
   }
 
   get distanceFromRouteMeters(): number | null {
-    return this._distanceFromRouteMeters;
+    return this.routeController.distanceFromRouteMeters;
   }
 
   get routeProgress(): number {
-    if (!this.hasRoute || this._routeDistance === 0) return 0;
-    return (this._currentRouteDistance / this._routeDistance) * 100;
+    return this.routeController.routeProgress;
   }
 
   private getAttachedRouteId(): string | null {
-    return this.routeAttachment.routeId;
+    return this.routeController.getAttachedRouteId(this._plan?.route_id);
   }
 
   private clearCurrentRouteState(): void {
-    this._currentRoute = null;
-    this._routeDistance = 0;
-    this._currentRouteDistance = 0;
-    this._isOnRoute = false;
-    this._distanceFromRouteMeters = null;
-    this.routeGradeSegmentIndex = 0;
-    this.routeProjectionSegmentIndex = 0;
-    this.routeProjectionUpdateCount = 0;
+    this.routeController.clearCurrentRouteState();
   }
 
   /**
@@ -1817,38 +1748,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
    * Returns grade at current position along route
    */
   get currentRouteGrade(): number {
-    if (!this.hasRoute || !this._currentRoute?.elevation_profile) return 0;
-
-    const profile = this._currentRoute.elevation_profile;
-    if (!profile || profile.length < 2) return 0;
-
-    const maxSegmentIndex = Math.max(0, profile.length - 2);
-    let segmentIndex = Math.min(this.routeGradeSegmentIndex, maxSegmentIndex);
-
-    while (
-      segmentIndex < maxSegmentIndex &&
-      this._currentRouteDistance >= profile[segmentIndex + 1]!.distance
-    ) {
-      segmentIndex += 1;
-    }
-
-    while (segmentIndex > 0 && this._currentRouteDistance < profile[segmentIndex]!.distance) {
-      segmentIndex -= 1;
-    }
-
-    this.routeGradeSegmentIndex = segmentIndex;
-
-    // Calculate grade between current and next point
-    const current = profile[segmentIndex];
-    const next = profile[Math.min(segmentIndex + 1, profile.length - 1)];
-
-    const elevationChange = next.elevation - current.elevation;
-    const distanceChange = next.distance - current.distance;
-
-    if (distanceChange === 0) return 0;
-
-    // Grade as percentage: (rise / run) * 100
-    return (elevationChange / distanceChange) * 100;
+    return this.routeController.currentRouteGrade;
   }
 
   get stepProgress(): StepProgress {
@@ -1886,24 +1786,20 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.hasConfiguredSetup = true;
     this._plan = plan;
     this._eventId = eventId;
-    this._routeOverrideId = undefined;
-    this.suppressedPlanRouteId = null;
     if (!plan.activity_category) {
       throw new Error("no plan category found");
     }
 
     // Load route if plan has one
     if (plan.route_id) {
-      this.clearCurrentRouteState();
       console.log("[Service] Plan has route, loading route data:", plan.route_id);
-      const operationId = ++this.routeAttachmentOperationId;
+      const operationId = this.routeController.beginPlanRouteAttachment();
       this.loadRoute(plan.route_id, operationId).catch((error) => {
         console.error("[Service] Failed to load route:", error);
         // Continue without route - don't fail the whole plan selection
       });
     } else {
-      ++this.routeAttachmentOperationId;
-      this.clearCurrentRouteState();
+      this.routeController.beginPlanRouteAttachment();
     }
 
     try {
@@ -1941,11 +1837,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.hasConfiguredSetup = true;
     this._plan = undefined;
     this._eventId = undefined;
-    this._routeOverrideId = undefined;
-    this.suppressedPlanRouteId = null;
-    ++this.routeAttachmentOperationId;
+    this.routeController.clearPlanAttachment();
     this.planExecution.clear();
-    this.clearCurrentRouteState();
 
     this.emit("planCleared");
     this.publishSessionUpdate();
@@ -1956,32 +1849,19 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       return;
     }
 
-    const operationId = ++this.routeAttachmentOperationId;
     const previousHasConfiguredSetup = this.hasConfiguredSetup;
-    const previousSuppressedPlanRouteId = this.suppressedPlanRouteId;
     this.hasConfiguredSetup = true;
-    const previousOverrideId = this._routeOverrideId;
-    const previousRoute = this._currentRoute;
-    const previousRouteDistance = this._routeDistance;
-    const previousCurrentRouteDistance = this._currentRouteDistance;
-
-    this._routeOverrideId = routeId;
-    this.suppressedPlanRouteId = null;
-    this.clearCurrentRouteState();
+    const { operationId, snapshot } = this.routeController.beginExplicitRouteAttachment(routeId);
     this.publishSessionUpdate();
 
     try {
       await this.loadRoute(routeId, operationId);
     } catch (error) {
-      if (operationId !== this.routeAttachmentOperationId) {
+      if (!this.routeController.isCurrentOperation(operationId)) {
         return;
       }
       this.hasConfiguredSetup = previousHasConfiguredSetup;
-      this.suppressedPlanRouteId = previousSuppressedPlanRouteId;
-      this._routeOverrideId = previousOverrideId;
-      this._currentRoute = previousRoute;
-      this._routeDistance = previousRouteDistance;
-      this._currentRouteDistance = previousCurrentRouteDistance;
+      this.routeController.rollback(snapshot);
       this.publishSessionUpdate();
       throw error;
     }
@@ -1993,10 +1873,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     }
 
     this.hasConfiguredSetup = true;
-    const operationId = ++this.routeAttachmentOperationId;
-    this._routeOverrideId = routeId;
-    this.suppressedPlanRouteId = null;
-    this.clearCurrentRouteState();
+    const operationId = this.routeController.prepareExplicitRouteAttachment(routeId);
     this.publishSessionUpdate();
 
     this.loadRoute(routeId, operationId).catch((error) => {
@@ -2007,21 +1884,14 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   public detachRoute(): void {
     this.hasConfiguredSetup = true;
-    ++this.routeAttachmentOperationId;
-    this.suppressedPlanRouteId =
-      this.routeAttachment.source === "plan_route" ? (this._plan?.route_id ?? null) : null;
-    this._routeOverrideId = null;
-    this.clearCurrentRouteState();
+    this.routeController.detachRoute(this._plan?.route_id);
     this.publishSessionUpdate();
   }
 
   /**
    * Load full route data from the server
    */
-  private async loadRoute(
-    routeId: string,
-    operationId = this.routeAttachmentOperationId,
-  ): Promise<void> {
+  private async loadRoute(routeId: string, operationId: number): Promise<void> {
     try {
       console.log("[Service] Loading route:", routeId);
 
@@ -2033,7 +1903,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         id: routeId,
       });
 
-      if (operationId !== this.routeAttachmentOperationId) {
+      if (!this.routeController.isCurrentOperation(operationId)) {
         return;
       }
 
@@ -2042,23 +1912,15 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         return;
       }
 
-      const normalizedRoute = this.normalizeLoadedRoute(route);
-      this._currentRoute = normalizedRoute;
-
-      // Calculate total route distance
-      this._routeDistance = normalizedRoute.distanceIndex?.cumulativeDistances.at(-1) ?? 0;
-      this._currentRouteDistance = 0;
-      this._isOnRoute = false;
-      this._distanceFromRouteMeters = null;
-      this.routeGradeSegmentIndex = 0;
-      this.routeProjectionSegmentIndex = 0;
-      this.routeProjectionUpdateCount = 0;
+      if (!this.routeController.loadRoute(route, operationId)) {
+        return;
+      }
 
       console.log("[Service] Route loaded successfully:", {
         id: route.id,
         name: route.name,
         points: route.coordinates.length,
-        distance: this._routeDistance,
+        distance: this.routeDistance,
       });
 
       this.publishSessionUpdate();
@@ -2069,299 +1931,34 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   /**
-   * Calculate total distance of a route from coordinates
-   */
-  private buildRouteDistanceIndex(
-    coordinates: Array<{ latitude: number; longitude: number }>,
-  ): NonNullable<LoadedRoute["distanceIndex"]> {
-    const segmentDistances: number[] = [];
-    const cumulativeDistances: number[] = [0];
-
-    let totalDistance = 0;
-    for (let i = 1; i < coordinates.length; i++) {
-      const prev = coordinates[i - 1];
-      const curr = coordinates[i];
-      const segmentDistance = this.calculateDistance(
-        prev.latitude,
-        prev.longitude,
-        curr.latitude,
-        curr.longitude,
-      );
-      segmentDistances.push(segmentDistance);
-      totalDistance += segmentDistance;
-      cumulativeDistances.push(totalDistance);
-    }
-
-    return { cumulativeDistances, segmentDistances };
-  }
-
-  private normalizeLoadedRoute(route: LoadedRoute): LoadedRoute {
-    const coordinates = route.coordinates.map((coordinate) => ({
-      ...coordinate,
-      elevation: coordinate.elevation ?? coordinate.altitude,
-    }));
-    const distanceIndex = this.buildRouteDistanceIndex(coordinates);
-
-    return {
-      ...route,
-      coordinates,
-      distanceIndex,
-      elevation_profile:
-        route.elevation_profile && route.elevation_profile.length > 1
-          ? route.elevation_profile
-          : this.buildElevationProfile(coordinates, distanceIndex.cumulativeDistances),
-    };
-  }
-
-  private buildElevationProfile(
-    coordinates: Array<{ latitude: number; longitude: number; elevation?: number }>,
-    cumulativeDistances?: number[],
-  ): Array<{ distance: number; elevation: number }> | undefined {
-    let cumulativeDistance = 0;
-    const profile: Array<{ distance: number; elevation: number }> = [];
-
-    for (let index = 0; index < coordinates.length; index += 1) {
-      const coordinate = coordinates[index];
-      if (!coordinate) continue;
-
-      if (typeof cumulativeDistances?.[index] === "number") {
-        cumulativeDistance = cumulativeDistances[index]!;
-      } else if (index > 0) {
-        const previous = coordinates[index - 1];
-        if (previous) {
-          cumulativeDistance += this.calculateDistance(
-            previous.latitude,
-            previous.longitude,
-            coordinate.latitude,
-            coordinate.longitude,
-          );
-        }
-      }
-
-      if (typeof coordinate.elevation === "number" && Number.isFinite(coordinate.elevation)) {
-        profile.push({ distance: cumulativeDistance, elevation: coordinate.elevation });
-      }
-    }
-
-    return profile.length > 1 ? profile : undefined;
-  }
-
-  /**
-   * Calculate distance between two GPS coordinates using Haversine formula
-   */
-  private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-    const R = 6371e3; // Earth's radius in meters
-    const φ1 = (lat1 * Math.PI) / 180;
-    const φ2 = (lat2 * Math.PI) / 180;
-    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
-    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
-
-    const a =
-      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    return R * c;
-  }
-
-  private projectLocationOntoRoute(
-    latitude: number,
-    longitude: number,
-    route: LoadedRoute,
-  ): RouteProjection | null {
-    const coordinates = route.coordinates;
-    if (coordinates.length === 0) return null;
-    if (coordinates.length === 1) {
-      return {
-        distanceAlongRoute: 0,
-        distanceFromRoute: this.calculateDistance(
-          latitude,
-          longitude,
-          coordinates[0]!.latitude,
-          coordinates[0]!.longitude,
-        ),
-        segmentIndex: 0,
-      };
-    }
-
-    const localSearchRadius = 25;
-    const maxSegmentIndex = coordinates.length - 2;
-    const localStart = Math.max(0, this.routeProjectionSegmentIndex - localSearchRadius);
-    const localEnd = Math.min(
-      maxSegmentIndex,
-      this.routeProjectionSegmentIndex + localSearchRadius,
-    );
-    const localProjection = this.projectLocationOntoRouteSegmentRange(
-      latitude,
-      longitude,
-      route,
-      localStart,
-      localEnd,
-    );
-
-    this.routeProjectionUpdateCount += 1;
-    const shouldValidateAgainstFullRoute = this.routeProjectionUpdateCount % 20 === 0;
-
-    if (
-      localProjection &&
-      localProjection.distanceFromRoute <= 40 &&
-      !shouldValidateAgainstFullRoute
-    ) {
-      this.routeProjectionSegmentIndex = localProjection.segmentIndex;
-      return localProjection;
-    }
-
-    const fullProjection = this.projectLocationOntoRouteSegmentRange(
-      latitude,
-      longitude,
-      route,
-      0,
-      maxSegmentIndex,
-    );
-
-    if (fullProjection) {
-      this.routeProjectionSegmentIndex = fullProjection.segmentIndex;
-    }
-
-    return fullProjection;
-  }
-
-  private projectLocationOntoRouteSegmentRange(
-    latitude: number,
-    longitude: number,
-    route: LoadedRoute,
-    startIndex: number,
-    endIndex: number,
-  ): RouteProjection | null {
-    const coordinates = route.coordinates;
-    if (startIndex > endIndex || coordinates.length < 2) return null;
-
-    const anchorLatitude = latitude;
-    const metersPerDegreeLatitude = 111_320;
-    const metersPerDegreeLongitude =
-      Math.cos((anchorLatitude * Math.PI) / 180) * metersPerDegreeLatitude;
-    const toPoint = (coordinate: { latitude: number; longitude: number }) => ({
-      x: (coordinate.longitude - longitude) * metersPerDegreeLongitude,
-      y: (coordinate.latitude - latitude) * metersPerDegreeLatitude,
-    });
-
-    let bestDistanceFromRoute = Infinity;
-    let bestDistanceAlongRoute = 0;
-    let bestSegmentIndex = startIndex;
-    let fallbackCumulativeDistance = 0;
-
-    if (!route.distanceIndex) {
-      for (let index = 0; index < startIndex; index += 1) {
-        const start = coordinates[index]!;
-        const end = coordinates[index + 1]!;
-        fallbackCumulativeDistance += this.calculateDistance(
-          start.latitude,
-          start.longitude,
-          end.latitude,
-          end.longitude,
-        );
-      }
-    }
-
-    for (let index = startIndex; index <= endIndex; index += 1) {
-      const start = coordinates[index]!;
-      const end = coordinates[index + 1]!;
-      const startPoint = toPoint(start);
-      const endPoint = toPoint(end);
-      const segmentX = endPoint.x - startPoint.x;
-      const segmentY = endPoint.y - startPoint.y;
-      const segmentLengthSquared = segmentX * segmentX + segmentY * segmentY;
-      const segmentDistance =
-        route.distanceIndex?.segmentDistances[index] ??
-        this.calculateDistance(start.latitude, start.longitude, end.latitude, end.longitude);
-      const cumulativeDistance =
-        route.distanceIndex?.cumulativeDistances[index] ?? fallbackCumulativeDistance;
-      const projectionRatio =
-        segmentLengthSquared > 0
-          ? Math.min(
-              1,
-              Math.max(
-                0,
-                -(startPoint.x * segmentX + startPoint.y * segmentY) / segmentLengthSquared,
-              ),
-            )
-          : 0;
-      const projectedX = startPoint.x + segmentX * projectionRatio;
-      const projectedY = startPoint.y + segmentY * projectionRatio;
-      const distanceFromRoute = Math.sqrt(projectedX * projectedX + projectedY * projectedY);
-
-      if (distanceFromRoute < bestDistanceFromRoute) {
-        bestDistanceFromRoute = distanceFromRoute;
-        bestDistanceAlongRoute = cumulativeDistance + segmentDistance * projectionRatio;
-        bestSegmentIndex = index;
-      }
-
-      fallbackCumulativeDistance += segmentDistance;
-    }
-
-    return {
-      distanceAlongRoute: bestDistanceAlongRoute,
-      distanceFromRoute: bestDistanceFromRoute,
-      segmentIndex: bestSegmentIndex,
-    };
-  }
-
-  /**
    * Update current position along route
    * Called from location updates
    */
   private updateRouteProgress(latitude: number, longitude: number): void {
-    if (!this.hasRoute || !this._currentRoute?.coordinates) return;
-
-    const previousDistance = this._currentRouteDistance;
-    const projection = this.projectLocationOntoRoute(latitude, longitude, this._currentRoute);
-    if (!projection) return;
-
-    const onRouteThresholdMeters = 40;
-    this._distanceFromRouteMeters = projection.distanceFromRoute;
-    this._isOnRoute = projection.distanceFromRoute <= onRouteThresholdMeters;
-
-    if (!this._isOnRoute) {
-      return;
-    }
-
-    const distanceAlongRoute = Math.min(
-      this._routeDistance > 0 ? this._routeDistance : projection.distanceAlongRoute,
-      Math.max(0, projection.distanceAlongRoute),
-    );
-    this._currentRouteDistance = distanceAlongRoute;
-
-    // Apply grade-based resistance when GPS recording is disabled with FTMS
-    // Only if: has trainer, recording, and NOT in manual control mode
     if (
+      this.routeController.updateRouteProgress(latitude, longitude) &&
       this.shouldUseTrainerDataAndControl() &&
       this.state === "recording" &&
-      !this.isTrainerManualMode() &&
-      Math.abs(distanceAlongRoute - previousDistance) > 10 // Only update every 10m
+      !this.isTrainerManualMode()
     ) {
       this.trainerControl.applyRouteGrade(this.currentRouteGrade).catch(console.error);
     }
   }
 
   private updateIndoorRouteProgressFromSessionDistance(): void {
-    if (this._gpsRecordingEnabled || !this.hasRoute || this._routeDistance <= 0) return;
+    if (this._gpsRecordingEnabled || !this.hasRoute || this.routeDistance <= 0) return;
 
     const stats = this.liveMetricsManager.getSessionStats();
-    const nextDistance = Math.min(this._routeDistance, Math.max(0, stats.distance ?? 0));
+    const nextDistance = Math.min(this.routeDistance, Math.max(0, stats.distance ?? 0));
     this.updateVirtualRouteDistance(nextDistance);
   }
 
   private updateVirtualRouteDistance(distanceAlongRoute: number): void {
-    const previousDistance = this._currentRouteDistance;
-    this._isOnRoute = true;
-    this._distanceFromRouteMeters = null;
-    this._currentRouteDistance = distanceAlongRoute;
-
     if (
+      this.routeController.updateVirtualRouteDistance(distanceAlongRoute) &&
       this.shouldUseTrainerDataAndControl() &&
       this.state === "recording" &&
-      !this.isTrainerManualMode() &&
-      Math.abs(distanceAlongRoute - previousDistance) > 10
+      !this.isTrainerManualMode()
     ) {
       this.trainerControl.applyRouteGrade(this.currentRouteGrade).catch(console.error);
     }

@@ -26,12 +26,21 @@ Use this file when working in `apps/mobile/app`.
 - For detail screens, default to this order unless the screen has a clear reason not to: header actions, identity card, linked primary content, analytical content, structured body content, engagement or secondary content.
 - Keep screen-level management actions in the header overflow menu, and keep at most one lightweight personal action near the identity block.
 - Make linked first-class content appear early and look tappable, and keep charts or metrics visually quieter than the identity and linked-content layers they support.
+- Linked first-class content must use the linked resource's canonical card, not ad hoc labels or screen-local summary rows, and should navigate to that resource's detail route when viewable.
+- Simple create/edit/settings screens should put the primary action in `headerRight` and rely on the header back button for cancel/back instead of duplicating bottom Cancel/Save rows.
+- Use bottom action bars only for multi-step flows, modal/sheet flows, sticky review flows, or actions that must remain visible while scrolling.
+- Keep simple settings visually light: one clear label, a trailing control, and only meaningful supporting text. Do not wrap one obvious toggle in a full card/section unless it is part of a larger group.
+- Optional route-owned form fields must support returning to their unset/null state with compact, colocated clear affordances rather than large secondary clear buttons.
+- Avoid blocking success modals for routine saves; use save loading state, return navigation, or lightweight feedback unless the user must decide something.
 
 ## Avoid
 
 - Putting shared business rules directly in screen files.
 - Smuggling app-wide state management into route components when it belongs in providers or stores.
 - Breaking route-group semantics with feature-specific shortcuts.
+- Displaying associated resource data as raw IDs, text labels, or one-off cards when a canonical card/detail pattern exists.
+- Repeating cancel/save actions in content when header navigation and `headerRight` already cover the flow.
+- Adding section chrome, helper copy, or descriptions that merely repeat an obvious setting label.
 
 ## References
 

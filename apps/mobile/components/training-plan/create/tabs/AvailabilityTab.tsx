@@ -2,7 +2,6 @@ import type { CreationAvailabilityConfig } from "@repo/core";
 import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
 import { ChevronDown, ChevronUp } from "lucide-react-native";
-import React from "react";
 import { Pressable, View } from "react-native";
 import type { TrainingPlanConfigFormData } from "../SinglePageForm";
 

@@ -1,16 +1,14 @@
 import { ADJUSTMENT_PRESETS, type AdjustmentType, getAdjustmentSummary } from "@repo/core/plan";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
-import { Separator } from "@repo/ui/components/separator";
 import { Text } from "@repo/ui/components/text";
 import { useRouter } from "expo-router";
 import { Settings2, Sparkles, X } from "lucide-react-native";
-import React from "react";
 import { ActivityIndicator, Alert, Modal, ScrollView, TouchableOpacity, View } from "react-native";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
-import { SmartSuggestion } from "@/lib/hooks/useSmartSuggestions";
+import type { SmartSuggestion } from "@/lib/hooks/useSmartSuggestions";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 interface QuickAdjustSheetProps {
@@ -26,7 +24,7 @@ export function QuickAdjustSheet({
   plan,
   smartSuggestion,
 }: QuickAdjustSheetProps) {
-  const router = useRouter();
+  const _router = useRouter();
   const navigateTo = useAppNavigate();
   const utils = api.useUtils();
 

@@ -1,4 +1,4 @@
-import { TRPCError } from "@trpc/server";
+import type { TRPCError } from "@trpc/server";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => {
     integrations: {
       listByProfileId: vi.fn(),
       findByProfileIdAndProvider: vi.fn(),
+      findCredentialsByProfileIdAndProvider: vi.fn(),
       updateTokensByProfileIdAndProvider: vi.fn(),
       deleteByProfileIdAndProvider: vi.fn(),
       upsertByProfileIdAndProvider: vi.fn(),
@@ -99,21 +100,15 @@ vi.mock("@repo/db", () => {
 
   return {
     publicIntegrationProviderSchema,
-    publicIntegrationsRowSchema: z
-      .object({
-        id: z.string().uuid(),
-        idx: z.number().int(),
-        profile_id: z.string().uuid(),
-        provider: publicIntegrationProviderSchema,
-        external_id: z.string().min(1),
-        access_token: z.string().min(1),
-        refresh_token: z.string().min(1).nullable(),
-        expires_at: z.date().nullable(),
-        scope: z.string().min(1).nullable(),
-        created_at: z.date(),
-        updated_at: z.date(),
-      })
-      .passthrough(),
+    publicIntegrationsRowSchema: z.object({
+      id: z.string().uuid(),
+      idx: z.number().int(),
+      profile_id: z.string().uuid(),
+      provider: publicIntegrationProviderSchema,
+      external_id: z.string().min(1),
+      created_at: z.date(),
+      updated_at: z.date(),
+    }),
   };
 });
 
@@ -268,7 +263,17 @@ describe("integrationsRouter", () => {
     mocks.repositories.oauthStates.deleteExpired.mockResolvedValue(2);
     mocks.repositories.integrations.listByProfileId.mockResolvedValue(rows);
 
-    await expect(caller.list()).resolves.toEqual(rows);
+    await expect(caller.list()).resolves.toEqual([
+      {
+        id: "77777777-7777-4777-8777-777777777777",
+        idx: 1,
+        profile_id: SESSION_USER_ID,
+        provider: "strava",
+        external_id: "ext-1",
+        created_at: new Date("2026-04-01T10:00:00.000Z"),
+        updated_at: new Date("2026-04-01T11:00:00.000Z"),
+      },
+    ]);
     expect(mocks.repositories.oauthStates.deleteExpired).toHaveBeenCalledWith({
       profileId: SESSION_USER_ID,
       now: expect.any(Date),
@@ -694,6 +699,9 @@ describe("integrationsRouter", () => {
   it("refreshToken refreshes and persists new provider tokens", async () => {
     const caller = createCaller();
     mocks.repositories.integrations.findByProfileIdAndProvider.mockResolvedValue({
+      id: "77777777-7777-4777-8777-777777777777",
+    });
+    mocks.repositories.integrations.findCredentialsByProfileIdAndProvider.mockResolvedValue({
       refresh_token: "refresh-1",
     });
     mocks.repositories.integrations.updateTokensByProfileIdAndProvider.mockResolvedValue(undefined);
@@ -727,6 +735,9 @@ describe("integrationsRouter", () => {
   it("refreshToken tolerates extra provider token fields", async () => {
     const caller = createCaller();
     mocks.repositories.integrations.findByProfileIdAndProvider.mockResolvedValue({
+      id: "77777777-7777-4777-8777-777777777777",
+    });
+    mocks.repositories.integrations.findCredentialsByProfileIdAndProvider.mockResolvedValue({
       refresh_token: "refresh-1",
     });
     mocks.repositories.integrations.updateTokensByProfileIdAndProvider.mockResolvedValue(undefined);
@@ -758,6 +769,9 @@ describe("integrationsRouter", () => {
   it("refreshToken rejects malformed provider token payloads", async () => {
     const caller = createCaller();
     mocks.repositories.integrations.findByProfileIdAndProvider.mockResolvedValue({
+      id: "77777777-7777-4777-8777-777777777777",
+    });
+    mocks.repositories.integrations.findCredentialsByProfileIdAndProvider.mockResolvedValue({
       refresh_token: "refresh-1",
     });
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -773,7 +787,7 @@ describe("integrationsRouter", () => {
     ).not.toHaveBeenCalled();
   });
 
-  it("cleanupExpiredStates sums both cleanup strategies", async () => {
+  it("cleanupExpiredStates sums both cleanup strategies for the signed-in user", async () => {
     const caller = createCaller();
     mocks.repositories.oauthStates.deleteExpired.mockResolvedValue(2);
     mocks.repositories.oauthStates.deleteCreatedBefore.mockResolvedValue(3);
@@ -783,11 +797,11 @@ describe("integrationsRouter", () => {
       cleaned: 5,
     });
     expect(mocks.repositories.oauthStates.deleteExpired).toHaveBeenCalledWith({
-      profileId: OTHER_USER_ID,
+      profileId: SESSION_USER_ID,
       now: expect.any(Date),
     });
     expect(mocks.repositories.oauthStates.deleteCreatedBefore).toHaveBeenCalledWith({
-      profileId: OTHER_USER_ID,
+      profileId: SESSION_USER_ID,
       before: expect.any(Date),
     });
   });
@@ -848,6 +862,13 @@ describe("integrationsRouter", () => {
 
   it("storeIntegration upserts the integration and deletes the consumed state", async () => {
     const caller = createCaller();
+    mocks.repositories.oauthStates.deleteExpired.mockResolvedValue(0);
+    mocks.repositories.oauthStates.findValidByState.mockResolvedValue({
+      profile_id: OTHER_USER_ID,
+      provider: "trainingpeaks",
+      mobile_redirect_uri: "gradientpeak://callback",
+      created_at: new Date("2026-04-01T12:00:00.000Z"),
+    });
     mocks.repositories.integrations.upsertByProfileIdAndProvider.mockResolvedValue({
       id: "77777777-7777-4777-8777-777777777777",
       idx: 1,
@@ -876,6 +897,13 @@ describe("integrationsRouter", () => {
       }),
     ).resolves.toEqual({ success: true });
 
+    expect(mocks.repositories.oauthStates.deleteExpired).toHaveBeenCalledWith({
+      now: expect.any(Date),
+    });
+    expect(mocks.repositories.oauthStates.findValidByState).toHaveBeenCalledWith({
+      state: STATE_ID,
+      now: expect.any(Date),
+    });
     expect(mocks.repositories.integrations.upsertByProfileIdAndProvider).toHaveBeenCalledWith({
       profileId: OTHER_USER_ID,
       provider: "trainingpeaks",
@@ -889,10 +917,102 @@ describe("integrationsRouter", () => {
     expect(mocks.repositories.oauthStates.deleteByState).toHaveBeenCalledWith(STATE_ID);
   });
 
+  it("storeIntegration rejects missing or expired oauth state before writing tokens", async () => {
+    const caller = createCaller();
+    mocks.repositories.oauthStates.deleteExpired.mockResolvedValue(1);
+    mocks.repositories.oauthStates.findValidByState.mockResolvedValue(null);
+
+    await expect(
+      caller.storeIntegration({
+        userId: OTHER_USER_ID,
+        provider: "trainingpeaks",
+        externalId: "ext-42",
+        accessToken: "access-42",
+        refreshToken: "refresh-42",
+        expiresAt: "2026-04-02T12:00:00.000Z",
+        scope: "activities:read",
+        state: STATE_ID,
+      }),
+    ).rejects.toMatchObject({
+      code: "NOT_FOUND",
+      message: "Invalid or expired OAuth state",
+    } satisfies Partial<TRPCError>);
+
+    expect(mocks.repositories.integrations.upsertByProfileIdAndProvider).not.toHaveBeenCalled();
+    expect(mocks.repositories.oauthStates.deleteByState).not.toHaveBeenCalled();
+  });
+
+  it("storeIntegration rejects oauth state ownership mismatches before writing tokens", async () => {
+    const caller = createCaller();
+    mocks.repositories.oauthStates.deleteExpired.mockResolvedValue(0);
+    mocks.repositories.oauthStates.findValidByState.mockResolvedValue({
+      profile_id: SESSION_USER_ID,
+      provider: "trainingpeaks",
+      mobile_redirect_uri: "gradientpeak://callback",
+      created_at: new Date("2026-04-01T12:00:00.000Z"),
+    });
+
+    await expect(
+      caller.storeIntegration({
+        userId: OTHER_USER_ID,
+        provider: "trainingpeaks",
+        externalId: "ext-42",
+        accessToken: "access-42",
+        refreshToken: "refresh-42",
+        expiresAt: "2026-04-02T12:00:00.000Z",
+        scope: "activities:read",
+        state: STATE_ID,
+      }),
+    ).rejects.toMatchObject({
+      code: "FORBIDDEN",
+      message: "OAuth state does not match integration request",
+    } satisfies Partial<TRPCError>);
+
+    expect(mocks.repositories.integrations.upsertByProfileIdAndProvider).not.toHaveBeenCalled();
+    expect(mocks.repositories.oauthStates.deleteByState).not.toHaveBeenCalled();
+  });
+
+  it("storeIntegration rejects oauth state provider mismatches before writing tokens", async () => {
+    const caller = createCaller();
+    mocks.repositories.oauthStates.deleteExpired.mockResolvedValue(0);
+    mocks.repositories.oauthStates.findValidByState.mockResolvedValue({
+      profile_id: OTHER_USER_ID,
+      provider: "wahoo",
+      mobile_redirect_uri: "gradientpeak://callback",
+      created_at: new Date("2026-04-01T12:00:00.000Z"),
+    });
+
+    await expect(
+      caller.storeIntegration({
+        userId: OTHER_USER_ID,
+        provider: "trainingpeaks",
+        externalId: "ext-42",
+        accessToken: "access-42",
+        refreshToken: "refresh-42",
+        expiresAt: "2026-04-02T12:00:00.000Z",
+        scope: "activities:read",
+        state: STATE_ID,
+      }),
+    ).rejects.toMatchObject({
+      code: "FORBIDDEN",
+      message: "OAuth state does not match integration request",
+    } satisfies Partial<TRPCError>);
+
+    expect(mocks.repositories.integrations.upsertByProfileIdAndProvider).not.toHaveBeenCalled();
+    expect(mocks.repositories.oauthStates.deleteByState).not.toHaveBeenCalled();
+  });
+
   it("storeIntegration enqueues Wahoo activity history reconciliation", async () => {
     const caller = createCaller();
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-02T09:30:00.000Z"));
+    mocks.repositories.oauthStates.deleteExpired.mockResolvedValue(0);
+    mocks.repositories.oauthStates.findValidByState.mockResolvedValue({
+      profile_id: OTHER_USER_ID,
+      provider: "wahoo",
+      mobile_redirect_uri: "gradientpeak://callback",
+      created_at: new Date("2026-04-01T12:00:00.000Z"),
+    });
     mocks.repositories.integrations.upsertByProfileIdAndProvider.mockResolvedValue({
       id: "77777777-7777-4777-8777-777777777777",
       idx: 1,

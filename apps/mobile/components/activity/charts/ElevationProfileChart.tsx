@@ -2,9 +2,10 @@ import { downsampleStream, removeNullValues } from "@repo/core";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
 import { LinearGradient, useFont, vec } from "@shopify/react-native-skia";
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 import { View } from "react-native";
 import { Area, CartesianChart, useChartPressState } from "victory-native";
+import { InteractiveChartValueTray } from "@/components/charts/InteractiveChartValueTray";
 import { useTheme } from "@/lib/stores/theme-store";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 
@@ -178,18 +179,26 @@ export function ElevationProfileChart({
           )}
         </View>
 
-        {/* Active value display */}
-        {isActive && (
-          <View className="mt-2 rounded-lg bg-muted p-2">
-            <Text className="text-sm text-foreground">
-              {distanceStream ? "Distance" : "Time"}:{" "}
-              {distanceStream
-                ? `${state.x.value.value.toFixed(2)} km`
-                : `${Math.floor(state.x.value.value / 60)}m ${Math.floor(state.x.value.value % 60)}s`}{" "}
-              • Elevation: {state.y.elevation.value.value.toFixed(0)}m
-            </Text>
-          </View>
-        )}
+        {isActive ? (
+          <InteractiveChartValueTray
+            testID="elevation-profile-active-values"
+            items={[
+              {
+                key: "x",
+                label: distanceStream ? "Distance" : "Time",
+                value: distanceStream
+                  ? `${state.x.value.value.toFixed(2)} km`
+                  : `${Math.floor(state.x.value.value / 60)}m ${Math.floor(state.x.value.value % 60)}s`,
+              },
+              {
+                key: "elevation",
+                label: "Elevation",
+                value: `${state.y.elevation.value.value.toFixed(0)} m`,
+                color: "#10b981",
+              },
+            ]}
+          />
+        ) : null}
       </CardContent>
     </Card>
   );

@@ -2,7 +2,7 @@ import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from "react";
 import { AccessibilityInfo } from "react-native";
 import { AppFormModal } from "@/components/shared/AppFormModal";
 import { type ResourcePickerItem, ResourcePickerModal } from "@/components/shared/resource-picker";
@@ -235,7 +235,7 @@ export const CreateEventFlow = forwardRef<
     const selectedPlan = knownActivityPlans.find((plan) => plan.id === preselectedActivityPlanId);
     if (!selectedPlan) return;
     handleSelectPlan(selectedPlan);
-  }, [draft, knownActivityPlans, preselectedActivityPlanId]);
+  }, [draft, knownActivityPlans, preselectedActivityPlanId, handleSelectPlan]);
 
   useEffect(() => {
     if (updateEvent?.activity_plan) {
@@ -254,7 +254,7 @@ export const CreateEventFlow = forwardRef<
     setFormErrorMessage(null);
     setTitleErrorMessage(null);
     setRecurrenceErrorMessage(null);
-  }, [updateEvent?.id]);
+  }, [updateEvent?.id, updateEvent]);
 
   useEffect(() => {
     if (updateEvent) return;
@@ -326,7 +326,7 @@ export const CreateEventFlow = forwardRef<
     });
   };
 
-  const handleSelectPlan = (plan: ActivityPlanListItem) => {
+  function handleSelectPlan(plan: ActivityPlanListItem) {
     setKnownActivityPlans((current) =>
       current.some((item) => item.id === plan.id) ? current : [...current, plan],
     );
@@ -341,7 +341,7 @@ export const CreateEventFlow = forwardRef<
     });
     setFormErrorMessage(null);
     AccessibilityInfo?.announceForAccessibility?.(`Selected activity plan ${plan.name}`);
-  };
+  }
 
   const handleSelectPlanResource = (item: ResourcePickerItem) => {
     handleSelectPlan({

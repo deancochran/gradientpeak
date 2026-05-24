@@ -42,6 +42,17 @@ export interface BuildProjectionEngineInputShape {
   disable_weekly_tss_optimizer?: boolean;
 }
 
+function optionalProperty<Key extends string, Value>(
+  key: Key,
+  value: Value | undefined,
+): { [Property in Key]?: Value } {
+  if (value === undefined) {
+    return {};
+  }
+
+  return { [key]: value } as { [Property in Key]?: Value };
+}
+
 /**
  * Builds the canonical deterministic projection engine input shape.
  *
@@ -61,28 +72,31 @@ export function buildProjectionEngineInput(
       phase: block.phase,
       start_date: block.start_date,
       end_date: block.end_date,
-      target_weekly_tss_range: block.target_weekly_tss_range,
+      ...optionalProperty("target_weekly_tss_range", block.target_weekly_tss_range),
     })),
     goals: input.expanded_plan.goals.map((goal) => ({
-      id: goal.id,
       name: goal.name,
       target_date: goal.target_date,
-      priority: goal.priority,
-      targets: goal.targets,
+      ...optionalProperty("id", goal.id),
+      ...optionalProperty("priority", goal.priority),
+      ...optionalProperty("targets", goal.targets),
     })),
-    starting_ctl: input.starting_ctl,
-    starting_atl: input.starting_atl,
-    prior_inferred_snapshot: input.prior_inferred_snapshot,
-    preference_profile: input.preference_profile,
-    no_history_context: input.no_history_context,
-    creation_config: input.normalized_creation_config
-      ? {
-          optimization_profile: input.normalized_creation_config.optimization_profile,
-          post_goal_recovery_days: input.normalized_creation_config.post_goal_recovery_days,
-          behavior_controls_v1: input.normalized_creation_config.behavior_controls_v1,
-          calibration: input.normalized_creation_config.calibration,
-        }
-      : undefined,
-    disable_weekly_tss_optimizer: input.disable_weekly_tss_optimizer,
+    ...optionalProperty("starting_ctl", input.starting_ctl),
+    ...optionalProperty("starting_atl", input.starting_atl),
+    ...optionalProperty("prior_inferred_snapshot", input.prior_inferred_snapshot),
+    ...optionalProperty("preference_profile", input.preference_profile),
+    ...optionalProperty("no_history_context", input.no_history_context),
+    ...optionalProperty(
+      "creation_config",
+      input.normalized_creation_config
+        ? {
+            optimization_profile: input.normalized_creation_config.optimization_profile,
+            post_goal_recovery_days: input.normalized_creation_config.post_goal_recovery_days,
+            behavior_controls_v1: input.normalized_creation_config.behavior_controls_v1,
+            calibration: input.normalized_creation_config.calibration,
+          }
+        : undefined,
+    ),
+    ...optionalProperty("disable_weekly_tss_optimizer", input.disable_weekly_tss_optimizer),
   };
 }

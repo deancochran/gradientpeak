@@ -1,5 +1,4 @@
 import { Text } from "@repo/ui/components/text";
-import React from "react";
 import { View } from "react-native";
 
 export function MetricTile({

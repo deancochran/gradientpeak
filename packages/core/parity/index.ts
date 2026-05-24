@@ -532,7 +532,7 @@ export const parityRegistry = [
   },
   {
     area: "profile",
-    backendOperations: ["profiles.getPublicById", "integrations.list"],
+    backendOperations: ["auth.signOut", "profiles.getPublicById", "integrations.list"],
     id: "profile.settings",
     mobileRoute: "/(internal)/(standard)/user/[userId]",
     policy: "required_on_web",

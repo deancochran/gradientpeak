@@ -1,11 +1,10 @@
 import { invalidateTrainingPlanQueries } from "@repo/api/react";
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
-import { Icon } from "@repo/ui/components/icon";
 import { ListSkeleton } from "@repo/ui/components/loading-skeletons";
 import { Text } from "@repo/ui/components/text";
 import { Stack, useRouter } from "expo-router";
 import { Calendar } from "lucide-react-native";
-import React, { useState } from "react";
+import { useState } from "react";
 import { Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { ActivityList } from "@/components/plan/calendar/ActivityList";
 import { api } from "@/lib/api";

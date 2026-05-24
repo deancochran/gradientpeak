@@ -25,6 +25,12 @@ export interface CalendarEventActivityPlan {
   structure?: unknown;
 }
 
+export interface CalendarEventOwner {
+  id?: string | null;
+  username?: string | null;
+  avatar_url?: string | null;
+}
+
 export interface CalendarEvent {
   id: string;
   event_type?: string | null;
@@ -42,6 +48,7 @@ export interface CalendarEvent {
   training_plan_id?: string | null;
   completed?: boolean | null;
   status?: string | null;
+  owner?: CalendarEventOwner | null;
   activity_plan?: CalendarEventActivityPlan | null;
 }
 

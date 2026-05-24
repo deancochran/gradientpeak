@@ -1,5 +1,4 @@
 import { Text } from "@repo/ui/components/text";
-import React from "react";
 import { View } from "react-native";
 import { MetricTile } from "./MetricTile";
 import type { InsightCardProps } from "./types";

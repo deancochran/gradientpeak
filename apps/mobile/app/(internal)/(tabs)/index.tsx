@@ -1,4 +1,3 @@
-import { Text } from "@repo/ui/components/text";
 import { View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { FeedList } from "@/components/feed";

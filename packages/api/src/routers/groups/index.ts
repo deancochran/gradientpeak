@@ -33,7 +33,6 @@ import {
   requireGroupAdmin,
   requireGroupMemberListAccess,
   requireGroupOwner,
-  requireGroupViewAccess,
 } from "./access";
 import { groupEventsRouter } from "./events";
 

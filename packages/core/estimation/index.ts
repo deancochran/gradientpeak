@@ -13,8 +13,11 @@ import { estimateWeeklyLoad, predictFatigue } from "./fatigue";
 import { estimateMetrics as estimateMetricsInternal } from "./metrics";
 import { estimateFromRoute, estimateFromStructure, estimateFromTemplate } from "./strategies";
 import type {
+  ActivityPlanEstimationInput,
+  BuildEstimationContextParams,
   EstimationContext,
   EstimationResult,
+  EstimationWarningHandler,
   FatiguePrediction,
   FitnessState,
   MetricEstimations,
@@ -42,6 +45,21 @@ export * from "./types";
 // Re-export functions
 export { estimateMetricsInternal as estimateMetrics, estimateWeeklyLoad, predictFatigue };
 
+const formatEstimationError = (error: unknown) => {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return "Unknown estimation error";
+};
+
+const withWarnings = (result: EstimationResult, warnings: string[]): EstimationResult => {
+  if (warnings.length === 0) return result;
+
+  return {
+    ...result,
+    warnings: [...warnings, ...(result.warnings ?? [])],
+  };
+};
+
 /**
  * Main estimation function - automatically selects best strategy
  *
@@ -53,32 +71,41 @@ export { estimateMetricsInternal as estimateMetrics, estimateWeeklyLoad, predict
  * @param context - User profile, activity details, and optional structure/route
  * @returns Estimation result with TSS, duration, IF, and metadata
  */
-export function estimateActivity(context: EstimationContext): EstimationResult {
+export function estimateActivity(
+  context: EstimationContext,
+  onWarning?: EstimationWarningHandler,
+): EstimationResult {
   // Validate context
   if (!context.profile) {
     throw new Error("User profile is required for estimation");
   }
+
+  const fallbackWarnings: string[] = [];
 
   // Strategy 1: Structure-based (preferred)
   if (context.structure?.intervals && context.structure.intervals.length > 0) {
     try {
       return estimateFromStructure(context);
     } catch (error) {
-      console.warn("Structure-based estimation failed, falling back to route/template", error);
+      const message = `Structure-based estimation failed, falling back to route/template: ${formatEstimationError(error)}`;
+      fallbackWarnings.push(message);
+      onWarning?.({ error, message });
     }
   }
 
   // Strategy 2: Route-based
   if (context.route) {
     try {
-      return estimateFromRoute(context);
+      return withWarnings(estimateFromRoute(context), fallbackWarnings);
     } catch (error) {
-      console.warn("Route-based estimation failed, falling back to template", error);
+      const message = `Route-based estimation failed, falling back to template: ${formatEstimationError(error)}`;
+      fallbackWarnings.push(message);
+      onWarning?.({ error, message });
     }
   }
 
   // Strategy 3: Template-based (fallback)
-  return estimateFromTemplate(context);
+  return withWarnings(estimateFromTemplate(context), fallbackWarnings);
 }
 
 /**
@@ -88,13 +115,16 @@ export function estimateActivity(context: EstimationContext): EstimationResult {
  * @param context - User profile and activity details
  * @returns Complete estimation including TSS, metrics, and optional fatigue prediction
  */
-export function estimateActivityComplete(context: EstimationContext): {
+export function estimateActivityComplete(
+  context: EstimationContext,
+  onWarning?: EstimationWarningHandler,
+): {
   estimation: EstimationResult;
   metrics: MetricEstimations;
   fatigue?: FatiguePrediction;
 } {
   // Get base TSS estimation
-  const estimation = estimateActivity(context);
+  const estimation = estimateActivity(context, onWarning);
 
   // Calculate additional metrics
   const metrics = estimateMetricsInternal(estimation, context);
@@ -110,7 +140,10 @@ export function estimateActivityComplete(context: EstimationContext): {
         [], // Weekly activities can be passed from caller
       );
     } catch (error) {
-      console.warn("Fatigue prediction failed", error);
+      onWarning?.({
+        error,
+        message: `Fatigue prediction failed: ${formatEstimationError(error)}`,
+      });
     }
   }
 
@@ -130,13 +163,9 @@ export function estimateActivityComplete(context: EstimationContext): {
  * @returns Map of plan ID to estimation result
  */
 export function estimateActivityBatch(
-  plans: Array<{
-    id: string;
-    structure?: any;
-    route?: any;
-    activity_category: string;
-  }>,
+  plans: ActivityPlanEstimationInput[],
   context: Omit<EstimationContext, "structure" | "route" | "activityCategory">,
+  onWarning?: EstimationWarningHandler,
 ): Map<string, EstimationResult> {
   const results = new Map<string, EstimationResult>();
 
@@ -146,13 +175,17 @@ export function estimateActivityBatch(
         ...context,
         structure: plan.structure,
         route: plan.route,
-        activityCategory: plan.activity_category as any,
+        activityCategory: plan.activity_category,
       };
 
-      const estimation = estimateActivity(planContext);
+      const estimation = estimateActivity(planContext, onWarning);
       results.set(plan.id, estimation);
     } catch (error) {
-      console.error(`Failed to estimate plan ${plan.id}:`, error);
+      onWarning?.({
+        error,
+        message: `Failed to estimate plan ${plan.id}: ${formatEstimationError(error)}`,
+        planId: plan.id,
+      });
       // Set default fallback
       results.set(plan.id, {
         tss: 50,
@@ -263,58 +296,21 @@ export function getTSSRange(estimation: EstimationResult): [number, number] {
 /**
  * Helper to build estimation context from common data sources
  */
-export function buildEstimationContext(params: {
-  // User data (from database/profile)
-  userProfile: {
-    ftp?: number | null;
-    threshold_hr?: number | null;
-    max_hr?: number | null;
-    resting_hr?: number | null;
-    weight_kg?: number | null;
-    dob?: string | null;
-    threshold_pace_seconds_per_km?: number | null;
-  };
-
-  // Current fitness (from trends calculation)
-  fitnessState?: {
-    ctl: number;
-    atl: number;
-    tsb: number;
-    lastActivityDate?: Date;
-  };
-
-  // Activity plan data
-  activityPlan: {
-    activity_category: string;
-    structure?: any;
-    route_id?: string;
-  };
-
-  // Optional route data
-  route?: {
-    distance_meters: number;
-    total_ascent: number;
-    total_descent: number;
-    average_grade?: number;
-  };
-
-  // Optional scheduling
-  scheduledDate?: Date;
-  weeklyPlannedTSS?: number;
-}): EstimationContext {
+export function buildEstimationContext(params: BuildEstimationContextParams): EstimationContext {
   const { userProfile, fitnessState, activityPlan, route, scheduledDate, weeklyPlannedTSS } =
     params;
 
-  // Note: This function builds a context but needs proper profile type
-  // The profile parameter should match PublicProfilesRow from the database
   return {
-    profile: userProfile as any, // Cast to match PublicProfilesRow
+    profile: {
+      ...userProfile,
+      dob: userProfile.dob ?? null,
+    },
     ftp: userProfile.ftp ?? undefined,
     thresholdHr: userProfile.threshold_hr ?? undefined,
     weightKg: userProfile.weight_kg ?? undefined,
     thresholdPaceSecondsPerKm: userProfile.threshold_pace_seconds_per_km ?? undefined,
     fitnessState,
-    activityCategory: activityPlan.activity_category as any,
+    activityCategory: activityPlan.activity_category,
     structure: activityPlan.structure,
     route: route
       ? {

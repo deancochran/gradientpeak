@@ -1,4 +1,4 @@
-import { ConfigContext, ExpoConfig } from "expo/config";
+import type { ConfigContext, ExpoConfig } from "expo/config";
 import { version } from "./package.json";
 
 const EAS_PROJECT_ID = "6d9b541c-ffca-46c3-b323-af579ff46b68";

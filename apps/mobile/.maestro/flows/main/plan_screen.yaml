@@ -13,4 +13,9 @@ appId: com.deancochran.gradientpeak.dev
     visible:
       id: "plan-screen"
     timeout: 10000
+- extendedWaitUntil:
+    visible:
+      id: "training-path-section"
+    timeout: 10000
+- assertVisible: "Weekly Training Path"
 - takeScreenshot: reports/plan_screen_after_login.png

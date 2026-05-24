@@ -8,13 +8,14 @@ import {
   FormTextField,
 } from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useQueryClient } from "@tanstack/react-query";
 import * as DocumentPicker from "expo-document-picker";
 import { File } from "expo-file-system";
 import { CheckCircle, FileText, History, Upload } from "lucide-react-native";
-import React, { useState } from "react";
+import { useState } from "react";
 import { Alert, ScrollView, View } from "react-native";
 import { z } from "zod";
 import { api } from "@/lib/api";
@@ -315,15 +316,15 @@ export default function ActivityImportScreen() {
               </View>
             ) : null}
 
-            <Button
+            <LoadingButton
               onPress={submitForm.handleSubmit}
               disabled={isImporting || !selectedActivityFile}
+              loading={isImporting}
+              loadingLabel="Importing Activity..."
               testID="activity-import-submit-button"
             >
-              <Text className="font-semibold text-primary-foreground">
-                {isImporting ? "Importing Activity..." : "Import Activity"}
-              </Text>
-            </Button>
+              <Text className="font-semibold text-primary-foreground">Import Activity</Text>
+            </LoadingButton>
           </CardContent>
         </Card>
 

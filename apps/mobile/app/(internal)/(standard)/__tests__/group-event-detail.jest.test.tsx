@@ -194,6 +194,22 @@ describe("group event detail route", () => {
     expect(detailRefetchMock).toHaveBeenCalled();
   });
 
+  it("offers separate edit actions for the occurrence and series", () => {
+    renderNative(<GroupEventDetailRoute />);
+
+    fireEvent.press(screen.getByTestId("group-event-detail-edit"));
+    expect(routerPushMock).toHaveBeenCalledWith({
+      pathname: "/group-event-edit",
+      params: { groupEventId: "99999999-9999-4999-8999-999999999999" },
+    });
+
+    fireEvent.press(screen.getByTestId("group-event-detail-edit-series"));
+    expect(routerPushMock).toHaveBeenCalledWith({
+      pathname: "/group-event-edit",
+      params: { groupEventId: "88888888-8888-4888-8888-888888888888" },
+    });
+  });
+
   it("exposes cancel from the management menu for recurring occurrences", () => {
     renderNative(<GroupEventDetailRoute />);
 

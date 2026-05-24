@@ -14,6 +14,7 @@ import {
   FormTextField,
 } from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { File as ExpoFile } from "expo-file-system";
@@ -150,7 +151,7 @@ function GroupImageUploadField({
             <Avatar alt={fallbackLabel || "Group"} className="h-28 w-28">
               {imageUrl ? <AvatarImage source={{ uri: imageUrl }} /> : null}
               <AvatarFallback>
-                <Text className="text-2xl font-semibold text-foreground">
+                <Text className="text-2xl font-semibold text-muted-foreground">
                   {groupInitials(fallbackLabel)}
                 </Text>
               </AvatarFallback>
@@ -268,6 +269,11 @@ export const GroupForm = forwardRef<GroupFormHandle, GroupFormProps>(function Gr
 
   const disabled = isSubmitting || submitForm.isSubmitting;
   const isUploadingImage = Boolean(uploadingImageField) || createImageUploadUrlMutation.isPending;
+  const submitButtonState = submitForm.getSubmitButtonState({
+    disabled: disabled || isUploadingImage,
+    label: submitLabel,
+    submittingLabel: "Saving...",
+  });
 
   useImperativeHandle(
     ref,
@@ -429,15 +435,17 @@ export const GroupForm = forwardRef<GroupFormHandle, GroupFormProps>(function Gr
               <Text className="text-sm font-semibold text-foreground">Cancel</Text>
             </Button>
           ) : null}
-          <Button
+          <LoadingButton
             className="flex-1"
-            disabled={disabled || isUploadingImage}
+            disabled={submitButtonState.disabled}
+            loading={disabled || submitButtonState.loading}
+            loadingLabel={submitButtonState.loadingLabel}
             onPress={submitForm.handleSubmit}
           >
             <Text className="text-sm font-semibold text-primary-foreground">
-              {disabled ? "Saving..." : submitLabel}
+              {submitButtonState.label}
             </Text>
-          </Button>
+          </LoadingButton>
         </View>
       ) : null}
       {imageSourceField ? (

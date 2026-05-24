@@ -12,6 +12,7 @@ import {
   FormTextareaField,
   FormTextField,
 } from "@repo/ui/components/form";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import * as DocumentPicker from "expo-document-picker";
@@ -109,6 +110,11 @@ export default function UploadRouteScreen() {
   });
 
   const isSubmitting = uploadMutation.isPending || submitForm.isSubmitting;
+  const submitButtonState = submitForm.getSubmitButtonState({
+    disabled: isSubmitting,
+    label: "Upload Route",
+    submittingLabel: "Uploading...",
+  });
 
   return (
     <View className="flex-1 bg-background" testID="route-upload-screen">
@@ -214,16 +220,16 @@ export default function UploadRouteScreen() {
           >
             <Text>Cancel</Text>
           </Button>
-          <Button
+          <LoadingButton
             className="flex-1"
             onPress={submitForm.handleSubmit}
-            disabled={isSubmitting}
+            disabled={submitButtonState.disabled}
+            loading={isSubmitting || submitButtonState.loading}
+            loadingLabel={submitButtonState.loadingLabel}
             testID="route-upload-submit-button"
           >
-            <Text className="text-primary-foreground">
-              {isSubmitting ? "Uploading..." : "Upload Route"}
-            </Text>
-          </Button>
+            <Text className="text-primary-foreground">{submitButtonState.label}</Text>
+          </LoadingButton>
         </View>
       </View>
     </View>

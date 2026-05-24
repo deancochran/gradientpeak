@@ -21,7 +21,7 @@ type ResourceListProps<TItem> = {
   loadingSkeletonCount?: number;
   loadingMoreLabel?: string;
   onLoadMore?: () => void;
-  onRefresh?: () => Promise<unknown> | void;
+  onRefresh?: () => Promise<unknown> | undefined;
   renderItem: (item: TItem, index: number) => ReactElement | null;
   refreshing?: boolean;
   showsVerticalScrollIndicator?: boolean;

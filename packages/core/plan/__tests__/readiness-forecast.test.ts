@@ -129,7 +129,7 @@ describe("buildReadinessForecastTimeline", () => {
     expect(mediumPoint?.low).toBeTypeOf("number");
     expect(mediumPoint?.high).toBeTypeOf("number");
     expect(
-      lowPoint!.readiness! - lowPoint!.low! > mediumPoint!.readiness! - mediumPoint!.low!,
+      lowPoint?.readiness! - lowPoint?.low! > mediumPoint?.readiness! - mediumPoint?.low!,
     ).toBe(true);
   });
 

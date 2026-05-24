@@ -94,7 +94,7 @@ export function OverviewTab({
         </Text>
       </View>
 
-      {actualCurve && actualCurve.dataPoints && actualCurve.dataPoints.length > 0 && (
+      {actualCurve?.dataPoints && actualCurve.dataPoints.length > 0 && (
         <TrainingLoadChart
           data={actualCurve.dataPoints.map(
             (point): TrainingLoadData => ({

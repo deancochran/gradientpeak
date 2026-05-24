@@ -1,5 +1,4 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
-import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import {
   Form,
@@ -10,6 +9,7 @@ import {
   FormTextField,
 } from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { File as ExpoFile } from "expo-file-system";
@@ -154,6 +154,11 @@ function ProfileEditScreen() {
 
   const isSavingProfile =
     submitForm.isSubmitting || updateProfileMutation.isPending || Boolean(uploadingImageField);
+  const saveButtonState = submitForm.getSubmitButtonState({
+    disabled: isSavingProfile,
+    label: "Save",
+    submittingLabel: "Saving...",
+  });
 
   const syncProfileImage = async (fieldName: ProfileImageFieldName, value: string | null) => {
     const updatedProfile = await updateProfileMutation.mutateAsync({ [fieldName]: value });
@@ -283,17 +288,18 @@ function ProfileEditScreen() {
       <Stack.Screen
         options={{
           headerRight: () => (
-            <Button
-              disabled={isSavingProfile}
+            <LoadingButton
+              disabled={saveButtonState.disabled}
+              loading={isSavingProfile || saveButtonState.loading}
+              loadingLabel={saveButtonState.loadingLabel}
+              loadingTextClassName="text-primary"
               onPress={submitForm.handleSubmit}
               size="sm"
               testID="profile-edit-save-button"
               variant="ghost"
             >
-              <Text className="text-sm font-semibold text-primary">
-                {isSavingProfile ? "Saving..." : "Save"}
-              </Text>
-            </Button>
+              <Text className="text-sm font-semibold text-primary">{saveButtonState.label}</Text>
+            </LoadingButton>
           ),
         }}
       />
@@ -366,7 +372,7 @@ function ProfileEditScreen() {
                       <Avatar alt={watchedUsername || "User"} className="h-24 w-24">
                         {avatarUrl ? <AvatarImage source={{ uri: avatarUrl }} /> : null}
                         <AvatarFallback>
-                          <Text className="text-3xl font-semibold text-foreground">
+                          <Text className="text-3xl font-semibold text-muted-foreground">
                             {profileInitial}
                           </Text>
                         </AvatarFallback>

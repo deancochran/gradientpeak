@@ -8,6 +8,7 @@ import {
   FormSegmentedSelectField,
   FormTextField,
 } from "@repo/ui/components/form";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 
 import {
@@ -71,17 +72,28 @@ export function ActivityEffortForm({
       await onSubmit(values);
     },
     shouldRethrow: false,
+    submittingLabel,
   });
   const isPending = pending || submit.isSubmitting;
+  const submitButtonState = submit.getSubmitButtonState({
+    disabled: pending,
+    label: submitLabel,
+    submittingLabel,
+  });
   const rootError = form.formState.errors.root?.message ?? submit.submitError?.message;
   const actions = (
     <>
       <Button onClick={onCancel} type="button" variant="outline">
         {cancelLabel}
       </Button>
-      <Button disabled={isPending} type="submit">
-        {isPending ? submittingLabel : submitLabel}
-      </Button>
+      <LoadingButton
+        disabled={submitButtonState.disabled}
+        loading={isPending}
+        loadingLabel={submitButtonState.loadingLabel}
+        type="submit"
+      >
+        {submitButtonState.label}
+      </LoadingButton>
     </>
   );
 

@@ -1,4 +1,4 @@
-import { type IntervalStepV2, type RecordingServiceActivityPlan } from "@repo/core";
+import type { IntervalStepV2, RecordingServiceActivityPlan } from "@repo/core";
 import { PlanManager } from "./plan";
 
 export interface PlanExecutionProgress {

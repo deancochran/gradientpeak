@@ -1,10 +1,24 @@
+import type { GroupEventRsvpStatus } from "@repo/core/groups";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
+import { useState } from "react";
 import { View } from "react-native";
 import { type ActivityPlan, ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { AppFormModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
 import type { GroupEventDetail, GroupEventSeriesOccurrence } from "@/lib/groups";
-import { formatGroupEventDateRange, GroupEventCard } from "./GroupEventCards";
+import {
+  formatAcceptedRsvpCount,
+  formatGroupEventDateRange,
+  GroupEventCard,
+  GroupEventOwnerRow,
+} from "./GroupEventCards";
+
+function formatRsvpStatus(status: GroupEventRsvpStatus | null) {
+  if (status === "accepted") return "Going";
+  if (status === "declined") return "Declined";
+  return "Tentative";
+}
 
 export function GroupEventActivityPlanOptionsSection({
   event,
@@ -26,8 +40,13 @@ export function GroupEventActivityPlanOptionsSection({
   if (event.activityPlanOptions.length === 0) return null;
 
   return (
-    <View className="gap-2">
-      <Text className="text-base font-semibold text-foreground">Activity plans</Text>
+    <View className="gap-3 rounded-2xl bg-card p-4">
+      <View className="gap-0.5">
+        <Text className="text-base font-semibold text-foreground">Workout options</Text>
+        <Text className="text-sm text-muted-foreground">
+          Choose a plan when you RSVP, or open one to review the work.
+        </Text>
+      </View>
       {activityPlansQuery.isLoading ? (
         <Text className="text-sm text-muted-foreground">Loading activity plans...</Text>
       ) : null}
@@ -63,7 +82,7 @@ export function GroupEventRsvpPanel({
   event: GroupEventDetail;
   isSubmitting?: boolean;
   onRsvp?: (
-    status: "accepted" | "declined",
+    status: GroupEventRsvpStatus | null,
     selectedGroupEventActivityPlanId?: string | null,
   ) => void;
 }) {
@@ -72,9 +91,22 @@ export function GroupEventRsvpPanel({
 
   return (
     <View className="gap-3 rounded-2xl bg-card p-4">
-      <Text className="text-base font-semibold text-foreground">
-        RSVP{status ? ` · ${status === "accepted" ? "Going" : "Declined"}` : ""}
-      </Text>
+      <View className="flex-row items-center justify-between gap-3">
+        <View className="min-w-0 flex-1 gap-0.5">
+          <Text className="text-base font-semibold text-foreground">Your RSVP</Text>
+          <Text className="text-sm text-muted-foreground">{formatRsvpStatus(status)}</Text>
+        </View>
+        {status ? (
+          <Button
+            disabled={isSubmitting || Boolean(event.cancelled_at)}
+            onPress={() => onRsvp?.(null, null)}
+            size="sm"
+            variant="ghost"
+          >
+            <Text className="text-xs font-semibold text-muted-foreground">Clear</Text>
+          </Button>
+        ) : null}
+      </View>
       {event.activityPlanOptions.length > 1 ? (
         <View className="gap-2">
           {event.activityPlanOptions.map((option, index) => (
@@ -98,6 +130,14 @@ export function GroupEventRsvpPanel({
         </View>
       ) : null}
       <View className="flex-row gap-3">
+        <Button
+          className="flex-1"
+          disabled={isSubmitting || Boolean(event.cancelled_at)}
+          onPress={() => onRsvp?.("tentative", null)}
+          variant={status === "tentative" || !status ? "secondary" : "outline"}
+        >
+          <Text className="text-sm font-semibold text-foreground">Tentative</Text>
+        </Button>
         <Button
           className="flex-1"
           disabled={isSubmitting || Boolean(event.cancelled_at)}
@@ -142,51 +182,100 @@ export function GroupEventSeriesRsvpPanel({
 }: {
   event: GroupEventDetail;
   isSubmitting?: boolean;
-  onRsvpSeries?: (status: "accepted" | "declined") => void;
+  onRsvpSeries?: (status: GroupEventRsvpStatus | null) => void;
 }) {
+  const [applyOpen, setApplyOpen] = useState(false);
+  const status = event.viewerSeriesRsvp?.status ?? null;
+  const eventStatus = event.viewerRsvp?.status ?? null;
+
   if (!event.is_recurring_series && !event.is_recurring_occurrence) return null;
 
-  const status = event.viewerSeriesRsvp?.status ?? null;
+  const handleSeriesRsvp = (nextStatus: GroupEventRsvpStatus | null) => {
+    onRsvpSeries?.(nextStatus);
+    setApplyOpen(false);
+  };
 
   return (
     <View className="gap-3 rounded-2xl bg-card p-4">
-      <Text className="text-base font-semibold text-foreground">
-        Series RSVP{status ? ` · ${status === "accepted" ? "Going" : "Declined"}` : ""}
-      </Text>
-      <View className="flex-row gap-3">
-        <Button
-          className="flex-1"
-          disabled={isSubmitting || Boolean(event.cancelled_at)}
-          onPress={() => onRsvpSeries?.("accepted")}
-          variant={status === "accepted" ? "default" : "outline"}
-        >
-          <Text
-            className={
-              status === "accepted"
-                ? "text-sm font-semibold text-primary-foreground"
-                : "text-sm font-semibold text-foreground"
-            }
-          >
-            {isSubmitting ? "Saving..." : "Going to series"}
+      <View className="flex-row items-center justify-between gap-3">
+        <View className="min-w-0 flex-1 gap-0.5">
+          <Text className="text-base font-semibold text-foreground">Repeating event</Text>
+          <Text className="text-sm text-muted-foreground">
+            Your RSVP is for this date{status ? ` · Series is ${formatRsvpStatus(status)}` : ""}.
           </Text>
-        </Button>
+        </View>
         <Button
-          className="flex-1"
           disabled={isSubmitting || Boolean(event.cancelled_at)}
-          onPress={() => onRsvpSeries?.("declined")}
-          variant={status === "declined" ? "destructive" : "outline"}
+          onPress={() => setApplyOpen(true)}
+          size="sm"
+          variant="outline"
         >
-          <Text
-            className={
-              status === "declined"
-                ? "text-sm font-semibold text-destructive-foreground"
-                : "text-sm font-semibold text-foreground"
-            }
-          >
-            Decline series
-          </Text>
+          <Text className="text-xs font-semibold text-foreground">Apply to series</Text>
         </Button>
       </View>
+
+      {applyOpen ? (
+        <AppFormModal
+          description="Use your RSVP for every date in this recurring event."
+          onClose={() => setApplyOpen(false)}
+          testID="group-event-series-rsvp-modal"
+          title="Apply RSVP to series"
+        >
+          <View className="gap-3">
+            <Text className="text-sm text-muted-foreground">
+              Current date: {formatRsvpStatus(eventStatus)}
+            </Text>
+            <Button
+              disabled={isSubmitting || Boolean(event.cancelled_at)}
+              onPress={() => handleSeriesRsvp("tentative")}
+              variant={status === "tentative" || !status ? "secondary" : "outline"}
+            >
+              <Text className="text-sm font-semibold text-foreground">Tentative for series</Text>
+            </Button>
+            <Button
+              disabled={isSubmitting || Boolean(event.cancelled_at)}
+              onPress={() => handleSeriesRsvp("accepted")}
+              variant={status === "accepted" ? "default" : "outline"}
+            >
+              <Text
+                className={
+                  status === "accepted"
+                    ? "text-sm font-semibold text-primary-foreground"
+                    : "text-sm font-semibold text-foreground"
+                }
+              >
+                {isSubmitting ? "Saving..." : "Going to series"}
+              </Text>
+            </Button>
+            <Button
+              disabled={isSubmitting || Boolean(event.cancelled_at)}
+              onPress={() => handleSeriesRsvp("declined")}
+              variant={status === "declined" ? "destructive" : "outline"}
+            >
+              <Text
+                className={
+                  status === "declined"
+                    ? "text-sm font-semibold text-destructive-foreground"
+                    : "text-sm font-semibold text-foreground"
+                }
+              >
+                Decline series
+              </Text>
+            </Button>
+            {status ? (
+              <Button
+                disabled={isSubmitting || Boolean(event.cancelled_at)}
+                onPress={() => handleSeriesRsvp(null)}
+                variant="ghost"
+              >
+                <Text className="text-sm font-semibold text-muted-foreground">
+                  Clear series RSVP
+                </Text>
+              </Button>
+            ) : null}
+          </View>
+        </AppFormModal>
+      ) : null}
     </View>
   );
 }
@@ -194,10 +283,12 @@ export function GroupEventSeriesRsvpPanel({
 export function GroupEventFutureOccurrencesSection({
   isLoading,
   occurrences,
+  onGroupPress,
   onOccurrencePress,
 }: {
   isLoading?: boolean;
   occurrences: GroupEventSeriesOccurrence[];
+  onGroupPress?: (group: NonNullable<GroupEventDetail["group"]>) => void;
   onOccurrencePress?: (event: GroupEventSeriesOccurrence) => void;
 }) {
   if (isLoading) {
@@ -209,10 +300,15 @@ export function GroupEventFutureOccurrencesSection({
   }
 
   return (
-    <View className="gap-2">
+    <View className="gap-3 rounded-2xl bg-card p-4">
       <Text className="text-base font-semibold text-foreground">Future dates</Text>
       {occurrences.map((occurrence) => (
-        <GroupEventCard event={occurrence} key={occurrence.id} onPress={onOccurrencePress} />
+        <GroupEventCard
+          event={occurrence}
+          key={occurrence.id}
+          onGroupPress={onGroupPress}
+          onPress={onOccurrencePress}
+        />
       ))}
     </View>
   );
@@ -221,14 +317,12 @@ export function GroupEventFutureOccurrencesSection({
 export function GroupEventDetailScreen({
   canManage = false,
   event,
-  futureOccurrences = [],
-  isLoadingFutureOccurrences = false,
   isWorking = false,
   onActivityPlanPress,
   onCancel,
   onCopySeriesPlans,
   onEdit,
-  onOccurrencePress,
+  onGroupPress,
   onRsvp,
   onRsvpSeries,
 }: {
@@ -241,40 +335,50 @@ export function GroupEventDetailScreen({
   onCancel?: () => void;
   onCopySeriesPlans?: () => void;
   onEdit?: () => void;
+  onGroupPress?: (group: NonNullable<GroupEventDetail["group"]>) => void;
   onOccurrencePress?: (event: GroupEventSeriesOccurrence) => void;
   onRsvp?: (
-    status: "accepted" | "declined",
+    status: GroupEventRsvpStatus | null,
     selectedGroupEventActivityPlanId?: string | null,
   ) => void;
-  onRsvpSeries?: (status: "accepted" | "declined") => void;
+  onRsvpSeries?: (status: GroupEventRsvpStatus | null) => void;
 }) {
-  const recurrenceLabel = event.is_recurring_series
-    ? "Recurring series"
-    : event.is_recurring_occurrence
-      ? "Series occurrence"
-      : "One-time event";
-
   return (
     <View className="gap-4">
-      <View className="gap-3 rounded-3xl bg-card p-5">
-        <View className="gap-1">
-          <Text className="text-xs font-semibold uppercase tracking-wide text-primary">
-            {recurrenceLabel}
-          </Text>
-          <Text className="text-3xl font-semibold text-foreground" numberOfLines={3}>
-            {event.title}
-          </Text>
-          <Text className="text-sm text-muted-foreground">{formatGroupEventDateRange(event)}</Text>
+      <View className="gap-4 rounded-3xl bg-card p-5">
+        <View className="gap-4">
+          {event.group ? <GroupEventOwnerRow group={event.group} onPress={onGroupPress} /> : null}
+          <View className="gap-2">
+            {event.cancelled_at ? (
+              <View className="self-start rounded-full bg-destructive/10 px-2.5 py-1">
+                <Text className="text-xs font-semibold text-destructive">Cancelled</Text>
+              </View>
+            ) : null}
+            <Text className="text-3xl font-semibold text-foreground" numberOfLines={3}>
+              {event.title}
+            </Text>
+            {event.description?.trim() ? (
+              <Text className="text-sm leading-6 text-muted-foreground">{event.description}</Text>
+            ) : null}
+          </View>
+          <View className="flex-row items-end justify-between gap-4">
+            <View className="min-w-0 flex-1 gap-1">
+              <Text className="text-sm font-medium text-foreground">
+                {formatGroupEventDateRange(event)}
+              </Text>
+              {event.location_name ? (
+                <Text className="text-sm text-muted-foreground" numberOfLines={1}>
+                  {event.location_name}
+                </Text>
+              ) : null}
+            </View>
+            <View className="shrink-0 rounded-full bg-muted px-3 py-1">
+              <Text className="text-sm font-semibold text-muted-foreground">
+                {formatAcceptedRsvpCount(event.acceptedRsvpCount)}
+              </Text>
+            </View>
+          </View>
         </View>
-        {event.cancelled_at ? (
-          <Text className="text-sm font-semibold text-destructive">This event is cancelled.</Text>
-        ) : null}
-        {event.location_name ? (
-          <Text className="text-sm text-muted-foreground">{event.location_name}</Text>
-        ) : null}
-        {event.description?.trim() ? (
-          <Text className="text-sm leading-6 text-muted-foreground">{event.description}</Text>
-        ) : null}
         {canManage ? (
           <View className="gap-3">
             {event.is_recurring_occurrence && event.series_id ? (
@@ -305,19 +409,12 @@ export function GroupEventDetailScreen({
         ) : null}
       </View>
 
+      <GroupEventRsvpPanel event={event} isSubmitting={isWorking} onRsvp={onRsvp} />
       <GroupEventSeriesRsvpPanel
         event={event}
         isSubmitting={isWorking}
         onRsvpSeries={onRsvpSeries}
       />
-      {event.is_recurring_series || event.is_recurring_occurrence ? (
-        <GroupEventFutureOccurrencesSection
-          isLoading={isLoadingFutureOccurrences}
-          occurrences={futureOccurrences}
-          onOccurrencePress={onOccurrencePress}
-        />
-      ) : null}
-      <GroupEventRsvpPanel event={event} isSubmitting={isWorking} onRsvp={onRsvp} />
       <GroupEventActivityPlanOptionsSection
         event={event}
         onActivityPlanPress={onActivityPlanPress}

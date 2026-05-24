@@ -49,12 +49,12 @@ Current runtime pieces:
 
 Before writing code, answer these questions:
 
-- Is this provider a destination for planned workouts, a source of completed activities, or both?
+- Is this provider a destination for planned activities, a source of completed activities, or both?
 - Is access public API access, partner API access, or private/approval-gated?
 - Does it use OAuth? If so, what scopes are required?
 - Does it support webhooks?
 - Does it have a publish window like Wahoo's 6-day rule?
-- Does it reject certain workout types or payload shapes?
+- Does it reject certain activity types or payload shapes?
 - Is reconciliation needed because the provider is pull-based or eventually consistent?
 
 If these answers are unclear, stop there and do research before implementing.
@@ -65,14 +65,14 @@ Do not build every direction at once.
 
 Choose one of these first:
 
-- outbound planned workouts only
+- outbound planned activities only
 - inbound completed activities only
 - OAuth connect only
 
 For most providers, the smallest useful slice is:
 
 - OAuth connect
-- one outbound publish flow for planned workouts
+- one outbound publish flow for planned activities
 - optional inbound webhook import only if the provider makes it straightforward
 
 ### 3. Add the provider to the account surface
@@ -119,7 +119,7 @@ Current shared adapter contract:
 
 Current scaffold example:
 
-- `packages/api/src/lib/provider-sync/garmin-planned-workout-adapter.ts`
+- `packages/api/src/lib/provider-sync/garmin-planned-activity-adapter.ts`
 
 Use that shape to isolate:
 
@@ -224,7 +224,7 @@ Use this checklist when onboarding any new provider.
 Wahoo is the right reference provider because it exercises the main system concerns:
 
 - OAuth account connection
-- planned workout publishing
+- planned activity publishing
 - publish horizon logic
 - webhook ingestion
 - completed activity import

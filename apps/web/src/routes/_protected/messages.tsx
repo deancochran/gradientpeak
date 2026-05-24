@@ -156,7 +156,7 @@ function MessagesPage() {
 
   useEffect(() => {
     form.reset({ content: "" });
-  }, [form, selectedId]);
+  }, [form]);
 
   useEffect(() => {
     if (!selectedId || !selectedConversation || messages.length === 0) {

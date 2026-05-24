@@ -1,8 +1,7 @@
-import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
-import React from "react";
-import { ActivityIndicator, ScrollView, TouchableOpacity, View } from "react-native";
+import type React from "react";
+import { ScrollView, TouchableOpacity, View } from "react-native";
 import { AppSelectionModal } from "@/components/shared/AppSelectionModal";
 
 type StructureSessionRow = {

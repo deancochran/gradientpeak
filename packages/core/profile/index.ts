@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { profileQuickUpdateSchema } from "../schemas";
+import type { profileQuickUpdateSchema } from "../schemas";
 
 export interface ProfileWithDob {
   dob: string | null;

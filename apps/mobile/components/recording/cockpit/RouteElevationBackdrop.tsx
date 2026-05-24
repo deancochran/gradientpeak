@@ -111,6 +111,7 @@ export function RouteElevationProfile({
       snapshot.profile,
       snapshot.progress,
       snapshot.routeDistance,
+      snapshot,
     ],
   );
   const isCompact = variant === "compact";
@@ -425,7 +426,7 @@ function interpolateProfilePoint(
 ): RouteElevationDatum | null {
   if (profilePoints.length === 0) return null;
 
-  if (currentDistanceMeters <= profilePoints[0]!.distanceMeters) return profilePoints[0]!;
+  if (currentDistanceMeters <= profilePoints[0]?.distanceMeters) return profilePoints[0]!;
 
   for (let index = 0; index < profilePoints.length - 1; index += 1) {
     const start = profilePoints[index]!;
@@ -503,18 +504,19 @@ function buildRenderedCompletedPoints(params: {
 }) {
   if (!params.currentPoint || !params.renderedPoint) return [];
 
+  const currentPoint = params.currentPoint;
   const completedPoints = params.points.filter(
-    (point) => getRenderedPointDistance(point) <= params.currentPoint!.distanceMeters,
+    (point) => getRenderedPointDistance(point) <= currentPoint.distanceMeters,
   );
 
   return [
     ...completedPoints,
     {
-      ...params.currentPoint,
+      ...currentPoint,
       x: params.renderedPoint.x,
       y: params.renderedPoint.y,
-      xValue: params.currentPoint.distanceMeters,
-      yValue: params.currentPoint.elevation,
+      xValue: currentPoint.distanceMeters,
+      yValue: currentPoint.elevation,
     },
   ];
 }

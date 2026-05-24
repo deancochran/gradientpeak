@@ -1,6 +1,7 @@
 import {
   activities,
   activityEfforts,
+  integrationCredentials,
   integrations,
   profileMetrics,
   profiles,
@@ -96,6 +97,14 @@ function createCaller(params?: {
             where: () => ({
               limit: async () => integrationRows.slice(0, 1),
               then: (resolve: (value: typeof integrationRows) => void) => resolve(integrationRows),
+            }),
+          };
+        }
+
+        if (table === integrationCredentials) {
+          return {
+            where: () => ({
+              limit: async () => [{ access_token: "wahoo-access-token", refresh_token: null }],
             }),
           };
         }

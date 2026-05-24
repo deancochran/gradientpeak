@@ -1,4 +1,3 @@
-import * as React from "react";
 import { getNativeTestProps } from "../../lib/test-props";
 import type { BadgeProps as RegistryBadgeProps } from "../../registry/native/badge";
 import {

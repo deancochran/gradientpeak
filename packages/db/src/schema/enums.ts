@@ -67,6 +67,7 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "coaching_invitation_declined",
   "new_follower",
   "follow_request",
+  "group_event_cancelled",
 ]);
 
 export const trainingEffectLabelEnum = pgEnum("training_effect_label", [

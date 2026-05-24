@@ -1,4 +1,3 @@
-import { act } from "@testing-library/react-native";
 import React from "react";
 import { createHost as mockCreateHost } from "../../../test/mock-components";
 import { renderNative, screen } from "../../../test/render-native";
@@ -25,7 +24,7 @@ jest.mock("../TrainingPlanSummaryHeader", () => ({
     React.createElement("TrainingPlanSummaryHeader", props, rightAccessory),
 }));
 
-const getAllByTypeOrEmpty = (type: string) => {
+const _getAllByTypeOrEmpty = (type: string) => {
   try {
     return (screen as any).UNSAFE_getAllByType(type);
   } catch {
@@ -33,11 +32,11 @@ const getAllByTypeOrEmpty = (type: string) => {
   }
 };
 
-const getNodeText = (children: any): string => {
+const _getNodeText = (children: any): string => {
   if (typeof children === "string") return children;
   if (typeof children === "number") return String(children);
-  if (Array.isArray(children)) return children.map((child) => getNodeText(child)).join("");
-  if (children?.props?.children !== undefined) return getNodeText(children.props.children);
+  if (Array.isArray(children)) return children.map((child) => _getNodeText(child)).join("");
+  if (children?.props?.children !== undefined) return _getNodeText(children.props.children);
   return "";
 };
 

@@ -156,8 +156,7 @@ export function AdvancedConfigSheet({
           </Pressable>
         </View>
 
-        {formData.periodization_template &&
-          formData.periodization_template.mesocycles &&
+        {formData.periodization_template?.mesocycles &&
           formData.periodization_template.mesocycles.length > 0 && (
             <View className="px-4 pt-4 pb-2">
               <FitnessProjectionChart

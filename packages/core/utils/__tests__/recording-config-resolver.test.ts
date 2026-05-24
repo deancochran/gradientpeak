@@ -239,7 +239,8 @@ describe("RecordingConfigResolver", () => {
     expect(virtualRoute.session.ui.floatingPanel.canMinimize).toBe(false);
 
     expect(routePreview.session.ui.backdropMode).toBe("route_preview");
-    expect(routePreview.session.ui.floatingPanel.canMinimize).toBe(true);
+    expect(routePreview.session.ui.floatingPanel.forcedExpanded).toBe(true);
+    expect(routePreview.session.ui.floatingPanel.canMinimize).toBe(false);
   });
 
   it("represents attached routes without geometry as unavailable", () => {
@@ -330,6 +331,8 @@ describe("RecordingConfigResolver", () => {
     expect(routeGpsDenied.session.ui.backdropMode).toBe("route_preview");
     expect(routeGpsDenied.session.degraded.gps).toBe("location_unavailable");
     expect(routeGpsDenied.session.ui.floatingPanel.availableCards).toContain("route_progress");
+    expect(routeGpsDenied.session.ui.floatingPanel.forcedExpanded).toBe(true);
+    expect(routeGpsDenied.session.ui.floatingPanel.canMinimize).toBe(false);
 
     expect(routeDetachedGpsOn.session.guidance.routeMode).toBe("none");
     expect(routeDetachedGpsOn.session.ui.backdropMode).toBe("gps_map");

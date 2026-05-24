@@ -13,7 +13,7 @@ import type {
 } from "@repo/core";
 import { isTargetTypePermittedForActivity, sortTargetsByActivityPreference } from "@repo/core";
 import type { ActivityType } from "./activity-type-utils";
-import { isWahooSupported, toWahooTypes } from "./activity-type-utils";
+import { toWahooTypes } from "./activity-type-utils";
 
 export interface WahooPlanJson {
   header: {
@@ -209,7 +209,7 @@ function convertIntervals(intervals: IntervalV2[], options: ConvertOptions): Wah
 
       // Add all steps in the interval as the pattern
       for (const step of interval.steps) {
-        repeatInterval.intervals!.push(convertStep(step, options));
+        repeatInterval.intervals?.push(convertStep(step, options));
       }
 
       wahooIntervals.push(repeatInterval);

@@ -1,4 +1,4 @@
-import { Button } from "@repo/ui/components/button";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { type RefObject, useEffect, useMemo, useRef } from "react";
 import { Alert } from "react-native";
@@ -16,7 +16,7 @@ type ActivityPlanComposerProcessParams = {
   notes: string;
   routeId: string | null;
   structure: unknown;
-  submit: () => void | Promise<unknown>;
+  submit: () => undefined | Promise<unknown>;
 };
 
 export function useActivityPlanComposerProcess({
@@ -85,14 +85,17 @@ export function useActivityPlanComposerProcess({
     navigation.setOptions({
       title: isEditMode ? "Edit Activity Plan" : "Create Activity Plan",
       headerRight: () => (
-        <Button
+        <LoadingButton
           variant="ghost"
           size="sm"
           onPress={submit}
           disabled={!canSubmit || isLoading || isSubmitting}
+          loading={isSubmitting}
+          loadingLabel="Saving..."
+          loadingTextClassName="text-primary"
         >
-          <Text className="text-primary font-semibold">{isSubmitting ? "Saving..." : "Save"}</Text>
-        </Button>
+          <Text className="text-primary font-semibold">Save</Text>
+        </LoadingButton>
       ),
     });
   }, [navigation, isEditMode, submit, canSubmit, isLoading, isSubmitting]);

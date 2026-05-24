@@ -1,14 +1,12 @@
 // auth-hooks.ts - Separate file for auth hooks that use API
 
-import React, { useCallback, useEffect, useMemo, useRef } from "react";
-import { AppState } from "react-native";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   deleteMobileAccount,
   updateMobileEmail,
   updateMobilePassword,
 } from "@/lib/auth/account-management";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
-import { refreshMobileAuthSession } from "@/lib/auth/client";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { api } from "../api";
 
@@ -25,7 +23,7 @@ export const useAuth = () => {
   const { session, user, ready, loading } = store;
 
   const isAuthenticated = useMemo(() => !!session?.user, [session]);
-  const hasAuthCredentials = useMemo(() => hasSessionAuthCredentials(), [session]);
+  const hasAuthCredentials = useMemo(() => hasSessionAuthCredentials(), []);
 
   // Compute verification status directly from user object
   // This is more reliable than the RPC for initial email verification
@@ -62,22 +60,6 @@ export const useAuth = () => {
       retry: false,
     },
   );
-
-  useEffect(() => {
-    if (!AppState?.addEventListener) {
-      return;
-    }
-
-    const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active" && isAuthenticated) {
-        void refreshMobileAuthSession();
-      }
-    });
-
-    return () => {
-      subscription.remove();
-    };
-  }, [isAuthenticated]);
 
   // FIX: Sync profile from API to store - use ref to track if we've already synced this data
   const lastSyncedProfileId = useRef<string | null>(null);
@@ -120,7 +102,14 @@ export const useAuth = () => {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profileQuery.data, profileQuery.isError, isAuthenticated]); // Don't include store methods
+  }, [
+    profileQuery.data,
+    profileQuery.isError,
+    isAuthenticated,
+    store.onboardingStatus,
+    store.setOnboardingStatus,
+    store.setProfile,
+  ]); // Don't include store methods
 
   // FIX: Delete account - stable callback
   const deleteAccount = useCallback(async () => {

@@ -14,8 +14,9 @@ type GroupEventListProps = {
   isLoading?: boolean;
   ListHeaderComponent?: ReactElement | null;
   onEventPress?: (event: GroupEventListItem) => void;
+  onGroupPress?: (group: NonNullable<GroupEventListItem["group"]>) => void;
   onLoadMore?: () => void;
-  onRefresh?: () => Promise<unknown> | void;
+  onRefresh?: () => Promise<unknown> | undefined;
   refreshing?: boolean;
 };
 
@@ -29,6 +30,7 @@ export function GroupEventList({
   isLoading = false,
   ListHeaderComponent,
   onEventPress,
+  onGroupPress,
   onLoadMore,
   onRefresh,
   refreshing = false,
@@ -51,7 +53,9 @@ export function GroupEventList({
       onLoadMore={onLoadMore}
       onRefresh={onRefresh}
       refreshing={refreshing}
-      renderItem={(event) => <GroupEventCard event={event} onPress={onEventPress} />}
+      renderItem={(event) => (
+        <GroupEventCard event={event} onGroupPress={onGroupPress} onPress={onEventPress} />
+      )}
       testID="group-event-list"
     />
   );

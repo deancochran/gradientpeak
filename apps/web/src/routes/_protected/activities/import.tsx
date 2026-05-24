@@ -8,6 +8,7 @@ import {
   FormTextareaField,
   FormTextField,
 } from "@repo/ui/components/form";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Upload } from "lucide-react";
@@ -170,10 +171,15 @@ function ActivityImportPage() {
                 >
                   Cancel
                 </Button>
-                <Button disabled={!selectedFile || isSubmitting} type="submit">
+                <LoadingButton
+                  disabled={!selectedFile || isSubmitting}
+                  loading={isSubmitting}
+                  loadingLabel="Importing activity..."
+                  type="submit"
+                >
                   <Upload className="mr-2 h-4 w-4" />
-                  {isSubmitting ? "Importing activity..." : "Import activity"}
-                </Button>
+                  Import activity
+                </LoadingButton>
               </div>
             </form>
           </Form>

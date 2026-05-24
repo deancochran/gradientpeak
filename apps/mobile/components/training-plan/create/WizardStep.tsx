@@ -2,7 +2,7 @@ import { Button } from "@repo/ui/components/button";
 import { Progress } from "@repo/ui/components/progress";
 import { Text } from "@repo/ui/components/text";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
-import React from "react";
+import type React from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 
 interface WizardStepProps {

@@ -1,9 +1,8 @@
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { AlertCircle, AlertTriangle, X } from "lucide-react-native";
-import React from "react";
 import { TouchableOpacity, View } from "react-native";
-import { SmartSuggestion } from "@/lib/hooks/useSmartSuggestions";
+import type { SmartSuggestion } from "@/lib/hooks/useSmartSuggestions";
 
 interface TrainingPlanAdjustmentAlertProps {
   suggestion: SmartSuggestion;

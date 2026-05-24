@@ -26,7 +26,7 @@ export function WeeklyPlanPreview({
   onActivityPress,
   onViewAll,
 }: WeeklyPlanPreviewProps) {
-  const getStatusBadgeColor = (status: string) => {
+  const _getStatusBadgeColor = (status: string) => {
     switch (status) {
       case "completed":
         return "bg-green-500/20 border-green-500";

@@ -9,7 +9,7 @@ import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { CircleAlert, Minus, Plus, Trash2 } from "lucide-react-native";
 import { Pressable, View } from "react-native";
-import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
+import { TimelineChart } from "@/components/activity-plan/workout/TimelineChart";
 import { getDurationMs } from "@/lib/utils/durationConversion";
 
 interface IntervalIssueSummary {

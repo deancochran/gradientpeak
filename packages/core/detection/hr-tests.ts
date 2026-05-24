@@ -123,7 +123,7 @@ export function detectHRRampTest(
 
   // Look for progressive HR increase over 10-30 minutes
   for (let i = 0; i < hrStream.length; i++) {
-    const startHR = hrStream[i];
+    const _startHR = hrStream[i];
     const startTime = timestamps[i];
     if (startTime === undefined) continue;
 

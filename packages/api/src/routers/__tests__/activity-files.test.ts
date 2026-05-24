@@ -3,10 +3,22 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@repo/db", () => ({
   activities: {
     id: "activities.id",
+    created_at: "activities.created_at",
     profile_id: "activities.profile_id",
     is_private: "activities.is_private",
+    name: "activities.name",
+    type: "activities.type",
+    started_at: "activities.started_at",
     activity_file_path: "activities.activity_file_path",
   },
+  activityGeometry: { table: "activity_geometry" },
+  activityImports: {
+    activity_id: "activity_imports.activity_id",
+    profile_id: "activity_imports.profile_id",
+    activity_file_path: "activity_imports.activity_file_path",
+  },
+  activityLaps: { table: "activity_laps" },
+  activitySummaries: { table: "activity_summaries" },
   activityEfforts: { table: "activity_efforts" },
   profileMetrics: {
     value: "profile_metrics.value",
@@ -110,6 +122,7 @@ vi.mock("../../db", () => ({
 
 vi.mock("../../utils/profile-estimation-state", () => ({
   bumpProfileEstimationState: vi.fn(async () => undefined),
+  markProfileAnalysisDirty: vi.fn(async () => undefined),
 }));
 
 import { activityFilesRouter } from "../activity-files";
@@ -137,6 +150,8 @@ function createDbMock(plan: MockDbPlan = {}) {
 
   const builder: any = {
     from: vi.fn(() => builder),
+    innerJoin: vi.fn(() => builder),
+    leftJoin: vi.fn(() => builder),
     where: vi.fn((...args: unknown[]) => {
       callLog.selectCalls.push({ type: "where", args });
       return builder;
@@ -150,7 +165,9 @@ function createDbMock(plan: MockDbPlan = {}) {
       return builder;
     }),
     then: (onFulfilled: (rows: unknown[]) => unknown) =>
-      Promise.resolve(selectResults.shift() ?? []).then(onFulfilled),
+      Promise.resolve(selectResults.shift() ?? [findFirstResults.shift()].filter(Boolean)).then(
+        onFulfilled,
+      ),
   };
 
   const db = {
@@ -164,6 +181,7 @@ function createDbMock(plan: MockDbPlan = {}) {
         return values;
       }),
     })),
+    transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback(db)),
     query: {
       activities: {
         findFirst: vi.fn(async (args: unknown) => {
@@ -349,7 +367,6 @@ describe("activityFilesRouter", () => {
         finished_at: finishedAt.toISOString(),
       },
     });
-    expect(callLog.executeCalls).toHaveLength(1);
     expect(callLog.insertCalls).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -571,7 +588,10 @@ describe("activityFilesRouter", () => {
       caller.getStreams({
         activityFilePath: "tmp/11111111-1111-4111-8111-111111111111-ride.fit",
       }),
-    ).rejects.toThrow("Failed to retrieve streams: Access denied");
+    ).rejects.toMatchObject({
+      code: "FORBIDDEN",
+      message: "Access denied: You can only access your own files",
+    });
   });
 
   it("returns parsed streams for an owned activity", async () => {

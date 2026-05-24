@@ -14,7 +14,7 @@ import {
   type RecordingTrainerIntentSource,
 } from "@repo/core";
 import { Buffer } from "buffer";
-import { Device } from "react-native-ble-plx";
+import type { Device } from "react-native-ble-plx";
 import { decodeBase64ToBytes, toDataView } from "./ble-bytes";
 import { DeviceGattQueueRegistry } from "./DeviceGattQueue";
 import type { RecordingTrainerCommandStatus } from "./types";
@@ -1069,7 +1069,7 @@ export class FTMSController {
         console.warn(`[FTMS] Write attempt ${attempt + 1} failed:`, error);
 
         if (attempt < retries - 1) {
-          const delay = Math.pow(2, attempt) * 500;
+          const delay = 2 ** attempt * 500;
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }
@@ -1245,13 +1245,13 @@ export class FTMSController {
               const opCode = bytes[0];
 
               const statusMessages: Record<number, string> = {
-                0x01: "Reset",
-                0x02: "Stopped by user",
-                0x03: "Stopped by safety key",
-                0x04: "Started by user",
-                0x07: "Target resistance changed",
-                0x08: "Target power changed",
-                0x12: "Indoor bike simulation parameters changed",
+                1: "Reset",
+                2: "Stopped by user",
+                3: "Stopped by safety key",
+                4: "Started by user",
+                7: "Target resistance changed",
+                8: "Target power changed",
+                18: "Indoor bike simulation parameters changed",
               };
 
               const message = statusMessages[opCode] || `Unknown status (0x${opCode.toString(16)})`;

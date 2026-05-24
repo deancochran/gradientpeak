@@ -118,7 +118,7 @@ function ProfileInviteRow({
           <Avatar alt={displayName} className="h-10 w-10">
             {profile.avatar_url ? <AvatarImage source={{ uri: profile.avatar_url }} /> : null}
             <AvatarFallback>
-              <Text className="text-sm font-semibold text-foreground">
+              <Text className="text-sm font-semibold text-muted-foreground">
                 {displayName.charAt(0).toUpperCase()}
               </Text>
             </AvatarFallback>

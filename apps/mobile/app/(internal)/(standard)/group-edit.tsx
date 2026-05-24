@@ -1,4 +1,4 @@
-import { Button } from "@repo/ui/components/button";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useRef } from "react";
@@ -58,16 +58,17 @@ export default function GroupEditScreen() {
       <Stack.Screen
         options={{
           headerRight: () => (
-            <Button
+            <LoadingButton
               disabled={isSubmitting}
+              loading={isSubmitting}
+              loadingLabel="Saving..."
+              loadingTextClassName="text-primary"
               onPress={() => formRef.current?.submit()}
               size="sm"
               variant="ghost"
             >
-              <Text className="text-sm font-semibold text-primary">
-                {isSubmitting ? "Saving..." : "Save"}
-              </Text>
-            </Button>
+              <Text className="text-sm font-semibold text-primary">Save</Text>
+            </LoadingButton>
           ),
         }}
       />
@@ -77,11 +78,13 @@ export default function GroupEditScreen() {
           group={detailVm.group}
           isSubmitting={isSubmitting}
           onSubmit={async (values) => {
+            if (!detailVm.group?.id) return;
+
             try {
-              await groupActions.updateGroup({ ...values, groupId: detailVm.group!.id });
+              await groupActions.updateGroup({ ...values, groupId: detailVm.group.id });
               router.replace({
                 pathname: "/group-detail",
-                params: { groupId: detailVm.group!.id },
+                params: { groupId: detailVm.group.id },
               });
             } catch (error) {
               Alert.alert(

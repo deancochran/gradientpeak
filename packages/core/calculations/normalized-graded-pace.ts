@@ -163,9 +163,9 @@ export function calculateNGP(gradedSpeedStream: number[]): number {
   // 4. 4th root.
   // This matches the NP algorithm structure.
 
-  const raisedTo4th = rollingAverages.map((avg) => Math.pow(avg, 4));
+  const raisedTo4th = rollingAverages.map((avg) => avg ** 4);
   const avgOf4th = raisedTo4th.reduce((sum, val) => sum + val, 0) / raisedTo4th.length;
-  const normalizedSpeed = Math.pow(avgOf4th, 1 / 4);
+  const normalizedSpeed = avgOf4th ** (1 / 4);
 
   return normalizedSpeed;
 }

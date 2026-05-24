@@ -1,7 +1,7 @@
-import {
-  type ActivityPlanStructureV2,
-  type IntervalStepV2,
-  type RecordingServiceActivityPlan,
+import type {
+  ActivityPlanStructureV2,
+  IntervalStepV2,
+  RecordingServiceActivityPlan,
 } from "@repo/core";
 
 export function expandPlanSteps(plan: RecordingServiceActivityPlan): IntervalStepV2[] {

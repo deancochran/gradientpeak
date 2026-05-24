@@ -12,7 +12,7 @@ import { skipToken, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { CheckCircle2, Ellipsis } from "lucide-react-native";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native";
 import {
   type CreateEventDefaults,
@@ -278,9 +278,10 @@ export default function EventDetailScreen() {
 
   const recurring = useMemo(() => isRecurringEvent(event), [event]);
   const isReadOnlyImported = !startsInCreateMode && event?.event_type === "imported";
-  const isPlannedEvent = !startsInCreateMode && event?.event_type === "planned";
-  const updateSupportsRecurrence = event?.event_type !== "planned";
   const activityPlan = event?.activity_plan as any;
+  const hasActivityPlan = Boolean(activityPlan?.id);
+  const isPlannedEvent = !startsInCreateMode && event?.event_type === "planned" && hasActivityPlan;
+  const updateSupportsRecurrence = !isPlannedEvent;
   const comments = useEntityCommentsController({ entityId: event?.id, entityType: "event" });
   const { data: sourceTrainingPlan } = api.trainingPlans.getById.useQuery(
     event?.training_plan_id ? { id: event.training_plan_id } : skipToken,
@@ -292,12 +293,12 @@ export default function EventDetailScreen() {
   const completed = isPlannedEvent ? isActivityCompleted(event) : false;
   const activityType = activityPlan?.activity_category || "other";
   const activityColor = getActivityColor(activityType);
-  const detailTitle = startsInCreateMode
+  const _detailTitle = startsInCreateMode
     ? "Create Event"
     : isPlannedEvent
       ? "Schedule details"
       : "Event details";
-  const detailSubtitle = startsInCreateMode
+  const _detailSubtitle = startsInCreateMode
     ? "choose event type"
     : event
       ? `${formatEventType(event.event_type)}${isPlannedEvent && activityColor.name ? ` · ${activityColor.name}` : ""}${recurring ? " · recurring" : ""}`
@@ -536,81 +537,65 @@ export default function EventDetailScreen() {
         ) : null}
 
         {!startsInCreateMode ? (
-          <Card className="rounded-3xl border border-border bg-card">
-            <CardContent className="p-4 gap-4">
-              <Text className="text-3xl font-semibold text-foreground">{displayTitle}</Text>
-              {statusLabel ? <EventStatusPill label={statusLabel} /> : null}
-              <View className="rounded-2xl bg-primary/10 px-4 py-3">
-                <Text className="text-sm font-semibold text-primary">Schedule</Text>
-                <Text className="mt-0.5 text-sm text-primary/80">
-                  {formatScheduleDateLabel(displayStartsAt)}
-                </Text>
-                <Text className="mt-1 text-xs font-medium uppercase tracking-wide text-primary/80">
-                  {formatEventTimeRange({
-                    all_day: displayAllDay,
-                    starts_at: displayStartsAt.toISOString(),
-                    ends_at: event?.ends_at ?? null,
-                  })}
-                </Text>
-              </View>
-              {displayNotes.trim().length > 0 ? (
-                <View className="rounded-2xl bg-muted/30 px-4 py-3">
-                  <Text className="text-sm leading-5 text-muted-foreground">{displayNotes}</Text>
-                </View>
-              ) : null}
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {!startsInCreateMode && event && (recurring || event.training_plan_id) ? (
-          <View className="gap-3 rounded-2xl border border-border bg-muted/10 px-4 py-3">
-            {recurring ? (
-              <View className="flex-row items-center justify-between gap-3">
-                <Text className="text-xs text-muted-foreground">Repeats</Text>
-                <Text className="text-sm font-medium text-foreground">
-                  {formatScheduleRepeatLabel(event, recurring)}
-                </Text>
-              </View>
-            ) : null}
-            {event.training_plan_id ? (
+          <View className="gap-4 rounded-3xl bg-card p-5">
+            {event?.training_plan_id ? (
               <Pressable
                 className="flex-row items-center justify-between gap-3"
                 onPress={handleOpenSourceTrainingPlan}
                 testID="event-detail-source-training-plan"
               >
-                <Text className="text-xs text-muted-foreground">Source</Text>
-                <Text className="text-sm font-medium text-foreground">
-                  {sourceTrainingPlan?.name ?? "Training plan"}
-                </Text>
+                <View className="min-w-0 flex-1 gap-0.5">
+                  <Text className="text-xs font-semibold uppercase tracking-wide text-primary">
+                    Source
+                  </Text>
+                  <Text className="text-sm font-medium text-foreground" numberOfLines={1}>
+                    {sourceTrainingPlan?.name ?? "Training plan"}
+                  </Text>
+                </View>
+                <Text className="text-xs font-semibold text-primary">Open</Text>
               </Pressable>
+            ) : null}
+
+            <View className="gap-2">
+              <View className="flex-row flex-wrap gap-2">
+                {statusLabel ? <EventStatusPill label={statusLabel} /> : null}
+                {recurring ? <EventStatusPill label="Recurring" /> : null}
+              </View>
+              <Text className="text-3xl font-semibold text-foreground">{displayTitle}</Text>
+            </View>
+
+            <View className="gap-1">
+              <Text className="text-sm font-medium text-foreground">
+                {formatScheduleDateLabel(displayStartsAt)}
+              </Text>
+              <Text className="text-sm text-muted-foreground">
+                {formatEventTimeRange({
+                  all_day: displayAllDay,
+                  starts_at: displayStartsAt.toISOString(),
+                  ends_at: event?.ends_at ?? null,
+                })}
+              </Text>
+              {recurring ? (
+                <Text className="text-sm text-muted-foreground">
+                  {formatScheduleRepeatLabel(event, recurring)}
+                </Text>
+              ) : null}
+            </View>
+
+            {displayNotes.trim().length > 0 ? (
+              <Text className="text-sm leading-6 text-muted-foreground">{displayNotes}</Text>
             ) : null}
           </View>
         ) : null}
 
         {!startsInCreateMode && activityPlan ? (
-          <View className="gap-2">
-            {!isReadOnlyImported ? (
-              <View className="flex-row gap-2">
-                <Button
-                  className="flex-1"
-                  variant="outline"
-                  onPress={() => setActivityPlanPickerOpen(true)}
-                  disabled={updateEventMutation.isPending}
-                  testID="event-detail-change-activity-plan-button"
-                >
-                  <Text className="text-foreground">Change Plan</Text>
-                </Button>
-                <Button
-                  className="flex-1"
-                  variant="outline"
-                  onPress={handleRemoveActivityPlan}
-                  disabled={updateEventMutation.isPending}
-                  testID="event-detail-remove-activity-plan-button"
-                >
-                  <Text className="text-foreground">Remove Plan</Text>
-                </Button>
-              </View>
-            ) : null}
+          <View className="gap-3 rounded-2xl bg-card p-4">
+            <View className="gap-0.5">
+              <Text className="text-base font-semibold text-foreground">Workout</Text>
+              <Text className="text-sm text-muted-foreground">
+                Open the linked plan to review the session details.
+              </Text>
+            </View>
             <ActivityPlanCard
               activityPlan={activityPlan as any}
               onPress={handleOpenPlanDetail}

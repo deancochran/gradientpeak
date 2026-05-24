@@ -18,6 +18,7 @@ import {
 import { TRPCError } from "@trpc/server";
 import { and, asc, count, desc, eq, gt, ilike, inArray, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
+import type { Context } from "../context";
 import { getRequiredDb } from "../db";
 import { createEventReadRepository } from "../infrastructure/repositories";
 import { createContentAccessPermissions } from "../permissions/content-access";
@@ -28,7 +29,7 @@ import {
   getActivityPlansDerivedMetrics,
 } from "../utils/activity-plan-derived-metrics";
 import { computePlanMetrics } from "../utils/estimation-helpers";
-import { loadProfileIdentityMap, profileIdentitySchema } from "../utils/profile-identity";
+import { loadProfileIdentityMap, type profileIdentitySchema } from "../utils/profile-identity";
 
 // Input schemas for queries
 const uuidSchema = z.string().uuid();
@@ -132,8 +133,8 @@ function validateStructure(structure: unknown, activityCategory?: ActivityTarget
   }
 }
 
-function getEstimationStore(ctx: { db?: unknown }) {
-  return createEventReadRepository(getRequiredDb(ctx as never));
+function getEstimationStore(ctx: Context) {
+  return createEventReadRepository(getRequiredDb(ctx));
 }
 
 const createActivityPlanInput = activityPlanCreateSchema.safeExtend({
@@ -154,7 +155,19 @@ const updateActivityPlanWithIdInput = updateActivityPlanInput
   .safeExtend({
     id: uuidSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((input, ctx) => {
+    const updateKeys = Object.entries(input).filter(
+      ([key, value]) =>
+        key !== "id" && !(key === "version" && value === "1.0") && value !== undefined,
+    );
+    if (updateKeys.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "At least one activity plan update field is required",
+      });
+    }
+  });
 
 const importedTemplateInput = z
   .object({
@@ -403,38 +416,48 @@ export const activityPlansRouter = createTRPCRouter({
     const pageRows = hasMore ? parsedRows.slice(0, limit) : parsedRows;
     const items = pageRows.map(serializeActivityPlanRow);
 
-    const itemsWithOptionalEstimation: DiscoverListActivityPlan[] = input.includeEstimation
-      ? await getActivityPlansDerivedMetrics(items, db, estimationStore, ctx.session.user.id)
-      : items.map((plan) => ({
-          ...plan,
-          estimated_calories: undefined,
-          estimated_zones: undefined,
-          confidence: undefined,
-          confidence_score: undefined,
-          authoritative_metrics: undefined,
-          route: undefined,
-        }));
-    const planIds = itemsWithOptionalEstimation.map((plan) => plan.id);
+    const planIds = items.map((plan) => plan.id);
+    const itemsWithOptionalEstimationPromise: Promise<DiscoverListActivityPlan[]> =
+      input.includeEstimation
+        ? getActivityPlansDerivedMetrics(items, db, estimationStore, ctx.session.user.id)
+        : Promise.resolve(
+            items.map((plan) => ({
+              ...plan,
+              estimated_calories: undefined,
+              estimated_zones: undefined,
+              confidence: undefined,
+              confidence_score: undefined,
+              authoritative_metrics: undefined,
+              route: undefined,
+            })),
+          );
+    const userLikeRowsPromise =
+      planIds.length > 0
+        ? db
+            .select({ entity_id: likes.entity_id })
+            .from(likes)
+            .where(
+              and(
+                eq(likes.profile_id, ctx.session.user.id),
+                eq(likes.entity_type, "activity_plan"),
+                inArray(likes.entity_id, planIds),
+              ),
+            )
+        : Promise.resolve([]);
+    const profileIdentityMapPromise = loadProfileIdentityMap(
+      db,
+      items.map((plan) => plan.profile_id),
+    );
 
-    let userLikes: string[] = [];
-
-    if (planIds.length > 0) {
-      const likeRows = await db
-        .select({ entity_id: likes.entity_id })
-        .from(likes)
-        .where(
-          and(
-            eq(likes.profile_id, ctx.session.user.id),
-            eq(likes.entity_type, "activity_plan"),
-            inArray(likes.entity_id, planIds),
-          ),
-        );
-
-      userLikes = z
-        .array(activityPlanLikeRowSchema)
-        .parse(likeRows)
-        .map((row) => row.entity_id);
-    }
+    const [itemsWithOptionalEstimation, likeRows, profileIdentityMap] = await Promise.all([
+      itemsWithOptionalEstimationPromise,
+      userLikeRowsPromise,
+      profileIdentityMapPromise,
+    ]);
+    const userLikes = z
+      .array(activityPlanLikeRowSchema)
+      .parse(likeRows)
+      .map((row) => row.entity_id);
 
     let nextCursor: string | undefined;
     if (hasMore && pageRows.length > 0) {
@@ -448,11 +471,6 @@ export const activityPlansRouter = createTRPCRouter({
         nextCursor = `${lastItem.created_at.toISOString()}_${lastItem.id}`;
       }
     }
-
-    const profileIdentityMap = await loadProfileIdentityMap(
-      db,
-      itemsWithOptionalEstimation.map((plan) => plan.profile_id),
-    );
 
     return {
       items: itemsWithOptionalEstimation.map((plan) => ({
@@ -689,7 +707,7 @@ export const activityPlansRouter = createTRPCRouter({
         }
       }
 
-      let metricsUpdates: Partial<ActivityPlanInsert> = {};
+      const metricsUpdates: Partial<ActivityPlanInsert> = {};
       if (updates.structure || updates.route_id !== undefined || updates.activity_category) {
         await computePlanMetrics(
           {

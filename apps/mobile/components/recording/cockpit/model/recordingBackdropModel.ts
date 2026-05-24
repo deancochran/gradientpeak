@@ -69,26 +69,6 @@ function buildMapKey(params: {
   ].join(":");
 }
 
-export function getBackdropTint(mode: RecordingBackdropModel["mode"]) {
-  switch (mode) {
-    case "live_navigation":
-      return "bg-emerald-950";
-    case "virtual_route":
-      return "bg-indigo-950";
-    case "route_preview":
-      return "bg-slate-900";
-    case "route_unavailable":
-      return "bg-amber-950";
-    case "gps_map":
-      return "bg-sky-950";
-    case "gps_unavailable":
-      return "bg-slate-950";
-    case "ambient":
-    default:
-      return "bg-zinc-950";
-  }
-}
-
 export function getMapBackdropDetail(mode: RecordingBackdropModel["mode"]) {
   if (mode === "live_navigation") return "Live GPS and route geometry are driving the map layer.";
   if (mode === "virtual_route")
@@ -141,7 +121,6 @@ function getBackdropCopy(mode: RecordingBackdropModel["mode"]) {
         label: "GPS unavailable",
         description: "GPS capture is requested, but location is not available yet.",
       };
-    case "ambient":
     default:
       return {
         label: "Indoor focus",

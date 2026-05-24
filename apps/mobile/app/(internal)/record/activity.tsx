@@ -15,7 +15,7 @@ import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { router } from "expo-router";
 import { Activity, Bike, Check, Dumbbell, Footprints, Waves } from "lucide-react-native";
-import React, { useState } from "react";
+import { useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { useActivityStatus, useRecordingState } from "@/lib/hooks/useActivityRecorder";
 import { useRecordingSessionContract } from "@/lib/hooks/useRecordingConfig";

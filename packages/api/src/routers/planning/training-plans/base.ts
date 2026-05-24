@@ -19,8 +19,7 @@ import {
   creationBehaviorControlsV1Schema,
   creationConfigValueSchema,
   creationConstraintsSchema,
-  creationNormalizationInputSchema,
-  creationWeekDayEnum,
+  type creationNormalizationInputSchema,
   deriveCreationContext,
   deriveCreationSuggestions,
   deriveNoHistoryGoalTierFromTargets,
@@ -53,8 +52,7 @@ import {
   type ProjectionRecoverySegment,
   parseDateOnlyUtc,
   parseProfileGoalRecord,
-  persistedTrainingPlanStructureSchema,
-  postCreateBehaviorSchema,
+  type postCreateBehaviorSchema,
   previewCreationConfigInputSchema,
   type ReadinessDailyLoadInput,
   type ReadinessDeltaDiagnostics,
@@ -67,7 +65,6 @@ import {
   templateApplyInputSchema,
   trainingPlanCalibrationConfigSchema,
   trainingPlanCreateInputSchema,
-  trainingPlanCreateSchema,
   trainingPlanCreationConfigFormSchema,
   trainingPlanSchema,
   trainingPlanUpdateInputSchema,
@@ -80,13 +77,32 @@ import {
   type TrainingPlanRow,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, asc, desc, eq, gte, inArray, isNotNull, lt, lte, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, lt, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
+  applyQuickAdjustmentUseCase,
+  applyTrainingPlanTemplateUseCase,
+  auditTrainingPlanTemplateHealthUseCase,
+  autoAddPeriodizationUseCase,
   createFromCreationConfigUseCase,
+  createTrainingPlanUseCase,
+  deleteTrainingPlanUseCase,
+  duplicateTrainingPlanUseCase,
+  getActivePlanUseCase,
   getCreationSuggestionsUseCase,
+  getTrainingPlanByIdUseCase,
+  getTrainingPlanTemplateUseCase,
+  getTrainingPlanUseCase,
+  listTrainingPlansUseCase,
+  listTrainingPlanTemplatesUseCase,
   previewCreationConfigUseCase,
+  regenerateAppliedScheduleUseCase,
+  removeAppliedScheduleUseCase,
+  shiftAppliedScheduleUseCase,
+  trainingPlanExistsUseCase,
+  updateActivePlanStatusUseCase,
   updateFromCreationConfigUseCase,
+  updateTrainingPlanUseCase,
 } from "../../../application/training-plan";
 import { getRequiredDb } from "../../../db";
 import { createTrainingPlanRepository } from "../../../infrastructure";
@@ -99,20 +115,11 @@ import {
   buildDynamicStressSeries,
 } from "../../../lib/activity-analysis";
 import { featureFlags } from "../../../lib/features";
-import { enqueuePlannedWorkoutSyncAfterCalendarMutation } from "../../../lib/provider-sync/planned-workouts";
-import {
-  createContentAccessPermissions,
-  needsContentGrantForRow,
-} from "../../../permissions/content-access";
+import { createContentAccessPermissions } from "../../../permissions/content-access";
 import { createTRPCRouter, protectedProcedure } from "../../../trpc";
 import { getActivityPlansDerivedMetrics } from "../../../utils/activity-plan-derived-metrics";
 import { addEstimationToPlans } from "../../../utils/estimation-helpers";
-import {
-  buildIndexPageInfo,
-  indexCursorSchema,
-  parseIndexCursor,
-} from "../../../utils/index-cursor";
-import { loadProfileIdentityMap, profileIdentitySchema } from "../../../utils/profile-identity";
+import { indexCursorSchema } from "../../../utils/index-cursor";
 
 const feasibilityStateSchema = z.enum(["feasible", "aggressive", "unsafe"]);
 const safetyStateSchema = z.enum(["safe", "caution", "exceeded"]);
@@ -122,7 +129,15 @@ const trainingPlanUpdateMutationInputSchema = trainingPlanUpdateInputSchema
     id: z.string().uuid(),
     template_visibility: trainingPlanTemplateVisibilitySchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((input, ctx) => {
+    if (Object.keys(input).length === 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "At least one training plan update field is required",
+      });
+    }
+  });
 const applyQuickAdjustmentInputSchema = z
   .object({
     id: z.string().uuid(),
@@ -147,56 +162,27 @@ type ProfileGoalSqlRow = Pick<
 
 type TrainingPlanCountRow = { value: number | string };
 
-async function enqueuePlannedWorkoutSyncForCalendarWrite(input: {
-  db: DbClient;
-  eventIds: string[];
-  operation: "publish" | "unsync";
-  profileId: string;
-}) {
-  try {
-    await enqueuePlannedWorkoutSyncAfterCalendarMutation(input);
-  } catch (error) {
-    console.error("Failed to enqueue planned workout sync after calendar write:", error);
-  }
-}
-
 const activitySummaryColumns = {
   id: schema.activities.id,
   type: schema.activities.type,
   started_at: schema.activities.started_at,
   finished_at: schema.activities.finished_at,
-  duration_seconds: schema.activities.duration_seconds,
-  moving_seconds: schema.activities.moving_seconds,
-  distance_meters: schema.activities.distance_meters,
-  avg_heart_rate: schema.activities.avg_heart_rate,
-  max_heart_rate: schema.activities.max_heart_rate,
-  avg_power: schema.activities.avg_power,
-  max_power: schema.activities.max_power,
-  avg_speed_mps: schema.activities.avg_speed_mps,
-  max_speed_mps: schema.activities.max_speed_mps,
-  normalized_power: schema.activities.normalized_power,
-  normalized_speed_mps: schema.activities.normalized_speed_mps,
-  normalized_graded_speed_mps: schema.activities.normalized_graded_speed_mps,
+  duration_seconds: schema.activitySummaries.duration_seconds,
+  moving_seconds: schema.activitySummaries.moving_seconds,
+  distance_meters: schema.activitySummaries.distance_meters,
+  avg_heart_rate: schema.activitySummaries.avg_heart_rate,
+  max_heart_rate: schema.activitySummaries.max_heart_rate,
+  avg_power: schema.activitySummaries.avg_power,
+  max_power: schema.activitySummaries.max_power,
+  avg_speed_mps: schema.activitySummaries.avg_speed_mps,
+  max_speed_mps: schema.activitySummaries.max_speed_mps,
+  normalized_power: schema.activitySummaries.normalized_power,
+  normalized_speed_mps: schema.activitySummaries.normalized_speed_mps,
+  normalized_graded_speed_mps: schema.activitySummaries.normalized_graded_speed_mps,
 } as const;
 
 function getSqlRows<T>(result: unknown) {
   return ((result as { rows?: T[] }).rows ?? []) as T[];
-}
-
-function parseTrainingPlanStructureOrThrow(input: {
-  value: unknown;
-  message: string;
-}): z.infer<typeof trainingPlanSchema> {
-  const parsed = trainingPlanSchema.safeParse(input.value);
-  if (parsed.success) {
-    return parsed.data;
-  }
-
-  throw new TRPCError({
-    code: "BAD_REQUEST",
-    message: input.message,
-    cause: parsed.error,
-  });
 }
 
 async function getAccessibleTrainingPlan(input: {
@@ -243,7 +229,7 @@ async function getProfileTrainingSettingsRow(input: {
   return getSqlRows<ProfileTrainingSettingsSqlRow>(result)[0] ?? null;
 }
 
-async function getOwnedTrainingPlan(input: {
+async function _getOwnedTrainingPlan(input: {
   db: DbClient;
   planId: string;
   profileId: string;
@@ -305,7 +291,7 @@ async function listTrainingPlans(input: {
   return getSqlRows<TrainingPlanRow>(result);
 }
 
-async function countOwnedTrainingPlans(db: DbClient, profileId: string): Promise<number> {
+async function _countOwnedTrainingPlans(db: DbClient, profileId: string): Promise<number> {
   const result = await db.execute(sql<TrainingPlanCountRow>`
     select count(*)::int as value
     from training_plans
@@ -315,7 +301,7 @@ async function countOwnedTrainingPlans(db: DbClient, profileId: string): Promise
   return Number(getSqlRows<TrainingPlanCountRow>(result)[0]?.value ?? 0);
 }
 
-async function listTrainingPlanLikedIds(input: {
+async function _listTrainingPlanLikedIds(input: {
   db: DbClient;
   profileId: string;
   planIds: string[];
@@ -338,7 +324,7 @@ async function listTrainingPlanLikedIds(input: {
   return rows.map((row) => row.entity_id);
 }
 
-async function hasTrainingPlanLike(input: {
+async function _hasTrainingPlanLike(input: {
   db: DbClient;
   profileId: string;
   planId: string;
@@ -356,258 +342,6 @@ async function hasTrainingPlanLike(input: {
     .limit(1);
 
   return rows.length > 0;
-}
-
-async function insertTrainingPlan(input: {
-  db: DbClient;
-  values: {
-    name: string;
-    description: string | null;
-    structure: Record<string, unknown>;
-    profileId: string;
-    templateVisibility?: "private" | "public";
-    isPublic?: boolean;
-  };
-}): Promise<TrainingPlanRow> {
-  const result = await input.db.execute(sql<TrainingPlanRow>`
-    insert into training_plans (
-      name,
-      description,
-      structure,
-      profile_id,
-      template_visibility,
-      is_public
-    )
-    values (
-      ${input.values.name},
-      ${input.values.description},
-      ${JSON.stringify(input.values.structure)}::jsonb,
-      ${input.values.profileId}::uuid,
-      ${input.values.templateVisibility ?? null},
-      ${input.values.isPublic ?? null}
-    )
-    returning *
-  `);
-
-  const row = getSqlRows<TrainingPlanRow>(result)[0];
-  if (!row) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Failed to save training plan" });
-  }
-  return row;
-}
-
-async function updateOwnedTrainingPlanRow(input: {
-  db: DbClient;
-  id: string;
-  profileId: string;
-  name?: string;
-  description?: string | null;
-  structure?: Record<string, unknown>;
-  templateVisibility?: "private" | "public";
-}): Promise<TrainingPlanRow | null> {
-  const updates = [sql`updated_at = now()`];
-
-  if (input.name !== undefined) updates.push(sql`name = ${input.name}`);
-  if (input.description !== undefined) updates.push(sql`description = ${input.description}`);
-  if (input.structure !== undefined) {
-    updates.push(sql`structure = ${JSON.stringify(input.structure)}::jsonb`);
-  }
-  if (input.templateVisibility !== undefined) {
-    updates.push(sql`template_visibility = ${input.templateVisibility}`);
-  }
-
-  const result = await input.db.execute(sql<TrainingPlanRow>`
-    update training_plans
-    set ${sql.join(updates, sql`, `)}
-    where id = ${input.id}::uuid
-      and profile_id = ${input.profileId}::uuid
-    returning *
-  `);
-
-  return getSqlRows<TrainingPlanRow>(result)[0] ?? null;
-}
-
-type TrainingPlanTemplateListFilters = {
-  sport?: string;
-  experience_level?: "beginner" | "intermediate" | "advanced";
-  min_weeks?: number;
-  max_weeks?: number;
-  min_sessions_per_week?: number;
-  max_sessions_per_week?: number;
-  search?: string;
-  sort_by?:
-    | "newest"
-    | "oldest"
-    | "duration_desc"
-    | "duration_asc"
-    | "sessions_desc"
-    | "sessions_asc";
-};
-
-type TrainingPlanTemplateHealthIssueCode =
-  | "invalid_persisted_structure"
-  | "legacy_structure"
-  | "missing_sport_metadata"
-  | "missing_experience_level_metadata"
-  | "missing_duration_weeks_metadata";
-
-function auditTrainingPlanTemplateStructureHealth(input: { structure: unknown }): {
-  isHealthy: boolean;
-  isPersistedCompatible: boolean;
-  isCurrentSchemaCompatible: boolean;
-  missingMetadata: Array<"sport" | "experienceLevel" | "durationWeeks">;
-  issueCodes: TrainingPlanTemplateHealthIssueCode[];
-} {
-  const persistedResult = persistedTrainingPlanStructureSchema.safeParse(input.structure);
-  const currentResult = trainingPlanCreateSchema.safeParse(input.structure);
-  const structure =
-    input.structure && typeof input.structure === "object"
-      ? (input.structure as Record<string, unknown>)
-      : null;
-
-  const missingMetadata: Array<"sport" | "experienceLevel" | "durationWeeks"> = [];
-
-  if (!Array.isArray(structure?.sport) || structure.sport.length === 0) {
-    missingMetadata.push("sport");
-  }
-
-  if (!Array.isArray(structure?.experienceLevel) || structure.experienceLevel.length === 0) {
-    missingMetadata.push("experienceLevel");
-  }
-
-  const durationWeeks =
-    structure?.durationWeeks && typeof structure.durationWeeks === "object"
-      ? (structure.durationWeeks as Record<string, unknown>)
-      : null;
-
-  if (
-    typeof durationWeeks?.recommended !== "number" ||
-    !Number.isFinite(durationWeeks.recommended)
-  ) {
-    missingMetadata.push("durationWeeks");
-  }
-
-  const issueCodes: TrainingPlanTemplateHealthIssueCode[] = [];
-
-  if (!persistedResult.success) {
-    issueCodes.push("invalid_persisted_structure");
-  } else if (!currentResult.success) {
-    issueCodes.push("legacy_structure");
-  }
-
-  if (missingMetadata.includes("sport")) {
-    issueCodes.push("missing_sport_metadata");
-  }
-
-  if (missingMetadata.includes("experienceLevel")) {
-    issueCodes.push("missing_experience_level_metadata");
-  }
-
-  if (missingMetadata.includes("durationWeeks")) {
-    issueCodes.push("missing_duration_weeks_metadata");
-  }
-
-  return {
-    isHealthy: issueCodes.length === 0,
-    isPersistedCompatible: persistedResult.success,
-    isCurrentSchemaCompatible: currentResult.success,
-    missingMetadata,
-    issueCodes,
-  };
-}
-
-function serializeTrainingPlanTemplate(t: any) {
-  return {
-    id: t.id,
-    name: t.name,
-    description: t.description,
-    sessions_per_week_target: t.sessions_per_week_target,
-    duration_hours: t.duration_hours,
-    likes_count: typeof t.likes_count === "number" ? t.likes_count : 0,
-    has_liked: Boolean(t.has_liked),
-    created_at:
-      t.created_at instanceof Date ? t.created_at.toISOString() : String(t.created_at ?? ""),
-    updated_at:
-      t.updated_at instanceof Date ? t.updated_at.toISOString() : String(t.updated_at ?? ""),
-    ...(t.structure as object),
-  };
-}
-
-async function listPublicTemplateTrainingPlans(
-  db: DbClient,
-  filters?: TrainingPlanTemplateListFilters,
-): Promise<TrainingPlanRow[]> {
-  const searchPattern = filters?.search?.trim() ? `%${filters.search.trim()}%` : null;
-  const sortClause =
-    filters?.sort_by === "oldest"
-      ? sql`created_at asc`
-      : filters?.sort_by === "duration_desc"
-        ? sql`coalesce((training_plans.structure->'durationWeeks'->>'recommended')::int, 0) desc, created_at desc`
-        : filters?.sort_by === "duration_asc"
-          ? sql`coalesce((training_plans.structure->'durationWeeks'->>'recommended')::int, 0) asc, created_at desc`
-          : filters?.sort_by === "sessions_desc"
-            ? sql`sessions_per_week_target desc nulls last, created_at desc`
-            : filters?.sort_by === "sessions_asc"
-              ? sql`sessions_per_week_target asc nulls last, created_at desc`
-              : sql`created_at desc`;
-
-  const result = await db.execute(sql<TrainingPlanRow>`
-    select
-      id,
-      name,
-      description,
-      structure,
-      sessions_per_week_target,
-      duration_hours,
-      is_system_template,
-      template_visibility,
-      likes_count,
-      created_at,
-      updated_at,
-      profile_id
-    from training_plans
-    where is_system_template = true
-      and template_visibility = 'public'
-      and (
-        ${filters?.sport ?? null}::text is null
-        or exists (
-          select 1
-          from jsonb_array_elements_text(coalesce(training_plans.structure->'sport', '[]'::jsonb)) as sport(value)
-          where sport.value = ${filters?.sport ?? null}
-        )
-      )
-      and (
-        ${filters?.experience_level ?? null}::text is null
-        or exists (
-          select 1
-          from jsonb_array_elements_text(coalesce(training_plans.structure->'experienceLevel', '[]'::jsonb)) as experience(value)
-          where experience.value = ${filters?.experience_level ?? null}
-        )
-      )
-      and (
-        ${filters?.min_weeks ?? null}::int is null
-        or coalesce((training_plans.structure->'durationWeeks'->>'recommended')::int, 0) >= ${filters?.min_weeks ?? null}
-      )
-      and (
-        ${filters?.max_weeks ?? null}::int is null
-        or coalesce((training_plans.structure->'durationWeeks'->>'recommended')::int, 0) <= ${filters?.max_weeks ?? null}
-      )
-      and (
-        ${filters?.min_sessions_per_week ?? null}::int is null
-        or coalesce(training_plans.sessions_per_week_target, 0) >= ${filters?.min_sessions_per_week ?? null}
-      )
-      and (
-        ${filters?.max_sessions_per_week ?? null}::int is null
-        or coalesce(training_plans.sessions_per_week_target, 0) <= ${filters?.max_sessions_per_week ?? null}
-      )
-      and (
-        ${searchPattern}::text is null
-        or training_plans.name ilike ${searchPattern}
-      )
-    order by ${sortClause}
-  `);
-
-  return getSqlRows<TrainingPlanRow>(result);
 }
 
 function toDayStartIso(dateOnly: string): string {
@@ -629,7 +363,7 @@ function todayStartIsoUtc(): string {
   return toDayStartIso(formatDateOnlyUtc(new Date()));
 }
 
-function todayDateOnlyUtc(): string {
+function _todayDateOnlyUtc(): string {
   return formatDateOnlyUtc(new Date());
 }
 
@@ -639,20 +373,6 @@ type ActivePlanLookup = {
   userTrainingPlanId: string | null;
   trainingPlan: TrainingPlanRow;
   nextEventAt: string;
-};
-
-type TrainingPlanApplicationMode = z.infer<typeof templateApplyInputSchema>["application_mode"];
-
-type MaterializedPlanSession = ReturnType<typeof materializePlanToEvents>[number];
-
-type MaterializedApplication = {
-  appliedPlanStartDate: string;
-  applicationMode: TrainingPlanApplicationMode;
-  includedFromDate: string | null;
-  materializedSessions: MaterializedPlanSession[];
-  skippedSessions: number;
-  snapshotStructure: Record<string, unknown>;
-  targetDate: string | null;
 };
 
 const shiftScheduledPlanInputSchema = z
@@ -668,118 +388,7 @@ const applicationScopedScheduleInputSchema = z
   })
   .strict();
 
-function buildTrainingPlanSnapshotStructure(input: {
-  applicationMode: TrainingPlanApplicationMode;
-  appliedPlanStartDate: string;
-  includedFromDate: string | null;
-  structure: Record<string, unknown>;
-  targetDate: string | null;
-}) {
-  return {
-    ...input.structure,
-    start_date: input.appliedPlanStartDate,
-    _application: {
-      applied_start_date: input.appliedPlanStartDate,
-      application_mode: input.applicationMode,
-      included_from_date: input.includedFromDate,
-      target_date: input.targetDate,
-    },
-  } satisfies Record<string, unknown>;
-}
-
-function materializeAppliedTrainingPlan(input: {
-  applicationMode: TrainingPlanApplicationMode;
-  startDate?: string;
-  targetDate?: string;
-  structure: Record<string, unknown>;
-  todayDate: string;
-}): MaterializedApplication {
-  let appliedPlanStartDate = input.startDate;
-
-  if (!appliedPlanStartDate && input.targetDate) {
-    const dummyStart = "2000-01-01";
-    const dummySessions = materializePlanToEvents(input.structure, dummyStart);
-    let maxOffsetDays = 0;
-    for (const session of dummySessions) {
-      const offset = diffDateOnlyUtcDays(dummyStart, session.scheduled_date);
-      if (offset > maxOffsetDays) {
-        maxOffsetDays = offset;
-      }
-    }
-    appliedPlanStartDate = addDaysDateOnlyUtc(input.targetDate, -maxOffsetDays);
-  }
-
-  if (!appliedPlanStartDate) {
-    appliedPlanStartDate = input.todayDate;
-  }
-
-  const materializationStructure = {
-    ...input.structure,
-    start_date: appliedPlanStartDate,
-  } satisfies Record<string, unknown>;
-  const allMaterializedSessions = materializePlanToEvents(
-    materializationStructure,
-    appliedPlanStartDate,
-  );
-  const includedFromDate =
-    input.applicationMode === "remaining"
-      ? maxDateOnlyUtc(appliedPlanStartDate, input.todayDate)
-      : null;
-  const materializedSessions = includedFromDate
-    ? allMaterializedSessions.filter((session) => session.scheduled_date >= includedFromDate)
-    : allMaterializedSessions;
-
-  return {
-    appliedPlanStartDate,
-    applicationMode: input.applicationMode,
-    includedFromDate,
-    materializedSessions,
-    skippedSessions: allMaterializedSessions.length - materializedSessions.length,
-    snapshotStructure: buildTrainingPlanSnapshotStructure({
-      applicationMode: input.applicationMode,
-      appliedPlanStartDate,
-      includedFromDate,
-      structure: input.structure,
-      targetDate: input.targetDate ?? null,
-    }),
-    targetDate: input.targetDate ?? null,
-  };
-}
-
-function maxDateOnlyUtc(left: string, right: string): string {
-  return left >= right ? left : right;
-}
-
-function getApplicationModeFromSnapshot(snapshot: unknown): TrainingPlanApplicationMode {
-  const snapshotRecord = snapshot as { _application?: { application_mode?: unknown } } | null;
-
-  if (snapshotRecord?._application?.application_mode === "remaining") {
-    return "remaining";
-  }
-
-  return "full";
-}
-
-async function getOwnedUserTrainingPlan(input: {
-  db: DbClient;
-  profileId: string;
-  userTrainingPlanId: string;
-}) {
-  const rows = await input.db
-    .select()
-    .from(schema.userTrainingPlans)
-    .where(
-      and(
-        eq(schema.userTrainingPlans.id, input.userTrainingPlanId),
-        eq(schema.userTrainingPlans.profile_id, input.profileId),
-      ),
-    )
-    .limit(1);
-
-  return rows[0] ?? null;
-}
-
-async function getActivePlanFromFutureEvents(input: {
+async function _getActivePlanFromFutureEvents(input: {
   db?: DbClient;
   supabase?: LegacyPlanningReader;
   profileId: string;
@@ -787,17 +396,21 @@ async function getActivePlanFromFutureEvents(input: {
   if (input.db) {
     const upcomingEvents = await input.db
       .select({
-        training_plan_id: schema.events.training_plan_id,
-        schedule_batch_id: schema.events.schedule_batch_id,
-        user_training_plan_id: schema.events.user_training_plan_id,
+        training_plan_id: schema.eventScheduleLinks.training_plan_id,
+        schedule_batch_id: schema.eventScheduleLinks.schedule_batch_id,
+        user_training_plan_id: schema.eventScheduleLinks.user_training_plan_id,
         starts_at: schema.events.starts_at,
       })
       .from(schema.events)
+      .innerJoin(
+        schema.eventScheduleLinks,
+        eq(schema.eventScheduleLinks.event_id, schema.events.id),
+      )
       .where(
         and(
           eq(schema.events.profile_id, input.profileId),
           eq(schema.events.event_type, plannedEventType),
-          isNotNull(schema.events.training_plan_id),
+          isNotNull(schema.eventScheduleLinks.training_plan_id),
           gte(schema.events.starts_at, new Date(todayStartIsoUtc())),
         ),
       )
@@ -904,38 +517,6 @@ async function getActivePlanFromFutureEvents(input: {
       ((nextScheduledPlanEvent as any).user_training_plan_id as string | null) ?? null,
     trainingPlan: trainingPlan as TrainingPlanRow,
     nextEventAt,
-  };
-}
-
-function withTrainingPlanIdentity<
-  T extends {
-    id: string;
-    profile_id: string | null;
-    template_visibility?: string | null;
-    is_system_template?: boolean | null;
-  },
->(plan: T) {
-  return {
-    ...plan,
-    content_type: "training_plan" as const,
-    content_id: plan.id,
-    owner_profile_id: plan.profile_id,
-    visibility:
-      plan.template_visibility === "private" || plan.template_visibility === "public"
-        ? plan.template_visibility
-        : plan.is_system_template
-          ? "public"
-          : "private",
-  };
-}
-
-function withTrainingPlanOwnerIdentity<T extends { profile_id: string | null }>(
-  plan: T,
-  profileIdentityMap: Map<string, z.infer<typeof profileIdentitySchema>>,
-) {
-  return {
-    ...plan,
-    owner: plan.profile_id ? (profileIdentityMap.get(plan.profile_id) ?? null) : null,
   };
 }
 
@@ -1186,7 +767,8 @@ function buildExpandedPlanFromMinimalGoal(
       .map((goal) => goal.id);
 
     if (isLast && goalIds.length === 0 && goals.length > 0) {
-      goalIds.push(goals[goals.length - 1]!.id);
+      const fallbackGoal = goals[goals.length - 1];
+      if (fallbackGoal) goalIds.push(fallbackGoal.id);
     }
 
     const targetWeeklyTss = Math.round(baselineWeeklyTss * tssMultiplierByPhase[phase.phase]);
@@ -1227,7 +809,7 @@ function buildExpandedPlanFromMinimalGoal(
 
   return {
     plan_type: "periodized",
-    name: goals.length === 1 ? `${goals[0]!.name} Plan` : "Multi-goal Training Plan",
+    name: goals.length === 1 ? `${goals[0]?.name} Plan` : "Multi-goal Training Plan",
     start_date: timeline.start_date,
     end_date: timeline.end_date,
     fitness_progression: {
@@ -2025,7 +1607,7 @@ function collectBlockRampWarnings(
   return uniqueReasons(warnings);
 }
 
-function findBlockForDate(
+function _findBlockForDate(
   blocks: Array<{
     name: string;
     phase: string;
@@ -2556,8 +2138,8 @@ async function loadOwnedActivityPlansForScheduleGap(input: {
     return getSqlRows<any>(result);
   }
 
-  const { data } = await input
-    .supabase!.from("activity_plans")
+  const { data } = await input.supabase
+    ?.from("activity_plans")
     .select("*")
     .eq("profile_id", input.profileId)
     .order("created_at", { ascending: false })
@@ -3032,6 +2614,7 @@ async function loadProfileGoalsWithTargetDates(input: {
         id,
         profile_id,
         title,
+        target_date,
         priority,
         activity_category,
         target_payload
@@ -3045,7 +2628,7 @@ async function loadProfileGoalsWithTargetDates(input: {
   } else if (input.supabase) {
     const { data, error } = await input.supabase
       .from("profile_goals")
-      .select("id, profile_id, title, priority, activity_category, target_payload")
+      .select("id, profile_id, title, target_date, priority, activity_category, target_payload")
       .eq("profile_id", input.profileId)
       .order("created_at", { ascending: true })
       .limit(40);
@@ -3444,6 +3027,10 @@ async function estimateCurrentCtl(input: {
     ? await input.db
         .select(activitySummaryColumns)
         .from(schema.activities)
+        .innerJoin(
+          schema.activitySummaries,
+          eq(schema.activitySummaries.activity_id, schema.activities.id),
+        )
         .where(
           and(
             eq(schema.activities.profile_id, profileId),
@@ -3776,6 +3363,10 @@ export async function deriveProfileAwareCreationContext(input: {
           input.db
             .select(activitySummaryColumns)
             .from(schema.activities)
+            .innerJoin(
+              schema.activitySummaries,
+              eq(schema.activitySummaries.activity_id, schema.activities.id),
+            )
             .where(
               and(
                 eq(schema.activities.profile_id, input.profileId),
@@ -3832,8 +3423,8 @@ export async function deriveProfileAwareCreationContext(input: {
           ),
         ])
       : await Promise.all([
-          input
-            .supabase!.from("activities")
+          input.supabase
+            ?.from("activities")
             .select(
               "id, type, started_at, finished_at, duration_seconds, moving_seconds, distance_meters, avg_heart_rate, max_heart_rate, avg_power, max_power, avg_speed_mps, max_speed_mps, normalized_power, normalized_speed_mps, normalized_graded_speed_mps",
             )
@@ -3841,22 +3432,22 @@ export async function deriveProfileAwareCreationContext(input: {
             .gte("started_at", recentActivitiesCutoff.toISOString())
             .order("started_at", { ascending: false })
             .limit(300),
-          input
-            .supabase!.from("activity_efforts")
+          input.supabase
+            ?.from("activity_efforts")
             .select("recorded_at, effort_type, duration_seconds, value, activity_category")
             .eq("profile_id", input.profileId)
             .gte("recorded_at", recentEffortsCutoff.toISOString())
             .order("recorded_at", { ascending: false })
             .limit(200),
-          input
-            .supabase!.from("profile_metrics")
+          input.supabase
+            ?.from("profile_metrics")
             .select("metric_type, value, recorded_at")
             .eq("profile_id", input.profileId)
             .in("metric_type", ["lthr", "weight_kg"])
             .order("recorded_at", { ascending: false }),
-          input.supabase!.from("profiles").select("dob, gender").eq("id", input.profileId).limit(1),
-          input
-            .supabase!.from("profile_training_settings")
+          input.supabase?.from("profiles").select("dob, gender").eq("id", input.profileId).limit(1),
+          input.supabase
+            ?.from("profile_training_settings")
             .select("settings")
             .eq("profile_id", input.profileId)
             .maybeSingle(),
@@ -4398,8 +3989,8 @@ export async function getPlanTabProjectionService({
   if (input.training_plan_id) {
     const fetchedPlan = db
       ? await getAccessibleTrainingPlan({ db, planId: input.training_plan_id, profileId })
-      : await fallbackSupabase!
-          .from("training_plans")
+      : await fallbackSupabase
+          ?.from("training_plans")
           .select("*")
           .eq("id", input.training_plan_id)
           .or(`profile_id.eq.${profileId},is_system_template.eq.true,template_visibility.eq.public`)
@@ -4483,8 +4074,8 @@ export async function getPlanTabProjectionService({
   const plannedActivitiesRaw = projectionInputs
     ? projectionInputs.plannedActivities
     : await (async () => {
-        let plannedActivitiesQuery: any = fallbackSupabase!
-          .from("events")
+        let plannedActivitiesQuery: any = fallbackSupabase
+          ?.from("events")
           .select("id, starts_at, training_plan_id, activity_plan:activity_plans (*)")
           .eq("profile_id", profileId)
           .eq("event_type", plannedEventType)
@@ -4551,8 +4142,8 @@ export async function getPlanTabProjectionService({
 
   const actualActivities = projectionInputs
     ? projectionInputs.actualActivities
-    : await fallbackSupabase!
-        .from("activities")
+    : await fallbackSupabase
+        ?.from("activities")
         .select(
           "id, type, started_at, finished_at, duration_seconds, moving_seconds, distance_meters, avg_heart_rate, max_heart_rate, avg_power, max_power, avg_speed_mps, max_speed_mps, normalized_power, normalized_speed_mps, normalized_graded_speed_mps",
         )
@@ -4824,7 +4415,7 @@ export async function getPlanTabProjectionService({
   };
 }
 
-export const trainingPlansRouter = createTRPCRouter({
+const trainingPlansProcedures = {
   // ------------------------------
   // Get a training plan (by ID or active plan)
   // ------------------------------
@@ -4832,81 +4423,12 @@ export const trainingPlansRouter = createTRPCRouter({
     .input(z.object({ id: z.string().uuid().optional() }).optional())
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      // If ID provided, get specific plan
-      if (input?.id) {
-        const data = await getAccessibleTrainingPlan({
-          db,
-          planId: input.id,
-          profileId: ctx.session.user.id,
-        });
-
-        if (!data) {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Training plan not found",
-          });
-        }
-
-        // Validate structure
-        try {
-          if (data.structure) {
-            persistedTrainingPlanStructureSchema.parse(data.structure);
-          }
-        } catch (validationError) {
-          console.error(
-            "Invalid structure in database for training plan",
-            data.id,
-            validationError,
-          );
-        }
-
-        // Check if user has liked this plan
-        const hasLiked = await hasTrainingPlanLike({
-          db,
-          profileId: ctx.session.user.id,
-          planId: input.id,
-        });
-        const profileIdentityMap = await loadProfileIdentityMap(db, [data.profile_id]);
-
-        return {
-          ...withTrainingPlanOwnerIdentity(data, profileIdentityMap),
-          has_liked: hasLiked,
-        };
-      }
-
-      // Otherwise, get active plan from future scheduled events
-      const activePlanLookup = await getActivePlanFromFutureEvents({
+      return getTrainingPlanUseCase({
         db,
+        id: input?.id,
         profileId: ctx.session.user.id,
+        repository: createTrainingPlanRepository(db),
       });
-
-      if (!activePlanLookup) {
-        return null;
-      }
-
-      const data = activePlanLookup.trainingPlan;
-
-      // Validate structure on read (defensive programming)
-      try {
-        if (data.structure) {
-          persistedTrainingPlanStructureSchema.parse(data.structure);
-        }
-      } catch (validationError) {
-        console.error("Invalid structure in database for training plan", data.id, validationError);
-      }
-
-      // Check if user has liked this plan
-      const hasLiked = await hasTrainingPlanLike({
-        db,
-        profileId: ctx.session.user.id,
-        planId: data.id,
-      });
-      const profileIdentityMap = await loadProfileIdentityMap(db, [data.profile_id]);
-
-      return {
-        ...withTrainingPlanOwnerIdentity(data, profileIdentityMap),
-        has_liked: hasLiked,
-      };
     }),
 
   // ------------------------------
@@ -4929,81 +4451,23 @@ export const trainingPlansRouter = createTRPCRouter({
     )
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      const offset = parseIndexCursor(input.cursor);
-
-      let ownerScope: "own" | "system" | "public" | "all" | "none";
-      if (input.ownerScope) {
-        ownerScope = input.ownerScope;
-      } else {
-        const includeOwnOnly = input.includeOwnOnly ?? true;
-        const includeSystemTemplates = input.includeSystemTemplates ?? false;
-        ownerScope = includeOwnOnly
-          ? includeSystemTemplates
-            ? "all"
-            : "own"
-          : includeSystemTemplates
-            ? "system"
-            : "none";
-      }
-
-      if (ownerScope === "own") {
-      } else if (ownerScope === "system") {
-      } else if (ownerScope === "public") {
-      } else if (ownerScope === "all") {
-      } else {
-        return { items: [], total: 0, hasMore: false, nextCursor: undefined };
-      }
-
-      const data = await listTrainingPlans({
+      return listTrainingPlansUseCase({
         db,
         profileId: ctx.session.user.id,
-        ownerScope,
-        visibility: input.visibility,
+        query: input,
+        repository: createTrainingPlanRepository(db),
       });
-
-      const normalizedSearch = input.search?.toLowerCase() ?? "";
-      const filteredData = normalizedSearch
-        ? data.filter((plan: any) => {
-            return [plan.name, plan.description]
-              .filter((value) => typeof value === "string")
-              .some((value) => value.toLowerCase().includes(normalizedSearch));
-          })
-        : data;
-
-      const total = filteredData?.length ?? 0;
-      const pageItems = (filteredData || []).slice(offset, offset + input.limit);
-      const pageInfo = buildIndexPageInfo({ offset, limit: input.limit, total });
-
-      const planIds = pageItems.map((p: any) => p.id);
-      const userLikes = await listTrainingPlanLikedIds({
-        db,
-        profileId: ctx.session.user.id,
-        planIds,
-      });
-      const profileIdentityMap = await loadProfileIdentityMap(
-        db,
-        pageItems.map((plan: any) => plan.profile_id),
-      );
-
-      return {
-        items: pageItems.map((plan: any) => ({
-          ...withTrainingPlanOwnerIdentity(
-            withTrainingPlanIdentity(plan as any),
-            profileIdentityMap,
-          ),
-          has_liked: userLikes.includes(plan.id),
-        })),
-        total,
-        ...pageInfo,
-      };
     }),
 
   // ------------------------------
   // Check if user has a training plan
   // ------------------------------
   exists: protectedProcedure.query(async ({ ctx }) => {
-    const count = await countOwnedTrainingPlans(getRequiredDb(ctx), ctx.session.user.id);
-    return { exists: count > 0, count };
+    const db = getRequiredDb(ctx);
+    return trainingPlanExistsUseCase({
+      profileId: ctx.session.user.id,
+      repository: createTrainingPlanRepository(db),
+    });
   }),
 
   // ------------------------------
@@ -5014,60 +4478,10 @@ export const trainingPlansRouter = createTRPCRouter({
     .input(trainingPlanCreateInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      // Note: input.structure is already validated by trainingPlanCreateInputSchema
-      // which uses trainingPlanCreateSchema (no ID required)
-
-      // Generate a unique UUID for this plan structure
-      // Each plan gets its own unique ID, even if created from a template
-      const planId = crypto.randomUUID();
-      const structureWithId = {
-        ...input.structure,
-        id: planId,
-      };
-
-      // Final validation with ID to ensure complete structure is valid
-      try {
-        trainingPlanSchema.parse(structureWithId);
-      } catch (validationError) {
-        console.error("Training plan validation error:", validationError);
-
-        // Extract more meaningful error message from Zod validation
-        let errorMessage = "Invalid training plan structure";
-        const errorDetails: string[] = [];
-
-        if (validationError && typeof validationError === "object") {
-          const zodError = validationError as any;
-          if (zodError.errors && Array.isArray(zodError.errors)) {
-            // Collect all errors, not just the first one
-            for (const err of zodError.errors) {
-              const path = err.path ? err.path.join(".") : "unknown";
-              const message = err.message || "validation failed";
-              errorDetails.push(`${path}: ${message}`);
-            }
-
-            if (errorDetails.length > 0) {
-              errorMessage = `Training plan validation failed:\n${errorDetails.join("\n")}`;
-            }
-          } else if (zodError.message) {
-            errorMessage = zodError.message;
-          }
-        }
-
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: errorMessage,
-          cause: validationError,
-        });
-      }
-
-      return insertTrainingPlan({
+      return createTrainingPlanUseCase({
         db,
-        values: {
-          name: input.name,
-          description: input.description ?? null,
-          structure: structureWithId,
-          profileId: ctx.session.user.id,
-        },
+        profileId: ctx.session.user.id,
+        values: input,
       });
     }),
 
@@ -5400,47 +4814,12 @@ export const trainingPlansRouter = createTRPCRouter({
     .input(trainingPlanUpdateMutationInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      const { id, template_visibility, ...updates } = input as {
-        id: string;
-        template_visibility?: "private" | "public";
-      } & z.infer<typeof trainingPlanUpdateInputSchema>;
-      const structure =
-        updates.structure === undefined
-          ? undefined
-          : parseTrainingPlanStructureOrThrow({
-              value: updates.structure,
-              message: "Invalid training plan structure",
-            });
-
-      // Check ownership
-      const existing = await getOwnedTrainingPlan({
+      return updateTrainingPlanUseCase({
         db,
-        planId: id,
         profileId: ctx.session.user.id,
+        repository: createTrainingPlanRepository(db),
+        values: input,
       });
-
-      if (!existing) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Training plan not found or you don't have permission to edit it",
-        });
-      }
-
-      const data = await updateOwnedTrainingPlanRow({
-        db,
-        id,
-        profileId: ctx.session.user.id,
-        name: updates.name as string | undefined,
-        description: updates.description as string | null | undefined,
-        structure,
-        templateVisibility: template_visibility,
-      });
-
-      if (!data) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Failed to update training plan" });
-      }
-
-      return data;
     }),
 
   // ------------------------------
@@ -5450,47 +4829,12 @@ export const trainingPlansRouter = createTRPCRouter({
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      // Check ownership
-      const existing = await getOwnedTrainingPlan({
+      return deleteTrainingPlanUseCase({
         db,
-        planId: input.id,
+        id: input.id,
         profileId: ctx.session.user.id,
+        repository: createTrainingPlanRepository(db),
       });
-
-      if (!existing) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Training plan not found or you don't have permission to delete it",
-        });
-      }
-
-      // Delete all planned events associated with this training plan first
-      const removedEvents = await db
-        .delete(schema.events)
-        .where(
-          and(
-            eq(schema.events.event_type, plannedEventType),
-            eq(schema.events.training_plan_id, input.id),
-            eq(schema.events.profile_id, ctx.session.user.id),
-          ),
-        )
-        .returning({ id: schema.events.id });
-
-      await enqueuePlannedWorkoutSyncForCalendarWrite({
-        db,
-        eventIds: removedEvents.map((event) => event.id),
-        operation: "unsync",
-        profileId: ctx.session.user.id,
-      });
-
-      // Now delete the training plan
-      await db.execute(sql`
-        delete from training_plans
-        where id = ${input.id}::uuid
-          and profile_id = ${ctx.session.user.id}::uuid
-      `);
-
-      return { success: true };
     }),
 
   duplicate: protectedProcedure
@@ -5502,63 +4846,13 @@ export const trainingPlansRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      const sourcePlan = await getAccessibleTrainingPlan({
+      return duplicateTrainingPlanUseCase({
         db,
-        planId: input.id,
+        id: input.id,
+        newName: input.newName,
         profileId: ctx.session.user.id,
+        repository: createTrainingPlanRepository(db),
       });
-
-      if (!sourcePlan) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Training plan not found",
-        });
-      }
-
-      try {
-        if (sourcePlan.structure) {
-          persistedTrainingPlanStructureSchema.parse(sourcePlan.structure);
-        }
-      } catch (validationError) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Source training plan has invalid structure",
-          cause: validationError,
-        });
-      }
-
-      const duplicatedPlanId = crypto.randomUUID();
-      const parsedCurrentSourceStructure = trainingPlanSchema.safeParse(sourcePlan.structure);
-      const duplicatedStructure = parsedCurrentSourceStructure.success
-        ? {
-            ...parsedCurrentSourceStructure.data,
-            id: duplicatedPlanId,
-          }
-        : ({ ...(sourcePlan.structure as Record<string, unknown>) } as Record<string, unknown>);
-
-      try {
-        persistedTrainingPlanStructureSchema.parse(duplicatedStructure);
-      } catch (validationError) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Duplicated training plan structure is invalid",
-          cause: validationError,
-        });
-      }
-
-      const data = await insertTrainingPlan({
-        db,
-        values: {
-          name: input.newName?.trim() || `${sourcePlan.name} (Copy)`,
-          description: (sourcePlan.description as string | null | undefined) ?? null,
-          structure: duplicatedStructure,
-          profileId: ctx.session.user.id,
-          templateVisibility: "private",
-          isPublic: false,
-        },
-      });
-
-      return withTrainingPlanIdentity(data);
     }),
 
   // ------------------------------
@@ -5568,39 +4862,12 @@ export const trainingPlansRouter = createTRPCRouter({
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      const data = await getAccessibleTrainingPlan({
+      return getTrainingPlanByIdUseCase({
         db,
-        planId: input.id,
+        id: input.id,
         profileId: ctx.session.user.id,
+        repository: createTrainingPlanRepository(db),
       });
-
-      if (!data) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Training plan not found",
-        });
-      }
-
-      // Validate structure on read
-      try {
-        if (data.structure) {
-          persistedTrainingPlanStructureSchema.parse(data.structure);
-        }
-      } catch (validationError) {
-        console.error("Invalid structure in database for training plan", input.id, validationError);
-      }
-
-      const hasLiked = await hasTrainingPlanLike({
-        db,
-        profileId: ctx.session.user.id,
-        planId: input.id,
-      });
-      const profileIdentityMap = await loadProfileIdentityMap(db, [data.profile_id]);
-
-      return {
-        ...withTrainingPlanOwnerIdentity(data, profileIdentityMap),
-        has_liked: hasLiked,
-      };
     }),
 
   // ------------------------------
@@ -5628,6 +4895,10 @@ export const trainingPlansRouter = createTRPCRouter({
     const activities = await db
       .select(activitySummaryColumns)
       .from(schema.activities)
+      .innerJoin(
+        schema.activitySummaries,
+        eq(schema.activitySummaries.activity_id, schema.activities.id),
+      )
       .where(
         and(
           eq(schema.activities.profile_id, ctx.session.user.id),
@@ -5664,6 +4935,10 @@ export const trainingPlansRouter = createTRPCRouter({
     const weekActivities = await db
       .select(activitySummaryColumns)
       .from(schema.activities)
+      .innerJoin(
+        schema.activitySummaries,
+        eq(schema.activitySummaries.activity_id, schema.activities.id),
+      )
       .where(
         and(
           eq(schema.activities.profile_id, ctx.session.user.id),
@@ -5692,7 +4967,11 @@ export const trainingPlansRouter = createTRPCRouter({
     const plannedActivitiesEvents = await db
       .select({ starts_at: schema.events.starts_at, activity_plan: schema.activityPlans })
       .from(schema.events)
-      .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
+      .leftJoin(schema.eventScheduleLinks, eq(schema.eventScheduleLinks.event_id, schema.events.id))
+      .leftJoin(
+        schema.activityPlans,
+        eq(schema.eventScheduleLinks.activity_plan_id, schema.activityPlans.id),
+      )
       .where(
         and(
           eq(schema.events.profile_id, ctx.session.user.id),
@@ -5748,7 +5027,11 @@ export const trainingPlansRouter = createTRPCRouter({
         activity_plan: schema.activityPlans,
       })
       .from(schema.events)
-      .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
+      .leftJoin(schema.eventScheduleLinks, eq(schema.eventScheduleLinks.event_id, schema.events.id))
+      .leftJoin(
+        schema.activityPlans,
+        eq(schema.eventScheduleLinks.activity_plan_id, schema.activityPlans.id),
+      )
       .where(
         and(
           eq(schema.events.profile_id, ctx.session.user.id),
@@ -5878,6 +5161,10 @@ export const trainingPlansRouter = createTRPCRouter({
       const actualCurve = await db
         .select(activitySummaryColumns)
         .from(schema.activities)
+        .innerJoin(
+          schema.activitySummaries,
+          eq(schema.activitySummaries.activity_id, schema.activities.id),
+        )
         .where(
           and(
             eq(schema.activities.profile_id, ctx.session.user.id),
@@ -6010,6 +5297,10 @@ export const trainingPlansRouter = createTRPCRouter({
       const baselineActivities = await db
         .select(activitySummaryColumns)
         .from(schema.activities)
+        .innerJoin(
+          schema.activitySummaries,
+          eq(schema.activitySummaries.activity_id, schema.activities.id),
+        )
         .where(
           and(
             eq(schema.activities.profile_id, ctx.session.user.id),
@@ -6043,6 +5334,10 @@ export const trainingPlansRouter = createTRPCRouter({
       const activities = await db
         .select(activitySummaryColumns)
         .from(schema.activities)
+        .innerJoin(
+          schema.activitySummaries,
+          eq(schema.activitySummaries.activity_id, schema.activities.id),
+        )
         .where(
           and(
             eq(schema.activities.profile_id, ctx.session.user.id),
@@ -6111,32 +5406,13 @@ export const trainingPlansRouter = createTRPCRouter({
     .input(applyQuickAdjustmentInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      // Check ownership
-      const existing = await getOwnedTrainingPlan({
-        db,
-        planId: input.id,
-        profileId: ctx.session.user.id,
-      });
-
-      if (!existing) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Training plan not found or you don't have permission to edit it",
-        });
-      }
-      // Apply the adjustment
-      const data = await updateOwnedTrainingPlanRow({
+      return applyQuickAdjustmentUseCase({
+        adjustedStructure: input.adjustedStructure,
         db,
         id: input.id,
         profileId: ctx.session.user.id,
-        structure: input.adjustedStructure,
+        repository: createTrainingPlanRepository(db),
       });
-
-      if (!data) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Failed to adjust training plan" });
-      }
-
-      return data;
     }),
 
   // ------------------------------
@@ -6180,11 +5456,18 @@ export const trainingPlansRouter = createTRPCRouter({
       const plannedActivitiesEventsRaw = await db
         .select({ starts_at: schema.events.starts_at, activity_plan: schema.activityPlans })
         .from(schema.events)
-        .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
+        .leftJoin(
+          schema.eventScheduleLinks,
+          eq(schema.eventScheduleLinks.event_id, schema.events.id),
+        )
+        .leftJoin(
+          schema.activityPlans,
+          eq(schema.eventScheduleLinks.activity_plan_id, schema.activityPlans.id),
+        )
         .where(
           and(
             eq(schema.events.profile_id, ctx.session.user.id),
-            eq(schema.events.training_plan_id, input.training_plan_id),
+            eq(schema.eventScheduleLinks.training_plan_id, input.training_plan_id),
             eq(schema.events.event_type, plannedEventType),
             gte(schema.events.starts_at, new Date(toDayStartIso(startDateOnly))),
             lt(schema.events.starts_at, new Date(toNextDayStartIso(todayDateOnly))),
@@ -6234,6 +5517,10 @@ export const trainingPlansRouter = createTRPCRouter({
       const completedActivities = await db
         .select(activitySummaryColumns)
         .from(schema.activities)
+        .innerJoin(
+          schema.activitySummaries,
+          eq(schema.activitySummaries.activity_id, schema.activities.id),
+        )
         .where(
           and(
             eq(schema.activities.profile_id, ctx.session.user.id),
@@ -6353,6 +5640,10 @@ export const trainingPlansRouter = createTRPCRouter({
       const activities = await db
         .select(activitySummaryColumns)
         .from(schema.activities)
+        .innerJoin(
+          schema.activitySummaries,
+          eq(schema.activitySummaries.activity_id, schema.activities.id),
+        )
         .where(
           and(
             eq(schema.activities.profile_id, ctx.session.user.id),
@@ -6504,6 +5795,10 @@ export const trainingPlansRouter = createTRPCRouter({
       const activities = await db
         .select(activitySummaryColumns)
         .from(schema.activities)
+        .innerJoin(
+          schema.activitySummaries,
+          eq(schema.activitySummaries.activity_id, schema.activities.id),
+        )
         .where(
           and(
             eq(schema.activities.profile_id, ctx.session.user.id),
@@ -6623,6 +5918,10 @@ export const trainingPlansRouter = createTRPCRouter({
           name: schema.activities.name,
         })
         .from(schema.activities)
+        .innerJoin(
+          schema.activitySummaries,
+          eq(schema.activitySummaries.activity_id, schema.activities.id),
+        )
         .where(
           and(
             eq(schema.activities.profile_id, ctx.session.user.id),
@@ -6726,10 +6025,14 @@ export const trainingPlansRouter = createTRPCRouter({
       // Get completed activities for this week
       const activities = await db
         .select({
-          distance_meters: schema.activities.distance_meters,
-          duration_seconds: schema.activities.duration_seconds,
+          distance_meters: schema.activitySummaries.distance_meters,
+          duration_seconds: schema.activitySummaries.duration_seconds,
         })
         .from(schema.activities)
+        .innerJoin(
+          schema.activitySummaries,
+          eq(schema.activitySummaries.activity_id, schema.activities.id),
+        )
         .where(
           and(
             eq(schema.activities.profile_id, ctx.session.user.id),
@@ -6789,51 +6092,18 @@ export const trainingPlansRouter = createTRPCRouter({
     )
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      const templates = await listPublicTemplateTrainingPlans(db, input);
-      const offset = parseIndexCursor(input.cursor);
-      const pageItems = templates.slice(offset, offset + input.limit);
-      const pageInfo = buildIndexPageInfo({ offset, limit: input.limit, total: templates.length });
-      const likedTemplateIds = await listTrainingPlanLikedIds({
-        db,
+      return listTrainingPlanTemplatesUseCase({
         profileId: ctx.session.user.id,
-        planIds: pageItems.map((template) => template.id),
+        query: input,
+        repository: createTrainingPlanRepository(db),
       });
-
-      return {
-        items: pageItems.map((template) =>
-          serializeTrainingPlanTemplate({
-            ...template,
-            has_liked: likedTemplateIds.includes(template.id),
-          }),
-        ),
-        total: templates.length,
-        ...pageInfo,
-      };
     }),
 
   auditTemplateHealth: protectedProcedure.query(async ({ ctx }) => {
     const db = getRequiredDb(ctx);
-    const templates = await listPublicTemplateTrainingPlans(db);
-    const items = templates.map((template) => {
-      const health = auditTrainingPlanTemplateStructureHealth({ structure: template.structure });
-
-      return {
-        id: template.id,
-        name: template.name,
-        ...health,
-      };
+    return auditTrainingPlanTemplateHealthUseCase({
+      repository: createTrainingPlanRepository(db),
     });
-
-    return {
-      total: items.length,
-      healthy_count: items.filter((item) => item.isHealthy).length,
-      legacy_count: items.filter(
-        (item) => item.isPersistedCompatible && !item.isCurrentSchemaCompatible,
-      ).length,
-      invalid_count: items.filter((item) => !item.isPersistedCompatible).length,
-      metadata_gap_count: items.filter((item) => item.missingMetadata.length > 0).length,
-      items,
-    };
   }),
 
   // ------------------------------
@@ -6842,351 +6112,25 @@ export const trainingPlansRouter = createTRPCRouter({
   getTemplate: protectedProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }) => {
-      const template = (await listPublicTemplateTrainingPlans(getRequiredDb(ctx))).find(
-        (item) => item.id === input.id,
-      );
-
-      if (!template) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Template not found",
-        });
-      }
-
-      return {
-        id: template.id,
-        name: template.name,
-        description: template.description,
-        sessions_per_week_target: template.sessions_per_week_target,
-        duration_hours: template.duration_hours,
-        ...(template.structure as object),
-      };
+      return getTrainingPlanTemplateUseCase({
+        id: input.id,
+        repository: createTrainingPlanRepository(getRequiredDb(ctx)),
+      });
     }),
 
   applyTemplate: protectedProcedure
     .input(templateApplyInputSchema)
     .mutation(async ({ ctx, input }) => {
-      if (input.template_type !== "training_plan") {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Only training plan templates are supported by this mutation",
-        });
-      }
-
       const profileId = ctx.session.user.id;
       const db = getRequiredDb(ctx);
       const permissions = createContentAccessPermissions(db);
-
-      const activePlanLookup = await getActivePlanFromFutureEvents({
+      return applyTrainingPlanTemplateUseCase({
         db,
+        permissions,
         profileId,
+        repository: createTrainingPlanRepository(db),
+        values: input,
       });
-      let scheduled_sessions_replaced = 0;
-
-      if (activePlanLookup) {
-        if (!input.replace_existing) {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message:
-              "You already have scheduled sessions from another training plan. Replace them first.",
-          });
-        }
-
-        const deleteBaseFilters = [
-          eq(schema.events.profile_id, profileId),
-          eq(schema.events.event_type, plannedEventType),
-          gte(schema.events.starts_at, new Date(todayStartIsoUtc())),
-          ne(schema.events.status, "completed"),
-        ] as const;
-
-        const removedEvents = await db
-          .delete(schema.events)
-          .where(
-            and(
-              ...deleteBaseFilters,
-              activePlanLookup.scheduleBatchId
-                ? eq(schema.events.schedule_batch_id, activePlanLookup.scheduleBatchId)
-                : eq(schema.events.training_plan_id, activePlanLookup.trainingPlanId),
-            ),
-          )
-          .returning({ id: schema.events.id });
-
-        scheduled_sessions_replaced = removedEvents.length;
-        await Promise.all(removedEvents.map((event) => permissions.revokeEventGrants(event.id)));
-        await enqueuePlannedWorkoutSyncForCalendarWrite({
-          db,
-          eventIds: removedEvents.map((event) => event.id),
-          operation: "unsync",
-          profileId,
-        });
-
-        if (activePlanLookup.userTrainingPlanId) {
-          await db
-            .update(schema.userTrainingPlans)
-            .set({ status: "abandoned", updated_at: new Date() })
-            .where(eq(schema.userTrainingPlans.id, activePlanLookup.userTrainingPlanId));
-        }
-      }
-
-      const templatePlan = await getAccessibleTrainingPlan({
-        db,
-        planId: input.template_id,
-        profileId,
-      });
-
-      if (!templatePlan) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Training plan template not found",
-        });
-      }
-
-      const structure =
-        templatePlan.structure && typeof templatePlan.structure === "object"
-          ? ({
-              ...(templatePlan.structure as Record<string, unknown>),
-            } as Record<string, unknown>)
-          : {};
-
-      const materializedApplication = materializeAppliedTrainingPlan({
-        applicationMode: input.application_mode,
-        startDate: input.start_date,
-        targetDate: input.target_date,
-        structure,
-        todayDate: todayDateOnlyUtc(),
-      });
-
-      const appliedStructureId = crypto.randomUUID();
-      materializedApplication.snapshotStructure.id = appliedStructureId;
-
-      const appliedPlanId = templatePlan.id as string;
-      const userTrainingPlanId = crypto.randomUUID();
-
-      const materializedSessions = materializedApplication.materializedSessions;
-
-      const candidatePlanIds = Array.from(
-        new Set(
-          materializedSessions
-            .map((session) => session.activity_plan_id)
-            .filter((id): id is string => Boolean(id)),
-        ),
-      );
-
-      let allowedPlanIds = new Set<string>();
-      const allowedPlanNameById = new Map<string, string>();
-      const allowedPlanAccessById = new Map<
-        string,
-        {
-          ownerProfileId?: string | null;
-          isPublic?: boolean | null;
-          isSystem?: boolean | null;
-          routeId?: string | null;
-        }
-      >();
-      if (candidatePlanIds.length > 0) {
-        const accessiblePlans = await db.execute(sql<{
-          id: string;
-          name: string;
-          ownerProfileId: string | null;
-          isPublic: boolean | null;
-          isSystem: boolean | null;
-          routeId: string | null;
-        }>`
-          select
-            id,
-            name,
-            profile_id as "ownerProfileId",
-            template_visibility = 'public' as "isPublic",
-            is_system_template as "isSystem",
-            route_id as "routeId"
-          from activity_plans
-          where id in (${sql.join(
-            candidatePlanIds.map((id) => sql`${id}::uuid`),
-            sql`, `,
-          )})
-            and (
-              profile_id = ${profileId}::uuid
-              or is_system_template = true
-              or template_visibility = 'public'
-              or exists (
-                select 1
-                from content_access_grants
-                where content_access_grants.content_type = 'activity_plan'
-                  and content_access_grants.content_id = activity_plans.id
-                  and content_access_grants.grantee_profile_id = ${profileId}::uuid
-                  and content_access_grants.access_level = 'read'
-                  and content_access_grants.revoked_at is null
-                  and (content_access_grants.expires_at is null or content_access_grants.expires_at > now())
-              )
-            )
-        `);
-
-        const accessiblePlanRows = getSqlRows<{
-          id: string;
-          name: string;
-          ownerProfileId?: string | null;
-          isPublic?: boolean | null;
-          isSystem?: boolean | null;
-          routeId?: string | null;
-        }>(accessiblePlans);
-        allowedPlanIds = new Set(accessiblePlanRows.map((row) => row.id));
-        accessiblePlanRows.forEach((row) => {
-          allowedPlanNameById.set(row.id, row.name);
-          allowedPlanAccessById.set(row.id, {
-            ownerProfileId: row.ownerProfileId,
-            isPublic: row.isPublic,
-            isSystem: row.isSystem,
-            routeId: row.routeId,
-          });
-        });
-      }
-
-      const unresolvedPlanIds = candidatePlanIds.filter((planId) => !allowedPlanIds.has(planId));
-
-      if (templatePlan.is_system_template === true && unresolvedPlanIds.length > 0) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `This system training plan cannot be scheduled because ${unresolvedPlanIds.length === 1 ? "a linked activity template is" : "linked activity templates are"} unavailable: ${unresolvedPlanIds.join(", ")}`,
-        });
-      }
-
-      const eventRows = materializedSessions
-        .filter((session) => session.event_type === "planned")
-        .filter(
-          (session) => !session.activity_plan_id || allowedPlanIds.has(session.activity_plan_id),
-        )
-        .map(
-          (session) =>
-            ({
-              profile_id: profileId,
-              event_type: plannedEventType,
-              title:
-                session.event_title_override ??
-                (session.activity_plan_id
-                  ? allowedPlanNameById.get(session.activity_plan_id)
-                  : undefined) ??
-                session.title,
-              all_day: session.all_day,
-              timezone: "UTC",
-              starts_at: session.starts_at,
-              ends_at: session.ends_at,
-              status: "scheduled" as const,
-              activity_plan_id: session.activity_plan_id,
-              training_plan_id: appliedPlanId,
-              user_training_plan_id: userTrainingPlanId,
-              payload: {
-                training_plan_generation: {
-                  application_mode: materializedApplication.applicationMode,
-                  applied_start_date: materializedApplication.appliedPlanStartDate,
-                  source_day_offset: session.source_day_offset,
-                  source_path: session.source_path,
-                  target_date: materializedApplication.targetDate,
-                  user_training_plan_id: userTrainingPlanId,
-                },
-              },
-            }) as any,
-        );
-
-      const schedule_batch_id = crypto.randomUUID();
-      let scheduled_sessions_created = 0;
-
-      if (eventRows.length === 0) {
-        const plannedSessionCount = materializedSessions.filter(
-          (session) => session.event_type === "planned",
-        ).length;
-
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message:
-            plannedSessionCount === 0
-              ? "This training plan does not contain any schedulable sessions."
-              : materializedApplication.skippedSessions > 0
-                ? "No future sessions remain in this training plan after applying the remaining schedule window."
-                : "This training plan could not be scheduled because its linked activities are not available to your account.",
-        });
-      }
-
-      const now = new Date();
-      await db.insert(schema.userTrainingPlans).values({
-        id: userTrainingPlanId,
-        profile_id: profileId,
-        training_plan_id: appliedPlanId,
-        status: "active",
-        start_date: materializedApplication.appliedPlanStartDate,
-        target_date: materializedApplication.targetDate,
-        snapshot_structure: materializedApplication.snapshotStructure,
-        created_at: now,
-        updated_at: now,
-      });
-
-      const insertedEvents = await db
-        .insert(schema.events)
-        .values(
-          eventRows.map((eventRow) => ({
-            ...eventRow,
-            schedule_batch_id,
-          })) as any,
-        )
-        .returning({ id: schema.events.id });
-
-      scheduled_sessions_created = insertedEvents.length;
-
-      await Promise.all(
-        insertedEvents.map((event, index) => {
-          const eventRow = eventRows[index];
-          if (!eventRow) {
-            return Promise.resolve();
-          }
-
-          const linkedPlanAccess = eventRow.activity_plan_id
-            ? allowedPlanAccessById.get(eventRow.activity_plan_id)
-            : null;
-          const shouldGrantLinkedPlan = linkedPlanAccess
-            ? needsContentGrantForRow(linkedPlanAccess, profileId)
-            : false;
-          const shouldGrantTrainingPlan = needsContentGrantForRow(
-            {
-              ownerProfileId: templatePlan.profile_id,
-              isPublic: templatePlan.template_visibility === "public",
-              isSystem: templatePlan.is_system_template,
-            },
-            profileId,
-          );
-
-          if (!shouldGrantLinkedPlan && !linkedPlanAccess?.routeId && !shouldGrantTrainingPlan) {
-            return Promise.resolve();
-          }
-
-          return permissions.grantEventContentAccess({
-            actorProfileId: profileId,
-            granteeProfileId: profileId,
-            eventId: event.id,
-            activityPlanId: eventRow.activity_plan_id,
-            trainingPlanId: shouldGrantTrainingPlan ? appliedPlanId : null,
-          });
-        }),
-      );
-
-      await enqueuePlannedWorkoutSyncForCalendarWrite({
-        db,
-        eventIds: insertedEvents
-          .filter((_, index) => Boolean(eventRows[index]?.activity_plan_id))
-          .map((event) => event.id),
-        operation: "publish",
-        profileId,
-      });
-
-      return {
-        applied_plan_id: appliedPlanId,
-        training_plan_id: templatePlan.id,
-        user_training_plan_id: userTrainingPlanId,
-        application_mode: materializedApplication.applicationMode,
-        schedule_batch_id,
-        scheduled_sessions_created,
-        scheduled_sessions_skipped: materializedApplication.skippedSessions,
-        scheduled_sessions_replaced,
-        cache_tags: ["events.list", "trainingPlans.list"],
-      };
     }),
 
   // ------------------------------
@@ -7200,528 +6144,59 @@ export const trainingPlansRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const profileId = ctx.session.user.id;
-      const windowStartIso = todayStartIsoUtc();
       const db = getRequiredDb(ctx);
       const permissions = createContentAccessPermissions(db);
-      const activePlanLookup = await getActivePlanFromFutureEvents({
+      return updateActivePlanStatusUseCase({
         db,
-        profileId,
-      });
-
-      const futurePlanEvents = await db
-        .select({ id: schema.events.id, training_plan_id: schema.events.training_plan_id })
-        .from(schema.events)
-        .where(
-          and(
-            eq(schema.events.profile_id, profileId),
-            eq(schema.events.event_type, plannedEventType),
-            eq(schema.events.training_plan_id, input.id),
-            gte(schema.events.starts_at, new Date(windowStartIso)),
-          ),
-        );
-
-      const hasFutureEventsForPlan = (futurePlanEvents?.length ?? 0) > 0;
-      if (!hasFutureEventsForPlan && (input.status === "active" || input.status === "paused")) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Active training plan not found",
-        });
-      }
-
-      if (input.status === "active" || input.status === "paused") {
-        const allFuturePlanEvents = await db
-          .select({ training_plan_id: schema.events.training_plan_id })
-          .from(schema.events)
-          .where(
-            and(
-              eq(schema.events.profile_id, profileId),
-              eq(schema.events.event_type, plannedEventType),
-              gte(schema.events.starts_at, new Date(windowStartIso)),
-            ),
-          )
-          .limit(200);
-
-        const hasOtherActivePlan = (allFuturePlanEvents ?? []).some(
-          (event: { training_plan_id?: unknown }) =>
-            isUuidString((event as any).training_plan_id) &&
-            (event as any).training_plan_id !== input.id,
-        );
-
-        if (hasOtherActivePlan) {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message:
-              "You already have another active or paused training plan. Please complete or abandon it first.",
-          });
-        }
-
-        return {
-          id: input.id,
-          training_plan_id: input.id,
-          user_training_plan_id: activePlanLookup?.userTrainingPlanId ?? null,
-          profile_id: profileId,
-          status: input.status,
-          scheduled_sessions_removed: 0,
-        };
-      }
-
-      const deletedEvents = await db
-        .delete(schema.events)
-        .where(
-          and(
-            eq(schema.events.profile_id, profileId),
-            eq(schema.events.event_type, plannedEventType),
-            activePlanLookup?.trainingPlanId === input.id && activePlanLookup.scheduleBatchId
-              ? eq(schema.events.schedule_batch_id, activePlanLookup.scheduleBatchId)
-              : eq(schema.events.training_plan_id, input.id),
-            gte(schema.events.starts_at, new Date(windowStartIso)),
-            ne(schema.events.status, "completed"),
-          ),
-        )
-        .returning({ id: schema.events.id });
-
-      await Promise.all(
-        (deletedEvents ?? []).map((event) => permissions.revokeEventGrants(event.id)),
-      );
-      await enqueuePlannedWorkoutSyncForCalendarWrite({
-        db,
-        eventIds: (deletedEvents ?? []).map((event) => event.id),
-        operation: "unsync",
-        profileId,
-      });
-
-      if (activePlanLookup?.userTrainingPlanId) {
-        await db
-          .update(schema.userTrainingPlans)
-          .set({ status: input.status, updated_at: new Date() })
-          .where(eq(schema.userTrainingPlans.id, activePlanLookup.userTrainingPlanId));
-      }
-
-      return {
         id: input.id,
-        training_plan_id: input.id,
-        user_training_plan_id: activePlanLookup?.userTrainingPlanId ?? null,
-        profile_id: profileId,
+        permissions,
+        profileId: ctx.session.user.id,
+        repository: createTrainingPlanRepository(db),
         status: input.status,
-        scheduled_sessions_removed: deletedEvents?.length ?? 0,
-      };
+      });
     }),
 
   removeAppliedSchedule: protectedProcedure
     .input(applicationScopedScheduleInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      const permissions = createContentAccessPermissions(db);
-      const profileId = ctx.session.user.id;
-      const application = await getOwnedUserTrainingPlan({
+      return removeAppliedScheduleUseCase({
         db,
-        profileId,
+        permissions: createContentAccessPermissions(db),
+        profileId: ctx.session.user.id,
         userTrainingPlanId: input.user_training_plan_id,
       });
-
-      if (!application) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Scheduled plan not found" });
-      }
-
-      const deletedEvents = await db
-        .delete(schema.events)
-        .where(
-          and(
-            eq(schema.events.profile_id, profileId),
-            eq(schema.events.user_training_plan_id, application.id),
-            eq(schema.events.event_type, plannedEventType),
-            gte(schema.events.starts_at, new Date(todayStartIsoUtc())),
-            ne(schema.events.status, "completed"),
-          ),
-        )
-        .returning({ id: schema.events.id });
-
-      await Promise.all(deletedEvents.map((event) => permissions.revokeEventGrants(event.id)));
-      await enqueuePlannedWorkoutSyncForCalendarWrite({
-        db,
-        eventIds: deletedEvents.map((event) => event.id),
-        operation: "unsync",
-        profileId,
-      });
-      await db
-        .update(schema.userTrainingPlans)
-        .set({ status: "abandoned", updated_at: new Date() })
-        .where(eq(schema.userTrainingPlans.id, application.id));
-
-      return {
-        success: true,
-        user_training_plan_id: application.id,
-        scheduled_sessions_removed: deletedEvents.length,
-      };
     }),
 
   shiftAppliedSchedule: protectedProcedure
     .input(shiftScheduledPlanInputSchema)
     .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      const profileId = ctx.session.user.id;
-      const application = await getOwnedUserTrainingPlan({
-        db,
-        profileId,
+      return shiftAppliedScheduleUseCase({
+        days: input.days,
+        db: getRequiredDb(ctx),
+        profileId: ctx.session.user.id,
         userTrainingPlanId: input.user_training_plan_id,
       });
-
-      if (!application) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Scheduled plan not found" });
-      }
-
-      const futureEvents = await db
-        .select({
-          id: schema.events.id,
-          activity_plan_id: schema.events.activity_plan_id,
-          starts_at: schema.events.starts_at,
-          ends_at: schema.events.ends_at,
-        })
-        .from(schema.events)
-        .where(
-          and(
-            eq(schema.events.profile_id, profileId),
-            eq(schema.events.user_training_plan_id, application.id),
-            eq(schema.events.event_type, plannedEventType),
-            gte(schema.events.starts_at, new Date(todayStartIsoUtc())),
-            ne(schema.events.status, "completed"),
-          ),
-        )
-        .orderBy(asc(schema.events.starts_at));
-
-      if (futureEvents.length === 0) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "No future scheduled sessions found" });
-      }
-
-      for (const event of futureEvents) {
-        const currentScheduledDate = formatDateOnlyUtc(event.starts_at);
-        const nextScheduledDate = addDaysDateOnlyUtc(currentScheduledDate, input.days);
-        await db
-          .update(schema.events)
-          .set({
-            starts_at: new Date(toDayStartIso(nextScheduledDate)),
-            ends_at: new Date(toDayStartIso(addDaysDateOnlyUtc(nextScheduledDate, 1))),
-            status: "scheduled",
-            updated_at: new Date(),
-          })
-          .where(eq(schema.events.id, event.id));
-      }
-
-      await enqueuePlannedWorkoutSyncForCalendarWrite({
-        db,
-        eventIds: futureEvents
-          .filter((event) => Boolean(event.activity_plan_id))
-          .map((event) => event.id),
-        operation: "publish",
-        profileId,
-      });
-
-      await db
-        .update(schema.userTrainingPlans)
-        .set({
-          start_date: addDaysDateOnlyUtc(application.start_date, input.days),
-          target_date: application.target_date
-            ? addDaysDateOnlyUtc(application.target_date, input.days)
-            : null,
-          updated_at: new Date(),
-        })
-        .where(eq(schema.userTrainingPlans.id, application.id));
-
-      return {
-        success: true,
-        days_shifted: input.days,
-        affected_count: futureEvents.length,
-        user_training_plan_id: application.id,
-      };
     }),
 
   regenerateAppliedSchedule: protectedProcedure
     .input(applicationScopedScheduleInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      const permissions = createContentAccessPermissions(db);
-      const profileId = ctx.session.user.id;
-      const application = await getOwnedUserTrainingPlan({
+      return regenerateAppliedScheduleUseCase({
         db,
-        profileId,
+        permissions: createContentAccessPermissions(db),
+        profileId: ctx.session.user.id,
+        repository: createTrainingPlanRepository(db),
         userTrainingPlanId: input.user_training_plan_id,
       });
-
-      if (!application) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Scheduled plan not found" });
-      }
-
-      const trainingPlan = await getAccessibleTrainingPlan({
-        db,
-        planId: application.training_plan_id,
-        profileId,
-      });
-
-      if (!trainingPlan) {
-        throw new TRPCError({ code: "NOT_FOUND", message: "Training plan not found" });
-      }
-
-      const snapshotStructure =
-        application.snapshot_structure && typeof application.snapshot_structure === "object"
-          ? ({ ...(application.snapshot_structure as Record<string, unknown>) } as Record<
-              string,
-              unknown
-            >)
-          : trainingPlan.structure && typeof trainingPlan.structure === "object"
-            ? ({ ...(trainingPlan.structure as Record<string, unknown>) } as Record<
-                string,
-                unknown
-              >)
-            : {};
-      const applicationMode = getApplicationModeFromSnapshot(snapshotStructure);
-      const snapshotApplication =
-        snapshotStructure._application && typeof snapshotStructure._application === "object"
-          ? (snapshotStructure._application as Record<string, unknown>)
-          : null;
-      const targetDate =
-        typeof snapshotApplication?.target_date === "string"
-          ? snapshotApplication.target_date
-          : undefined;
-      const resolved = materializeAppliedTrainingPlan({
-        applicationMode,
-        startDate: application.start_date,
-        targetDate,
-        structure: snapshotStructure,
-        todayDate: todayDateOnlyUtc(),
-      });
-
-      const removedEvents = await db
-        .delete(schema.events)
-        .where(
-          and(
-            eq(schema.events.profile_id, profileId),
-            eq(schema.events.user_training_plan_id, application.id),
-            eq(schema.events.event_type, plannedEventType),
-            gte(schema.events.starts_at, new Date(todayStartIsoUtc())),
-            ne(schema.events.status, "completed"),
-          ),
-        )
-        .returning({ id: schema.events.id });
-
-      await Promise.all(removedEvents.map((event) => permissions.revokeEventGrants(event.id)));
-      await enqueuePlannedWorkoutSyncForCalendarWrite({
-        db,
-        eventIds: removedEvents.map((event) => event.id),
-        operation: "unsync",
-        profileId,
-      });
-
-      const candidatePlanIds = Array.from(
-        new Set(
-          resolved.materializedSessions
-            .map((session) => session.activity_plan_id)
-            .filter((id): id is string => Boolean(id)),
-        ),
-      );
-      let allowedPlanIds = new Set<string>();
-      const allowedPlanNameById = new Map<string, string>();
-      const allowedPlanAccessById = new Map<
-        string,
-        {
-          ownerProfileId?: string | null;
-          isPublic?: boolean | null;
-          isSystem?: boolean | null;
-          routeId?: string | null;
-        }
-      >();
-
-      if (candidatePlanIds.length > 0) {
-        const accessiblePlans = await db.execute(sql<{
-          id: string;
-          name: string;
-          ownerProfileId: string | null;
-          isPublic: boolean | null;
-          isSystem: boolean | null;
-          routeId: string | null;
-        }>`
-          select
-            id,
-            name,
-            profile_id as "ownerProfileId",
-            template_visibility = 'public' as "isPublic",
-            is_system_template as "isSystem",
-            route_id as "routeId"
-          from activity_plans
-          where id in (${sql.join(
-            candidatePlanIds.map((id) => sql`${id}::uuid`),
-            sql`, `,
-          )})
-            and (
-              profile_id = ${profileId}::uuid
-              or is_system_template = true
-              or template_visibility = 'public'
-              or exists (
-                select 1
-                from content_access_grants
-                where content_access_grants.content_type = 'activity_plan'
-                  and content_access_grants.content_id = activity_plans.id
-                  and content_access_grants.grantee_profile_id = ${profileId}::uuid
-                  and content_access_grants.access_level = 'read'
-                  and content_access_grants.revoked_at is null
-                  and (content_access_grants.expires_at is null or content_access_grants.expires_at > now())
-              )
-            )
-        `);
-
-        const accessiblePlanRows = getSqlRows<{
-          id: string;
-          name: string;
-          ownerProfileId?: string | null;
-          isPublic?: boolean | null;
-          isSystem?: boolean | null;
-          routeId?: string | null;
-        }>(accessiblePlans);
-        allowedPlanIds = new Set(accessiblePlanRows.map((row) => row.id));
-        accessiblePlanRows.forEach((row) => {
-          allowedPlanNameById.set(row.id, row.name);
-          allowedPlanAccessById.set(row.id, {
-            ownerProfileId: row.ownerProfileId,
-            isPublic: row.isPublic,
-            isSystem: row.isSystem,
-            routeId: row.routeId,
-          });
-        });
-      }
-
-      const eventRows = resolved.materializedSessions
-        .filter(
-          (session) => !session.activity_plan_id || allowedPlanIds.has(session.activity_plan_id),
-        )
-        .map((session) => ({
-          profile_id: profileId,
-          event_type: plannedEventType,
-          title:
-            session.event_title_override ??
-            (session.activity_plan_id
-              ? allowedPlanNameById.get(session.activity_plan_id)
-              : undefined) ??
-            session.title,
-          all_day: session.all_day,
-          timezone: "UTC",
-          starts_at: session.starts_at,
-          ends_at: session.ends_at,
-          status: "scheduled" as const,
-          activity_plan_id: session.activity_plan_id,
-          training_plan_id: trainingPlan.id,
-          user_training_plan_id: application.id,
-          payload: {
-            training_plan_generation: {
-              application_mode: resolved.applicationMode,
-              applied_start_date: resolved.appliedPlanStartDate,
-              source_day_offset: session.source_day_offset,
-              source_path: session.source_path,
-              target_date: resolved.targetDate,
-              user_training_plan_id: application.id,
-            },
-          },
-        }));
-
-      if (eventRows.length === 0) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "This scheduled plan no longer has any future sessions to regenerate.",
-        });
-      }
-
-      const schedule_batch_id = crypto.randomUUID();
-      const insertedEvents = await db
-        .insert(schema.events)
-        .values(eventRows.map((row) => ({ ...row, schedule_batch_id })) as any)
-        .returning({ id: schema.events.id });
-
-      await Promise.all(
-        insertedEvents.map((event, index) => {
-          const eventRow = eventRows[index];
-          if (!eventRow) {
-            return Promise.resolve();
-          }
-
-          const linkedPlanAccess = eventRow.activity_plan_id
-            ? allowedPlanAccessById.get(eventRow.activity_plan_id)
-            : null;
-          const shouldGrantLinkedPlan = linkedPlanAccess
-            ? needsContentGrantForRow(linkedPlanAccess, profileId)
-            : false;
-          const shouldGrantTrainingPlan = needsContentGrantForRow(
-            {
-              ownerProfileId: trainingPlan.profile_id,
-              isPublic: trainingPlan.template_visibility === "public",
-              isSystem: trainingPlan.is_system_template,
-            },
-            profileId,
-          );
-
-          if (!shouldGrantLinkedPlan && !linkedPlanAccess?.routeId && !shouldGrantTrainingPlan) {
-            return Promise.resolve();
-          }
-
-          return permissions.grantEventContentAccess({
-            actorProfileId: profileId,
-            granteeProfileId: profileId,
-            eventId: event.id,
-            activityPlanId: eventRow.activity_plan_id,
-            trainingPlanId: shouldGrantTrainingPlan ? trainingPlan.id : null,
-          });
-        }),
-      );
-
-      await enqueuePlannedWorkoutSyncForCalendarWrite({
-        db,
-        eventIds: insertedEvents
-          .filter((_, index) => Boolean(eventRows[index]?.activity_plan_id))
-          .map((event) => event.id),
-        operation: "publish",
-        profileId,
-      });
-
-      await db
-        .update(schema.userTrainingPlans)
-        .set({
-          start_date: resolved.appliedPlanStartDate,
-          target_date: resolved.targetDate,
-          snapshot_structure: resolved.snapshotStructure,
-          status: "active",
-          updated_at: new Date(),
-        })
-        .where(eq(schema.userTrainingPlans.id, application.id));
-
-      return {
-        success: true,
-        schedule_batch_id,
-        scheduled_sessions_created: insertedEvents.length,
-        scheduled_sessions_replaced: removedEvents.length,
-        scheduled_sessions_skipped: resolved.skippedSessions,
-        user_training_plan_id: application.id,
-      };
     }),
 
   getActivePlan: protectedProcedure.query(async ({ ctx }) => {
-    const db = getRequiredDb(ctx);
-    const activePlanLookup = await getActivePlanFromFutureEvents({
-      db,
+    return getActivePlanUseCase({
       profileId: ctx.session.user.id,
+      repository: createTrainingPlanRepository(getRequiredDb(ctx)),
     });
-
-    if (!activePlanLookup) {
-      return null;
-    }
-
-    return {
-      id: activePlanLookup.trainingPlanId,
-      profile_id: ctx.session.user.id,
-      training_plan_id: activePlanLookup.trainingPlanId,
-      user_training_plan_id: activePlanLookup.userTrainingPlanId,
-      schedule_batch_id: activePlanLookup.scheduleBatchId,
-      status: "active",
-      next_event_at: activePlanLookup.nextEventAt,
-      training_plan: activePlanLookup.trainingPlan,
-    };
   }),
 
   // ------------------------------
@@ -7731,36 +6206,60 @@ export const trainingPlansRouter = createTRPCRouter({
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      // Check ownership
-      const existing = await getOwnedTrainingPlan({
-        db,
-        planId: input.id,
+      return autoAddPeriodizationUseCase({
+        id: input.id,
         profileId: ctx.session.user.id,
-      });
-
-      if (!existing) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Training plan not found or you don't have permission to edit it",
-        });
-      }
-
-      const structure = existing.structure as any;
-
-      // Check if already periodized
-      if (structure?.plan_type === "periodized" && structure?.fitness_progression) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "This plan already has periodization configured",
-        });
-      }
-
-      // For now, return a message that this feature is under development
-      // In the future, this could automatically generate blocks and fitness progression
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message:
-          "Auto-periodization is not yet implemented. Please create a new periodized training plan or manually configure periodization in settings.",
+        repository: createTrainingPlanRepository(db),
       });
     }),
+};
+
+export const trainingPlansCreationProcedures = {
+  getFeasibilityPreview: trainingPlansProcedures.getFeasibilityPreview,
+  getCreationSuggestions: trainingPlansProcedures.getCreationSuggestions,
+  previewCreationConfig: trainingPlansProcedures.previewCreationConfig,
+  createFromCreationConfig: trainingPlansProcedures.createFromCreationConfig,
+  updateFromCreationConfig: trainingPlansProcedures.updateFromCreationConfig,
+  createFromMinimalGoal: trainingPlansProcedures.createFromMinimalGoal,
+};
+
+export const trainingPlansCrudProcedures = {
+  get: trainingPlansProcedures.get,
+  list: trainingPlansProcedures.list,
+  exists: trainingPlansProcedures.exists,
+  create: trainingPlansProcedures.create,
+  update: trainingPlansProcedures.update,
+  updateActivePlanStatus: trainingPlansProcedures.updateActivePlanStatus,
+  getActivePlan: trainingPlansProcedures.getActivePlan,
+  removeAppliedSchedule: trainingPlansProcedures.removeAppliedSchedule,
+  shiftAppliedSchedule: trainingPlansProcedures.shiftAppliedSchedule,
+  regenerateAppliedSchedule: trainingPlansProcedures.regenerateAppliedSchedule,
+  delete: trainingPlansProcedures.delete,
+  duplicate: trainingPlansProcedures.duplicate,
+  getById: trainingPlansProcedures.getById,
+  applyQuickAdjustment: trainingPlansProcedures.applyQuickAdjustment,
+  listTemplates: trainingPlansProcedures.listTemplates,
+  auditTemplateHealth: trainingPlansProcedures.auditTemplateHealth,
+  getTemplate: trainingPlansProcedures.getTemplate,
+  applyTemplate: trainingPlansProcedures.applyTemplate,
+  autoAddPeriodization: trainingPlansProcedures.autoAddPeriodization,
+};
+
+export const trainingPlansAnalyticsProcedures = {
+  getInsightTimeline: trainingPlansProcedures.getInsightTimeline,
+  simulateScheduleAdjustment: trainingPlansProcedures.simulateScheduleAdjustment,
+  getCurrentStatus: trainingPlansProcedures.getCurrentStatus,
+  getIdealCurve: trainingPlansProcedures.getIdealCurve,
+  getActualCurve: trainingPlansProcedures.getActualCurve,
+  getWeeklySummary: trainingPlansProcedures.getWeeklySummary,
+  getIntensityDistribution: trainingPlansProcedures.getIntensityDistribution,
+  getIntensityTrends: trainingPlansProcedures.getIntensityTrends,
+  checkHardActivitySpacing: trainingPlansProcedures.checkHardActivitySpacing,
+  getWeeklyTotals: trainingPlansProcedures.getWeeklyTotals,
+};
+
+export const trainingPlansRouter = createTRPCRouter({
+  ...trainingPlansCreationProcedures,
+  ...trainingPlansCrudProcedures,
+  ...trainingPlansAnalyticsProcedures,
 });

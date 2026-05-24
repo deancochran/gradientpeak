@@ -2,9 +2,10 @@ import { downsampleStream, getSamplingStrategy } from "@repo/core";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
 import { Circle, useFont } from "@shopify/react-native-skia";
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 import { View } from "react-native";
 import { CartesianChart, Line, useChartPressState } from "victory-native";
+import { InteractiveChartValueTray } from "@/components/charts/InteractiveChartValueTray";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 
 type NumericStream = Omit<DecompressedStream, "values"> & {
@@ -148,7 +149,7 @@ export function StreamChart({
     // Add data from other streams, interpolating to nearest timestamp
     processedStreams.slice(1).forEach((streamData) => {
       streamData.timestamps.forEach((timestamp, i) => {
-        const relativeTime = (timestamp - startTime) / 1000;
+        const _relativeTime = (timestamp - startTime) / 1000;
 
         // Find closest point in reference stream
         let closestTimestamp = referenceStream.timestamps[0];
@@ -238,48 +239,44 @@ export function StreamChart({
                       animate={{ type: "timing", duration: 300 }}
                     />
                   ))}
-                  {isActive && (
-                    <>
-                      {streams.map((stream) => {
-                        const point = (state.y as any)[stream.type];
-                        if (!point) return null;
-                        return (
-                          <Circle
-                            key={`active-${stream.type}`}
-                            cx={state.x.position}
-                            cy={point.position}
-                            r={6}
-                            color={stream.color}
-                            opacity={0.8}
-                          />
-                        );
-                      })}
-                    </>
-                  )}
+                  {isActive &&
+                    streams.map((stream) => {
+                      const point = (state.y as any)[stream.type];
+                      if (!point) return null;
+                      return (
+                        <Circle
+                          key={`active-${stream.type}`}
+                          cx={state.x.position}
+                          cy={point.position}
+                          r={6}
+                          color={stream.color}
+                          opacity={0.8}
+                        />
+                      );
+                    })}
                 </>
               )}
             </CartesianChart>
           )}
         </View>
 
-        {/* Active value display */}
-        {isActive && (
-          <View className="mt-2 p-2 bg-muted rounded-lg">
-            <View className="flex-row flex-wrap gap-3">
-              {streams.map((stream) => {
-                const value = (state.y as any)[stream.type]?.value;
-                return (
-                  <View key={stream.type} className="flex-row items-center gap-1">
-                    <Text className="text-xs font-medium">{stream.label}:</Text>
-                    <Text className="text-xs">
-                      {value?.toFixed(0)} {stream.unit}
-                    </Text>
-                  </View>
-                );
-              })}
-            </View>
-          </View>
-        )}
+        {isActive ? (
+          <InteractiveChartValueTray
+            testID="stream-chart-active-values"
+            items={streams.map((stream) => {
+              const value = (state.y as any)[stream.type]?.value?.value;
+              return {
+                key: stream.type,
+                label: stream.label,
+                value:
+                  typeof value === "number" && Number.isFinite(value)
+                    ? `${value.toFixed(0)} ${stream.unit}`
+                    : `-- ${stream.unit}`,
+                color: stream.color,
+              };
+            })}
+          />
+        ) : null}
       </CardContent>
     </Card>
   );

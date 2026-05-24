@@ -4,7 +4,8 @@ import BottomSheet, {
   BottomSheetView,
 } from "@gorhom/bottom-sheet";
 import { Text } from "@repo/ui/components/text";
-import React, { useCallback, useMemo, useRef } from "react";
+import type React from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { TouchableOpacity, View } from "react-native";
 import { useTheme } from "@/lib/stores/theme-store";
 

@@ -7,108 +7,20 @@ import {
   athleteTrainingSettingsFormSchema,
 } from "@repo/core/schemas/settings/profile_settings";
 import type { GoalTargetV2 } from "@repo/core/schemas/training_plan_structure";
-import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
 import type { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 import { computeLocalCreationPreview } from "@/lib/training-plan-form/localPreview";
+import {
+  aggregateScheduledLoadByDate,
+  type ScheduledLoadEventInput,
+} from "@/lib/training-plan-form/scheduledLoadAggregation";
 
 export type TrainingPreferencesValues = AthleteTrainingSettings | AthleteTrainingSettingsFormInput;
 
 type TrainingPlanSnapshot = ReturnType<typeof useTrainingPlanSnapshot>;
 type FitnessHistoryPoint = { date: string; ctl?: number | null };
-type ScheduledEventInput = {
-  starts_at?: string | null;
-  scheduled_date?: string | null;
-  recurrence_rule?: string | null;
-  recurrence?: { rule?: string | null } | null;
-  activity_plan?: unknown;
-  tentative?: boolean | null;
-};
-
-const weekdayToRRuleDay = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"] as const;
 
 function toDateKey(value: Date) {
   return value.toISOString().split("T")[0] ?? "";
-}
-
-function parseRRule(rule: string) {
-  const body = rule.trim().startsWith("RRULE:") ? rule.trim().slice(6) : rule.trim();
-  return new Map(
-    body.split(";").map((part) => {
-      const [key, value] = part.split("=");
-      return [key ?? "", value ?? ""];
-    }),
-  );
-}
-
-function parseRRuleUntilDateKey(value: string) {
-  if (/^\d{8}$/.test(value)) {
-    return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
-  }
-
-  if (/^\d{8}T\d{6}Z$/.test(value)) {
-    const parsed = new Date(
-      `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}T${value.slice(9, 11)}:${value.slice(11, 13)}:${value.slice(13, 15)}.000Z`,
-    );
-    return Number.isNaN(parsed.getTime()) ? null : toDateKey(parsed);
-  }
-
-  return null;
-}
-
-function getScheduledEventDateKeys(input: {
-  event: ScheduledEventInput;
-  windowStart?: string | null;
-  windowEnd?: string | null;
-}) {
-  const startDate = input.event.scheduled_date ?? input.event.starts_at?.split("T")[0];
-  if (!startDate) return [];
-
-  const rule = input.event.recurrence?.rule ?? input.event.recurrence_rule;
-  if (!rule || !input.windowStart || !input.windowEnd) {
-    return [startDate];
-  }
-
-  const tokens = parseRRule(rule);
-  if (tokens.get("FREQ") !== "WEEKLY") {
-    return [startDate];
-  }
-
-  const start = new Date(`${startDate}T12:00:00.000Z`);
-  if (Number.isNaN(start.getTime())) {
-    return [startDate];
-  }
-
-  const interval = Number(tokens.get("INTERVAL") ?? "1");
-  if (!Number.isInteger(interval) || interval < 1) {
-    return [startDate];
-  }
-
-  const byDay = tokens.get("BYDAY") ?? weekdayToRRuleDay[start.getUTCDay()];
-  if (byDay !== weekdayToRRuleDay[start.getUTCDay()]) {
-    return [startDate];
-  }
-
-  const untilDate = tokens.get("UNTIL") ? parseRRuleUntilDateKey(tokens.get("UNTIL")!) : null;
-  const countToken = tokens.get("COUNT");
-  const count = countToken ? Number(countToken) : 366;
-  if (!Number.isInteger(count) || count < 1) {
-    return [startDate];
-  }
-
-  const dates: string[] = [];
-  const maxCount = Math.min(count, 366);
-  for (let index = 0; index < maxCount; index += 1) {
-    const occurrenceDate = new Date(start);
-    occurrenceDate.setUTCDate(start.getUTCDate() + index * interval * 7);
-    const dateKey = toDateKey(occurrenceDate);
-    if (untilDate && dateKey > untilDate) break;
-    if (dateKey > input.windowEnd) break;
-    if (dateKey >= input.windowStart) {
-      dates.push(dateKey);
-    }
-  }
-
-  return dates.length > 0 ? dates : [startDate];
 }
 
 function toGoalTargets(goal: TrainingPlanSnapshot["profileGoals"][number]): GoalTargetV2[] {
@@ -272,7 +184,7 @@ export function buildTrainingPreferencesProjectionPreview(input: {
 export function buildTrainingPreferencesLoadTimeline(input: {
   projectionChart: ProjectionChartPayload | null;
   snapshot: TrainingPlanSnapshot;
-  scheduledEvents?: ScheduledEventInput[] | null;
+  scheduledEvents?: ScheduledLoadEventInput[] | null;
   scheduledWindowStart?: string | null;
   scheduledWindowEnd?: string | null;
 }) {
@@ -283,25 +195,8 @@ export function buildTrainingPreferencesLoadTimeline(input: {
   );
   const dateSource = baselineTimeline.length > 0 ? baselineTimeline : [...previewByDate.values()];
   const dates = new Set(dateSource.map((point) => point.date));
-  const scheduledLoadByDate = new Map<string, number>();
-  const tentativeScheduledLoadByDate = new Map<string, number>();
-
-  for (const event of input.scheduledEvents ?? []) {
-    const tss = getAuthoritativeActivityPlanMetrics(
-      event.activity_plan as Parameters<typeof getAuthoritativeActivityPlanMetrics>[0],
-    ).estimated_tss;
-    if (typeof tss !== "number" || !Number.isFinite(tss)) continue;
-
-    for (const date of getScheduledEventDateKeys({
-      event,
-      windowStart: input.scheduledWindowStart,
-      windowEnd: input.scheduledWindowEnd,
-    })) {
-      dates.add(date);
-      const loadByDate = event.tentative ? tentativeScheduledLoadByDate : scheduledLoadByDate;
-      loadByDate.set(date, (loadByDate.get(date) ?? 0) + tss);
-    }
-  }
+  const scheduledLoadAggregation = aggregateScheduledLoadByDate(input);
+  for (const date of scheduledLoadAggregation.dates) dates.add(date);
 
   const hasCalendarScheduleForDate = (date: string) =>
     !!input.scheduledWindowStart &&
@@ -315,10 +210,10 @@ export function buildTrainingPreferencesLoadTimeline(input: {
       const baseline = baselineByDate.get(date);
       const previewPoint = previewByDate.get(date);
       const scheduledLoad = hasCalendarScheduleForDate(date)
-        ? (scheduledLoadByDate.get(date) ?? 0)
+        ? (scheduledLoadAggregation.scheduledLoadByDate.get(date) ?? 0)
         : (baseline?.scheduled_tss ?? 0);
       const tentativeScheduledLoad = hasCalendarScheduleForDate(date)
-        ? (tentativeScheduledLoadByDate.get(date) ?? 0)
+        ? (scheduledLoadAggregation.tentativeScheduledLoadByDate.get(date) ?? 0)
         : 0;
 
       return withLegacyTrainingLoadAliases({

@@ -11,6 +11,7 @@ import {
   FormDateTimeField,
   FormTextareaField,
 } from "@repo/ui/components/form";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { z } from "zod";
 
@@ -65,8 +66,14 @@ export function ProfileMetricForm({
       await onSubmit(formValues);
     },
     shouldRethrow: false,
+    submittingLabel: "Saving...",
   });
   const isPending = pending || submit.isSubmitting;
+  const submitButtonState = submit.getSubmitButtonState({
+    disabled: pending,
+    label: "Save",
+    submittingLabel: "Saving...",
+  });
 
   return (
     <Form {...form}>
@@ -94,9 +101,14 @@ export function ProfileMetricForm({
           <Button onClick={onCancel} type="button" variant="outline">
             Cancel
           </Button>
-          <Button disabled={isPending} type="submit">
-            {isPending ? "Saving..." : "Save"}
-          </Button>
+          <LoadingButton
+            disabled={submitButtonState.disabled}
+            loading={isPending}
+            loadingLabel={submitButtonState.loadingLabel}
+            type="submit"
+          >
+            {submitButtonState.label}
+          </LoadingButton>
         </DialogFooter>
       </form>
     </Form>

@@ -7,6 +7,7 @@
  * - Network state awareness
  */
 
+import { fetch as expoFetch } from "expo/fetch";
 import { File } from "expo-file-system";
 
 export interface UploadProgress {
@@ -151,17 +152,12 @@ export class ActivityFileUploader {
         throw new Error("File not found");
       }
 
-      // Convert to Blob to ensure binary streaming works with fetch
-      // Expo fetch can read from local URIs to create a Blob
-      const fileResponse = await fetch(file.uri);
-      const blob = await fileResponse.blob();
+      console.log(`[ActivityFileUploader] Uploading ${file.size ?? 0} bytes from file`);
 
-      console.log(`[ActivityFileUploader] Uploading ${blob.size} bytes via Blob`);
-
-      const response = await fetch(url, {
+      const response = await expoFetch(url, {
         method: method,
         headers: headers,
-        body: blob,
+        body: file,
       });
 
       if (!response.ok) {
@@ -171,8 +167,8 @@ export class ActivityFileUploader {
       // Simulate progress complete
       if (this.uploadState.progress) {
         this.uploadState.progress = {
-          loaded: blob.size,
-          total: blob.size,
+          loaded: file.size ?? 0,
+          total: file.size ?? 0,
           percentage: 100,
         };
       }
@@ -209,7 +205,7 @@ export class ActivityFileUploader {
    * Calculate retry delay with exponential backoff
    */
   private calculateRetryDelay(attempt: number): number {
-    const delay = this.config.baseRetryDelayMs * Math.pow(2, attempt - 1);
+    const delay = this.config.baseRetryDelayMs * 2 ** (attempt - 1);
     return Math.min(delay, this.config.maxRetryDelayMs);
   }
 

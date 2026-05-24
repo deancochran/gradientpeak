@@ -68,6 +68,12 @@ jest.mock("expo-router", () => ({
 }));
 
 jest.mock("@repo/ui/components/button", () => ({ __esModule: true, Button: createHost("Button") }));
+jest.mock("@repo/ui/components/avatar", () => ({
+  __esModule: true,
+  Avatar: createHost("Avatar"),
+  AvatarFallback: createHost("AvatarFallback"),
+  AvatarImage: createHost("AvatarImage"),
+}));
 jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHost("Text") }));
 
 jest.mock("lucide-react-native", () => ({
@@ -79,6 +85,12 @@ jest.mock("lucide-react-native", () => ({
 jest.mock("@/components/shared/ActivityPlanCard", () => ({
   __esModule: true,
   ActivityPlanCard: createHost("ActivityPlanCard"),
+}));
+
+jest.mock("@/components/shared/AppFormModal", () => ({
+  __esModule: true,
+  AppFormModal: ({ children, testID, title }: any) =>
+    React.createElement("View", { testID }, React.createElement("Text", null, title), children),
 }));
 
 jest.mock("@/components/shared/detail", () => ({
@@ -216,9 +228,10 @@ describe("group event detail route", () => {
 
     renderNative(<GroupEventDetailRoute />);
 
-    expect(screen.getByText("Series occurrence")).toBeTruthy();
-    expect(screen.getByText("Next Occurrence")).toBeTruthy();
+    expect(screen.getByText("Repeating event")).toBeTruthy();
+    expect(screen.queryByText("Next Occurrence")).toBeNull();
 
+    fireEvent.press(screen.getByText("Apply to series"));
     fireEvent.press(screen.getByText("Going to series"));
 
     await waitFor(() => {
@@ -228,6 +241,30 @@ describe("group event detail route", () => {
       });
     });
     expect(refetchMock).toHaveBeenCalled();
+  });
+
+  it("shows the owning group avatar row and links to the group detail page", () => {
+    detailVm.event = {
+      ...baseEvent,
+      group: {
+        id: "22222222-2222-4222-8222-222222222222",
+        name: "Ride Club",
+        slug: "ride-club",
+        avatar_url: null,
+      },
+    } as any;
+
+    renderNative(<GroupEventDetailRoute />);
+
+    expect(screen.getByText("Ride Club")).toBeTruthy();
+    expect(screen.getByText("RC")).toBeTruthy();
+
+    fireEvent.press(screen.getByLabelText("Open group Ride Club"));
+
+    expect(pushMock).toHaveBeenCalledWith({
+      pathname: "/group-detail",
+      params: { groupId: "22222222-2222-4222-8222-222222222222" },
+    });
   });
 
   it("exposes copy-series-plans management only for manageable occurrences", async () => {

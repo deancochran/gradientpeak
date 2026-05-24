@@ -45,6 +45,7 @@ import {
 import { appRouter } from "../index";
 
 const SESSION_USER_ID = "11111111-1111-4111-8111-111111111111";
+const EMPTY_ICAL_FEED = "BEGIN:VCALENDAR\nVERSION:2.0\nEND:VCALENDAR";
 
 const queryMap: QueryMap = {
   activity_efforts: { data: [], error: null },
@@ -119,11 +120,16 @@ describe("backend endpoint performance", () => {
   beforeAll(() => {
     consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(EMPTY_ICAL_FEED, { status: 200 })),
+    );
   });
 
   afterAll(() => {
     consoleErrorSpy.mockRestore();
     consoleLogSpy.mockRestore();
+    vi.unstubAllGlobals();
   });
 
   it("discovers every app router endpoint for performance coverage", () => {

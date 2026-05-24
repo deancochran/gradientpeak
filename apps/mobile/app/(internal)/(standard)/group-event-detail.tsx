@@ -35,13 +35,23 @@ export default function GroupEventDetailRoute() {
   const managementActions: DetailOverflowMenuAction[] = [];
   if (event && groupVm.viewer?.canCreateGroupEvent) {
     managementActions.push({
-      label: "Edit event",
+      label: event.is_recurring_occurrence ? "Edit this event" : "Edit event",
       onPress: () =>
         router.push({ pathname: "/group-event-edit", params: { groupEventId: event.id } }),
       testID: "group-event-detail-edit",
     });
 
     if (event.is_recurring_occurrence && event.series_id) {
+      managementActions.push({
+        label: "Edit series",
+        onPress: () =>
+          router.push({
+            pathname: "/group-event-edit",
+            params: { groupEventId: event.series_id as string },
+          }),
+        testID: "group-event-detail-edit-series",
+      });
+
       managementActions.push({
         label: "Copy series plans",
         onPress: async () => {
@@ -138,6 +148,9 @@ export default function GroupEventDetailRoute() {
           isWorking={isWorking}
           onActivityPlanPress={(activityPlanId) =>
             router.push({ pathname: "/activity-plan-detail", params: { id: activityPlanId } })
+          }
+          onGroupPress={(group) =>
+            router.push({ pathname: "/group-detail", params: { groupId: group.id } })
           }
           onOccurrencePress={(occurrence) =>
             router.push({

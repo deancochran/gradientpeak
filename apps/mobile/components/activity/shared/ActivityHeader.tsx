@@ -6,7 +6,6 @@ import { Text } from "@repo/ui/components/text";
 import { Textarea } from "@repo/ui/components/textarea";
 import { format } from "date-fns";
 import { Activity, Bike, Dumbbell, Footprints, Waves } from "lucide-react-native";
-import React from "react";
 import { Pressable, View } from "react-native";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";

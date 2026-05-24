@@ -1,14 +1,13 @@
 import { calculateAge, calculateRollingTrainingQuality, getFormStatus } from "@repo/core";
 import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core/load";
 import {
-  type ActivityRow,
   type EventRow,
   type ProfileTrainingSettingsRow,
   type PublicActivityPlansRow,
   schema,
   type TrainingPlanRow,
 } from "@repo/db";
-import { and, asc, eq, gte, isNotNull, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, gte, isNotNull, lt, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
 import {
@@ -280,24 +279,24 @@ const dashboardResponseSchema = z
   .strict();
 
 type ActivitySummaryRow = Pick<
-  ActivityRow,
-  | "id"
-  | "type"
-  | "started_at"
-  | "finished_at"
-  | "duration_seconds"
-  | "moving_seconds"
-  | "distance_meters"
-  | "avg_heart_rate"
-  | "max_heart_rate"
-  | "avg_power"
-  | "max_power"
-  | "avg_speed_mps"
-  | "max_speed_mps"
-  | "normalized_power"
-  | "normalized_speed_mps"
-  | "normalized_graded_speed_mps"
->;
+  typeof schema.activities.$inferSelect,
+  "id" | "type" | "started_at" | "finished_at"
+> &
+  Pick<
+    typeof schema.activitySummaries.$inferSelect,
+    | "duration_seconds"
+    | "moving_seconds"
+    | "distance_meters"
+    | "avg_heart_rate"
+    | "max_heart_rate"
+    | "avg_power"
+    | "max_power"
+    | "avg_speed_mps"
+    | "max_speed_mps"
+    | "normalized_power"
+    | "normalized_speed_mps"
+    | "normalized_graded_speed_mps"
+  >;
 
 type DashboardTrainingPlanRow = Pick<TrainingPlanRow, "id" | "name" | "description" | "structure">;
 
@@ -357,7 +356,11 @@ async function listPlannedActivitiesInRange(
       activity_plan: schema.activityPlans,
     })
     .from(schema.events)
-    .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
+    .leftJoin(schema.eventScheduleLinks, eq(schema.eventScheduleLinks.event_id, schema.events.id))
+    .leftJoin(
+      schema.activityPlans,
+      eq(schema.eventScheduleLinks.activity_plan_id, schema.activityPlans.id),
+    )
     .where(
       and(
         eq(schema.events.profile_id, input.profileId),
@@ -416,16 +419,20 @@ export const homeRouter = createTRPCRouter({
       const [rawNextPlannedEvent, profileSettingsData] = await Promise.all([
         db
           .select({
-            training_plan_id: schema.events.training_plan_id,
+            training_plan_id: schema.eventScheduleLinks.training_plan_id,
             starts_at: schema.events.starts_at,
           })
           .from(schema.events)
+          .innerJoin(
+            schema.eventScheduleLinks,
+            eq(schema.eventScheduleLinks.event_id, schema.events.id),
+          )
           .where(
             and(
               eq(schema.events.profile_id, userId),
               eq(schema.events.event_type, "planned_activity"),
               gte(schema.events.starts_at, today),
-              isNotNull(schema.events.training_plan_id),
+              isNotNull(schema.eventScheduleLinks.training_plan_id),
             ),
           )
           .orderBy(asc(schema.events.starts_at))
@@ -489,20 +496,24 @@ export const homeRouter = createTRPCRouter({
             type: schema.activities.type,
             started_at: schema.activities.started_at,
             finished_at: schema.activities.finished_at,
-            duration_seconds: schema.activities.duration_seconds,
-            moving_seconds: schema.activities.moving_seconds,
-            distance_meters: schema.activities.distance_meters,
-            avg_heart_rate: schema.activities.avg_heart_rate,
-            max_heart_rate: schema.activities.max_heart_rate,
-            avg_power: schema.activities.avg_power,
-            max_power: schema.activities.max_power,
-            avg_speed_mps: schema.activities.avg_speed_mps,
-            max_speed_mps: schema.activities.max_speed_mps,
-            normalized_power: schema.activities.normalized_power,
-            normalized_speed_mps: schema.activities.normalized_speed_mps,
-            normalized_graded_speed_mps: schema.activities.normalized_graded_speed_mps,
+            duration_seconds: schema.activitySummaries.duration_seconds,
+            moving_seconds: schema.activitySummaries.moving_seconds,
+            distance_meters: schema.activitySummaries.distance_meters,
+            avg_heart_rate: schema.activitySummaries.avg_heart_rate,
+            max_heart_rate: schema.activitySummaries.max_heart_rate,
+            avg_power: schema.activitySummaries.avg_power,
+            max_power: schema.activitySummaries.max_power,
+            avg_speed_mps: schema.activitySummaries.avg_speed_mps,
+            max_speed_mps: schema.activitySummaries.max_speed_mps,
+            normalized_power: schema.activitySummaries.normalized_power,
+            normalized_speed_mps: schema.activitySummaries.normalized_speed_mps,
+            normalized_graded_speed_mps: schema.activitySummaries.normalized_graded_speed_mps,
           })
           .from(schema.activities)
+          .innerJoin(
+            schema.activitySummaries,
+            eq(schema.activitySummaries.activity_id, schema.activities.id),
+          )
           .where(
             and(
               eq(schema.activities.profile_id, userId),
@@ -902,7 +913,7 @@ export const homeRouter = createTRPCRouter({
                 // Calculate ideal CTL progression using exponential growth
                 // CTL should increase by rampRate per week
                 const weeksPassed = i / 7;
-                idealCTL = startingCTL * Math.pow(1 + rampRate, weeksPassed);
+                idealCTL = startingCTL * (1 + rampRate) ** weeksPassed;
 
                 // Cap at target CTL
                 if (idealCTL > targetCTL) {
@@ -938,14 +949,8 @@ export const homeRouter = createTRPCRouter({
           ? Math.round((weeklyActualStats.tss / weeklyPlannedStats.tss) * 100)
           : null;
 
-      let firstTargetType = undefined;
-      if (
-        planStructure &&
-        planStructure.goals &&
-        planStructure.goals[0] &&
-        planStructure.goals[0].targets &&
-        planStructure.goals[0].targets[0]
-      ) {
+      let firstTargetType;
+      if (planStructure?.goals?.[0]?.targets?.[0]) {
         firstTargetType = planStructure.goals[0].targets[0].target_type;
       }
 

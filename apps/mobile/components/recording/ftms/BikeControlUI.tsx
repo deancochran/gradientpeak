@@ -18,7 +18,7 @@
 
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
-import React, { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Alert, View } from "react-native";
 import { usePlan } from "@/lib/hooks/useActivityRecorder";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
@@ -43,13 +43,13 @@ export function BikeControlUI({ service, controlMode, hasPlan }: BikeControlUIPr
   // SIM mode state
   const [grade, setGrade] = useState<number>(0);
   const [windSpeed, setWindSpeed] = useState<number>(0);
-  const [weight, setWeight] = useState<number>(75); // User weight for grade calculations
+  const [_weight, _setWeight] = useState<number>(75); // User weight for grade calculations
 
   // Resistance mode state
   const [resistanceLevel, setResistanceLevel] = useState<number>(5);
 
   // FTP for zone display
-  const [ftp, setFtp] = useState<number>(200);
+  const [ftp, _setFtp] = useState<number>(200);
 
   // Get trainer features
   const features = service.getTrainerFeatures();
@@ -162,7 +162,7 @@ export function BikeControlUI({ service, controlMode, hasPlan }: BikeControlUIPr
     if (availableModes.length > 0 && !availableModes.includes(bikeMode)) {
       setBikeMode(availableModes[0]);
     }
-  }, []);
+  }, [availableModes.includes, availableModes[0], bikeMode]);
 
   // Controls are disabled in Auto mode, but mode buttons are always enabled
   const isDisabled = controlMode === "auto";

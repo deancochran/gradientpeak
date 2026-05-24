@@ -8,7 +8,7 @@
 import { formatIntensityTarget, getStepIntensityColor, type IntervalStepV2 } from "@repo/core";
 import { Slider } from "@repo/ui/components/slider";
 import { Text } from "@repo/ui/components/text";
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ScrollView, View } from "react-native";
 import { usePlan } from "@/lib/hooks/useActivityRecorder";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
@@ -35,20 +35,23 @@ function resolveIntensityTarget(
   // Resolve percentage-based targets to absolute values with units
   // Apply intensity adjustment to numeric values
   switch (target.type) {
-    case "%FTP":
+    case "%FTP": {
       const ftp = profile?.ftp || 200;
       const watts = Math.round((target.intensity / 100) * ftp * intensityAdjustment);
       return `${watts}W`;
-    case "%MaxHR":
+    }
+    case "%MaxHR": {
       const maxHR = profile?.max_heart_rate || 180;
       const targetHR = Math.round((target.intensity / 100) * maxHR * intensityAdjustment);
       return `${targetHR} bpm`;
-    case "%ThresholdHR":
+    }
+    case "%ThresholdHR": {
       const thresholdHR = profile?.threshold_heart_rate || 160;
       const targetThresholdHR = Math.round(
         (target.intensity / 100) * thresholdHR * intensityAdjustment,
       );
       return `${targetThresholdHR} bpm`;
+    }
     case "watts":
       return `${Math.round(target.intensity * intensityAdjustment)}W`;
     case "bpm":

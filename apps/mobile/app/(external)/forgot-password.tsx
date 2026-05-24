@@ -1,9 +1,9 @@
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Form, FormTextField } from "@repo/ui/components/form";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
-import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
 import React from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
@@ -19,13 +19,14 @@ import { type ForgotPasswordFields, forgotPasswordSchema } from "@/lib/auth/form
 import { withAuthRequestTimeout } from "@/lib/auth/request-timeout";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { logMobileAction } from "@/lib/logging/mobile-action-log";
-import { useServerConfig } from "@/lib/server-config";
+import { isServerUrlOverrideEnabled, useServerConfig } from "@/lib/server-config";
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
   const { loading: authLoading } = useAuth();
   const [emailSent, setEmailSent] = React.useState(false);
   const [isServerConfigExpanded, setIsServerConfigExpanded] = React.useState(false);
+  const serverOverrideEnabled = isServerUrlOverrideEnabled();
   const serverConfig = useServerConfig();
   const [serverUrlInput, setServerUrlInput] = React.useState(
     serverConfig.overrideUrl ?? serverConfig.apiUrl,
@@ -105,25 +106,22 @@ export default function ForgotPasswordScreen() {
         <View className="flex-1 justify-center items-center">
           <Card className="w-full max-w-sm bg-card border-border shadow-sm">
             <CardContent className="p-8 items-center">
-              {/* Success Icon */}
               <View className="w-16 h-16 bg-success rounded-full items-center justify-center mb-6">
                 <Text className="text-success-foreground text-2xl font-bold">✓</Text>
               </View>
 
-              {/* Success Message */}
               <View className="items-center mb-8">
                 <Text variant="h3" className="text-center mb-2">
                   Check your email
                 </Text>
                 <Text variant="muted" className="text-center">
-                  Weve sent password reset instructions to{"\n"}
+                  We have sent password reset instructions to{"\n"}
                   <Text variant="default" className="font-semibold">
                     {form.getValues("email")}
                   </Text>
                 </Text>
               </View>
 
-              {/* Action Buttons */}
               <View className="w-full gap-4">
                 <Button
                   variant="default"
@@ -159,24 +157,21 @@ export default function ForgotPasswordScreen() {
       testID="forgot-password-screen"
     >
       <ScrollView
-        contentContainerClassName="flex-grow justify-center p-6"
+        contentContainerClassName="flex-grow justify-center p-5"
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         <Card className="w-full max-w-sm mx-auto bg-card border-border shadow-sm">
-          <CardHeader className="items-center pb-6">
-            <CardTitle>
-              <Text variant="h2" className="text-center">
-                Reset your password
-              </Text>
+          <CardHeader className="items-center gap-2 pb-4">
+            <CardTitle className="text-center text-3xl leading-tight">
+              Reset your password
             </CardTitle>
-            <Text variant="muted" className="text-center">
+            <Text variant="muted" className="text-center text-base leading-6">
               Enter your email address and we will send you instructions to reset your password
             </Text>
           </CardHeader>
 
-          <CardContent className="gap-6">
-            {/* Form */}
+          <CardContent className="gap-5">
             <Form {...form}>
               <View className="gap-4" testID="forgot-password-form">
                 <FormTextField
@@ -192,27 +187,29 @@ export default function ForgotPasswordScreen() {
               </View>
             </Form>
 
-            {/* Send Reset Button */}
-            <Button
+            <LoadingButton
               variant="default"
               size="lg"
               onPress={submitForm.handleSubmit}
               disabled={isLoading}
+              loading={isLoading}
+              loadingLabel="Sending..."
               testID="send-reset-button"
               className="w-full"
             >
-              <Text>{isLoading ? "Sending..." : "Send Reset Instructions"}</Text>
-            </Button>
+              <Text>Send Reset Instructions</Text>
+            </LoadingButton>
 
-            <ServerUrlOverride
-              expanded={isServerConfigExpanded}
-              value={serverUrlInput}
-              usingHostedDefault={!serverConfig.overrideUrl}
-              onToggle={() => setIsServerConfigExpanded((currentValue) => !currentValue)}
-              onChange={setServerUrlInput}
-            />
+            {serverOverrideEnabled ? (
+              <ServerUrlOverride
+                expanded={isServerConfigExpanded}
+                value={serverUrlInput}
+                usingHostedDefault={!serverConfig.overrideUrl}
+                onToggle={() => setIsServerConfigExpanded((currentValue) => !currentValue)}
+                onChange={setServerUrlInput}
+              />
+            ) : null}
 
-            {/* Back to Sign In Link */}
             <View className="border-t border-border pt-4">
               <Button
                 variant="outline"

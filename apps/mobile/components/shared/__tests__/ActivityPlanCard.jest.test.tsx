@@ -1,4 +1,3 @@
-import React from "react";
 import { createHost } from "../../../test/mock-components";
 import { renderNative, screen } from "../../../test/render-native";
 import { ActivityPlanCard } from "../ActivityPlanCard";

@@ -1,6 +1,5 @@
 // apps/native/app/(internal)/_layout.tsx
 import { Stack } from "expo-router";
-import React from "react";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { ActivityRecorderProvider } from "@/lib/providers/ActivityRecorderProvider";
 

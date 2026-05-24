@@ -1,5 +1,4 @@
 import { Text } from "@repo/ui/components/text";
-import React from "react";
 import { Dimensions, TouchableOpacity, View } from "react-native";
 import { LineChart } from "react-native-chart-kit";
 import { useTheme } from "@/lib/stores/theme-store";

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { accountDeletionResultSchema } from "./account-deletion";
+import type { accountDeletionResultSchema } from "./account-deletion";
 import { authSessionSchema, authUserSchema } from "./session";
 
 export const signUpInputSchema = z.object({

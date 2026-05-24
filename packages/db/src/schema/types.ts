@@ -1,18 +1,26 @@
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 
-import {
+import type {
   activities,
   activityEfforts,
+  activityGeometry,
+  activityImports,
+  activityLaps,
   activityPlanDerivedMetricsCache,
   activityPlanRefreshQueue,
   activityPlans,
   activityRoutes,
+  activitySummaries,
   coachesAthletes,
   coachingInvitations,
   comments,
   contentAccessGrants,
   conversationParticipants,
   conversations,
+  eventExternalLinks,
+  eventPayloads,
+  eventRecurrence,
+  eventScheduleLinks,
   events,
   follows,
   groupEventActivityPlans,
@@ -23,6 +31,7 @@ import {
   groupJoinRequests,
   groupMemberships,
   groups,
+  integrationCredentials,
   integrationResourceLinks,
   integrations,
   likes,
@@ -96,11 +105,89 @@ export type TrainingPlanInsert = InferInsertModel<typeof trainingPlans>;
 export type UserTrainingPlanRow = InferSelectModel<typeof userTrainingPlans>;
 export type UserTrainingPlanInsert = InferInsertModel<typeof userTrainingPlans>;
 
-export type ActivityRow = InferSelectModel<typeof activities>;
+type BaseActivityRow = InferSelectModel<typeof activities>;
 export type ActivityInsert = InferInsertModel<typeof activities>;
 
-export type EventRow = InferSelectModel<typeof events>;
+export type ActivitySummaryRow = InferSelectModel<typeof activitySummaries>;
+export type ActivitySummaryInsert = InferInsertModel<typeof activitySummaries>;
+
+export type ActivityImportRow = InferSelectModel<typeof activityImports>;
+export type ActivityImportInsert = InferInsertModel<typeof activityImports>;
+
+export type ActivityGeometryRow = InferSelectModel<typeof activityGeometry>;
+export type ActivityGeometryInsert = InferInsertModel<typeof activityGeometry>;
+
+export type ActivityLapRow = InferSelectModel<typeof activityLaps>;
+export type ActivityLapInsert = InferInsertModel<typeof activityLaps>;
+
+type BaseEventRow = InferSelectModel<typeof events>;
 export type EventInsert = InferInsertModel<typeof events>;
+
+export type EventScheduleLinkRow = InferSelectModel<typeof eventScheduleLinks>;
+export type EventScheduleLinkInsert = InferInsertModel<typeof eventScheduleLinks>;
+
+export type EventExternalLinkRow = InferSelectModel<typeof eventExternalLinks>;
+export type EventExternalLinkInsert = InferInsertModel<typeof eventExternalLinks>;
+
+export type EventRecurrenceRow = InferSelectModel<typeof eventRecurrence>;
+export type EventRecurrenceInsert = InferInsertModel<typeof eventRecurrence>;
+
+export type EventPayloadRow = InferSelectModel<typeof eventPayloads>;
+export type EventPayloadInsert = InferInsertModel<typeof eventPayloads>;
+
+export type ActivityRow = BaseActivityRow &
+  Partial<
+    Pick<
+      ActivitySummaryRow,
+      | "avg_cadence"
+      | "avg_heart_rate"
+      | "avg_power"
+      | "avg_speed_mps"
+      | "calories"
+      | "distance_meters"
+      | "duration_seconds"
+      | "max_cadence"
+      | "max_heart_rate"
+      | "max_power"
+      | "max_speed_mps"
+      | "moving_seconds"
+      | "normalized_graded_speed_mps"
+      | "normalized_power"
+      | "normalized_speed_mps"
+    >
+  > &
+  Partial<Pick<ActivityImportRow, "activity_file_path">> &
+  Partial<Pick<ActivityGeometryRow, "map_bounds" | "polyline">>;
+
+export type EventRow = BaseEventRow &
+  Partial<
+    Pick<
+      EventScheduleLinkRow,
+      | "activity_plan_id"
+      | "linked_activity_id"
+      | "route_id"
+      | "schedule_batch_id"
+      | "training_plan_id"
+      | "user_training_plan_id"
+    >
+  > &
+  Partial<
+    Pick<
+      EventExternalLinkRow,
+      "external_calendar_id" | "external_event_id" | "integration_account_id" | "source_provider"
+    >
+  > &
+  Partial<
+    Pick<
+      EventRecurrenceRow,
+      | "occurrence_key"
+      | "original_starts_at"
+      | "recurrence"
+      | "recurrence_rule"
+      | "recurrence_timezone"
+      | "series_id"
+    >
+  >;
 
 export type ContentAccessGrantRow = InferSelectModel<typeof contentAccessGrants>;
 export type ContentAccessGrantInsert = InferInsertModel<typeof contentAccessGrants>;
@@ -110,6 +197,9 @@ export type ActivityEffortInsert = InferInsertModel<typeof activityEfforts>;
 
 export type IntegrationRow = InferSelectModel<typeof integrations>;
 export type IntegrationInsert = InferInsertModel<typeof integrations>;
+
+export type IntegrationCredentialRow = InferSelectModel<typeof integrationCredentials>;
+export type IntegrationCredentialInsert = InferInsertModel<typeof integrationCredentials>;
 
 export type ProviderSyncStateRow = InferSelectModel<typeof providerSyncState>;
 export type ProviderSyncStateInsert = InferInsertModel<typeof providerSyncState>;

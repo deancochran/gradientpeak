@@ -2,7 +2,6 @@ import { Button } from "@repo/ui/components/button";
 import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
 import { ChevronDown, ChevronUp } from "lucide-react-native";
-import React from "react";
 import { View } from "react-native";
 
 type Props = {
