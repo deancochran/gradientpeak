@@ -62,7 +62,7 @@ describe("TrainingPlanCard", () => {
           durationWeeks: { recommended: 10 },
           sport: ["run"],
           experienceLevel: ["intermediate"],
-          updated_at: "2026-03-21T12:00:00.000Z",
+          updated_at: "2026-03-21T08:00:00.000",
           owner: null,
         }}
         variant="compact"
@@ -87,7 +87,7 @@ describe("TrainingPlanCard", () => {
         plan={{
           id: "training-plan-1",
           name: "Half Marathon Build",
-          updated_at: "2026-03-21T12:00:00.000Z",
+          updated_at: "2026-03-21T08:00:00.000",
           owner: {
             id: "owner-1",
             username: "Coach Kim",

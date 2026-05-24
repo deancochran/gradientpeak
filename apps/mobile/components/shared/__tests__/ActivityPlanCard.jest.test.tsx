@@ -80,7 +80,7 @@ describe("ActivityPlanCard", () => {
           name: "Tempo Builder",
           description: "Progressive tempo with a strong finish.",
           activity_category: "outdoor_run",
-          updated_at: "2026-03-21T12:00:00.000Z",
+          updated_at: "2026-03-21T08:00:00.000",
           owner: null,
         }}
         variant="compact"
@@ -104,7 +104,7 @@ describe("ActivityPlanCard", () => {
           id: "plan-1",
           name: "Tempo Builder",
           activity_category: "outdoor_run",
-          updated_at: "2026-03-21T12:00:00.000Z",
+          updated_at: "2026-03-21T08:00:00.000",
           owner: {
             id: "owner-1",
             username: "Coach Kim",

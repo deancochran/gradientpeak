@@ -71,7 +71,7 @@ describe("RouteCard", () => {
           name: "Morning Loop",
           activity_category: "outdoor_run",
           total_distance: 5000,
-          updated_at: "2026-03-21T12:00:00.000Z",
+          updated_at: "2026-03-21T08:00:00.000",
           owner: {
             id: "owner-1",
             username: "Coach Kim",
