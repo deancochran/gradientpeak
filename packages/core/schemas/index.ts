@@ -118,7 +118,7 @@ export * from "./template_library";
 
 // tRPC-specific Activity Plans Schemas - use different names to avoid conflicts with supabase exports
 // Note: estimated_duration and estimated_tss are calculated server-side and NOT part of the input
-export const activityPlanCreateSchema = z
+const activityPlanBaseSchema = z
   .object({
     activity_category: z.enum(["run", "bike", "swim", "strength", "other"]),
     name: z.string().min(1, "Plan name is required"),
@@ -128,17 +128,18 @@ export const activityPlanCreateSchema = z
     route_id: z.string().uuid().nullable().optional(),
     notes: z.string().max(2000).nullable().optional(),
   })
-  .strict()
-  .superRefine((plan, ctx) => {
-    addActivityTargetCompatibilityIssuesToZodContext({
-      activityCategory: plan.activity_category as ActivityTargetCategory,
-      ctx,
-      pathPrefix: ["structure"],
-      structure: plan.structure,
-    });
-  });
+  .strict();
 
-export const activityPlanUpdateSchema = activityPlanCreateSchema
+export const activityPlanCreateSchema = activityPlanBaseSchema.superRefine((plan, ctx) => {
+  addActivityTargetCompatibilityIssuesToZodContext({
+    activityCategory: plan.activity_category as ActivityTargetCategory,
+    ctx,
+    pathPrefix: ["structure"],
+    structure: plan.structure,
+  });
+});
+
+export const activityPlanUpdateSchema = activityPlanBaseSchema
   .partial()
   .superRefine((plan, ctx) => {
     if (plan.structure && plan.activity_category) {

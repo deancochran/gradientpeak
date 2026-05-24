@@ -345,7 +345,7 @@ export const activityCategorySchema = canonicalSportSchema;
  * The route adds geography/context, but the structure remains the
  * canonical effort definition used for validation and derived metrics.
  */
-const activityPlanFormFieldsSchema = activityPlanInsertShapeSchema
+const activityPlanFormFieldsBaseSchema = activityPlanInsertShapeSchema
   .pick({
     name: true,
     description: true,
@@ -363,15 +363,16 @@ const activityPlanFormFieldsSchema = activityPlanInsertShapeSchema
     ),
     notes: activityPlanNotesSchema,
     structure: saveableActivityPlanStructureSchemaV2,
-  })
-  .superRefine((plan, ctx) => {
-    addActivityTargetCompatibilityIssuesToZodContext({
-      activityCategory: plan.activity_category as ActivityTargetCategory,
-      ctx,
-      pathPrefix: ["structure"],
-      structure: plan.structure,
-    });
   });
+
+const activityPlanFormFieldsSchema = activityPlanFormFieldsBaseSchema.superRefine((plan, ctx) => {
+  addActivityTargetCompatibilityIssuesToZodContext({
+    activityCategory: plan.activity_category as ActivityTargetCategory,
+    ctx,
+    pathPrefix: ["structure"],
+    structure: plan.structure,
+  });
+});
 
 export const activityPlanCreateFormSchema = activityPlanFormFieldsSchema;
 
@@ -380,7 +381,7 @@ export type ActivityPlanCreateFormData = z.infer<typeof activityPlanCreateFormSc
 /**
  * Activity Plan Update Form Schema
  */
-export const activityPlanUpdateFormSchema = activityPlanFormFieldsSchema
+export const activityPlanUpdateFormSchema = activityPlanFormFieldsBaseSchema
   .partial()
   .safeExtend({
     id: z.string().uuid("Invalid activity plan ID"),

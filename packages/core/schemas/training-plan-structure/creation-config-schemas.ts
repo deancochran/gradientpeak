@@ -306,48 +306,48 @@ export type TrainingPlanCalibrationInput = z.infer<typeof trainingPlanCalibratio
 
 export type TrainingPlanCalibrationConfig = z.infer<typeof trainingPlanCalibrationConfigSchema>;
 
-export const creationConstraintsSchema = z
-  .object({
-    hard_rest_days: z.array(creationWeekDayEnum).max(7).default([]),
-    min_sessions_per_week: z.number().int().min(0).max(21).optional(),
-    max_sessions_per_week: z.number().int().min(0).max(21).optional(),
-    max_single_session_duration_minutes: z.number().int().min(20).max(600).optional(),
-    goal_difficulty_preference: creationGoalDifficultyPreferenceEnum.default("balanced"),
-  })
-  .superRefine((data, ctx) => {
-    if (
-      data.min_sessions_per_week !== undefined &&
-      data.max_sessions_per_week !== undefined &&
-      data.min_sessions_per_week > data.max_sessions_per_week
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["min_sessions_per_week"],
-        message: "Minimum sessions per week cannot exceed maximum sessions",
-      });
-    }
+export const creationConstraintsBaseSchema = z.object({
+  hard_rest_days: z.array(creationWeekDayEnum).max(7).default([]),
+  min_sessions_per_week: z.number().int().min(0).max(21).optional(),
+  max_sessions_per_week: z.number().int().min(0).max(21).optional(),
+  max_single_session_duration_minutes: z.number().int().min(20).max(600).optional(),
+  goal_difficulty_preference: creationGoalDifficultyPreferenceEnum.default("balanced"),
+});
 
-    const uniqueRestDays = new Set(data.hard_rest_days);
-    if (uniqueRestDays.size !== data.hard_rest_days.length) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["hard_rest_days"],
-        message: "Hard rest days cannot contain duplicates",
-      });
-    }
+export const creationConstraintsSchema = creationConstraintsBaseSchema.superRefine((data, ctx) => {
+  if (
+    data.min_sessions_per_week !== undefined &&
+    data.max_sessions_per_week !== undefined &&
+    data.min_sessions_per_week > data.max_sessions_per_week
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["min_sessions_per_week"],
+      message: "Minimum sessions per week cannot exceed maximum sessions",
+    });
+  }
 
-    const availableTrainingDays = 7 - uniqueRestDays.size;
-    if (
-      data.min_sessions_per_week !== undefined &&
-      data.min_sessions_per_week > availableTrainingDays
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["min_sessions_per_week"],
-        message: "Minimum sessions exceed available training days after hard rest constraints",
-      });
-    }
-  });
+  const uniqueRestDays = new Set(data.hard_rest_days);
+  if (uniqueRestDays.size !== data.hard_rest_days.length) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["hard_rest_days"],
+      message: "Hard rest days cannot contain duplicates",
+    });
+  }
+
+  const availableTrainingDays = 7 - uniqueRestDays.size;
+  if (
+    data.min_sessions_per_week !== undefined &&
+    data.min_sessions_per_week > availableTrainingDays
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["min_sessions_per_week"],
+      message: "Minimum sessions exceed available training days after hard rest constraints",
+    });
+  }
+});
 
 export type CreationConstraints = z.infer<typeof creationConstraintsSchema>;
 
