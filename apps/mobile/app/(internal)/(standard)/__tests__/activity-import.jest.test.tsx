@@ -169,6 +169,19 @@ jest.mock("@repo/ui/components/form", () => ({
   },
 }));
 
+jest.mock("@repo/ui/hooks", () => {
+  const actual = jest.requireActual("@repo/ui/hooks");
+
+  return {
+    __esModule: true,
+    ...actual,
+    useZodFormSubmit: ({ form, onSubmit }: any) => ({
+      handleSubmit: () => onSubmit(form.getValues()),
+      isSubmitting: false,
+    }),
+  };
+});
+
 jest.mock("@repo/ui/components/input", () => ({
   __esModule: true,
   Input: ({ value, onChangeText, placeholder, ...props }: any) =>
@@ -178,6 +191,16 @@ jest.mock("@repo/ui/components/input", () => ({
       placeholder,
       ...props,
     }),
+}));
+
+jest.mock("@repo/ui/components/loading", () => ({
+  __esModule: true,
+  LoadingButton: ({ children, disabled, loading, onPress, ...props }: any) =>
+    React.createElement(
+      "Pressable",
+      { disabled: disabled || loading, onPress, ...props },
+      children,
+    ),
 }));
 
 jest.mock("@repo/ui/components/select", () => ({
@@ -292,10 +315,15 @@ describe("activity import screen", () => {
       screen.getByTestId("activity-import-notes-input"),
       "  Imported from archive  ",
     );
-    fireEvent.press(screen.getByText("Import Activity"));
+    fireEvent.press(screen.getByTestId("activity-import-submit-button"));
+
+    await waitFor(() => {
+      expect(getSignedUrlMock).toHaveBeenCalled();
+      expect(uploadToSignedUrlMock).toHaveBeenCalled();
+    });
 
     await act(async () => {
-      jest.advanceTimersByTime(1000);
+      jest.runOnlyPendingTimers();
     });
 
     await waitFor(() => {

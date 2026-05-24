@@ -23,6 +23,10 @@ function PlanDashboardScreen() {
       router.navigate({ pathname: "/goal-detail", params: { id: goalId } } as never),
     [router],
   );
+  const navigateToCreateGoal = useCallback(
+    () => router.navigate(ROUTES.GOALS.CREATE as never),
+    [router],
+  );
   const navigateToGroup = useCallback(
     (groupId: string) =>
       router.navigate({ pathname: "/group-detail", params: { groupId } } as never),
@@ -69,6 +73,7 @@ function PlanDashboardScreen() {
             onScrollNearEnd={trainingPath.extendTrainingPathWindowEnd}
             onScrollNearStart={trainingPath.extendTrainingPathWindowStart}
             onOpenActivity={navigateToActivity}
+            onCreateGoal={navigateToCreateGoal}
             onOpenGoal={navigateToGoal}
             onOpenGroup={navigateToGroup}
             onOpenGroupEvent={navigateToGroupEvent}

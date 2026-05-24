@@ -1,6 +1,6 @@
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { HelpCircle, Settings } from "lucide-react-native";
+import { HelpCircle, Plus, Settings } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import { TouchableOpacity, View } from "react-native";
 import { AppFormModal } from "@/components/shared/AppFormModal";
@@ -24,6 +24,7 @@ type TrainingPathSectionProps = {
   onScrollNearEnd?: () => void;
   onScrollNearStart?: () => void;
   onOpenActivity: (activityId: string) => void;
+  onCreateGoal?: () => void;
   onOpenGoal: (goalId: string) => void;
   onOpenGroup?: (groupId: string) => void;
   onOpenGroupEvent: (eventId: string) => void;
@@ -88,6 +89,7 @@ export function TrainingPathSection({
   onScrollNearEnd,
   onScrollNearStart,
   onOpenActivity,
+  onCreateGoal,
   onOpenGoal,
   onOpenGroup,
   onOpenGroupEvent,
@@ -195,6 +197,19 @@ export function TrainingPathSection({
             <Text className="text-center text-sm font-medium text-muted-foreground">
               {emptyStateCopy[model.emptyState]}
             </Text>
+            {model.emptyState === "noGoal" && onCreateGoal ? (
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Create goal"
+                activeOpacity={0.85}
+                className="mt-3 flex-row items-center gap-1.5 rounded-full bg-primary px-4 py-2"
+                onPress={onCreateGoal}
+                testID="plan-add-goal-button"
+              >
+                <Icon as={Plus} size={14} className="text-primary-foreground" />
+                <Text className="text-xs font-semibold text-primary-foreground">Add goal</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         ) : (
           <TrainingPathChart

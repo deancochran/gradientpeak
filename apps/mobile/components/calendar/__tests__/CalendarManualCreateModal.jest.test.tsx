@@ -39,6 +39,12 @@ jest.mock("@repo/ui/hooks", () => {
       }, []);
     },
     useZodFormSubmit: ({ form, onSubmit }: any) => ({
+      getSubmitButtonState: ({ disabled, label, submittingLabel }: any) => ({
+        disabled,
+        label,
+        loading: false,
+        loadingLabel: submittingLabel,
+      }),
       isSubmitting: false,
       handleSubmit: () => onSubmit(form.getValues()),
     }),

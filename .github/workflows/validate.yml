@@ -299,9 +299,9 @@ jobs:
           echo "Timed out waiting for supabase on 127.0.0.1:54321" >&2
           exit 1
 
-      - name: Apply local app schema migrations
+      - name: Verify local database status
         if: needs.changes.outputs.api_live_db_related == 'true'
-        run: pnpm --filter @repo/db db:migrate
+        run: pnpm --filter @repo/db db:status
 
       - name: Run API live DB smoke tests
         if: needs.changes.outputs.api_live_db_related == 'true'

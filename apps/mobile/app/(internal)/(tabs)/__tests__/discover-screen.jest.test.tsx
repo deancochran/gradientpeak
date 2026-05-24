@@ -136,6 +136,12 @@ jest.mock("expo-router", () => ({
   useRouter: () => ({ push: pushMock }),
 }));
 
+jest.mock("@react-navigation/native", () => ({
+  __esModule: true,
+  ...jest.requireActual("@react-navigation/native"),
+  useFocusEffect: (callback: () => void) => callback(),
+}));
+
 jest.mock("@/components/shared", () => ({
   __esModule: true,
   AppHeader: ({ title }: any) => React.createElement("Text", null, `Header:${title}`),
@@ -239,10 +245,18 @@ jest.mock("@/lib/stores/theme-store", () => ({
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
+    useUtils: () => ({
+      profiles: { get: { invalidate: jest.fn(async () => undefined) } },
+    }),
     activityPlans: {
       list: {
         useInfiniteQuery: (input?: unknown, options?: unknown) =>
           activityPlansUseInfiniteQueryMock(input, options),
+      },
+    },
+    profiles: {
+      get: {
+        useQuery: () => ({ data: { id: "profile-1" }, isLoading: false }),
       },
     },
     trainingPlans: {
@@ -322,19 +336,19 @@ describe("discover screen", () => {
       );
       expect(activityPlansUseInfiniteQueryMock).toHaveBeenLastCalledWith(
         expect.anything(),
-        expect.objectContaining({ enabled: true, getNextPageParam: expect.any(Function) }),
+        expect.objectContaining({ enabled: false, getNextPageParam: expect.any(Function) }),
       );
       expect(trainingPlansUseInfiniteQueryMock).toHaveBeenLastCalledWith(
         expect.anything(),
-        expect.objectContaining({ enabled: true, getNextPageParam: expect.any(Function) }),
+        expect.objectContaining({ enabled: false, getNextPageParam: expect.any(Function) }),
       );
       expect(usersUseInfiniteQueryMock).toHaveBeenLastCalledWith(
         expect.anything(),
-        expect.objectContaining({ enabled: true, getNextPageParam: expect.any(Function) }),
+        expect.objectContaining({ enabled: false, getNextPageParam: expect.any(Function) }),
       );
       expect(groupsUseInfiniteQueryMock).toHaveBeenLastCalledWith(
         expect.anything(),
-        expect.objectContaining({ enabled: true, getNextPageParam: expect.any(Function) }),
+        expect.objectContaining({ enabled: false, getNextPageParam: expect.any(Function) }),
       );
       expect(screen.getByTestId("discover-feed-item-routes-route-1")).toBeTruthy();
       expect(screen.queryByTestId("discover-feed-item-users-user-1")).toBeNull();
@@ -364,19 +378,19 @@ describe("discover screen", () => {
       );
       expect(trainingPlansUseInfiniteQueryMock).toHaveBeenLastCalledWith(
         expect.objectContaining({ search: "river" }),
-        expect.objectContaining({ enabled: true, getNextPageParam: expect.any(Function) }),
+        expect.objectContaining({ enabled: false, getNextPageParam: expect.any(Function) }),
       );
       expect(routesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
         expect.objectContaining({ search: "river" }),
-        expect.objectContaining({ enabled: true, getNextPageParam: expect.any(Function) }),
+        expect.objectContaining({ enabled: false, getNextPageParam: expect.any(Function) }),
       );
       expect(usersUseInfiniteQueryMock).toHaveBeenLastCalledWith(
         expect.objectContaining({ query: "river" }),
-        expect.objectContaining({ enabled: true, getNextPageParam: expect.any(Function) }),
+        expect.objectContaining({ enabled: false, getNextPageParam: expect.any(Function) }),
       );
       expect(groupsUseInfiniteQueryMock).toHaveBeenLastCalledWith(
         expect.objectContaining({ search: "river" }),
-        expect.objectContaining({ enabled: true, getNextPageParam: expect.any(Function) }),
+        expect.objectContaining({ enabled: false, getNextPageParam: expect.any(Function) }),
       );
     });
   });

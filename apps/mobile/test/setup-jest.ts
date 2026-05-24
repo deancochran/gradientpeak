@@ -7,7 +7,7 @@ import "@repo/ui/test/setup-native";
 type HostProps = Record<string, unknown> & { children?: React.ReactNode };
 type CartesianChartProps = Record<string, unknown> & {
   children?: React.ReactNode | ((context: Record<string, unknown>) => React.ReactNode);
-  data?: unknown;
+  data?: Record<string, unknown>[];
 };
 
 const createHost = (type: string) =>
@@ -38,6 +38,57 @@ jest.mock("expo-constants", () => ({
 jest.mock("expo-linking", () => ({
   __esModule: true,
   createURL: jest.fn((path = "") => `gradientpeak-dev://${String(path).replace(/^\//, "")}`),
+}));
+
+jest.mock("expo-file-system", () => ({
+  __esModule: true,
+  File: class MockExpoFile {
+    uri: string;
+    name: string;
+    size = 0;
+
+    constructor(uri: string) {
+      this.uri = uri;
+      this.name = uri.split("/").pop() ?? "mock-file.fit";
+    }
+
+    arrayBuffer = jest.fn(async () => new ArrayBuffer(0));
+    bytes = jest.fn(async () => new Uint8Array());
+  },
+  Paths: { cache: "file:///cache" },
+  copyAsync: jest.fn(async () => undefined),
+  deleteAsync: jest.fn(async () => undefined),
+  getInfoAsync: jest.fn(async () => ({ exists: true, isDirectory: false, size: 0 })),
+  makeDirectoryAsync: jest.fn(async () => undefined),
+  readAsStringAsync: jest.fn(async () => ""),
+  writeAsStringAsync: jest.fn(async () => undefined),
+}));
+
+jest.mock("expo-image-picker", () => ({
+  __esModule: true,
+  MediaTypeOptions: { Images: "Images" },
+  launchImageLibraryAsync: jest.fn(async () => ({ canceled: true, assets: [] })),
+  requestMediaLibraryPermissionsAsync: jest.fn(async () => ({ granted: true, status: "granted" })),
+}));
+
+jest.mock("expo-location", () => ({
+  __esModule: true,
+  Accuracy: { Balanced: 3, BestForNavigation: 6, High: 4 },
+  PermissionStatus: { GRANTED: "granted", DENIED: "denied", UNDETERMINED: "undetermined" },
+  getCurrentPositionAsync: jest.fn(async () => null),
+  requestBackgroundPermissionsAsync: jest.fn(async () => ({ granted: true, status: "granted" })),
+  requestForegroundPermissionsAsync: jest.fn(async () => ({ granted: true, status: "granted" })),
+  startLocationUpdatesAsync: jest.fn(async () => undefined),
+  stopLocationUpdatesAsync: jest.fn(async () => undefined),
+  watchPositionAsync: jest.fn(async () => ({ remove: jest.fn() })),
+}));
+
+jest.mock("expo-task-manager", () => ({
+  __esModule: true,
+  defineTask: jest.fn(),
+  isTaskDefined: jest.fn(() => false),
+  isTaskRegisteredAsync: jest.fn(async () => false),
+  unregisterTaskAsync: jest.fn(async () => undefined),
 }));
 
 jest.mock(
@@ -202,8 +253,15 @@ jest.mock("victory-native", () => ({
   __esModule: true,
   Area: createLeafHost("Area"),
   Bar: createLeafHost("Bar"),
-  CartesianChart: ({ children, data }: CartesianChartProps) =>
-    React.createElement(
+  CartesianChart: ({ children, data = [] }: CartesianChartProps) => {
+    const pointSeries = (key: string) =>
+      data.map((datum, index) => ({
+        x: index,
+        y: typeof datum[key] === "number" ? Number(datum[key]) : null,
+        yValue: typeof datum[key] === "number" ? Number(datum[key]) : null,
+      }));
+
+    return React.createElement(
       "CartesianChart",
       { data },
       typeof children === "function"
@@ -211,14 +269,22 @@ jest.mock("victory-native", () => ({
             chartBounds: { bottom: 100, left: 0, right: 100, top: 0 },
             points: {
               actual: data,
+              completedLoad: pointSeries("completedLoad"),
+              fitness: pointSeries("fitness"),
               goal: data,
               planned: data,
+              plannedLoad: pointSeries("plannedLoad"),
+              plannedLoadWithTentative: pointSeries("plannedLoadWithTentative"),
               projection: data,
+              scheduledFitness: pointSeries("scheduledFitness"),
+              targetFitness: pointSeries("targetFitness"),
+              targetLoad: pointSeries("targetLoad"),
               value: data,
             },
           })
         : children,
-    ),
+    );
+  },
   Line: createLeafHost("Line"),
   Scatter: createLeafHost("Scatter"),
   useChartPressState: jest.fn(() => ({ isActive: false, state: {} })),
@@ -247,5 +313,25 @@ jest.mock("expo-secure-store", () => {
       store.delete(key);
     }),
     __store: store,
+  };
+});
+
+jest.mock("@react-native-async-storage/async-storage", () => {
+  const store = new Map<string, string>();
+
+  return {
+    __esModule: true,
+    default: {
+      clear: jest.fn(async () => {
+        store.clear();
+      }),
+      getItem: jest.fn(async (key: string) => store.get(key) ?? null),
+      removeItem: jest.fn(async (key: string) => {
+        store.delete(key);
+      }),
+      setItem: jest.fn(async (key: string, value: string) => {
+        store.set(key, value);
+      }),
+    },
   };
 });

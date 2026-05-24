@@ -66,7 +66,9 @@ jest.mock("@/lib/auth/client", () => ({
 
 jest.mock("@/lib/stores/auth-store", () => ({
   __esModule: true,
-  useAuthStore: () => authStoreState,
+  useAuthStore: Object.assign(() => authStoreState, {
+    getState: () => authStoreState,
+  }),
 }));
 
 jest.mock("@/lib/api", () => ({

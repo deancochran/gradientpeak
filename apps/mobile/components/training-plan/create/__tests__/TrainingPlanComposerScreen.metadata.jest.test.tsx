@@ -36,6 +36,16 @@ jest.mock("@repo/ui/hooks", () => ({
       reValidateMode,
     });
   },
+  useZodFormSubmit: ({ form, onSubmit }: any) => ({
+    getSubmitButtonState: ({ disabled, label, submittingLabel }: any) => ({
+      disabled,
+      label,
+      loading: false,
+      loadingLabel: submittingLabel,
+    }),
+    handleSubmit: () => onSubmit(form.getValues()),
+    isSubmitting: false,
+  }),
 }));
 
 jest.mock("react-native", () => ({

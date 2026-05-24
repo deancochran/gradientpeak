@@ -2,8 +2,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar"
 import { Text } from "@repo/ui/components/text";
 import type { ReactNode } from "react";
 import { Pressable, View } from "react-native";
-import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import { useAuthStore } from "@/lib/stores/auth-store";
 
 export type EntityOwner = {
   id?: string | null;
@@ -34,7 +34,7 @@ export function EntityOwnerRow({
   subtitle,
   testID,
 }: EntityOwnerRowProps) {
-  const { user } = useAuth();
+  const user = useAuthStore((state) => state.user);
   const navigateTo = useAppNavigate();
   const displayName = displayNameOverride?.trim() || owner?.username?.trim() || "Unknown User";
   const canOpenProfile = typeof owner?.id === "string" && owner.id.length > 0;

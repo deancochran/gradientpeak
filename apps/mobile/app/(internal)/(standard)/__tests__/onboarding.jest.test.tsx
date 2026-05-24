@@ -68,12 +68,34 @@ jest.mock("@/lib/api", () => ({
         useQuery: () => ({ data: { id: "profile-1" } }),
       },
     },
+    useUtils: () => ({
+      onboarding: {
+        getImportedOnboardingValues: { invalidate: jest.fn(async () => undefined) },
+        getProviderEnrichmentStatus: { invalidate: jest.fn(async () => undefined) },
+      },
+      profiles: { get: { invalidate: jest.fn(async () => undefined) } },
+    }),
     onboarding: {
       completeOnboarding: {
         useMutation: () => ({ mutateAsync: completeOnboardingMutationMock }),
       },
+      getImportedOnboardingValues: {
+        useQuery: () => ({ data: null, isLoading: false, refetch: jest.fn() }),
+      },
+      getProviderEnrichmentStatus: {
+        useQuery: () => ({ data: null, isLoading: false, refetch: jest.fn() }),
+      },
+      startProviderEnrichment: {
+        useMutation: () => ({ mutateAsync: jest.fn(async () => undefined), isPending: false }),
+      },
+      clearProviderRequirement: {
+        useMutation: () => ({ mutateAsync: jest.fn(async () => undefined), isPending: false }),
+      },
     },
     integrations: {
+      list: {
+        useQuery: () => ({ data: [], refetch: jest.fn(async () => ({ data: [] })) }),
+      },
       getAuthUrl: {
         useMutation: () => ({
           mutateAsync: jest.fn(async () => ({ url: "https://example.test" })),
@@ -150,8 +172,12 @@ describe("onboarding screen", () => {
     jest.clearAllMocks();
   });
 
-  const completeRequiredSteps = () => {
+  const completeRequiredSteps = async () => {
     fireEvent.press(screen.getByText("Next"));
+    fireEvent.press(screen.getByText("Skip"));
+    await waitFor(() => {
+      expect(screen.getByText("beginner")).toBeTruthy();
+    });
     fireEvent.press(screen.getByText("beginner"));
     fireEvent.press(screen.getByText("Next"));
     fireEvent.press(screen.getByText("male"));
@@ -168,11 +194,9 @@ describe("onboarding screen", () => {
   it("completes the required onboarding flow and submits the profile", async () => {
     renderNative(<OnboardingScreen />);
 
-    completeRequiredSteps();
+    await completeRequiredSteps();
     fireEvent.press(screen.getByText("Next"));
     fireEvent.press(screen.getByText("Next"));
-    fireEvent.press(screen.getByText("Next"));
-    fireEvent.press(screen.getByTestId("onboarding-skip-button"));
     fireEvent.press(screen.getByText("Finish"));
 
     await waitFor(() => {
@@ -188,10 +212,10 @@ describe("onboarding screen", () => {
     });
   });
 
-  it("lets users skip optional onboarding steps", () => {
+  it("lets users skip optional onboarding steps", async () => {
     renderNative(<OnboardingScreen />);
 
-    completeRequiredSteps();
+    await completeRequiredSteps();
 
     expect(screen.getByTestId("onboarding-skip-button").props.disabled).toBe(false);
 

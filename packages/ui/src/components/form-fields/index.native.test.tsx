@@ -149,7 +149,7 @@ describe("Form fields native", () => {
     const timePicker = (UNSAFE_getAllByType("DateTimePicker" as any) as any[])
       .filter((node) => node.props.mode === "time")
       .at(-1) as any;
-    fireEvent(timePicker, "change", {}, new Date("2026-03-23T07:45:00.000Z"));
+    fireEvent(timePicker, "change", {}, new Date(2026, 2, 23, 3, 45));
     fireEvent.press(getAllByText("Done").at(-1)!);
     fireEvent(getByLabelText("Duration"), "changeText", "45:00");
     fireEvent(getByLabelText("Duration"), "blur");
@@ -158,13 +158,13 @@ describe("Form fields native", () => {
     const datePicker = (UNSAFE_getAllByType("DateTimePicker" as any) as any[]).find(
       (node) => node.props.mode === "date",
     ) as any;
-    fireEvent(datePicker, "change", {}, new Date("2026-03-24T06:30:00.000Z"));
+    fireEvent(datePicker, "change", {}, new Date(2026, 2, 24, 0, 0));
     fireEvent.press(getAllByText("Done")[0]!);
     fireEvent.press(getByTestId("recorded-at-field-time"));
     const recordedTimePicker = (UNSAFE_getAllByType("DateTimePicker" as any) as any[]).find(
       (node) => node.props.mode === "time",
     ) as any;
-    fireEvent(recordedTimePicker, "change", {}, new Date("2026-03-23T08:15:00.000Z"));
+    fireEvent(recordedTimePicker, "change", {}, new Date(2026, 2, 24, 4, 15));
     fireEvent.press(getAllByText("Done")[1]!);
     fireEvent.press(getByTestId("activity-type-field-bike"));
     fireEvent(getByLabelText("FTP"), "changeText", "300");

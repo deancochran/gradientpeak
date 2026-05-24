@@ -71,6 +71,12 @@ export const View = createHost("View");
 export const useColorScheme = () => "light";
 export const useWindowDimensions = () => ({ width: 390, height: 844 });
 
+export const Appearance = {
+  addChangeListener: jest.fn(() => ({ remove: jest.fn() })),
+  getColorScheme: jest.fn(() => "light"),
+  setColorScheme: jest.fn(),
+};
+
 export const Alert = {
   alert: jest.fn(),
 };

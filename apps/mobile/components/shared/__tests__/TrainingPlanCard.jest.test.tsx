@@ -77,8 +77,8 @@ describe("TrainingPlanCard", () => {
     expect(screen.getByTestId("training-plan-visual-segment-9")).toBeTruthy();
     expect(screen.getByTestId("training-plan-visual-recovery-9")).toBeTruthy();
     expect(screen.queryByTestId("training-plan-visual-segment-10")).toBeNull();
-    expect(screen.getByText("System Template")).toBeTruthy();
-    expect(screen.getByText("Updated Mar 21, 2026")).toBeTruthy();
+    expect(screen.getByText("GradientPeak")).toBeTruthy();
+    expect(screen.getByText("Mar 21, 2026 • 8:00 AM")).toBeTruthy();
   });
 
   it("shows owner and last updated metadata in the footer", () => {
@@ -100,7 +100,7 @@ describe("TrainingPlanCard", () => {
 
     expect(screen.queryByText("By")).toBeNull();
     expect(screen.getByText("Coach Kim")).toBeTruthy();
-    expect(screen.getByText("Updated Mar 21, 2026")).toBeTruthy();
+    expect(screen.getByText("Mar 21, 2026 • 8:00 AM")).toBeTruthy();
   });
 
   it("toggles likes using the training_plan entity type", () => {

@@ -78,7 +78,7 @@ export function RecordControlDock({
           return {
             action,
             label: sessionContract.devices.hasTrainer ? "Trainer" : "No trainer",
-            onPress: onOpenSensors,
+            onPress: onOpenFtms,
           };
         default:
           return {
@@ -88,7 +88,15 @@ export function RecordControlDock({
           };
       }
     });
-  }, [onGpsPress, onOpenActivity, onOpenPlan, onOpenRoute, onOpenSensors, sessionContract]);
+  }, [
+    onGpsPress,
+    onOpenActivity,
+    onOpenFtms,
+    onOpenPlan,
+    onOpenRoute,
+    onOpenSensors,
+    sessionContract,
+  ]);
 
   return (
     <View

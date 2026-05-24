@@ -34,8 +34,17 @@ jest.mock("@/lib/auth/auth-headers", () => ({
 
 jest.mock("@/lib/stores/auth-store", () => ({
   __esModule: true,
-  useAuthStore: (selector: any) =>
-    selector({ ready: true, session: { user: { id: "11111111-1111-4111-8111-111111111111" } } }),
+  useAuthStore: (selector?: any) => {
+    const state = {
+      ready: true,
+      session: { user: { id: "11111111-1111-4111-8111-111111111111" } },
+      setOnboardingStatus: jest.fn(),
+      setProfile: jest.fn(),
+      user: { id: "11111111-1111-4111-8111-111111111111", emailVerified: true },
+    };
+
+    return typeof selector === "function" ? selector(state) : state;
+  },
 }));
 
 jest.mock("@repo/core", () => ({
@@ -192,14 +201,28 @@ jest.mock("@/lib/api", () => ({
     events: {
       list: { useQuery: () => ({ data: { items: [] }, refetch: jest.fn() }) },
     },
+    activities: {
+      list: { useQuery: () => ({ data: [], refetch: jest.fn(async () => undefined) }) },
+    },
     profileSettings: {
       getForProfile: {
         useQuery: () => ({ data: null, refetch: jest.fn(async () => undefined), isLoading: false }),
       },
     },
+    profiles: {
+      get: {
+        useQuery: () => ({
+          data: { id: "11111111-1111-4111-8111-111111111111" },
+          isLoading: false,
+        }),
+      },
+    },
     groups: {
       events: {
         myCalendarGroupEvents: {
+          useQuery: () => ({ data: { items: [] }, refetch: jest.fn(async () => undefined) }),
+        },
+        myUpcomingGroupEvents: {
           useQuery: () => ({ data: { items: [] }, refetch: jest.fn(async () => undefined) }),
         },
       },
