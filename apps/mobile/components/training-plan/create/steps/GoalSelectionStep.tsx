@@ -2,7 +2,7 @@ import { createEmptyGoalDraft, type WizardGoalInput } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { View } from "react-native";
 import { GoalEditorModal } from "@/components/goals";
 import { WizardStep } from "../WizardStep";
@@ -32,7 +32,7 @@ export function GoalSelectionStep({
     }
 
     return Math.ceil(
-      (new Date(goal.target_date).getTime() - new Date().getTime()) / (7 * 24 * 60 * 60 * 1000),
+      (new Date(goal.target_date).getTime() - Date.now()) / (7 * 24 * 60 * 60 * 1000),
     );
   }, [goal.target_date]);
 
@@ -44,7 +44,7 @@ export function GoalSelectionStep({
         currentStep={currentStep}
         totalSteps={totalSteps}
         title="What's your goal?"
-        description="Set your main event with the reusable goal editor"
+        description="Set your primary goal and target date with the reusable goal editor"
         onBack={onBack}
         onNext={onNext}
         nextDisabled={!isValid}
@@ -83,7 +83,7 @@ export function GoalSelectionStep({
           <Card className="bg-destructive/10 border-destructive/20">
             <CardContent className="p-4">
               <Text className="text-sm text-destructive">
-                Add an event name and target date to continue.
+                Add a goal name and target date to continue.
               </Text>
             </CardContent>
           </Card>

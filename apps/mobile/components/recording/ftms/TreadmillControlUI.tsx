@@ -14,7 +14,7 @@
  */
 
 import { Text } from "@repo/ui/components/text";
-import React, { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Alert, Pressable, View } from "react-native";
 import { usePlan } from "@/lib/hooks/useActivityRecorder";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
@@ -92,7 +92,7 @@ export function TreadmillControlUI({ service, controlMode, hasPlan }: TreadmillC
     } else {
       Alert.alert("Error", "Failed to set speed. Check treadmill connection.");
     }
-  }, [speedKmh, maxSpeed, controlMode, supportsSpeed]);
+  }, [speedKmh, maxSpeed, controlMode, supportsSpeed, service.applyManualTrainerSpeed]);
 
   /**
    * Apply incline target
@@ -134,7 +134,13 @@ export function TreadmillControlUI({ service, controlMode, hasPlan }: TreadmillC
     } else {
       Alert.alert("Error", "Failed to set incline. Check treadmill connection.");
     }
-  }, [inclinePercent, maxIncline, controlMode, supportsInclination]);
+  }, [
+    inclinePercent,
+    maxIncline,
+    controlMode,
+    supportsInclination,
+    service.applyManualTrainerIncline,
+  ]);
 
   const isDisabled = controlMode === "auto";
 

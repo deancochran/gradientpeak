@@ -2,17 +2,23 @@ import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
-import { ChevronRight, Clock3, Heart, Search, Sparkles } from "lucide-react-native";
-import React, { useMemo, useState } from "react";
-import { ActivityIndicator, Modal, ScrollView, TouchableOpacity, View } from "react-native";
+import { Heart, Search, Sparkles } from "lucide-react-native";
+import { useMemo, useState } from "react";
+import { ActivityIndicator, ScrollView, TouchableOpacity, View } from "react-native";
+import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { AppSelectionModal } from "@/components/shared/AppSelectionModal";
 import { api } from "@/lib/api";
 
 type ActivityPlanListItem = {
   id: string;
   name: string;
   activity_category?: string | null;
-  estimated_duration?: number | null;
-  estimated_tss?: number | null;
+  authoritative_metrics?: {
+    estimated_duration?: number | null;
+    estimated_tss?: number | null;
+    intensity_factor?: number | null;
+    estimated_distance?: number | null;
+  } | null;
   description?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -50,23 +56,6 @@ function toCategoryLabel(category?: string | null): string {
     .join(" ");
 }
 
-function formatDuration(seconds?: number | null): string | null {
-  if (!seconds || seconds <= 0) return null;
-
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-
-  if (hours > 0 && minutes > 0) {
-    return `${hours}h ${minutes}m`;
-  }
-
-  if (hours > 0) {
-    return `${hours}h`;
-  }
-
-  return `${minutes}m`;
-}
-
 function toTimestamp(value?: string | null): number {
   if (!value) return 0;
 
@@ -96,14 +85,13 @@ function sortByRecency(plans: ActivityPlanListItem[]): ActivityPlanListItem[] {
 
 function sortBySuggestionScore(plans: ActivityPlanListItem[]): ActivityPlanListItem[] {
   return [...plans].sort((left, right) => {
-    const leftScore =
-      (left.estimated_tss ?? 0) +
-      (left.estimated_duration ?? 0) / 600 +
-      (left.description ? 10 : 0);
+    const leftEstimatedTss = left.authoritative_metrics?.estimated_tss ?? 0;
+    const leftEstimatedDuration = left.authoritative_metrics?.estimated_duration ?? 0;
+    const rightEstimatedTss = right.authoritative_metrics?.estimated_tss ?? 0;
+    const rightEstimatedDuration = right.authoritative_metrics?.estimated_duration ?? 0;
+    const leftScore = leftEstimatedTss + leftEstimatedDuration / 600 + (left.description ? 10 : 0);
     const rightScore =
-      (right.estimated_tss ?? 0) +
-      (right.estimated_duration ?? 0) / 600 +
-      (right.description ? 10 : 0);
+      rightEstimatedTss + rightEstimatedDuration / 600 + (right.description ? 10 : 0);
 
     if (rightScore !== leftScore) {
       return rightScore - leftScore;
@@ -243,8 +231,6 @@ export function CalendarPlannedActivityPickerModal({
   }, [filteredPlans, searchQuery]);
 
   const renderPlanCard = (plan: ActivityPlanListItem, sectionKey: string) => {
-    const durationLabel = formatDuration(plan.estimated_duration);
-    const categoryLabel = toCategoryLabel(plan.activity_category);
     const recommendationLabel =
       sectionKey === "suggested"
         ? "Good next pick"
@@ -253,135 +239,79 @@ export function CalendarPlannedActivityPickerModal({
           : null;
 
     return (
-      <TouchableOpacity
-        key={plan.id}
-        onPress={() => onSelectPlan(plan.id)}
-        className="rounded-xl border border-border bg-card px-4 py-4"
-        activeOpacity={0.8}
-        testID={`calendar-planned-activity-option-${plan.id}`}
-      >
-        <View className="flex-row items-start gap-3">
-          <View className="flex-1 gap-2">
-            <View className="flex-row flex-wrap items-center gap-2">
-              <Text className="text-sm font-semibold text-foreground">{plan.name}</Text>
-              {recommendationLabel ? (
-                <View className="rounded-full bg-primary/10 px-2 py-1">
-                  <Text className="text-[10px] font-semibold uppercase tracking-wide text-primary">
-                    {recommendationLabel}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-
-            <Text className="text-xs text-muted-foreground">
-              {categoryLabel}
-              {durationLabel ? ` • ${durationLabel}` : ""}
-              {typeof plan.estimated_tss === "number"
-                ? ` • ${Math.round(plan.estimated_tss)} TSS`
-                : ""}
-            </Text>
-
-            {plan.description ? (
-              <Text className="text-xs text-muted-foreground" numberOfLines={2}>
-                {plan.description}
-              </Text>
-            ) : (
-              <Text className="text-xs text-muted-foreground">
-                Saved {categoryLabel.toLowerCase()} plan ready to drop onto this day.
-              </Text>
-            )}
-          </View>
-
-          <View className="items-end gap-2 pt-0.5">
-            <View className="flex-row items-center gap-1">
-              <Icon as={Clock3} size={12} className="text-muted-foreground" />
-              <Icon as={ChevronRight} size={16} className="text-muted-foreground" />
-            </View>
-            {(plan.has_liked || (plan.likes_count ?? 0) > 0) && (
-              <View className="flex-row items-center gap-1 rounded-full bg-muted px-2 py-1">
-                <Icon as={Heart} size={10} className="text-muted-foreground" />
-                <Text className="text-[10px] font-medium text-muted-foreground">
-                  {(plan.likes_count ?? 1) > 1 ? `${plan.likes_count} likes` : "Favorite"}
-                </Text>
-              </View>
-            )}
-          </View>
-        </View>
-      </TouchableOpacity>
+      <View key={plan.id} className="gap-1">
+        {recommendationLabel ? (
+          <Text className="self-start rounded-full bg-primary/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-primary">
+            {recommendationLabel}
+          </Text>
+        ) : null}
+        <ActivityPlanCard
+          activityPlan={plan as any}
+          onPress={() => onSelectPlan(plan.id)}
+          testID={`calendar-planned-activity-option-${plan.id}`}
+          variant="compact"
+        />
+      </View>
     );
   };
 
+  if (!visible) {
+    return null;
+  }
+
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={onClose}
+    <AppSelectionModal
+      description={`Stay on ${toDisplayDateLabel(selectedDate)} and choose one of your saved activity plans.`}
+      onClose={onClose}
+      onRefresh={() => void refetch()}
+      refreshDisabled={isLoading}
+      testID="calendar-planned-activity-modal"
+      title="Schedule Activity"
     >
-      <View className="flex-1 bg-background">
-        <View className="border-b border-border px-4 py-4">
-          <View className="flex-row items-start justify-between gap-3">
-            <View className="flex-1">
-              <Text className="text-lg font-semibold text-foreground">Schedule Activity</Text>
-              <Text className="mt-1 text-sm text-muted-foreground">
-                Stay on {toDisplayDateLabel(selectedDate)} and choose one of your saved activity
-                plans.
-              </Text>
-            </View>
-            <TouchableOpacity
-              onPress={onClose}
-              className="rounded-md bg-muted px-3 py-2"
-              activeOpacity={0.8}
-              testID="calendar-planned-activity-close"
-            >
-              <Text className="text-xs font-medium text-foreground">Close</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View className="mt-4 flex-row items-center rounded-lg border border-border bg-card px-3">
-            <Icon as={Search} size={14} className="text-muted-foreground" />
-            <Input
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Search your activity plans"
-              className="flex-1 border-0 bg-transparent"
-              testID="calendar-planned-activity-search"
-            />
-          </View>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerClassName="mt-4 gap-2"
-          >
-            {categoryOptions.map((category) => {
-              const isSelected = selectedCategory === category;
-              return (
-                <TouchableOpacity
-                  key={category}
-                  onPress={() => setSelectedCategory(category)}
-                  className={`rounded-full border px-3 py-2 ${
-                    isSelected ? "border-primary bg-primary/10" : "border-border bg-background"
-                  }`}
-                  activeOpacity={0.8}
-                  testID={`calendar-planned-activity-filter-${category}`}
-                >
-                  <Text
-                    className={`text-xs font-semibold ${
-                      isSelected ? "text-primary" : "text-foreground"
-                    }`}
-                  >
-                    {category === "all" ? "All Sports" : toCategoryLabel(category)}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+      <View className="gap-4">
+        <View className="flex-row items-center rounded-lg border border-border bg-card px-3">
+          <Icon as={Search} size={14} className="text-muted-foreground" />
+          <Input
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search your activity plans"
+            className="flex-1 border-0 bg-transparent"
+            testID="calendar-planned-activity-search"
+          />
         </View>
 
         <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerClassName="gap-2"
+        >
+          {categoryOptions.map((category) => {
+            const isSelected = selectedCategory === category;
+            return (
+              <TouchableOpacity
+                key={category}
+                onPress={() => setSelectedCategory(category)}
+                className={`rounded-full border px-3 py-2 ${
+                  isSelected ? "border-primary bg-primary/10" : "border-border bg-background"
+                }`}
+                activeOpacity={0.8}
+                testID={`calendar-planned-activity-filter-${category}`}
+              >
+                <Text
+                  className={`text-xs font-semibold ${
+                    isSelected ? "text-primary" : "text-foreground"
+                  }`}
+                >
+                  {category === "all" ? "All Sports" : toCategoryLabel(category)}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        <ScrollView
           className="flex-1"
-          contentContainerClassName="gap-3 px-4 py-4"
+          contentContainerClassName="gap-3"
           keyboardShouldPersistTaps="handled"
         >
           {isLoading ? (
@@ -461,12 +391,10 @@ export function CalendarPlannedActivityPickerModal({
             : null}
         </ScrollView>
 
-        <View className="px-4 pb-4 pt-2">
-          <Text className="text-center text-xs text-muted-foreground">
-            Choose a plan to continue into the scheduling form.
-          </Text>
-        </View>
+        <Text className="text-center text-xs text-muted-foreground">
+          Choose a plan to continue into the scheduling form.
+        </Text>
       </View>
-    </Modal>
+    </AppSelectionModal>
   );
 }

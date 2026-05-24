@@ -52,6 +52,17 @@ export interface DeterministicMpcSolverResult {
   diagnostics: DeterministicMpcSolverDiagnostics;
 }
 
+function optionalProperty<Key extends string, Value>(
+  key: Key,
+  value: Value | undefined,
+): { [Property in Key]?: Value } {
+  if (value === undefined) {
+    return {};
+  }
+
+  return { [key]: value } as { [Property in Key]?: Value };
+}
+
 /**
  * Solves a single deterministic bounded MPC action selection step.
  */
@@ -60,8 +71,8 @@ export function solveDeterministicBoundedMpc(
 ): DeterministicMpcSolverResult {
   const bounds = resolveMpcSolveBounds({
     optimization_profile: input.optimization_profile,
-    requested_horizon_weeks: input.requested_horizon_weeks,
-    requested_candidate_count: input.requested_candidate_count,
+    ...optionalProperty("requested_horizon_weeks", input.requested_horizon_weeks),
+    ...optionalProperty("requested_candidate_count", input.requested_candidate_count),
   });
 
   const centeredAction = clampMpcCandidateAction({
@@ -75,7 +86,7 @@ export function solveDeterministicBoundedMpc(
     max_value: input.action_bounds.max_value,
     center_value: centeredAction,
     candidate_count: bounds.candidate_count,
-    precision: input.precision,
+    ...optionalProperty("precision", input.precision),
   });
 
   const evaluatedCandidates: DeterministicMpcEvaluatedCandidate[] = generatedCandidates.map(
@@ -91,14 +102,14 @@ export function solveDeterministicBoundedMpc(
       return {
         candidate_value: candidateValue,
         objective_score: objectiveScore,
-        safety_penalty: evaluation.safety_penalty,
-        tracking_error: evaluation.tracking_error,
-        volatility_penalty: evaluation.volatility_penalty,
-        churn_penalty: evaluation.churn_penalty,
+        ...optionalProperty("safety_penalty", evaluation.safety_penalty),
+        ...optionalProperty("tracking_error", evaluation.tracking_error),
+        ...optionalProperty("volatility_penalty", evaluation.volatility_penalty),
+        ...optionalProperty("churn_penalty", evaluation.churn_penalty),
         delta_from_prev: Math.abs(candidateValue - input.previous_action),
-        primary_goal_date: evaluation.primary_goal_date,
-        primary_goal_id: evaluation.primary_goal_id,
-        diagnostics_payload: evaluation.diagnostics_payload,
+        ...optionalProperty("primary_goal_date", evaluation.primary_goal_date),
+        ...optionalProperty("primary_goal_id", evaluation.primary_goal_id),
+        ...optionalProperty("diagnostics_payload", evaluation.diagnostics_payload),
       };
     },
   );

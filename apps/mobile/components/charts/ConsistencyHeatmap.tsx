@@ -1,5 +1,4 @@
 import { Text } from "@repo/ui/components/text";
-import React from "react";
 import { ScrollView, View } from "react-native";
 
 export interface ConsistencyData {
@@ -34,7 +33,7 @@ export function ConsistencyHeatmap({ data, startDate, endDate }: ConsistencyHeat
 
   // Generate weeks
   const weeks: Array<Array<{ date: Date; hasActivity: boolean; isOutOfRange: boolean }>> = [];
-  let currentDate = new Date(firstMonday);
+  const currentDate = new Date(firstMonday);
 
   while (currentDate <= lastSunday) {
     const week: Array<{
@@ -165,11 +164,11 @@ export function ConsistencyHeatmap({ data, startDate, endDate }: ConsistencyHeat
           </View>
 
           {/* Frequency indicator */}
-          <View className="mt-3 p-3 bg-blue-50 rounded">
-            <Text className="text-xs text-gray-700">
+          <View className="mt-3 rounded bg-blue-50 p-3 dark:bg-blue-950/30">
+            <Text className="text-xs text-blue-900 dark:text-blue-100">
               Training Frequency: {frequencyPercentage.toFixed(1)}% of days
             </Text>
-            <Text className="text-xs text-gray-600 mt-1">
+            <Text className="mt-1 text-xs text-blue-700 dark:text-blue-200">
               {frequencyPercentage >= 80
                 ? "🔥 Excellent consistency!"
                 : frequencyPercentage >= 60

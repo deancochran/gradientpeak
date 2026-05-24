@@ -12,7 +12,7 @@
 
 import { decodePolyline } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 
@@ -135,7 +135,7 @@ export function VirtualRouteMap({ service, isFocused = false }: VirtualRouteMapP
   }, [service]);
 
   // Calculate bounds for map viewport
-  const bounds = useMemo(() => {
+  const _bounds = useMemo(() => {
     if (coordinates.length === 0) {
       return { minLat: 0, maxLat: 0, minLng: 0, maxLng: 0 };
     }

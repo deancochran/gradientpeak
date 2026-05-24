@@ -12,8 +12,11 @@ export interface CreateOwnedEventInput {
   eventType: EventCompletionEventRecord["event_type"];
   notes: string | null;
   profileId: string;
+  occurrenceKey?: string | null;
+  originalStartsAt?: string | null;
   recurrenceRule: string | null;
   recurrenceTimezone: string | null;
+  seriesId?: string | null;
   sourceProvider: string | null;
   startsAt: string;
   status: "scheduled" | "completed" | "cancelled";
@@ -32,6 +35,10 @@ export interface EventWriteRepository {
     profileId: string;
     trainingPlanId: string;
   }): Promise<OwnedTrainingPlanRef | null>;
+  listOwnedEventsForSeries(input: {
+    anchorEvent: Pick<EventCompletionEventRecord, "id" | "series_id">;
+    profileId: string;
+  }): Promise<EventCompletionEventRecord[]>;
   updateOwnedEventsForScope(input: {
     anchorEvent: Pick<EventCompletionEventRecord, "id" | "series_id" | "starts_at">;
     eventUpdates: Record<string, unknown>;

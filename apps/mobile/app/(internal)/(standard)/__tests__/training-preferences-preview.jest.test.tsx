@@ -1,13 +1,17 @@
 import { act, waitFor } from "@testing-library/react-native";
-import React from "react";
 
+import { createHost } from "../../../../test/mock-components";
 import { renderNative, screen } from "../../../../test/render-native";
 
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
+jest.mock("expo-router", () => ({
+  Stack: {
+    Screen: ({ options }: any) => {
+      const React = require("react");
+      const headerRight = typeof options?.headerRight === "function" ? options.headerRight() : null;
+      return React.createElement("StackScreen", {}, headerRight);
+    },
+  },
+}));
 
 function getNodeText(children: any): string {
   if (typeof children === "string") {
@@ -76,7 +80,6 @@ const previewGoalsFixture = [
   {
     id: "goal-1",
     profile_id: "profile-1",
-    milestone_event_id: "event-1",
     title: "Spring Bike Test",
     activity_category: "bike",
     priority: 7,
@@ -97,15 +100,40 @@ let snapshotState = {
   },
   actualCurveData: {
     dataPoints: [
-      { date: "2026-03-01", ctl: 40 },
-      { date: "2026-03-02", ctl: 41 },
+      { date: "2026-05-01", ctl: 40 },
+      { date: "2026-05-02", ctl: 41 },
+    ],
+  },
+  insightTimeline: {
+    timeline: [
+      {
+        date: "2026-05-01",
+        ideal_tss: 45,
+        scheduled_tss: 42,
+        actual_tss: 40,
+        adherence_score: 90,
+      },
+      {
+        date: "2026-05-02",
+        ideal_tss: 50,
+        scheduled_tss: 44,
+        actual_tss: 38,
+        adherence_score: 82,
+      },
+      {
+        date: "2026-05-03",
+        ideal_tss: 55,
+        scheduled_tss: 46,
+        actual_tss: 0,
+        adherence_score: 0,
+      },
     ],
   },
   idealCurveData: {
     dataPoints: [
-      { date: "2026-03-01", ctl: 40 },
-      { date: "2026-03-02", ctl: 42 },
-      { date: "2026-03-03", ctl: 44 },
+      { date: "2026-05-01", ctl: 40 },
+      { date: "2026-05-02", ctl: 42 },
+      { date: "2026-05-03", ctl: 44 },
     ],
     targetCTL: 60,
     targetDate: "2026-07-01",
@@ -146,18 +174,24 @@ jest.mock("@/components/charts/PlanVsActualChart", () => ({
   PlanVsActualChart: createHost("PlanVsActualChart"),
 }));
 
+jest.mock("@/components/plan/training-path/TrainingPathChart", () => ({
+  __esModule: true,
+  TrainingPathChart: createHost("TrainingPathChart"),
+}));
+
 jest.mock("@/lib/training-plan-form/localPreview", () => ({
   __esModule: true,
   computeLocalCreationPreview: ({ profileSettings }: any) => {
     const pace = profileSettings?.training_style?.progression_pace ?? 0.5;
     const finalCtl = 44 + Math.round((pace - 0.5) * 100) / 5;
+    const finalLoad = 46 + Math.round((pace - 0.5) * 100);
 
     return {
       projectionChart: {
         display_points: [
-          { date: "2026-03-01", predicted_fitness_ctl: 40 },
-          { date: "2026-03-02", predicted_fitness_ctl: 42 },
-          { date: "2026-03-03", predicted_fitness_ctl: finalCtl },
+          { date: "2026-05-01", predicted_fitness_ctl: 40, predicted_load_tss: 42 },
+          { date: "2026-05-02", predicted_fitness_ctl: 42, predicted_load_tss: 44 },
+          { date: "2026-05-03", predicted_fitness_ctl: finalCtl, predicted_load_tss: finalLoad },
         ],
       },
       previewSnapshotBaseline: {
@@ -268,7 +302,7 @@ const TrainingPreferencesScreen = require("../training-preferences").default;
 const getTextValues = () =>
   (screen as any).UNSAFE_getAllByType("Text").map((node: any) => getNodeText(node.props.children));
 
-const getChart = () => (screen as any).UNSAFE_getAllByType("PlanVsActualChart")[0];
+const getChart = () => (screen as any).UNSAFE_getAllByType("TrainingPathChart")[0];
 
 const getAllByTypeOrEmpty = (type: string) => {
   try {
@@ -292,7 +326,11 @@ const getTab = (label: string) =>
   });
 
 const getByTypeAndId = (type: string, id: string) =>
-  (screen as any).UNSAFE_getAllByType(type).find((node: any) => node.props.id === id);
+  (screen as any)
+    .UNSAFE_getAllByType(type)
+    .find(
+      (node: any) => node.props.id === id || node.props.testId === id || node.props.testID === id,
+    );
 
 const getByTypeAndTestId = (type: string, testId: string) =>
   (screen as any).UNSAFE_getAllByType(type).find((node: any) => node.props.testId === testId);
@@ -318,18 +356,43 @@ describe("training preferences projection preview", () => {
       },
       actualCurveData: {
         dataPoints: [
-          { date: "2026-03-01", ctl: 40 },
-          { date: "2026-03-02", ctl: 41 },
+          { date: "2026-05-01", ctl: 40 },
+          { date: "2026-05-02", ctl: 41 },
         ],
       },
       idealCurveData: {
         dataPoints: [
-          { date: "2026-03-01", ctl: 40 },
-          { date: "2026-03-02", ctl: 42 },
-          { date: "2026-03-03", ctl: 44 },
+          { date: "2026-05-01", ctl: 40 },
+          { date: "2026-05-02", ctl: 42 },
+          { date: "2026-05-03", ctl: 44 },
         ],
         targetCTL: 60,
         targetDate: "2026-07-01",
+      },
+      insightTimeline: {
+        timeline: [
+          {
+            date: "2026-05-01",
+            ideal_tss: 45,
+            scheduled_tss: 42,
+            actual_tss: 40,
+            adherence_score: 90,
+          },
+          {
+            date: "2026-05-02",
+            ideal_tss: 50,
+            scheduled_tss: 44,
+            actual_tss: 38,
+            adherence_score: 82,
+          },
+          {
+            date: "2026-05-03",
+            ideal_tss: 55,
+            scheduled_tss: 46,
+            actual_tss: 0,
+            adherence_score: 0,
+          },
+        ],
       },
       loading: {
         plan: false,
@@ -347,6 +410,7 @@ describe("training preferences projection preview", () => {
 
     const tabLabels = getTextValues();
 
+    expect(tabLabels).toContain("Preferences");
     expect(tabLabels).toContain("Schedule");
     expect(tabLabels).toContain("Training style");
     expect(tabLabels).toContain("Recovery");
@@ -359,6 +423,7 @@ describe("training preferences projection preview", () => {
 
     const tabLabels = getTextValues();
 
+    expect(tabLabels).toContain("Preferences");
     expect(tabLabels).toContain("Schedule");
     expect(tabLabels).toContain("Training style");
     expect(tabLabels).toContain("Recovery");
@@ -373,7 +438,13 @@ describe("training preferences projection preview", () => {
     });
 
     let textValues = getTextValues();
-    expect(textValues).toContain("Strength integration priority");
+    expect(
+      getByTypeAndId("PercentSliderInput", "preferences-strength-integration").props.label,
+    ).toBe("Strength integration priority");
+    expect(
+      getByTypeAndId("PercentSliderInput", "preferences-strength-integration").props
+        .showNumericInput,
+    ).toBe(false);
     expect(textValues).not.toContain("Key session density");
 
     act(() => {
@@ -381,7 +452,9 @@ describe("training preferences projection preview", () => {
     });
 
     textValues = getTextValues();
-    expect(textValues).toContain("Systemic fatigue tolerance");
+    expect(getByTypeAndId("PercentSliderInput", "preferences-systemic-fatigue").props.label).toBe(
+      "Systemic fatigue tolerance",
+    );
     expect(textValues).not.toContain("Double day tolerance");
     expect(textValues).not.toContain("Long session fatigue tolerance");
 
@@ -390,7 +463,9 @@ describe("training preferences projection preview", () => {
     });
 
     textValues = getTextValues();
-    expect(textValues).toContain("Taper style");
+    expect(getByTypeAndId("PercentSliderInput", "preferences-taper-style").props.label).toBe(
+      "Taper style",
+    );
     expect(textValues).not.toContain("Priority tradeoff");
   });
 
@@ -398,8 +473,12 @@ describe("training preferences projection preview", () => {
     renderNative(<TrainingPreferencesScreen />);
 
     const initialChart = getChart();
-    const initialLastCtl =
-      initialChart.props.projectedData[initialChart.props.projectedData.length - 1].ctl;
+    const initialLastRecommendedLoad = initialChart.props.model.weeks
+      .toReversed()
+      .find((week: any) => week.targetLoad != null)?.targetLoad;
+    const initialLastScheduledLoad = initialChart.props.model.weeks
+      .toReversed()
+      .find((week: any) => week.plannedLoad != null)?.plannedLoad;
 
     act(() => {
       getTab("Training style").props.onPress();
@@ -415,24 +494,80 @@ describe("training preferences projection preview", () => {
     });
 
     const updatedChart = getChart();
-    const updatedLastCtl =
-      updatedChart.props.projectedData[updatedChart.props.projectedData.length - 1].ctl;
+    const updatedLastRecommendedLoad = updatedChart.props.model.weeks
+      .toReversed()
+      .find((week: any) => week.targetLoad != null)?.targetLoad;
+    const updatedLastScheduledLoad = updatedChart.props.model.weeks
+      .toReversed()
+      .find((week: any) => week.plannedLoad != null)?.plannedLoad;
 
-    expect(updatedLastCtl).not.toEqual(initialLastCtl);
+    expect(updatedLastRecommendedLoad).not.toEqual(initialLastRecommendedLoad);
+    expect(updatedLastScheduledLoad).toEqual(initialLastScheduledLoad);
+  });
+
+  it("marks presets custom after a preset value is manually changed", () => {
+    renderNative(<TrainingPreferencesScreen />);
+
+    expect(screen.getByTestId("training-preferences-preset-custom").props.className).toContain(
+      "bg-primary",
+    );
+
+    act(() => {
+      screen.getByTestId("training-preferences-preset-balanced").props.onPress();
+    });
+
+    expect(screen.getByTestId("training-preferences-preset-balanced").props.className).toContain(
+      "bg-primary",
+    );
+
+    act(() => {
+      getTab("Training style").props.onPress();
+    });
+
+    act(() => {
+      getByTypeAndId("PercentSliderInput", "preferences-progression-pace").props.onChange(80);
+    });
+
+    act(() => {
+      getTab("Preferences").props.onPress();
+    });
+
+    expect(screen.getByTestId("training-preferences-preset-custom").props.className).toContain(
+      "bg-primary",
+    );
+  });
+
+  it("renders the preview training path chart", () => {
+    renderNative(<TrainingPreferencesScreen />);
+
+    expect(getChart().props.model.weeks.length).toBeGreaterThanOrEqual(3);
+    expect(getChart().props.model.goalMarkers).toEqual([
+      expect.objectContaining({ id: "goal-1", label: "Spring Bike Test" }),
+    ]);
+    expect(getChart().props.range).toBe("season");
+    expect(getChart().props.scrollX).toBe(true);
   });
 
   it("shows a clear empty state when there is no active plan", () => {
     activePlanData = undefined;
+    snapshotState = {
+      ...snapshotState,
+      plan: undefined,
+      idealCurveData: {
+        dataPoints: [],
+        targetCTL: null,
+        targetDate: null,
+      },
+    } as any;
 
     renderNative(<TrainingPreferencesScreen />);
 
     const textValues = getTextValues();
 
-    expect(textValues.some((value: string) => value.includes("Preview unavailable"))).toBe(true);
-    expect(
-      textValues.some((value: string) => value.includes("Start or activate a training plan")),
-    ).toBe(true);
-    expect(getAllByTypeOrEmpty("PlanVsActualChart")).toHaveLength(0);
+    expect(textValues).toContain("Training Load Preview");
+    expect(textValues.some((value: string) => value.includes("Draft preview"))).toBe(false);
+    expect(textValues.some((value: string) => value.includes("Preview unavailable"))).toBe(false);
+    expect(getAllByTypeOrEmpty("TrainingPathChart")).toHaveLength(1);
   });
 
   it("shows a baseline-curve message when projection data is missing", () => {
@@ -449,16 +584,17 @@ describe("training preferences projection preview", () => {
 
     const textValues = getTextValues();
 
-    expect(textValues.some((value: string) => value.includes("Baseline curve not ready"))).toBe(
-      true,
-    );
-    expect(textValues.some((value: string) => value.includes("baseline-vs-draft comparison"))).toBe(
-      true,
-    );
+    expect(textValues).toContain("Training Load Preview");
+    expect(textValues.some((value: string) => value.includes("Draft preview"))).toBe(false);
+    expect(textValues.some((value: string) => value.includes("Preview unavailable"))).toBe(false);
   });
 
   it("blocks saving when schedule limits conflict", () => {
     renderNative(<TrainingPreferencesScreen />);
+
+    act(() => {
+      getTab("Schedule").props.onPress();
+    });
 
     const minSessionsStepper = getByTypeAndTestId("IntegerStepper", "preferences-min-sessions");
 
@@ -466,7 +602,7 @@ describe("training preferences projection preview", () => {
       minSessionsStepper.props.onChange(8);
     });
 
-    const saveButton = getButtonByLabel("Save Preferences");
+    const saveButton = getButtonByLabel("Save");
     const textValues = getTextValues();
 
     expect(saveButton.props.disabled).toBe(true);
@@ -492,7 +628,7 @@ describe("training preferences projection preview", () => {
     });
 
     await waitFor(() => {
-      expect(getButtonByLabel("Save Preferences").props.disabled).toBe(false);
+      expect(getButtonByLabel("Save").props.disabled).toBe(false);
     });
 
     act(() => {
@@ -502,7 +638,7 @@ describe("training preferences projection preview", () => {
     const resetSlider = getByTypeAndId("PercentSliderInput", "preferences-target-surplus");
 
     expect(resetSlider.props.value).toBe(15);
-    expect(getButtonByLabel("Save Preferences").props.disabled).toBe(true);
+    expect(getButtonByLabel("Save").props.disabled).toBe(true);
   });
 
   it("saves canonical preference sections including target surplus", async () => {
@@ -519,7 +655,7 @@ describe("training preferences projection preview", () => {
     });
 
     await act(async () => {
-      await getButtonByLabel("Save Preferences").props.onPress();
+      await getButtonByLabel("Save").props.onPress();
     });
 
     await waitFor(() => {
@@ -555,7 +691,7 @@ describe("training preferences projection preview", () => {
     });
 
     await act(async () => {
-      await getButtonByLabel("Save Preferences").props.onPress();
+      await getButtonByLabel("Save").props.onPress();
     });
 
     await waitFor(() => {
@@ -569,5 +705,26 @@ describe("training preferences projection preview", () => {
         }),
       });
     });
+  });
+
+  it("warns when manual baseline CTL is likely to distort estimated readiness", () => {
+    renderNative(<TrainingPreferencesScreen />);
+
+    act(() => {
+      getTab("Baseline fitness").props.onPress();
+    });
+
+    act(() => {
+      getByTypeAndTestId("Switch", "preferences-baseline-enabled").props.onCheckedChange(true);
+    });
+
+    act(() => {
+      getByTypeAndTestId("IntegerStepper", "preferences-baseline-ctl").props.onChange(220);
+    });
+
+    expect(screen.getByTestId("preferences-baseline-ctl-warning")).toBeTruthy();
+    expect(getTextValues()).toContain(
+      "Manual CTL above 120 is very high and can make estimated readiness look flat or inflated without completed activity history.",
+    );
   });
 });

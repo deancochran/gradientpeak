@@ -1,6 +1,7 @@
 import { Text } from "@repo/ui/components/text";
-import { ChevronDown, ChevronRight, LucideIcon } from "lucide-react-native";
-import React, { useState } from "react";
+import { ChevronDown, ChevronRight, type LucideIcon } from "lucide-react-native";
+import type React from "react";
+import { useState } from "react";
 import { Pressable, View } from "react-native";
 
 interface CollapsibleSectionProps {
@@ -21,7 +22,7 @@ export function CollapsibleSection({
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
   return (
-    <View className="mb-4">
+    <View className="mb-4 gap-3">
       <Pressable
         onPress={() => setIsOpen(!isOpen)}
         className="flex-row items-center justify-between p-4 bg-card rounded-lg border border-border active:opacity-70"
@@ -37,7 +38,7 @@ export function CollapsibleSection({
         )}
       </Pressable>
 
-      {isOpen && <View className="mt-3">{children}</View>}
+      {isOpen ? children : null}
     </View>
   );
 }

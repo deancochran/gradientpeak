@@ -1,16 +1,18 @@
 /**
- * @repo/core - Core types, schemas, and utilities
+ * @repo/core - Runtime-neutral domain contracts, schemas, and utilities.
  *
- * This package serves as the main dependency for web, mobile, and tRPC packages.
- * It provides business logic, calculations, schemas, and utilities.
+ * The root API is optimized for shared web, mobile, and server consumers. Prefer
+ * explicit subpaths for new imports, especially `@repo/core/server` for Node-only
+ * activity-file parsing and stream decompression helpers.
  *
  * Architecture:
  * - Prefer package-owned domain schemas and helper types at the public boundary
  * - Keep database-generated types behind adapters when possible
  * - Business logic, calculations, and utilities are defined here
- * - All exports are organized for easy consumption by consuming packages
+ * - Keep server-only runtime dependencies behind explicit server subpaths
  */
 
+export * from "./ftms";
 // ============================================================================
 // FTMS (Fitness Machine Service) Types
 // ============================================================================
@@ -165,27 +167,15 @@ export * from "./constants";
 // and will automatically pick up new files added to their directories
 
 export * from "./activity-analysis"; // Shared dynamic activity analysis contracts/helpers
+// ============================================================================
+// Legacy Server-Only Activity File Parsing
+// ============================================================================
+// Compatibility exports for existing root consumers only. Do not add new
+// server-only exports here; use `@repo/core/server` or its server subpaths so
+// runtime-neutral consumers can avoid Node/FIT-SDK dependencies.
+export * from "./activity-files/activity-file-parser";
 export * from "./bluetooth"; // Canonical BLE parsers
-export * from "./coaching"; // Shared coaching roster adapters
-export * from "./contracts"; // Shared API contracts
-export * from "./duration"; // Canonical duration helpers
-export * from "./estimation"; // TSS estimation system
-export * from "./goals"; // Goal draft/payload helpers
-export * from "./load"; // Canonical load-domain helpers
-export * from "./messaging"; // Shared messaging adapters
-export * from "./notifications"; // Shared notification normalization helpers
-export * from "./plan"; // Training plan normalization/expansion helpers
-export * from "./profile"; // Shared profile contracts and adapters
-export * from "./samples"; // Sample data for testing and development
-export * from "./schemas"; // Zod schemas and types (includes formatDuration for DurationV2)
-export * from "./sports"; // Canonical sport registry and heuristics
-export * from "./utils"; // Utility functions
-export * from "./zones"; // Canonical zones and threshold metadata
-
-// ============================================================================
-// FIT File Parsing and Encoding Module
-// ============================================================================
-
+export * from "./calculations/critical-power";
 // Performance curves (power, pace, HR)
 export * from "./calculations/curves";
 // ============================================================================
@@ -196,6 +186,8 @@ export * from "./calculations/duration";
 export * from "./calculations/training-quality";
 export * from "./calculations/tss";
 export * from "./calculations/workload";
+export * from "./coaching"; // Shared coaching roster adapters
+export * from "./contracts"; // Shared API contracts
 // Heart rate test detection
 export * from "./detection/hr-tests";
 // Running test detection
@@ -205,9 +197,37 @@ export * from "./detection/pace-tests";
 // ============================================================================
 // Power test detection
 export * from "./detection/power-tests";
+export * from "./duration"; // Canonical duration helpers
+export * from "./estimation"; // TSS estimation system
+export * from "./goals"; // Goal draft/payload helpers
+export * from "./groups"; // Group contracts, permissions, and display state
+export * from "./integrations"; // Provider capability registry and sync action helpers
+// Compatibility export; prefer `@repo/core/server/fit-sdk-parser` in new code.
 export * from "./lib/fit-sdk-parser";
-export { extractHeartRateZones, extractPowerZones } from "./lib/fit-sdk-parser";
+export * from "./load"; // Canonical load-domain helpers
+export * from "./messaging"; // Shared messaging adapters
+export * from "./notifications"; // Shared notification normalization helpers
+export * from "./parity"; // Product parity registry and contracts
+export * from "./plan"; // Training plan normalization/expansion helpers
+export * from "./profile"; // Shared profile contracts and adapters
+export type {
+  ActivityCategory as RecordingMetricsActivityCategory,
+  RecordingMetricSample,
+  RecordingMetricsAccumulator,
+  RecordingMetricsConfig,
+  RecordingMetricsSnapshot,
+  TrainingStressScoreMethod,
+} from "./recording-metrics";
+export {
+  calculateRecordingMetrics,
+  createRecordingMetricsAccumulator,
+} from "./recording-metrics"; // Live/replay recording metrics accumulator
+export * from "./samples"; // Sample data for testing and development
+export * from "./schemas"; // Zod schemas and types (includes formatDuration for DurationV2)
+export * from "./sports"; // Canonical sport registry and heuristics
 export type { StandardActivity } from "./types/normalization";
+export * from "./utils"; // Utility functions
+export * from "./zones"; // Canonical zones and threshold metadata
 
 // ============================================================================
 // Namespace Exports - For organized imports
@@ -223,10 +243,12 @@ export * as Constants from "./constants";
 export * as Duration from "./duration";
 export * as Estimation from "./estimation";
 export * as Estimators from "./estimators/index";
+export * as Ftms from "./ftms";
 export * as Load from "./load";
 export * as Messaging from "./messaging";
 export * as Plan from "./plan";
 export * as Profile from "./profile";
+export * as RecordingMetrics from "./recording-metrics";
 export * as Samples from "./samples";
 export * as Schemas from "./schemas";
 export * as Sports from "./sports";

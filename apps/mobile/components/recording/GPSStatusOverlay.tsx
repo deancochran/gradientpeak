@@ -13,15 +13,9 @@
  */
 
 import { Text } from "@repo/ui/components/text";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
-import Animated, {
-  FadeIn,
-  FadeOut,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from "react-native-reanimated";
+import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 
 export interface GPSStatusOverlayProps {

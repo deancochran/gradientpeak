@@ -39,6 +39,7 @@ export function createActivityAnalysisStore(db: DrizzleDbClient): ActivityAnalys
             duration_seconds: schema.activityEfforts.duration_seconds,
             effort_type: schema.activityEfforts.effort_type,
             recorded_at: schema.activityEfforts.recorded_at,
+            unit: schema.activityEfforts.unit,
             value: schema.activityEfforts.value,
           })
           .from(schema.activityEfforts)
@@ -73,6 +74,7 @@ export function createActivityAnalysisStore(db: DrizzleDbClient): ActivityAnalys
           duration_seconds: effort.duration_seconds,
           effort_type: effort.effort_type,
           recorded_at: effort.recorded_at,
+          unit: effort.unit,
           value: toNumber(effort.value),
         })),
       };

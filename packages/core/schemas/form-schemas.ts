@@ -10,6 +10,51 @@
  */
 
 import { z } from "zod";
+import { saveableActivityPlanStructureSchemaV2 } from "./activity_plan_v2";
+import {
+  type ActivityTargetCategory,
+  addActivityTargetCompatibilityIssuesToZodContext,
+} from "./activity_target_capabilities";
+import {
+  completionTimeHmsSchema,
+  dateStringSchema,
+  distanceKmSchema,
+  emailSchema,
+  emptyStringToNull,
+  futureDateSchema,
+  optionalEmailSchema,
+  optionalPhoneSchema,
+  optionalUrlSchema,
+  optionalUsernameSchema,
+  paceMmSsSchema,
+  pastDateSchema,
+  phoneSchema,
+  stringToNumber,
+  trimString,
+  urlSchema,
+  usernameSchema,
+} from "./forms/primitives";
+import {
+  ageSchema,
+  bioSchema,
+  dobSchema,
+  ftpSchema,
+  genderSchema,
+  optionalAgeSchema,
+  optionalBioSchema,
+  optionalDobSchema,
+  optionalFtpSchema,
+  optionalGenderSchema,
+  optionalMaxHrSchema,
+  optionalRestingHrSchema,
+  optionalThresholdHrSchema,
+  optionalWeightKgSchema,
+  profileQuickUpdateSchema,
+  profileSettingsFormSchema,
+  restingHrSchema,
+  thresholdHrSchema,
+  weightKgSchema,
+} from "./forms/profile";
 import { profileGoalTargetSchema } from "./goals/profile_goals";
 import {
   eventLifecycleSchema,
@@ -25,65 +70,66 @@ import {
   trainingPlanCreationConfigSchema,
 } from "./training_plan_structure";
 
+export {
+  completionTimeHmsSchema,
+  completionTimeHmsToSecondsSchema,
+  dateStringSchema,
+  distanceKmSchema,
+  distanceKmToMetersSchema,
+  emailSchema,
+  emptyStringToNull,
+  emptyStringToUndefined,
+  futureDateSchema,
+  isFutureDateString,
+  isPastDateString,
+  optionalEmailSchema,
+  optionalPhoneSchema,
+  optionalUrlSchema,
+  optionalUsernameSchema,
+  paceMmSsSchema,
+  paceMmSsToMpsSchema,
+  pastDateSchema,
+  phoneSchema,
+  stringToNumber,
+  trimString,
+  urlSchema,
+  usernameSchema,
+} from "./forms/primitives";
+export type {
+  ProfileAvatarUpdateData,
+  ProfileQuickUpdateData,
+  ProfileSettingsFormData,
+} from "./forms/profile";
+export {
+  ageSchema,
+  bioSchema,
+  dobSchema,
+  ftpSchema,
+  genderSchema,
+  maxHrSchema,
+  optionalAgeSchema,
+  optionalBioSchema,
+  optionalDobSchema,
+  optionalFtpSchema,
+  optionalGenderSchema,
+  optionalMaxHrSchema,
+  optionalRestingHrSchema,
+  optionalThresholdHrSchema,
+  optionalWeightKgSchema,
+  profileAvatarUpdateSchema,
+  profileQuickUpdateSchema,
+  profileSettingsFormSchema,
+  restingHrSchema,
+  thresholdHrSchema,
+  weightKgSchema,
+} from "./forms/profile";
+
 // ============================================================================
 // REUSABLE VALIDATION PATTERNS
 // ============================================================================
 
-/**
- * Preprocessor to convert empty strings to null for optional numeric fields
- */
-const emptyStringToNull = (val: unknown) => {
-  if (typeof val === "string" && val.trim() === "") return null;
-  return val;
-};
-
-/**
- * Preprocessor to convert empty strings to undefined for optional fields
- */
-const emptyStringToUndefined = (val: unknown) => {
-  if (typeof val === "string" && val.trim() === "") return undefined;
-  return val;
-};
-
-/**
- * Preprocessor to trim strings
- */
-const trimString = (val: unknown) => {
-  if (typeof val === "string") return val.trim();
-  return val;
-};
-
-/**
- * Preprocessor to convert string numbers to actual numbers
- */
-const stringToNumber = (val: unknown) => {
-  if (typeof val === "string" && val.trim() !== "") {
-    const num = Number(val);
-    return isNaN(num) ? val : num;
-  }
-  return val;
-};
-
-/**
- * Strict decimal distance input in kilometers.
- * Accepts numbers or plain decimal strings only (no scientific notation).
- */
-export const distanceKmSchema = z.preprocess(
-  (val) => {
-    if (typeof val === "number") return val;
-    if (typeof val !== "string") return val;
-
-    const trimmed = val.trim();
-    if (trimmed === "") return val;
-    if (!/^\d+(\.\d+)?$/.test(trimmed)) return val;
-    return Number(trimmed);
-  },
-  z
-    .number({ message: "Distance must be a decimal number in km" })
-    .positive("Distance must be greater than 0 km"),
-);
-
-export const distanceKmToMetersSchema = distanceKmSchema.transform((km) => Math.round(km * 1000));
+// Generic preprocessing, contact, date, pace, and distance schemas live in
+// ./forms/primitives. They are re-exported here to preserve the public module API.
 
 const activityInsertShapeSchema = z.object({
   is_private: z.boolean().optional(),
@@ -93,415 +139,12 @@ const activityInsertShapeSchema = z.object({
 
 const activityPlanInsertShapeSchema = z.object({
   activity_category: canonicalSportSchema,
-  description: z.string(),
+  description: z.string().nullable().optional(),
   name: z.string(),
   notes: z.string().nullable().optional(),
   route_id: z.string().uuid().nullable().optional(),
   structure: z.unknown().nullable().optional(),
 });
-
-/**
- * Strict completion time input in h:mm:ss format.
- */
-export const completionTimeHmsSchema = z
-  .string()
-  .trim()
-  .regex(/^\d+:[0-5]\d:[0-5]\d$/, "Completion time must use h:mm:ss format");
-
-export const completionTimeHmsToSecondsSchema = completionTimeHmsSchema.transform((value) => {
-  const [hours = 0, minutes = 0, seconds = 0] = value.split(":").map(Number);
-  return hours * 3600 + minutes * 60 + seconds;
-});
-
-/**
- * Strict pace input in mm:ss format.
- */
-export const paceMmSsSchema = z
-  .string()
-  .trim()
-  .regex(/^\d{1,2}:[0-5]\d$/, "Pace must use mm:ss format")
-  .refine((value) => {
-    const [minutes = 0, seconds = 0] = value.split(":").map(Number);
-    return minutes > 0 || seconds > 0;
-  }, "Pace must be greater than 00:00");
-
-export const paceMmSsToMpsSchema = paceMmSsSchema.transform((value) => {
-  const [minutes = 0, seconds = 0] = value.split(":").map(Number);
-  const totalSecondsPerKm = minutes * 60 + seconds;
-  return 1000 / totalSecondsPerKm;
-});
-
-/**
- * Email validation pattern
- */
-export const emailSchema = z
-  .string()
-  .email("Please enter a valid email address")
-  .toLowerCase()
-  .trim();
-
-/**
- * Optional email (allows empty string)
- */
-export const optionalEmailSchema = z.preprocess(
-  emptyStringToNull,
-  z.string().email("Please enter a valid email address").toLowerCase().trim().nullable(),
-);
-
-/**
- * Phone number validation (international format)
- */
-export const phoneSchema = z
-  .string()
-  .regex(/^\+?[1-9]\d{1,14}$/, "Please enter a valid phone number (e.g., +1234567890)")
-  .trim();
-
-/**
- * Optional phone number
- */
-export const optionalPhoneSchema = z.preprocess(
-  emptyStringToNull,
-  z
-    .string()
-    .regex(/^\+?[1-9]\d{1,14}$/, "Please enter a valid phone number (e.g., +1234567890)")
-    .trim()
-    .nullable(),
-);
-
-/**
- * URL validation
- */
-export const urlSchema = z.string().url("Please enter a valid URL").trim();
-
-/**
- * Optional URL
- */
-export const optionalUrlSchema = z.preprocess(
-  emptyStringToNull,
-  z.string().url("Please enter a valid URL").trim().nullable(),
-);
-
-/**
- * Username validation (8-30 characters, alphanumeric + underscore)
- */
-export const usernameSchema = z
-  .string()
-  .min(3, "Username must be at least 3 characters")
-  .max(30, "Username must be less than 30 characters")
-  .regex(/^[a-zA-Z0-9_]+$/, "Username can only contain letters, numbers, and underscores")
-  .trim();
-
-/**
- * Optional username
- */
-export const optionalUsernameSchema = z.preprocess(emptyStringToNull, usernameSchema.nullable());
-
-/**
- * Date string validation (ISO 8601 format)
- */
-export const dateStringSchema = z
-  .string()
-  .refine((val) => !isNaN(Date.parse(val)), "Invalid date format");
-
-/**
- * Future date validation
- */
-export const futureDateSchema = z
-  .string()
-  .refine((val) => !isNaN(Date.parse(val)), "Invalid date format")
-  .refine((val) => new Date(val) >= new Date(), "Date must be in the future");
-
-/**
- * Past date validation
- */
-export const pastDateSchema = z
-  .string()
-  .refine((val) => !isNaN(Date.parse(val)), "Invalid date format")
-  .refine((val) => new Date(val) <= new Date(), "Date must be in the past");
-
-// ============================================================================
-// PROFILE & SETTINGS FORM SCHEMAS
-// ============================================================================
-
-/**
- * Weight validation (in kilograms)
- * Range: 30kg - 300kg (covers children to heavyweight athletes)
- */
-export const weightKgSchema = z.preprocess(
-  stringToNumber,
-  z
-    .number({
-      message: "Weight must be a number",
-    })
-    .min(30, "Weight must be at least 30kg")
-    .max(300, "Weight must be less than 300kg")
-    .positive("Weight must be positive"),
-);
-
-/**
- * Optional weight (allows null/empty)
- */
-export const optionalWeightKgSchema = z.preprocess(
-  (val) => stringToNumber(emptyStringToNull(val)),
-  z
-    .number()
-    .min(30, "Weight must be at least 30kg")
-    .max(300, "Weight must be less than 300kg")
-    .positive("Weight must be positive")
-    .nullable(),
-);
-
-/**
- * FTP (Functional Threshold Power) validation in watts
- * Range: 50W - 1000W (covers beginners to elite cyclists)
- */
-export const ftpSchema = z.preprocess(
-  stringToNumber,
-  z
-    .number({
-      message: "FTP must be a number",
-    })
-    .int("FTP must be a whole number")
-    .min(50, "FTP must be at least 50 watts")
-    .max(1000, "FTP must be less than 1000 watts")
-    .positive("FTP must be positive"),
-);
-
-/**
- * Optional FTP
- */
-export const optionalFtpSchema = z.preprocess(
-  (val) => stringToNumber(emptyStringToNull(val)),
-  z
-    .number()
-    .int("FTP must be a whole number")
-    .min(50, "FTP must be at least 50 watts")
-    .max(1000, "FTP must be less than 1000 watts")
-    .positive("FTP must be positive")
-    .nullable(),
-);
-
-/**
- * Threshold Heart Rate validation in BPM
- * Range: 100 - 220 BPM (covers all age groups)
- */
-export const thresholdHrSchema = z.preprocess(
-  stringToNumber,
-  z
-    .number({
-      message: "Threshold heart rate must be a number",
-    })
-    .int("Threshold heart rate must be a whole number")
-    .min(100, "Threshold heart rate must be at least 100 bpm")
-    .max(220, "Threshold heart rate must be less than 220 bpm")
-    .positive("Threshold heart rate must be positive"),
-);
-
-/**
- * Optional threshold heart rate
- */
-export const optionalThresholdHrSchema = z.preprocess(
-  (val) => stringToNumber(emptyStringToNull(val)),
-  z
-    .number()
-    .int("Threshold heart rate must be a whole number")
-    .min(100, "Threshold heart rate must be at least 100 bpm")
-    .max(220, "Threshold heart rate must be less than 220 bpm")
-    .positive("Threshold heart rate must be positive")
-    .nullable(),
-);
-
-/**
- * Maximum Heart Rate validation in BPM
- * Range: 120 - 250 BPM
- */
-export const maxHrSchema = z.preprocess(
-  stringToNumber,
-  z
-    .number({
-      message: "Maximum heart rate must be a number",
-    })
-    .int("Maximum heart rate must be a whole number")
-    .min(120, "Maximum heart rate must be at least 120 bpm")
-    .max(250, "Maximum heart rate must be less than 250 bpm")
-    .positive("Maximum heart rate must be positive"),
-);
-
-/**
- * Optional maximum heart rate
- */
-export const optionalMaxHrSchema = z.preprocess(
-  (val) => stringToNumber(emptyStringToNull(val)),
-  z
-    .number()
-    .int("Maximum heart rate must be a whole number")
-    .min(120, "Maximum heart rate must be at least 120 bpm")
-    .max(250, "Maximum heart rate must be less than 250 bpm")
-    .positive("Maximum heart rate must be positive")
-    .nullable(),
-);
-
-/**
- * Resting Heart Rate validation in BPM
- * Range: 30 - 100 BPM
- */
-export const restingHrSchema = z.preprocess(
-  stringToNumber,
-  z
-    .number({
-      message: "Resting heart rate must be a number",
-    })
-    .int("Resting heart rate must be a whole number")
-    .min(30, "Resting heart rate must be at least 30 bpm")
-    .max(100, "Resting heart rate must be less than 100 bpm")
-    .positive("Resting heart rate must be positive"),
-);
-
-/**
- * Optional resting heart rate
- */
-export const optionalRestingHrSchema = z.preprocess(
-  (val) => stringToNumber(emptyStringToNull(val)),
-  z
-    .number()
-    .int("Resting heart rate must be a whole number")
-    .min(30, "Resting heart rate must be at least 30 bpm")
-    .max(100, "Resting heart rate must be less than 100 bpm")
-    .positive("Resting heart rate must be positive")
-    .nullable(),
-);
-
-/**
- * Age validation
- * Range: 13 - 120 years
- */
-export const ageSchema = z.preprocess(
-  stringToNumber,
-  z
-    .number({
-      message: "Age must be a number",
-    })
-    .int("Age must be a whole number")
-    .min(13, "You must be at least 13 years old")
-    .max(120, "Age must be less than 120")
-    .positive("Age must be positive"),
-);
-
-/**
- * Optional age
- */
-export const optionalAgeSchema = z.preprocess(
-  (val) => stringToNumber(emptyStringToNull(val)),
-  z
-    .number()
-    .int("Age must be a whole number")
-    .min(13, "You must be at least 13 years old")
-    .max(120, "Age must be less than 120")
-    .positive("Age must be positive")
-    .nullable(),
-);
-
-/**
- * Gender validation
- */
-export const genderSchema = z.enum(["male", "female", "other", "prefer_not_to_say"]);
-
-/**
- * Optional gender
- */
-export const optionalGenderSchema = z.preprocess(emptyStringToNull, genderSchema.nullable());
-
-/**
- * Date of Birth validation
- * Must be at least 13 years ago and no more than 120 years ago
- */
-export const dobSchema = z
-  .string()
-  .refine((val) => !isNaN(Date.parse(val)), "Invalid date of birth")
-  .refine((val) => {
-    const dob = new Date(val);
-    const age = Math.floor((Date.now() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
-    return age >= 13;
-  }, "You must be at least 13 years old")
-  .refine((val) => {
-    const dob = new Date(val);
-    const age = Math.floor((Date.now() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
-    return age <= 120;
-  }, "Invalid date of birth");
-
-/**
- * Optional date of birth
- */
-export const optionalDobSchema = z.preprocess(emptyStringToNull, dobSchema.nullable());
-
-/**
- * Bio/description validation
- * Max 500 characters
- */
-export const bioSchema = z.string().max(500, "Bio must be less than 500 characters").trim();
-
-/**
- * Optional bio
- */
-export const optionalBioSchema = z.preprocess(emptyStringToNull, bioSchema.nullable());
-
-/**
- * Profile Settings Form Schema
- * Matches the actual database schema (public.profiles table)
- * Fields: username, bio, weight_kg, ftp, threshold_hr, dob, avatar_url, preferred_units, language, onboarded
- */
-export const profileSettingsFormSchema = z
-  .object({
-    username: optionalUsernameSchema,
-    bio: optionalBioSchema,
-    weight_kg: optionalWeightKgSchema,
-    ftp: optionalFtpSchema,
-    threshold_hr: optionalThresholdHrSchema,
-    dob: optionalDobSchema,
-    avatar_url: optionalUrlSchema,
-    preferred_units: z.enum(["metric", "imperial"]).optional().nullable(),
-    language: z.string().max(10).optional().nullable(),
-    onboarded: z.boolean().optional().nullable(),
-  })
-  .refine(
-    (data) => {
-      // Power-to-weight ratio sanity check (if both provided)
-      if (data.ftp && data.weight_kg) {
-        const powerToWeight = data.ftp / data.weight_kg;
-        // Reasonable range: 1.0 - 7.0 W/kg
-        return powerToWeight >= 1.0 && powerToWeight <= 7.0;
-      }
-      return true;
-    },
-    {
-      message: "Power-to-weight ratio seems unrealistic. Please verify FTP and weight.",
-      path: ["ftp"],
-    },
-  );
-
-export type ProfileSettingsFormData = z.infer<typeof profileSettingsFormSchema>;
-
-/**
- * Minimal profile update schema (for quick edits)
- */
-export const profileQuickUpdateSchema = z.object({
-  username: optionalUsernameSchema,
-  weight_kg: optionalWeightKgSchema,
-  ftp: optionalFtpSchema,
-  threshold_hr: optionalThresholdHrSchema,
-  is_public: z.boolean().optional(),
-});
-
-export type ProfileQuickUpdateData = z.infer<typeof profileQuickUpdateSchema>;
-
-/**
- * Avatar update schema (avatar only)
- */
-export const profileAvatarUpdateSchema = z.object({
-  avatar_url: z.string().url("Invalid avatar URL").nullable(),
-});
-
-export type ProfileAvatarUpdateData = z.infer<typeof profileAvatarUpdateSchema>;
 
 // ============================================================================
 // ACTIVITY SUBMISSION FORM SCHEMAS
@@ -692,17 +335,15 @@ export const activityCategorySchema = canonicalSportSchema;
  *
  * Fields from the shared insert shape:
  * - name: required string (enhanced: 1-100 chars)
- * - description: required string (enhanced: max 1000 chars)
+ * - description: optional nullable string (enhanced: max 1000 chars)
  * - notes: optional nullable string (enhanced: max 2000 chars)
  * - activity_category: enum ["run", "bike", "swim", "strength", "other"]
  * - route_id: optional nullable UUID
- * - structure: optional nullable JSON
+ * - structure: required V2 structure
  *
- * Note: Structure, route, and description can be combined:
- * - Structure-only: Structured workout (intervals/steps)
- * - Route-only: Just follow a route
- * - Description-only: Casual activity with no structure
- * - Combinations supported
+ * Note: Route-backed plans are still required to carry structure.
+ * The route adds geography/context, but the structure remains the
+ * canonical effort definition used for validation and derived metrics.
  */
 const activityPlanFormFieldsSchema = activityPlanInsertShapeSchema
   .pick({
@@ -716,42 +357,44 @@ const activityPlanFormFieldsSchema = activityPlanInsertShapeSchema
   .extend({
     // Override with stricter validations
     name: activityPlanNameSchema,
-    // Description is required by database but can be empty string
-    // Form allows it to be optional, defaulting to empty string
     description: z.preprocess(
       trimString,
-      z.string().max(1000, "Description must be less than 1000 characters").default(""),
+      z.string().max(1000, "Description must be less than 1000 characters").nullable().optional(),
     ),
     notes: activityPlanNotesSchema,
-    structure: z
-      .object({
-        version: z.literal(2),
-        intervals: z.array(z.any()).min(1),
-      })
-      .optional()
-      .nullable(),
+    structure: saveableActivityPlanStructureSchemaV2,
+  })
+  .superRefine((plan, ctx) => {
+    addActivityTargetCompatibilityIssuesToZodContext({
+      activityCategory: plan.activity_category as ActivityTargetCategory,
+      ctx,
+      pathPrefix: ["structure"],
+      structure: plan.structure,
+    });
   });
 
-export const activityPlanCreateFormSchema = activityPlanFormFieldsSchema.refine(
-  (data) => {
-    // At least one of structure or route_id must be provided
-    // (description is always provided as it has a default empty string)
-    return data.structure != null || data.route_id != null;
-  },
-  {
-    message: "Activity plan must have either a structure or a route",
-    path: ["structure"],
-  },
-);
+export const activityPlanCreateFormSchema = activityPlanFormFieldsSchema;
 
 export type ActivityPlanCreateFormData = z.infer<typeof activityPlanCreateFormSchema>;
 
 /**
  * Activity Plan Update Form Schema
  */
-export const activityPlanUpdateFormSchema = activityPlanFormFieldsSchema.partial().safeExtend({
-  id: z.string().uuid("Invalid activity plan ID"),
-});
+export const activityPlanUpdateFormSchema = activityPlanFormFieldsSchema
+  .partial()
+  .safeExtend({
+    id: z.string().uuid("Invalid activity plan ID"),
+  })
+  .superRefine((plan, ctx) => {
+    if (plan.structure && plan.activity_category) {
+      addActivityTargetCompatibilityIssuesToZodContext({
+        activityCategory: plan.activity_category as ActivityTargetCategory,
+        ctx,
+        pathPrefix: ["structure"],
+        structure: plan.structure,
+      });
+    }
+  });
 
 export type ActivityPlanUpdateFormData = z.infer<typeof activityPlanUpdateFormSchema>;
 
@@ -990,9 +633,9 @@ export const trainingPlanWeeklyTargetsFormSchema = z.object({
     stringToNumber,
     z
       .number()
-      .int("Workouts per week must be a whole number")
-      .min(1, "At least 1 workout per week")
-      .max(14, "Maximum 14 workouts per week")
+      .int("Activities per week must be a whole number")
+      .min(1, "At least 1 activity per week")
+      .max(14, "Maximum 14 activities per week")
       .positive(),
   ),
 });

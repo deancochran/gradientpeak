@@ -42,7 +42,7 @@ export const Playground: Story = {
         <div className="flex flex-col gap-4 px-4">
           <div className="flex items-center gap-3">
             <Checkbox id="only-starred" />
-            <Label htmlFor="only-starred">Only starred workouts</Label>
+            <Label htmlFor="only-starred">Only starred activities</Label>
           </div>
           <div className="flex items-center gap-3">
             <Checkbox id="show-completed" />

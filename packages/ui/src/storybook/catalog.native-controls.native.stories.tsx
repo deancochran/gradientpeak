@@ -191,10 +191,10 @@ export const DateInputStory: Story = {
 export const DurationInputStory: Story = {
   name: "Duration Input",
   render: () => {
-    const [value, setValue] = React.useState<string>(durationInputFixtures.workout.value);
+    const [value, setValue] = React.useState<string>(durationInputFixtures.activity.value);
     return (
       <NativeFrame>
-        <DurationInput {...durationInputFixtures.workout} onChange={setValue} value={value} />
+        <DurationInput {...durationInputFixtures.activity} onChange={setValue} value={value} />
       </NativeFrame>
     );
   },

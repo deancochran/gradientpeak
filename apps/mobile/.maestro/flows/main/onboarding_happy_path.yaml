@@ -3,10 +3,49 @@ appId: com.deancochran.gradientpeak.dev
 - runFlow:
     file: ../reusable/bootstrap.yaml
 - runFlow:
-    file: ../reusable/login.yaml
-    env:
-      email: "${ONBOARDING_USER_EMAIL}"
-      password: "${ONBOARDING_USER_PASS}"
+    when:
+      visible:
+        id: "verify-screen"
+    commands:
+      - tapOn:
+          id: "back-to-sign-in-button"
+- runFlow:
+    when:
+      visible:
+        id: "search-header-button"
+    commands:
+      - tapOn:
+          id: "app-header-avatar-button"
+      - extendedWaitUntil:
+          visible:
+            id: "user-detail-screen"
+          timeout: 10000
+      - tapOn:
+          id: "sign-out"
+      - tapOn:
+          text: "Sign Out"
+          optional: true
+      - extendedWaitUntil:
+          visible:
+            id: "sign-in-screen"
+          timeout: 10000
+- tapOn:
+    id: "login-button"
+    optional: true
+- runFlow:
+    when:
+      visible:
+        id: "sign-in-screen"
+    commands:
+      - tapOn:
+          id: "email-input"
+      - inputText: "${ONBOARDING_USER_EMAIL}"
+      - tapOn:
+          id: "password-input"
+      - inputText: "${ONBOARDING_USER_PASS}"
+      - hideKeyboard
+      - tapOn:
+          id: "sign-in-button"
 - extendedWaitUntil:
     visible:
       id: "onboarding-screen"
@@ -22,13 +61,11 @@ appId: com.deancochran.gradientpeak.dev
 - tapOn:
     id: "onboarding-next-button"
 - tapOn:
-    id: "onboarding-dob"
-- inputText: "1990-01-01"
+    id: "onboarding-skip-button"
 - tapOn:
-    id: "onboarding-next-button"
-- tapOn:
-    id: "onboarding-weight"
+    text: "Current weight"
 - inputText: "72"
+- hideKeyboard
 - tapOn:
     id: "onboarding-next-button"
 - tapOn:
@@ -46,6 +83,10 @@ appId: com.deancochran.gradientpeak.dev
     timeout: 10000
 - tapOn:
     id: "onboarding-finish-button"
+- tapOn:
+    id: "onboarding-status-confirm"
+    optional: true
 - extendedWaitUntil:
-    visible: "Plan"
+    visible:
+      id: "search-header-button"
     timeout: 15000

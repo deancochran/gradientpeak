@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { clampNumber, formatNumberForInput, parseBoundedNumber } from "../../lib/fitness-inputs";
 import { View } from "../../lib/react-native";
 import { Input } from "../input/index.native";
@@ -57,6 +57,7 @@ function PercentSliderInput({
       {showNumericInput ? (
         <View className="flex-row items-center gap-2">
           <Input
+            accessibilityLabel={label}
             accessibilityHint={accessibilityHint ?? `Enter percent between ${min} and ${max}`}
             className="flex-1"
             value={draftValue}

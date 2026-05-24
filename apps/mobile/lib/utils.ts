@@ -1,4 +1,4 @@
-import { format, isToday, isYesterday } from "date-fns";
+import { format, isToday, isValid, isYesterday } from "date-fns";
 
 /**
  * Format a date as relative time (e.g., "5m ago", "Yesterday", "3/4/26")
@@ -6,6 +6,10 @@ import { format, isToday, isYesterday } from "date-fns";
  */
 export function formatRelativeTime(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : date;
+
+  if (!isValid(d)) {
+    return "";
+  }
 
   if (isToday(d)) {
     return format(d, "h:mm a");

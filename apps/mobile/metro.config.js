@@ -20,7 +20,9 @@ function getWithStorybook() {
 }
 
 /** @type {import('expo/metro-config').MetroConfig} */
-const config = withNativewind(getDefaultConfig(__dirname));
+const config = withNativewind(getDefaultConfig(__dirname), {
+  input: "./global.css",
+});
 
 const existingResolveRequest = config.resolver?.resolveRequest;
 

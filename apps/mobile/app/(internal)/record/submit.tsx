@@ -1,11 +1,17 @@
 import { type ActivitySubmissionFormData, activitySubmissionFormSchema } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
-import { Form, FormSelectField, FormTextareaField, FormTextField } from "@repo/ui/components/form";
+import {
+  Form,
+  FormSegmentedSelectField,
+  FormTextareaField,
+  FormTextField,
+} from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useRouter } from "expo-router";
-import { Loader2, Save, Trash2 } from "lucide-react-native";
+import { Save, Trash2 } from "lucide-react-native";
 import { useCallback, useEffect, useMemo } from "react";
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
@@ -58,9 +64,7 @@ function SubmitScreen() {
       if (service) {
         await service.cleanup();
       }
-      // Navigate back twice: once to close submit screen, once to close record modal
-      router.back();
-      router.back();
+      router.replace("/(internal)/(tabs)" as any);
     },
     [submission, service, router],
   );
@@ -79,9 +83,7 @@ function SubmitScreen() {
           if (service) {
             await service.cleanup();
           }
-          // Navigate back twice: once to close submit screen, once to close record modal
-          router.back();
-          router.back();
+          router.replace("/(internal)/(tabs)" as any);
         },
       },
     ]);
@@ -97,6 +99,12 @@ function SubmitScreen() {
   const submitForm = useZodFormSubmit<ActivitySubmissionFormData>({
     form,
     onSubmit: handleSubmit,
+    submittingLabel: "Saving...",
+  });
+  const submitButtonState = submitForm.getSubmitButtonState({
+    disabled: !canSubmit,
+    label: "Save Activity",
+    submittingLabel: "Saving...",
   });
 
   return (
@@ -108,7 +116,7 @@ function SubmitScreen() {
       <View className="bg-background border-b border-border px-6 py-4 pt-14">
         <View className="flex-1 items-center mb-4">
           <Text className="text-2xl font-bold">Save Activity</Text>
-          <Text className="text-sm text-muted-foreground">Add details for your workout</Text>
+          <Text className="text-sm text-muted-foreground">Add details for your activity</Text>
         </View>
       </View>
 
@@ -132,7 +140,7 @@ function SubmitScreen() {
 
               <FormTextareaField
                 control={form.control}
-                description="Add notes about how the workout felt (optional)"
+                description="Add notes about how the activity felt (optional)"
                 disabled={submission.isUploading}
                 formatValue={(value) => value ?? ""}
                 label="Description"
@@ -144,7 +152,7 @@ function SubmitScreen() {
                 className="min-h-32"
               />
 
-              <FormSelectField
+              <FormSegmentedSelectField
                 control={form.control}
                 description="Choose whether this activity is only visible to you or visible on your profile."
                 disabled={submission.isUploading}
@@ -156,7 +164,6 @@ function SubmitScreen() {
                   { label: "Private activity", value: "private" },
                 ]}
                 parseValue={(value: string) => value === "private"}
-                placeholder="Select visibility"
                 testId="activity-visibility-select"
               />
 
@@ -189,24 +196,21 @@ function SubmitScreen() {
 
       {/* Sticky Save Button at Bottom */}
       <View className="absolute bottom-0 left-0 right-0 bg-background border-t border-border px-6 py-4 pb-8">
-        <Button
+        <LoadingButton
           onPress={submitForm.handleSubmit}
-          disabled={!canSubmit || submitForm.isSubmitting}
+          disabled={submitButtonState.disabled}
+          loading={submission.isUploading || submitButtonState.loading}
+          loadingLabel={submitButtonState.loadingLabel}
           className="w-full"
           size="lg"
         >
-          {submission.isUploading || submitForm.isSubmitting ? (
-            <View className="flex-row items-center gap-2">
-              <Icon as={Loader2} size={20} className="text-primary-foreground animate-spin" />
-              <Text className="text-base font-semibold text-primary-foreground">Saving...</Text>
-            </View>
-          ) : (
-            <View className="flex-row items-center gap-2">
-              <Icon as={Save} size={20} className="text-primary-foreground" />
-              <Text className="text-base font-semibold text-primary-foreground">Save Activity</Text>
-            </View>
-          )}
-        </Button>
+          <View className="flex-row items-center gap-2">
+            <Icon as={Save} size={20} className="text-primary-foreground" />
+            <Text className="text-base font-semibold text-primary-foreground">
+              {submitButtonState.label}
+            </Text>
+          </View>
+        </LoadingButton>
       </View>
     </KeyboardAvoidingView>
   );

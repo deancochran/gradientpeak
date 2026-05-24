@@ -173,7 +173,7 @@ export class PredictiveResistanceCalculator {
     const standardCadence = constants.standardCadence;
 
     const requiredTorque = (targetPower * 60) / (2 * Math.PI * standardCadence);
-    let resistance = this.torqueToResistance(requiredTorque, deviceType);
+    const resistance = this.torqueToResistance(requiredTorque, deviceType);
 
     return this.applyDeviceLimits(resistance, deviceFeatures);
   }
@@ -209,7 +209,7 @@ export class PredictiveResistanceCalculator {
   }
 
   /**
-   * Reset calculator state (call when starting new workout or changing devices)
+   * Reset calculator state (call when starting new activity or changing devices)
    */
   reset(): void {
     this.cadenceBuffer.clear();

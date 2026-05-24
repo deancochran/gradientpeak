@@ -1,15 +1,16 @@
-import { activities, likes, profiles } from "@repo/db";
+import { likes, profiles, trainingPlans } from "@repo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { socialRouter } from "../social";
 
-type SelectTableName = "likes" | "profiles";
+type SelectTableName = "likes" | "profiles" | "trainingPlans";
 
 type DbPlan = {
   select?: Partial<Record<SelectTableName, Array<unknown[]>>>;
   execute?: Array<Array<Record<string, unknown>>>;
   query?: {
     activities?: unknown[];
+    events?: unknown[];
   };
 };
 
@@ -25,6 +26,7 @@ const COMMENT_ID = "88888888-8888-4888-8888-888888888888";
 function getSelectTableName(table: unknown): SelectTableName {
   if (table === likes) return "likes";
   if (table === profiles) return "profiles";
+  if (table === trainingPlans) return "trainingPlans";
   throw new Error(`Unhandled select table: ${String(table)}`);
 }
 
@@ -32,9 +34,11 @@ function createDbMock(plan: DbPlan = {}) {
   const selectQueues = {
     likes: [...(plan.select?.likes ?? [])],
     profiles: [...(plan.select?.profiles ?? [])],
+    trainingPlans: [...(plan.select?.trainingPlans ?? [])],
   } satisfies Record<SelectTableName, Array<unknown[]>>;
   const executeQueue = [...(plan.execute ?? [])];
   const activityQueryQueue = [...(plan.query?.activities ?? [])];
+  const eventQueryQueue = [...(plan.query?.events ?? [])];
 
   const calls = {
     selects: [] as Array<{ table: SelectTableName }>,
@@ -87,6 +91,9 @@ function createDbMock(plan: DbPlan = {}) {
       query: {
         activities: {
           findFirst: vi.fn(async () => activityQueryQueue.shift() ?? null),
+        },
+        events: {
+          findFirst: vi.fn(async () => eventQueryQueue.shift() ?? null),
         },
       },
     },
@@ -202,6 +209,9 @@ describe("socialRouter", () => {
 
   it("getFollowers returns follower rows with relationship status for the viewer", async () => {
     const { caller } = createCaller({
+      select: {
+        profiles: [[{ is_public: true }]],
+      },
       execute: [
         [
           {
@@ -209,12 +219,16 @@ describe("socialRouter", () => {
             username: "follower-one",
             avatar_url: "https://example.com/one.png",
             is_public: true,
+            created_at: "2026-04-01T12:00:00.000Z",
+            updated_at: "2026-04-01T12:00:00.000Z",
           },
           {
             id: FOLLOWER_TWO_ID,
             username: "follower-two",
             avatar_url: null,
             is_public: false,
+            created_at: "2026-03-31T12:00:00.000Z",
+            updated_at: "2026-03-31T12:00:00.000Z",
           },
         ],
         [{ value: 3 }],
@@ -222,7 +236,7 @@ describe("socialRouter", () => {
       ],
     });
 
-    const result = await caller.getFollowers({ user_id: TARGET_USER_ID, limit: 2, offset: 0 });
+    const result = await caller.getFollowers({ user_id: TARGET_USER_ID, limit: 2 });
 
     expect(result).toEqual({
       users: [
@@ -231,6 +245,8 @@ describe("socialRouter", () => {
           username: "follower-one",
           avatar_url: "https://example.com/one.png",
           is_public: true,
+          created_at: "2026-04-01T12:00:00.000Z",
+          updated_at: "2026-04-01T12:00:00.000Z",
           follow_status: "accepted",
         },
         {
@@ -238,16 +254,22 @@ describe("socialRouter", () => {
           username: "follower-two",
           avatar_url: null,
           is_public: false,
+          created_at: "2026-03-31T12:00:00.000Z",
+          updated_at: "2026-03-31T12:00:00.000Z",
           follow_status: null,
         },
       ],
       total: 3,
       hasMore: true,
+      nextCursor: "index:2",
     });
   });
 
   it("getFollowing returns followed users with viewer-specific relationship status", async () => {
     const { caller } = createCaller({
+      select: {
+        profiles: [[{ is_public: true }]],
+      },
       execute: [
         [
           {
@@ -255,12 +277,16 @@ describe("socialRouter", () => {
             username: "following-one",
             avatar_url: "https://example.com/following.png",
             is_public: true,
+            created_at: "2026-04-02T12:00:00.000Z",
+            updated_at: "2026-04-02T12:00:00.000Z",
           },
           {
             id: FOLLOWING_TWO_ID,
             username: "following-two",
             avatar_url: null,
             is_public: true,
+            created_at: "2026-04-01T12:00:00.000Z",
+            updated_at: "2026-04-01T12:00:00.000Z",
           },
         ],
         [{ value: 2 }],
@@ -268,7 +294,7 @@ describe("socialRouter", () => {
       ],
     });
 
-    const result = await caller.getFollowing({ user_id: TARGET_USER_ID, limit: 2, offset: 0 });
+    const result = await caller.getFollowing({ user_id: TARGET_USER_ID, limit: 2 });
 
     expect(result).toEqual({
       users: [
@@ -277,6 +303,8 @@ describe("socialRouter", () => {
           username: "following-one",
           avatar_url: "https://example.com/following.png",
           is_public: true,
+          created_at: "2026-04-02T12:00:00.000Z",
+          updated_at: "2026-04-02T12:00:00.000Z",
           follow_status: null,
         },
         {
@@ -284,12 +312,32 @@ describe("socialRouter", () => {
           username: "following-two",
           avatar_url: null,
           is_public: true,
+          created_at: "2026-04-01T12:00:00.000Z",
+          updated_at: "2026-04-01T12:00:00.000Z",
           follow_status: "pending",
         },
       ],
       total: 2,
       hasMore: false,
+      nextCursor: undefined,
     });
+  });
+
+  it("getFollowers rejects private social graph access for non-followers", async () => {
+    const { caller, calls } = createCaller({
+      select: {
+        profiles: [[{ is_public: false }]],
+      },
+      execute: [
+        [{ follower_id: SESSION_USER_ID, following_id: TARGET_USER_ID, status: "pending" }],
+      ],
+    });
+
+    await expect(caller.getFollowers({ user_id: TARGET_USER_ID, limit: 2 })).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+
+    expect(calls.executes).toHaveLength(1);
   });
 
   it("searchUsers trims the query and returns paginated matches", async () => {
@@ -301,6 +349,8 @@ describe("socialRouter", () => {
             username: "target-runner",
             avatar_url: null,
             is_public: true,
+            created_at: "2026-04-03T12:00:00.000Z",
+            updated_at: "2026-04-03T12:00:00.000Z",
           },
         ],
         [{ value: 1 }],
@@ -316,10 +366,13 @@ describe("socialRouter", () => {
           username: "target-runner",
           avatar_url: null,
           is_public: true,
+          created_at: "2026-04-03T12:00:00.000Z",
+          updated_at: "2026-04-03T12:00:00.000Z",
         },
       ],
       total: 1,
       hasMore: false,
+      nextCursor: undefined,
     });
   });
 
@@ -403,7 +456,6 @@ describe("socialRouter", () => {
       entity_id: ACTIVITY_ID,
       entity_type: "activity",
       limit: 1,
-      offset: 0,
     });
 
     expect(result).toEqual({
@@ -421,6 +473,83 @@ describe("socialRouter", () => {
       ],
       total: 2,
       hasMore: true,
+      nextCursor: "index:1",
     });
+  });
+
+  it("getComments allows system training plans with null owner profile_id", async () => {
+    const createdAt = new Date("2026-04-03T14:00:00.000Z");
+    const trainingPlanId = "99999999-9999-4999-8999-999999999999";
+
+    const { caller } = createCaller({
+      select: {
+        trainingPlans: [
+          [
+            {
+              id: trainingPlanId,
+              ownerProfileId: null,
+              templateVisibility: "public",
+              isSystem: true,
+            },
+          ],
+        ],
+      },
+      execute: [
+        [
+          {
+            id: COMMENT_ID,
+            content: "Pinned session",
+            created_at: createdAt,
+            profile_id: TARGET_USER_ID,
+            profile_username: "target-runner",
+            profile_avatar_url: null,
+          },
+        ],
+        [{ value: 1 }],
+      ],
+    });
+
+    const result = await caller.getComments({
+      entity_id: trainingPlanId,
+      entity_type: "training_plan",
+      limit: 20,
+    });
+
+    expect(result).toEqual({
+      comments: [
+        {
+          id: COMMENT_ID,
+          content: "Pinned session",
+          created_at: createdAt.toISOString(),
+          profile: {
+            id: TARGET_USER_ID,
+            username: "target-runner",
+            avatar_url: null,
+          },
+        },
+      ],
+      total: 1,
+      hasMore: false,
+      nextCursor: undefined,
+    });
+  });
+
+  it("getComments rejects event comments for non-owners", async () => {
+    const eventId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const { caller, calls } = createCaller({
+      query: {
+        events: [{ profile_id: TARGET_USER_ID }],
+      },
+    });
+
+    await expect(
+      caller.getComments({
+        entity_id: eventId,
+        entity_type: "event",
+        limit: 20,
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    expect(calls.executes).toHaveLength(0);
   });
 });

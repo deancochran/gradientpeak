@@ -1,6 +1,7 @@
 import { Text } from "@repo/ui/components/text";
-import { Dimensions, useColorScheme, View } from "react-native";
+import { Dimensions, View } from "react-native";
 import { LineChart } from "react-native-chart-kit";
+import { useTheme } from "@/lib/stores/theme-store";
 import type { InsightTimelinePoint } from "./PlanVsActualChart";
 
 export interface TrainingLoadData {
@@ -19,17 +20,21 @@ export interface TrainingLoadChartProps {
 export function TrainingLoadChart({ data, timeline, height = 250 }: TrainingLoadChartProps) {
   const screenWidth = Dimensions.get("window").width;
   const chartWidth = screenWidth - 48;
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === "dark";
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
 
   const useTimeline = !!timeline && timeline.length > 0;
   const normalizedData: TrainingLoadData[] = useTimeline
-    ? timeline.map((point) => ({
-        date: point.date,
-        ctl: point.actual_tss,
-        atl: point.scheduled_tss,
-        tsb: point.actual_tss - point.scheduled_tss,
-      }))
+    ? timeline.map((point) => {
+        const completedLoad = point.completed_load_tss ?? point.actual_tss ?? 0;
+        const scheduledLoad = point.scheduled_load_tss ?? point.scheduled_tss ?? 0;
+        return {
+          date: point.date,
+          ctl: completedLoad,
+          atl: scheduledLoad,
+          tsb: completedLoad - scheduledLoad,
+        };
+      })
     : data || [];
 
   const isEmpty = normalizedData.length === 0;
@@ -149,7 +154,7 @@ export function TrainingLoadChart({ data, timeline, height = 250 }: TrainingLoad
               {useTimeline ? "Actual Today" : "Current CTL"}
             </Text>
             <Text className="text-sm font-semibold text-blue-600">
-              {Math.round(recentData[recentData.length - 1]!.ctl)}
+              {Math.round(recentData[recentData.length - 1]?.ctl)}
             </Text>
           </View>
           <View className="items-center">
@@ -157,7 +162,7 @@ export function TrainingLoadChart({ data, timeline, height = 250 }: TrainingLoad
               {useTimeline ? "Scheduled Today" : "Current ATL"}
             </Text>
             <Text className="text-sm font-semibold text-yellow-600">
-              {Math.round(recentData[recentData.length - 1]!.atl)}
+              {Math.round(recentData[recentData.length - 1]?.atl)}
             </Text>
           </View>
           <View className="items-center">
@@ -166,11 +171,11 @@ export function TrainingLoadChart({ data, timeline, height = 250 }: TrainingLoad
             </Text>
             <Text
               className={`text-sm font-semibold ${
-                recentData[recentData.length - 1]!.tsb > 0 ? "text-green-600" : "text-red-600"
+                recentData[recentData.length - 1]?.tsb > 0 ? "text-green-600" : "text-red-600"
               }`}
             >
-              {recentData[recentData.length - 1]!.tsb > 0 ? "+" : ""}
-              {Math.round(recentData[recentData.length - 1]!.tsb)}
+              {recentData[recentData.length - 1]?.tsb > 0 ? "+" : ""}
+              {Math.round(recentData[recentData.length - 1]?.tsb)}
             </Text>
           </View>
         </View>

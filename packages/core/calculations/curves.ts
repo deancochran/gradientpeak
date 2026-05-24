@@ -215,7 +215,7 @@ export function analyzePaceCurve(curve: PaceCurvePoint[]): PaceCurve {
 function predictTime(distance: number, criticalVelocity: number, riegelExponent: number): number {
   // Time = Distance / (CV × (Distance/Reference)^(n-1))
   const referenceDistance = 10000;
-  return distance / (criticalVelocity * Math.pow(distance / referenceDistance, riegelExponent - 1));
+  return distance / (criticalVelocity * (distance / referenceDistance) ** (riegelExponent - 1));
 }
 
 /**
@@ -228,7 +228,7 @@ function predictTime(distance: number, criticalVelocity: number, riegelExponent:
  * @returns Best pace and time or null
  */
 function findBestPaceForDistance(
-  paceStream: number[],
+  _paceStream: number[],
   timestamps: number[],
   distanceStream: number[],
   targetDistance: number,

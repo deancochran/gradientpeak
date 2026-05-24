@@ -1,4 +1,4 @@
-import * as React from "react";
+import type * as React from "react";
 import { getNativeTestProps } from "../../lib/test-props";
 import { Text as RegistryText, TextClassContext } from "../../registry/native/text";
 import type { TextTestProps, TextVariant, TextVariantProps } from "./shared";

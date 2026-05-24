@@ -210,7 +210,7 @@ export function ActivityStepChart({
               }}
             >
               <View
-                className={`flex-1 rounded justify-between p-2 ${
+                className={`flex-1 justify-between rounded p-2 ${
                   isSelected ? "border-2 border-primary" : ""
                 }`}
                 style={{
@@ -218,7 +218,6 @@ export function ActivityStepChart({
                   opacity: isSelected ? 1 : 0.9,
                 }}
               >
-                {/* Step info */}
                 <View>
                   {step.isFromRepetition && (
                     <Text className="text-white text-[10px] font-bold" numberOfLines={1}>
@@ -230,7 +229,6 @@ export function ActivityStepChart({
                   </Text>
                 </View>
 
-                {/* Duration & Target */}
                 <View>
                   <Text className="text-white text-[10px] font-medium" numberOfLines={1}>
                     {formatDuration(step.duration)}
@@ -245,7 +243,6 @@ export function ActivityStepChart({
         })}
       </ScrollView>
 
-      {/* X-axis label */}
       <View className="px-4 pb-2 border-t border-border">
         <Text className="text-xs text-muted-foreground text-center">
           {flattenedSteps.length} steps • {Math.round(totalDurationMs / 60000)} min total

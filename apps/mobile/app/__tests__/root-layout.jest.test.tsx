@@ -43,7 +43,7 @@ jest.mock("react-native-gesture-handler", () => ({
   GestureHandlerRootView: createHost("GestureHandlerRootView"),
 }));
 
-jest.mock("react-native-safe-area-context", () => ({
+jest.mock("react-native-css/components/react-native-safe-area-context", () => ({
   __esModule: true,
   SafeAreaProvider: createHost("SafeAreaProvider"),
   SafeAreaView: createHost("SafeAreaView"),
@@ -71,6 +71,7 @@ jest.mock("expo-router", () => ({
 jest.mock("nativewind", () => ({
   __esModule: true,
   vars: (value: any) => value,
+  VariableContextProvider: ({ children }: any) => children,
 }));
 
 jest.mock("@repo/ui/components/button", () => ({

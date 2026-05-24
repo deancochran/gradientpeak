@@ -1,4 +1,5 @@
 CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA pg_catalog;--> statement-breakpoint
+CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions;--> statement-breakpoint
 GRANT USAGE ON SCHEMA cron TO postgres;--> statement-breakpoint
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA cron TO postgres;--> statement-breakpoint
 
@@ -35,6 +36,14 @@ BEGIN
     body := '{}'::jsonb,
     timeout_milliseconds := 10000
   );
+END;
+$$;--> statement-breakpoint
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'provider-sync-wahoo-drain') THEN
+    PERFORM cron.unschedule('provider-sync-wahoo-drain');
+  END IF;
 END;
 $$;--> statement-breakpoint
 

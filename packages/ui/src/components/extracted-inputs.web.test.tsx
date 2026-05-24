@@ -19,6 +19,8 @@ import { paceSecondsFieldFixtures } from "./pace-seconds-field/fixtures";
 import { PaceSecondsField } from "./pace-seconds-field/index.web";
 import { percentSliderInputFixtures } from "./percent-slider-input/fixtures";
 import { PercentSliderInput } from "./percent-slider-input/index.web";
+import { timeInputFixtures } from "./time-input/fixtures";
+import { TimeInput } from "./time-input/index.web";
 import { weightInputFieldFixtures } from "./weight-input-field/fixtures";
 import { WeightInputField } from "./weight-input-field/index.web";
 
@@ -34,6 +36,21 @@ describe("extracted inputs web", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /clear date/i }));
+
+    expect(onChange).toHaveBeenCalledWith(undefined);
+  });
+
+  it("TimeInput clears a selected value", () => {
+    const onChange = vi.fn();
+
+    renderWeb(<TimeInput {...timeInputFixtures.startTime} clearable onChange={onChange} />);
+
+    expect(screen.getByTestId(timeInputFixtures.startTime.testId)).toHaveAttribute(
+      "id",
+      `${timeInputFixtures.startTime.id}-field`,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /clear time/i }));
 
     expect(onChange).toHaveBeenCalledWith(undefined);
   });
@@ -87,9 +104,9 @@ describe("extracted inputs web", () => {
   it("DurationInput forwards typed values", () => {
     const onChange = vi.fn();
 
-    renderWeb(<DurationInput {...durationInputFixtures.workout} onChange={onChange} />);
+    renderWeb(<DurationInput {...durationInputFixtures.activity} onChange={onChange} />);
 
-    fireEvent.change(screen.getByLabelText(durationInputFixtures.workout.label), {
+    fireEvent.change(screen.getByLabelText(durationInputFixtures.activity.label), {
       currentTarget: { value: "1:45:00" },
       target: { value: "1:45:00" },
     });

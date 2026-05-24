@@ -1,0 +1,61 @@
+appId: com.deancochran.gradientpeak.dev
+---
+- runFlow:
+    file: ../reusable/authenticated_home.yaml
+- runFlow:
+    file: ../reusable/assert_runtime_errors_clear.yaml
+
+- tapOn:
+    id: "tab-button-plan"
+- extendedWaitUntil:
+    visible:
+      id: "perf-metric-route-plan"
+    timeout: 3000
+- copyTextFrom:
+    id: "perf-metric-route-plan"
+- evalScript: ${output.planRouteMs = Number(maestro.copiedText)}
+- assertTrue:
+    condition: ${output.planRouteMs <= 300}
+    label: Plan tab route is ready within 300ms
+
+- tapOn:
+    id: "tab-button-calendar"
+- extendedWaitUntil:
+    visible:
+      id: "perf-metric-route-calendar"
+    timeout: 3000
+- copyTextFrom:
+    id: "perf-metric-route-calendar"
+- evalScript: ${output.calendarRouteMs = Number(maestro.copiedText)}
+- assertTrue:
+    condition: ${output.calendarRouteMs <= 500}
+    label: Calendar tab route is ready within 500ms
+
+- tapOn:
+    id: "tab-button-groups"
+- extendedWaitUntil:
+    visible:
+      id: "perf-metric-route-groups"
+    timeout: 3000
+- copyTextFrom:
+    id: "perf-metric-route-groups"
+- evalScript: ${output.groupsRouteMs = Number(maestro.copiedText)}
+- assertTrue:
+    condition: ${output.groupsRouteMs <= 300}
+    label: Groups tab route is ready within 300ms
+
+- tapOn:
+    id: "tab-button-home"
+- extendedWaitUntil:
+    visible:
+      id: "perf-metric-route-home"
+    timeout: 3000
+- copyTextFrom:
+    id: "perf-metric-route-home"
+- evalScript: ${output.homeRouteMs = Number(maestro.copiedText)}
+- assertTrue:
+    condition: ${output.homeRouteMs <= 300}
+    label: Home tab route is ready within 300ms
+
+- runFlow:
+    file: ../reusable/assert_runtime_errors_clear.yaml

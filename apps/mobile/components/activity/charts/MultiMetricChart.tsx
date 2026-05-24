@@ -1,4 +1,3 @@
-import React from "react";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 import { StreamChart } from "./StreamChart";
 

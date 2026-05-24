@@ -44,12 +44,12 @@ export function createEmptyGoalDraft(): GoalEditorDraft {
 }
 
 export function buildGoalDraftFromGoal(input: GoalDraftFromGoalInput): GoalEditorDraft {
-  const { goal, targetDate } = input;
+  const { goal } = input;
 
   if (goal.objective.type === "event_performance") {
     return {
       title: goal.title,
-      targetDate: targetDate ?? "",
+      targetDate: goal.target_date,
       importance: goal.priority,
       goalType: "race_performance",
       activityCategory: goal.activity_category,
@@ -75,7 +75,7 @@ export function buildGoalDraftFromGoal(input: GoalDraftFromGoalInput): GoalEdito
     if (goal.objective.metric === "pace") {
       return {
         title: goal.title,
-        targetDate: targetDate ?? "",
+        targetDate: goal.target_date,
         importance: goal.priority,
         goalType: "pace_threshold",
         activityCategory: "run",
@@ -97,7 +97,7 @@ export function buildGoalDraftFromGoal(input: GoalDraftFromGoalInput): GoalEdito
     if (goal.objective.metric === "power") {
       return {
         title: goal.title,
-        targetDate: targetDate ?? "",
+        targetDate: goal.target_date,
         importance: goal.priority,
         goalType: "power_threshold",
         activityCategory: "bike",
@@ -118,7 +118,7 @@ export function buildGoalDraftFromGoal(input: GoalDraftFromGoalInput): GoalEdito
 
     return {
       title: goal.title,
-      targetDate: targetDate ?? "",
+      targetDate: goal.target_date,
       importance: goal.priority,
       goalType: "hr_threshold",
       activityCategory: goal.activity_category,
@@ -137,7 +137,7 @@ export function buildGoalDraftFromGoal(input: GoalDraftFromGoalInput): GoalEdito
   if (goal.objective.type === "completion") {
     return {
       title: goal.title,
-      targetDate: targetDate ?? "",
+      targetDate: goal.target_date,
       importance: goal.priority,
       goalType: "completion",
       activityCategory: goal.activity_category,
@@ -158,7 +158,7 @@ export function buildGoalDraftFromGoal(input: GoalDraftFromGoalInput): GoalEdito
 
   return {
     title: goal.title,
-    targetDate: targetDate ?? "",
+    targetDate: goal.target_date,
     importance: goal.priority,
     goalType: "consistency",
     activityCategory: goal.activity_category,

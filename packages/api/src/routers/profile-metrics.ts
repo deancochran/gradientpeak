@@ -18,11 +18,12 @@ import {
   publicProfileMetricTypeSchema,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, gte, lte } from "drizzle-orm";
+import { and, count, desc, eq, gte, lte } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
-import { bumpProfileEstimationState } from "../utils/profile-estimation-state";
+import { buildIndexPageInfo, indexCursorSchema, parseIndexCursor } from "../utils/index-cursor";
+import { markProfileAnalysisDirty } from "../utils/profile-estimation-state";
 
 const createProfileMetricInputSchema = z
   .object({
@@ -52,8 +53,9 @@ const listProfileMetricsInputSchema = z
     metric_type: publicProfileMetricTypeSchema.optional(),
     start_date: z.date().optional(),
     end_date: z.date().optional(),
-    limit: z.number().min(1).max(100).default(50),
-    offset: z.number().min(0).default(0),
+    limit: z.number().int().min(1).max(50).default(25),
+    cursor: indexCursorSchema.optional(),
+    direction: z.enum(["forward", "backward"]).optional(),
   })
   .strict();
 
@@ -75,6 +77,8 @@ const profileMetricListOutputSchema = z
   .object({
     items: profileMetricRowArraySchema,
     total: z.number().int().nonnegative(),
+    hasMore: z.boolean(),
+    nextCursor: z.string().optional(),
   })
   .strict();
 const deleteProfileMetricOutputSchema = z.object({ success: z.literal(true) }).strict();
@@ -94,6 +98,7 @@ export const profileMetricsRouter = createTRPCRouter({
    */
   list: protectedProcedure.input(listProfileMetricsInputSchema).query(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
+    const offset = parseIndexCursor(input.cursor);
 
     const conditions = [eq(profileMetrics.profile_id, ctx.session.user.id)];
 
@@ -101,17 +106,24 @@ export const profileMetricsRouter = createTRPCRouter({
     if (input.start_date) conditions.push(gte(profileMetrics.recorded_at, input.start_date));
     if (input.end_date) conditions.push(lte(profileMetrics.recorded_at, input.end_date));
 
-    const data = await db
-      .select()
-      .from(profileMetrics)
-      .where(and(...conditions))
-      .orderBy(desc(profileMetrics.recorded_at))
-      .limit(input.limit)
-      .offset(input.offset);
+    const whereClause = and(...conditions);
+    const [data, totalRows] = await Promise.all([
+      db
+        .select()
+        .from(profileMetrics)
+        .where(whereClause)
+        .orderBy(desc(profileMetrics.recorded_at))
+        .limit(input.limit)
+        .offset(offset),
+      db.select({ total: count() }).from(profileMetrics).where(whereClause),
+    ]);
+    const total = Number(totalRows[0]?.total ?? 0);
+    const pageInfo = buildIndexPageInfo({ offset, limit: input.limit, total });
 
     return profileMetricListOutputSchema.parse({
       items: profileMetricRowArraySchema.parse(data ?? []),
-      total: data.length,
+      total,
+      ...pageInfo,
     });
   }),
 
@@ -192,7 +204,15 @@ export const profileMetricsRouter = createTRPCRouter({
         })
         .returning();
 
-      await bumpProfileEstimationState(db, input.profile_id, ["metrics"]);
+      if (!data) {
+        throw new Error("Failed to create profile metric");
+      }
+
+      await markProfileAnalysisDirty(db, {
+        profileId: input.profile_id,
+        kinds: ["metrics"],
+        dirtySince: data.recorded_at,
+      });
 
       return parseProfileMetricRow(data);
     }),
@@ -204,6 +224,13 @@ export const profileMetricsRouter = createTRPCRouter({
     .input(strictUpdateProfileMetricInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
+      const [existing] = await db
+        .select({ recorded_at: profileMetrics.recorded_at })
+        .from(profileMetrics)
+        .where(
+          and(eq(profileMetrics.id, input.id), eq(profileMetrics.profile_id, ctx.session.user.id)),
+        )
+        .limit(1);
 
       const [data] = await db
         .update(profileMetrics)
@@ -220,7 +247,11 @@ export const profileMetricsRouter = createTRPCRouter({
         .returning();
 
       if (data) {
-        await bumpProfileEstimationState(db, ctx.session.user.id, ["metrics"]);
+        await markProfileAnalysisDirty(db, {
+          profileId: ctx.session.user.id,
+          kinds: ["metrics"],
+          dirtySince: getEarliestDate(existing?.recorded_at, data.recorded_at),
+        });
       }
 
       return data ? parseProfileMetricRow(data) : data;
@@ -233,6 +264,13 @@ export const profileMetricsRouter = createTRPCRouter({
     .input(deleteProfileMetricInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
+      const [existing] = await db
+        .select({ recorded_at: profileMetrics.recorded_at })
+        .from(profileMetrics)
+        .where(
+          and(eq(profileMetrics.id, input.id), eq(profileMetrics.profile_id, ctx.session.user.id)),
+        )
+        .limit(1);
 
       await db
         .delete(profileMetrics)
@@ -240,8 +278,24 @@ export const profileMetricsRouter = createTRPCRouter({
           and(eq(profileMetrics.id, input.id), eq(profileMetrics.profile_id, ctx.session.user.id)),
         );
 
-      await bumpProfileEstimationState(db, ctx.session.user.id, ["metrics"]);
+      if (existing) {
+        await markProfileAnalysisDirty(db, {
+          profileId: ctx.session.user.id,
+          kinds: ["metrics"],
+          dirtySince: existing.recorded_at,
+        });
+      }
 
       return deleteProfileMetricOutputSchema.parse({ success: true });
     }),
 });
+
+function getEarliestDate(...values: Array<Date | string | null | undefined>) {
+  const dates = values
+    .filter((value): value is Date | string => value != null)
+    .map((value) => new Date(value))
+    .filter((value) => Number.isFinite(value.getTime()));
+
+  if (dates.length === 0) return null;
+  return new Date(Math.min(...dates.map((value) => value.getTime())));
+}

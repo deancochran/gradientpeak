@@ -93,20 +93,12 @@ export async function invalidateGoalQueries(
   options: {
     goalId?: string | null;
     includeGoalDetail?: boolean;
-    includeEventDetail?: boolean;
   } = {},
 ) {
-  const refreshTasks: Promise<unknown>[] = [
-    utils.goals.list.invalidate(),
-    utils.events.list.invalidate(),
-  ];
+  const refreshTasks: Promise<unknown>[] = [utils.goals.list.invalidate()];
 
   if (options.includeGoalDetail !== false && options.goalId) {
     refreshTasks.push(utils.goals.getById.invalidate({ id: options.goalId }));
-  }
-
-  if (options.includeEventDetail) {
-    refreshTasks.push(utils.events.getById.invalidate());
   }
 
   await Promise.all(refreshTasks);

@@ -27,7 +27,7 @@ export const Route = createFileRoute("/_protected")({
     if (!session?.user) {
       throw redirect({
         to: "/auth/login",
-        search: { redirect: location.href },
+        search: { flash: undefined, flashType: undefined, redirect: location.href },
       });
     }
   },

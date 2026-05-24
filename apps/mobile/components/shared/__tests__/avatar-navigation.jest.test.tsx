@@ -1,7 +1,7 @@
-import React from "react";
-
+import { createHost as mockCreateHost } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
 
+const navigateMock = jest.fn();
 const pushMock = jest.fn();
 const authState = {
   user: { id: "11111111-1111-4111-8111-111111111111", email: "own@test.com" },
@@ -11,15 +11,9 @@ const authState = {
   },
 };
 
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
-
 jest.mock("expo-router", () => ({
   __esModule: true,
-  useRouter: () => ({ push: pushMock }),
+  useRouter: () => ({ navigate: navigateMock, push: pushMock }),
 }));
 
 jest.mock("react-native", () => ({
@@ -31,9 +25,9 @@ jest.mock("react-native", () => ({
     Version: "17",
     select: (values: Record<string, unknown>) => values.ios ?? values.default,
   },
-  TouchableOpacity: createHost("TouchableOpacity"),
-  Pressable: createHost("Pressable"),
-  View: createHost("View"),
+  TouchableOpacity: mockCreateHost("TouchableOpacity"),
+  Pressable: mockCreateHost("Pressable"),
+  View: mockCreateHost("View"),
 }));
 
 jest.mock("@/lib/hooks/useAuth", () => ({
@@ -43,26 +37,29 @@ jest.mock("@/lib/hooks/useAuth", () => ({
 
 jest.mock("@repo/ui/components/avatar", () => ({
   __esModule: true,
-  Avatar: createHost("Avatar"),
-  AvatarFallback: createHost("AvatarFallback"),
-  AvatarImage: createHost("AvatarImage"),
+  Avatar: mockCreateHost("Avatar"),
+  AvatarFallback: mockCreateHost("AvatarFallback"),
+  AvatarImage: mockCreateHost("AvatarImage"),
 }));
 
-jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHost("Text") }));
+jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: mockCreateHost("Text") }));
 jest.mock("@repo/ui/components/card", () => ({
   __esModule: true,
-  Card: createHost("Card"),
-  CardContent: createHost("CardContent"),
+  Card: mockCreateHost("Card"),
+  CardContent: mockCreateHost("CardContent"),
 }));
-jest.mock("@repo/ui/components/icon", () => ({ __esModule: true, Icon: createHost("Icon") }));
-jest.mock("@repo/ui/components/input", () => ({ __esModule: true, Input: createHost("Input") }));
+jest.mock("@repo/ui/components/icon", () => ({ __esModule: true, Icon: mockCreateHost("Icon") }));
+jest.mock("@repo/ui/components/input", () => ({
+  __esModule: true,
+  Input: mockCreateHost("Input"),
+}));
 jest.mock("@repo/ui/components/textarea", () => ({
   __esModule: true,
-  Textarea: createHost("Textarea"),
+  Textarea: mockCreateHost("Textarea"),
 }));
 
 jest.mock("lucide-react-native", () => {
-  const Icon = createHost("LucideIcon");
+  const Icon = mockCreateHost("LucideIcon");
   return {
     __esModule: true,
     Activity: Icon,
@@ -76,16 +73,15 @@ jest.mock("lucide-react-native", () => {
 describe.skip("avatar profile navigation", () => {
   it("routes app header avatar to canonical own user route", async () => {
     const { AppHeader } = await import("../AppHeader");
+    navigateMock.mockReset();
     pushMock.mockReset();
 
     renderNative(<AppHeader />);
 
     fireEvent.press(screen.getByTestId("app-header-avatar-button"));
 
-    expect(pushMock).toHaveBeenCalledWith({
-      pathname: "/user/[userId]",
-      params: { userId: authState.user.id },
-    });
+    expect(navigateMock).toHaveBeenCalledWith("/profile");
+    expect(pushMock).not.toHaveBeenCalled();
   });
 
   it("routes activity avatar taps to target user route", async () => {

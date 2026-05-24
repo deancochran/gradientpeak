@@ -134,15 +134,11 @@ export function buildGoalTargetPayload(input: {
   }
 }
 
-export function buildGoalCreatePayload(input: {
-  draft: GoalEditorDraft;
-  profileId: string;
-  milestoneEventId: string;
-}) {
+export function buildGoalCreatePayload(input: { draft: GoalEditorDraft; profileId: string }) {
   const activityCategory = resolveGoalActivityCategory(input.draft);
   return profileGoalCreateSchema.parse({
     profile_id: input.profileId,
-    milestone_event_id: input.milestoneEventId,
+    target_date: input.draft.targetDate,
     title: input.draft.title.trim(),
     priority: Math.max(0, Math.min(10, input.draft.importance)),
     activity_category: activityCategory,
@@ -153,55 +149,17 @@ export function buildGoalCreatePayload(input: {
   });
 }
 
-export function buildGoalUpdatePayload(input: {
-  draft: GoalEditorDraft;
-  milestoneEventId: string;
-}) {
+export function buildGoalUpdatePayload(input: { draft: GoalEditorDraft }) {
   const createPayload = buildGoalCreatePayload({
     draft: input.draft,
     profileId: "00000000-0000-0000-0000-000000000000",
-    milestoneEventId: input.milestoneEventId,
   });
 
   return {
-    milestone_event_id: createPayload.milestone_event_id,
+    target_date: createPayload.target_date,
     title: createPayload.title,
     priority: createPayload.priority,
     activity_category: createPayload.activity_category,
     target_payload: createPayload.target_payload,
-  };
-}
-
-export function buildMilestoneEventCreateInput(input: {
-  draft: GoalEditorDraft;
-  trainingPlanId?: string | null;
-}) {
-  const eventType =
-    input.draft.goalType === "race_performance" ? ("race_target" as const) : ("custom" as const);
-
-  return {
-    title: input.draft.title.trim(),
-    starts_at: `${input.draft.targetDate}T12:00:00.000Z`,
-    all_day: true,
-    timezone: "UTC",
-    training_plan_id: input.trainingPlanId ?? undefined,
-    event_type: eventType,
-  };
-}
-
-export function buildMilestoneEventUpdatePatch(input: {
-  draft: GoalEditorDraft;
-  trainingPlanId?: string | null;
-}) {
-  const eventType =
-    input.draft.goalType === "race_performance" ? ("race_target" as const) : ("custom" as const);
-
-  return {
-    title: input.draft.title.trim(),
-    starts_at: `${input.draft.targetDate}T12:00:00.000Z`,
-    all_day: true,
-    timezone: "UTC",
-    training_plan_id: input.trainingPlanId ?? null,
-    event_type: eventType,
   };
 }

@@ -54,8 +54,8 @@ export const setupFocusManager = () => {
 
 export function QueryProvider({ children }: { children: React.ReactNode }) {
   const { version } = useServerConfig();
-  const queryClient = React.useMemo(() => createQueryClient(), [version]);
-  const apiClient = React.useMemo(() => createApiClient(), [version]);
+  const queryClient = React.useMemo(() => createQueryClient(), []);
+  const apiClient = React.useMemo(() => createApiClient(), []);
 
   React.useEffect(() => {
     const cleanupNetwork = setupNetworkListener();

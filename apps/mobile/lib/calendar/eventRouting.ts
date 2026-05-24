@@ -22,7 +22,7 @@ export function buildOpenEventRoute(event: CalendarRoutingEvent): string | null 
 
 export function buildEditEventRoute(event: CalendarRoutingEvent): string | null {
   if (event.event_type === "race_target" || event.event_type === "custom") {
-    return ROUTES.PLAN.EVENT_DETAIL(event.id, "edit");
+    return ROUTES.PLAN.EVENT_UPDATE(event.id);
   }
 
   return null;

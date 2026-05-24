@@ -1,30 +1,31 @@
 import React from "react";
 
+import { createHost as mockCreateHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
-const updateGoalMutateAsync = jest.fn().mockResolvedValue({ id: "goal-1" });
-const updateEventMutateAsync = jest.fn().mockResolvedValue({ id: "event-1" });
-const goalEditorModalPropsRef = { current: null as any };
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
+const navigateMock = jest.fn();
 
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
-  ActivityIndicator: createHost("ActivityIndicator"),
+  ActivityIndicator: mockCreateHost("ActivityIndicator"),
   Alert: { alert: jest.fn() },
-  ScrollView: createHost("ScrollView"),
-  View: createHost("View"),
+  ScrollView: mockCreateHost("ScrollView"),
+  View: mockCreateHost("View"),
 }));
 
 jest.mock("expo-router", () => ({
   __esModule: true,
+  Stack: {
+    Screen: (props: any) =>
+      React.createElement(
+        "StackScreen",
+        props,
+        typeof props.options?.headerRight === "function" ? props.options.headerRight() : null,
+      ),
+  },
   useLocalSearchParams: () => ({ id: "goal-1" }),
-  useRouter: () => ({ back: jest.fn() }),
+  useRouter: () => ({ back: jest.fn(), navigate: navigateMock }),
 }));
 
 jest.mock("@repo/core", () => ({
@@ -32,10 +33,10 @@ jest.mock("@repo/core", () => ({
   createEmptyGoalDraft: jest.fn(() => ({ title: "", objective: null })),
   buildGoalDraftFromGoal: jest.fn(() => ({ title: "Spring 5K" })),
   parseProfileGoalRecord: jest.fn((goal: any) => goal),
-  buildGoalUpdatePayload: jest.fn(({ draft, milestoneEventId }: any) => ({
+  buildGoalUpdatePayload: jest.fn(({ draft }: any) => ({
+    target_date: draft.targetDate,
     title: draft.title,
     priority: draft.importance,
-    milestone_event_id: milestoneEventId,
     activity_category: draft.activityCategory,
     target_payload: {
       type: "event_performance",
@@ -43,40 +44,143 @@ jest.mock("@repo/core", () => ({
       distance_m: 5000,
     },
   })),
-  buildMilestoneEventCreateInput: jest.fn(),
-  buildMilestoneEventUpdatePatch: jest.fn(({ draft }: any) => ({
-    starts_at: `${draft.targetDate}T12:00:00.000Z`,
-    event_type: "race_target",
+  buildGoalIntelligence: jest.fn(() => ({
+    goalId: "goal-1",
+    status: "uncertain",
+    readinessScore: null,
+    projectedOutcome: {
+      type: "completion",
+      value: null,
+      unit: "unknown",
+      displayValue: "Projection unavailable",
+    },
+    targetOutcome: {
+      value: 1500,
+      unit: "seconds",
+      displayValue: "25:00",
+    },
+    summary:
+      "More training data is needed before Spring 5K can produce a reliable performance projection.",
+    explanation:
+      "Goal intelligence needs completed training, readiness, or forecast inputs before it can estimate a reliable outcome.",
+    keyDrivers: [
+      {
+        metric: "goal_target",
+        direction: "neutral",
+        label: "Goal time",
+        description: "25:00 is the target this projection is measured against.",
+        impact: "medium",
+      },
+    ],
+    updatedAt: "2026-05-01T00:00:00.000Z",
+  })),
+  buildGoalReadinessTrajectory: jest.fn(({ points, currentGoalReadiness }: any) =>
+    points.map((point: any, index: number) => ({
+      date: point.date,
+      goal_readiness:
+        index === points.length - 1 ? 100 : (currentGoalReadiness ?? point.state_readiness),
+      low: 88,
+      high: 100,
+    })),
+  ),
+  resolveGoalReadinessTarget: jest.fn(() => 100),
+  resolveGoalReadinessViewModel: jest.fn(({ value }: any) => ({
+    value,
+    target: 100,
+    band: "building_toward_target",
+    label: "Building toward target",
   })),
   formatGoalTypeLabel: jest.fn(() => "Race"),
   getGoalDistanceBadge: jest.fn(() => null),
   getGoalMetricSummary: jest.fn(() => null),
   getGoalObjectiveSummary: jest.fn(() => "5K target"),
+  getManualBaselineCtlWarning: jest.fn((value: number | null | undefined) =>
+    typeof value === "number" && value > 120
+      ? "Manual CTL above 120 is very high and can make estimated readiness look flat or inflated without completed activity history."
+      : null,
+  ),
+  getProfileGoalLifecycleStatus: jest.fn(() => ({
+    status: "in_progress",
+    label: "In progress",
+    message: "This goal is active in your planning window.",
+    missing: [],
+    canGuidePlan: true,
+  })),
 }));
 
-jest.mock("@/components/goals/GoalEditorModal", () => ({
+jest.mock("@repo/ui/components/button", () => ({
   __esModule: true,
-  GoalEditorModal: (props: any) => {
-    goalEditorModalPropsRef.current = props;
-    return React.createElement("GoalEditorModal", props, props.children);
-  },
+  Button: mockCreateHost("Button"),
 }));
-
-jest.mock("@repo/ui/components/button", () => ({ __esModule: true, Button: createHost("Button") }));
 jest.mock("@repo/ui/components/card", () => ({
   __esModule: true,
-  Card: createHost("Card"),
-  CardContent: createHost("CardContent"),
-  CardTitle: createHost("CardTitle"),
+  Card: mockCreateHost("Card"),
+  CardContent: mockCreateHost("CardContent"),
+  CardTitle: mockCreateHost("CardTitle"),
 }));
-jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHost("Text") }));
+jest.mock("@repo/ui/components/dropdown-menu", () => ({
+  __esModule: true,
+  DropdownMenu: mockCreateHost("DropdownMenu"),
+  DropdownMenuContent: mockCreateHost("DropdownMenuContent"),
+  DropdownMenuItem: mockCreateHost("DropdownMenuItem"),
+  DropdownMenuTrigger: mockCreateHost("DropdownMenuTrigger"),
+}));
+jest.mock("@repo/ui/components/icon", () => ({ __esModule: true, Icon: mockCreateHost("Icon") }));
+jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: mockCreateHost("Text") }));
+jest.mock("react-native-svg", () => ({
+  __esModule: true,
+  default: mockCreateHost("Svg"),
+  Circle: mockCreateHost("Circle"),
+}));
+
+jest.mock("@/components/charts/PlanReadinessComparisonChart", () => ({
+  __esModule: true,
+  PlanReadinessComparisonChart: (props: any) =>
+    React.createElement("PlanReadinessComparisonChart", props, props.children),
+}));
+
+jest.mock("@/lib/navigation/useAppNavigate", () => ({
+  __esModule: true,
+  useAppNavigate: () => jest.fn(),
+}));
+
+jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
+  __esModule: true,
+  useTrainingPlanSnapshot: () => ({
+    insightTimeline: {
+      projection_dashboard: {
+        goal_forecasts: [
+          {
+            profile_goal_id: "goal-1",
+            readiness_score: 72,
+          },
+        ],
+      },
+      readiness_forecast: {
+        current_readiness: 68,
+        confidence_reason_codes: ["missing_recent_history", "projection_fallback_baseline"],
+        series: {
+          actual: { points: [{ date: "2026-05-15", readiness: 68 }] },
+          scheduled: { points: [{ date: "2026-06-01", readiness: 70 }] },
+          recommended: { points: [{ date: "2026-06-01", readiness: 74 }] },
+        },
+      },
+    },
+    profileSettings: {
+      baseline_fitness: {
+        is_enabled: true,
+        override_ctl: 220,
+      },
+    },
+  }),
+}));
 
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
     useUtils: () => ({
       goals: { list: { invalidate: jest.fn() }, getById: { invalidate: jest.fn() } },
-      events: { list: { invalidate: jest.fn() }, getById: { invalidate: jest.fn() } },
+      events: { list: { invalidate: jest.fn() } },
     }),
     goals: {
       getById: {
@@ -84,7 +188,7 @@ jest.mock("@/lib/api", () => ({
           data: {
             id: "goal-1",
             profile_id: "22222222-2222-4222-8222-222222222222",
-            milestone_event_id: "33333333-3333-4333-8333-333333333333",
+            target_date: "2026-06-01",
             title: "Spring 5K",
             priority: 8,
             activity_category: "run",
@@ -99,21 +203,10 @@ jest.mock("@/lib/api", () => ({
           refetch: jest.fn(async () => undefined),
         }),
       },
-      update: { useMutation: () => ({ isPending: false, mutateAsync: updateGoalMutateAsync }) },
       delete: { useMutation: () => ({ isPending: false, mutate: jest.fn() }) },
     },
-    events: {
-      getById: {
-        useQuery: () => ({
-          data: {
-            id: "33333333-3333-4333-8333-333333333333",
-            starts_at: "2026-06-01T12:00:00.000Z",
-          },
-        }),
-      },
-      create: { useMutation: () => ({ isPending: false, mutateAsync: jest.fn() }) },
-      update: { useMutation: () => ({ isPending: false, mutateAsync: updateEventMutateAsync }) },
-      delete: { useMutation: () => ({ isPending: false, mutate: jest.fn() }) },
+    trainingPlans: {
+      getActivePlan: { useQuery: () => ({ data: { id: "plan-1" } }) },
     },
   },
 }));
@@ -122,50 +215,29 @@ const GoalDetailScreen = require("../goal-detail").default;
 
 describe("goal detail persistence", () => {
   beforeEach(() => {
-    updateGoalMutateAsync.mockClear();
-    updateEventMutateAsync.mockClear();
-    goalEditorModalPropsRef.current = null;
+    navigateMock.mockClear();
   });
 
-  it("serializes canonical updates when editing a goal", async () => {
+  it("routes editing through the dedicated goal edit screen", async () => {
     renderNative(<GoalDetailScreen />);
 
-    fireEvent.press(screen.getByText("Edit Goal"));
+    fireEvent.press(screen.getByTestId("goal-detail-options-edit"));
 
-    await goalEditorModalPropsRef.current.onSubmit({
-      title: "Spring 5K",
-      targetDate: "2026-06-15",
-      importance: 9,
-      goalType: "race_performance",
-      activityCategory: "run",
-      raceDistanceKm: 5,
-      raceTargetMode: "time",
-      targetDuration: "0:24:10",
-      thresholdTestDuration: "0:20:00",
-      consistencySessionsPerWeek: 4,
-      consistencyWeeks: 8,
-    });
+    expect(navigateMock).toHaveBeenCalledWith("/goal-edit?id=goal-1");
+  });
 
-    expect(updateEventMutateAsync).toHaveBeenCalledWith({
-      id: "33333333-3333-4333-8333-333333333333",
-      patch: expect.objectContaining({
-        starts_at: "2026-06-15T12:00:00.000Z",
-        event_type: "race_target",
-      }),
-    });
-    expect(updateGoalMutateAsync).toHaveBeenCalledWith({
-      id: "goal-1",
-      data: expect.objectContaining({
-        milestone_event_id: "33333333-3333-4333-8333-333333333333",
-        title: "Spring 5K",
-        priority: 9,
-        activity_category: "run",
-        target_payload: expect.objectContaining({
-          type: "event_performance",
-          target_time_s: 1450,
-          distance_m: 5000,
-        }),
-      }),
-    });
+  it("shows goal progress in the detail header", async () => {
+    renderNative(<GoalDetailScreen />);
+
+    expect(screen.getByTestId("goal-readiness-ring")).toBeTruthy();
+    expect(screen.getByText("72%")).toBeTruthy();
+  });
+
+  it("labels fallback readiness as estimated", async () => {
+    renderNative(<GoalDetailScreen />);
+
+    expect(screen.getByText("Estimated readiness path")).toBeTruthy();
+    expect(screen.getByTestId("goal-readiness-estimated-note")).toBeTruthy();
+    expect(screen.getByTestId("goal-readiness-baseline-warning")).toBeTruthy();
   });
 });

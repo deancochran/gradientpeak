@@ -1,15 +1,20 @@
 import type { ActivityPlanStructureV2 } from "@repo/core";
-import { formatDurationSec } from "@repo/core";
-import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
-import { Calendar, Heart } from "lucide-react-native";
-import { useState } from "react";
-import { Pressable, TouchableOpacity, View } from "react-native";
-import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
+import { Calendar } from "lucide-react-native";
+import { View } from "react-native";
+import { ActivityPlanContentPreview } from "@/components/activity-plan/ActivityPlanContentPreview";
 import { api } from "@/lib/api";
 import { getActivityCategoryConfig, getActivityConfig } from "@/lib/constants/activities";
+import { useResourceLike } from "@/lib/hooks/useResourceLike";
+import { ActivityPlanSummary } from "./ActivityPlanSummary";
+import type { EntityOwner } from "./EntityOwnerRow";
+import {
+  ResourceCardShell,
+  ResourceLikeButton,
+  ResourceOwnerActionRow,
+} from "./ResourceCardPrimitives";
 
 // ============================================
 // TYPES
@@ -22,9 +27,17 @@ export interface ActivityPlan {
   activity_category: string;
   description?: string | null;
   structure?: ActivityPlanStructureV2;
-  estimated_duration?: number | null; // in seconds
-  estimated_tss?: number | null;
-  intensity_factor?: number | null;
+  authoritative_metrics?: {
+    estimated_duration?: number | null;
+    estimated_tss?: number | null;
+    intensity_factor?: number | null;
+    estimated_distance?: number | null;
+  } | null;
+  route?: {
+    distance?: number | null;
+    ascent?: number | null;
+    descent?: number | null;
+  } | null;
   route_id?: string | null;
   notes?: string | null;
   profile_id?: string | null;
@@ -32,6 +45,7 @@ export interface ActivityPlan {
   updated_at?: string;
   likes_count?: number;
   has_liked?: boolean;
+  owner?: EntityOwner | null;
 }
 
 export interface PlannedActivity {
@@ -45,6 +59,22 @@ export interface PlannedActivity {
   created_at?: string;
   updated_at?: string;
 }
+
+type ActivityPlanCardRoute = {
+  id?: string | null;
+  name?: string | null;
+  polyline?: string | null;
+  total_distance?: number | null;
+  distance?: number | null;
+  total_ascent?: number | null;
+  ascent?: number | null;
+  total_descent?: number | null;
+  descent?: number | null;
+};
+
+type ActivityPlanCardFullRoute = {
+  coordinates?: Array<{ latitude: number; longitude: number; altitude?: number }>;
+};
 
 // Legacy data interface (for backwards compatibility)
 export interface ActivityPlanCardData {
@@ -60,6 +90,8 @@ export interface ActivityPlanCardData {
   routeId?: string;
   routeName?: string;
   notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
 
   // Scheduling info (optional)
   scheduledDate?: string; // ISO date string
@@ -67,6 +99,7 @@ export interface ActivityPlanCardData {
 
   likes_count?: number;
   has_liked?: boolean;
+  owner?: EntityOwner | null;
 }
 
 interface ActivityPlanCardProps {
@@ -78,6 +111,10 @@ interface ActivityPlanCardProps {
   activity?: ActivityPlanCardData;
 
   onPress?: () => void;
+  loadRoutePreview?: boolean;
+  route?: ActivityPlanCardRoute | null;
+  routeFull?: ActivityPlanCardFullRoute | null;
+  testID?: string;
   variant?: "default" | "compact" | "hero";
   showScheduleInfo?: boolean; // Show date/time badge
 }
@@ -90,158 +127,131 @@ export function ActivityPlanCard({
   activityPlan,
   plannedActivity,
   activity: legacyActivity,
+  loadRoutePreview = false,
   onPress,
+  route: routeProp,
+  routeFull: routeFullProp,
+  testID,
   variant = "default",
   showScheduleInfo = false,
 }: ActivityPlanCardProps) {
   // Transform database objects to internal format
   const activity = legacyActivity || transformToCardData(activityPlan, plannedActivity);
 
-  const config =
-    activity.activityType in { run: true, bike: true, swim: true, strength: true, other: true }
-      ? getActivityCategoryConfig(activity.activityType)
-      : getActivityConfig(activity.activityType);
-
-  // Check if has structure with steps/intervals
-  const hasStructure = Boolean(
-    activity.structure?.intervals && activity.structure.intervals.length > 0,
-  );
-
-  // Determine if interactive
-  const isInteractive = Boolean(onPress);
-
   // Determine card size based on variant
   const isCompact = variant === "compact";
   const isHero = variant === "hero";
+  const activityConfig = activity.activityType.includes("_")
+    ? getActivityConfig(activity.activityType)
+    : getActivityCategoryConfig(activity.activityType);
 
-  const CardWrapper = isInteractive ? TouchableOpacity : View;
+  const routeId = activity.routeId;
+  const { data: fetchedRoute } = api.routes.get.useQuery(
+    { id: routeId! },
+    { enabled: loadRoutePreview && !!routeId && !routeProp },
+  );
+  const { data: routeFull } = api.routes.loadFull.useQuery(
+    { id: routeId! },
+    { enabled: loadRoutePreview && !!routeId && !routeFullProp },
+  );
+  const route = (routeProp ?? fetchedRoute ?? null) as ActivityPlanCardRoute | null;
+  const resolvedRouteFull = routeFullProp ?? routeFull ?? null;
 
-  const [isLiked, setIsLiked] = useState(activity.has_liked ?? false);
-  const [likesCount, setLikesCount] = useState(activity.likes_count ?? 0);
-
-  const toggleLikeMutation = api.social.toggleLike.useMutation({
-    onError: () => {
-      // Revert optimistic update on error
-      setIsLiked(activity.has_liked ?? false);
-      setLikesCount(activity.likes_count ?? 0);
-    },
+  const {
+    isLiked,
+    isPending: isLikePending,
+    likeCount,
+    toggleLike,
+  } = useResourceLike({
+    entityId: activity.id,
+    entityType: "activity_plan",
+    initialCount: activity.likes_count,
+    initialLiked: activity.has_liked,
   });
 
-  const handleToggleLike = () => {
-    const newLikedState = !isLiked;
-    setIsLiked(newLikedState);
-    setLikesCount((prev) => (newLikedState ? prev + 1 : prev - 1));
-    toggleLikeMutation.mutate({
-      entity_id: activity.id,
-      entity_type: "activity_plan",
-    });
-  };
-
   return (
-    <CardWrapper
+    <ResourceCardShell
+      cardClassName={activity.isCompleted ? "opacity-60" : undefined}
+      compact={isCompact}
+      contentClassName={isCompact ? "gap-3 px-2" : "gap-3 px-3"}
+      highlighted={isHero}
       onPress={onPress}
-      activeOpacity={isInteractive ? 0.7 : 1}
-      disabled={!isInteractive}
-      testID={`activity-plan-card-${activity.id}`}
+      testID={testID ?? `activity-plan-card-${activity.id}`}
     >
-      <Card
-        className={`${isHero ? "border-2 border-primary" : ""} ${activity.isCompleted ? "opacity-60" : ""}`}
-      >
-        <CardContent className={isCompact ? "p-3" : "p-4"}>
-          <View className="mb-3 flex-row items-start gap-3">
-            <View className={`shrink-0 rounded-full p-2 ${config.bgColor}`}>
-              <Icon as={config.icon} size={isCompact ? 14 : 16} className={config.color} />
-            </View>
+      <ResourceOwnerActionRow
+        actions={
+          <ResourceLikeButton
+            disabled={isLikePending}
+            isLiked={isLiked}
+            likeCount={likeCount}
+            onPress={toggleLike}
+          />
+        }
+        compact={isCompact}
+        categoryIcon={activityConfig.icon}
+        categoryIconClassName={activityConfig.color}
+        categoryLabel={activityConfig.name}
+        fallbackLabel="GradientPeak"
+        owner={activity.owner}
+        timestamp={activity.createdAt ?? activity.updatedAt}
+      />
 
-            <View className="min-w-0 flex-1">
-              <Text
-                className={isCompact ? "text-sm font-semibold" : "text-base font-semibold"}
-                numberOfLines={1}
-              >
-                {activity.name}
-              </Text>
-            </View>
+      <ActivityPlanSummary
+        activityCategory={activity.activityType}
+        description={activity.description || activity.notes || null}
+        estimatedDuration={activity.estimatedDuration}
+        estimatedTss={activity.estimatedTss}
+        intensityFactor={activity.intensityFactor}
+        owner={activity.owner}
+        routeName={route?.name || activity.routeName}
+        routeProvided={!!activity.routeId}
+        structure={activity.structure}
+        title={activity.name}
+        variant="standalone"
+        showAttribution={false}
+      />
 
-            <Pressable
-              onPress={(e) => {
-                e.stopPropagation();
-                handleToggleLike();
-              }}
-              className="flex-row items-center rounded-full bg-muted px-2.5 py-1.5"
-            >
-              <Icon
-                as={Heart}
-                size={14}
-                className={isLiked ? "text-red-500 fill-red-500" : "text-muted-foreground"}
-              />
-              <Text className="ml-1 text-xs font-medium text-muted-foreground">
-                {likesCount > 0 ? `${likesCount}` : "Like"}
-              </Text>
-            </Pressable>
-          </View>
+      {showScheduleInfo && activity.scheduledDate && (
+        <View className="mb-2 mt-3 flex-row items-center">
+          <Icon as={Calendar} size={12} className="text-muted-foreground mr-1.5" />
+          <Text className="text-xs text-muted-foreground">
+            {formatScheduledDateTime(activity.scheduledDate)}
+          </Text>
+        </View>
+      )}
 
-          {showScheduleInfo && activity.scheduledDate && (
-            <View className="mb-2 flex-row items-center">
-              <Icon as={Calendar} size={12} className="text-muted-foreground mr-1.5" />
-              <Text className="text-xs text-muted-foreground">
-                {formatScheduledDateTime(activity.scheduledDate)}
-              </Text>
-            </View>
-          )}
-
-          {(activity.estimatedDuration !== undefined ||
-            activity.estimatedTss !== undefined ||
-            activity.intensityFactor !== undefined ||
-            activity.structure?.intervals) && (
-            <View className="mb-3 rounded-lg bg-muted/30 px-2.5 py-2">
-              <View className="flex-row justify-between gap-2">
-                <CompactMetric
-                  label="Duration"
-                  value={
-                    activity.estimatedDuration && activity.estimatedDuration > 0
-                      ? formatDurationSec(Math.round(activity.estimatedDuration))
-                      : "--"
-                  }
-                />
-                <CompactMetric
-                  label="TSS"
-                  value={
-                    activity.estimatedTss !== undefined && activity.estimatedTss > 0
-                      ? `${Math.round(activity.estimatedTss)}`
-                      : "--"
-                  }
-                />
-                <CompactMetric
-                  label="Intensity"
-                  value={
-                    activity.intensityFactor !== undefined && activity.intensityFactor > 0
-                      ? activity.intensityFactor.toFixed(2)
-                      : "--"
-                  }
-                />
-                <CompactMetric label="Steps" value={`${countStructureSteps(activity.structure)}`} />
-              </View>
-            </View>
-          )}
-
-          {hasStructure && !activity.isCompleted && activity.structure && (
-            <View className="mb-3 overflow-hidden rounded-md">
-              <TimelineChart structure={activity.structure} height={50} compact={true} />
-            </View>
-          )}
-
-          {activity.notes && (
-            <Text
-              className="text-sm leading-5 text-muted-foreground"
-              numberOfLines={2}
-              ellipsizeMode="tail"
-            >
-              {activity.notes}
-            </Text>
-          )}
-        </CardContent>
-      </Card>
-    </CardWrapper>
+      <ActivityPlanContentPreview
+        compact={isCompact}
+        size={isCompact ? "small" : isHero ? "large" : "medium"}
+        plan={{
+          authoritative_metrics: {
+            estimated_duration: activity.estimatedDuration,
+            estimated_tss: activity.estimatedTss,
+            intensity_factor: activity.intensityFactor,
+            estimated_distance: activity.estimatedDistance,
+          },
+          route: {
+            distance: activity.estimatedDistance,
+          },
+          route_id: activity.routeId,
+          structure: activity.structure,
+        }}
+        route={
+          route
+            ? {
+                ...route,
+                total_distance: route.total_distance ?? route.distance ?? null,
+                total_ascent: route.total_ascent ?? route.ascent ?? null,
+                total_descent: route.total_descent ?? route.descent ?? null,
+              }
+            : null
+        }
+        routeFull={resolvedRouteFull ? { coordinates: resolvedRouteFull.coordinates ?? [] } : null}
+        intensityFactor={activity.intensityFactor}
+        tss={activity.estimatedTss}
+        testIDPrefix={`activity-plan-card-preview-${activity.id}`}
+      />
+    </ResourceCardShell>
   );
 }
 
@@ -267,6 +277,8 @@ function transformToCardData(
 
   // Extract route info from structure if available
   const routeInfo = (plan.structure as any)?.route;
+  const authoritativeMetrics = plan.authoritative_metrics;
+  const planRoute = plan.route;
 
   return {
     id: plannedActivity?.id || plan.id,
@@ -274,38 +286,22 @@ function transformToCardData(
     activityType: plan.activity_category,
     description: plan.description || undefined,
     structure: plan.structure,
-    estimatedDuration: plan.estimated_duration || undefined,
-    estimatedTss: plan.estimated_tss || undefined,
-    intensityFactor: plan.intensity_factor || undefined,
-    estimatedDistance: routeInfo?.distance,
+    estimatedDuration: authoritativeMetrics?.estimated_duration ?? undefined,
+    estimatedTss: authoritativeMetrics?.estimated_tss ?? undefined,
+    intensityFactor: authoritativeMetrics?.intensity_factor ?? undefined,
+    estimatedDistance:
+      authoritativeMetrics?.estimated_distance ?? planRoute?.distance ?? routeInfo?.distance,
     routeId: plan.route_id || undefined,
     routeName: routeInfo?.name,
     notes: plannedActivity?.notes || plan.description || plan.notes || undefined,
+    createdAt: plan.created_at || undefined,
+    updatedAt: plan.updated_at || undefined,
     scheduledDate: plannedActivity?.scheduled_date,
     isCompleted: Boolean(plannedActivity?.completed_activity_id),
     likes_count: plan.likes_count,
     has_liked: plan.has_liked,
+    owner: plan.owner ?? null,
   };
-}
-
-function countStructureSteps(structure?: ActivityPlanStructureV2): number {
-  if (!structure?.intervals) return 0;
-
-  return structure.intervals.reduce((total, interval) => {
-    const repetitions = interval.repetitions || 1;
-    return total + interval.steps.length * repetitions;
-  }, 0);
-}
-
-function CompactMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <View className="flex-1 items-center gap-0.5">
-      <Text className="text-[10px] text-muted-foreground">{label}</Text>
-      <Text className="text-[11px] font-semibold text-foreground" numberOfLines={1}>
-        {value}
-      </Text>
-    </View>
-  );
 }
 
 /**

@@ -15,7 +15,7 @@ env:
       id: "training-plans-list-screen"
     timeout: 10000
 - tapOn:
-    id: "training-plans-list-create-button"
+    id: "training-plans-list-create-trigger"
 - extendedWaitUntil:
     visible:
       id: "training-plan-composer-screen"

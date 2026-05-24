@@ -6,7 +6,9 @@ describe("Tooltip native", () => {
     const { getByTestId } = renderNative(
       <Tooltip>
         <TooltipTrigger testID="tooltip-trigger">Why this matters</TooltipTrigger>
-        <TooltipContent testID="tooltip-content">Workout stress updates after sync.</TooltipContent>
+        <TooltipContent testID="tooltip-content">
+          Activity stress updates after sync.
+        </TooltipContent>
       </Tooltip>,
     );
 

@@ -1,12 +1,21 @@
 import { decodePolyline, type IntervalStepV2 } from "@repo/core";
 import { useMemo } from "react";
+import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
 import { getDurationMs } from "@/lib/utils/durationConversion";
 
 type ActivityPlanLike = {
   activity_category: string;
-  estimated_duration?: number | null;
-  estimated_tss?: number | null;
-  intensity_factor?: number | null;
+  authoritative_metrics?: {
+    estimated_duration?: number | null;
+    estimated_tss?: number | null;
+    intensity_factor?: number | null;
+    estimated_distance?: number | null;
+  } | null;
+  route?: {
+    distance?: number | null;
+    ascent?: number | null;
+    descent?: number | null;
+  } | null;
   profile_id?: string | null;
   structure?: unknown;
   [key: string]: unknown;
@@ -28,7 +37,6 @@ interface UseActivityPlanDetailViewModelParams {
   activityPlanParam?: string;
   fetchedPlan: ActivityPlanLike | null | undefined;
   formatDuration: (seconds: number) => string;
-  isPublic: boolean;
   isScheduled: boolean;
   plannedActivity: PlannedActivityLike | null | undefined;
   profile: ProfileLike | null | undefined;
@@ -48,7 +56,6 @@ export function useActivityPlanDetailViewModel({
   activityPlanParam,
   fetchedPlan,
   formatDuration,
-  isPublic,
   isScheduled,
   plannedActivity,
   profile,
@@ -92,19 +99,19 @@ export function useActivityPlanDetailViewModel({
     [steps],
   );
 
-  const estimatedDurationMinutes = activityPlan?.estimated_duration
-    ? Math.round(activityPlan.estimated_duration / 60)
+  const authoritativeMetrics = getAuthoritativeActivityPlanMetrics(activityPlan);
+  const estimatedDurationSeconds = authoritativeMetrics.estimated_duration ?? null;
+  const estimatedDurationMinutes = estimatedDurationSeconds
+    ? Math.round(estimatedDurationSeconds / 60)
     : null;
   const durationMinutes = estimatedDurationMinutes ?? Math.round(totalDuration / 60000);
-  const tss = activityPlan?.estimated_tss ?? null;
-  const intensityFactor = activityPlan?.intensity_factor ?? null;
+  const tss = authoritativeMetrics.estimated_tss ?? null;
+  const intensityFactor = authoritativeMetrics.intensity_factor ?? null;
   const isOwnedByUser = activityPlan?.profile_id === profile?.id;
-  const visibilityLabel = isOwnedByUser ? (isPublic ? "Public" : "Private") : "Read only";
   const detailBadges = activityPlan
     ? [
         activityPlan.activity_category,
         isScheduled ? "Scheduled" : isOwnedByUser ? "My plan" : "Template",
-        visibilityLabel,
       ]
     : [];
 
@@ -129,7 +136,6 @@ export function useActivityPlanDetailViewModel({
     routePreview,
     steps,
     tss,
-    visibilityLabel,
     durationLabel: formatDuration(durationMinutes * 60),
     durationMinutes,
   };

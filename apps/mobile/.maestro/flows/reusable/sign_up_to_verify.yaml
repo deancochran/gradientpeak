@@ -1,6 +1,6 @@
 appId: com.deancochran.gradientpeak.dev
 ---
-- runFlow: bootstrap.yaml
+- runFlow: ensure_signed_out.yaml
 - tapOn:
     id: "signup-button"
     optional: true

@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { SYSTEM_TEMPLATES, type SystemTrainingPlanTemplate } from "../../samples";
+import {
+  ALL_SAMPLE_PLANS,
+  SYSTEM_TEMPLATES,
+  SYSTEM_TRACK_RUN_WORKOUTS,
+  type SystemTrainingPlanTemplate,
+} from "../../samples";
+import {
+  activityPlanCreateSchema,
+  persistedTrainingPlanStructureSchema,
+  trainingPlanCreateSchema,
+} from "../../schemas";
 import {
   buildSystemActivityTemplateCatalog,
   normalizeActivityTemplateStructureForAudit,
@@ -24,6 +34,62 @@ describe("system activity-template catalog", () => {
           entry.session_archetype.length > 0,
       ),
     ).toBe(true);
+  });
+
+  it("accepts every shipped system training plan as a persisted compatible structure", () => {
+    for (const plan of ALL_SAMPLE_PLANS) {
+      expect(() => persistedTrainingPlanStructureSchema.parse(plan.structure)).not.toThrow();
+    }
+  });
+
+  it("ships UI metadata for every system training plan template", () => {
+    for (const plan of ALL_SAMPLE_PLANS) {
+      const structure = plan.structure as {
+        durationWeeks?: { recommended?: number };
+        experienceLevel?: string[];
+        sport?: string[];
+      };
+
+      expect(Array.isArray(structure.sport)).toBe(true);
+      expect(structure.sport?.length).toBeGreaterThan(0);
+      expect(Array.isArray(structure.experienceLevel)).toBe(true);
+      expect(structure.experienceLevel?.length).toBeGreaterThan(0);
+      expect(structure.durationWeeks?.recommended).toBeGreaterThan(0);
+    }
+  });
+
+  it("keeps every shipped system training plan current-schema compatible", () => {
+    for (const plan of ALL_SAMPLE_PLANS) {
+      expect(() => trainingPlanCreateSchema.parse(plan.structure)).not.toThrow();
+    }
+  });
+
+  it("keeps every shipped system activity template current-schema compatible", () => {
+    for (const template of SYSTEM_TEMPLATES) {
+      const createInput = {
+        activity_category: template.activity_category,
+        description: template.description,
+        name: template.name,
+        notes: template.notes,
+        route_id: template.route_id,
+        structure: template.structure,
+        version: template.version,
+      };
+
+      expect(() => activityPlanCreateSchema.parse(createInput)).not.toThrow();
+    }
+  });
+
+  it("keeps shipped track run workouts distance-based", () => {
+    expect(SYSTEM_TRACK_RUN_WORKOUTS.length).toBeGreaterThan(0);
+
+    for (const template of SYSTEM_TRACK_RUN_WORKOUTS) {
+      for (const interval of template.structure.intervals) {
+        for (const step of interval.steps) {
+          expect(step.duration.type).toBe("distance");
+        }
+      }
+    }
   });
 
   it("uses normalized ids instead of names when duplicate names exist", () => {
@@ -53,8 +119,9 @@ describe("system activity-template catalog", () => {
     const template = SYSTEM_TEMPLATES[0]!;
     const modifiedStructure = structuredClone(template.structure);
 
-    modifiedStructure.intervals[0]!.id = "11111111-1111-4111-8111-111111111111";
-    modifiedStructure.intervals[0]!.steps[0]!.id = "22222222-2222-4222-8222-222222222222";
+    const firstInterval = modifiedStructure.intervals[0]!;
+    firstInterval.id = "11111111-1111-4111-8111-111111111111";
+    firstInterval.steps[0]!.id = "22222222-2222-4222-8222-222222222222";
 
     expect(normalizeActivityTemplateStructureForAudit(modifiedStructure)).toEqual(
       normalizeActivityTemplateStructureForAudit(template.structure),
@@ -63,7 +130,7 @@ describe("system activity-template catalog", () => {
 
   it("throws explicitly when a shipped system plan has unresolved linked templates", () => {
     const templateIndex = buildSystemTemplateIndex();
-    const validTemplateId = SYSTEM_TEMPLATES[0]!.id;
+    const validTemplateId = SYSTEM_TEMPLATES[0]?.id;
     const partialPlan: SystemTrainingPlanTemplate = {
       id: "00000000-0000-4000-8000-000000000001",
       name: "Partial Missing Plan",

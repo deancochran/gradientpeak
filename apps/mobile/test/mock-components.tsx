@@ -82,3 +82,40 @@ export function createButtonComponent() {
     );
   };
 }
+
+export function createStackComponent() {
+  return Object.assign(createHost("Stack"), {
+    Screen: (props: any) =>
+      React.createElement("StackScreen", { testID: `stack-screen-${props.name}`, ...props }),
+  });
+}
+
+function createControlledFieldHost(type: string, valueProp: string, changeProp?: string) {
+  return function MockControlledField({ control, name, testId, placeholder }: any) {
+    const { Controller } = require("react-hook-form");
+
+    return React.createElement(Controller, {
+      control,
+      name,
+      render: ({ field }: any) =>
+        React.createElement(type, {
+          testID: testId,
+          placeholder,
+          [valueProp]: field.value,
+          ...(changeProp ? { [changeProp]: field.onChange } : {}),
+        }),
+    });
+  };
+}
+
+export function createFormComponentMocks() {
+  return {
+    __esModule: true,
+    Form: ({ children }: any) => children,
+    FormDateInputField: createControlledFieldHost("Text", "children"),
+    FormSwitchField: createControlledFieldHost("Switch", "checked", "onCheckedChange"),
+    FormTextareaField: createControlledFieldHost("Textarea", "value", "onChangeText"),
+    FormTextField: createControlledFieldHost("Input", "value", "onChangeText"),
+    FormTimeInputField: createControlledFieldHost("Text", "children"),
+  };
+}

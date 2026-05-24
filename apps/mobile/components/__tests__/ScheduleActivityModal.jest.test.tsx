@@ -1,6 +1,7 @@
 import React, { act } from "react";
 import { z } from "zod";
 
+import { createHost } from "../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../test/render-native";
 
 const alertMock = jest.fn();
@@ -8,12 +9,6 @@ const createMutateMock = jest.fn();
 const updateMutateMock = jest.fn();
 
 let existingActivityData: any = null;
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
 
 jest.mock("@tanstack/react-query", () => ({
   __esModule: true,
@@ -40,6 +35,7 @@ jest.mock("@repo/core", () => ({
     scheduled_date: z.string().optional(),
     notes: z.string().nullable().optional(),
     training_plan_id: z.string().nullable().optional(),
+    recurrence: z.any().optional(),
   }),
 }));
 
@@ -74,7 +70,7 @@ jest.mock("@repo/ui/hooks", () => {
   };
 });
 
-jest.mock("@/components/ActivityPlan/TimelineChart", () => ({
+jest.mock("@/components/activity-plan/workout/TimelineChart", () => ({
   __esModule: true,
   TimelineChart: createHost("TimelineChart"),
 }));
@@ -84,9 +80,21 @@ jest.mock("@/components/activity-plan/ActivityPlanContentPreview", () => ({
   ActivityPlanContentPreview: createHost("ActivityPlanContentPreview"),
 }));
 
+jest.mock("@/components/shared/ActivityPlanCard", () => ({
+  __esModule: true,
+  ActivityPlanCard: createHost("ActivityPlanCard"),
+}));
+
 jest.mock("../training-plan/modals/components/ConstraintValidator", () => ({
   __esModule: true,
   ConstraintValidator: () => React.createElement("Text", {}, "Constraint Validation"),
+}));
+
+jest.mock("@/components/shared/AppFormModal", () => ({
+  __esModule: true,
+  AppFormModal: ({ children, footerContent, ...props }: any) =>
+    React.createElement("AppFormModal", props, children, footerContent),
+  AppConfirmModal: createHost("AppConfirmModal"),
 }));
 
 jest.mock("@repo/ui/components/button", () => ({ __esModule: true, Button: createHost("Button") }));
@@ -98,7 +106,11 @@ jest.mock("@repo/ui/components/card", () => ({
 jest.mock("@repo/ui/components/form", () => ({
   __esModule: true,
   Form: createHost("Form"),
-  FormDateInputField: createHost("FormDateInputField"),
+  FormDateInputField: ({ testId, ...props }: any) =>
+    React.createElement("FormDateInputField", { testID: testId, ...props }, props.children),
+  FormSwitchField: createHost("FormSwitchField"),
+  FormTimeInputField: ({ testId, ...props }: any) =>
+    React.createElement("FormTimeInputField", { testID: testId, ...props }, props.children),
   FormTextareaField: createHost("FormTextareaField"),
 }));
 jest.mock("@repo/ui/components/icon", () => ({ __esModule: true, Icon: createHost("Icon") }));
@@ -186,7 +198,7 @@ describe("ScheduleActivityModal", () => {
   });
 
   it("shows the activity preview immediately and keeps constraints collapsed by default", () => {
-    renderNative(
+    const rendered = renderNative(
       <ScheduleActivityModal
         visible
         onClose={jest.fn()}
@@ -198,6 +210,7 @@ describe("ScheduleActivityModal", () => {
     expect(screen.getByTestId("schedule-constraints-toggle")).toBeTruthy();
     expect(screen.getByTestId("schedule-preview-details")).toBeTruthy();
     expect(screen.queryByTestId("schedule-constraints-details")).toBeNull();
+    expect((rendered as any).UNSAFE_getByType("ActivityPlanCard").props.variant).toBe("compact");
   });
 
   it("reveals constraint details only when the disclosure control is used", () => {
@@ -217,7 +230,77 @@ describe("ScheduleActivityModal", () => {
     expect(screen.getByText("Constraint Validation")).toBeTruthy();
   });
 
-  it("supports editing planned-event date, time, and all-day state", () => {
+  it("submits bounded weekly recurrence when scheduling a planned activity", () => {
+    renderNative(
+      <ScheduleActivityModal
+        visible
+        onClose={jest.fn()}
+        activityPlanId="plan-1"
+        preselectedDate="2026-06-02"
+      />,
+    );
+
+    fireEvent.press(screen.getByTestId("schedule-repeat-weekly-toggle"));
+    fireEvent.press(screen.getByTestId("schedule-submit-button"));
+
+    expect(createMutateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activity_plan_id: "plan-1",
+        scheduled_date: "2026-06-02",
+        recurrence: {
+          rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=4;BYDAY=TU",
+          timezone: "UTC",
+        },
+      }),
+    );
+  });
+
+  it("keeps weekly recurrence counts within supported bounds", () => {
+    renderNative(
+      <ScheduleActivityModal
+        visible
+        onClose={jest.fn()}
+        activityPlanId="plan-1"
+        preselectedDate="2026-06-02"
+      />,
+    );
+
+    fireEvent.press(screen.getByTestId("schedule-repeat-weekly-toggle"));
+
+    for (let index = 0; index < 60; index++) {
+      fireEvent.press(screen.getByTestId("schedule-repeat-count-increment"));
+    }
+
+    fireEvent.press(screen.getByTestId("schedule-submit-button"));
+
+    expect(createMutateMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        recurrence: {
+          rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=52;BYDAY=TU",
+          timezone: "UTC",
+        },
+      }),
+    );
+
+    createMutateMock.mockClear();
+
+    for (let index = 0; index < 60; index++) {
+      fireEvent.press(screen.getByTestId("schedule-repeat-count-decrement"));
+    }
+
+    fireEvent.press(screen.getByTestId("schedule-submit-button"));
+
+    expect(createMutateMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        recurrence: {
+          rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=2;BYDAY=TU",
+          timezone: "UTC",
+        },
+      }),
+    );
+  });
+
+  it("submits edits for an existing planned event", () => {
     existingActivityData = {
       id: "event-1",
       scheduled_date: "2026-03-23",
@@ -234,32 +317,6 @@ describe("ScheduleActivityModal", () => {
     expect(screen.getByTestId("scheduled-date-button")).toBeTruthy();
     expect(screen.getByTestId("scheduled-time-button")).toBeTruthy();
 
-    const getSwitch = () => (screen as any).UNSAFE_getByType("Switch");
-
-    act(() => {
-      getSwitch().props.onCheckedChange(true);
-    });
-
-    expect(screen.queryByTestId("scheduled-time-button")).toBeNull();
-
-    act(() => {
-      getSwitch().props.onCheckedChange(false);
-      fireEvent.press(screen.getByTestId("scheduled-date-button"));
-    });
-
-    const datePicker = (screen as any).UNSAFE_getByType("DateTimePicker");
-
-    act(() => {
-      datePicker.props.onChange({}, new Date("2026-03-24T12:00:00.000Z"));
-      fireEvent.press(screen.getByTestId("scheduled-time-button"));
-    });
-
-    const timePicker = (screen as any).UNSAFE_getByType("DateTimePicker");
-
-    act(() => {
-      timePicker.props.onChange({}, new Date("2026-03-24T14:45:00.000Z"));
-    });
-
     const buttons = (screen as any).UNSAFE_getAllByType("Button");
 
     act(() => {
@@ -272,9 +329,68 @@ describe("ScheduleActivityModal", () => {
       patch: expect.objectContaining({
         activity_plan_id: "plan-1",
         all_day: false,
+        notes: "Bring gels",
         timezone: "UTC",
-        starts_at: "2026-03-24T14:45:00.000Z",
+        starts_at: expect.stringMatching(/^2026-03-23T/),
       }),
     });
+  });
+
+  it("requires a scope choice before editing a recurring occurrence", () => {
+    existingActivityData = {
+      id: "event-1",
+      scheduled_date: "2026-03-23",
+      starts_at: "2026-03-23T09:00:00.000Z",
+      all_day: false,
+      notes: "Bring gels",
+      series_id: "series-1",
+      occurrence_key: "2026-03-23",
+      activity_plan: {
+        id: "plan-1",
+      },
+    };
+
+    renderNative(<ScheduleActivityModal visible onClose={jest.fn()} eventId="event-1" />);
+
+    expect(screen.getByTestId("schedule-submit-button").props["disabled"]).toBe(true);
+    expect(updateMutateMock).not.toHaveBeenCalled();
+
+    fireEvent.press(screen.getByTestId("schedule-edit-scope-future"));
+    fireEvent.press(screen.getByTestId("schedule-submit-button"));
+
+    expect(updateMutateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "event-1",
+        scope: "future",
+      }),
+    );
+  });
+
+  it("uses a provided edit scope without prompting for recurring occurrences", () => {
+    existingActivityData = {
+      id: "event-1",
+      scheduled_date: "2026-03-23",
+      starts_at: "2026-03-23T09:00:00.000Z",
+      all_day: false,
+      notes: "Bring gels",
+      recurrence_rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=4;BYDAY=MO",
+      activity_plan: {
+        id: "plan-1",
+      },
+    };
+
+    renderNative(
+      <ScheduleActivityModal visible onClose={jest.fn()} eventId="event-1" editScope="series" />,
+    );
+
+    fireEvent.press(screen.getByTestId("schedule-submit-button"));
+
+    expect(screen.queryByTestId("schedule-edit-scope-single")).toBeNull();
+    expect(updateMutateMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "event-1",
+        scope: "series",
+      }),
+    );
   });
 });

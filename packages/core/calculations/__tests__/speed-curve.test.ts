@@ -38,7 +38,7 @@ describe("deriveSpeedCurveFromThresholdPace", () => {
     const curve = deriveSpeedCurveFromThresholdPace(thresholdPace);
 
     const sprintEffort = curve[0]; // 5 seconds
-    expect(sprintEffort!.value).toBeGreaterThan(thresholdSpeed);
+    expect(sprintEffort?.value).toBeGreaterThan(thresholdSpeed);
   });
 
   it("should have tempo efforts slower than threshold", () => {
@@ -47,7 +47,7 @@ describe("deriveSpeedCurveFromThresholdPace", () => {
     const curve = deriveSpeedCurveFromThresholdPace(thresholdPace);
 
     const tempoEffort = curve[curve.length - 1]; // 60 minutes
-    expect(tempoEffort!.value).toBeLessThan(thresholdSpeed);
+    expect(tempoEffort?.value).toBeLessThan(thresholdSpeed);
   });
 
   it("should throw error for invalid pace", () => {

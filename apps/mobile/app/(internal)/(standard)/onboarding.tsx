@@ -17,28 +17,13 @@ import * as Linking from "expo-linking";
 import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { Activity, ArrowRight, Check, ChevronRight } from "lucide-react-native";
-import { useMemo, useState } from "react";
-import { Alert, Platform, ScrollView, TouchableOpacity, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { ScrollView, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
+import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import { useAuth } from "@/lib/hooks/useAuth";
-
-type HealthKitPermissions = {
-  permissions: {
-    read: string[];
-    write: string[];
-  };
-};
-
-type AppleHealthKitModule = {
-  Constants: {
-    Permissions: Record<string, string>;
-  };
-  initHealthKit: (
-    permissions: HealthKitPermissions,
-    callback: (error: string | null) => void,
-  ) => void;
-};
 
 // ================================
 // Types
@@ -96,6 +81,8 @@ const INITIAL_DATA: OnboardingData = {
 
 type StepId =
   | "intro"
+  | "integrations"
+  | "provider_sync"
   | "experience"
   | "gender"
   | "dob"
@@ -106,13 +93,14 @@ type StepId =
   | "ftp"
   | "threshold_pace"
   | "css"
-  | "integrations"
   | "summary";
+
+type IntegrationProvider = "strava" | "wahoo" | "trainingpeaks" | "garmin" | "zwift";
 
 interface StepConfig {
   canSkip: boolean;
   id: StepId;
-  component: React.FC<StepProps>;
+  component: React.ComponentType<StepProps>;
   shouldShow: (data: OnboardingData) => boolean;
   isValid: (data: OnboardingData) => boolean;
   title?: string;
@@ -120,7 +108,25 @@ interface StepConfig {
 
 interface StepProps {
   data: OnboardingData;
-  updateData: (updates: Partial<OnboardingData>) => void;
+  updateData: (
+    updates: Partial<OnboardingData>,
+    options?: { source?: "imported" | "user" },
+  ) => void;
+  fieldSources?: Partial<Record<keyof OnboardingData, string>>;
+  integrations?: Array<{ provider: IntegrationProvider }>;
+  providerSyncStatus?: {
+    status: "idle" | "queued" | "running" | "succeeded" | "partial" | "failed" | "timed_out";
+    canContinue: boolean;
+    providers: Array<{
+      provider: IntegrationProvider;
+      status: string;
+      blocking: boolean;
+      message?: string;
+    }>;
+  };
+  onRetryProviderSync?: () => void;
+  onRefreshIntegrations?: () => void;
+  onClearProviderRequirement?: (provider: IntegrationProvider) => void;
 }
 
 // ================================
@@ -171,9 +177,12 @@ const ExperienceStep = ({ data, updateData }: StepProps) => (
   </View>
 );
 
-const GenderStep = ({ data, updateData }: StepProps) => (
+const GenderStep = ({ data, updateData, fieldSources }: StepProps) => (
   <View className="gap-4">
     <Text className="text-xl font-semibold mb-2">How do you identify?</Text>
+    {fieldSources?.gender ? (
+      <Text className="text-xs text-muted-foreground">From {fieldSources.gender}</Text>
+    ) : null}
     {(["male", "female", "other"] as const).map((gender) => (
       <TouchableOpacity
         key={gender}
@@ -190,10 +199,13 @@ const GenderStep = ({ data, updateData }: StepProps) => (
   </View>
 );
 
-const DobStep = ({ data, updateData }: StepProps) => {
+const DobStep = ({ data, updateData, fieldSources }: StepProps) => {
   return (
     <View className="gap-4">
       <Text className="text-xl font-semibold">When were you born?</Text>
+      {fieldSources?.dob ? (
+        <Text className="text-xs text-muted-foreground">From {fieldSources.dob}</Text>
+      ) : null}
       <DateField
         id="onboarding-dob"
         label="Date of birth"
@@ -208,9 +220,12 @@ const DobStep = ({ data, updateData }: StepProps) => {
   );
 };
 
-const WeightStep = ({ data, updateData }: StepProps) => (
+const WeightStep = ({ data, updateData, fieldSources }: StepProps) => (
   <View className="gap-4">
     <Text className="text-xl font-semibold mb-2">What is your weight?</Text>
+    {fieldSources?.weight_kg ? (
+      <Text className="text-xs text-muted-foreground">From {fieldSources.weight_kg}</Text>
+    ) : null}
     <WeightInputField
       id="onboarding-weight"
       label="Current weight"
@@ -303,12 +318,15 @@ const RestingHrStep = ({ data, updateData }: StepProps) => (
   </View>
 );
 
-const FtpStep = ({ data, updateData }: StepProps) => {
+const FtpStep = ({ data, updateData, fieldSources }: StepProps) => {
   const estimatedFtp = estimateConservativeFTPFromWeight(data.weight_kg);
 
   return (
     <View className="gap-4">
       <Text className="text-xl font-semibold mb-2">Functional Threshold Power (FTP)</Text>
+      {fieldSources?.ftp ? (
+        <Text className="text-xs text-muted-foreground">From {fieldSources.ftp}</Text>
+      ) : null}
       <BoundedNumberInput
         id="onboarding-ftp"
         label="FTP"
@@ -376,58 +394,16 @@ const CssStep = ({ data, updateData }: StepProps) => (
   </View>
 );
 
-const IntegrationsStep = ({ data, updateData }: StepProps) => {
-  const [connected, setConnected] = useState<string[]>([]);
+const IntegrationsStep = ({ integrations = [], onRefreshIntegrations }: StepProps) => {
+  const [statusModal, setStatusModal] = useState<null | { title: string; description: string }>(
+    null,
+  );
   const getAuthUrlMutation = api.integrations.getAuthUrl.useMutation();
 
+  const connectedProviders = new Set(integrations.map((integration) => integration.provider));
+
   const handleConnect = async (provider: string) => {
-    if (provider === "Apple Health") {
-      if (Platform.OS !== "ios") {
-        Alert.alert("Not Available", "Apple Health is only available on iOS.");
-        return;
-      }
-
-      let AppleHealthKit: AppleHealthKitModule;
-      try {
-        AppleHealthKit = require("react-native-health").default as AppleHealthKitModule;
-      } catch {
-        Alert.alert("Not Available", "Apple Health integration is not available in this build.");
-        return;
-      }
-
-      const permissions = {
-        permissions: {
-          read: [
-            AppleHealthKit.Constants.Permissions.HeartRate,
-            AppleHealthKit.Constants.Permissions.Workout,
-            AppleHealthKit.Constants.Permissions.Steps,
-            AppleHealthKit.Constants.Permissions.ActiveEnergyBurned,
-            AppleHealthKit.Constants.Permissions.DistanceCycling,
-            AppleHealthKit.Constants.Permissions.DistanceWalkingRunning,
-            AppleHealthKit.Constants.Permissions.DistanceSwimming,
-            AppleHealthKit.Constants.Permissions.Weight,
-            AppleHealthKit.Constants.Permissions.BiologicalSex,
-            AppleHealthKit.Constants.Permissions.DateOfBirth,
-          ],
-          write: [AppleHealthKit.Constants.Permissions.Workout],
-        },
-      } as HealthKitPermissions;
-
-      AppleHealthKit.initHealthKit(permissions, (error) => {
-        if (error) {
-          console.error("[HealthKit] Error:", error);
-          Alert.alert("Error", "Failed to connect to Apple Health.");
-          return;
-        }
-        // Success
-        setConnected((prev) => [...prev, "Apple Health"]);
-        Alert.alert("Success", "Connected to Apple Health!");
-      });
-      return;
-    }
-
-    // Map display name to provider enum
-    const providerMap: Record<string, string> = {
+    const providerMap: Record<string, IntegrationProvider> = {
       Strava: "strava",
       Garmin: "garmin",
       Wahoo: "wahoo",
@@ -437,37 +413,38 @@ const IntegrationsStep = ({ data, updateData }: StepProps) => {
 
     const providerKey = providerMap[provider];
     if (!providerKey) {
-      Alert.alert("Coming Soon", `Connection to ${provider} will be available in the next update.`);
+      setStatusModal({
+        title: "Coming Soon",
+        description: `Connection to ${provider} will be available in the next update.`,
+      });
       return;
     }
 
     try {
       const redirectUri = getMobileRedirectUri();
       const { url } = await getAuthUrlMutation.mutateAsync({
-        provider: providerKey as any,
+        provider: providerKey,
         redirectUri,
       });
 
       const result = await WebBrowser.openAuthSessionAsync(url, redirectUri);
 
       if (result.type === "success") {
-        setConnected((prev) => [...prev, provider]);
-        Alert.alert("Success", `Connected to ${provider}`);
+        onRefreshIntegrations?.();
+        setStatusModal({ title: "Success", description: `Connected to ${provider}` });
       }
     } catch (error) {
       console.error(error);
-      Alert.alert("Error", `Failed to connect to ${provider}.`);
+      setStatusModal({ title: "Error", description: `Failed to connect to ${provider}.` });
     }
   };
 
-  const providers = [
-    { name: "Apple Health", color: "#000000" },
-    { name: "Garmin", color: "#007CC3" },
-    { name: "Strava", color: "#FC4C02" },
-    { name: "TrainingPeaks", color: "#0074D9" },
-    { name: "Wahoo", color: "#003D7C" },
-    { name: "Whoop", color: "#CE0F2D" },
-    { name: "Zwift", color: "#FC6719" },
+  const providers: Array<{ name: string; provider: IntegrationProvider; color: string }> = [
+    { name: "Garmin", provider: "garmin", color: "#007CC3" },
+    { name: "Strava", provider: "strava", color: "#FC4C02" },
+    { name: "TrainingPeaks", provider: "trainingpeaks", color: "#0074D9" },
+    { name: "Wahoo", provider: "wahoo", color: "#003D7C" },
+    { name: "Zwift", provider: "zwift", color: "#FC6719" },
   ];
 
   return (
@@ -480,7 +457,7 @@ const IntegrationsStep = ({ data, updateData }: StepProps) => {
           key={service.name}
           onPress={() => handleConnect(service.name)}
           className={`flex-row items-center justify-between p-4 border rounded-xl mb-2 ${
-            connected.includes(service.name)
+            connectedProviders.has(service.provider)
               ? "border-green-500 bg-green-500/10"
               : "border-border bg-card"
           }`}
@@ -492,13 +469,85 @@ const IntegrationsStep = ({ data, updateData }: StepProps) => {
             </View>
             <Text className="font-semibold">{service.name}</Text>
           </View>
-          {connected.includes(service.name) ? (
+          {connectedProviders.has(service.provider) ? (
             <Icon as={Check} className="text-green-600" size={20} />
           ) : (
             <Icon as={ChevronRight} className="text-muted-foreground" size={20} />
           )}
         </TouchableOpacity>
       ))}
+      {statusModal ? (
+        <AppConfirmModal
+          description={statusModal.description}
+          onClose={() => setStatusModal(null)}
+          primaryAction={{
+            label: "OK",
+            onPress: () => setStatusModal(null),
+            testID: "onboarding-integrations-status-confirm",
+          }}
+          testID="onboarding-integrations-status-modal"
+          title={statusModal.title}
+        />
+      ) : null}
+    </View>
+  );
+};
+
+const ProviderSyncStep = ({
+  providerSyncStatus,
+  onRetryProviderSync,
+  onClearProviderRequirement,
+}: StepProps) => {
+  const status = providerSyncStatus?.status ?? "idle";
+  const isRecoverable = status === "failed" || status === "timed_out";
+
+  return (
+    <View className="gap-4">
+      <Text className="text-xl font-semibold mb-2">Syncing connected accounts</Text>
+      <Text className="text-muted-foreground mb-2">
+        We&apos;re importing setup fields from connected services before showing the manual review
+        steps.
+      </Text>
+
+      <Card>
+        <CardContent className="pt-6 gap-3">
+          {(providerSyncStatus?.providers ?? []).map((provider) => (
+            <View key={provider.provider} className="gap-1">
+              <View className="flex-row items-center justify-between">
+                <Text className="font-semibold capitalize text-foreground">
+                  {provider.provider}
+                </Text>
+                <Text className="text-sm text-muted-foreground capitalize">
+                  {provider.status.replace(/_/g, " ")}
+                </Text>
+              </View>
+              {provider.message ? (
+                <Text className="text-xs text-muted-foreground">{provider.message}</Text>
+              ) : null}
+              {(provider.status === "failed" || provider.status === "timed_out") &&
+              provider.blocking ? (
+                <Button
+                  variant="outline"
+                  onPress={() => onClearProviderRequirement?.(provider.provider)}
+                  testID={`onboarding-clear-${provider.provider}-requirement`}
+                >
+                  <Text>Remove from onboarding</Text>
+                </Button>
+              ) : null}
+            </View>
+          ))}
+        </CardContent>
+      </Card>
+
+      {isRecoverable ? (
+        <Button
+          variant="outline"
+          onPress={onRetryProviderSync}
+          testID="onboarding-provider-sync-retry"
+        >
+          <Text>Retry sync</Text>
+        </Button>
+      ) : null}
     </View>
   );
 };
@@ -582,12 +631,104 @@ export default function OnboardingScreen() {
   const [data, setData] = useState<OnboardingData>(INITIAL_DATA);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { completeOnboarding } = useAuth();
-  const { data: profile } = api.profiles.get.useQuery();
+  const [providerSyncStarted, setProviderSyncStarted] = useState(false);
+  const [touchedFields, setTouchedFields] = useState<Set<keyof OnboardingData>>(() => new Set());
+  const [statusModal, setStatusModal] = useState<null | { title: string; description: string }>(
+    null,
+  );
+  const { completeOnboarding, isAuthenticated, isFullyLoaded } = useAuth();
+  const profileQueryEnabled = isFullyLoaded && isAuthenticated && hasSessionAuthCredentials();
+  const { data: profile } = api.profiles.get.useQuery(undefined, {
+    enabled: profileQueryEnabled,
+  });
+  const utils = api.useUtils();
+  const { data: integrations = [], refetch: refetchIntegrations } = api.integrations.list.useQuery(
+    undefined,
+    {
+      enabled: profileQueryEnabled,
+    },
+  );
+  const importedValuesQuery = api.onboarding.getImportedOnboardingValues.useQuery(undefined, {
+    enabled: profileQueryEnabled,
+  });
+  const statusQuery = api.onboarding.getProviderEnrichmentStatus.useQuery(undefined, {
+    enabled: profileQueryEnabled && providerSyncStarted,
+    refetchInterval: 1000,
+  });
+  const startProviderEnrichmentMutation = api.onboarding.startProviderEnrichment.useMutation({
+    onSuccess: async () => {
+      await utils.onboarding.getProviderEnrichmentStatus.invalidate();
+      await utils.onboarding.getImportedOnboardingValues.invalidate();
+    },
+  });
+  const clearProviderRequirementMutation = api.onboarding.clearProviderRequirement.useMutation({
+    onSuccess: async () => {
+      await utils.onboarding.getProviderEnrichmentStatus.invalidate();
+      await utils.onboarding.getImportedOnboardingValues.invalidate();
+    },
+  });
   const completeOnboardingMutation = api.onboarding.completeOnboarding.useMutation();
 
-  const updateData = (updates: Partial<OnboardingData>) => {
+  const updateData = (
+    updates: Partial<OnboardingData>,
+    options?: { source?: "imported" | "user" },
+  ) => {
+    if (options?.source !== "imported") {
+      setTouchedFields((prev) => {
+        const next = new Set(prev);
+        Object.keys(updates).forEach((key) => next.add(key as keyof OnboardingData));
+        return next;
+      });
+    }
+
     setData((prev) => ({ ...prev, ...updates }));
+  };
+
+  useEffect(() => {
+    const importedValues = importedValuesQuery.data;
+    if (!importedValues) return;
+
+    const updates: Partial<OnboardingData> = {};
+
+    for (const field of ["dob", "gender", "weight_kg", "ftp"] as const) {
+      const value = importedValues.values[field];
+      if (!touchedFields.has(field) && value !== undefined) {
+        updates[field] = value as never;
+      }
+    }
+
+    if (Object.keys(updates).length > 0) {
+      updateData(updates, { source: "imported" });
+    }
+  }, [importedValuesQuery.data, touchedFields, updateData]);
+
+  const fieldSources = useMemo(() => {
+    const sources: Partial<Record<keyof OnboardingData, string>> = {};
+    const importedSources = importedValuesQuery.data?.sources;
+
+    for (const field of ["dob", "gender", "weight_kg", "ftp"] as const) {
+      if (importedSources?.[field]) {
+        sources[field] = importedSources[field].label;
+      }
+    }
+
+    return sources;
+  }, [importedValuesQuery.data?.sources]);
+
+  const retryProviderSync = async () => {
+    const result = await refetchIntegrations();
+    const providers = (result.data ?? integrations).map((integration) => integration.provider);
+    if (providers.length === 0) return;
+    setProviderSyncStarted(true);
+    await startProviderEnrichmentMutation.mutateAsync({ providers });
+    await statusQuery.refetch();
+    await importedValuesQuery.refetch();
+  };
+
+  const clearProviderRequirement = async (provider: IntegrationProvider) => {
+    setProviderSyncStarted(true);
+    await clearProviderRequirementMutation.mutateAsync({ provider });
+    await statusQuery.refetch();
   };
 
   // Define steps with validation ranges
@@ -599,6 +740,20 @@ export default function OnboardingScreen() {
         component: IntroStep,
         shouldShow: () => true,
         isValid: () => true,
+      },
+      {
+        id: "integrations",
+        canSkip: true,
+        component: IntegrationsStep,
+        shouldShow: () => true,
+        isValid: () => true,
+      },
+      {
+        id: "provider_sync",
+        canSkip: false,
+        component: ProviderSyncStep,
+        shouldShow: () => providerSyncStarted,
+        isValid: () => statusQuery.data?.canContinue ?? false,
       },
       {
         id: "experience",
@@ -673,13 +828,6 @@ export default function OnboardingScreen() {
         isValid: (d) => !d.css || (d.css >= 60 && d.css <= 300), // 1:00 to 5:00 min/100m
       },
       {
-        id: "integrations",
-        canSkip: true,
-        component: IntegrationsStep,
-        shouldShow: () => true,
-        isValid: () => true,
-      },
-      {
         id: "summary",
         canSkip: false,
         component: SummaryStep,
@@ -687,7 +835,7 @@ export default function OnboardingScreen() {
         isValid: () => true,
       },
     ],
-    [],
+    [providerSyncStarted, statusQuery.data?.canContinue],
   );
 
   // Filter valid steps
@@ -697,18 +845,53 @@ export default function OnboardingScreen() {
 
   const isStepValid = currentStep?.isValid(data) ?? true;
   const canSkipStep = !isLastStep && (currentStep?.canSkip ?? false);
+  const isProviderSyncBlocking =
+    currentStep?.id === "provider_sync" &&
+    ["queued", "running"].includes(statusQuery.data?.status ?? "running");
+  const isBusy =
+    isSubmitting ||
+    startProviderEnrichmentMutation.isPending ||
+    clearProviderRequirementMutation.isPending;
 
   const handleNext = async () => {
     if (isLastStep) {
       await handleComplete();
       return;
     }
+
+    if (currentStep?.id === "integrations") {
+      const result = await refetchIntegrations();
+      const providers = (result.data ?? integrations).map((integration) => integration.provider);
+
+      if (providers.length > 0) {
+        setProviderSyncStarted(true);
+        void startProviderEnrichmentMutation
+          .mutateAsync({ providers })
+          .then(async () => {
+            await statusQuery.refetch();
+            await importedValuesQuery.refetch();
+          })
+          .catch((error) => {
+            console.error(error);
+            setStatusModal({ title: "Error", description: "Failed to sync connected providers." });
+          });
+      }
+    }
+
+    if (currentStep?.id === "provider_sync") {
+      await importedValuesQuery.refetch();
+    }
+
     setCurrentStepIndex((prev) => prev + 1);
   };
 
   const handleSkip = async () => {
     if (isLastStep) {
       await handleComplete();
+      return;
+    }
+    if (currentStep?.id === "integrations") {
+      await handleNext();
       return;
     }
     setCurrentStepIndex((prev) => prev + 1);
@@ -720,7 +903,7 @@ export default function OnboardingScreen() {
 
     try {
       if (!profile?.id) {
-        Alert.alert("Error", "User profile not found.");
+        setStatusModal({ title: "Error", description: "User profile not found." });
         return;
       }
 
@@ -729,7 +912,7 @@ export default function OnboardingScreen() {
       const dobDate = data.dob ? new Date(data.dob) : undefined;
 
       if (dobDate && dobDate.toString() === "Invalid Date") {
-        Alert.alert("Error", "Please enter a valid date of birth.");
+        setStatusModal({ title: "Error", description: "Please enter a valid date of birth." });
         return;
       }
 
@@ -748,13 +931,13 @@ export default function OnboardingScreen() {
         css_seconds_per_hundred_meters: data.css ?? undefined,
       };
 
-      const result = await completeOnboardingMutation.mutateAsync(input);
+      const _result = await completeOnboardingMutation.mutateAsync(input);
       await completeOnboarding();
 
       // Hand control back to the global auth gate.
       router.replace("/");
     } catch (error) {
-      Alert.alert("Error", "Failed to save profile. Please try again.");
+      setStatusModal({ title: "Error", description: "Failed to save profile. Please try again." });
       console.error(error);
     } finally {
       setIsSubmitting(false);
@@ -783,7 +966,18 @@ export default function OnboardingScreen() {
           contentContainerStyle={{ padding: 24, paddingBottom: 100 }}
           keyboardShouldPersistTaps="handled"
         >
-          <currentStep.component data={data} updateData={updateData} />
+          <currentStep.component
+            data={data}
+            updateData={updateData}
+            fieldSources={fieldSources}
+            integrations={integrations as Array<{ provider: IntegrationProvider }>}
+            providerSyncStatus={statusQuery.data as StepProps["providerSyncStatus"]}
+            onRetryProviderSync={retryProviderSync}
+            onRefreshIntegrations={() => {
+              void refetchIntegrations();
+            }}
+            onClearProviderRequirement={clearProviderRequirement}
+          />
         </ScrollView>
 
         {/* Footer - Fixed */}
@@ -792,7 +986,7 @@ export default function OnboardingScreen() {
             variant="ghost"
             onPress={handleSkip}
             className={`flex-1 ${!canSkipStep ? "opacity-50" : ""}`}
-            disabled={isSubmitting || !canSkipStep}
+            disabled={isBusy || !canSkipStep || isProviderSyncBlocking}
             testID="onboarding-skip-button"
           >
             <Text className="text-muted-foreground">Skip</Text>
@@ -800,7 +994,7 @@ export default function OnboardingScreen() {
           <Button
             onPress={handleNext}
             className={`flex-[2] ${!isStepValid ? "opacity-50" : ""}`}
-            disabled={isSubmitting || !isStepValid}
+            disabled={isBusy || isProviderSyncBlocking || !isStepValid}
             testID={isLastStep ? "onboarding-finish-button" : "onboarding-next-button"}
           >
             <Text className="font-semibold text-primary-foreground">
@@ -809,6 +1003,19 @@ export default function OnboardingScreen() {
             {!isLastStep && <Icon as={ArrowRight} className="ml-2 text-primary-foreground" />}
           </Button>
         </View>
+        {statusModal ? (
+          <AppConfirmModal
+            description={statusModal.description}
+            onClose={() => setStatusModal(null)}
+            primaryAction={{
+              label: "OK",
+              onPress: () => setStatusModal(null),
+              testID: "onboarding-status-confirm",
+            }}
+            testID="onboarding-status-modal"
+            title={statusModal.title}
+          />
+        ) : null}
       </View>
     </SafeAreaView>
   );

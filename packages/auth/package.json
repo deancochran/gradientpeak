@@ -8,6 +8,7 @@
     "./client/web": "./src/client/web.ts",
     "./client/expo": "./src/client/expo.ts",
     "./operations": "./src/contracts/operations.ts",
+    "./forms": "./src/contracts/forms.ts",
     "./session": "./src/contracts/session.ts",
     "./callbacks": "./src/contracts/callbacks.ts",
     "./session/*": "./src/contracts/session.ts",

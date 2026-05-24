@@ -1,10 +1,11 @@
 import { Alert, AlertDescription } from "@repo/ui/components/alert";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { AlertCircle } from "lucide-react-native";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { authClient, getEmailVerificationCallbackUrl } from "@/lib/auth/client";
 import { useAuth } from "@/lib/hooks/useAuth";
@@ -83,15 +84,18 @@ export default function VerifyScreen() {
             </Alert>
 
             <View className="gap-2 pt-2">
-              <Button
+              <LoadingButton
                 variant="ghost"
                 onPress={onResend}
                 disabled={isResending}
+                loading={isResending}
+                loadingLabel="Sending..."
+                loadingTextClassName="text-foreground"
                 className="w-full"
                 testID="resend-code-button"
               >
-                <Text>{isResending ? "Sending..." : "Resend Email"}</Text>
-              </Button>
+                <Text className="text-foreground">Resend Email</Text>
+              </LoadingButton>
               <Button
                 variant="link"
                 onPress={() => router.replace("/(external)/sign-in")}

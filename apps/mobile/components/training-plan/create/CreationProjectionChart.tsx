@@ -1,17 +1,38 @@
-import type { NoHistoryProjectionMetadata, ProjectionChartPayload } from "@repo/core";
+import type { ProjectionChartPayload } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import { useFont } from "@shopify/react-native-skia";
-import { format } from "date-fns";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   type LayoutChangeEvent,
   Pressable,
   ScrollView,
-  useColorScheme,
   useWindowDimensions,
   View,
 } from "react-native";
 import { CartesianChart, Line } from "victory-native";
+import { useTheme } from "@/lib/stores/theme-store";
+import {
+  formatCompactAxisNumber,
+  formatIsoDate,
+  formatWeeklyTss,
+  toPercentReductionLabel,
+} from "./projection-chart/formatters";
+import {
+  formatDiagnosticNumber,
+  formatNoHistoryConfidence,
+  resolveContinuousProjectionDiagnostics,
+  resolveProjectionConfidenceHint,
+  summarizeNumericRecord,
+  toSentenceKey,
+} from "./projection-chart/metadata";
+import { ProjectionChartLegends } from "./projection-chart/ProjectionChartLegends";
+import {
+  isDateWithinRange,
+  resolveGoalPointPlacements,
+  resolvePhaseBandPlacements,
+  resolvePhaseBoundaryMarkers,
+  resolvePhaseLegendItems,
+} from "./projection-chart/placements";
 
 interface CreationProjectionChartProps {
   projectionChart?: ProjectionChartPayload;
@@ -31,7 +52,6 @@ type ProjectionChartDatum = Record<string, unknown> & {
 type ChartYKey = "loadTss" | "fitnessCtl" | "fatigueAtl";
 
 type ProjectionPoint = ProjectionChartPayload["points"][number];
-type UnknownRecord = Record<string, unknown>;
 
 const chartYKeys: ChartYKey[] = ["loadTss", "fitnessCtl", "fatigueAtl"];
 
@@ -78,292 +98,6 @@ const goalDateLabelWidth = 34;
 const goalDateLabelHalfWidth = goalDateLabelWidth / 2;
 const phaseAxisStripHeight = 2;
 
-const formatIsoDate = (isoDate: string, pattern: string) => {
-  const date = new Date(`${isoDate}T00:00:00`);
-  if (Number.isNaN(date.getTime())) {
-    return isoDate;
-  }
-  return format(date, pattern);
-};
-
-const isDateWithinRange = (date: string, startDate: string, endDate: string) => {
-  return date >= startDate && date <= endDate;
-};
-
-const toUtcDate = (isoDate: string): Date | null => {
-  const date = new Date(`${isoDate}T00:00:00.000Z`);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-  return date;
-};
-
-const toPercentReductionLabel = (factor: number) => {
-  const reduction = Math.max(0, Math.min(1, 1 - factor));
-  return `${Math.round(reduction * 100)}%`;
-};
-
-const formatNoHistoryConfidence = (
-  confidence: NoHistoryProjectionMetadata["projection_floor_confidence"],
-) => confidence ?? "n/a";
-
-const formatCompactAxisNumber = (value: number) => {
-  const absolute = Math.abs(value);
-  if (absolute >= 1000) {
-    return `${(value / 1000).toFixed(1)}k`;
-  }
-  return `${Math.round(value)}`;
-};
-
-const formatWeeklyTss = (value: number) => value.toFixed(1);
-
-const asRecord = (value: unknown): UnknownRecord | undefined => {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return undefined;
-  }
-
-  return value as UnknownRecord;
-};
-
-const asFiniteNumber = (value: unknown): number | undefined => {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return undefined;
-  }
-
-  return value;
-};
-
-const asStringArray = (value: unknown): string[] => {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.filter((item): item is string => typeof item === "string");
-};
-
-const toBoundedPercent = (value: number): number => {
-  const normalized = value <= 1 ? value * 100 : value;
-  return Math.max(0, Math.min(100, normalized));
-};
-
-const readPercent = (value: unknown): number | undefined => {
-  const numeric = asFiniteNumber(value);
-  if (numeric !== undefined) {
-    return toBoundedPercent(numeric);
-  }
-
-  const record = asRecord(value);
-  if (!record) {
-    return undefined;
-  }
-
-  const candidateKeys = [
-    "score",
-    "value",
-    "percent",
-    "percentage",
-    "confidence",
-    "confidence_score",
-    "confidence_0_100",
-    "uncertainty",
-    "uncertainty_score",
-    "uncertainty_0_100",
-    "prediction_uncertainty",
-    "prediction_confidence",
-  ];
-
-  for (const key of candidateKeys) {
-    const candidate = asFiniteNumber(record[key]);
-    if (candidate !== undefined) {
-      return toBoundedPercent(candidate);
-    }
-  }
-
-  return undefined;
-};
-
-const resolveProjectionConfidenceHint = (
-  projectionChart: ProjectionChartPayload | undefined,
-  selectedPoint: ProjectionPoint | undefined,
-) => {
-  const selectedPointRecord = asRecord(selectedPoint as unknown);
-  const uncertaintyPercent =
-    readPercent(selectedPointRecord?.prediction_uncertainty) ??
-    readPercent(selectedPointRecord?.predictionUncertainty) ??
-    readPercent(asRecord(projectionChart as unknown)?.prediction_uncertainty) ??
-    readPercent(asRecord(projectionChart as unknown)?.predictionUncertainty);
-  if (uncertaintyPercent !== undefined) {
-    return `Uncertainty hint: forecast spread ${Math.round(uncertaintyPercent)}%. Readiness remains the primary signal.`;
-  }
-
-  const confidencePercent =
-    readPercent(selectedPointRecord?.prediction_confidence) ??
-    readPercent(selectedPointRecord?.predictionConfidence) ??
-    readPercent(projectionChart?.readiness_confidence) ??
-    readPercent(projectionChart?.no_history?.evidence_confidence?.score);
-  if (confidencePercent !== undefined) {
-    return `Confidence hint: model confidence ${Math.round(confidencePercent)}%. Readiness remains the primary signal.`;
-  }
-
-  const confidenceState =
-    projectionChart?.no_history?.evidence_confidence?.state ??
-    projectionChart?.no_history?.projection_floor_confidence;
-  if (confidenceState) {
-    return `Confidence hint: evidence confidence ${confidenceState}. Readiness remains the primary signal.`;
-  }
-
-  return undefined;
-};
-
-const toSentenceKey = (key: string) => key.replaceAll("_", " ").replaceAll("-", " ").trim();
-
-const formatDiagnosticNumber = (value: number) => {
-  if (Math.abs(value) >= 100) return value.toFixed(0);
-  if (Math.abs(value) >= 10) return value.toFixed(1);
-  return value.toFixed(2);
-};
-
-const summarizeNumericRecord = (record: UnknownRecord | undefined, limit: number) => {
-  if (!record) {
-    return "";
-  }
-
-  const entries = Object.entries(record)
-    .map(([key, value]) => {
-      const numeric = asFiniteNumber(value);
-      if (numeric === undefined) {
-        return null;
-      }
-      return `${toSentenceKey(key)} ${formatDiagnosticNumber(numeric)}`;
-    })
-    .filter((entry): entry is string => Boolean(entry));
-
-  return entries.slice(0, limit).join(", ");
-};
-
-const readFirstRecord = (
-  source: UnknownRecord | undefined,
-  keys: string[],
-): UnknownRecord | undefined => {
-  if (!source) {
-    return undefined;
-  }
-
-  for (const key of keys) {
-    const candidate = asRecord(source[key]);
-    if (candidate) {
-      return candidate;
-    }
-  }
-
-  return undefined;
-};
-
-const readFirstNumber = (source: UnknownRecord | undefined, keys: string[]): number | undefined => {
-  if (!source) {
-    return undefined;
-  }
-
-  for (const key of keys) {
-    const candidate = asFiniteNumber(source[key]);
-    if (candidate !== undefined) {
-      return candidate;
-    }
-  }
-
-  return undefined;
-};
-
-const readFirstStringArray = (source: UnknownRecord | undefined, keys: string[]): string[] => {
-  if (!source) {
-    return [];
-  }
-
-  for (const key of keys) {
-    const candidate = asStringArray(source[key]);
-    if (candidate.length > 0) {
-      return candidate;
-    }
-  }
-
-  return [];
-};
-
-const resolveContinuousProjectionDiagnostics = (
-  projectionChart: ProjectionChartPayload | undefined,
-) => {
-  const baseDiagnostics = asRecord(projectionChart?.projection_diagnostics);
-  const scopedDiagnostics =
-    readFirstRecord(baseDiagnostics, [
-      "continuous_projection_diagnostics",
-      "continuous_projection",
-      "continuous",
-    ]) ?? baseDiagnostics;
-
-  const effectiveOptimizer = readFirstRecord(scopedDiagnostics, [
-    "effective_optimizer",
-    "effectiveOptimizer",
-    "effective_optimizer_values",
-    "effectiveOptimizerValues",
-  ]);
-  const effectiveOptimizerConfig = readFirstRecord(scopedDiagnostics, [
-    "effective_optimizer_config",
-    "effectiveOptimizerConfig",
-  ]);
-  const objectiveContributions = readFirstRecord(scopedDiagnostics, [
-    "objective_contributions",
-    "objectiveContributions",
-  ]);
-  const objectiveComposition = readFirstRecord(scopedDiagnostics, [
-    "objective_composition",
-    "objectiveComposition",
-  ]);
-  const clampCounts = readFirstRecord(scopedDiagnostics, ["clamp_counts", "clampCounts"]);
-  const sampledWeeks =
-    readFirstNumber(objectiveContributions, ["sampled_weeks", "sampledWeeks"]) ?? undefined;
-  const derivedClampPressure =
-    clampCounts && sampledWeeks && sampledWeeks > 0
-      ? ((readFirstNumber(clampCounts, ["tss"]) ?? 0) +
-          (readFirstNumber(clampCounts, ["ctl"]) ?? 0)) /
-        sampledWeeks
-      : undefined;
-  const effectiveOptimizerSummaryRecord =
-    effectiveOptimizer ??
-    readFirstRecord(effectiveOptimizerConfig, ["weights"]) ??
-    effectiveOptimizerConfig;
-  const objectiveSummaryRecord =
-    objectiveComposition ??
-    readFirstRecord(objectiveContributions, ["weighted_terms", "weightedTerms"]) ??
-    objectiveContributions;
-  const curvatureContribution =
-    readFirstNumber(scopedDiagnostics, ["curvature_contribution", "curvatureContribution"]) ??
-    readFirstNumber(objectiveSummaryRecord, [
-      "curvature_contribution",
-      "curvatureContribution",
-      "curvature",
-      "curve",
-    ]);
-
-  return {
-    activeConstraints: readFirstStringArray(scopedDiagnostics, [
-      "active_constraints",
-      "activeConstraints",
-    ]),
-    bindingConstraints: readFirstStringArray(scopedDiagnostics, [
-      "binding_constraints",
-      "bindingConstraints",
-    ]),
-    clampPressure:
-      readFirstNumber(scopedDiagnostics, ["clamp_pressure", "clampPressure"]) ??
-      (derivedClampPressure !== undefined
-        ? Math.max(0, Math.min(1, derivedClampPressure))
-        : undefined),
-    effectiveOptimizer: effectiveOptimizerSummaryRecord,
-    objectiveComposition: objectiveSummaryRecord,
-    curvatureContribution,
-  };
-};
-
 const roundUpAxisMax = (value: number) => {
   if (!Number.isFinite(value) || value <= 0) {
     return 100;
@@ -390,48 +124,6 @@ const getAxisFontSource = (): Parameters<typeof useFont>[0] => {
   } catch {
     return undefined;
   }
-};
-
-const getPhaseColor = (phaseName: string, isDark: boolean) => {
-  const normalized = phaseName.toLowerCase();
-
-  if (normalized.includes("base")) {
-    return isDark ? "rgba(56, 189, 248, 0.78)" : "rgba(3, 105, 161, 0.78)";
-  }
-  if (normalized.includes("build")) {
-    return isDark ? "rgba(52, 211, 153, 0.8)" : "rgba(5, 150, 105, 0.8)";
-  }
-  if (normalized.includes("peak")) {
-    return isDark ? "rgba(250, 204, 21, 0.85)" : "rgba(202, 138, 4, 0.85)";
-  }
-  if (normalized.includes("taper")) {
-    return isDark ? "rgba(148, 163, 184, 0.82)" : "rgba(71, 85, 105, 0.82)";
-  }
-  if (normalized.includes("recovery")) {
-    return isDark ? "rgba(167, 139, 250, 0.82)" : "rgba(124, 58, 237, 0.82)";
-  }
-
-  return isDark ? "rgba(148, 163, 184, 0.72)" : "rgba(100, 116, 139, 0.72)";
-};
-
-type GoalPointPlacement = {
-  marker: {
-    id: string;
-    name: string;
-    target_date: string;
-    source: "projection";
-  };
-  pointIndex: number;
-  stackIndex: number;
-  stackSize: number;
-};
-
-type PhaseBandPlacement = {
-  key: string;
-  label: string;
-  left: number;
-  width: number;
-  color: string;
 };
 
 type PlotBounds = {
@@ -461,135 +153,6 @@ const ChartBoundsSync = React.memo(function ChartBoundsSync({
   return null;
 });
 
-const resolveGoalPointPlacements = (
-  points: ProjectionPoint[],
-  payload: ProjectionChartPayload,
-): GoalPointPlacement[] => {
-  if (points.length === 0) {
-    return [];
-  }
-
-  const mergedMarkers: Array<{
-    id: string;
-    name: string;
-    target_date: string;
-    source: "projection";
-  }> = payload.goal_markers.map((goal) => ({
-    ...goal,
-    source: "projection",
-  }));
-
-  const visibleStartDate = points[0]?.date;
-  const visibleEndDate = points[points.length - 1]?.date;
-  const visibleMarkers =
-    visibleStartDate && visibleEndDate
-      ? mergedMarkers.filter((goal) =>
-          isDateWithinRange(goal.target_date, visibleStartDate, visibleEndDate),
-        )
-      : mergedMarkers;
-
-  if (visibleMarkers.length === 0) {
-    return [];
-  }
-
-  const indexByPointDate = new Map<string, number>();
-  const pointTimes = points.map((point, index) => {
-    if (!indexByPointDate.has(point.date)) {
-      indexByPointDate.set(point.date, index);
-    }
-
-    const pointDate = toUtcDate(point.date);
-    return pointDate ? pointDate.getTime() : Number.NaN;
-  });
-
-  const indexedPlacements: Array<{
-    marker: GoalPointPlacement["marker"];
-    pointIndex: number;
-  }> = [];
-
-  for (const goal of visibleMarkers) {
-    const directIndex = indexByPointDate.get(goal.target_date);
-    if (directIndex !== undefined) {
-      indexedPlacements.push({ marker: goal, pointIndex: directIndex });
-      continue;
-    }
-
-    const goalDate = toUtcDate(goal.target_date);
-    if (!goalDate) {
-      continue;
-    }
-
-    let bestIndex = 0;
-    let bestDistance = Number.POSITIVE_INFINITY;
-    const goalTime = goalDate.getTime();
-
-    for (let index = 0; index < pointTimes.length; index++) {
-      const pointTime = pointTimes[index];
-      if (!Number.isFinite(pointTime)) {
-        continue;
-      }
-
-      const distance = Math.abs(pointTime - goalTime);
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        bestIndex = index;
-      }
-    }
-
-    indexedPlacements.push({ marker: goal, pointIndex: bestIndex });
-  }
-
-  const placementsByIndex = new Map<number, typeof indexedPlacements>();
-  for (const placement of indexedPlacements) {
-    const current = placementsByIndex.get(placement.pointIndex) ?? [];
-    current.push(placement);
-    placementsByIndex.set(placement.pointIndex, current);
-  }
-
-  const stackedPlacements: GoalPointPlacement[] = [];
-  const sortedIndexes = Array.from(placementsByIndex.keys()).sort((a, b) => a - b);
-
-  for (const pointIndex of sortedIndexes) {
-    const placementsAtIndex = placementsByIndex.get(pointIndex) ?? [];
-    const stackSize = placementsAtIndex.length;
-
-    placementsAtIndex.forEach((placement, stackIndex) => {
-      stackedPlacements.push({
-        marker: placement.marker,
-        pointIndex,
-        stackIndex,
-        stackSize,
-      });
-    });
-  }
-
-  return stackedPlacements;
-};
-
-const resolveNearestPointIndexByDate = (points: ProjectionPoint[], date: string): number | null => {
-  if (points.length === 0) return null;
-
-  const directIndex = points.findIndex((point) => point.date === date);
-  if (directIndex >= 0) return directIndex;
-
-  const target = toUtcDate(date);
-  if (!target) return null;
-
-  let bestIndex = 0;
-  let bestDistance = Number.POSITIVE_INFINITY;
-  for (let index = 0; index < points.length; index += 1) {
-    const pointDate = toUtcDate(points[index]!.date);
-    if (!pointDate) continue;
-    const distance = Math.abs(pointDate.getTime() - target.getTime());
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      bestIndex = index;
-    }
-  }
-
-  return bestIndex;
-};
-
 const buildDisplayedPoints = (input: {
   projectionChart?: ProjectionChartPayload;
 }): ProjectionPoint[] => {
@@ -616,8 +179,8 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
   compact = false,
   chartMaxHeight,
 }: CreationProjectionChartProps) {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === "dark";
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
   const { width } = useWindowDimensions();
   const [measuredChartContainerWidth, setMeasuredChartContainerWidth] = useState(0);
   const fallbackChartContainerWidth = width;
@@ -679,26 +242,10 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
       ),
     [goalPointPlacements, points.length],
   );
-  const phaseBoundaryMarkers = useMemo(() => {
-    if (!projectionChart) {
-      return [] as Array<{ index: number; label: string }>;
-    }
-
-    const deduped = new Map<number, string>();
-    for (const phase of projectionChart.periodization_phases.slice(1)) {
-      const index = resolveNearestPointIndexByDate(points, phase.start_date);
-      if (index === null || index <= 0 || index >= points.length - 1) {
-        continue;
-      }
-      if (!deduped.has(index)) {
-        deduped.set(index, phase.name);
-      }
-    }
-
-    return Array.from(deduped.entries())
-      .sort((left, right) => left[0] - right[0])
-      .map(([index, label]) => ({ index, label }));
-  }, [points, projectionChart]);
+  const phaseBoundaryMarkers = useMemo(
+    () => resolvePhaseBoundaryMarkers(points, projectionChart),
+    [points, projectionChart],
+  );
   const handlePlotBoundsChange = useCallback((nextBounds: PlotBounds) => {
     setPlotBounds((previous) => (areBoundsEqual(previous, nextBounds) ? previous : nextBounds));
   }, []);
@@ -728,69 +275,20 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
     },
     [plotBounds.left, plotBounds.right, points.length],
   );
-  const phaseBandPlacements = useMemo(() => {
-    if (!projectionChart || points.length === 0) {
-      return [] as PhaseBandPlacement[];
-    }
-
-    const visibleStart = points[0]?.date;
-    const visibleEnd = points[points.length - 1]?.date;
-    if (!visibleStart || !visibleEnd) {
-      return [] as PhaseBandPlacement[];
-    }
-
-    const rawBands = projectionChart.periodization_phases
-      .map((phase) => {
-        const clampedStart = phase.start_date < visibleStart ? visibleStart : phase.start_date;
-        const clampedEnd = phase.end_date > visibleEnd ? visibleEnd : phase.end_date;
-        if (clampedStart > clampedEnd) {
-          return null;
-        }
-
-        const startIndex = resolveNearestPointIndexByDate(points, clampedStart);
-        const endIndex = resolveNearestPointIndexByDate(points, clampedEnd);
-        if (startIndex === null || endIndex === null) {
-          return null;
-        }
-
-        const leftIndex = Math.min(startIndex, endIndex);
-        const rightIndex = Math.max(startIndex, endIndex);
-        const left = markerXForIndex(leftIndex);
-        const right = markerXForIndex(rightIndex);
-
-        return {
-          key: phase.id,
-          label: phase.name,
-          left,
-          width: Math.max(1, right - left),
-          color: getPhaseColor(phase.name, isDark),
-        };
-      })
-      .filter((phase): phase is PhaseBandPlacement => phase !== null);
-
-    const sortedBands = [...rawBands].sort((a, b) => a.left - b.left);
-
-    return sortedBands.map((band, index) => {
-      const nextBand = sortedBands[index + 1];
-      const connectedWidth = nextBand ? Math.max(1, nextBand.left - band.left) : band.width;
-
-      return {
-        ...band,
-        width: connectedWidth,
-      };
-    });
-  }, [isDark, markerXForIndex, points, projectionChart]);
-  const phaseLegendItems = useMemo(() => {
-    const deduped = new Map<string, { label: string; color: string }>();
-    for (const phase of phaseBandPlacements) {
-      const key = phase.label.trim().toLowerCase();
-      if (!deduped.has(key)) {
-        deduped.set(key, { label: phase.label, color: phase.color });
-      }
-    }
-
-    return Array.from(deduped.values());
-  }, [phaseBandPlacements]);
+  const phaseBandPlacements = useMemo(
+    () =>
+      resolvePhaseBandPlacements({
+        points,
+        projectionChart,
+        isDark,
+        markerXForIndex,
+      }),
+    [isDark, markerXForIndex, points, projectionChart],
+  );
+  const phaseLegendItems = useMemo(
+    () => resolvePhaseLegendItems(phaseBandPlacements),
+    [phaseBandPlacements],
+  );
   const goalDateLabelPlacements = useMemo(() => {
     if (goalPointPlacements.length === 0) {
       return [] as Array<{ key: string; left: number; dateLabel: string }>;
@@ -877,11 +375,6 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
         readinessScore: point.readiness_score,
       })),
     [points],
-  );
-
-  const visibleChartYKeys = useMemo(
-    () => lineConfig.filter((line) => lineVisibility[line.key]).map((line) => line.key),
-    [lineVisibility],
   );
 
   const leftAxisUnitLabel = "TSS/wk";
@@ -1113,7 +606,7 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
           </Text>
           <Text className="text-[11px] text-muted-foreground">
             Readiness: {readinessBand ?? "n/a"}
-            {unmetDemand !== undefined ? ` | Demand gap: ${Math.round(unmetDemand)} TSS` : ""}
+            {unmetDemand !== undefined ? ` | Demand gap: ~${Math.round(unmetDemand)} TSS` : ""}
           </Text>
           <Text className="text-[11px] text-muted-foreground">
             Demand floor enabled: {noHistoryFloorEnabledLabel}
@@ -1293,69 +786,13 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
             </View>
           </View>
 
-          <View className="gap-1">
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ alignItems: "center", gap: 6 }}
-            >
-              {lineConfig.map((line) => {
-                const isActive = lineVisibility[line.key];
-                const isOnlyVisibleLine = isActive && activeLineCount === 1;
-                return (
-                  <Pressable
-                    key={line.key}
-                    onPress={() => toggleLineVisibility(line.key)}
-                    disabled={isOnlyVisibleLine}
-                    accessibilityRole="button"
-                    accessibilityState={{
-                      selected: isActive,
-                      disabled: isOnlyVisibleLine,
-                    }}
-                    accessibilityLabel={`${line.label} line`}
-                    accessibilityHint={
-                      isOnlyVisibleLine
-                        ? "At least one chart line must remain visible"
-                        : `${isActive ? "Hide" : "Show"} this series`
-                    }
-                    hitSlop={8}
-                    className={`flex-row items-center gap-1 rounded-full border px-1.5 py-0.5 ${isActive ? "border-border bg-muted/40" : "border-border/70 bg-background/70"}`}
-                  >
-                    <View
-                      className="h-0.5 w-3 rounded-full"
-                      style={{
-                        backgroundColor: line.color,
-                        opacity: isActive ? 1 : 0.35,
-                      }}
-                    />
-                    <Text
-                      className={`text-[9px] ${isActive ? "text-foreground" : "text-muted-foreground"}`}
-                    >
-                      {line.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-            {phaseLegendItems.length > 0 ? (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ alignItems: "center", gap: 8 }}
-              >
-                <Text className="text-[9px] text-muted-foreground">Phase colors:</Text>
-                {phaseLegendItems.map((phase) => (
-                  <View key={`phase-legend-${phase.label}`} className="flex-row items-center gap-1">
-                    <View
-                      className="h-1 w-3 rounded-full"
-                      style={{ backgroundColor: phase.color }}
-                    />
-                    <Text className="text-[9px] text-muted-foreground">{phase.label}</Text>
-                  </View>
-                ))}
-              </ScrollView>
-            ) : null}
-          </View>
+          <ProjectionChartLegends
+            lineConfig={lineConfig}
+            lineVisibility={lineVisibility}
+            activeLineCount={activeLineCount}
+            phaseLegendItems={phaseLegendItems}
+            onToggleLineVisibility={toggleLineVisibility}
+          />
 
           {!compact && (
             <>

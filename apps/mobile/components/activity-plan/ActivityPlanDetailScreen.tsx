@@ -1,37 +1,49 @@
 import { invalidateActivityPlanQueries } from "@repo/api/react";
-import type { ActivityPayload } from "@repo/core";
-import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
-import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
-import { Textarea } from "@repo/ui/components/textarea";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
+import { MessageCircle } from "lucide-react-native";
+import React from "react";
 import {
-  Calendar,
-  CalendarCheck,
-  CalendarX,
-  Copy,
-  Edit,
-  Eye,
-  EyeOff,
-  Heart,
-  MessageCircle,
-  Send,
-  Smartphone,
-  Trash2,
-} from "lucide-react-native";
-import React, { useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native";
-import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
+  ActivityIndicator,
+  Alert,
+  InteractionManager,
+  Pressable,
+  ScrollView,
+  View,
+} from "react-native";
+import { ActivityPlanSummary } from "@/components/shared/ActivityPlanSummary";
+import {
+  DetailDeleteConfirmModal,
+  DetailOverflowMenu,
+  type DetailOverflowMenuAction,
+} from "@/components/shared/detail";
+import {
+  ResourceLikeButton,
+  ResourceOwnerActionRow,
+} from "@/components/shared/ResourceCardPrimitives";
+import { RouteCard } from "@/components/shared/RouteCard";
+import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
+import {
+  getActivityPlanRoute,
+  getAuthoritativeActivityPlanMetrics,
+} from "@/lib/activityPlanMetrics";
 import { api } from "@/lib/api";
+import { getActivityCategoryConfig, getActivityConfig } from "@/lib/constants/activities";
 import { ROUTES } from "@/lib/constants/routes";
+import { useRecordingLifecycle } from "@/lib/hooks/useActivityRecorder";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
+import { returnToRecordScreen } from "@/lib/navigation/recordingNavigation";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
-import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
+import { useOptionalSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
+import {
+  handleRecordingObjectAction,
+  type RecordingObjectActionCandidate,
+  resolveRecordingObjectAction,
+} from "@/lib/recording/recordingObjectActions";
 import { ActivityPlanContentPreview } from "./ActivityPlanContentPreview";
-import { ActivityPlanSummarySection } from "./ActivityPlanSummarySection";
 import { useActivityPlanDetailViewModel } from "./useActivityPlanDetailViewModel";
 import { useActivityPlanSchedulingActions } from "./useActivityPlanSchedulingActions";
 import { useActivityPlanSocialController } from "./useActivityPlanSocialController";
@@ -45,6 +57,30 @@ export interface ActivityPlanDetailRouteParams {
   activityPlan?: string;
 }
 
+type RouteSeedPlan = {
+  route_id?: string | null;
+};
+
+function parseRouteSeedPlan(template?: string, activityPlanParam?: string): RouteSeedPlan | null {
+  if (template) {
+    try {
+      return JSON.parse(template) as RouteSeedPlan;
+    } catch (error) {
+      console.error("Failed to parse template:", error);
+    }
+  }
+
+  if (activityPlanParam) {
+    try {
+      return JSON.parse(activityPlanParam) as RouteSeedPlan;
+    } catch (error) {
+      console.error("Failed to parse activityPlan:", error);
+    }
+  }
+
+  return null;
+}
+
 export function ActivityPlanDetailScreen({
   planId: planIdParam,
   fallbackId,
@@ -56,9 +92,12 @@ export function ActivityPlanDetailScreen({
   const planId = planIdParam ?? fallbackId;
   const queryClient = useQueryClient();
   const { profile } = useAuth();
-  const [isPublic, setIsPublic] = useState(false);
   const router = require("expo-router").useRouter();
   const navigateTo = useAppNavigate();
+  const recorderService = useOptionalSharedActivityRecorder();
+  const recordingLifecycle = useRecordingLifecycle(recorderService);
+  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false);
+  const [shouldLoadRouteGeometry, setShouldLoadRouteGeometry] = React.useState(false);
 
   const utils = api.useUtils();
   const { beginRedirect, isRedirecting, redirectOnNotFound } = useDeletedDetailRedirect({
@@ -80,8 +119,30 @@ export function ActivityPlanDetailScreen({
     redirectOnNotFound(plannedActivityError);
   }, [plannedActivityError, redirectOnNotFound]);
 
-  const routeId = fetchedPlan?.route_id || plannedActivity?.activity_plan?.route_id;
+  const routeSeedPlan = React.useMemo(
+    () => parseRouteSeedPlan(template, activityPlanParam),
+    [activityPlanParam, template],
+  );
+  const routeId =
+    fetchedPlan?.route_id ?? plannedActivity?.activity_plan?.route_id ?? routeSeedPlan?.route_id;
   const { data: route } = api.routes.get.useQuery({ id: routeId! }, { enabled: !!routeId });
+  const { data: routeFull, isFetching: isFetchingRouteFull } = api.routes.loadFull.useQuery(
+    { id: routeId! },
+    { enabled: !!routeId && shouldLoadRouteGeometry },
+  );
+
+  React.useEffect(() => {
+    setShouldLoadRouteGeometry(false);
+    if (!routeId) {
+      return;
+    }
+
+    const task = InteractionManager.runAfterInteractions(() => {
+      setShouldLoadRouteGeometry(true);
+    });
+
+    return () => task.cancel();
+  }, [routeId]);
 
   const formatDuration = (seconds: number) => {
     const minutes = Math.floor(seconds / 60);
@@ -97,7 +158,6 @@ export function ActivityPlanDetailScreen({
     activityPlanParam,
     fetchedPlan,
     formatDuration,
-    isPublic,
     isScheduled,
     plannedActivity,
     profile,
@@ -106,17 +166,40 @@ export function ActivityPlanDetailScreen({
   });
 
   const activityPlan = vm.activityPlan;
+  const authoritativeMetrics = getAuthoritativeActivityPlanMetrics(activityPlan);
+  const planRoute = getActivityPlanRoute(activityPlan);
+  const activityConfig = activityPlan?.activity_category?.includes("_")
+    ? getActivityConfig(activityPlan.activity_category)
+    : getActivityCategoryConfig(activityPlan?.activity_category ?? "other");
 
-  const handleRecordNow = () => {
-    if (!activityPlan) return;
-    const payload: ActivityPayload = {
+  const recordingCandidate = React.useMemo<RecordingObjectActionCandidate | null>(() => {
+    if (!activityPlan) return null;
+    return {
+      objectKind: "activity_plan",
+      objectId: activityPlan.id,
+      label: activityPlan.name,
       category: activityPlan.activity_category,
-      gpsRecordingEnabled: true,
       plan: activityPlan,
-      eventId: plannedActivity?.id,
+      planRouteId: activityPlan.route_id ?? null,
     };
-    activitySelectionStore.setSelection(payload);
-    navigateTo("/record");
+  }, [activityPlan]);
+
+  const recordingAction = recordingCandidate
+    ? resolveRecordingObjectAction({
+        candidate: recordingCandidate,
+        lifecycle: recordingLifecycle,
+        service: recorderService,
+      })
+    : null;
+
+  const handleRecordNow = async () => {
+    if (!recordingCandidate || !recordingAction) return;
+    await handleRecordingObjectAction({
+      candidate: recordingCandidate,
+      command: recordingAction.command,
+      navigateToRecord: () => returnToRecordScreen(router),
+      service: recorderService,
+    });
   };
   const scheduling = useActivityPlanSchedulingActions({
     action,
@@ -158,30 +241,6 @@ export function ActivityPlanDetailScreen({
     },
   });
 
-  const updatePrivacyMutation = api.activityPlans.update.useMutation({
-    onSuccess: async () => {
-      await invalidateActivityPlanQueries(utils, {
-        planId,
-        includeCount: false,
-        includeDetail: true,
-      });
-    },
-    onError: (error) => {
-      console.error("Privacy update error:", error);
-      Alert.alert("Error", error.message || "Failed to update privacy");
-      setIsPublic(!isPublic);
-    },
-  });
-
-  const handleTogglePrivacy = () => {
-    const newVisibility = isPublic ? "private" : "public";
-    setIsPublic(!isPublic);
-    updatePrivacyMutation.mutate({
-      id: planId || activityPlan.id,
-      template_visibility: newVisibility,
-    });
-  };
-
   const handleDelete = () => {
     if (!activityPlan) return;
     const actualPlanId = planId || activityPlan.id;
@@ -193,18 +252,18 @@ export function ActivityPlanDetailScreen({
       Alert.alert("Error", "You don't have permission to delete this activity plan");
       return;
     }
-    Alert.alert(
-      "Delete Activity Plan",
-      `Are you sure you want to delete "${activityPlan.name}"? This cannot be undone.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => deleteMutation.mutate({ id: actualPlanId }),
-        },
-      ],
-    );
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDelete = () => {
+    if (!activityPlan) return;
+    const actualPlanId = planId || activityPlan.id;
+    if (!actualPlanId) {
+      setShowDeleteConfirm(false);
+      Alert.alert("Error", "Cannot delete this activity plan - no ID found");
+      return;
+    }
+    deleteMutation.mutate({ id: actualPlanId });
   };
 
   const social = useActivityPlanSocialController({
@@ -212,10 +271,6 @@ export function ActivityPlanDetailScreen({
     initialLikesCount: activityPlan?.likes_count,
     planId: planId || activityPlan?.id,
   });
-
-  React.useEffect(() => {
-    if (activityPlan) setIsPublic(activityPlan.template_visibility === "public");
-  }, [activityPlan?.template_visibility]);
 
   if (loadingPlan || loadingPlannedActivity || isRedirecting) {
     return (
@@ -238,219 +293,234 @@ export function ActivityPlanDetailScreen({
   const tss = vm.tss;
   const intensityFactor = vm.intensityFactor;
   const isOwnedByUser = vm.isOwnedByUser;
+  const isEventContext = !!eventId;
   const primaryScheduleLabel = scheduling.primaryScheduleLabel;
-  const detailBadges = vm.detailBadges;
-  const steps = vm.steps;
+  const { Stack } = require("expo-router") as typeof import("expo-router");
+
+  const renderOptionsMenu = () => {
+    const actions: DetailOverflowMenuAction[] = [
+      {
+        disabled: recordingAction?.primaryAction === "disabled" || !recordingAction?.command,
+        label: recordingAction?.label ?? "Start Activity",
+        onPress: handleRecordNow,
+        testID: "activity-plan-options-start",
+      },
+    ];
+
+    if (!isEventContext) {
+      actions.push({
+        label: primaryScheduleLabel,
+        onPress: scheduling.isScheduled ? scheduling.handleReschedule : scheduling.handleSchedule,
+        testID: "activity-plan-options-schedule",
+      });
+    }
+
+    if (!isEventContext && scheduling.isScheduled && eventId) {
+      actions.push({
+        label: "Remove Schedule",
+        onPress: scheduling.handleRemoveSchedule,
+        testID: "activity-plan-options-remove-schedule",
+      });
+    }
+
+    actions.push({
+      disabled: scheduling.duplicatePending,
+      label: scheduling.duplicatePending ? "Duplicating..." : "Duplicate",
+      onPress: scheduling.handleDuplicate,
+      testID: "activity-plan-options-duplicate",
+    });
+
+    if (isOwnedByUser) {
+      actions.push(
+        {
+          label: "Edit Activity Plan",
+          onPress: handleEdit,
+          testID: "activity-plan-options-edit",
+        },
+        {
+          label: "Delete Activity Plan",
+          onPress: handleDelete,
+          testID: "activity-plan-options-delete",
+          variant: "destructive",
+        },
+      );
+    }
+
+    return <DetailOverflowMenu actions={actions} testID="activity-plan-options-trigger" />;
+  };
 
   return (
     <View className="flex-1 bg-background">
+      <Stack.Screen
+        options={{
+          headerRight: renderOptionsMenu,
+        }}
+      />
       <ScrollView className="flex-1">
-        <View className="p-4">
-          <ActivityPlanSummarySection
-            description={activityPlan.description}
-            detailBadges={detailBadges}
-            durationLabel={vm.durationLabel}
-            intensityFactor={intensityFactor}
-            name={activityPlan.name}
-            notes={activityPlan.notes}
-            scheduledDate={scheduling.isScheduled ? scheduling.scheduledDate : null}
-            stepsCount={steps.length}
-            tss={tss}
-          />
-          <View className="mb-6 gap-2.5">
-            <View className="flex-row gap-2">
-              <Button
-                onPress={handleRecordNow}
-                size="sm"
-                className="flex-1 flex-row items-center justify-center gap-1.5 rounded-2xl"
-                testID="activity-plan-record-now-button"
-              >
-                <Icon as={Smartphone} size={16} className="text-primary-foreground" />
-                <Text className="text-primary-foreground text-sm font-semibold">
-                  Start Activity
-                </Text>
-              </Button>
-              <Button
-                onPress={
-                  scheduling.isScheduled ? scheduling.handleReschedule : scheduling.handleSchedule
-                }
-                variant="outline"
-                size="sm"
-                className="flex-1 flex-row items-center justify-center gap-1.5 rounded-2xl"
-                disabled={!scheduling.isScheduled && scheduling.duplicatePending}
-                testID={
-                  scheduling.isScheduled
-                    ? "activity-plan-reschedule-button"
-                    : "activity-plan-schedule-button"
-                }
-              >
-                <Icon as={Calendar} size={16} className="text-foreground" />
-                <Text className="text-foreground text-sm">{primaryScheduleLabel}</Text>
-              </Button>
-            </View>
-            {scheduling.isScheduled && eventId && (
-              <View className="flex-row gap-2">
-                <Button
-                  onPress={scheduling.handleRemoveSchedule}
-                  variant="outline"
-                  size="sm"
-                  className="flex-1 flex-row items-center justify-center gap-1.5 rounded-2xl"
-                  disabled={scheduling.removeSchedulePending}
-                  testID="activity-plan-remove-schedule-button"
-                >
-                  <Icon as={CalendarX} size={16} className="text-destructive" />
-                  <Text className="text-destructive text-sm">
-                    {scheduling.removeSchedulePending ? "Removing..." : "Remove Schedule"}
-                  </Text>
-                </Button>
-              </View>
-            )}
-            <View className="flex-row gap-2">
-              <Pressable
-                onPress={social.handleToggleLike}
-                className="flex-1 flex-row items-center justify-center gap-1.5 rounded-2xl border border-border bg-card px-3 py-2.5"
-                testID="activity-plan-like-button"
-              >
-                <Icon
-                  as={Heart}
-                  size={16}
-                  className={social.isLiked ? "text-red-500 fill-red-500" : "text-muted-foreground"}
+        <View className="gap-6 p-4">
+          <View className="rounded-3xl border border-border bg-card p-4">
+            <ResourceOwnerActionRow
+              actions={
+                <ResourceLikeButton
+                  isLiked={social.isLiked}
+                  likeCount={social.likesCount}
+                  onPress={social.handleToggleLike}
+                  testID="activity-plan-like-button"
                 />
-                <Text
-                  className={
-                    social.isLiked
-                      ? "text-red-500 text-sm font-medium"
-                      : "text-muted-foreground text-sm"
+              }
+              categoryIcon={activityConfig.icon}
+              categoryIconClassName={activityConfig.color}
+              categoryLabel={activityConfig.name}
+              fallbackLabel="GradientPeak"
+              owner={
+                (
+                  activityPlan as {
+                    owner?: {
+                      id?: string | null;
+                      username?: string | null;
+                      avatar_url?: string | null;
+                    } | null;
                   }
-                >
-                  {social.likesCount > 0 ? social.likesCount : "Like"}
-                </Text>
-                {social.commentCount > 0 && (
-                  <>
-                    <Text className="text-muted-foreground text-sm">·</Text>
-                    <Icon as={MessageCircle} size={14} className="text-muted-foreground" />
-                    <Text className="text-muted-foreground text-sm">{social.commentCount}</Text>
-                  </>
-                )}
-              </Pressable>
-              <Button
-                onPress={scheduling.handleDuplicate}
-                variant="outline"
-                size="sm"
-                className="flex-1 flex-row items-center justify-center gap-1.5 rounded-2xl"
-                disabled={scheduling.duplicatePending}
-                testID="activity-plan-duplicate-button"
-              >
-                <Icon as={Copy} size={16} className="text-foreground" />
-                <Text className="text-foreground text-sm">
-                  {scheduling.duplicatePending ? "Duplicating..." : "Duplicate Activity"}
-                </Text>
-              </Button>
-            </View>
-            {isOwnedByUser && (
-              <View className="flex-row gap-2">
-                <View className="flex-1 flex-row items-center justify-between rounded-2xl border border-border bg-card px-3 py-2.5">
-                  <View className="flex-row items-center gap-2">
-                    <Icon
-                      as={isPublic ? Eye : EyeOff}
-                      size={16}
-                      className="text-muted-foreground"
-                    />
-                    <Text className="text-sm text-foreground">
-                      {isPublic ? "Public" : "Private"}
-                    </Text>
-                  </View>
-                  <Switch
-                    checked={isPublic}
-                    onCheckedChange={handleTogglePrivacy}
-                    disabled={updatePrivacyMutation.isPending}
-                  />
-                </View>
-                <Button
-                  onPress={handleEdit}
-                  variant="outline"
-                  size="sm"
-                  className="flex-1 flex-row items-center justify-center gap-1.5 rounded-2xl"
-                  testID="activity-plan-edit-button"
-                >
-                  <Icon as={Edit} size={16} className="text-foreground" />
-                  <Text className="text-foreground text-sm">Edit</Text>
-                </Button>
-                <Button
-                  onPress={handleDelete}
-                  variant="outline"
-                  size="sm"
-                  className="flex-1 flex-row items-center justify-center gap-1.5 rounded-2xl"
-                  disabled={deleteMutation.isPending}
-                  testID="activity-plan-delete-button"
-                >
-                  <Icon as={Trash2} size={16} className="text-destructive" />
-                  <Text className="text-destructive text-sm">
-                    {deleteMutation.isPending ? "Deleting..." : "Delete"}
-                  </Text>
-                </Button>
-              </View>
-            )}
-          </View>
-          <View className="mb-6">
-            <ActivityPlanContentPreview
-              plan={activityPlan}
-              route={route}
-              intensityFactor={intensityFactor}
-              testIDPrefix="activity-plan-content-preview"
+                ).owner ?? null
+              }
+              timestamp={
+                (
+                  activityPlan as {
+                    created_at?: string | Date | null;
+                    updated_at?: string | Date | null;
+                  }
+                ).created_at ??
+                (activityPlan as { updated_at?: string | Date | null }).updated_at ??
+                null
+              }
             />
-          </View>
-          <View className="bg-card border border-border rounded-xl p-4 mb-6 gap-4">
-            <View>
-              <Text className="font-semibold text-foreground mb-1">
-                Comments ({social.commentCount})
-              </Text>
-              <Text className="text-sm text-muted-foreground">
-                Ask questions or leave context for anyone reusing this activity.
-              </Text>
-            </View>
-            <View className="flex-row items-center gap-2">
-              <Textarea
-                className="min-h-11 flex-1"
-                placeholder="Add a comment..."
-                value={social.newComment}
-                onChangeText={social.setNewComment}
-              />
-              <Button
-                onPress={social.handleAddComment}
-                disabled={!social.newComment.trim() || social.addCommentPending}
-                size="icon"
-                testID="activity-plan-add-comment-button"
+
+            <ActivityPlanSummary
+              activityCategory={activityPlan.activity_category}
+              description={activityPlan.description}
+              estimatedDuration={authoritativeMetrics.estimated_duration ?? null}
+              estimatedTss={tss}
+              intensityFactor={intensityFactor}
+              routeName={route?.name}
+              routeProvided={!!routeId}
+              structure={activityPlan.structure}
+              title={activityPlan.name}
+              variant="standalone"
+              showAttribution={false}
+            />
+            {scheduling.isScheduled ? (
+              <Pressable
+                className="mt-4 rounded-2xl bg-primary/10 px-4 py-3"
+                disabled={isEventContext || !eventId}
+                onPress={() => {
+                  if (!eventId) return;
+                  navigateTo(ROUTES.PLAN.EVENT_DETAIL(eventId) as never);
+                }}
+                testID="activity-plan-open-scheduled-event"
               >
-                <Icon as={Send} size={18} className="text-primary-foreground" />
-              </Button>
-            </View>
-            {social.comments.length > 0 ? (
-              <View className="gap-3 border-t border-border pt-4">
-                {social.comments.map((comment: any) => (
-                  <View
-                    key={comment.id}
-                    className="rounded-lg border border-border/60 bg-background p-3"
-                  >
-                    <View className="flex-row items-center gap-2 mb-1">
-                      <Text className="font-medium text-sm text-foreground">
-                        {comment.profile?.username || "Unknown User"}
-                      </Text>
-                      <Text className="text-xs text-muted-foreground">
-                        {new Date(comment.created_at).toLocaleDateString()}
-                      </Text>
-                    </View>
-                    <Text className="text-sm text-foreground">{comment.content}</Text>
-                  </View>
-                ))}
+                <Text className="text-sm font-semibold text-primary">Scheduled activity</Text>
+                <Text className="mt-0.5 text-xs text-primary/80">
+                  {format(new Date(scheduling.scheduledDate), "EEEE, MMMM d, yyyy")}
+                </Text>
+              </Pressable>
+            ) : null}
+            {activityPlan.notes ? (
+              <View className="mt-4 rounded-2xl bg-muted/30 px-4 py-3">
+                <Text className="text-sm leading-5 text-muted-foreground">
+                  {activityPlan.notes}
+                </Text>
               </View>
-            ) : (
-              <Text className="text-sm text-muted-foreground">No comments yet.</Text>
-            )}
+            ) : null}
+            {social.commentCount > 0 ? (
+              <View className="mt-4 flex-row items-center gap-1.5">
+                <Icon as={MessageCircle} size={14} className="text-muted-foreground" />
+                <Text className="text-sm text-muted-foreground">
+                  {social.commentCount} comments
+                </Text>
+              </View>
+            ) : null}
           </View>
+          {route ? (
+            <RouteCard
+              route={route}
+              routeFull={routeFull}
+              onPress={
+                routeId
+                  ? () =>
+                      navigateTo({
+                        pathname: "/(internal)/(standard)/route-detail",
+                        params: { id: routeId },
+                      } as never)
+                  : undefined
+              }
+            />
+          ) : null}
+          {routeId && (!shouldLoadRouteGeometry || isFetchingRouteFull) ? (
+            <View className="items-center gap-3 rounded-2xl border border-border bg-muted/20 px-4 py-5">
+              <ActivityIndicator size="small" className="text-primary" />
+              <Text className="text-sm text-muted-foreground">Loading route preview...</Text>
+            </View>
+          ) : routeId && !route?.polyline && !routeFull?.coordinates?.length ? (
+            <View className="items-center gap-2 rounded-2xl border border-border bg-muted/20 px-4 py-5">
+              <Text className="text-sm font-medium text-foreground">No route preview</Text>
+              <Text className="text-center text-sm text-muted-foreground">
+                This attached route does not include map geometry to preview.
+              </Text>
+            </View>
+          ) : null}
+          <ActivityPlanContentPreview
+            size="large"
+            plan={activityPlan}
+            route={
+              route
+                ? route
+                : planRoute
+                  ? {
+                      total_ascent: planRoute.ascent ?? null,
+                      total_descent: planRoute.descent ?? null,
+                      total_distance: planRoute.distance ?? null,
+                    }
+                  : null
+            }
+            routeFull={routeFull}
+            showRoutePreview={false}
+            onRoutePress={
+              routeId
+                ? () =>
+                    navigateTo({
+                      pathname: "/(internal)/(standard)/route-detail",
+                      params: { id: routeId },
+                    } as never)
+                : null
+            }
+            intensityFactor={intensityFactor}
+            tss={tss}
+            testIDPrefix="activity-plan-content-preview"
+          />
+          <EntityCommentsSection
+            addCommentPending={social.addCommentPending}
+            commentCount={social.commentCount}
+            comments={social.comments}
+            hasMoreComments={social.hasMoreComments}
+            isLoadingMoreComments={social.isLoadingMoreComments}
+            newComment={social.newComment}
+            onAddComment={social.handleAddComment}
+            onChangeNewComment={social.setNewComment}
+            onLoadMoreComments={social.loadMoreComments}
+            testIDPrefix="activity-plan"
+          />
         </View>
       </ScrollView>
-      {activityPlan && <ScheduleActivityModal {...scheduling.scheduleModalProps} />}
+      {showDeleteConfirm ? (
+        <DetailDeleteConfirmModal
+          entityLabel="Activity Plan"
+          entityName={activityPlan.name}
+          onClose={() => setShowDeleteConfirm(false)}
+          onConfirm={handleConfirmDelete}
+          pending={deleteMutation.isPending}
+          testIDPrefix="activity-plan"
+        />
+      ) : null}
     </View>
   );
 }

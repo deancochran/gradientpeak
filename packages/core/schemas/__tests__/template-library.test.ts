@@ -30,4 +30,14 @@ describe("template library schemas", () => {
 
     expect(parsed.success).toBe(false);
   });
+
+  it("requires a target date when applying only the remaining schedule", () => {
+    const parsed = templateApplyInputSchema.safeParse({
+      template_type: "training_plan",
+      template_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      application_mode: "remaining",
+    });
+
+    expect(parsed.success).toBe(false);
+  });
 });

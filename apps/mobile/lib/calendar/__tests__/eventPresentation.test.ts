@@ -18,15 +18,18 @@ describe("calendar event presentation", () => {
       event_type: "planned",
       starts_at: "2026-03-23T06:30:00.000Z",
       activity_plan: {
+        id: "plan-1",
         activity_category: "outdoor_run",
-        estimated_duration: 3600,
-        estimated_tss: 72,
+        authoritative_metrics: {
+          estimated_duration: 3600,
+          estimated_tss: 72,
+        },
         description: "Progressive tempo with a strong finish.",
       },
     };
 
     expect(getEventTimeLabel(event)).not.toBe("Scheduled");
-    expect(getEventPrimaryMeta(event)).toEqual(["Outdoor Run", "1h"]);
+    expect(getEventPrimaryMeta(event)).toEqual(["Outdoor Run", "~1h"]);
     expect(getEventSupportingLine(event)).toBe("Progressive tempo with a strong finish.");
     expect(getEventStatusLabel(event)).toBeNull();
   });
@@ -38,12 +41,15 @@ describe("calendar event presentation", () => {
       completed: true,
       recurrence_rule: "RRULE:FREQ=WEEKLY",
       activity_plan: {
+        id: "plan-2",
         activity_category: "indoor_bike",
-        estimated_tss: 88,
+        authoritative_metrics: {
+          estimated_tss: 88,
+        },
       },
     };
 
-    expect(getEventPrimaryMeta(event)).toEqual(["Indoor Bike", "88 TSS"]);
+    expect(getEventPrimaryMeta(event)).toEqual(["Indoor Bike", "~88 TSS"]);
     expect(getEventStatusLabel(event)).toBe("Completed");
   });
 
@@ -59,6 +65,37 @@ describe("calendar event presentation", () => {
     expect(getEventTimeLabel(event)).toBe("All day");
     expect(getEventPrimaryMeta(event)).toEqual([]);
     expect(getEventSupportingLine(event)).toBe("Bring passport and race packet.");
+  });
+
+  it("does not present planned-event metadata when no activity plan is associated", () => {
+    const event = {
+      id: "planned-without-plan",
+      event_type: "planned",
+      title: "Club meetup",
+      completed: true,
+      notes: "Bring lights.",
+      activity_plan: null,
+    };
+
+    expect(getEventPrimaryMeta(event)).toEqual([]);
+    expect(getEventSupportingLine(event)).toBe("Bring lights.");
+    expect(getEventStatusLabel(event)).toBeNull();
+  });
+
+  it("does not treat plan-shaped rows without an id as associated activity plans", () => {
+    const event = {
+      id: "planned-empty-plan",
+      event_type: "planned",
+      title: "Activity Plan - May 19, 2026 10:53 AM",
+      completed: true,
+      activity_plan: {
+        activity_category: "run",
+        authoritative_metrics: { estimated_tss: 55 },
+      },
+    };
+
+    expect(getEventPrimaryMeta(event)).toEqual([]);
+    expect(getEventStatusLabel(event)).toBeNull();
   });
 
   it("marks imported events as read-only without extra secondary badges", () => {

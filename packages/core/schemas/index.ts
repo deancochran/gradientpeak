@@ -1,7 +1,14 @@
 import { z } from "zod";
-import type { ActivityPlanStructureV2 } from "./activity_plan_v2";
+import {
+  type ActivityPlanStructureV2,
+  saveableActivityPlanStructureSchemaV2,
+} from "./activity_plan_v2";
+import {
+  type ActivityTargetCategory,
+  addActivityTargetCompatibilityIssuesToZodContext,
+} from "./activity_target_capabilities";
 import { profileGoalLegacySchema, profileGoalTargetSchema } from "./goals/profile_goals";
-import { canonicalSportSchema } from "./sport";
+import type { canonicalSportSchema } from "./sport";
 import {
   minimalTrainingPlanCreateSchema,
   trainingPlanCreateSchema,
@@ -9,6 +16,8 @@ import {
 
 // Export from activity_payload (includes ActivityType)
 export * from "./activity_payload";
+export * from "./activity_streams";
+export * from "./activity_target_capabilities";
 
 // ============================================================================
 // ACTIVITY PLAN V2 SCHEMA (RECOMMENDED - Current Standard)
@@ -29,11 +38,13 @@ export {
   durationSchemaV2,
   formatIntensityTarget,
   formatStepTargets,
+  getSaveableActivityPlanStructureIssues,
   getStepIntensityColor,
   intensityTargetSchemaV2,
   intervalSchemaV2,
   intervalStepSchemaV2,
   planStepSchemaV2,
+  saveableActivityPlanStructureSchemaV2,
   validateActivityPlanStructureV2,
 } from "./activity_plan_v2";
 
@@ -112,21 +123,40 @@ export const activityPlanCreateSchema = z
     activity_category: z.enum(["run", "bike", "swim", "strength", "other"]),
     name: z.string().min(1, "Plan name is required"),
     description: z.string().max(1000).nullable().optional(),
-    structure: z.any(), // Will be validated by activityPlanStructureSchema
+    structure: saveableActivityPlanStructureSchemaV2,
     version: z.string().default("1.0").optional(),
     route_id: z.string().uuid().nullable().optional(),
     notes: z.string().max(2000).nullable().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((plan, ctx) => {
+    addActivityTargetCompatibilityIssuesToZodContext({
+      activityCategory: plan.activity_category as ActivityTargetCategory,
+      ctx,
+      pathPrefix: ["structure"],
+      structure: plan.structure,
+    });
+  });
 
-export const activityPlanUpdateSchema = activityPlanCreateSchema.partial();
+export const activityPlanUpdateSchema = activityPlanCreateSchema
+  .partial()
+  .superRefine((plan, ctx) => {
+    if (plan.structure && plan.activity_category) {
+      addActivityTargetCompatibilityIssuesToZodContext({
+        activityCategory: plan.activity_category as ActivityTargetCategory,
+        ctx,
+        pathPrefix: ["structure"],
+        structure: plan.structure,
+      });
+    }
+  });
 
 // Note: plannedActivityCreateSchema and plannedActivityUpdateSchema are now exported from ./planned_activity
 
 // Type for ActivityRecorder service (V2 only)
 export interface RecordingServiceActivityPlan {
   activity_category: z.infer<typeof canonicalSportSchema>;
-  description: string;
+  description?: string | null;
   gps_recording_enabled?: boolean;
   id?: string;
   import_external_id?: string | null;

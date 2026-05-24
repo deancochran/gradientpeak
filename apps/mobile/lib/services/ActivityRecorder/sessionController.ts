@@ -16,6 +16,7 @@ const DEFAULT_OVERRIDE_STATE: RecordingSessionOverrideState = {
   trainerMode: "auto",
   intensityScale: 1,
   preferredSources: {},
+  disabledSources: {},
 };
 
 const DEFAULT_RUNTIME_SOURCE_STATE: RecordingRuntimeSourceState = {
@@ -86,6 +87,7 @@ export class RecordingSessionController {
       trainerMode: "auto",
       intensityScale: 1,
       preferredSources: {},
+      disabledSources: {},
     };
     this.runtimeSourceState = {
       selectedSources: [],
@@ -131,6 +133,12 @@ export class RecordingSessionController {
       trainerMode: this.overrideState.trainerMode,
       intensityScale: this.overrideState.intensityScale,
       preferredSources: { ...this.overrideState.preferredSources },
+      disabledSources: Object.fromEntries(
+        Object.entries(this.overrideState.disabledSources).map(([metricFamily, sourceIds]) => [
+          metricFamily,
+          [...(sourceIds ?? [])],
+        ]),
+      ),
     };
   }
 

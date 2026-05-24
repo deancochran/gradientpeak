@@ -1,4 +1,4 @@
-import { getProfileQuickUpdateDefaults, normalizeProfileSettingsView } from "@repo/core/profile";
+import { zodResolver } from "@hookform/resolvers/zod";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,34 +21,58 @@ import {
   CardTitle,
 } from "@repo/ui/components/card";
 import { FileInput } from "@repo/ui/components/file-input";
-import { Input } from "@repo/ui/components/input";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+  FormTextareaField,
+  FormTextField,
+} from "@repo/ui/components/form";
 import { Label } from "@repo/ui/components/label";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { Switch } from "@repo/ui/components/switch";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { Calendar, Camera, Loader2, Mail, Trash2, UserRound } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
-
+import { useEffect, useRef, useState } from "react";
+import { type UseFormReturn, useForm } from "react-hook-form";
 import { useAuth } from "../../components/providers/auth-provider";
+import { RouteFlashToast, type RouteFlashType } from "../../components/route-flash-toast";
 import { api } from "../../lib/api/client";
-import { authClient } from "../../lib/auth/client";
+import { signOutAction } from "../../lib/auth/server-actions";
+import {
+  type SettingsProfileFormInput,
+  type SettingsProfileFormValues,
+  settingsProfileFormSchema,
+} from "../../lib/profile/form-schemas";
+import {
+  updateSettingsProfileAction,
+  uploadProfileAvatarAction,
+} from "../../lib/profile/server-actions";
 
-const allowedAvatarMimeTypes = [
-  "image/jpeg",
-  "image/jpg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-] as const;
-type AllowedAvatarMimeType = (typeof allowedAvatarMimeTypes)[number];
+type AvatarFile = { file?: File; name: string };
+
+function isAbsoluteUrl(value: string) {
+  return /^https?:\/\//i.test(value);
+}
 
 export const Route = createFileRoute("/_protected/settings")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    flash: typeof search.flash === "string" ? search.flash : undefined,
+    flashType:
+      search.flashType === "success" || search.flashType === "error" || search.flashType === "info"
+        ? (search.flashType as RouteFlashType)
+        : undefined,
+  }),
   component: SettingsPage,
 });
 
 function SettingsPage() {
-  const navigate = useNavigate();
-  const { user, isLoading: authLoading, refreshSession } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
+  const navigate = Route.useNavigate();
+  const { flash, flashType } = Route.useSearch();
   const {
     data: profile,
     isLoading: profileLoading,
@@ -57,105 +81,60 @@ function SettingsPage() {
     enabled: Boolean(user),
   });
 
-  const updateProfileMutation = api.profiles.update.useMutation({
-    onSuccess: async () => {
-      await refetchProfile();
-      toast.success("Profile updated successfully");
-    },
-    onError: (error) => {
-      console.error("Error updating profile:", error);
-      toast.error("Failed to update profile");
+  const [avatarBlobUrl, setAvatarBlobUrl] = useState<string | null>(null);
+  const [avatarFiles, setAvatarFiles] = useState<Array<{ file?: File; name: string }>>([]);
+  const [uploadingAvatar, _setUploadingAvatar] = useState(false);
+  const profileSubmitValidatedRef = useRef(false);
+  const loading = authLoading || profileLoading;
+  const avatarFilePath =
+    profile?.avatar_url && !isAbsoluteUrl(profile.avatar_url) ? profile.avatar_url : null;
+
+  const form = useForm<SettingsProfileFormInput, undefined, SettingsProfileFormValues>({
+    resolver: zodResolver(settingsProfileFormSchema),
+    defaultValues: {
+      bio: "",
+      is_public: false,
+      language: "",
+      preferred_units: "metric",
+      username: "",
     },
   });
 
-  const createSignedUploadUrlMutation = api.storage.createSignedUploadUrl.useMutation();
-  const [avatarBlobUrl, setAvatarBlobUrl] = useState<string | null>(null);
-  const [signingOut, setSigningOut] = useState(false);
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const [username, setUsername] = useState("");
-  const [isPublic, setIsPublic] = useState(false);
-  const [isProfileDirty, setIsProfileDirty] = useState(false);
-  const loading = authLoading || profileLoading;
-
-  const normalizedProfile = useMemo(() => normalizeProfileSettingsView(profile), [profile]);
-
   useEffect(() => {
-    if (!normalizedProfile || isProfileDirty) return;
-    const defaults = getProfileQuickUpdateDefaults(normalizedProfile);
-    setUsername(typeof defaults.username === "string" ? defaults.username : "");
-    setIsPublic(defaults.is_public ?? false);
-  }, [isProfileDirty, normalizedProfile]);
+    if (!profile || form.formState.isDirty) return;
+
+    form.reset({
+      bio: profile.bio ?? "",
+      is_public: profile.is_public ?? false,
+      language: profile.language ?? "",
+      preferred_units: profile.preferred_units ?? "metric",
+      username: profile.username ?? "",
+    });
+  }, [form, form.formState.isDirty, profile]);
 
   const { data: avatarUrlData } = api.storage.getSignedUrl.useQuery(
-    { filePath: profile?.avatar_url || "" },
-    { enabled: Boolean(profile?.avatar_url), refetchOnWindowFocus: false },
+    { filePath: avatarFilePath || "" },
+    { enabled: Boolean(avatarFilePath), refetchOnWindowFocus: false },
   );
 
   useEffect(() => {
-    setAvatarBlobUrl(avatarUrlData?.signedUrl ?? null);
-  }, [avatarUrlData?.signedUrl]);
+    setAvatarBlobUrl(
+      avatarFilePath ? (avatarUrlData?.signedUrl ?? null) : (profile?.avatar_url ?? null),
+    );
+  }, [avatarFilePath, avatarUrlData?.signedUrl, profile?.avatar_url]);
 
   const handleProfileSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    await updateProfileMutation.mutateAsync({ username, is_public: isPublic });
-    setIsProfileDirty(false);
-  };
-
-  const handleAvatarUpload = async (files: Array<{ file?: File }>) => {
-    const file = files[0]?.file;
-    if (!file || !user) return;
-
-    try {
-      setUploadingAvatar(true);
-      if (!allowedAvatarMimeTypes.includes(file.type as AllowedAvatarMimeType)) {
-        toast.error("Please select an image file");
-        return;
-      }
-      const fileType = file.type as AllowedAvatarMimeType;
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error("File size must be less than 5MB");
-        return;
-      }
-
-      const { signedUrl, path: filePath } = await createSignedUploadUrlMutation.mutateAsync({
-        fileName: file.name,
-        fileType,
-      });
-
-      const uploadResponse = await fetch(signedUrl, {
-        method: "PUT",
-        body: file,
-        headers: { "Content-Type": fileType },
-      });
-
-      if (!uploadResponse.ok) throw new Error("Upload failed");
-
-      await updateProfileMutation.mutateAsync({
-        username: profile?.username || "",
-        avatar_url: filePath,
-      });
-      toast.success("Avatar updated successfully");
-    } catch (error) {
-      console.error("Error:", error);
-      toast.error("Failed to upload avatar");
-    } finally {
-      setUploadingAvatar(false);
+    if (profileSubmitValidatedRef.current) {
+      profileSubmitValidatedRef.current = false;
+      return;
     }
-  };
 
-  const handleSignOut = async () => {
-    setSigningOut(true);
-    try {
-      const result = await authClient.signOut();
-      if (result.error) throw result.error;
-      await refreshSession();
-      toast.success("Signed out successfully");
-      await navigate({ to: "/auth/login" });
-    } catch (error) {
-      console.error("Error signing out:", error);
-      toast.error("Failed to sign out");
-    } finally {
-      setSigningOut(false);
+    event.preventDefault();
+    const valid = await form.trigger();
+
+    if (valid) {
+      profileSubmitValidatedRef.current = true;
+      event.currentTarget.requestSubmit();
     }
   };
 
@@ -179,165 +158,292 @@ function SettingsPage() {
     <div className="container mx-auto max-w-4xl py-4">
       <div className="space-y-8">
         <div>
+          <RouteFlashToast
+            message={flash}
+            type={flashType}
+            clear={() =>
+              void navigate({
+                to: "/settings",
+                search: { flash: undefined, flashType: undefined },
+                replace: true,
+              })
+            }
+          />
           <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
           <p className="text-muted-foreground">Manage your account settings and preferences.</p>
         </div>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <UserRound className="h-5 w-5" />
-              Profile Information
-            </CardTitle>
-            <CardDescription>Update your profile information and avatar.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="flex items-center gap-6">
-              <div className="group relative">
-                <Avatar className="h-20 w-20 cursor-pointer transition-all duration-200 group-hover:opacity-70">
-                  <AvatarImage src={avatarBlobUrl || ""} alt="User" />
-                  <AvatarFallback className="text-lg">
-                    <UserRound className="h-8 w-8" />
-                  </AvatarFallback>
-                </Avatar>
-                <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-                  {uploadingAvatar ? (
-                    <Loader2 className="h-6 w-6 animate-spin text-white" />
-                  ) : (
-                    <Camera className="h-6 w-6 text-white" />
-                  )}
-                </div>
-                <div className="absolute inset-0 opacity-0">
-                  <FileInput
-                    accept="image/*"
-                    buttonLabel="Upload avatar"
-                    label="Avatar upload"
-                    onFilesChange={handleAvatarUpload}
-                  />
-                </div>
-              </div>
-              <div>
-                <h3 className="font-medium">{profile?.username || "No name set"}</h3>
-                <p className="text-sm text-muted-foreground">{user?.email}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Click avatar to change picture (max 5MB)
-                </p>
-              </div>
-            </div>
-            <form onSubmit={handleProfileSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="settings-username">Username</Label>
-                <Input
-                  id="settings-username"
-                  value={username}
-                  placeholder="Enter your username"
-                  onChange={(event) => {
-                    setUsername(event.currentTarget.value);
-                    setIsProfileDirty(true);
-                  }}
-                />
-                <p className="text-sm text-muted-foreground">
-                  This is the username that will be displayed on your profile.
-                </p>
-              </div>
-              <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
-                <div className="space-y-1">
-                  <Label htmlFor="settings-public-account">Public Account</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Make your profile and activities visible to everyone.
-                  </p>
-                </div>
-                <Switch
-                  id="settings-public-account"
-                  checked={isPublic}
-                  onCheckedChange={(checked) => {
-                    setIsPublic(checked);
-                    setIsProfileDirty(true);
-                  }}
-                />
-              </div>
-              <Button type="submit" disabled={updateProfileMutation.isPending || !isProfileDirty}>
-                {updateProfileMutation.isPending ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : null}
-                Update Profile
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Mail className="h-5 w-5" />
-              Account Information
-            </CardTitle>
-            <CardDescription>View your account details and status.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div>
-                <Label className="text-sm font-medium">Email</Label>
-                <p className="text-sm text-muted-foreground">{user?.email}</p>
-              </div>
-              <div>
-                <Label className="text-sm font-medium">Email Verified</Label>
-                <div className="mt-1 flex items-center gap-2">
-                  <Badge variant={user?.emailVerified ? "default" : "secondary"}>
-                    {user?.emailVerified ? "Verified" : "Unverified"}
-                  </Badge>
-                </div>
-              </div>
-              <div>
-                <Label className="text-sm font-medium">Account Created</Label>
-                <p className="flex items-center gap-1 text-sm text-muted-foreground">
-                  <Calendar className="h-4 w-4" />
-                  {createdAt}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-destructive">
-          <CardHeader>
-            <CardTitle className="text-destructive">Danger Zone</CardTitle>
-            <CardDescription>Irreversible and destructive actions.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-col gap-4 sm:flex-row">
-              <Button
-                variant="outline"
-                onClick={handleSignOut}
-                disabled={signingOut}
-                className="flex-1"
-              >
-                {signingOut ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}Sign Out
-              </Button>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="destructive" className="flex-1">
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Delete Account
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Account deletion is temporarily unavailable</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      We are finishing our authentication migration. If you need your account
-                      removed right now, please contact support and we will handle it manually.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction disabled className="bg-destructive">
-                      Delete Account Unavailable
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </div>
-          </CardContent>
-        </Card>
+        <ProfileInformationCard
+          avatarBlobUrl={avatarBlobUrl}
+          avatarFiles={avatarFiles}
+          form={form}
+          profileUsername={profile?.username}
+          uploadingAvatar={uploadingAvatar}
+          userEmail={user?.email}
+          onAvatarFilesChange={setAvatarFiles}
+          onProfileSubmit={handleProfileSubmit}
+        />
+        <AccountInformationCard
+          createdAt={createdAt}
+          email={user?.email}
+          emailVerified={user?.emailVerified}
+        />
+        <DangerZoneCard />
       </div>
     </div>
+  );
+}
+
+function ProfileInformationCard({
+  avatarBlobUrl,
+  avatarFiles,
+  form,
+  profileUsername,
+  uploadingAvatar,
+  userEmail,
+  onAvatarFilesChange,
+  onProfileSubmit,
+}: {
+  avatarBlobUrl: string | null;
+  avatarFiles: AvatarFile[];
+  form: UseFormReturn<SettingsProfileFormInput, undefined, SettingsProfileFormValues>;
+  profileUsername?: string | null;
+  uploadingAvatar: boolean;
+  userEmail?: string | null;
+  onAvatarFilesChange: (files: AvatarFile[]) => void;
+  onProfileSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <UserRound className="h-5 w-5" />
+          Profile Information
+        </CardTitle>
+        <CardDescription>Update your profile information and avatar.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="flex items-center gap-6">
+          <div className="group relative">
+            <Avatar className="h-20 w-20 transition-all duration-200 group-hover:opacity-90">
+              <AvatarImage src={avatarBlobUrl || ""} alt="User" />
+              <AvatarFallback className="text-lg">
+                <UserRound className="h-8 w-8" />
+              </AvatarFallback>
+            </Avatar>
+            <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/50 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+              {uploadingAvatar ? (
+                <Loader2 className="h-6 w-6 animate-spin text-white" />
+              ) : (
+                <Camera className="h-6 w-6 text-white" />
+              )}
+            </div>
+          </div>
+          <div>
+            <h3 className="font-medium">{profileUsername || "No name set"}</h3>
+            <p className="text-sm text-muted-foreground">{userEmail}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Use the upload field below to change your picture (max 5MB)
+            </p>
+          </div>
+        </div>
+        <form
+          action={uploadProfileAvatarAction.url}
+          method="post"
+          encType="multipart/form-data"
+          className="space-y-3"
+        >
+          <FileInput
+            accept="image/*"
+            buttonLabel="Upload avatar"
+            label="Avatar upload"
+            name="avatar"
+            files={avatarFiles}
+            onFilesChange={onAvatarFilesChange}
+          />
+          <Button
+            type="submit"
+            variant="outline"
+            disabled={uploadingAvatar || avatarFiles.length === 0}
+          >
+            {uploadingAvatar ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Upload Avatar
+          </Button>
+        </form>
+        <Form {...form}>
+          <form
+            action={updateSettingsProfileAction.url}
+            method="post"
+            onSubmit={(event) => {
+              void onProfileSubmit(event);
+            }}
+            className="space-y-4"
+          >
+            <FormTextField
+              control={form.control}
+              description="This is the username that will be displayed on your profile."
+              label="Username"
+              name="username"
+              placeholder="Enter your username"
+            />
+            <FormTextareaField
+              control={form.control}
+              description="Shown anywhere your public profile is visible."
+              label="Bio"
+              name="bio"
+              placeholder="Add a short profile bio"
+            />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="preferred_units"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Preferred units</FormLabel>
+                    <FormControl>
+                      <select
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        name={field.name}
+                        value={field.value ?? "metric"}
+                        onBlur={field.onBlur}
+                        onChange={field.onChange}
+                      >
+                        <option value="metric">Metric</option>
+                        <option value="imperial">Imperial</option>
+                      </select>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormTextField
+                control={form.control}
+                label="Language"
+                name="language"
+                placeholder="en"
+              />
+            </div>
+            <FormField
+              control={form.control}
+              name="is_public"
+              render={({ field }) => (
+                <FormItem className="flex items-start justify-between gap-4 rounded-lg border p-4">
+                  <div className="space-y-1">
+                    <FormLabel>Public Account</FormLabel>
+                    <p className="text-sm text-muted-foreground">
+                      Make your profile and activities visible to everyone.
+                    </p>
+                  </div>
+                  <FormControl>
+                    <input
+                      type="hidden"
+                      name="is_public"
+                      value={field.value === true || field.value === "true" ? "true" : "false"}
+                    />
+                    <Switch
+                      checked={field.value === true || field.value === "true"}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+            <LoadingButton
+              type="submit"
+              disabled={form.formState.isSubmitting || !form.formState.isDirty}
+              loading={form.formState.isSubmitting}
+              loadingLabel="Updating..."
+            >
+              Update Profile
+            </LoadingButton>
+          </form>
+        </Form>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AccountInformationCard({
+  createdAt,
+  email,
+  emailVerified,
+}: {
+  createdAt: string;
+  email?: string | null;
+  emailVerified?: boolean | null;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Mail className="h-5 w-5" />
+          Account Information
+        </CardTitle>
+        <CardDescription>View your account details and manage your session.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div>
+            <Label className="text-sm font-medium">Email</Label>
+            <p className="text-sm text-muted-foreground">{email}</p>
+          </div>
+          <div>
+            <Label className="text-sm font-medium">Email Verified</Label>
+            <div className="mt-1 flex items-center gap-2">
+              <Badge variant={emailVerified ? "default" : "secondary"}>
+                {emailVerified ? "Verified" : "Unverified"}
+              </Badge>
+            </div>
+          </div>
+          <div>
+            <Label className="text-sm font-medium">Account Created</Label>
+            <p className="flex items-center gap-1 text-sm text-muted-foreground">
+              <Calendar className="h-4 w-4" />
+              {createdAt}
+            </p>
+          </div>
+        </div>
+        <form action={signOutAction.url} method="post">
+          <Button variant="outline" type="submit">
+            Sign Out
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DangerZoneCard() {
+  return (
+    <Card className="border-destructive">
+      <CardHeader>
+        <CardTitle className="text-destructive">Danger Zone</CardTitle>
+        <CardDescription>Irreversible and destructive actions.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button variant="destructive">
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete Account
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Account deletion is temporarily unavailable</AlertDialogTitle>
+              <AlertDialogDescription>
+                We are finishing our authentication migration. If you need your account removed
+                right now, please contact support and we will handle it manually.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction disabled className="bg-destructive">
+                Delete Account Unavailable
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </CardContent>
+    </Card>
   );
 }

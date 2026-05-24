@@ -2,15 +2,16 @@ import { randomUUID } from "node:crypto";
 import {
   canonicalGoalActivityCategorySchema,
   canonicalGoalObjectiveSchema,
-  profileGoalCreateSchema,
+  type profileGoalCreateSchema,
   profileGoalRecordSchema,
 } from "@repo/core";
 import { profileGoals } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { desc, eq } from "drizzle-orm";
+import { and, asc, count, desc, eq, ilike } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { buildIndexPageInfo, indexCursorSchema, parseIndexCursor } from "../utils/index-cursor";
 import { assertProfileAccess } from "./account/profile-access";
 
 function toSafeDbErrorMessage(error: unknown): string {
@@ -32,20 +33,41 @@ function toSafeDbErrorMessage(error: unknown): string {
   return `${code}${message}`;
 }
 
+function rethrowTrpcError(error: unknown): never | undefined {
+  if (error instanceof TRPCError) {
+    throw error;
+  }
+}
+
 const goalIdSchema = z.string().uuid();
+const goalDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 const goalsListInputSchema = z
   .object({
     profile_id: z.string().uuid(),
-    limit: z.number().int().min(1).max(100).default(20),
-    offset: z.number().int().min(0).default(0),
+    search: z.string().trim().max(80).optional(),
+    activity_category: canonicalGoalActivityCategorySchema.optional(),
+    sort_by: z.enum(["created_at", "target_date", "priority"]).default("created_at"),
+    sort_order: z.enum(["asc", "desc"]).default("desc"),
+    limit: z.number().int().min(1).max(50).default(25),
+    cursor: indexCursorSchema.optional(),
+    direction: z.enum(["forward", "backward"]).optional(),
   })
   .strict();
 
-const profileGoalWriteSchema = profileGoalCreateSchema;
+const profileGoalWriteSchema = z
+  .object({
+    profile_id: z.string().uuid(),
+    target_date: goalDateSchema,
+    title: z.string().trim().min(1).max(100),
+    priority: z.number().int().min(0).max(10),
+    activity_category: canonicalGoalActivityCategorySchema,
+    target_payload: canonicalGoalObjectiveSchema,
+  })
+  .strict();
 const profileGoalUpdateDataSchema = z
   .object({
-    milestone_event_id: z.string().uuid(),
+    target_date: goalDateSchema,
     title: z.string().trim().min(1).max(100),
     priority: z.number().int().min(0).max(10),
     activity_category: canonicalGoalActivityCategorySchema,
@@ -65,25 +87,57 @@ const profileGoalUpdateInputSchema = z
 
 type ProfileGoalRecord = z.infer<typeof profileGoalRecordSchema>;
 
+function buildGoalListConditions(input: {
+  profileId: string;
+  search?: string;
+  activityCategory?: z.infer<typeof canonicalGoalActivityCategorySchema>;
+}) {
+  const conditions = [eq(profileGoals.profile_id, input.profileId)];
+
+  if (input.search) {
+    conditions.push(ilike(profileGoals.title, `%${input.search}%`));
+  }
+
+  if (input.activityCategory) {
+    conditions.push(eq(profileGoals.activity_category, input.activityCategory));
+  }
+
+  return conditions;
+}
+
 async function listProfileGoals(input: {
   db: ReturnType<typeof getRequiredDb>;
   profileId: string;
+  search?: string;
+  activityCategory?: z.infer<typeof canonicalGoalActivityCategorySchema>;
+  sortBy: "created_at" | "target_date" | "priority";
+  sortOrder: "asc" | "desc";
   limit: number;
   offset: number;
 }): Promise<ProfileGoalRecord[]> {
+  const conditions = buildGoalListConditions(input);
+
+  const sortColumn =
+    input.sortBy === "target_date"
+      ? profileGoals.target_date
+      : input.sortBy === "priority"
+        ? profileGoals.priority
+        : profileGoals.created_at;
+  const orderBy = input.sortOrder === "asc" ? asc(sortColumn) : desc(sortColumn);
+
   const rows = await input.db
     .select({
       id: profileGoals.id,
       profile_id: profileGoals.profile_id,
-      milestone_event_id: profileGoals.milestone_event_id,
+      target_date: profileGoals.target_date,
       title: profileGoals.title,
       priority: profileGoals.priority,
       activity_category: profileGoals.activity_category,
       target_payload: profileGoals.target_payload,
     })
     .from(profileGoals)
-    .where(eq(profileGoals.profile_id, input.profileId))
-    .orderBy(desc(profileGoals.created_at))
+    .where(and(...conditions))
+    .orderBy(orderBy)
     .limit(input.limit)
     .offset(input.offset);
 
@@ -100,7 +154,7 @@ async function getProfileGoalById(input: {
         .select({
           id: profileGoals.id,
           profile_id: profileGoals.profile_id,
-          milestone_event_id: profileGoals.milestone_event_id,
+          target_date: profileGoals.target_date,
           title: profileGoals.title,
           priority: profileGoals.priority,
           activity_category: profileGoals.activity_category,
@@ -116,14 +170,14 @@ async function getProfileGoalById(input: {
 
 async function createProfileGoal(input: {
   db: ReturnType<typeof getRequiredDb>;
-  values: z.infer<typeof profileGoalWriteSchema>;
+  values: z.infer<typeof profileGoalCreateSchema>;
 }): Promise<ProfileGoalRecord> {
   const [row] = await input.db
     .insert(profileGoals)
     .values({
       id: randomUUID(),
       profile_id: input.values.profile_id,
-      milestone_event_id: input.values.milestone_event_id,
+      target_date: input.values.target_date,
       title: input.values.title,
       priority: input.values.priority,
       activity_category: input.values.activity_category,
@@ -134,7 +188,7 @@ async function createProfileGoal(input: {
     .returning({
       id: profileGoals.id,
       profile_id: profileGoals.profile_id,
-      milestone_event_id: profileGoals.milestone_event_id,
+      target_date: profileGoals.target_date,
       title: profileGoals.title,
       priority: profileGoals.priority,
       activity_category: profileGoals.activity_category,
@@ -152,7 +206,7 @@ async function updateProfileGoal(input: {
   const [row] = await input.db
     .update(profileGoals)
     .set({
-      milestone_event_id: input.data.milestone_event_id,
+      target_date: input.data.target_date,
       title: input.data.title,
       priority: input.data.priority,
       activity_category: input.data.activity_category,
@@ -163,7 +217,7 @@ async function updateProfileGoal(input: {
     .returning({
       id: profileGoals.id,
       profile_id: profileGoals.profile_id,
-      milestone_event_id: profileGoals.milestone_event_id,
+      target_date: profileGoals.target_date,
       title: profileGoals.title,
       priority: profileGoals.priority,
       activity_category: profileGoals.activity_category,
@@ -183,19 +237,44 @@ async function deleteProfileGoal(input: {
 export const goalsRouter = createTRPCRouter({
   list: protectedProcedure.input(goalsListInputSchema).query(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
+    const offset = parseIndexCursor(input.cursor);
 
     await assertProfileAccess({
       ctx,
       profileId: input.profile_id,
     });
 
+    const conditions = buildGoalListConditions({
+      profileId: input.profile_id,
+      search: input.search,
+      activityCategory: input.activity_category,
+    });
+
     try {
-      return await listProfileGoals({
-        db,
-        profileId: input.profile_id,
-        limit: input.limit,
-        offset: input.offset,
-      });
+      const [items, totalRows] = await Promise.all([
+        listProfileGoals({
+          db,
+          profileId: input.profile_id,
+          search: input.search,
+          activityCategory: input.activity_category,
+          sortBy: input.sort_by,
+          sortOrder: input.sort_order,
+          limit: input.limit,
+          offset,
+        }),
+        db
+          .select({ total: count() })
+          .from(profileGoals)
+          .where(and(...conditions)),
+      ]);
+
+      const total = Number(totalRows[0]?.total ?? 0);
+
+      return {
+        items,
+        total,
+        ...buildIndexPageInfo({ offset, limit: input.limit, total }),
+      };
     } catch {
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
@@ -235,14 +314,25 @@ export const goalsRouter = createTRPCRouter({
       profileId: input.profile_id,
     });
 
-    let createdGoal: ProfileGoalRecord;
-
     try {
-      createdGoal = await createProfileGoal({
+      const createdGoal = await createProfileGoal({
         db,
-        values: input,
+        values: {
+          profile_id: input.profile_id,
+          target_date: input.target_date,
+          title: input.title,
+          priority: input.priority,
+          activity_category: input.activity_category,
+          target_payload: input.target_payload,
+        },
       });
+
+      return {
+        ...createdGoal,
+        cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
+      };
     } catch (error) {
+      rethrowTrpcError(error);
       console.error("goals.create failed", {
         profileId: input.profile_id,
         errorCode:
@@ -256,11 +346,6 @@ export const goalsRouter = createTRPCRouter({
         message: `Failed to create goal: ${toSafeDbErrorMessage(error)}`,
       });
     }
-
-    return {
-      ...createdGoal,
-      cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
-    };
   }),
 
   update: protectedProcedure
@@ -298,25 +383,24 @@ export const goalsRouter = createTRPCRouter({
         });
       }
 
-      let updatedGoal: ProfileGoalRecord;
-
       try {
-        updatedGoal = await updateProfileGoal({
+        const updatedGoal = await updateProfileGoal({
           db,
           id: input.id,
           data: mergedGoal.data,
         });
-      } catch {
+
+        return {
+          ...updatedGoal,
+          cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
+        };
+      } catch (error) {
+        rethrowTrpcError(error);
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to update goal",
         });
       }
-
-      return {
-        ...updatedGoal,
-        cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
-      };
     }),
 
   delete: protectedProcedure.input(goalIdInputSchema).mutation(async ({ ctx, input }) => {
@@ -344,7 +428,8 @@ export const goalsRouter = createTRPCRouter({
         db,
         id: input.id,
       });
-    } catch {
+    } catch (error) {
+      rethrowTrpcError(error);
       throw new TRPCError({
         code: "INTERNAL_SERVER_ERROR",
         message: "Failed to delete goal",

@@ -106,7 +106,7 @@ export function buildProfileBoundedCandidateLattice(
     max_value: input.max_value,
     center_value: input.center_value,
     candidate_count: boundedCount,
-    precision: input.precision,
+    ...(input.precision === undefined ? {} : { precision: input.precision }),
   });
 }
 

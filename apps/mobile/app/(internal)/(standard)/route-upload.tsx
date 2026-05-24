@@ -9,10 +9,10 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-  FormSelectField,
   FormTextareaField,
   FormTextField,
 } from "@repo/ui/components/form";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import * as DocumentPicker from "expo-document-picker";
@@ -20,12 +20,8 @@ import { useRouter } from "expo-router";
 import { AlertCircle, CheckCircle, FileText, Upload } from "lucide-react-native";
 import { ScrollView, View } from "react-native";
 import { api } from "@/lib/api";
-import { getErrorMessage } from "@/lib/utils/formErrors";
-import {
-  type RouteUploadFormValues,
-  routeUploadActivityCategoryOptions,
-  routeUploadFormSchema,
-} from "@/lib/validation/route-upload";
+import { getErrorMessage, handleSubmitFormError } from "@/lib/utils/formErrors";
+import { type RouteUploadFormValues, routeUploadFormSchema } from "@/lib/validation/route-upload";
 
 export default function UploadRouteScreen() {
   const router = useRouter();
@@ -35,7 +31,6 @@ export default function UploadRouteScreen() {
     defaultValues: {
       name: "",
       description: "",
-      activityCategory: "run",
       fileName: "",
       fileContent: "",
     },
@@ -55,7 +50,12 @@ export default function UploadRouteScreen() {
 
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: ["application/gpx+xml", "text/xml", "application/xml"],
+        type: [
+          "application/gpx+xml",
+          "application/vnd.garmin.tcx+xml",
+          "text/xml",
+          "application/xml",
+        ],
         copyToCacheDirectory: true,
       });
 
@@ -79,7 +79,7 @@ export default function UploadRouteScreen() {
       });
 
       if (!String(form.getValues("name") ?? "").trim() && file.name) {
-        form.setValue("name", file.name.replace(/\.gpx$/i, ""), {
+        form.setValue("name", file.name.replace(/\.(gpx|tcx|xml)$/i, ""), {
           shouldDirty: true,
           shouldTouch: true,
           shouldValidate: true,
@@ -94,26 +94,27 @@ export default function UploadRouteScreen() {
 
   const submitForm = useZodFormSubmit<RouteUploadFormValues>({
     form,
+    shouldRethrow: false,
     onSubmit: async (values) => {
       form.clearErrors("root");
-
-      try {
-        await uploadMutation.mutateAsync({
-          name: values.name,
-          description: values.description || undefined,
-          activityCategory: values.activityCategory,
-          fileContent: values.fileContent,
-          fileName: values.fileName,
-        });
-      } catch (error) {
-        form.setError("root", {
-          message: getErrorMessage(error),
-        });
-      }
+      await uploadMutation.mutateAsync({
+        name: values.name,
+        description: values.description || undefined,
+        fileContent: values.fileContent,
+        fileName: values.fileName,
+      });
+    },
+    onError: (error) => {
+      handleSubmitFormError(form, error, { preferRootError: true });
     },
   });
 
   const isSubmitting = uploadMutation.isPending || submitForm.isSubmitting;
+  const submitButtonState = submitForm.getSubmitButtonState({
+    disabled: isSubmitting,
+    label: "Upload Route",
+    submittingLabel: "Uploading...",
+  });
 
   return (
     <View className="flex-1 bg-background" testID="route-upload-screen">
@@ -127,7 +128,7 @@ export default function UploadRouteScreen() {
                   name="fileName"
                   render={() => (
                     <FormItem>
-                      <FormLabel>GPX File *</FormLabel>
+                      <FormLabel>GPX or TCX File *</FormLabel>
                       <FormControl>
                         {!selectedFileName ? (
                           <Button
@@ -137,7 +138,7 @@ export default function UploadRouteScreen() {
                             testID="route-upload-pick-file-button"
                           >
                             <Upload className="text-foreground" size={20} />
-                            <Text>Choose GPX File</Text>
+                            <Text>Choose GPX or TCX File</Text>
                           </Button>
                         ) : (
                           <View className="flex-row items-center gap-2 rounded-lg bg-muted p-3">
@@ -157,7 +158,7 @@ export default function UploadRouteScreen() {
                           </View>
                         )}
                       </FormControl>
-                      <FormDescription>Select a GPX file from your device</FormDescription>
+                      <FormDescription>Select a GPX or TCX file from your device</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -174,15 +175,6 @@ export default function UploadRouteScreen() {
                   placeholder="e.g., Morning Hill Climb"
                   required
                   testId="route-upload-name-input"
-                />
-
-                <FormSelectField
-                  control={form.control}
-                  label="Activity Category"
-                  name="activityCategory"
-                  options={routeUploadActivityCategoryOptions.map((option) => ({ ...option }))}
-                  placeholder="Select activity category"
-                  required
                 />
 
                 <FormTextareaField
@@ -228,16 +220,16 @@ export default function UploadRouteScreen() {
           >
             <Text>Cancel</Text>
           </Button>
-          <Button
+          <LoadingButton
             className="flex-1"
             onPress={submitForm.handleSubmit}
-            disabled={isSubmitting}
+            disabled={submitButtonState.disabled}
+            loading={isSubmitting || submitButtonState.loading}
+            loadingLabel={submitButtonState.loadingLabel}
             testID="route-upload-submit-button"
           >
-            <Text className="text-primary-foreground">
-              {isSubmitting ? "Uploading..." : "Upload Route"}
-            </Text>
-          </Button>
+            <Text className="text-primary-foreground">{submitButtonState.label}</Text>
+          </LoadingButton>
         </View>
       </View>
     </View>

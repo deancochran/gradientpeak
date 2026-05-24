@@ -11,8 +11,8 @@ vi.mock("next-themes", () => ({
 describe("Sonner web", () => {
   it("renders toasts through the shared toaster", async () => {
     renderWeb(<Toaster />);
-    toast("Workout saved");
+    toast("Activity saved");
 
-    expect(await screen.findByText("Workout saved")).toBeInTheDocument();
+    expect(await screen.findByText("Activity saved")).toBeInTheDocument();
   });
 });

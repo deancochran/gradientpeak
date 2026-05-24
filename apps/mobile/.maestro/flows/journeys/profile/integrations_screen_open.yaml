@@ -13,12 +13,10 @@ env:
       TARGET_USERNAME: "${TARGET_USERNAME}"
       TARGET_USER_ID: "${TARGET_USER_ID}"
 - tapOn:
-    id: "integrations"
+    id: "manage-integrations-button"
 - extendedWaitUntil:
     visible:
       id: "integrations-screen"
     timeout: 10000
 - assertVisible:
     id: "integration-provider-strava"
-- assertVisible:
-    id: "integrations-pick-fit-file-button"

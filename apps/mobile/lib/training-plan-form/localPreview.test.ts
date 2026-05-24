@@ -1,8 +1,9 @@
 import type { CreationNormalizationInput, PreviewReadinessSnapshot } from "@repo/core";
 import {
   buildDeterministicProjectionPayload,
+  buildProjectionChartPayloadFromDeterministicProjection,
   buildProjectionEngineInput,
-  deterministicUuidFromSeed,
+  defaultAthletePreferenceProfile,
   normalizeCreationConfig,
 } from "@repo/core";
 import { describe, expect, it } from "vitest";
@@ -115,6 +116,23 @@ describe("computeLocalCreationPreview", () => {
     expect(preview.previewSnapshotBaseline).not.toBeNull();
   });
 
+  it("forwards profile settings into goal readiness targets", () => {
+    const preview = computeLocalCreationPreview({
+      minimalPlan,
+      creationInput: baseCreationInput,
+      contextSummary,
+      profileSettings: {
+        ...defaultAthletePreferenceProfile,
+        goal_strategy_preferences: {
+          ...defaultAthletePreferenceProfile.goal_strategy_preferences,
+          target_surplus_preference: 0.45,
+        },
+      },
+    });
+
+    expect(preview.projectionChart.goal_assessments?.[0]?.goal_readiness_target).toBe(103);
+  });
+
   it("keeps local preview projection in parity with server recompute mapping across fixture histories", () => {
     const fixtures: Array<{
       name: string;
@@ -181,6 +199,10 @@ describe("computeLocalCreationPreview", () => {
       expect(server.points.map((point) => point.date)).toEqual(localDates);
       expect(local.projectionChart.goal_markers).toEqual(server.goal_markers);
       expect(local.projectionChart.constraint_summary).toEqual(server.constraint_summary);
+      expect(local.projectionChart.load_resolution_summary).toEqual(server.load_resolution_summary);
+      expect(local.projectionChart.projection_diagnostics?.load_resolution_summary).toEqual(
+        server.projection_diagnostics?.load_resolution_summary,
+      );
 
       const tolerance = 0.05;
       for (let i = 0; i < local.projectionChart.points.length; i += 1) {
@@ -206,7 +228,7 @@ describe("computeLocalCreationPreview", () => {
         ).toBeLessThanOrEqual(tolerance);
       }
 
-      expect(local.projectionChart.readiness_score).toBeCloseTo(server.readiness_score, 4);
+      expect(local.projectionChart.readiness_score).toBeCloseTo(server.readiness_score ?? 0, 4);
       expect(server.readiness_confidence).toBeDefined();
       expect(local.projectionChart.readiness_confidence).toBeCloseTo(
         server.readiness_confidence ?? 0,
@@ -236,23 +258,8 @@ function buildServerRecomputeProjectionChartLike(input: {
     }),
   );
 
-  return {
-    ...deterministicProjection,
-    periodization_phases: expandedPlan.blocks.map((block, index) => ({
-      id: deterministicUuidFromSeed(
-        `projection-phase|${expandedPlan.start_date}|${expandedPlan.end_date}|${index}|${block.name}|${block.start_date}|${block.end_date}`,
-      ),
-      name: block.name,
-      start_date: block.start_date,
-      end_date: block.end_date,
-      target_weekly_tss_min: Math.round((block.target_weekly_tss_range?.min ?? 0) * 10) / 10,
-      target_weekly_tss_max: Math.round((block.target_weekly_tss_range?.max ?? 0) * 10) / 10,
-    })),
-    microcycles: deterministicProjection.microcycles.map((microcycle) => ({
-      id: deterministicUuidFromSeed(
-        `projection-microcycle|${expandedPlan.start_date}|${microcycle.week_start_date}|${microcycle.week_end_date}`,
-      ),
-      ...microcycle,
-    })),
-  };
+  return buildProjectionChartPayloadFromDeterministicProjection({
+    expandedPlan,
+    deterministicProjection,
+  });
 }

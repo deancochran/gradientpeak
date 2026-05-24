@@ -1,6 +1,5 @@
-import React from "react";
 import { View } from "react-native";
 
-export function CurrentFitnessStep(props: any) {
+export function CurrentFitnessStep(_props: any) {
   return <View />;
 }

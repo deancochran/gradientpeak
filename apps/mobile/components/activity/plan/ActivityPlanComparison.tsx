@@ -2,9 +2,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/ca
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { CheckCircle, XCircle } from "lucide-react-native";
-import React from "react";
-import { View } from "react-native";
-import { TimelineChart } from "@/components/ActivityPlan/TimelineChart";
+import { Pressable, View } from "react-native";
+import { TimelineChart } from "@/components/activity-plan/workout/TimelineChart";
+import {
+  formatEstimatedIntensityFactor,
+  formatEstimatedTss,
+  markEstimated,
+} from "@/lib/estimatedMetrics";
 
 interface ActivityPlanData {
   id: string;
@@ -24,6 +28,7 @@ interface ActivityPlanComparisonProps {
   activityPlan: ActivityPlanData;
   actualMetrics: ActivityMetrics;
   compact?: boolean;
+  onPress?: () => void;
 }
 
 function formatDuration(seconds: number): string {
@@ -62,6 +67,7 @@ export function ActivityPlanComparison({
   activityPlan,
   actualMetrics,
   compact = false,
+  onPress,
 }: ActivityPlanComparisonProps) {
   // Calculate estimated values from structure
   const estimatedDuration = calculateEstimatedDuration(activityPlan.structure);
@@ -80,7 +86,7 @@ export function ActivityPlanComparison({
   // Determine if adherence is good (>= 85%)
   const goodAdherence = adherence >= 85;
 
-  return (
+  const content = (
     <Card>
       <CardHeader>
         <View className="flex-row items-center justify-between">
@@ -119,7 +125,7 @@ export function ActivityPlanComparison({
             </View>
             {estimatedDuration > 0 && (
               <Text className="text-xs text-muted-foreground mt-1">
-                Plan: {formatDuration(estimatedDuration)}
+                Plan: {markEstimated(formatDuration(estimatedDuration))}
               </Text>
             )}
           </View>
@@ -129,7 +135,9 @@ export function ActivityPlanComparison({
             <View className="flex-1 p-3 bg-muted rounded-lg">
               <Text className="text-xs text-muted-foreground uppercase mb-1">TSS</Text>
               <View className="flex-row items-baseline gap-1">
-                <Text className="text-lg font-bold">{actualTSS.toFixed(0)}</Text>
+                <Text className="text-lg font-bold">
+                  {formatEstimatedTss(actualTSS, { includeUnit: false })}
+                </Text>
                 {estimatedTSS > 0 && (
                   <Text
                     className={`text-xs ${tssVariance > 10 ? "text-yellow-600" : tssVariance < -10 ? "text-blue-600" : "text-green-600"}`}
@@ -141,7 +149,7 @@ export function ActivityPlanComparison({
               </View>
               {estimatedTSS > 0 && (
                 <Text className="text-xs text-muted-foreground mt-1">
-                  Plan: {estimatedTSS.toFixed(0)}
+                  Plan: {markEstimated(estimatedTSS.toFixed(0))}
                 </Text>
               )}
             </View>
@@ -151,7 +159,9 @@ export function ActivityPlanComparison({
           {actualIF > 0 && (
             <View className="flex-1 p-3 bg-muted rounded-lg">
               <Text className="text-xs text-muted-foreground uppercase mb-1">IF</Text>
-              <Text className="text-lg font-bold">{(actualIF / 100).toFixed(2)}</Text>
+              <Text className="text-lg font-bold">
+                {formatEstimatedIntensityFactor(actualIF > 2 ? actualIF / 100 : actualIF)}
+              </Text>
             </View>
           )}
         </View>
@@ -165,5 +175,15 @@ export function ActivityPlanComparison({
         )}
       </CardContent>
     </Card>
+  );
+
+  if (!onPress) {
+    return content;
+  }
+
+  return (
+    <Pressable onPress={onPress} testID="activity-detail-open-activity-plan">
+      {content}
+    </Pressable>
   );
 }

@@ -1,14 +1,9 @@
 import React from "react";
 
+import { createHost as mockCreateHost } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
 
 const navigateMock = jest.fn();
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
 
 jest.mock("expo-router", () => ({
   __esModule: true,
@@ -20,16 +15,17 @@ jest.mock("react-native", () => ({
   ...jest.requireActual("@repo/ui/test/react-native"),
   TouchableOpacity: ({ children, onPress, ...props }: any) =>
     React.createElement("Pressable", { onPress, ...props }, children),
-  View: createHost("View"),
+  View: mockCreateHost("View"),
 }));
 
-jest.mock("@repo/ui/components/icon", () => ({ __esModule: true, Icon: createHost("Icon") }));
-jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHost("Text") }));
+jest.mock("@repo/ui/components/icon", () => ({ __esModule: true, Icon: mockCreateHost("Icon") }));
+jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: mockCreateHost("Text") }));
 
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
-  Bell: createHost("Bell"),
-  MessageSquare: createHost("MessageSquare"),
+  Bell: mockCreateHost("Bell"),
+  MessageSquare: mockCreateHost("MessageSquare"),
+  Search: mockCreateHost("Search"),
 }));
 
 jest.mock("@/lib/api", () => ({
@@ -40,7 +36,11 @@ jest.mock("@/lib/api", () => ({
   },
 }));
 
-const { MessagesHeaderButton, NotificationsHeaderButton } = require("../HeaderButtons");
+const {
+  MessagesHeaderButton,
+  NotificationsHeaderButton,
+  SearchHeaderButton,
+} = require("../HeaderButtons");
 
 describe("header buttons", () => {
   beforeEach(() => {
@@ -61,5 +61,13 @@ describe("header buttons", () => {
     fireEvent.press(screen.getByTestId("notifications-header-button"));
 
     expect(navigateMock).toHaveBeenCalledWith("/notifications");
+  });
+
+  it("navigates to global search without using the Discover tab", () => {
+    renderNative(<SearchHeaderButton />);
+
+    fireEvent.press(screen.getByTestId("search-header-button"));
+
+    expect(navigateMock).toHaveBeenCalledWith("/search");
   });
 });

@@ -1,12 +1,7 @@
 import { act, waitFor } from "@testing-library/react-native";
 import React from "react";
+import { createHost } from "../../../../test/mock-components";
 import { renderNative, screen } from "../../../../test/render-native";
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
 
 const localSearchParamsMock = {} as Record<string, string | undefined>;
 const routerMock = { back: jest.fn(), push: jest.fn(), replace: jest.fn() };
@@ -23,6 +18,14 @@ jest.mock("@tanstack/react-query", () => ({
 
 jest.mock("expo-router", () => ({
   __esModule: true,
+  Stack: {
+    Screen: (props: any) =>
+      React.createElement(
+        "StackScreen",
+        props,
+        typeof props.options?.headerRight === "function" ? props.options.headerRight() : null,
+      ),
+  },
   useRouter: () => routerMock,
   useLocalSearchParams: () => localSearchParamsMock,
 }));
@@ -40,9 +43,14 @@ jest.mock("react-native-maps", () => ({
   PROVIDER_DEFAULT: "default",
 }));
 
-jest.mock("@/components/ActivityPlan/TimelineChart", () => ({
+jest.mock("@/components/activity-plan/workout/TimelineChart", () => ({
   __esModule: true,
   TimelineChart: createHost("TimelineChart"),
+}));
+
+jest.mock("@/components/activity/charts/ElevationProfileChart", () => ({
+  __esModule: true,
+  ElevationProfileChart: createHost("ElevationProfileChart"),
 }));
 
 jest.mock("@/components/ScheduleActivityModal", () => ({
@@ -51,6 +59,13 @@ jest.mock("@/components/ScheduleActivityModal", () => ({
 }));
 
 jest.mock("@repo/ui/components/button", () => ({ __esModule: true, Button: createHost("Button") }));
+jest.mock("@repo/ui/components/dropdown-menu", () => ({
+  __esModule: true,
+  DropdownMenu: createHost("DropdownMenu"),
+  DropdownMenuContent: createHost("DropdownMenuContent"),
+  DropdownMenuItem: createHost("DropdownMenuItem"),
+  DropdownMenuTrigger: createHost("DropdownMenuTrigger"),
+}));
 jest.mock("@repo/ui/components/icon", () => ({ __esModule: true, Icon: createHost("Icon") }));
 jest.mock("@repo/ui/components/switch", () => ({ __esModule: true, Switch: createHost("Switch") }));
 jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHost("Text") }));
@@ -109,23 +124,35 @@ jest.mock("@/lib/api", () => ({
       getById: { useQuery: () => ({ data: null, error: null, isLoading: false }) },
       delete: { useMutation: () => ({ mutate: jest.fn(), isPending: false }) },
     },
-    routes: { get: { useQuery: () => ({ data: null }) } },
+    routes: {
+      get: { useQuery: () => ({ data: null }) },
+      loadFull: { useQuery: () => ({ data: null }) },
+    },
     social: {
       toggleLike: { useMutation: () => ({ mutate: toggleLikeMutateMock, isPending: false }) },
       getComments: {
-        useQuery: () => ({
+        useInfiniteQuery: () => ({
           data: {
-            total: 1,
-            comments: [
+            pages: [
               {
-                id: "comment-1",
-                content: "Nice session",
-                created_at: "2026-02-13T00:00:00.000Z",
-                profile: { username: "Runner" },
+                total: 1,
+                comments: [
+                  {
+                    id: "comment-1",
+                    content: "Nice session",
+                    created_at: "2026-02-13T00:00:00.000Z",
+                    profile: { username: "Runner" },
+                  },
+                ],
+                hasMore: false,
+                nextCursor: undefined,
               },
             ],
           },
           refetch: refetchCommentsMock,
+          hasNextPage: false,
+          isFetchingNextPage: false,
+          fetchNextPage: jest.fn(),
         }),
       },
       addComment: {
@@ -185,7 +212,7 @@ const getAllByTypeOrEmpty = (type: string) => {
   }
 };
 
-const findButton = (matcher: (label: string) => boolean) =>
+const _findButton = (matcher: (label: string) => boolean) =>
   getAllByTypeOrEmpty("Button").find((node: any) => matcher(getTextContent(node.props?.children)));
 
 describe("activity plan detail social orchestration", () => {

@@ -1,4 +1,6 @@
 import type {
+  IntegrationCredentialInsert,
+  IntegrationCredentialRow,
   IntegrationInsert,
   IntegrationRow,
   OAuthStateInsert,
@@ -7,20 +9,20 @@ import type {
 } from "@repo/db";
 
 type IntegrationUpsertFields = {
-  accessToken: IntegrationInsert["access_token"];
-  expiresAt: IntegrationInsert["expires_at"];
+  accessToken: IntegrationCredentialInsert["access_token"];
+  expiresAt: IntegrationCredentialInsert["expires_at"];
   externalId: IntegrationInsert["external_id"];
   profileId: IntegrationInsert["profile_id"];
   provider: IntegrationInsert["provider"];
-  refreshToken: IntegrationInsert["refresh_token"];
-  scope: IntegrationInsert["scope"];
+  refreshToken: IntegrationCredentialInsert["refresh_token"];
+  scope: IntegrationCredentialInsert["scope"];
 };
 type IntegrationTokenUpdateFields = {
-  accessToken: IntegrationInsert["access_token"];
-  expiresAt: IntegrationInsert["expires_at"];
+  accessToken: IntegrationCredentialInsert["access_token"];
+  expiresAt: IntegrationCredentialInsert["expires_at"];
   profileId: IntegrationInsert["profile_id"];
   provider: IntegrationInsert["provider"];
-  refreshToken: IntegrationInsert["refresh_token"];
+  refreshToken: IntegrationCredentialInsert["refresh_token"];
 };
 type OAuthStateCreateFields = {
   createdAt: OAuthStateInsert["created_at"];
@@ -37,7 +39,11 @@ export interface IntegrationsRepository {
     profileId: string;
     provider: PublicIntegrationProvider;
   }): Promise<IntegrationRow | null>;
-  upsertByProfileIdAndProvider(input: IntegrationUpsertFields): Promise<void>;
+  findCredentialsByProfileIdAndProvider(input: {
+    profileId: string;
+    provider: PublicIntegrationProvider;
+  }): Promise<IntegrationCredentialRow | null>;
+  upsertByProfileIdAndProvider(input: IntegrationUpsertFields): Promise<IntegrationRow>;
   updateTokensByProfileIdAndProvider(input: IntegrationTokenUpdateFields): Promise<void>;
   deleteByProfileIdAndProvider(input: {
     profileId: string;

@@ -102,7 +102,7 @@ export function formatValidationMessage(result: PlanValidationResult): PlanValid
   return {
     title: "Profile Setup Required",
     message:
-      `This workout requires the following metrics to be set:\n\n${metricsList}\n\n` +
+      `This activity requires the following metrics to be set:\n\n${metricsList}\n\n` +
       "You can continue without these, but automatic trainer control and accurate target display will not be available.",
     actions: [
       { action: "navigate:settings", label: "Go to Settings" },

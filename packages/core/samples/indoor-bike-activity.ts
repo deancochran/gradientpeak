@@ -282,7 +282,7 @@ export const SYSTEM_SWEET_SPOT_WORKOUT: RecordingServiceActivityPlan = {
   id: "d2c8f1a0-5b9e-4e3a-8f7d-9c6b4a2e1f0d",
   version: "2.0",
   name: "Sweet Spot Intervals",
-  description: "Classic sweet spot workout with 3x10min intervals at 90% FTP",
+  description: "Classic sweet spot activity with 3x10min intervals at 90% FTP",
   activity_category: "bike",
   gps_recording_enabled: false,
   structure: createPlan()

@@ -18,10 +18,10 @@ import {
 } from "@repo/core";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { useZodForm } from "@repo/ui/hooks";
+import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { Stack, useRouter } from "expo-router";
 import { X } from "lucide-react-native";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type FieldError, type FieldErrors, useWatch } from "react-hook-form";
 import {
   ActivityIndicator,
@@ -649,7 +649,7 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
       });
       setIsPreviewPending(previewPendingRequestCountRef.current > 0);
     }
-  }, [buildCreationInput, configData, contextSummary, effectiveFormData]);
+  }, [configData, contextSummary, effectiveFormData, resolveStartingAtlOverride]);
 
   useEffect(() => {
     if (!isEditMode) {
@@ -750,7 +750,6 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
     configData.locks,
     configData.behaviorControlsV1,
     configData.recentInfluenceScore,
-    configData.recentInfluenceAction,
     hasSeededDefaults,
     mergeSuggestionsIntoConfig,
     recomputeNonce,
@@ -780,7 +779,7 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
         scheduledPreviewTimerRef.current = null;
       }
     };
-  }, [configData, hasSeededDefaults, refreshPreview]);
+  }, [hasSeededDefaults, refreshPreview]);
 
   useEffect(() => {
     return () => {
@@ -1025,13 +1024,25 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
     }
   };
 
+  const submitForm = useZodFormSubmit<TrainingPlanFormData>({
+    form,
+    shouldRethrow: false,
+    onSubmit: async (validatedFormData) => {
+      const metadataIsValid = await metadataForm.trigger();
+      if (!metadataIsValid) {
+        return;
+      }
+
+      await handleSave(
+        validatedFormData,
+        metadataForm.getValues() as TrainingPlanMetadataFormValues,
+      );
+    },
+  });
+
   const handleSavePress = useCallback(() => {
-    void form.handleSubmit(async (validatedFormData) => {
-      await metadataForm.handleSubmit(async (validatedMetadata) => {
-        await handleSave(validatedFormData as TrainingPlanFormData, validatedMetadata);
-      })();
-    })();
-  }, [form, metadataForm, handleSave]);
+    void submitForm.handleSubmit();
+  }, [submitForm.handleSubmit]);
 
   if (isEditMode && editPlanQuery.isLoading) {
     return (
@@ -1105,7 +1116,7 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
                 <View className="flex-1">
                   <Text className="text-xs font-semibold text-foreground">Plan Hierarchy</Text>
                   <Text className="mt-1 text-xs text-muted-foreground">
-                    Activity plans are single workouts. Training plans arrange workouts on a
+                    Activity plans are single activities. Training plans arrange activities on a
                     timeline. Templates are reusable versions of either one.
                   </Text>
                 </View>
@@ -1146,6 +1157,29 @@ export function TrainingPlanComposerScreen(contract: TrainingPlanComposerScreenP
             </Text>
           </View>
         ) : null}
+        <View className="px-4 pt-3">
+          <View className="rounded-2xl border border-border bg-card p-3">
+            <Text className="text-sm font-semibold text-foreground">
+              {isEditMode ? "Refine the plan scaffold" : "Build the plan scaffold first"}
+            </Text>
+            <Text className="mt-1 text-xs text-muted-foreground">
+              Training plans stay intentionally lightweight. This screen defines timing, goals, and
+              planning constraints first. Specific activity plans and route-backed activities can be
+              linked from the detail screen after save.
+            </Text>
+            <View className="mt-3 gap-1">
+              <Text className="text-xs text-muted-foreground">
+                1. Set the plan identity and target outcome.
+              </Text>
+              <Text className="text-xs text-muted-foreground">
+                2. Tune availability, limits, and planner behavior.
+              </Text>
+              <Text className="text-xs text-muted-foreground">
+                3. Save, then refine the linked activities on the detail page.
+              </Text>
+            </View>
+          </View>
+        </View>
         <SinglePageForm
           metadataForm={metadataForm}
           initialTab={contract.initialTab}

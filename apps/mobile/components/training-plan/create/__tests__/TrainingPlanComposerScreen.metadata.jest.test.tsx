@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import React from "react";
-import { FormProvider, useController, useForm } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { renderNative, waitFor } from "../../../../test/render-native";
 
@@ -36,6 +36,16 @@ jest.mock("@repo/ui/hooks", () => ({
       reValidateMode,
     });
   },
+  useZodFormSubmit: ({ form, onSubmit }: any) => ({
+    getSubmitButtonState: ({ disabled, label, submittingLabel }: any) => ({
+      disabled,
+      label,
+      loading: false,
+      loadingLabel: submittingLabel,
+    }),
+    handleSubmit: () => onSubmit(form.getValues()),
+    isSubmitting: false,
+  }),
 }));
 
 jest.mock("react-native", () => ({

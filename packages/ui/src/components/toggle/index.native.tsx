@@ -1,4 +1,4 @@
-import * as React from "react";
+import type * as React from "react";
 import { getNativeTestProps } from "../../lib/test-props";
 import { Toggle as RegistryToggle, ToggleIcon, toggleVariants } from "../../registry/native/toggle";
 import type { ToggleSize, ToggleTestProps, ToggleVariant } from "./shared";

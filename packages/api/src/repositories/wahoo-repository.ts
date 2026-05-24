@@ -2,15 +2,24 @@ import type { DrizzleDbClient } from "@repo/db";
 
 export type WahooIntegrationRecord = {
   accessToken: string;
+  expiresAt: string | null;
   externalId: string;
   id: string;
   profileId: string;
   refreshToken: string | null;
 };
 
+export type WahooEventResourceProviderMetadata = {
+  wahoo?: {
+    planId?: number;
+    routeId?: number;
+  };
+};
+
 export type WahooEventResourceLinkRecord = {
   externalId: string;
   id: string;
+  providerMetadata: WahooEventResourceProviderMetadata | null;
   updatedAt: string | null;
 };
 
@@ -21,6 +30,7 @@ export interface WahooRepository {
     integrationId: string;
     profileId: string;
     provider: "wahoo";
+    providerMetadata?: WahooEventResourceProviderMetadata | null;
     syncedAt: string;
     updatedAt: string;
   }): Promise<void>;
@@ -29,7 +39,10 @@ export interface WahooRepository {
   findWahooIntegrationByExternalId(
     externalId: string,
   ): Promise<{ integrationId: string; profileId: string } | null>;
-  findImportedActivityByExternalId(externalId: string): Promise<{ id: string } | null>;
+  findImportedActivityLinkByExternalId(input: {
+    externalId: string;
+    integrationId: string;
+  }): Promise<{ activityId: string; linkId: string } | null>;
   findLinkedPlannedEventId(input: {
     profileId: string;
     externalWorkoutId: string;
@@ -47,12 +60,15 @@ export interface WahooRepository {
     elevationGainMeters: number | null;
     externalId: string;
     finishedAt: string;
-    fitFilePath: string | null;
-    fitFileSize: number | null;
+    activityFilePath: string;
+    activityFileSize: number;
+    integrationId: string;
     movingSeconds: number;
     name: string;
     normalizedPower: number | null;
+    polyline: string | null;
     profileId: string;
+    providerUpdatedAt: string | null;
     provider: "wahoo";
     startedAt: string;
     type: string;
@@ -77,10 +93,10 @@ export interface WahooRepository {
   } | null>;
   getProfileSyncMetrics(profileId: string): Promise<{
     ftp: number | null;
+    maxHr: number | null;
     thresholdHr: number | null;
   } | null>;
   getRouteForSync(input: { profileId: string; routeId: string }): Promise<{
-    activityCategory: string;
     description: string | null;
     filePath: string;
     id: string;
@@ -101,7 +117,14 @@ export interface WahooRepository {
   updateEventResourceLink(input: {
     externalId?: string;
     id: string;
+    providerMetadata?: WahooEventResourceProviderMetadata | null;
     updatedAt: string;
+  }): Promise<void>;
+  updateWahooIntegrationTokens(input: {
+    accessToken: string;
+    expiresAt: string | null;
+    id: string;
+    refreshToken: string | null;
   }): Promise<void>;
 }
 

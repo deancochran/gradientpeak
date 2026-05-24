@@ -1,13 +1,8 @@
 import { waitFor } from "@testing-library/react-native";
 import React from "react";
+import { createHost } from "../../../../test/mock-components";
 import { renderNative, screen } from "../../../../test/render-native";
 import EventDetailScreen from "../event-detail";
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
 
 var mockRouterNavigate = jest.fn();
 var mockQuery = jest.fn((_input?: any, _options?: any) => ({
@@ -35,6 +30,14 @@ jest.mock("react-native", () => ({
 
 jest.mock("expo-router", () => ({
   __esModule: true,
+  Stack: {
+    Screen: (props: any) =>
+      React.createElement(
+        "StackScreen",
+        props,
+        typeof props.options?.headerRight === "function" ? props.options.headerRight() : null,
+      ),
+  },
   useLocalSearchParams: () => ({ id: "event-1" }),
   useRouter: () => ({
     back: jest.fn(),
@@ -54,9 +57,9 @@ jest.mock("@/components/ScheduleActivityModal", () => ({
   ScheduleActivityModal: createHost("ScheduleActivityModal"),
 }));
 
-jest.mock("@/components/activity-plan/ActivityPlanContentPreview", () => ({
+jest.mock("@/components/shared/ActivityPlanCard", () => ({
   __esModule: true,
-  ActivityPlanContentPreview: createHost("ActivityPlanContentPreview"),
+  ActivityPlanCard: createHost("ActivityPlanCard"),
 }));
 
 jest.mock("@repo/ui/components/button", () => ({
@@ -69,6 +72,14 @@ jest.mock("@repo/ui/components/card", () => ({
   Card: createHost("Card"),
   CardContent: createHost("CardContent"),
   CardTitle: createHost("CardTitle"),
+}));
+
+jest.mock("@repo/ui/components/dropdown-menu", () => ({
+  __esModule: true,
+  DropdownMenu: createHost("DropdownMenu"),
+  DropdownMenuContent: createHost("DropdownMenuContent"),
+  DropdownMenuItem: createHost("DropdownMenuItem"),
+  DropdownMenuTrigger: createHost("DropdownMenuTrigger"),
 }));
 
 jest.mock("@repo/ui/components/icon", () => ({
@@ -137,11 +148,8 @@ jest.mock("lucide-react-native", () => ({
   ArrowUpRight: "ArrowUpRight",
   Calendar: "Calendar",
   CheckCircle2: "CheckCircle2",
-  Clock: "Clock",
-  Edit: "Edit",
+  Ellipsis: "Ellipsis",
   Play: "Play",
-  Trash2: "Trash2",
-  Zap: "Zap",
 }));
 
 jest.mock("@/lib/api", () => ({
@@ -161,10 +169,33 @@ jest.mock("@/lib/api", () => ({
       get: {
         useQuery: () => ({ data: null }),
       },
+      loadFull: {
+        useQuery: () => ({ data: null }),
+      },
+    },
+    social: {
+      getComments: {
+        useInfiniteQuery: () => ({
+          data: { pages: [{ comments: [], total: 0, hasMore: false, nextCursor: undefined }] },
+          refetch: jest.fn(),
+          hasNextPage: false,
+          isFetchingNextPage: false,
+          fetchNextPage: jest.fn(),
+        }),
+      },
+      addComment: {
+        useMutation: () => ({ mutate: jest.fn(), isPending: false }),
+      },
     },
     events: {
       getById: {
         useQuery: (input: any, options: any) => mockQuery(input, options),
+      },
+      create: {
+        useMutation: () => ({
+          isPending: false,
+          mutate: jest.fn(),
+        }),
       },
       update: {
         useMutation: () => ({
@@ -177,6 +208,21 @@ jest.mock("@/lib/api", () => ({
           isPending: false,
           mutate: jest.fn(),
         }),
+      },
+    },
+    activityPlans: {
+      list: {
+        useQuery: () => ({
+          data: { items: [] },
+          isLoading: false,
+          error: null,
+          refetch: jest.fn(),
+        }),
+      },
+    },
+    trainingPlans: {
+      getById: {
+        useQuery: () => ({ data: null }),
       },
     },
   },

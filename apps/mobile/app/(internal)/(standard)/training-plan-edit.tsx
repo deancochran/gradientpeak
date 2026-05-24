@@ -1,6 +1,5 @@
 import { Text } from "@repo/ui/components/text";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React from "react";
 import { Pressable, View } from "react-native";
 import { TrainingPlanComposerScreen } from "@/components/training-plan/create/TrainingPlanComposerScreen";
 import { ROUTES } from "../../../lib/constants/routes";

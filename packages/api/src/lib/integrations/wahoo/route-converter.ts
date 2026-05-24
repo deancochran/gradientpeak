@@ -41,7 +41,7 @@ export function extractStartCoordinates(gpxContent: string): {
   // Simple regex to find first trkpt element
   const trkptMatch = gpxContent.match(/<trkpt[^>]*lat="([^"]*)"[^>]*lon="([^"]*)"/);
 
-  if (trkptMatch && trkptMatch[1] && trkptMatch[2]) {
+  if (trkptMatch?.[1] && trkptMatch[2]) {
     return {
       latitude: parseFloat(trkptMatch[1]),
       longitude: parseFloat(trkptMatch[2]),

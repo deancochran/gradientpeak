@@ -5,39 +5,31 @@ import type {
 import {
   athleteTrainingSettingsFormSchema,
   defaultAthletePreferenceProfile,
+  getManualBaselineCtlWarning,
   toAthleteTrainingSettingsFormValues,
 } from "@repo/core/schemas/settings/profile_settings";
 import { Button } from "@repo/ui/components/button";
-import { Card, CardContent } from "@repo/ui/components/card";
 import {
   Form,
-  FormControl,
   FormDateInputField,
-  FormDescription,
-  FormField,
   FormIntegerStepperField,
-  FormItem,
-  FormLabel,
-  FormMessage,
+  FormPercentSliderField,
   FormSwitchField,
 } from "@repo/ui/components/form";
-import { PercentSliderInput } from "@repo/ui/components/percent-slider-input";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
-import React, { useEffect, useMemo, useState } from "react";
-import {
-  type Control,
-  type FieldPath,
-  type FieldPathValue,
-  type FieldValues,
-  useWatch,
-} from "react-hook-form";
+import { Stack } from "expo-router";
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useWatch } from "react-hook-form";
 import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 import { TrainingPreferencesProjectionPreview } from "@/components/settings/TrainingPreferencesProjectionPreview";
 import { api } from "@/lib/api";
 import { useProfileSettings } from "@/lib/hooks/useProfileSettings";
+import { handleSubmitFormError } from "@/lib/utils/formErrors";
 
 type PreferencesTabKey =
+  | "preferences"
   | "schedule"
   | "training-style"
   | "recovery"
@@ -46,7 +38,10 @@ type PreferencesTabKey =
 
 type TrainingPreferencesValues = AthleteTrainingSettings | AthleteTrainingSettingsFormInput;
 
+type PreferencePresetKey = "custom" | "conservative" | "balanced" | "performance";
+
 const preferenceTabs: Array<{ key: PreferencesTabKey; label: string }> = [
+  { key: "preferences", label: "Preferences" },
   { key: "schedule", label: "Schedule" },
   { key: "training-style", label: "Training style" },
   { key: "recovery", label: "Recovery" },
@@ -54,27 +49,60 @@ const preferenceTabs: Array<{ key: PreferencesTabKey; label: string }> = [
   { key: "baseline-fitness", label: "Baseline fitness" },
 ];
 
-function toFractionFromPercent(value: number, decimals = 2) {
-  return Number((value / 100).toFixed(decimals));
-}
-
-function formatMinutes(minutes?: number) {
-  if (!minutes || minutes <= 0) {
-    return null;
-  }
-
-  if (minutes < 60) {
-    return `${minutes} min`;
-  }
-
-  const hours = Math.floor(minutes / 60);
-  const remainder = minutes % 60;
-  if (remainder === 0) {
-    return `${hours} hr`;
-  }
-
-  return `${hours} hr ${remainder} min`;
-}
+const preferencePresets: Array<{
+  key: Exclude<PreferencePresetKey, "custom">;
+  label: string;
+  description: string;
+  values: Pick<
+    AthleteTrainingSettingsFormInput["training_style"],
+    "progression_pace" | "week_pattern_preference"
+  > &
+    Pick<
+      AthleteTrainingSettingsFormInput["recovery_preferences"],
+      "recovery_priority" | "systemic_fatigue_tolerance"
+    > &
+    Pick<
+      AthleteTrainingSettingsFormInput["goal_strategy_preferences"],
+      "target_surplus_preference"
+    >;
+}> = [
+  {
+    key: "conservative",
+    label: "Safer",
+    description: "Protect recovery and keep progression steady.",
+    values: {
+      progression_pace: 0.35,
+      week_pattern_preference: 0.35,
+      recovery_priority: 0.75,
+      systemic_fatigue_tolerance: 0.35,
+      target_surplus_preference: 0.15,
+    },
+  },
+  {
+    key: "balanced",
+    label: "Balanced",
+    description: "Use the default tradeoff between progress and recovery.",
+    values: {
+      progression_pace: 0.5,
+      week_pattern_preference: 0.5,
+      recovery_priority: 0.6,
+      systemic_fatigue_tolerance: 0.5,
+      target_surplus_preference: 0.25,
+    },
+  },
+  {
+    key: "performance",
+    label: "Push harder",
+    description: "Allow faster progression when the projection stays safe.",
+    values: {
+      progression_pace: 0.72,
+      week_pattern_preference: 0.65,
+      recovery_priority: 0.45,
+      systemic_fatigue_tolerance: 0.68,
+      target_surplus_preference: 0.45,
+    },
+  },
+];
 
 function createTrainingPreferencesFormDefaults(
   settings: AthleteTrainingSettings,
@@ -89,66 +117,44 @@ function createTrainingPreferencesFormDefaults(
   };
 }
 
-type PercentSliderFormFieldProps<
-  TFieldValues extends FieldValues,
-  TName extends FieldPath<TFieldValues>,
-> = {
-  control: Control<TFieldValues>;
-  decimals?: number;
-  description?: string;
-  fallbackValue?: number;
-  id: string;
-  label: string;
-  name: TName;
-};
+function getPreferenceDirectionSummary(draft: AthleteTrainingSettingsFormInput) {
+  const progression = draft.training_style.progression_pace;
+  const recovery = draft.recovery_preferences.recovery_priority;
+  const surplus = draft.goal_strategy_preferences.target_surplus_preference;
 
-function PercentSliderFormField<
-  TFieldValues extends FieldValues,
-  TName extends FieldPath<TFieldValues>,
->({
-  control,
-  decimals = 0,
-  description,
-  fallbackValue = 0.5,
-  id,
-  label,
-  name,
-}: PercentSliderFormFieldProps<TFieldValues, TName>) {
-  return (
-    <FormField
-      control={control}
-      name={name}
-      render={({ field, fieldState }) => (
-        <FormItem>
-          <FormLabel>{label}</FormLabel>
-          <FormControl>
-            <PercentSliderInput
-              decimals={decimals}
-              error={fieldState.error?.message}
-              helperText={description}
-              id={id}
-              label={label}
-              max={100}
-              min={0}
-              onChange={(value) => {
-                field.onChange(toFractionFromPercent(value) as FieldPathValue<TFieldValues, TName>);
-              }}
-              step={1}
-              value={(typeof field.value === "number" ? field.value : fallbackValue) * 100}
-            />
-          </FormControl>
-          {description ? <FormDescription>{description}</FormDescription> : null}
-          <FormMessage />
-        </FormItem>
-      )}
-    />
-  );
+  if (recovery >= 0.7 && progression <= 0.45) {
+    return "Safer progression";
+  }
+
+  if (progression >= 0.65 || surplus >= 0.4) {
+    return "Performance leaning";
+  }
+
+  return "Balanced setup";
+}
+
+function getSelectedPreferencePreset(draft: AthleteTrainingSettingsFormInput): PreferencePresetKey {
+  const matchedPreset = preferencePresets.find((preset) => {
+    return (
+      draft.training_style.progression_pace === preset.values.progression_pace &&
+      draft.training_style.week_pattern_preference === preset.values.week_pattern_preference &&
+      draft.recovery_preferences.recovery_priority === preset.values.recovery_priority &&
+      draft.recovery_preferences.systemic_fatigue_tolerance ===
+        preset.values.systemic_fatigue_tolerance &&
+      draft.goal_strategy_preferences.target_surplus_preference ===
+        preset.values.target_surplus_preference
+    );
+  });
+
+  return matchedPreset?.key ?? "custom";
 }
 
 export default function TrainingPreferencesScreen() {
   const utils = api.useUtils();
   const settingsQuery = useProfileSettings();
-  const [activeTab, setActiveTab] = useState<PreferencesTabKey>("schedule");
+  const activePlanQuery = api.trainingPlans.getActivePlan.useQuery(undefined);
+  const [activeTab, setActiveTab] = useState<PreferencesTabKey>("preferences");
+  const [showAdvancedBaselineControls, setShowAdvancedBaselineControls] = useState(false);
 
   const formDefaults = useMemo(
     () => createTrainingPreferencesFormDefaults(settingsQuery.settings),
@@ -168,10 +174,12 @@ export default function TrainingPreferencesScreen() {
 
   const draft = (useWatch({ control: form.control }) ??
     form.getValues()) as AthleteTrainingSettingsFormInput;
+  const deferredDraft = useDeferredValue(draft);
 
   const upsertMutation = api.profileSettings.upsert.useMutation();
   const submitForm = useZodFormSubmit<AthleteTrainingSettings>({
     form,
+    shouldRethrow: false,
     onSubmit: async (settings) => {
       if (!settingsQuery.profileId) {
         return;
@@ -184,13 +192,17 @@ export default function TrainingPreferencesScreen() {
 
       await Promise.all([
         utils.profileSettings.getForProfile.invalidate(),
+        utils.trainingPlans.invalidate(),
         settingsQuery.refetch(),
       ]);
       form.reset(createTrainingPreferencesFormDefaults(settings));
     },
+    onError: (error) =>
+      handleSubmitFormError(form, error, { alertTitle: "Failed to save preferences" }),
   });
 
   const hasUnsavedChanges = form.formState.isDirty;
+  const isSaving = submitForm.isSubmitting || upsertMutation.isPending;
 
   const scheduleValidation = useMemo(() => {
     const minSessions = draft.dose_limits.min_sessions_per_week ?? 0;
@@ -209,7 +221,7 @@ export default function TrainingPreferencesScreen() {
       typeof maxWeeklyDuration === "number" &&
       maxSingleSessionDuration > maxWeeklyDuration
     ) {
-      issues.push("Weekly time budget must be at least as long as your longest workout.");
+      issues.push("Weekly time budget must be at least as long as your longest activity.");
     }
 
     return {
@@ -226,25 +238,76 @@ export default function TrainingPreferencesScreen() {
         typeof maxSingleSessionDuration === "number" &&
         typeof maxWeeklyDuration === "number" &&
         maxSingleSessionDuration > maxWeeklyDuration
-          ? "A single workout cannot be longer than the full weekly time budget."
+          ? "A single activity cannot be longer than the full weekly time budget."
           : undefined,
       maxWeeklyDurationError:
         typeof maxSingleSessionDuration === "number" &&
         typeof maxWeeklyDuration === "number" &&
         maxSingleSessionDuration > maxWeeklyDuration
-          ? "Increase this budget or shorten the longest workout."
+          ? "Increase this budget or shorten the longest activity."
           : undefined,
     };
   }, [draft]);
 
-  const scheduleSnapshot = useMemo(() => {
-    const minSessions = draft.dose_limits.min_sessions_per_week ?? 0;
-    const maxSessions = draft.dose_limits.max_sessions_per_week ?? 0;
-    const weeklyBudget = formatMinutes(draft.dose_limits.max_weekly_duration_minutes);
-    const longestWorkout = formatMinutes(draft.dose_limits.max_single_session_duration_minutes);
+  const saveDisabled =
+    !settingsQuery.profileId ||
+    !hasUnsavedChanges ||
+    scheduleValidation.issues.length > 0 ||
+    isSaving;
+  const saveButtonState = submitForm.getSubmitButtonState({
+    disabled: saveDisabled,
+    label: "Save",
+    submittingLabel: "Saving...",
+  });
 
-    return `${minSessions}-${maxSessions} sessions per week, ${weeklyBudget ?? "no weekly cap"}, longest workout ${longestWorkout ?? "not set"}.`;
-  }, [draft.dose_limits]);
+  const preferenceDirectionSummary = useMemo(() => getPreferenceDirectionSummary(draft), [draft]);
+  const selectedPreferencePreset = useMemo(() => getSelectedPreferencePreset(draft), [draft]);
+  const manualBaselineCtlWarning = draft.baseline_fitness?.is_enabled
+    ? getManualBaselineCtlWarning(draft.baseline_fitness.override_ctl)
+    : null;
+
+  const applyPreferencePreset = useCallback(
+    (presetKey: Exclude<PreferencePresetKey, "custom">) => {
+      const preset = preferencePresets.find((item) => item.key === presetKey);
+      if (!preset) {
+        return;
+      }
+
+      form.setValue("training_style.progression_pace", preset.values.progression_pace, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      form.setValue(
+        "training_style.week_pattern_preference",
+        preset.values.week_pattern_preference,
+        {
+          shouldDirty: true,
+          shouldValidate: true,
+        },
+      );
+      form.setValue("recovery_preferences.recovery_priority", preset.values.recovery_priority, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      form.setValue(
+        "recovery_preferences.systemic_fatigue_tolerance",
+        preset.values.systemic_fatigue_tolerance,
+        {
+          shouldDirty: true,
+          shouldValidate: true,
+        },
+      );
+      form.setValue(
+        "goal_strategy_preferences.target_surplus_preference",
+        preset.values.target_surplus_preference,
+        {
+          shouldDirty: true,
+          shouldValidate: true,
+        },
+      );
+    },
+    [form],
+  );
 
   if (settingsQuery.isLoading) {
     return (
@@ -260,9 +323,40 @@ export default function TrainingPreferencesScreen() {
 
   return (
     <View className="flex-1 bg-background" testID="training-preferences-screen">
+      <Stack.Screen
+        options={{
+          headerRight: () => (
+            <View className="flex-row items-center gap-1">
+              <Button
+                disabled={!hasUnsavedChanges || isSaving}
+                onPress={() => form.reset(formDefaults)}
+                size="sm"
+                variant="ghost"
+              >
+                <Text className="text-sm font-semibold text-muted-foreground">Reset</Text>
+              </Button>
+              <LoadingButton
+                disabled={saveButtonState.disabled}
+                loading={isSaving || saveButtonState.loading}
+                loadingLabel={saveButtonState.loadingLabel}
+                loadingTextClassName="text-primary"
+                onPress={submitForm.handleSubmit}
+                size="sm"
+                variant="ghost"
+                testID="training-preferences-save-button"
+              >
+                <Text className="text-sm font-semibold text-primary">{saveButtonState.label}</Text>
+              </LoadingButton>
+            </View>
+          ),
+        }}
+      />
       <Form {...form}>
-        <ScrollView className="flex-1" contentContainerClassName="p-4 gap-4">
-          <TrainingPreferencesProjectionPreview draft={draft} />
+        <ScrollView className="flex-1" contentContainerClassName="p-3 gap-3">
+          <TrainingPreferencesProjectionPreview
+            draft={deferredDraft}
+            planId={activePlanQuery.data?.id}
+          />
 
           <ScrollView
             horizontal
@@ -278,7 +372,7 @@ export default function TrainingPreferencesScreen() {
                   key={tab.key}
                   onPress={() => setActiveTab(tab.key)}
                   testID={`training-preferences-tab-${tab.key}`}
-                  className={`border-b-2 px-1.5 py-2 ${isActive ? "border-primary" : "border-transparent"}`}
+                  className={`border-b-2 px-1.5 py-1.5 ${isActive ? "border-primary" : "border-transparent"}`}
                   accessibilityRole="tab"
                   accessibilityState={{ selected: isActive }}
                 >
@@ -292,298 +386,316 @@ export default function TrainingPreferencesScreen() {
             })}
           </ScrollView>
 
-          <Card>
-            <CardContent className="gap-5">
-              {activeTab === "schedule" ? (
-                <>
-                  <Text className="text-xs text-muted-foreground">
-                    Set the weekly training floor, ceiling, and time budget the planner should
-                    respect. Planner-only tuning stays out of this profile view.
+          <View className="gap-3 rounded-xl border border-border bg-card p-3">
+            {activeTab === "preferences" ? (
+              <>
+                <Text className="text-sm font-semibold text-foreground">
+                  {preferenceDirectionSummary}
+                </Text>
+                <View className="flex-row flex-wrap gap-2">
+                  <View
+                    className={`rounded-md border px-2 py-1.5 ${
+                      selectedPreferencePreset === "custom"
+                        ? "border-primary bg-primary"
+                        : "border-border bg-muted/20"
+                    }`}
+                    testID="training-preferences-preset-custom"
+                  >
+                    <Text
+                      className={`text-center text-xs font-semibold ${
+                        selectedPreferencePreset === "custom"
+                          ? "text-primary-foreground"
+                          : "text-foreground"
+                      }`}
+                    >
+                      Custom
+                    </Text>
+                  </View>
+                  {preferencePresets.map((preset) => {
+                    const isSelected = selectedPreferencePreset === preset.key;
+                    return (
+                      <Pressable
+                        key={preset.key}
+                        onPress={() => applyPreferencePreset(preset.key)}
+                        className={`rounded-md border px-2 py-1.5 ${
+                          isSelected ? "border-primary bg-primary" : "border-border bg-muted/20"
+                        }`}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Apply ${preset.label} training preference preset`}
+                        testID={`training-preferences-preset-${preset.key}`}
+                      >
+                        <Text
+                          className={`text-center text-xs font-semibold ${
+                            isSelected ? "text-primary-foreground" : "text-foreground"
+                          }`}
+                        >
+                          {preset.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </>
+            ) : null}
+
+            {activeTab === "schedule" ? (
+              <>
+                {scheduleValidation.issues.length > 0 ? (
+                  <View className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">
+                    <Text className="text-sm font-medium text-destructive">
+                      Fix these schedule conflicts before saving.
+                    </Text>
+                    <Text className="mt-1 text-xs text-destructive">
+                      {scheduleValidation.issues.join(" ")}
+                    </Text>
+                  </View>
+                ) : null}
+                <FormIntegerStepperField
+                  control={form.control}
+                  label="Fewest sessions per week"
+                  max={14}
+                  min={0}
+                  name="dose_limits.min_sessions_per_week"
+                  testId="preferences-min-sessions"
+                />
+                {scheduleValidation.minSessionsError ? (
+                  <Text className="-mt-3 text-sm font-medium text-destructive">
+                    {scheduleValidation.minSessionsError}
                   </Text>
-                  <Text className="text-xs text-muted-foreground">
-                    Current draft: {scheduleSnapshot}
+                ) : null}
+                <FormIntegerStepperField
+                  control={form.control}
+                  label="Most sessions per week"
+                  max={21}
+                  min={0}
+                  name="dose_limits.max_sessions_per_week"
+                  testId="preferences-max-sessions"
+                />
+                {scheduleValidation.maxSessionsError ? (
+                  <Text className="-mt-3 text-sm font-medium text-destructive">
+                    {scheduleValidation.maxSessionsError}
                   </Text>
-                  {scheduleValidation.issues.length > 0 ? (
-                    <View className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">
-                      <Text className="text-sm font-medium text-destructive">
-                        Fix these schedule conflicts before saving.
-                      </Text>
-                      <Text className="mt-1 text-xs text-destructive">
-                        {scheduleValidation.issues.join(" ")}
-                      </Text>
+                ) : null}
+                <FormIntegerStepperField
+                  control={form.control}
+                  label="Longest activity (minutes)"
+                  max={600}
+                  min={20}
+                  name="dose_limits.max_single_session_duration_minutes"
+                  testId="preferences-max-duration"
+                />
+                {scheduleValidation.maxSingleSessionError ? (
+                  <Text className="-mt-3 text-sm font-medium text-destructive">
+                    {scheduleValidation.maxSingleSessionError}
+                  </Text>
+                ) : null}
+                <FormIntegerStepperField
+                  control={form.control}
+                  label="Weekly time budget (minutes)"
+                  max={10080}
+                  min={30}
+                  name="dose_limits.max_weekly_duration_minutes"
+                  testId="preferences-max-weekly-duration"
+                />
+                {scheduleValidation.maxWeeklyDurationError ? (
+                  <Text className="-mt-3 text-sm font-medium text-destructive">
+                    {scheduleValidation.maxWeeklyDurationError}
+                  </Text>
+                ) : null}
+              </>
+            ) : null}
+
+            {activeTab === "training-style" ? (
+              <>
+                <FormPercentSliderField
+                  control={form.control}
+                  decimals={0}
+                  label="Progression pace"
+                  max={100}
+                  min={0}
+                  name="training_style.progression_pace"
+                  showNumericInput={false}
+                  step={1}
+                  testId="preferences-progression-pace"
+                  valueMode="fraction"
+                />
+                <FormPercentSliderField
+                  control={form.control}
+                  decimals={0}
+                  label="Week pattern"
+                  max={100}
+                  min={0}
+                  name="training_style.week_pattern_preference"
+                  showNumericInput={false}
+                  step={1}
+                  testId="preferences-week-pattern"
+                  valueMode="fraction"
+                />
+                <FormPercentSliderField
+                  control={form.control}
+                  decimals={0}
+                  label="Strength integration priority"
+                  max={100}
+                  min={0}
+                  name="training_style.strength_integration_priority"
+                  showNumericInput={false}
+                  step={1}
+                  testId="preferences-strength-integration"
+                  valueMode="fraction"
+                />
+              </>
+            ) : null}
+
+            {activeTab === "recovery" ? (
+              <>
+                <FormPercentSliderField
+                  control={form.control}
+                  decimals={0}
+                  label="Recovery priority"
+                  max={100}
+                  min={0}
+                  name="recovery_preferences.recovery_priority"
+                  showNumericInput={false}
+                  step={1}
+                  testId="preferences-recovery-priority"
+                  valueMode="fraction"
+                />
+                <FormIntegerStepperField
+                  control={form.control}
+                  label="Recovery days after a goal"
+                  max={21}
+                  min={0}
+                  name="recovery_preferences.post_goal_recovery_days"
+                  testId="preferences-recovery-days"
+                />
+                <FormPercentSliderField
+                  control={form.control}
+                  decimals={0}
+                  label="Systemic fatigue tolerance"
+                  max={100}
+                  min={0}
+                  name="recovery_preferences.systemic_fatigue_tolerance"
+                  showNumericInput={false}
+                  step={1}
+                  testId="preferences-systemic-fatigue"
+                  valueMode="fraction"
+                />
+              </>
+            ) : null}
+
+            {activeTab === "goal-strategy" ? (
+              <>
+                <FormPercentSliderField
+                  control={form.control}
+                  decimals={0}
+                  label="Target surplus preference"
+                  max={100}
+                  min={0}
+                  name="goal_strategy_preferences.target_surplus_preference"
+                  showNumericInput={false}
+                  step={1}
+                  testId="preferences-target-surplus"
+                  valueMode="fraction"
+                />
+                <FormPercentSliderField
+                  control={form.control}
+                  decimals={0}
+                  label="Taper style"
+                  max={100}
+                  min={0}
+                  name="goal_strategy_preferences.taper_style_preference"
+                  showNumericInput={false}
+                  step={1}
+                  testId="preferences-taper-style"
+                  valueMode="fraction"
+                />
+              </>
+            ) : null}
+
+            {activeTab === "baseline-fitness" ? (
+              <>
+                <FormSwitchField
+                  control={form.control}
+                  label="Enable Manual Baseline"
+                  name="baseline_fitness.is_enabled"
+                  switchLabel="Enable manual baseline"
+                  testId="preferences-baseline-enabled"
+                />
+                {draft.baseline_fitness?.is_enabled ? (
+                  <>
+                    <FormIntegerStepperField
+                      control={form.control}
+                      label="CTL"
+                      max={250}
+                      min={0}
+                      name="baseline_fitness.override_ctl"
+                      testId="preferences-baseline-ctl"
+                    />
+                    {manualBaselineCtlWarning ? (
+                      <View
+                        className="rounded-2xl border border-border bg-muted/20 px-3 py-2"
+                        testID="preferences-baseline-ctl-warning"
+                      >
+                        <Text className="text-xs leading-5 text-muted-foreground">
+                          {manualBaselineCtlWarning}
+                        </Text>
+                      </View>
+                    ) : null}
+                    <FormIntegerStepperField
+                      control={form.control}
+                      label="ATL"
+                      max={250}
+                      min={0}
+                      name="baseline_fitness.override_atl"
+                      testId="preferences-baseline-atl"
+                    />
+                    <FormDateInputField
+                      clearable
+                      control={form.control}
+                      label="Baseline date"
+                      name="baseline_fitness.override_date"
+                      pickerPresentation="modal"
+                      testId="preferences-baseline-date"
+                    />
+                    <View className="mt-1 rounded-md border border-border bg-muted/20 px-3 py-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onPress={() => setShowAdvancedBaselineControls((value) => !value)}
+                        testID="preferences-toggle-advanced-ramp"
+                      >
+                        <Text>
+                          {showAdvancedBaselineControls ? "Hide ramp controls" : "Fine tune ramps"}
+                        </Text>
+                      </Button>
                     </View>
-                  ) : null}
-                  <FormIntegerStepperField
-                    control={form.control}
-                    description="Set the lowest weekly frequency that still feels sustainable."
-                    label="Fewest sessions per week"
-                    max={14}
-                    min={0}
-                    name="dose_limits.min_sessions_per_week"
-                    testId="preferences-min-sessions"
-                  />
-                  {scheduleValidation.minSessionsError ? (
-                    <Text className="-mt-3 text-sm font-medium text-destructive">
-                      {scheduleValidation.minSessionsError}
-                    </Text>
-                  ) : null}
-                  <FormIntegerStepperField
-                    control={form.control}
-                    description="Set the upper limit the planner should never exceed."
-                    label="Most sessions per week"
-                    max={21}
-                    min={0}
-                    name="dose_limits.max_sessions_per_week"
-                    testId="preferences-max-sessions"
-                  />
-                  {scheduleValidation.maxSessionsError ? (
-                    <Text className="-mt-3 text-sm font-medium text-destructive">
-                      {scheduleValidation.maxSessionsError}
-                    </Text>
-                  ) : null}
-                  <FormIntegerStepperField
-                    control={form.control}
-                    description="Use the longest workout you can realistically absorb in one day."
-                    label="Longest workout (minutes)"
-                    max={600}
-                    min={20}
-                    name="dose_limits.max_single_session_duration_minutes"
-                    testId="preferences-max-duration"
-                  />
-                  {scheduleValidation.maxSingleSessionError ? (
-                    <Text className="-mt-3 text-sm font-medium text-destructive">
-                      {scheduleValidation.maxSingleSessionError}
-                    </Text>
-                  ) : null}
-                  <FormIntegerStepperField
-                    control={form.control}
-                    description="This should cover the whole week, including your longest workout."
-                    label="Weekly time budget (minutes)"
-                    max={10080}
-                    min={30}
-                    name="dose_limits.max_weekly_duration_minutes"
-                    testId="preferences-max-weekly-duration"
-                  />
-                  {scheduleValidation.maxWeeklyDurationError ? (
-                    <Text className="-mt-3 text-sm font-medium text-destructive">
-                      {scheduleValidation.maxWeeklyDurationError}
-                    </Text>
-                  ) : null}
-                </>
-              ) : null}
-
-              {activeTab === "training-style" ? (
-                <>
-                  <Text className="text-xs text-muted-foreground">
-                    Training style is about progression and week feel, not bounded upside beyond the
-                    goal target.
-                  </Text>
-                  <PercentSliderFormField
-                    control={form.control}
-                    description="Higher builds load faster from week to week."
-                    id="preferences-progression-pace"
-                    label="Progression pace"
-                    name="training_style.progression_pace"
-                  />
-                  <PercentSliderFormField
-                    control={form.control}
-                    description="Lower stays steadier. Higher varies week shape more."
-                    id="preferences-week-pattern"
-                    label="Week pattern"
-                    name="training_style.week_pattern_preference"
-                  />
-                  <PercentSliderFormField
-                    control={form.control}
-                    description="Higher gives strength work more weight when the planner balances endurance and supporting work."
-                    fallbackValue={0.5}
-                    id="preferences-strength-integration"
-                    label="Strength integration priority"
-                    name="training_style.strength_integration_priority"
-                  />
-                </>
-              ) : null}
-
-              {activeTab === "recovery" ? (
-                <>
-                  <PercentSliderFormField
-                    control={form.control}
-                    description="Higher protects easy days and recovery space more strongly."
-                    id="preferences-recovery-priority"
-                    label="Recovery priority"
-                    name="recovery_preferences.recovery_priority"
-                  />
-                  <FormIntegerStepperField
-                    control={form.control}
-                    label="Recovery days after a goal"
-                    max={21}
-                    min={0}
-                    name="recovery_preferences.post_goal_recovery_days"
-                    testId="preferences-recovery-days"
-                  />
-                  <PercentSliderFormField
-                    control={form.control}
-                    description="Higher allows the planner to tolerate more systemic fatigue before reducing load progression."
-                    fallbackValue={0.5}
-                    id="preferences-systemic-fatigue"
-                    label="Systemic fatigue tolerance"
-                    name="recovery_preferences.systemic_fatigue_tolerance"
-                  />
-                </>
-              ) : null}
-
-              {activeTab === "goal-strategy" ? (
-                <>
-                  <Text className="text-xs text-muted-foreground">
-                    Goal strategy changes how closely the planner hugs the stated target versus
-                    aiming for bounded upside when confidence supports it. This stays separate from
-                    progression pace and schedule limits.
-                  </Text>
-                  <PercentSliderFormField
-                    control={form.control}
-                    description="Higher asks the system to plan for a little more than the stated target when it is safe and well supported."
-                    id="preferences-target-surplus"
-                    label="Target surplus preference"
-                    name="goal_strategy_preferences.target_surplus_preference"
-                  />
-                  <PercentSliderFormField
-                    control={form.control}
-                    description="Higher extends taper windows when the event and sport support it. Lower keeps the lead-in sharper and shorter."
-                    fallbackValue={0.5}
-                    id="preferences-taper-style"
-                    label="Taper style"
-                    name="goal_strategy_preferences.taper_style_preference"
-                  />
-                </>
-              ) : null}
-
-              {activeTab === "baseline-fitness" ? (
-                <>
-                  <Text className="text-xs text-muted-foreground">
-                    Override your baseline fitness to unlock higher volume training plans without
-                    historical data. This tells the system your current CTL (fitness) and ATL
-                    (fatigue) so it doesn't cap your plan due to low historical load.
-                  </Text>
-                  <FormSwitchField
-                    control={form.control}
-                    description="Use override values instead of calculated from history"
-                    label="Enable Manual Baseline"
-                    name="baseline_fitness.is_enabled"
-                    switchLabel="Enable manual baseline"
-                    testId="preferences-baseline-enabled"
-                  />
-                  {draft.baseline_fitness?.is_enabled ? (
-                    <>
-                      <FormIntegerStepperField
-                        control={form.control}
-                        description="Your current fitness level (42-day average TSS)"
-                        label="CTL (Chronic Training Load)"
-                        max={250}
-                        min={0}
-                        name="baseline_fitness.override_ctl"
-                        testId="preferences-baseline-ctl"
-                      />
-                      <FormIntegerStepperField
-                        control={form.control}
-                        description="Your current fatigue level (7-day average TSS)"
-                        label="ATL (Acute Training Load)"
-                        max={250}
-                        min={0}
-                        name="baseline_fitness.override_atl"
-                        testId="preferences-baseline-atl"
-                      />
-                      <FormDateInputField
-                        clearable
-                        control={form.control}
-                        description="When these values were valid (defaults to today)"
-                        label="Baseline Date"
-                        name="baseline_fitness.override_date"
-                        pickerPresentation="modal"
-                        testId="preferences-baseline-date"
-                      />
-                      <View className="mt-4 rounded-md border border-warning/30 bg-warning/10 px-3 py-2">
-                        <Text className="text-sm font-medium text-warning">
-                          Advanced: Ramp Rate Settings
-                        </Text>
-                        <Text className="mt-1 text-xs text-muted-foreground">
-                          Override the default weekly ramp caps. Higher values allow faster training
-                          load progression but increase injury risk.
-                        </Text>
-                      </View>
-                      <FormIntegerStepperField
-                        control={form.control}
-                        description="Maximum weekly TSS increase (default: 10%)"
-                        label="Max Weekly TSS Ramp %"
-                        max={40}
-                        min={1}
-                        name="baseline_fitness.max_weekly_tss_ramp_pct"
-                        testId="preferences-ramp-tss-pct"
-                      />
-                      <FormIntegerStepperField
-                        control={form.control}
-                        description="Maximum CTL increase per week (default: 5)"
-                        label="Max CTL Ramp Per Week"
-                        max={12}
-                        min={1}
-                        name="baseline_fitness.max_ctl_ramp_per_week"
-                        testId="preferences-ramp-ctl"
-                      />
-                      <View className="mt-4 rounded-md border border-info/30 bg-info/10 px-3 py-2">
-                        <Text className="text-sm font-medium text-info">
-                          Why Adjust Ramp Rates?
-                        </Text>
-                        <Text className="mt-1 text-xs text-muted-foreground">
-                          If your plan's readiness score feels too low, it may be because the goal
-                          requires more training load than the default ramp caps allow. Try
-                          increasing the Max Weekly TSS Ramp % or Max CTL Ramp Per Week above to see
-                          if that unlocks a higher readiness. Higher values allow faster progression
-                          but increase injury risk.
-                        </Text>
-                      </View>
-                      <View className="mt-4 rounded-md border border-info/30 bg-info/10 px-3 py-2">
-                        <Text className="text-sm font-medium text-info">Example CTL Values</Text>
-                        <Text className="mt-1 text-xs text-muted-foreground">
-                          Recreatonal: 30-50 | Intermediate: 50-80 | Advanced: 80-120 | Elite: 120+
-                        </Text>
-                      </View>
-                    </>
-                  ) : null}
-                </>
-              ) : null}
-            </CardContent>
-          </Card>
+                    {showAdvancedBaselineControls ? (
+                      <>
+                        <FormIntegerStepperField
+                          control={form.control}
+                          label="Max weekly TSS ramp %"
+                          max={40}
+                          min={1}
+                          name="baseline_fitness.max_weekly_tss_ramp_pct"
+                          testId="preferences-ramp-tss-pct"
+                        />
+                        <FormIntegerStepperField
+                          control={form.control}
+                          label="Max CTL ramp/week"
+                          max={12}
+                          min={1}
+                          name="baseline_fitness.max_ctl_ramp_per_week"
+                          testId="preferences-ramp-ctl"
+                        />
+                      </>
+                    ) : null}
+                  </>
+                ) : null}
+              </>
+            ) : null}
+          </View>
         </ScrollView>
       </Form>
-
-      <View className="border-t border-border bg-background px-4 py-4">
-        <View className="flex-row gap-2">
-          <Button
-            variant="outline"
-            className="flex-1"
-            onPress={() => form.reset(formDefaults)}
-            disabled={!hasUnsavedChanges || submitForm.isSubmitting || upsertMutation.isPending}
-          >
-            <Text>Reset</Text>
-          </Button>
-          <Button
-            className="flex-1"
-            onPress={submitForm.handleSubmit}
-            disabled={
-              !settingsQuery.profileId ||
-              !hasUnsavedChanges ||
-              scheduleValidation.issues.length > 0 ||
-              submitForm.isSubmitting ||
-              upsertMutation.isPending
-            }
-            testID="training-preferences-save-button"
-          >
-            <Text className="text-primary-foreground">
-              {submitForm.isSubmitting || upsertMutation.isPending
-                ? "Saving..."
-                : "Save Preferences"}
-            </Text>
-          </Button>
-        </View>
-      </View>
     </View>
   );
 }

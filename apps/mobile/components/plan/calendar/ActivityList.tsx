@@ -7,8 +7,12 @@
 import { Text } from "@repo/ui/components/text";
 import { useMemo } from "react";
 import { View } from "react-native";
-import { ActivityPlanCard, ActivityPlanCardData } from "@/components/shared/ActivityPlanCard";
-import { GroupedActivities, groupActivitiesByDate } from "@/lib/utils/plan/dateGrouping";
+import { ActivityPlanCard, type ActivityPlanCardData } from "@/components/shared/ActivityPlanCard";
+import {
+  getActivityPlanRoute,
+  getAuthoritativeActivityPlanMetrics,
+} from "@/lib/activityPlanMetrics";
+import { type GroupedActivities, groupActivitiesByDate } from "@/lib/utils/plan/dateGrouping";
 
 export interface ActivityListProps {
   activities: any[];
@@ -28,15 +32,17 @@ interface GroupSectionProps {
 // Transform planned activity to card data format
 function transformToCardData(plannedActivity: any): ActivityPlanCardData {
   const plan = plannedActivity.activity_plan;
+  const planMetrics = getAuthoritativeActivityPlanMetrics(plan);
+  const planRoute = getActivityPlanRoute(plan);
   return {
     id: plannedActivity.id,
     name: plan?.name || "Unnamed Activity",
     activityType: plan?.activity_category || "other",
     structure: plan?.structure,
-    estimatedDuration: plan?.estimated_duration,
-    estimatedTss: plan?.estimated_tss,
-    estimatedDistance: (plan?.structure as any)?.route?.distance,
-    routeId: (plan?.structure as any)?.route_id,
+    estimatedDuration: planMetrics.estimated_duration ?? undefined,
+    estimatedTss: planMetrics.estimated_tss ?? undefined,
+    estimatedDistance: planRoute.distance ?? undefined,
+    routeId: plan?.route_id,
     routeName: (plan?.structure as any)?.route?.name,
     notes: plannedActivity.notes,
     scheduledDate: plannedActivity.scheduled_date,
@@ -52,11 +58,9 @@ function GroupSection({ title, activities, onPress }: GroupSectionProps) {
 
   return (
     <View className="mb-6">
-      <View className="flex-row items-center mb-3 px-4">
+      <View className="mb-3 flex-row items-center px-4">
         <Text className="text-lg font-semibold flex-1">{title}</Text>
-        <View className="bg-muted px-3 py-1 rounded-full">
-          <Text className="text-sm text-muted-foreground">{activities.length}</Text>
-        </View>
+        <Text className="text-sm text-muted-foreground">{activities.length}</Text>
       </View>
       <View className="gap-3 px-4">
         {activities.map((activity) => (

@@ -1,5 +1,9 @@
 import { z } from "zod";
 import type { IntensityTargetV2 } from "./activity_plan_v2";
+import {
+  type ActivityTargetCategory,
+  getLegacyActivityTargetCompatibilityIssues,
+} from "./activity_target_capabilities";
 
 // ==============================
 // ENUMS
@@ -225,7 +229,7 @@ export const stepOrRepetitionSchema = z.discriminatedUnion("type", [stepSchema, 
 export type StepOrRepetition = z.infer<typeof stepOrRepetitionSchema>;
 
 // ==============================
-// STRUCTURED WORKOUT PLAN
+// STRUCTURED ACTIVITY PLAN
 // ==============================
 export const activityPlanStructureSchema = z.object({
   steps: z
@@ -270,17 +274,31 @@ const activityPlanObjectSchema = z
   })
   .strict();
 
-export const activityPlanSchema = activityPlanObjectSchema.refine(
-  (data) => {
-    const hasSteps = (data.structure.steps?.length ?? 0) > 0;
-    const hasRoute = !!data.route_id;
-    return hasSteps || hasRoute;
-  },
-  {
-    message: "Plan must have steps, route, or both",
-    path: ["structure"],
-  },
-);
+export const activityPlanSchema = activityPlanObjectSchema
+  .refine(
+    (data) => {
+      const hasSteps = (data.structure.steps?.length ?? 0) > 0;
+      const hasRoute = !!data.route_id;
+      return hasSteps || hasRoute;
+    },
+    {
+      message: "Plan must have steps, route, or both",
+      path: ["structure"],
+    },
+  )
+  .superRefine((plan, ctx) => {
+    getLegacyActivityTargetCompatibilityIssues({
+      activityCategory: plan.activity_category as ActivityTargetCategory,
+      pathPrefix: ["structure"],
+      structure: plan.structure,
+    }).forEach((issue) => {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: issue.path,
+        message: issue.message,
+      });
+    });
+  });
 
 export type ActivityPlan = z.infer<typeof activityPlanSchema>;
 
@@ -292,9 +310,26 @@ export type ActivityPlan = z.infer<typeof activityPlanSchema>;
 export const createActivityPlanSchema = activityPlanSchema;
 
 // For updating an existing plan (partial updates allowed)
-export const updateActivityPlanSchema = activityPlanObjectSchema.partial().safeExtend({
-  id: z.string().uuid({ message: "Invalid plan ID format" }),
-});
+export const updateActivityPlanSchema = activityPlanObjectSchema
+  .partial()
+  .safeExtend({
+    id: z.string().uuid({ message: "Invalid plan ID format" }),
+  })
+  .superRefine((plan, ctx) => {
+    if (plan.structure && plan.activity_category) {
+      getLegacyActivityTargetCompatibilityIssues({
+        activityCategory: plan.activity_category as ActivityTargetCategory,
+        pathPrefix: ["structure"],
+        structure: plan.structure,
+      }).forEach((issue) => {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: issue.path,
+          message: issue.message,
+        });
+      });
+    }
+  });
 
 export type CreateActivityPlan = z.infer<typeof createActivityPlanSchema>;
 export type UpdateActivityPlan = z.infer<typeof updateActivityPlanSchema>;
@@ -374,10 +409,11 @@ export function getIntensityColor(intensity: number, type?: string): string {
       if (intensity >= 56) return "#16a34a"; // Z2 - Green
       return "#06b6d4"; // Z1 - Light Blue
 
-    case "watts":
+    case "watts": {
       // Assuming 250W FTP for color coding
       const ftpPercent = (intensity / 250) * 100;
       return getIntensityColor(ftpPercent, "%FTP");
+    }
 
     case "%MaxHR":
     case "%ThresholdHR":
@@ -578,7 +614,7 @@ export function calculateTotalDuration(steps: FlattenedStep[]): number {
  * Check if an activity type can have a route
  * Note: All activity types can optionally have a route attached
  */
-export function canHaveRoute(activityType: string): boolean {
+export function canHaveRoute(_activityType: string): boolean {
   return true; // Routes are optional for all activity types
 }
 

@@ -1,7 +1,10 @@
 appId: com.deancochran.gradientpeak.dev
 ---
 - runFlow:
-    file: ../reusable/bootstrap.yaml
+    file: ../reusable/ensure_signed_out.yaml
+- tapOn:
+    id: "login-button"
+    optional: true
 - assertVisible:
     id: "sign-in-screen"
 - tapOn:

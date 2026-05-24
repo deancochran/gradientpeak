@@ -4,16 +4,9 @@
  */
 
 import type { ActivityPlanStructureV2 } from "@repo/core";
-import type {
-  PublicActivityCategory,
-  PublicActivityPlansRow,
-  PublicEffortType,
-  PublicEventStatus,
-  PublicEventType,
-  PublicProfileMetricType,
-} from "@repo/db";
+import type { PublicActivityCategory } from "@repo/db";
 import { toActivityType, toWahooWorkoutTypeId } from "./activity-type-utils";
-import { createWahooClient, supportsRoutes } from "./client";
+import { createWahooClient, refreshWahooAccessToken, supportsRoutes } from "./client";
 import {
   calculateWorkoutDuration,
   convertToWahooPlan,
@@ -30,6 +23,18 @@ import {
 
 type SyncAction = "created" | "updated" | "recreated" | "no_change";
 
+type WahooEventResourceProviderMetadata = {
+  wahoo?: {
+    planId?: number;
+    routeId?: number;
+  };
+};
+
+type SyncedWahooRoute = {
+  routeId?: number;
+  warnings: string[];
+};
+
 interface WahooRepository {
   createEventResourceLink(input: {
     eventId: string;
@@ -37,17 +42,25 @@ interface WahooRepository {
     integrationId: string;
     profileId: string;
     provider: "wahoo";
+    providerMetadata?: WahooEventResourceProviderMetadata | null;
     syncedAt: string;
     updatedAt: string;
   }): Promise<void>;
   deleteEventResourceLink(id: string): Promise<void>;
   findWahooIntegrationByProfileId(profileId: string): Promise<{
     accessToken: string;
+    expiresAt?: string | null;
     externalId: string;
     id: string;
     profileId: string;
     refreshToken: string | null;
   } | null>;
+  updateWahooIntegrationTokens?(input: {
+    accessToken: string;
+    expiresAt: string | null;
+    id: string;
+    refreshToken: string | null;
+  }): Promise<void>;
   getPlannedEventForSync(input: { eventId: string; profileId: string }): Promise<{
     activityPlan: {
       activityCategory: string;
@@ -63,9 +76,8 @@ interface WahooRepository {
   } | null>;
   getProfileSyncMetrics(
     profileId: string,
-  ): Promise<{ ftp: number | null; thresholdHr: number | null } | null>;
+  ): Promise<{ ftp: number | null; maxHr: number | null; thresholdHr: number | null } | null>;
   getRouteForSync(input: { profileId: string; routeId: string }): Promise<{
-    activityCategory: string;
     description: string | null;
     filePath: string;
     id: string;
@@ -74,11 +86,12 @@ interface WahooRepository {
     totalDescent: number | null;
     totalDistance: number;
   } | null>;
-  getEventResourceLink(input: {
-    eventId: string;
-    profileId: string;
-    provider: "wahoo";
-  }): Promise<{ externalId: string; id: string; updatedAt: string | null } | null>;
+  getEventResourceLink(input: { eventId: string; profileId: string; provider: "wahoo" }): Promise<{
+    externalId: string;
+    id: string;
+    providerMetadata?: WahooEventResourceProviderMetadata | null;
+    updatedAt: string | null;
+  } | null>;
   listEventResourceLinks(input: { eventId: string; profileId: string }): Promise<
     Array<{
       externalId: string;
@@ -91,16 +104,36 @@ interface WahooRepository {
   updateEventResourceLink(input: {
     externalId?: string;
     id: string;
+    providerMetadata?: WahooEventResourceProviderMetadata | null;
     updatedAt: string;
   }): Promise<void>;
 }
 
-type WahooActivityPlan = Pick<
-  PublicActivityPlansRow,
-  "id" | "name" | "description" | "activity_category" | "structure" | "updated_at" | "route_id"
->;
+type WahooActivityPlan = {
+  activity_category: PublicActivityCategory;
+  description: string | null;
+  id: string;
+  name: string;
+  route_id: string | null;
+  structure: unknown;
+  updated_at: string;
+};
 
-type WahooActivityPlanRelation = WahooActivityPlan | WahooActivityPlan[] | null;
+type WahooRepositoryActivityPlan = {
+  activityCategory: PublicActivityCategory;
+  description: string | null;
+  id: string;
+  name: string;
+  routeId: string | null;
+  structure: unknown;
+  updatedAt: string;
+};
+
+type WahooActivityPlanRelation =
+  | WahooActivityPlan
+  | WahooActivityPlan[]
+  | WahooRepositoryActivityPlan
+  | null;
 
 type WahooPlannedEvent = {
   id: string;
@@ -111,7 +144,36 @@ type WahooPlannedEvent = {
 function normalizeActivityPlanRelation(
   relation: WahooActivityPlanRelation,
 ): WahooActivityPlan | null {
-  return Array.isArray(relation) ? (relation[0] ?? null) : relation;
+  const activityPlan = Array.isArray(relation) ? (relation[0] ?? null) : relation;
+  if (!activityPlan) return null;
+
+  if ("activityCategory" in activityPlan) {
+    return {
+      activity_category: activityPlan.activityCategory,
+      description: activityPlan.description,
+      id: activityPlan.id,
+      name: activityPlan.name,
+      route_id: activityPlan.routeId,
+      structure: activityPlan.structure,
+      updated_at: activityPlan.updatedAt,
+    } as WahooActivityPlan;
+  }
+
+  return activityPlan;
+}
+
+function hasWorkoutIntervals(structure: unknown): structure is ActivityPlanStructureV2 {
+  return Boolean(
+    structure &&
+      typeof structure === "object" &&
+      "intervals" in structure &&
+      Array.isArray((structure as ActivityPlanStructureV2).intervals) &&
+      (structure as ActivityPlanStructureV2).intervals.length > 0,
+  );
+}
+
+function isRouteOnlyActivityPlan(activityPlan: WahooActivityPlan): boolean {
+  return Boolean(activityPlan.route_id && !hasWorkoutIntervals(activityPlan.structure));
 }
 
 export interface SyncResult {
@@ -142,6 +204,37 @@ export class WahooSyncService {
 
   private get repository() {
     return this.deps.repository;
+  }
+
+  private async ensureFreshIntegrationAccessToken(integration: {
+    accessToken: string;
+    expiresAt?: string | null;
+    id: string;
+    refreshToken: string | null;
+  }) {
+    if (!integration.expiresAt || Date.parse(integration.expiresAt) > Date.now() + 60_000) {
+      return integration;
+    }
+
+    if (!integration.refreshToken) {
+      return integration;
+    }
+
+    const refreshed = await refreshWahooAccessToken(integration.refreshToken);
+
+    await this.repository.updateWahooIntegrationTokens?.({
+      accessToken: refreshed.accessToken,
+      expiresAt: refreshed.expiresAt,
+      id: integration.id,
+      refreshToken: refreshed.refreshToken,
+    });
+
+    return {
+      ...integration,
+      accessToken: refreshed.accessToken,
+      expiresAt: refreshed.expiresAt,
+      refreshToken: refreshed.refreshToken,
+    };
   }
 
   /**
@@ -226,7 +319,7 @@ export class WahooSyncService {
                 filePath: route.filePath,
                 name: route.name,
                 description: route.description ?? undefined,
-                activityType: toActivityType(route.activityCategory as PublicActivityCategory),
+                activityType,
                 totalDistance: route.totalDistance,
                 totalAscent: route.totalAscent ?? undefined,
                 totalDescent: route.totalDescent ?? undefined,
@@ -248,14 +341,19 @@ export class WahooSyncService {
         provider: "wahoo",
       });
 
+      const freshIntegration = await this.ensureFreshIntegrationAccessToken(integration);
       const wahooClient = createWahooClient({
-        accessToken: integration.accessToken,
-        refreshToken: integration.refreshToken || undefined,
+        accessToken: freshIntegration.accessToken,
+        refreshToken: freshIntegration.refreshToken || undefined,
       });
+
+      const routeOnly = isRouteOnlyActivityPlan(activityPlan);
 
       // 6. Validate compatibility
       const structure = activityPlan.structure as ActivityPlanStructureV2;
-      const validation = validateWahooCompatibility(structure);
+      const validation = routeOnly
+        ? { compatible: true, warnings: [] }
+        : validateWahooCompatibility(structure);
 
       if (!validation.compatible) {
         return {
@@ -273,13 +371,14 @@ export class WahooSyncService {
           normalizedPlanned,
           structure,
           profile,
-          integration,
+          freshIntegration,
           wahooClient,
           profileId,
           activityType,
           validation.warnings,
           routeData,
           gpxContent,
+          routeOnly,
         );
       } else {
         // Update existing sync
@@ -318,57 +417,32 @@ export class WahooSyncService {
     warnings?: string[],
     routeData?: RouteFileData | null,
     gpxContent?: string | null,
+    routeOnly?: boolean,
   ): Promise<SyncResult> {
     // Sync route first if present
-    let wahooRouteId: number | undefined;
-    if (routeData && gpxContent && supportsRoutes(activityType as any)) {
-      try {
-        // Validate route for Wahoo
-        const validation = validateRouteForWahoo(routeData);
-        if (!validation.valid) {
-          return {
-            success: false,
-            action: "no_change",
-            error: `Route validation failed: ${validation.errors.join(", ")}`,
-            warnings: validation.warnings,
-          };
-        }
+    const syncedRoute = await this.syncRouteForWorkout({
+      activityType,
+      gpxContent,
+      requireRoute: Boolean(routeOnly),
+      routeData,
+      wahooClient,
+    });
+    if (!syncedRoute.success) {
+      return syncedRoute.result;
+    }
+    const wahooRouteId = syncedRoute.route?.routeId;
+    warnings = [...(warnings || []), ...(syncedRoute.route?.warnings ?? [])];
 
-        // Check if we have start coordinates
-        if (!routeData.startLat || !routeData.startLng) {
-          return {
-            success: false,
-            action: "no_change",
-            error: "Route has no starting coordinates",
-          };
-        }
-
-        // Prepare GPX file for Wahoo (base64 encode)
-        const base64Gpx = prepareGPXForWahoo(gpxContent);
-
-        // Create route in Wahoo
-        const wahooRoute = await wahooClient.createRoute({
-          file: base64Gpx,
-          filename: `${routeData.name}.gpx`,
-          externalId: routeData.filePath,
-          providerUpdatedAt: new Date().toISOString(),
-          name: routeData.name,
-          description: routeData.description,
-          workoutTypeFamilyId: getWorkoutTypeFamilyForRoute(routeData.activityType),
-          startLat: routeData.startLat,
-          startLng: routeData.startLng,
-          distance: routeData.totalDistance,
-          ascent: routeData.totalAscent || 0,
-          descent: routeData.totalDescent || 0,
-        });
-
-        wahooRouteId = wahooRoute.id;
-        warnings = [...(warnings || []), ...validation.warnings];
-      } catch (error) {
-        console.error("Failed to sync route to Wahoo:", error);
-        // Continue without route - workout can still be created
-        warnings = [...(warnings || []), "Route sync failed, workout created without route"];
-      }
+    if (routeOnly) {
+      return await this.createRouteOnlySync({
+        activityType,
+        integration,
+        planned,
+        profileId,
+        routeId: wahooRouteId,
+        wahooClient,
+        warnings,
+      });
     }
 
     // Convert to Wahoo format
@@ -378,11 +452,13 @@ export class WahooSyncService {
       name: planned.activity_plan.name,
       description: planned.activity_plan.description ?? undefined,
       ftp: profile?.ftp || undefined,
-      threshold_hr: profile?.threshold_hr || undefined,
+      max_hr: profile?.maxHr || undefined,
+      threshold_hr: profile?.thresholdHr || undefined,
     });
 
     // Create plan in Wahoo's library
     console.log(`[Wahoo Sync] Creating plan for "${planned.activity_plan.name}"`);
+    await this.deleteExistingPlansForExternalId(wahooClient, planned.activity_plan.id);
     const plan = await wahooClient.createPlan({
       structure: wahooPlan,
       name: planned.activity_plan.name,
@@ -454,6 +530,7 @@ export class WahooSyncService {
       integrationId: integration.id,
       provider: "wahoo",
       externalId: workout.id.toString(),
+      providerMetadata: { wahoo: { planId: plan.id, routeId: wahooRouteId } },
       syncedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     });
@@ -463,6 +540,150 @@ export class WahooSyncService {
       action: "created",
       workoutId: workout.id.toString(),
       warnings,
+    };
+  }
+
+  private async syncRouteForWorkout(input: {
+    activityType: string;
+    gpxContent?: string | null;
+    requireRoute: boolean;
+    routeData?: RouteFileData | null;
+    wahooClient: any;
+  }): Promise<
+    { success: true; route?: SyncedWahooRoute } | { success: false; result: SyncResult }
+  > {
+    if (!input.routeData || !input.gpxContent || !supportsRoutes(input.activityType as any)) {
+      if (!input.requireRoute) return { success: true };
+      return {
+        success: false,
+        result: {
+          success: false,
+          action: "no_change",
+          error: "Route-only activity plan requires a syncable route.",
+        },
+      };
+    }
+
+    try {
+      const validation = validateRouteForWahoo(input.routeData);
+      if (!validation.valid) {
+        return {
+          success: false,
+          result: {
+            success: false,
+            action: "no_change",
+            error: `Route validation failed: ${validation.errors.join(", ")}`,
+            warnings: validation.warnings,
+          },
+        };
+      }
+
+      if (!input.routeData.startLat || !input.routeData.startLng) {
+        return {
+          success: false,
+          result: {
+            success: false,
+            action: "no_change",
+            error: "Route has no starting coordinates",
+          },
+        };
+      }
+
+      const wahooRoute = await input.wahooClient.createRoute({
+        file: prepareGPXForWahoo(input.gpxContent),
+        filename: `${input.routeData.name}.gpx`,
+        externalId: input.routeData.filePath,
+        providerUpdatedAt: new Date().toISOString(),
+        name: input.routeData.name,
+        description: input.routeData.description,
+        workoutTypeFamilyId: getWorkoutTypeFamilyForRoute(input.routeData.activityType),
+        startLat: input.routeData.startLat,
+        startLng: input.routeData.startLng,
+        distance: input.routeData.totalDistance,
+        ascent: input.routeData.totalAscent || 0,
+        descent: input.routeData.totalDescent || 0,
+      });
+
+      return {
+        success: true,
+        route: {
+          routeId: wahooRoute.id,
+          warnings: validation.warnings,
+        },
+      };
+    } catch (error) {
+      console.error("Failed to sync route to Wahoo:", error);
+      if (input.requireRoute) {
+        return {
+          success: false,
+          result: {
+            success: false,
+            action: "no_change",
+            error: error instanceof Error ? error.message : "Route sync failed",
+          },
+        };
+      }
+
+      return {
+        success: true,
+        route: {
+          warnings: ["Route sync failed, workout created without route"],
+        },
+      };
+    }
+  }
+
+  private async createRouteOnlySync(input: {
+    activityType: string;
+    integration: { id: string };
+    planned: WahooPlannedEvent;
+    profileId: string;
+    routeId?: number;
+    wahooClient: any;
+    warnings?: string[];
+  }): Promise<SyncResult> {
+    if (!input.routeId) {
+      return {
+        success: false,
+        action: "no_change",
+        error: "Route-only activity plan requires a Wahoo route.",
+      };
+    }
+
+    const workoutTypeId = toWahooWorkoutTypeId(input.activityType as any, { hasRoute: true });
+    if (workoutTypeId === null) {
+      return {
+        success: false,
+        action: "no_change",
+        error: `Unable to map activity type '${input.activityType}' to Wahoo workout type`,
+      };
+    }
+
+    const workout = await input.wahooClient.createWorkout({
+      name: input.planned.activity_plan.name,
+      scheduledDate: new Date(input.planned.starts_at).toISOString(),
+      externalId: input.planned.id,
+      routeId: input.routeId,
+      workoutTypeId,
+      durationMinutes: 1,
+    });
+
+    await this.repository.createEventResourceLink({
+      profileId: input.profileId,
+      eventId: input.planned.id,
+      integrationId: input.integration.id,
+      provider: "wahoo",
+      externalId: workout.id.toString(),
+      providerMetadata: { wahoo: { routeId: input.routeId } },
+      syncedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    return {
+      success: true,
+      action: "created",
+      workoutId: workout.id.toString(),
+      warnings: input.warnings,
     };
   }
 
@@ -476,7 +697,7 @@ export class WahooSyncService {
     structure: ActivityPlanStructureV2,
     profile: any,
     wahooClient: any,
-    profileId: string,
+    _profileId: string,
     activityType: string,
     warnings?: string[],
   ): Promise<SyncResult> {
@@ -514,10 +735,16 @@ export class WahooSyncService {
         name: planned.activity_plan.name,
         description: planned.activity_plan.description ?? undefined,
         ftp: profile?.ftp || undefined,
-        threshold_hr: profile?.threshold_hr || undefined,
+        max_hr: profile?.maxHr || undefined,
+        threshold_hr: profile?.thresholdHr || undefined,
       });
 
       // Create new plan
+      await this.deleteExistingPlansForExternalId(
+        wahooClient,
+        planned.activity_plan.id,
+        existingSync.providerMetadata?.wahoo?.planId,
+      );
       const plan = await wahooClient.createPlan({
         structure: wahooPlan,
         name: planned.activity_plan.name,
@@ -563,6 +790,7 @@ export class WahooSyncService {
       await this.repository.updateEventResourceLink({
         id: existingSync.id,
         externalId: workout.id.toString(),
+        providerMetadata: { wahoo: { planId: plan.id } },
         updatedAt: new Date().toISOString(),
       });
 
@@ -572,6 +800,37 @@ export class WahooSyncService {
         workoutId: workout.id.toString(),
         warnings,
       };
+    }
+  }
+
+  private async deleteExistingPlansForExternalId(
+    wahooClient: any,
+    externalId: string,
+    storedPlanId?: number,
+  ) {
+    if (typeof wahooClient.deletePlan !== "function") {
+      return;
+    }
+
+    const deletedPlanIds = new Set<number>();
+    if (storedPlanId) {
+      try {
+        await wahooClient.deletePlan(storedPlanId);
+        deletedPlanIds.add(storedPlanId);
+      } catch (error) {
+        console.warn("Failed to delete stored Wahoo plan before replacement:", error);
+      }
+    }
+
+    if (typeof wahooClient.getPlans !== "function") {
+      return;
+    }
+
+    const existingPlans = await wahooClient.getPlans(externalId);
+    for (const plan of existingPlans) {
+      if (plan?.id && !deletedPlanIds.has(plan.id)) {
+        await wahooClient.deletePlan(plan.id);
+      }
     }
   }
 
@@ -607,17 +866,13 @@ export class WahooSyncService {
       }
 
       // 3. Delete workout from Wahoo
+      const freshIntegration = await this.ensureFreshIntegrationAccessToken(integration);
       const wahooClient = createWahooClient({
-        accessToken: integration.accessToken,
-        refreshToken: integration.refreshToken || undefined,
+        accessToken: freshIntegration.accessToken,
+        refreshToken: freshIntegration.refreshToken || undefined,
       });
 
-      try {
-        await wahooClient.deleteWorkout(sync.externalId);
-      } catch (error) {
-        console.warn("Failed to delete Wahoo workout:", error);
-        // Continue to delete sync record even if Wahoo delete fails
-      }
+      await wahooClient.deleteWorkout(sync.externalId);
 
       // 4. Delete sync record
       await this.repository.deleteEventResourceLink(sync.id);

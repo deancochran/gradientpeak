@@ -1,13 +1,12 @@
 // auth-hooks.ts - Separate file for auth hooks that use API
 
-import React, { useCallback, useEffect, useMemo, useRef } from "react";
-import { AppState } from "react-native";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import {
   deleteMobileAccount,
   updateMobileEmail,
   updateMobilePassword,
 } from "@/lib/auth/account-management";
-import { refreshMobileAuthSession } from "@/lib/auth/client";
+import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { api } from "../api";
 
@@ -24,6 +23,7 @@ export const useAuth = () => {
   const { session, user, ready, loading } = store;
 
   const isAuthenticated = useMemo(() => !!session?.user, [session]);
+  const hasAuthCredentials = useMemo(() => hasSessionAuthCredentials(), []);
 
   // Compute verification status directly from user object
   // This is more reliable than the RPC for initial email verification
@@ -48,7 +48,8 @@ export const useAuth = () => {
       : ("authenticated-unverified" as const);
   }, [isAuthenticated, isEmailVerified]);
 
-  const shouldFetchProfile = ready && !!user && isAuthenticated && userStatus === "verified";
+  const shouldFetchProfile =
+    ready && !!user && isAuthenticated && hasAuthCredentials && userStatus === "verified";
 
   // Use API query for profile data - this gives you caching, refetching, etc.
   const profileQuery = api.profiles.get.useQuery(
@@ -60,33 +61,23 @@ export const useAuth = () => {
     },
   );
 
-  useEffect(() => {
-    if (!AppState?.addEventListener) {
-      return;
-    }
-
-    const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active" && isAuthenticated) {
-        void refreshMobileAuthSession();
-      }
-    });
-
-    return () => {
-      subscription.remove();
-    };
-  }, [isAuthenticated]);
-
   // FIX: Sync profile from API to store - use ref to track if we've already synced this data
   const lastSyncedProfileId = useRef<string | null>(null);
   const lastSyncedOnboarded = useRef<boolean | null>(null);
+  const lastSyncedUpdatedAt = useRef<string | null>(null);
 
   useEffect(() => {
     if (profileQuery.data) {
       // Only update if data actually changed
       const profileId = profileQuery.data.id;
       const onboarded = profileQuery.data.onboarded;
+      const updatedAt = profileQuery.data.updated_at ?? null;
 
-      if (lastSyncedProfileId.current !== profileId || lastSyncedOnboarded.current !== onboarded) {
+      if (
+        lastSyncedProfileId.current !== profileId ||
+        lastSyncedOnboarded.current !== onboarded ||
+        lastSyncedUpdatedAt.current !== updatedAt
+      ) {
         // Prevent stale query data from overwriting optimistic 'true' status
         if (store.onboardingStatus === true && onboarded === false) {
           console.log(
@@ -97,6 +88,7 @@ export const useAuth = () => {
           store.setOnboardingStatus(onboarded);
           lastSyncedProfileId.current = profileId;
           lastSyncedOnboarded.current = onboarded;
+          lastSyncedUpdatedAt.current = updatedAt;
         }
       }
     } else if (profileQuery.isError || !isAuthenticated) {
@@ -106,10 +98,18 @@ export const useAuth = () => {
         store.setOnboardingStatus(null);
         lastSyncedProfileId.current = null;
         lastSyncedOnboarded.current = null;
+        lastSyncedUpdatedAt.current = null;
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profileQuery.data, profileQuery.isError, isAuthenticated]); // Don't include store methods
+  }, [
+    profileQuery.data,
+    profileQuery.isError,
+    isAuthenticated,
+    store.onboardingStatus,
+    store.setOnboardingStatus,
+    store.setProfile,
+  ]); // Don't include store methods
 
   // FIX: Delete account - stable callback
   const deleteAccount = useCallback(async () => {

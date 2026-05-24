@@ -1,9 +1,14 @@
+import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const pgDialect = new PgDialect();
 
 const mockActivityAnalysis = vi.hoisted(() => ({
   analyzeActivityDerivedMetrics: vi.fn(),
   buildActivityDerivedSummaryMap: vi.fn(),
-  createActivityAnalysisStore: vi.fn(() => ({ kind: "activity-analysis-store" })),
+  createActivityAnalysisStore: vi.fn(() => ({
+    kind: "activity-analysis-store",
+  })),
   mapActivityToDerivedResponse: vi.fn(({ activity, has_liked, derived }) => ({
     activity,
     has_liked,
@@ -35,6 +40,10 @@ vi.mock("../../lib/activity-analysis", () => ({
   mapActivityToDerivedResponse: mockActivityAnalysis.mapActivityToDerivedResponse,
   mapActivityToListDerivedResponse: mockActivityAnalysis.mapActivityToListDerivedResponse,
   resolveActivityContextAsOf: mockActivityAnalysis.resolveActivityContextAsOf,
+}));
+
+vi.mock("../../utils/profile-estimation-state", () => ({
+  markProfileAnalysisDirty: vi.fn(async () => undefined),
 }));
 
 import { activitiesRouter } from "../activities";
@@ -86,8 +95,8 @@ function buildActivityRow(overrides: Record<string, unknown> = {}) {
     total_strokes: null,
     device_manufacturer: null,
     device_product: null,
-    fit_file_path: null,
-    fit_file_size: null,
+    activity_file_path: null,
+    activity_file_size: null,
     import_source: null,
     import_file_type: null,
     import_original_file_name: null,
@@ -125,6 +134,93 @@ function buildActivityPlanRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function buildActivitySummaryRow(overrides: Record<string, unknown> = {}) {
+  return {
+    activity_id: ACTIVITY_ID,
+    profile_id: OWNER_ID,
+    duration_seconds: 3000,
+    moving_seconds: 2900,
+    distance_meters: 10000,
+    elevation_gain_meters: 120,
+    elevation_loss_meters: 80,
+    calories: 500,
+    avg_heart_rate: 145,
+    max_heart_rate: 172,
+    avg_power: 210,
+    max_power: 430,
+    normalized_power: 235,
+    avg_cadence: 88,
+    max_cadence: 112,
+    avg_speed_mps: 3.45,
+    max_speed_mps: 5.1,
+    normalized_speed_mps: 3.5,
+    normalized_graded_speed_mps: 3.6,
+    avg_temperature: null,
+    avg_swolf: null,
+    efficiency_factor: null,
+    aerobic_decoupling: null,
+    pool_length: null,
+    total_strokes: null,
+    created_at: new Date("2026-01-01T00:00:00.000Z"),
+    updated_at: new Date("2026-01-01T00:00:00.000Z"),
+    ...overrides,
+  };
+}
+
+function buildActivityImportRow(overrides: Record<string, unknown> = {}) {
+  return {
+    activity_id: ACTIVITY_ID,
+    profile_id: OWNER_ID,
+    provider: "wahoo",
+    external_id: "external-activity-1",
+    device_manufacturer: "Wahoo",
+    device_product: "ELEMNT",
+    activity_file_path: "activities/file.fit",
+    activity_file_size: 1234,
+    import_source: null,
+    import_file_type: "fit",
+    import_original_file_name: "ride.fit",
+    created_at: new Date("2026-01-01T00:00:00.000Z"),
+    updated_at: new Date("2026-01-01T00:00:00.000Z"),
+    ...overrides,
+  };
+}
+
+function buildActivityGeometryRow(overrides: Record<string, unknown> = {}) {
+  return {
+    activity_id: ACTIVITY_ID,
+    profile_id: OWNER_ID,
+    polyline: "split-polyline",
+    map_bounds: { north: 1, south: 0, east: 1, west: 0 },
+    created_at: new Date("2026-01-01T00:00:00.000Z"),
+    updated_at: new Date("2026-01-01T00:00:00.000Z"),
+    ...overrides,
+  };
+}
+
+function getTableName(table: unknown) {
+  if (table && typeof table === "object") {
+    const candidate =
+      (table as any)?._?.name ??
+      (table as any)?._?.baseName ??
+      (table as any)?.config?.name ??
+      (table as any)?.name;
+
+    if (typeof candidate === "string") return candidate;
+
+    for (const symbol of Object.getOwnPropertySymbols(table)) {
+      const value = (table as any)[symbol];
+      if (typeof value === "string" && /^[a-z_]+$/i.test(value)) return value;
+    }
+  }
+
+  return "unknown";
+}
+
+function toSql(fragment: unknown) {
+  return pgDialect.sqlToQuery(fragment as any).sql;
+}
+
 function createCaller(db: any, userId = OWNER_ID) {
   return activitiesRouter.createCaller({
     db,
@@ -154,15 +250,42 @@ function createDbMock(options: {
   likeRows?: Array<{ entity_id: string }>;
   totalRows?: Array<{ total: number }>;
   joinedRows?: any[];
+  activitySummaryRows?: any[];
+  activityImportRows?: any[];
+  activityGeometryRows?: any[];
+  activityLapRows?: any[];
   queryActivitiesFindFirst?: any[];
+  queryActivityGeometryFindFirst?: any[];
+  queryActivityImportsFindFirst?: any[];
+  queryActivitySummariesFindFirst?: any[];
   queryEventsFindFirst?: any[];
   queryLikesFindFirst?: any[];
   executeRows?: Array<{ id: string }>;
   updatedRows?: any[];
 }) {
   const deleteWhere = vi.fn(() => Promise.resolve());
+  const offset = vi.fn(() => Promise.resolve(options.activityRows ?? []));
+  const limit = vi.fn(() => ({
+    offset,
+    then: (onFulfilled: (value: unknown[]) => unknown) =>
+      Promise.resolve(options.activityRows ?? []).then(onFulfilled),
+  }));
+  const orderBy = vi.fn((..._args: unknown[]) => ({
+    limit,
+    then: (onFulfilled: (value: unknown[]) => unknown) =>
+      Promise.resolve(options.activityRows ?? []).then(onFulfilled),
+  }));
 
-  return {
+  function rowsForTable(tableName: string) {
+    if (tableName === "activity_summaries") return options.activitySummaryRows ?? [];
+    if (tableName === "activity_imports") return options.activityImportRows ?? [];
+    if (tableName === "activity_geometry") return options.activityGeometryRows ?? [];
+    if (tableName === "activity_laps") return options.activityLapRows ?? [];
+    if (tableName === "events") return options.queryEventsFindFirst ?? [];
+    return options.activityRows ?? [];
+  }
+
+  const db = {
     select: vi.fn((fields?: Record<string, unknown>) => {
       if (fields && "total" in fields) {
         return {
@@ -180,27 +303,62 @@ function createDbMock(options: {
         };
       }
 
-      if (fields && "activity" in fields) {
+      if (fields && "payload" in fields) {
         return {
-          from: vi.fn(() => ({
-            leftJoin: vi.fn(() => ({
-              where: vi.fn(() => ({
-                limit: vi.fn(() => Promise.resolve(options.joinedRows ?? [])),
-              })),
+          from: vi.fn((table: unknown) => ({
+            where: vi.fn(() => ({
+              orderBy: vi.fn(() => Promise.resolve(rowsForTable(getTableName(table)))),
             })),
           })),
         };
       }
 
-      return {
-        from: vi.fn(() => ({
-          where: vi.fn(() => ({
-            orderBy: vi.fn(() => Promise.resolve(options.activityRows ?? [])),
+      if (fields && "activity" in fields) {
+        return {
+          from: vi.fn(() => ({
+            leftJoin: vi.fn(() => {
+              const joinedBuilder = {
+                where: vi.fn(() => ({
+                  orderBy,
+                  limit: vi.fn(() => Promise.resolve(options.joinedRows ?? [])),
+                })),
+              };
+              return joinedBuilder;
+            }),
           })),
-        })),
+        };
+      }
+
+      return {
+        from: vi.fn((table: unknown) => {
+          const builder = {
+            leftJoin: vi.fn(() => builder),
+            where: vi.fn(() => {
+              const rows = rowsForTable(getTableName(table));
+              const resolveRows = () => Promise.resolve(rows);
+              return {
+                limit: vi.fn(resolveRows),
+                orderBy:
+                  getTableName(table) === "activities"
+                    ? orderBy
+                    : vi.fn(() => Promise.resolve(rows)),
+                then: (onFulfilled: (value: unknown[]) => unknown) =>
+                  Promise.resolve(rows).then(onFulfilled),
+              };
+            }),
+          };
+
+          return builder;
+        }),
       };
     }),
     execute: vi.fn(async () => ({ rows: options.executeRows ?? [] })),
+    insert: vi.fn(() => ({
+      values: vi.fn(() => ({
+        returning: vi.fn(() => Promise.resolve(options.executeRows ?? [])),
+      })),
+    })),
+    transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback(db)),
     update: vi.fn(() => ({
       set: vi.fn(() => ({
         where: vi.fn(() => ({
@@ -215,6 +373,15 @@ function createDbMock(options: {
       activities: {
         findFirst: createSequencedFn(options.queryActivitiesFindFirst ?? []),
       },
+      activityGeometry: {
+        findFirst: createSequencedFn(options.queryActivityGeometryFindFirst ?? []),
+      },
+      activityImports: {
+        findFirst: createSequencedFn(options.queryActivityImportsFindFirst ?? []),
+      },
+      activitySummaries: {
+        findFirst: createSequencedFn(options.queryActivitySummariesFindFirst ?? []),
+      },
       events: {
         findFirst: createSequencedFn(options.queryEventsFindFirst ?? []),
       },
@@ -224,8 +391,13 @@ function createDbMock(options: {
     },
     __spies: {
       deleteWhere,
+      limit,
+      offset,
+      orderBy,
     },
   };
+
+  return db;
 }
 
 beforeEach(() => {
@@ -246,7 +418,11 @@ beforeEach(() => {
 describe("activitiesRouter", () => {
   it("lists owned activities with like and derived summaries", async () => {
     const rows = [buildActivityRow()];
-    const derived = { tss: 72, intensity_factor: 0.81, computed_as_of: "2026-01-10T09:00:00.000Z" };
+    const derived = {
+      tss: 72,
+      intensity_factor: 0.81,
+      computed_as_of: "2026-01-10T09:00:00.000Z",
+    };
     const db = createDbMock({
       activityRows: rows,
       likeRows: [{ entity_id: ACTIVITY_ID }],
@@ -275,6 +451,77 @@ describe("activitiesRouter", () => {
         activities: rows,
       }),
     );
+  });
+
+  it("overlays split summary import and geometry values in list responses", async () => {
+    const rows = [
+      buildActivityRow({
+        distance_meters: 1,
+        duration_seconds: 2,
+        provider: null,
+        external_id: null,
+        polyline: "legacy-polyline",
+        map_bounds: { legacy: true },
+      }),
+    ];
+    const db = createDbMock({
+      activityRows: rows,
+      activitySummaryRows: [
+        buildActivitySummaryRow({
+          distance_meters: 12345,
+          duration_seconds: 3600,
+        }),
+      ],
+      activityImportRows: [
+        buildActivityImportRow({
+          provider: "wahoo",
+          external_id: "split-external-id",
+        }),
+      ],
+      activityGeometryRows: [
+        buildActivityGeometryRow({
+          polyline: "split-polyline",
+          map_bounds: { split: true },
+        }),
+      ],
+    });
+
+    const caller = createCaller(db);
+    const result = await caller.list({
+      date_from: "2026-01-01T00:00:00.000Z",
+      date_to: "2026-01-31T23:59:59.999Z",
+    });
+
+    expect(result[0]).toMatchObject({
+      distance_meters: 12345,
+      duration_seconds: 3600,
+      provider: "wahoo",
+      external_id: "split-external-id",
+      polyline: "split-polyline",
+      map_bounds: { split: true },
+    });
+  });
+
+  it("sorts paginated distance and duration queries by split summary values with legacy fallback", async () => {
+    const db = createDbMock({
+      activityRows: [buildActivityRow()],
+      totalRows: [{ total: 1 }],
+      activitySummaryRows: [buildActivitySummaryRow({ distance_meters: 5000 })],
+    });
+    const caller = createCaller(db);
+
+    await caller.listPaginated({
+      sort_by: "distance",
+      sort_order: "asc",
+    });
+    await caller.listPaginated({
+      sort_by: "duration",
+      sort_order: "desc",
+    });
+
+    const orderSql = db.__spies.orderBy.mock.calls.flat().map(toSql).join("\n");
+    expect(orderSql).toContain('"activity_summaries"."distance_meters"');
+    expect(orderSql).toContain('"activity_summaries"."duration_seconds" desc');
   });
 
   it("sorts paginated results by derived tss before slicing", async () => {
@@ -309,15 +556,27 @@ describe("activitiesRouter", () => {
         [ACTIVITY_ID, { tss: 20 }],
         [
           ACTIVITY_ID_2,
-          { tss: 95, intensity_factor: 0.92, computed_as_of: "2026-01-11T10:00:00.000Z" },
+          {
+            tss: 95,
+            intensity_factor: 0.92,
+            computed_as_of: "2026-01-11T10:00:00.000Z",
+          },
         ],
         [
           ACTIVITY_ID_3,
-          { tss: 60, intensity_factor: 0.78, computed_as_of: "2026-01-10T09:00:00.000Z" },
+          {
+            tss: 60,
+            intensity_factor: 0.78,
+            computed_as_of: "2026-01-10T09:00:00.000Z",
+          },
         ],
         [
           ACTIVITY_ID,
-          { tss: 20, intensity_factor: 0.65, computed_as_of: "2026-01-12T09:00:00.000Z" },
+          {
+            tss: 20,
+            intensity_factor: 0.65,
+            computed_as_of: "2026-01-12T09:00:00.000Z",
+          },
         ],
       ]),
     );
@@ -325,14 +584,33 @@ describe("activitiesRouter", () => {
     const caller = createCaller(db);
     const result = await caller.listPaginated({
       limit: 2,
-      offset: 1,
+      cursor: "index:1",
       sort_by: "tss",
       sort_order: "desc",
     });
 
     expect(result.total).toBe(3);
     expect(result.hasMore).toBe(false);
+    expect(result.nextCursor).toBeUndefined();
     expect(result.items.map((item: any) => item.id)).toEqual([ACTIVITY_ID_3, ACTIVITY_ID]);
+    expect(db.__spies.limit).toHaveBeenCalledWith(3);
+  });
+
+  it("caps paginated tss candidate loading", async () => {
+    const db = createDbMock({
+      activityRows: [buildActivityRow()],
+      totalRows: [{ total: 1000 }],
+    });
+    const caller = createCaller(db);
+
+    await caller.listPaginated({
+      limit: 50,
+      cursor: "index:900",
+      sort_by: "tss",
+      sort_order: "desc",
+    });
+
+    expect(db.__spies.limit).toHaveBeenCalledWith(500);
   });
 
   it("creates an activity linked to a planned-activity event", async () => {
@@ -365,8 +643,8 @@ describe("activitiesRouter", () => {
     });
 
     expect(result).toEqual(createdActivity);
-    expect(db.query.events.findFirst).toHaveBeenCalledTimes(1);
-    expect(db.execute).toHaveBeenCalledTimes(1);
+    expect(db.select).toHaveBeenCalled();
+    expect(db.transaction).toHaveBeenCalledTimes(1);
   });
 
   it("returns a derived activity response for an accessible activity", async () => {
@@ -398,7 +676,9 @@ describe("activitiesRouter", () => {
       queryLikesFindFirst: [{ id: "like-1" }],
     });
 
-    mockActivityAnalysis.resolveActivityContextAsOf.mockResolvedValue({ baseline: "context" });
+    mockActivityAnalysis.resolveActivityContextAsOf.mockResolvedValue({
+      baseline: "context",
+    });
     mockActivityAnalysis.analyzeActivityDerivedMetrics.mockReturnValue(derived);
 
     const caller = createCaller(db, OWNER_ID);
@@ -423,6 +703,59 @@ describe("activitiesRouter", () => {
         activityTimestamp: finishedAt,
       }),
     );
+  });
+
+  it("prefers split activity detail values and treats empty split laps as authoritative", async () => {
+    const activity = buildActivityRow({
+      id: ACTIVITY_ID,
+      profile_id: OWNER_ID,
+      distance_meters: 1,
+      duration_seconds: 2,
+      provider: null,
+      external_id: "legacy-external-id",
+      polyline: "legacy-polyline",
+      map_bounds: { legacy: true },
+      laps: [{ legacy: true }],
+    });
+    const db = createDbMock({
+      queryActivitiesFindFirst: [
+        {
+          profile_id: OWNER_ID,
+          is_private: false,
+        },
+      ],
+      joinedRows: [{ activity, activityPlan: null }],
+      queryActivitySummariesFindFirst: [
+        buildActivitySummaryRow({
+          distance_meters: 22222,
+          duration_seconds: 3333,
+        }),
+      ],
+      queryActivityImportsFindFirst: [
+        buildActivityImportRow({
+          external_id: "split-external-id",
+        }),
+      ],
+      queryActivityGeometryFindFirst: [
+        buildActivityGeometryRow({
+          polyline: "split-polyline",
+          map_bounds: { split: true },
+        }),
+      ],
+      activityLapRows: [],
+    });
+
+    const caller = createCaller(db);
+    const result = await caller.getById({ id: ACTIVITY_ID });
+
+    expect(result.activity).toMatchObject({
+      distance_meters: 22222,
+      duration_seconds: 3333,
+      external_id: "split-external-id",
+      polyline: "split-polyline",
+      map_bounds: { split: true },
+      laps: [],
+    });
   });
 
   it("updates an owned activity", async () => {

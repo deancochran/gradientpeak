@@ -1,8 +1,250 @@
 import { describe, expect, it } from "vitest";
-import { buildProjectionEngineInput, deterministicUuidFromSeed } from "../..";
+import {
+  buildProjectionChartPayloadFromDeterministicProjection,
+  buildProjectionEngineInput,
+} from "../..";
 import { buildDeterministicProjectionPayload } from "../projection/engine";
 
 describe("projection parity fixtures", () => {
+  it("keeps load resolution summary goldens stable for risk-critical scenarios", () => {
+    const fixtures: Array<{
+      key: string;
+      input: Parameters<typeof buildDeterministicProjectionPayload>[0];
+      expected: {
+        readiness_score: number;
+        weekly_tss: number[];
+        load_resolution_summary: NonNullable<
+          ReturnType<typeof buildDeterministicProjectionPayload>["load_resolution_summary"]
+        >;
+      };
+    }> = [
+      {
+        key: "beginner-aggressive-race",
+        input: {
+          timeline: {
+            start_date: "2026-04-06",
+            end_date: "2026-06-28",
+          },
+          blocks: [
+            {
+              name: "Build",
+              phase: "build",
+              start_date: "2026-04-06",
+              end_date: "2026-06-28",
+              target_weekly_tss_range: { min: 260, max: 360 },
+            },
+          ],
+          goals: [
+            {
+              id: "11111111-1111-4111-8111-111111111111",
+              name: "First Half Marathon",
+              target_date: "2026-06-28",
+              priority: 9,
+              targets: [
+                {
+                  target_type: "race_performance",
+                  distance_m: 21097,
+                  target_time_s: 7200,
+                  activity_category: "run",
+                },
+              ],
+            },
+          ],
+          starting_ctl: 18,
+          creation_config: {
+            optimization_profile: "balanced",
+            max_weekly_tss_ramp_pct: 7,
+            max_ctl_ramp_per_week: 3,
+          },
+        },
+        expected: {
+          readiness_score: 39,
+          weekly_tss: [
+            200.1, 214.1, 229.1, 241.5, 258.4, 276.5, 276.6, 275.6, 294.9, 289.9, 272.3, 234.6,
+          ],
+          load_resolution_summary: {
+            week_count: 12,
+            capped_weeks: 6,
+            tss_ramp_capped_weeks: 5,
+            ctl_ramp_capped_weeks: 1,
+            demand_floor_weeks: 0,
+            demand_floor_override_weeks: 0,
+            recovery_adjusted_weeks: 0,
+            recovery_weeks: 0,
+            average_baseline_to_final_delta_tss: -25.7,
+            average_requested_to_final_delta_tss: -20.1,
+            average_mpc_to_final_delta_tss: 0,
+            max_requested_to_final_delta_tss: 89.4,
+            limiting_constraints: ["weekly_tss_ramp_cap", "weekly_ctl_ramp_cap"],
+            confidence: "low",
+            confidence_reasons: ["low_evidence_confidence", "frequent_safety_caps"],
+          },
+        },
+      },
+      {
+        key: "high-ctl-taper",
+        input: {
+          timeline: {
+            start_date: "2026-04-06",
+            end_date: "2026-05-17",
+          },
+          blocks: [
+            {
+              name: "Peak",
+              phase: "peak",
+              start_date: "2026-04-06",
+              end_date: "2026-05-03",
+              target_weekly_tss_range: { min: 520, max: 620 },
+            },
+            {
+              name: "Taper",
+              phase: "taper",
+              start_date: "2026-05-04",
+              end_date: "2026-05-17",
+              target_weekly_tss_range: { min: 320, max: 440 },
+            },
+          ],
+          goals: [
+            {
+              id: "22222222-2222-4222-8222-222222222222",
+              name: "A Race Marathon",
+              target_date: "2026-05-17",
+              priority: 10,
+              targets: [
+                {
+                  target_type: "race_performance",
+                  distance_m: 42195,
+                  target_time_s: 10800,
+                  activity_category: "run",
+                },
+              ],
+            },
+          ],
+          starting_ctl: 72,
+          starting_atl: 80,
+          creation_config: {
+            optimization_profile: "balanced",
+            max_weekly_tss_ramp_pct: 7,
+            max_ctl_ramp_per_week: 3,
+          },
+        },
+        expected: {
+          readiness_score: 48,
+          weekly_tss: [513.9, 529.9, 567, 489.6, 394, 421.6],
+          load_resolution_summary: {
+            week_count: 6,
+            capped_weeks: 1,
+            tss_ramp_capped_weeks: 1,
+            ctl_ramp_capped_weeks: 0,
+            demand_floor_weeks: 0,
+            demand_floor_override_weeks: 0,
+            recovery_adjusted_weeks: 0,
+            recovery_weeks: 0,
+            average_baseline_to_final_delta_tss: -23.1,
+            average_requested_to_final_delta_tss: 32.2,
+            average_mpc_to_final_delta_tss: 0,
+            max_requested_to_final_delta_tss: 148.2,
+            limiting_constraints: ["weekly_tss_ramp_cap"],
+            confidence: "low",
+            confidence_reasons: ["low_evidence_confidence"],
+          },
+        },
+      },
+      {
+        key: "recovery-overlap",
+        input: {
+          timeline: {
+            start_date: "2026-04-06",
+            end_date: "2026-05-17",
+          },
+          blocks: [
+            {
+              name: "Race Block",
+              phase: "build",
+              start_date: "2026-04-06",
+              end_date: "2026-05-17",
+              target_weekly_tss_range: { min: 300, max: 380 },
+            },
+          ],
+          goals: [
+            {
+              id: "33333333-3333-4333-8333-333333333333",
+              name: "Tune Up 10K",
+              target_date: "2026-04-26",
+              priority: 7,
+              targets: [
+                {
+                  target_type: "race_performance",
+                  distance_m: 10000,
+                  target_time_s: 2700,
+                  activity_category: "run",
+                },
+              ],
+            },
+            {
+              id: "44444444-4444-4444-8444-444444444444",
+              name: "Follow Up 5K",
+              target_date: "2026-05-10",
+              priority: 6,
+              targets: [
+                {
+                  target_type: "race_performance",
+                  distance_m: 5000,
+                  target_time_s: 1200,
+                  activity_category: "run",
+                },
+              ],
+            },
+          ],
+          starting_ctl: 45,
+          creation_config: {
+            optimization_profile: "balanced",
+            post_goal_recovery_days: 5,
+            max_weekly_tss_ramp_pct: 7,
+            max_ctl_ramp_per_week: 3,
+          },
+        },
+        expected: {
+          readiness_score: 48,
+          weekly_tss: [302.9, 278.3, 236.5, 234.4, 217.8, 173.9],
+          load_resolution_summary: {
+            week_count: 6,
+            capped_weeks: 0,
+            tss_ramp_capped_weeks: 0,
+            ctl_ramp_capped_weeks: 0,
+            demand_floor_weeks: 0,
+            demand_floor_override_weeks: 0,
+            recovery_adjusted_weeks: 2,
+            recovery_weeks: 2,
+            average_baseline_to_final_delta_tss: -56.3,
+            average_requested_to_final_delta_tss: 15.6,
+            average_mpc_to_final_delta_tss: 0,
+            max_requested_to_final_delta_tss: 93.7,
+            limiting_constraints: ["recovery_segment"],
+            confidence: "low",
+            confidence_reasons: ["low_evidence_confidence"],
+          },
+        },
+      },
+    ];
+
+    for (const fixture of fixtures) {
+      const result = buildDeterministicProjectionPayload(fixture.input);
+
+      expect(result.readiness_score, fixture.key).toBe(fixture.expected.readiness_score);
+      expect(
+        result.microcycles.map((microcycle) => microcycle.planned_weekly_tss),
+        fixture.key,
+      ).toEqual(fixture.expected.weekly_tss);
+      expect(result.load_resolution_summary, fixture.key).toEqual(
+        fixture.expected.load_resolution_summary,
+      );
+      expect(result.projection_diagnostics?.load_resolution_summary, fixture.key).toEqual(
+        result.load_resolution_summary,
+      );
+    }
+  });
+
   it("keeps deterministic fixture output stable", () => {
     const result = buildDeterministicProjectionPayload({
       timeline: {
@@ -494,7 +736,7 @@ describe("projection parity fixtures", () => {
 
       expect(localPath.constraint_summary).toEqual(serverPath.constraint_summary);
       expect(localPath.goal_markers).toEqual(serverPath.goal_markers);
-      expect(localPath.readiness_score).toBeCloseTo(serverPath.readiness_score, 4);
+      expect(localPath.readiness_score).toBeCloseTo(serverPath.readiness_score ?? 0, 4);
       expect(serverPath.readiness_confidence).toBeDefined();
       expect(localPath.readiness_confidence).toBeCloseTo(serverPath.readiness_confidence ?? 0, 4);
     }
@@ -512,23 +754,8 @@ function buildServerRecomputePathLike(input: Parameters<typeof buildProjectionEn
 
   const expandedPlan = input.expanded_plan;
 
-  return {
-    ...deterministicProjection,
-    periodization_phases: expandedPlan.blocks.map((block, index) => ({
-      id: deterministicUuidFromSeed(
-        `projection-phase|${expandedPlan.start_date}|${expandedPlan.end_date}|${index}|${block.name}|${block.start_date}|${block.end_date}`,
-      ),
-      name: block.name,
-      start_date: block.start_date,
-      end_date: block.end_date,
-      target_weekly_tss_min: Math.round((block.target_weekly_tss_range?.min ?? 0) * 10) / 10,
-      target_weekly_tss_max: Math.round((block.target_weekly_tss_range?.max ?? 0) * 10) / 10,
-    })),
-    microcycles: deterministicProjection.microcycles.map((microcycle) => ({
-      id: deterministicUuidFromSeed(
-        `projection-microcycle|${expandedPlan.start_date}|${microcycle.week_start_date}|${microcycle.week_end_date}`,
-      ),
-      ...microcycle,
-    })),
-  };
+  return buildProjectionChartPayloadFromDeterministicProjection({
+    expandedPlan,
+    deterministicProjection,
+  });
 }

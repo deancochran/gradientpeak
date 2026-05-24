@@ -302,6 +302,60 @@ describe("Goal Readiness Score - 99+ Override Removal", () => {
       note: "Higher alignment loss should reduce readiness",
     });
   });
+
+  it("reports physiological readiness from the final displayed readiness series", () => {
+    const projection = buildDeterministicProjectionPayload({
+      timeline: {
+        start_date: "2026-03-01",
+        end_date: "2026-05-24",
+      },
+      blocks: [
+        {
+          name: "Build",
+          phase: "build",
+          start_date: "2026-03-01",
+          end_date: "2026-05-10",
+          target_weekly_tss_range: { min: 300, max: 380 },
+        },
+        {
+          name: "Taper",
+          phase: "taper",
+          start_date: "2026-05-11",
+          end_date: "2026-05-24",
+          target_weekly_tss_range: { min: 140, max: 190 },
+        },
+      ],
+      goals: [
+        {
+          id: "marathon-1",
+          name: "Marathon",
+          target_date: "2026-05-24",
+          priority: 8,
+          targets: [
+            {
+              target_type: "race_performance",
+              activity_category: "run",
+              distance_m: 42195,
+              target_time_s: 12600,
+            },
+          ],
+        },
+      ],
+      starting_ctl: 38,
+      starting_atl: 36,
+      starting_tsb: 2,
+    });
+
+    const displayedGoalPoint = projection.display_points?.find(
+      (point) => point.date === "2026-05-24",
+    );
+
+    expect(displayedGoalPoint).toBeDefined();
+    expect(projection.physiological_readiness_score).toBeCloseTo(
+      displayedGoalPoint?.readiness_score ?? 0,
+      0,
+    );
+  });
 });
 
 describe("Goal Readiness Score - Determinism", () => {

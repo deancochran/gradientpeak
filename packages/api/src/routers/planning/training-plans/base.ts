@@ -3,28 +3,30 @@ import {
   type AthletePreferenceProfile,
   addDaysDateOnlyUtc,
   athletePreferenceProfileSchema,
+  type BuildReadinessForecastTimelineInput,
   buildDeterministicProjectionPayload,
+  buildProjectionChartPayloadFromDeterministicProjection,
   buildProjectionEngineInput,
-  type ProjectionChartPayload as CoreProjectionChartPayload,
+  buildReadinessForecastTimeline,
   type CreationContextSummary,
   calculateTrainingLoadSeries,
   canonicalizeMinimalTrainingPlanCreate,
   classifyCreationFeasibility,
+  classifyProjectionFeasibility,
   computeLoadBootstrapState,
   countAvailableTrainingDays,
   createFromCreationConfigInputSchema,
   creationBehaviorControlsV1Schema,
   creationConfigValueSchema,
   creationConstraintsSchema,
-  creationNormalizationInputSchema,
-  creationWeekDayEnum,
-  type DeterministicProjectionMicrocycle,
+  type creationNormalizationInputSchema,
   deriveCreationContext,
   deriveCreationSuggestions,
   deriveNoHistoryGoalTierFromTargets,
   derivePlanTimeline,
   deterministicUuidFromSeed,
   diffDateOnlyUtcDays,
+  type ForecastConfidenceReasonCode,
   formatDateOnlyUtc,
   getCreationSuggestionsInputSchema,
   getFormStatus,
@@ -44,21 +46,25 @@ import {
   normalizeProjectionSafetyConfig,
   type PreviewReadinessSnapshot,
   type ProfileGoal,
+  type ProjectionChartPayloadWithDeterministicIds,
   type ProjectionConstraintSummary,
-  type ProjectionPeriodizationPhase,
+  type ProjectionFeasibilitySummary,
   type ProjectionRecoverySegment,
   parseDateOnlyUtc,
   parseProfileGoalRecord,
-  postCreateBehaviorSchema,
+  type postCreateBehaviorSchema,
   previewCreationConfigInputSchema,
+  type ReadinessDailyLoadInput,
   type ReadinessDeltaDiagnostics,
+  type ReadinessForecastBaseline,
+  type ReadinessForecastGoalInput,
   resolveConstraintConflicts,
-  resolveGoalEventDate,
+  type ScheduledReadinessDailyLoadInput,
+  simulateReadinessScheduleAdjustment,
   type TrainingPlanCreationConfig,
   templateApplyInputSchema,
   trainingPlanCalibrationConfigSchema,
   trainingPlanCreateInputSchema,
-  trainingPlanCreateSchema,
   trainingPlanCreationConfigFormSchema,
   trainingPlanSchema,
   trainingPlanUpdateInputSchema,
@@ -74,10 +80,29 @@ import { TRPCError } from "@trpc/server";
 import { and, asc, desc, eq, gte, inArray, isNotNull, lt, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
+  applyQuickAdjustmentUseCase,
+  applyTrainingPlanTemplateUseCase,
+  auditTrainingPlanTemplateHealthUseCase,
+  autoAddPeriodizationUseCase,
   createFromCreationConfigUseCase,
+  createTrainingPlanUseCase,
+  deleteTrainingPlanUseCase,
+  duplicateTrainingPlanUseCase,
+  getActivePlanUseCase,
   getCreationSuggestionsUseCase,
+  getTrainingPlanByIdUseCase,
+  getTrainingPlanTemplateUseCase,
+  getTrainingPlanUseCase,
+  listTrainingPlansUseCase,
+  listTrainingPlanTemplatesUseCase,
   previewCreationConfigUseCase,
+  regenerateAppliedScheduleUseCase,
+  removeAppliedScheduleUseCase,
+  shiftAppliedScheduleUseCase,
+  trainingPlanExistsUseCase,
+  updateActivePlanStatusUseCase,
   updateFromCreationConfigUseCase,
+  updateTrainingPlanUseCase,
 } from "../../../application/training-plan";
 import { getRequiredDb } from "../../../db";
 import { createTrainingPlanRepository } from "../../../infrastructure";
@@ -90,9 +115,11 @@ import {
   buildDynamicStressSeries,
 } from "../../../lib/activity-analysis";
 import { featureFlags } from "../../../lib/features";
+import { createContentAccessPermissions } from "../../../permissions/content-access";
 import { createTRPCRouter, protectedProcedure } from "../../../trpc";
 import { getActivityPlansDerivedMetrics } from "../../../utils/activity-plan-derived-metrics";
 import { addEstimationToPlans } from "../../../utils/estimation-helpers";
+import { indexCursorSchema } from "../../../utils/index-cursor";
 
 const feasibilityStateSchema = z.enum(["feasible", "aggressive", "unsafe"]);
 const safetyStateSchema = z.enum(["safe", "caution", "exceeded"]);
@@ -102,7 +129,15 @@ const trainingPlanUpdateMutationInputSchema = trainingPlanUpdateInputSchema
     id: z.string().uuid(),
     template_visibility: trainingPlanTemplateVisibilitySchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((input, ctx) => {
+    if (Object.keys(input).length === 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "At least one training plan update field is required",
+      });
+    }
+  });
 const applyQuickAdjustmentInputSchema = z
   .object({
     id: z.string().uuid(),
@@ -122,13 +157,7 @@ type ProfileTrainingSettingsSqlRow = Pick<ProfileTrainingSettingsRow, "settings"
 
 type ProfileGoalSqlRow = Pick<
   ProfileGoalRow,
-  | "id"
-  | "profile_id"
-  | "milestone_event_id"
-  | "title"
-  | "priority"
-  | "activity_category"
-  | "target_payload"
+  "id" | "profile_id" | "title" | "priority" | "activity_category" | "target_payload"
 >;
 
 type TrainingPlanCountRow = { value: number | string };
@@ -138,38 +167,22 @@ const activitySummaryColumns = {
   type: schema.activities.type,
   started_at: schema.activities.started_at,
   finished_at: schema.activities.finished_at,
-  duration_seconds: schema.activities.duration_seconds,
-  moving_seconds: schema.activities.moving_seconds,
-  distance_meters: schema.activities.distance_meters,
-  avg_heart_rate: schema.activities.avg_heart_rate,
-  max_heart_rate: schema.activities.max_heart_rate,
-  avg_power: schema.activities.avg_power,
-  max_power: schema.activities.max_power,
-  avg_speed_mps: schema.activities.avg_speed_mps,
-  max_speed_mps: schema.activities.max_speed_mps,
-  normalized_power: schema.activities.normalized_power,
-  normalized_speed_mps: schema.activities.normalized_speed_mps,
-  normalized_graded_speed_mps: schema.activities.normalized_graded_speed_mps,
+  duration_seconds: schema.activitySummaries.duration_seconds,
+  moving_seconds: schema.activitySummaries.moving_seconds,
+  distance_meters: schema.activitySummaries.distance_meters,
+  avg_heart_rate: schema.activitySummaries.avg_heart_rate,
+  max_heart_rate: schema.activitySummaries.max_heart_rate,
+  avg_power: schema.activitySummaries.avg_power,
+  max_power: schema.activitySummaries.max_power,
+  avg_speed_mps: schema.activitySummaries.avg_speed_mps,
+  max_speed_mps: schema.activitySummaries.max_speed_mps,
+  normalized_power: schema.activitySummaries.normalized_power,
+  normalized_speed_mps: schema.activitySummaries.normalized_speed_mps,
+  normalized_graded_speed_mps: schema.activitySummaries.normalized_graded_speed_mps,
 } as const;
 
 function getSqlRows<T>(result: unknown) {
   return ((result as { rows?: T[] }).rows ?? []) as T[];
-}
-
-function parseTrainingPlanStructureOrThrow(input: {
-  value: unknown;
-  message: string;
-}): z.infer<typeof trainingPlanSchema> {
-  const parsed = trainingPlanSchema.safeParse(input.value);
-  if (parsed.success) {
-    return parsed.data;
-  }
-
-  throw new TRPCError({
-    code: "BAD_REQUEST",
-    message: input.message,
-    cause: parsed.error,
-  });
 }
 
 async function getAccessibleTrainingPlan(input: {
@@ -185,6 +198,16 @@ async function getAccessibleTrainingPlan(input: {
         profile_id = ${input.profileId}::uuid
         or is_system_template = true
         or template_visibility = 'public'
+        or exists (
+          select 1
+          from content_access_grants
+          where content_access_grants.content_type = 'training_plan'
+            and content_access_grants.content_id = training_plans.id
+            and content_access_grants.grantee_profile_id = ${input.profileId}::uuid
+            and content_access_grants.access_level = 'read'
+            and content_access_grants.revoked_at is null
+            and (content_access_grants.expires_at is null or content_access_grants.expires_at > now())
+        )
       )
     limit 1
   `);
@@ -206,7 +229,7 @@ async function getProfileTrainingSettingsRow(input: {
   return getSqlRows<ProfileTrainingSettingsSqlRow>(result)[0] ?? null;
 }
 
-async function getOwnedTrainingPlan(input: {
+async function _getOwnedTrainingPlan(input: {
   db: DbClient;
   planId: string;
   profileId: string;
@@ -241,6 +264,16 @@ async function listTrainingPlans(input: {
       profile_id = ${input.profileId}::uuid
       or is_system_template = true
       or template_visibility = 'public'
+      or exists (
+        select 1
+        from content_access_grants
+        where content_access_grants.content_type = 'training_plan'
+          and content_access_grants.content_id = training_plans.id
+          and content_access_grants.grantee_profile_id = ${input.profileId}::uuid
+          and content_access_grants.access_level = 'read'
+          and content_access_grants.revoked_at is null
+          and (content_access_grants.expires_at is null or content_access_grants.expires_at > now())
+      )
     )`);
   }
 
@@ -258,7 +291,7 @@ async function listTrainingPlans(input: {
   return getSqlRows<TrainingPlanRow>(result);
 }
 
-async function countOwnedTrainingPlans(db: DbClient, profileId: string): Promise<number> {
+async function _countOwnedTrainingPlans(db: DbClient, profileId: string): Promise<number> {
   const result = await db.execute(sql<TrainingPlanCountRow>`
     select count(*)::int as value
     from training_plans
@@ -268,7 +301,7 @@ async function countOwnedTrainingPlans(db: DbClient, profileId: string): Promise
   return Number(getSqlRows<TrainingPlanCountRow>(result)[0]?.value ?? 0);
 }
 
-async function listTrainingPlanLikedIds(input: {
+async function _listTrainingPlanLikedIds(input: {
   db: DbClient;
   profileId: string;
   planIds: string[];
@@ -291,7 +324,7 @@ async function listTrainingPlanLikedIds(input: {
   return rows.map((row) => row.entity_id);
 }
 
-async function hasTrainingPlanLike(input: {
+async function _hasTrainingPlanLike(input: {
   db: DbClient;
   profileId: string;
   planId: string;
@@ -309,140 +342,6 @@ async function hasTrainingPlanLike(input: {
     .limit(1);
 
   return rows.length > 0;
-}
-
-async function insertTrainingPlan(input: {
-  db: DbClient;
-  values: {
-    name: string;
-    description: string | null;
-    structure: Record<string, unknown>;
-    profileId: string;
-    templateVisibility?: "private" | "public";
-    isPublic?: boolean;
-  };
-}): Promise<TrainingPlanRow> {
-  const result = await input.db.execute(sql<TrainingPlanRow>`
-    insert into training_plans (
-      name,
-      description,
-      structure,
-      profile_id,
-      template_visibility,
-      is_public
-    )
-    values (
-      ${input.values.name},
-      ${input.values.description},
-      ${JSON.stringify(input.values.structure)}::jsonb,
-      ${input.values.profileId}::uuid,
-      ${input.values.templateVisibility ?? null},
-      ${input.values.isPublic ?? null}
-    )
-    returning *
-  `);
-
-  const row = getSqlRows<TrainingPlanRow>(result)[0];
-  if (!row) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Failed to save training plan" });
-  }
-  return row;
-}
-
-async function updateOwnedTrainingPlanRow(input: {
-  db: DbClient;
-  id: string;
-  profileId: string;
-  name?: string;
-  description?: string | null;
-  structure?: Record<string, unknown>;
-  templateVisibility?: "private" | "public";
-}): Promise<TrainingPlanRow | null> {
-  const updates = [sql`updated_at = now()`];
-
-  if (input.name !== undefined) updates.push(sql`name = ${input.name}`);
-  if (input.description !== undefined) updates.push(sql`description = ${input.description}`);
-  if (input.structure !== undefined) {
-    updates.push(sql`structure = ${JSON.stringify(input.structure)}::jsonb`);
-  }
-  if (input.templateVisibility !== undefined) {
-    updates.push(sql`template_visibility = ${input.templateVisibility}`);
-  }
-
-  const result = await input.db.execute(sql<TrainingPlanRow>`
-    update training_plans
-    set ${sql.join(updates, sql`, `)}
-    where id = ${input.id}::uuid
-      and profile_id = ${input.profileId}::uuid
-    returning *
-  `);
-
-  return getSqlRows<TrainingPlanRow>(result)[0] ?? null;
-}
-
-type TrainingPlanTemplateListFilters = {
-  sport?: string;
-  experience_level?: "beginner" | "intermediate" | "advanced";
-  min_weeks?: number;
-  max_weeks?: number;
-  search?: string;
-};
-
-async function listPublicTemplateTrainingPlans(
-  db: DbClient,
-  filters?: TrainingPlanTemplateListFilters,
-): Promise<TrainingPlanRow[]> {
-  const searchPattern = filters?.search?.trim() ? `%${filters.search.trim()}%` : null;
-
-  const result = await db.execute(sql<TrainingPlanRow>`
-    select
-      id,
-      name,
-      description,
-      structure,
-      sessions_per_week_target,
-      duration_hours,
-      is_system_template,
-      template_visibility,
-      likes_count,
-      created_at,
-      updated_at,
-      profile_id
-    from training_plans
-    where is_system_template = true
-      and template_visibility = 'public'
-      and (
-        ${filters?.sport ?? null}::text is null
-        or exists (
-          select 1
-          from jsonb_array_elements_text(coalesce(training_plans.structure->'sport', '[]'::jsonb)) as sport(value)
-          where sport.value = ${filters?.sport ?? null}
-        )
-      )
-      and (
-        ${filters?.experience_level ?? null}::text is null
-        or exists (
-          select 1
-          from jsonb_array_elements_text(coalesce(training_plans.structure->'experienceLevel', '[]'::jsonb)) as experience(value)
-          where experience.value = ${filters?.experience_level ?? null}
-        )
-      )
-      and (
-        ${filters?.min_weeks ?? null}::int is null
-        or coalesce((training_plans.structure->'durationWeeks'->>'recommended')::int, 0) >= ${filters?.min_weeks ?? null}
-      )
-      and (
-        ${filters?.max_weeks ?? null}::int is null
-        or coalesce((training_plans.structure->'durationWeeks'->>'recommended')::int, 0) <= ${filters?.max_weeks ?? null}
-      )
-      and (
-        ${searchPattern}::text is null
-        or training_plans.name ilike ${searchPattern}
-      )
-    order by created_at desc
-  `);
-
-  return getSqlRows<TrainingPlanRow>(result);
 }
 
 function toDayStartIso(dateOnly: string): string {
@@ -464,17 +363,32 @@ function todayStartIsoUtc(): string {
   return toDayStartIso(formatDateOnlyUtc(new Date()));
 }
 
-function todayDateOnlyUtc(): string {
+function _todayDateOnlyUtc(): string {
   return formatDateOnlyUtc(new Date());
 }
 
 type ActivePlanLookup = {
+  scheduleBatchId: string | null;
   trainingPlanId: string;
+  userTrainingPlanId: string | null;
   trainingPlan: TrainingPlanRow;
   nextEventAt: string;
 };
 
-async function getActivePlanFromFutureEvents(input: {
+const shiftScheduledPlanInputSchema = z
+  .object({
+    user_training_plan_id: z.string().uuid(),
+    days: z.number().int().min(-90).max(90),
+  })
+  .strict();
+
+const applicationScopedScheduleInputSchema = z
+  .object({
+    user_training_plan_id: z.string().uuid(),
+  })
+  .strict();
+
+async function _getActivePlanFromFutureEvents(input: {
   db?: DbClient;
   supabase?: LegacyPlanningReader;
   profileId: string;
@@ -482,15 +396,21 @@ async function getActivePlanFromFutureEvents(input: {
   if (input.db) {
     const upcomingEvents = await input.db
       .select({
-        training_plan_id: schema.events.training_plan_id,
+        training_plan_id: schema.eventScheduleLinks.training_plan_id,
+        schedule_batch_id: schema.eventScheduleLinks.schedule_batch_id,
+        user_training_plan_id: schema.eventScheduleLinks.user_training_plan_id,
         starts_at: schema.events.starts_at,
       })
       .from(schema.events)
+      .innerJoin(
+        schema.eventScheduleLinks,
+        eq(schema.eventScheduleLinks.event_id, schema.events.id),
+      )
       .where(
         and(
           eq(schema.events.profile_id, input.profileId),
           eq(schema.events.event_type, plannedEventType),
-          isNotNull(schema.events.training_plan_id),
+          isNotNull(schema.eventScheduleLinks.training_plan_id),
           gte(schema.events.starts_at, new Date(todayStartIsoUtc())),
         ),
       )
@@ -518,7 +438,9 @@ async function getActivePlanFromFutureEvents(input: {
     }
 
     return {
+      scheduleBatchId: nextScheduledPlanEvent.schedule_batch_id ?? null,
       trainingPlanId,
+      userTrainingPlanId: nextScheduledPlanEvent.user_training_plan_id ?? null,
       trainingPlan,
       nextEventAt: nextScheduledPlanEvent.starts_at.toISOString(),
     };
@@ -533,7 +455,7 @@ async function getActivePlanFromFutureEvents(input: {
 
   let eventsQuery: any = input.supabase
     .from("events")
-    .select("training_plan_id, starts_at")
+    .select("training_plan_id, schedule_batch_id, user_training_plan_id, starts_at")
     .eq("profile_id", input.profileId)
     .eq("event_type", plannedEventType);
 
@@ -589,31 +511,12 @@ async function getActivePlanFromFutureEvents(input: {
   }
 
   return {
+    scheduleBatchId: ((nextScheduledPlanEvent as any).schedule_batch_id as string | null) ?? null,
     trainingPlanId,
+    userTrainingPlanId:
+      ((nextScheduledPlanEvent as any).user_training_plan_id as string | null) ?? null,
     trainingPlan: trainingPlan as TrainingPlanRow,
     nextEventAt,
-  };
-}
-
-function withTrainingPlanIdentity<
-  T extends {
-    id: string;
-    profile_id: string | null;
-    template_visibility?: string | null;
-    is_system_template?: boolean | null;
-  },
->(plan: T) {
-  return {
-    ...plan,
-    content_type: "training_plan" as const,
-    content_id: plan.id,
-    owner_profile_id: plan.profile_id,
-    visibility:
-      plan.template_visibility === "private" || plan.template_visibility === "public"
-        ? plan.template_visibility
-        : plan.is_system_template
-          ? "public"
-          : "private",
   };
 }
 
@@ -633,7 +536,7 @@ type InsightSummary = {
   interpretation: string;
 };
 
-type LoadGuidanceMode = "baseline" | "goal_driven";
+type LoadGuidanceMode = "baseline";
 
 type LoadGuidanceSummary = {
   mode: LoadGuidanceMode;
@@ -645,7 +548,6 @@ type LoadGuidanceSummary = {
 };
 
 type ProjectionLoadProvenanceSource =
-  | "canonical_goal_projection"
   | "plan_structure"
   | "scheduled_sessions"
   | "conservative_baseline";
@@ -696,22 +598,6 @@ type PlanAssessmentBundle = {
   goalSafety: GoalSafetyAssessment[];
 };
 
-type ProjectionMicrocycleWithId = DeterministicProjectionMicrocycle & {
-  id?: string;
-};
-
-type ProjectionFeasibilitySummary = {
-  state: FeasibilityState;
-  reasons: string[];
-  diagnostics: {
-    tss_ramp_near_cap_weeks: number;
-    ctl_ramp_near_cap_weeks: number;
-    tss_ramp_clamp_weeks: number;
-    ctl_ramp_clamp_weeks: number;
-    recovery_weeks: number;
-  };
-};
-
 type CreationConflictItem = {
   code: string;
   severity: "blocking" | "warning";
@@ -720,8 +606,7 @@ type CreationConflictItem = {
   suggestions: string[];
 };
 
-type ProjectionChartPayload = Omit<CoreProjectionChartPayload, "microcycles"> & {
-  microcycles: ProjectionMicrocycleWithId[];
+type ProjectionChartPayload = ProjectionChartPayloadWithDeterministicIds & {
   recovery_segments: ProjectionRecoverySegment[];
   constraint_summary: ProjectionConstraintSummary;
 };
@@ -882,7 +767,8 @@ function buildExpandedPlanFromMinimalGoal(
       .map((goal) => goal.id);
 
     if (isLast && goalIds.length === 0 && goals.length > 0) {
-      goalIds.push(goals[goals.length - 1]!.id);
+      const fallbackGoal = goals[goals.length - 1];
+      if (fallbackGoal) goalIds.push(fallbackGoal.id);
     }
 
     const targetWeeklyTss = Math.round(baselineWeeklyTss * tssMultiplierByPhase[phase.phase]);
@@ -923,7 +809,7 @@ function buildExpandedPlanFromMinimalGoal(
 
   return {
     plan_type: "periodized",
-    name: goals.length === 1 ? `${goals[0]!.name} Plan` : "Multi-goal Training Plan",
+    name: goals.length === 1 ? `${goals[0]?.name} Plan` : "Multi-goal Training Plan",
     start_date: timeline.start_date,
     end_date: timeline.end_date,
     fitness_progression: {
@@ -1669,33 +1555,6 @@ async function estimateWeeklyTssFromStructuredActivities(input: {
   };
 }
 
-function resolveIdealDailyTss(input: {
-  date: string;
-  projectedIdealTss?: number;
-  blocks: Array<{
-    start_date: string;
-    end_date: string;
-    target_weekly_tss_range?: { min: number; max: number };
-  }>;
-  structure: Record<string, unknown> | null | undefined;
-}): number {
-  if (typeof input.projectedIdealTss === "number" && Number.isFinite(input.projectedIdealTss)) {
-    return Math.round(Math.max(0, input.projectedIdealTss) * 10) / 10;
-  }
-
-  const structureWeeklyTss = deriveStructureWeeklyTssTarget(input.structure, input.date);
-  if (structureWeeklyTss !== null) {
-    return Math.round((structureWeeklyTss / 7) * 10) / 10;
-  }
-
-  const blockDailyTss = estimateIdealDailyTss(input.date, input.blocks);
-  if (blockDailyTss > 0) {
-    return blockDailyTss;
-  }
-
-  return conservativeStarterDailyTss;
-}
-
 function resolveBaselineDailyTss(input: {
   date: string;
   structure: Record<string, unknown> | null | undefined;
@@ -1748,7 +1607,7 @@ function collectBlockRampWarnings(
   return uniqueReasons(warnings);
 }
 
-function findBlockForDate(
+function _findBlockForDate(
   blocks: Array<{
     name: string;
     phase: string;
@@ -1767,23 +1626,10 @@ function buildProjectionChartPayload(input: {
   startingAtl?: number;
   priorInferredSnapshot?: InferredStateSnapshot;
   normalizedCreationConfig?: TrainingPlanCreationConfig;
+  preferenceProfile?: AthletePreferenceProfile;
   noHistoryContext?: NoHistoryAnchorContext;
 }): ProjectionChartPayload {
   const { expandedPlan } = input;
-
-  const periodizationPhases: ProjectionPeriodizationPhase[] = expandedPlan.blocks.map(
-    (block, index) => ({
-      id: deterministicUuidFromSeed(
-        `projection-phase|${expandedPlan.start_date}|${expandedPlan.end_date}|${index}|${block.name}|${block.start_date}|${block.end_date}`,
-      ),
-      name: block.name,
-      start_date: block.start_date,
-      end_date: block.end_date,
-      target_weekly_tss_min: Math.round((block.target_weekly_tss_range?.min ?? 0) * 10) / 10,
-      target_weekly_tss_max: Math.round((block.target_weekly_tss_range?.max ?? 0) * 10) / 10,
-    }),
-  );
-
   const deterministicProjection = buildDeterministicProjectionPayload(
     buildProjectionEngineInput({
       expanded_plan: expandedPlan,
@@ -1791,66 +1637,15 @@ function buildProjectionChartPayload(input: {
       starting_ctl: input.startingCtl,
       starting_atl: input.startingAtl,
       prior_inferred_snapshot: input.priorInferredSnapshot,
+      preference_profile: input.preferenceProfile,
       no_history_context: input.noHistoryContext,
     }),
   );
 
-  const microcycles: ProjectionMicrocycleWithId[] = deterministicProjection.microcycles.map(
-    (microcycle) => ({
-      id: deterministicUuidFromSeed(
-        `projection-microcycle|${expandedPlan.start_date}|${microcycle.week_start_date}|${microcycle.week_end_date}`,
-      ),
-      ...microcycle,
-    }),
-  );
-
-  const deterministicProjectionCompat =
-    deterministicProjection as typeof deterministicProjection & {
-      prediction_uncertainty?: CoreProjectionChartPayload["prediction_uncertainty"];
-      goal_target_distributions?: CoreProjectionChartPayload["goal_target_distributions"];
-    };
-
-  return {
-    start_date: expandedPlan.start_date,
-    end_date: expandedPlan.end_date,
-    points: deterministicProjection.points,
-    display_points: deterministicProjection.display_points,
-    goal_markers: deterministicProjection.goal_markers,
-    periodization_phases: periodizationPhases,
-    microcycles,
-    recovery_segments: deterministicProjection.recovery_segments,
-    constraint_summary: deterministicProjection.constraint_summary,
-    inferred_current_state: deterministicProjection.inferred_current_state,
-    no_history: toNoHistoryMetadataOrUndefined(deterministicProjection.no_history),
-    readiness_score: deterministicProjection.readiness_score,
-    readiness_confidence: deterministicProjection.readiness_confidence,
-    readiness_rationale_codes: deterministicProjection.readiness_rationale_codes,
-    capacity_envelope: deterministicProjection.capacity_envelope,
-    feasibility_band: deterministicProjection.feasibility_band,
-    risk_score: deterministicProjection.risk_score,
-    risk_level: deterministicProjection.risk_level,
-    risk_flags: deterministicProjection.risk_flags,
-    caps_applied: deterministicProjection.caps_applied,
-    projection_diagnostics: deterministicProjection.projection_diagnostics,
-    prediction_uncertainty: deterministicProjectionCompat.prediction_uncertainty,
-    goal_target_distributions: deterministicProjectionCompat.goal_target_distributions,
-    optimization_tradeoff_summary: deterministicProjection.optimization_tradeoff_summary,
-    goal_assessments: deterministicProjection.goal_assessments,
-  };
-}
-
-function toNoHistoryMetadataOrUndefined(
-  metadata: NoHistoryProjectionMetadata,
-): NoHistoryProjectionMetadata | undefined {
-  if (
-    !metadata.projection_floor_applied &&
-    !metadata.evidence_confidence &&
-    !metadata.projection_feasibility
-  ) {
-    return undefined;
-  }
-
-  return metadata;
+  return buildProjectionChartPayloadFromDeterministicProjection({
+    expandedPlan,
+    deterministicProjection,
+  });
 }
 
 function deriveNoHistoryAnchorContext(input: {
@@ -1911,74 +1706,6 @@ function deriveNoHistoryAnchorContext(input: {
       hard_rest_days: input.finalConfig.constraints.hard_rest_days,
       max_single_session_duration_minutes:
         input.finalConfig.constraints.max_single_session_duration_minutes,
-    },
-  };
-}
-
-function buildProjectionFeasibilitySummary(
-  projectionChart: ProjectionChartPayload,
-): ProjectionFeasibilitySummary {
-  const nearCapThreshold = 0.9;
-  let tssNearCapWeeks = 0;
-  let ctlNearCapWeeks = 0;
-
-  for (const microcycle of projectionChart.microcycles) {
-    const tssRamp = microcycle.metadata?.tss_ramp;
-    const ctlRamp = microcycle.metadata?.ctl_ramp;
-    if (!tssRamp || !ctlRamp) {
-      continue;
-    }
-
-    if (!tssRamp.clamped && tssRamp.previous_week_tss > 0 && tssRamp.max_weekly_tss_ramp_pct > 0) {
-      const requestedRampPct =
-        ((tssRamp.requested_weekly_tss - tssRamp.previous_week_tss) / tssRamp.previous_week_tss) *
-        100;
-      if (requestedRampPct >= tssRamp.max_weekly_tss_ramp_pct * nearCapThreshold) {
-        tssNearCapWeeks += 1;
-      }
-    }
-
-    if (!ctlRamp.clamped && ctlRamp.max_ctl_ramp_per_week > 0) {
-      if (ctlRamp.requested_ctl_ramp >= ctlRamp.max_ctl_ramp_per_week * nearCapThreshold) {
-        ctlNearCapWeeks += 1;
-      }
-    }
-  }
-
-  const reasons: string[] = [];
-  let state: FeasibilityState = "feasible";
-
-  if (projectionChart.constraint_summary.tss_ramp_clamp_weeks > 0) {
-    state = "aggressive";
-    reasons.push("required_tss_ramp_exceeds_configured_cap");
-  }
-
-  if (projectionChart.constraint_summary.ctl_ramp_clamp_weeks > 0) {
-    state = "aggressive";
-    reasons.push("required_ctl_ramp_exceeds_configured_cap");
-  }
-
-  if (tssNearCapWeeks > 0) {
-    state = "aggressive";
-    reasons.push("required_tss_ramp_near_configured_cap");
-  }
-
-  if (ctlNearCapWeeks > 0) {
-    state = "aggressive";
-    reasons.push("required_ctl_ramp_near_configured_cap");
-  }
-
-  reasons.unshift("safety_first_best_safe_projection");
-
-  return {
-    state,
-    reasons: uniqueReasons(reasons),
-    diagnostics: {
-      tss_ramp_near_cap_weeks: tssNearCapWeeks,
-      ctl_ramp_near_cap_weeks: ctlNearCapWeeks,
-      tss_ramp_clamp_weeks: projectionChart.constraint_summary.tss_ramp_clamp_weeks,
-      ctl_ramp_clamp_weeks: projectionChart.constraint_summary.ctl_ramp_clamp_weeks,
-      recovery_weeks: projectionChart.constraint_summary.recovery_weeks,
     },
   };
 }
@@ -2057,6 +1784,15 @@ const insightTimelineInputSchema = z.object({
   timezone: z.string().min(1),
 });
 
+const scheduleAdjustmentSimulationInputSchema = insightTimelineInputSchema.extend({
+  adjustment_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  tss_delta: z.number().finite().min(-300).max(300),
+  comparison_date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+});
+
 const dateOnlyPattern = /^\d{4}-\d{2}-\d{2}$/;
 const safeFallbackHrThresholdBpm = 160;
 const projectionTargetTestDurationSeconds = 1200;
@@ -2079,6 +1815,668 @@ type ProjectionContextDiagnostics = {
   projection_floor_applied: boolean;
   confidence: ProjectionConfidenceSummary;
 };
+
+type ProjectionDashboardSummary = {
+  readiness_score: number | null;
+  physiological_readiness_score: number | null;
+  readiness_confidence: number | null;
+  planning_confidence: number | null;
+  planning_confidence_reasons: string[];
+  readiness_rationale_codes: string[];
+  feasibility_band: string | null;
+  risk_score: number | null;
+  risk_level: string | null;
+  risk_flags: string[];
+  caps_applied: string[];
+  load_resolution_summary: ProjectionChartPayload["load_resolution_summary"] | null;
+  dose_recommendation: ProjectionChartPayload["dose_recommendation"] | null;
+  sport_load_states: ProjectionChartPayload["sport_load_states"];
+  recovery_segments: ProjectionChartPayload["recovery_segments"];
+  readiness_points: Array<{
+    date: string;
+    readiness_score: number;
+    predicted_fitness_ctl: number;
+  }>;
+  microcycles: Array<{
+    week_start_date: string;
+    week_end_date: string;
+    phase: string;
+    planned_weekly_tss: number;
+    projected_ctl: number;
+    constraints: string[];
+    recovery_active: boolean;
+    demand_floor_tss: number | null;
+    demand_gap_unmet_weekly_tss: number | null;
+  }>;
+  goal_forecasts: Array<{
+    profile_goal_id: string;
+    projection_goal_id: string;
+    title: string;
+    target_date: string;
+    priority: number;
+    readiness_target: number | null;
+    readiness_score: number | null;
+    state_readiness_score: number | null;
+    alignment_loss_0_100: number | null;
+    feasibility_band: string;
+    limiter_shares: NonNullable<
+      NonNullable<ProjectionChartPayload["goal_assessments"]>[number]["limiter_shares"]
+    > | null;
+    target_scores: NonNullable<ProjectionChartPayload["goal_assessments"]>[number]["target_scores"];
+    conflict_notes: string[];
+    interference_notes: string[];
+  }>;
+};
+
+type WeeklyLoadComparison = {
+  weeks: Array<{
+    week_start: string;
+    week_end: string;
+    actual_load: number | null;
+    scheduled_load: number | null;
+    recommended_load: number | null;
+    safety_cap?: number | null;
+    is_recovery_week?: boolean;
+    has_goal?: boolean;
+  }>;
+};
+
+type UpcomingActivityImpact = {
+  activity_plan_id: string;
+  title: string;
+  scheduled_at: string;
+  sport: string;
+  estimated_load: number | null;
+  short_term_readiness_delta: number | null;
+  fitness_contribution: number | null;
+  confidence: "high" | "medium" | "low";
+  explanation: string;
+};
+
+type ScheduleRecommendation = {
+  type: "add_load" | "reduce_load" | "add_schedule_detail" | "review_session" | "maintain_schedule";
+  label: string;
+  description: string;
+  target_date: string;
+  target_week_start: string | null;
+  target_load_delta: number | null;
+};
+
+type ActivityPlanMatchReasonCode =
+  | "near_target_tss"
+  | "same_activity_category"
+  | "reasonable_duration"
+  | "owned_plan"
+  | "recently_created";
+
+type ScheduleGapActivityPlanMatch = {
+  activity_plan_id: string;
+  name: string;
+  activity_category: string | null;
+  estimated_tss: number | null;
+  estimated_duration_seconds: number | null;
+  score: number;
+  target_tss_delta: number;
+  absolute_tss_gap: number | null;
+  reason_codes: ActivityPlanMatchReasonCode[];
+};
+
+type ScheduleGapActivityPlanMatches = {
+  target_date: string;
+  target_tss_delta: number;
+  matches: ScheduleGapActivityPlanMatch[];
+  empty_reason:
+    | "no_positive_gap"
+    | "no_activity_plans"
+    | "no_estimated_tss"
+    | "low_confidence"
+    | null;
+};
+
+type ScheduleSimulation = ReturnType<typeof simulateReadinessScheduleAdjustment>;
+
+function readFinitePlanNumber(...values: unknown[]) {
+  for (const value of values) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return Math.round(parsed * 10) / 10;
+    }
+  }
+
+  return null;
+}
+
+function isRecentlyCreated(value: unknown, today: string) {
+  if (!value) return false;
+  const created = new Date(String(value));
+  const reference = new Date(`${today}T12:00:00.000Z`);
+  if (Number.isNaN(created.getTime()) || Number.isNaN(reference.getTime())) return false;
+  return reference.getTime() - created.getTime() <= 30 * 24 * 60 * 60 * 1000;
+}
+
+function buildScheduleGapActivityPlanMatches(input: {
+  targetDate: string;
+  targetTssDelta: number | null | undefined;
+  primaryCategory: string | null | undefined;
+  plans: any[];
+  today: string;
+  limit?: number;
+}): ScheduleGapActivityPlanMatches {
+  const targetTssDelta = Number(input.targetTssDelta);
+  if (!Number.isFinite(targetTssDelta) || targetTssDelta <= 0) {
+    return {
+      target_date: input.targetDate,
+      target_tss_delta: 0,
+      matches: [],
+      empty_reason: "no_positive_gap",
+    };
+  }
+
+  if (input.plans.length === 0) {
+    return {
+      target_date: input.targetDate,
+      target_tss_delta: Math.round(targetTssDelta * 10) / 10,
+      matches: [],
+      empty_reason: "no_activity_plans",
+    };
+  }
+
+  const target = Math.round(targetTssDelta * 10) / 10;
+  const primaryCategory = input.primaryCategory ? String(input.primaryCategory) : null;
+  const matches = input.plans
+    .map<ScheduleGapActivityPlanMatch | null>((plan) => {
+      const estimatedTss = readFinitePlanNumber(
+        plan.authoritative_metrics?.estimated_tss,
+        plan.estimated_tss,
+      );
+      if (estimatedTss === null) return null;
+
+      const estimatedDurationSeconds = readFinitePlanNumber(
+        plan.authoritative_metrics?.estimated_duration,
+        plan.estimated_duration,
+        plan.estimated_duration_seconds,
+      );
+      const activityCategory =
+        typeof plan.activity_category === "string" && plan.activity_category.trim().length > 0
+          ? plan.activity_category
+          : null;
+      if (primaryCategory && activityCategory && activityCategory !== primaryCategory) {
+        return null;
+      }
+      const absoluteTssGap = Math.round(Math.abs(estimatedTss - target) * 10) / 10;
+      if (absoluteTssGap > Math.max(30, target * 0.5)) {
+        return null;
+      }
+      const reasonCodes: ActivityPlanMatchReasonCode[] = ["owned_plan"];
+      if (absoluteTssGap <= Math.max(10, target * 0.2)) reasonCodes.push("near_target_tss");
+      if (primaryCategory && activityCategory === primaryCategory)
+        reasonCodes.push("same_activity_category");
+      if (estimatedDurationSeconds !== null) reasonCodes.push("reasonable_duration");
+      if (isRecentlyCreated(plan.created_at, input.today)) reasonCodes.push("recently_created");
+
+      const sameCategoryBonus = primaryCategory && activityCategory === primaryCategory ? 10 : 0;
+      const ownedPlanBonus = 5;
+      const durationAvailabilityBonus = estimatedDurationSeconds !== null ? 2 : 0;
+      const score =
+        Math.round(
+          (100 -
+            Math.min(60, absoluteTssGap) +
+            sameCategoryBonus +
+            ownedPlanBonus +
+            durationAvailabilityBonus) *
+            10,
+        ) / 10;
+
+      return {
+        activity_plan_id: String(plan.id),
+        name: String(plan.name ?? "Activity plan"),
+        activity_category: activityCategory,
+        estimated_tss: estimatedTss,
+        estimated_duration_seconds: estimatedDurationSeconds,
+        score,
+        target_tss_delta: target,
+        absolute_tss_gap: absoluteTssGap,
+        reason_codes: reasonCodes,
+      };
+    })
+    .filter((match): match is ScheduleGapActivityPlanMatch => match !== null)
+    .sort((left, right) => {
+      if (right.score !== left.score) return right.score - left.score;
+      if ((left.absolute_tss_gap ?? Infinity) !== (right.absolute_tss_gap ?? Infinity)) {
+        return (left.absolute_tss_gap ?? Infinity) - (right.absolute_tss_gap ?? Infinity);
+      }
+      if ((right.estimated_tss ?? 0) !== (left.estimated_tss ?? 0)) {
+        return (right.estimated_tss ?? 0) - (left.estimated_tss ?? 0);
+      }
+      const nameCompare = left.name.localeCompare(right.name);
+      if (nameCompare !== 0) return nameCompare;
+      return left.activity_plan_id.localeCompare(right.activity_plan_id);
+    })
+    .slice(0, input.limit ?? 5);
+
+  return {
+    target_date: input.targetDate,
+    target_tss_delta: target,
+    matches,
+    empty_reason: matches.length > 0 ? null : "no_estimated_tss",
+  };
+}
+
+function clampDateOnOrAfter(value: string, minimum: string) {
+  return value < minimum ? minimum : value;
+}
+
+function resolveScheduleGapActivityPlanMatchTarget(input: {
+  today: string;
+  scheduleRecommendation: ScheduleRecommendation | null;
+  loadComparison: WeeklyLoadComparison | null;
+}) {
+  if (
+    input.scheduleRecommendation?.type === "add_load" &&
+    typeof input.scheduleRecommendation.target_load_delta === "number" &&
+    input.scheduleRecommendation.target_load_delta > 0
+  ) {
+    return {
+      targetDate: clampDateOnOrAfter(input.scheduleRecommendation.target_date, input.today),
+      targetTssDelta: input.scheduleRecommendation.target_load_delta,
+    };
+  }
+
+  const gapWeek = input.loadComparison?.weeks.find((week) => {
+    if (week.week_end < input.today) return false;
+    const recommended = week.recommended_load ?? 0;
+    const scheduled = week.scheduled_load ?? 0;
+    return recommended - scheduled > 15;
+  });
+
+  if (!gapWeek) {
+    return {
+      targetDate: input.scheduleRecommendation?.target_date ?? input.today,
+      targetTssDelta: null,
+    };
+  }
+
+  return {
+    targetDate: clampDateOnOrAfter(
+      input.scheduleRecommendation?.target_date &&
+        input.scheduleRecommendation.target_date >= gapWeek.week_start
+        ? input.scheduleRecommendation.target_date
+        : gapWeek.week_start,
+      input.today,
+    ),
+    targetTssDelta:
+      Math.round(((gapWeek.recommended_load ?? 0) - (gapWeek.scheduled_load ?? 0)) * 10) / 10,
+  };
+}
+
+async function loadOwnedActivityPlansForScheduleGap(input: {
+  db?: DbClient;
+  supabase?: LegacyPlanningReader;
+  profileId: string;
+  limit?: number;
+}) {
+  const limit = input.limit ?? 25;
+  if (input.db) {
+    const result = await input.db.execute(sql<any>`
+      select
+        activity_plans.*,
+        cached_metrics.estimated_tss,
+        cached_metrics.estimated_duration_seconds
+      from activity_plans
+      left join lateral (
+        select estimated_tss, estimated_duration_seconds
+        from activity_plan_derived_metrics_cache
+        where activity_plan_derived_metrics_cache.activity_plan_id = activity_plans.id
+          and activity_plan_derived_metrics_cache.profile_id = ${input.profileId}::uuid
+        order by computed_at desc
+        limit 1
+      ) cached_metrics on true
+      where activity_plans.profile_id = ${input.profileId}::uuid
+      order by activity_plans.created_at desc, activity_plans.id asc
+      limit ${limit}
+    `);
+    return getSqlRows<any>(result);
+  }
+
+  const { data } = await input.supabase
+    ?.from("activity_plans")
+    .select("*")
+    .eq("profile_id", input.profileId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  return (data ?? []) as any[];
+}
+
+function mapDailyLoadFromDateTotals(map: Map<string, number>): ReadinessDailyLoadInput[] {
+  return [...map.entries()]
+    .filter(([, tss]) => Number.isFinite(tss) && tss > 0)
+    .map(([date, tss]) => ({ date, tss: Math.round(tss * 10) / 10 }))
+    .sort((left, right) => left.date.localeCompare(right.date));
+}
+
+function mapScheduledDailyLoadFromDateTotals(
+  map: Map<string, number>,
+): ScheduledReadinessDailyLoadInput[] {
+  return [...map.entries()]
+    .filter(([, tss]) => Number.isFinite(tss) && tss > 0)
+    .map(([date, tss]) => ({
+      date,
+      tss: Math.round(tss * 10) / 10,
+      confidence: "medium" as const,
+    }))
+    .sort((left, right) => left.date.localeCompare(right.date));
+}
+
+function mapRecommendedDailyLoadFromTimeline(
+  timeline: Array<{ date: string; ideal_tss: number }>,
+): ReadinessDailyLoadInput[] {
+  return timeline
+    .filter((point) => Number.isFinite(point.ideal_tss) && point.ideal_tss > 0)
+    .map((point) => ({ date: point.date, tss: Math.round(point.ideal_tss * 10) / 10 }))
+    .sort((left, right) => left.date.localeCompare(right.date));
+}
+
+function buildWeeklyLoadComparison(input: {
+  timeline: Array<{ date: string; actual_tss: number; scheduled_tss: number; ideal_tss: number }>;
+  goals: Array<{ target_date: string }>;
+  dashboard: ProjectionDashboardSummary | null;
+}): WeeklyLoadComparison | null {
+  if (input.timeline.length === 0) {
+    return null;
+  }
+
+  const microcycleByWeek = new Map(
+    (input.dashboard?.microcycles ?? []).map((microcycle) => [
+      microcycle.week_start_date,
+      microcycle,
+    ]),
+  );
+  const goalWeeks = new Set(input.goals.map((goal) => getWeekStartDateOnly(goal.target_date)));
+  const buckets = new Map<
+    string,
+    { actual: number; scheduled: number; recommended: number; dates: string[] }
+  >();
+
+  for (const point of input.timeline) {
+    const weekStart = getWeekStartDateOnly(point.date);
+    const bucket = buckets.get(weekStart) ?? { actual: 0, scheduled: 0, recommended: 0, dates: [] };
+    bucket.actual += point.actual_tss || 0;
+    bucket.scheduled += point.scheduled_tss || 0;
+    bucket.recommended += point.ideal_tss || 0;
+    bucket.dates.push(point.date);
+    buckets.set(weekStart, bucket);
+  }
+
+  return {
+    weeks: [...buckets.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([weekStart, bucket]) => {
+        const microcycle = microcycleByWeek.get(weekStart);
+        return {
+          week_start: weekStart,
+          week_end: addDaysDateOnlyUtc(weekStart, 6),
+          actual_load: bucket.actual > 0 ? Math.round(bucket.actual * 10) / 10 : null,
+          scheduled_load: bucket.scheduled > 0 ? Math.round(bucket.scheduled * 10) / 10 : null,
+          recommended_load:
+            bucket.recommended > 0 ? Math.round(bucket.recommended * 10) / 10 : null,
+          safety_cap: microcycle?.demand_floor_tss ?? null,
+          is_recovery_week: microcycle?.recovery_active ?? false,
+          has_goal: goalWeeks.has(weekStart),
+        };
+      }),
+  };
+}
+
+function buildUpcomingActivityImpact(input: {
+  plannedActivities: any[];
+  estimatedTssByPlanId: Map<unknown, unknown>;
+  today: string;
+  horizonEnd: string;
+  recommendedByDate: Map<string, number>;
+}): UpcomingActivityImpact[] {
+  return (input.plannedActivities ?? [])
+    .filter((planned) => {
+      const scheduledDate = planned.scheduled_date;
+      return scheduledDate >= input.today && scheduledDate <= input.horizonEnd;
+    })
+    .sort((left, right) =>
+      String(left.starts_at ?? "").localeCompare(String(right.starts_at ?? "")),
+    )
+    .slice(0, 5)
+    .map((planned) => {
+      const plan = planned.activity_plan ?? {};
+      const planId = plan.id ?? planned.id ?? planned.starts_at;
+      const scheduledDate = planned.scheduled_date ?? String(planned.starts_at ?? "").slice(0, 10);
+      const estimatedLoadRaw = plan.id ? Number(input.estimatedTssByPlanId.get(plan.id) || 0) : 0;
+      const estimatedLoad =
+        Number.isFinite(estimatedLoadRaw) && estimatedLoadRaw > 0 ? estimatedLoadRaw : null;
+      const recommendedLoad = input.recommendedByDate.get(scheduledDate) ?? 0;
+      const loadDelta = estimatedLoad === null ? null : estimatedLoad - recommendedLoad;
+      const readinessDelta =
+        loadDelta === null
+          ? null
+          : Math.round(Math.max(-12, Math.min(8, -loadDelta / 12)) * 10) / 10;
+      const fitnessContribution =
+        estimatedLoad === null ? null : Math.round(Math.min(12, estimatedLoad / 12) * 10) / 10;
+      const title = plan.name ?? plan.title ?? planned.title ?? "Scheduled session";
+      const sport = plan.activity_category ?? plan.sport ?? plan.type ?? "training";
+
+      return {
+        activity_plan_id: String(planId),
+        title: String(title),
+        scheduled_at: String(planned.starts_at ?? `${scheduledDate}T00:00:00.000Z`),
+        sport: String(sport),
+        estimated_load: estimatedLoad === null ? null : Math.round(estimatedLoad * 10) / 10,
+        short_term_readiness_delta: readinessDelta,
+        fitness_contribution: fitnessContribution,
+        confidence: estimatedLoad === null ? "low" : "medium",
+        explanation:
+          estimatedLoad === null
+            ? "Add duration and intensity to estimate this session's readiness impact."
+            : loadDelta !== null && loadDelta > 15
+              ? "This session is above the recommended daily load and may reduce short-term readiness."
+              : "This session contributes fitness while staying close to the recommended load path.",
+      };
+    });
+}
+
+function buildScheduleRecommendation(input: {
+  today: string;
+  readinessForecast: ReturnType<typeof buildReadinessForecastTimeline>;
+  loadComparison: WeeklyLoadComparison | null;
+  upcomingImpact: UpcomingActivityImpact[];
+}): ScheduleRecommendation | null {
+  const gapType = input.readinessForecast.gap_summary?.type;
+  const currentWeekStart = getWeekStartDateOnly(input.today);
+  const currentWeek =
+    input.loadComparison?.weeks.find((week) => week.week_start === currentWeekStart) ??
+    input.loadComparison?.weeks.find((week) => week.week_start >= currentWeekStart) ??
+    null;
+  const targetDate =
+    input.upcomingImpact[0]?.scheduled_at.slice(0, 10) ?? currentWeek?.week_start ?? input.today;
+  const scheduledLoad = currentWeek?.scheduled_load ?? 0;
+  const recommendedLoad = currentWeek?.recommended_load ?? 0;
+  const loadDelta = Math.round((recommendedLoad - scheduledLoad) * 10) / 10;
+
+  if (gapType === "overload_risk") {
+    return {
+      type: "reduce_load",
+      label: "Review overloaded week",
+      description:
+        "Move, shorten, or reduce intensity on scheduled sessions above the recommended path.",
+      target_date: targetDate,
+      target_week_start: currentWeek?.week_start ?? null,
+      target_load_delta: loadDelta < 0 ? loadDelta : null,
+    };
+  }
+
+  if (gapType === "plan_gap" || gapType === "goal_risk") {
+    return {
+      type: "add_load",
+      label: "Adjust schedule",
+      description:
+        loadDelta > 15
+          ? `Add about ${Math.round(loadDelta)} TSS this week or schedule one moderate session.`
+          : "Add or refine scheduled sessions to close the readiness gap before your goal.",
+      target_date: targetDate,
+      target_week_start: currentWeek?.week_start ?? null,
+      target_load_delta: loadDelta > 0 ? loadDelta : null,
+    };
+  }
+
+  if (gapType === "low_confidence") {
+    return {
+      type: "add_schedule_detail",
+      label: "Add schedule details",
+      description: "Add duration and intensity to upcoming sessions for a more reliable forecast.",
+      target_date: targetDate,
+      target_week_start: currentWeek?.week_start ?? null,
+      target_load_delta: null,
+    };
+  }
+
+  if (input.upcomingImpact.length > 0) {
+    return {
+      type: "review_session",
+      label: "View upcoming session",
+      description: "Review the next scheduled session and its expected readiness impact.",
+      target_date: targetDate,
+      target_week_start: currentWeek?.week_start ?? null,
+      target_load_delta: null,
+    };
+  }
+
+  if (gapType === "on_track") {
+    return {
+      type: "maintain_schedule",
+      label: "View schedule",
+      description:
+        "Your schedule is aligned with the recommended path. Keep upcoming sessions on track.",
+      target_date: targetDate,
+      target_week_start: currentWeek?.week_start ?? null,
+      target_load_delta: null,
+    };
+  }
+
+  return null;
+}
+
+function buildScheduleSimulation(input: {
+  forecastInput: BuildReadinessForecastTimelineInput;
+  recommendation: ScheduleRecommendation | null;
+}): ScheduleSimulation | null {
+  const recommendation = input.recommendation;
+  if (!recommendation?.target_load_delta) {
+    return null;
+  }
+
+  const boundedDelta =
+    recommendation.type === "reduce_load"
+      ? Math.max(recommendation.target_load_delta, -90)
+      : recommendation.type === "add_load"
+        ? Math.min(recommendation.target_load_delta, 90)
+        : 0;
+
+  if (Math.abs(boundedDelta) < 5) {
+    return null;
+  }
+
+  return simulateReadinessScheduleAdjustment({
+    forecastInput: input.forecastInput,
+    date: recommendation.target_date,
+    tssDelta: boundedDelta,
+  });
+}
+
+function buildReadinessForecastGoals(input: {
+  fallbackGoals: Array<{ id: string; name: string; target_date: string }>;
+  dashboard: ProjectionDashboardSummary | null;
+}): ReadinessForecastGoalInput[] {
+  const projectionGoals = input.dashboard?.goal_forecasts ?? [];
+  if (projectionGoals.length > 0) {
+    return projectionGoals.map((goal) => ({
+      goal_id: goal.profile_goal_id,
+      title: goal.title,
+      target_date: goal.target_date,
+      target_readiness_min: null,
+      target_readiness_max: null,
+    }));
+  }
+
+  return input.fallbackGoals.map((goal) => ({
+    goal_id: goal.id,
+    title: goal.name,
+    target_date: goal.target_date,
+    target_readiness_min: null,
+    target_readiness_max: null,
+  }));
+}
+
+function buildReadinessForecastBaseline(input: {
+  startDate: string;
+  today: string;
+  hasActualHistory: boolean;
+  estimatedCurrentCtl: number;
+  projectionDashboard: ProjectionDashboardSummary | null;
+  readinessSummaryScore: number;
+}): ReadinessForecastBaseline {
+  if (input.hasActualHistory) {
+    return {
+      start_date: input.startDate,
+      today: input.today,
+      initial_ctl: 0,
+      initial_atl: 0,
+      initial_readiness: 50,
+      source: "history",
+      confidence: "medium",
+      confidence_reason_codes: [],
+    };
+  }
+
+  const projectionPoint = input.projectionDashboard?.readiness_points[0];
+  const fallbackCtl =
+    projectionPoint && Number.isFinite(projectionPoint.predicted_fitness_ctl)
+      ? projectionPoint.predicted_fitness_ctl
+      : input.estimatedCurrentCtl;
+  const fallbackReadiness =
+    input.projectionDashboard?.physiological_readiness_score ??
+    input.projectionDashboard?.readiness_score ??
+    input.readinessSummaryScore;
+
+  return {
+    start_date: input.startDate,
+    today: input.today,
+    initial_ctl: Math.round(Math.max(0, fallbackCtl) * 10) / 10,
+    initial_atl: Math.round(Math.max(0, fallbackCtl) * 10) / 10,
+    initial_readiness: clampNumber(Math.round(fallbackReadiness), 0, 100),
+    today_ctl: Math.round(Math.max(0, fallbackCtl) * 10) / 10,
+    today_atl: Math.round(Math.max(0, fallbackCtl) * 10) / 10,
+    today_readiness: clampNumber(Math.round(fallbackReadiness), 0, 100),
+    source: input.projectionDashboard ? "fallback" : "profile_estimate",
+    confidence: input.projectionDashboard ? "medium" : "low",
+    confidence_reason_codes: ["projection_fallback_baseline"],
+  };
+}
+
+function buildReadinessForecastReasonCodes(input: {
+  hasActualHistory: boolean;
+  scheduledDailyLoad: ScheduledReadinessDailyLoadInput[];
+  recommendedDailyLoad: ReadinessDailyLoadInput[];
+  failedEstimations: unknown[];
+  hasDatedGoals: boolean;
+}): ForecastConfidenceReasonCode[] {
+  const codes: ForecastConfidenceReasonCode[] = [
+    ...(!input.hasActualHistory ? ["missing_recent_history" as const] : []),
+    ...(input.scheduledDailyLoad.length === 0 ? ["scheduled_path_unavailable" as const] : []),
+    ...(input.recommendedDailyLoad.length === 0 ? ["recommended_path_unavailable" as const] : []),
+    ...(input.failedEstimations.length > 0 ? ["missing_scheduled_intensity" as const] : []),
+    ...(input.scheduledDailyLoad.length > 0 ? ["inferred_scheduled_load" as const] : []),
+    ...(!input.hasDatedGoals ? ["missing_goal_specificity" as const] : []),
+  ];
+
+  return uniqueReasons(codes) as ForecastConfidenceReasonCode[];
+}
 
 function buildSafeHrThresholdFallbackTarget(input?: {
   preferredValue?: number | null;
@@ -2215,8 +2613,8 @@ async function loadProfileGoalsWithTargetDates(input: {
       select
         id,
         profile_id,
-        milestone_event_id,
         title,
+        target_date,
         priority,
         activity_category,
         target_payload
@@ -2230,9 +2628,7 @@ async function loadProfileGoalsWithTargetDates(input: {
   } else if (input.supabase) {
     const { data, error } = await input.supabase
       .from("profile_goals")
-      .select(
-        "id, profile_id, milestone_event_id, title, priority, activity_category, target_payload",
-      )
+      .select("id, profile_id, title, target_date, priority, activity_category, target_payload")
       .eq("profile_id", input.profileId)
       .order("created_at", { ascending: true })
       .limit(40);
@@ -2283,67 +2679,14 @@ async function loadProfileGoalsWithTargetDates(input: {
     return [];
   }
 
-  const milestoneEventIds = [
-    ...new Set(parsedGoals.map((goal: ProfileGoal) => goal.milestone_event_id)),
-  ];
-  let eventRows: Array<{ id: string; starts_at: string }> = [];
-
-  if (milestoneEventIds.length > 0) {
-    if (input.db) {
-      const rows = await input.db
-        .select({ id: schema.events.id, starts_at: schema.events.starts_at })
-        .from(schema.events)
-        .where(inArray(schema.events.id, milestoneEventIds));
-
-      eventRows = rows.map((event) => ({ id: event.id, starts_at: event.starts_at.toISOString() }));
-    } else if (input.supabase) {
-      const { data, error } = await input.supabase
-        .from("events")
-        .select("id, starts_at")
-        .in("id", milestoneEventIds);
-
-      if (error) {
-        console.warn(
-          "Failed to load milestone events for insight timeline projection fallback.",
-          error.message,
-        );
-        return [];
-      }
-
-      eventRows = (data ?? []) as Array<{ id: string; starts_at: string }>;
-    }
-  }
-
-  const eventById = new Map(
-    eventRows
-      .filter(
-        (event): event is { id: string; starts_at: string } =>
-          typeof event?.id === "string" && typeof event?.starts_at === "string",
-      )
-      .map((event: any) => [event.id, event]),
-  );
-
   return parsedGoals
     .flatMap((goal: ProfileGoal) => {
-      const linkedEvent = eventById.get(goal.milestone_event_id);
-      if (!linkedEvent) {
+      const targetDate = goal.target_date;
+      if (!dateOnlyPattern.test(targetDate) || targetDate < input.startDate) {
         return [];
       }
 
-      try {
-        const targetDate = resolveGoalEventDate(goal, linkedEvent);
-        if (!dateOnlyPattern.test(targetDate) || targetDate < input.startDate) {
-          return [];
-        }
-
-        return [{ goal, targetDate }];
-      } catch (resolutionError) {
-        console.warn(
-          "Failed to resolve canonical goal milestone date for insight timeline projection.",
-          resolutionError,
-        );
-        return [];
-      }
+      return [{ goal, targetDate }];
     })
     .sort((left: GoalProjectionSource, right: GoalProjectionSource) =>
       left.targetDate.localeCompare(right.targetDate),
@@ -2411,6 +2754,78 @@ function mapProjectionMicrocyclesToIdealTssByDate(
   return map;
 }
 
+function buildProjectionDashboardSummary(input: {
+  projectionChart: ProjectionChartPayload;
+  rawGoals: GoalProjectionSource[];
+}): ProjectionDashboardSummary {
+  const assessmentByGoalId = new Map(
+    (input.projectionChart.goal_assessments ?? []).map((assessment) => [
+      assessment.goal_id,
+      assessment,
+    ]),
+  );
+
+  const goalForecasts = input.rawGoals.map((source, index) => {
+    const projectionGoal = input.projectionChart.goal_markers[index];
+    const assessment = projectionGoal ? assessmentByGoalId.get(projectionGoal.id) : undefined;
+
+    return {
+      profile_goal_id: source.goal.id,
+      projection_goal_id: projectionGoal?.id ?? source.goal.id,
+      title: source.goal.title,
+      target_date: source.targetDate,
+      priority: source.goal.priority,
+      readiness_target: assessment?.goal_readiness_target ?? null,
+      readiness_score: assessment?.goal_readiness_score ?? null,
+      state_readiness_score: assessment?.state_readiness_score ?? null,
+      alignment_loss_0_100: assessment?.goal_alignment_loss_0_100 ?? null,
+      feasibility_band:
+        assessment?.feasibility_band ?? input.projectionChart.feasibility_band ?? "stretch",
+      limiter_shares: assessment?.limiter_shares ?? null,
+      target_scores: assessment?.target_scores ?? [],
+      conflict_notes: assessment?.conflict_notes ?? [],
+      interference_notes: assessment?.interference_notes ?? [],
+    };
+  });
+
+  return {
+    readiness_score: input.projectionChart.readiness_score ?? null,
+    physiological_readiness_score: input.projectionChart.physiological_readiness_score ?? null,
+    readiness_confidence: input.projectionChart.readiness_confidence ?? null,
+    planning_confidence: input.projectionChart.planning_confidence ?? null,
+    planning_confidence_reasons: input.projectionChart.planning_confidence_reasons ?? [],
+    readiness_rationale_codes: input.projectionChart.readiness_rationale_codes ?? [],
+    feasibility_band: input.projectionChart.feasibility_band ?? null,
+    risk_score: input.projectionChart.risk_score ?? null,
+    risk_level: input.projectionChart.risk_level ?? null,
+    risk_flags: input.projectionChart.risk_flags ?? [],
+    caps_applied: input.projectionChart.caps_applied ?? [],
+    load_resolution_summary: input.projectionChart.load_resolution_summary ?? null,
+    dose_recommendation: input.projectionChart.dose_recommendation ?? null,
+    sport_load_states: input.projectionChart.sport_load_states ?? [],
+    recovery_segments: input.projectionChart.recovery_segments ?? [],
+    readiness_points: (input.projectionChart.display_points ?? input.projectionChart.points).map(
+      (point) => ({
+        date: point.date,
+        readiness_score: point.readiness_score,
+        predicted_fitness_ctl: point.predicted_fitness_ctl,
+      }),
+    ),
+    microcycles: input.projectionChart.microcycles.map((microcycle) => ({
+      week_start_date: microcycle.week_start_date,
+      week_end_date: microcycle.week_end_date,
+      phase: microcycle.phase,
+      planned_weekly_tss: microcycle.planned_weekly_tss,
+      projected_ctl: microcycle.projected_ctl,
+      constraints: microcycle.metadata.load_resolution.constraints,
+      recovery_active: microcycle.metadata.recovery.active,
+      demand_floor_tss: microcycle.metadata.load_resolution.demand_floor_tss,
+      demand_gap_unmet_weekly_tss: microcycle.metadata.tss_ramp.demand_gap_unmet_weekly_tss ?? null,
+    })),
+    goal_forecasts: goalForecasts,
+  };
+}
+
 async function deriveInsightTimelineProjectionIdealTssByDate(input: {
   db?: DbClient;
   supabase?: LegacyPlanningReader;
@@ -2422,6 +2837,7 @@ async function deriveInsightTimelineProjectionIdealTssByDate(input: {
   goalCount: number;
   datedGoalCount: number;
   diagnostics: ProjectionContextDiagnostics;
+  dashboard: ProjectionDashboardSummary | null;
 }> {
   try {
     const rawGoals = await loadProfileGoalsWithTargetDates({
@@ -2438,6 +2854,7 @@ async function deriveInsightTimelineProjectionIdealTssByDate(input: {
         idealTssByDate: null,
         goalCount,
         datedGoalCount: 0,
+        dashboard: null,
         diagnostics: {
           fallback_mode: "no_dated_goals",
           projection_curve_available: false,
@@ -2460,6 +2877,7 @@ async function deriveInsightTimelineProjectionIdealTssByDate(input: {
         idealTssByDate: null,
         goalCount,
         datedGoalCount: 0,
+        dashboard: null,
         diagnostics: {
           fallback_mode: "unsupported_goal_objective",
           projection_curve_available: false,
@@ -2488,6 +2906,7 @@ async function deriveInsightTimelineProjectionIdealTssByDate(input: {
         idealTssByDate: null,
         goalCount,
         datedGoalCount: mappedGoals.length,
+        dashboard: null,
         diagnostics: {
           fallback_mode: "invalid_projection_inputs",
           projection_curve_available: false,
@@ -2528,6 +2947,7 @@ async function deriveInsightTimelineProjectionIdealTssByDate(input: {
       minimalPlan: minimalPlanResult.data,
       loadBootstrapState: profileContext.loadBootstrapState,
       finalConfig: creationConfig.finalConfig,
+      preferenceProfile: profileContext.preferenceProfile,
       contextSummary: profileContext.contextSummary,
       startingCtlOverride: profileContext.globalCtlOverride,
       startingAtlOverride: profileContext.globalAtlOverride,
@@ -2541,6 +2961,10 @@ async function deriveInsightTimelineProjectionIdealTssByDate(input: {
       idealTssByDate: idealTssByDate.size > 0 ? idealTssByDate : null,
       goalCount,
       datedGoalCount: mappedGoals.length,
+      dashboard: buildProjectionDashboardSummary({
+        projectionChart: projectionArtifacts.projectionChart,
+        rawGoals,
+      }),
       diagnostics: {
         fallback_mode: projectionArtifacts.projectionChart.no_history?.projection_floor_applied
           ? "conservative_priors"
@@ -2571,6 +2995,7 @@ async function deriveInsightTimelineProjectionIdealTssByDate(input: {
       idealTssByDate: null,
       goalCount: 0,
       datedGoalCount: 0,
+      dashboard: null,
       diagnostics: {
         fallback_mode: "projection_error",
         projection_curve_available: false,
@@ -2602,6 +3027,10 @@ async function estimateCurrentCtl(input: {
     ? await input.db
         .select(activitySummaryColumns)
         .from(schema.activities)
+        .innerJoin(
+          schema.activitySummaries,
+          eq(schema.activitySummaries.activity_id, schema.activities.id),
+        )
         .where(
           and(
             eq(schema.activities.profile_id, profileId),
@@ -2840,6 +3269,7 @@ function buildCreationProjectionArtifacts(input: {
   startingCtlOverride?: number;
   startingAtlOverride?: number;
   finalConfig: Awaited<ReturnType<typeof evaluateCreationConfig>>["finalConfig"];
+  preferenceProfile?: AthletePreferenceProfile;
   contextSummary: CreationContextSummary;
 }): {
   expandedPlan: ExpandedProjectionPlan;
@@ -2866,6 +3296,7 @@ function buildCreationProjectionArtifacts(input: {
     startingAtl: effectiveStartingAtl,
     priorInferredSnapshot: input.priorInferredSnapshot,
     normalizedCreationConfig: input.finalConfig,
+    preferenceProfile: input.preferenceProfile,
     noHistoryContext,
   });
 
@@ -2899,7 +3330,7 @@ function buildCreationProjectionArtifacts(input: {
   return {
     expandedPlan,
     projectionChart,
-    projectionFeasibility: buildProjectionFeasibilitySummary(projectionChart),
+    projectionFeasibility: classifyProjectionFeasibility(projectionChart),
   };
 }
 
@@ -2932,6 +3363,10 @@ export async function deriveProfileAwareCreationContext(input: {
           input.db
             .select(activitySummaryColumns)
             .from(schema.activities)
+            .innerJoin(
+              schema.activitySummaries,
+              eq(schema.activitySummaries.activity_id, schema.activities.id),
+            )
             .where(
               and(
                 eq(schema.activities.profile_id, input.profileId),
@@ -2988,8 +3423,8 @@ export async function deriveProfileAwareCreationContext(input: {
           ),
         ])
       : await Promise.all([
-          input
-            .supabase!.from("activities")
+          input.supabase
+            ?.from("activities")
             .select(
               "id, type, started_at, finished_at, duration_seconds, moving_seconds, distance_meters, avg_heart_rate, max_heart_rate, avg_power, max_power, avg_speed_mps, max_speed_mps, normalized_power, normalized_speed_mps, normalized_graded_speed_mps",
             )
@@ -2997,22 +3432,22 @@ export async function deriveProfileAwareCreationContext(input: {
             .gte("started_at", recentActivitiesCutoff.toISOString())
             .order("started_at", { ascending: false })
             .limit(300),
-          input
-            .supabase!.from("activity_efforts")
+          input.supabase
+            ?.from("activity_efforts")
             .select("recorded_at, effort_type, duration_seconds, value, activity_category")
             .eq("profile_id", input.profileId)
             .gte("recorded_at", recentEffortsCutoff.toISOString())
             .order("recorded_at", { ascending: false })
             .limit(200),
-          input
-            .supabase!.from("profile_metrics")
+          input.supabase
+            ?.from("profile_metrics")
             .select("metric_type, value, recorded_at")
             .eq("profile_id", input.profileId)
             .in("metric_type", ["lthr", "weight_kg"])
             .order("recorded_at", { ascending: false }),
-          input.supabase!.from("profiles").select("dob, gender").eq("id", input.profileId).limit(1),
-          input
-            .supabase!.from("profile_training_settings")
+          input.supabase?.from("profiles").select("dob, gender").eq("id", input.profileId).limit(1),
+          input.supabase
+            ?.from("profile_training_settings")
             .select("settings")
             .eq("profile_id", input.profileId)
             .maybeSingle(),
@@ -3113,6 +3548,10 @@ export async function deriveProfileAwareCreationContext(input: {
   };
 
   const settings = settingsResult.data?.settings as any;
+  const parsedPreferenceProfile = athletePreferenceProfileSchema.safeParse(settings);
+  const preferenceProfile = parsedPreferenceProfile.success
+    ? parsedPreferenceProfile.data
+    : undefined;
   const baselineFitnessOverride = settings?.baseline_fitness;
 
   const contextSummary = deriveCreationContext({
@@ -3156,6 +3595,7 @@ export async function deriveProfileAwareCreationContext(input: {
     globalCtlOverride,
     globalAtlOverride,
     baselineFitnessOverride,
+    preferenceProfile,
   };
 }
 
@@ -3513,6 +3953,11 @@ export async function getPlanTabProjectionService({
     start_date: string;
     end_date: string;
     timezone: string;
+    schedule_adjustment?: {
+      date: string;
+      tss_delta: number;
+      comparison_date?: string;
+    };
   };
 }) {
   const windowDays = diffDateOnlyUtcDays(input.start_date, input.end_date) + 1;
@@ -3544,8 +3989,8 @@ export async function getPlanTabProjectionService({
   if (input.training_plan_id) {
     const fetchedPlan = db
       ? await getAccessibleTrainingPlan({ db, planId: input.training_plan_id, profileId })
-      : await fallbackSupabase!
-          .from("training_plans")
+      : await fallbackSupabase
+          ?.from("training_plans")
           .select("*")
           .eq("id", input.training_plan_id)
           .or(`profile_id.eq.${profileId},is_system_template.eq.true,template_visibility.eq.public`)
@@ -3629,9 +4074,9 @@ export async function getPlanTabProjectionService({
   const plannedActivitiesRaw = projectionInputs
     ? projectionInputs.plannedActivities
     : await (async () => {
-        let plannedActivitiesQuery: any = fallbackSupabase!
-          .from("events")
-          .select("starts_at, training_plan_id, activity_plan:activity_plans (*)")
+        let plannedActivitiesQuery: any = fallbackSupabase
+          ?.from("events")
+          .select("id, starts_at, training_plan_id, activity_plan:activity_plans (*)")
           .eq("profile_id", profileId)
           .eq("event_type", plannedEventType)
           .gte("starts_at", toDayStartIso(input.start_date))
@@ -3697,8 +4142,8 @@ export async function getPlanTabProjectionService({
 
   const actualActivities = projectionInputs
     ? projectionInputs.actualActivities
-    : await fallbackSupabase!
-        .from("activities")
+    : await fallbackSupabase
+        ?.from("activities")
         .select(
           "id, type, started_at, finished_at, duration_seconds, moving_seconds, distance_meters, avg_heart_rate, max_heart_rate, avg_power, max_power, avg_speed_mps, max_speed_mps, normalized_power, normalized_speed_mps, normalized_graded_speed_mps",
         )
@@ -3731,8 +4176,7 @@ export async function getPlanTabProjectionService({
   const projectionIdealTssByDate = projectionGoalContext.idealTssByDate;
   const hasActivityHistory = (actualActivities?.length || 0) > 0;
   const hasGoalProjectionCurve = (projectionIdealTssByDate?.size ?? 0) > 0;
-  const loadGuidanceMode: LoadGuidanceMode =
-    projectionGoalContext.datedGoalCount > 0 ? "goal_driven" : "baseline";
+  const loadGuidanceMode: LoadGuidanceMode = "baseline";
   const hasPlanStructureTargets = hasPlanStructureProjectionAnchor(
     looseStructure as Record<string, unknown>,
     input.start_date,
@@ -3740,22 +4184,13 @@ export async function getPlanTabProjectionService({
 
   const timelineDates = buildDateRange(input.start_date, input.end_date);
   const timeline = timelineDates.map((date) => {
-    const projectedIdealTss = projectionIdealTssByDate?.get(date);
     const scheduled_tss = Math.round((scheduledByDate.get(date) || 0) * 10) / 10;
-    const ideal_tss =
-      loadGuidanceMode === "goal_driven"
-        ? resolveIdealDailyTss({
-            date,
-            projectedIdealTss,
-            blocks,
-            structure: looseStructure as Record<string, unknown>,
-          })
-        : resolveBaselineDailyTss({
-            date,
-            structure: looseStructure as Record<string, unknown>,
-            blocks,
-            hasActivityHistory,
-          });
+    const ideal_tss = resolveBaselineDailyTss({
+      date,
+      structure: looseStructure as Record<string, unknown>,
+      blocks,
+      hasActivityHistory,
+    });
     const actual_tss = Math.round((actualByDate.get(date) || 0) * 10) / 10;
     const boundary = classifyBoundaryState(ideal_tss, scheduled_tss, actual_tss);
 
@@ -3811,11 +4246,9 @@ export async function getPlanTabProjectionService({
     adherenceScore: adherenceSummary.score,
   });
 
-  const loadProvenanceSource: ProjectionLoadProvenanceSource = hasGoalProjectionCurve
-    ? "canonical_goal_projection"
-    : hasPlanStructureTargets
-      ? "plan_structure"
-      : "conservative_baseline";
+  const loadProvenanceSource: ProjectionLoadProvenanceSource = hasPlanStructureTargets
+    ? "plan_structure"
+    : "conservative_baseline";
 
   const projectionDiagnostics: ProjectionInsightDiagnostics = {
     fallback_mode:
@@ -3852,14 +4285,95 @@ export async function getPlanTabProjectionService({
     has_activity_history: hasActivityHistory,
     weekly_cap_tss:
       loadGuidanceMode === "baseline" && !hasActivityHistory ? conservativeStarterWeeklyTss : null,
-    interpretation: hasGoalProjectionCurve
-      ? "Recommended load is anchored to your canonical dated goals and current plan context."
-      : loadGuidanceMode === "goal_driven"
-        ? "Recommended load falls back to baseline guidance because canonical goal projection was unavailable for this window."
+    interpretation:
+      projectionGoalContext.datedGoalCount > 0
+        ? "Goals are evaluated separately; recommended load remains a baseline estimate instead of aggregating goal-derived planned load."
         : hasActivityHistory
           ? "Recommended load is a baseline estimate from your recent training and active plan, not a dated goal."
           : "Recommended load is a conservative baseline estimate because no dated goal or usable history was found.",
   };
+
+  const today = formatDateOnlyUtc(new Date());
+  const actualDailyLoad = mapDailyLoadFromDateTotals(actualByDate);
+  const scheduledDailyLoad = mapScheduledDailyLoadFromDateTotals(scheduledByDate);
+  const recommendedDailyLoad = mapRecommendedDailyLoadFromTimeline(timeline);
+  const readinessForecastInput: BuildReadinessForecastTimelineInput = {
+    startDate: input.start_date,
+    endDate: input.end_date,
+    today,
+    baseline: buildReadinessForecastBaseline({
+      startDate: input.start_date,
+      today,
+      hasActualHistory: actualDailyLoad.length > 0,
+      estimatedCurrentCtl,
+      projectionDashboard: projectionGoalContext.dashboard,
+      readinessSummaryScore: readinessSummary.score,
+    }),
+    actualDailyLoad,
+    scheduledDailyLoad,
+    recommendedDailyLoad,
+    goals: buildReadinessForecastGoals({
+      fallbackGoals: goals,
+      dashboard: projectionGoalContext.dashboard,
+    }),
+    confidenceReasonCodes: buildReadinessForecastReasonCodes({
+      hasActualHistory: actualDailyLoad.length > 0,
+      scheduledDailyLoad,
+      recommendedDailyLoad,
+      failedEstimations,
+      hasDatedGoals: projectionGoalContext.datedGoalCount > 0,
+    }),
+  };
+  const readinessForecast = buildReadinessForecastTimeline(readinessForecastInput);
+  const loadComparison = buildWeeklyLoadComparison({
+    timeline,
+    goals,
+    dashboard: projectionGoalContext.dashboard,
+  });
+  const upcomingImpact = buildUpcomingActivityImpact({
+    plannedActivities: plannedActivitiesRaw || [],
+    estimatedTssByPlanId,
+    today,
+    horizonEnd: addDaysDateOnlyUtc(today, 14),
+    recommendedByDate: new Map(timeline.map((point) => [point.date, point.ideal_tss])),
+  });
+  const scheduleRecommendation = buildScheduleRecommendation({
+    today,
+    readinessForecast,
+    loadComparison,
+    upcomingImpact,
+  });
+  const activityPlanMatchTarget = resolveScheduleGapActivityPlanMatchTarget({
+    today,
+    scheduleRecommendation,
+    loadComparison,
+  });
+  const ownedActivityPlans =
+    activityPlanMatchTarget.targetTssDelta && activityPlanMatchTarget.targetTssDelta > 0
+      ? await loadOwnedActivityPlansForScheduleGap({
+          db,
+          supabase: fallbackSupabase,
+          profileId,
+        })
+      : [];
+  const activityPlanMatches = buildScheduleGapActivityPlanMatches({
+    targetDate: activityPlanMatchTarget.targetDate,
+    targetTssDelta: activityPlanMatchTarget.targetTssDelta,
+    primaryCategory,
+    plans: ownedActivityPlans,
+    today,
+  });
+  const scheduleSimulation = input.schedule_adjustment
+    ? simulateReadinessScheduleAdjustment({
+        forecastInput: readinessForecastInput,
+        date: input.schedule_adjustment.date,
+        tssDelta: input.schedule_adjustment.tss_delta,
+        comparisonDate: input.schedule_adjustment.comparison_date,
+      })
+    : buildScheduleSimulation({
+        forecastInput: readinessForecastInput,
+        recommendation: scheduleRecommendation,
+      });
 
   return {
     window: {
@@ -3887,14 +4401,21 @@ export async function getPlanTabProjectionService({
       drivers: projectionDrivers,
       diagnostics: projectionDiagnostics,
     },
+    projection_dashboard: projectionGoalContext.dashboard,
     adherence_summary: adherenceSummary,
     readiness_summary: readinessSummary,
     load_guidance: loadGuidance,
+    readiness_forecast: readinessForecast,
+    load_comparison: loadComparison,
+    upcoming_impact: upcomingImpact,
+    schedule_recommendation: scheduleRecommendation,
+    activity_plan_matches: activityPlanMatches,
+    schedule_simulation: scheduleSimulation,
     timeline,
   };
 }
 
-export const trainingPlansRouter = createTRPCRouter({
+const trainingPlansProcedures = {
   // ------------------------------
   // Get a training plan (by ID or active plan)
   // ------------------------------
@@ -3902,79 +4423,12 @@ export const trainingPlansRouter = createTRPCRouter({
     .input(z.object({ id: z.string().uuid().optional() }).optional())
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      // If ID provided, get specific plan
-      if (input?.id) {
-        const data = await getAccessibleTrainingPlan({
-          db,
-          planId: input.id,
-          profileId: ctx.session.user.id,
-        });
-
-        if (!data) {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Training plan not found",
-          });
-        }
-
-        // Validate structure
-        try {
-          if (data.structure) {
-            trainingPlanSchema.parse(data.structure);
-          }
-        } catch (validationError) {
-          console.error(
-            "Invalid structure in database for training plan",
-            data.id,
-            validationError,
-          );
-        }
-
-        // Check if user has liked this plan
-        const hasLiked = await hasTrainingPlanLike({
-          db,
-          profileId: ctx.session.user.id,
-          planId: input.id,
-        });
-
-        return {
-          ...data,
-          has_liked: hasLiked,
-        };
-      }
-
-      // Otherwise, get active plan from future scheduled events
-      const activePlanLookup = await getActivePlanFromFutureEvents({
+      return getTrainingPlanUseCase({
         db,
+        id: input?.id,
         profileId: ctx.session.user.id,
+        repository: createTrainingPlanRepository(db),
       });
-
-      if (!activePlanLookup) {
-        return null;
-      }
-
-      const data = activePlanLookup.trainingPlan;
-
-      // Validate structure on read (defensive programming)
-      try {
-        if (data.structure) {
-          trainingPlanSchema.parse(data.structure);
-        }
-      } catch (validationError) {
-        console.error("Invalid structure in database for training plan", data.id, validationError);
-      }
-
-      // Check if user has liked this plan
-      const hasLiked = await hasTrainingPlanLike({
-        db,
-        profileId: ctx.session.user.id,
-        planId: data.id,
-      });
-
-      return {
-        ...data,
-        has_liked: hasLiked,
-      };
     }),
 
   // ------------------------------
@@ -3988,61 +4442,32 @@ export const trainingPlansRouter = createTRPCRouter({
           includeSystemTemplates: z.boolean().default(false),
           ownerScope: z.enum(["own", "system", "public", "all"]).optional(),
           visibility: z.enum(["private", "public"]).optional(),
+          search: z.string().trim().max(80).optional(),
+          limit: z.number().int().min(1).max(50).default(25),
+          cursor: indexCursorSchema.optional(),
+          direction: z.enum(["forward", "backward"]).optional(),
         })
-        .optional(),
+        .strict(),
     )
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-
-      let ownerScope: "own" | "system" | "public" | "all" | "none";
-      if (input?.ownerScope) {
-        ownerScope = input.ownerScope;
-      } else {
-        const includeOwnOnly = input?.includeOwnOnly ?? true;
-        const includeSystemTemplates = input?.includeSystemTemplates ?? false;
-        ownerScope = includeOwnOnly
-          ? includeSystemTemplates
-            ? "all"
-            : "own"
-          : includeSystemTemplates
-            ? "system"
-            : "none";
-      }
-
-      if (ownerScope === "own") {
-      } else if (ownerScope === "system") {
-      } else if (ownerScope === "public") {
-      } else if (ownerScope === "all") {
-      } else {
-        return [];
-      }
-
-      const data = await listTrainingPlans({
+      return listTrainingPlansUseCase({
         db,
         profileId: ctx.session.user.id,
-        ownerScope,
-        visibility: input?.visibility,
+        query: input,
+        repository: createTrainingPlanRepository(db),
       });
-
-      const planIds = data?.map((p: any) => p.id) || [];
-      const userLikes = await listTrainingPlanLikedIds({
-        db,
-        profileId: ctx.session.user.id,
-        planIds,
-      });
-
-      return (data || []).map((plan: any) => ({
-        ...withTrainingPlanIdentity(plan as any),
-        has_liked: userLikes.includes(plan.id),
-      }));
     }),
 
   // ------------------------------
   // Check if user has a training plan
   // ------------------------------
   exists: protectedProcedure.query(async ({ ctx }) => {
-    const count = await countOwnedTrainingPlans(getRequiredDb(ctx), ctx.session.user.id);
-    return { exists: count > 0, count };
+    const db = getRequiredDb(ctx);
+    return trainingPlanExistsUseCase({
+      profileId: ctx.session.user.id,
+      repository: createTrainingPlanRepository(db),
+    });
   }),
 
   // ------------------------------
@@ -4053,60 +4478,10 @@ export const trainingPlansRouter = createTRPCRouter({
     .input(trainingPlanCreateInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      // Note: input.structure is already validated by trainingPlanCreateInputSchema
-      // which uses trainingPlanCreateSchema (no ID required)
-
-      // Generate a unique UUID for this plan structure
-      // Each plan gets its own unique ID, even if created from a template
-      const planId = crypto.randomUUID();
-      const structureWithId = {
-        ...input.structure,
-        id: planId,
-      };
-
-      // Final validation with ID to ensure complete structure is valid
-      try {
-        trainingPlanSchema.parse(structureWithId);
-      } catch (validationError) {
-        console.error("Training plan validation error:", validationError);
-
-        // Extract more meaningful error message from Zod validation
-        let errorMessage = "Invalid training plan structure";
-        const errorDetails: string[] = [];
-
-        if (validationError && typeof validationError === "object") {
-          const zodError = validationError as any;
-          if (zodError.errors && Array.isArray(zodError.errors)) {
-            // Collect all errors, not just the first one
-            for (const err of zodError.errors) {
-              const path = err.path ? err.path.join(".") : "unknown";
-              const message = err.message || "validation failed";
-              errorDetails.push(`${path}: ${message}`);
-            }
-
-            if (errorDetails.length > 0) {
-              errorMessage = `Training plan validation failed:\n${errorDetails.join("\n")}`;
-            }
-          } else if (zodError.message) {
-            errorMessage = zodError.message;
-          }
-        }
-
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: errorMessage,
-          cause: validationError,
-        });
-      }
-
-      return insertTrainingPlan({
+      return createTrainingPlanUseCase({
         db,
-        values: {
-          name: input.name,
-          description: input.description ?? null,
-          structure: structureWithId,
-          profileId: ctx.session.user.id,
-        },
+        profileId: ctx.session.user.id,
+        values: input,
       });
     }),
 
@@ -4408,6 +4783,30 @@ export const trainingPlansRouter = createTRPCRouter({
       });
     }),
 
+  simulateScheduleAdjustment: protectedProcedure
+    .input(scheduleAdjustmentSimulationInputSchema)
+    .query(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
+      const result = await getPlanTabProjectionService({
+        db,
+        store: createActivityAnalysisStore(db),
+        profileId: ctx.session.user.id,
+        input: {
+          training_plan_id: input.training_plan_id,
+          start_date: input.start_date,
+          end_date: input.end_date,
+          timezone: input.timezone,
+          schedule_adjustment: {
+            date: input.adjustment_date,
+            tss_delta: input.tss_delta,
+            comparison_date: input.comparison_date,
+          },
+        },
+      });
+
+      return result.schedule_simulation;
+    }),
+
   // ------------------------------
   // Update training plan
   // ------------------------------
@@ -4415,47 +4814,12 @@ export const trainingPlansRouter = createTRPCRouter({
     .input(trainingPlanUpdateMutationInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      const { id, template_visibility, ...updates } = input as {
-        id: string;
-        template_visibility?: "private" | "public";
-      } & z.infer<typeof trainingPlanUpdateInputSchema>;
-      const structure =
-        updates.structure === undefined
-          ? undefined
-          : parseTrainingPlanStructureOrThrow({
-              value: updates.structure,
-              message: "Invalid training plan structure",
-            });
-
-      // Check ownership
-      const existing = await getOwnedTrainingPlan({
+      return updateTrainingPlanUseCase({
         db,
-        planId: id,
         profileId: ctx.session.user.id,
+        repository: createTrainingPlanRepository(db),
+        values: input,
       });
-
-      if (!existing) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Training plan not found or you don't have permission to edit it",
-        });
-      }
-
-      const data = await updateOwnedTrainingPlanRow({
-        db,
-        id,
-        profileId: ctx.session.user.id,
-        name: updates.name as string | undefined,
-        description: updates.description as string | null | undefined,
-        structure,
-        templateVisibility: template_visibility,
-      });
-
-      if (!data) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Failed to update training plan" });
-      }
-
-      return data;
     }),
 
   // ------------------------------
@@ -4465,39 +4829,12 @@ export const trainingPlansRouter = createTRPCRouter({
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      // Check ownership
-      const existing = await getOwnedTrainingPlan({
+      return deleteTrainingPlanUseCase({
         db,
-        planId: input.id,
+        id: input.id,
         profileId: ctx.session.user.id,
+        repository: createTrainingPlanRepository(db),
       });
-
-      if (!existing) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Training plan not found or you don't have permission to delete it",
-        });
-      }
-
-      // Delete all planned events associated with this training plan first
-      await db
-        .delete(schema.events)
-        .where(
-          and(
-            eq(schema.events.event_type, plannedEventType),
-            eq(schema.events.training_plan_id, input.id),
-            eq(schema.events.profile_id, ctx.session.user.id),
-          ),
-        );
-
-      // Now delete the training plan
-      await db.execute(sql`
-        delete from training_plans
-        where id = ${input.id}::uuid
-          and profile_id = ${ctx.session.user.id}::uuid
-      `);
-
-      return { success: true };
     }),
 
   duplicate: protectedProcedure
@@ -4509,60 +4846,13 @@ export const trainingPlansRouter = createTRPCRouter({
     )
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      const sourcePlan = await getAccessibleTrainingPlan({
+      return duplicateTrainingPlanUseCase({
         db,
-        planId: input.id,
+        id: input.id,
+        newName: input.newName,
         profileId: ctx.session.user.id,
+        repository: createTrainingPlanRepository(db),
       });
-
-      if (!sourcePlan) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Training plan not found",
-        });
-      }
-
-      try {
-        if (sourcePlan.structure) {
-          trainingPlanSchema.parse(sourcePlan.structure);
-        }
-      } catch (validationError) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Source training plan has invalid structure",
-          cause: validationError,
-        });
-      }
-
-      const duplicatedPlanId = crypto.randomUUID();
-      const duplicatedStructure = {
-        ...(sourcePlan.structure as Record<string, unknown>),
-        id: duplicatedPlanId,
-      };
-
-      try {
-        trainingPlanSchema.parse(duplicatedStructure);
-      } catch (validationError) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Duplicated training plan structure is invalid",
-          cause: validationError,
-        });
-      }
-
-      const data = await insertTrainingPlan({
-        db,
-        values: {
-          name: input.newName?.trim() || `${sourcePlan.name} (Copy)`,
-          description: (sourcePlan.description as string | null | undefined) ?? null,
-          structure: duplicatedStructure,
-          profileId: ctx.session.user.id,
-          templateVisibility: "private",
-          isPublic: false,
-        },
-      });
-
-      return withTrainingPlanIdentity(data);
     }),
 
   // ------------------------------
@@ -4572,38 +4862,12 @@ export const trainingPlansRouter = createTRPCRouter({
     .input(z.object({ id: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      const data = await getAccessibleTrainingPlan({
+      return getTrainingPlanByIdUseCase({
         db,
-        planId: input.id,
+        id: input.id,
         profileId: ctx.session.user.id,
+        repository: createTrainingPlanRepository(db),
       });
-
-      if (!data) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Training plan not found",
-        });
-      }
-
-      // Validate structure on read
-      try {
-        if (data.structure) {
-          trainingPlanSchema.parse(data.structure);
-        }
-      } catch (validationError) {
-        console.error("Invalid structure in database for training plan", input.id, validationError);
-      }
-
-      const hasLiked = await hasTrainingPlanLike({
-        db,
-        profileId: ctx.session.user.id,
-        planId: input.id,
-      });
-
-      return {
-        ...data,
-        has_liked: hasLiked,
-      };
     }),
 
   // ------------------------------
@@ -4631,6 +4895,10 @@ export const trainingPlansRouter = createTRPCRouter({
     const activities = await db
       .select(activitySummaryColumns)
       .from(schema.activities)
+      .innerJoin(
+        schema.activitySummaries,
+        eq(schema.activitySummaries.activity_id, schema.activities.id),
+      )
       .where(
         and(
           eq(schema.activities.profile_id, ctx.session.user.id),
@@ -4667,6 +4935,10 @@ export const trainingPlansRouter = createTRPCRouter({
     const weekActivities = await db
       .select(activitySummaryColumns)
       .from(schema.activities)
+      .innerJoin(
+        schema.activitySummaries,
+        eq(schema.activitySummaries.activity_id, schema.activities.id),
+      )
       .where(
         and(
           eq(schema.activities.profile_id, ctx.session.user.id),
@@ -4695,7 +4967,11 @@ export const trainingPlansRouter = createTRPCRouter({
     const plannedActivitiesEvents = await db
       .select({ starts_at: schema.events.starts_at, activity_plan: schema.activityPlans })
       .from(schema.events)
-      .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
+      .leftJoin(schema.eventScheduleLinks, eq(schema.eventScheduleLinks.event_id, schema.events.id))
+      .leftJoin(
+        schema.activityPlans,
+        eq(schema.eventScheduleLinks.activity_plan_id, schema.activityPlans.id),
+      )
       .where(
         and(
           eq(schema.events.profile_id, ctx.session.user.id),
@@ -4728,7 +5004,7 @@ export const trainingPlansRouter = createTRPCRouter({
         : [];
 
     const plannedWeeklyTSS = plansWithEstimations.reduce(
-      (sum, plan) => sum + plan.estimated_tss,
+      (sum, plan) => sum + plan.authoritative_metrics.estimated_tss,
       0,
     );
 
@@ -4751,7 +5027,11 @@ export const trainingPlansRouter = createTRPCRouter({
         activity_plan: schema.activityPlans,
       })
       .from(schema.events)
-      .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
+      .leftJoin(schema.eventScheduleLinks, eq(schema.eventScheduleLinks.event_id, schema.events.id))
+      .leftJoin(
+        schema.activityPlans,
+        eq(schema.eventScheduleLinks.activity_plan_id, schema.activityPlans.id),
+      )
       .where(
         and(
           eq(schema.events.profile_id, ctx.session.user.id),
@@ -4881,6 +5161,10 @@ export const trainingPlansRouter = createTRPCRouter({
       const actualCurve = await db
         .select(activitySummaryColumns)
         .from(schema.activities)
+        .innerJoin(
+          schema.activitySummaries,
+          eq(schema.activitySummaries.activity_id, schema.activities.id),
+        )
         .where(
           and(
             eq(schema.activities.profile_id, ctx.session.user.id),
@@ -5013,6 +5297,10 @@ export const trainingPlansRouter = createTRPCRouter({
       const baselineActivities = await db
         .select(activitySummaryColumns)
         .from(schema.activities)
+        .innerJoin(
+          schema.activitySummaries,
+          eq(schema.activitySummaries.activity_id, schema.activities.id),
+        )
         .where(
           and(
             eq(schema.activities.profile_id, ctx.session.user.id),
@@ -5046,6 +5334,10 @@ export const trainingPlansRouter = createTRPCRouter({
       const activities = await db
         .select(activitySummaryColumns)
         .from(schema.activities)
+        .innerJoin(
+          schema.activitySummaries,
+          eq(schema.activitySummaries.activity_id, schema.activities.id),
+        )
         .where(
           and(
             eq(schema.activities.profile_id, ctx.session.user.id),
@@ -5114,32 +5406,13 @@ export const trainingPlansRouter = createTRPCRouter({
     .input(applyQuickAdjustmentInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      // Check ownership
-      const existing = await getOwnedTrainingPlan({
-        db,
-        planId: input.id,
-        profileId: ctx.session.user.id,
-      });
-
-      if (!existing) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Training plan not found or you don't have permission to edit it",
-        });
-      }
-      // Apply the adjustment
-      const data = await updateOwnedTrainingPlanRow({
+      return applyQuickAdjustmentUseCase({
+        adjustedStructure: input.adjustedStructure,
         db,
         id: input.id,
         profileId: ctx.session.user.id,
-        structure: input.adjustedStructure,
+        repository: createTrainingPlanRepository(db),
       });
-
-      if (!data) {
-        throw new TRPCError({ code: "BAD_REQUEST", message: "Failed to adjust training plan" });
-      }
-
-      return data;
     }),
 
   // ------------------------------
@@ -5183,11 +5456,18 @@ export const trainingPlansRouter = createTRPCRouter({
       const plannedActivitiesEventsRaw = await db
         .select({ starts_at: schema.events.starts_at, activity_plan: schema.activityPlans })
         .from(schema.events)
-        .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
+        .leftJoin(
+          schema.eventScheduleLinks,
+          eq(schema.eventScheduleLinks.event_id, schema.events.id),
+        )
+        .leftJoin(
+          schema.activityPlans,
+          eq(schema.eventScheduleLinks.activity_plan_id, schema.activityPlans.id),
+        )
         .where(
           and(
             eq(schema.events.profile_id, ctx.session.user.id),
-            eq(schema.events.training_plan_id, input.training_plan_id),
+            eq(schema.eventScheduleLinks.training_plan_id, input.training_plan_id),
             eq(schema.events.event_type, plannedEventType),
             gte(schema.events.starts_at, new Date(toDayStartIso(startDateOnly))),
             lt(schema.events.starts_at, new Date(toNextDayStartIso(todayDateOnly))),
@@ -5237,6 +5517,10 @@ export const trainingPlansRouter = createTRPCRouter({
       const completedActivities = await db
         .select(activitySummaryColumns)
         .from(schema.activities)
+        .innerJoin(
+          schema.activitySummaries,
+          eq(schema.activitySummaries.activity_id, schema.activities.id),
+        )
         .where(
           and(
             eq(schema.activities.profile_id, ctx.session.user.id),
@@ -5356,6 +5640,10 @@ export const trainingPlansRouter = createTRPCRouter({
       const activities = await db
         .select(activitySummaryColumns)
         .from(schema.activities)
+        .innerJoin(
+          schema.activitySummaries,
+          eq(schema.activitySummaries.activity_id, schema.activities.id),
+        )
         .where(
           and(
             eq(schema.activities.profile_id, ctx.session.user.id),
@@ -5507,6 +5795,10 @@ export const trainingPlansRouter = createTRPCRouter({
       const activities = await db
         .select(activitySummaryColumns)
         .from(schema.activities)
+        .innerJoin(
+          schema.activitySummaries,
+          eq(schema.activitySummaries.activity_id, schema.activities.id),
+        )
         .where(
           and(
             eq(schema.activities.profile_id, ctx.session.user.id),
@@ -5626,6 +5918,10 @@ export const trainingPlansRouter = createTRPCRouter({
           name: schema.activities.name,
         })
         .from(schema.activities)
+        .innerJoin(
+          schema.activitySummaries,
+          eq(schema.activitySummaries.activity_id, schema.activities.id),
+        )
         .where(
           and(
             eq(schema.activities.profile_id, ctx.session.user.id),
@@ -5729,10 +6025,14 @@ export const trainingPlansRouter = createTRPCRouter({
       // Get completed activities for this week
       const activities = await db
         .select({
-          distance_meters: schema.activities.distance_meters,
-          duration_seconds: schema.activities.duration_seconds,
+          distance_meters: schema.activitySummaries.distance_meters,
+          duration_seconds: schema.activitySummaries.duration_seconds,
         })
         .from(schema.activities)
+        .innerJoin(
+          schema.activitySummaries,
+          eq(schema.activitySummaries.activity_id, schema.activities.id),
+        )
         .where(
           and(
             eq(schema.activities.profile_id, ctx.session.user.id),
@@ -5771,22 +6071,40 @@ export const trainingPlansRouter = createTRPCRouter({
           experience_level: z.enum(["beginner", "intermediate", "advanced"]).optional(),
           min_weeks: z.number().int().min(1).max(52).optional(),
           max_weeks: z.number().int().min(1).max(52).optional(),
+          min_sessions_per_week: z.number().int().min(1).max(14).optional(),
+          max_sessions_per_week: z.number().int().min(1).max(14).optional(),
           search: z.string().optional(),
+          sort_by: z
+            .enum([
+              "newest",
+              "oldest",
+              "duration_desc",
+              "duration_asc",
+              "sessions_desc",
+              "sessions_asc",
+            ])
+            .optional(),
+          limit: z.number().int().min(1).max(50).default(25),
+          cursor: indexCursorSchema.optional(),
+          direction: z.enum(["forward", "backward"]).optional(),
         })
-        .optional(),
+        .strict(),
     )
     .query(async ({ ctx, input }) => {
-      const templates = await listPublicTemplateTrainingPlans(getRequiredDb(ctx), input);
-
-      return (templates || []).map((t: any) => ({
-        id: t.id,
-        name: t.name,
-        description: t.description,
-        sessions_per_week_target: t.sessions_per_week_target,
-        duration_hours: t.duration_hours,
-        ...(t.structure as object),
-      }));
+      const db = getRequiredDb(ctx);
+      return listTrainingPlanTemplatesUseCase({
+        profileId: ctx.session.user.id,
+        query: input,
+        repository: createTrainingPlanRepository(db),
+      });
     }),
+
+  auditTemplateHealth: protectedProcedure.query(async ({ ctx }) => {
+    const db = getRequiredDb(ctx);
+    return auditTrainingPlanTemplateHealthUseCase({
+      repository: createTrainingPlanRepository(db),
+    });
+  }),
 
   // ------------------------------
   // Get single training plan template
@@ -5794,190 +6112,25 @@ export const trainingPlansRouter = createTRPCRouter({
   getTemplate: protectedProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }) => {
-      const template = (await listPublicTemplateTrainingPlans(getRequiredDb(ctx))).find(
-        (item) => item.id === input.id,
-      );
-
-      if (!template) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Template not found",
-        });
-      }
-
-      return {
-        id: template.id,
-        name: template.name,
-        description: template.description,
-        sessions_per_week_target: template.sessions_per_week_target,
-        duration_hours: template.duration_hours,
-        ...(template.structure as object),
-      };
+      return getTrainingPlanTemplateUseCase({
+        id: input.id,
+        repository: createTrainingPlanRepository(getRequiredDb(ctx)),
+      });
     }),
 
   applyTemplate: protectedProcedure
     .input(templateApplyInputSchema)
     .mutation(async ({ ctx, input }) => {
-      if (input.template_type !== "training_plan") {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Only training plan templates are supported by this mutation",
-        });
-      }
-
       const profileId = ctx.session.user.id;
       const db = getRequiredDb(ctx);
-
-      const activePlanLookup = await getActivePlanFromFutureEvents({
+      const permissions = createContentAccessPermissions(db);
+      return applyTrainingPlanTemplateUseCase({
         db,
+        permissions,
         profileId,
+        repository: createTrainingPlanRepository(db),
+        values: input,
       });
-
-      if (activePlanLookup) {
-        throw new TRPCError({
-          code: "CONFLICT",
-          message: "You already have an active training plan. Please complete or abandon it first.",
-        });
-      }
-
-      const templatePlan = await getAccessibleTrainingPlan({
-        db,
-        planId: input.template_id,
-        profileId,
-      });
-
-      if (!templatePlan) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Training plan template not found",
-        });
-      }
-
-      const structure =
-        templatePlan.structure && typeof templatePlan.structure === "object"
-          ? ({
-              ...(templatePlan.structure as Record<string, unknown>),
-            } as Record<string, unknown>)
-          : {};
-
-      let appliedPlanStartDate = input.start_date;
-
-      if (!appliedPlanStartDate && input.target_date) {
-        const dummyStart = "2000-01-01";
-        const dummySessions = materializePlanToEvents(structure, dummyStart);
-        let maxOffsetDays = 0;
-        for (const s of dummySessions) {
-          const offset = diffDateOnlyUtcDays(dummyStart, s.scheduled_date);
-          if (offset > maxOffsetDays) maxOffsetDays = offset;
-        }
-        appliedPlanStartDate = addDaysDateOnlyUtc(input.target_date, -maxOffsetDays);
-      }
-
-      if (!appliedPlanStartDate) {
-        appliedPlanStartDate = todayDateOnlyUtc();
-      }
-
-      const appliedStructureId = crypto.randomUUID();
-      structure.id = appliedStructureId;
-      structure.start_date = appliedPlanStartDate;
-
-      const appliedPlanId = templatePlan.id as string;
-
-      const materializedSessions = materializePlanToEvents(structure, appliedPlanStartDate);
-
-      const candidatePlanIds = Array.from(
-        new Set(
-          materializedSessions
-            .map((session) => session.activity_plan_id)
-            .filter((id): id is string => Boolean(id)),
-        ),
-      );
-
-      let allowedPlanIds = new Set<string>();
-      if (candidatePlanIds.length > 0) {
-        const accessiblePlans = await db.execute(sql<{ id: string }>`
-          select id
-          from activity_plans
-          where id in (${sql.join(
-            candidatePlanIds.map((id) => sql`${id}::uuid`),
-            sql`, `,
-          )})
-            and (
-              profile_id = ${profileId}::uuid
-              or is_system_template = true
-              or template_visibility = 'public'
-            )
-        `);
-
-        allowedPlanIds = new Set(getSqlRows<{ id: string }>(accessiblePlans).map((row) => row.id));
-      }
-
-      const unresolvedPlanIds = candidatePlanIds.filter((planId) => !allowedPlanIds.has(planId));
-
-      if (templatePlan.is_system_template === true && unresolvedPlanIds.length > 0) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `This system training plan cannot be scheduled because ${unresolvedPlanIds.length === 1 ? "a linked activity template is" : "linked activity templates are"} unavailable: ${unresolvedPlanIds.join(", ")}`,
-        });
-      }
-
-      const eventRows = materializedSessions
-        .filter((session) => session.event_type === "planned")
-        .filter(
-          (session) => !session.activity_plan_id || allowedPlanIds.has(session.activity_plan_id),
-        )
-        .map(
-          (session) =>
-            ({
-              profile_id: profileId,
-              event_type: plannedEventType,
-              title: session.title,
-              all_day: session.all_day,
-              timezone: "UTC",
-              starts_at: session.starts_at,
-              ends_at: session.ends_at,
-              status: "scheduled" as const,
-              activity_plan_id: session.activity_plan_id,
-              training_plan_id: appliedPlanId,
-            }) as any,
-        );
-
-      const schedule_batch_id = crypto.randomUUID();
-      let created_event_count = 0;
-
-      if (eventRows.length === 0) {
-        const plannedSessionCount = materializedSessions.filter(
-          (session) => session.event_type === "planned",
-        ).length;
-
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message:
-            plannedSessionCount === 0
-              ? "This training plan does not contain any schedulable sessions."
-              : "This training plan could not be scheduled because its linked activities are not available to your account.",
-        });
-      }
-
-      const insertedEvents = await db
-        .insert(schema.events)
-        .values(
-          eventRows.map((eventRow) => ({
-            ...eventRow,
-            schedule_batch_id,
-          })) as any,
-        )
-        .returning({ id: schema.events.id });
-
-      created_event_count = insertedEvents.length;
-
-      return {
-        applied_plan_id: appliedPlanId,
-        training_plan_id: templatePlan.id,
-        schedule_batch_id,
-        created_event_count,
-        cache_tags: ["events.list", "trainingPlans.list"],
-      };
     }),
 
   // ------------------------------
@@ -5991,106 +6144,59 @@ export const trainingPlansRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const profileId = ctx.session.user.id;
-      const windowStartIso = todayStartIsoUtc();
       const db = getRequiredDb(ctx);
-
-      const futurePlanEvents = await db
-        .select({ id: schema.events.id, training_plan_id: schema.events.training_plan_id })
-        .from(schema.events)
-        .where(
-          and(
-            eq(schema.events.profile_id, profileId),
-            eq(schema.events.event_type, plannedEventType),
-            eq(schema.events.training_plan_id, input.id),
-            gte(schema.events.starts_at, new Date(windowStartIso)),
-          ),
-        );
-
-      const hasFutureEventsForPlan = (futurePlanEvents?.length ?? 0) > 0;
-      if (!hasFutureEventsForPlan && (input.status === "active" || input.status === "paused")) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Active training plan not found",
-        });
-      }
-
-      if (input.status === "active" || input.status === "paused") {
-        const allFuturePlanEvents = await db
-          .select({ training_plan_id: schema.events.training_plan_id })
-          .from(schema.events)
-          .where(
-            and(
-              eq(schema.events.profile_id, profileId),
-              eq(schema.events.event_type, plannedEventType),
-              gte(schema.events.starts_at, new Date(windowStartIso)),
-            ),
-          )
-          .limit(200);
-
-        const hasOtherActivePlan = (allFuturePlanEvents ?? []).some(
-          (event: { training_plan_id?: unknown }) =>
-            isUuidString((event as any).training_plan_id) &&
-            (event as any).training_plan_id !== input.id,
-        );
-
-        if (hasOtherActivePlan) {
-          throw new TRPCError({
-            code: "CONFLICT",
-            message:
-              "You already have another active or paused training plan. Please complete or abandon it first.",
-          });
-        }
-
-        return {
-          id: input.id,
-          training_plan_id: input.id,
-          profile_id: profileId,
-          status: input.status,
-          updated_event_count: 0,
-        };
-      }
-
-      const deletedEvents = await db
-        .delete(schema.events)
-        .where(
-          and(
-            eq(schema.events.profile_id, profileId),
-            eq(schema.events.event_type, plannedEventType),
-            eq(schema.events.training_plan_id, input.id),
-            gte(schema.events.starts_at, new Date(windowStartIso)),
-          ),
-        )
-        .returning({ id: schema.events.id });
-
-      return {
+      const permissions = createContentAccessPermissions(db);
+      return updateActivePlanStatusUseCase({
+        db,
         id: input.id,
-        training_plan_id: input.id,
-        profile_id: profileId,
+        permissions,
+        profileId: ctx.session.user.id,
+        repository: createTrainingPlanRepository(db),
         status: input.status,
-        updated_event_count: deletedEvents?.length ?? 0,
-      };
+      });
+    }),
+
+  removeAppliedSchedule: protectedProcedure
+    .input(applicationScopedScheduleInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
+      return removeAppliedScheduleUseCase({
+        db,
+        permissions: createContentAccessPermissions(db),
+        profileId: ctx.session.user.id,
+        userTrainingPlanId: input.user_training_plan_id,
+      });
+    }),
+
+  shiftAppliedSchedule: protectedProcedure
+    .input(shiftScheduledPlanInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      return shiftAppliedScheduleUseCase({
+        days: input.days,
+        db: getRequiredDb(ctx),
+        profileId: ctx.session.user.id,
+        userTrainingPlanId: input.user_training_plan_id,
+      });
+    }),
+
+  regenerateAppliedSchedule: protectedProcedure
+    .input(applicationScopedScheduleInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const db = getRequiredDb(ctx);
+      return regenerateAppliedScheduleUseCase({
+        db,
+        permissions: createContentAccessPermissions(db),
+        profileId: ctx.session.user.id,
+        repository: createTrainingPlanRepository(db),
+        userTrainingPlanId: input.user_training_plan_id,
+      });
     }),
 
   getActivePlan: protectedProcedure.query(async ({ ctx }) => {
-    const db = getRequiredDb(ctx);
-    const activePlanLookup = await getActivePlanFromFutureEvents({
-      db,
+    return getActivePlanUseCase({
       profileId: ctx.session.user.id,
+      repository: createTrainingPlanRepository(getRequiredDb(ctx)),
     });
-
-    if (!activePlanLookup) {
-      return null;
-    }
-
-    return {
-      id: activePlanLookup.trainingPlanId,
-      profile_id: ctx.session.user.id,
-      training_plan_id: activePlanLookup.trainingPlanId,
-      status: "active",
-      next_event_at: activePlanLookup.nextEventAt,
-      training_plan: activePlanLookup.trainingPlan,
-    };
   }),
 
   // ------------------------------
@@ -6100,36 +6206,60 @@ export const trainingPlansRouter = createTRPCRouter({
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      // Check ownership
-      const existing = await getOwnedTrainingPlan({
-        db,
-        planId: input.id,
+      return autoAddPeriodizationUseCase({
+        id: input.id,
         profileId: ctx.session.user.id,
-      });
-
-      if (!existing) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Training plan not found or you don't have permission to edit it",
-        });
-      }
-
-      const structure = existing.structure as any;
-
-      // Check if already periodized
-      if (structure?.plan_type === "periodized" && structure?.fitness_progression) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "This plan already has periodization configured",
-        });
-      }
-
-      // For now, return a message that this feature is under development
-      // In the future, this could automatically generate blocks and fitness progression
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message:
-          "Auto-periodization is not yet implemented. Please create a new periodized training plan or manually configure periodization in settings.",
+        repository: createTrainingPlanRepository(db),
       });
     }),
+};
+
+export const trainingPlansCreationProcedures = {
+  getFeasibilityPreview: trainingPlansProcedures.getFeasibilityPreview,
+  getCreationSuggestions: trainingPlansProcedures.getCreationSuggestions,
+  previewCreationConfig: trainingPlansProcedures.previewCreationConfig,
+  createFromCreationConfig: trainingPlansProcedures.createFromCreationConfig,
+  updateFromCreationConfig: trainingPlansProcedures.updateFromCreationConfig,
+  createFromMinimalGoal: trainingPlansProcedures.createFromMinimalGoal,
+};
+
+export const trainingPlansCrudProcedures = {
+  get: trainingPlansProcedures.get,
+  list: trainingPlansProcedures.list,
+  exists: trainingPlansProcedures.exists,
+  create: trainingPlansProcedures.create,
+  update: trainingPlansProcedures.update,
+  updateActivePlanStatus: trainingPlansProcedures.updateActivePlanStatus,
+  getActivePlan: trainingPlansProcedures.getActivePlan,
+  removeAppliedSchedule: trainingPlansProcedures.removeAppliedSchedule,
+  shiftAppliedSchedule: trainingPlansProcedures.shiftAppliedSchedule,
+  regenerateAppliedSchedule: trainingPlansProcedures.regenerateAppliedSchedule,
+  delete: trainingPlansProcedures.delete,
+  duplicate: trainingPlansProcedures.duplicate,
+  getById: trainingPlansProcedures.getById,
+  applyQuickAdjustment: trainingPlansProcedures.applyQuickAdjustment,
+  listTemplates: trainingPlansProcedures.listTemplates,
+  auditTemplateHealth: trainingPlansProcedures.auditTemplateHealth,
+  getTemplate: trainingPlansProcedures.getTemplate,
+  applyTemplate: trainingPlansProcedures.applyTemplate,
+  autoAddPeriodization: trainingPlansProcedures.autoAddPeriodization,
+};
+
+export const trainingPlansAnalyticsProcedures = {
+  getInsightTimeline: trainingPlansProcedures.getInsightTimeline,
+  simulateScheduleAdjustment: trainingPlansProcedures.simulateScheduleAdjustment,
+  getCurrentStatus: trainingPlansProcedures.getCurrentStatus,
+  getIdealCurve: trainingPlansProcedures.getIdealCurve,
+  getActualCurve: trainingPlansProcedures.getActualCurve,
+  getWeeklySummary: trainingPlansProcedures.getWeeklySummary,
+  getIntensityDistribution: trainingPlansProcedures.getIntensityDistribution,
+  getIntensityTrends: trainingPlansProcedures.getIntensityTrends,
+  checkHardActivitySpacing: trainingPlansProcedures.checkHardActivitySpacing,
+  getWeeklyTotals: trainingPlansProcedures.getWeeklyTotals,
+};
+
+export const trainingPlansRouter = createTRPCRouter({
+  ...trainingPlansCreationProcedures,
+  ...trainingPlansCrudProcedures,
+  ...trainingPlansAnalyticsProcedures,
 });

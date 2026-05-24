@@ -1,23 +1,27 @@
 import { invalidateTrainingPlanQueries } from "@repo/api/react";
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
-import { Icon } from "@repo/ui/components/icon";
 import { ListSkeleton } from "@repo/ui/components/loading-skeletons";
 import { Text } from "@repo/ui/components/text";
-import { useRouter } from "expo-router";
-import { Calendar, Plus } from "lucide-react-native";
-import React, { useState } from "react";
-import { RefreshControl, ScrollView, TouchableOpacity, View } from "react-native";
+import { Stack, useRouter } from "expo-router";
+import { Calendar } from "lucide-react-native";
+import { useState } from "react";
+import { Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { ActivityList } from "@/components/plan/calendar/ActivityList";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
+import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import { useAuthStore } from "@/lib/stores/auth-store";
 
 export default function ScheduledScreen() {
   const router = useRouter();
   const navigateTo = useAppNavigate();
   const [refreshing, setRefreshing] = useState(false);
   const utils = api.useUtils();
+  const eventsQueryEnabled = useAuthStore(
+    (state) => state.ready && !!state.session && hasSessionAuthCredentials(),
+  );
 
   // Query all scheduled activities
   const {
@@ -28,7 +32,10 @@ export default function ScheduledScreen() {
     {
       limit: 100, // Get all activities for scheduling view
     },
-    scheduleAwareReadQueryOptions,
+    {
+      ...scheduleAwareReadQueryOptions,
+      enabled: eventsQueryEnabled,
+    },
   );
 
   const scheduledActivities = scheduledData?.items || [];
@@ -65,10 +72,8 @@ export default function ScheduledScreen() {
         <View className="flex-1 p-6 items-center justify-center min-h-[500px]">
           <EmptyStateCard
             icon={Calendar}
-            title="No Activities Scheduled"
-            description="Open Calendar to schedule an activity on the day you want."
-            actionLabel="Open Calendar"
-            onAction={handleScheduleNew}
+            title="No scheduled activities"
+            description="Scheduled activities will appear here."
             iconSize={64}
             iconColor="text-primary"
           />
@@ -79,6 +84,19 @@ export default function ScheduledScreen() {
 
   return (
     <View className="flex-1 bg-background">
+      <Stack.Screen
+        options={{
+          headerRight: () => (
+            <Pressable
+              onPress={handleScheduleNew}
+              className="mr-2 rounded-full px-2 py-1"
+              testID="scheduled-activities-list-calendar-trigger"
+            >
+              <Text className="text-sm font-medium text-primary">Calendar</Text>
+            </Pressable>
+          ),
+        }}
+      />
       {/* Activity Count */}
       <View className="px-4 pt-4 pb-3 border-b border-border bg-card">
         <Text className="text-sm text-muted-foreground">
@@ -101,22 +119,6 @@ export default function ScheduledScreen() {
           emptyStateMessage="No activities found"
         />
       </ScrollView>
-
-      {/* FAB - Floating Action Button */}
-      <TouchableOpacity
-        className="absolute bottom-6 right-6 w-14 h-14 rounded-full bg-primary items-center justify-center shadow-lg"
-        onPress={handleScheduleNew}
-        activeOpacity={0.8}
-        style={{
-          shadowColor: "#000",
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.3,
-          shadowRadius: 8,
-          elevation: 8,
-        }}
-      >
-        <Icon as={Plus} size={24} className="text-primary-foreground" />
-      </TouchableOpacity>
     </View>
   );
 }

@@ -61,8 +61,11 @@ This catalog maps the interaction inventory to Maestro flow files so broad mobil
 
 - `flows/main/calendar_custom_event.yaml`
 - `flows/journeys/calendar/custom_event_create_edit_delete.yaml`
+- `flows/journeys/calendar/inaccessible_event_detail_blocked.yaml`
 - `flows/journeys/calendar/recurring_event_reschedule_scopes.yaml`
 - `flows/journeys/calendar/scheduled_event_open_and_start_record.yaml`
+- `flows/journeys/groups/group_event_visibility_and_series_overrides.yaml`
+- `flows/journeys/groups/private_group_event_detail_blocked.yaml`
 
 ## Recording
 

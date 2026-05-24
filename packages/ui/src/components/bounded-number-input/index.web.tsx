@@ -14,6 +14,7 @@ function BoundedNumberInput({
   label,
   max = Number.POSITIVE_INFINITY,
   min = 0,
+  name,
   onChange,
   onNumberChange,
   placeholder,
@@ -61,6 +62,7 @@ function BoundedNumberInput({
           accessibilityLabel={label}
           className={error ? "border-destructive bg-destructive/5" : undefined}
           id={`${id}-field`}
+          name={name}
           onBlur={() => commitValue(draftValue)}
           onChange={(event) => {
             setDraftValue(event.currentTarget.value);

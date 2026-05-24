@@ -232,11 +232,19 @@ describe("activity-plan-derived-metrics", () => {
     );
 
     expect(result).toMatchObject({
-      estimated_tss: 77,
-      estimated_duration: 4300,
-      intensity_factor: 0.79,
       estimate_source: "cache",
       estimator_version: ESTIMATOR_VERSION,
+      authoritative_metrics: {
+        estimated_tss: 77,
+        estimated_duration: 4300,
+        intensity_factor: 0.79,
+        estimated_distance: 42000,
+      },
+      route: {
+        distance: 42000,
+        ascent: 300,
+        descent: 300,
+      },
     });
     expect(vi.mocked(estimationCore.estimateActivity)).not.toHaveBeenCalled();
     expect(insertCalls).toHaveLength(1);
@@ -289,11 +297,13 @@ describe("activity-plan-derived-metrics", () => {
     );
 
     expect(result).toMatchObject({
-      estimated_tss: 95,
-      estimated_duration: 5400,
       estimate_source: "computed",
       estimate_computed_at: "2026-04-20T12:00:00.000Z",
       estimate_last_accessed_at: "2026-04-20T12:00:00.000Z",
+      authoritative_metrics: {
+        estimated_tss: 95,
+        estimated_duration: 5400,
+      },
     });
     expect(vi.mocked(estimationCore.estimateActivity)).toHaveBeenCalledTimes(1);
     expect(insertCalls).toHaveLength(1);
@@ -341,11 +351,13 @@ describe("activity-plan-derived-metrics", () => {
     );
 
     expect(result).toMatchObject({
-      estimated_tss: 77,
-      estimated_duration: 4300,
       estimate_source: "cache",
       estimate_computed_at: staleColdRow.computed_at.toISOString(),
       estimate_last_accessed_at: staleColdRow.last_accessed_at.toISOString(),
+      authoritative_metrics: {
+        estimated_tss: 77,
+        estimated_duration: 4300,
+      },
     });
     expect(vi.mocked(estimationCore.estimateActivity)).not.toHaveBeenCalled();
     expect(insertCalls).toHaveLength(1);
@@ -377,13 +389,21 @@ describe("activity-plan-derived-metrics", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({
-      estimated_tss: 95,
-      estimated_duration: 5400,
       estimated_calories: 640,
-      estimated_distance: 42000,
       estimated_zones: ["Z2", "Z3"],
       estimate_source: "computed",
       estimator_version: ESTIMATOR_VERSION,
+      authoritative_metrics: {
+        estimated_tss: 95,
+        estimated_duration: 5400,
+        intensity_factor: 0.84,
+        estimated_distance: 42000,
+      },
+      route: {
+        distance: 42000,
+        ascent: 300,
+        descent: 300,
+      },
     });
     expect(vi.mocked(estimationCore.estimateActivity)).toHaveBeenCalledTimes(1);
     expect(insertCalls).toHaveLength(1);

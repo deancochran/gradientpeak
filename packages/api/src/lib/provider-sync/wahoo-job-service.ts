@@ -1,5 +1,6 @@
 import type { ProviderSyncRepository, WahooRepository } from "../../repositories";
 import type { WahooSyncService } from "../integrations/wahoo/sync-service";
+import { WahooPlannedWorkoutProvider } from "./planned-workouts/wahoo-planned-workout-provider";
 
 const WAHOO_PUBLISH_HORIZON_DAYS = 6;
 const WAHOO_RESOURCE = "planned_workouts";
@@ -10,12 +11,6 @@ type WahooJobPayload = {
   eventId: string;
   operation: "publish" | "unsync";
 };
-
-function subtractDays(isoString: string, days: number): string {
-  const date = new Date(isoString);
-  date.setUTCDate(date.getUTCDate() - days);
-  return date.toISOString();
-}
 
 function addMinutes(isoString: string, minutes: number): string {
   const date = new Date(isoString);
@@ -47,81 +42,20 @@ export class WahooSyncJobService {
     eventId: string;
     profileId: string;
   }): Promise<{ queued: boolean; jobId: string }> {
-    const integration = await this.deps.wahooRepository.findWahooIntegrationByProfileId(
-      input.profileId,
-    );
-    if (!integration) {
-      throw new Error("Wahoo integration not found");
-    }
-
-    const planned = await this.deps.wahooRepository.getPlannedEventForSync({
-      eventId: input.eventId,
-      profileId: input.profileId,
-    });
-
-    if (!planned) {
-      throw new Error("Planned activity event not found");
-    }
-
-    const now = new Date().toISOString();
-    const earliestPublishAt = subtractDays(planned.startsAt, WAHOO_PUBLISH_HORIZON_DAYS);
-    const runAt = earliestPublishAt > now ? earliestPublishAt : now;
-
-    await this.deps.providerSyncRepository.touchSyncState({
-      integrationId: integration.id,
-      metadata: { last_enqueued_event_id: input.eventId },
-      nextSyncAt: runAt,
-      provider: "wahoo",
-      publishHorizonDays: WAHOO_PUBLISH_HORIZON_DAYS,
-      resource: WAHOO_RESOURCE,
-      syncMode: "push_windowed",
-    });
-
-    const queued = await this.deps.providerSyncRepository.enqueueJob({
-      dedupeKey: `wahoo:publish:event:${input.eventId}`,
-      integrationId: integration.id,
-      internalResourceId: input.eventId,
-      jobType: WAHOO_PUBLISH_EVENT_JOB,
-      payload: {
-        eventId: input.eventId,
-        operation: "publish" satisfies WahooJobPayload["operation"],
-      },
-      profileId: input.profileId,
-      provider: "wahoo",
-      resourceKind: "event",
-      runAt,
-    });
-
-    return { jobId: queued.id, queued: queued.status === "queued" };
+    return new WahooPlannedWorkoutProvider({
+      providerSyncRepository: this.deps.providerSyncRepository,
+      wahooRepository: this.deps.wahooRepository,
+    }).enqueuePublishEvent(input);
   }
 
   async enqueueUnsyncEvent(input: {
     eventId: string;
     profileId: string;
   }): Promise<{ queued: boolean; jobId: string }> {
-    const integration = await this.deps.wahooRepository.findWahooIntegrationByProfileId(
-      input.profileId,
-    );
-    if (!integration) {
-      throw new Error("Wahoo integration not found");
-    }
-
-    const queued = await this.deps.providerSyncRepository.enqueueJob({
-      dedupeKey: `wahoo:unsync:event:${input.eventId}`,
-      integrationId: integration.id,
-      internalResourceId: input.eventId,
-      jobType: WAHOO_UNSYNC_EVENT_JOB,
-      payload: {
-        eventId: input.eventId,
-        operation: "unsync" satisfies WahooJobPayload["operation"],
-      },
-      profileId: input.profileId,
-      provider: "wahoo",
-      resourceKind: "event",
-      runAt: new Date().toISOString(),
-    });
-
-    return { jobId: queued.id, queued: queued.status === "queued" };
+    return new WahooPlannedWorkoutProvider({
+      providerSyncRepository: this.deps.providerSyncRepository,
+      wahooRepository: this.deps.wahooRepository,
+    }).enqueueUnsyncEvent(input);
   }
 
   async processDueJobs(input: { limit?: number; workerId?: string }): Promise<{
@@ -130,13 +64,14 @@ export class WahooSyncJobService {
     processed: number;
   }> {
     const now = new Date().toISOString();
+    const workerId = input.workerId ?? "wahoo-sync-worker";
     const jobs = await this.deps.providerSyncRepository.claimDueJobs({
       jobTypes: [WAHOO_PUBLISH_EVENT_JOB, WAHOO_UNSYNC_EVENT_JOB],
       limit: input.limit ?? 10,
       lockExpiresAt: addMinutes(now, 5),
       now,
       provider: "wahoo",
-      workerId: input.workerId ?? "wahoo-sync-worker",
+      workerId,
     });
 
     let completed = 0;
@@ -148,12 +83,22 @@ export class WahooSyncJobService {
           id: job.id,
           lastError: "Invalid Wahoo job payload",
           status: "dead_lettered",
+          workerId,
         });
         failed += 1;
         continue;
       }
 
       try {
+        const integration = await this.deps.wahooRepository.findWahooIntegrationByProfileId(
+          job.profileId,
+        );
+        if (!integration || integration.id !== job.integrationId) {
+          await this.deps.providerSyncRepository.markJobSucceeded(job.id, workerId);
+          completed += 1;
+          continue;
+        }
+
         if (job.jobType === WAHOO_PUBLISH_EVENT_JOB) {
           const result = await this.deps.syncService.syncEvent(job.payload.eventId, job.profileId);
           if (!result.success) {
@@ -164,6 +109,15 @@ export class WahooSyncJobService {
             job.payload.eventId,
             job.profileId,
           );
+          if (
+            !result.success &&
+            result.action === "no_change" &&
+            result.error === "Sync record not found"
+          ) {
+            await this.deps.providerSyncRepository.markJobSucceeded(job.id, workerId);
+            completed += 1;
+            continue;
+          }
           if (!result.success) {
             throw new Error(result.error ?? "Wahoo unsync job failed");
           }
@@ -171,7 +125,7 @@ export class WahooSyncJobService {
           throw new Error(`Unsupported Wahoo job type: ${job.jobType}`);
         }
 
-        await this.deps.providerSyncRepository.markJobSucceeded(job.id);
+        await this.deps.providerSyncRepository.markJobSucceeded(job.id, workerId);
         await this.deps.providerSyncRepository.updateSyncStateAfterRun({
           integrationId: job.integrationId,
           provider: "wahoo",
@@ -187,6 +141,7 @@ export class WahooSyncJobService {
           lastError,
           nextRunAt: shouldDeadLetter ? undefined : addMinutes(now, Math.min(job.attempt * 5, 60)),
           status: shouldDeadLetter ? "dead_lettered" : "failed",
+          workerId,
         });
         await this.deps.providerSyncRepository.updateSyncStateAfterFailure({
           integrationId: job.integrationId,

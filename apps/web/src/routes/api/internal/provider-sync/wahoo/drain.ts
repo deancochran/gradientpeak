@@ -11,12 +11,16 @@ export const Route = createFileRoute("/api/internal/provider-sync/wahoo/drain" a
         }
 
         const runtime = createWahooSyncRuntime();
-        const [syncJobs, webhookJobs] = await Promise.all([
+        const [syncJobs, webhookJobs, activityHistoryJobs] = await Promise.all([
           runtime.syncJobs.processDueJobs({ workerId: "api-internal-wahoo-drain" }),
           runtime.webhookJobs.processDueJobs({ workerId: "api-internal-wahoo-webhook-drain" }),
+          runtime.activityHistoryJobs.processDueJobs({
+            workerId: "api-internal-wahoo-activity-history-drain",
+          }),
         ]);
 
         return Response.json({
+          activityHistoryJobs,
           provider: "wahoo",
           syncJobs,
           webhookJobs,

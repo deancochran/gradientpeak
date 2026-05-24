@@ -1,12 +1,31 @@
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
+import { cn } from "@repo/ui/lib/cn";
 import { useRouter } from "expo-router";
-import { Bell, MessageSquare } from "lucide-react-native";
-import React from "react";
+import { Bell, MessageSquare, Search } from "lucide-react-native";
 import { TouchableOpacity, View } from "react-native";
 import { api } from "@/lib/api";
 
-export function MessagesHeaderButton() {
+interface HeaderButtonProps {
+  className?: string;
+}
+
+export function SearchHeaderButton({ className }: HeaderButtonProps = {}) {
+  const router = useRouter();
+
+  return (
+    <TouchableOpacity
+      onPress={() => router.navigate("/search")}
+      testID="search-header-button"
+      className={cn("w-10 h-10 items-center justify-center mr-2", className)}
+      accessibilityLabel="Search"
+    >
+      <Icon as={Search} size={24} className="text-foreground" />
+    </TouchableOpacity>
+  );
+}
+
+export function MessagesHeaderButton({ className }: HeaderButtonProps = {}) {
   const router = useRouter();
   const { data: unreadCount = 0 } = api.messaging.getUnreadCount.useQuery();
 
@@ -14,7 +33,7 @@ export function MessagesHeaderButton() {
     <TouchableOpacity
       onPress={() => router.navigate("/messages")}
       testID="messages-header-button"
-      className="w-10 h-10 items-center justify-center mr-2"
+      className={cn("w-10 h-10 items-center justify-center mr-2", className)}
     >
       <Icon as={MessageSquare} size={24} className="text-foreground" />
       {unreadCount > 0 && (
@@ -28,7 +47,7 @@ export function MessagesHeaderButton() {
   );
 }
 
-export function NotificationsHeaderButton() {
+export function NotificationsHeaderButton({ className }: HeaderButtonProps = {}) {
   const router = useRouter();
   const { data: unreadCount = 0 } = api.notifications.getUnreadCount.useQuery();
 
@@ -36,7 +55,7 @@ export function NotificationsHeaderButton() {
     <TouchableOpacity
       onPress={() => router.navigate("/notifications")}
       testID="notifications-header-button"
-      className="w-10 h-10 items-center justify-center mr-2"
+      className={cn("w-10 h-10 items-center justify-center mr-2", className)}
     >
       <Icon as={Bell} size={24} className="text-foreground" />
       {unreadCount > 0 && (

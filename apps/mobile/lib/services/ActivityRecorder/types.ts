@@ -1,22 +1,25 @@
-import {
-  type CanonicalSport,
-  type ControlMode,
-  type CurrentMetricValue as CoreCurrentMetricValue,
-  type RecordingSessionArtifact as CoreRecordingSessionArtifact,
-  type RecordingSessionOverride as CoreRecordingSessionOverride,
-  type RecordingSessionSnapshot as CoreRecordingSessionSnapshot,
-  type IntervalStepV2,
-  type MetricFamily,
-  type MetricProvenance,
-  type MetricSourceSelection,
-  type PublicActivityMetric,
-  type PublicActivityMetricDataType,
-  type RecordingActivityCategory,
-  type RecordingConfiguration,
-  type RecordingControlPolicy,
+import type {
+  CanonicalSport,
+  ControlMode,
+  CurrentMetricValue as CoreCurrentMetricValue,
+  RecordingSessionArtifact as CoreRecordingSessionArtifact,
+  RecordingSessionOverride as CoreRecordingSessionOverride,
+  RecordingSessionSnapshot as CoreRecordingSessionSnapshot,
+  FtmsAvailableMode,
+  FtmsControlMode,
+  IntervalStepV2,
+  MetricFamily,
+  MetricProvenance,
+  MetricSourceSelection,
+  PublicActivityMetric,
+  PublicActivityMetricDataType,
+  RecordingActivityCategory,
+  RecordingConfiguration,
+  RecordingControlPolicy,
+  RecordingMetricsSnapshot,
   RecordingServiceActivityPlan,
-  type RecordingTrainerIntentSource,
-  type RecordingTrainerMachineType,
+  RecordingTrainerIntentSource,
+  RecordingTrainerMachineType,
 } from "@repo/core";
 import { Activity, Bike, Dumbbell, Footprints, Waves } from "lucide-react-native";
 
@@ -124,6 +127,9 @@ export interface LiveMetricsState {
   totalAscent: number; // meters
   totalDescent: number; // meters
   avgGrade: number; // percentage (-100 to 100)
+  currentGrade?: number; // percentage (-100 to 100)
+  gradeAdjustedPaceSecondsPerKm?: number;
+  verticalSpeedMetersPerHour?: number;
   elevationGainPerKm: number; // meters per km
 
   // === Heart Rate ===
@@ -135,6 +141,7 @@ export interface LiveMetricsState {
   hrZone3Time: number; // seconds in zone 3
   hrZone4Time: number; // seconds in zone 4
   hrZone5Time: number; // seconds in zone 5
+  currentHeartRateZone?: number; // 1-indexed current HR zone
 
   // === Power ===
   avgPower: number; // watts
@@ -147,6 +154,7 @@ export interface LiveMetricsState {
   powerZone5Time: number; // seconds in zone 5
   powerZone6Time: number; // seconds in zone 6
   powerZone7Time: number; // seconds in zone 7
+  currentPowerZone?: number; // 1-indexed current power zone
   powerHeartRateRatio: number; // watts per bpm
 
   // === Cadence ===
@@ -425,7 +433,7 @@ export interface RecordingMetadata {
   profile: RecorderProfileRef;
   eventId?: string;
   activityPlan?: RecordingServiceActivityPlan;
-  fitFilePath?: string;
+  activityFilePath?: string;
 }
 
 export type RecorderLifecycleState =
@@ -469,6 +477,7 @@ export interface RecordingSessionOverrideState {
   trainerMode: "auto" | "manual";
   intensityScale: number;
   preferredSources: Partial<Record<MetricFamily, string>>;
+  disabledSources: Partial<Record<MetricFamily, string[]>>;
 }
 
 export interface RecordingPlanView {
@@ -489,6 +498,8 @@ export interface RecordingPlanView {
   isLast: boolean;
   isFinished: boolean;
   canAdvance: boolean;
+  canSkip: boolean;
+  canGoBack: boolean;
   planTimeRemaining: number;
 }
 
@@ -580,11 +591,15 @@ export interface RecordingServiceError {
 export interface RecordingTrainerView {
   deviceId: string | null;
   deviceName: string | null;
+  selectedDeviceId?: string | null;
+  candidates?: Array<{ deviceId: string; displayName: string; supportsControl: boolean }>;
   machineType: RecordingTrainerMachineType | null;
   connectionState: RecordingTrainerConnectionState;
   dataFlowState: RecordingTrainerDataFlowState;
   controlState: RecordingTrainerControlState;
   currentControlMode: ControlMode | null;
+  selectedMode?: FtmsControlMode | null;
+  availableModes?: FtmsAvailableMode[];
   recoveryState: RecordingTrainerRecoveryState;
   lastCommandStatus: RecordingTrainerCommandStatus | null;
   lastServiceError: RecordingServiceError | null;
@@ -675,10 +690,18 @@ export interface SessionStats {
   variabilityIndex?: number;
   efficiencyFactor?: number;
   aerobicDecoupling?: number;
+  recordingMetrics?: RecordingMetricsSnapshot;
 
   // Elevation metrics
   avgGrade?: number; // percentage
+  currentGrade?: number; // percentage
+  gradeAdjustedPaceSecondsPerKm?: number;
+  verticalSpeedMetersPerHour?: number;
   elevationGainPerKm?: number; // meters per km
+
+  // Current zones (1-indexed)
+  currentHeartRateZone?: number;
+  currentPowerZone?: number;
 
   // Plan execution
   planAdherence?: number; // 0-1

@@ -1,7 +1,7 @@
 import type { FitnessProgression, TrainingBlock } from "@repo/core";
 import { calculateCTLProjection } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 import { View } from "react-native";
 import { PlanVsActualChart } from "./PlanVsActualChart";
 
@@ -52,8 +52,8 @@ export function FitnessProjectionChart(props: FitnessProjectionChartProps) {
       }
 
       // Generate CTL projection from blocks
-      const startDate = new Date(blocks[0]!.start_date);
-      const endDate = new Date(blocks[blocks.length - 1]!.end_date);
+      const startDate = new Date(blocks[0]?.start_date);
+      const endDate = new Date(blocks[blocks.length - 1]?.end_date);
       const totalDays = Math.ceil(
         (endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000),
       );

@@ -81,6 +81,16 @@ describe("trainingPlansRouter boundary validation", () => {
     expect(callLog).toHaveLength(0);
   });
 
+  it("rejects id-only no-op updates before hitting the database", async () => {
+    const { caller, callLog } = createCaller();
+
+    await expect(caller.update({ id: TRAINING_PLAN_ID })).rejects.toThrow(
+      "At least one training plan update field is required",
+    );
+
+    expect(callLog).toHaveLength(0);
+  });
+
   it("rejects non-plan quick adjustments before ownership queries", async () => {
     const { caller, callLog } = createCaller();
 

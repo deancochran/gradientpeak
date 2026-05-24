@@ -1,21 +1,14 @@
-import DateTimePicker from "@react-native-community/datetimepicker";
 import { Alert, AlertDescription, AlertTitle } from "@repo/ui/components/alert";
-import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
+import { DateInput } from "@repo/ui/components/date-input";
 import { Icon } from "@repo/ui/components/icon";
 import { IntegerStepper } from "@repo/ui/components/integer-stepper";
 import { Label } from "@repo/ui/components/label";
 import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
-import {
-  AlertCircle,
-  Calendar as CalendarIcon,
-  CheckCircle,
-  Lock,
-  TrendingUp,
-} from "lucide-react-native";
+import { AlertCircle, CheckCircle, Lock, TrendingUp } from "lucide-react-native";
 import React from "react";
-import { Platform, View } from "react-native";
+import { View } from "react-native";
 
 interface PeriodizationTemplate {
   starting_ctl: number;
@@ -38,7 +31,6 @@ export function PeriodizationForm({
   currentCTL = 0, // Default to 0 for new users
 }: PeriodizationFormProps) {
   const [isEnabled, setIsEnabled] = React.useState(!!data);
-  const [showDatePicker, setShowDatePicker] = React.useState(false);
 
   // Use currentCTL as starting point (not editable)
   const startingCtl = currentCTL;
@@ -56,8 +48,8 @@ export function PeriodizationForm({
   // Calculate progression preview
   const progressionPreview = React.useMemo(() => {
     const startCtl = startingCtl;
-    const targetCtl = parseInt(targetCtlText) || 0;
-    const rampRate = (parseInt(rampRateText) || 5) / 100;
+    const targetCtl = parseInt(targetCtlText, 10) || 0;
+    const rampRate = (parseInt(rampRateText, 10) || 5) / 100;
 
     const now = new Date();
     const daysToTarget = Math.floor((targetDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
@@ -89,8 +81,8 @@ export function PeriodizationForm({
     } else {
       onChange({
         starting_ctl: startingCtl,
-        target_ctl: parseInt(targetCtlText) || 85,
-        ramp_rate: (parseInt(rampRateText) || 5) / 100,
+        target_ctl: parseInt(targetCtlText, 10) || 85,
+        ramp_rate: (parseInt(rampRateText, 10) || 5) / 100,
         target_date: targetDate.toISOString().split("T")[0] || "",
       });
     }
@@ -98,12 +90,12 @@ export function PeriodizationForm({
 
   const handleTargetCtlChange = (text: string) => {
     setTargetCtlText(text);
-    const value = parseInt(text);
-    if (!isNaN(value) && isEnabled) {
+    const value = parseInt(text, 10);
+    if (!Number.isNaN(value) && isEnabled) {
       onChange({
         starting_ctl: startingCtl,
         target_ctl: value,
-        ramp_rate: (parseInt(rampRateText) || 5) / 100,
+        ramp_rate: (parseInt(rampRateText, 10) || 5) / 100,
         target_date: targetDate.toISOString().split("T")[0] || "",
       });
     }
@@ -111,29 +103,14 @@ export function PeriodizationForm({
 
   const handleRampRateChange = (text: string) => {
     setRampRateText(text);
-    const value = parseInt(text);
-    if (!isNaN(value) && isEnabled) {
+    const value = parseInt(text, 10);
+    if (!Number.isNaN(value) && isEnabled) {
       onChange({
         starting_ctl: startingCtl,
-        target_ctl: parseInt(targetCtlText) || 85,
+        target_ctl: parseInt(targetCtlText, 10) || 85,
         ramp_rate: value / 100,
         target_date: targetDate.toISOString().split("T")[0] || "",
       });
-    }
-  };
-
-  const handleDateChange = (event: any, selectedDate?: Date) => {
-    setShowDatePicker(Platform.OS === "ios");
-    if (selectedDate) {
-      setTargetDate(selectedDate);
-      if (isEnabled) {
-        onChange({
-          starting_ctl: startingCtl,
-          target_ctl: parseInt(targetCtlText) || 85,
-          ramp_rate: (parseInt(rampRateText) || 5) / 100,
-          target_date: selectedDate.toISOString().split("T")[0] || "",
-        });
-      }
     }
   };
 
@@ -144,7 +121,7 @@ export function PeriodizationForm({
         <Text className="text-2xl font-bold">Periodization Planning</Text>
         <Text className="text-muted-foreground">
           Use periodization to progressively build your Chronic Training Load (CTL) toward a
-          specific goal or event.
+          specific goal target.
         </Text>
       </View>
 
@@ -203,7 +180,7 @@ export function PeriodizationForm({
             </Text>
             <IntegerStepper
               id="periodization-target-ctl"
-              value={parseInt(targetCtlText) || 85}
+              value={parseInt(targetCtlText, 10) || 85}
               min={0}
               max={250}
               onChange={(nextCtl) => handleTargetCtlChange(String(nextCtl))}
@@ -220,7 +197,7 @@ export function PeriodizationForm({
             </Text>
             <IntegerStepper
               id="periodization-ramp-rate"
-              value={parseInt(rampRateText) || 5}
+              value={parseInt(rampRateText, 10) || 5}
               min={1}
               max={20}
               onChange={(nextRate) => handleRampRateChange(String(nextRate))}
@@ -233,32 +210,39 @@ export function PeriodizationForm({
           <View className="gap-3">
             <Label className="text-base font-semibold">Target Date</Label>
             <Text className="text-sm text-muted-foreground">
-              Your goal date (event, race, or fitness milestone)
+              Your goal date for this fitness target
             </Text>
-            <Button
-              variant="outline"
-              onPress={() => setShowDatePicker(true)}
-              className="justify-start"
-            >
-              <Icon as={CalendarIcon} size={18} className="text-foreground mr-2" />
-              <Text className="text-foreground">{targetDate.toLocaleDateString()}</Text>
-            </Button>
-            {showDatePicker && (
-              <DateTimePicker
-                value={targetDate}
-                mode="date"
-                display="default"
-                onChange={handleDateChange}
-                minimumDate={new Date()}
-              />
-            )}
+            <DateInput
+              accessibilityHint="Choose the goal date for this target"
+              id="periodization-target-date"
+              label="Target Date"
+              minimumDate={new Date()}
+              onChange={(value) => {
+                if (!value) {
+                  return;
+                }
+
+                const selectedDate = new Date(`${value}T12:00:00.000Z`);
+                setTargetDate(selectedDate);
+                if (isEnabled) {
+                  onChange({
+                    starting_ctl: startingCtl,
+                    target_ctl: parseInt(targetCtlText, 10) || 85,
+                    ramp_rate: (parseInt(rampRateText, 10) || 5) / 100,
+                    target_date: value,
+                  });
+                }
+              }}
+              pickerPresentation="modal"
+              value={targetDate.toISOString().split("T")[0] || ""}
+            />
             {errors.target_date && (
               <Text className="text-destructive text-xs">{errors.target_date}</Text>
             )}
           </View>
 
           {/* Progression Preview */}
-          {startingCtl > 0 && parseInt(targetCtlText) > 0 && parseInt(rampRateText) > 0 && (
+          {startingCtl > 0 && parseInt(targetCtlText, 10) > 0 && parseInt(rampRateText, 10) > 0 && (
             <Card className="bg-primary/5 border-primary/20">
               <CardContent className="p-4 gap-3">
                 <View className="flex-row items-center gap-2">
@@ -333,7 +317,7 @@ export function PeriodizationForm({
           </Card>
 
           {/* Warning for aggressive ramp rate */}
-          {parseInt(rampRateText) > 10 && (
+          {parseInt(rampRateText, 10) > 10 && (
             <Alert icon={AlertCircle} iconClassName="text-amber-500">
               <AlertTitle className="text-amber-500">Warning: Very Aggressive Ramp Rate</AlertTitle>
               <AlertDescription className="text-amber-500">

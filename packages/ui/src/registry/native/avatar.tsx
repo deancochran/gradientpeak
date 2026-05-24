@@ -1,5 +1,6 @@
 import * as AvatarPrimitive from "@rn-primitives/avatar";
 import { cn } from "../../lib/cn";
+import { TextClassContext } from "./text";
 
 function Avatar({ className, ...props }: React.ComponentProps<typeof AvatarPrimitive.Root>) {
   return (
@@ -15,6 +16,7 @@ function AvatarImage({ className, ...props }: React.ComponentProps<typeof Avatar
 }
 
 function AvatarFallback({
+  children,
   className,
   ...props
 }: React.ComponentProps<typeof AvatarPrimitive.Fallback>) {
@@ -25,7 +27,11 @@ function AvatarFallback({
         className,
       )}
       {...props}
-    />
+    >
+      <TextClassContext.Provider value="text-muted-foreground">
+        {children}
+      </TextClassContext.Provider>
+    </AvatarPrimitive.Fallback>
   );
 }
 

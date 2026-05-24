@@ -9,13 +9,12 @@ export { TodaysFocusCard } from "./TodaysFocusCard";
 export { default as TodaysTrainingCard } from "./TodaysTrainingCard";
 export { TrainingFormCard } from "./TrainingFormCard";
 export { TrainingReadinessCard } from "./TrainingReadinessCard";
-export { TrendCard } from "./TrendCard";
 // Trend cards for dashboard
 export {
   ChartModal,
   MicroBarChart,
   MicroLineChart,
-  TrendCard as TrendCardOld,
+  TrendCard,
 } from "./TrendCards";
 export { WeeklyGoalCard } from "./WeeklyGoalCard";
 export { WeeklyPlanPreview } from "./WeeklyPlanPreview";

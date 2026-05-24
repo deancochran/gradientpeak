@@ -4,6 +4,7 @@ import {
   buildPreviewMinimalPlanFromForm,
   buildPreviewReadinessSnapshot,
   buildReadinessDeltaDiagnostics,
+  classifyProjectionFeasibility,
   reducePreviewState,
 } from "../trainingPlanPreview";
 
@@ -213,6 +214,50 @@ describe("trainingPlanPreview helpers", () => {
       feasibility_state: "aggressive",
       tss_ramp_clamp_weeks: 1,
       ctl_ramp_clamp_weeks: 0,
+    });
+  });
+
+  it("classifies projection feasibility from shared ramp and clamp diagnostics", () => {
+    const summary = classifyProjectionFeasibility({
+      microcycles: [
+        {
+          metadata: {
+            tss_ramp: {
+              previous_week_tss: 100,
+              requested_weekly_tss: 106.5,
+              max_weekly_tss_ramp_pct: 7,
+              clamped: false,
+            },
+            ctl_ramp: {
+              requested_ctl_ramp: 2.8,
+              max_ctl_ramp_per_week: 3,
+              clamped: false,
+            },
+          },
+        },
+      ],
+      constraint_summary: {
+        tss_ramp_clamp_weeks: 1,
+        ctl_ramp_clamp_weeks: 0,
+        recovery_weeks: 0,
+      },
+    });
+
+    expect(summary).toEqual({
+      state: "aggressive",
+      reasons: [
+        "safety_first_best_safe_projection",
+        "required_tss_ramp_exceeds_configured_cap",
+        "required_tss_ramp_near_configured_cap",
+        "required_ctl_ramp_near_configured_cap",
+      ],
+      diagnostics: {
+        tss_ramp_near_cap_weeks: 1,
+        ctl_ramp_near_cap_weeks: 1,
+        tss_ramp_clamp_weeks: 1,
+        ctl_ramp_clamp_weeks: 0,
+        recovery_weeks: 0,
+      },
     });
   });
 });

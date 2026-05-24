@@ -137,7 +137,7 @@ describe("recording session schemas", () => {
         movingSeconds: 3550,
         distanceMeters: 32100,
       },
-      fitFilePath: "/tmp/session.fit",
+      activityFilePath: "/tmp/session.fit",
       streamArtifactPaths: ["/tmp/power.jsonl"],
       completedAt: "2026-03-20T11:00:00Z",
     });

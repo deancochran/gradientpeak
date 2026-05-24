@@ -130,6 +130,47 @@ const trendActivityRowSchema = z
   })
   .strict();
 
+const trendActivitySelect = {
+  id: activities.id,
+  name: activities.name,
+  type: activities.type,
+  started_at: activities.started_at,
+  finished_at: activities.finished_at,
+  duration_seconds: activities.duration_seconds,
+  moving_seconds: activities.moving_seconds,
+  distance_meters: activities.distance_meters,
+  avg_heart_rate: activities.avg_heart_rate,
+  max_heart_rate: activities.max_heart_rate,
+  avg_power: activities.avg_power,
+  max_power: activities.max_power,
+  avg_speed_mps: activities.avg_speed_mps,
+  max_speed_mps: activities.max_speed_mps,
+  normalized_power: activities.normalized_power,
+  normalized_speed_mps: activities.normalized_speed_mps,
+  normalized_graded_speed_mps: activities.normalized_graded_speed_mps,
+};
+
+type TrendActivityRow = Pick<
+  ActivityRow,
+  | "id"
+  | "name"
+  | "type"
+  | "started_at"
+  | "finished_at"
+  | "duration_seconds"
+  | "moving_seconds"
+  | "distance_meters"
+  | "avg_heart_rate"
+  | "max_heart_rate"
+  | "avg_power"
+  | "max_power"
+  | "avg_speed_mps"
+  | "max_speed_mps"
+  | "normalized_power"
+  | "normalized_speed_mps"
+  | "normalized_graded_speed_mps"
+>;
+
 const profileTelemetryRowSchema = z
   .object({
     dob: activityTimestampSchema.nullable().optional(),
@@ -297,7 +338,7 @@ const peakPerformancesOutputSchema = z
   })
   .strict();
 
-function parseTrendActivityRows(rows: ActivityRow[]) {
+function parseTrendActivityRows(rows: TrendActivityRow[]) {
   return trendActivityRowSchema.array().parse(
     rows.map((activity) => ({
       id: activity.id,
@@ -336,7 +377,7 @@ export const trendsRouter = createTRPCRouter({
 
     const activityRows = parseTrendActivityRows(
       await db
-        .select()
+        .select(trendActivitySelect)
         .from(activities)
         .where(and(...conditions))
         .orderBy(asc(activities.started_at)),
@@ -429,7 +470,7 @@ export const trendsRouter = createTRPCRouter({
 
       const activityRows = parseTrendActivityRows(
         await db
-          .select()
+          .select(trendActivitySelect)
           .from(activities)
           .where(and(...conditions))
           .orderBy(asc(activities.started_at)),
@@ -481,8 +522,8 @@ export const trendsRouter = createTRPCRouter({
     const extendedStart = new Date(startDate);
     extendedStart.setDate(startDate.getDate() - 42);
 
-    const rawActivityRows: ActivityRow[] = await db
-      .select()
+    const rawActivityRows: TrendActivityRow[] = await db
+      .select(trendActivitySelect)
       .from(activities)
       .where(
         and(
@@ -613,8 +654,8 @@ export const trendsRouter = createTRPCRouter({
       const db = getRequiredDb(ctx);
 
       // Get activities with intensity factor and TSS
-      const rawActivityRows: ActivityRow[] = await db
-        .select()
+      const rawActivityRows: TrendActivityRow[] = await db
+        .select(trendActivitySelect)
         .from(activities)
         .where(
           and(
@@ -732,7 +773,7 @@ export const trendsRouter = createTRPCRouter({
     const db = getRequiredDb(ctx);
     const activityRows = parseTrendActivityRows(
       await db
-        .select()
+        .select(trendActivitySelect)
         .from(activities)
         .where(
           and(
@@ -844,37 +885,37 @@ export const trendsRouter = createTRPCRouter({
       }
 
       const baseWhere = and(...conditions);
-      const activityRows: ActivityRow[] =
+      const activityRows: TrendActivityRow[] =
         input.metric === "distance"
           ? await db
-              .select()
+              .select(trendActivitySelect)
               .from(activities)
               .where(baseWhere)
               .orderBy(desc(activities.distance_meters))
               .limit(input.limit)
           : input.metric === "duration"
             ? await db
-                .select()
+                .select(trendActivitySelect)
                 .from(activities)
                 .where(baseWhere)
                 .orderBy(desc(activities.moving_seconds))
                 .limit(input.limit)
             : input.metric === "speed"
               ? await db
-                  .select()
+                  .select(trendActivitySelect)
                   .from(activities)
                   .where(and(baseWhere, isNotNull(activities.avg_speed_mps)))
                   .orderBy(desc(activities.avg_speed_mps))
                   .limit(input.limit * 10)
               : input.metric === "power"
                 ? await db
-                    .select()
+                    .select(trendActivitySelect)
                     .from(activities)
                     .where(and(baseWhere, isNotNull(activities.avg_power)))
                     .orderBy(desc(activities.avg_power))
                     .limit(input.limit * 10)
                 : await db
-                    .select()
+                    .select(trendActivitySelect)
                     .from(activities)
                     .where(baseWhere)
                     .orderBy(desc(activities.started_at))

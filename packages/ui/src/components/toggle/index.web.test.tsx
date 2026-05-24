@@ -9,18 +9,18 @@ describe("Toggle web", () => {
 
     renderWeb(
       <Toggle
-        accessibilityLabel="Pin workout"
+        accessibilityLabel="Pin activity"
         onPressedChange={onPressedChange}
         pressed
-        testId="pin-workout-toggle"
+        testId="pin-activity-toggle"
       >
         Pin
       </Toggle>,
     );
 
-    const toggle = screen.getByRole("button", { name: "Pin workout" });
+    const toggle = screen.getByRole("button", { name: "Pin activity" });
 
-    expect(toggle).toHaveAttribute("data-testid", "pin-workout-toggle");
+    expect(toggle).toHaveAttribute("data-testid", "pin-activity-toggle");
     expect(toggle).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(toggle);
     expect(onPressedChange).toHaveBeenCalledWith(false);

@@ -1,7 +1,6 @@
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { Plus, RotateCcw } from "lucide-react-native";
-import React from "react";
 import { TouchableOpacity, View } from "react-native";
 
 type CalendarHeaderProps = {

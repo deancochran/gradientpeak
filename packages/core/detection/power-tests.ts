@@ -125,7 +125,7 @@ export function detectPowerRampTest(
 
   // Look for progressive power increase
   for (let i = 0; i < powerStream.length; i++) {
-    const startPower = powerStream[i];
+    const _startPower = powerStream[i];
     const startTime = timestamps[i];
     if (startTime === undefined) continue;
 
@@ -184,13 +184,13 @@ export function detectPowerRampTest(
 }
 
 /**
- * Detects interval workout pattern.
+ * Detects interval activity pattern.
  *
  * Identifies repeated high-intensity efforts with recovery periods.
  *
  * @param powerStream - Array of power values
  * @param timestamps - Array of timestamps
- * @returns Interval workout metadata or null
+ * @returns Interval activity metadata or null
  */
 export function detectIntervalWorkout(
   powerStream: number[],
@@ -251,7 +251,7 @@ export function detectIntervalWorkout(
   }
 
   if (intervals.length < 3) {
-    return null; // Not an interval workout
+    return null; // Not an interval activity
   }
 
   const avgIntervalPower = intervals.reduce((sum, int) => sum + int.power, 0) / intervals.length;

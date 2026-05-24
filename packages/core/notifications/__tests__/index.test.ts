@@ -39,6 +39,23 @@ describe("notification helpers", () => {
     });
   });
 
+  it("builds cancellation copy for group event notifications", () => {
+    const notification = normalizeNotificationListItem({
+      id: "n-group-cancelled",
+      actor_id: "u-admin",
+      created_at: "2026-03-21T00:00:00.000Z",
+      read_at: null,
+      type: "group_event_cancelled",
+    });
+
+    expect(getNotificationViewModel(notification!)).toMatchObject({
+      title: "Group Event Cancelled",
+      description: "A group event on your calendar was cancelled.",
+      isUnread: true,
+      requiresFollowRequestAction: false,
+    });
+  });
+
   it("collects unread notification ids across read_at and is_read shapes", () => {
     const notifications = [
       normalizeNotificationListItem({

@@ -16,17 +16,21 @@ import { getGenderAdjustedRecoveryLoadMultiplier } from "../calibration-constant
 import type { ProjectionPointReadinessInput } from "./readiness";
 
 /**
- * Utility: Round to 1 decimal place
- */
-function round1(value: number): number {
-  return Math.round(value * 10) / 10;
-}
-
-/**
  * Utility: Clamp value between min and max
  */
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function optionalProperty<Key extends string, Value>(
+  key: Key,
+  value: Value | undefined,
+): { [Property in Key]?: Value } {
+  if (value === undefined) {
+    return {};
+  }
+
+  return { [key]: value } as { [Property in Key]?: Value };
 }
 
 /**
@@ -131,7 +135,7 @@ function computeThresholdRecoveryProfile(input: {
 }): EventRecoveryProfile {
   const recoveryLoad =
     input.modalityFactor *
-    Math.pow(Math.max(0.1, input.durationHours), 0.65) *
+    Math.max(0.1, input.durationHours) ** 0.65 *
     (0.7 + input.intensityScore / 100) *
     input.genderMultiplier;
   const recoveryDaysFull = Math.round(clamp(1.5 + 4.5 * recoveryLoad, 2, 14));
@@ -294,13 +298,13 @@ export function computePostEventFatiguePenalty(input: PostEventFatigueInput): nu
     target: primaryTarget,
     projected_ctl_at_event: input.eventGoal.projected_ctl,
     projected_atl_at_event: input.eventGoal.projected_atl,
-    athlete_gender: input.eventGoal.athlete_gender,
+    ...optionalProperty("athlete_gender", input.eventGoal.athlete_gender),
   });
 
   // Exponential decay curve (simple, no bi-phasic complexity)
   // Half-life = 1/3 of full recovery time
   const recoveryHalfLife = recoveryProfile.recovery_days_full / 3;
-  const decayFactor = Math.pow(0.5, daysAfterEvent / recoveryHalfLife);
+  const decayFactor = 0.5 ** (daysAfterEvent / recoveryHalfLife);
 
   // Check current ATL/CTL ratio for overload penalty
   const atlRatio =

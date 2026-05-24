@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  customEventCreateSchema,
   eventCreateSchema,
   eventDomainSchema,
   eventMutationScopeSchema,
@@ -8,7 +9,9 @@ import {
   eventUpdateSchema,
   importedEventLifecycleMutationSchema,
   importedEventSourceMetadataSchema,
+  persistableEventRecurrenceSchema,
   plannedActivityCreateSchema,
+  plannedActivityEventCreateSchema,
   plannedActivityRescheduleSchema,
 } from "../planned_activity";
 
@@ -65,6 +68,41 @@ describe("planned activity event domain schemas", () => {
     });
 
     expect(parsed.success).toBe(false);
+  });
+
+  it("rejects non-empty persisted recurrence exclusions until persistence supports them", () => {
+    const valid = persistableEventRecurrenceSchema.safeParse({
+      rule: "FREQ=WEEKLY;INTERVAL=1",
+      timezone: "UTC",
+    });
+
+    const withExdates = persistableEventRecurrenceSchema.safeParse({
+      rule: "FREQ=WEEKLY;INTERVAL=1",
+      timezone: "UTC",
+      exdates: ["2026-05-10"],
+    });
+
+    const withExceptions = customEventCreateSchema.safeParse({
+      event_type: "custom",
+      title: "Team meeting",
+      starts_at: "2026-03-12T16:30:00.000Z",
+      timezone: "UTC",
+      recurrence: {
+        rule: "FREQ=WEEKLY;INTERVAL=1",
+        timezone: "UTC",
+        exceptions: [
+          {
+            occurrence_date: "2026-05-10",
+            action: "modified",
+            starts_at: "2026-05-10T07:00:00.000Z",
+          },
+        ],
+      },
+    });
+
+    expect(valid.success).toBe(true);
+    expect(withExdates.success).toBe(false);
+    expect(withExceptions.success).toBe(false);
   });
 
   it("enforces source metadata and read-only rules for imported events", () => {
@@ -129,15 +167,126 @@ describe("planned activity event domain schemas", () => {
     expect(parsed.success).toBe(false);
   });
 
+  it("requires recurrence updates to target future or series scope only", () => {
+    const recurrence = {
+      rule: "FREQ=WEEKLY;INTERVAL=1",
+      timezone: "UTC",
+    };
+
+    expect(
+      eventUpdateSchema.safeParse({
+        id: "e4e9d401-49dc-4f14-b8ab-2da517f7db1b",
+        scope: "future",
+        patch: { recurrence },
+      }).success,
+    ).toBe(true);
+
+    expect(
+      eventUpdateSchema.safeParse({
+        id: "e4e9d401-49dc-4f14-b8ab-2da517f7db1b",
+        scope: "series",
+        patch: { recurrence: null },
+      }).success,
+    ).toBe(true);
+
+    expect(
+      eventUpdateSchema.safeParse({
+        id: "e4e9d401-49dc-4f14-b8ab-2da517f7db1b",
+        scope: "single",
+        patch: { recurrence },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("keeps recurrence patches separate from details and schedule patches", () => {
+    const parsed = eventUpdateSchema.safeParse({
+      id: "e4e9d401-49dc-4f14-b8ab-2da517f7db1b",
+      scope: "future",
+      patch: {
+        title: "Updated title",
+        recurrence: {
+          rule: "FREQ=WEEKLY;INTERVAL=1",
+          timezone: "UTC",
+        },
+      },
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
+  it("accepts custom timed and recurring event creation", () => {
+    const parsed = customEventCreateSchema.safeParse({
+      event_type: "custom",
+      title: "Team meeting",
+      starts_at: "2026-03-12T16:30:00.000Z",
+      all_day: false,
+      timezone: "UTC",
+      recurrence: {
+        rule: "FREQ=WEEKLY;UNTIL=20260401T235959Z",
+        timezone: "UTC",
+      },
+    });
+
+    expect(parsed.success).toBe(true);
+  });
+
   it("requires activity plan linkage for planned event creation", () => {
     const parsed = eventCreateSchema.safeParse({
       event_type: "planned",
       title: "Threshold session",
-      starts_at: "2026-03-12T06:00:00.000Z",
+      scheduled_date: "2026-03-12",
       timezone: "UTC",
     });
 
     expect(parsed.success).toBe(false);
+  });
+
+  it("enforces all-day date-only planned activity event creation", () => {
+    const valid = plannedActivityEventCreateSchema.safeParse({
+      event_type: "planned",
+      activity_plan_id: "2f3e7214-35ca-4ef5-a8ef-ef4f3efb1d15",
+      title: "Threshold session",
+      scheduled_date: "2026-03-12",
+      all_day: true,
+      timezone: "UTC",
+    });
+
+    const timed = plannedActivityEventCreateSchema.safeParse({
+      event_type: "planned",
+      activity_plan_id: "2f3e7214-35ca-4ef5-a8ef-ef4f3efb1d15",
+      title: "Threshold session",
+      scheduled_date: "2026-03-12",
+      all_day: false,
+      timezone: "UTC",
+    });
+
+    const recurring = plannedActivityEventCreateSchema.safeParse({
+      event_type: "planned",
+      activity_plan_id: "2f3e7214-35ca-4ef5-a8ef-ef4f3efb1d15",
+      title: "Threshold session",
+      scheduled_date: "2026-03-12",
+      all_day: true,
+      timezone: "UTC",
+      recurrence: {
+        rule: "FREQ=WEEKLY;INTERVAL=1",
+        timezone: "UTC",
+      },
+    });
+
+    const timestamped = plannedActivityEventCreateSchema.safeParse({
+      event_type: "planned",
+      activity_plan_id: "2f3e7214-35ca-4ef5-a8ef-ef4f3efb1d15",
+      title: "Threshold session",
+      scheduled_date: "2026-03-12",
+      starts_at: "2026-03-12T06:00:00.000Z",
+      all_day: true,
+      timezone: "UTC",
+    });
+
+    expect(valid.success).toBe(true);
+    expect(timed.success).toBe(false);
+    expect(recurring.success).toBe(true);
+    expect(timestamped.success).toBe(false);
   });
 
   it("rejects new rest-day writes while preserving legacy event-type parsing", () => {

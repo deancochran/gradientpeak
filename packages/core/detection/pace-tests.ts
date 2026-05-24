@@ -141,13 +141,13 @@ function detectTempoRuns(
 }
 
 /**
- * Detects interval workout pattern.
+ * Detects interval activity pattern.
  *
  * Identifies repeated fast efforts with recovery periods.
  *
  * @param paceStream - Array of pace values
  * @param timestamps - Array of timestamps
- * @returns Interval workout metadata or null
+ * @returns Interval activity metadata or null
  */
 export function detectRunningIntervals(
   paceStream: number[],
@@ -208,7 +208,7 @@ export function detectRunningIntervals(
   }
 
   if (intervals.length < 3) {
-    return null; // Not an interval workout
+    return null; // Not an interval activity
   }
 
   const avgIntervalPace = intervals.reduce((sum, int) => sum + int.pace, 0) / intervals.length;
@@ -237,7 +237,7 @@ export function detectRunningIntervals(
  * @returns Best pace and time or null
  */
 function findBestPaceForDistance(
-  paceStream: number[],
+  _paceStream: number[],
   timestamps: number[],
   distanceStream: number[],
   targetDistance: number,
@@ -343,7 +343,7 @@ function calculateStdDev(values: number[]): number {
   if (values.length === 0) return 0;
 
   const mean = values.reduce((sum, val) => sum + val, 0) / values.length;
-  const squaredDiffs = values.map((val) => Math.pow(val - mean, 2));
+  const squaredDiffs = values.map((val) => (val - mean) ** 2);
   const variance = squaredDiffs.reduce((sum, val) => sum + val, 0) / values.length;
 
   return Math.sqrt(variance);

@@ -42,6 +42,7 @@ describe("materializePlanToEvents", () => {
       expect.objectContaining({
         scheduled_date: "2026-04-22",
         title: "Threshold Run",
+        event_title_override: null,
         activity_plan_id: activityPlanIdA,
       }),
     ]);
@@ -77,6 +78,7 @@ describe("materializePlanToEvents", () => {
       expect.objectContaining({
         scheduled_date: "2026-05-01",
         title: "Race Rehearsal",
+        event_title_override: null,
       }),
     ]);
   });
@@ -148,6 +150,7 @@ describe("materializePlanToEvents", () => {
     expect(events).toHaveLength(2);
     expect(events.map((event) => event.scheduled_date)).toEqual(["2026-04-09", "2026-04-09"]);
     expect(events.map((event) => event.title)).toEqual(["AM Easy Run", "PM Strength"]);
+    expect(events.map((event) => event.event_title_override)).toEqual([null, null]);
   });
 
   it("skips explicit rest-day sessions instead of materializing synthetic events", () => {
@@ -186,7 +189,33 @@ describe("materializePlanToEvents", () => {
       expect.objectContaining({
         scheduled_date: "2026-04-07",
         title: "Easy Run",
+        event_title_override: null,
         event_type: "planned",
+      }),
+    ]);
+  });
+
+  it("prefers explicit event_title_override over legacy title fields", () => {
+    const events = materializePlanToEvents(
+      {
+        start_date: "2026-04-06",
+        sessions: [
+          {
+            offset_days: 0,
+            title: "Legacy Session Name",
+            event_title_override: "Race Prep",
+            activity_plan_id: activityPlanIdA,
+          },
+        ],
+      },
+      "2026-04-06",
+    );
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        title: "Race Prep",
+        event_title_override: "Race Prep",
+        activity_plan_id: activityPlanIdA,
       }),
     ]);
   });

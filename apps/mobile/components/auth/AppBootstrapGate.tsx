@@ -98,7 +98,6 @@ export function AppBootstrapGate({ children }: { children: React.ReactNode }) {
     profileError,
     profileLoading,
     user,
-    authState,
   ]);
 
   if (guardDecision.type === "loading") {

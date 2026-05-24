@@ -1,6 +1,6 @@
 import type { InferredStateSnapshot } from "@repo/core";
 import type { TrainingPlanRow } from "@repo/db";
-import { TRPCError } from "@trpc/server";
+import type { TRPCError } from "@trpc/server";
 import { describe, expect, it } from "vitest";
 
 import { createQueryMapDbMock } from "../../../test/mock-query-db";

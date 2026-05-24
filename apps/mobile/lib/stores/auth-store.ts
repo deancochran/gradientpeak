@@ -1,4 +1,5 @@
 import type { AuthSession, AuthUser } from "@repo/auth/session";
+import { AppState } from "react-native";
 import { create } from "zustand";
 import {
   getMobileAuthSession,
@@ -8,6 +9,7 @@ import {
 } from "@/lib/auth/client";
 
 let authUnsubscribe: (() => void) | null = null;
+let authAppStateUnsubscribe: (() => void) | null = null;
 let initializePromise: Promise<void> | null = null;
 
 export interface AuthState {
@@ -85,6 +87,15 @@ export const useAuthStore = create<AuthState>()((set, get) => ({
           authUnsubscribe = subscribeToMobileAuthSession((nextSession) => {
             get().setSession(nextSession);
           });
+        }
+
+        if (!authAppStateUnsubscribe && AppState?.addEventListener) {
+          const subscription = AppState.addEventListener("change", (state) => {
+            if (state === "active" && get().session) {
+              void get().refreshSession();
+            }
+          });
+          authAppStateUnsubscribe = () => subscription.remove();
         }
       } catch (err) {
         set({

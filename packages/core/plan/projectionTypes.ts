@@ -3,11 +3,14 @@ import type {
   ReferenceTrajectory,
   TrajectoryMode,
 } from "../schemas/planning";
+import { deterministicUuidFromSeed } from "./normalizeGoalInput";
 import type {
   DeterministicProjectionMicrocycle,
+  DeterministicProjectionPayload,
   DeterministicProjectionPoint,
   ProjectionDiagnostics,
   ProjectionDoseRecommendation,
+  ProjectionLoadResolutionSummary,
   ProjectionRecoverySegment,
   ProjectionSafetyConfig,
   ProjectionSportLoadState,
@@ -20,6 +23,24 @@ export interface ProjectionPeriodizationPhase {
   end_date: string;
   target_weekly_tss_min: number;
   target_weekly_tss_max: number;
+}
+
+export type ProjectionMicrocycleWithDeterministicId = DeterministicProjectionMicrocycle & {
+  id: string;
+};
+
+export interface ProjectionChartAssemblyPlan {
+  start_date: string;
+  end_date: string;
+  blocks: Array<{
+    name: string;
+    start_date: string;
+    end_date: string;
+    target_weekly_tss_range?: {
+      min: number;
+      max: number;
+    };
+  }>;
 }
 
 export interface ProjectionGoalMarker {
@@ -176,6 +197,7 @@ export interface ProjectionChartPayload {
   risk_level?: "low" | "moderate" | "high" | "extreme";
   risk_flags?: string[];
   caps_applied?: string[];
+  load_resolution_summary?: ProjectionLoadResolutionSummary;
   projection_diagnostics?: ProjectionDiagnostics;
   prediction_uncertainty?: ProjectionPredictionUncertainty;
   goal_target_distributions?: ProjectionGoalTargetDistribution[];
@@ -188,6 +210,7 @@ export interface ProjectionChartPayload {
   goal_assessments?: Array<{
     goal_id: string;
     priority: number;
+    goal_readiness_target?: number;
     goal_readiness_score?: number;
     state_readiness_score?: number;
     goal_alignment_loss_0_100?: number;
@@ -218,4 +241,90 @@ export interface ProjectionChartPayload {
     }>;
     conflict_notes: string[];
   }>;
+}
+
+export type ProjectionChartPayloadWithDeterministicIds = Omit<
+  ProjectionChartPayload,
+  "constraint_summary" | "microcycles" | "recovery_segments"
+> & {
+  constraint_summary: ProjectionConstraintSummary;
+  microcycles: ProjectionMicrocycleWithDeterministicId[];
+  recovery_segments: ProjectionRecoverySegment[];
+};
+
+export function buildProjectionChartPayloadFromDeterministicProjection(input: {
+  expandedPlan: ProjectionChartAssemblyPlan;
+  deterministicProjection: DeterministicProjectionPayload;
+}): ProjectionChartPayloadWithDeterministicIds {
+  const { deterministicProjection, expandedPlan } = input;
+  const deterministicProjectionCompat =
+    deterministicProjection as typeof deterministicProjection & {
+      prediction_uncertainty?: ProjectionChartPayload["prediction_uncertainty"];
+      goal_target_distributions?: ProjectionChartPayload["goal_target_distributions"];
+    };
+
+  return {
+    start_date: expandedPlan.start_date,
+    end_date: expandedPlan.end_date,
+    points: deterministicProjection.points,
+    display_points: deterministicProjection.display_points,
+    goal_markers: deterministicProjection.goal_markers,
+    periodization_phases: expandedPlan.blocks.map((block, index) => ({
+      id: deterministicUuidFromSeed(
+        `projection-phase|${expandedPlan.start_date}|${expandedPlan.end_date}|${index}|${block.name}|${block.start_date}|${block.end_date}`,
+      ),
+      name: block.name,
+      start_date: block.start_date,
+      end_date: block.end_date,
+      target_weekly_tss_min: Math.round((block.target_weekly_tss_range?.min ?? 0) * 10) / 10,
+      target_weekly_tss_max: Math.round((block.target_weekly_tss_range?.max ?? 0) * 10) / 10,
+    })),
+    microcycles: deterministicProjection.microcycles.map((microcycle) => ({
+      id: deterministicUuidFromSeed(
+        `projection-microcycle|${expandedPlan.start_date}|${microcycle.week_start_date}|${microcycle.week_end_date}`,
+      ),
+      ...microcycle,
+    })),
+    recovery_segments: deterministicProjection.recovery_segments,
+    constraint_summary: deterministicProjection.constraint_summary,
+    inferred_current_state: deterministicProjection.inferred_current_state,
+    no_history: toNoHistoryMetadataOrUndefined(deterministicProjection.no_history),
+    readiness_score: deterministicProjection.readiness_score,
+    physiological_readiness_score: deterministicProjection.physiological_readiness_score,
+    readiness_confidence: deterministicProjection.readiness_confidence,
+    planning_confidence: deterministicProjection.planning_confidence,
+    planning_confidence_reasons: deterministicProjection.planning_confidence_reasons,
+    readiness_rationale_codes: deterministicProjection.readiness_rationale_codes,
+    capacity_envelope: deterministicProjection.capacity_envelope,
+    feasibility_band: deterministicProjection.feasibility_band,
+    risk_score: deterministicProjection.risk_score,
+    risk_level: deterministicProjection.risk_level,
+    risk_flags: deterministicProjection.risk_flags,
+    caps_applied: deterministicProjection.caps_applied,
+    load_resolution_summary: deterministicProjection.load_resolution_summary,
+    projection_diagnostics: deterministicProjection.projection_diagnostics,
+    prediction_uncertainty: deterministicProjectionCompat.prediction_uncertainty,
+    goal_target_distributions: deterministicProjectionCompat.goal_target_distributions,
+    optimization_tradeoff_summary: deterministicProjection.optimization_tradeoff_summary,
+    reference_trajectory: deterministicProjection.reference_trajectory,
+    trajectory_mode: deterministicProjection.trajectory_mode,
+    feasibility_assessment: deterministicProjection.feasibility_assessment,
+    sport_load_states: deterministicProjection.sport_load_states,
+    dose_recommendation: deterministicProjection.dose_recommendation,
+    goal_assessments: deterministicProjection.goal_assessments,
+  };
+}
+
+export function toNoHistoryMetadataOrUndefined(
+  metadata: NoHistoryProjectionMetadata,
+): NoHistoryProjectionMetadata | undefined {
+  if (
+    !metadata.projection_floor_applied &&
+    !metadata.evidence_confidence &&
+    !metadata.projection_feasibility
+  ) {
+    return undefined;
+  }
+
+  return metadata;
 }

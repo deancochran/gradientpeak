@@ -51,6 +51,17 @@ export async function resolveActivityContextAsOf(
 
   profileMetrics.ftp = bikePower20mEffort ? Math.round(bikePower20mEffort.value * 0.95) : null;
 
+  const runSpeed20mEffort = typedEfforts.find(
+    (effort) =>
+      effort.effort_type === "speed" &&
+      effort.activity_category === "run" &&
+      effort.duration_seconds === 1200,
+  );
+
+  profileMetrics.threshold_speed_mps = runSpeed20mEffort
+    ? normalizeSpeedMetersPerSecond(runSpeed20mEffort.value, runSpeed20mEffort.unit)
+    : null;
+
   const activityTimestampIso = asOf.toISOString();
 
   return {
@@ -60,6 +71,7 @@ export async function resolveActivityContextAsOf(
       effort_type: effort.effort_type,
       duration_seconds: effort.duration_seconds,
       value: effort.value,
+      unit: effort.unit,
       activity_category: effort.activity_category,
     })),
     profile: {
@@ -88,4 +100,11 @@ function toNumber(value: string | number | null | undefined): number | null {
   if (value == null) return null;
   const normalized = typeof value === "number" ? value : Number(value);
   return Number.isFinite(normalized) ? normalized : null;
+}
+
+function normalizeSpeedMetersPerSecond(value: number, unit: string): number | null {
+  if (!Number.isFinite(value) || value <= 0) return null;
+  if (unit === "meters_per_second") return value;
+  if (unit === "km_per_hour") return value / 3.6;
+  return value;
 }

@@ -1,9 +1,10 @@
 import {
   createActivityImporter,
   createProviderSyncRepository,
-  createWahooImportFitFileStorage,
+  createWahooImportActivityFileStorage,
   createWahooRepository,
   createWahooRouteStorage,
+  WahooActivityHistoryJobService,
   WahooSyncJobService,
   WahooSyncService,
   WahooWebhookJobService,
@@ -21,12 +22,14 @@ export function createWahooSyncRuntime() {
   const providerSyncRepository = createProviderSyncRepository({ db });
   const importer = createActivityImporter({
     repository: wahooRepository,
-    fitFileStorage: createWahooImportFitFileStorage({
-      async uploadFitFile(input) {
-        const { error } = await supabase.storage.from("fit-files").upload(input.path, input.bytes, {
-          contentType: input.contentType,
-          upsert: false,
-        });
+    activityFileStorage: createWahooImportActivityFileStorage({
+      async uploadActivityFile(input) {
+        const { error } = await supabase.storage
+          .from("activity-files")
+          .upload(input.path, input.bytes, {
+            contentType: input.contentType,
+            upsert: false,
+          });
 
         if (error) {
           throw error;
@@ -47,6 +50,11 @@ export function createWahooSyncRuntime() {
   });
 
   return {
+    activityHistoryJobs: new WahooActivityHistoryJobService({
+      importer,
+      providerSyncRepository,
+      wahooRepository,
+    }),
     syncJobs: new WahooSyncJobService({
       providerSyncRepository,
       syncService,

@@ -108,7 +108,15 @@ function resolveDemandPenalty(demandRatio: number): number {
     return 1;
   }
 
-  return 1 / (1 + Math.pow(demandRatio - 1, 2) * 4);
+  return 1 / (1 + (demandRatio - 1) ** 2 * 4);
+}
+
+function resolveProjectionInferencePenalty(input: {
+  projectionInferred: boolean;
+  readinessConfidence: number;
+}): number {
+  if (!input.projectionInferred) return 1;
+  return clamp(0.35 + input.readinessConfidence * 0.35, 0.35, 0.7);
 }
 
 function toUnmetGap(value: number): number | undefined {
@@ -228,7 +236,11 @@ export function scoreTargetSatisfaction(input: {
         projected,
         sigma,
       });
-      const utility = clamp01(attainmentProbability * resolveDemandPenalty(demandRatio));
+      const utility = clamp01(
+        attainmentProbability *
+          resolveDemandPenalty(demandRatio) *
+          resolveProjectionInferencePenalty({ projectionInferred, readinessConfidence }),
+      );
       const gap = Math.max(0, projected - effectiveTarget.effective_scoring_target);
 
       return {
@@ -241,6 +253,7 @@ export function scoreTargetSatisfaction(input: {
           "distribution_attainment_utility",
           effectiveTarget.rationale_code,
           ...(projectionInferred ? ["projection_inferred_from_readiness"] : []),
+          ...(projectionInferred ? ["target_projection_missing_low_confidence"] : []),
           ...(demandRatio > 1 ? ["target_demand_above_plausible_cap"] : []),
           gap <= 0 ? "target_met_or_exceeded_on_mean" : "target_unmet_on_mean",
         ],
@@ -272,7 +285,11 @@ export function scoreTargetSatisfaction(input: {
         projected,
         sigma,
       });
-      const utility = clamp01(attainmentProbability * resolveDemandPenalty(demandRatio));
+      const utility = clamp01(
+        attainmentProbability *
+          resolveDemandPenalty(demandRatio) *
+          resolveProjectionInferencePenalty({ projectionInferred, readinessConfidence }),
+      );
       const gap = Math.max(0, effectiveTarget.effective_scoring_target - projected);
 
       return {
@@ -285,6 +302,7 @@ export function scoreTargetSatisfaction(input: {
           "distribution_attainment_utility",
           effectiveTarget.rationale_code,
           ...(projectionInferred ? ["projection_inferred_from_readiness"] : []),
+          ...(projectionInferred ? ["target_projection_missing_low_confidence"] : []),
           ...(demandRatio > 1 ? ["target_demand_above_plausible_cap"] : []),
           gap <= 0 ? "target_met_or_exceeded_on_mean" : "target_unmet_on_mean",
         ],
@@ -316,7 +334,11 @@ export function scoreTargetSatisfaction(input: {
         projected,
         sigma,
       });
-      const utility = clamp01(attainmentProbability * resolveDemandPenalty(demandRatio));
+      const utility = clamp01(
+        attainmentProbability *
+          resolveDemandPenalty(demandRatio) *
+          resolveProjectionInferencePenalty({ projectionInferred, readinessConfidence }),
+      );
       const gap = Math.max(0, effectiveTarget.effective_scoring_target - projected);
 
       return {
@@ -329,6 +351,7 @@ export function scoreTargetSatisfaction(input: {
           "distribution_attainment_utility",
           effectiveTarget.rationale_code,
           ...(projectionInferred ? ["projection_inferred_from_readiness"] : []),
+          ...(projectionInferred ? ["target_projection_missing_low_confidence"] : []),
           ...(demandRatio > 1 ? ["target_demand_above_plausible_cap"] : []),
           gap <= 0 ? "target_met_or_exceeded_on_mean" : "target_unmet_on_mean",
         ],
@@ -359,7 +382,11 @@ export function scoreTargetSatisfaction(input: {
         projected,
         sigma,
       });
-      const utility = clamp01(attainmentProbability * resolveDemandPenalty(demandRatio));
+      const utility = clamp01(
+        attainmentProbability *
+          resolveDemandPenalty(demandRatio) *
+          resolveProjectionInferencePenalty({ projectionInferred, readinessConfidence }),
+      );
       const gap = Math.max(0, effectiveTarget.effective_scoring_target - projected);
 
       return {
@@ -372,6 +399,7 @@ export function scoreTargetSatisfaction(input: {
           "distribution_attainment_utility",
           effectiveTarget.rationale_code,
           ...(projectionInferred ? ["projection_inferred_from_readiness"] : []),
+          ...(projectionInferred ? ["target_projection_missing_low_confidence"] : []),
           ...(demandRatio > 1 ? ["target_demand_above_plausible_cap"] : []),
           gap <= 0 ? "target_met_or_exceeded_on_mean" : "target_unmet_on_mean",
         ],

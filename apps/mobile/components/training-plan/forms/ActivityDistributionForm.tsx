@@ -5,7 +5,7 @@ import { Label } from "@repo/ui/components/label";
 import { Slider } from "@repo/ui/components/slider";
 import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { View } from "react-native";
 
 type ActivityCategory = CanonicalSport;
@@ -64,7 +64,10 @@ export function ActivityDistributionForm({
       // Default: single-sport run
       onChange({ run: 1.0, bike: 0, swim: 0, strength: 0, other: 0 });
     }
-  }, []);
+  }, [
+    data, // Default: single-sport run
+    onChange,
+  ]);
 
   // Handle multi-sport toggle
   const handleMultiSportToggle = (enabled: boolean) => {

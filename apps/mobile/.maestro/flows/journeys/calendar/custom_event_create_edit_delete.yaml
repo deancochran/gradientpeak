@@ -32,21 +32,29 @@ env:
 - tapOn: "${EVENT_TITLE}"
 - extendedWaitUntil:
     visible:
-      id: "event-detail-edit-button"
+      id: "event-detail-options-trigger"
     timeout: 10000
 - tapOn:
-    id: "event-detail-edit-button"
+    id: "event-detail-options-trigger"
 - tapOn:
-    id: "event-detail-title-input"
+    id: "event-detail-options-edit"
+- extendedWaitUntil:
+    visible:
+      id: "event-detail-update-title-input"
+    timeout: 10000
+- tapOn:
+    id: "event-detail-update-title-input"
 - eraseText
 - inputText: "${EVENT_TITLE_UPDATED}"
 - tapOn:
-    id: "event-detail-save-button"
+    id: "event-detail-update-save-button"
 - extendedWaitUntil:
     visible: "${EVENT_TITLE_UPDATED}"
     timeout: 10000
 - tapOn:
-    id: "event-detail-delete-button"
+    id: "event-detail-options-trigger"
+- tapOn:
+    id: "event-detail-options-delete"
 - tapOn:
     text: "Delete"
     optional: true

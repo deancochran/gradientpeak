@@ -2,9 +2,9 @@ import { Alert, AlertDescription } from "@repo/ui/components/alert";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Form, FormTextField } from "@repo/ui/components/form";
+import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
-import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
 import { AlertCircle } from "lucide-react-native";
 import React from "react";
@@ -22,7 +22,7 @@ import { withAuthRequestTimeout } from "@/lib/auth/request-timeout";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { logMobileAction } from "@/lib/logging/mobile-action-log";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
-import { useServerConfig } from "@/lib/server-config";
+import { isServerUrlOverrideEnabled, useServerConfig } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
 
 export default function SignInScreen() {
@@ -30,6 +30,7 @@ export default function SignInScreen() {
   const navigateTo = useAppNavigate();
   const { loading: authLoading } = useAuth();
   const [isServerConfigExpanded, setIsServerConfigExpanded] = React.useState(false);
+  const serverOverrideEnabled = isServerUrlOverrideEnabled();
   const serverConfig = useServerConfig();
   const [serverUrlInput, setServerUrlInput] = React.useState(
     serverConfig.overrideUrl ?? serverConfig.apiUrl,
@@ -83,7 +84,7 @@ export default function SignInScreen() {
       logMobileAction("auth.signIn", "success", { email: data.email });
       await refreshMobileAuthSession();
       await useAuthStore.getState().refreshSession();
-      router.replace("/" as any);
+      router.replace("/");
     } catch (err) {
       logMobileAction("auth.signIn", "failure", {
         email: data.email,
@@ -117,27 +118,21 @@ export default function SignInScreen() {
       testID="sign-in-screen"
     >
       <ScrollView
-        contentContainerClassName="flex-grow justify-center p-6"
+        contentContainerClassName="flex-grow justify-center p-5"
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         <Card className="w-full max-w-sm mx-auto bg-card border-border shadow-sm">
-          <CardHeader className="items-center pb-6">
-            <CardTitle>
-              <Text variant="h2" className="text-center">
-                Welcome Back
-              </Text>
-            </CardTitle>
-            <Text variant="muted" className="text-center">
+          <CardHeader className="items-center gap-2 pb-4">
+            <CardTitle className="text-center text-3xl leading-tight">Welcome Back</CardTitle>
+            <Text variant="muted" className="text-center text-base leading-6">
               Sign in to continue your fitness journey
             </Text>
           </CardHeader>
 
-          <CardContent className="gap-6">
-            {/* Form */}
+          <CardContent className="gap-5">
             <Form {...form}>
               <View className="gap-4" testID="sign-in-form">
-                {/* Email Input */}
                 <FormTextField
                   autoCapitalize="none"
                   autoComplete="email"
@@ -149,7 +144,6 @@ export default function SignInScreen() {
                   testId="email-input"
                 />
 
-                {/* Password Input */}
                 <FormTextField
                   control={form.control}
                   label="Password"
@@ -159,7 +153,6 @@ export default function SignInScreen() {
                   testId="password-input"
                 />
 
-                {/* Root Error */}
                 {form.formState.errors.root && (
                   <Alert icon={AlertCircle} variant="destructive" testID="root-error-container">
                     <AlertDescription className="text-center">
@@ -170,27 +163,29 @@ export default function SignInScreen() {
               </View>
             </Form>
 
-            {/* Sign In Button */}
-            <Button
+            <LoadingButton
               variant="default"
               size="lg"
               onPress={submitForm.handleSubmit}
               disabled={isLoading}
+              loading={isLoading}
+              loadingLabel="Signing in..."
               testID="sign-in-button"
               className="w-full"
             >
-              <Text>{isLoading ? "Signing In..." : "Sign In"}</Text>
-            </Button>
+              <Text>Sign In</Text>
+            </LoadingButton>
 
-            <ServerUrlOverride
-              expanded={isServerConfigExpanded}
-              value={serverUrlInput}
-              usingHostedDefault={!serverConfig.overrideUrl}
-              onToggle={() => setIsServerConfigExpanded((currentValue) => !currentValue)}
-              onChange={setServerUrlInput}
-            />
+            {serverOverrideEnabled ? (
+              <ServerUrlOverride
+                expanded={isServerConfigExpanded}
+                value={serverUrlInput}
+                usingHostedDefault={!serverConfig.overrideUrl}
+                onToggle={() => setIsServerConfigExpanded((currentValue) => !currentValue)}
+                onChange={setServerUrlInput}
+              />
+            ) : null}
 
-            {/* Forgot Password Link */}
             <Button
               variant="link"
               onPress={handleForgotPasswordPress}
@@ -200,7 +195,6 @@ export default function SignInScreen() {
               <Text className="text-muted-foreground">Forgot your password?</Text>
             </Button>
 
-            {/* Sign Up Link */}
             <View className="border-t border-border pt-4">
               <Button
                 variant="outline"
@@ -210,17 +204,6 @@ export default function SignInScreen() {
               >
                 <Text>Need an account? Sign up</Text>
               </Button>
-
-              {__DEV__ && (
-                <Button
-                  variant="ghost"
-                  onPress={() => navigateTo("/(external)/ui-preview" as any)}
-                  testId="open-ui-preview-button"
-                  className="mt-3 w-full"
-                >
-                  <Text>UI Preview</Text>
-                </Button>
-              )}
             </View>
           </CardContent>
         </Card>

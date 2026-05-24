@@ -17,13 +17,13 @@ describe("Tooltip web", () => {
     renderWeb(
       <Tooltip open>
         <TooltipTrigger>Why this matters</TooltipTrigger>
-        <TooltipContent>Workout stress updates after sync.</TooltipContent>
+        <TooltipContent>Activity stress updates after sync.</TooltipContent>
       </Tooltip>,
     );
 
     expect(await screen.findByRole("button", { name: "Why this matters" })).toBeInTheDocument();
     expect(await screen.findByRole("tooltip")).toHaveTextContent(
-      "Workout stress updates after sync.",
+      "Activity stress updates after sync.",
     );
   });
 });

@@ -5,7 +5,10 @@
   "scripts": {
     "dev": "concurrently \"pnpm run dev:app\" \"pnpm run dev:ngrok\"",
     "dev:app": "pnpm exec dotenv -e .env.local -- vite dev --host 0.0.0.0 --port 3000",
-    "dev:ngrok": "ngrok http 3000",
+    "dev:wahoo-drain": "pnpm exec dotenv -e .env.local -- node scripts/drain-wahoo-provider-sync.mjs",
+    "dev:wahoo-drain:direct": "pnpm exec dotenv -e .env.local -- vite-node scripts/drain-wahoo-provider-sync-direct.ts",
+    "dev:wahoo-drain:once": "pnpm exec dotenv -e .env.local -- node scripts/drain-wahoo-provider-sync.mjs --once",
+    "dev:ngrok": "ngrok http --domain=outgoing-ape-repeatedly.ngrok-free.app 3000",
     "dev:scan": "concurrently \"VITE_ENABLE_REACT_SCAN=1 pnpm run dev:app\" \"pnpm run dev:ngrok\"",
     "build": "vite build",
     "check-types": "tsc --noEmit",
@@ -24,6 +27,7 @@
     "@repo/db": "workspace:*",
     "@repo/tailwindcss": "workspace:*",
     "@repo/ui": "workspace:*",
+    "@hookform/resolvers": "^5.2.2",
     "@supabase/supabase-js": "^2.56.0",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/react-devtools": "^0.10.2",
@@ -40,6 +44,7 @@
     "pg": "^8.16.3",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "react-hook-form": "^7.66.0",
     "sonner": "^2.0.7",
     "tailwindcss": "^4.1.18",
     "zod": "^4.2.1"

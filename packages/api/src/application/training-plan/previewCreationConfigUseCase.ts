@@ -9,11 +9,11 @@ import {
   type OverridePolicy,
   type PreviewReadinessSnapshot,
   type ProjectionConstraintSummary,
-  previewCreationConfigInputSchema,
+  type previewCreationConfigInputSchema,
   type ReadinessDeltaDiagnostics,
   type TrainingPlanCreationConfig,
 } from "@repo/core";
-import { z } from "zod";
+import type { z } from "zod";
 import type { TrainingPlanRepository } from "../../repositories";
 
 type PreviewCreationConfigInput = z.infer<typeof previewCreationConfigInputSchema> & {

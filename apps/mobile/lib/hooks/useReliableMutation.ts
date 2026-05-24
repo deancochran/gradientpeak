@@ -76,7 +76,7 @@ export function useReliableMutation<T extends { useMutation: any }>(
   const queryClient = useQueryClient();
 
   return mutation.useMutation({
-    onSuccess: async (data: any, variables: any, context: any) => {
+    onSuccess: async (data: any, _variables: any, _context: any) => {
       const refreshTasks: Promise<unknown>[] = [];
 
       if (options.invalidate) {
@@ -106,7 +106,7 @@ export function useReliableMutation<T extends { useMutation: any }>(
         Alert.alert("Success", options.success);
       }
     },
-    onError: (error: any, variables: any, context: any) => {
+    onError: (error: any, _variables: any, _context: any) => {
       // Custom error callback first
       options.onError?.(error);
 

@@ -48,6 +48,7 @@ function isLatLngReading(reading: BufferedReading): reading is LatLngBufferedRea
 export class DataBuffer {
   // Store readings by metric for O(1) access to specific streams
   private stores = new Map<string, BufferedReading[]>();
+  private newestTimestampByMetric = new Map<string, number>();
   private windowMs: number;
 
   constructor(windowSeconds: number = RECORDING_CONFIG.BUFFER_WINDOW_SECONDS) {
@@ -61,7 +62,44 @@ export class DataBuffer {
     if (!this.stores.has(reading.metric)) {
       this.stores.set(reading.metric, []);
     }
-    this.stores.get(reading.metric)!.push(reading);
+    const readings = this.stores.get(reading.metric)!;
+    const insertIndex = readings.findIndex((existing) => existing.timestamp > reading.timestamp);
+    if (insertIndex === -1) {
+      readings.push(reading);
+    } else {
+      readings.splice(insertIndex, 0, reading);
+    }
+    this.newestTimestampByMetric.set(
+      reading.metric,
+      Math.max(
+        this.newestTimestampByMetric.get(reading.metric) ?? reading.timestamp,
+        reading.timestamp,
+      ),
+    );
+    this.trimMetric(reading.metric, readings);
+  }
+
+  private trimMetric(metric: string, readings: BufferedReading[]): void {
+    if (readings.length === 0) return;
+
+    const newestTimestamp = this.newestTimestampByMetric.get(metric) ?? readings.at(-1)?.timestamp;
+    if (newestTimestamp === undefined) return;
+
+    const cutoff = newestTimestamp - this.windowMs;
+    let firstRetainedIndex = readings.findIndex((reading) => reading.timestamp > cutoff);
+
+    if (firstRetainedIndex === -1) {
+      firstRetainedIndex = readings.length - 1;
+    }
+
+    const maxReadings = RECORDING_CONFIG.MAX_READINGS_PER_METRIC;
+    const countRetainedByTime = readings.length - firstRetainedIndex;
+    const countRetained = Math.min(countRetainedByTime, maxReadings);
+    const nextReadings = readings.slice(readings.length - countRetained);
+
+    if (nextReadings.length !== readings.length) {
+      this.stores.set(metric, nextReadings);
+    }
   }
 
   /**
@@ -234,6 +272,7 @@ export class DataBuffer {
         // If array not empty, all are old -> clear
         if (readings.length > 0 && readings[readings.length - 1].timestamp <= cutoff) {
           this.stores.set(metric, []);
+          this.newestTimestampByMetric.delete(metric);
           totalRemoved += beforeCount;
         } else {
           // Array empty or all valid (findIndex returns -1 if no match, but we need to check if they are all > cutoff or all <= cutoff)
@@ -243,6 +282,7 @@ export class DataBuffer {
           // If -1, it means NO element is > cutoff. So all are old.
           if (readings.length > 0) {
             this.stores.set(metric, []);
+            this.newestTimestampByMetric.delete(metric);
             totalRemoved += beforeCount;
           }
         }
@@ -250,6 +290,10 @@ export class DataBuffer {
         // Remove old readings
         const newReadings = readings.slice(firstValidIndex);
         this.stores.set(metric, newReadings);
+        const newestTimestamp = newReadings.at(-1)?.timestamp;
+        if (newestTimestamp !== undefined) {
+          this.newestTimestampByMetric.set(metric, newestTimestamp);
+        }
         totalRemoved += firstValidIndex;
         totalRemaining += newReadings.length;
       } else {
@@ -270,6 +314,12 @@ export class DataBuffer {
    */
   clear(): void {
     this.stores.clear();
+    this.newestTimestampByMetric.clear();
+  }
+
+  clearMetric(metric: string): void {
+    this.stores.delete(metric);
+    this.newestTimestampByMetric.delete(metric);
   }
 
   /**

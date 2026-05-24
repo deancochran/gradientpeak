@@ -1,9 +1,46 @@
 import { type DrizzleDbClient, schema } from "@repo/db";
-import { and, asc, count, desc, eq, gt, gte, inArray, isNotNull, lt, lte, or } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  isNotNull,
+  lt,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import type { EventReadRepository } from "../../repositories";
+
+type EventReadDb = {
+  execute: any;
+  query: any;
+  select: any;
+};
+
+function resolveDb(dbInput: EventReadDb | { db: EventReadDb }) {
+  return "db" in dbInput ? dbInput.db : dbInput;
+}
+
+function serializeActivityPlanRow(activityPlan: typeof schema.activityPlans.$inferSelect | null) {
+  if (!activityPlan) {
+    return null;
+  }
+
+  return {
+    ...activityPlan,
+    created_at: activityPlan.created_at.toISOString(),
+    updated_at: activityPlan.updated_at.toISOString(),
+  };
+}
 
 function serializeEventRow(row: {
   activity_plan_id: string | null;
+  activity_plan: typeof schema.activityPlans.$inferSelect | null;
   all_day: boolean | null;
   created_at: Date;
   description: string | null;
@@ -26,21 +63,41 @@ function serializeEventRow(row: {
   title: string | null;
   training_plan_id: string | null;
   updated_at: Date;
+  external_link?: typeof schema.eventExternalLinks.$inferSelect | null;
+  recurrence?: typeof schema.eventRecurrence.$inferSelect | null;
+  schedule_link?: typeof schema.eventScheduleLinks.$inferSelect | null;
 }) {
+  const {
+    external_link: externalLink = null,
+    recurrence = null,
+    schedule_link: scheduleLink = null,
+    ...eventRow
+  } = row;
+
   return {
-    ...row,
+    ...eventRow,
+    activity_plan_id: scheduleLink?.activity_plan_id ?? row.activity_plan_id,
     idx: row.idx ?? 0,
     all_day: row.all_day ?? false,
+    linked_activity_id: scheduleLink?.linked_activity_id ?? row.linked_activity_id,
     occurrence_key: row.occurrence_key ?? "",
+    recurrence_rule: recurrence?.recurrence_rule ?? row.recurrence_rule,
+    recurrence_timezone: recurrence?.recurrence_timezone ?? row.recurrence_timezone,
+    series_id: recurrence?.series_id ?? row.series_id,
+    source_provider: externalLink?.source_provider ?? row.source_provider,
     status: row.status ?? "scheduled",
     timezone: row.timezone ?? "UTC",
     title: row.title ?? "",
+    training_plan_id: scheduleLink?.training_plan_id ?? row.training_plan_id,
     created_at: row.created_at.toISOString(),
     starts_at: row.starts_at.toISOString(),
     ends_at: row.ends_at?.toISOString() ?? null,
-    original_starts_at: row.original_starts_at?.toISOString() ?? null,
+    original_starts_at:
+      recurrence?.original_starts_at?.toISOString() ??
+      row.original_starts_at?.toISOString() ??
+      null,
     updated_at: row.updated_at.toISOString(),
-    activity_plan: null,
+    activity_plan: serializeActivityPlanRow(row.activity_plan),
   };
 }
 
@@ -53,29 +110,52 @@ const eventColumns = {
   description: schema.events.description,
   all_day: schema.events.all_day,
   timezone: schema.events.timezone,
-  activity_plan_id: schema.events.activity_plan_id,
-  training_plan_id: schema.events.training_plan_id,
-  recurrence_rule: schema.events.recurrence_rule,
-  recurrence_timezone: schema.events.recurrence_timezone,
-  series_id: schema.events.series_id,
-  source_provider: schema.events.source_provider,
-  occurrence_key: schema.events.occurrence_key,
-  original_starts_at: schema.events.original_starts_at,
+  activity_plan_id: schema.eventScheduleLinks.activity_plan_id,
+  training_plan_id: schema.eventScheduleLinks.training_plan_id,
+  recurrence_rule: schema.eventRecurrence.recurrence_rule,
+  recurrence_timezone: schema.eventRecurrence.recurrence_timezone,
+  series_id: schema.eventRecurrence.series_id,
+  source_provider: schema.eventExternalLinks.source_provider,
+  occurrence_key: schema.eventRecurrence.occurrence_key,
+  original_starts_at: schema.eventRecurrence.original_starts_at,
   notes: schema.events.notes,
   status: schema.events.status,
-  linked_activity_id: schema.events.linked_activity_id,
+  linked_activity_id: schema.eventScheduleLinks.linked_activity_id,
   created_at: schema.events.created_at,
   updated_at: schema.events.updated_at,
   starts_at: schema.events.starts_at,
   ends_at: schema.events.ends_at,
 } as const;
 
-export function createEventReadRepository(db: DrizzleDbClient): EventReadRepository {
+export function createEventReadRepository(
+  dbInput: EventReadDb | { db: EventReadDb },
+): EventReadRepository {
+  const db = resolveDb(dbInput) as DrizzleDbClient;
+
   return {
     async getOwnedEventById({ eventId, profileId }) {
       const [row] = await db
-        .select(eventColumns)
+        .select({
+          ...eventColumns,
+          activity_plan: schema.activityPlans,
+          external_link: schema.eventExternalLinks,
+          recurrence: schema.eventRecurrence,
+          schedule_link: schema.eventScheduleLinks,
+        })
         .from(schema.events)
+        .leftJoin(
+          schema.eventScheduleLinks,
+          eq(schema.events.id, schema.eventScheduleLinks.event_id),
+        )
+        .leftJoin(
+          schema.activityPlans,
+          eq(schema.eventScheduleLinks.activity_plan_id, schema.activityPlans.id),
+        )
+        .leftJoin(
+          schema.eventExternalLinks,
+          eq(schema.events.id, schema.eventExternalLinks.event_id),
+        )
+        .leftJoin(schema.eventRecurrence, eq(schema.events.id, schema.eventRecurrence.event_id))
         .where(and(eq(schema.events.id, eventId), eq(schema.events.profile_id, profileId)))
         .limit(1);
 
@@ -99,7 +179,11 @@ export function createEventReadRepository(db: DrizzleDbClient): EventReadReposit
 
     async listCompletedActivitiesInRange({ profileId, startedAtGte, startedAtLt }) {
       const rows = await db
-        .select({ id: schema.activities.id, started_at: schema.activities.started_at })
+        .select({
+          activity_plan_id: schema.activities.activity_plan_id,
+          id: schema.activities.id,
+          started_at: schema.activities.started_at,
+        })
         .from(schema.activities)
         .where(
           and(
@@ -109,7 +193,11 @@ export function createEventReadRepository(db: DrizzleDbClient): EventReadReposit
           ),
         );
 
-      return rows.map((row) => ({ id: row.id, started_at: row.started_at.toISOString() }));
+      return rows.map((row) => ({
+        activity_plan_id: row.activity_plan_id,
+        id: row.id,
+        started_at: row.started_at.toISOString(),
+      }));
     },
 
     async listPlannedEventDatesInRange({ profileId, startsAtGte, startsAtLte }) {
@@ -138,14 +226,12 @@ export function createEventReadRepository(db: DrizzleDbClient): EventReadReposit
       const [trainingPlan, activityPlan, profile, best20mPower, lthrMetric, weightMetric] =
         await Promise.all([
           db
-            .select({ id: schema.trainingPlans.id, structure: schema.trainingPlans.structure })
+            .select({
+              id: schema.trainingPlans.id,
+              structure: schema.trainingPlans.structure,
+            })
             .from(schema.trainingPlans)
-            .where(
-              and(
-                eq(schema.trainingPlans.id, trainingPlanId),
-                eq(schema.trainingPlans.profile_id, profileId),
-              ),
-            )
+            .where(eq(schema.trainingPlans.id, trainingPlanId))
             .limit(1)
             .then((rows) => rows[0] ?? null),
           db
@@ -156,15 +242,7 @@ export function createEventReadRepository(db: DrizzleDbClient): EventReadReposit
               route_id: schema.activityPlans.route_id,
             })
             .from(schema.activityPlans)
-            .where(
-              and(
-                eq(schema.activityPlans.id, activityPlanId),
-                or(
-                  eq(schema.activityPlans.profile_id, profileId),
-                  eq(schema.activityPlans.is_system_template, true),
-                ),
-              ),
-            )
+            .where(eq(schema.activityPlans.id, activityPlanId))
             .limit(1)
             .then((rows) => rows[0] ?? null),
           db
@@ -291,7 +369,26 @@ export function createEventReadRepository(db: DrizzleDbClient): EventReadReposit
                 updated_at: schema.activityRoutes.updated_at,
               })
               .from(schema.activityRoutes)
-              .where(inArray(schema.activityRoutes.id, routeIds))
+              .where(
+                and(
+                  inArray(schema.activityRoutes.id, routeIds),
+                  or(
+                    eq(schema.activityRoutes.profile_id, profileId),
+                    eq(schema.activityRoutes.is_public, true),
+                    eq(schema.activityRoutes.is_system_template, true),
+                    sql`exists (
+                      select 1
+                      from content_access_grants
+                      where content_access_grants.content_type = 'activity_route'
+                        and content_access_grants.content_id = ${schema.activityRoutes.id}
+                        and content_access_grants.grantee_profile_id = ${profileId}::uuid
+                        and content_access_grants.access_level in ('read', 'read_geometry')
+                        and content_access_grants.revoked_at is null
+                        and (content_access_grants.expires_at is null or content_access_grants.expires_at > now())
+                    )`,
+                  ),
+                ),
+              )
           : Promise.resolve([]),
       ]);
 
@@ -322,7 +419,10 @@ export function createEventReadRepository(db: DrizzleDbClient): EventReadReposit
     }) {
       const trainingPlan = trainingPlanId
         ? await db
-            .select({ id: schema.trainingPlans.id, structure: schema.trainingPlans.structure })
+            .select({
+              id: schema.trainingPlans.id,
+              structure: schema.trainingPlans.structure,
+            })
             .from(schema.trainingPlans)
             .where(
               and(
@@ -340,18 +440,27 @@ export function createEventReadRepository(db: DrizzleDbClient): EventReadReposit
       const plannedEvents = await db
         .select({
           starts_at: schema.events.starts_at,
-          training_plan_id: schema.events.training_plan_id,
+          training_plan_id: schema.eventScheduleLinks.training_plan_id,
           activity_plan: schema.activityPlans,
         })
         .from(schema.events)
-        .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
+        .leftJoin(
+          schema.eventScheduleLinks,
+          eq(schema.events.id, schema.eventScheduleLinks.event_id),
+        )
+        .leftJoin(
+          schema.activityPlans,
+          eq(schema.eventScheduleLinks.activity_plan_id, schema.activityPlans.id),
+        )
         .where(
           and(
             eq(schema.events.profile_id, profileId),
             eq(schema.events.event_type, "planned_activity"),
             gte(schema.events.starts_at, new Date(startDateIso)),
             lt(schema.events.starts_at, new Date(endDateExclusiveIso)),
-            ...(trainingPlanId ? [eq(schema.events.training_plan_id, trainingPlanId)] : []),
+            ...(trainingPlanId
+              ? [eq(schema.eventScheduleLinks.training_plan_id, trainingPlanId)]
+              : []),
           ),
         );
 
@@ -401,19 +510,21 @@ export function createEventReadRepository(db: DrizzleDbClient): EventReadReposit
 
     async listOwnedEvents(input) {
       const conditions = [eq(schema.events.profile_id, input.profileId)];
+      const trainingPlanId = schema.eventScheduleLinks.training_plan_id;
+      const activityPlanId = schema.eventScheduleLinks.activity_plan_id;
 
       if (input.eventTypes && input.eventTypes.length > 0) {
         conditions.push(inArray(schema.events.event_type, input.eventTypes));
       }
 
       if (input.trainingPlanId) {
-        conditions.push(eq(schema.events.training_plan_id, input.trainingPlanId));
+        conditions.push(eq(trainingPlanId, input.trainingPlanId));
       } else if (!input.includeAdhoc) {
-        conditions.push(isNotNull(schema.events.training_plan_id));
+        conditions.push(isNotNull(trainingPlanId));
       }
 
       if (input.activityPlanId) {
-        conditions.push(eq(schema.events.activity_plan_id, input.activityPlanId));
+        conditions.push(eq(activityPlanId, input.activityPlanId));
       }
 
       if (input.dateFrom) {
@@ -439,9 +550,24 @@ export function createEventReadRepository(db: DrizzleDbClient): EventReadReposit
       }
 
       const rows = await db
-        .select(eventColumns)
+        .select({
+          ...eventColumns,
+          activity_plan: schema.activityPlans,
+          external_link: schema.eventExternalLinks,
+          recurrence: schema.eventRecurrence,
+          schedule_link: schema.eventScheduleLinks,
+        })
         .from(schema.events)
-        .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
+        .leftJoin(
+          schema.eventScheduleLinks,
+          eq(schema.events.id, schema.eventScheduleLinks.event_id),
+        )
+        .leftJoin(schema.activityPlans, eq(activityPlanId, schema.activityPlans.id))
+        .leftJoin(
+          schema.eventExternalLinks,
+          eq(schema.events.id, schema.eventExternalLinks.event_id),
+        )
+        .leftJoin(schema.eventRecurrence, eq(schema.events.id, schema.eventRecurrence.event_id))
         .where(and(...conditions))
         .orderBy(asc(schema.events.starts_at), asc(schema.events.id))
         .limit(input.limit);

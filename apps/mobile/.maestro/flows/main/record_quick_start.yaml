@@ -13,10 +13,8 @@ env:
 - tapOn: "Record"
 - extendedWaitUntil:
     visible:
-      id: "activity-selection-modal"
+      id: "record-screen-ready"
     timeout: 10000
-- tapOn:
-    id: "activity-select-run"
 - extendedWaitUntil:
     visible:
       id: "recording-start-button"

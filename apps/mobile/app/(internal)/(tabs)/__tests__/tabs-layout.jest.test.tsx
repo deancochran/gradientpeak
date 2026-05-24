@@ -5,6 +5,8 @@ import { fireEvent, renderNative, screen } from "../../../../test/render-native"
 const pushMock = jest.fn();
 const guardNavigationMock = jest.fn((navigate: () => void) => navigate());
 const navigateToMock = jest.fn();
+const setSelectionMock = jest.fn();
+let mockRecordingLifecycle: "idle" | "setup" | "active" = "idle";
 
 const ButtonHost = createButtonComponent();
 
@@ -48,13 +50,32 @@ jest.mock("@repo/ui/components/icon", () => ({
   Icon: createHost("Icon"),
 }));
 
+jest.mock("@repo/ui/components/avatar", () => ({
+  __esModule: true,
+  Avatar: createHost("Avatar"),
+  AvatarFallback: createHost("AvatarFallback"),
+  AvatarImage: createHost("AvatarImage"),
+}));
+
+jest.mock("@repo/ui/components/text", () => ({
+  __esModule: true,
+  Text: createHost("Text"),
+}));
+
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
-  Calendar: createHost("Calendar"),
+  CalendarDays: createHost("CalendarDays"),
   Circle: createHost("Circle"),
   Home: createHost("Home"),
-  Search: createHost("Search"),
   Target: createHost("Target"),
+}));
+
+jest.mock("@/lib/hooks/useAuth", () => ({
+  __esModule: true,
+  useAuth: () => ({
+    user: { id: "user-1", email: "athlete@example.com" },
+    profile: { username: "Athlete", avatar_url: null },
+  }),
 }));
 
 jest.mock("@/lib/navigation/useNavigationActionGuard", () => ({
@@ -65,6 +86,36 @@ jest.mock("@/lib/navigation/useNavigationActionGuard", () => ({
 jest.mock("@/lib/navigation/useAppNavigate", () => ({
   __esModule: true,
   useAppNavigate: () => navigateToMock,
+}));
+
+jest.mock("@/lib/hooks/useActivityRecorder", () => ({
+  __esModule: true,
+  useRecordingLifecycle: () => mockRecordingLifecycle,
+}));
+
+jest.mock("@/lib/providers/ActivityRecorderProvider", () => ({
+  __esModule: true,
+  useSharedActivityRecorder: () => ({}),
+}));
+
+jest.mock("@/lib/server-config", () => ({
+  __esModule: true,
+  getReachableSupabaseStorageUrl: (path: string) => path,
+}));
+
+jest.mock("@/lib/performance", () => ({
+  __esModule: true,
+  markNavigationStart: jest.fn(),
+}));
+
+jest.mock("@/lib/stores/activitySelectionStore", () => ({
+  __esModule: true,
+  activitySelectionStore: { setSelection: setSelectionMock },
+  defaultRecordLaunchPayload: () => ({
+    launchSource: "record_tab",
+    category: "run",
+    gpsRecordingEnabled: true,
+  }),
 }));
 
 jest.mock("@/lib/stores/theme-store", () => ({
@@ -89,16 +140,19 @@ describe("tabs layout", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     navigateToMock.mockReset();
+    setSelectionMock.mockReset();
+    mockRecordingLifecycle = "idle";
   });
 
   it("configures all primary tabs", () => {
     renderNative(<TabsLayout />);
 
     expect(screen.getByText("Home")).toBeTruthy();
-    expect(screen.getByText("Discover")).toBeTruthy();
-    expect(screen.getByText("Record")).toBeTruthy();
     expect(screen.getByText("Plan")).toBeTruthy();
+    expect(screen.getByText("Record")).toBeTruthy();
     expect(screen.getByText("Calendar")).toBeTruthy();
+    expect(screen.getByText("Profile")).toBeTruthy();
+    expect(screen.queryByText("Groups")).toBeNull();
   });
 
   it("routes the record tab through the navigation guard", () => {
@@ -107,7 +161,28 @@ describe("tabs layout", () => {
     fireEvent.press(screen.getByTestId("tab-button-record"));
 
     expect(guardNavigationMock).toHaveBeenCalledTimes(1);
+    expect(setSelectionMock).toHaveBeenCalledTimes(1);
     expect(navigateToMock).toHaveBeenCalledWith("/record");
     expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it("does not reset recording setup from the record tab", () => {
+    mockRecordingLifecycle = "setup";
+    renderNative(<TabsLayout />);
+
+    fireEvent.press(screen.getByTestId("tab-button-record"));
+
+    expect(setSelectionMock).not.toHaveBeenCalled();
+    expect(navigateToMock).toHaveBeenCalledWith("/record");
+  });
+
+  it("does not reset active recording from the record tab", () => {
+    mockRecordingLifecycle = "active";
+    renderNative(<TabsLayout />);
+
+    fireEvent.press(screen.getByTestId("tab-button-record"));
+
+    expect(setSelectionMock).not.toHaveBeenCalled();
+    expect(navigateToMock).toHaveBeenCalledWith("/record");
   });
 });

@@ -13,20 +13,28 @@
  */
 
 import {
+  createRecordingMetricsAccumulator,
   GLOBAL_DEFAULTS,
   type PerformanceMetrics,
   type RecordingActivityCategory,
+  type RecordingMetricsAccumulator,
+  type RecordingMetricsConfig,
+  type RecordingMetricsSnapshot,
 } from "@repo/core";
 import { EventEmitter } from "expo";
 import { MOVEMENT_THRESHOLDS, RECORDING_CONFIG } from "./config";
 import { DataBuffer, type LatLngBufferedReading } from "./DataBuffer";
-import { convertToSimplifiedMetrics, getSensorModel, SimplifiedMetrics } from "./SimplifiedMetrics";
-import { StreamBuffer } from "./StreamBuffer";
 import {
+  convertToSimplifiedMetrics,
+  getSensorModel,
+  type SimplifiedMetrics,
+} from "./SimplifiedMetrics";
+import { StreamBuffer } from "./StreamBuffer";
+import type {
   LiveMetricsState,
   LocationReading,
   ProfileMetrics,
-  type RecorderProfileRef,
+  RecorderProfileRef,
   SensorReading,
   SessionStats,
   ZoneConfig,
@@ -45,8 +53,11 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   private profile: ProfileMetrics;
   private zones: ZoneConfig;
   private metrics: LiveMetricsState;
+  private recordingMetricsAccumulator: RecordingMetricsAccumulator;
+  private recordingMetricsSnapshot: RecordingMetricsSnapshot;
   private isActive = false;
   private gpsRecordingEnabled = true;
+  private gpsSpeedFallbackEnabled = true;
   private activityCategory?: RecordingActivityCategory; // Track activity type for calorie calculation
 
   // === Core Components ===
@@ -62,6 +73,8 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   private sensorUpdateTimer?: ReturnType<typeof setTimeout> | number;
   private lastStatsEmit = 0;
   private cachedStats?: SessionStats;
+  private lastAdvancedMetricsSampleAt = 0;
+  private advancedMetricsDisabledUntil = 0;
 
   // === State Tracking ===
   private startTime?: number;
@@ -106,6 +119,10 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     this.profile = this.extractProfileMetrics(profile, metrics);
     this.zones = this.calculateZones(this.profile);
     this.metrics = this.createInitialMetrics();
+    this.recordingMetricsAccumulator = createRecordingMetricsAccumulator(
+      this.buildRecordingMetricsConfig(),
+    );
+    this.recordingMetricsSnapshot = this.recordingMetricsAccumulator.getSnapshot();
     this.buffer = new DataBuffer(RECORDING_CONFIG.BUFFER_WINDOW_SECONDS);
     this.streamBuffer = new StreamBuffer();
 
@@ -123,12 +140,24 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     this.gpsRecordingEnabled = enabled;
   }
 
+  public setGpsSpeedFallbackEnabled(enabled: boolean): void {
+    if (enabled && !this.gpsSpeedFallbackEnabled) {
+      this.buffer.clearMetric("speed");
+    }
+    this.gpsSpeedFallbackEnabled = enabled;
+  }
+
+  public clearBufferedSensorMetric(metric: SensorReading["metric"]): void {
+    this.buffer.clearMetric(metric);
+  }
+
   /**
    * Set activity category (bike, run, etc.)
    * Used for improved calorie estimation
    */
   public setActivityCategory(category: RecordingActivityCategory): void {
     this.activityCategory = category;
+    this.resetRecordingMetricsAccumulator();
     console.log("[LiveMetricsManager] Activity category set to:", category);
   }
 
@@ -163,10 +192,13 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     // Initialize StreamBuffer storage directory
     await this.streamBuffer.initialize();
 
+    this.resetLiveSessionState();
     this.isActive = true;
     this.startTime = Date.now();
     this.metrics.startedAt = this.startTime;
     this.zoneStartTime = this.startTime;
+    this.addRecordingMetricsSample(this.startTime);
+    this.lastAdvancedMetricsSampleAt = this.startTime;
 
     // Start 1-second update timer
     this.updateTimer = setInterval(() => {
@@ -202,6 +234,9 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       this.totalPauseTime += Date.now() - this.pauseStartTime;
       this.pauseStartTime = undefined;
     }
+    this.buffer.clear();
+    this.cachedStats = undefined;
+    this.lastStatsEmit = 0;
     this.isActive = true;
     this.zoneStartTime = Date.now();
 
@@ -308,23 +343,31 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   /**
    * Ingest location data
    */
-  public ingestLocationData(location: LocationReading): void {
-    // Update lastLocation FIRST so getCurrentReadings() can access it immediately
-    // This ensures the GPS signal modal disappears as soon as location data arrives
+  public ingestLocationData(
+    location: LocationReading,
+    options: { updateDistance?: boolean } = {},
+  ): void {
+    const updateDistance = options.updateDistance ?? true;
+    const isReliableLocation = this.isLocationReliable(location);
+    // Keep current position tied to reliable fixes so FIT/location artifacts do not drift on bad GPS.
     const previousLocation = this.lastLocation;
-    this.lastLocation = location;
+    if (isReliableLocation) {
+      this.lastLocation = location;
+    }
 
     // Add to streamBuffer for persistence (only when active)
-    if (this.isActive) {
+    if (this.isActive && isReliableLocation) {
       this.streamBuffer.addLocation(location);
     }
 
     // Add lat/lng to buffer for route tracking (always, for display)
-    this.buffer.add({
-      metric: "latlng",
-      value: [location.latitude, location.longitude],
-      timestamp: location.timestamp,
-    });
+    if (isReliableLocation) {
+      this.buffer.add({
+        metric: "latlng",
+        value: [location.latitude, location.longitude],
+        timestamp: location.timestamp,
+      });
+    }
 
     // Emit sensor update immediately so UI reflects GPS acquisition
     this.emit("sensorUpdate", {
@@ -334,7 +377,13 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
 
     // Calculate distance if we have a previous location (only when active)
     // Skip GPS distance when GPS recording is disabled
-    if (this.isActive && previousLocation && this.gpsRecordingEnabled) {
+    if (
+      this.isActive &&
+      previousLocation &&
+      this.gpsRecordingEnabled &&
+      updateDistance &&
+      isReliableLocation
+    ) {
       const distance = this.calculateDistance(previousLocation, location);
 
       // Filter GPS noise
@@ -342,10 +391,11 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
         this.totalDistance += distance;
 
         // Calculate speed
-        const timeDelta = (location.timestamp - this.lastLocation.timestamp) / 1000; // seconds
+        const timeDelta = (location.timestamp - previousLocation.timestamp) / 1000; // seconds
         if (timeDelta > 0) {
           const speed = distance / timeDelta; // m/s
           this.maxSpeed = Math.max(this.maxSpeed, speed);
+          this.updateTerrainIntensity(previousLocation, location, distance, timeDelta);
         }
       }
     }
@@ -370,6 +420,10 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
    */
   public getMetrics(): LiveMetricsState {
     return { ...this.metrics };
+  }
+
+  public getRecordingMetricsSnapshot(): RecordingMetricsSnapshot {
+    return this.recordingMetricsSnapshot;
   }
 
   /**
@@ -485,16 +539,40 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       // Elevation metrics
       avgGrade: this.metrics.avgGrade,
       elevationGainPerKm: this.metrics.elevationGainPerKm,
-
-      // Advanced metrics (only if enough data)
-      ...(this.hasEnoughDataForAdvancedMetrics() && {
-        normalizedPower: this.metrics.normalizedPowerEst,
-        trainingStressScore: this.metrics.trainingStressScoreEst,
-        intensityFactor: this.metrics.intensityFactorEst,
-        variabilityIndex: this.metrics.variabilityIndexEst,
-        efficiencyFactor: this.metrics.efficiencyFactorEst,
-        aerobicDecoupling: this.metrics.decouplingEst,
+      ...(this.metrics.currentGrade !== undefined && { currentGrade: this.metrics.currentGrade }),
+      ...(this.metrics.gradeAdjustedPaceSecondsPerKm !== undefined && {
+        gradeAdjustedPaceSecondsPerKm: this.metrics.gradeAdjustedPaceSecondsPerKm,
       }),
+      ...(this.metrics.verticalSpeedMetersPerHour !== undefined && {
+        verticalSpeedMetersPerHour: this.metrics.verticalSpeedMetersPerHour,
+      }),
+
+      // Current zones
+      ...(this.metrics.currentHeartRateZone !== undefined && {
+        currentHeartRateZone: this.metrics.currentHeartRateZone,
+      }),
+      ...(this.metrics.currentPowerZone !== undefined && {
+        currentPowerZone: this.metrics.currentPowerZone,
+      }),
+
+      // Advanced metrics from the exact core accumulator.
+      ...(this.recordingMetricsSnapshot.normalizedPowerWatts !== null && {
+        normalizedPower: this.recordingMetricsSnapshot.normalizedPowerWatts,
+      }),
+      ...(this.recordingMetricsSnapshot.trainingStressScore !== null && {
+        trainingStressScore: this.recordingMetricsSnapshot.trainingStressScore,
+      }),
+      ...(this.recordingMetricsSnapshot.intensityFactor !== null && {
+        intensityFactor: this.recordingMetricsSnapshot.intensityFactor,
+      }),
+      ...(this.recordingMetricsSnapshot.variabilityIndex !== null && {
+        variabilityIndex: this.recordingMetricsSnapshot.variabilityIndex,
+      }),
+      ...(this.recordingMetricsSnapshot.efficiencyFactor !== null && {
+        efficiencyFactor: this.recordingMetricsSnapshot.efficiencyFactor,
+      }),
+      aerobicDecoupling: this.metrics.decouplingEst,
+      recordingMetrics: this.recordingMetricsSnapshot,
 
       // Plan adherence
       planAdherence: this.metrics.adherenceCurrentStep,
@@ -508,6 +586,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     this.stopTimers();
     this.buffer.clear();
     this.streamBuffer.clear();
+    this.resetRecordingMetricsAccumulator();
 
     // Remove all listeners for each event type
     this.removeAllListeners("statsUpdate");
@@ -525,37 +604,71 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
    */
   private calculateAndEmitMetrics(): void {
     const startTime = Date.now();
+    let coreDuration = 0;
+    let accumulatorDuration = 0;
+    let statsDuration = 0;
+    let emitDuration = 0;
 
     // Always update core metrics
     this.updateTiming();
     this.updateDistanceMetrics();
     this.updateZoneMetrics();
+    coreDuration = Date.now() - startTime;
+
+    if (this.isActive && this.shouldSampleAdvancedMetrics(startTime)) {
+      const accumulatorStart = Date.now();
+      this.addRecordingMetricsSample(startTime);
+      accumulatorDuration = Date.now() - accumulatorStart;
+      this.lastAdvancedMetricsSampleAt = startTime;
+
+      if (accumulatorDuration > RECORDING_CONFIG.ADVANCED_METRICS_SLOW_THRESHOLD_MS) {
+        this.advancedMetricsDisabledUntil =
+          Date.now() + RECORDING_CONFIG.ADVANCED_METRICS_COOLDOWN_MS;
+        console.warn(
+          "[LiveMetricsManager] Advanced metrics temporarily disabled after slow sample",
+          {
+            accumulatorDuration,
+            cooldownMs: RECORDING_CONFIG.ADVANCED_METRICS_COOLDOWN_MS,
+          },
+        );
+      }
+    }
 
     // Update expensive calculations less frequently
     const shouldUpdateExpensive = startTime - this.lastStatsEmit >= 1000;
 
     if (shouldUpdateExpensive) {
+      const statsStart = Date.now();
       this.updatePowerMetrics();
       this.updateHeartRateMetrics();
       this.updateCadenceMetrics();
       this.updateTemperatureMetrics();
       this.updateCalories();
       this.updateTier2Metrics();
+      this.applyRecordingMetricsSnapshot();
 
       // Cache stats
       this.cachedStats = this.getSessionStats();
       this.lastStatsEmit = startTime;
+      statsDuration = Date.now() - statsStart;
 
       // Emit stats update
+      const emitStart = Date.now();
       this.emit("statsUpdate", {
         stats: this.cachedStats,
         timestamp: startTime,
       });
+      emitDuration = Date.now() - emitStart;
     }
 
     const duration = Date.now() - startTime;
     if (duration > 50) {
-      console.warn(`[LiveMetricsManager] Slow calculation: ${duration}ms`);
+      console.warn(`[LiveMetricsManager] Slow calculation: ${duration}ms`, {
+        accumulatorDuration,
+        coreDuration,
+        emitDuration,
+        statsDuration,
+      });
     }
   }
 
@@ -588,7 +701,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
 
     // Fallback to GPS speed calculation when GPS recording is enabled
     // This ensures we always have speed/pace data even without sensors
-    if (this.gpsRecordingEnabled && this.lastLocation) {
+    if (this.gpsRecordingEnabled && this.gpsSpeedFallbackEnabled && this.lastLocation) {
       // Calculate speed from recent GPS positions
       const gpsSpeed = this.calculateGPSSpeed();
       if (gpsSpeed !== undefined) {
@@ -618,7 +731,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       let speed = 0;
       for (let v = 0; v < 20; v += 0.1) {
         const rollingResistance = CRR * totalMassKg * 9.81 * v;
-        const airResistance = 0.5 * AIR_DENSITY * CDA * Math.pow(v, 3);
+        const airResistance = 0.5 * AIR_DENSITY * CDA * v ** 3;
         const requiredPower = rollingResistance + airResistance;
 
         if (requiredPower >= effectivePower) {
@@ -631,6 +744,13 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     }
 
     return undefined;
+  }
+
+  private isLocationReliable(location: LocationReading): boolean {
+    return (
+      location.accuracy === undefined ||
+      location.accuracy <= MOVEMENT_THRESHOLDS.GPS_ACCURACY_THRESHOLD_M
+    );
   }
 
   /**
@@ -914,6 +1034,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       }
 
       this.currentHrZone = hrZone;
+      this.metrics.currentHeartRateZone = hrZone + 1;
     }
 
     // Update Power zone time
@@ -926,6 +1047,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       }
 
       this.currentPowerZone = powerZone;
+      this.metrics.currentPowerZone = powerZone + 1;
     }
 
     // Update metrics (convert to seconds)
@@ -984,7 +1106,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
 
     // TIER 3: Heart Rate + Activity Type
     if (this.metrics.avgHeartRate > 0 && this.activityCategory) {
-      const age = this.profile.age || 35;
+      const _age = this.profile.age || 35;
 
       // Activity-specific MET multipliers (at moderate intensity)
       const activityMETs: Record<string, number> = {
@@ -1123,10 +1245,110 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     this.metrics.decouplingEst = 0;
   }
 
+  private buildRecordingMetricsConfig(): RecordingMetricsConfig {
+    return {
+      activityCategory: this.activityCategory ?? "other",
+      ftpWatts: this.profile.ftp ?? null,
+      thresholdHeartRateBpm: this.profile.threshold_hr ?? null,
+      thresholdPaceSecondsPerKm: this.profile.threshold_pace_seconds_per_km ?? null,
+      timeBasis: "moving",
+    };
+  }
+
+  private resetRecordingMetricsAccumulator(): void {
+    this.recordingMetricsAccumulator = createRecordingMetricsAccumulator(
+      this.buildRecordingMetricsConfig(),
+    );
+    this.recordingMetricsSnapshot = this.recordingMetricsAccumulator.getSnapshot();
+  }
+
+  private resetLiveSessionState(): void {
+    this.buffer.clear();
+    this.metrics = this.createInitialMetrics();
+    this.cachedStats = undefined;
+    this.lastStatsEmit = 0;
+    this.lastAdvancedMetricsSampleAt = 0;
+    this.advancedMetricsDisabledUntil = 0;
+    this.startTime = undefined;
+    this.pauseStartTime = undefined;
+    this.totalPauseTime = 0;
+    this.lastLocation = undefined;
+    this.totalDistance = 0;
+    this.totalWork = 0;
+    this.totalAscent = 0;
+    this.totalDescent = 0;
+    this.maxSpeed = 0;
+    this.maxPower = 0;
+    this.maxHeartRate = 0;
+    this.maxCadence = 0;
+    this.maxTemperature = 0;
+    this.lastPowerUpdate = undefined;
+    this.lastPowerValue = 0;
+    this.zoneStartTime = undefined;
+    this.currentHrZone = undefined;
+    this.currentPowerZone = undefined;
+    this.hrZoneTimes = [0, 0, 0, 0, 0];
+    this.powerZoneTimes = [0, 0, 0, 0, 0, 0, 0];
+    this.resetRecordingMetricsAccumulator();
+  }
+
+  private shouldSampleAdvancedMetrics(timestampMs: number): boolean {
+    if (timestampMs < this.advancedMetricsDisabledUntil) return false;
+    return (
+      this.lastAdvancedMetricsSampleAt === 0 ||
+      timestampMs - this.lastAdvancedMetricsSampleAt >=
+        RECORDING_CONFIG.ADVANCED_METRICS_SAMPLE_INTERVAL_MS
+    );
+  }
+
+  private addRecordingMetricsSample(timestampMs: number): void {
+    this.recordingMetricsAccumulator.addSample({
+      timestampMs,
+      moving: this.isActive,
+      powerWatts: this.buffer.getLatest("power") ?? null,
+      heartRateBpm: this.buffer.getLatest("heartrate") ?? null,
+      cadenceRpm: this.buffer.getLatest("cadence") ?? null,
+      speedMps: this.buffer.getLatest("speed") ?? null,
+      distanceMeters: this.totalDistance,
+      altitudeMeters: this.lastLocation?.altitude ?? null,
+    });
+    this.recordingMetricsSnapshot = this.recordingMetricsAccumulator.getSnapshot();
+  }
+
+  private applyRecordingMetricsSnapshot(): void {
+    const snapshot = this.recordingMetricsSnapshot;
+
+    if (snapshot.averagePowerWatts !== null) {
+      this.metrics.avgPower = Math.round(snapshot.averagePowerWatts);
+    }
+    if (snapshot.workKilojoules !== null) {
+      this.totalWork = snapshot.workKilojoules * 1000;
+      this.metrics.totalWork = Math.round(this.totalWork);
+    }
+    if (snapshot.averageHeartRateBpm !== null) {
+      this.metrics.avgHeartRate = Math.round(snapshot.averageHeartRateBpm);
+    }
+    if (snapshot.normalizedPowerWatts !== null) {
+      this.metrics.normalizedPowerEst = snapshot.normalizedPowerWatts;
+    }
+    if (snapshot.intensityFactor !== null) {
+      this.metrics.intensityFactorEst = snapshot.intensityFactor;
+    }
+    if (snapshot.trainingStressScore !== null) {
+      this.metrics.trainingStressScoreEst = snapshot.trainingStressScore;
+    }
+    if (snapshot.variabilityIndex !== null) {
+      this.metrics.variabilityIndexEst = snapshot.variabilityIndex;
+    }
+    if (snapshot.efficiencyFactor !== null) {
+      this.metrics.efficiencyFactorEst = snapshot.efficiencyFactor;
+    }
+  }
+
   /**
    * Update elevation tracking
    */
-  private updateElevation(altitude: number): void {
+  private updateElevation(_altitude: number): void {
     const recentAltitudes = this.buffer.getRecent("altitude", 10);
 
     if (recentAltitudes.length < 2) return;
@@ -1148,6 +1370,38 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
 
     this.metrics.totalAscent = Math.round(this.totalAscent);
     this.metrics.totalDescent = Math.round(this.totalDescent);
+  }
+
+  private updateTerrainIntensity(
+    previousLocation: LocationReading,
+    location: LocationReading,
+    distanceMeters: number,
+    seconds: number,
+  ): void {
+    if (
+      previousLocation.altitude === undefined ||
+      location.altitude === undefined ||
+      distanceMeters <= 0 ||
+      seconds <= 0
+    ) {
+      return;
+    }
+
+    const altitudeDelta = location.altitude - previousLocation.altitude;
+    const grade = clamp((altitudeDelta / distanceMeters) * 100, -30, 30);
+    const speedMps = distanceMeters / seconds;
+    const gradeAdjustedSpeed = speedMps * (minettiCost(grade / 100) / minettiCost(0));
+
+    this.metrics.currentGrade = grade;
+    this.metrics.verticalSpeedMetersPerHour = (altitudeDelta / seconds) * 3600;
+
+    if (Number.isFinite(gradeAdjustedSpeed) && gradeAdjustedSpeed > 0) {
+      this.metrics.gradeAdjustedPaceSecondsPerKm = 1000 / gradeAdjustedSpeed;
+    }
+
+    if (this.totalDistance > 0) {
+      this.metrics.avgGrade = ((this.totalAscent - this.totalDescent) / this.totalDistance) * 100;
+    }
   }
 
   /**
@@ -1244,7 +1498,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       speed = (min + max) / 2;
 
       const rollingResistance = CRR * totalMassKg * 9.81 * speed;
-      const airResistance = 0.5 * AIR_DENSITY * CDA * Math.pow(speed, 3);
+      const airResistance = 0.5 * AIR_DENSITY * CDA * speed ** 3;
       const requiredPower = rollingResistance + airResistance;
 
       if (requiredPower < effectivePower) {
@@ -1309,7 +1563,7 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
    * Extract profile metrics
    */
   private extractProfileMetrics(
-    profile: RecorderProfileRef,
+    _profile: RecorderProfileRef,
     metrics?: {
       ftp?: number;
       thresholdHr?: number;
@@ -1404,4 +1658,19 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       adherenceCurrentStep: 0,
     };
   }
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function minettiCost(grade: number): number {
+  return (
+    155.4 * grade ** 5 -
+    30.4 * grade ** 4 -
+    43.3 * grade ** 3 +
+    46.3 * grade ** 2 +
+    19.5 * grade +
+    3.6
+  );
 }

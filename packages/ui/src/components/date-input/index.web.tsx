@@ -11,6 +11,7 @@ function DateInput({
   label,
   maximumDate,
   minimumDate,
+  name,
   onChange,
   placeholder,
   required = false,
@@ -25,24 +26,33 @@ function DateInput({
         {label}
         {required ? <span className="text-destructive"> *</span> : null}
       </Label>
-      <Input
-        id={inputId}
-        max={maximumDate ? maximumDate.toISOString().split("T")[0] : undefined}
-        min={minimumDate ? minimumDate.toISOString().split("T")[0] : undefined}
-        onChange={(event) => onChange(event.currentTarget.value || undefined)}
-        placeholder={placeholder}
-        testId={testId}
-        type="date"
-        value={value ?? ""}
-      />
-      {helperText ? <p className="text-xs text-muted-foreground">{helperText}</p> : null}
-      {clearable && value ? (
-        <div>
-          <Button size="sm" type="button" variant="outline" onClick={() => onChange(undefined)}>
-            Clear date
+      <div className="flex items-center gap-2">
+        <Input
+          className="flex-1"
+          id={inputId}
+          max={maximumDate ? maximumDate.toISOString().split("T")[0] : undefined}
+          min={minimumDate ? minimumDate.toISOString().split("T")[0] : undefined}
+          name={name}
+          onChange={(event) => onChange(event.currentTarget.value || undefined)}
+          placeholder={placeholder}
+          testId={testId}
+          type="date"
+          value={value ?? ""}
+        />
+        {clearable && value ? (
+          <Button
+            aria-label="Clear date"
+            className="px-2 text-muted-foreground"
+            size="sm"
+            type="button"
+            variant="ghost"
+            onClick={() => onChange(undefined)}
+          >
+            Clear
           </Button>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
+      {helperText ? <p className="text-xs text-muted-foreground">{helperText}</p> : null}
       {error ? <p className="text-xs text-destructive">Adjust this field: {error}</p> : null}
     </div>
   );

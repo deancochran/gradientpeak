@@ -9,13 +9,36 @@ export type ProviderSyncJobRecord = {
   integrationId: string;
   internalResourceId: string | null;
   jobType: string;
+  lastError: string | null;
   maxAttempts: number;
+  operation: string | null;
   payload: unknown;
+  payloadHash: string | null;
   profileId: string;
   provider: "wahoo" | "strava" | "trainingpeaks" | "garmin" | "zwift";
   resourceKind: "event" | "activity_plan" | "activity_route" | "activity" | null;
   runAt: string;
   status: ProviderSyncJobStatus;
+  supersedesJobId: string | null;
+  syncLaneKey: string | null;
+};
+
+export type ProviderSyncStateRecord = {
+  consecutiveFailures: number;
+  cursor: string | null;
+  highWatermark: string | null;
+  id: string;
+  integrationId: string;
+  lastError: string | null;
+  lastSyncFailedAt: string | null;
+  lastSyncStartedAt: string | null;
+  lastSyncSucceededAt: string | null;
+  metadata: unknown;
+  nextSyncAt: string | null;
+  provider: "wahoo" | "strava" | "trainingpeaks" | "garmin" | "zwift";
+  publishHorizonDays: number | null;
+  resource: string;
+  syncMode: string;
 };
 
 export type ProviderWebhookReceiptRecord = {
@@ -48,19 +71,24 @@ export interface ProviderSyncRepository {
     internalResourceId?: string;
     jobType: string;
     maxAttempts?: number;
+    operation?: string;
     payload: unknown;
+    payloadHash?: string;
     profileId: string;
     provider: "wahoo";
     resourceKind?: "event" | "activity_plan" | "activity_route" | "activity";
     runAt: string;
+    supersedesJobId?: string;
+    syncLaneKey?: string;
   }): Promise<{ id: string; status: ProviderSyncJobStatus }>;
   markJobFailed(input: {
     id: string;
     lastError: string;
     nextRunAt?: string;
     status: Extract<ProviderSyncJobStatus, "queued" | "failed" | "dead_lettered">;
+    workerId?: string;
   }): Promise<void>;
-  markJobSucceeded(id: string): Promise<void>;
+  markJobSucceeded(id: string, workerId?: string): Promise<void>;
   markWebhookReceiptProcessed(input: {
     id: string;
     lastError?: string;
@@ -81,9 +109,11 @@ export interface ProviderSyncRepository {
   getWebhookReceipt(id: string): Promise<ProviderWebhookReceiptRecord | null>;
   listJobs(input: {
     limit: number;
+    profileId?: string;
     provider?: "wahoo" | "garmin";
     statuses?: ProviderSyncJobStatus[];
   }): Promise<ProviderSyncJobRecord[]>;
+  listSyncStateByIntegrationIds(integrationIds: string[]): Promise<ProviderSyncStateRecord[]>;
   listWebhookReceipts(input: {
     limit: number;
     provider?: "wahoo" | "garmin";

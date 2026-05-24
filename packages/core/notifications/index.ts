@@ -7,6 +7,7 @@ export const notificationListItemTypeSchema = z.enum([
   "coaching_invitation_declined",
   "new_follower",
   "follow_request",
+  "group_event_cancelled",
 ]);
 
 export type NotificationListItemType = z.infer<typeof notificationListItemTypeSchema>;
@@ -122,6 +123,17 @@ export function getNotificationViewModel(
         requiresFollowRequestAction: true,
         title: "Follow Request",
         description: "Someone requested to follow you.",
+        type: notification.type,
+      };
+    case "group_event_cancelled":
+      return {
+        actorId: notification.actor_id,
+        createdAt: notification.created_at,
+        id: notification.id,
+        isUnread: isNotificationUnread(notification),
+        requiresFollowRequestAction: false,
+        title: "Group Event Cancelled",
+        description: "A group event on your calendar was cancelled.",
         type: notification.type,
       };
     default:

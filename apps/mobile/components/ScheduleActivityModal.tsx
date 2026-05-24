@@ -72,38 +72,44 @@
  * ```
  */
 
-import DateTimePicker from "@react-native-community/datetimepicker";
-import { plannedActivityScheduleFormSchema } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
-import { Card, CardContent } from "@repo/ui/components/card";
-import { Form, FormDateInputField, FormTextareaField } from "@repo/ui/components/form";
+import {
+  Form,
+  FormDateInputField,
+  FormSwitchField,
+  FormTextareaField,
+  FormTimeInputField,
+} from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
-import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Calendar, ChevronDown, ChevronUp, X } from "lucide-react-native";
-import React, { useEffect, useState } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react-native";
+import { useEffect, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
-import {
-  ActivityIndicator,
-  Alert,
-  Modal,
-  Pressable,
-  ScrollView,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { ActivityIndicator, Pressable, View } from "react-native";
 import { z } from "zod";
-import { ActivityPlanContentPreview } from "@/components/activity-plan/ActivityPlanContentPreview";
+import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { AppFormModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
 import { refreshScheduleWithCallbacks } from "@/lib/scheduling/refreshScheduleViews";
 import { applyServerFormErrors, getErrorMessage } from "@/lib/utils/formErrors";
 import { ConstraintValidator } from "./training-plan/modals/components/ConstraintValidator";
 
-type PlannedActivityScheduleFormInput = z.input<typeof plannedActivityScheduleFormSchema>;
-type PlannedActivityScheduleFormOutput = z.output<typeof plannedActivityScheduleFormSchema>;
+const scheduleActivityModalFormSchema = z.object({
+  activityPlanId: z.string().uuid("Please select an activity plan"),
+  scheduledDate: z
+    .string()
+    .refine((value) => !Number.isNaN(Date.parse(value)), "Invalid date format"),
+  notes: z.string().nullable().optional(),
+  trainingPlanId: z.string().uuid().optional().nullable(),
+  allDay: z.boolean(),
+  scheduledTime: z.string().nullable().optional(),
+});
+type ScheduleActivityModalFormInput = z.input<typeof scheduleActivityModalFormSchema>;
+type ScheduleActivityModalFormOutput = z.output<typeof scheduleActivityModalFormSchema>;
+type EditScope = "single" | "future" | "series";
 
 interface ScheduleActivityModalProps {
   visible: boolean;
@@ -122,7 +128,7 @@ interface ScheduleActivityModalProps {
   trainingPlanId?: string;
 
   // Recurrence scope for edit mode updates
-  editScope?: "single" | "future" | "series";
+  editScope?: EditScope;
 }
 
 function isRecurringEvent(event: any) {
@@ -156,19 +162,15 @@ function toPickerDate(value: string | null | undefined): Date {
   return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), 12, 0, 0, 0);
 }
 
-function alertSuccess(message: string) {
-  Alert.alert("Success", message);
-}
-
 function setRootFormError(
-  form: Partial<Pick<UseFormReturn<PlannedActivityScheduleFormOutput>, "setError">>,
+  form: Partial<Pick<UseFormReturn<ScheduleActivityModalFormOutput>, "setError">>,
   error: unknown,
   fallbackMessage: string,
 ) {
   if (
     form.setError &&
     applyServerFormErrors(
-      form as Pick<UseFormReturn<PlannedActivityScheduleFormOutput>, "setError">,
+      form as Pick<UseFormReturn<ScheduleActivityModalFormOutput>, "setError">,
       error,
     )
   ) {
@@ -182,7 +184,7 @@ function setRootFormError(
 }
 
 function clearRootFormError(
-  form: Partial<Pick<UseFormReturn<PlannedActivityScheduleFormOutput>, "clearErrors">>,
+  form: Partial<Pick<UseFormReturn<ScheduleActivityModalFormOutput>, "clearErrors">>,
 ) {
   form.clearErrors?.("root");
 }
@@ -211,12 +213,70 @@ function buildAllDayStartIso(value: Date) {
   return `${toDateOnlyString(value)}T00:00:00.000Z`;
 }
 
+function getRRuleWeekday(dateKey: string): string {
+  const day = new Date(`${dateKey}T00:00:00.000Z`).getUTCDay();
+  return ["SU", "MO", "TU", "WE", "TH", "FR", "SA"][day] ?? "MO";
+}
+
+function buildWeeklyRecurrence(dateKey: string, occurrenceCount: number) {
+  return {
+    rule: `FREQ=WEEKLY;INTERVAL=1;COUNT=${occurrenceCount};BYDAY=${getRRuleWeekday(dateKey)}`,
+    timezone: "UTC",
+  };
+}
+
+function buildStartsAtFromEditorValues(input: {
+  scheduledDate: string;
+  scheduledTime: string | null;
+  allDay: boolean;
+}) {
+  return toPickerDate(
+    input.allDay || !input.scheduledTime
+      ? input.scheduledDate
+      : `${input.scheduledDate}T${input.scheduledTime}:00.000Z`,
+  );
+}
+
 function parseEventDateForEditor(event: { starts_at: string; all_day?: boolean | null }) {
   if (event.all_day) {
     return toPickerDate(event.starts_at.slice(0, 10));
   }
 
   return new Date(event.starts_at);
+}
+
+function toScheduleCreatePayload(input: {
+  data: ScheduleActivityModalFormOutput;
+  recurrence: ReturnType<typeof buildWeeklyRecurrence> | undefined;
+}) {
+  return {
+    activity_plan_id: input.data.activityPlanId,
+    scheduled_date: input.data.scheduledDate,
+    notes: input.data.notes || undefined,
+    training_plan_id: input.data.trainingPlanId || undefined,
+    recurrence: input.recurrence,
+  };
+}
+
+function toScheduleUpdatePayload(input: {
+  data: ScheduleActivityModalFormOutput;
+  eventId: string;
+  scope: EditScope;
+  startsAt: Date;
+}) {
+  return {
+    id: input.eventId,
+    scope: input.scope,
+    patch: {
+      activity_plan_id: input.data.activityPlanId,
+      notes: input.data.notes || null,
+      all_day: input.data.allDay,
+      timezone: "UTC",
+      starts_at: input.data.allDay
+        ? buildAllDayStartIso(input.startsAt)
+        : input.startsAt.toISOString(),
+    },
+  };
 }
 
 export function ScheduleActivityModal({
@@ -245,25 +305,37 @@ export function ScheduleActivityModal({
     );
   }
 
-  const form = useZodForm({
-    schema: plannedActivityScheduleFormSchema,
+  const form = useZodForm<
+    ScheduleActivityModalFormInput,
+    undefined,
+    ScheduleActivityModalFormOutput
+  >({
+    schema: scheduleActivityModalFormSchema,
     defaultValues: {
-      scheduled_date: preselectedDate || toDateOnlyString(new Date()),
+      scheduledDate: preselectedDate || toDateOnlyString(new Date()),
+      allDay: false,
+      scheduledTime: null,
       notes: null,
-      activity_plan_id: resolvedActivityPlanId,
-      training_plan_id: trainingPlanId || null,
+      activityPlanId: resolvedActivityPlanId,
+      trainingPlanId: trainingPlanId || null,
     },
   });
 
   const [showConstraintDetails, setShowConstraintDetails] = useState(false);
-  const [startsAt, setStartsAt] = useState(new Date());
-  const [allDay, setAllDay] = useState(false);
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [localEditScope, setLocalEditScope] = useState<EditScope | null>(null);
+  const [repeatWeekly, setRepeatWeekly] = useState(false);
+  const [repeatOccurrenceCount, setRepeatOccurrenceCount] = useState(4);
 
-  const scheduledDateString = form.watch("scheduled_date");
+  const scheduledDateString = form.watch("scheduledDate");
+  const scheduledTimeString = form.watch("scheduledTime");
+  const allDay = form.watch("allDay") ?? false;
   const scheduledDateForApi = scheduledDateString || toDateOnlyString(new Date());
-  const currentActivityPlanId = form.watch("activity_plan_id");
+  const currentActivityPlanId = form.watch("activityPlanId");
+  const startsAt = buildStartsAtFromEditorValues({
+    scheduledDate: scheduledDateForApi,
+    scheduledTime: scheduledTimeString ?? null,
+    allDay,
+  });
 
   // Fetch existing activity if editing
   const { data: existingActivity, isLoading: loadingExistingActivity } =
@@ -304,14 +376,15 @@ export function ScheduleActivityModal({
     if (!visible) {
       form.reset();
       setShowConstraintDetails(false);
-      setShowDatePicker(false);
-      setShowTimePicker(false);
+      setLocalEditScope(null);
+      setRepeatWeekly(false);
+      setRepeatOccurrenceCount(4);
     }
   }, [visible, form]);
 
   useEffect(() => {
     if (!isEditMode && resolvedActivityPlanId) {
-      form.setValue("activity_plan_id", resolvedActivityPlanId, {
+      form.setValue("activityPlanId", resolvedActivityPlanId, {
         shouldValidate: false,
       });
     }
@@ -319,119 +392,90 @@ export function ScheduleActivityModal({
 
   // Load existing activity data (edit mode)
   useEffect(() => {
-    if (existingActivity && existingActivity.activity_plan) {
-      form.setValue("activity_plan_id", existingActivity.activity_plan.id);
-      form.setValue("scheduled_date", existingActivity.scheduled_date);
+    if (existingActivity?.activity_plan) {
+      form.setValue("activityPlanId", existingActivity.activity_plan.id);
+      form.setValue("scheduledDate", existingActivity.scheduled_date);
+      form.setValue("allDay", !!existingActivity.all_day);
+      form.setValue("scheduledTime", format(parseEventDateForEditor(existingActivity), "HH:mm"));
       form.setValue("notes", existingActivity.notes || null);
-      setAllDay(!!existingActivity.all_day);
-      setStartsAt(parseEventDateForEditor(existingActivity));
     }
   }, [existingActivity, form]);
 
   useEffect(() => {
     if (!isEditMode) {
-      setStartsAt(toPickerDate(scheduledDateForApi));
-      setAllDay(false);
+      form.setValue("allDay", false, { shouldValidate: false });
+      form.setValue("scheduledTime", null, { shouldValidate: false });
     }
-  }, [isEditMode, scheduledDateForApi]);
+  }, [isEditMode, form]);
 
   const queryClient = useQueryClient();
   const existingActivityIsRecurring = isRecurringEvent(existingActivity);
+  const recurringEditRequiresScope = isEditMode && existingActivityIsRecurring && !editScope;
+  const resolvedEditScope = editScope ?? localEditScope;
 
   const createMutation = api.events.create.useMutation();
 
   const updateMutation = api.events.update.useMutation();
 
-  const handleMutationSuccess = async (message: string) => {
+  const handleMutationSuccess = async () => {
     await refreshScheduleWithCallbacks({
       queryClient,
-      callbacks: onSuccess ? [onSuccess] : [],
+      callbacks: [],
     });
     onClose();
-    setTimeout(() => {
-      alertSuccess(message);
-    }, 300);
+    await onSuccess?.();
   };
 
-  const submitEditWithScope = async (
-    data: PlannedActivityScheduleFormOutput,
-    scope: "single" | "future" | "series",
-  ) => {
+  const submitEditWithScope = async (data: ScheduleActivityModalFormOutput, scope: EditScope) => {
     clearRootFormError(form);
 
     try {
-      await runMutation(updateMutation, {
-        id: eventId!,
-        scope,
-        patch: {
-          activity_plan_id: data.activity_plan_id,
-          notes: data.notes || null,
-          all_day: allDay,
-          timezone: "UTC",
-          starts_at: allDay ? buildAllDayStartIso(startsAt) : startsAt.toISOString(),
-        },
-      });
+      await runMutation(
+        updateMutation,
+        toScheduleUpdatePayload({ data, eventId: eventId!, scope, startsAt }),
+      );
 
-      await handleMutationSuccess("Activity updated!");
+      await handleMutationSuccess();
     } catch (error) {
       setRootFormError(form, error, "Failed to update activity. Please try again.");
     }
   };
 
-  const promptForEditScope = (onSelect: (scope: "single" | "future" | "series") => void) => {
-    Alert.alert("Recurring Schedule", "Choose how much of this series to update.", [
-      { text: "Cancel", style: "cancel" },
-      { text: "This event only", onPress: () => onSelect("single") },
-      { text: "This and future events", onPress: () => onSelect("future") },
-      { text: "Entire series", onPress: () => onSelect("series") },
-    ]);
-  };
-
-  const onSubmit = async (data: PlannedActivityScheduleFormOutput) => {
+  const onSubmit = async (data: ScheduleActivityModalFormOutput) => {
     if (isEditMode) {
-      if (existingActivityIsRecurring && !editScope) {
-        promptForEditScope((scope) => {
-          void submitEditWithScope(data, scope);
-        });
+      if (recurringEditRequiresScope && !resolvedEditScope) {
+        const message = "Choose whether to update one event, future events, or the entire series.";
+        setRootFormError(form, new Error(message), message);
         return;
       }
 
-      await submitEditWithScope(data, editScope ?? "single");
+      await submitEditWithScope(data, resolvedEditScope ?? "single");
       return;
     }
 
     clearRootFormError(form);
 
     try {
-      await runMutation(createMutation, {
-        activity_plan_id: data.activity_plan_id,
-        scheduled_date: data.scheduled_date,
-        notes: data.notes || undefined,
-        training_plan_id: data.training_plan_id || undefined,
-      });
+      await runMutation(
+        createMutation,
+        toScheduleCreatePayload({
+          data,
+          recurrence: repeatWeekly
+            ? buildWeeklyRecurrence(data.scheduledDate, repeatOccurrenceCount)
+            : undefined,
+        }),
+      );
 
-      await handleMutationSuccess("Activity scheduled!");
+      await handleMutationSuccess();
     } catch (error) {
       setRootFormError(form, error, "Failed to schedule activity. Please try again.");
     }
   };
 
-  const submitForm = useZodFormSubmit<PlannedActivityScheduleFormOutput>({
+  const submitForm = useZodFormSubmit<ScheduleActivityModalFormOutput>({
     form,
     onSubmit,
   });
-
-  const getActivityTypeIcon = (type: string): string => {
-    const iconMap: Record<string, string> = {
-      outdoor_run: "🏃",
-      outdoor_bike: "🚴",
-      indoor_treadmill: "🏃‍♂️",
-      indoor_bike_trainer: "🚴‍♀️",
-      indoor_strength: "💪",
-      indoor_swim: "🏊",
-    };
-    return iconMap[type] || "🏋️";
-  };
 
   const isSubmitting =
     submitForm.isSubmitting || createMutation.isPending || updateMutation.isPending;
@@ -439,7 +483,12 @@ export function ScheduleActivityModal({
   const isLoading = (loadingPlan && !isTemplate) || loadingExistingActivity;
   const isValidationPending = !!trainingPlanId && validationLoading && !validation;
   const canSchedule =
-    !isLoading && displayPlan && !!currentActivityPlanId && !isValidationPending && !isSubmitting;
+    !isLoading &&
+    displayPlan &&
+    !!currentActivityPlanId &&
+    !isValidationPending &&
+    !isSubmitting &&
+    (!recurringEditRequiresScope || !!localEditScope);
   const validationSummary = !trainingPlanId
     ? null
     : validationError
@@ -484,245 +533,14 @@ export function ScheduleActivityModal({
               textTone: "text-muted-foreground",
             };
 
+  const minimumScheduleDate = isEditMode ? undefined : new Date();
+  const minimumScheduleDateProps = minimumScheduleDate ? { minimumDate: minimumScheduleDate } : {};
+
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={onClose}
-    >
-      <View className="flex-1 bg-background" testID="schedule-modal">
-        {/* Header */}
-        <View className="flex-row items-center justify-between px-4 py-4 border-b border-border">
-          <View className="flex-1">
-            <Text className="text-xl font-bold">
-              {isEditMode ? "Update Schedule" : "Schedule Activity"}
-            </Text>
-            {!isLoading && displayPlan && (
-              <Text className="text-sm text-muted-foreground mt-0.5">{displayPlan.name}</Text>
-            )}
-          </View>
-          <Pressable
-            onPress={onClose}
-            className="p-2 rounded-full bg-muted"
-            disabled={isSubmitting}
-            hitSlop={12}
-          >
-            <Icon as={X} size={24} className="text-muted-foreground" />
-          </Pressable>
-        </View>
-
-        {/* Content */}
-        <ScrollView className="flex-1" showsVerticalScrollIndicator={true}>
-          <View className="p-4 gap-4">
-            {/* Loading State */}
-            {isLoading ? (
-              <View className="py-8 items-center">
-                <ActivityIndicator size="large" />
-                <Text className="text-sm text-muted-foreground mt-2">
-                  Loading activity details...
-                </Text>
-              </View>
-            ) : displayPlan ? (
-              <>
-                {/* Activity Plan Summary */}
-                <Card>
-                  <CardContent className="p-4 gap-4">
-                    <View className="flex-row items-start gap-3">
-                      <View className="h-10 w-10 items-center justify-center rounded-full bg-muted">
-                        <Text className="text-xl">
-                          {getActivityTypeIcon(displayPlan.activity_category)}
-                        </Text>
-                      </View>
-                      <View className="flex-1 gap-1">
-                        <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                          Selected activity
-                        </Text>
-                        <Text className="text-lg font-semibold text-foreground">
-                          {displayPlan.name}
-                        </Text>
-                        {displayPlan.description && (
-                          <Text
-                            className="text-sm leading-5 text-muted-foreground"
-                            numberOfLines={3}
-                          >
-                            {displayPlan.description}
-                          </Text>
-                        )}
-                      </View>
-                    </View>
-
-                    <View className="rounded-xl border border-border bg-background px-3 py-3">
-                      <View className="gap-1">
-                        <Text className="text-sm font-medium text-foreground">
-                          Activity preview
-                        </Text>
-                        <Text className="text-sm text-muted-foreground">
-                          Review the session shape before you save the activity.
-                        </Text>
-                      </View>
-                      <View className="mt-3" testID="schedule-preview-details">
-                        <ActivityPlanContentPreview
-                          compact
-                          plan={displayPlan}
-                          route={displayRoute}
-                        />
-                      </View>
-                    </View>
-                  </CardContent>
-                </Card>
-
-                <Form {...form}>
-                  {isEditMode ? (
-                    <View className="gap-3">
-                      <View className="gap-2">
-                        <Text className="text-sm font-medium text-foreground">Scheduled Date</Text>
-                        <TouchableOpacity
-                          accessibilityHint="Choose the day for this activity"
-                          className="rounded-xl border border-border bg-card px-3 py-3"
-                          disabled={isSubmitting}
-                          onPress={() => setShowDatePicker(true)}
-                          testID="scheduled-date-button"
-                        >
-                          <Text className="text-sm text-foreground">
-                            {format(startsAt, "EEEE, MMM d, yyyy")}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-
-                      <View className="flex-row items-center justify-between rounded-xl border border-border bg-card px-3 py-3">
-                        <View className="flex-1 pr-3">
-                          <Text className="text-sm font-medium text-foreground">All day</Text>
-                          <Text className="text-xs text-muted-foreground">
-                            Turn this on when the event does not need a start time.
-                          </Text>
-                        </View>
-                        <Switch
-                          checked={allDay}
-                          disabled={isSubmitting}
-                          onCheckedChange={setAllDay}
-                          testID="schedule-all-day-toggle"
-                        />
-                      </View>
-
-                      {!allDay ? (
-                        <View className="gap-2">
-                          <Text className="text-sm font-medium text-foreground">Start Time</Text>
-                          <TouchableOpacity
-                            className="rounded-xl border border-border bg-card px-3 py-3"
-                            disabled={isSubmitting}
-                            onPress={() => setShowTimePicker(true)}
-                            testID="scheduled-time-button"
-                          >
-                            <Text className="text-sm text-foreground">
-                              {format(startsAt, "h:mm a")}
-                            </Text>
-                          </TouchableOpacity>
-                        </View>
-                      ) : null}
-                    </View>
-                  ) : (
-                    <FormDateInputField
-                      accessibilityHint="Choose when this activity should be scheduled"
-                      control={form.control}
-                      disabled={isSubmitting}
-                      label="Scheduled Date"
-                      minimumDate={new Date()}
-                      name="scheduled_date"
-                      placeholder="Choose a date"
-                      testId="scheduled-date-field"
-                    />
-                  )}
-                </Form>
-
-                {/* Constraint Validation Summary */}
-                {trainingPlanId && validationSummary && (
-                  <View>
-                    <View className={`rounded-xl border px-4 py-4 ${validationSummary.tone}`}>
-                      <View className="flex-row items-start justify-between gap-3">
-                        <View className="flex-1 gap-1">
-                          <Text className={`text-sm font-semibold ${validationSummary.textTone}`}>
-                            {validationSummary.title}
-                          </Text>
-                          <Text className="text-sm text-muted-foreground">
-                            {validationSummary.detail}
-                          </Text>
-                        </View>
-                        <Pressable
-                          onPress={() => setShowConstraintDetails((current) => !current)}
-                          className="flex-row items-center gap-1 rounded-full border border-border bg-background px-3 py-2"
-                          disabled={isSubmitting}
-                          testID="schedule-constraints-toggle"
-                        >
-                          <Text className="text-xs font-semibold text-foreground">
-                            {showConstraintDetails ? "Hide" : "Details"}
-                          </Text>
-                          <Icon
-                            as={showConstraintDetails ? ChevronUp : ChevronDown}
-                            size={14}
-                            className="text-foreground"
-                          />
-                        </Pressable>
-                      </View>
-
-                      {showConstraintDetails && (
-                        <View className="mt-3" testID="schedule-constraints-details">
-                          <ConstraintValidator
-                            validation={validation ?? null}
-                            isLoading={validationLoading}
-                          />
-                        </View>
-                      )}
-                    </View>
-                  </View>
-                )}
-
-                <Form {...form}>
-                  <FormTextareaField
-                    control={form.control}
-                    disabled={isSubmitting}
-                    formatValue={(value) => value ?? ""}
-                    label="Notes"
-                    name="notes"
-                    numberOfLines={5}
-                    parseValue={(value) => value || null}
-                    placeholder="Add any notes about this activity..."
-                    description="Optional details to help you remember context when you review this activity later."
-                    className="min-h-[100px]"
-                    testId="schedule-notes-field"
-                  />
-                </Form>
-
-                {/* Error Messages */}
-                {!currentActivityPlanId ? (
-                  <View className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
-                    <Text className="text-destructive font-medium">
-                      This activity cannot be scheduled yet
-                    </Text>
-                    <Text className="text-destructive/80 text-sm mt-1">
-                      Duplicate the activity plan first, then schedule it from its detail screen.
-                    </Text>
-                  </View>
-                ) : null}
-                {rootErrorMessage ? (
-                  <View className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
-                    <Text className="text-destructive font-medium">
-                      Failed to {isEditMode ? "update" : "schedule"} activity
-                    </Text>
-                    <Text className="text-destructive/80 text-sm mt-1">{rootErrorMessage}</Text>
-                  </View>
-                ) : null}
-              </>
-            ) : (
-              <View className="py-8 items-center">
-                <Text className="text-destructive">Failed to load activity details</Text>
-              </View>
-            )}
-          </View>
-        </ScrollView>
-
-        {/* Footer Actions */}
-        <View className="px-4 py-4 border-t border-border bg-background">
+    <AppFormModal
+      dismissDisabled={isSubmitting}
+      footerContent={
+        <View className="gap-2">
           <View className="flex-row gap-3">
             <Button
               variant="outline"
@@ -731,7 +549,7 @@ export function ScheduleActivityModal({
               className="flex-1"
               testID="schedule-cancel-button"
             >
-              <Text>Cancel</Text>
+              <Text className="text-foreground font-medium">Cancel</Text>
             </Button>
             <Button
               onPress={submitForm.handleSubmit}
@@ -751,54 +569,281 @@ export function ScheduleActivityModal({
               </Text>
             </Button>
           </View>
-
-          {/* Helper text */}
-          {displayPlan && trainingPlanId && validationSummary && (
-            <Text className="text-xs text-muted-foreground text-center mt-2">
+          {displayPlan && trainingPlanId && validationSummary ? (
+            <Text className="text-center text-xs text-muted-foreground">
               {validationSummary.title}
             </Text>
-          )}
+          ) : null}
         </View>
+      }
+      onClose={onClose}
+      testID="schedule-modal"
+      title={isEditMode ? "Update Schedule" : "Schedule Activity"}
+      description={!isLoading && displayPlan ? displayPlan.name : undefined}
+    >
+      <View className="gap-4">
+        {/* Loading State */}
+        {isLoading ? (
+          <View className="py-8 items-center">
+            <ActivityIndicator size="large" />
+            <Text className="text-sm text-muted-foreground mt-2">Loading activity details...</Text>
+          </View>
+        ) : displayPlan ? (
+          <>
+            <View className="gap-2" testID="schedule-preview-details">
+              <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Selected activity
+              </Text>
+              <ActivityPlanCard
+                activityPlan={displayPlan as any}
+                route={displayRoute as any}
+                testID="schedule-selected-activity-card"
+                variant="compact"
+              />
+              <Text className="text-sm text-muted-foreground">
+                Review the session shape before you save the activity.
+              </Text>
+            </View>
+
+            <Form {...form}>
+              {isEditMode ? (
+                <View className="gap-3">
+                  <FormDateInputField
+                    accessibilityHint="Choose the day for this activity"
+                    control={form.control}
+                    disabled={isSubmitting}
+                    label="Scheduled Date"
+                    name="scheduledDate"
+                    pickerPresentation="modal"
+                    testId="scheduled-date-button"
+                    {...minimumScheduleDateProps}
+                  />
+
+                  <FormSwitchField
+                    control={form.control}
+                    disabled={isSubmitting}
+                    label="All day"
+                    name="allDay"
+                    switchLabel="All day"
+                    description="Turn this on when the event does not need a start time."
+                    testId="schedule-all-day-toggle"
+                  />
+
+                  {!allDay ? (
+                    <View className="gap-2">
+                      <FormTimeInputField
+                        accessibilityHint="Choose the start time for this activity"
+                        control={form.control}
+                        disabled={isSubmitting}
+                        label="Start Time"
+                        name="scheduledTime"
+                        pickerPresentation="modal"
+                        testId="scheduled-time-button"
+                      />
+                    </View>
+                  ) : null}
+
+                  {recurringEditRequiresScope ? (
+                    <View className="gap-2 rounded-xl border border-border bg-card px-3 py-3">
+                      <View className="gap-1">
+                        <Text className="text-sm font-semibold text-foreground">
+                          Apply changes to
+                        </Text>
+                        <Text className="text-xs text-muted-foreground">
+                          This activity repeats. Choose the part of the series to update before
+                          saving.
+                        </Text>
+                      </View>
+                      <View className="gap-2">
+                        {(
+                          [
+                            ["single", "This event only"],
+                            ["future", "This and future events"],
+                            ["series", "Entire series"],
+                          ] as const
+                        ).map(([scope, label]) => {
+                          const selected = localEditScope === scope;
+                          return (
+                            <Pressable
+                              key={scope}
+                              accessibilityRole="radio"
+                              accessibilityState={{ checked: selected }}
+                              className={`rounded-lg border px-3 py-2 ${
+                                selected
+                                  ? "border-primary bg-primary/10"
+                                  : "border-border bg-background"
+                              }`}
+                              disabled={isSubmitting}
+                              onPress={() => setLocalEditScope(scope)}
+                              testID={`schedule-edit-scope-${scope}`}
+                            >
+                              <Text
+                                className={`text-sm font-medium ${
+                                  selected ? "text-primary" : "text-foreground"
+                                }`}
+                              >
+                                {label}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  ) : null}
+                </View>
+              ) : (
+                <View className="gap-3">
+                  <FormDateInputField
+                    accessibilityHint="Choose when this activity should be scheduled"
+                    control={form.control}
+                    disabled={isSubmitting}
+                    label="Scheduled Date"
+                    name="scheduledDate"
+                    placeholder="Choose a date"
+                    testId="scheduled-date-field"
+                    {...minimumScheduleDateProps}
+                  />
+
+                  <View className="rounded-xl border border-border bg-card px-3 py-3">
+                    <View className="flex-row items-center justify-between gap-3">
+                      <View className="flex-1 gap-1">
+                        <Text className="text-sm font-medium text-foreground">Repeat weekly</Text>
+                        <Text className="text-xs text-muted-foreground">
+                          Schedule this activity every week on the selected day.
+                        </Text>
+                      </View>
+                      <Pressable
+                        accessibilityRole="switch"
+                        accessibilityState={{ checked: repeatWeekly }}
+                        className={`rounded-full px-3 py-2 ${repeatWeekly ? "bg-primary" : "bg-muted"}`}
+                        disabled={isSubmitting}
+                        onPress={() => setRepeatWeekly((current) => !current)}
+                        testID="schedule-repeat-weekly-toggle"
+                      >
+                        <Text
+                          className={`text-xs font-semibold ${repeatWeekly ? "text-primary-foreground" : "text-foreground"}`}
+                        >
+                          {repeatWeekly ? "On" : "Off"}
+                        </Text>
+                      </Pressable>
+                    </View>
+
+                    {repeatWeekly ? (
+                      <View className="mt-3 gap-2 border-t border-border pt-3">
+                        <Text className="text-xs font-medium text-muted-foreground">
+                          Ends after {repeatOccurrenceCount} occurrences
+                        </Text>
+                        <View className="flex-row gap-2">
+                          <Pressable
+                            className="rounded-md border border-border px-3 py-2"
+                            disabled={isSubmitting || repeatOccurrenceCount <= 2}
+                            onPress={() =>
+                              setRepeatOccurrenceCount((current) => Math.max(2, current - 1))
+                            }
+                            testID="schedule-repeat-count-decrement"
+                          >
+                            <Text className="text-sm text-foreground">-</Text>
+                          </Pressable>
+                          <Pressable
+                            className="rounded-md border border-border px-3 py-2"
+                            disabled={isSubmitting || repeatOccurrenceCount >= 52}
+                            onPress={() =>
+                              setRepeatOccurrenceCount((current) => Math.min(52, current + 1))
+                            }
+                            testID="schedule-repeat-count-increment"
+                          >
+                            <Text className="text-sm text-foreground">+</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+              )}
+            </Form>
+
+            {/* Constraint Validation Summary */}
+            {trainingPlanId && validationSummary && (
+              <View className={`rounded-xl border px-4 py-4 ${validationSummary.tone}`}>
+                <View className="flex-row items-start justify-between gap-3">
+                  <View className="flex-1 gap-1">
+                    <Text className={`text-sm font-semibold ${validationSummary.textTone}`}>
+                      {validationSummary.title}
+                    </Text>
+                    <Text className="text-sm text-muted-foreground">
+                      {validationSummary.detail}
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={() => setShowConstraintDetails((current) => !current)}
+                    className="flex-row items-center gap-1 rounded-full border border-border bg-background px-3 py-2"
+                    disabled={isSubmitting}
+                    testID="schedule-constraints-toggle"
+                  >
+                    <Text className="text-xs font-semibold text-foreground">
+                      {showConstraintDetails ? "Hide" : "Details"}
+                    </Text>
+                    <Icon
+                      as={showConstraintDetails ? ChevronUp : ChevronDown}
+                      size={14}
+                      className="text-foreground"
+                    />
+                  </Pressable>
+                </View>
+
+                {showConstraintDetails ? (
+                  <View className="mt-3" testID="schedule-constraints-details">
+                    <ConstraintValidator
+                      validation={validation ?? null}
+                      isLoading={validationLoading}
+                    />
+                  </View>
+                ) : null}
+              </View>
+            )}
+
+            <Form {...form}>
+              <FormTextareaField
+                control={form.control}
+                disabled={isSubmitting}
+                formatValue={(value) => value ?? ""}
+                label="Notes"
+                name="notes"
+                numberOfLines={5}
+                parseValue={(value) => value || null}
+                placeholder="Add any notes about this activity..."
+                description="Optional details to help you remember context when you review this activity later."
+                className="min-h-[100px]"
+                testId="schedule-notes-field"
+              />
+            </Form>
+
+            {/* Error Messages */}
+            {!currentActivityPlanId ? (
+              <View className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
+                <Text className="text-destructive font-medium">
+                  This activity cannot be scheduled yet
+                </Text>
+                <Text className="text-destructive/80 text-sm mt-1">
+                  Duplicate the activity plan first, then schedule it from its detail screen.
+                </Text>
+              </View>
+            ) : null}
+            {rootErrorMessage ? (
+              <View className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
+                <Text className="text-destructive font-medium">
+                  Failed to {isEditMode ? "update" : "schedule"} activity
+                </Text>
+                <Text className="text-destructive/80 text-sm mt-1">{rootErrorMessage}</Text>
+              </View>
+            ) : null}
+          </>
+        ) : (
+          <View className="py-8 items-center">
+            <Text className="text-destructive">Failed to load activity details</Text>
+          </View>
+        )}
       </View>
-
-      {isEditMode && showDatePicker ? (
-        <DateTimePicker
-          display="default"
-          mode="date"
-          onChange={(_, selected) => {
-            setShowDatePicker(false);
-            if (!selected) {
-              return;
-            }
-
-            const next = new Date(startsAt);
-            next.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
-            setStartsAt(next);
-            form.setValue("scheduled_date", toDateOnlyString(next), { shouldDirty: true });
-          }}
-          testID="schedule-date-picker"
-          value={startsAt}
-        />
-      ) : null}
-
-      {isEditMode && showTimePicker ? (
-        <DateTimePicker
-          display="default"
-          mode="time"
-          onChange={(_, selected) => {
-            setShowTimePicker(false);
-            if (!selected) {
-              return;
-            }
-
-            const next = new Date(startsAt);
-            next.setHours(selected.getHours(), selected.getMinutes(), 0, 0);
-            setStartsAt(next);
-          }}
-          testID="schedule-time-picker"
-          value={startsAt}
-        />
-      ) : null}
-    </Modal>
+    </AppFormModal>
   );
 }

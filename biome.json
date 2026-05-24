@@ -12,7 +12,6 @@
       "!**/.expo",
       "!**/.next",
       "!**/.worktrees",
-      "!**/.worktrees/**",
       "!**/.turbo",
       "!**/coverage",
       "!**/dist",
@@ -28,11 +27,63 @@
   },
   "linter": {
     "enabled": true,
+    "domains": {
+      "drizzle": "all",
+      "project": "recommended",
+      "react": "recommended",
+      "test": "recommended",
+      "turborepo": "all",
+      "types": "all"
+    },
     "rules": {
-      "recommended": false
+      "recommended": true,
+      "correctness": {
+        "noUndeclaredVariables": "error",
+        "noConstantCondition": "warn",
+        "noInvalidPositionAtImportRule": "warn",
+        "noInvalidUseBeforeDeclaration": "warn",
+        "noUnsafeOptionalChaining": "warn",
+        "useHookAtTopLevel": "warn",
+        "useExhaustiveDependencies": "warn"
+      },
+      "a11y": {
+        "noSvgWithoutTitle": "warn",
+        "useHtmlLang": "warn"
+      },
+      "security": {
+        "noSecrets": "warn"
+      },
+      "suspicious": {
+        "noAssignInExpressions": "warn",
+        "noArrayIndexKey": "warn",
+        "noDuplicateTestHooks": "warn",
+        "noExplicitAny": "warn",
+        "noFallthroughSwitchClause": "warn",
+        "noImplicitAnyLet": "warn",
+        "noNonNullAssertedOptionalChain": "warn",
+        "noShadowRestrictedNames": "warn",
+        "noThenProperty": "warn",
+        "useIterableCallbackReturn": "warn"
+      }
     }
   },
   "javascript": {
+    "globals": [
+      "__DEV__",
+      "afterAll",
+      "afterEach",
+      "beforeAll",
+      "beforeEach",
+      "describe",
+      "Deno",
+      "expect",
+      "global",
+      "it",
+      "jest",
+      "module",
+      "require",
+      "test"
+    ],
     "formatter": {
       "quoteStyle": "double",
       "semicolons": "always",
@@ -53,5 +104,41 @@
     "formatter": {
       "trailingCommas": "none"
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["apps/mobile/.rnstorybook/**"],
+      "linter": {
+        "enabled": false
+      }
+    },
+    {
+      "includes": [
+        "**/__tests__/**",
+        "**/*.test.ts",
+        "**/*.test.tsx",
+        "**/*.jest.test.ts",
+        "**/*.jest.test.tsx",
+        "**/*.spec.ts",
+        "**/*.spec.tsx"
+      ],
+      "linter": {
+        "rules": {
+          "security": {
+            "noSecrets": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["**/test/**", "**/*.test-setup.ts", "**/*.setup.ts"],
+      "linter": {
+        "rules": {
+          "security": {
+            "noSecrets": "off"
+          }
+        }
+      }
+    }
+  ]
 }

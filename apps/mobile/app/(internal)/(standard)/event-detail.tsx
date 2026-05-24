@@ -1,44 +1,44 @@
-import DateTimePicker from "@react-native-community/datetimepicker";
-import type { ActivityPayload } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
-import { Card, CardContent, CardTitle } from "@repo/ui/components/card";
+import { Card, CardContent } from "@repo/ui/components/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@repo/ui/components/dropdown-menu";
 import { Icon } from "@repo/ui/components/icon";
-import { Input } from "@repo/ui/components/input";
-import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
-import { Textarea } from "@repo/ui/components/textarea";
-import { useQueryClient } from "@tanstack/react-query";
+import { skipToken, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { CheckCircle2, Ellipsis } from "lucide-react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native";
 import {
-  ArrowUpRight,
-  Calendar,
-  CheckCircle2,
-  Clock,
-  Edit,
-  Play,
-  Trash2,
-  Zap,
-} from "lucide-react-native";
-import React, { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, TouchableOpacity, View } from "react-native";
-import { ActivityPlanContentPreview } from "@/components/activity-plan/ActivityPlanContentPreview";
-import { ScheduleActivityModal } from "@/components/ScheduleActivityModal";
+  type CreateEventDefaults,
+  CreateEventFlow,
+  type CreateEventFlowHandle,
+} from "@/components/event/create/CreateEventFlow";
+import type { CreateEventMode } from "@/components/event/create/createEventDraft";
+import {
+  parseRecurrenceEndDate,
+  parseRecurrenceFrequency,
+} from "@/components/event/EventEditorCard";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { AppConfirmModal, AppFormModal } from "@/components/shared/AppFormModal";
+import { type ResourcePickerItem, ResourcePickerModal } from "@/components/shared/resource-picker";
+import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
+import { getEventStatusLabel, getEventTitle } from "@/lib/calendar/eventPresentation";
 import { ROUTES } from "@/lib/constants/routes";
+import { markEstimated } from "@/lib/estimatedMetrics";
 import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
+import { useEntityCommentsController } from "@/lib/hooks/useEntityCommentsController";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
-import {
-  refreshScheduleViews,
-  refreshScheduleWithCallbacks,
-} from "@/lib/scheduling/refreshScheduleViews";
-import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
-import { getActivityBgClass, getActivityColor } from "@/lib/utils/plan/colors";
+import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
+import { getActivityColor } from "@/lib/utils/plan/colors";
 import { isActivityCompleted } from "@/lib/utils/plan/dateGrouping";
-
-type EventMutationScope = "single" | "future" | "series";
 
 function isRecurringEvent(event: any) {
   if (!event) {
@@ -48,213 +48,272 @@ function isRecurringEvent(event: any) {
   return !!(event.series_id || event.recurrence_rule || event.recurrence?.rule);
 }
 
-function toDateOnly(value: Date) {
-  return format(value, "yyyy-MM-dd");
-}
-
-function buildAllDayStartIso(value: Date) {
-  return `${toDateOnly(value)}T00:00:00.000Z`;
-}
-
-function parseEventDateForEditor(event: { starts_at: string; all_day?: boolean | null }) {
-  if (event.all_day) {
-    const dateOnly = event.starts_at.slice(0, 10);
-    const [year, month, day] = dateOnly.split("-").map(Number);
-    return new Date(year ?? 1970, (month ?? 1) - 1, day ?? 1, 12, 0, 0, 0);
-  }
-
-  return new Date(event.starts_at);
-}
-
 function formatEventType(eventType: string | null | undefined) {
   return String(eventType || "event").replace(/_/g, " ");
+}
+
+function formatEventTimeRange(event: {
+  all_day?: boolean | null;
+  ends_at?: string | null;
+  starts_at?: string | null;
+}) {
+  if (event.all_day) {
+    return "All day";
+  }
+
+  if (!event.starts_at) {
+    return "Scheduled";
+  }
+
+  const start = new Date(event.starts_at);
+  if (Number.isNaN(start.getTime())) {
+    return "Scheduled";
+  }
+
+  if (!event.ends_at) {
+    return format(start, "h:mm a");
+  }
+
+  const end = new Date(event.ends_at);
+  if (Number.isNaN(end.getTime())) {
+    return format(start, "h:mm a");
+  }
+
+  return `${format(start, "h:mm a")} - ${format(end, "h:mm a")}`;
+}
+
+type EventMutationScope = "single" | "future" | "series";
+
+function EventStatusPill({ label }: { label: string }) {
+  return (
+    <View className="rounded-full border border-border/60 bg-muted/60 px-2 py-1">
+      <Text className="text-[11px] font-medium text-muted-foreground">{label}</Text>
+    </View>
+  );
+}
+
+function formatScheduleDateLabel(value: Date) {
+  return format(value, "EEEE, MMMM d, yyyy");
+}
+
+function formatScheduleRepeatLabel(event: any, recurring: boolean) {
+  if (!recurring) {
+    return "Does not repeat";
+  }
+
+  const frequency = parseRecurrenceFrequency(event);
+  const endDate = parseRecurrenceEndDate(event);
+
+  const cadenceLabel =
+    frequency === "daily"
+      ? "Every day"
+      : frequency === "weekly"
+        ? "Every week"
+        : frequency === "monthly"
+          ? "Every month"
+          : "Repeats";
+
+  if (!endDate) {
+    return cadenceLabel;
+  }
+
+  const endAt = new Date(`${endDate}T12:00:00.000Z`);
+  if (Number.isNaN(endAt.getTime())) {
+    return cadenceLabel;
+  }
+
+  return `${cadenceLabel} until ${format(endAt, "MMMM d, yyyy")}`;
+}
+
+function readSearchParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function isAccessDeniedError(error: unknown) {
+  const code = (error as { data?: { code?: string | null } | null } | null | undefined)?.data?.code;
+  return code === "FORBIDDEN" || code === "UNAUTHORIZED";
+}
+
+function parseSuggestionTssDelta(value: string | string[] | undefined) {
+  const parsed = Number(readSearchParam(value));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function buildPlanSuggestionDefaults(input: {
+  type?: string;
+  tssDelta: number | null;
+  description?: string;
+}): (CreateEventDefaults & { targetTss: number | null }) | null {
+  const roundedDelta = input.tssDelta === null ? null : Math.round(input.tssDelta);
+  const absoluteDelta = roundedDelta === null ? null : Math.abs(roundedDelta);
+  const targetCopy =
+    absoluteDelta && absoluteDelta > 0
+      ? `Target: about ${markEstimated(`${absoluteDelta} TSS`)}.`
+      : null;
+  const description = input.description?.trim() || null;
+  const notes = [description, targetCopy, "Created from the Plan tab readiness suggestion."]
+    .filter(Boolean)
+    .join("\n\n");
+
+  if ((input.type === "add_load" || (roundedDelta ?? 0) > 0) && (roundedDelta ?? 0) > 0) {
+    return {
+      createEventType: "planned" as CreateEventMode,
+      title: absoluteDelta
+        ? `Suggested ${markEstimated(`${absoluteDelta} TSS`)} session`
+        : "Suggested session",
+      notes,
+      helperText: absoluteDelta
+        ? `Plan suggested adding about ${markEstimated(`${absoluteDelta} TSS`)}. Select or adjust the matched activity plan before creating.`
+        : "Plan suggested adding load. Select or adjust an activity plan before creating.",
+      targetTss: absoluteDelta,
+    };
+  }
+
+  if (input.type || roundedDelta !== null || description) {
+    return {
+      createEventType: "custom" as CreateEventMode,
+      title: roundedDelta && roundedDelta < 0 ? "Reduce scheduled load" : "Plan adjustment",
+      notes,
+      helperText:
+        "Plan suggested a schedule adjustment. Custom events do not change training load; edit existing sessions to reduce scheduled TSS.",
+      targetTss: null,
+    };
+  }
+
+  return null;
 }
 
 export default function EventDetailScreen() {
   const router = useRouter();
   const navigateTo = useAppNavigate();
+  const createEventFlowRef = useRef<CreateEventFlowHandle>(null);
+  const { Stack } = require("expo-router") as typeof import("expo-router");
   const queryClient = useQueryClient();
-  const { id, mode } = useLocalSearchParams<{ id?: string; mode?: string }>();
+  const utils = api.useUtils();
+  const {
+    id,
+    mode,
+    date,
+    trainingPlanId,
+    activityPlanId,
+    scheduleGapTssDelta,
+    planSuggestionType,
+    planSuggestionTssDelta,
+    planSuggestionDescription,
+  } = useLocalSearchParams<{
+    id?: string;
+    mode?: string;
+    date?: string;
+    trainingPlanId?: string;
+    activityPlanId?: string;
+    scheduleGapTssDelta?: string;
+    planSuggestionType?: string;
+    planSuggestionTssDelta?: string;
+    planSuggestionDescription?: string;
+  }>();
   const eventId = typeof id === "string" ? id : "";
-  const startsInEditMode = mode === "edit";
+  const startsInCreateMode = mode === "create";
+  const createDate = typeof date === "string" ? date : undefined;
+  const createTrainingPlanId = typeof trainingPlanId === "string" ? trainingPlanId : undefined;
+  const preselectedActivityPlanId = typeof activityPlanId === "string" ? activityPlanId : undefined;
+  const scheduleGapTss = parseSuggestionTssDelta(scheduleGapTssDelta);
+  const scheduleGapNote =
+    scheduleGapTss !== null && scheduleGapTss > 0
+      ? `Schedule gap: about ${markEstimated(`${Math.round(scheduleGapTss)} TSS`)}.`
+      : null;
+  const planSuggestionDefaults = useMemo(
+    () =>
+      buildPlanSuggestionDefaults({
+        type: readSearchParam(planSuggestionType),
+        tssDelta: parseSuggestionTssDelta(planSuggestionTssDelta),
+        description: readSearchParam(planSuggestionDescription),
+      }),
+    [planSuggestionDescription, planSuggestionTssDelta, planSuggestionType],
+  );
 
   const { beginRedirect, isRedirecting, redirectOnNotFound } = useDeletedDetailRedirect({
     onRedirect: () => router.navigate(ROUTES.PLAN.CALENDAR),
   });
+  const [isClosingAfterDelete, setIsClosingAfterDelete] = useState(false);
 
   const {
     data: event,
     error,
     isLoading,
-    refetch,
   } = api.events.getById.useQuery(
     { id: eventId },
     {
       ...scheduleAwareReadQueryOptions,
-      enabled: !!eventId && !isRedirecting,
+      enabled: !!eventId && !isRedirecting && !isClosingAfterDelete && !startsInCreateMode,
     },
   );
+  const accessDenied = !startsInCreateMode && isAccessDeniedError(error);
 
-  const [isEditing, setIsEditing] = useState(startsInEditMode);
-  const [title, setTitle] = useState("");
-  const [notes, setNotes] = useState("");
-  const [allDay, setAllDay] = useState(false);
-  const [startsAt, setStartsAt] = useState(new Date());
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
-  const [showRescheduleModal, setShowRescheduleModal] = useState(false);
-  const [rescheduleScope, setRescheduleScope] = useState<EventMutationScope | undefined>();
+  const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
+  const [deleteScopeModalVisible, setDeleteScopeModalVisible] = useState(false);
+  const [pendingDeleteScope, setPendingDeleteScope] = useState<EventMutationScope | null>(null);
+  const [activityPlanPickerOpen, setActivityPlanPickerOpen] = useState(false);
 
   useEffect(() => {
     redirectOnNotFound(error);
   }, [error, redirectOnNotFound]);
 
-  useEffect(() => {
-    if (!event) {
-      return;
-    }
-
-    setTitle(event.title ?? "");
-    setNotes(event.notes ?? "");
-    setAllDay(!!event.all_day);
-    setStartsAt(parseEventDateForEditor(event));
-    setIsEditing(
-      startsInEditMode && event.event_type !== "planned" && event.event_type !== "imported",
-    );
-  }, [event, startsInEditMode]);
-
-  const updateMutation = api.events.update.useMutation({
-    onSuccess: async () => {
-      await refreshScheduleWithCallbacks({
-        queryClient,
-        callbacks: [refetch],
-      });
-      setIsEditing(false);
-    },
-  });
-
   const deleteMutation = api.events.delete.useMutation({
     onSuccess: async () => {
-      await refreshScheduleViews(queryClient, "eventDeletionMutation");
       beginRedirect();
+      await refreshScheduleViews(queryClient, "eventMutation");
+    },
+    onError: () => {
+      setIsClosingAfterDelete(false);
+    },
+  });
+  const updateEventMutation = api.events.update.useMutation({
+    onSuccess: async () => {
+      await Promise.all([
+        utils.events.invalidate(),
+        refreshScheduleViews(queryClient, "eventMutation"),
+      ]);
     },
   });
 
   const recurring = useMemo(() => isRecurringEvent(event), [event]);
-  const isReadOnlyImported = event?.event_type === "imported";
-  const isPlannedEvent = event?.event_type === "planned";
+  const isReadOnlyImported = !startsInCreateMode && event?.event_type === "imported";
   const activityPlan = event?.activity_plan as any;
-  const routeId = activityPlan?.route_id as string | undefined;
-  const { data: route } = api.routes.get.useQuery({ id: routeId! }, { enabled: !!routeId });
+  const hasActivityPlan = Boolean(activityPlan?.id);
+  const isPlannedEvent = !startsInCreateMode && event?.event_type === "planned" && hasActivityPlan;
+  const updateSupportsRecurrence = !isPlannedEvent;
+  const comments = useEntityCommentsController({ entityId: event?.id, entityType: "event" });
+  const { data: sourceTrainingPlan } = api.trainingPlans.getById.useQuery(
+    event?.training_plan_id ? { id: event.training_plan_id } : skipToken,
+    {
+      ...scheduleAwareReadQueryOptions,
+      enabled: !startsInCreateMode && typeof event?.training_plan_id === "string",
+    },
+  );
   const completed = isPlannedEvent ? isActivityCompleted(event) : false;
   const activityType = activityPlan?.activity_category || "other";
   const activityColor = getActivityColor(activityType);
-  const isPastScheduledEvent =
-    typeof event?.scheduled_date === "string"
-      ? event.scheduled_date < toDateOnly(new Date())
-      : false;
-  const canStartPlanned = isPlannedEvent && !completed && !isPastScheduledEvent;
-
-  const promptForScope = (
-    action: "save" | "delete" | "reschedule",
-    onSelect: (scope: EventMutationScope) => void,
-  ) => {
-    const actionLabel = action === "save" ? "save" : action === "delete" ? "delete" : "update";
-
-    Alert.alert(
-      action === "reschedule" ? "Recurring Schedule" : `Recurring Event`,
-      `Choose how much of this series to ${actionLabel}.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "This event only", onPress: () => onSelect("single") },
-        { text: "This and future events", onPress: () => onSelect("future") },
-        {
-          text: "Entire series",
-          style: action === "delete" ? "destructive" : "default",
-          onPress: () => onSelect("series"),
-        },
-      ],
-    );
-  };
-
-  const submitUpdate = (scope: EventMutationScope = "single") => {
-    if (!event) {
-      return;
-    }
-
-    const trimmedTitle = title.trim();
-    if (!trimmedTitle) {
-      Alert.alert("Missing title", "Please add a title for this event.");
-      return;
-    }
-
-    updateMutation.mutate({
-      id: event.id,
-      scope,
-      patch: {
-        title: trimmedTitle,
-        notes: notes.trim() ? notes.trim() : null,
-        all_day: allDay,
-        timezone: "UTC",
-        starts_at: allDay ? buildAllDayStartIso(startsAt) : startsAt.toISOString(),
-      },
-    });
-  };
-
-  const handleSave = () => {
-    if (recurring) {
-      promptForScope("save", submitUpdate);
-      return;
-    }
-
-    submitUpdate("single");
-  };
-
-  const submitDelete = (scope: EventMutationScope = "single") => {
-    if (!event) {
-      return;
-    }
-
-    deleteMutation.mutate({ id: event.id, scope });
-  };
-
-  const handleDelete = () => {
-    Alert.alert(
-      isPlannedEvent ? "Delete Activity" : "Delete Event",
-      isPlannedEvent
-        ? "Are you sure you want to remove this activity from your schedule?"
-        : "Are you sure you want to delete this event?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            if (recurring) {
-              promptForScope("delete", submitDelete);
-              return;
-            }
-
-            submitDelete("single");
-          },
-        },
-      ],
-    );
-  };
-
-  const handleStartActivity = () => {
-    if (!activityPlan || !event) return;
-
-    const payload: ActivityPayload = {
-      category: activityPlan.activity_category as any,
-      gpsRecordingEnabled: true,
-      eventId: event.id,
-      plan: activityPlan,
-    };
-
-    activitySelectionStore.setSelection(payload);
-    navigateTo(ROUTES.RECORD);
-  };
+  const _detailTitle = startsInCreateMode
+    ? "Create Event"
+    : isPlannedEvent
+      ? "Schedule details"
+      : "Event details";
+  const _detailSubtitle = startsInCreateMode
+    ? "choose event type"
+    : event
+      ? `${formatEventType(event.event_type)}${isPlannedEvent && activityColor.name ? ` · ${activityColor.name}` : ""}${recurring ? " · recurring" : ""}`
+      : "event";
+  const displayTitle = startsInCreateMode
+    ? "Create event"
+    : event
+      ? isPlannedEvent
+        ? event.title?.trim() || "Scheduled activity"
+        : getEventTitle(event as any)
+      : activityPlan?.name || "Event";
+  const statusLabel = event ? getEventStatusLabel(event as any) : null;
+  const displayStartsAt = event ? new Date(event.starts_at) : new Date();
+  const displayAllDay = !!event?.all_day;
+  const displayNotes = event?.notes ?? "";
 
   const handleOpenPlanDetail = () => {
     if (!activityPlan?.id || !event) return;
@@ -268,18 +327,157 @@ export default function EventDetailScreen() {
     } as any);
   };
 
-  const openRescheduleModal = (scope?: EventMutationScope) => {
-    setRescheduleScope(scope);
-    setShowRescheduleModal(true);
+  const handleOpenSourceTrainingPlan = () => {
+    if (!event?.training_plan_id) {
+      return;
+    }
+
+    navigateTo(ROUTES.PLAN.TRAINING_PLAN.DETAIL(event.training_plan_id) as any);
   };
 
-  const handleReschedule = () => {
+  const handleAttachActivityPlan = async (item: ResourcePickerItem) => {
     if (!event) return;
 
-    openRescheduleModal(recurring ? undefined : "single");
+    try {
+      await updateEventMutation.mutateAsync({
+        id: event.id,
+        scope: "single",
+        patch: {
+          activity_plan_id: item.id,
+          event_type: "planned",
+          title: event.title?.trim() || item.name || "Scheduled activity",
+        },
+      });
+      setActivityPlanPickerOpen(false);
+    } catch (error) {
+      Alert.alert(
+        "Unable to attach activity plan",
+        error instanceof Error ? error.message : "Please try again.",
+      );
+    }
   };
 
-  if (isLoading || isRedirecting) {
+  const handleRemoveActivityPlan = async () => {
+    if (!event) return;
+
+    try {
+      await updateEventMutation.mutateAsync({
+        id: event.id,
+        scope: "single",
+        patch: {
+          activity_plan_id: null,
+          event_type: "custom",
+          title: event.title?.trim() || activityPlan?.name || "Event",
+        },
+      });
+    } catch (error) {
+      Alert.alert(
+        "Unable to remove activity plan",
+        error instanceof Error ? error.message : "Please try again.",
+      );
+    }
+  };
+
+  const closeDeleteFlow = () => {
+    setDeleteScopeModalVisible(false);
+    setDeleteConfirmVisible(false);
+    setPendingDeleteScope(null);
+  };
+
+  const handleSelectDeleteScope = (scope: EventMutationScope) => {
+    setPendingDeleteScope(scope);
+    setDeleteScopeModalVisible(false);
+    setDeleteConfirmVisible(true);
+  };
+
+  const handleDeleteEvent = (scope?: EventMutationScope) => {
+    if (!event) {
+      return;
+    }
+
+    setIsClosingAfterDelete(true);
+    deleteMutation.mutate(scope ? { id: event.id, scope } : { id: event.id });
+  };
+
+  const handleDeletePress = () => {
+    if (!event) {
+      return;
+    }
+
+    if (updateSupportsRecurrence && recurring) {
+      setDeleteScopeModalVisible(true);
+      return;
+    }
+
+    setPendingDeleteScope("single");
+    setDeleteConfirmVisible(true);
+  };
+
+  const renderHeaderActions = () => {
+    if (startsInCreateMode) {
+      return (
+        <Button
+          onPress={() => createEventFlowRef.current?.submit()}
+          size="sm"
+          testID="event-detail-save-button"
+          variant="ghost"
+        >
+          <Text className="text-sm font-semibold text-primary">Create</Text>
+        </Button>
+      );
+    }
+
+    if (isReadOnlyImported || !event) {
+      return null;
+    }
+
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger testID="event-detail-options-trigger">
+          <View className="mr-2 rounded-full p-2">
+            <Icon as={Ellipsis} size={18} className="text-foreground" />
+          </View>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" sideOffset={6}>
+          <DropdownMenuItem
+            onPress={() => router.navigate(ROUTES.PLAN.EVENT_UPDATE(event.id))}
+            testID="event-detail-options-edit"
+          >
+            <Text className="text-foreground">Edit Event</Text>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onPress={() => setActivityPlanPickerOpen(true)}
+            testID="event-detail-options-activity-plan"
+          >
+            <Text className="text-foreground">
+              {activityPlan ? "Change Activity Plan" : "Attach Activity Plan"}
+            </Text>
+          </DropdownMenuItem>
+          {activityPlan ? (
+            <DropdownMenuItem
+              onPress={handleRemoveActivityPlan}
+              testID="event-detail-options-remove-activity-plan"
+            >
+              <Text className="text-foreground">
+                {updateEventMutation.isPending ? "Removing..." : "Remove Activity Plan"}
+              </Text>
+            </DropdownMenuItem>
+          ) : null}
+          <DropdownMenuItem
+            onPress={handleDeletePress}
+            variant="destructive"
+            testID="event-detail-options-delete"
+          >
+            <Text className="text-foreground">
+              {deleteMutation.isPending ? "Deleting..." : "Delete Event"}
+            </Text>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  };
+
+  if ((!startsInCreateMode && isLoading) || isRedirecting) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
         <ActivityIndicator size="large" />
@@ -290,7 +488,21 @@ export default function EventDetailScreen() {
     );
   }
 
-  if (!event) {
+  if (accessDenied) {
+    return (
+      <View className="flex-1 items-center justify-center px-6 bg-background">
+        <Text className="text-lg font-semibold text-foreground">Event unavailable</Text>
+        <Text className="text-sm text-muted-foreground text-center mt-2">
+          You do not have permission to view this event.
+        </Text>
+        <Button className="mt-4" onPress={() => router.back()}>
+          <Text className="text-primary-foreground">Go Back</Text>
+        </Button>
+      </View>
+    );
+  }
+
+  if (!startsInCreateMode && !event) {
     return (
       <View className="flex-1 items-center justify-center px-6 bg-background">
         <Text className="text-lg font-semibold text-foreground">Event not found</Text>
@@ -306,8 +518,14 @@ export default function EventDetailScreen() {
 
   return (
     <View className="flex-1 bg-background">
+      <Stack.Screen
+        options={{
+          headerRight: renderHeaderActions,
+          title: startsInCreateMode ? "Create Event" : undefined,
+        }}
+      />
       <ScrollView className="flex-1" contentContainerClassName="p-4 gap-4">
-        {completed ? (
+        {!startsInCreateMode && completed ? (
           <Card className="border-green-200 bg-green-50">
             <CardContent className="p-3">
               <View className="flex-row items-center gap-2">
@@ -318,373 +536,183 @@ export default function EventDetailScreen() {
           </Card>
         ) : null}
 
-        {!isPlannedEvent ? (
-          <Card className="border-border bg-muted/20">
-            <CardContent className="p-4 gap-2">
-              <View className="flex-row items-start gap-3">
-                <View className="mt-0.5 h-9 w-9 items-center justify-center rounded-full bg-background">
-                  <Icon as={ArrowUpRight} size={16} className="text-muted-foreground" />
-                </View>
-                <View className="flex-1 gap-1">
-                  <Text className="text-sm font-semibold text-foreground">
-                    Advanced event detail
+        {!startsInCreateMode ? (
+          <View className="gap-4 rounded-3xl bg-card p-5">
+            {event?.training_plan_id ? (
+              <Pressable
+                className="flex-row items-center justify-between gap-3"
+                onPress={handleOpenSourceTrainingPlan}
+                testID="event-detail-source-training-plan"
+              >
+                <View className="min-w-0 flex-1 gap-0.5">
+                  <Text className="text-xs font-semibold uppercase tracking-wide text-primary">
+                    Source
                   </Text>
-                  <Text
-                    className="text-sm text-muted-foreground"
-                    testID="event-detail-fallback-note"
-                  >
-                    Calendar taps open the preview sheet first. Use this fallback screen for deeper
-                    edits, schedule changes, linked plan access, or deletion.
+                  <Text className="text-sm font-medium text-foreground" numberOfLines={1}>
+                    {sourceTrainingPlan?.name ?? "Training plan"}
                   </Text>
                 </View>
-              </View>
-            </CardContent>
-          </Card>
-        ) : null}
+                <Text className="text-xs font-semibold text-primary">Open</Text>
+              </Pressable>
+            ) : null}
 
-        <Card>
-          <CardContent className="p-4 gap-4">
-            <View className="gap-1">
-              <CardTitle>
-                {isEditing
-                  ? "Edit Event"
-                  : isPlannedEvent
-                    ? activityPlan?.name || title || "Planned activity"
-                    : title || "Event"}
-              </CardTitle>
-              <Text className="text-sm text-muted-foreground capitalize">
-                {formatEventType(event.event_type)}
-                {isPlannedEvent && activityColor.name ? ` · ${activityColor.name}` : ""}
-                {recurring ? " · recurring" : ""}
-              </Text>
+            <View className="gap-2">
+              <View className="flex-row flex-wrap gap-2">
+                {statusLabel ? <EventStatusPill label={statusLabel} /> : null}
+                {recurring ? <EventStatusPill label="Recurring" /> : null}
+              </View>
+              <Text className="text-3xl font-semibold text-foreground">{displayTitle}</Text>
             </View>
 
-            {!isEditing ? (
-              <View className="gap-3 rounded-md border border-border bg-muted/10 p-3">
-                <View className="flex-row items-center justify-between gap-3">
-                  <Text className="text-xs text-muted-foreground">Date</Text>
-                  <Text className="text-sm font-medium text-foreground">
-                    {format(startsAt, "EEE, MMM d, yyyy")}
-                  </Text>
-                </View>
-                <View className="flex-row items-center justify-between gap-3">
-                  <Text className="text-xs text-muted-foreground">Time</Text>
-                  <Text className="text-sm font-medium text-foreground">
-                    {allDay ? "All day" : format(startsAt, "h:mm a")}
-                  </Text>
-                </View>
-                {notes.trim().length > 0 ? (
-                  <View className="gap-1">
-                    <Text className="text-xs text-muted-foreground">Notes</Text>
-                    <Text className="text-sm text-foreground">{notes}</Text>
-                  </View>
-                ) : null}
-              </View>
-            ) : (
-              <View className="gap-3">
-                <View className="gap-2">
-                  <Text className="text-xs text-muted-foreground">Title</Text>
-                  <Input
-                    value={title}
-                    editable={!isReadOnlyImported}
-                    onChangeText={setTitle}
-                    placeholder="Event title"
-                    testID="event-detail-title-input"
-                  />
-                </View>
-
-                <View className="gap-2">
-                  <Text className="text-xs text-muted-foreground">Date</Text>
-                  <TouchableOpacity
-                    className="rounded-md border border-border bg-card px-3 py-3"
-                    activeOpacity={0.8}
-                    disabled={isReadOnlyImported}
-                    onPress={() => setShowDatePicker(true)}
-                    testID="event-detail-date-button"
-                  >
-                    <Text className="text-sm text-foreground">
-                      {format(startsAt, "EEEE, MMM d, yyyy")}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View className="flex-row items-center justify-between rounded-md border border-border bg-card px-3 py-3">
-                  <View>
-                    <Text className="text-sm font-medium text-foreground">All day</Text>
-                    <Text className="text-xs text-muted-foreground">Hide time for this event</Text>
-                  </View>
-                  <Switch
-                    checked={allDay}
-                    onCheckedChange={setAllDay}
-                    disabled={isReadOnlyImported}
-                    testId="event-detail-all-day-switch"
-                  />
-                </View>
-
-                {!allDay ? (
-                  <TouchableOpacity
-                    className="rounded-md border border-border bg-card px-3 py-3"
-                    activeOpacity={0.8}
-                    disabled={isReadOnlyImported}
-                    onPress={() => setShowTimePicker(true)}
-                    testID="event-detail-time-button"
-                  >
-                    <Text className="text-sm text-foreground">{format(startsAt, "h:mm a")}</Text>
-                  </TouchableOpacity>
-                ) : null}
-
-                <View className="gap-2">
-                  <Text className="text-xs text-muted-foreground">Notes</Text>
-                  <Textarea
-                    value={notes}
-                    onChangeText={setNotes}
-                    editable={!isReadOnlyImported}
-                    placeholder="Optional notes"
-                    testID="event-detail-notes-input"
-                  />
-                </View>
-              </View>
-            )}
-
-            {isReadOnlyImported ? (
-              <Text className="text-xs text-muted-foreground">
-                Imported events are read-only and cannot be edited or deleted.
+            <View className="gap-1">
+              <Text className="text-sm font-medium text-foreground">
+                {formatScheduleDateLabel(displayStartsAt)}
               </Text>
-            ) : recurring ? (
-              <Text className="text-xs text-muted-foreground">
-                Recurring changes will ask whether to update one event, future events, or the full
-                series.
+              <Text className="text-sm text-muted-foreground">
+                {formatEventTimeRange({
+                  all_day: displayAllDay,
+                  starts_at: displayStartsAt.toISOString(),
+                  ends_at: event?.ends_at ?? null,
+                })}
               </Text>
+              {recurring ? (
+                <Text className="text-sm text-muted-foreground">
+                  {formatScheduleRepeatLabel(event, recurring)}
+                </Text>
+              ) : null}
+            </View>
+
+            {displayNotes.trim().length > 0 ? (
+              <Text className="text-sm leading-6 text-muted-foreground">{displayNotes}</Text>
             ) : null}
-          </CardContent>
-        </Card>
-
-        {isPlannedEvent ? (
-          <Card>
-            <CardContent className="p-4 gap-3">
-              <View className="flex-row items-center gap-3">
-                <View
-                  className={`h-10 w-10 ${getActivityBgClass(activityType)} items-center justify-center rounded-full`}
-                >
-                  <Icon as={Calendar} size={18} className="text-white" />
-                </View>
-                <View className="flex-1 gap-1">
-                  <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    Activity
-                  </Text>
-                  <Text className="text-sm font-semibold text-foreground">
-                    {activityColor.name}
-                  </Text>
-                </View>
-              </View>
-
-              <View className="rounded-2xl bg-muted/30 px-3 py-3">
-                <View className="flex-row items-center justify-between gap-3">
-                  <Text className="text-sm font-medium text-foreground">
-                    {format(startsAt, "EEEE, MMMM d, yyyy")}
-                  </Text>
-                  <Text className="text-sm text-muted-foreground">
-                    {allDay ? "All day" : format(startsAt, "h:mm a")}
-                  </Text>
-                </View>
-                {isPastScheduledEvent && !completed ? (
-                  <Text className="mt-2 text-xs text-amber-700">
-                    This activity is in the past and can be rescheduled.
-                  </Text>
-                ) : null}
-              </View>
-            </CardContent>
-          </Card>
+          </View>
         ) : null}
 
-        {activityPlan ? (
-          <Card>
-            <CardContent className="p-4 gap-4">
-              <View className="gap-1">
-                <Text className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Activity details
-                </Text>
-                <CardTitle>{activityPlan.name || "Planned activity"}</CardTitle>
-              </View>
+        {!startsInCreateMode && activityPlan ? (
+          <View className="gap-3 rounded-2xl bg-card p-4">
+            <View className="gap-0.5">
+              <Text className="text-base font-semibold text-foreground">Workout</Text>
+              <Text className="text-sm text-muted-foreground">
+                Open the linked plan to review the session details.
+              </Text>
+            </View>
+            <ActivityPlanCard
+              activityPlan={activityPlan as any}
+              onPress={handleOpenPlanDetail}
+              testID="event-detail-activity-plan-card"
+              variant="default"
+            />
+          </View>
+        ) : !startsInCreateMode && event && !isReadOnlyImported ? (
+          <Pressable
+            className="rounded-2xl border border-dashed border-border bg-card px-4 py-4"
+            onPress={() => setActivityPlanPickerOpen(true)}
+            testID="event-detail-attach-activity-plan-card"
+          >
+            <Text className="text-sm font-semibold text-foreground">Attach Activity Plan</Text>
+            <Text className="mt-1 text-xs text-muted-foreground">
+              Search visible activity plans and associate one with this event.
+            </Text>
+          </Pressable>
+        ) : null}
 
-              <ActivityPlanCard
-                plannedActivity={{
-                  id: event.id,
-                  activity_plan_id: activityPlan.id,
-                  activity_plan: activityPlan,
-                  scheduled_date: event.scheduled_date || event.starts_at,
-                  notes: event.notes,
-                  completed_activity_id: completed ? event.id : null,
-                }}
-                onPress={handleOpenPlanDetail}
-                showScheduleInfo={true}
-              />
+        {startsInCreateMode ? (
+          <CreateEventFlow
+            ref={createEventFlowRef}
+            createDate={createDate}
+            defaults={planSuggestionDefaults}
+            onCancel={() => router.back()}
+            onCreated={(createdEvent) => router.replace(ROUTES.PLAN.EVENT_DETAIL(createdEvent.id))}
+            preselectedActivityPlanId={preselectedActivityPlanId}
+            scheduleGapNote={scheduleGapNote}
+            showFooterActions={false}
+            testIDPrefix="event-detail"
+            trainingPlanId={createTrainingPlanId}
+          />
+        ) : null}
 
-              <ActivityPlanContentPreview
-                plan={activityPlan}
-                route={route}
-                testIDPrefix="event-detail-plan"
-              />
-            </CardContent>
-          </Card>
+        {!startsInCreateMode ? (
+          <EntityCommentsSection
+            addCommentPending={comments.addCommentPending}
+            commentCount={comments.commentCount}
+            comments={comments.comments}
+            hasMoreComments={comments.hasMoreComments}
+            isLoadingMoreComments={comments.isLoadingMoreComments}
+            newComment={comments.newComment}
+            onAddComment={comments.handleAddComment}
+            onChangeNewComment={comments.setNewComment}
+            onLoadMoreComments={comments.loadMoreComments}
+            testIDPrefix="event-detail"
+          />
         ) : null}
       </ScrollView>
 
-      <View className="px-4 py-4 border-t border-border bg-background">
-        {isReadOnlyImported ? (
-          <Button variant="outline" onPress={() => router.back()}>
-            <Text>Close</Text>
-          </Button>
-        ) : isPlannedEvent ? (
-          <View className="gap-2.5">
-            {canStartPlanned ? (
-              <Button
-                className="rounded-2xl"
-                onPress={handleStartActivity}
-                testID="event-detail-start-activity-button"
-              >
-                <Icon as={Play} size={18} className="mr-2 text-primary-foreground" />
-                <Text className="text-primary-foreground">Start Activity</Text>
-              </Button>
-            ) : null}
-
-            <View className="flex-row gap-2">
-              <Button
-                variant="outline"
-                className="flex-1 rounded-2xl"
-                onPress={handleReschedule}
-                testID="event-detail-reschedule-button"
-              >
-                <Icon as={Edit} size={16} className="mr-2 text-foreground" />
-                <Text>Edit Activity</Text>
-              </Button>
-              <Button
-                variant="outline"
-                className="flex-1 rounded-2xl"
-                onPress={handleOpenPlanDetail}
-                testID="event-detail-open-linked-plan-button"
-              >
-                <Icon as={Zap} size={16} className="mr-2 text-foreground" />
-                <Text>View Plan</Text>
-              </Button>
-            </View>
-
+      {deleteScopeModalVisible ? (
+        <AppFormModal
+          description="Choose how much of this series to delete."
+          onClose={closeDeleteFlow}
+          secondaryAction={
+            <Button onPress={closeDeleteFlow} variant="outline">
+              <Text className="text-foreground font-medium">Cancel</Text>
+            </Button>
+          }
+          testID="event-detail-delete-scope-modal"
+          title="Recurring Event"
+        >
+          <View className="gap-3">
             <Button
+              onPress={() => handleSelectDeleteScope("single")}
+              testID="event-detail-delete-scope-single"
               variant="outline"
-              className="rounded-2xl"
-              onPress={handleDelete}
-              disabled={deleteMutation.isPending}
-              testID="event-detail-delete-button"
             >
-              <Icon as={Trash2} size={16} className="mr-2 text-destructive" />
-              <Text className="text-destructive">
-                {deleteMutation.isPending ? "Deleting..." : "Delete"}
-              </Text>
+              <Text className="text-foreground font-medium">This event only</Text>
+            </Button>
+            <Button
+              onPress={() => handleSelectDeleteScope("future")}
+              testID="event-detail-delete-scope-future"
+              variant="outline"
+            >
+              <Text className="text-foreground font-medium">This and future events</Text>
+            </Button>
+            <Button
+              onPress={() => handleSelectDeleteScope("series")}
+              testID="event-detail-delete-scope-series"
+              variant="outline"
+            >
+              <Text className="text-foreground font-medium">Entire series</Text>
             </Button>
           </View>
-        ) : isEditing ? (
-          <View className="flex-row gap-2">
-            <Button
-              variant="outline"
-              className="flex-1"
-              onPress={() => {
-                setIsEditing(false);
-                setTitle(event.title ?? "");
-                setNotes(event.notes ?? "");
-                setAllDay(!!event.all_day);
-                setStartsAt(parseEventDateForEditor(event));
-              }}
-              disabled={updateMutation.isPending}
-              testID="event-detail-cancel-edit-button"
-            >
-              <Text>Cancel</Text>
-            </Button>
-            <Button
-              className="flex-1"
-              onPress={handleSave}
-              disabled={updateMutation.isPending}
-              testID="event-detail-save-button"
-            >
-              <Text className="text-primary-foreground">
-                {updateMutation.isPending ? "Saving..." : "Save Changes"}
-              </Text>
-            </Button>
-          </View>
-        ) : (
-          <View className="flex-row gap-2">
-            <Button
-              variant="outline"
-              className="flex-1"
-              onPress={() => setIsEditing(true)}
-              testID="event-detail-edit-button"
-            >
-              <Text>Edit Event</Text>
-            </Button>
-            <Button
-              variant="outline"
-              className="flex-1"
-              onPress={handleDelete}
-              disabled={deleteMutation.isPending}
-              testID="event-detail-delete-button"
-            >
-              <Text className="text-destructive">
-                {deleteMutation.isPending ? "Deleting..." : "Delete"}
-              </Text>
-            </Button>
-          </View>
-        )}
-      </View>
-
-      {showDatePicker ? (
-        <DateTimePicker
-          value={startsAt}
-          mode="date"
-          display="default"
-          onChange={(_, selected) => {
-            setShowDatePicker(false);
-            if (!selected) {
-              return;
-            }
-            const next = new Date(startsAt);
-            next.setFullYear(selected.getFullYear(), selected.getMonth(), selected.getDate());
-            setStartsAt(next);
-          }}
-        />
+        </AppFormModal>
       ) : null}
 
-      {showTimePicker ? (
-        <DateTimePicker
-          value={startsAt}
-          mode="time"
-          display="default"
-          onChange={(_, selected) => {
-            setShowTimePicker(false);
-            if (!selected) {
-              return;
-            }
-            const next = new Date(startsAt);
-            next.setHours(selected.getHours(), selected.getMinutes(), 0, 0);
-            setStartsAt(next);
+      {deleteConfirmVisible ? (
+        <AppConfirmModal
+          description="Are you sure you want to delete this event?"
+          onClose={closeDeleteFlow}
+          primaryAction={{
+            label: deleteMutation.isPending ? "Deleting..." : "Delete Event",
+            onPress: () => handleDeleteEvent(pendingDeleteScope ?? undefined),
+            testID: "event-detail-delete-confirm",
+            variant: "destructive",
           }}
+          secondaryAction={{
+            label: "Cancel",
+            onPress: closeDeleteFlow,
+            variant: "outline",
+          }}
+          testID="event-detail-delete-confirm-modal"
+          title="Delete Event"
         />
       ) : null}
-
-      {event && showRescheduleModal ? (
-        <ScheduleActivityModal
-          visible={showRescheduleModal}
-          onClose={() => {
-            setShowRescheduleModal(false);
-            setRescheduleScope(undefined);
-          }}
-          eventId={event.id}
-          editScope={rescheduleScope}
-          onSuccess={async () => {
-            await refetch();
-            setShowRescheduleModal(false);
-            setRescheduleScope(undefined);
-          }}
-        />
-      ) : null}
+      <ResourcePickerModal
+        visible={activityPlanPickerOpen}
+        scope="activityPlans"
+        selectedId={activityPlan?.id ?? null}
+        title={activityPlan ? "Change Activity Plan" : "Attach Activity Plan"}
+        description="Search activity plans visible to your profile."
+        onClose={() => setActivityPlanPickerOpen(false)}
+        onSelect={handleAttachActivityPlan}
+      />
     </View>
   );
 }

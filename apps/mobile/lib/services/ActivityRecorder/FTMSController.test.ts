@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FTMSController } from "./FTMSController";
 
 class MockFtmsDevice {
+  public id = "mock-ftms-device";
   public writeOpcodes: number[] = [];
   private monitorCallback?: (
     error: Error | null,
@@ -56,8 +57,10 @@ class MockFtmsDevice {
 
   async flushAll(resultCode = FTMS_RESULT_CODES.SUCCESS): Promise<void> {
     for (let attempt = 0; attempt < 20; attempt++) {
+      await this.drainQueueTurns();
+
       if (this.pendingWrites.length === 0) {
-        await Promise.resolve();
+        await this.drainQueueTurns();
         if (this.pendingWrites.length === 0) {
           break;
         }
@@ -65,6 +68,12 @@ class MockFtmsDevice {
 
       await this.flushNext(resultCode);
       await vi.advanceTimersByTimeAsync(300);
+    }
+  }
+
+  private async drainQueueTurns(): Promise<void> {
+    for (let turn = 0; turn < 5; turn++) {
+      await Promise.resolve();
     }
   }
 }
@@ -168,9 +177,8 @@ describe("FTMSController queue", () => {
     await expect(manual).resolves.toBe(true);
 
     expect(device.writeOpcodes).toEqual([
-      FTMS_OPCODES.RESET,
+      FTMS_OPCODES.REQUEST_CONTROL,
       FTMS_OPCODES.SET_TARGET_SPEED,
-      FTMS_OPCODES.RESET,
       FTMS_OPCODES.SET_TARGET_POWER,
     ]);
   });
@@ -230,6 +238,45 @@ describe("FTMSController queue", () => {
       commandType: "set_power",
       controlMode: "erg",
       targetValue: 245,
+      success: true,
+    });
+  });
+
+  it("rejects unsupported trainer commands without requesting control", async () => {
+    const device = new MockFtmsDevice();
+    const controller = createController(device, createFeatures());
+
+    await expect(controller.setPowerTarget(220, { source: "manual" })).resolves.toBe(false);
+
+    expect(device.writeOpcodes).toEqual([]);
+    expect(controller.getLastCommandStatus()).toMatchObject({
+      source: "manual",
+      commandType: "set_power",
+      controlMode: "erg",
+      targetValue: 220,
+      outcome: "unsupported",
+      success: false,
+    });
+  });
+
+  it("clamps power targets to the advertised FTMS range before writing", async () => {
+    const device = new MockFtmsDevice();
+    const controller = createController(
+      device,
+      createFeatures({
+        powerTargetSettingSupported: true,
+        powerRange: { min: 100, max: 400, increment: 5 },
+      }),
+    );
+
+    const command = controller.setPowerTarget(650, { source: "manual" });
+
+    await device.flushAll();
+
+    await expect(command).resolves.toBe(true);
+    expect(controller.getLastCommandStatus()).toMatchObject({
+      commandType: "set_power",
+      targetValue: 400,
       success: true,
     });
   });

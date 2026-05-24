@@ -55,6 +55,51 @@ export interface EstimationContext {
   weeklyPlannedTSS?: number; // TSS already planned for the week
 }
 
+export type EstimationWarningHandler = (warning: {
+  error?: unknown;
+  message: string;
+  planId?: string;
+}) => void;
+
+export interface ActivityPlanEstimationInput {
+  id: string;
+  structure?: EstimationContext["structure"];
+  route?: EstimationContext["route"];
+  activity_category: CanonicalSport;
+}
+
+export interface EstimationProfileInput {
+  ftp?: number | null;
+  threshold_hr?: number | null;
+  max_hr?: number | null;
+  resting_hr?: number | null;
+  weight_kg?: number | null;
+  dob?: string | null;
+  threshold_pace_seconds_per_km?: number | null;
+}
+
+export interface EstimationActivityPlanInput {
+  activity_category: CanonicalSport;
+  structure?: EstimationContext["structure"];
+  route_id?: string;
+}
+
+export interface EstimationRouteInput {
+  distance_meters: number;
+  total_ascent: number;
+  total_descent: number;
+  average_grade?: number;
+}
+
+export interface BuildEstimationContextParams {
+  userProfile: EstimationProfileInput;
+  fitnessState?: FitnessState;
+  activityPlan: EstimationActivityPlanInput;
+  route?: EstimationRouteInput;
+  scheduledDate?: Date;
+  weeklyPlannedTSS?: number;
+}
+
 // ==============================
 // Estimation Results
 // ==============================

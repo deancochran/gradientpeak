@@ -1,35 +1,35 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Text } from "@repo/ui/components/text";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import { Loader2 } from "lucide-react-native";
-import React, { useState } from "react";
 import { FlatList, TouchableOpacity, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { api } from "@/lib/api";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 function FollowingScreen() {
-  const router = useRouter();
   const navigateTo = useAppNavigate();
   const { userId } = useLocalSearchParams<{ userId: string }>();
 
   const targetUserId = typeof userId === "string" ? userId : "";
 
-  const [page, setPage] = useState(0);
   const limit = 20;
 
   const {
     data: followingData,
     isLoading,
     isFetching,
-  } = api.social.getFollowing.useQuery(
-    { user_id: targetUserId, limit, offset: page * limit },
-    { enabled: !!targetUserId },
+    error,
+    hasNextPage,
+    fetchNextPage,
+  } = api.social.getFollowing.useInfiniteQuery(
+    { user_id: targetUserId, limit },
+    { enabled: !!targetUserId, getNextPageParam: (lastPage: any) => lastPage.nextCursor },
   );
 
-  const users = followingData?.users || [];
-  const total = followingData?.total || 0;
-  const hasMore = followingData?.hasMore || false;
+  const users = followingData?.pages.flatMap((page) => page.users) || [];
+  const total = followingData?.pages[0]?.total || 0;
+  const hasMore = hasNextPage || false;
 
   const handleUserPress = (profileUserId: string) => {
     navigateTo(`/user/${profileUserId}` as any);
@@ -37,7 +37,7 @@ function FollowingScreen() {
 
   const handleLoadMore = () => {
     if (hasMore && !isFetching) {
-      setPage((prev) => prev + 1);
+      void fetchNextPage();
     }
   };
 
@@ -103,6 +103,23 @@ function FollowingScreen() {
     return (
       <View className="flex-1 items-center justify-center bg-background p-6">
         <Text className="text-sm text-muted-foreground">Invalid user id.</Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    const isPrivate = error.data?.code === "FORBIDDEN";
+
+    return (
+      <View className="flex-1 items-center justify-center bg-background p-6">
+        <Text className="text-base font-semibold text-foreground">
+          {isPrivate ? "Following is private" : "Unable to load following"}
+        </Text>
+        <Text className="mt-2 text-center text-sm text-muted-foreground">
+          {isPrivate
+            ? "Follow requests must be accepted before you can see who this profile follows."
+            : "Please try again."}
+        </Text>
       </View>
     );
   }

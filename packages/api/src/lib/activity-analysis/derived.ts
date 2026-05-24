@@ -23,6 +23,10 @@ type ActivitySummaryRow = Pick<
   | "normalized_graded_speed_mps"
 >;
 
+function toIsoString(value: Date | string): string {
+  return value instanceof Date ? value.toISOString() : value;
+}
+
 export async function buildActivityDerivedSummaryMap(input: {
   store: ActivityAnalysisStore;
   profileId: string;
@@ -34,15 +38,18 @@ export async function buildActivityDerivedSummaryMap(input: {
       const context = await resolveActivityContextAsOf({
         store,
         profileId,
-        activityTimestamp: activity.finished_at,
+        activityTimestamp:
+          activity.finished_at instanceof Date
+            ? activity.finished_at
+            : new Date(activity.finished_at),
       });
 
       const derived = analyzeActivityDerivedMetrics({
         activity: {
           id: activity.id,
           type: activity.type,
-          started_at: activity.started_at.toISOString(),
-          finished_at: activity.finished_at.toISOString(),
+          started_at: toIsoString(activity.started_at),
+          finished_at: toIsoString(activity.finished_at),
           duration_seconds: activity.duration_seconds,
           moving_seconds: activity.moving_seconds,
           distance_meters: activity.distance_meters,
@@ -85,7 +92,7 @@ export async function buildDynamicStressSeries(input: {
   const byDate = new Map<string, number>();
 
   for (const activity of input.activities) {
-    const dateKey = activity.started_at.toISOString().split("T")[0];
+    const dateKey = toIsoString(activity.started_at).split("T")[0];
     if (!dateKey) continue;
     const tss = byActivityId.get(activity.id)?.tss ?? 0;
     byDate.set(dateKey, (byDate.get(dateKey) ?? 0) + tss);

@@ -11,17 +11,17 @@ describe("DropdownMenu native", () => {
   it("renders trigger text and item content", () => {
     const { getByTestId } = renderNative(
       <DropdownMenu>
-        <DropdownMenuTrigger testID="workout-menu-trigger">Open menu</DropdownMenuTrigger>
-        <DropdownMenuContent testID="workout-menu-content">
-          <DropdownMenuItem testID="pin-workout-item">Pin workout</DropdownMenuItem>
-          <DropdownMenuShortcut testID="pin-workout-shortcut">Shift+P</DropdownMenuShortcut>
+        <DropdownMenuTrigger testID="activity-menu-trigger">Open menu</DropdownMenuTrigger>
+        <DropdownMenuContent testID="activity-menu-content">
+          <DropdownMenuItem testID="pin-activity-item">Pin activity</DropdownMenuItem>
+          <DropdownMenuShortcut testID="pin-activity-shortcut">Shift+P</DropdownMenuShortcut>
         </DropdownMenuContent>
       </DropdownMenu>,
     );
 
-    expect(getByTestId("workout-menu-trigger")).toBeTruthy();
-    expect(getByTestId("workout-menu-content")).toBeTruthy();
-    expect(getByTestId("pin-workout-item")).toBeTruthy();
-    expect(getByTestId("pin-workout-shortcut")).toBeTruthy();
+    expect(getByTestId("activity-menu-trigger")).toBeTruthy();
+    expect(getByTestId("activity-menu-content")).toBeTruthy();
+    expect(getByTestId("pin-activity-item")).toBeTruthy();
+    expect(getByTestId("pin-activity-shortcut")).toBeTruthy();
   });
 });

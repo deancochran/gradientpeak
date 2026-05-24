@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   boolean,
   check,
   date,
@@ -45,6 +46,7 @@ export const profiles = pgTable(
     full_name: text("full_name"),
     username: text("username"),
     avatar_url: text("avatar_url"),
+    cover_url: text("cover_url"),
     bio: text("bio"),
     dob: timestamp("dob", { withTimezone: true, mode: "date" }),
     gender: genderEnum("gender"),
@@ -64,6 +66,148 @@ export const profiles = pgTable(
   ],
 );
 
+export const groups = pgTable(
+  "groups",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    created_by_profile_id: uuid("created_by_profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    description: text("description"),
+    avatar_url: text("avatar_url"),
+    cover_url: text("cover_url"),
+    access_level: text("access_level", { enum: ["public", "members_only"] })
+      .notNull()
+      .default("public"),
+    join_policy: text("join_policy", { enum: ["open", "request_to_join", "invite_only"] })
+      .notNull()
+      .default("open"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    deleted_at: timestamp("deleted_at", { withTimezone: true, mode: "date" }),
+  },
+  (table) => [
+    uniqueIndex("groups_slug_unique_idx").on(table.slug).where(sql`${table.deleted_at} is null`),
+    index("groups_created_at_idx")
+      .on(table.created_at.desc())
+      .where(sql`${table.deleted_at} is null`),
+    index("idx_groups_created_by_profile_id").on(table.created_by_profile_id),
+    check("groups_access_level_check", sql`${table.access_level} in ('public', 'members_only')`),
+    check(
+      "groups_join_policy_check",
+      sql`${table.join_policy} in ('open', 'request_to_join', 'invite_only')`,
+    ),
+    check("groups_name_non_empty", sql`btrim(${table.name}) <> ''`),
+    check("groups_slug_non_empty", sql`btrim(${table.slug}) <> ''`),
+  ],
+);
+
+export const groupMemberships = pgTable(
+  "group_memberships",
+  {
+    group_id: uuid("group_id")
+      .notNull()
+      .references(() => groups.id, { onDelete: "cascade" }),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    role: text("role", { enum: ["owner", "admin", "member"] })
+      .notNull()
+      .default("member"),
+    status: text("status", { enum: ["active", "left", "removed"] })
+      .notNull()
+      .default("active"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.group_id, table.profile_id] }),
+    index("group_memberships_profile_status_idx").on(table.profile_id, table.status),
+    index("group_memberships_group_status_idx").on(table.group_id, table.status),
+    check("group_memberships_role_check", sql`${table.role} in ('owner', 'admin', 'member')`),
+    check("group_memberships_status_check", sql`${table.status} in ('active', 'left', 'removed')`),
+  ],
+);
+
+export const groupInvitations = pgTable(
+  "group_invitations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    group_id: uuid("group_id")
+      .notNull()
+      .references(() => groups.id, { onDelete: "cascade" }),
+    invited_profile_id: uuid("invited_profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    status: text("status", { enum: ["pending", "accepted", "declined", "revoked", "expired"] })
+      .notNull()
+      .default("pending"),
+    expires_at: timestamp("expires_at", { withTimezone: true, mode: "date" }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("group_invitations_invited_profile_status_idx").on(
+      table.invited_profile_id,
+      table.status,
+    ),
+    uniqueIndex("group_invitations_pending_profile_unique_idx")
+      .on(table.group_id, table.invited_profile_id)
+      .where(sql`${table.status} = 'pending'`),
+    check(
+      "group_invitations_status_check",
+      sql`${table.status} in ('pending', 'accepted', 'declined', 'revoked', 'expired')`,
+    ),
+  ],
+);
+
+export const groupJoinRequests = pgTable(
+  "group_join_requests",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    group_id: uuid("group_id")
+      .notNull()
+      .references(() => groups.id, { onDelete: "cascade" }),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    status: text("status", { enum: ["pending", "approved", "declined", "cancelled"] })
+      .notNull()
+      .default("pending"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("group_join_requests_group_status_idx").on(table.group_id, table.status),
+    index("idx_group_join_requests_profile_id").on(table.profile_id),
+    uniqueIndex("group_join_requests_pending_unique_idx")
+      .on(table.group_id, table.profile_id)
+      .where(sql`${table.status} = 'pending'`),
+    check(
+      "group_join_requests_status_check",
+      sql`${table.status} in ('pending', 'approved', 'declined', 'cancelled')`,
+    ),
+  ],
+);
+
 export const activityRoutes = pgTable(
   "activity_routes",
   {
@@ -75,19 +219,16 @@ export const activityRoutes = pgTable(
     updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
-    profile_id: uuid("profile_id")
-      .notNull()
-      .references(() => profiles.id, { onDelete: "cascade" }),
+    profile_id: uuid("profile_id").references(() => profiles.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     description: text("description"),
-    activity_category: activityCategoryEnum("activity_category").notNull(),
     file_path: text("file_path").notNull(),
     total_distance: integer("total_distance").notNull(),
     total_ascent: integer("total_ascent"),
     total_descent: integer("total_descent"),
-    source: text("source"),
     elevation_polyline: text("elevation_polyline"),
     polyline: text("polyline").notNull(),
+    is_system_template: boolean("is_system_template").notNull().default(false),
     is_public: boolean("is_public").notNull().default(false),
     likes_count: integer("likes_count").default(0),
   },
@@ -96,10 +237,20 @@ export const activityRoutes = pgTable(
     check("activity_routes_total_distance_check", sql`${table.total_distance} >= 0`),
     check("activity_routes_total_ascent_check", sql`${table.total_ascent} >= 0`),
     check("activity_routes_total_descent_check", sql`${table.total_descent} >= 0`),
-    index("idx_routes_profile_id").on(table.profile_id),
+    check(
+      "activity_routes_system_templates_public_check",
+      sql`${table.is_system_template} = false or ${table.is_public} = true`,
+    ),
+    check(
+      "activity_routes_system_template_check",
+      sql`(${table.is_system_template} = true and ${table.profile_id} is null) or (${table.is_system_template} = false and ${table.profile_id} is not null)`,
+    ),
+    index("idx_routes_profile_id").on(table.profile_id).where(sql`${table.profile_id} is not null`),
     index("idx_routes_name").on(table.name),
-    index("idx_routes_activity_category").on(table.activity_category),
     index("idx_routes_created_at").on(table.created_at),
+    index("idx_routes_is_system_template")
+      .on(table.is_system_template)
+      .where(sql`${table.is_system_template} = true`),
   ],
 );
 
@@ -117,7 +268,7 @@ export const activityPlans = pgTable(
     profile_id: uuid("profile_id").references(() => profiles.id, { onDelete: "cascade" }),
     route_id: uuid("route_id").references(() => activityRoutes.id, { onDelete: "set null" }),
     name: text("name").notNull(),
-    description: text("description").notNull(),
+    description: text("description"),
     notes: text("notes"),
     activity_category: activityCategoryEnum("activity_category").notNull(),
     structure: jsonb("structure"),
@@ -168,6 +319,197 @@ export const activityPlans = pgTable(
     uniqueIndex("idx_activity_plans_import_identity")
       .on(table.profile_id, table.import_provider, table.import_external_id)
       .where(sql`${table.import_provider} is not null and ${table.import_external_id} is not null`),
+  ],
+);
+
+export const groupEvents = pgTable(
+  "group_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    group_id: uuid("group_id")
+      .notNull()
+      .references(() => groups.id, { onDelete: "cascade" }),
+    series_id: uuid("series_id").references((): AnyPgColumn => groupEvents.id, {
+      onDelete: "cascade",
+    }),
+    created_by_profile_id: uuid("created_by_profile_id").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
+    title: text("title"),
+    description: text("description"),
+    starts_at: timestamp("starts_at", { withTimezone: true, mode: "date" }).notNull(),
+    ends_at: timestamp("ends_at", { withTimezone: true, mode: "date" }),
+    timezone: text("timezone"),
+    recurrence_rule: text("recurrence_rule"),
+    recurrence_timezone: text("recurrence_timezone"),
+    occurrence_key: text("occurrence_key"),
+    location_name: text("location_name"),
+    route_id: uuid("route_id").references(() => activityRoutes.id, { onDelete: "set null" }),
+    cancelled_at: timestamp("cancelled_at", { withTimezone: true, mode: "date" }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("group_events_group_starts_at_idx").on(table.group_id, table.starts_at),
+    index("group_events_group_cancelled_starts_at_idx").on(
+      table.group_id,
+      table.cancelled_at,
+      table.starts_at,
+    ),
+    uniqueIndex("group_events_series_occurrence_unique_idx")
+      .on(table.series_id, table.occurrence_key)
+      .where(sql`${table.series_id} is not null`),
+    index("group_events_series_starts_at_idx")
+      .on(table.series_id, table.starts_at)
+      .where(sql`${table.series_id} is not null`),
+    index("idx_group_events_created_by_profile_id")
+      .on(table.created_by_profile_id)
+      .where(sql`${table.created_by_profile_id} is not null`),
+    index("idx_group_events_route_id").on(table.route_id).where(sql`${table.route_id} is not null`),
+    check(
+      "group_events_title_non_empty",
+      sql`${table.title} is null or btrim(${table.title}) <> ''`,
+    ),
+    check(
+      "group_events_root_title_required",
+      sql`${table.series_id} is not null or ${table.title} is not null`,
+    ),
+    check(
+      "group_events_time_window",
+      sql`${table.ends_at} is null or ${table.ends_at} > ${table.starts_at}`,
+    ),
+    check(
+      "group_events_series_not_self",
+      sql`${table.series_id} is null or ${table.series_id} <> ${table.id}`,
+    ),
+    check(
+      "group_events_timezone_non_empty",
+      sql`${table.timezone} is null or btrim(${table.timezone}) <> ''`,
+    ),
+    check(
+      "group_events_recurrence_rule_non_empty",
+      sql`${table.recurrence_rule} is null or btrim(${table.recurrence_rule}) <> ''`,
+    ),
+    check(
+      "group_events_recurrence_timezone_non_empty",
+      sql`${table.recurrence_timezone} is null or btrim(${table.recurrence_timezone}) <> ''`,
+    ),
+    check(
+      "group_events_recurrence_timezone_requires_rule",
+      sql`${table.recurrence_timezone} is null or ${table.recurrence_rule} is not null`,
+    ),
+    check(
+      "group_events_recurring_series_timezone_required",
+      sql`${table.recurrence_rule} is null or ${table.timezone} is not null`,
+    ),
+    check(
+      "group_events_occurrence_key_required",
+      sql`${table.series_id} is null or (${table.occurrence_key} is not null and btrim(${table.occurrence_key}) <> '')`,
+    ),
+    check(
+      "group_events_location_name_non_empty",
+      sql`${table.location_name} is null or btrim(${table.location_name}) <> ''`,
+    ),
+  ],
+);
+
+export const groupEventActivityPlans = pgTable(
+  "group_event_activity_plans",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    group_event_id: uuid("group_event_id")
+      .notNull()
+      .references(() => groupEvents.id, { onDelete: "cascade" }),
+    activity_plan_id: uuid("activity_plan_id")
+      .notNull()
+      .references(() => activityPlans.id, { onDelete: "cascade" }),
+    label: text("label"),
+    sort_order: integer("sort_order").notNull().default(0),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("group_event_activity_plans_event_plan_unique").on(
+      table.group_event_id,
+      table.activity_plan_id,
+    ),
+    index("group_event_activity_plans_event_sort_idx").on(table.group_event_id, table.sort_order),
+    index("idx_group_event_activity_plans_activity_plan_id").on(table.activity_plan_id),
+    check("group_event_activity_plans_sort_order_check", sql`${table.sort_order} >= 0`),
+    check(
+      "group_event_activity_plans_label_non_empty",
+      sql`${table.label} is null or btrim(${table.label}) <> ''`,
+    ),
+  ],
+);
+
+export const groupEventRsvps = pgTable(
+  "group_event_rsvps",
+  {
+    group_event_id: uuid("group_event_id")
+      .notNull()
+      .references(() => groupEvents.id, { onDelete: "cascade" }),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    status: text("status", { enum: ["accepted", "declined", "tentative"] })
+      .notNull()
+      .default("accepted"),
+    selected_group_event_activity_plan_id: uuid("selected_group_event_activity_plan_id").references(
+      () => groupEventActivityPlans.id,
+      { onDelete: "set null" },
+    ),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.group_event_id, table.profile_id] }),
+    index("group_event_rsvps_profile_status_idx").on(table.profile_id, table.status),
+    index("idx_group_event_rsvps_selected_activity_plan_id")
+      .on(table.selected_group_event_activity_plan_id)
+      .where(sql`${table.selected_group_event_activity_plan_id} is not null`),
+    check(
+      "group_event_rsvps_status_check",
+      sql`${table.status} in ('accepted', 'declined', 'tentative')`,
+    ),
+  ],
+);
+
+export const groupEventSeriesRsvps = pgTable(
+  "group_event_series_rsvps",
+  {
+    group_event_series_id: uuid("group_event_series_id")
+      .notNull()
+      .references(() => groupEvents.id, { onDelete: "cascade" }),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    status: text("status", { enum: ["accepted", "declined", "tentative"] })
+      .notNull()
+      .default("accepted"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.group_event_series_id, table.profile_id] }),
+    index("group_event_series_rsvps_profile_status_idx").on(table.profile_id, table.status),
+    check(
+      "group_event_series_rsvps_status_check",
+      sql`${table.status} in ('accepted', 'declined', 'tentative')`,
+    ),
   ],
 );
 
@@ -242,6 +584,7 @@ export const activityPlanRefreshQueue = pgTable(
       table.profile_id,
       table.queued_at,
     ),
+    index("idx_activity_plan_refresh_queue_activity_plan_id").on(table.activity_plan_id),
   ],
 );
 
@@ -254,6 +597,7 @@ export const profileEstimationState = pgTable(
     metrics_revision: integer("metrics_revision").notNull().default(0),
     performance_revision: integer("performance_revision").notNull().default(0),
     fitness_revision: integer("fitness_revision").notNull().default(0),
+    dirty_since: timestamp("dirty_since", { withTimezone: true, mode: "date" }),
     updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -350,13 +694,6 @@ export const events = pgTable(
     profile_id: uuid("profile_id")
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
-    training_plan_id: uuid("training_plan_id").references(() => trainingPlans.id, {
-      onDelete: "set null",
-    }),
-    activity_plan_id: uuid("activity_plan_id").references(() => activityPlans.id, {
-      onDelete: "set null",
-    }),
-    linked_activity_id: uuid("linked_activity_id").references(() => activities.id),
     event_type: eventTypeEnum("event_type").notNull(),
     status: eventStatusEnum("status").notNull().default("scheduled"),
     title: text("title").notNull(),
@@ -364,57 +701,135 @@ export const events = pgTable(
     notes: text("notes"),
     all_day: boolean("all_day").notNull().default(false),
     timezone: text("timezone").notNull().default("UTC"),
+    starts_at: timestamp("starts_at", { withTimezone: true, mode: "date" }).notNull(),
+    ends_at: timestamp("ends_at", { withTimezone: true, mode: "date" }),
+    scheduled_date: text("scheduled_date"),
+    read_only: boolean("read_only"),
+    training_plan_id: uuid("training_plan_id"),
+    activity_plan_id: uuid("activity_plan_id"),
+    linked_activity_id: uuid("linked_activity_id"),
+    route_id: uuid("route_id"),
     recurrence_rule: text("recurrence_rule"),
     recurrence_timezone: text("recurrence_timezone"),
     series_id: uuid("series_id"),
     source_provider: text("source_provider"),
     occurrence_key: text("occurrence_key").notNull().default(""),
     original_starts_at: timestamp("original_starts_at", { withTimezone: true, mode: "date" }),
-    integration_account_id: uuid("integration_account_id").references(() => integrations.id),
+    integration_account_id: uuid("integration_account_id"),
     external_calendar_id: text("external_calendar_id"),
     external_event_id: text("external_event_id"),
+    schedule_batch_id: uuid("schedule_batch_id"),
+    user_training_plan_id: uuid("user_training_plan_id"),
+    lifecycle: jsonb("lifecycle"),
+    recurrence: jsonb("recurrence"),
+    payload: jsonb("payload"),
+  },
+  (table) => [
+    uniqueIndex("events_idx_key").on(table.idx),
+    unique("events_id_profile_id_unique").on(table.id, table.profile_id),
+    check(
+      "events_time_window",
+      sql`${table.ends_at} is null or ${table.ends_at} > ${table.starts_at}`,
+    ),
+    index("idx_events_event_type_starts_at").on(table.event_type, table.starts_at),
+    index("idx_events_profile_starts_at").on(table.profile_id, table.starts_at),
+    index("idx_events_profile_status_starts_at").on(
+      table.profile_id,
+      table.status,
+      table.starts_at,
+    ),
+  ],
+);
+
+export const eventScheduleLinks = pgTable(
+  "event_schedule_links",
+  {
+    event_id: uuid("event_id").primaryKey(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    training_plan_id: uuid("training_plan_id").references(() => trainingPlans.id, {
+      onDelete: "set null",
+    }),
+    activity_plan_id: uuid("activity_plan_id").references(() => activityPlans.id, {
+      onDelete: "set null",
+    }),
+    linked_activity_id: uuid("linked_activity_id").references(() => activities.id),
+    route_id: uuid("route_id").references(() => activityRoutes.id),
     schedule_batch_id: uuid("schedule_batch_id"),
     user_training_plan_id: uuid("user_training_plan_id").references(() => userTrainingPlans.id, {
       onDelete: "set null",
     }),
-    starts_at: timestamp("starts_at", { withTimezone: true, mode: "date" }).notNull(),
-    ends_at: timestamp("ends_at", { withTimezone: true, mode: "date" }),
-    scheduled_date: text("scheduled_date"),
-    read_only: boolean("read_only"),
-    lifecycle: jsonb("lifecycle"),
-    recurrence: jsonb("recurrence"),
-    payload: jsonb("payload"),
-    route_id: uuid("route_id").references(() => activityRoutes.id),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
   },
   (table) => [
-    uniqueIndex("events_idx_key").on(table.idx),
     foreignKey({
-      columns: [table.series_id],
-      foreignColumns: [table.id],
-      name: "events_series_id_fkey",
+      columns: [table.event_id, table.profile_id],
+      foreignColumns: [events.id, events.profile_id],
+      name: "event_schedule_links_event_profile_fkey",
+    }).onDelete("cascade"),
+    index("idx_event_schedule_links_profile_id").on(table.profile_id),
+    index("idx_event_schedule_links_training_plan_id")
+      .on(table.training_plan_id)
+      .where(sql`${table.training_plan_id} is not null`),
+    index("idx_event_schedule_links_activity_plan_id")
+      .on(table.activity_plan_id)
+      .where(sql`${table.activity_plan_id} is not null`),
+    index("idx_event_schedule_links_linked_activity_id")
+      .on(table.linked_activity_id)
+      .where(sql`${table.linked_activity_id} is not null`),
+    index("idx_event_schedule_links_route_id")
+      .on(table.route_id)
+      .where(sql`${table.route_id} is not null`),
+    index("idx_event_schedule_links_schedule_batch")
+      .on(table.profile_id, table.schedule_batch_id)
+      .where(sql`${table.schedule_batch_id} is not null`),
+    index("idx_event_schedule_links_user_training_plan_id")
+      .on(table.user_training_plan_id)
+      .where(sql`${table.user_training_plan_id} is not null`),
+  ],
+);
+
+export const eventExternalLinks = pgTable(
+  "event_external_links",
+  {
+    event_id: uuid("event_id").primaryKey(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    source_provider: text("source_provider"),
+    integration_account_id: uuid("integration_account_id").references(() => integrations.id),
+    external_calendar_id: text("external_calendar_id"),
+    external_event_id: text("external_event_id"),
+    occurrence_key: text("occurrence_key").notNull().default(""),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.event_id, table.profile_id],
+      foreignColumns: [events.id, events.profile_id],
+      name: "event_external_links_event_profile_fkey",
     }).onDelete("cascade"),
     check(
-      "events_external_calendar_non_empty",
+      "event_external_links_calendar_non_empty",
       sql`${table.external_calendar_id} is null or btrim(${table.external_calendar_id}) <> ''`,
     ),
     check(
-      "events_external_event_non_empty",
+      "event_external_links_event_non_empty",
       sql`${table.external_event_id} is null or btrim(${table.external_event_id}) <> ''`,
     ),
     check(
-      "events_recurrence_timezone_requires_rule",
-      sql`${table.recurrence_timezone} is null or ${table.recurrence_rule} is not null`,
-    ),
-    check(
-      "events_series_not_self",
-      sql`${table.series_id} is null or ${table.series_id} <> ${table.id}`,
-    ),
-    check(
-      "events_series_occurrence_key_required",
-      sql`${table.series_id} is null or btrim(${table.occurrence_key}) <> ''`,
-    ),
-    check(
-      "events_source_identity_complete",
+      "event_external_links_source_identity_complete",
       sql`(
         ${table.source_provider} is null
         and ${table.integration_account_id} is null
@@ -428,18 +843,10 @@ export const events = pgTable(
       )`,
     ),
     check(
-      "events_source_provider_non_empty",
+      "event_external_links_source_provider_non_empty",
       sql`${table.source_provider} is null or btrim(${table.source_provider}) <> ''`,
     ),
-    check(
-      "events_time_window",
-      sql`${table.ends_at} is null or ${table.ends_at} > ${table.starts_at}`,
-    ),
-    index("idx_events_activity_plan")
-      .on(table.activity_plan_id)
-      .where(sql`${table.activity_plan_id} is not null`),
-    index("idx_events_event_type_starts_at").on(table.event_type, table.starts_at),
-    uniqueIndex("idx_events_external_identity_unique")
+    uniqueIndex("idx_event_external_links_identity_unique")
       .on(
         table.source_provider,
         table.integration_account_id,
@@ -450,29 +857,138 @@ export const events = pgTable(
       .where(
         sql`${table.source_provider} is not null and ${table.integration_account_id} is not null and ${table.external_calendar_id} is not null and ${table.external_event_id} is not null`,
       ),
-    index("idx_events_integration_calendar_updated")
+    index("idx_event_external_links_profile_id").on(table.profile_id),
+    index("idx_event_external_links_integration_calendar_updated")
       .on(table.integration_account_id, table.external_calendar_id, table.updated_at)
       .where(
         sql`${table.integration_account_id} is not null and ${table.external_calendar_id} is not null`,
       ),
-    index("idx_events_profile_starts_at").on(table.profile_id, table.starts_at),
-    index("idx_events_profile_status_starts_at").on(
-      table.profile_id,
-      table.status,
-      table.starts_at,
+  ],
+);
+
+export const eventRecurrence = pgTable(
+  "event_recurrence",
+  {
+    event_id: uuid("event_id").primaryKey(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    recurrence_rule: text("recurrence_rule"),
+    recurrence_timezone: text("recurrence_timezone"),
+    series_id: uuid("series_id").references(() => events.id, { onDelete: "cascade" }),
+    occurrence_key: text("occurrence_key").notNull().default(""),
+    original_starts_at: timestamp("original_starts_at", { withTimezone: true, mode: "date" }),
+    recurrence: jsonb("recurrence"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.event_id, table.profile_id],
+      foreignColumns: [events.id, events.profile_id],
+      name: "event_recurrence_event_profile_fkey",
+    }).onDelete("cascade"),
+    check(
+      "event_recurrence_rule_non_empty",
+      sql`${table.recurrence_rule} is null or btrim(${table.recurrence_rule}) <> ''`,
     ),
-    uniqueIndex("idx_events_series_occurrence_unique")
+    check(
+      "event_recurrence_timezone_non_empty",
+      sql`${table.recurrence_timezone} is null or btrim(${table.recurrence_timezone}) <> ''`,
+    ),
+    check(
+      "event_recurrence_timezone_requires_rule",
+      sql`${table.recurrence_timezone} is null or ${table.recurrence_rule} is not null`,
+    ),
+    check(
+      "event_recurrence_series_occurrence_key_required",
+      sql`${table.series_id} is null or btrim(${table.occurrence_key}) <> ''`,
+    ),
+    check(
+      "event_recurrence_series_not_self",
+      sql`${table.series_id} is null or ${table.series_id} <> ${table.event_id}`,
+    ),
+    index("idx_event_recurrence_profile_id").on(table.profile_id),
+    uniqueIndex("idx_event_recurrence_series_occurrence_unique")
       .on(table.series_id, table.occurrence_key)
       .where(sql`${table.series_id} is not null`),
-    index("idx_events_training_plan")
-      .on(table.training_plan_id)
-      .where(sql`${table.training_plan_id} is not null`),
-    index("idx_events_schedule_batch")
-      .on(table.profile_id, table.schedule_batch_id)
-      .where(sql`${table.schedule_batch_id} is not null`),
-    index("idx_events_user_training_plan")
-      .on(table.user_training_plan_id)
-      .where(sql`${table.user_training_plan_id} is not null`),
+  ],
+);
+
+export const eventPayloads = pgTable(
+  "event_payloads",
+  {
+    event_id: uuid("event_id").primaryKey(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    lifecycle: jsonb("lifecycle"),
+    payload: jsonb("payload"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.event_id, table.profile_id],
+      foreignColumns: [events.id, events.profile_id],
+      name: "event_payloads_event_profile_fkey",
+    }).onDelete("cascade"),
+    index("idx_event_payloads_profile_id").on(table.profile_id),
+  ],
+);
+
+export const contentAccessGrants = pgTable(
+  "content_access_grants",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    content_type: text("content_type", {
+      enum: ["profile", "event", "activity_plan", "activity_route", "training_plan"],
+    }).notNull(),
+    content_id: uuid("content_id").notNull(),
+    grantee_profile_id: uuid("grantee_profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    actor_profile_id: uuid("actor_profile_id").references(() => profiles.id, {
+      onDelete: "set null",
+    }),
+    access_level: text("access_level", { enum: ["read", "read_geometry"] }).notNull(),
+    source_type: text("source_type", { enum: ["event", "training_plan"] }).notNull(),
+    source_id: uuid("source_id").notNull(),
+    expires_at: timestamp("expires_at", { withTimezone: true, mode: "date" }),
+    revoked_at: timestamp("revoked_at", { withTimezone: true, mode: "date" }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("content_access_grants_source_unique").on(
+      table.content_type,
+      table.content_id,
+      table.grantee_profile_id,
+      table.access_level,
+      table.source_type,
+      table.source_id,
+    ),
+    index("idx_content_access_grants_grantee_content").on(
+      table.grantee_profile_id,
+      table.content_type,
+      table.content_id,
+    ),
+    index("idx_content_access_grants_source").on(table.source_type, table.source_id),
+    index("idx_content_access_grants_active_expiry")
+      .on(table.expires_at)
+      .where(sql`${table.expires_at} is not null and ${table.revoked_at} is null`),
+    index("idx_content_access_grants_actor_profile_id")
+      .on(table.actor_profile_id)
+      .where(sql`${table.actor_profile_id} is not null`),
   ],
 );
 
@@ -495,10 +1011,13 @@ export const activities = pgTable(
     }),
     name: text("name").notNull(),
     type: text("type").notNull(),
-    provider: integrationProviderEnum("provider"),
-    external_id: text("external_id"),
     started_at: timestamp("started_at", { withTimezone: true, mode: "date" }).notNull(),
     finished_at: timestamp("finished_at", { withTimezone: true, mode: "date" }).notNull(),
+    notes: text("notes"),
+    likes_count: integer("likes_count").default(0),
+    is_private: boolean("is_private").notNull().default(true),
+    provider: integrationProviderEnum("provider"),
+    external_id: text("external_id"),
     duration_seconds: integer("duration_seconds").notNull().default(0),
     moving_seconds: integer("moving_seconds").notNull().default(0),
     distance_meters: integer("distance_meters").notNull().default(0),
@@ -532,78 +1051,235 @@ export const activities = pgTable(
       scale: 2,
       mode: "number",
     }),
-    avg_temperature: numeric("avg_temperature"),
-    avg_swolf: numeric("avg_swolf"),
-    efficiency_factor: numeric("efficiency_factor"),
-    aerobic_decoupling: numeric("aerobic_decoupling"),
-    pool_length: numeric("pool_length"),
+    avg_temperature: numeric("avg_temperature", { mode: "number" }),
+    avg_swolf: numeric("avg_swolf", { mode: "number" }),
+    efficiency_factor: numeric("efficiency_factor", { mode: "number" }),
+    aerobic_decoupling: numeric("aerobic_decoupling", { mode: "number" }),
+    pool_length: numeric("pool_length", { mode: "number" }),
     total_strokes: integer("total_strokes"),
     device_manufacturer: text("device_manufacturer"),
     device_product: text("device_product"),
-    fit_file_path: text("fit_file_path"),
-    fit_file_size: integer("fit_file_size"),
+    activity_file_path: text("activity_file_path"),
+    activity_file_size: integer("activity_file_size"),
     import_source: text("import_source"),
     import_file_type: text("import_file_type"),
     import_original_file_name: text("import_original_file_name"),
-    notes: text("notes"),
     polyline: text("polyline"),
     laps: jsonb("laps"),
     map_bounds: jsonb("map_bounds"),
-    likes_count: integer("likes_count").default(0),
-    is_private: boolean("is_private").notNull().default(true),
   },
   (table) => [
     uniqueIndex("activities_idx_key").on(table.idx),
-    check("activities_distance_meters_check", sql`${table.distance_meters} >= 0`),
-    check("activities_duration_seconds_check", sql`${table.duration_seconds} >= 0`),
-    check("activities_moving_seconds_check", sql`${table.moving_seconds} >= 0`),
-    check(
-      "chk_moving_time",
-      sql`${table.moving_seconds} >= 0 and ${table.moving_seconds} <= ${table.duration_seconds}`,
-    ),
-    check(
-      "activities_import_file_type_non_empty_check",
-      sql`${table.import_file_type} is null or btrim(${table.import_file_type}) <> ''`,
-    ),
-    check(
-      "activities_import_original_file_name_non_empty_check",
-      sql`${table.import_original_file_name} is null or btrim(${table.import_original_file_name}) <> ''`,
-    ),
-    check(
-      "activities_import_source_check",
-      sql`${table.import_source} is null or ${table.import_source} = 'manual_historical'`,
-    ),
+    unique("activities_id_profile_id_unique").on(table.id, table.profile_id),
     index("idx_activities_activity_plan")
       .on(table.activity_plan_id)
       .where(sql`${table.activity_plan_id} is not null`),
-    uniqueIndex("idx_activities_external_unique")
-      .on(table.provider, table.external_id)
-      .where(sql`${table.external_id} is not null and ${table.provider} is not null`),
-    index("idx_activities_provider_external")
-      .on(table.provider, table.external_id)
-      .where(sql`${table.external_id} is not null`),
     index("idx_activities_profile_started").on(table.profile_id, table.started_at),
     index("idx_activities_started").on(table.started_at),
     index("idx_activities_type").on(table.type),
   ],
 );
 
-export const activityEfforts = pgTable("activity_efforts", {
-  id: uuid("id").primaryKey(),
-  created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
-  updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }),
-  profile_id: uuid("profile_id")
-    .notNull()
-    .references(() => profiles.id),
-  activity_id: uuid("activity_id").references(() => activities.id),
-  recorded_at: timestamp("recorded_at", { withTimezone: true, mode: "date" }).notNull(),
-  activity_category: activityCategoryEnum("activity_category").notNull(),
-  effort_type: effortTypeEnum("effort_type").notNull(),
-  duration_seconds: integer("duration_seconds").notNull(),
-  start_offset: integer("start_offset"),
-  unit: text("unit").notNull(),
-  value: real("value").notNull(),
-});
+export const activitySummaries = pgTable(
+  "activity_summaries",
+  {
+    activity_id: uuid("activity_id").primaryKey(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    duration_seconds: integer("duration_seconds").notNull().default(0),
+    moving_seconds: integer("moving_seconds").notNull().default(0),
+    distance_meters: integer("distance_meters").notNull().default(0),
+    elevation_gain_meters: numeric("elevation_gain_meters", {
+      precision: 10,
+      scale: 2,
+      mode: "number",
+    }),
+    elevation_loss_meters: numeric("elevation_loss_meters", {
+      precision: 10,
+      scale: 2,
+      mode: "number",
+    }),
+    calories: integer("calories"),
+    avg_heart_rate: integer("avg_heart_rate"),
+    max_heart_rate: integer("max_heart_rate"),
+    avg_power: integer("avg_power"),
+    max_power: integer("max_power"),
+    normalized_power: integer("normalized_power"),
+    avg_cadence: integer("avg_cadence"),
+    max_cadence: integer("max_cadence"),
+    avg_speed_mps: numeric("avg_speed_mps", { precision: 6, scale: 2, mode: "number" }),
+    max_speed_mps: numeric("max_speed_mps", { precision: 6, scale: 2, mode: "number" }),
+    normalized_speed_mps: numeric("normalized_speed_mps", {
+      precision: 6,
+      scale: 2,
+      mode: "number",
+    }),
+    normalized_graded_speed_mps: numeric("normalized_graded_speed_mps", {
+      precision: 6,
+      scale: 2,
+      mode: "number",
+    }),
+    avg_temperature: numeric("avg_temperature", { mode: "number" }),
+    avg_swolf: numeric("avg_swolf", { mode: "number" }),
+    efficiency_factor: numeric("efficiency_factor", { mode: "number" }),
+    aerobic_decoupling: numeric("aerobic_decoupling", { mode: "number" }),
+    pool_length: numeric("pool_length", { mode: "number" }),
+    total_strokes: integer("total_strokes"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.activity_id, table.profile_id],
+      foreignColumns: [activities.id, activities.profile_id],
+      name: "activity_summaries_activity_profile_fkey",
+    }).onDelete("cascade"),
+    check("activity_summaries_distance_meters_check", sql`${table.distance_meters} >= 0`),
+    check("activity_summaries_duration_seconds_check", sql`${table.duration_seconds} >= 0`),
+    check("activity_summaries_moving_seconds_check", sql`${table.moving_seconds} >= 0`),
+    check(
+      "activity_summaries_moving_time_check",
+      sql`${table.moving_seconds} >= 0 and ${table.moving_seconds} <= ${table.duration_seconds}`,
+    ),
+    index("idx_activity_summaries_profile_id").on(table.profile_id),
+  ],
+);
+
+export const activityImports = pgTable(
+  "activity_imports",
+  {
+    activity_id: uuid("activity_id").primaryKey(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    provider: integrationProviderEnum("provider"),
+    external_id: text("external_id"),
+    device_manufacturer: text("device_manufacturer"),
+    device_product: text("device_product"),
+    activity_file_path: text("activity_file_path"),
+    activity_file_size: integer("activity_file_size"),
+    import_source: text("import_source"),
+    import_file_type: text("import_file_type"),
+    import_original_file_name: text("import_original_file_name"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.activity_id, table.profile_id],
+      foreignColumns: [activities.id, activities.profile_id],
+      name: "activity_imports_activity_profile_fkey",
+    }).onDelete("cascade"),
+    check(
+      "activity_imports_import_file_type_non_empty_check",
+      sql`${table.import_file_type} is null or btrim(${table.import_file_type}) <> ''`,
+    ),
+    check(
+      "activity_imports_import_original_file_name_non_empty_check",
+      sql`${table.import_original_file_name} is null or btrim(${table.import_original_file_name}) <> ''`,
+    ),
+    check(
+      "activity_imports_import_source_check",
+      sql`${table.import_source} is null or ${table.import_source} = 'manual_historical'`,
+    ),
+    uniqueIndex("idx_activity_imports_external_unique")
+      .on(table.provider, table.external_id)
+      .where(sql`${table.external_id} is not null and ${table.provider} is not null`),
+    index("idx_activity_imports_profile_id").on(table.profile_id),
+    index("idx_activity_imports_provider_external")
+      .on(table.provider, table.external_id)
+      .where(sql`${table.external_id} is not null`),
+  ],
+);
+
+export const activityGeometry = pgTable(
+  "activity_geometry",
+  {
+    activity_id: uuid("activity_id").primaryKey(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    polyline: text("polyline"),
+    map_bounds: jsonb("map_bounds"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.activity_id, table.profile_id],
+      foreignColumns: [activities.id, activities.profile_id],
+      name: "activity_geometry_activity_profile_fkey",
+    }).onDelete("cascade"),
+    index("idx_activity_geometry_profile_id").on(table.profile_id),
+  ],
+);
+
+export const activityLaps = pgTable(
+  "activity_laps",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    activity_id: uuid("activity_id").notNull(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    lap_index: integer("lap_index").notNull(),
+    payload: jsonb("payload").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.activity_id, table.profile_id],
+      foreignColumns: [activities.id, activities.profile_id],
+      name: "activity_laps_activity_profile_fkey",
+    }).onDelete("cascade"),
+    unique("activity_laps_activity_index_unique").on(table.activity_id, table.lap_index),
+    check("activity_laps_lap_index_check", sql`${table.lap_index} >= 0`),
+    index("idx_activity_laps_activity_id").on(table.activity_id),
+    index("idx_activity_laps_profile_id").on(table.profile_id),
+  ],
+);
+
+export const activityEfforts = pgTable(
+  "activity_efforts",
+  {
+    id: uuid("id").primaryKey(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id),
+    activity_id: uuid("activity_id").references(() => activities.id, { onDelete: "cascade" }),
+    recorded_at: timestamp("recorded_at", { withTimezone: true, mode: "date" }).notNull(),
+    activity_category: activityCategoryEnum("activity_category").notNull(),
+    effort_type: effortTypeEnum("effort_type").notNull(),
+    duration_seconds: integer("duration_seconds").notNull(),
+    start_offset: integer("start_offset"),
+    unit: text("unit").notNull(),
+    value: real("value").notNull(),
+  },
+  (table) => [
+    index("idx_activity_efforts_activity_id").on(table.activity_id),
+    index("idx_activity_efforts_profile_id").on(table.profile_id),
+  ],
+);
 
 export const integrations = pgTable(
   "integrations",
@@ -615,10 +1291,6 @@ export const integrations = pgTable(
       .references(() => profiles.id, { onDelete: "cascade" }),
     provider: integrationProviderEnum("provider").notNull(),
     external_id: text("external_id").notNull(),
-    access_token: text("access_token").notNull(),
-    refresh_token: text("refresh_token"),
-    expires_at: timestamp("expires_at", { withTimezone: true, mode: "date" }),
-    scope: text("scope"),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -631,8 +1303,27 @@ export const integrations = pgTable(
     index("idx_integrations_profile_id").on(table.profile_id),
     index("idx_integrations_external_id").on(table.external_id),
     index("idx_integrations_provider").on(table.provider),
-    index("idx_integrations_expires_at").on(table.expires_at),
   ],
+);
+
+export const integrationCredentials = pgTable(
+  "integration_credentials",
+  {
+    integration_id: uuid("integration_id")
+      .primaryKey()
+      .references(() => integrations.id, { onDelete: "cascade" }),
+    access_token: text("access_token").notNull(),
+    refresh_token: text("refresh_token"),
+    expires_at: timestamp("expires_at", { withTimezone: true, mode: "date" }),
+    scope: text("scope"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [index("idx_integration_credentials_expires_at").on(table.expires_at)],
 );
 
 export const profileMetrics = pgTable(
@@ -689,9 +1380,6 @@ export const profileGoals = pgTable(
     profile_id: uuid("profile_id")
       .notNull()
       .references(() => profiles.id),
-    milestone_event_id: uuid("milestone_event_id")
-      .notNull()
-      .references(() => events.id),
     title: text("title").notNull(),
     priority: integer("priority").notNull(),
     activity_category: text("activity_category"),
@@ -700,10 +1388,7 @@ export const profileGoals = pgTable(
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
     updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
   },
-  (table) => [
-    index("idx_profile_goals_profile_id").on(table.profile_id),
-    index("idx_profile_goals_milestone_event_id").on(table.milestone_event_id),
-  ],
+  (table) => [index("idx_profile_goals_profile_id").on(table.profile_id)],
 );
 
 export const oauthStates = pgTable(
@@ -751,6 +1436,7 @@ export const integrationResourceLinks = pgTable(
     internal_resource_id: uuid("internal_resource_id").notNull(),
     external_id: text("external_id").notNull(),
     provider_updated_at: timestamp("provider_updated_at", { withTimezone: true, mode: "date" }),
+    provider_metadata: jsonb("provider_metadata"),
     payload_hash: text("payload_hash"),
   },
   (table) => [
@@ -835,8 +1521,10 @@ export const providerSyncJobs = pgTable(
       .references(() => integrations.id, { onDelete: "cascade" }),
     provider: integrationProviderEnum("provider").notNull(),
     job_type: text("job_type").notNull(),
+    operation: text("operation"),
     resource_kind: integrationResourceKindEnum("resource_kind"),
     internal_resource_id: uuid("internal_resource_id"),
+    sync_lane_key: text("sync_lane_key"),
     status: text("status").notNull().default("queued"),
     priority: integer("priority").notNull().default(100),
     run_at: timestamp("run_at", { withTimezone: true, mode: "date" }).notNull().defaultNow(),
@@ -844,6 +1532,8 @@ export const providerSyncJobs = pgTable(
     max_attempts: integer("max_attempts").notNull().default(8),
     dedupe_key: text("dedupe_key"),
     payload: jsonb("payload").notNull().default(sql`'{}'::jsonb`),
+    payload_hash: text("payload_hash"),
+    supersedes_job_id: uuid("supersedes_job_id"),
     last_error: text("last_error"),
     locked_at: timestamp("locked_at", { withTimezone: true, mode: "date" }),
     lock_expires_at: timestamp("lock_expires_at", { withTimezone: true, mode: "date" }),
@@ -862,6 +1552,12 @@ export const providerSyncJobs = pgTable(
       table.status,
     ),
     index("idx_provider_sync_jobs_dedupe_key").on(table.dedupe_key),
+    index("idx_provider_sync_jobs_lane_status").on(table.sync_lane_key, table.status, table.run_at),
+    index("idx_provider_sync_jobs_integration_id").on(table.integration_id),
+    index("idx_provider_sync_jobs_profile_id").on(table.profile_id),
+    index("idx_provider_sync_jobs_supersedes_job_id")
+      .on(table.supersedes_job_id)
+      .where(sql`${table.supersedes_job_id} is not null`),
   ],
 );
 
@@ -904,6 +1600,9 @@ export const providerWebhookReceipts = pgTable(
       table.processing_status,
     ),
     index("idx_provider_webhook_receipts_job_id").on(table.job_id),
+    index("idx_provider_webhook_receipts_integration_id")
+      .on(table.integration_id)
+      .where(sql`${table.integration_id} is not null`),
   ],
 );
 
@@ -924,6 +1623,7 @@ export const notifications = pgTable(
   },
   (table) => [
     index("idx_notifications_user_id").on(table.user_id),
+    index("idx_notifications_actor_id").on(table.actor_id),
     index("idx_notifications_read_at").on(table.read_at),
   ],
 );
@@ -951,7 +1651,10 @@ export const conversationParticipants = pgTable(
       .defaultNow()
       .notNull(),
   },
-  (table) => [primaryKey({ columns: [table.conversation_id, table.user_id] })],
+  (table) => [
+    primaryKey({ columns: [table.conversation_id, table.user_id] }),
+    index("idx_conversation_participants_user_id").on(table.user_id),
+  ],
 );
 
 export const messages = pgTable(
@@ -971,7 +1674,10 @@ export const messages = pgTable(
     deleted_at: timestamp("deleted_at", { withTimezone: true, mode: "date" }),
     read_at: timestamp("read_at", { withTimezone: true, mode: "date" }),
   },
-  (table) => [index("idx_messages_conversation_id").on(table.conversation_id)],
+  (table) => [
+    index("idx_messages_conversation_id").on(table.conversation_id),
+    index("idx_messages_sender_id").on(table.sender_id),
+  ],
 );
 
 export const follows = pgTable(
@@ -1063,7 +1769,7 @@ export const comments = pgTable(
     id: uuid("id").primaryKey(),
     profile_id: uuid("profile_id").references(() => profiles.id),
     entity_type: text("entity_type", {
-      enum: ["activity", "training_plan", "activity_plan", "route"],
+      enum: ["activity", "training_plan", "activity_plan", "route", "event"],
     }).notNull(),
     entity_id: uuid("entity_id").notNull(),
     content: text("content").notNull(),

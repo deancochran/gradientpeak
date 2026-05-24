@@ -8,7 +8,7 @@ type ActivityAnalysisMetricSnapshot = Omit<
 type ActivityAnalysisEffortSnapshot = Omit<
   Pick<
     ActivityEffortRow,
-    "activity_category" | "duration_seconds" | "effort_type" | "recorded_at" | "value"
+    "activity_category" | "duration_seconds" | "effort_type" | "recorded_at" | "unit" | "value"
   >,
   "value"
 > & { value: number };

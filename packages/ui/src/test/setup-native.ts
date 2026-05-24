@@ -179,6 +179,7 @@ jest.mock(
 jest.mock("react-native-reanimated", () => ({
   __esModule: true,
   default: {
+    ScrollView: createHost("Animated.ScrollView"),
     View: createHost("Animated.View"),
   },
   Extrapolation: {
@@ -193,9 +194,11 @@ jest.mock("react-native-reanimated", () => ({
   LinearTransition: createAnimationBuilder(),
   interpolate: (_value: unknown, _input: unknown, output: [unknown, unknown]) => output[0],
   useAnimatedStyle: (callback: () => unknown) => callback(),
+  useAnimatedScrollHandler: (handler: unknown) => handler,
   useDerivedValue: (callback: () => unknown) => ({
     value: callback(),
   }),
+  useSharedValue: (value: unknown) => ({ value }),
   withSpring: (value: unknown) => value,
   withTiming: (value: unknown) => value,
 }));

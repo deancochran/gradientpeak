@@ -60,7 +60,7 @@ For multi-device scenarios, prefer actor-specific env overlays instead of reusin
 - one saved route discoverable by name
 - one scheduled planned event that can be rescheduled and deleted
 - one custom event that can be edited and deleted
-- one planned workout whose start path warns about missing profile metrics, so continue-without-metrics can be exercised
+- one planned activity whose start path warns about missing profile metrics, so continue-without-metrics can be exercised
 - one goal so Plan tab chart updates are visible after scheduling changes
 - optional historical FIT sample file and seeded import-ready integration account
 - optional direct-message conversation and unread notification state for social lanes

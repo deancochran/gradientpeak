@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-async function loadServerConfigModule() {
+async function loadServerConfigModule(environment = "development") {
   vi.resetModules();
+  process.env.APP_ENV = environment;
   process.env.EXPO_PUBLIC_API_URL = "https://api.gradientpeak.app";
   process.env.EXPO_PUBLIC_SUPABASE_URL = "https://db.gradientpeak.app";
+  delete process.env.EXPO_PUBLIC_ENABLE_SERVER_OVERRIDE;
 
   const secureStore = await import("expo-secure-store");
   (secureStore as any).__store.clear();
@@ -15,6 +17,11 @@ async function loadServerConfigModule() {
 describe("server-config", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    delete process.env.APP_ENV;
+    delete process.env.EXPO_PUBLIC_ENABLE_SERVER_OVERRIDE;
+    delete process.env.EXPO_PUBLIC_MAESTRO_E2E;
+    delete process.env.EXPO_PUBLIC_MAESTRO_E2E_API_URL;
+    delete process.env.EXPO_PUBLIC_MAESTRO_E2E_SUPABASE_URL;
   });
 
   it("loads hosted defaults when no override exists", async () => {
@@ -26,6 +33,22 @@ describe("server-config", () => {
       initialized: true,
       apiUrl: "https://api.gradientpeak.app",
       supabaseUrl: "https://db.gradientpeak.app",
+      overrideUrl: null,
+    });
+  });
+
+  it("uses configurable Maestro E2E server defaults", async () => {
+    process.env.EXPO_PUBLIC_MAESTRO_E2E = "1";
+    process.env.EXPO_PUBLIC_MAESTRO_E2E_API_URL = "http://10.0.2.2:3000/";
+    process.env.EXPO_PUBLIC_MAESTRO_E2E_SUPABASE_URL = "http://10.0.2.2:54321/";
+    const { module } = await loadServerConfigModule();
+
+    await module.initializeServerConfig();
+
+    expect(module.getServerConfig()).toMatchObject({
+      initialized: true,
+      apiUrl: "http://10.0.2.2:3000",
+      supabaseUrl: "http://10.0.2.2:54321",
       overrideUrl: null,
     });
   });
@@ -85,6 +108,23 @@ describe("server-config", () => {
     );
   });
 
+  it("disables stored and new override URLs in production", async () => {
+    const { module, secureStore } = await loadServerConfigModule("production");
+
+    await secureStore.setItemAsync("server_url_override", "http://127.0.0.1:3000");
+    await module.initializeServerConfig();
+
+    expect(module.isServerUrlOverrideEnabled()).toBe(false);
+    expect(module.getServerConfig()).toMatchObject({
+      apiUrl: "https://api.gradientpeak.app",
+      supabaseUrl: "https://db.gradientpeak.app",
+      overrideUrl: null,
+    });
+    await expect(module.setServerUrlOverride("http://127.0.0.1:3000")).rejects.toThrow(
+      "disabled in production",
+    );
+  });
+
   it("does not bump state version when override is unchanged", async () => {
     const { module } = await loadServerConfigModule();
 
@@ -97,5 +137,34 @@ describe("server-config", () => {
 
     expect(result.changed).toBe(false);
     expect(afterSecondSet.version).toBe(afterFirstSet.version);
+  });
+
+  it("rewrites local signed storage URLs to the reachable hosted supabase origin", async () => {
+    const { module } = await loadServerConfigModule();
+
+    await module.initializeServerConfig();
+
+    expect(
+      module.getReachableSupabaseStorageUrl(
+        "http://127.0.0.1:54321/storage/v1/object/upload/sign/profile-avatars/test.png?token=abc",
+      ),
+    ).toBe(
+      "https://db.gradientpeak.app/storage/v1/object/upload/sign/profile-avatars/test.png?token=abc",
+    );
+  });
+
+  it("keeps local signed storage URLs when the device is intentionally using local supabase", async () => {
+    const { module } = await loadServerConfigModule();
+
+    await module.initializeServerConfig();
+    await module.setServerUrlOverride("http://127.0.0.1:3000");
+
+    expect(
+      module.getReachableSupabaseStorageUrl(
+        "http://127.0.0.1:54321/storage/v1/object/upload/sign/profile-avatars/test.png?token=abc",
+      ),
+    ).toBe(
+      "http://127.0.0.1:54321/storage/v1/object/upload/sign/profile-avatars/test.png?token=abc",
+    );
   });
 });

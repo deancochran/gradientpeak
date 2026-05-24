@@ -69,10 +69,10 @@ function isValidIcalRRule(value: string): boolean {
 /**
  * Event types used by the core event domain.
  *
- * - "planned": user/programmed planned workout
+ * - "planned": user/programmed planned activity
  * - "rest_day": legacy persisted rest-day marker (read compatibility only)
  * - "race_target": race/goal target marker
- * - "custom": user-authored non-workout event
+ * - "custom": user-authored non-activity event
  * - "imported": read-only external calendar import
  */
 export const eventTypeSchema = z.enum(["planned", "rest_day", "race_target", "custom", "imported"]);
@@ -161,6 +161,26 @@ export const eventRecurrenceSchema = z
       }
     }
   });
+
+export const persistableEventRecurrenceSchema = eventRecurrenceSchema.superRefine(
+  (recurrence, ctx) => {
+    if (recurrence.exdates.length > 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["exdates"],
+        message: "exdates are not supported for persisted recurrence yet",
+      });
+    }
+
+    if (recurrence.exceptions.length > 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["exceptions"],
+        message: "exceptions are not supported for persisted recurrence yet",
+      });
+    }
+  },
+);
 
 export const eventLifecycleStatusSchema = z.enum([
   "scheduled",
@@ -281,33 +301,6 @@ export const editableEventDomainSchema = editableEventDomainBaseSchema
     }
   });
 
-export const editableEventPatchSchema = z
-  .object({
-    title: z.string().min(1).max(255).optional(),
-    starts_at: dateTimeStringSchema.optional(),
-    ends_at: dateTimeStringSchema.nullable().optional(),
-    all_day: z.boolean().optional(),
-    timezone: z.string().min(1).max(120).optional(),
-    notes: z.string().max(2000).nullable().optional(),
-    description: z.string().max(5000).nullable().optional(),
-    activity_plan_id: z.string().uuid().nullable().optional(),
-    training_plan_id: z.string().uuid().nullable().optional(),
-    recurrence: eventRecurrenceSchema.optional(),
-    lifecycle: eventLifecycleSchema.optional(),
-    event_type: editableEventTypeSchema.optional(),
-    source: z.undefined().optional(),
-    read_only: z.boolean().optional(),
-  })
-  .superRefine((event, ctx) => {
-    if (event.event_type === "planned" && !event.activity_plan_id) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["activity_plan_id"],
-        message: 'activity_plan_id is required when event_type is "planned"',
-      });
-    }
-  });
-
 export const importedEventDomainSchema = eventDomainBaseSchema.extend({
   event_type: z.literal("imported"),
   source: importedEventSourceMetadataSchema,
@@ -316,7 +309,129 @@ export const importedEventDomainSchema = eventDomainBaseSchema.extend({
 
 export const eventDomainSchema = z.union([editableEventDomainSchema, importedEventDomainSchema]);
 
-export const eventCreateSchema = eventDomainSchema;
+const editableEventDetailsPatchSchema = z
+  .object({
+    title: z.string().min(1).max(255).optional(),
+    notes: z.string().max(2000).nullable().optional(),
+    description: z.string().max(5000).nullable().optional(),
+    activity_plan_id: z.string().uuid().nullable().optional(),
+    training_plan_id: z.string().uuid().nullable().optional(),
+    lifecycle: eventLifecycleSchema.optional(),
+    event_type: editableEventTypeSchema.optional(),
+    source: z.undefined().optional(),
+    read_only: z.boolean().optional(),
+  })
+  .strict();
+
+const editableEventSchedulePatchSchema = z
+  .object({
+    starts_at: dateTimeStringSchema.optional(),
+    ends_at: dateTimeStringSchema.nullable().optional(),
+    all_day: z.boolean().optional(),
+    timezone: z.string().min(1).max(120).optional(),
+  })
+  .strict();
+
+const hasAtLeastOneDefinedKey = (patch: object) =>
+  Object.values(patch).some((value) => value !== undefined);
+
+const requireNonEmptyPatch = <Schema extends z.ZodTypeAny>(schema: Schema) =>
+  schema.refine(
+    (patch) => hasAtLeastOneDefinedKey(patch as object),
+    "patch must include at least one editable field",
+  );
+
+export const editableEventDetailsOnlyPatchSchema = requireNonEmptyPatch(
+  editableEventDetailsPatchSchema,
+).superRefine((event, ctx) => {
+  if (event.event_type === "planned" && !event.activity_plan_id) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["activity_plan_id"],
+      message: 'activity_plan_id is required when event_type is "planned"',
+    });
+  }
+});
+
+export const editableEventScheduleOnlyPatchSchema = requireNonEmptyPatch(
+  editableEventSchedulePatchSchema,
+);
+
+export const editableEventDetailsAndSchedulePatchSchema = requireNonEmptyPatch(
+  editableEventDetailsPatchSchema.merge(editableEventSchedulePatchSchema),
+).superRefine((event, ctx) => {
+  const hasDetails = Object.keys(editableEventDetailsPatchSchema.shape).some(
+    (key) => event[key as keyof typeof event] !== undefined,
+  );
+  const hasSchedule = Object.keys(editableEventSchedulePatchSchema.shape).some(
+    (key) => event[key as keyof typeof event] !== undefined,
+  );
+
+  if (!hasDetails || !hasSchedule) {
+    ctx.addIssue({
+      code: "custom",
+      message: "patch must include both details and schedule fields",
+    });
+  }
+
+  if (event.event_type === "planned" && !event.activity_plan_id) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["activity_plan_id"],
+      message: 'activity_plan_id is required when event_type is "planned"',
+    });
+  }
+});
+
+export const editableEventRecurrenceOnlyPatchSchema = z
+  .object({
+    recurrence: persistableEventRecurrenceSchema.nullable(),
+  })
+  .strict();
+
+export const editableEventPatchSchema = z.union([
+  editableEventDetailsAndSchedulePatchSchema,
+  editableEventDetailsOnlyPatchSchema,
+  editableEventScheduleOnlyPatchSchema,
+  editableEventRecurrenceOnlyPatchSchema,
+]);
+
+export const customEventCreateSchema = z
+  .object({
+    event_type: z.enum(["custom", "race_target"]),
+    title: z.string().min(1).max(255),
+    starts_at: dateTimeStringSchema,
+    ends_at: dateTimeStringSchema.nullable().optional(),
+    all_day: z.boolean().default(false),
+    timezone: z.string().min(1).max(120).default("UTC"),
+    notes: z.string().max(2000).nullable().optional(),
+    description: z.string().max(5000).nullable().optional(),
+    recurrence: persistableEventRecurrenceSchema.optional(),
+    lifecycle: eventLifecycleSchema.default({ status: "scheduled" }),
+    read_only: z.boolean().optional().default(false),
+  })
+  .strict();
+
+export const plannedActivityEventCreateSchema = z
+  .object({
+    event_type: z.literal("planned"),
+    activity_plan_id: z.string().uuid(),
+    training_plan_id: z.string().uuid().nullable().optional(),
+    title: z.string().min(1).max(255),
+    scheduled_date: dateOnlyStringSchema,
+    all_day: z.literal(true).default(true),
+    timezone: z.string().min(1).max(120).default("UTC"),
+    notes: z.string().max(2000).nullable().optional(),
+    recurrence: persistableEventRecurrenceSchema.optional(),
+    lifecycle: eventLifecycleSchema.default({ status: "scheduled" }),
+    read_only: z.boolean().optional().default(false),
+  })
+  .strict();
+
+export const eventCreateSchema = z.discriminatedUnion("event_type", [
+  customEventCreateSchema,
+  plannedActivityEventCreateSchema,
+]);
 
 export const eventUpdateSchema = z
   .object({
@@ -325,11 +440,11 @@ export const eventUpdateSchema = z
     patch: editableEventPatchSchema,
   })
   .superRefine((mutation, ctx) => {
-    if (Object.keys(mutation.patch).length === 0) {
+    if ("recurrence" in mutation.patch && mutation.scope === "single") {
       ctx.addIssue({
         code: "custom",
-        path: ["patch"],
-        message: "patch must include at least one editable field",
+        path: ["scope"],
+        message: 'scope must be "future" or "series" when updating recurrence',
       });
     }
   });
@@ -377,11 +492,11 @@ export const eventSoftDeleteSchema = z.object({
  */
 export const plannedActivityCreateSchema = z.object({
   activity_plan_id: z.string().uuid("Invalid activity plan ID"),
-  scheduled_date: z.string().refine((val) => !isNaN(Date.parse(val)), "Invalid date format"),
+  scheduled_date: z.string().refine((val) => !Number.isNaN(Date.parse(val)), "Invalid date format"),
   training_plan_id: z.string().uuid("Invalid training plan ID").optional(),
   notes: z.string().max(2000, "Notes are too long").nullable().optional(),
   event_type: editableEventTypeInputSchema.default("planned").optional(),
-  recurrence: eventRecurrenceSchema.optional(),
+  recurrence: persistableEventRecurrenceSchema.optional(),
   lifecycle: eventLifecycleSchema.optional(),
   source: importedEventSourceMetadataSchema.optional(),
   read_only: z.boolean().optional(),
@@ -395,11 +510,11 @@ export const plannedActivityUpdateSchema = z.object({
   activity_plan_id: z.string().uuid("Invalid activity plan ID").optional(),
   scheduled_date: z
     .string()
-    .refine((val) => !isNaN(Date.parse(val)), "Invalid date format")
+    .refine((val) => !Number.isNaN(Date.parse(val)), "Invalid date format")
     .optional(),
   notes: z.string().max(2000, "Notes are too long").nullable().optional(),
   event_type: editableEventTypeInputSchema.optional(),
-  recurrence: eventRecurrenceSchema.optional(),
+  recurrence: persistableEventRecurrenceSchema.optional(),
   lifecycle: eventLifecycleSchema.optional(),
 });
 
@@ -409,7 +524,7 @@ export const plannedActivityUpdateSchema = z.object({
  */
 export const plannedActivityRescheduleSchema = z.object({
   id: z.string().uuid("Invalid planned activity ID"),
-  new_date: z.string().refine((val) => !isNaN(Date.parse(val)), "Invalid date format"),
+  new_date: z.string().refine((val) => !Number.isNaN(Date.parse(val)), "Invalid date format"),
   reason: z.string().max(500, "Reason is too long").optional(),
   scope: eventMutationScopeSchema.default("single"),
 });
@@ -420,6 +535,9 @@ export const plannedActivityRescheduleSchema = z.object({
 export type PlannedActivityCreate = z.infer<typeof plannedActivityCreateSchema>;
 export type PlannedActivityUpdate = z.infer<typeof plannedActivityUpdateSchema>;
 export type PlannedActivityReschedule = z.infer<typeof plannedActivityRescheduleSchema>;
+export type CustomEventCreate = z.infer<typeof customEventCreateSchema>;
+export type PlannedActivityEventCreate = z.infer<typeof plannedActivityEventCreateSchema>;
+export type EventCreate = z.infer<typeof eventCreateSchema>;
 export type EventType = z.infer<typeof eventTypeSchema>;
 export type EventTypeInput = z.infer<typeof eventTypeInputSchema>;
 export type EventMutationScope = z.infer<typeof eventMutationScopeSchema>;

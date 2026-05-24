@@ -5,10 +5,9 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import { Label } from "@repo/ui/components/label";
 import { Text } from "@repo/ui/components/text";
 import { Activity, ChevronDown, ChevronUp, Sprout, Trophy } from "lucide-react-native";
-import React, { useState } from "react";
+import { useState } from "react";
 import { Pressable, View } from "react-native";
 import { WizardStep } from "../WizardStep";
 
@@ -44,7 +43,7 @@ const EXPERIENCE_LEVELS = [
     bullets: [
       "Established training routine",
       "Some race experience",
-      "Ready for structured workouts",
+      "Ready for structured activities",
       "Focus on performance gains",
     ],
   },

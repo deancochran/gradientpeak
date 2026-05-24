@@ -172,8 +172,36 @@ describe("scoreTargetSatisfaction", () => {
     });
 
     expect(result.rationale_codes).toContain("projection_inferred_from_readiness");
+    expect(result.rationale_codes).toContain("target_projection_missing_low_confidence");
     expect(result.score_0_100).toBeGreaterThanOrEqual(0);
     expect(result.score_0_100).toBeLessThanOrEqual(100);
+  });
+
+  it("penalizes inferred target attainment versus direct performance projections", () => {
+    const target = {
+      target_type: "power_threshold" as const,
+      target_watts: 300,
+      test_duration_s: 1200,
+      activity_category: "bike" as const,
+    };
+    const inferred = scoreTargetSatisfaction({
+      target,
+      projection: {
+        readiness_score: 92,
+        readiness_confidence: 0.8,
+      },
+    });
+    const direct = scoreTargetSatisfaction({
+      target,
+      projection: {
+        projected_power_watts: 330,
+        readiness_confidence: 0.8,
+      },
+    });
+
+    expect(inferred.score_0_100).toBeLessThan(direct.score_0_100);
+    expect(inferred.rationale_codes).toContain("target_projection_missing_low_confidence");
+    expect(direct.rationale_codes).not.toContain("target_projection_missing_low_confidence");
   });
 
   it("applies strong demand penalties for implausible above-cap targets", () => {

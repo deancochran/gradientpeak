@@ -6,5 +6,5 @@ appId: com.deancochran.gradientpeak.dev
     id: "tab-button-plan"
 - extendedWaitUntil:
     visible:
-      id: "plan-projection-card"
+      id: "plan-screen"
     timeout: 10000

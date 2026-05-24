@@ -2,13 +2,18 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
+import { parseFreshLocationBuffer, serializeLocationBuffer } from "./locationBuffer";
 
 const BACKGROUND_LOCATION_TASK = "background-location-task";
 const LOCATION_BUFFER_KEY = "location_buffer";
 const MAX_BUFFER_SIZE = 100;
+const BACKGROUND_LOG_INTERVAL_MS = 30_000;
+const BACKGROUND_STORAGE_INTERVAL_MS = 15_000;
 
 // Static callback registry for background task
 const backgroundLocationCallbacks = new Set<(location: Location.LocationObject) => void>();
+let lastBackgroundLogTime = 0;
+let lastBackgroundStorageWriteTime = 0;
 
 // Define background location task at module level (required for Expo)
 TaskManager.defineTask(
@@ -32,22 +37,16 @@ TaskManager.defineTask(
         return;
       }
 
-      console.log(`[Background Location Task] Processing ${locations.length} location(s)`);
+      const now = Date.now();
+      if (now - lastBackgroundLogTime >= BACKGROUND_LOG_INTERVAL_MS) {
+        console.log(`[Background Location Task] Processing ${locations.length} location(s)`);
+        lastBackgroundLogTime = now;
+      }
 
       // Process each location through callbacks
       for (const location of locations) {
         // Validate location quality
         if (isLocationValid(location)) {
-          // Update last location time
-          try {
-            await AsyncStorage.setItem("last_location_time", location.timestamp.toString());
-          } catch (storageError) {
-            console.warn(
-              "[Background Location Task] Failed to update last location time:",
-              storageError,
-            );
-          }
-
           // Notify all registered callbacks
           if (backgroundLocationCallbacks.size > 0) {
             backgroundLocationCallbacks.forEach((cb) => {
@@ -57,20 +56,23 @@ TaskManager.defineTask(
                 console.error("[Background Location Task] Error in callback:", e);
               }
             });
-          } else {
+          } else if (now - lastBackgroundLogTime >= BACKGROUND_LOG_INTERVAL_MS) {
             console.warn("[Background Location Task] No callbacks registered, buffering location");
+            lastBackgroundLogTime = now;
           }
         } else {
           console.warn("[Background Location Task] Invalid location, skipping:", {
             accuracy: location.coords?.accuracy,
-            lat: location.coords?.latitude,
-            lng: location.coords?.longitude,
           });
         }
       }
 
-      // Buffer management for offline storage
-      await bufferLocations(locations);
+      // Keep a small crash-recovery buffer, but do not write AsyncStorage every GPS tick.
+      if (now - lastBackgroundStorageWriteTime >= BACKGROUND_STORAGE_INTERVAL_MS) {
+        await AsyncStorage.setItem("last_location_time", now.toString());
+        await bufferLocations(locations);
+        lastBackgroundStorageWriteTime = now;
+      }
     } catch (taskError) {
       console.error("[Background Location Task] Unexpected error:", taskError);
     }
@@ -99,7 +101,7 @@ async function bufferLocations(locations: Location.LocationObject[]): Promise<vo
   try {
     // Get current buffer
     const bufferedStr = await AsyncStorage.getItem(LOCATION_BUFFER_KEY);
-    let buffer: Location.LocationObject[] = bufferedStr ? JSON.parse(bufferedStr) : [];
+    let buffer = parseFreshLocationBuffer(bufferedStr).locations;
 
     // Add new locations
     buffer.push(...locations);
@@ -110,7 +112,7 @@ async function bufferLocations(locations: Location.LocationObject[]): Promise<vo
     }
 
     // Persist to storage
-    await AsyncStorage.setItem(LOCATION_BUFFER_KEY, JSON.stringify(buffer));
+    await AsyncStorage.setItem(LOCATION_BUFFER_KEY, serializeLocationBuffer(buffer));
   } catch (error) {
     console.warn("Failed to buffer locations:", error);
   }
@@ -122,6 +124,7 @@ export class LocationManager {
   private taskName = BACKGROUND_LOCATION_TASK;
   private locationBuffer: Location.LocationObject[] = [];
   private lastLocationTime = 0;
+  private lastEmittedLocationKey: string | null = null;
   private healthCheckInterval: ReturnType<typeof setInterval> | number | null = null;
   private readonly HEALTH_CHECK_INTERVAL = 10000; // 10 seconds
   private headingSubscription: Location.LocationSubscription | null = null;
@@ -142,6 +145,10 @@ export class LocationManager {
       return;
     }
 
+    if (this.isDuplicateLocation(location)) {
+      return;
+    }
+
     this.locationCallbacks.forEach((cb) => {
       try {
         cb(location);
@@ -151,11 +158,30 @@ export class LocationManager {
     });
   }
 
+  private isDuplicateLocation(location: Location.LocationObject): boolean {
+    const key = [
+      location.timestamp,
+      location.coords.latitude.toFixed(7),
+      location.coords.longitude.toFixed(7),
+    ].join(":");
+
+    if (key === this.lastEmittedLocationKey) {
+      return true;
+    }
+
+    this.lastEmittedLocationKey = key;
+    return false;
+  }
+
   private async loadBufferedLocations(): Promise<void> {
     try {
       const bufferedStr = await AsyncStorage.getItem(LOCATION_BUFFER_KEY);
       if (bufferedStr) {
-        this.locationBuffer = JSON.parse(bufferedStr);
+        const parsedBuffer = parseFreshLocationBuffer(bufferedStr);
+        this.locationBuffer = parsedBuffer.locations;
+        if (parsedBuffer.isStale) {
+          await AsyncStorage.removeItem(LOCATION_BUFFER_KEY);
+        }
         console.log(`Loaded ${this.locationBuffer.length} buffered locations`);
       }
     } catch (error) {
@@ -178,6 +204,20 @@ export class LocationManager {
   }
 
   // --- Foreground GPS ---
+  async getLastKnownLocation(): Promise<Location.LocationObject | null> {
+    try {
+      const location = await Location.getLastKnownPositionAsync();
+      if (!location || !isLocationValid(location)) {
+        return null;
+      }
+
+      return location;
+    } catch (error) {
+      console.warn("Failed to load last known location:", error);
+      return null;
+    }
+  }
+
   async startForegroundTracking(): Promise<void> {
     if (this.locationSubscription) return;
 
@@ -261,16 +301,16 @@ export class LocationManager {
       }
 
       await Location.startLocationUpdatesAsync(this.taskName, {
-        accuracy: Location.Accuracy.BestForNavigation,
-        timeInterval: 1000,
-        distanceInterval: 1,
+        accuracy: Location.Accuracy.High,
+        timeInterval: 5000,
+        distanceInterval: 5,
         showsBackgroundLocationIndicator: true, // Show indicator for transparency
-        deferredUpdatesInterval: 1000, // Process updates every second
-        deferredUpdatesDistance: 1, // Process updates every meter
+        deferredUpdatesInterval: 5000,
+        deferredUpdatesDistance: 5,
         // Foreground service keeps the app running in background on Android
         foregroundService: {
           notificationTitle: "Recording Activity",
-          notificationBody: "GradientPeak is tracking your workout",
+          notificationBody: "GradientPeak is tracking your activity",
           notificationColor: "#4CAF50",
           killServiceOnDestroy: false, // Keep service alive even if notification is dismissed
         },
@@ -302,8 +342,7 @@ export class LocationManager {
       // Ignore "task not found" errors as this happens during cleanup/restart
 
       if (
-        (error as Error).message &&
-        (error as Error).message.includes("Task") &&
+        (error as Error).message?.includes("Task") &&
         (error as Error).message.includes("not found")
       ) {
         console.log("Background location task already cleaned up");
@@ -401,14 +440,32 @@ export class LocationManager {
     } catch (error) {
       // Ignore task not found errors during cleanup
       if (
-        (error as Error).message &&
-        (error as Error).message.includes("Task") &&
+        (error as Error).message?.includes("Task") &&
         (error as Error).message.includes("not found")
       ) {
         console.log("Background location task already unregistered");
       } else {
         console.warn("Error unregistering background location task:", error);
       }
+    }
+  }
+
+  static async cleanupOrphanedBackgroundTracking(): Promise<void> {
+    try {
+      const isStarted = await Location.hasStartedLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+      if (isStarted) {
+        await Location.stopLocationUpdatesAsync(BACKGROUND_LOCATION_TASK);
+        console.log("Background location task stopped during startup cleanup");
+      }
+      await AsyncStorage.removeItem("background_location_session_id");
+    } catch (error) {
+      if (
+        (error as Error).message?.includes("Task") &&
+        (error as Error).message.includes("not found")
+      ) {
+        return;
+      }
+      console.warn("Failed to cleanup orphaned background location task:", error);
     }
   }
 
@@ -422,8 +479,7 @@ export class LocationManager {
     } catch (error) {
       // Task not found errors are expected during cleanup
       if (
-        (error as Error).message &&
-        (error as Error).message.includes("Task") &&
+        (error as Error).message?.includes("Task") &&
         (error as Error).message.includes("not found")
       ) {
         return false;

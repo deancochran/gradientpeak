@@ -5,6 +5,7 @@
  * Provides a robust, production-ready FIT file parser.
  */
 import { Decoder, Stream, Utils } from "@garmin/fitsdk";
+import { Buffer } from "buffer";
 import type { StandardActivity } from "../types/normalization";
 
 const SEMICIRCLE_TO_DEGREES = 180 / 2147483648;

@@ -30,8 +30,8 @@ describe("system training plan verification helpers", () => {
       current_ctl: 34,
       expected_mode: "target_seeking",
     });
-    expect(exact5kContract!.goals).toHaveLength(1);
-    const firstGoal = exact5kContract!.goals.at(0);
+    expect(exact5kContract?.goals).toHaveLength(1);
+    const firstGoal = exact5kContract?.goals.at(0);
 
     expect(firstGoal?.targets).toHaveLength(1);
 

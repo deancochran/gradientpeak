@@ -1,39 +1,33 @@
-import React from "react";
+import { createHost as mockCreateHost } from "../../../test/mock-components";
 import { renderNative, screen } from "../../../test/render-native";
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
 
 jest.mock("@repo/ui/components/button", () => ({
   __esModule: true,
-  Button: createHost("Button"),
+  Button: mockCreateHost("Button"),
 }));
 
 jest.mock("@repo/ui/components/card", () => ({
   __esModule: true,
-  Card: createHost("Card"),
-  CardContent: createHost("CardContent"),
-  CardHeader: createHost("CardHeader"),
+  Card: mockCreateHost("Card"),
+  CardContent: mockCreateHost("CardContent"),
+  CardHeader: mockCreateHost("CardHeader"),
 }));
 
 jest.mock("@repo/ui/components/icon", () => ({
   __esModule: true,
-  Icon: createHost("Icon"),
+  Icon: mockCreateHost("Icon"),
 }));
 
 jest.mock("@repo/ui/components/text", () => ({
   __esModule: true,
-  Text: createHost("Text"),
+  Text: mockCreateHost("Text"),
 }));
 
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
-  Activity: createHost("Activity"),
-  Calendar: createHost("Calendar"),
-  Play: createHost("Play"),
+  Activity: mockCreateHost("Activity"),
+  Calendar: mockCreateHost("Calendar"),
+  Play: mockCreateHost("Play"),
 }));
 
 const { TodaysFocusCard } = require("../TodaysFocusCard");

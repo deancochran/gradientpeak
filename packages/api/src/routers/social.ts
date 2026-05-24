@@ -1,17 +1,12 @@
 import { randomUUID } from "node:crypto";
-import {
-  activities,
-  activityPlans,
-  activityRoutes,
-  likes,
-  profiles,
-  publicNotificationTypeSchema,
-} from "@repo/db";
+import { activities, events, likes, profiles, type publicNotificationTypeSchema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
+import { createContentAccessPermissions } from "../permissions/content-access";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { buildIndexPageInfo, indexCursorSchema, parseIndexCursor } from "../utils/index-cursor";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 
@@ -19,7 +14,14 @@ const uuidSchema = z.string().uuid();
 const nullableAvatarUrlSchema = z.string().nullable();
 const nullableUsernameSchema = z.string().nullable();
 const followStatusSchema = z.enum(["pending", "accepted"]);
-const entityTypeSchema = z.enum(["activity", "training_plan", "activity_plan", "route"]);
+const likeEntityTypeSchema = z.enum(["activity", "training_plan", "activity_plan", "route"]);
+const commentEntityTypeSchema = z.enum([
+  "activity",
+  "training_plan",
+  "activity_plan",
+  "route",
+  "event",
+]);
 type FollowNotificationType = Extract<
   z.infer<typeof publicNotificationTypeSchema>,
   "follow_request" | "new_follower"
@@ -53,6 +55,8 @@ const profileListItemSchema = z
     username: nullableUsernameSchema,
     avatar_url: nullableAvatarUrlSchema,
     is_public: z.boolean().nullable(),
+    created_at: z.union([z.date(), z.string()]),
+    updated_at: z.union([z.date(), z.string()]),
   })
   .strict();
 
@@ -65,7 +69,7 @@ const commentInsertRowSchema = z
     id: uuidSchema,
     profile_id: uuidSchema,
     entity_id: uuidSchema,
-    entity_type: entityTypeSchema,
+    entity_type: commentEntityTypeSchema,
     content: z.string(),
     created_at: z.union([z.date(), z.string()]),
   })
@@ -81,14 +85,6 @@ const commentListRowSchema = z
     profile_id: uuidSchema.nullable(),
     profile_username: nullableUsernameSchema,
     profile_avatar_url: nullableAvatarUrlSchema,
-  })
-  .strict();
-
-const trainingPlanAccessRowSchema = z
-  .object({
-    profile_id: uuidSchema,
-    is_system_template: z.boolean(),
-    template_visibility: z.enum(["private", "public"]),
   })
   .strict();
 
@@ -161,7 +157,7 @@ async function getCount(resultPromise: Promise<{ rows: unknown[] }>) {
 
 /**
  * Check if a user has access to view an activity.
- * Returns true if: user owns the activity, OR activity is public, OR user follows the owner.
+ * Returns true if: user owns the activity, OR activity is public.
  */
 async function checkActivityAccess(
   db: DbClient,
@@ -188,17 +184,7 @@ async function checkActivityAccess(
     return true;
   }
 
-  const followResult = await db.execute(sql<{ has_access: boolean }>`
-    select exists(
-      select 1
-      from follows
-      where follower_id = ${userId}::uuid
-        and following_id = ${activity.profile_id}::uuid
-        and status = 'accepted'
-    ) as has_access
-  `);
-
-  return Boolean(followResult.rows[0]?.has_access);
+  return false;
 }
 
 async function checkPlanAccess(
@@ -207,69 +193,72 @@ async function checkPlanAccess(
   planType: "training_plan" | "activity_plan",
   userId: string,
 ): Promise<boolean> {
-  if (planType === "activity_plan") {
-    const plan = await db.query.activityPlans.findFirst({
-      columns: {
-        profile_id: true,
-        is_system_template: true,
-        template_visibility: true,
-      },
-      where: eq(activityPlans.id, planId),
-    });
+  const decision = await createContentAccessPermissions(db).canRead(userId, {
+    type: planType,
+    id: planId,
+  });
 
-    if (!plan) {
-      return false;
-    }
-
-    if (plan.profile_id === userId) {
-      return true;
-    }
-
-    if (plan.is_system_template) {
-      return true;
-    }
-
-    return plan.template_visibility === "public";
-  }
-
-  const result = await db.execute(sql`
-    select profile_id, is_system_template, template_visibility
-    from training_plans
-    where id = ${planId}::uuid
-    limit 1
-  `);
-
-  const plan = result.rows[0] ? trainingPlanAccessRowSchema.parse(result.rows[0]) : null;
-
-  if (!plan) {
-    return false;
-  }
-
-  if (plan.profile_id === userId) {
-    return true;
-  }
-
-  if (plan.is_system_template) {
-    return true;
-  }
-
-  return plan.template_visibility === "public";
+  return decision.allowed;
 }
 
 async function checkRouteAccess(db: DbClient, routeId: string, userId: string): Promise<boolean> {
-  const route = await db.query.activityRoutes.findFirst({
-    columns: {
-      profile_id: true,
-      is_public: true,
-    },
-    where: eq(activityRoutes.id, routeId),
+  const decision = await createContentAccessPermissions(db).canRead(userId, {
+    type: "activity_route",
+    id: routeId,
   });
 
-  if (!route) {
+  return decision.allowed;
+}
+
+async function requireProfileSocialGraphAccess(
+  db: DbClient,
+  targetUserId: string,
+  currentUserId: string,
+) {
+  if (targetUserId === currentUserId) {
+    return;
+  }
+
+  const [targetProfile] = await db
+    .select({ is_public: profiles.is_public })
+    .from(profiles)
+    .where(eq(profiles.id, targetUserId))
+    .limit(1);
+
+  if (!targetProfile) {
+    throw new TRPCError({
+      code: "NOT_FOUND",
+      message: "Profile not found",
+    });
+  }
+
+  if (targetProfile.is_public !== false) {
+    return;
+  }
+
+  const relationship = await getFollowRecord(db, currentUserId, targetUserId);
+
+  if (relationship?.status !== "accepted") {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "You don't have permission to view this profile's social graph",
+    });
+  }
+}
+
+async function checkEventAccess(db: DbClient, eventId: string, userId: string): Promise<boolean> {
+  const event = await db.query.events.findFirst({
+    columns: {
+      profile_id: true,
+    },
+    where: eq(events.id, eventId),
+  });
+
+  if (!event) {
     return false;
   }
 
-  return route.profile_id === userId || route.is_public;
+  return event.profile_id === userId;
 }
 
 export const socialRouter = createTRPCRouter({
@@ -312,9 +301,10 @@ export const socialRouter = createTRPCRouter({
 
       const status = targetProfile.is_public ? "accepted" : "pending";
 
+      const now = new Date();
       const insertResult = await db.execute(sql`
-        insert into follows (follower_id, following_id, status)
-        values (${ctx.session.user.id}::uuid, ${input.target_user_id}::uuid, ${status})
+        insert into follows (follower_id, following_id, status, created_at, updated_at)
+        values (${ctx.session.user.id}::uuid, ${input.target_user_id}::uuid, ${status}, ${now}, ${now})
         returning follower_id, following_id, status
       `);
 
@@ -447,7 +437,7 @@ export const socialRouter = createTRPCRouter({
       z
         .object({
           entity_id: z.string().uuid(),
-          entity_type: entityTypeSchema,
+          entity_type: likeEntityTypeSchema,
         })
         .strict(),
     )
@@ -522,7 +512,8 @@ export const socialRouter = createTRPCRouter({
         .object({
           user_id: z.string().uuid(),
           limit: z.number().min(1).max(50).default(20),
-          offset: z.number().min(0).default(0),
+          cursor: indexCursorSchema.optional(),
+          direction: z.enum(["forward", "backward"]).optional(),
         })
         .strict(),
     )
@@ -531,15 +522,19 @@ export const socialRouter = createTRPCRouter({
 
       try {
         const currentUserId = ctx.session.user.id;
+        const offset = parseIndexCursor(input.cursor);
+
+        await requireProfileSocialGraphAccess(db, input.user_id, currentUserId);
 
         const followersResult = await db.execute(sql`
-          select p.id, p.username, p.avatar_url, p.is_public
+          select p.id, p.username, p.avatar_url, p.is_public, p.created_at, p.updated_at
           from follows f
           join profiles p on p.id = f.follower_id
           where f.following_id = ${input.user_id}::uuid
             and f.status = 'accepted'
+          order by p.created_at desc, p.id asc
           limit ${input.limit}
-          offset ${input.offset}
+          offset ${offset}
         `);
 
         const followers = z.array(profileListItemSchema).parse(followersResult.rows);
@@ -588,7 +583,7 @@ export const socialRouter = createTRPCRouter({
         return {
           users: usersWithRelationship,
           total,
-          hasMore: input.offset + input.limit < total,
+          ...buildIndexPageInfo({ offset, limit: input.limit, total }),
         };
       } catch (error) {
         if (error instanceof TRPCError) {
@@ -608,7 +603,8 @@ export const socialRouter = createTRPCRouter({
         .object({
           user_id: z.string().uuid(),
           limit: z.number().min(1).max(50).default(20),
-          offset: z.number().min(0).default(0),
+          cursor: indexCursorSchema.optional(),
+          direction: z.enum(["forward", "backward"]).optional(),
         })
         .strict(),
     )
@@ -617,15 +613,19 @@ export const socialRouter = createTRPCRouter({
 
       try {
         const currentUserId = ctx.session.user.id;
+        const offset = parseIndexCursor(input.cursor);
+
+        await requireProfileSocialGraphAccess(db, input.user_id, currentUserId);
 
         const followingResult = await db.execute(sql`
-          select p.id, p.username, p.avatar_url, p.is_public
+          select p.id, p.username, p.avatar_url, p.is_public, p.created_at, p.updated_at
           from follows f
           join profiles p on p.id = f.following_id
           where f.follower_id = ${input.user_id}::uuid
             and f.status = 'accepted'
+          order by p.created_at desc, p.id asc
           limit ${input.limit}
-          offset ${input.offset}
+          offset ${offset}
         `);
 
         const following = z.array(profileListItemSchema).parse(followingResult.rows);
@@ -674,7 +674,7 @@ export const socialRouter = createTRPCRouter({
         return {
           users: usersWithRelationship,
           total,
-          hasMore: input.offset + input.limit < total,
+          ...buildIndexPageInfo({ offset, limit: input.limit, total }),
         };
       } catch (error) {
         if (error instanceof TRPCError) {
@@ -694,7 +694,10 @@ export const socialRouter = createTRPCRouter({
         .object({
           query: z.string().optional(),
           limit: z.number().min(1).max(50).default(20),
+          cursor: indexCursorSchema.optional(),
           offset: z.number().min(0).default(0),
+          direction: z.enum(["forward", "backward"]).optional(),
+          sort_by: z.enum(["newest", "oldest", "username_asc", "username_desc"]).optional(),
         })
         .strict(),
     )
@@ -704,25 +707,34 @@ export const socialRouter = createTRPCRouter({
       try {
         const trimmedQuery = input.query?.trim() ?? "";
         const searchPattern = `%${trimmedQuery}%`;
+        const offset = input.cursor ? parseIndexCursor(input.cursor) : input.offset;
+        const profileSortClause =
+          input.sort_by === "oldest"
+            ? sql`p.created_at asc, p.id asc`
+            : input.sort_by === "username_asc"
+              ? sql`p.username asc nulls last, p.created_at desc, p.id asc`
+              : input.sort_by === "username_desc"
+                ? sql`p.username desc nulls last, p.created_at desc, p.id asc`
+                : sql`p.created_at desc, p.id asc`;
 
         const usersResult = trimmedQuery
           ? await db.execute(sql`
-              select p.id, p.username, p.avatar_url, p.is_public
+              select p.id, p.username, p.avatar_url, p.is_public, p.created_at, p.updated_at
               from profiles p
-              where p.id != ${ctx.session.user.id}::uuid
-                and p.username ilike ${searchPattern}
-              order by p.username asc
-              limit ${input.limit}
-              offset ${input.offset}
-            `)
+               where p.id != ${ctx.session.user.id}::uuid
+                 and p.username ilike ${searchPattern}
+               order by ${profileSortClause}
+               limit ${input.limit}
+               offset ${offset}
+             `)
           : await db.execute(sql`
-              select p.id, p.username, p.avatar_url, p.is_public
-              from profiles p
-              where p.id != ${ctx.session.user.id}::uuid
-              order by p.username asc
-              limit ${input.limit}
-              offset ${input.offset}
-            `);
+               select p.id, p.username, p.avatar_url, p.is_public, p.created_at, p.updated_at
+               from profiles p
+               where p.id != ${ctx.session.user.id}::uuid
+               order by ${profileSortClause}
+               limit ${input.limit}
+               offset ${offset}
+             `);
 
         const users = z.array(profileListItemSchema).parse(usersResult.rows);
         const total = await getCount(
@@ -743,7 +755,7 @@ export const socialRouter = createTRPCRouter({
         return {
           users,
           total,
-          hasMore: input.offset + input.limit < total,
+          ...buildIndexPageInfo({ offset, limit: input.limit, total }),
         };
       } catch (error) {
         if (error instanceof TRPCError) {
@@ -762,7 +774,7 @@ export const socialRouter = createTRPCRouter({
       z
         .object({
           entity_id: z.string().uuid(),
-          entity_type: entityTypeSchema,
+          entity_type: commentEntityTypeSchema,
           content: z.string().min(1).max(1000),
         })
         .strict(),
@@ -800,6 +812,17 @@ export const socialRouter = createTRPCRouter({
           throw new TRPCError({
             code: "FORBIDDEN",
             message: "You don't have permission to comment on this route",
+          });
+        }
+      }
+
+      if (input.entity_type === "event") {
+        const hasAccess = await checkEventAccess(db, input.entity_id, userId);
+
+        if (!hasAccess) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "You don't have permission to view comments on this event",
           });
         }
       }
@@ -866,15 +889,17 @@ export const socialRouter = createTRPCRouter({
       z
         .object({
           entity_id: z.string().uuid(),
-          entity_type: entityTypeSchema,
+          entity_type: commentEntityTypeSchema,
           limit: z.number().min(1).max(100).default(20),
-          offset: z.number().min(0).default(0),
+          cursor: indexCursorSchema.optional(),
+          direction: z.enum(["forward", "backward"]).optional(),
         })
         .strict(),
     )
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       const userId = ctx.session.user.id;
+      const offset = parseIndexCursor(input.cursor);
 
       if (input.entity_type === "activity") {
         const hasAccess = await checkActivityAccess(db, input.entity_id, userId);
@@ -909,6 +934,17 @@ export const socialRouter = createTRPCRouter({
         }
       }
 
+      if (input.entity_type === "event") {
+        const hasAccess = await checkEventAccess(db, input.entity_id, userId);
+
+        if (!hasAccess) {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "You don't have permission to view comments on this event",
+          });
+        }
+      }
+
       const commentsResult = await db.execute(sql`
         select
           c.id,
@@ -923,7 +959,7 @@ export const socialRouter = createTRPCRouter({
           and c.entity_type = ${input.entity_type}
         order by c.created_at asc
         limit ${input.limit}
-        offset ${input.offset}
+        offset ${offset}
       `);
 
       const comments = z.array(commentListRowSchema).parse(commentsResult.rows);
@@ -950,7 +986,7 @@ export const socialRouter = createTRPCRouter({
             : null,
         })),
         total,
-        hasMore: input.offset + input.limit < total,
+        ...buildIndexPageInfo({ offset, limit: input.limit, total }),
       };
     }),
 });

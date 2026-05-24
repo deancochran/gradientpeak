@@ -19,17 +19,19 @@ import { paceSecondsFieldFixtures } from "./pace-seconds-field/fixtures";
 import { PaceSecondsField } from "./pace-seconds-field/index.native";
 import { percentSliderInputFixtures } from "./percent-slider-input/fixtures";
 import { PercentSliderInput } from "./percent-slider-input/index.native";
+import { timeInputFixtures } from "./time-input/fixtures";
+import { TimeInput } from "./time-input/index.native";
 import { weightInputFieldFixtures } from "./weight-input-field/fixtures";
 import { WeightInputField } from "./weight-input-field/index.native";
 
 describe("extracted inputs native", () => {
   it("DateInput clears a selected value", () => {
     const onChange = jest.fn();
-    const { getByText } = renderNative(
+    const { getByLabelText } = renderNative(
       <DateInput {...dateInputFixtures.raceDay} clearable onChange={onChange} />,
     );
 
-    fireEvent.press(getByText("Clear date"));
+    fireEvent.press(getByLabelText("Clear date"));
 
     expect(onChange).toHaveBeenCalledWith(undefined);
   });
@@ -81,10 +83,10 @@ describe("extracted inputs native", () => {
   it("DurationInput forwards typed values", () => {
     const onChange = jest.fn();
     const { getByDisplayValue } = renderNative(
-      <DurationInput {...durationInputFixtures.workout} onChange={onChange} />,
+      <DurationInput {...durationInputFixtures.activity} onChange={onChange} />,
     );
 
-    fireEvent(getByDisplayValue(durationInputFixtures.workout.value), "changeText", "1:45:00");
+    fireEvent(getByDisplayValue(durationInputFixtures.activity.value), "changeText", "1:45:00");
 
     expect(onChange).toHaveBeenCalledWith("1:45:00");
   });
@@ -157,5 +159,16 @@ describe("extracted inputs native", () => {
     fireEvent.press(getByText("LBS"));
 
     expect(onUnitChange).toHaveBeenCalledWith("lbs");
+  });
+
+  it("TimeInput clears a selected value", () => {
+    const onChange = jest.fn();
+    const { getByText } = renderNative(
+      <TimeInput {...timeInputFixtures.startTime} clearable onChange={onChange} />,
+    );
+
+    fireEvent.press(getByText("Clear time"));
+
+    expect(onChange).toHaveBeenCalledWith(undefined);
   });
 });

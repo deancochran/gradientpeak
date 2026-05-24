@@ -1,9 +1,6 @@
 import { z } from "zod";
 
 const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-const dateTimeStringSchema = z
-  .string()
-  .refine((value) => !Number.isNaN(Date.parse(value)), "Invalid date format");
 const uuidSchema = z.string().uuid();
 const positiveNumberSchema = z.number().positive().finite();
 const positiveIntegerSchema = z.number().int().positive();
@@ -111,7 +108,7 @@ const profileGoalHeaderSchema = z
   .object({
     id: uuidSchema,
     profile_id: uuidSchema,
-    milestone_event_id: uuidSchema,
+    target_date: dateOnlySchema,
     title: z.string().trim().min(1).max(100),
     priority: z.number().int().min(0).max(10),
     activity_category: canonicalGoalActivityCategorySchema,
@@ -272,13 +269,6 @@ export const profileGoalSchema = profileGoalDomainInputBaseSchema
 
 export const canonicalGoalSchema = profileGoalSchema;
 
-export const profileGoalLinkedEventSchema = z
-  .object({
-    id: uuidSchema,
-    starts_at: dateTimeStringSchema,
-  })
-  .strict();
-
 function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
 }
@@ -315,35 +305,12 @@ export function parseProfileGoalRecord(record: unknown): ProfileGoal {
   return profileGoalSchema.parse({
     id: parsedRecord.id,
     profile_id: parsedRecord.profile_id,
-    milestone_event_id: parsedRecord.milestone_event_id,
+    target_date: parsedRecord.target_date,
     title: parsedRecord.title,
     priority: parsedRecord.priority,
     activity_category: parsedRecord.activity_category,
     objective: parsedRecord.target_payload,
   });
-}
-
-/**
- * Resolves a goal's planning date from its linked milestone event.
- *
- * Goal timing is event-owned by design, so this helper rejects mismatched links
- * and returns the canonical event date in `YYYY-MM-DD` form.
- *
- * @param goal - Canonical goal with required `milestone_event_id`
- * @param linkedEvent - Event record referenced by the goal
- * @returns Resolved planning date derived from the linked event start
- */
-export function resolveGoalEventDate(
-  goal: Pick<ProfileGoal, "milestone_event_id">,
-  linkedEvent: unknown,
-): string {
-  const event = profileGoalLinkedEventSchema.parse(linkedEvent);
-
-  if (event.id !== goal.milestone_event_id) {
-    throw new Error("linked event id must match goal.milestone_event_id for timing resolution");
-  }
-
-  return event.starts_at.slice(0, 10);
 }
 
 /**
@@ -449,6 +416,5 @@ export type ProfileGoalCreate = z.output<typeof profileGoalCreateSchema>;
 export type ProfileGoalCreateInput = z.input<typeof profileGoalCreateSchema>;
 export type ProfileGoal = z.output<typeof profileGoalSchema>;
 export type CanonicalGoal = ProfileGoal;
-export type ProfileGoalLinkedEvent = z.infer<typeof profileGoalLinkedEventSchema>;
 export type ProfileGoalTarget = z.infer<typeof profileGoalTargetSchema>;
 export type ProfileGoalLegacy = z.infer<typeof profileGoalLegacySchema>;

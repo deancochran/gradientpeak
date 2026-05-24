@@ -1,21 +1,21 @@
 import React from "react";
 
+import { createHost as mockCreateHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const navigateMock = jest.fn();
 const pushMock = jest.fn();
 const markReadMutateMock = jest.fn();
 
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
-
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: ({ options }: any) => React.createElement("StackScreen", { options }),
+    Screen: ({ options }: any) =>
+      React.createElement(
+        "StackScreen",
+        { options },
+        typeof options?.headerRight === "function" ? options.headerRight() : null,
+      ),
   },
   useRouter: () => ({ navigate: navigateMock, push: pushMock }),
 }));
@@ -31,16 +31,19 @@ jest.mock("react-native", () => ({
     ),
   Pressable: ({ children, onPress, ...props }: any) =>
     React.createElement("Pressable", { onPress, ...props }, children),
-  View: createHost("View"),
+  View: mockCreateHost("View"),
 }));
 
-jest.mock("@repo/ui/components/badge", () => ({ __esModule: true, Badge: createHost("Badge") }));
+jest.mock("@repo/ui/components/badge", () => ({
+  __esModule: true,
+  Badge: mockCreateHost("Badge"),
+}));
 jest.mock("@repo/ui/components/button", () => ({
   __esModule: true,
   Button: ({ children, onPress, ...props }: any) =>
     React.createElement("Pressable", { onPress, ...props }, children),
 }));
-jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHost("Text") }));
+jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: mockCreateHost("Text") }));
 jest.mock("@repo/ui/lib/cn", () => ({
   __esModule: true,
   cn: (...values: string[]) => values.filter(Boolean).join(" "),
@@ -48,9 +51,9 @@ jest.mock("@repo/ui/lib/cn", () => ({
 
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
-  Bell: createHost("Bell"),
-  Mail: createHost("Mail"),
-  UserPlus: createHost("UserPlus"),
+  Bell: mockCreateHost("Bell"),
+  Mail: mockCreateHost("Mail"),
+  UserPlus: mockCreateHost("UserPlus"),
 }));
 
 jest.mock("@repo/core", () => ({
@@ -124,5 +127,13 @@ describe("notifications screen", () => {
     expect(markReadMutateMock).toHaveBeenCalledWith({ notification_ids: ["notification-1"] });
     expect(navigateMock).toHaveBeenCalledWith("/messages");
     expect(pushMock).not.toHaveBeenCalled();
+  });
+
+  it("marks all notifications as read from the direct header action", () => {
+    renderNative(<NotificationsScreen />);
+
+    fireEvent.press(screen.getByTestId("notifications-read-all-trigger"));
+
+    expect(markReadMutateMock).toHaveBeenCalledWith({ notification_ids: ["notification-1"] });
   });
 });

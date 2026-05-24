@@ -4,6 +4,7 @@ import { Text } from "@repo/ui/components/text";
 import { Activity } from "lucide-react-native";
 import { View } from "react-native";
 import { IntensityDistributionChart } from "@/components/charts";
+import { formatEstimatedTss } from "@/lib/estimatedMetrics";
 
 interface IntensityDistribution {
   recovery: number;
@@ -171,7 +172,9 @@ export function IntensityTab({
         <Text className="text-sm text-muted-foreground">
           {totalActivities} total activities • {activitiesWithIntensity} with power data
         </Text>
-        <Text className="text-xs text-muted-foreground mt-1">Total TSS: {totalTSS}</Text>
+        <Text className="text-xs text-muted-foreground mt-1">
+          Total TSS: {formatEstimatedTss(totalTSS)}
+        </Text>
       </View>
 
       {/* Recommendations */}

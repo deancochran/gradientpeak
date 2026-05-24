@@ -51,6 +51,11 @@ jest.mock("@/assets/fonts/SpaceMono-Regular.ttf", () => ({
   default: "mock-font",
 }));
 
+jest.mock("@/lib/stores/theme-store", () => ({
+  __esModule: true,
+  useTheme: () => ({ resolvedTheme: "light" }),
+}));
+
 describe("PlanVsActualChart", () => {
   it("renders the core series for a weekly timeline", () => {
     renderNative(
@@ -115,15 +120,41 @@ describe("PlanVsActualChart", () => {
         projectedData={[]}
         goalMarkers={[
           { id: "goal-1", targetDate: "2026-03-03", label: "Race A" },
-          { id: "goal-2", targetDate: "2026-03-18", label: "Race B" },
+          { id: "goal-2", targetDate: "2026-03-10", label: "Race B" },
         ]}
       />,
     );
 
     const goalLines = (screen as any)
       .UNSAFE_getAllByType("SkiaLine")
-      .filter((node: any) => node.props.color === "rgba(34, 197, 94, 0.6)");
+      .filter((node: any) => node.props.color === "rgba(34, 197, 94, 0.68)");
 
     expect(goalLines).toHaveLength(2);
+  });
+
+  it("renders planned and completed load as zero when no load is found", () => {
+    renderNative(
+      <PlanVsActualChart
+        timeline={[
+          {
+            date: "2026-03-02",
+            recommended_load_tss: 320,
+            scheduled_load_tss: 0,
+            completed_load_tss: 0,
+          },
+          {
+            date: "2026-03-09",
+            recommended_load_tss: 340,
+            scheduled_load_tss: 0,
+            completed_load_tss: 0,
+          },
+        ]}
+        actualData={[]}
+        projectedData={[]}
+      />,
+    );
+
+    expect(screen.getByText("Scheduled")).toBeTruthy();
+    expect(screen.getByText("Actual")).toBeTruthy();
   });
 });

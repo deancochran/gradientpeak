@@ -42,6 +42,7 @@ jest.mock("@/lib/logging/mobile-action-log", () => ({
 jest.mock("@/lib/server-config", () => ({
   __esModule: true,
   getHostedApiUrl: () => "https://api.gradientpeak.test",
+  isServerUrlOverrideEnabled: () => false,
   setServerUrlOverride: jest.fn(async () => ({ changed: false })),
   useServerConfig: () => ({ apiUrl: "https://api.gradientpeak.test", overrideUrl: null }),
 }));

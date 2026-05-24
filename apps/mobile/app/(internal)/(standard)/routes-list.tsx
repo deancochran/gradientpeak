@@ -1,197 +1,129 @@
-import { decodePolyline } from "@repo/core";
-import { Button } from "@repo/ui/components/button";
-import { Card, CardContent } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
-import { useRouter } from "expo-router";
-import { MapPin, Plus, Trash2, TrendingDown, TrendingUp } from "lucide-react-native";
-import { Alert, FlatList, Pressable, View } from "react-native";
-import MapView, { Polyline } from "react-native-maps";
+import { Stack } from "expo-router";
+import { MapPin } from "lucide-react-native";
+import { useState } from "react";
+import { Pressable, View } from "react-native";
+import { IndexFilterSheet } from "@/components/shared/IndexFilterSheet";
+import {
+  FilterChip,
+  FilterSection,
+  IndexResultsSummary,
+  IndexSearchBar,
+} from "@/components/shared/IndexSearchBar";
+import { ResourceList } from "@/components/shared/ResourceList";
+import { RouteCard } from "@/components/shared/RouteCard";
 import { api } from "@/lib/api";
-import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
+import { ROUTES } from "@/lib/constants/routes";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
-const ACTIVITY_CATEGORY_LABELS: Record<string, string> = {
-  outdoor_run: "🏃 Run",
-  outdoor_bike: "🚴 Bike",
-  indoor_treadmill: "🏃 Treadmill",
-  indoor_bike_trainer: "🚴 Trainer",
-};
-
 export default function RoutesLibraryScreen() {
-  const router = useRouter();
   const navigateTo = useAppNavigate();
-  const utils = api.useUtils();
-
-  const { data, isLoading, fetchNextPage, hasNextPage } = api.routes.list.useInfiniteQuery(
-    { limit: 20 },
-    {
-      getNextPageParam: (lastPage) => lastPage.nextCursor,
-    },
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<"newest" | "oldest" | "distance_desc" | "ascent_desc">(
+    "newest",
   );
+  const [draftSortBy, setDraftSortBy] = useState<typeof sortBy>("newest");
+  const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
 
-  const deleteMutation = useReliableMutation(api.routes.delete, {
-    invalidate: [utils.routes],
-    success: "Route deleted successfully",
-  });
+  const { data, isLoading, isFetchingNextPage, fetchNextPage, hasNextPage } =
+    api.routes.list.useInfiniteQuery(
+      { limit: 20, ownerScope: "own", search: searchQuery.trim() || undefined, sort_by: sortBy },
+      {
+        getNextPageParam: (lastPage) => lastPage.nextCursor,
+      },
+    );
 
   const routes = data?.pages.flatMap((page) => page.items) ?? [];
 
-  const handleDelete = (routeId: string, routeName: string) => {
-    Alert.alert(
-      "Delete Route",
-      `Are you sure you want to delete "${routeName}"? This cannot be undone.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => deleteMutation.mutate({ id: routeId }),
-        },
-      ],
-    );
-  };
-
-  const formatDistance = (meters: number) => {
-    const km = meters / 1000;
-    return `${km.toFixed(1)} km`;
-  };
-
-  const renderRouteCard = ({ item }: { item: any }) => {
-    const coordinates = decodePolyline(item.polyline);
-
-    return (
-      <Pressable
-        onPress={() => navigateTo(`/route-detail?id=${item.id}` as any)}
-        className="mb-3"
-        testID={`routes-list-item-${item.id}`}
-      >
-        <Card>
-          <CardContent className="p-0">
-            {/* Map Preview */}
-            <View className="h-32 bg-muted overflow-hidden rounded-t-lg">
-              {coordinates.length > 0 && (
-                <MapView
-                  style={{ flex: 1 }}
-                  scrollEnabled={false}
-                  zoomEnabled={false}
-                  pitchEnabled={false}
-                  rotateEnabled={false}
-                  initialRegion={{
-                    latitude: coordinates[0].latitude,
-                    longitude: coordinates[0].longitude,
-                    latitudeDelta: 0.05,
-                    longitudeDelta: 0.05,
-                  }}
-                >
-                  <Polyline coordinates={coordinates} strokeColor="#f97316" strokeWidth={3} />
-                </MapView>
-              )}
-            </View>
-
-            {/* Route Info */}
-            <View className="p-4">
-              <View className="flex-row items-center justify-between mb-2">
-                <Text className="text-lg font-semibold flex-1" numberOfLines={1}>
-                  {item.name}
-                </Text>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onPress={() => handleDelete(item.id, item.name)}
-                  disabled={deleteMutation.isPending}
-                  testID={`routes-list-delete-${item.id}`}
-                >
-                  <Trash2 className="text-destructive" size={18} />
-                </Button>
-              </View>
-
-              <Text className="text-sm text-muted-foreground mb-3">
-                {ACTIVITY_CATEGORY_LABELS[item.activity_category] || item.activity_category}
-              </Text>
-
-              {/* Stats */}
-              <View className="flex-row gap-4">
-                <View className="flex-row items-center gap-1">
-                  <MapPin size={16} className="text-muted-foreground" />
-                  <Text className="text-sm">{formatDistance(item.total_distance)}</Text>
-                </View>
-
-                {item.total_ascent > 0 && (
-                  <View className="flex-row items-center gap-1">
-                    <TrendingUp size={16} className="text-green-600" />
-                    <Text className="text-sm">{item.total_ascent}m</Text>
-                  </View>
-                )}
-
-                {item.total_descent > 0 && (
-                  <View className="flex-row items-center gap-1">
-                    <TrendingDown size={16} className="text-red-600" />
-                    <Text className="text-sm">{item.total_descent}m</Text>
-                  </View>
-                )}
-              </View>
-
-              {item.description && (
-                <Text className="text-sm text-muted-foreground mt-2" numberOfLines={2}>
-                  {item.description}
-                </Text>
-              )}
-            </View>
-          </CardContent>
-        </Card>
-      </Pressable>
-    );
-  };
-
   return (
     <View className="flex-1 bg-background" testID="routes-list-screen">
-      <FlatList
+      <Stack.Screen
+        options={{
+          headerRight: () => (
+            <Pressable
+              onPress={() => navigateTo(ROUTES.ROUTES.UPLOAD as any)}
+              className="mr-2 rounded-full px-2 py-1"
+              testID="routes-list-upload-trigger"
+            >
+              <Text className="text-sm font-medium text-primary">Upload</Text>
+            </Pressable>
+          ),
+        }}
+      />
+      <IndexSearchBar
+        value={searchQuery}
+        placeholder="Search routes"
+        hasActiveFilters={sortBy !== "newest"}
+        onChangeText={setSearchQuery}
+        onClear={() => setSearchQuery("")}
+        onFilterPress={() => {
+          setDraftSortBy(sortBy);
+          setIsFilterSheetOpen(true);
+        }}
+        testIDPrefix="routes-list"
+      />
+      <ResourceList
         testID="routes-list-content"
         data={routes}
-        renderItem={renderRouteCard}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={{ padding: 16 }}
-        ListEmptyComponent={
+        contentContainerClassName="gap-4 p-4 pb-6"
+        ListHeaderComponent={<IndexResultsSummary count={routes.length} singularLabel="route" />}
+        emptyComponent={
           <View
             className="flex-1 items-center justify-center py-12"
             testID="routes-list-empty-state"
           >
             <MapPin size={64} className="text-muted-foreground mb-4" />
-            <Text className="text-xl font-semibold mb-2">No Routes Yet</Text>
+            <Text className="text-xl font-semibold mb-2">No routes yet</Text>
             <Text className="text-muted-foreground text-center mb-6">
-              Upload your first GPX route to get started
+              Your saved routes will appear here.
             </Text>
-            <Button
-              onPress={() => navigateTo("/route-upload" as any)}
-              testID="routes-list-upload-button"
-            >
-              <Plus className="text-primary-foreground mr-2" size={20} />
-              <Text className="text-primary-foreground">Upload Route</Text>
-            </Button>
           </View>
         }
-        onEndReached={() => {
-          if (hasNextPage) {
-            fetchNextPage();
-          }
-        }}
-        onEndReachedThreshold={0.5}
-        refreshing={isLoading}
+        hasNextPage={hasNextPage}
+        isFetchingNextPage={isFetchingNextPage}
+        isLoading={isLoading}
+        loadingMoreLabel="Loading more routes..."
+        onLoadMore={() => void fetchNextPage()}
+        renderItem={(item: any) => (
+          <RouteCard
+            route={item}
+            onPress={() => navigateTo(`/route-detail?id=${item.id}` as any)}
+          />
+        )}
       />
-
-      {/* Floating Action Button */}
-      {routes.length > 0 && (
-        <View className="absolute bottom-6 right-6">
-          <Button
-            size="lg"
-            className="rounded-full shadow-lg"
-            onPress={() => navigateTo("/route-upload" as any)}
-            testID="routes-list-fab-upload-button"
-          >
-            <Plus className="text-primary-foreground" size={24} />
-          </Button>
-        </View>
-      )}
+      <IndexFilterSheet
+        visible={isFilterSheetOpen}
+        title="Route Filters"
+        description="Refine your routes list."
+        isResetDisabled={draftSortBy === "newest"}
+        onReset={() => setDraftSortBy("newest")}
+        onApply={() => {
+          setSortBy(draftSortBy);
+          setIsFilterSheetOpen(false);
+        }}
+        onClose={() => setIsFilterSheetOpen(false)}
+        testID="routes-list-filter-sheet"
+      >
+        <FilterSection title="Sort">
+          <View className="flex-row flex-wrap gap-2">
+            {[
+              { id: "newest", label: "Newest" },
+              { id: "oldest", label: "Oldest" },
+              { id: "distance_desc", label: "Distance" },
+              { id: "ascent_desc", label: "Ascent" },
+            ].map((option) => (
+              <FilterChip
+                key={option.id}
+                label={option.label}
+                isActive={draftSortBy === option.id}
+                onPress={() => setDraftSortBy(option.id as typeof sortBy)}
+                testID={`routes-list-filter-sort-${option.id}`}
+              />
+            ))}
+          </View>
+        </FilterSection>
+      </IndexFilterSheet>
     </View>
   );
 }

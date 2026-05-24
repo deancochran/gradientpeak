@@ -12,10 +12,11 @@ env:
       password: "${USER_PASS}"
 - tapOn: "Plan"
 - extendedWaitUntil:
-    visible: "Goals"
+    visible:
+      id: "training-path-section"
     timeout: 10000
 - tapOn:
-    id: "projection-settings-button"
+    id: "training-path-settings-button"
 - extendedWaitUntil:
     visible: "Training Preferences"
     timeout: 10000

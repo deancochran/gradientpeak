@@ -1,8 +1,8 @@
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { ArrowUpRight, Lock, Play, Target, Zap } from "lucide-react-native";
-import React from "react";
+import { CalendarDays, Lock, Play, Target, Zap } from "lucide-react-native";
 import { TouchableOpacity, View } from "react-native";
+import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
 import {
   getEventPrimaryMeta,
   getEventStatusLabel,
@@ -11,6 +11,7 @@ import {
   getEventTitle,
 } from "@/lib/calendar/eventPresentation";
 import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
+import { formatEstimatedTss } from "@/lib/estimatedMetrics";
 import { getActivityColor } from "@/lib/utils/plan/colors";
 
 function getPlannedStepCount(event: CalendarEvent): number {
@@ -60,12 +61,15 @@ export function CalendarEventCard({
   const meta = getEventPrimaryMeta(event);
   const supportingLine = getEventSupportingLine(event);
   const statusLabel = getEventStatusLabel(event);
+  const hasActivityPlan = Boolean(event.activity_plan?.id);
   const activityColor = getActivityColor(event.activity_plan?.activity_category ?? undefined);
   const timeLabel = getEventTimeLabel(event);
-  const planned = event.event_type === "planned";
-  const estimatedTss = readMetric(event.activity_plan?.estimated_tss);
+  const planned = event.event_type === "planned" && hasActivityPlan;
+  const estimatedTss = readMetric(
+    getAuthoritativeActivityPlanMetrics(event.activity_plan).estimated_tss,
+  );
   const plannedStepCount = getPlannedStepCount(event);
-  const hasRoute = !!event.activity_plan?.route_id;
+  const hasRoute = hasActivityPlan && !!event.activity_plan?.route_id;
   const intensityLevel =
     estimatedTss === null ? 0 : estimatedTss >= 90 ? 3 : estimatedTss >= 55 ? 2 : 1;
 
@@ -76,9 +80,9 @@ export function CalendarEventCard({
         ? Target
         : event.event_type === "imported"
           ? Lock
-          : ArrowUpRight;
+          : CalendarDays;
 
-  const quickActionIcon = canStart ? Play : ArrowUpRight;
+  const quickActionIcon = canStart ? Play : CalendarDays;
 
   return (
     <View
@@ -156,7 +160,7 @@ export function CalendarEventCard({
                           Intensity
                         </Text>
                         <Text className="text-[10px] font-medium text-muted-foreground">
-                          {Math.round(estimatedTss)} TSS
+                          {formatEstimatedTss(estimatedTss)}
                         </Text>
                       </View>
                       <View className="mt-2 flex-row gap-1.5">

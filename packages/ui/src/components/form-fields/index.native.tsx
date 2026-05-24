@@ -1,6 +1,8 @@
 import type { FieldPath, FieldPathValue, FieldValues } from "react-hook-form";
 
+import { View } from "../../lib/react-native";
 import { BoundedNumberInput } from "../bounded-number-input/index.native";
+import { Button } from "../button/index.native";
 import { DateInput } from "../date-input/index.native";
 import { DurationInput } from "../duration-input/index.native";
 import {
@@ -14,6 +16,7 @@ import {
 import { Input } from "../input/index.native";
 import { IntegerStepper } from "../integer-stepper/index.native";
 import { PaceInput } from "../pace-input/index.native";
+import { PercentSliderInput } from "../percent-slider-input/index.native";
 import {
   Select,
   SelectContent,
@@ -22,20 +25,26 @@ import {
   SelectValue,
 } from "../select/index.native";
 import { Switch } from "../switch/index.native";
+import { Text } from "../text/index.native";
 import { Textarea } from "../textarea/index.native";
+import { TimeInput } from "../time-input/index.native";
 import { WeightInputField } from "../weight-input-field/index.native";
 import {
   defaultFormatValue,
   type FormBoundedNumberFieldProps,
   type FormDateInputFieldProps,
+  type FormDateTimeFieldProps,
   type FormDurationFieldProps,
   type FormIntegerStepperFieldProps,
   type FormNumberFieldProps,
   type FormPaceFieldProps,
+  type FormPercentSliderFieldProps,
+  type FormSegmentedSelectFieldProps,
   type FormSelectFieldProps,
   type FormSwitchFieldProps,
   type FormTextareaFieldProps,
   type FormTextFieldProps,
+  type FormTimeInputFieldProps,
   type FormWeightInputFieldProps,
 } from "./shared";
 
@@ -93,6 +102,7 @@ function FormNumberField<TFieldValues extends FieldValues, TName extends FieldPa
   control,
   description,
   disabled,
+  emptyValue,
   formatValue = defaultFormatValue,
   label,
   max,
@@ -124,7 +134,11 @@ function FormNumberField<TFieldValues extends FieldValues, TName extends FieldPa
               onChangeText={(nextValue) => {
                 const raw = nextValue.trim();
                 if (raw.length === 0) {
-                  field.onChange(undefined as FieldPathValue<TFieldValues, TName>);
+                  field.onChange(
+                    emptyValue === undefined
+                      ? (undefined as FieldPathValue<TFieldValues, TName>)
+                      : emptyValue,
+                  );
                   return;
                 }
 
@@ -418,6 +432,85 @@ function FormSelectField<TFieldValues extends FieldValues, TName extends FieldPa
   );
 }
 
+function FormSegmentedSelectField<
+  TFieldValues extends FieldValues,
+  TName extends FieldPath<TFieldValues>,
+>({
+  control,
+  description,
+  disabled,
+  formatValue,
+  label,
+  name,
+  options,
+  parseValue,
+  required,
+  rules,
+  testId,
+}: FormSegmentedSelectFieldProps<TFieldValues, TName>) {
+  return (
+    <FormField
+      control={control}
+      name={name}
+      rules={rules}
+      render={({ field }) => {
+        const selectedValue = formatValue
+          ? formatValue(field.value)
+          : field.value == null
+            ? undefined
+            : String(field.value);
+
+        return (
+          <FormItem>
+            <FormLabel>
+              {label}
+              {required ? " *" : null}
+            </FormLabel>
+            <FormControl>
+              <View className="flex-row flex-wrap gap-2" testID={testId}>
+                {options.map((option) => {
+                  const selected = option.value === selectedValue;
+
+                  return (
+                    <Button
+                      accessibilityRole="button"
+                      accessibilityState={{ selected, disabled: disabled || option.disabled }}
+                      className={options.length > 3 ? "min-w-[30%] flex-1" : "flex-1"}
+                      disabled={disabled || option.disabled}
+                      key={option.value}
+                      onPress={() => {
+                        field.onChange(
+                          parseValue
+                            ? parseValue(option.value)
+                            : (option.value as FieldPathValue<TFieldValues, TName>),
+                        );
+                      }}
+                      testId={testId ? `${testId}-${option.value}` : undefined}
+                      variant={selected ? "default" : "outline"}
+                    >
+                      <Text
+                        className={
+                          selected
+                            ? "text-center text-primary-foreground"
+                            : "text-center text-foreground"
+                        }
+                      >
+                        {option.label}
+                      </Text>
+                    </Button>
+                  );
+                })}
+              </View>
+            </FormControl>
+            {description ? <FormDescription>{description}</FormDescription> : null}
+            <FormMessage />
+          </FormItem>
+        );
+      }}
+    />
+  );
+}
+
 function FormDateInputField<
   TFieldValues extends FieldValues,
   TName extends FieldPath<TFieldValues>,
@@ -439,6 +532,125 @@ function FormDateInputField<
       render={({ field, fieldState }) => (
         <DateInput
           {...dateProps}
+          error={fieldState.error?.message}
+          helperText={description}
+          id={String(name)}
+          label={label}
+          onChange={(value) => field.onChange(value ?? null)}
+          required={required}
+          testId={testId}
+          value={typeof field.value === "string" ? field.value : undefined}
+        />
+      )}
+    />
+  );
+}
+
+function splitDateTimeValue(value: unknown) {
+  if (typeof value !== "string") {
+    return { date: undefined, time: undefined };
+  }
+
+  const [date, timeWithSeconds] = value.split("T");
+  const time = timeWithSeconds?.slice(0, 5);
+  return {
+    date: date || undefined,
+    time: time || undefined,
+  };
+}
+
+function combineDateTimeValue(date: string | undefined, time: string | undefined) {
+  if (!date && !time) {
+    return null;
+  }
+
+  return `${date ?? new Date().toISOString().slice(0, 10)}T${time ?? "00:00"}`;
+}
+
+function FormDateTimeField<
+  TFieldValues extends FieldValues,
+  TName extends FieldPath<TFieldValues>,
+>({
+  control,
+  dateLabel,
+  description,
+  disabled,
+  label,
+  name,
+  required,
+  rules,
+  testId,
+  timeLabel,
+}: FormDateTimeFieldProps<TFieldValues, TName>) {
+  return (
+    <FormField
+      control={control}
+      name={name}
+      rules={rules}
+      render={({ field, fieldState }) => {
+        const { date, time } = splitDateTimeValue(field.value);
+
+        return (
+          <View pointerEvents={disabled ? "none" : "auto"} className="gap-3 opacity-100">
+            <View className="gap-3 sm:flex-row">
+              <DateInput
+                error={fieldState.error?.message}
+                helperText={description}
+                id={`${String(name)}-date`}
+                label={dateLabel ?? `${label} date`}
+                onChange={(nextDate) => {
+                  field.onChange(
+                    combineDateTimeValue(nextDate, time) as FieldPathValue<TFieldValues, TName>,
+                  );
+                }}
+                pickerPresentation="modal"
+                required={required}
+                testId={testId ? `${testId}-date` : undefined}
+                value={date}
+              />
+              <TimeInput
+                error={fieldState.error?.message}
+                id={`${String(name)}-time`}
+                label={timeLabel ?? `${label} time`}
+                onChange={(nextTime) => {
+                  field.onChange(
+                    combineDateTimeValue(date, nextTime) as FieldPathValue<TFieldValues, TName>,
+                  );
+                }}
+                pickerPresentation="modal"
+                required={required}
+                testId={testId ? `${testId}-time` : undefined}
+                value={time}
+              />
+            </View>
+          </View>
+        );
+      }}
+    />
+  );
+}
+
+function FormTimeInputField<
+  TFieldValues extends FieldValues,
+  TName extends FieldPath<TFieldValues>,
+>({
+  control,
+  description,
+  label,
+  name,
+  required,
+  rules,
+  testId,
+  ...timeProps
+}: FormTimeInputFieldProps<TFieldValues, TName>) {
+  return (
+    <FormField
+      control={control}
+      name={name}
+      rules={rules}
+      render={({ field, fieldState }) => (
+        <TimeInput
+          {...timeProps}
           error={fieldState.error?.message}
           helperText={description}
           id={String(name)}
@@ -520,6 +732,60 @@ function FormPaceField<TFieldValues extends FieldValues, TName extends FieldPath
   );
 }
 
+function formatPercentFieldValue(value: unknown, valueMode: "percent" | "fraction") {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return 0;
+  }
+
+  return valueMode === "fraction" ? value * 100 : value;
+}
+
+function parsePercentFieldValue(value: number, valueMode: "percent" | "fraction") {
+  return valueMode === "fraction" ? Number((value / 100).toFixed(4)) : value;
+}
+
+function FormPercentSliderField<
+  TFieldValues extends FieldValues,
+  TName extends FieldPath<TFieldValues>,
+>({
+  control,
+  decimals,
+  description,
+  disabled: _disabled,
+  label,
+  name,
+  required,
+  rules,
+  testId,
+  valueMode = "percent",
+  ...percentProps
+}: FormPercentSliderFieldProps<TFieldValues, TName>) {
+  return (
+    <FormField
+      control={control}
+      name={name}
+      rules={rules}
+      render={({ field, fieldState }) => (
+        <PercentSliderInput
+          {...percentProps}
+          decimals={decimals}
+          error={fieldState.error?.message}
+          helperText={description}
+          id={String(name)}
+          label={`${label}${required ? " *" : ""}`}
+          onChange={(value) => {
+            field.onChange(
+              parsePercentFieldValue(value, valueMode) as FieldPathValue<TFieldValues, TName>,
+            );
+          }}
+          testId={testId}
+          value={formatPercentFieldValue(field.value, valueMode)}
+        />
+      )}
+    />
+  );
+}
+
 function FormWeightInputField<
   TFieldValues extends FieldValues,
   TName extends FieldPath<TFieldValues>,
@@ -558,13 +824,17 @@ function FormWeightInputField<
 export {
   FormBoundedNumberField,
   FormDateInputField,
+  FormDateTimeField,
   FormDurationField,
   FormIntegerStepperField,
   FormNumberField,
   FormPaceField,
+  FormPercentSliderField,
+  FormSegmentedSelectField,
   FormSelectField,
   FormSwitchField,
   FormTextareaField,
   FormTextField,
+  FormTimeInputField,
   FormWeightInputField,
 };

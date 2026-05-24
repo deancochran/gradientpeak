@@ -1,15 +1,7 @@
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import {
-  Activity,
-  BarChart2,
-  BarChart3,
-  Calendar,
-  Heart,
-  TrendingUp,
-  Zap,
-} from "lucide-react-native";
-import { Pressable, ScrollView, View } from "react-native";
+import { BarChart2, Calendar, Heart, TrendingUp, Zap } from "lucide-react-native";
+import { Pressable, ScrollView } from "react-native";
 
 export type TabView =
   | "overview"
@@ -35,31 +27,32 @@ export function TrendsTabBar({ activeTab, onTabChange }: TrendsTabBarProps) {
   ];
 
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
-      <View className="flex-row bg-muted rounded-lg p-1 gap-1">
-        {tabs.map((tab) => (
-          <Pressable
-            key={tab.id}
-            onPress={() => onTabChange(tab.id)}
-            className={`py-2 px-3 rounded-md ${activeTab === tab.id ? "bg-card shadow-sm" : ""}`}
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      className="mb-4"
+      contentContainerClassName="flex-row gap-1 rounded-lg bg-muted p-1"
+    >
+      {tabs.map((tab) => (
+        <Pressable
+          key={tab.id}
+          onPress={() => onTabChange(tab.id)}
+          className={`flex-row items-center justify-center rounded-md px-3 py-2 ${activeTab === tab.id ? "bg-card shadow-sm" : ""}`}
+        >
+          <Icon
+            as={tab.icon}
+            size={16}
+            className={activeTab === tab.id ? "text-primary" : "text-muted-foreground"}
+          />
+          <Text
+            className={`ml-1 text-sm font-medium whitespace-nowrap ${
+              activeTab === tab.id ? "text-primary" : "text-muted-foreground"
+            }`}
           >
-            <View className="flex-row items-center justify-center">
-              <Icon
-                as={tab.icon}
-                size={16}
-                className={activeTab === tab.id ? "text-primary" : "text-muted-foreground"}
-              />
-              <Text
-                className={`ml-1 text-sm font-medium whitespace-nowrap ${
-                  activeTab === tab.id ? "text-primary" : "text-muted-foreground"
-                }`}
-              >
-                {tab.label}
-              </Text>
-            </View>
-          </Pressable>
-        ))}
-      </View>
+            {tab.label}
+          </Text>
+        </Pressable>
+      ))}
     </ScrollView>
   );
 }

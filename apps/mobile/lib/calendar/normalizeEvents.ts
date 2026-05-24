@@ -1,14 +1,34 @@
+import { toDateKey } from "@/lib/calendar/dateMath";
+
 export interface CalendarEventActivityPlan {
   id?: string | null;
   name?: string | null;
   description?: string | null;
   notes?: string | null;
   activity_category?: string | null;
+  authoritative_metrics?: {
+    estimated_duration?: number | null;
+    estimated_tss?: number | null;
+    intensity_factor?: number | null;
+    estimated_distance?: number | null;
+  } | null;
   estimated_duration?: number | null;
-  estimated_duration_minutes?: number | null;
   estimated_tss?: number | null;
+  intensity_factor?: number | null;
+  estimated_distance?: number | null;
+  route?: {
+    distance?: number | null;
+    ascent?: number | null;
+    descent?: number | null;
+  } | null;
   route_id?: string | null;
   structure?: unknown;
+}
+
+export interface CalendarEventOwner {
+  id?: string | null;
+  username?: string | null;
+  avatar_url?: string | null;
 }
 
 export interface CalendarEvent {
@@ -25,12 +45,38 @@ export interface CalendarEvent {
   recurrence_rule?: string | null;
   recurrence?: { rule?: string | null } | null;
   linked_activity_id?: string | null;
+  training_plan_id?: string | null;
   completed?: boolean | null;
   status?: string | null;
+  owner?: CalendarEventOwner | null;
   activity_plan?: CalendarEventActivityPlan | null;
 }
 
 export type CalendarEventsByDate = Map<string, CalendarEvent[]>;
+
+function getEventStartDateKey(event: CalendarEvent): string | null {
+  if (event.scheduled_date) {
+    return event.scheduled_date;
+  }
+
+  if (event.starts_at) {
+    const startsAt = new Date(event.starts_at);
+    if (!Number.isNaN(startsAt.getTime())) {
+      return toDateKey(startsAt);
+    }
+  }
+
+  return null;
+}
+
+function getScheduledDateKey(event: CalendarEvent): string | null {
+  const startDateKey = getEventStartDateKey(event);
+  if (!startDateKey) {
+    return null;
+  }
+
+  return startDateKey;
+}
 
 function compareEvents(left: CalendarEvent, right: CalendarEvent): number {
   if (left.all_day && !right.all_day) return -1;
@@ -45,7 +91,7 @@ export function buildEventsByDate(events: CalendarEvent[]): CalendarEventsByDate
   const map = new Map<string, CalendarEvent[]>();
 
   for (const event of events) {
-    const dateKey = event.scheduled_date;
+    const dateKey = getScheduledDateKey(event);
     if (!dateKey) continue;
     const current = map.get(dateKey) ?? [];
     current.push(event);

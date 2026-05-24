@@ -29,7 +29,7 @@ function hasChanges(
   if (local.sessions_per_week_target !== remote.sessions_per_week_target) return true;
   if (`${local.duration_hours}` !== `${remote.duration_hours ?? ""}`) return true;
 
-  const localStructure = JSON.parse(JSON.stringify(local));
+  const localStructure = JSON.parse(JSON.stringify(local.structure));
 
   return !deepEqual(localStructure, remote.structure);
 }

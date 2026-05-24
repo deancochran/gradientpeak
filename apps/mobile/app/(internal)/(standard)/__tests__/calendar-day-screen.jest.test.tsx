@@ -1,5 +1,6 @@
 import React from "react";
 
+import { createHost as mockCreateHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const pushMock = jest.fn();
@@ -7,25 +8,35 @@ const setSelectionMock = jest.fn();
 const setActiveDateMock = jest.fn();
 const fixedNow = new Date("2026-03-23T12:00:00.000Z");
 const today = fixedNow.toISOString().split("T")[0]!;
-let paramsState: { date?: string } = { date: today };
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
+const tomorrow = "2026-03-24";
+let paramsState: {
+  date?: string;
+  trainingPlanId?: string;
+  planSuggestionType?: string;
+  planSuggestionTssDelta?: string;
+  planSuggestionDescription?: string;
+} = { date: today };
+let eventItems: any[] = [];
+let groupEventItems: any[] = [];
 
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
-  ScrollView: createHost("ScrollView"),
-  TouchableOpacity: createHost("TouchableOpacity"),
-  View: createHost("View"),
+  ScrollView: mockCreateHost("ScrollView"),
+  TouchableOpacity: mockCreateHost("TouchableOpacity"),
+  View: mockCreateHost("View"),
 }));
 
 jest.mock("expo-router", () => ({
   __esModule: true,
-  Stack: { Screen: createHost("StackScreen") },
+  Stack: {
+    Screen: (props: any) =>
+      React.createElement(
+        "StackScreen",
+        props,
+        typeof props.options?.headerRight === "function" ? props.options.headerRight() : null,
+      ),
+  },
   useLocalSearchParams: () => paramsState,
 }));
 
@@ -34,21 +45,45 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
   useAppNavigate: () => pushMock,
 }));
 
-jest.mock("@repo/ui/components/icon", () => ({ __esModule: true, Icon: createHost("Icon") }));
-jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHost("Text") }));
+jest.mock("@repo/ui/components/icon", () => ({ __esModule: true, Icon: mockCreateHost("Icon") }));
+jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: mockCreateHost("Text") }));
 
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
-  ArrowUpRight: createHost("ArrowUpRight"),
-  Lock: createHost("Lock"),
-  Play: createHost("Play"),
-  Target: createHost("Target"),
-  Zap: createHost("Zap"),
+  ArrowUpRight: mockCreateHost("ArrowUpRight"),
+  Lock: mockCreateHost("Lock"),
+  Play: mockCreateHost("Play"),
+  Target: mockCreateHost("Target"),
+  Zap: mockCreateHost("Zap"),
 }));
 
 jest.mock("@/lib/stores/calendar-store", () => ({
   __esModule: true,
   useCalendarStore: (selector: any) => selector({ setActiveDate: setActiveDateMock }),
+}));
+
+jest.mock("@/lib/stores/auth-store", () => ({
+  __esModule: true,
+  useAuthStore: (selector: any) =>
+    selector({ ready: true, session: { user: { id: "profile-1" } } }),
+}));
+
+jest.mock("@/lib/auth/auth-headers", () => ({
+  __esModule: true,
+  hasSessionAuthCredentials: () => true,
+}));
+
+jest.mock("@/lib/hooks/useProfileGoals", () => ({
+  __esModule: true,
+  useProfileGoals: () => ({
+    goals: [
+      {
+        id: "goal-1",
+        title: "Spring A Race",
+        target_date: today,
+      },
+    ],
+  }),
 }));
 
 jest.mock("@/lib/stores/activitySelectionStore", () => ({
@@ -61,27 +96,17 @@ jest.mock("@/lib/constants/routes", () => ({
   ROUTES: {
     RECORD: "/record",
     PLAN: {
+      AGENDA_CREATE: (date: string) => ({ pathname: "/agenda-create", params: { date } }),
       PLAN_DETAIL: (id: string) => `/activity-plan-detail?id=${id}`,
       EVENT_DETAIL: (id: string) => `/event-detail?id=${id}`,
+      GOAL_DETAIL: (id: string) => `/goal-detail?id=${id}`,
     },
   },
 }));
 
 jest.mock("@/components/shared/ActivityPlanCard", () => ({
   __esModule: true,
-  ActivityPlanCard: ({ plannedActivity, onPress }: any) =>
-    React.createElement(
-      "TouchableOpacity",
-      {
-        onPress,
-        testID: `activity-plan-card-${plannedActivity?.id}`,
-      },
-      React.createElement("Text", null, plannedActivity?.activity_plan?.name),
-      React.createElement("Text", null, plannedActivity?.activity_plan?.description),
-      React.createElement("Text", null, "Outdoor Run"),
-      React.createElement("Text", null, "4 steps"),
-      React.createElement("Text", null, "Route"),
-    ),
+  ActivityPlanCard: mockCreateHost("ActivityPlanCard"),
 }));
 
 jest.mock("@/lib/utils/plan/colors", () => ({
@@ -102,47 +127,42 @@ jest.mock("@/lib/utils/plan/dateGrouping", () => ({
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
+    routes: {
+      get: {
+        useQuery: () => ({ data: { id: "route-1", name: "River Loop" } }),
+      },
+    },
     events: {
       list: {
         useQuery: () => ({
           data: {
-            items: [
-              {
-                id: "event-1",
-                event_type: "planned",
-                title: "Tempo Builder",
-                scheduled_date: today,
-                starts_at: `${today}T06:30:00.000Z`,
-                all_day: false,
-                completed: false,
-                activity_plan: {
-                  id: "plan-1",
-                  name: "Tempo Builder",
-                  description: "Progressive tempo with a strong finish.",
-                  activity_category: "outdoor_run",
-                  estimated_duration: 3600,
-                  estimated_tss: 72,
-                  route_id: "route-1",
-                  structure: {
-                    intervals: [{ repetitions: 2, steps: [{}, {}] }],
-                  },
-                },
-              },
-              {
-                id: "event-2",
-                event_type: "custom",
-                title: "Mobility session",
-                description: "Gentle evening mobility.",
-                scheduled_date: today,
-                starts_at: `${today}T18:00:00.000Z`,
-                all_day: false,
-              },
-            ],
+            items: eventItems,
           },
           isLoading: false,
           error: null,
           refetch: jest.fn(async () => undefined),
         }),
+      },
+    },
+    activityPlans: {
+      getManyByIds: {
+        useQuery: () => ({
+          data: { items: [] },
+          isLoading: false,
+          error: null,
+        }),
+      },
+    },
+    groups: {
+      events: {
+        myCalendarGroupEvents: {
+          useQuery: () => ({
+            data: { items: groupEventItems },
+            isLoading: false,
+            error: null,
+            refetch: jest.fn(async () => undefined),
+          }),
+        },
       },
     },
   },
@@ -161,6 +181,47 @@ jest.mock("@/lib/calendar/eventRouting", () => ({
 const CalendarDayScreen = require("../calendar-day").default;
 
 describe("calendar day screen", () => {
+  beforeEach(() => {
+    eventItems = [
+      {
+        id: "event-1",
+        event_type: "planned",
+        title: "Tempo Builder",
+        training_plan_id: "training-plan-1",
+        scheduled_date: today,
+        starts_at: `${today}T06:30:00.000`,
+        all_day: false,
+        completed: false,
+        activity_plan: {
+          id: "plan-1",
+          name: "Tempo Builder",
+          description: "Progressive tempo with a strong finish.",
+          activity_category: "outdoor_run",
+          estimated_duration: 3600,
+          estimated_tss: 72,
+          intensity_factor: 0.88,
+          route_id: "route-1",
+          structure: {
+            intervals: [{ repetitions: 2, steps: [{}, {}] }],
+          },
+        },
+      },
+      {
+        id: "event-2",
+        event_type: "custom",
+        title: "Mobility session",
+        description: "Gentle evening mobility.",
+        location: "Garage studio",
+        scheduled_date: today,
+        starts_at: `${today}T14:00:00.000`,
+        ends_at: `${today}T15:00:00.000`,
+        all_day: false,
+      },
+    ];
+    groupEventItems = [];
+    pushMock.mockReset();
+  });
+
   beforeAll(() => {
     jest.useFakeTimers();
     jest.setSystemTime(fixedNow);
@@ -183,28 +244,173 @@ describe("calendar day screen", () => {
     expect(stackScreen.props.options.title).toBe("Today, March 23");
   });
 
-  it("shows the shared activity-plan list item and opens plan detail on tap", () => {
+  it("opens agenda creation with the selected day prefilled", () => {
     renderNative(<CalendarDayScreen />);
 
-    expect(screen.getByText("Tempo Builder")).toBeTruthy();
-    expect(screen.getByText("Progressive tempo with a strong finish.")).toBeTruthy();
-    expect(screen.getByText("Outdoor Run")).toBeTruthy();
-    expect(screen.getByText("4 steps")).toBeTruthy();
-    expect(screen.getByText("Route")).toBeTruthy();
+    fireEvent.press(screen.getByTestId("calendar-day-create-event-button"));
 
-    fireEvent.press(screen.getByTestId("activity-plan-card-event-1"));
-
-    expect(pushMock).toHaveBeenCalledWith("/activity-plan-detail?id=plan-1");
+    expect(pushMock).toHaveBeenCalledWith({
+      pathname: "/(internal)/(standard)/agenda-create",
+      params: { date: today },
+    });
   });
 
-  it("starts a planned activity from the quick action", () => {
+  it("shows a plan suggestion and passes it into event creation", () => {
+    paramsState = {
+      date: tomorrow,
+      trainingPlanId: "training-plan-1",
+      planSuggestionType: "add_load",
+      planSuggestionTssDelta: "75",
+      planSuggestionDescription: "Add load to close the readiness gap.",
+    };
+
     renderNative(<CalendarDayScreen />);
 
-    fireEvent.press(screen.getByTestId("schedule-event-action-event-1"));
+    expect(screen.getByTestId("calendar-day-plan-suggestion")).toBeTruthy();
+    expect(screen.getByText("Plan suggestion")).toBeTruthy();
+    expect(screen.getByText("Add about ~75 TSS")).toBeTruthy();
+    expect(screen.getByText("Add load to close the readiness gap.")).toBeTruthy();
 
-    expect(setSelectionMock).toHaveBeenCalledWith(
-      expect.objectContaining({ category: "outdoor_run", eventId: "event-1" }),
+    fireEvent.press(screen.getByTestId("calendar-day-create-from-plan-suggestion"));
+
+    expect(pushMock).toHaveBeenCalledWith({
+      pathname: "/(internal)/(standard)/agenda-create",
+      params: {
+        date: tomorrow,
+        trainingPlanId: "training-plan-1",
+        planSuggestionType: "add_load",
+        planSuggestionTssDelta: "75",
+      },
+    });
+  });
+
+  it("does not show scheduled session candidates for a reduce-load suggestion", () => {
+    paramsState = {
+      date: today,
+      trainingPlanId: "training-plan-1",
+      planSuggestionType: "reduce_load",
+      planSuggestionTssDelta: "-40",
+      planSuggestionDescription: "Reduce load to protect readiness.",
+    };
+
+    renderNative(<CalendarDayScreen />);
+
+    expect(screen.getByText("Reduce about ~40 TSS")).toBeTruthy();
+    expect(screen.getByText("Reduce load to protect readiness.")).toBeTruthy();
+    expect(screen.getByText("Create adjustment note")).toBeTruthy();
+    expect(screen.queryByTestId("calendar-day-reduce-load-candidates")).toBeNull();
+    expect(screen.queryByText("Scheduled sessions to review")).toBeNull();
+  });
+
+  it("shows the linked activity plan card under the event details and opens event detail on tap", () => {
+    const rendered = renderNative(<CalendarDayScreen />);
+
+    expect(screen.getByText("Goal")).toBeTruthy();
+    expect(screen.getByText("Spring A Race")).toBeTruthy();
+    expect(screen.getByText("Tempo Builder")).toBeTruthy();
+    expect(screen.getByText("From training plan")).toBeTruthy();
+    expect(screen.getByText("Linked activity plan")).toBeTruthy();
+    expect((rendered as any).UNSAFE_getByType("ActivityPlanCard").props.activityPlan).toEqual(
+      expect.objectContaining({
+        id: "plan-1",
+        name: "Tempo Builder",
+      }),
     );
-    expect(pushMock).toHaveBeenCalledWith("/record");
+
+    fireEvent.press(screen.getByTestId("schedule-event-event-1"));
+
+    expect(pushMock).toHaveBeenCalledWith("/event-detail?id=event-1");
+  });
+
+  it("opens goal detail from the goal anchor card", () => {
+    renderNative(<CalendarDayScreen />);
+
+    fireEvent.press(screen.getByTestId("calendar-day-goal-anchor"));
+
+    expect(pushMock).toHaveBeenCalledWith("/goal-detail?id=goal-1");
+  });
+
+  it("shows normal events as plain calendar entries", () => {
+    renderNative(<CalendarDayScreen />);
+
+    expect(screen.getByText("Mobility session")).toBeTruthy();
+    expect(screen.getByText("Gentle evening mobility.")).toBeTruthy();
+    expect(screen.getByText("2:00 PM - 3:00 PM")).toBeTruthy();
+    expect(screen.getByText("Garage studio")).toBeTruthy();
+  });
+
+  it("keeps planned agenda items scan-first without a quick action button", () => {
+    renderNative(<CalendarDayScreen />);
+
+    expect(screen.queryByTestId("schedule-event-action-event-1")).toBeNull();
+  });
+
+  it("shows human-readable recurrence text in agenda items", () => {
+    eventItems = [
+      {
+        id: "event-recurring",
+        event_type: "custom",
+        title: "Team sync",
+        scheduled_date: today,
+        starts_at: `${today}T16:00:00.000`,
+        all_day: false,
+        recurrence_rule: "FREQ=WEEKLY;UNTIL=20260530T235959Z",
+      },
+    ];
+
+    renderNative(<CalendarDayScreen />);
+
+    expect(screen.getByText("Every week until May 30, 2026")).toBeTruthy();
+  });
+
+  it("shows goal anchors even when the day has no events", () => {
+    eventItems = [];
+
+    renderNative(<CalendarDayScreen />);
+
+    expect(screen.getByTestId("calendar-day-goal-anchor")).toBeTruthy();
+    expect(screen.getByText("No events scheduled")).toBeTruthy();
+    expect(screen.queryByText("Rest day")).toBeNull();
+  });
+
+  it("keeps custom events visible while still classifying the day as a rest day", () => {
+    paramsState = { date: tomorrow };
+    eventItems = [
+      {
+        id: "event-custom-only",
+        event_type: "custom",
+        title: "Dinner reservation",
+        description: "Family night out.",
+        location: "Downtown",
+        scheduled_date: tomorrow,
+        starts_at: `${tomorrow}T19:00:00.000`,
+        ends_at: `${tomorrow}T20:30:00.000`,
+        all_day: false,
+      },
+    ];
+
+    renderNative(<CalendarDayScreen />);
+
+    expect(screen.getByTestId(`calendar-rest-day-state-${tomorrow}`)).toBeTruthy();
+    expect(screen.getByText("Rest day")).toBeTruthy();
+    expect(screen.getByText("Dinner reservation")).toBeTruthy();
+  });
+
+  it("keeps events on their scheduled date even when starts_at crosses a local timezone boundary", () => {
+    eventItems = [
+      {
+        id: "event-timezone-shift",
+        event_type: "custom",
+        title: "Early travel day",
+        scheduled_date: today,
+        starts_at: `${today}T00:30:00.000Z`,
+        all_day: false,
+      },
+    ];
+
+    renderNative(<CalendarDayScreen />);
+
+    expect(screen.getByText("Early travel day")).toBeTruthy();
+    expect(screen.queryByTestId(`calendar-rest-day-state-${today}`)).toBeNull();
   });
 });

@@ -4,7 +4,7 @@ import { useAuthStore } from "@/lib/stores/auth-store";
 export const getSessionAuthHeaders = () => {
   const session = useAuthStore.getState().session;
   const headers = new Headers();
-  const cookie = (authClient as { getCookie?: () => string }).getCookie?.();
+  const cookie = (authClient as { getCookie?: () => string } | undefined)?.getCookie?.();
 
   if (cookie) {
     headers.set("cookie", cookie);
@@ -15,4 +15,11 @@ export const getSessionAuthHeaders = () => {
   }
 
   return headers;
+};
+
+export const hasSessionAuthCredentials = () => {
+  const session = useAuthStore.getState().session;
+  const cookie = (authClient as { getCookie?: () => string } | undefined)?.getCookie?.();
+
+  return Boolean(cookie || session?.bearerToken);
 };

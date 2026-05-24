@@ -11,11 +11,16 @@ import { StatusBar } from "expo-status-bar";
 import { vars } from "nativewind";
 import * as React from "react";
 import { ActivityIndicator, View } from "react-native";
+import {
+  SafeAreaProvider,
+  SafeAreaView,
+} from "react-native-css/components/react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { AppBootstrapGate } from "@/components/auth/AppBootstrapGate";
+import { PerformanceBeacon } from "@/lib/performance";
 import { QueryProvider } from "@/lib/providers/QueryProvider";
 import { initializeServerConfig, useServerConfig } from "@/lib/server-config";
+import { LocationManager } from "@/lib/services/ActivityRecorder/location";
 import { StreamBuffer } from "@/lib/services/ActivityRecorder/StreamBuffer";
 import { GarminFitEncoder } from "@/lib/services/fit/GarminFitEncoder";
 import { initSentry } from "@/lib/services/sentry";
@@ -81,22 +86,25 @@ function AppShell() {
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <ThemeProvider value={navigationTheme}>
-          <View style={themeVariables} className="flex-1 bg-background">
-            <StatusBar style={isDark ? "light" : "dark"} />
-            <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
-              <View className="flex-1 bg-background">
-                <Slot />
-                <PortalHost />
-                <E2ERuntimeErrorStatus />
-              </View>
-            </SafeAreaView>
-          </View>
-        </ThemeProvider>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <View style={themeVariables} className="flex-1 bg-background">
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          <ThemeProvider value={navigationTheme}>
+            <View className="flex-1 bg-background">
+              <StatusBar style={isDark ? "light" : "dark"} />
+              <SafeAreaView style={{ flex: 1 }} edges={["top", "left", "right"]}>
+                <View className="flex-1 bg-background">
+                  <Slot />
+                  <PortalHost />
+                  <E2ERuntimeErrorStatus />
+                  <PerformanceBeacon />
+                </View>
+              </SafeAreaView>
+            </View>
+          </ThemeProvider>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    </View>
   );
 }
 
@@ -113,6 +121,10 @@ export default function RootLayout() {
 
     GarminFitEncoder.cleanupOrphanedRecordings().catch((error) => {
       console.warn("Failed to cleanup orphaned FIT recordings:", error);
+    });
+
+    LocationManager.cleanupOrphanedBackgroundTracking().catch((error) => {
+      console.warn("Failed to cleanup orphaned background location tracking:", error);
     });
   }, []);
 

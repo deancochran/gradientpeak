@@ -16,25 +16,15 @@ import type {
   TrainingPlanCalibrationConfig,
 } from "@repo/core";
 import { Badge } from "@repo/ui/components/badge";
-import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Button } from "@repo/ui/components/button";
 import { DateInput as DateField } from "@repo/ui/components/date-input";
-import { DurationInput } from "@repo/ui/components/duration-input";
 import { Input } from "@repo/ui/components/input";
 import { NumberSliderInput } from "@repo/ui/components/number-slider-input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@repo/ui/components/select";
 import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
-import { Textarea } from "@repo/ui/components/textarea";
 import { useZodForm } from "@repo/ui/hooks";
 import { Flag, Plus, ShieldAlert, Trash2, Trophy } from "lucide-react-native";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import { Pressable, ScrollView, useWindowDimensions, View } from "react-native";
 import Svg, { Circle } from "react-native-svg";
@@ -506,7 +496,7 @@ const formatCodeAsSentence = (code: string) => {
 };
 
 const formatDriverText = (message: string, code?: string) => {
-  if (message && message.includes(" ")) return message;
+  if (message?.includes(" ")) return message;
   if (message) return formatCodeAsSentence(message);
   if (code) return formatCodeAsSentence(code);
   return "Adjustment noted.";
@@ -910,7 +900,7 @@ export function SinglePageForm({
 
       return getTargetRowError(activeGoalIndex, targetIndex);
     },
-    [activeGoalIndex],
+    [activeGoalIndex, getTargetRowError],
   );
 
   const openActiveGoalTargetEditor = useCallback(
@@ -932,7 +922,7 @@ export function SinglePageForm({
 
       addTargetWithType(activeGoal.id, targetType);
     },
-    [activeGoal],
+    [activeGoal, addTargetWithType],
   );
 
   const removeTargetFromActiveGoal = useCallback(
@@ -943,7 +933,7 @@ export function SinglePageForm({
 
       removeTarget(activeGoal.id, targetId);
     },
-    [activeGoal],
+    [activeGoal, removeTarget],
   );
   const reviewNoticeCount = useMemo(() => {
     const blockingCount = blockingIssues.length;

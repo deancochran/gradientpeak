@@ -42,7 +42,59 @@ describe("GPS cutover schemas", () => {
     ).toBe(false);
   });
 
-  it("does not require persisted GPS fields and rejects activity_location in activityPlanCreateSchema", () => {
+  it("requires structured intervals and rejects activity_location in activityPlanCreateSchema", () => {
+    expect(
+      activityPlanCreateSchema.safeParse({
+        name: "Easy Run",
+        description: "",
+        activity_category: "run",
+        structure: {
+          version: 2,
+          intervals: [
+            {
+              id: "11111111-1111-4111-8111-111111111111",
+              name: "Main Set",
+              repetitions: 1,
+              steps: [
+                {
+                  id: "22222222-2222-4222-8222-222222222222",
+                  name: "Run",
+                  duration: { type: "time", seconds: 600 },
+                  targets: [{ type: "%MaxHR", intensity: 70 }],
+                },
+              ],
+            },
+          ],
+        },
+      }).success,
+    ).toBe(true);
+
+    expect(
+      activityPlanCreateSchema.safeParse({
+        name: "Route Only",
+        description: "",
+        activity_category: "run",
+        structure: {
+          version: 2,
+          intervals: [
+            {
+              id: "11111111-1111-4111-8111-111111111111",
+              name: "Follow Route",
+              repetitions: 1,
+              steps: [
+                {
+                  id: "22222222-2222-4222-8222-222222222222",
+                  name: "Follow Route",
+                  duration: { type: "untilFinished" },
+                  targets: [],
+                },
+              ],
+            },
+          ],
+        },
+      }).success,
+    ).toBe(false);
+
     expect(
       activityPlanCreateSchema.safeParse({
         name: "Easy Run",
@@ -53,7 +105,7 @@ describe("GPS cutover schemas", () => {
           intervals: [],
         },
       }).success,
-    ).toBe(true);
+    ).toBe(false);
 
     expect(
       activityPlanCreateSchema.safeParse({

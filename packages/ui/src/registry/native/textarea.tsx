@@ -1,5 +1,6 @@
-import { Platform, TextInput } from "react-native";
+import { Platform, TextInput, useColorScheme, View } from "react-native";
 import { cn } from "../../lib/cn";
+import { getResolvedNativeTheme } from "../../lib/native-theme";
 
 function Textarea({
   className,
@@ -8,23 +9,40 @@ function Textarea({
   placeholderClassName,
   ...props
 }: React.ComponentProps<typeof TextInput>) {
+  const theme = getResolvedNativeTheme(useColorScheme());
+
   return (
-    <TextInput
+    <View
       className={cn(
-        "text-foreground border-input dark:bg-input/30 flex min-h-16 w-full flex-row rounded-md border bg-transparent px-3 py-2 text-base shadow-sm shadow-black/5 md:text-sm",
+        "border-input dark:bg-input/30 min-h-16 w-full rounded-md border bg-transparent shadow-sm shadow-black/5",
         Platform.select({
-          web: "placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive field-sizing-content resize-y outline-none transition-[color,box-shadow] focus-visible:ring-[3px] disabled:cursor-not-allowed",
+          web: "field-sizing-content resize-y outline-none transition-[color,box-shadow] focus-within:border-ring focus-within:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive focus-within:ring-[3px] disabled:cursor-not-allowed",
         }),
         props.editable === false && "opacity-50",
         className,
       )}
-      placeholderClassName={cn("text-muted-foreground", placeholderClassName)}
-      multiline={multiline}
-      numberOfLines={numberOfLines}
-      textAlignVertical="top"
-      {...props}
-    />
+    >
+      <TextInput
+        {...props}
+        cursorColor={props.cursorColor ?? theme.primary}
+        placeholderTextColor={props.placeholderTextColor ?? theme.mutedForeground}
+        selectionColor={props.selectionColor ?? theme.primary}
+        style={[styles.textarea, { color: theme.foreground }, props.style]}
+        multiline={multiline}
+        numberOfLines={numberOfLines}
+        textAlignVertical="top"
+      />
+    </View>
   );
 }
+
+const styles = {
+  textarea: {
+    fontSize: 16,
+    minHeight: 64,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+} as const;
 
 export { Textarea };

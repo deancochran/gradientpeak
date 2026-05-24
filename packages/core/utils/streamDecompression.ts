@@ -11,7 +11,7 @@ import { gunzipSync } from "node:zlib";
  * These functions will throw errors if called in React Native.
  * Mobile app has its own implementation in: apps/mobile/lib/utils/streamDecompression.ts
  *
- * For server-side usage (Next.js, tRPC), import the actual implementations from the tRPC package.
+ * For server-side usage, import from @repo/core/server/stream-decompression.
  */
 
 export interface DecompressedStream {
@@ -22,10 +22,15 @@ export interface DecompressedStream {
   sampleCount: number;
 }
 
+export interface StreamDecompressionWarning {
+  type: string;
+  error: unknown;
+}
+
 /**
  * Convert base64 string to Buffer (Node.js server-side)
  */
-export function base64ToBuffer(base64: string): any {
+export function base64ToBuffer(base64: string): Buffer {
   if (!Buffer) {
     throw new Error("Buffer is not available in this environment. Use server-side only.");
   }
@@ -51,63 +56,59 @@ export function decompressStream(
     throw new Error("gunzipSync is not available in this environment. Use server-side only.");
   }
 
-  try {
-    // Decompress values
-    const valuesBuffer = base64ToBuffer(compressedValues);
-    const decompressedValues = gunzipSync(valuesBuffer);
+  // Decompress values
+  const valuesBuffer = base64ToBuffer(compressedValues);
+  const decompressedValues = gunzipSync(valuesBuffer);
 
-    // Decompress timestamps
-    const timestampsBuffer = base64ToBuffer(compressedTimestamps);
-    const decompressedTimestamps = gunzipSync(timestampsBuffer);
+  // Decompress timestamps
+  const timestampsBuffer = base64ToBuffer(compressedTimestamps);
+  const decompressedTimestamps = gunzipSync(timestampsBuffer);
 
-    // Parse based on data type
-    let values: number[] | [number, number][] | boolean[];
-    if (dataType === "latlng") {
-      // Parse as JSON array of coordinate pairs
-      const jsonStr = decompressedValues.toString("utf-8");
-      values = JSON.parse(jsonStr) as [number, number][];
-    } else {
-      // Parse as Float32Array for numeric data
-      const float32Array = new Float32Array(
-        decompressedValues.buffer,
-        decompressedValues.byteOffset,
-        decompressedValues.byteLength / 4,
-      );
-      const numericValues = Array.from(float32Array);
-
-      if (dataType === "boolean") {
-        // Convert float to boolean (> 0.5 = true)
-        values = numericValues.map((v) => v > 0.5);
-      } else {
-        values = numericValues;
-      }
-    }
-
-    // Parse timestamps as Float32Array
-    const timestampsArray = new Float32Array(
-      decompressedTimestamps.buffer,
-      decompressedTimestamps.byteOffset,
-      decompressedTimestamps.byteLength / 4,
+  // Parse based on data type
+  let values: number[] | [number, number][] | boolean[];
+  if (dataType === "latlng") {
+    // Parse as JSON array of coordinate pairs
+    const jsonStr = decompressedValues.toString("utf-8");
+    values = JSON.parse(jsonStr) as [number, number][];
+  } else {
+    // Parse as Float32Array for numeric data
+    const float32Array = new Float32Array(
+      decompressedValues.buffer,
+      decompressedValues.byteOffset,
+      decompressedValues.byteLength / 4,
     );
-    const timestamps = Array.from(timestampsArray);
+    const numericValues = Array.from(float32Array);
 
-    return {
-      type: streamType,
-      dataType,
-      values,
-      timestamps,
-      sampleCount: values.length,
-    };
-  } catch (error) {
-    console.error(`Failed to decompress ${streamType} stream:`, error);
-    throw error;
+    if (dataType === "boolean") {
+      // Convert float to boolean (> 0.5 = true)
+      values = numericValues.map((v) => v > 0.5);
+    } else {
+      values = numericValues;
+    }
   }
+
+  // Parse timestamps as Float32Array
+  const timestampsArray = new Float32Array(
+    decompressedTimestamps.buffer,
+    decompressedTimestamps.byteOffset,
+    decompressedTimestamps.byteLength / 4,
+  );
+  const timestamps = Array.from(timestampsArray);
+
+  return {
+    type: streamType,
+    dataType,
+    values,
+    timestamps,
+    sampleCount: values.length,
+  };
 }
 
 /**
  * Decompress all activity streams (server-side)
  *
  * @param activityStreams - Array of compressed stream objects from database
+ * @param onWarning - Optional callback for streams skipped after decompression errors
  * @returns Map of stream type to decompressed stream data
  */
 export function decompressAllStreams(
@@ -117,6 +118,7 @@ export function decompressAllStreams(
     compressed_values: string;
     compressed_timestamps: string;
   }>,
+  onWarning?: (warning: StreamDecompressionWarning) => void,
 ): Map<string, DecompressedStream> {
   const streams = new Map<string, DecompressedStream>();
 
@@ -130,8 +132,7 @@ export function decompressAllStreams(
       );
       streams.set(stream.type, decompressed);
     } catch (error) {
-      // Log error but continue with other streams
-      console.error(`Skipping ${stream.type} stream due to error:`, error);
+      onWarning?.({ type: stream.type, error });
     }
   }
 

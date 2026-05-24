@@ -1,25 +1,25 @@
-import { TRPCError } from "@trpc/server";
+import type { TRPCError } from "@trpc/server";
 import { describe, expect, it } from "vitest";
 import { goalsRouter } from "../goals";
 
 type GoalRow = {
   id: string;
   profile_id: string;
-  milestone_event_id: string;
+  target_date: string;
   title: string;
   priority: number;
-  activity_category: "run" | "bike" | "swim" | "strength";
+  activity_category: "run" | "bike" | "swim" | "other";
   target_payload:
     | {
         type: "event_performance";
-        activity_category: "run" | "bike" | "swim" | "strength";
+        activity_category: "run" | "bike" | "swim" | "other";
         distance_m: number;
         target_time_s: number;
       }
     | {
         type: "threshold";
-        metric: "pace" | "power" | "heart_rate";
-        activity_category: "run" | "bike" | "swim" | "strength";
+        metric: "pace" | "power" | "hr";
+        activity_category: "run" | "bike" | "swim" | "other";
         value: number;
         test_duration_s: number;
       };
@@ -27,6 +27,7 @@ type GoalRow = {
 
 type QueryMap = {
   profileGoalsSelect?: GoalRow[] | GoalRow[][];
+  profileGoalsCount?: Array<{ total: number }>;
   profileGoalsInsert?: GoalRow[];
   profileGoalsUpdate?: GoalRow[];
   profileAccess?: Array<{ has_access: boolean }>;
@@ -35,26 +36,34 @@ type QueryMap = {
 type CallLogEntry =
   | {
       operation: "insert";
+      table: "profile_goals";
       payload: Record<string, unknown>;
     }
   | {
       operation: "update";
+      table: "profile_goals";
       payload: Record<string, unknown>;
     }
   | {
       operation: "delete";
+      table: "profile_goals";
     };
 
 const OWNER_ID = "11111111-1111-4111-8111-111111111111";
 const COACH_ID = "22222222-2222-4222-8222-222222222222";
 const GOAL_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-const EVENT_ID = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+
+function getTableName(table: any): "profile_goals" | "training_plans" {
+  const name = String(table?.[Symbol.for("drizzle:Name")] ?? table?._?.name ?? "");
+  if (name.includes("training_plans")) return "training_plans";
+  return "profile_goals";
+}
 
 function createGoalRow(overrides: Partial<GoalRow> = {}): GoalRow {
   return {
     id: GOAL_ID,
     profile_id: OWNER_ID,
-    milestone_event_id: EVENT_ID,
+    target_date: "2026-06-01",
     title: "10K Goal",
     priority: 7,
     activity_category: "run",
@@ -71,10 +80,18 @@ function createGoalRow(overrides: Partial<GoalRow> = {}): GoalRow {
 function createDbMock(queryMap: QueryMap = {}) {
   const selectCounters = new Map<string, number>();
   const callLog: CallLogEntry[] = [];
+  let _activeTable: "profile_goals" | "training_plans" = "profile_goals";
 
-  const nextSelectResult = (): GoalRow[] => {
+  const nextSelectResult = (isCountSelect = false): any[] => {
+    if (isCountSelect) {
+      return (
+        queryMap.profileGoalsCount ?? [
+          { total: Array.isArray(queryMap.profileGoalsSelect) ? 1 : 0 },
+        ]
+      );
+    }
+
     const entry = queryMap.profileGoalsSelect;
-
     if (!entry) {
       return [];
     }
@@ -88,55 +105,71 @@ function createDbMock(queryMap: QueryMap = {}) {
     return (entry as GoalRow[][])[index] ?? (entry as GoalRow[][]).at(-1) ?? [];
   };
 
-  const createSelectBuilder = () => {
+  const createSelectBuilder = (isCountSelect = false) => {
     const builder: any = {
-      from: () => builder,
+      from: (table: any) => {
+        _activeTable = getTableName(table);
+        return builder;
+      },
       where: () => builder,
       orderBy: () => builder,
       limit: () => builder,
       offset: () => builder,
-      then: (
-        onFulfilled: (value: GoalRow[]) => unknown,
-        onRejected?: (reason: unknown) => unknown,
-      ) => Promise.resolve(nextSelectResult()).then(onFulfilled, onRejected),
+      then: (onFulfilled: (value: any[]) => unknown, onRejected?: (reason: unknown) => unknown) =>
+        Promise.resolve(nextSelectResult(isCountSelect)).then(onFulfilled, onRejected),
     };
 
     return builder;
   };
 
-  return {
-    db: {
-      execute: async () => ({
-        rows: queryMap.profileAccess ?? [{ has_access: false }],
-      }),
-      select: () => createSelectBuilder(),
-      insert: () => ({
-        values: (payload: Record<string, unknown>) => {
-          callLog.push({ operation: "insert", payload });
-          return {
-            returning: async () => queryMap.profileGoalsInsert ?? [],
-          };
-        },
-      }),
-      update: () => ({
-        set: (payload: Record<string, unknown>) => {
-          callLog.push({ operation: "update", payload });
-          return {
-            where: () => ({
-              returning: async () => queryMap.profileGoalsUpdate ?? [],
-            }),
-          };
-        },
-      }),
-      delete: () => ({
-        where: async () => {
-          callLog.push({ operation: "delete" });
-          return [];
-        },
-      }),
-    },
-    callLog,
+  const db: any = {
+    transaction: async (callback: (tx: any) => Promise<unknown>) => callback(db),
+    execute: async () => ({
+      rows: queryMap.profileAccess ?? [{ has_access: false }],
+    }),
+    select: (selection?: Record<string, unknown>) => createSelectBuilder(Boolean(selection?.total)),
+    insert: (table: any) => ({
+      values: (payload: Record<string, unknown>) => {
+        const tableName = getTableName(table);
+        if (tableName === "training_plans") {
+          throw new Error("unexpected training plan insert");
+        }
+
+        callLog.push({ operation: "insert", table: tableName, payload });
+        return {
+          returning: async () => queryMap.profileGoalsInsert ?? [],
+        };
+      },
+    }),
+    update: (table: any) => ({
+      set: (payload: Record<string, unknown>) => {
+        const tableName = getTableName(table);
+        if (tableName === "training_plans") {
+          throw new Error("unexpected training plan update");
+        }
+
+        callLog.push({ operation: "update", table: tableName, payload });
+        return {
+          where: () => ({
+            returning: async () => queryMap.profileGoalsUpdate ?? [],
+          }),
+        };
+      },
+    }),
+    delete: (table: any) => ({
+      where: async () => {
+        const tableName = getTableName(table);
+        if (tableName === "training_plans") {
+          throw new Error("unexpected training plan delete");
+        }
+
+        callLog.push({ operation: "delete", table: tableName });
+        return [];
+      },
+    }),
   };
+
+  return { db, callLog };
 }
 
 function createCaller(params?: { userId?: string; queryMap?: QueryMap }) {
@@ -160,16 +193,39 @@ describe("goalsRouter", () => {
     const { caller } = createCaller({
       queryMap: {
         profileGoalsSelect: [goal],
+        profileGoalsCount: [{ total: 1 }],
       },
     });
 
     const result = await caller.list({
       profile_id: OWNER_ID,
       limit: 20,
-      offset: 0,
     });
 
-    expect(result).toEqual([goal]);
+    expect(result).toEqual({
+      items: [goal],
+      total: 1,
+      hasMore: false,
+      nextCursor: undefined,
+    });
+  });
+
+  it("accepts infinite-query direction metadata", async () => {
+    const goal = createGoalRow();
+    const { caller } = createCaller({
+      queryMap: {
+        profileGoalsSelect: [goal],
+        profileGoalsCount: [{ total: 1 }],
+      },
+    });
+
+    await expect(
+      caller.list({
+        profile_id: OWNER_ID,
+        limit: 20,
+        direction: "forward",
+      }),
+    ).resolves.toMatchObject({ items: [goal] });
   });
 
   it("rejects list input with unexpected keys", async () => {
@@ -179,8 +235,28 @@ describe("goalsRouter", () => {
       caller.list({
         profile_id: OWNER_ID,
         limit: 20,
-        offset: 0,
         extra: true,
+      } as any),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
+  });
+
+  it("rejects create input with removed training plan linkage", async () => {
+    const { caller } = createCaller();
+
+    await expect(
+      caller.create({
+        profile_id: OWNER_ID,
+        target_date: "2026-06-10",
+        title: "Canonical Goal",
+        priority: 6,
+        activity_category: "run",
+        training_plan_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        target_payload: {
+          type: "event_performance",
+          activity_category: "run",
+          distance_m: 5000,
+          target_time_s: 1500,
+        },
       } as any),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
   });
@@ -201,7 +277,11 @@ describe("goalsRouter", () => {
   });
 
   it("creates a goal and returns cache tags", async () => {
-    const createdGoal = createGoalRow({ title: "Canonical Goal", priority: 6 });
+    const createdGoal = createGoalRow({
+      title: "Canonical Goal",
+      priority: 6,
+      target_date: "2026-06-10",
+    });
     const { caller, callLog } = createCaller({
       queryMap: {
         profileGoalsInsert: [createdGoal],
@@ -210,7 +290,7 @@ describe("goalsRouter", () => {
 
     const result = await caller.create({
       profile_id: OWNER_ID,
-      milestone_event_id: EVENT_ID,
+      target_date: "2026-06-10",
       title: "Canonical Goal",
       priority: 6,
       activity_category: "run",
@@ -228,10 +308,11 @@ describe("goalsRouter", () => {
     });
     expect(callLog).toContainEqual({
       operation: "insert",
+      table: "profile_goals",
       payload: expect.objectContaining({
         id: expect.any(String),
         profile_id: OWNER_ID,
-        milestone_event_id: EVENT_ID,
+        target_date: "2026-06-10",
         title: "Canonical Goal",
         priority: 6,
         activity_category: "run",
@@ -250,6 +331,7 @@ describe("goalsRouter", () => {
   it("updates a goal by merging partial input with the stored record", async () => {
     const existingGoal = createGoalRow({ title: "Original Goal", priority: 5 });
     const updatedGoal = createGoalRow({
+      target_date: "2026-07-01",
       title: "Updated Goal",
       priority: 5,
       target_payload: {
@@ -269,6 +351,7 @@ describe("goalsRouter", () => {
     const result = await caller.update({
       id: GOAL_ID,
       data: {
+        target_date: "2026-07-01",
         title: "Updated Goal",
         target_payload: {
           type: "event_performance",
@@ -285,8 +368,9 @@ describe("goalsRouter", () => {
     });
     expect(callLog).toContainEqual({
       operation: "update",
+      table: "profile_goals",
       payload: expect.objectContaining({
-        milestone_event_id: EVENT_ID,
+        target_date: "2026-07-01",
         title: "Updated Goal",
         priority: 5,
         activity_category: "run",
@@ -328,7 +412,7 @@ describe("goalsRouter", () => {
       success: true,
       cache_tags: ["goals.list", "goals.getById", "profileSettings.getForProfile"],
     });
-    expect(callLog).toContainEqual({ operation: "delete" });
+    expect(callLog).toContainEqual({ operation: "delete", table: "profile_goals" });
   });
 
   it("rejects delete input with unexpected keys", async () => {
@@ -354,7 +438,6 @@ describe("goalsRouter", () => {
       caller.list({
         profile_id: OWNER_ID,
         limit: 20,
-        offset: 0,
       }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" } as Partial<TRPCError>);
   });

@@ -42,7 +42,7 @@ export default function ExternalLayout() {
   return (
     <Stack
       screenOptions={{
-        headerShown: true,
+        headerShown: false,
         headerBackTitle: "Back",
         animation: "slide_from_right",
         gestureEnabled: true,
@@ -132,12 +132,6 @@ export default function ExternalLayout() {
         options={{
           title: "Developer Storybook",
           headerShown: false,
-        }}
-      />
-      <Stack.Screen
-        name="ui-preview"
-        options={{
-          title: "Developer UI Preview",
         }}
       />
     </Stack>

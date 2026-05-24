@@ -10,7 +10,7 @@ import { z } from "zod";
  * Duration Types V2
  *
  * NOTE: Step completion is evaluated at runtime based on actual performance.
- * - If user changes pace mid-workout or GPS drifts, completion dynamically adjusts
+ * - If user changes pace mid-activity or GPS drifts, completion dynamically adjusts
  * - When paused, distance/duration tracking stops until resumed
  * - All evaluation happens in real-time during recording
  */
@@ -151,6 +151,50 @@ export const activityPlanStructureSchemaV2 = z.object({
 });
 
 export type ActivityPlanStructureV2 = z.infer<typeof activityPlanStructureSchemaV2>;
+
+type ActivityPlanStructureValidationIssue = {
+  message: string;
+  path: (string | number)[];
+};
+
+export function getSaveableActivityPlanStructureIssues(
+  structure: ActivityPlanStructureV2,
+): ActivityPlanStructureValidationIssue[] {
+  const issues: ActivityPlanStructureValidationIssue[] = [];
+
+  structure.intervals.forEach((interval, intervalIndex) => {
+    interval.steps.forEach((step, stepIndex) => {
+      if (step.duration.type === "untilFinished") {
+        issues.push({
+          path: ["intervals", intervalIndex, "steps", stepIndex, "duration"],
+          message:
+            "Saved steps need an explicit time, distance, or repetitions duration. 'Until finished' cannot produce trustworthy IF/TSS.",
+        });
+      }
+
+      if (!step.targets?.[0]) {
+        issues.push({
+          path: ["intervals", intervalIndex, "steps", stepIndex, "targets"],
+          message: "Each saved step needs an intensity target.",
+        });
+      }
+    });
+  });
+
+  return issues;
+}
+
+export const saveableActivityPlanStructureSchemaV2 = activityPlanStructureSchemaV2.superRefine(
+  (structure, ctx) => {
+    getSaveableActivityPlanStructureIssues(structure).forEach((issue) => {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: issue.path,
+        message: issue.message,
+      });
+    });
+  },
+);
 
 // ==============================
 // MINIMAL STRUCTURE HELPERS

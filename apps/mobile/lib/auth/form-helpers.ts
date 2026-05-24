@@ -1,3 +1,9 @@
+import {
+  getForgotPasswordFormError,
+  getSignInFormError,
+  getSignUpFormError,
+  getUpdatePasswordFormError,
+} from "@repo/auth/forms";
 import type { FieldValues, Path, UseFormReturn } from "react-hook-form";
 import { AuthRequestTimeoutError, getAuthRequestTimeoutMessage } from "@/lib/auth/request-timeout";
 import { getHostedApiUrl, setServerUrlOverride } from "@/lib/server-config";
@@ -6,6 +12,25 @@ import { useAuthStore } from "@/lib/stores/auth-store";
 type FormErrorTarget<TFieldValues extends FieldValues> = {
   message: string;
   name: Path<TFieldValues> | "root";
+};
+
+type SignInMappedError =
+  | { type: "verify-email" }
+  | { type: "form-error"; error: { name: "root"; message: string } };
+
+type SignUpMappedError = {
+  name: "root" | "email" | "password";
+  message: string;
+};
+
+type ForgotPasswordMappedError = {
+  name: "email";
+  message: string;
+};
+
+type ResetPasswordMappedError = {
+  name: "root" | "password";
+  message: string;
 };
 
 export async function applyPendingAuthServerOverride(params: {
@@ -42,94 +67,42 @@ export function setAuthFormError<TFieldValues extends FieldValues>(
   });
 }
 
-export function mapSignInError(message?: string | null) {
-  const normalizedMessage = message?.toLowerCase();
-
-  if (message?.includes("Invalid login credentials")) {
-    return {
-      type: "form-error" as const,
-      error: {
-        name: "root" as const,
-        message: "Invalid email or password. Please try again.",
-      },
-    };
-  }
-
-  if (
-    normalizedMessage?.includes("email not confirmed") ||
-    normalizedMessage?.includes("email not verified") ||
-    normalizedMessage?.includes("email isn't verified") ||
-    normalizedMessage?.includes("email is not verified") ||
-    ((normalizedMessage?.includes("verify") || normalizedMessage?.includes("verified")) &&
-      normalizedMessage?.includes("email"))
-  ) {
-    return { type: "verify-email" as const };
-  }
+export function mapSignInError(message?: string | null): SignInMappedError {
+  const mapped = getSignInFormError(message);
+  if (mapped.type === "verify-email") return mapped;
 
   return {
     type: "form-error" as const,
     error: {
-      name: "root" as const,
-      message: message || "An unexpected error occurred",
+      name: "root",
+      message: mapped.error.message,
     },
   };
 }
 
-export function mapSignUpError(message?: string | null) {
-  if (
-    message?.includes("User already registered") ||
-    message?.includes("User already exists. Use another email.")
-  ) {
-    return {
-      name: "email" as const,
-      message: "An account with this email already exists",
-    };
-  }
-
-  if (message?.includes("Password should be")) {
-    return {
-      name: "password" as const,
-      message: message,
-    };
-  }
-
-  if (message?.includes("Unable to validate email")) {
-    return {
-      name: "email" as const,
-      message: "Please enter a valid email address",
-    };
-  }
+export function mapSignUpError(message?: string | null): SignUpMappedError {
+  const mapped = getSignUpFormError(message);
 
   return {
-    name: "root" as const,
-    message: message || "An unexpected error occurred",
+    name: mapped.target,
+    message: mapped.message,
   };
 }
 
-export function mapForgotPasswordError(message?: string | null) {
-  if (message?.includes("User not found")) {
-    return {
-      name: "email" as const,
-      message: "No account found with this email address",
-    };
-  }
-
-  if (message?.includes("Email rate limit")) {
-    return {
-      name: "email" as const,
-      message: "Too many requests. Please try again later.",
-    };
-  }
+export function mapForgotPasswordError(message?: string | null): ForgotPasswordMappedError {
+  const mapped = getForgotPasswordFormError(message || undefined);
 
   return {
-    name: "email" as const,
-    message: message || "Failed to send reset email",
+    name: "email",
+    message: mapped.message,
   };
 }
 
-export function mapResetPasswordError(message?: string | null) {
+export function mapResetPasswordError(message?: string | null): ResetPasswordMappedError {
+  const mapped = getUpdatePasswordFormError(message || undefined);
+
   return {
-    name: "root" as const,
-    message: message || "An unexpected error occurred",
+    name: mapped.target === "password" ? "password" : "root",
+    message: mapped.message,
   };
 }

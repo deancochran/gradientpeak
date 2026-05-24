@@ -26,9 +26,14 @@ const mockCore = vi.hoisted(() => ({
 
 const mockRandomUUID = vi.hoisted(() => vi.fn(() => UPLOADED_ROUTE_ID));
 
-vi.mock("node:crypto", () => ({
-  randomUUID: mockRandomUUID,
-}));
+vi.mock("node:crypto", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:crypto")>();
+
+  return {
+    ...actual,
+    randomUUID: mockRandomUUID,
+  };
+});
 
 vi.mock("../../storage-service", () => ({
   getApiStorageService: () => ({
@@ -73,15 +78,14 @@ function createRouteRow(overrides: Record<string, unknown> = {}) {
     profile_id: OWNER_ID,
     name: "River Loop",
     description: "Steady weekend route",
-    activity_category: "bike",
     file_path: `${OWNER_ID}/route.gpx`,
     total_distance: 42195,
     total_ascent: 550,
     total_descent: 540,
     polyline: "encoded-preview",
     elevation_polyline: "encoded-elevation",
+    is_system_template: false,
     likes_count: null,
-    source: "manual",
     is_public: false,
     created_at: new Date("2026-02-01T10:00:00.000Z"),
     updated_at: new Date("2026-02-02T10:00:00.000Z"),
@@ -157,11 +161,20 @@ describe("routesRouter", () => {
           from: vi.fn(() => ({
             where: vi.fn().mockResolvedValue([{ entity_id: ROUTE_ID }]),
           })),
+        }))
+        .mockImplementationOnce(() => ({
+          from: vi.fn(() => ({
+            where: vi
+              .fn()
+              .mockResolvedValue([
+                { id: OWNER_ID, username: "Owner", avatar_url: "https://example.com/avatar.png" },
+              ]),
+          })),
         })),
     };
 
     const caller = createCaller(db);
-    const result = await caller.list({ limit: 2, activityCategory: "bike", search: "Loop" });
+    const result = await caller.list({ limit: 2, search: "Loop" });
 
     expect(result).toEqual({
       items: [
@@ -170,12 +183,14 @@ describe("routesRouter", () => {
           created_at: "2026-02-01T10:00:00.000Z",
           updated_at: "2026-02-02T10:00:00.000Z",
           has_liked: true,
+          owner: { id: OWNER_ID, username: "Owner", avatar_url: "https://example.com/avatar.png" },
         },
         {
           ...secondRoute,
           created_at: "2026-01-31T10:00:00.000Z",
           updated_at: "2026-02-01T10:00:00.000Z",
           has_liked: false,
+          owner: { id: OWNER_ID, username: "Owner", avatar_url: "https://example.com/avatar.png" },
         },
       ],
       nextCursor: "2026-01-31T10:00:00.000Z_33333333-3333-4333-8333-333333333333",
@@ -189,9 +204,9 @@ describe("routesRouter", () => {
 
     const caller = createCaller(db);
 
-    await expect(
-      caller.list({ limit: 2, activityCategory: "bike", unexpected: true } as never),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller.list({ limit: 2, unexpected: true } as never)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
   });
 
   it("accepts infinite-query direction metadata", async () => {
@@ -215,13 +230,43 @@ describe("routesRouter", () => {
     });
   });
 
+  it("accepts owner scope filtering metadata", async () => {
+    const db = {
+      select: vi.fn().mockImplementationOnce(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn(() => ({
+            orderBy: vi.fn(() => ({
+              limit: vi.fn().mockResolvedValue([]),
+            })),
+          })),
+        })),
+      })),
+    };
+
+    const caller = createCaller(db);
+
+    await expect(caller.list({ limit: 20, ownerScope: "own" } as never)).resolves.toEqual({
+      items: [],
+      nextCursor: undefined,
+    });
+  });
+
   it("gets a single owned route with like state", async () => {
     const route = createRouteRow();
     const db = {
       select: vi
         .fn()
         .mockImplementationOnce(() => createSelectWithLimit([route]))
-        .mockImplementationOnce(() => createSelectWithLimit([{ id: "like-id" }])),
+        .mockImplementationOnce(() => createSelectWithLimit([{ id: "like-id" }]))
+        .mockImplementationOnce(() => ({
+          from: vi.fn(() => ({
+            where: vi
+              .fn()
+              .mockResolvedValue([
+                { id: OWNER_ID, username: "Owner", avatar_url: "https://example.com/avatar.png" },
+              ]),
+          })),
+        })),
     };
 
     const caller = createCaller(db);
@@ -232,7 +277,34 @@ describe("routesRouter", () => {
       created_at: "2026-02-01T10:00:00.000Z",
       updated_at: "2026-02-02T10:00:00.000Z",
       has_liked: true,
+      owner: { id: OWNER_ID, username: "Owner", avatar_url: "https://example.com/avatar.png" },
     });
+  });
+
+  it("gets a public system route even when it has no owner profile", async () => {
+    const route = createRouteRow({
+      profile_id: null,
+      is_public: true,
+      is_system_template: true,
+    });
+    const db = {
+      select: vi
+        .fn()
+        .mockImplementationOnce(() => createSelectWithLimit([route]))
+        .mockImplementationOnce(() => createSelectWithLimit([]))
+        .mockImplementationOnce(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn().mockResolvedValue([]),
+          })),
+        })),
+    };
+
+    const caller = createCaller(db, "99999999-9999-4999-8999-999999999999");
+    const result = await caller.get({ id: ROUTE_ID });
+
+    expect(result.owner).toBeNull();
+    expect(result.is_system_template).toBe(true);
+    expect(result.is_public).toBe(true);
   });
 
   it("loads full route coordinates from stored GPX content", async () => {
@@ -262,8 +334,64 @@ describe("routesRouter", () => {
       totalDistance: 42195,
       totalAscent: 550,
       totalDescent: 540,
-      activityCategory: "bike",
     });
+  });
+
+  it("loads full coordinates for a public system route", async () => {
+    const route = createRouteRow({
+      profile_id: null,
+      file_path: "system/route.gpx",
+      is_public: true,
+      is_system_template: true,
+    });
+    const fileData = {
+      text: vi.fn().mockResolvedValue("<gpx>route</gpx>"),
+    };
+    mockStorage.download.mockResolvedValue({ error: null, data: fileData });
+
+    const db = {
+      select: vi.fn().mockImplementationOnce(() => createSelectWithLimit([route])),
+    };
+
+    const caller = createCaller(db, "99999999-9999-4999-8999-999999999999");
+    const result = await caller.loadFull({ id: ROUTE_ID });
+
+    expect(mockStorage.download).toHaveBeenCalledWith("system/route.gpx");
+    expect(result.id).toBe(ROUTE_ID);
+  });
+
+  it("loads full coordinates through a contextual route geometry grant", async () => {
+    const route = createRouteRow({
+      profile_id: "99999999-9999-4999-8999-999999999999",
+      is_public: false,
+      is_system_template: false,
+    });
+    const fileData = {
+      text: vi.fn().mockResolvedValue("<gpx>route</gpx>"),
+    };
+    mockStorage.download.mockResolvedValue({ error: null, data: fileData });
+
+    const db = {
+      select: vi
+        .fn()
+        .mockImplementationOnce(() => createSelectWithLimit([route]))
+        .mockImplementationOnce(() => createSelectWithLimit([route]))
+        .mockImplementationOnce(() =>
+          createSelectWithLimit([
+            {
+              accessLevel: "read_geometry",
+              sourceType: "event",
+              sourceId: "77777777-7777-4777-8777-777777777777",
+            },
+          ]),
+        ),
+    };
+
+    const caller = createCaller(db);
+    const result = await caller.loadFull({ id: ROUTE_ID });
+
+    expect(mockStorage.download).toHaveBeenCalledWith(`${OWNER_ID}/route.gpx`);
+    expect(result.id).toBe(ROUTE_ID);
   });
 
   it("rejects invalid parsed coordinates from stored route files", async () => {
@@ -314,10 +442,8 @@ describe("routesRouter", () => {
     const result = await caller.upload({
       name: "New Route",
       description: "Uploaded from file",
-      activityCategory: "bike",
       fileContent: "<gpx>upload</gpx>",
       fileName: "new-route.gpx",
-      source: "gpx-import",
     });
 
     expect(mockRouteParser.validateRoute).toHaveBeenCalled();
@@ -335,6 +461,41 @@ describe("routesRouter", () => {
       created_at: "2026-02-01T10:00:00.000Z",
       updated_at: "2026-02-02T10:00:00.000Z",
     });
+  });
+
+  it("uploads TCX routes through the TCX parser and stores TCX content type", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_706_000_000_000);
+
+    const insertedRoute = createRouteRow({
+      id: UPLOADED_ROUTE_ID,
+      file_path: `${OWNER_ID}/1706000000000.tcx`,
+    });
+
+    const db = {
+      insert: vi.fn(() => ({
+        values: vi.fn(() => ({
+          returning: vi.fn().mockResolvedValue([insertedRoute]),
+        })),
+      })),
+    };
+
+    const caller = createCaller(db);
+    await caller.upload({
+      name: "New Route",
+      description: "Uploaded from TCX",
+      fileContent: "<TrainingCenterDatabase />",
+      fileName: "new-route.tcx",
+    });
+
+    expect(mockRouteParser.parseRoute).toHaveBeenCalledWith("<TrainingCenterDatabase />", "tcx");
+    expect(mockStorage.upload).toHaveBeenCalledWith(
+      `${OWNER_ID}/1706000000000.tcx`,
+      "<TrainingCenterDatabase />",
+      {
+        contentType: "application/vnd.garmin.tcx+xml",
+        upsert: false,
+      },
+    );
   });
 
   it("deletes an unused route and removes its stored file", async () => {

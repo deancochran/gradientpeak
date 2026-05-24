@@ -1,4 +1,3 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Progress } from "@repo/ui/components/progress";
 import { Text } from "@repo/ui/components/text";
 import { View } from "react-native";
@@ -34,41 +33,33 @@ export function TrainingFormCard({ formStatus }: TrainingFormCardProps) {
   };
 
   return (
-    <Card className="bg-card border-border">
-      <CardHeader className="pb-3">
-        <View className="flex-row items-center justify-between">
-          <CardTitle className="text-foreground">Training Form</CardTitle>
-          <View className={`px-3 py-1 rounded-full ${getFormStatusColor()}/20`}>
-            <Text
-              className={`${getFormStatusColor().replace("bg-", "text-")} font-semibold text-sm`}
-            >
-              {formStatus.label}
-            </Text>
-          </View>
+    <View className="gap-3 rounded-xl border border-border bg-card p-4">
+      <View className="flex-row items-center justify-between">
+        <Text className="text-base font-semibold text-foreground">Training Form</Text>
+        <Text className={`${getFormStatusColor().replace("bg-", "text-")} text-sm font-semibold`}>
+          {formStatus.label}
+        </Text>
+      </View>
+      <Progress
+        value={formStatus.percentage}
+        className="h-3 w-full"
+        indicatorClassName={getFormStatusColor()}
+      />
+      <Text className="text-sm text-card-foreground">{formStatus.explanation}</Text>
+      <View className="flex-row justify-between">
+        <View>
+          <Text className="text-muted-foreground text-xs">Fitness (CTL)</Text>
+          <Text className="text-foreground font-semibold">{formStatus.ctl}</Text>
         </View>
-      </CardHeader>
-      <CardContent>
-        <Progress
-          value={formStatus.percentage}
-          className="w-full h-3 mb-3"
-          indicatorClassName={getFormStatusColor()}
-        />
-        <Text className="text-card-foreground text-sm mb-3">{formStatus.explanation}</Text>
-        <View className="flex-row justify-between">
-          <View>
-            <Text className="text-muted-foreground text-xs">Fitness (CTL)</Text>
-            <Text className="text-foreground font-semibold">{formStatus.ctl}</Text>
-          </View>
-          <View>
-            <Text className="text-muted-foreground text-xs">Fatigue (ATL)</Text>
-            <Text className="text-foreground font-semibold">{formStatus.atl}</Text>
-          </View>
-          <View>
-            <Text className="text-muted-foreground text-xs">Form (TSB)</Text>
-            <Text className="text-foreground font-semibold">{formStatus.tsb}</Text>
-          </View>
+        <View>
+          <Text className="text-muted-foreground text-xs">Fatigue (ATL)</Text>
+          <Text className="text-foreground font-semibold">{formStatus.atl}</Text>
         </View>
-      </CardContent>
-    </Card>
+        <View>
+          <Text className="text-muted-foreground text-xs">Form (TSB)</Text>
+          <Text className="text-foreground font-semibold">{formStatus.tsb}</Text>
+        </View>
+      </View>
+    </View>
   );
 }

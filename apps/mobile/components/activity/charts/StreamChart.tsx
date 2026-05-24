@@ -1,19 +1,79 @@
-import { downsampleStream, getSamplingStrategy, removeNullValues } from "@repo/core";
+import { downsampleStream, getSamplingStrategy } from "@repo/core";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
 import { Circle, useFont } from "@shopify/react-native-skia";
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 import { View } from "react-native";
 import { CartesianChart, Line, useChartPressState } from "victory-native";
+import { InteractiveChartValueTray } from "@/components/charts/InteractiveChartValueTray";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";
+
+type NumericStream = Omit<DecompressedStream, "values"> & {
+  values: Array<number | null | undefined>;
+};
 
 interface StreamData {
   type: string;
-  stream: DecompressedStream;
+  stream: DecompressedStream | NumericStream;
   color: string;
   label: string;
   unit: string;
   yAxis?: "left" | "right";
+}
+
+type ChartDatum = { x: number; [key: string]: number | null };
+
+function getGapThreshold(timestamps: number[]): number {
+  const deltas = timestamps
+    .slice(1)
+    .map((timestamp, index) => timestamp - (timestamps[index] ?? timestamp))
+    .filter((delta) => Number.isFinite(delta) && delta > 0)
+    .sort((a, b) => a - b);
+
+  if (deltas.length === 0) return 5000;
+
+  const medianDelta = deltas[Math.floor(deltas.length / 2)] ?? 1000;
+  return Math.max(5000, medianDelta * 3);
+}
+
+function downsampleNullableStream(
+  values: Array<number | null | undefined>,
+  timestamps: number[],
+  type: string,
+) {
+  const sampledValues: Array<number | null> = [];
+  const sampledTimestamps: number[] = [];
+  const strategy = getSamplingStrategy(type);
+  let segmentValues: number[] = [];
+  let segmentTimestamps: number[] = [];
+
+  const flushSegment = () => {
+    if (segmentValues.length === 0) return;
+    const sampled = downsampleStream(segmentValues, segmentTimestamps, 500, strategy);
+    sampledValues.push(...sampled.values);
+    sampledTimestamps.push(...sampled.timestamps);
+    segmentValues = [];
+    segmentTimestamps = [];
+  };
+
+  values.forEach((value, index) => {
+    const timestamp = timestamps[index];
+    if (typeof timestamp !== "number" || !Number.isFinite(timestamp)) return;
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+      segmentValues.push(value);
+      segmentTimestamps.push(timestamp);
+      return;
+    }
+
+    flushSegment();
+    sampledValues.push(null);
+    sampledTimestamps.push(timestamp);
+  });
+
+  flushSegment();
+
+  return { values: sampledValues, timestamps: sampledTimestamps };
 }
 
 interface StreamChartProps {
@@ -38,18 +98,16 @@ export function StreamChart({
   const chartData = useMemo(() => {
     if (streams.length === 0) return [];
 
-    // Process each stream: remove nulls and downsample
+    // Process each stream without erasing nulls; nulls tell Victory to break line segments.
     const processedStreams = streams.map((streamData) => {
       const stream = streamData.stream;
-      const { values, timestamps } = removeNullValues(stream.values as number[], stream.timestamps);
-
-      // Downsample if needed
-      const strategy = getSamplingStrategy(stream.type);
-      const { values: sampledValues, timestamps: sampledTimestamps } = downsampleStream(
-        values,
-        timestamps,
-        500,
-        strategy,
+      const numericValues = (stream.values as unknown[]).map((value) =>
+        typeof value === "number" ? value : null,
+      );
+      const { values: sampledValues, timestamps: sampledTimestamps } = downsampleNullableStream(
+        numericValues,
+        stream.timestamps,
+        stream.type,
       );
 
       return {
@@ -64,24 +122,34 @@ export function StreamChart({
     const startTime = referenceStream.timestamps[0] || 0;
 
     // Build data points aligned by timestamp
-    const data: Array<{ x: number; [key: string]: number }> = [];
-
     // Create a map of timestamp -> point for efficient lookup
-    const pointMap = new Map<number, { x: number; [key: string]: number }>();
+    const pointMap = new Map<number, ChartDatum>();
 
     // Add all points from reference stream
+    const gapThreshold = getGapThreshold(referenceStream.timestamps);
+    let previousTimestamp: number | null = null;
+
     referenceStream.timestamps.forEach((timestamp, i) => {
+      if (previousTimestamp !== null && timestamp - previousTimestamp > gapThreshold) {
+        const gapTimestamp = previousTimestamp + 1;
+        pointMap.set(gapTimestamp, {
+          x: (gapTimestamp - startTime) / 1000,
+          [referenceStream.type]: null,
+        });
+      }
+
       const relativeTime = (timestamp - startTime) / 1000; // Convert to seconds
       pointMap.set(timestamp, {
         x: relativeTime,
-        [referenceStream.type]: referenceStream.values[i],
+        [referenceStream.type]: referenceStream.values[i] ?? null,
       });
+      previousTimestamp = timestamp;
     });
 
     // Add data from other streams, interpolating to nearest timestamp
     processedStreams.slice(1).forEach((streamData) => {
       streamData.timestamps.forEach((timestamp, i) => {
-        const relativeTime = (timestamp - startTime) / 1000;
+        const _relativeTime = (timestamp - startTime) / 1000;
 
         // Find closest point in reference stream
         let closestTimestamp = referenceStream.timestamps[0];
@@ -167,51 +235,48 @@ export function StreamChart({
                       points={points[stream.type]}
                       color={stream.color}
                       strokeWidth={2}
+                      connectMissingData={false}
                       animate={{ type: "timing", duration: 300 }}
                     />
                   ))}
-                  {isActive && (
-                    <>
-                      {streams.map((stream) => {
-                        const point = (state.y as any)[stream.type];
-                        if (!point) return null;
-                        return (
-                          <Circle
-                            key={`active-${stream.type}`}
-                            cx={state.x.position}
-                            cy={point.position}
-                            r={6}
-                            color={stream.color}
-                            opacity={0.8}
-                          />
-                        );
-                      })}
-                    </>
-                  )}
+                  {isActive &&
+                    streams.map((stream) => {
+                      const point = (state.y as any)[stream.type];
+                      if (!point) return null;
+                      return (
+                        <Circle
+                          key={`active-${stream.type}`}
+                          cx={state.x.position}
+                          cy={point.position}
+                          r={6}
+                          color={stream.color}
+                          opacity={0.8}
+                        />
+                      );
+                    })}
                 </>
               )}
             </CartesianChart>
           )}
         </View>
 
-        {/* Active value display */}
-        {isActive && (
-          <View className="mt-2 p-2 bg-muted rounded-lg">
-            <View className="flex-row flex-wrap gap-3">
-              {streams.map((stream) => {
-                const value = (state.y as any)[stream.type]?.value;
-                return (
-                  <View key={stream.type} className="flex-row items-center gap-1">
-                    <Text className="text-xs font-medium">{stream.label}:</Text>
-                    <Text className="text-xs">
-                      {value?.toFixed(0)} {stream.unit}
-                    </Text>
-                  </View>
-                );
-              })}
-            </View>
-          </View>
-        )}
+        {isActive ? (
+          <InteractiveChartValueTray
+            testID="stream-chart-active-values"
+            items={streams.map((stream) => {
+              const value = (state.y as any)[stream.type]?.value?.value;
+              return {
+                key: stream.type,
+                label: stream.label,
+                value:
+                  typeof value === "number" && Number.isFinite(value)
+                    ? `${value.toFixed(0)} ${stream.unit}`
+                    : `-- ${stream.unit}`,
+                color: stream.color,
+              };
+            })}
+          />
+        ) : null}
       </CardContent>
     </Card>
   );

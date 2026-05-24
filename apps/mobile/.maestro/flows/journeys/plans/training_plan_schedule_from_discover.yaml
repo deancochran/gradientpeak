@@ -12,10 +12,10 @@ env:
       STANDARD_USER_PASS: "${STANDARD_USER_PASS}"
       SHARED_TRAINING_PLAN_NAME: "${SHARED_TRAINING_PLAN_NAME}"
 - tapOn:
-    id: "training-plan-duplicate-button"
+    id: "training-plan-options-duplicate"
     optional: true
 - tapOn:
-    id: "training-plan-schedule-button"
+    id: "training-plan-options-schedule"
 - extendedWaitUntil:
     visible:
       id: "apply-template-anchor-date"
@@ -30,5 +30,5 @@ env:
 - runFlow:
     file: ../../reusable/open_plan_tab.yaml
 - assertVisible:
-    id: "plan-current-plan-card"
+    id: "plan-screen"
 - assertVisible: "${SHARED_TRAINING_PLAN_NAME}"

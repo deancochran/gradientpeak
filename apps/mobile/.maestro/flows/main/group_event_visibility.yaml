@@ -1,0 +1,19 @@
+appId: com.deancochran.gradientpeak.dev
+env:
+  STANDARD_USER_EMAIL: "test@example.com"
+  STANDARD_USER_PASS: "password123"
+  GROUP_EVENT_TITLE: "Saturday Ride"
+  PRIVATE_GROUP_EVENT_ID: "00000000-0000-4000-8000-000000000000"
+---
+- runFlow:
+    file: ../journeys/groups/group_event_visibility_and_series_overrides.yaml
+    env:
+      STANDARD_USER_EMAIL: "${STANDARD_USER_EMAIL}"
+      STANDARD_USER_PASS: "${STANDARD_USER_PASS}"
+      GROUP_EVENT_TITLE: "${GROUP_EVENT_TITLE}"
+- runFlow:
+    file: ../journeys/groups/private_group_event_detail_blocked.yaml
+    env:
+      STANDARD_USER_EMAIL: "${STANDARD_USER_EMAIL}"
+      STANDARD_USER_PASS: "${STANDARD_USER_PASS}"
+      PRIVATE_GROUP_EVENT_ID: "${PRIVATE_GROUP_EVENT_ID}"

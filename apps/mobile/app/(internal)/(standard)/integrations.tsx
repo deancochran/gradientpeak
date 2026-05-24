@@ -1,37 +1,13 @@
-import { invalidatePostActivityIngestionQueries } from "@repo/api/client";
-import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
-import { Input } from "@repo/ui/components/input";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@repo/ui/components/select";
 import { Text } from "@repo/ui/components/text";
-import { Textarea } from "@repo/ui/components/textarea";
-import { useQueryClient } from "@tanstack/react-query";
 import Constants from "expo-constants";
-import * as DocumentPicker from "expo-document-picker";
-import { File } from "expo-file-system";
 import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
-import {
-  Check,
-  CheckCircle,
-  ChevronLeft,
-  ChevronRight,
-  FileText,
-  History,
-  Upload,
-} from "lucide-react-native";
+import { Check, ChevronLeft, ChevronRight } from "lucide-react-native";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   BackHandler,
   Platform,
   Pressable,
@@ -39,246 +15,199 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
 import type { IntegrationProvider } from "@/lib/constants/integrations";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
-import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
-import { FitUploader } from "@/lib/services/fit/FitUploader";
 
 type IntegrationConfig = {
   provider: IntegrationProvider;
   name: string;
 };
 
+type IntegrationOverviewItem = {
+  actions: Array<"refresh_setup_data" | "sync_now" | "disconnect">;
+  activityHistory: {
+    lastError: string | null;
+    lastFailedAt: string | null;
+    lastSucceededAt: string | null;
+    queuedJobId: string | null;
+    status: "idle" | "queued" | "importing" | "synced" | "failed" | "unsupported";
+  };
+  plannedWorkouts: {
+    lastError: string | null;
+    lastFailedAt: string | null;
+    lastSucceededAt: string | null;
+    queuedJobId: string | null;
+    status: "automatic" | "queued" | "syncing" | "failed" | "unsupported";
+  };
+  providerHealth: {
+    lastError: string | null;
+    status: "connected" | "needs_reconnect" | "unsupported";
+  };
+  setupData: {
+    lastError: string | null;
+    lastFailedAt: string | null;
+    lastSucceededAt: string | null;
+    status: "idle" | "refreshing" | "refreshed" | "failed" | "unsupported";
+  };
+  connected: boolean;
+  integrationId: string | null;
+  label: string;
+  provider: IntegrationProvider;
+};
+
 const INTEGRATIONS: IntegrationConfig[] = [
-  {
-    provider: "strava",
-    name: "Strava",
-  },
-  {
-    provider: "wahoo",
-    name: "Wahoo",
-  },
-  {
-    provider: "trainingpeaks",
-    name: "TrainingPeaks",
-  },
-  {
-    provider: "garmin",
-    name: "Garmin Connect",
-  },
-  {
-    provider: "zwift",
-    name: "Zwift",
-  },
+  { provider: "strava", name: "Strava" },
+  { provider: "wahoo", name: "Wahoo" },
+  { provider: "trainingpeaks", name: "TrainingPeaks" },
+  { provider: "garmin", name: "Garmin Connect" },
+  { provider: "zwift", name: "Zwift" },
 ];
 
-const ACTIVITY_TYPES = [
-  { value: "run", label: "Run" },
-  { value: "bike", label: "Ride" },
-  { value: "swim", label: "Swim" },
-  { value: "strength", label: "Strength" },
-  { value: "other", label: "Other" },
-] as const;
-
-function isFitParseFailureMessage(message: string) {
-  const normalized = message.toLowerCase();
-  return (
-    normalized.includes("failed to parse fit file") ||
-    normalized.includes("fit decode") ||
-    normalized.includes("fit parser") ||
-    normalized.includes("fit parse") ||
-    normalized.includes("corrupt fit") ||
-    normalized.includes("invalid fit") ||
-    normalized.includes("bar error")
-  );
+function getConnectedSummary(overview: IntegrationOverviewItem[] | undefined) {
+  const count = overview?.filter((provider) => provider.connected).length ?? 0;
+  if (count === 0) return "No services connected";
+  return `${count} connected ${count === 1 ? "service" : "services"}`;
 }
 
-const createOption = (value: string, label?: string) => ({
-  value,
-  label: label || value,
-});
+function getSetupDataCopy(status: IntegrationOverviewItem["setupData"]["status"]) {
+  switch (status) {
+    case "refreshing":
+      return "Setup data: Refreshing from provider.";
+    case "refreshed":
+      return "Setup data: Refreshed safely.";
+    case "failed":
+      return "Setup data: Needs attention.";
+    case "idle":
+      return "Setup data: Ready to refresh missing values.";
+    case "unsupported":
+      return "Setup data: Not available.";
+  }
+}
 
-const buildManualHistoricalImportProvenance = (fileName: string) => ({
-  import_source: "manual_historical" as const,
-  import_file_type: "fit" as const,
-  import_original_file_name: fileName.trim(),
-});
+function getProviderMetricSummary(fields: string[] | undefined) {
+  const labels = (fields ?? []).map((field) => {
+    switch (field) {
+      case "weight_kg":
+        return "weight";
+      case "ftp":
+        return "FTP";
+      case "dob":
+        return "date of birth";
+      case "gender":
+        return "gender";
+      default:
+        return field;
+    }
+  });
 
-/**
- * Get the mobile redirect URI based on environment
- */
+  if (labels.length === 0) return null;
+  if (labels.length === 1) return labels[0];
+  return `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}`;
+}
+
+function getSyncCompleteDescription(result: {
+  queued: boolean;
+  setupRefresh?: {
+    fieldsKept?: string[];
+    fieldsUpdated?: string[];
+    keptExistingValues?: boolean;
+  } | null;
+}) {
+  const updatedSummary = getProviderMetricSummary(result.setupRefresh?.fieldsUpdated);
+  const keptSummary = getProviderMetricSummary(result.setupRefresh?.fieldsKept);
+  const historyCopy = result.queued
+    ? "Recent history sync has been queued."
+    : "Recent history sync was not queued; check the status above or try again shortly.";
+
+  if (updatedSummary) {
+    return keptSummary
+      ? `Updated ${updatedSummary} from Wahoo. Kept your existing GradientPeak ${keptSummary} because Wahoo differs. ${historyCopy}`
+      : `Updated ${updatedSummary} from Wahoo. ${historyCopy}`;
+  }
+
+  if (keptSummary) {
+    return `Wahoo differs for ${keptSummary}; kept your existing GradientPeak values. ${historyCopy}`;
+  }
+
+  return `Wahoo sync ran. ${historyCopy}`;
+}
+
+function getPlannedWorkoutCopy(status: IntegrationOverviewItem["plannedWorkouts"]["status"]) {
+  switch (status) {
+    case "queued":
+      return "Planned workouts: Sync queued.";
+    case "syncing":
+      return "Planned workouts: Syncing.";
+    case "failed":
+      return "Planned workouts: Needs attention.";
+    case "automatic":
+      return "Planned workouts: Automatic when connected.";
+    case "unsupported":
+      return "Planned workouts: Not available.";
+  }
+}
+
+function getActivityHistoryCopy(status: IntegrationOverviewItem["activityHistory"]["status"]) {
+  switch (status) {
+    case "queued":
+      return "Recent activity history is queued for import.";
+    case "importing":
+      return "Importing recent activity history.";
+    case "synced":
+      return "Recent activity history is up to date.";
+    case "failed":
+      return "Recent activity history needs attention. Try Sync now.";
+    case "idle":
+      return "Recent activity history will import automatically.";
+    case "unsupported":
+      return "Activity history import is not available for this provider.";
+  }
+}
+
 function getMobileRedirectUri(): string {
-  // Use environment variable if set
   if (Constants.expoConfig?.extra?.redirectUri) {
     return Constants.expoConfig.extra.redirectUri;
   }
 
-  // Default to the app scheme
   return Linking.createURL("integrations");
 }
 
 export default function IntegrationsScreen() {
   const router = useRouter();
-  const navigateTo = useAppNavigate();
-  const queryClient = useQueryClient();
   const [pendingByProvider, setPendingByProvider] = useState<
-    Partial<Record<IntegrationProvider, "connect" | "disconnect">>
+    Partial<Record<IntegrationProvider, "connect" | "disconnect" | "sync">>
   >({});
+  const [disconnectingProvider, setDisconnectingProvider] = useState<IntegrationProvider | null>(
+    null,
+  );
+  const [statusModal, setStatusModal] = useState<null | { title: string; description: string }>(
+    null,
+  );
 
   const utils = api.useUtils();
-  const [historicalName, setHistoricalName] = useState("");
-  const [historicalNotes, setHistoricalNotes] = useState("");
-  const [historicalActivityType, setHistoricalActivityType] = useState<string>("bike");
-  const [selectedFitFile, setSelectedFitFile] = useState<{
-    name: string;
-    uri: string;
-    size: number;
-  } | null>(null);
-  const [importSummary, setImportSummary] = useState<{
-    activityId: string;
-    name: string;
-    fileName: string;
-  } | null>(null);
-
-  // API queries
   const {
-    data: integrations,
-    refetch,
+    data: syncOverview,
+    refetch: refetchSyncOverview,
     isLoading: integrationsLoading,
-  } = api.integrations.list.useQuery();
+  } = api.integrations.getSyncOverview.useQuery();
   const getAuthUrlMutation = useReliableMutation(api.integrations.getAuthUrl, {
-    silent: true, // No success message for auth URL generation
+    silent: true,
+  });
+  const invalidateIntegrations = [
+    () => utils.integrations.getSyncOverview.invalidate(),
+    () => utils.integrations.list.invalidate(),
+  ];
+  const syncNowMutation = useReliableMutation(api.integrations.syncNow, {
+    invalidate: invalidateIntegrations,
+    success: "Sync queued",
   });
   const disconnectMutation = useReliableMutation(api.integrations.disconnect, {
-    invalidate: [utils.integrations],
+    invalidate: invalidateIntegrations,
     success: "Integration disconnected",
   });
 
-  const getSignedUrlMutation = api.fitFiles.getSignedUploadUrl.useMutation();
-  const processFitFileMutation = api.fitFiles.processFitFile.useMutation();
-
-  const isImporting = getSignedUrlMutation.isPending || processFitFileMutation.isPending;
-
-  const handlePickFitFile = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ["*/*"],
-        copyToCacheDirectory: true,
-      });
-
-      if (result.canceled || !result.assets[0]) {
-        return;
-      }
-
-      const asset = result.assets[0];
-
-      if (!asset.name.toLowerCase().endsWith(".fit")) {
-        Alert.alert("Unsupported file", "Choose a FIT file ending in .fit.");
-        return;
-      }
-
-      const file = new File(asset.uri);
-      const fileSize = asset.size ?? file.size ?? 0;
-
-      if (fileSize <= 0) {
-        Alert.alert("Unreadable file", "The selected FIT file appears to be empty.");
-        return;
-      }
-
-      setSelectedFitFile({
-        name: asset.name,
-        uri: asset.uri,
-        size: fileSize,
-      });
-
-      if (!historicalName.trim()) {
-        setHistoricalName(asset.name.replace(/\.fit$/i, ""));
-      }
-    } catch (error) {
-      console.error("Failed to pick FIT file", error);
-      Alert.alert("File selection failed", "Could not open the FIT file picker.");
-    }
-  };
-
-  const handleHistoricalImport = async () => {
-    const trimmedName = historicalName.trim();
-
-    if (!selectedFitFile) {
-      Alert.alert("Missing file", "Choose a FIT file to import.");
-      return;
-    }
-
-    if (!trimmedName) {
-      Alert.alert("Missing activity name", "Enter a name for this imported activity.");
-      return;
-    }
-
-    try {
-      const signedUrlData = await getSignedUrlMutation.mutateAsync({
-        fileName: selectedFitFile.name,
-        fileSize: selectedFitFile.size,
-      });
-
-      const uploader = new FitUploader(undefined, undefined, "fit-files");
-
-      const uploadResult = await uploader.uploadToSignedUrl(
-        selectedFitFile.uri,
-        signedUrlData.signedUrl,
-      );
-
-      if (!uploadResult.success) {
-        throw new Error(uploadResult.error || "Failed to upload FIT file");
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      const result = await processFitFileMutation.mutateAsync({
-        fitFilePath: signedUrlData.filePath,
-        name: trimmedName,
-        notes: historicalNotes.trim() || undefined,
-        activityType: historicalActivityType,
-        importProvenance: buildManualHistoricalImportProvenance(selectedFitFile.name),
-      });
-
-      await invalidatePostActivityIngestionQueries(queryClient);
-      await utils.activities.invalidate();
-
-      setImportSummary({
-        activityId: result.activity.id,
-        name: result.activity.name,
-        fileName: selectedFitFile.name,
-      });
-    } catch (error) {
-      console.error("Historical FIT import failed", error);
-      const message = error instanceof Error ? error.message : "Unknown error";
-
-      if (message.includes("Only .fit files are supported")) {
-        Alert.alert("Unsupported file", "Only FIT files are supported right now.");
-        return;
-      }
-
-      if (isFitParseFailureMessage(message)) {
-        Alert.alert(
-          "Import failed",
-          "We could not read that FIT file. Try a different export or recording.",
-        );
-        return;
-      }
-
-      Alert.alert(
-        "Import failed",
-        "The FIT activity could not be imported right now. Please try again.",
-      );
-    }
-  };
-
-  const handleViewImportedActivity = () => {
-    if (!importSummary) return;
-    navigateTo(`/activity-detail?id=${importSummary.activityId}` as any);
-  };
-
-  // Handle deep link and trigger cleanup via refetch
   const handleDeepLink = useCallback(
     (event: { url: string }) => {
       try {
@@ -289,12 +218,13 @@ export default function IntegrationsScreen() {
         const errorDetail = url.searchParams.get("error_detail");
 
         if (success === "true") {
-          Alert.alert("Success", `Successfully connected to ${provider}!`);
-          // Refetch integrations - this also cleans up expired states
-          refetch();
+          setStatusModal({
+            title: "Success",
+            description: `Successfully connected to ${provider}. Recent history imports automatically when supported.`,
+          });
+          refetchSyncOverview();
         } else if (error) {
-          // Even on error, refetch to trigger cleanup of expired states
-          refetch();
+          refetchSyncOverview();
           let errorMessage = "Failed to connect";
           switch (error) {
             case "invalid_state":
@@ -322,34 +252,29 @@ export default function IntegrationsScreen() {
             default:
               errorMessage = `Failed to connect: ${error}`;
           }
-          Alert.alert("Error", errorMessage);
+          setStatusModal({ title: "Error", description: errorMessage });
         }
       } catch (err) {
         console.error("Failed to parse deep link:", err);
       }
     },
-    [refetch],
+    [refetchSyncOverview],
   );
 
-  // Handle close action
   const handleClose = useCallback(() => {
     router.back();
   }, [router]);
 
-  // Handle deep link return from OAuth
   useEffect(() => {
     const subscription = Linking.addEventListener("url", handleDeepLink);
-    // Refetch on mount to get fresh data and clean expired states
-    refetch();
+    refetchSyncOverview();
     return () => subscription.remove();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [handleDeepLink, refetchSyncOverview]);
 
-  // Handle Android back button
   useEffect(() => {
     const backHandler = BackHandler?.addEventListener?.("hardwareBackPress", () => {
       handleClose();
-      return true; // Prevent default behavior
+      return true;
     });
 
     return () => backHandler?.remove?.();
@@ -359,274 +284,262 @@ export default function IntegrationsScreen() {
     setPendingByProvider((prev) => ({ ...prev, [provider]: "connect" }));
 
     try {
-      // Get the redirect URI for the current environment
       const redirectUri = getMobileRedirectUri();
-
-      // This automatically cleans up expired states before creating a new one
-      const { url } = await getAuthUrlMutation.mutateAsync({
-        provider,
-        redirectUri,
-      });
-
-      // Open OAuth flow in browser
+      const { url } = await getAuthUrlMutation.mutateAsync({ provider, redirectUri });
       const result = await WebBrowser.openAuthSessionAsync(url, redirectUri, {
-        // Use system browser on iOS for better OAuth support
         preferEphemeralSession: Platform.OS === "ios",
       });
 
       if (result.type === "cancel") {
-        Alert.alert("Cancelled", "OAuth flow was cancelled");
+        setStatusModal({ title: "Cancelled", description: "OAuth flow was cancelled" });
       } else if (result.type === "success" && "url" in result && result.url) {
         handleDeepLink({ url: result.url });
       }
-      // Success/error handling happens via deep link
     } catch (error) {
       console.error("OAuth initiation error:", error);
-      Alert.alert("Error", "Failed to initiate connection. Please try again.");
+      setStatusModal({
+        title: "Error",
+        description: "Failed to initiate connection. Please try again.",
+      });
     } finally {
       setPendingByProvider((prev) => ({ ...prev, [provider]: undefined }));
     }
   };
 
   const handleDisconnect = async (provider: IntegrationProvider) => {
-    Alert.alert(
-      "Disconnect Integration",
-      `Are you sure you want to disconnect from ${getProviderDisplayName(provider)}?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Disconnect",
-          style: "destructive",
-          onPress: async () => {
-            setPendingByProvider((prev) => ({
-              ...prev,
-              [provider]: "disconnect",
-            }));
-            try {
-              await disconnectMutation.mutateAsync({ provider });
-              refetch();
-              Alert.alert("Success", "Integration disconnected successfully");
-            } catch (error) {
-              console.error("Disconnect error:", error);
-              Alert.alert("Error", "Failed to disconnect. Please try again.");
-            } finally {
-              setPendingByProvider((prev) => ({
-                ...prev,
-                [provider]: undefined,
-              }));
-            }
-          },
-        },
-      ],
-    );
+    setDisconnectingProvider(provider);
   };
 
-  const isConnected = (provider: IntegrationProvider) => {
-    return integrations?.some((i) => i.provider === provider);
+  const confirmDisconnect = async () => {
+    if (!disconnectingProvider) return;
+    const provider = disconnectingProvider;
+    setPendingByProvider((prev) => ({ ...prev, [provider]: "disconnect" }));
+    try {
+      await disconnectMutation.mutateAsync({ provider });
+      refetchSyncOverview();
+      setDisconnectingProvider(null);
+      setStatusModal({ title: "Success", description: "Integration disconnected successfully" });
+    } catch (error) {
+      console.error("Disconnect error:", error);
+      setStatusModal({ title: "Error", description: "Failed to disconnect. Please try again." });
+    } finally {
+      setPendingByProvider((prev) => ({ ...prev, [provider]: undefined }));
+    }
+  };
+
+  const handleSyncNow = async (provider: IntegrationProvider) => {
+    setPendingByProvider((prev) => ({ ...prev, [provider]: "sync" }));
+    try {
+      const result = await syncNowMutation.mutateAsync({ provider });
+      await refetchSyncOverview();
+      setStatusModal({
+        title: result.queued ? "Sync queued" : "Sync complete",
+        description: getSyncCompleteDescription(result),
+      });
+    } catch (error) {
+      console.error("Sync now error:", error);
+      setStatusModal({ title: "Error", description: "Failed to queue sync. Please try again." });
+    } finally {
+      setPendingByProvider((prev) => ({ ...prev, [provider]: undefined }));
+    }
+  };
+
+  const getProviderOverview = (provider: IntegrationProvider) => {
+    return syncOverview?.find((item) => item.provider === provider);
   };
 
   const getProviderDisplayName = (provider: IntegrationProvider) => {
-    return INTEGRATIONS.find((i) => i.provider === provider)?.name || provider;
+    return INTEGRATIONS.find((integration) => integration.provider === provider)?.name || provider;
   };
 
   return (
     <View className="flex-1 bg-background" testID="integrations-screen">
-      {/* Header */}
-      <View className="flex-row items-center px-6 py-4 border-b border-border/50">
-        <Pressable onPress={handleClose} className="p-2 -ml-2" testID="back-button">
+      <View className="flex-row items-center border-b border-border/50 px-6 py-4">
+        <Pressable onPress={handleClose} className="-ml-2 p-2" testID="back-button">
           <Icon as={ChevronLeft} size={24} />
         </Pressable>
-        <Text className="text-xl font-semibold text-foreground ml-4">Integrations</Text>
+        <Text className="ml-4 text-xl font-semibold text-foreground">Integrations</Text>
       </View>
 
-      {/* Content */}
       <ScrollView
         className="flex-1"
         contentContainerClassName="px-6 py-5"
         showsVerticalScrollIndicator={false}
       >
-        <View className="mb-4">
-          <Text className="text-muted-foreground text-base">
-            Connect your fitness platforms and import completed history from FIT files.
+        <View className="mb-4 gap-2">
+          <Text className="text-base text-muted-foreground">
+            Connect your training platforms and keep account-level sync settings together here.
+          </Text>
+          <Text className="text-xs text-muted-foreground">
+            File imports now live with the relevant activity and route screens.
           </Text>
           {integrationsLoading ? (
-            <Text className="text-xs text-muted-foreground mt-2">
+            <Text className="mt-2 text-xs text-muted-foreground">
               Checking connection status...
             </Text>
           ) : null}
         </View>
 
+        <View className="mb-4 rounded-2xl border border-border bg-muted/20 px-4 py-3">
+          <Text className="text-sm text-muted-foreground">{getConnectedSummary(syncOverview)}</Text>
+        </View>
+
         {INTEGRATIONS.map((integration) => {
-          const connected = isConnected(integration.provider);
+          const overview = getProviderOverview(integration.provider);
+          const connected = overview?.connected ?? false;
           const pendingAction = pendingByProvider[integration.provider];
           const isPending = pendingAction !== undefined;
+          const canSyncNow = connected && overview?.actions.includes("sync_now");
+          const needsReconnect = overview?.providerHealth.status === "needs_reconnect";
+          const activityHistoryCopy = overview
+            ? getActivityHistoryCopy(overview.activityHistory.status)
+            : "Checking sync status...";
+          const setupCopy = overview ? getSetupDataCopy(overview.setupData.status) : null;
+          const plannedCopy = overview
+            ? getPlannedWorkoutCopy(overview.plannedWorkouts.status)
+            : null;
 
           return (
-            <TouchableOpacity
+            <View
               key={integration.provider}
-              onPress={() =>
-                connected
-                  ? handleDisconnect(integration.provider)
-                  : handleConnect(integration.provider)
-              }
-              disabled={isPending}
-              activeOpacity={0.7}
               testID={`integration-provider-${integration.provider}`}
-              className={`flex-row items-center justify-between border rounded-xl px-4 py-3 mb-2 ${
+              className={`mb-2 rounded-xl border px-4 py-3 ${
                 connected ? "border-green-500 bg-green-500/10" : "border-border bg-card"
               } ${isPending ? "opacity-70" : ""}`}
             >
-              <View>
-                <Text className="text-base font-semibold text-foreground">{integration.name}</Text>
-                <Text className="text-xs text-muted-foreground mt-0.5">
-                  {connected ? "Connected - tap to disconnect" : "Not connected - tap to connect"}
-                </Text>
+              <View className="flex-row items-start justify-between gap-3">
+                <View className="flex-1">
+                  <Text className="text-base font-semibold text-foreground">
+                    {integration.name}
+                  </Text>
+                  <Text className="mt-0.5 text-xs text-muted-foreground">
+                    {needsReconnect ? "Needs reconnect" : connected ? "Connected" : "Not connected"}
+                  </Text>
+                  <Text className="mt-2 text-xs text-muted-foreground">{activityHistoryCopy}</Text>
+                  {setupCopy ? (
+                    <Text className="mt-1 text-xs text-muted-foreground">{setupCopy}</Text>
+                  ) : null}
+                  {plannedCopy ? (
+                    <Text className="mt-1 text-xs text-muted-foreground">{plannedCopy}</Text>
+                  ) : null}
+                  {overview?.activityHistory.lastError ? (
+                    <Text className="mt-1 text-xs text-destructive">
+                      {overview.activityHistory.lastError}
+                    </Text>
+                  ) : null}
+                  {overview?.providerHealth.status === "needs_reconnect" ? (
+                    <Text className="mt-1 text-xs text-destructive">
+                      GradientPeak can no longer access this provider. Reconnect to continue
+                      syncing.
+                    </Text>
+                  ) : null}
+                </View>
+
+                {isPending ? (
+                  <ActivityIndicator size="small" />
+                ) : connected ? (
+                  <Icon as={Check} className="text-green-600" size={20} />
+                ) : (
+                  <Icon as={ChevronRight} className="text-muted-foreground" size={20} />
+                )}
               </View>
 
-              {isPending ? (
-                <ActivityIndicator size="small" />
-              ) : connected ? (
-                <Icon as={Check} className="text-green-600" size={20} />
-              ) : (
-                <Icon as={ChevronRight} className="text-muted-foreground" size={20} />
-              )}
-            </TouchableOpacity>
+              <View className="mt-3 flex-row gap-2">
+                {connected ? (
+                  <>
+                    {needsReconnect ? (
+                      <TouchableOpacity
+                        disabled={isPending}
+                        onPress={() => {
+                          void handleConnect(integration.provider);
+                        }}
+                        testID={`integration-reconnect-${integration.provider}`}
+                        className="rounded-full border border-border bg-background px-3 py-2"
+                      >
+                        <Text className="text-xs font-semibold text-foreground">Reconnect</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                    {!needsReconnect && canSyncNow ? (
+                      <TouchableOpacity
+                        disabled={isPending}
+                        onPress={() => {
+                          void handleSyncNow(integration.provider);
+                        }}
+                        testID={`integration-sync-now-${integration.provider}`}
+                        className="rounded-full border border-border bg-background px-3 py-2"
+                      >
+                        <Text className="text-xs font-semibold text-foreground">Sync now</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                    <TouchableOpacity
+                      disabled={isPending}
+                      onPress={() => handleDisconnect(integration.provider)}
+                      testID={`integration-disconnect-${integration.provider}`}
+                      className="rounded-full border border-destructive/40 bg-background px-3 py-2"
+                    >
+                      <Text className="text-xs font-semibold text-destructive">Disconnect</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <TouchableOpacity
+                    disabled={isPending}
+                    onPress={() => {
+                      void handleConnect(integration.provider);
+                    }}
+                    testID={`integration-connect-${integration.provider}`}
+                    className="rounded-full border border-border bg-background px-3 py-2"
+                  >
+                    <Text className="text-xs font-semibold text-foreground">Connect</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
           );
         })}
 
-        <View className="mt-6">
-          <Text className="text-base font-semibold text-foreground mb-2">
-            Import Activity History
+        <View className="mt-6 rounded-2xl border border-border bg-muted/20 p-4">
+          <Text className="text-sm font-medium text-foreground">Automatic history import</Text>
+          <Text className="mt-1 text-xs text-muted-foreground">
+            Supported providers import recent activity history automatically after connection.
+            Manual FIT uploads remain available from My Activities.
           </Text>
-          <Text className="text-xs text-muted-foreground mb-3">
-            FIT-only for now. Older activities are imported into your normal activity history and
-            may influence training insights.
-          </Text>
-
-          <View className="border border-border rounded-xl p-4 bg-card gap-3">
-            <View className="flex-row items-start gap-3">
-              <View className="h-10 w-10 rounded-full bg-primary/10 items-center justify-center">
-                <Icon as={History} size={18} className="text-primary" />
-              </View>
-              <View className="flex-1 gap-1">
-                <Text className="text-sm font-medium text-foreground">Completed FIT Activity</Text>
-                <Text className="text-xs text-muted-foreground">
-                  Upload one completed FIT file from your device. Other file formats stay deferred
-                  for a later phase.
-                </Text>
-              </View>
-            </View>
-
-            {!selectedFitFile ? (
-              <Button
-                onPress={handlePickFitFile}
-                variant="outline"
-                className="justify-start gap-2"
-                disabled={isImporting}
-                testID="integrations-pick-fit-file-button"
-              >
-                <Upload className="text-foreground" size={18} />
-                <Text>Choose FIT File</Text>
-              </Button>
-            ) : (
-              <View className="border border-border rounded-xl p-3 bg-muted/40 gap-2">
-                <View className="flex-row items-center gap-2">
-                  <FileText className="text-foreground" size={18} />
-                  <Text className="flex-1 text-sm text-foreground" numberOfLines={1}>
-                    {selectedFitFile.name}
-                  </Text>
-                  <CheckCircle className="text-green-600" size={18} />
-                </View>
-                <Text className="text-xs text-muted-foreground">
-                  {(selectedFitFile.size / (1024 * 1024)).toFixed(2)} MB
-                </Text>
-                <Button
-                  onPress={handlePickFitFile}
-                  variant="ghost"
-                  className="self-start px-0"
-                  disabled={isImporting}
-                >
-                  <Text className="text-sm text-primary font-medium">Choose a different file</Text>
-                </Button>
-              </View>
-            )}
-
-            <Input
-              value={historicalName}
-              onChangeText={setHistoricalName}
-              placeholder="Activity name"
-              autoCapitalize="sentences"
-              testID="integrations-historical-name-input"
-            />
-
-            <Select
-              value={createOption(historicalActivityType)}
-              onValueChange={(option: { value: string; label: string } | undefined) => {
-                if (option) setHistoricalActivityType(option.value);
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Choose activity type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  {ACTIVITY_TYPES.map((activityType) => (
-                    <SelectItem
-                      key={activityType.value}
-                      value={activityType.value}
-                      label={activityType.label}
-                    />
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-
-            <Textarea
-              value={historicalNotes}
-              onChangeText={setHistoricalNotes}
-              placeholder="Optional notes"
-              className="min-h-[88px]"
-              testID="integrations-historical-notes-input"
-            />
-
-            <Text className="text-xs text-muted-foreground">
-              Supported now: `.fit` only. Historical imports keep their original timestamps.
-            </Text>
-
-            <Button
-              onPress={handleHistoricalImport}
-              disabled={isImporting || !selectedFitFile || !historicalName.trim()}
-              testID="integrations-import-fit-button"
-            >
-              <Text className="text-primary-foreground font-semibold">
-                {isImporting ? "Importing FIT Activity..." : "Import FIT Activity"}
-              </Text>
-            </Button>
-          </View>
-
-          {importSummary ? (
-            <View
-              className="mt-3 border border-border rounded-xl p-3 bg-muted/40"
-              testID="integrations-import-summary"
-            >
-              <Text className="text-sm text-foreground font-medium">
-                Historical activity imported
-              </Text>
-              <Text className="text-xs text-muted-foreground mt-1">
-                {importSummary.name} was created from {importSummary.fileName}.
-              </Text>
-              <Button
-                onPress={handleViewImportedActivity}
-                variant="outline"
-                className="mt-3"
-                testID="integrations-view-imported-activity-button"
-              >
-                <Text>View Activity</Text>
-              </Button>
-            </View>
-          ) : null}
         </View>
       </ScrollView>
+      {disconnectingProvider ? (
+        <AppConfirmModal
+          description={`Disconnect ${getProviderDisplayName(disconnectingProvider)}? Existing GradientPeak activities, files, plans, and metrics stay in your account. Future provider sync will stop until you reconnect.`}
+          onClose={() => setDisconnectingProvider(null)}
+          primaryAction={{
+            label: "Disconnect",
+            onPress: () => {
+              void confirmDisconnect();
+            },
+            variant: "destructive",
+            testID: "integration-disconnect-confirm",
+            disabled: pendingByProvider[disconnectingProvider] === "disconnect",
+          }}
+          secondaryAction={{
+            label: "Cancel",
+            onPress: () => setDisconnectingProvider(null),
+            variant: "outline",
+          }}
+          testID="integration-disconnect-modal"
+          title="Disconnect Integration"
+        />
+      ) : null}
+      {statusModal ? (
+        <AppConfirmModal
+          description={statusModal.description}
+          onClose={() => setStatusModal(null)}
+          primaryAction={{
+            label: "OK",
+            onPress: () => setStatusModal(null),
+            testID: "integrations-status-confirm",
+          }}
+          testID="integrations-status-modal"
+          title={statusModal.title}
+        />
+      ) : null}
     </View>
   );
 }

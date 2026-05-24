@@ -1,30 +1,3 @@
-import type { OptimizationProfile } from "../projection/safety-caps";
-
-export const RISK_PROFILE_DEFAULTS: Record<
-  OptimizationProfile,
-  {
-    postGoalRecoveryDays: number;
-    maxWeeklyTssRampPct: number;
-    maxCtlRampPerWeek: number;
-  }
-> = {
-  outcome_first: {
-    postGoalRecoveryDays: 3,
-    maxWeeklyTssRampPct: 10,
-    maxCtlRampPerWeek: 5,
-  },
-  balanced: {
-    postGoalRecoveryDays: 5,
-    maxWeeklyTssRampPct: 7,
-    maxCtlRampPerWeek: 3,
-  },
-  sustainable: {
-    postGoalRecoveryDays: 7,
-    maxWeeklyTssRampPct: 5,
-    maxCtlRampPerWeek: 2,
-  },
-};
-
 export const PREFERENCE_MODIFIER_BOUNDS = {
   taperStylePreference: { min: 0.8, max: 1.2 },
   systemicFatigueTolerance: { min: 0.9, max: 1.15 },

@@ -22,7 +22,7 @@ describe("derivePowerCurveFromFTP", () => {
     const sixtyMinEffort = curve.find((e) => e.duration_seconds === 3600);
     expect(sixtyMinEffort).toBeDefined();
     // 60-min includes W'/3600, so slightly higher than FTP
-    expect(sixtyMinEffort!.value).toBeCloseTo(256, 0); // 250 + 20000/3600 ≈ 256
+    expect(sixtyMinEffort?.value).toBeCloseTo(256, 0); // 250 + 20000/3600 ≈ 256
   });
 
   it("should have 5-second effort significantly higher than FTP", () => {
@@ -31,8 +31,8 @@ describe("derivePowerCurveFromFTP", () => {
 
     const fiveSecEffort = curve.find((e) => e.duration_seconds === 5);
     expect(fiveSecEffort).toBeDefined();
-    expect(fiveSecEffort!.value).toBeGreaterThan(1000);
-    expect(fiveSecEffort!.value).toBe(4250); // 250 + 20000/5
+    expect(fiveSecEffort?.value).toBeGreaterThan(1000);
+    expect(fiveSecEffort?.value).toBe(4250); // 250 + 20000/5
   });
 
   it("should use custom W' if provided", () => {
@@ -42,7 +42,7 @@ describe("derivePowerCurveFromFTP", () => {
 
     const fiveSecEffort = curve.find((e) => e.duration_seconds === 5);
     expect(fiveSecEffort).toBeDefined();
-    expect(fiveSecEffort!.value).toBe(5250); // 250 + 25000/5
+    expect(fiveSecEffort?.value).toBe(5250); // 250 + 25000/5
   });
 
   it("should have correct format for all efforts", () => {
@@ -154,7 +154,7 @@ describe("estimatePowerForDuration", () => {
     expect(fiveMinEffort).toBeDefined();
     const calculatedPower = estimatePowerForDuration(ftp, wPrime, 300);
 
-    expect(calculatedPower).toBe(fiveMinEffort!.value);
+    expect(calculatedPower).toBe(fiveMinEffort?.value);
   });
 
   it("should throw error for invalid inputs", () => {

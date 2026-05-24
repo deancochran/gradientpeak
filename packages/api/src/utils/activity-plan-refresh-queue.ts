@@ -4,7 +4,7 @@ import {
   activityPlans,
   type DrizzleDbClient,
 } from "@repo/db";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import {
   type ActivityPlanWithDerivedMetrics,
   getActivityPlansDerivedMetrics,

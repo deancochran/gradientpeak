@@ -21,6 +21,7 @@ export * from "./icon/index.web";
 export * from "./input/index.web";
 export * from "./integer-stepper/index.web";
 export * from "./label/index.web";
+export * from "./loading/index.web";
 export * from "./loading-skeletons/index.web";
 export * from "./metric-card/index.web";
 export * from "./navigation-menu/index.web";

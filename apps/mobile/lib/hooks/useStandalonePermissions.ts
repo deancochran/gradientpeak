@@ -9,10 +9,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { AppState } from "react-native";
 import {
-  AllPermissionsStatus,
+  type AllPermissionsStatus,
   areAllPermissionsGranted,
   checkAllPermissions,
-  PermissionType,
+  type PermissionType,
   requestPermission,
 } from "@/lib/services/permissions-check";
 
@@ -125,7 +125,7 @@ export function useAllPermissionsGranted() {
   useEffect(() => {
     let mounted = true;
 
-    const check = async (forceRefresh = false) => {
+    const check = async (_forceRefresh = false) => {
       try {
         if (mounted) {
           setIsLoading(true);

@@ -1,20 +1,17 @@
 import { act, waitFor } from "@testing-library/react-native";
 import React from "react";
+import { createHost } from "../../../../test/mock-components";
 import { renderNative, screen } from "../../../../test/render-native";
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
 
 var alertMock = jest.fn();
 var duplicateMutateMock = jest.fn();
 var fetchedPlanMock = {
   current: null as Record<string, any> | null,
 };
+var plannedActivityMock = {
+  current: null as Record<string, any> | null,
+};
 var localSearchParamsMock = {} as Record<string, string | undefined>;
-var scheduleModalProps: any[] = [];
 var routerMock = {
   back: jest.fn(),
   navigate: jest.fn(),
@@ -30,6 +27,14 @@ jest.mock("@tanstack/react-query", () => ({
 
 jest.mock("expo-router", () => ({
   __esModule: true,
+  Stack: {
+    Screen: (props: any) =>
+      React.createElement(
+        "StackScreen",
+        props,
+        typeof props.options?.headerRight === "function" ? props.options.headerRight() : null,
+      ),
+  },
   useRouter: () => routerMock,
   useLocalSearchParams: () => localSearchParamsMock,
 }));
@@ -47,22 +52,27 @@ jest.mock("react-native-maps", () => ({
   PROVIDER_DEFAULT: "default",
 }));
 
-jest.mock("@/components/ActivityPlan/TimelineChart", () => ({
+jest.mock("@/components/activity-plan/workout/TimelineChart", () => ({
   __esModule: true,
   TimelineChart: createHost("TimelineChart"),
 }));
 
-jest.mock("@/components/ScheduleActivityModal", () => ({
+jest.mock("@/components/activity/charts/ElevationProfileChart", () => ({
   __esModule: true,
-  ScheduleActivityModal: (props: any) => {
-    scheduleModalProps.push(props);
-    return React.createElement("ScheduleActivityModal", props, props.children);
-  },
+  ElevationProfileChart: createHost("ElevationProfileChart"),
 }));
 
 jest.mock("@repo/ui/components/button", () => ({
   __esModule: true,
   Button: createHost("Button"),
+}));
+
+jest.mock("@repo/ui/components/dropdown-menu", () => ({
+  __esModule: true,
+  DropdownMenu: createHost("DropdownMenu"),
+  DropdownMenuContent: createHost("DropdownMenuContent"),
+  DropdownMenuItem: createHost("DropdownMenuItem"),
+  DropdownMenuTrigger: createHost("DropdownMenuTrigger"),
 }));
 
 jest.mock("@repo/ui/components/icon", () => ({
@@ -152,7 +162,7 @@ jest.mock("@/lib/api", () => ({
     },
     events: {
       getById: {
-        useQuery: () => ({ data: null, error: null, isLoading: false }),
+        useQuery: () => ({ data: plannedActivityMock.current, error: null, isLoading: false }),
       },
       delete: {
         useMutation: () => ({ mutate: jest.fn(), isPending: false }),
@@ -162,15 +172,21 @@ jest.mock("@/lib/api", () => ({
       get: {
         useQuery: () => ({ data: null }),
       },
+      loadFull: {
+        useQuery: () => ({ data: null }),
+      },
     },
     social: {
       toggleLike: {
         useMutation: () => ({ mutate: jest.fn(), isPending: false }),
       },
       getComments: {
-        useQuery: () => ({
-          data: { comments: [], total: 0 },
+        useInfiniteQuery: () => ({
+          data: { pages: [{ comments: [], total: 0, hasMore: false, nextCursor: undefined }] },
           refetch: jest.fn(),
+          hasNextPage: false,
+          isFetchingNextPage: false,
+          fetchNextPage: jest.fn(),
         }),
       },
       addComment: {
@@ -239,12 +255,12 @@ const getAllByTypeOrEmpty = (type: string) => {
   }
 };
 
-const findButton = (matcher: (label: string) => boolean) =>
+const _findButton = (matcher: (label: string) => boolean) =>
   getAllByTypeOrEmpty("Button").find((node: any) => matcher(getTextContent(node.props?.children)));
 
 const resetTestState = () => {
   fetchedPlanMock.current = null;
-  scheduleModalProps.length = 0;
+  plannedActivityMock.current = null;
   alertMock.mockReset();
   nativeAlertMock.mockReset();
   duplicateMutateMock.mockReset();
@@ -262,7 +278,7 @@ describe("activity plan detail scheduling", () => {
     resetTestState();
   });
 
-  it("opens the scheduling modal for a schedulable template plan", () => {
+  it("opens event creation for a schedulable template plan", () => {
     localSearchParamsMock.template = JSON.stringify({
       id: "11111111-1111-1111-1111-111111111111",
       name: "Tempo Builder",
@@ -274,11 +290,17 @@ describe("activity plan detail scheduling", () => {
     renderNative(<ActivityPlanDetail />);
 
     act(() => {
-      findButton((label) => label === "Schedule").props.onPress();
+      screen.getByTestId("activity-plan-options-schedule").props.onPress();
     });
 
     expect(nativeAlertMock).not.toHaveBeenCalled();
-    expect(scheduleModalProps.at(-1)?.visible).toBe(true);
+    expect(routerMock.navigate).toHaveBeenCalledWith({
+      pathname: "/event-detail",
+      params: {
+        activityPlanId: "11111111-1111-1111-1111-111111111111",
+        mode: "create",
+      },
+    });
   });
 
   it("shows a visible alert instead of silently doing nothing for an unsaved template", () => {
@@ -292,17 +314,17 @@ describe("activity plan detail scheduling", () => {
     renderNative(<ActivityPlanDetail />);
 
     act(() => {
-      findButton((label) => label === "Schedule").props.onPress();
+      screen.getByTestId("activity-plan-options-schedule").props.onPress();
     });
 
     expect(nativeAlertMock).toHaveBeenCalledWith(
       "Scheduling unavailable",
       "Create this activity plan first, then schedule it from its detail screen.",
     );
-    expect(scheduleModalProps.at(-1)?.visible).toBe(false);
+    expect(routerMock.navigate).not.toHaveBeenCalled();
   });
 
-  it("duplicates and routes into scheduling for a shared template", async () => {
+  it("opens event creation directly for a shared public template", async () => {
     localSearchParamsMock.template = JSON.stringify({
       id: "11111111-1111-1111-1111-111111111111",
       name: "Shared Builder",
@@ -313,23 +335,19 @@ describe("activity plan detail scheduling", () => {
 
     renderNative(<ActivityPlanDetail />);
 
-    await act(async () => {
-      findButton((label) => label === "Duplicate and Schedule").props.onPress();
-      await Promise.resolve();
+    act(() => {
+      screen.getByTestId("activity-plan-options-schedule").props.onPress();
     });
 
-    expect(duplicateMutateMock).toHaveBeenCalledWith({
-      id: "11111111-1111-1111-1111-111111111111",
-      newName: "Shared Builder (Copy)",
-    });
     expect(nativeAlertMock).not.toHaveBeenCalled();
-    await waitFor(() => {
-      expect(routerMock.replace).toHaveBeenCalledWith({
-        pathname: "/activity-plan-detail",
-        params: { planId: "duplicated-plan-1", action: "schedule" },
-      });
+    expect(duplicateMutateMock).not.toHaveBeenCalled();
+    expect(routerMock.navigate).toHaveBeenCalledWith({
+      pathname: "/event-detail",
+      params: {
+        activityPlanId: "11111111-1111-1111-1111-111111111111",
+        mode: "create",
+      },
     });
-    expect(scheduleModalProps.at(-1)?.visible).toBe(false);
   });
 
   it("duplicates a shared activity plan into the owned detail flow", async () => {
@@ -344,7 +362,7 @@ describe("activity plan detail scheduling", () => {
     renderNative(<ActivityPlanDetail />);
 
     await act(async () => {
-      findButton((label) => label === "Duplicate Activity").props.onPress();
+      screen.getByTestId("activity-plan-options-duplicate").props.onPress();
       await Promise.resolve();
     });
 
@@ -373,7 +391,7 @@ describe("activity plan detail scheduling", () => {
     });
   });
 
-  it("opens scheduling immediately for a routed owned plan", () => {
+  it("opens event creation immediately for a routed owned plan", async () => {
     fetchedPlanMock.current = {
       id: "owned-plan-1",
       name: "Owned Builder",
@@ -386,11 +404,19 @@ describe("activity plan detail scheduling", () => {
 
     renderNative(<ActivityPlanDetail />);
 
-    expect(scheduleModalProps.at(-1)?.visible).toBe(true);
+    await waitFor(() => {
+      expect(routerMock.navigate).toHaveBeenCalledWith({
+        pathname: "/event-detail",
+        params: {
+          activityPlanId: "owned-plan-1",
+          mode: "create",
+        },
+      });
+    });
     expect(nativeAlertMock).not.toHaveBeenCalled();
   });
 
-  it("opens rescheduling immediately for a routed scheduled activity", () => {
+  it("opens event editing immediately for a routed scheduled activity", async () => {
     fetchedPlanMock.current = {
       id: "owned-plan-1",
       name: "Owned Builder",
@@ -401,15 +427,17 @@ describe("activity plan detail scheduling", () => {
     localSearchParamsMock.planId = "owned-plan-1";
     localSearchParamsMock.eventId = "event-1";
     localSearchParamsMock.action = "schedule";
+    plannedActivityMock.current = { id: "event-1", scheduled_date: "2026-05-21" };
 
     renderNative(<ActivityPlanDetail />);
 
-    expect(scheduleModalProps.at(-1)?.visible).toBe(true);
-    expect(scheduleModalProps.at(-1)?.eventId).toBe("event-1");
+    await waitFor(() => {
+      expect(routerMock.navigate).toHaveBeenCalledWith("/event-detail-update?id=event-1");
+    });
     expect(nativeAlertMock).not.toHaveBeenCalled();
   });
 
-  it("navigates to the calendar tab after scheduling succeeds", () => {
+  it("navigates to event creation when scheduling a fetched plan", () => {
     fetchedPlanMock.current = {
       id: "owned-plan-1",
       name: "Owned Builder",
@@ -421,15 +449,34 @@ describe("activity plan detail scheduling", () => {
     renderNative(<ActivityPlanDetail />);
 
     act(() => {
-      findButton((label) => label === "Schedule").props.onPress();
+      screen.getByTestId("activity-plan-options-schedule").props.onPress();
     });
 
-    act(() => {
-      scheduleModalProps.at(-1)?.onSuccess?.();
+    expect(routerMock.navigate).toHaveBeenCalledWith({
+      pathname: "/event-detail",
+      params: {
+        activityPlanId: "owned-plan-1",
+        mode: "create",
+      },
     });
+  });
 
-    expect(routerMock.navigate).toHaveBeenCalledWith("/(internal)/(tabs)/calendar");
-    expect(routerMock.back).not.toHaveBeenCalled();
+  it("hides schedule actions when the plan is opened from an event", () => {
+    fetchedPlanMock.current = {
+      id: "owned-plan-1",
+      name: "Owned Builder",
+      activity_category: "run",
+      profile_id: "profile-1",
+      structure: { intervals: [] },
+    };
+    localSearchParamsMock.planId = "owned-plan-1";
+    localSearchParamsMock.eventId = "event-1";
+
+    renderNative(<ActivityPlanDetail />);
+
+    expect(screen.queryByTestId("activity-plan-options-schedule")).toBeNull();
+    expect(screen.queryByTestId("activity-plan-options-open-event")).toBeNull();
+    expect(screen.queryByTestId("activity-plan-options-remove-schedule")).toBeNull();
   });
 
   it("shows the new summary-first detail context and hides placeholder share UI", () => {
@@ -445,9 +492,8 @@ describe("activity plan detail scheduling", () => {
 
     renderNative(<ActivityPlanDetail />);
 
-    expect(screen.getByText("Overview")).toBeTruthy();
     expect(screen.getByText("Controlled tempo intervals.")).toBeTruthy();
-    expect(screen.getByText("Notes")).toBeTruthy();
+    expect(screen.getByText("Keep the recoveries honest.")).toBeTruthy();
     expect(screen.getByText("Comments (0)")).toBeTruthy();
     expect(screen.queryByText("Share")).toBeNull();
   });

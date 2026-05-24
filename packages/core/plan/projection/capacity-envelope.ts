@@ -39,6 +39,17 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+function optionalProperty<Key extends string, Value>(
+  key: Key,
+  value: Value | undefined,
+): { [Property in Key]?: Value } {
+  if (value === undefined) {
+    return {};
+  }
+
+  return { [key]: value } as { [Property in Key]?: Value };
+}
+
 function smoothstep01(value: number): number {
   const clamped = clamp01(value);
   return clamped * clamped * (3 - 2 * clamped);
@@ -117,8 +128,8 @@ export function computeCapacityEnvelope(input: CapacityEnvelopeInput): CapacityE
 
   const baselineWeeklyTss = Math.max(35, input.starting_ctl * 7);
   const historyMultiplier = getHistoryMultiplierFromEvidence({
-    evidence_state: input.evidence_state,
-    evidence_score: input.evidence_score,
+    ...optionalProperty("evidence_state", input.evidence_state),
+    ...optionalProperty("evidence_score", input.evidence_score),
   });
   const envelopePenalties = input.envelope_penalties;
   const weightOverHigh = envelopePenalties?.over_high_weight ?? 0.55;

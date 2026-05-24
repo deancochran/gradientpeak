@@ -1,14 +1,21 @@
-import * as SecureStore from "expo-secure-store";
 import { useSyncExternalStore } from "react";
+import { safeSecureStore } from "@/lib/storage/safe-secure-store";
 
 const SERVER_URL_OVERRIDE_KEY = "server_url_override";
 const useLocalE2EHost = process.env.EXPO_PUBLIC_MAESTRO_E2E === "1";
+const appEnvironment = process.env.APP_ENV ?? "development";
 
 const hostedApiUrl = useLocalE2EHost
-  ? "http://127.0.0.1:3000"
+  ? requireUrl(
+      process.env.EXPO_PUBLIC_MAESTRO_E2E_API_URL ?? "http://127.0.0.1:3000",
+      "EXPO_PUBLIC_MAESTRO_E2E_API_URL",
+    )
   : requireUrl(process.env.EXPO_PUBLIC_API_URL, "EXPO_PUBLIC_API_URL");
 const hostedSupabaseUrl = useLocalE2EHost
-  ? "http://127.0.0.1:54321"
+  ? requireUrl(
+      process.env.EXPO_PUBLIC_MAESTRO_E2E_SUPABASE_URL ?? "http://127.0.0.1:54321",
+      "EXPO_PUBLIC_MAESTRO_E2E_SUPABASE_URL",
+    )
   : requireUrl(process.env.EXPO_PUBLIC_SUPABASE_URL, "EXPO_PUBLIC_SUPABASE_URL");
 
 type ServerConfigState = {
@@ -29,6 +36,10 @@ let state: ServerConfigState = {
 
 const listeners = new Set<() => void>();
 let initializePromise: Promise<void> | null = null;
+
+export function isServerUrlOverrideEnabled() {
+  return appEnvironment !== "production" || process.env.EXPO_PUBLIC_ENABLE_SERVER_OVERRIDE === "1";
+}
 
 function emit() {
   listeners.forEach((listener) => listener());
@@ -108,7 +119,9 @@ export async function initializeServerConfig() {
   }
 
   initializePromise = (async () => {
-    const storedUrl = await SecureStore.getItemAsync(SERVER_URL_OVERRIDE_KEY);
+    const storedUrl = isServerUrlOverrideEnabled()
+      ? await safeSecureStore.getItemAsync(SERVER_URL_OVERRIDE_KEY)
+      : null;
     const normalizedOverride = normalizeBaseUrl(storedUrl);
     updateState(normalizedOverride);
   })();
@@ -121,6 +134,10 @@ export async function initializeServerConfig() {
 }
 
 export async function setServerUrlOverride(url: string | null) {
+  if (!isServerUrlOverrideEnabled()) {
+    throw new Error("Server URL overrides are disabled in production builds");
+  }
+
   const normalizedOverride = normalizeBaseUrl(url);
 
   if (url && !normalizedOverride) {
@@ -132,18 +149,45 @@ export async function setServerUrlOverride(url: string | null) {
   }
 
   if (!normalizedOverride) {
-    await SecureStore.deleteItemAsync(SERVER_URL_OVERRIDE_KEY);
+    await safeSecureStore.deleteItemAsync(SERVER_URL_OVERRIDE_KEY);
     updateState(null);
     return { changed: true as const };
   }
 
-  await SecureStore.setItemAsync(SERVER_URL_OVERRIDE_KEY, normalizedOverride);
+  await safeSecureStore.setItemAsync(SERVER_URL_OVERRIDE_KEY, normalizedOverride);
   updateState(normalizedOverride);
   return { changed: true as const };
 }
 
 export function getServerConfig() {
   return state;
+}
+
+export function getReachableSupabaseStorageUrl(rawUrl: string) {
+  try {
+    const parsedRawUrl = new URL(rawUrl);
+    const parsedSupabaseUrl = new URL(state.supabaseUrl);
+    const isStorageUrl = parsedRawUrl.pathname.startsWith("/storage/v1/");
+    const isServerLocalOnlyHost = ["127.0.0.1", "localhost", "10.0.2.2"].includes(
+      parsedRawUrl.hostname,
+    );
+
+    if (
+      !isStorageUrl ||
+      !isServerLocalOnlyHost ||
+      parsedRawUrl.origin === parsedSupabaseUrl.origin
+    ) {
+      return rawUrl;
+    }
+
+    parsedRawUrl.protocol = parsedSupabaseUrl.protocol;
+    parsedRawUrl.hostname = parsedSupabaseUrl.hostname;
+    parsedRawUrl.port = parsedSupabaseUrl.port;
+
+    return parsedRawUrl.toString();
+  } catch {
+    return rawUrl;
+  }
 }
 
 export function getHostedApiUrl() {

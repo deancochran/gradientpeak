@@ -105,6 +105,27 @@ class StandalonePermissionsManager {
     return allGranted;
   }
 
+  async areRecordingPermissionsGranted(gpsRequired: boolean): Promise<boolean> {
+    const permissions = await this.checkAllPermissions();
+    const granted =
+      permissions.bluetooth?.granted === true &&
+      (!gpsRequired ||
+        (permissions.location?.granted === true &&
+          permissions.locationBackground?.granted === true));
+
+    if (!granted) {
+      console.log("[PermissionsManager] areRecordingPermissionsGranted check:", {
+        bluetooth: permissions.bluetooth?.granted,
+        gpsRequired,
+        location: permissions.location?.granted,
+        locationBackground: permissions.locationBackground?.granted,
+        granted,
+      });
+    }
+
+    return granted;
+  }
+
   /**
    * Check bluetooth permission status
    */
@@ -357,6 +378,10 @@ export async function checkAllPermissions(forceRefresh = false): Promise<AllPerm
 
 export async function areAllPermissionsGranted(): Promise<boolean> {
   return permissionsChecker.areAllPermissionsGranted();
+}
+
+export async function areRecordingPermissionsGranted(gpsRequired: boolean): Promise<boolean> {
+  return permissionsChecker.areRecordingPermissionsGranted(gpsRequired);
 }
 
 export async function requestPermission(type: PermissionType): Promise<boolean> {

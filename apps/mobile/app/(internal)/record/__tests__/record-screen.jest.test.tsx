@@ -10,13 +10,19 @@ const pauseMock = jest.fn();
 const resumeMock = jest.fn();
 const finishMock = jest.fn(async () => undefined);
 const requestPermissionMock = jest.fn(async () => true);
+let mockRecordingLifecycle: "idle" | "setup" | "active" = "idle";
+let mockServiceState: "pending" | "ready" | "recording" | "paused" | "finishing" | "finished" =
+  "pending";
 
 const service = {
   currentRoute: null,
   plan: null,
+  attachRoute: jest.fn(async () => undefined),
+  prepareRouteAttachment: jest.fn(),
   selectActivityFromPayload: jest.fn(),
   updateMetrics: jest.fn(),
   refreshAndCheckAllPermissions: jest.fn(async () => true),
+  refreshAndCheckRecordingPermissions: jest.fn(async () => true),
   validatePlanRequirements: jest.fn<any, any>(() => ({ isValid: true, warnings: [] })),
   recordLap: jest.fn(() => 42),
 };
@@ -49,9 +55,22 @@ jest.mock("react-native-safe-area-context", () => ({
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 
-jest.mock("@/components/ActivitySelectionModal", () => ({
+jest.mock("@/components/recording/RecordingActivityQuickEdit", () => ({
   __esModule: true,
-  ActivitySelectionModal: createHost("ActivitySelectionModal"),
+  RecordingActivityQuickEdit: createHost("RecordingActivityQuickEdit"),
+}));
+
+jest.mock("@/components/shared/resource-picker", () => ({
+  __esModule: true,
+  ResourcePickerModal: createHost("ResourcePickerModal"),
+}));
+
+jest.mock("@/components/activity-plan/useActivityPlanRouteUpload", () => ({
+  __esModule: true,
+  useActivityPlanRouteUpload: () => ({
+    isUploadingRoute: false,
+    pickGpxFile: jest.fn(),
+  }),
 }));
 
 jest.mock("@/components/ErrorBoundary", () => ({
@@ -60,9 +79,9 @@ jest.mock("@/components/ErrorBoundary", () => ({
   ScreenErrorFallback: createHost("ScreenErrorFallback"),
 }));
 
-jest.mock("@/components/recording/footer", () => ({
+jest.mock("@/components/recording/cockpit", () => ({
   __esModule: true,
-  RecordingFooter: ({ onStart, onPause, onResume, onLap, onFinish }: any) =>
+  RecordingLiveCockpit: ({ onStart, onPause, onResume, onLap, onFinish }: any) =>
     React.createElement(
       "View",
       null,
@@ -90,16 +109,9 @@ jest.mock("@/components/recording/footer", () => ({
     ),
 }));
 
-jest.mock("@/components/recording/zones", () => ({
-  __esModule: true,
-  RecordingZones: createHost("RecordingZones"),
-  ZoneFocusOverlay: createHost("ZoneFocusOverlay"),
-}));
-
 jest.mock("@/lib/hooks/useActivityRecorder", () => ({
   __esModule: true,
   useActivityStatus: () => ({ gpsRecordingEnabled: false, activityCategory: "bike" }),
-  useIntensityScale: () => "power",
   usePlan: () => ({ hasPlan: true }),
   useRecorderActions: () => ({
     start: startMock,
@@ -107,7 +119,8 @@ jest.mock("@/lib/hooks/useActivityRecorder", () => ({
     resume: resumeMock,
     finish: finishMock,
   }),
-  useRecordingState: () => "pending",
+  useRecordingLifecycle: () => mockRecordingLifecycle,
+  useRecordingState: () => mockServiceState,
   useSensors: () => ({ count: 1, sensors: [] }),
 }));
 
@@ -116,9 +129,41 @@ jest.mock("@/lib/hooks/useAuth", () => ({
   useAuth: () => ({ user: { id: "user-1" } }),
 }));
 
+jest.mock("@/lib/auth/auth-headers", () => ({
+  __esModule: true,
+  hasSessionAuthCredentials: () => true,
+}));
+
+jest.mock("@/lib/performance", () => ({
+  __esModule: true,
+  markNavigationStart: jest.fn(),
+  toPerformanceRouteKey: () => "mock-route",
+  usePerformanceScreenReady: jest.fn(),
+}));
+
 jest.mock("@/lib/hooks/useRecordingConfig", () => ({
   __esModule: true,
-  useRecordingCapabilities: () => ({ canUseTrainerControl: true }),
+  useRecordingSessionContract: () => ({
+    guidance: { hasPlan: true, hasRoute: false, routeMode: "none" },
+    devices: { hasTrainer: false, trainerControllable: false },
+    editing: { canEditActivity: false, canEditGps: true, canEditPlan: true, canEditRoute: true },
+    ui: {
+      backdropMode: "ambient",
+      floatingPanel: {
+        defaultCard: "workout_interval",
+        availableCards: ["workout_interval", "metrics"],
+        forcedExpanded: true,
+        canMinimize: false,
+      },
+      controls: { quickActions: ["plan", "sensors"] },
+    },
+    surfaces: {
+      defaultPrimarySurface: "activity",
+      availablePrimarySurfaces: ["activity", "metrics"],
+      quickActions: ["plan", "sensors"],
+    },
+    validation: { consequences: [] },
+  }),
 }));
 
 jest.mock("@/lib/hooks/useStandalonePermissions", () => ({
@@ -139,14 +184,30 @@ jest.mock("@/lib/services/permissions-check", () => ({
 jest.mock("@/lib/stores/activitySelectionStore", () => ({
   __esModule: true,
   activitySelectionStore: activitySelectionStoreMock,
+  defaultRecordLaunchPayload: jest.fn(() => ({
+    launchSource: "record_tab",
+    category: "run",
+    gpsRecordingEnabled: true,
+  })),
 }));
 
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
+    useUtils: () => ({ routes: { invalidate: jest.fn() } }),
+    activityPlans: {
+      getById: {
+        useQuery: () => ({ data: null }),
+      },
+    },
     profiles: {
       getZones: {
         useQuery: () => ({ data: { profile: null } }),
+      },
+    },
+    routes: {
+      upload: {
+        useMutation: () => ({ mutate: jest.fn() }),
       },
     },
   },
@@ -184,7 +245,11 @@ const RecordScreen = require("../index").default;
 describe("record screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockRecordingLifecycle = "idle";
+    mockServiceState = "pending";
+    service.attachRoute.mockResolvedValue(undefined);
     service.refreshAndCheckAllPermissions.mockResolvedValue(true);
+    service.refreshAndCheckRecordingPermissions.mockResolvedValue(true);
     service.validatePlanRequirements.mockReturnValue({ isValid: true, warnings: [] });
     activitySelectionStoreMock.peekSelection.mockReturnValue({
       category: "bike",
@@ -205,9 +270,78 @@ describe("record screen", () => {
     expect(activitySelectionStoreMock.consumeSelection).toHaveBeenCalled();
   });
 
+  it("initializes explicit route launches without waiting for route geometry", async () => {
+    activitySelectionStoreMock.peekSelection.mockReturnValue({
+      launchSource: "route",
+      category: "bike",
+      gpsRecordingEnabled: false,
+      routeId: "route-1",
+    } as any);
+
+    renderNative(<RecordScreen />);
+
+    await waitFor(() => {
+      expect(service.selectActivityFromPayload).toHaveBeenCalledWith(
+        expect.objectContaining({ category: "bike", routeId: "route-1" }),
+      );
+      expect(activitySelectionStoreMock.consumeSelection).toHaveBeenCalled();
+      expect(service.prepareRouteAttachment).toHaveBeenCalledWith("route-1");
+      expect(screen.getByText("Start")).toBeTruthy();
+    });
+
+    expect(service.attachRoute).not.toHaveBeenCalled();
+    expect(Alert.alert).not.toHaveBeenCalledWith("Route Not Attached", expect.any(String));
+    expect(backMock).not.toHaveBeenCalled();
+  });
+
+  it("does not apply default payload over existing setup", async () => {
+    mockRecordingLifecycle = "setup";
+    activitySelectionStoreMock.peekSelection.mockReturnValue(null as any);
+
+    renderNative(<RecordScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Start")).toBeTruthy();
+    });
+
+    expect(service.selectActivityFromPayload).not.toHaveBeenCalled();
+    expect(activitySelectionStoreMock.consumeSelection).not.toHaveBeenCalled();
+  });
+
+  it("does not apply launch payload over active recording", async () => {
+    mockRecordingLifecycle = "active";
+
+    renderNative(<RecordScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Start")).toBeTruthy();
+    });
+
+    expect(service.selectActivityFromPayload).not.toHaveBeenCalled();
+    expect(activitySelectionStoreMock.consumeSelection).toHaveBeenCalled();
+  });
+
+  it("keeps the close button available during active recording", async () => {
+    mockRecordingLifecycle = "active";
+    mockServiceState = "recording";
+
+    renderNative(<RecordScreen />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("record-close-button")).toBeTruthy();
+    });
+
+    fireEvent.press(screen.getByTestId("record-close-button"));
+
+    expect(backMock).toHaveBeenCalled();
+  });
+
   it("requests missing permissions before starting the recorder", async () => {
     useAllPermissionsGranted.mockReturnValue({ allGranted: false, isLoading: false });
-    service.refreshAndCheckAllPermissions.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    service.refreshAndCheckRecordingPermissions
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
 
     renderNative(<RecordScreen />);
 
@@ -219,8 +353,6 @@ describe("record screen", () => {
 
     await waitFor(() => {
       expect(requestPermissionMock).toHaveBeenNthCalledWith(1, "bluetooth");
-      expect(requestPermissionMock).toHaveBeenNthCalledWith(2, "location");
-      expect(requestPermissionMock).toHaveBeenNthCalledWith(3, "location-background");
       expect(startMock).toHaveBeenCalled();
     });
   });
@@ -240,20 +372,19 @@ describe("record screen", () => {
 
     fireEvent.press(screen.getByText("Start"));
 
-    expect(Alert.alert).toHaveBeenCalledWith(
-      "Profile Setup Required",
-      expect.stringContaining("FTP"),
-      expect.any(Array),
-    );
+    await waitFor(() => {
+      expect(Alert.alert).toHaveBeenCalledWith(
+        "Profile Setup Required",
+        expect.stringContaining("FTP"),
+        expect.any(Array),
+      );
+    });
 
     const alertButtons = (Alert.alert as jest.Mock).mock.calls[0]?.[2] as Array<any>;
     const goToProfile = alertButtons.find((button) => button.text === "Go to Profile");
     goToProfile?.onPress?.();
 
-    expect(pushMock).toHaveBeenCalledWith({
-      pathname: "/user/[userId]",
-      params: { userId: "user-1" },
-    });
+    expect(pushMock).toHaveBeenCalledWith("/profile");
     expect(startMock).not.toHaveBeenCalled();
   });
 

@@ -125,8 +125,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run Biome check
-        run: pnpm check
+      - name: Run Biome CI
+        run: pnpm check:ci
 
   typecheck:
     name: Typecheck
@@ -241,33 +241,9 @@ jobs:
         if: needs.changes.outputs.db_schema_related == 'true'
         run: pnpm install --frozen-lockfile
 
-      - name: Setup Supabase CLI
+      - name: Run static DB verification
         if: needs.changes.outputs.db_schema_related == 'true'
-        uses: supabase/setup-cli@v1
-        with:
-          version: latest
-
-      - name: Start local Supabase
-        if: needs.changes.outputs.db_schema_related == 'true'
-        run: pnpm run self-host:up
-
-      - name: Wait for Supabase
-        if: needs.changes.outputs.db_schema_related == 'true'
-        run: |
-          for i in $(seq 1 180); do
-            nc -z 127.0.0.1 54321 && exit 0
-            sleep 1
-          done
-          echo "Timed out waiting for supabase on 127.0.0.1:54321" >&2
-          exit 1
-
-      - name: Apply local app schema migrations
-        if: needs.changes.outputs.db_schema_related == 'true'
-        run: pnpm --filter @repo/db db:migrate
-
-      - name: Check schema parity
-        if: needs.changes.outputs.db_schema_related == 'true'
-        run: pnpm --filter @repo/db db:schema:check
+        run: pnpm --filter @repo/db db:verify:static
 
       - name: Skip schema parity when DB schema is unchanged
         if: needs.changes.outputs.db_schema_related != 'true'
@@ -323,9 +299,11 @@ jobs:
           echo "Timed out waiting for supabase on 127.0.0.1:54321" >&2
           exit 1
 
-      - name: Apply local app schema migrations
+      - name: Apply local database schema
         if: needs.changes.outputs.api_live_db_related == 'true'
-        run: pnpm --filter @repo/db db:migrate
+        run: |
+          pnpm --filter @repo/db db:reset
+          pnpm --filter @repo/db db:push:local
 
       - name: Run API live DB smoke tests
         if: needs.changes.outputs.api_live_db_related == 'true'

@@ -1,33 +1,39 @@
-import { activityPlans, likes } from "@repo/db";
-import { TRPCError } from "@trpc/server";
+import { activityPlans, contentAccessGrants, likes, profiles } from "@repo/db";
+import type { TRPCError } from "@trpc/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { estimationState } = vi.hoisted(() => ({
   estimationState: {
     getActivityPlanDerivedMetrics: vi.fn(async (plan: any) => ({
       ...plan,
-      estimated_tss: 88,
-      estimated_duration: 3600,
-      estimated_distance: 12000,
-      intensity_factor: 0.82,
-      confidence: "moderate",
-      confidence_score: 82,
-      estimate_source: "cache",
-      estimate_computed_at: "2026-03-01T10:00:00.000Z",
-      estimator_version: "2026-04-derived-metrics-v1",
-    })),
-    getActivityPlansDerivedMetrics: vi.fn(async (plans: any[]) =>
-      plans.map((plan) => ({
-        ...plan,
+      authoritative_metrics: {
         estimated_tss: 88,
         estimated_duration: 3600,
         estimated_distance: 12000,
         intensity_factor: 0.82,
+      },
+      route: null,
+      confidence: "moderate",
+      confidence_score: 82,
+      estimate_source: "cache",
+      estimate_computed_at: "2026-03-01T10:00:00.000Z",
+      estimator_version: "2026-05-estimated-provenance-v1",
+    })),
+    getActivityPlansDerivedMetrics: vi.fn(async (plans: any[]) =>
+      plans.map((plan) => ({
+        ...plan,
+        authoritative_metrics: {
+          estimated_tss: 88,
+          estimated_duration: 3600,
+          estimated_distance: 12000,
+          intensity_factor: 0.82,
+        },
+        route: null,
         confidence: "moderate",
         confidence_score: 82,
         estimate_source: "cache",
         estimate_computed_at: "2026-03-01T10:00:00.000Z",
-        estimator_version: "2026-04-derived-metrics-v1",
+        estimator_version: "2026-05-estimated-provenance-v1",
       })),
     ),
     computePlanMetrics: vi.fn(async () => ({
@@ -64,7 +70,7 @@ vi.mock("../../infrastructure/repositories", () => ({
 
 import { activityPlansRouter } from "../activity-plans";
 
-type MockTableName = "activity_plans" | "likes";
+type MockTableName = "activity_plans" | "content_access_grants" | "likes" | "profiles";
 type MockOperation = "select" | "insert" | "update" | "delete";
 
 type MockDbState = Partial<Record<`${MockOperation}:${MockTableName}`, unknown[][]>>;
@@ -89,8 +95,8 @@ const sampleStructure: any = {
         {
           id: "44444444-4444-4444-8444-444444444444",
           name: "Ride",
-          duration: { type: "untilFinished" },
-          targets: [],
+          duration: { type: "time", seconds: 1800 },
+          targets: [{ type: "%FTP", intensity: 75 }],
         },
       ],
     },
@@ -106,7 +112,7 @@ function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
     profile_id: USER_ID,
     route_id: null,
     name: "Tempo Builder",
-    description: "Structured workout",
+    description: "Structured activity",
     notes: "Bring bottles",
     activity_category: "bike",
     structure: sampleStructure,
@@ -128,6 +134,14 @@ function resolveTableName(table: unknown): MockTableName {
 
   if (table === likes) {
     return "likes";
+  }
+
+  if (table === contentAccessGrants) {
+    return "content_access_grants";
+  }
+
+  if (table === profiles) {
+    return "profiles";
   }
 
   throw new Error(`Unsupported table in activity-plans test mock: ${String(table)}`);
@@ -221,6 +235,15 @@ function createCaller(params?: { state?: MockDbState; userId?: string }) {
   return { caller, callLog };
 }
 
+function createProfileRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: USER_ID,
+    username: "Owner",
+    avatar_url: "https://example.com/avatar.png",
+    ...overrides,
+  };
+}
+
 describe("activityPlansRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -241,6 +264,7 @@ describe("activityPlansRouter", () => {
       state: {
         "select:activity_plans": [[firstPlan, secondPlan]],
         "select:likes": [[{ entity_id: firstPlan.id }]],
+        "select:profiles": [[createProfileRow()]],
       },
     });
 
@@ -252,8 +276,15 @@ describe("activityPlansRouter", () => {
       has_liked: true,
       content_type: "activity_plan",
       owner_profile_id: USER_ID,
+      owner: {
+        id: USER_ID,
+        username: "Owner",
+        avatar_url: "https://example.com/avatar.png",
+      },
       visibility: "private",
-      estimated_tss: 88,
+      authoritative_metrics: {
+        estimated_tss: 88,
+      },
     });
     expect(result.nextCursor).toBe(`${firstPlan.created_at.toISOString()}_${firstPlan.id}`);
   });
@@ -270,13 +301,22 @@ describe("activityPlansRouter", () => {
               is_system_template: false,
             }),
           ],
+          [
+            createActivityPlanRow({
+              id: "99999999-9999-4999-8999-999999999999",
+              profile_id: OTHER_USER_ID,
+              template_visibility: "private",
+              is_system_template: false,
+            }),
+          ],
         ],
+        "select:content_access_grants": [[]],
       },
     });
 
     await expect(
       caller.getById({ id: "99999999-9999-4999-8999-999999999999" }),
-    ).rejects.toMatchObject({ code: "FORBIDDEN" } as Partial<TRPCError>);
+    ).rejects.toMatchObject({ code: "NOT_FOUND" } as Partial<TRPCError>);
   });
 
   it("getById rejects unexpected input fields", async () => {
@@ -302,6 +342,12 @@ describe("activityPlansRouter", () => {
       state: {
         "select:activity_plans": [[publicPlan, ownPlan]],
         "select:likes": [[{ entity_id: ownPlan.id }]],
+        "select:profiles": [
+          [
+            createProfileRow(),
+            createProfileRow({ id: OTHER_USER_ID, username: "Other", avatar_url: null }),
+          ],
+        ],
       },
     });
 
@@ -312,6 +358,66 @@ describe("activityPlansRouter", () => {
     expect(result.items.map((item) => item.id)).toEqual([ownPlan.id, publicPlan.id]);
     expect(result.items[0]?.has_liked).toBe(true);
     expect(result.items[1]?.has_liked).toBe(false);
+    expect(result.items[0]?.owner?.id).toBe(USER_ID);
+    expect(result.items[1]?.owner?.id).toBe(OTHER_USER_ID);
+  });
+
+  it("getManyByIds includes contextually granted private plans and omits denied private plans", async () => {
+    const ownPlan = createActivityPlanRow({ id: "11111111-1111-4111-8111-111111111111" });
+    const grantedPlan = createActivityPlanRow({
+      id: "22222222-2222-4222-8222-222222222222",
+      profile_id: OTHER_USER_ID,
+      template_visibility: "private",
+      is_public: false,
+    });
+    const deniedPlan = createActivityPlanRow({
+      id: "33333333-3333-4333-8333-333333333333",
+      profile_id: OTHER_USER_ID,
+      template_visibility: "private",
+      is_public: false,
+    });
+    const systemPlan = createActivityPlanRow({
+      id: "44444444-4444-4444-8444-444444444444",
+      profile_id: null,
+      is_system_template: true,
+    });
+    const { caller } = createCaller({
+      state: {
+        "select:activity_plans": [
+          [grantedPlan, deniedPlan, systemPlan, ownPlan],
+          [grantedPlan],
+          [deniedPlan],
+        ],
+        "select:content_access_grants": [
+          [
+            {
+              accessLevel: "read",
+              sourceType: "event",
+              sourceId: "55555555-5555-4555-8555-555555555555",
+            },
+          ],
+          [],
+        ],
+        "select:likes": [[]],
+        "select:profiles": [
+          [
+            createProfileRow(),
+            createProfileRow({ id: OTHER_USER_ID, username: "Other", avatar_url: null }),
+          ],
+        ],
+      },
+    });
+
+    const result = await caller.getManyByIds({
+      ids: [deniedPlan.id, ownPlan.id, grantedPlan.id, systemPlan.id],
+    });
+
+    expect(result.items.map((item) => item.id)).toEqual([
+      ownPlan.id,
+      grantedPlan.id,
+      systemPlan.id,
+    ]);
+    expect(result.items.map((item) => item.id)).not.toContain(deniedPlan.id);
   });
 
   it("getUserPlansCount coerces the current user's count from the DB", async () => {
@@ -324,7 +430,7 @@ describe("activityPlansRouter", () => {
     await expect(caller.getUserPlansCount()).resolves.toBe(3);
   });
 
-  it("create stores computed metrics and returns identity fields", async () => {
+  it("create stores computed metrics and allows missing description", async () => {
     const createdRow = createActivityPlanRow({
       id: "55555555-5555-4555-8555-555555555555",
       name: "Created Plan",
@@ -340,7 +446,6 @@ describe("activityPlansRouter", () => {
     const result = await caller.create({
       name: "Created Plan",
       activity_category: "bike",
-      description: "Built from test",
       notes: "Hydrate",
       structure: sampleStructure,
       template_visibility: "public",
@@ -349,6 +454,7 @@ describe("activityPlansRouter", () => {
     const insertCall = callLog.find((call) => call.operation === "insert");
     expect(insertCall?.payload).toMatchObject({
       name: "Created Plan",
+      description: null,
       profile_id: USER_ID,
       template_visibility: "public",
       is_public: true,
@@ -394,6 +500,16 @@ describe("activityPlansRouter", () => {
     expect(result).toMatchObject({ id: existingRow.id, visibility: "public" });
   });
 
+  it("update rejects id-only no-op payloads before hitting the database", async () => {
+    const { caller, callLog } = createCaller();
+
+    await expect(caller.update({ id: "66666666-6666-4666-8666-666666666666" })).rejects.toThrow(
+      "At least one activity plan update field is required",
+    );
+
+    expect(callLog).toHaveLength(0);
+  });
+
   it("delete removes an owned plan", async () => {
     const { caller, callLog } = createCaller({
       state: {
@@ -424,12 +540,12 @@ describe("activityPlansRouter", () => {
       profile_id: OTHER_USER_ID,
       template_visibility: "public",
       is_public: true,
-      name: "Shared Workout",
+      name: "Shared Activity",
     });
     const duplicatedRow = createActivityPlanRow({
       id: "99999999-8888-4888-8888-888888888888",
       profile_id: USER_ID,
-      name: "Shared Workout (Copy)",
+      name: "Shared Activity (Copy)",
       template_visibility: "private",
       is_public: false,
     });
@@ -444,7 +560,7 @@ describe("activityPlansRouter", () => {
 
     const insertCall = callLog.find((call) => call.operation === "insert");
     expect(insertCall?.payload).toMatchObject({
-      name: "Shared Workout (Copy)",
+      name: "Shared Activity (Copy)",
       profile_id: USER_ID,
       template_visibility: "private",
       import_provider: null,

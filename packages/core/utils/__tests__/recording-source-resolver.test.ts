@@ -51,6 +51,32 @@ describe("recording source resolver", () => {
     expect(selection.selectionMethod).toBe("preferred");
   });
 
+  it("falls back when the preferred source is unavailable", () => {
+    const selection = resolveMetricSource(
+      "heart_rate",
+      [
+        {
+          metricFamily: "heart_rate",
+          sourceId: "strap-1",
+          sourceType: "chest_strap",
+          provenance: "actual",
+          isAvailable: false,
+        },
+        {
+          metricFamily: "heart_rate",
+          sourceId: "watch-1",
+          sourceType: "optical",
+          provenance: "actual",
+          isAvailable: true,
+        },
+      ],
+      { preferredSourceId: "strap-1" },
+    );
+
+    expect(selection.sourceId).toBe("watch-1");
+    expect(selection.selectionMethod).toBe("fallback");
+  });
+
   it("falls back to derived data for indoor distance when direct sources are unavailable", () => {
     const selection = resolveMetricSource(
       "distance",

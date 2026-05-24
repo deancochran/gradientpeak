@@ -10,7 +10,7 @@ const queueMocks = vi.hoisted(() => ({
       estimate_computed_at: "2026-04-20T12:00:00.000Z",
       estimate_last_accessed_at: "2026-04-20T12:00:00.000Z",
       estimate_source: "computed",
-      estimator_version: "2026-04-derived-metrics-v1",
+      estimator_version: "2026-05-estimated-provenance-v1",
     })),
   ),
 }));

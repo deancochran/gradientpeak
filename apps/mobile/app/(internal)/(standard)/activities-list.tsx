@@ -1,72 +1,69 @@
-import type { ActivityCategory } from "@repo/core";
-import { Button } from "@repo/ui/components/button";
-import { Card, CardContent } from "@repo/ui/components/card";
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
-import { Icon } from "@repo/ui/components/icon";
-import { ListSkeleton } from "@repo/ui/components/loading-skeletons";
 import { Text } from "@repo/ui/components/text";
-import { format } from "date-fns";
-import { useRouter } from "expo-router";
-import { Activity, ChevronRight } from "lucide-react-native";
-import React, { useState } from "react";
-import { RefreshControl, ScrollView, TouchableOpacity, View } from "react-native";
+import { Stack } from "expo-router";
+import { Activity } from "lucide-react-native";
+import { useState } from "react";
+import { TouchableOpacity, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { ActivityCard } from "@/components/shared/ActivityCard";
+import { IndexFilterSheet } from "@/components/shared/IndexFilterSheet";
+import {
+  FilterChip,
+  FilterSection,
+  IndexResultsSummary,
+  IndexSearchBar,
+} from "@/components/shared/IndexSearchBar";
+import { ResourceList } from "@/components/shared/ResourceList";
 import { api } from "@/lib/api";
+import { ROUTES } from "@/lib/constants/routes";
+import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
-type SortBy = "date" | "distance" | "duration" | "tss";
-
-const ACTIVITY_TYPES: {
-  value: ActivityCategory;
-  label: string;
-  icon: string;
-}[] = [
-  { value: "run", label: "Run", icon: "🏃" },
-  { value: "bike", label: "Bike", icon: "🚴" },
-  { value: "swim", label: "Swim", icon: "🏊" },
-  { value: "strength", label: "Strength", icon: "💪" },
-  { value: "other", label: "Other", icon: "🎯" },
-];
-
-function formatDuration(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  if (hours > 0) {
-    return `${hours}h ${minutes}m`;
-  }
-  return `${minutes}m`;
-}
-
-function formatDistance(meters: number): string {
-  const km = meters / 1000;
-  return `${km.toFixed(2)} km`;
-}
-
 function ActivitiesScreen() {
-  const router = useRouter();
   const navigateTo = useAppNavigate();
+  const { profile, user } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedType, setSelectedType] = useState<ActivityCategory>("bike");
-  const [sortBy, setSortBy] = useState<SortBy>("date");
-  const [page, setPage] = useState(0);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState<
+    "run" | "bike" | "swim" | "strength" | "other" | null
+  >(null);
+  const [draftCategoryFilter, setDraftCategoryFilter] = useState<typeof categoryFilter>(null);
+  const [sortBy, setSortBy] = useState<"date" | "distance" | "duration" | "tss">("date");
+  const [draftSortBy, setDraftSortBy] = useState<typeof sortBy>("date");
+  const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const limit = 20;
 
   // Query paginated activities
   const {
     data: activitiesData,
     isLoading,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
     refetch,
-  } = api.activities.listPaginated.useQuery({
-    limit,
-    offset: page * limit,
-    activity_category: selectedType === "bike" ? undefined : selectedType,
-    sort_by: sortBy,
-    sort_order: "desc",
-  });
+  } = api.activities.listPaginated.useInfiniteQuery(
+    {
+      limit,
+      search: searchQuery.trim() || undefined,
+      activity_category: categoryFilter ?? undefined,
+      sort_by: sortBy,
+      sort_order: "desc",
+    },
+    {
+      getNextPageParam: (lastPage: any) => lastPage.nextCursor,
+    },
+  );
 
-  const activities = activitiesData?.items || [];
-  const hasMore = activitiesData?.hasMore || false;
-  const total = activitiesData?.total || 0;
+  const activities = activitiesData?.pages.flatMap((page) => page.items) || [];
+  const activityOwner = user?.id
+    ? {
+        avatar_url: profile?.avatar_url ?? null,
+        id: user.id,
+        username: profile?.username ?? user.email?.split("@")[0] ?? "You",
+      }
+    : null;
+  const hasMore = activitiesData?.pages[activitiesData.pages.length - 1]?.hasMore || false;
+  const total = activitiesData?.pages[0]?.total || 0;
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -79,237 +76,137 @@ function ActivitiesScreen() {
   };
 
   const handleLoadMore = () => {
-    if (hasMore && !isLoading) {
-      setPage((prev) => prev + 1);
+    if (hasMore && !isFetchingNextPage) {
+      void fetchNextPage();
     }
   };
 
-  const handleTypeChange = (type: ActivityCategory) => {
-    setSelectedType(type);
-    setPage(0); // Reset to first page
-  };
-
-  const getActivityIcon = (type: string) => {
-    const activityType = ACTIVITY_TYPES.find((t) => t.value === type);
-    return activityType?.icon || "🎯";
-  };
-
-  const getActivityColor = (type: string) => {
-    const colors: Record<string, string> = {
-      run: "text-orange-500",
-      bike: "text-blue-500",
-      swim: "text-cyan-500",
-      strength: "text-purple-500",
-      other: "text-gray-500",
-    };
-    return colors[type] || "text-gray-500";
-  };
-
-  if (isLoading && page === 0) {
-    return (
-      <ScrollView className="flex-1 bg-background" testID="activities-list-loading">
-        <View className="p-4">
-          <ListSkeleton count={8} />
-        </View>
-      </ScrollView>
-    );
-  }
-
   return (
     <View className="flex-1 bg-background" testID="activities-list-screen">
-      {/* Filter Chips */}
-      <View className="bg-card border-b border-border">
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerClassName="px-4 py-3 gap-2"
-        >
-          {ACTIVITY_TYPES.map((type) => (
+      <Stack.Screen
+        options={{
+          headerRight: () => (
             <TouchableOpacity
-              key={type.value}
-              onPress={() => handleTypeChange(type.value)}
-              testID={`activities-filter-${type.value}`}
-              className={`px-4 py-2 rounded-full border ${
-                selectedType === type.value
-                  ? "bg-primary border-primary"
-                  : "bg-background border-border"
-              }`}
+              onPress={() => navigateTo(ROUTES.ACTIVITIES.IMPORT as any)}
+              className="mr-2 rounded-full px-2 py-1"
+              testID="activities-list-import-trigger"
             >
-              <Text
-                className={`font-medium ${
-                  selectedType === type.value ? "text-primary-foreground" : "text-foreground"
-                }`}
-              >
-                {type.icon} {type.label}
-              </Text>
+              <Text className="text-sm font-medium text-primary">Import</Text>
             </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-
-      {/* Activity Count */}
-      {total > 0 && (
-        <View className="px-4 py-3 bg-muted/30">
-          <Text className="text-sm text-muted-foreground">
-            {total} {total === 1 ? "activity" : "activities"} found
-          </Text>
-        </View>
-      )}
-
-      {/* Activity List */}
-      <ScrollView
-        testID="activities-list-content"
-        className="flex-1"
-        contentContainerClassName="p-4 gap-3"
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
-        onScroll={({ nativeEvent }) => {
-          const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
-          const isCloseToBottom =
-            layoutMeasurement.height + contentOffset.y >= contentSize.height - 100;
-          if (isCloseToBottom && hasMore && !isLoading) {
-            handleLoadMore();
-          }
+          ),
         }}
-        scrollEventThrottle={400}
-      >
-        {activities.length === 0 ? (
+      />
+      <IndexSearchBar
+        value={searchQuery}
+        placeholder="Search activities"
+        hasActiveFilters={categoryFilter !== null || sortBy !== "date"}
+        onChangeText={setSearchQuery}
+        onClear={() => setSearchQuery("")}
+        onFilterPress={() => {
+          setDraftCategoryFilter(categoryFilter);
+          setDraftSortBy(sortBy);
+          setIsFilterSheetOpen(true);
+        }}
+        testIDPrefix="activities-list"
+      />
+      <ResourceList
+        testID="activities-list-content"
+        contentContainerClassName="gap-4 p-4 pb-6"
+        data={activities}
+        emptyComponent={
           <View
             className="flex-1 items-center justify-center py-12"
             testID="activities-list-empty-state"
           >
             <EmptyStateCard
               icon={Activity}
-              title="No Activities Found"
-              description="Start recording activities to see them here"
-              actionLabel="Record Activity"
-              onAction={() => navigateTo("/record" as any)}
+              title="No activities yet"
+              description="Recorded activities will appear here."
               iconSize={64}
               iconColor="text-primary"
             />
           </View>
-        ) : (
-          <>
-            {activities.map((activity) => (
-              <TouchableOpacity
-                key={activity.id}
-                onPress={() => handleActivityPress(activity.id)}
-                activeOpacity={0.7}
-                testID={`activities-list-item-${activity.id}`}
-              >
-                <Card>
-                  <CardContent className="p-4">
-                    {/* Header with avatar, username, metadata */}
-                    <View className="flex-row items-start gap-3 mb-3">
-                      <View className="w-10 h-10 rounded-full bg-primary/10 items-center justify-center">
-                        <Text className="text-xl">{getActivityIcon(activity.type)}</Text>
-                      </View>
-
-                      <View className="flex-1">
-                        {/* Username (or user info if available) */}
-                        <Text className="text-sm font-semibold text-foreground">You</Text>
-
-                        {/* Metadata Row: Date + Device */}
-                        <View className="flex-row items-center gap-1.5 mt-1 flex-wrap">
-                          <Text className="text-xs text-muted-foreground">
-                            {format(new Date(activity.started_at), "MMM d, yyyy • h:mm a")}
-                          </Text>
-                          {activity.device_manufacturer && (
-                            <>
-                              <Text className="text-xs text-muted-foreground">•</Text>
-                              <Text className="text-xs text-muted-foreground">
-                                {activity.device_manufacturer} {activity.device_product || ""}
-                              </Text>
-                            </>
-                          )}
-                        </View>
-                      </View>
-
-                      {/* Chevron */}
-                      <Icon as={ChevronRight} size={20} className="text-muted-foreground" />
-                    </View>
-
-                    {/* Activity Name */}
-                    <Text className="text-base font-semibold text-foreground mb-1">
-                      {activity.name}
-                    </Text>
-
-                    {/* Notes (if any) */}
-                    {activity.notes && (
-                      <Text className="text-sm text-muted-foreground mb-3" numberOfLines={2}>
-                        {activity.notes}
-                      </Text>
-                    )}
-
-                    {/* Key Metrics */}
-                    <View className="flex-row items-center gap-4 flex-wrap">
-                      {activity.distance_meters > 0 && (
-                        <View>
-                          <Text className="text-xs text-muted-foreground uppercase">Distance</Text>
-                          <Text className="text-sm font-semibold">
-                            {formatDistance(activity.distance_meters)}
-                          </Text>
-                        </View>
-                      )}
-                      <View>
-                        <Text className="text-xs text-muted-foreground uppercase">Duration</Text>
-                        <Text className="text-sm font-semibold">
-                          {formatDuration(activity.duration_seconds)}
-                        </Text>
-                      </View>
-                      {activity.derived?.tss !== null && activity.derived?.tss !== undefined && (
-                        <View>
-                          <Text className="text-xs text-muted-foreground uppercase">TSS</Text>
-                          <Text className="text-sm font-semibold text-primary">
-                            {Math.round(activity.derived.tss)}
-                          </Text>
-                        </View>
-                      )}
-                      {activity.avg_power && (
-                        <View>
-                          <Text className="text-xs text-muted-foreground uppercase">Avg Power</Text>
-                          <Text className="text-sm font-semibold">
-                            {Math.round(activity.avg_power)}W
-                          </Text>
-                        </View>
-                      )}
-                      {activity.avg_heart_rate && (
-                        <View>
-                          <Text className="text-xs text-muted-foreground uppercase">Avg HR</Text>
-                          <Text className="text-sm font-semibold">
-                            {Math.round(activity.avg_heart_rate)} bpm
-                          </Text>
-                        </View>
-                      )}
-                    </View>
-                  </CardContent>
-                </Card>
-              </TouchableOpacity>
-            ))}
-
-            {/* Load More */}
-            {hasMore && (
-              <View className="py-4 items-center">
-                {isLoading ? (
-                  <Text className="text-sm text-muted-foreground">Loading more...</Text>
-                ) : (
-                  <Button variant="outline" onPress={handleLoadMore}>
-                    <Text>Load More</Text>
-                  </Button>
-                )}
-              </View>
-            )}
-
-            {/* End of List */}
-            {!hasMore && activities.length > 0 && (
-              <View className="py-4">
-                <Text className="text-center text-sm text-muted-foreground">
-                  You&apos;ve reached the end
-                </Text>
-              </View>
-            )}
-          </>
+        }
+        hasNextPage={hasMore}
+        isFetchingNextPage={isFetchingNextPage}
+        isLoading={isLoading}
+        keyExtractor={(activity) => activity.id}
+        ListHeaderComponent={<IndexResultsSummary count={total} singularLabel="activity" />}
+        loadingSkeletonCount={8}
+        onLoadMore={handleLoadMore}
+        onRefresh={handleRefresh}
+        refreshing={refreshing}
+        renderItem={(activity) => (
+          <ActivityCard
+            activity={activity as any}
+            dateMode="absolute"
+            onPress={() => handleActivityPress(activity.id)}
+            owner={activityOwner}
+            showLike
+            testID={`activities-list-item-${activity.id}`}
+            variant="list"
+          />
         )}
-      </ScrollView>
+      />
+      <IndexFilterSheet
+        visible={isFilterSheetOpen}
+        title="Activity Filters"
+        description="Refine your activities list."
+        isResetDisabled={draftCategoryFilter === null && draftSortBy === "date"}
+        onReset={() => {
+          setDraftCategoryFilter(null);
+          setDraftSortBy("date");
+        }}
+        onApply={() => {
+          setCategoryFilter(draftCategoryFilter);
+          setSortBy(draftSortBy);
+          setIsFilterSheetOpen(false);
+        }}
+        onClose={() => setIsFilterSheetOpen(false)}
+        testID="activities-list-filter-sheet"
+      >
+        <FilterSection title="Activity type">
+          <View className="flex-row flex-wrap gap-2">
+            {[
+              { id: "run", label: "Running" },
+              { id: "bike", label: "Cycling" },
+              { id: "swim", label: "Swimming" },
+              { id: "strength", label: "Strength" },
+              { id: "other", label: "Other" },
+            ].map((option) => (
+              <FilterChip
+                key={option.id}
+                label={option.label}
+                isActive={draftCategoryFilter === option.id}
+                onPress={() =>
+                  setDraftCategoryFilter(
+                    draftCategoryFilter === option.id ? null : (option.id as typeof categoryFilter),
+                  )
+                }
+                testID={`activities-list-filter-category-${option.id}`}
+              />
+            ))}
+          </View>
+        </FilterSection>
+        <FilterSection title="Sort">
+          <View className="flex-row flex-wrap gap-2">
+            {[
+              { id: "date", label: "Date" },
+              { id: "distance", label: "Distance" },
+              { id: "duration", label: "Duration" },
+              { id: "tss", label: "TSS" },
+            ].map((option) => (
+              <FilterChip
+                key={option.id}
+                label={option.label}
+                isActive={draftSortBy === option.id}
+                onPress={() => setDraftSortBy(option.id as typeof sortBy)}
+                testID={`activities-list-filter-sort-${option.id}`}
+              />
+            ))}
+          </View>
+        </FilterSection>
+      </IndexFilterSheet>
     </View>
   );
 }

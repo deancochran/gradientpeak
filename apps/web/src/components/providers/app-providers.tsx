@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api, createApiClient, getQueryClient } from "../../lib/api/client";
 
 import { AuthProvider } from "./auth-provider";
+import { ThemeProvider } from "./theme-provider";
 
 let reactScanEnabled = false;
 
@@ -33,7 +34,9 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <api.Provider client={apiClient} queryClient={queryClient}>
-        <AuthProvider>{children}</AuthProvider>
+        <ThemeProvider>
+          <AuthProvider>{children}</AuthProvider>
+        </ThemeProvider>
       </api.Provider>
     </QueryClientProvider>
   );

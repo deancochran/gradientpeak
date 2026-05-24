@@ -21,7 +21,7 @@ export interface WahooPlanData {
 }
 
 export interface WahooWorkoutData {
-  planId: number;
+  planId?: number;
   name: string;
   scheduledDate: string; // ISO date string
   externalId: string; // Your event_id (from events table)
@@ -88,6 +88,7 @@ export interface WahooWorkout {
   plan_id: number;
   plan_ids: number[];
   workout_token: string;
+  workout_summary?: WahooWorkoutSummary | null;
   created_at: string;
   updated_at: string;
 }
@@ -121,6 +122,26 @@ export interface WahooWorkoutSummary {
   fitness_app_id: number;
   manual: boolean;
   edited: boolean;
+}
+
+export type WahooWorkoutSummaryListInput = {
+  endDate: string;
+  page?: number;
+  perPage?: number;
+  startDate: string;
+};
+
+export interface WahooPowerZones {
+  ftp?: number | null;
+  critical_power?: number | null;
+  zones?: unknown;
+  updated_at?: string | null;
+}
+
+export interface WahooTokenRefreshResult {
+  accessToken: string;
+  expiresAt: string | null;
+  refreshToken: string | null;
 }
 
 export interface WahooRoute {
@@ -163,23 +184,37 @@ export class WahooClient {
   async createPlan(planData: WahooPlanData): Promise<WahooPlan> {
     // Convert plan structure to Wahoo's format (will be done by converter)
     const planJson = planData.structure;
-    const base64Plan = Buffer.from(JSON.stringify(planJson)).toString("base64");
 
-    const formData = new URLSearchParams();
-    formData.append("plan[file]", base64Plan);
-    formData.append("plan[filename]", "plan.json");
+    const formData = new FormData();
+    formData.append(
+      "plan[file]",
+      new Blob([JSON.stringify(planJson)], { type: "application/json" }),
+      "plan.json",
+    );
     formData.append("plan[external_id]", planData.externalId);
     formData.append("plan[provider_updated_at]", new Date().toISOString());
 
     const response = await this.makeRequest<WahooPlan>("/v1/plans", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: formData.toString(),
+      body: formData,
     });
 
     return response;
+  }
+
+  async getPlans(externalId?: string): Promise<WahooPlan[]> {
+    const params = externalId ? `?external_id=${encodeURIComponent(externalId)}` : "";
+    return await this.makeRequest<WahooPlan[]>(`/v1/plans${params}`, {
+      method: "GET",
+    });
+  }
+
+  async deletePlan(planId: string | number): Promise<{ success: boolean }> {
+    await this.makeRequest(`/v1/plans/${planId}`, {
+      method: "DELETE",
+    });
+
+    return { success: true };
   }
 
   /**
@@ -190,7 +225,6 @@ export class WahooClient {
   async createWorkout(workoutData: WahooWorkoutData): Promise<WahooWorkout> {
     const body: any = {
       workout: {
-        plan_id: workoutData.planId,
         name: workoutData.name,
         starts: workoutData.scheduledDate,
         external_id: workoutData.externalId,
@@ -199,6 +233,10 @@ export class WahooClient {
         minutes: workoutData.durationMinutes,
       },
     };
+
+    if (workoutData.planId) {
+      body.workout.plan_id = workoutData.planId;
+    }
 
     // Add route_id if provided
     if (workoutData.routeId) {
@@ -286,15 +324,64 @@ export class WahooClient {
   }
 
   /**
+   * Fetch Wahoo power zones for onboarding FTP enrichment.
+   */
+  async getPowerZones(): Promise<WahooPowerZones> {
+    return await this.makeRequest<WahooPowerZones>("/v1/power_zones", {
+      method: "GET",
+    });
+  }
+
+  /**
    * Fetch completed workout summary (for webhook processing)
    */
   async getWorkoutSummary(workoutSummaryId: string): Promise<WahooWorkoutSummary> {
     return await this.makeRequest<WahooWorkoutSummary>(
-      `/v1/workout_summaries/${workoutSummaryId}`,
+      `/v1/workouts/${workoutSummaryId}/workout_summary`,
       {
         method: "GET",
       },
     );
+  }
+
+  /**
+   * Fetch completed workout summaries for a bounded history window.
+   */
+  async listWorkoutSummaries(input: WahooWorkoutSummaryListInput): Promise<WahooWorkoutSummary[]> {
+    const params = new URLSearchParams({
+      page: String(input.page ?? 1),
+      per_page: String(input.perPage ?? 50),
+    });
+    const response = await this.makeRequest<{ workouts?: WahooWorkout[] }>(
+      `/v1/workouts?${params.toString()}`,
+      {
+        method: "GET",
+      },
+    );
+
+    const start = new Date(input.startDate).getTime();
+    const end = new Date(input.endDate).getTime();
+
+    return (response.workouts ?? [])
+      .filter((workout) => {
+        const starts = new Date(workout.starts).getTime();
+        return Number.isFinite(starts) && starts >= start && starts <= end;
+      })
+      .flatMap((workout) => {
+        if (!workout.workout_summary) return [];
+        return [
+          {
+            ...workout.workout_summary,
+            started_at: workout.starts,
+            workout_id: workout.id,
+            workout: {
+              id: workout.id,
+              name: workout.name,
+              workout_type_id: workout.workout_type_id,
+            },
+          },
+        ];
+      });
   }
 
   /**
@@ -466,13 +553,55 @@ export class WahooClient {
         }
 
         // Exponential backoff: 1s, 2s, 4s
-        const delay = Math.pow(2, i) * 1000;
+        const delay = 2 ** i * 1000;
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
 
     throw new Error("Max retries exceeded");
   }
+}
+
+export async function refreshWahooAccessToken(
+  refreshToken: string,
+): Promise<WahooTokenRefreshResult> {
+  const response = await fetch(`${WAHOO_API_BASE}/oauth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      client_id: process.env.WAHOO_CLIENT_ID!,
+      client_secret: process.env.WAHOO_CLIENT_SECRET!,
+    }).toString(),
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to refresh Wahoo access token");
+  }
+
+  const data = (await response.json()) as {
+    access_token?: unknown;
+    refresh_token?: unknown;
+    expires_in?: unknown;
+  };
+
+  if (typeof data.access_token !== "string" || data.access_token.length === 0) {
+    throw new Error("Wahoo token refresh response did not include an access token");
+  }
+
+  const expiresIn =
+    typeof data.expires_in === "number"
+      ? data.expires_in
+      : typeof data.expires_in === "string" && /^\d+$/.test(data.expires_in)
+        ? Number(data.expires_in)
+        : null;
+
+  return {
+    accessToken: data.access_token,
+    expiresAt: expiresIn ? new Date(Date.now() + expiresIn * 1000).toISOString() : null,
+    refreshToken: typeof data.refresh_token === "string" ? data.refresh_token : refreshToken,
+  };
 }
 
 /**

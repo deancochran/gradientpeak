@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import * as React from "react";
 
 import { View } from "../../lib/react-native";
 import { Button } from "../button/index.native";

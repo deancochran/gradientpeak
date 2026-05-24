@@ -1,4 +1,4 @@
-import { type TrainingQualityProfile } from "../calculations/training-quality";
+import type { TrainingQualityProfile } from "../calculations/training-quality";
 import { calculateATL, calculateCTL, calculateTSB } from "./progression";
 
 export interface DatedTssEntry {

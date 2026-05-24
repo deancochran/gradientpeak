@@ -1,11 +1,11 @@
 import { Button } from "@repo/ui/components/button";
-import { NumberSliderInput } from "@repo/ui/components/number-slider-input";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
-import React, { useEffect, useMemo, useRef } from "react";
-import { Controller, useWatch } from "react-hook-form";
+import { useEffect, useMemo, useRef } from "react";
+import { useWatch } from "react-hook-form";
 import { View } from "react-native";
 import { z } from "zod";
+import { ConfigNumberSliderField } from "./fields/TrainingPlanConfigSliderFields";
 
 const constraintsConfigSectionSchema = z.object({
   startingCtlAssumption: z.number().min(0).max(250),
@@ -24,8 +24,6 @@ interface ConstraintsConfigSectionProps {
   onChange: (values: ConstraintsConfigSectionValues) => void;
   onReset?: () => void;
 }
-
-const sectionCardClass = "gap-2";
 
 const areValuesEqual = (
   left: ConstraintsConfigSectionValues,
@@ -121,59 +119,40 @@ export function ConstraintsConfigSection({
         </Button>
       </View>
 
-      <View className={sectionCardClass}>
-        <Controller
-          control={form.control}
-          name="startingCtlAssumption"
-          render={({ field }) => (
-            <NumberSliderInput
-              id="starting-ctl-assumption"
-              label="Initial CTL (fitness)"
-              value={field.value}
-              min={0}
-              max={250}
-              step={0.5}
-              decimals={1}
-              unitLabel="CTL"
-              helperText="Higher values raise your starting fitness line before progression is projected."
-              onChange={(value) => {
-                startingCtlIsExplicitRef.current = true;
-                field.onChange(Number(value.toFixed(1)));
-              }}
-              showCurrentValueInRange={false}
-            />
-          )}
-        />
-      </View>
+      <ConfigNumberSliderField
+        control={form.control}
+        name="startingCtlAssumption"
+        id="starting-ctl-assumption"
+        label="Initial CTL (fitness)"
+        min={0}
+        max={250}
+        step={0.5}
+        decimals={1}
+        unitLabel="CTL"
+        helperText="Higher values raise your starting fitness line before progression is projected."
+        showCurrentValueInRange={false}
+        onSliderChange={() => {
+          startingCtlIsExplicitRef.current = true;
+        }}
+        toFieldValue={(value) => Number(value.toFixed(1))}
+      />
 
-      <View className={sectionCardClass}>
-        <Text className="text-sm">Recovery days after goal</Text>
-        <Controller
-          control={form.control}
-          name="postGoalRecoveryDays"
-          render={({ field }) => (
-            <NumberSliderInput
-              id="post-goal-recovery-days"
-              value={field.value}
-              min={0}
-              max={28}
-              decimals={0}
-              step={1}
-              unitLabel="days"
-              helperText="Adds easy days between goal peaks."
-              onChange={(value) => {
-                field.onChange(value);
-              }}
-            />
-          )}
-        />
-      </View>
+      <Text className="text-sm">Recovery days after goal</Text>
+      <ConfigNumberSliderField
+        control={form.control}
+        name="postGoalRecoveryDays"
+        id="post-goal-recovery-days"
+        min={0}
+        max={28}
+        decimals={0}
+        step={1}
+        unitLabel="days"
+        helperText="Adds easy days between goal peaks."
+      />
 
-      <View className={sectionCardClass}>
-        <Text className="text-xs text-muted-foreground">
-          Safety caps are always enforced internally.
-        </Text>
-      </View>
+      <Text className="text-xs text-muted-foreground">
+        Safety caps are always enforced internally.
+      </Text>
     </View>
   );
 }

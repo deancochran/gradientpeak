@@ -4,6 +4,7 @@ import {
   athletePreferenceProfileSchema,
   athleteTrainingSettingsFormSchema,
   defaultAthletePreferenceProfile,
+  getManualBaselineCtlWarning,
   invalidateCapabilitySnapshot,
   plannerDerivedDiagnosticsSchema,
   plannerPolicyConfigSchema,
@@ -223,6 +224,11 @@ describe("athletePreferenceProfileSchema", () => {
     });
 
     expect(normalizedFormValues.baseline_fitness?.override_date).toBe("2026-04-03");
+  });
+
+  it("warns when manual baseline CTL is high enough to distort estimated readiness", () => {
+    expect(getManualBaselineCtlWarning(90)).toBeNull();
+    expect(getManualBaselineCtlWarning(220)).toContain("Manual CTL above 120");
   });
 });
 

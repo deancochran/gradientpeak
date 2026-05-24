@@ -12,14 +12,39 @@ const activityPlansUseInfiniteQueryMock = jest.fn((_input?: unknown, _options?: 
   fetchNextPage: jest.fn(),
   refetch: jest.fn(),
 }));
-const trainingPlansUseQueryMock = jest.fn((_input?: unknown) => ({
-  data: trainingPlans,
+const trainingPlansUseInfiniteQueryMock = jest.fn((_input?: unknown, _options?: unknown) => ({
+  data: {
+    pages: [
+      { items: trainingPlans, total: trainingPlans.length, hasMore: false, nextCursor: undefined },
+    ],
+  },
   isLoading: false,
   isRefetching: false,
+  hasNextPage: false,
+  isFetchingNextPage: false,
+  fetchNextPage: jest.fn(),
   refetch: jest.fn(),
 }));
 const routesListUseInfiniteQueryMock = jest.fn((_input?: unknown, _options?: unknown) => ({
   data: { pages: [{ items: routes, nextCursor: undefined }] },
+  isLoading: false,
+  isRefetching: false,
+  hasNextPage: false,
+  isFetchingNextPage: false,
+  fetchNextPage: jest.fn(),
+  refetch: jest.fn(),
+}));
+const usersUseInfiniteQueryMock = jest.fn((_input?: unknown, _options?: unknown) => ({
+  data: { pages: [{ users, total: users.length, hasMore: false, nextCursor: undefined }] },
+  isLoading: false,
+  isRefetching: false,
+  hasNextPage: false,
+  isFetchingNextPage: false,
+  fetchNextPage: jest.fn(),
+  refetch: jest.fn(),
+}));
+const groupsUseInfiniteQueryMock = jest.fn((_input?: unknown, _options?: unknown) => ({
+  data: { pages: [{ items: groups, total: groups.length, hasMore: false, nextCursor: undefined }] },
   isLoading: false,
   isRefetching: false,
   hasNextPage: false,
@@ -32,6 +57,7 @@ const activityPlans = [
   {
     id: "ap-1",
     name: "Threshold Run",
+    created_at: "2026-04-01T10:00:00.000Z",
   },
 ];
 
@@ -44,6 +70,8 @@ const trainingPlans = [
     sport: ["run"],
     experienceLevel: ["beginner"],
     sessions_per_week_target: 4,
+    created_at: "2026-04-03T10:00:00.000Z",
+    updated_at: "2026-04-03T10:00:00.000Z",
   },
 ];
 
@@ -55,6 +83,7 @@ const routes = [
     total_distance: 10200,
     total_ascent: 180,
     description: "Flat opening miles with a steady climb home.",
+    created_at: "2026-04-02T10:00:00.000Z",
   },
 ];
 
@@ -64,6 +93,19 @@ const users = [
     username: "alpinefox",
     avatar_url: null,
     is_public: true,
+    created_at: "2026-04-04T10:00:00.000Z",
+    updated_at: "2026-04-04T10:00:00.000Z",
+  },
+];
+
+const groups = [
+  {
+    id: "group-1",
+    name: "Morning Climbers",
+    description: "Early starts and steady ascents.",
+    slug: "morning-climbers",
+    created_at: "2026-04-05T10:00:00.000Z",
+    updated_at: "2026-04-05T10:00:00.000Z",
   },
 ];
 
@@ -90,7 +132,14 @@ jest.mock("@gorhom/bottom-sheet", () => ({
 
 jest.mock("expo-router", () => ({
   __esModule: true,
+  useLocalSearchParams: () => ({}),
   useRouter: () => ({ push: pushMock }),
+}));
+
+jest.mock("@react-navigation/native", () => ({
+  __esModule: true,
+  ...jest.requireActual("@react-navigation/native"),
+  useFocusEffect: (callback: () => void) => callback(),
 }));
 
 jest.mock("@/components/shared", () => ({
@@ -105,6 +154,16 @@ jest.mock("@/components/shared/ActivityPlanCard", () => ({
       "Pressable",
       { onPress, testID: `activity-plan-${activityPlan.id}` },
       React.createElement("Text", null, activityPlan.name),
+    ),
+}));
+
+jest.mock("@/components/shared/RouteCard", () => ({
+  __esModule: true,
+  RouteCard: ({ route, onPress }: any) =>
+    React.createElement(
+      "Pressable",
+      { onPress, testID: `route-${route.id}` },
+      React.createElement("Text", null, route.name),
     ),
 }));
 
@@ -149,6 +208,11 @@ jest.mock("@repo/ui/components/input", () => ({
     React.createElement("TextInput", { value, onChangeText, placeholder, ...props }),
 }));
 
+jest.mock("@repo/ui/components/slider", () => ({
+  __esModule: true,
+  Slider: createHost("Slider"),
+}));
+
 jest.mock("@repo/ui/components/text", () => ({
   __esModule: true,
   Text: createHost("Text"),
@@ -156,13 +220,9 @@ jest.mock("@repo/ui/components/text", () => ({
 
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
-  Activity: createHost("Activity"),
   ChevronRight: createHost("ChevronRight"),
-  Dumbbell: createHost("Dumbbell"),
-  MapPin: createHost("MapPin"),
   Search: createHost("Search"),
   SlidersHorizontal: createHost("SlidersHorizontal"),
-  Users: createHost("Users"),
   X: createHost("X"),
 }));
 
@@ -177,18 +237,32 @@ jest.mock("@/lib/constants/routes", () => ({
   },
 }));
 
+jest.mock("@/lib/stores/theme-store", () => ({
+  __esModule: true,
+  useTheme: () => ({ resolvedTheme: "light" }),
+}));
+
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
+    useUtils: () => ({
+      profiles: { get: { invalidate: jest.fn(async () => undefined) } },
+    }),
     activityPlans: {
       list: {
         useInfiniteQuery: (input?: unknown, options?: unknown) =>
           activityPlansUseInfiniteQueryMock(input, options),
       },
     },
+    profiles: {
+      get: {
+        useQuery: () => ({ data: { id: "profile-1" }, isLoading: false }),
+      },
+    },
     trainingPlans: {
       listTemplates: {
-        useQuery: (input?: unknown) => trainingPlansUseQueryMock(input),
+        useInfiniteQuery: (input?: unknown, options?: unknown) =>
+          trainingPlansUseInfiniteQueryMock(input, options),
       },
     },
     routes: {
@@ -198,14 +272,18 @@ jest.mock("@/lib/api", () => ({
       },
     },
     social: {
+      toggleLike: {
+        useMutation: () => ({ mutate: jest.fn() }),
+      },
       searchUsers: {
-        useQuery: jest.fn((input?: any) => ({
-          data: { users, total: users.length, hasMore: false },
-          isLoading: false,
-          isRefetching: false,
-          refetch: jest.fn(),
-          input,
-        })),
+        useInfiniteQuery: (input?: unknown, options?: unknown) =>
+          usersUseInfiniteQueryMock(input, options),
+      },
+    },
+    groups: {
+      listDiscoverable: {
+        useInfiniteQuery: (input?: unknown, options?: unknown) =>
+          groupsUseInfiniteQueryMock(input, options),
       },
     },
   },
@@ -216,9 +294,6 @@ const DiscoverScreen = require("../discover").default;
 describe("discover screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    activityPlansUseInfiniteQueryMock.mockClear();
-    trainingPlansUseQueryMock.mockClear();
-    routesListUseInfiniteQueryMock.mockClear();
   });
 
   afterEach(() => {
@@ -227,62 +302,64 @@ describe("discover screen", () => {
     });
   });
 
-  it("renders a mixed discover feed by default", () => {
+  it("defaults to activity plans with one selected record type", () => {
     renderNative(<DiscoverScreen />);
 
-    expect(screen.getByText("Header:Discover")).toBeTruthy();
-    expect(screen.getByPlaceholderText("Search plans, routes, and profiles")).toBeTruthy();
-    expect(screen.getByTestId("discover-section-activityPlans-0")).toBeTruthy();
-    expect(screen.getByTestId("discover-section-trainingPlans-1")).toBeTruthy();
-    expect(screen.getByTestId("discover-section-routes-2")).toBeTruthy();
-    expect(screen.getByTestId("discover-section-users-3")).toBeTruthy();
-    expect(screen.queryByText("Search anything in Discover")).toBeNull();
+    expect(screen.queryByText(/^Header:/)).toBeNull();
+    expect(screen.getByPlaceholderText("Search activity plans")).toBeTruthy();
+    expect(screen.getByTestId("discover-scope-row")).toBeTruthy();
+    expect(screen.getByTestId("discover-scope-activityPlans")).toBeTruthy();
+    expect(screen.getByTestId("discover-feed-item-activityPlans-ap-1")).toBeTruthy();
+    expect(screen.queryByTestId("discover-feed-item-users-user-1")).toBeNull();
+    expect(screen.queryByTestId("discover-feed-item-trainingPlans-tp-1")).toBeNull();
+    expect(screen.queryByTestId("discover-feed-item-routes-route-1")).toBeNull();
   });
 
-  it("uses live type filters to exclude deselected result sections", async () => {
+  it("fetches all scopes in parallel while rendering the selected scope", async () => {
     renderNative(<DiscoverScreen />);
 
-    fireEvent.press(screen.getByTestId("discover-filter-button"));
-    fireEvent.press(screen.getByTestId("discover-filter-type-activityPlans"));
-    fireEvent.press(screen.getByTestId("discover-filter-type-routes"));
-    fireEvent.press(screen.getByTestId("discover-filter-type-users"));
+    fireEvent.press(screen.getByTestId("discover-scope-routes"));
 
     await waitFor(() => {
-      expect(screen.queryByTestId("discover-section-activityPlans-0")).toBeNull();
-      expect(screen.getByTestId("discover-section-trainingPlans-0")).toBeTruthy();
-      expect(screen.queryByTestId("discover-section-routes-0")).toBeNull();
-      expect(screen.queryByTestId("discover-section-users-0")).toBeNull();
+      expect(routesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+        {
+          search: undefined,
+          activityCategories: undefined,
+          min_distance_m: undefined,
+          max_distance_m: undefined,
+          min_ascent_m: undefined,
+          max_ascent_m: undefined,
+          sort_by: "newest",
+          limit: 25,
+        },
+        expect.objectContaining({ enabled: true, getNextPageParam: expect.any(Function) }),
+      );
+      expect(activityPlansUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({ enabled: false, getNextPageParam: expect.any(Function) }),
+      );
+      expect(trainingPlansUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({ enabled: false, getNextPageParam: expect.any(Function) }),
+      );
+      expect(usersUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({ enabled: false, getNextPageParam: expect.any(Function) }),
+      );
+      expect(groupsUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.objectContaining({ enabled: false, getNextPageParam: expect.any(Function) }),
+      );
+      expect(screen.getByTestId("discover-feed-item-routes-route-1")).toBeTruthy();
+      expect(screen.queryByTestId("discover-feed-item-users-user-1")).toBeNull();
     });
-
-    expect(screen.getByTestId("discover-filter-button-dot")).toBeTruthy();
   });
 
-  it("updates training plan queries from bottom sheet interactions", async () => {
-    renderNative(<DiscoverScreen />);
-
-    fireEvent.press(screen.getByTestId("discover-filter-button"));
-    fireEvent.press(screen.getByTestId("discover-filter-trainingPlans-sport-run"));
-    fireEvent.press(screen.getByTestId("discover-filter-trainingPlans-experience-beginner"));
-
-    await waitFor(() => {
-      expect(trainingPlansUseQueryMock).toHaveBeenLastCalledWith({
-        search: undefined,
-        sport: "run",
-        experience_level: "beginner",
-        min_weeks: undefined,
-        max_weeks: undefined,
-      });
-    });
-  });
-
-  it("searches across all result types with the same debounced query", async () => {
+  it("searches across the mixed list with the same debounced query", async () => {
     renderNative(<DiscoverScreen />);
 
     act(() => {
-      fireEvent.changeText(
-        screen.getByPlaceholderText("Search plans, routes, and profiles"),
-        "river",
-      );
+      fireEvent.changeText(screen.getByPlaceholderText("Search activity plans"), "river");
       jest.advanceTimersByTime(350);
     });
 
@@ -291,47 +368,140 @@ describe("discover screen", () => {
         {
           includeSystemTemplates: true,
           includeOwnOnly: false,
-          includeEstimation: false,
+          includeEstimation: true,
           ownerScope: "all",
           search: "river",
-          activityCategory: undefined,
-          limit: 20,
+          activityCategories: undefined,
+          limit: 25,
         },
-        expect.objectContaining({ getNextPageParam: expect.any(Function) }),
+        expect.objectContaining({ enabled: true, getNextPageParam: expect.any(Function) }),
       );
-      expect(trainingPlansUseQueryMock).toHaveBeenLastCalledWith({
-        search: "river",
-        sport: undefined,
-        experience_level: undefined,
-        min_weeks: undefined,
-        max_weeks: undefined,
-      });
+      expect(trainingPlansUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ search: "river" }),
+        expect.objectContaining({ enabled: false, getNextPageParam: expect.any(Function) }),
+      );
       expect(routesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
-        {
-          search: "river",
-          activityCategory: undefined,
-          limit: 20,
-        },
-        expect.objectContaining({ getNextPageParam: expect.any(Function) }),
+        expect.objectContaining({ search: "river" }),
+        expect.objectContaining({ enabled: false, getNextPageParam: expect.any(Function) }),
+      );
+      expect(usersUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ query: "river" }),
+        expect.objectContaining({ enabled: false, getNextPageParam: expect.any(Function) }),
+      );
+      expect(groupsUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ search: "river" }),
+        expect.objectContaining({ enabled: false, getNextPageParam: expect.any(Function) }),
       );
     });
   });
 
-  it("can filter routes while keeping the mixed feed model", async () => {
+  it("keeps only activity-plan sort and filters inside the bottom sheet by default", async () => {
     renderNative(<DiscoverScreen />);
 
     fireEvent.press(screen.getByTestId("discover-filter-button"));
-    fireEvent.press(screen.getByTestId("discover-filter-routes-category-run"));
+    fireEvent.changeText(screen.getByTestId("discover-filter-activityPlans-tss-min"), "50");
+    expect(screen.queryByTestId("discover-filter-routes-category-run")).toBeNull();
+    expect(screen.queryByTestId("discover-filter-trainingPlans-sport-run")).toBeNull();
+    fireEvent.press(screen.getByTestId("discover-filter-sort-field-created-at"));
+    fireEvent.press(screen.getByTestId("discover-filter-sort-direction-asc"));
+    fireEvent.press(screen.getByTestId("discover-filter-activityPlans-category-run"));
+    fireEvent.press(screen.getByTestId("discover-filter-activityPlans-category-bike"));
+    fireEvent.press(screen.getByTestId("discover-filter-apply"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("discover-filter-button-dot")).toBeTruthy();
+      expect(activityPlansUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+        {
+          includeSystemTemplates: true,
+          includeOwnOnly: false,
+          includeEstimation: true,
+          ownerScope: "all",
+          search: undefined,
+          activityCategories: ["run", "bike"],
+          limit: 25,
+        },
+        expect.objectContaining({ enabled: true, getNextPageParam: expect.any(Function) }),
+      );
+    });
+  });
+
+  it("passes route range filters and sort to the routes query", async () => {
+    renderNative(<DiscoverScreen />);
+
+    fireEvent.press(screen.getByTestId("discover-scope-routes"));
+    fireEvent.press(screen.getByTestId("discover-filter-button"));
+    fireEvent.press(screen.getByTestId("discover-filter-sort-field-distance"));
+    fireEvent.press(screen.getByTestId("discover-filter-sort-direction-desc"));
+    fireEvent.changeText(screen.getByTestId("discover-filter-routes-distance-min"), "10");
+    fireEvent.changeText(screen.getByTestId("discover-filter-routes-ascent-max"), "500");
+    fireEvent.press(screen.getByTestId("discover-filter-apply"));
 
     await waitFor(() => {
       expect(routesListUseInfiniteQueryMock).toHaveBeenLastCalledWith(
         {
           search: undefined,
-          activityCategory: "run",
-          limit: 20,
+          activityCategories: undefined,
+          min_distance_m: 10000,
+          max_distance_m: undefined,
+          min_ascent_m: undefined,
+          max_ascent_m: 500,
+          sort_by: "distance_desc",
+          limit: 25,
         },
-        expect.objectContaining({ getNextPageParam: expect.any(Function) }),
+        expect.objectContaining({ enabled: true, getNextPageParam: expect.any(Function) }),
       );
+    });
+  });
+
+  it("blocks invalid filter ranges from being applied", () => {
+    renderNative(<DiscoverScreen />);
+
+    fireEvent.press(screen.getByTestId("discover-filter-button"));
+    fireEvent.changeText(screen.getByTestId("discover-filter-activityPlans-duration-min"), "60");
+    fireEvent.changeText(screen.getByTestId("discover-filter-activityPlans-duration-max"), "30");
+
+    expect(screen.getByText("Duration: min cannot be greater than max.")).toBeTruthy();
+  });
+
+  it("passes training plan numeric filters and sort to the training plan query", async () => {
+    renderNative(<DiscoverScreen />);
+
+    fireEvent.press(screen.getByTestId("discover-scope-trainingPlans"));
+    fireEvent.press(screen.getByTestId("discover-filter-button"));
+    fireEvent.press(screen.getByTestId("discover-filter-sort-field-sessions"));
+    fireEvent.press(screen.getByTestId("discover-filter-sort-direction-desc"));
+    fireEvent.changeText(screen.getByTestId("discover-filter-trainingPlans-weeks-min"), "8");
+    fireEvent.changeText(screen.getByTestId("discover-filter-trainingPlans-sessions-max"), "5");
+    fireEvent.press(screen.getByTestId("discover-filter-apply"));
+
+    await waitFor(() => {
+      expect(trainingPlansUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+        {
+          search: undefined,
+          sport: undefined,
+          experience_level: undefined,
+          min_weeks: 8,
+          max_weeks: undefined,
+          min_sessions_per_week: undefined,
+          max_sessions_per_week: 5,
+          sort_by: "sessions_desc",
+          limit: 25,
+        },
+        expect.objectContaining({ enabled: true, getNextPageParam: expect.any(Function) }),
+      );
+    });
+  });
+
+  it("shows only profile results when the profiles scope is selected", async () => {
+    renderNative(<DiscoverScreen />);
+
+    fireEvent.press(screen.getByTestId("discover-scope-users"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("discover-feed-item-users-user-1")).toBeTruthy();
+      expect(screen.queryByTestId("discover-feed-item-routes-route-1")).toBeNull();
+      expect(screen.queryByTestId("discover-feed-item-trainingPlans-tp-1")).toBeNull();
+      expect(screen.queryByTestId("discover-feed-item-activityPlans-ap-1")).toBeNull();
     });
   });
 });

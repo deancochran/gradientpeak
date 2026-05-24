@@ -72,8 +72,8 @@ function logAuthEmailEvent(
   details: {
     kind: AuthEmailKind;
     to: string;
-    smtpHost?: string;
-    smtpPort?: number;
+    smtpHost?: string | undefined;
+    smtpPort?: number | undefined;
     actionUrl?: string;
     error?: string;
   },
@@ -97,10 +97,10 @@ export function createAuthMailer(env: AuthRuntimeEnv): AuthMailer {
         logAuthEmailEvent("auth.email.log_delivery", {
           kind: input.kind,
           to: maskEmail(input.to),
-          smtpHost: env.smtpHost,
-          smtpPort: env.smtpPort,
           // Local log mode is a fallback when SMTP is unavailable, so print the link directly.
           actionUrl: input.actionUrl,
+          ...(env.smtpHost ? { smtpHost: env.smtpHost } : {}),
+          ...(env.smtpPort ? { smtpPort: env.smtpPort } : {}),
         });
         return;
       }
@@ -117,8 +117,8 @@ export function createAuthMailer(env: AuthRuntimeEnv): AuthMailer {
       logAuthEmailEvent("auth.email.smtp_attempt", {
         kind: input.kind,
         to: maskEmail(input.to),
-        smtpHost: env.smtpHost,
-        smtpPort: env.smtpPort,
+        ...(env.smtpHost ? { smtpHost: env.smtpHost } : {}),
+        ...(env.smtpPort ? { smtpPort: env.smtpPort } : {}),
       });
 
       await transporter.sendMail({
@@ -133,8 +133,8 @@ export function createAuthMailer(env: AuthRuntimeEnv): AuthMailer {
       logAuthEmailEvent("auth.email.smtp_success", {
         kind: input.kind,
         to: maskEmail(input.to),
-        smtpHost: env.smtpHost,
-        smtpPort: env.smtpPort,
+        ...(env.smtpHost ? { smtpHost: env.smtpHost } : {}),
+        ...(env.smtpPort ? { smtpPort: env.smtpPort } : {}),
       });
     },
   };

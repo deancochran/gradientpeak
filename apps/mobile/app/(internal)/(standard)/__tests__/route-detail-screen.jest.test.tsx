@@ -1,11 +1,10 @@
 import React from "react";
-import { createButtonComponent } from "../../../../test/mock-components";
-import { renderNative, screen } from "../../../../test/render-native";
+import { createButtonComponent, createHost } from "../../../../test/mock-components";
+import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const routeData = {
   id: "11111111-1111-4111-8111-111111111111",
   name: "River Loop",
-  activity_category: "outdoor_run",
   total_distance: 10200,
   total_ascent: 180,
   total_descent: 175,
@@ -13,20 +12,24 @@ const routeData = {
   description: "Flat start, climb home.",
   polyline: "encoded",
   has_liked: false,
+  likes_count: 4,
 };
 
 const backMock = jest.fn();
 const deleteMutateMock = jest.fn();
 const toggleLikeMutateMock = jest.fn();
-
-function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
-  };
-}
+const authState = { user: { id: "profile-1" } };
 
 jest.mock("expo-router", () => ({
   __esModule: true,
+  Stack: {
+    Screen: (props: any) =>
+      React.createElement(
+        "StackScreen",
+        props,
+        typeof props.options?.headerRight === "function" ? props.options.headerRight() : null,
+      ),
+  },
   useLocalSearchParams: () => ({ id: routeData.id }),
   useRouter: () => ({ back: backMock }),
 }));
@@ -56,6 +59,14 @@ jest.mock("@repo/ui/components/card", () => ({
   CardContent: createHost("CardContent"),
 }));
 
+jest.mock("@repo/ui/components/dropdown-menu", () => ({
+  __esModule: true,
+  DropdownMenu: createHost("DropdownMenu"),
+  DropdownMenuContent: createHost("DropdownMenuContent"),
+  DropdownMenuItem: createHost("DropdownMenuItem"),
+  DropdownMenuTrigger: createHost("DropdownMenuTrigger"),
+}));
+
 jest.mock("@repo/ui/components/icon", () => ({
   __esModule: true,
   Icon: createHost("Icon"),
@@ -64,6 +75,16 @@ jest.mock("@repo/ui/components/icon", () => ({
 jest.mock("@repo/ui/components/text", () => ({
   __esModule: true,
   Text: createHost("Text"),
+}));
+
+jest.mock("@/lib/hooks/useAuth", () => ({
+  __esModule: true,
+  useAuth: () => authState,
+}));
+
+jest.mock("@repo/ui/components/textarea", () => ({
+  __esModule: true,
+  Textarea: createHost("Textarea"),
 }));
 
 jest.mock("@/lib/hooks/useReliableMutation", () => ({
@@ -80,7 +101,17 @@ jest.mock("@/lib/api", () => ({
     useUtils: () => ({ routes: {} }),
     routes: {
       get: {
-        useQuery: () => ({ data: routeData, isLoading: false }),
+        useQuery: () => ({ data: { ...routeData, profile_id: "profile-1" }, isLoading: false }),
+      },
+      loadFull: {
+        useQuery: () => ({
+          data: {
+            coordinates: [
+              { latitude: 40.0, longitude: -75.0, altitude: 120 },
+              { latitude: 40.1, longitude: -75.1, altitude: 180 },
+            ],
+          },
+        }),
       },
       delete: {},
     },
@@ -88,26 +119,35 @@ jest.mock("@/lib/api", () => ({
       toggleLike: {
         useMutation: () => ({ mutate: toggleLikeMutateMock }),
       },
+      getComments: {
+        useInfiniteQuery: () => ({
+          data: { pages: [{ comments: [], total: 0, hasMore: false, nextCursor: undefined }] },
+          refetch: jest.fn(),
+          hasNextPage: false,
+          isFetchingNextPage: false,
+          fetchNextPage: jest.fn(),
+        }),
+      },
+      addComment: {
+        useMutation: () => ({ mutate: jest.fn(), isPending: false }),
+      },
     },
   },
 }));
 
 jest.mock("@repo/core", () => ({
   __esModule: true,
-  decodePolyline: () => [
-    { latitude: 40.0, longitude: -75.0 },
-    { latitude: 40.1, longitude: -75.1 },
-  ],
+}));
+
+jest.mock("@/components/activity/charts/ElevationProfileChart", () => ({
+  __esModule: true,
+  ElevationProfileChart: createHost("ElevationProfileChart"),
 }));
 
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
-  Calendar: createHost("Calendar"),
+  Ellipsis: createHost("Ellipsis"),
   Heart: createHost("Heart"),
-  MapPin: createHost("MapPin"),
-  Trash2: createHost("Trash2"),
-  TrendingDown: createHost("TrendingDown"),
-  TrendingUp: createHost("TrendingUp"),
 }));
 
 const RouteDetailScreen = require("../route-detail").default;
@@ -117,22 +157,49 @@ describe("route detail screen", () => {
     backMock.mockReset();
     deleteMutateMock.mockReset();
     toggleLikeMutateMock.mockReset();
+    authState.user.id = "profile-1";
   });
 
-  it("shows the new summary chips and route management copy", () => {
+  it("shows the new identity-first route layout", () => {
     renderNative(<RouteDetailScreen />);
 
     expect(screen.getByText("River Loop")).toBeTruthy();
-    expect(screen.getAllByText("10.20 km").length).toBeGreaterThan(0);
-    expect(screen.getByText("180m climb")).toBeTruthy();
-    expect(screen.getAllByText(/Uploaded/).length).toBeGreaterThan(0);
-    expect(screen.getByText("Route management")).toBeTruthy();
-    expect(screen.queryByText("Use in Activity Plan")).toBeNull();
+    expect(screen.getByText("Flat start, climb home.")).toBeTruthy();
+    expect(screen.getByText("Distance")).toBeTruthy();
+    expect(screen.getByText("10.20 km")).toBeTruthy();
+    expect(screen.getByText("Climb")).toBeTruthy();
+    expect(screen.getByText("180m")).toBeTruthy();
+    expect(screen.getByText("Descent")).toBeTruthy();
+    expect(screen.getByText("175m")).toBeTruthy();
+    expect(screen.getByText("4")).toBeTruthy();
   });
 
-  it("keeps the delete action inside the route management section", () => {
+  it("moves delete into the header overflow menu", () => {
     renderNative(<RouteDetailScreen />);
 
-    expect(screen.getByText("Delete Route")).toBeTruthy();
+    expect(screen.getByTestId("route-detail-options-trigger")).toBeTruthy();
+    expect(screen.getByTestId("route-detail-options-delete")).toBeTruthy();
+  });
+
+  it("hides owner-only delete action for non-owners", () => {
+    authState.user.id = "profile-2";
+
+    renderNative(<RouteDetailScreen />);
+
+    expect(screen.getByTestId("route-detail-options-trigger")).toBeTruthy();
+    expect(screen.queryByTestId("route-detail-options-delete")).toBeNull();
+  });
+
+  it("uses a confirm modal before deleting a route", () => {
+    renderNative(<RouteDetailScreen />);
+
+    fireEvent.press(screen.getByTestId("route-detail-options-delete"));
+
+    expect(screen.getByTestId("route-detail-delete-modal")).toBeTruthy();
+    expect(deleteMutateMock).not.toHaveBeenCalled();
+
+    fireEvent.press(screen.getByTestId("route-detail-delete-confirm"));
+
+    expect(deleteMutateMock).toHaveBeenCalledWith({ id: "11111111-1111-4111-8111-111111111111" });
   });
 });

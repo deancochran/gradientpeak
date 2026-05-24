@@ -1,7 +1,6 @@
 import { Icon } from "@repo/ui/components/icon";
 import { Stack, useRouter } from "expo-router";
 import { ChevronLeft } from "lucide-react-native";
-import React from "react";
 import { TouchableOpacity } from "react-native";
 
 /**
@@ -20,6 +19,7 @@ import { TouchableOpacity } from "react-native";
  *
  * ACTIVITIES:
  * - activities-list - Completed activity history
+ * - activity-import - Import completed activity history
  * - activity-detail - Individual activity details
  *
  * ROUTES:
@@ -28,12 +28,30 @@ import { TouchableOpacity } from "react-native";
  * - route-upload - Upload new route
  *
  * ACTIVITY PLANS:
+ * - activity-plans-list - Browse owned activity plans
  * - activity-plan-detail - View/edit activity plan details
  * - create-activity-plan - Main activity plan builder
  *
  * SCHEDULED ACTIVITIES:
  * - schedule-activity - Schedule activity to calendar
  * - scheduled-activities-list - View all scheduled activities
+ *
+ * GOALS:
+ * - goals-list - Browse and filter athlete goals
+ * - goal-detail - Individual goal intelligence destination
+ * - goal-create - Create a goal
+ * - goal-edit - Edit a goal
+ *
+ * GROUPS:
+ * - group-detail - Group profile and viewer actions
+ * - group-create - Create a group
+ * - group-edit - Edit group details
+ * - group-members - View and manage members
+ * - group-invites - Manage pending invitations
+ * - group-join-requests - Review join requests
+ * - group-event-detail - Group event details and RSVP
+ * - group-event-create - Create a one-off group event
+ * - group-event-edit - Edit a one-off group event
  *
  * TRAINING PLANS:
  * - training-plans-list - Training plan management
@@ -75,7 +93,14 @@ export default function StandardLayout() {
       <Stack.Screen
         name="activities-list"
         options={{
-          title: "Activities",
+          title: "My Activities",
+        }}
+      />
+      <Stack.Screen
+        name="activity-import"
+        options={{
+          title: "Import Activity",
+          presentation: "modal",
         }}
       />
       <Stack.Screen
@@ -89,7 +114,7 @@ export default function StandardLayout() {
       <Stack.Screen
         name="routes-list"
         options={{
-          title: "Routes",
+          title: "My Routes",
         }}
       />
       <Stack.Screen
@@ -110,7 +135,7 @@ export default function StandardLayout() {
       <Stack.Screen
         name="activity-efforts-list"
         options={{
-          title: "Activity Efforts",
+          title: "My Activity Efforts",
         }}
       />
       <Stack.Screen
@@ -120,8 +145,20 @@ export default function StandardLayout() {
           presentation: "modal",
         }}
       />
+      <Stack.Screen
+        name="activity-effort-detail"
+        options={{
+          title: "Activity Effort",
+        }}
+      />
 
       {/* ACTIVITY PLANS */}
+      <Stack.Screen
+        name="activity-plans-list"
+        options={{
+          title: "My Activity Plans",
+        }}
+      />
       <Stack.Screen
         name="activity-plan-detail"
         options={{
@@ -148,9 +185,27 @@ export default function StandardLayout() {
         }}
       />
       <Stack.Screen
+        name="event-detail-update"
+        options={{
+          title: "Update Event",
+        }}
+      />
+      <Stack.Screen
         name="calendar-day"
         options={{
           title: "Day Agenda",
+        }}
+      />
+      <Stack.Screen
+        name="agenda-create"
+        options={{
+          title: "Create",
+        }}
+      />
+      <Stack.Screen
+        name="goals-list"
+        options={{
+          title: "My Goals",
         }}
       />
       <Stack.Screen
@@ -159,12 +214,86 @@ export default function StandardLayout() {
           title: "Goal Details",
         }}
       />
+      <Stack.Screen
+        name="goal-create"
+        options={{
+          title: "Create Goal",
+        }}
+      />
+      <Stack.Screen
+        name="goal-edit"
+        options={{
+          title: "Edit Goal",
+        }}
+      />
+
+      {/* GROUPS */}
+      <Stack.Screen
+        name="group-detail"
+        options={{
+          title: "Group",
+        }}
+      />
+      <Stack.Screen
+        name="group-create"
+        options={{
+          title: "Create Group",
+        }}
+      />
+      <Stack.Screen
+        name="group-edit"
+        options={{
+          title: "Edit Group",
+        }}
+      />
+      <Stack.Screen
+        name="group-members"
+        options={{
+          title: "Members",
+        }}
+      />
+      <Stack.Screen
+        name="group-requests"
+        options={{
+          title: "Requests",
+        }}
+      />
+      <Stack.Screen
+        name="group-invites"
+        options={{
+          title: "Requests",
+        }}
+      />
+      <Stack.Screen
+        name="group-join-requests"
+        options={{
+          title: "Requests",
+        }}
+      />
+      <Stack.Screen
+        name="group-event-detail"
+        options={{
+          title: "Group Event",
+        }}
+      />
+      <Stack.Screen
+        name="group-event-create"
+        options={{
+          title: "Create Event",
+        }}
+      />
+      <Stack.Screen
+        name="group-event-edit"
+        options={{
+          title: "Edit Event",
+        }}
+      />
 
       {/* TRAINING PLANS */}
       <Stack.Screen
         name="training-plans-list"
         options={{
-          title: "Training Plans",
+          title: "My Training Plans",
         }}
       />
       <Stack.Screen
@@ -186,9 +315,9 @@ export default function StandardLayout() {
         }}
       />
       <Stack.Screen
-        name="workouts-reorder"
+        name="activities-reorder"
         options={{
-          title: "Reorder Workouts",
+          title: "Reorder Activities",
         }}
       />
 
@@ -201,6 +330,13 @@ export default function StandardLayout() {
       />
 
       {/* SETTINGS */}
+      <Stack.Screen
+        name="search"
+        options={{
+          title: "Search",
+          presentation: "modal",
+        }}
+      />
       <Stack.Screen
         name="integrations"
         options={{
@@ -223,9 +359,27 @@ export default function StandardLayout() {
         }}
       />
       <Stack.Screen
+        name="messages/new"
+        options={{
+          title: "New Message",
+        }}
+      />
+      <Stack.Screen
         name="profile-edit"
         options={{
           title: "Edit Profile",
+        }}
+      />
+      <Stack.Screen
+        name="profile-metrics-list"
+        options={{
+          title: "My Profile Metrics",
+        }}
+      />
+      <Stack.Screen
+        name="profile-metric-detail"
+        options={{
+          title: "Profile Metric",
         }}
       />
       <Stack.Screen

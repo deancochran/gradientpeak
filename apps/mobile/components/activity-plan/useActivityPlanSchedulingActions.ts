@@ -1,7 +1,7 @@
-import { invalidateActivityPlanQueries, invalidateTrainingPlanQueries } from "@repo/api/react";
+import { invalidateActivityPlanQueries } from "@repo/api/react";
 import { Alert } from "react-native";
 import { api } from "@/lib/api";
-import { buildPlanRoute, ROUTES } from "@/lib/constants/routes";
+import { ROUTES } from "@/lib/constants/routes";
 import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
 
 type RouterLike = {
@@ -36,8 +36,7 @@ export function useActivityPlanSchedulingActions({
   utils,
 }: UseActivityPlanSchedulingActionsParams) {
   const React = require("react") as typeof import("react");
-  const [showScheduleModal, setShowScheduleModal] = React.useState(false);
-  const duplicateActionRef = React.useRef<"copy" | "schedule" | null>(null);
+  const duplicateActionRef = React.useRef<"copy" | null>(null);
   const scheduleActionHandledRef = React.useRef<string | null>(null);
 
   const scheduledDate = plannedActivity?.scheduled_date || null;
@@ -45,13 +44,8 @@ export function useActivityPlanSchedulingActions({
 
   const duplicatePlanMutation = api.activityPlans.duplicate.useMutation({
     onSuccess: (duplicatedPlan) => {
-      const duplicateAction = duplicateActionRef.current;
       duplicateActionRef.current = null;
       void invalidateActivityPlanQueries(utils);
-      if (duplicateAction === "schedule") {
-        router.replace(buildPlanRoute(duplicatedPlan.id, "schedule") as any);
-        return;
-      }
       Alert.alert("Duplicated", "Activity plan added to your plans.", [
         {
           text: "Open",
@@ -71,7 +65,6 @@ export function useActivityPlanSchedulingActions({
   const removeScheduleMutation = api.events.delete.useMutation({
     onSuccess: () => {
       beginRedirect();
-      setShowScheduleModal(false);
       void refreshScheduleViews(queryClient, "eventDeletionMutation");
     },
     onError: (error) => {
@@ -81,7 +74,6 @@ export function useActivityPlanSchedulingActions({
 
   const handleSchedule = () => {
     if (!activityPlan) return;
-    const isOwnedByUser = activityPlan.profile_id === profileId;
     if (!activityPlan.id) {
       Alert.alert(
         "Scheduling unavailable",
@@ -89,17 +81,18 @@ export function useActivityPlanSchedulingActions({
       );
       return;
     }
-    if (!isOwnedByUser) {
-      duplicateActionRef.current = "schedule";
-      duplicatePlanMutation.mutate({ id: activityPlan.id, newName: `${activityPlan.name} (Copy)` });
-      return;
-    }
-    setShowScheduleModal(true);
+    router.navigate({
+      pathname: "/event-detail",
+      params: {
+        activityPlanId: activityPlan.id,
+        mode: "create",
+      },
+    });
   };
 
   const handleReschedule = () => {
     if (!plannedActivity) return;
-    setShowScheduleModal(true);
+    router.navigate(ROUTES.PLAN.EVENT_UPDATE(plannedActivity.id));
   };
 
   const handleRemoveSchedule = () => {
@@ -130,12 +123,30 @@ export function useActivityPlanSchedulingActions({
 
   React.useEffect(() => {
     if (action !== "schedule" || !activityPlan?.id) return;
+    if (eventId && !plannedActivity?.id) return;
     const scheduleKey = `${activityPlan.id}:${eventId ?? "none"}:${action}`;
     if (scheduleActionHandledRef.current === scheduleKey) return;
-    if (activityPlan.profile_id !== profileId) return;
     scheduleActionHandledRef.current = scheduleKey;
-    setShowScheduleModal(true);
-  }, [action, activityPlan?.id, activityPlan?.profile_id, eventId, profileId]);
+    if (eventId && plannedActivity?.id) {
+      router.navigate(ROUTES.PLAN.EVENT_UPDATE(plannedActivity.id));
+      return;
+    }
+    router.navigate({
+      pathname: "/event-detail",
+      params: {
+        activityPlanId: activityPlan.id,
+        mode: "create",
+      },
+    });
+  }, [
+    action,
+    activityPlan?.id,
+    activityPlan?.profile_id,
+    eventId,
+    plannedActivity?.id,
+    profileId,
+    router,
+  ]);
 
   return {
     duplicatePending: duplicatePlanMutation.isPending,
@@ -144,32 +155,8 @@ export function useActivityPlanSchedulingActions({
     handleReschedule,
     handleSchedule,
     isScheduled,
-    primaryScheduleLabel: isScheduled
-      ? "Reschedule"
-      : activityPlan?.profile_id === profileId
-        ? "Schedule"
-        : duplicatePlanMutation.isPending
-          ? "Duplicating..."
-          : "Duplicate and Schedule",
+    primaryScheduleLabel: isScheduled ? "Reschedule" : "Schedule",
     removeSchedulePending: removeScheduleMutation.isPending,
-    scheduleModalProps: {
-      activityPlan:
-        !planId && !eventId && activityPlan?.profile_id === profileId ? activityPlan : undefined,
-      activityPlanId: eventId
-        ? undefined
-        : activityPlan?.profile_id === profileId
-          ? activityPlan?.id
-          : undefined,
-      eventId,
-      onClose: () => setShowScheduleModal(false),
-      onSuccess: () => {
-        setShowScheduleModal(false);
-        void utils.events.invalidate();
-        void invalidateTrainingPlanQueries(utils);
-        router.navigate(ROUTES.PLAN.CALENDAR);
-      },
-      visible: showScheduleModal,
-    },
     scheduledDate,
   };
 }

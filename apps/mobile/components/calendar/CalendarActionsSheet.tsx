@@ -1,6 +1,6 @@
 import BottomSheet, { BottomSheetBackdrop, BottomSheetView } from "@gorhom/bottom-sheet";
 import { Text } from "@repo/ui/components/text";
-import React, { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { TouchableOpacity, View } from "react-native";
 
 type CalendarActionsSheetProps = {

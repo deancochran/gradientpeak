@@ -1,10 +1,10 @@
 import type { CreationAvailabilityConfig, CreationConstraints } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
-import { Form, FormIntegerStepperField, FormSelectField } from "@repo/ui/components/form";
+import { Form, FormIntegerStepperField, FormSegmentedSelectField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
 import { ChevronDown, ChevronUp } from "lucide-react-native";
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import { Pressable, View } from "react-native";
 import { z } from "zod";
 import type { TrainingPlanConfigFormData } from "../SinglePageForm";
@@ -271,12 +271,11 @@ export function ConstraintsTab({
           <View className="gap-1.5">
             <Text className="text-sm">Goal difficulty</Text>
             <Form {...goalDifficultyForm}>
-              <FormSelectField
+              <FormSegmentedSelectField
                 control={goalDifficultyForm.control}
                 label="Goal difficulty"
                 name="goal_difficulty_preference"
                 options={goalDifficultyOptions}
-                placeholder="Choose preference"
               />
             </Form>
           </View>
@@ -284,12 +283,11 @@ export function ConstraintsTab({
           <View className="gap-1.5 rounded-md border border-border bg-background/50 p-2">
             <Text className="text-sm font-medium">Plan style</Text>
             <Form {...optimizationProfileForm}>
-              <FormSelectField
+              <FormSegmentedSelectField
                 control={optimizationProfileForm.control}
                 label="Plan style"
                 name="optimizationProfile"
                 options={optimizationProfileOptions}
-                placeholder="Choose profile"
               />
             </Form>
             <Text className="text-[11px] text-muted-foreground">

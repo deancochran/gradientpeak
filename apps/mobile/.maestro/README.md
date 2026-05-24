@@ -1,6 +1,6 @@
 # Maestro flows
 
-Use Maestro against the localhost E2E dev-client server.
+Use Maestro against an already-running Expo dev-client server by default.
 
 ## Local loop
 
@@ -11,17 +11,33 @@ pnpm --filter mobile android:launch
 pnpm --filter mobile test:e2e
 ```
 
+To reuse your normal development server instead, leave that server running and set the label Maestro should tap in Expo Dev Client when it differs from the Android emulator default:
+
+```bash
+EXPO_DEV_SERVER_LABEL="http://192.168.1.20:8081" pnpm --filter mobile test:e2e
+```
+
 Run one flow:
 
 ```bash
 pnpm --filter mobile test:e2e:flow -- .maestro/flows/main/auth_navigation.yaml
 ```
 
+Run performance budgets:
+
+```bash
+pnpm --filter mobile dev:e2e:perf
+pnpm --filter mobile test:e2e:perf
+```
+
+Performance flows read app-side `perf-metric-*` beacons that are enabled only when `EXPO_PUBLIC_MAESTRO_E2E=1` or `EXPO_PUBLIC_PERF_TEST=1`. Prefer a preview/release-style build for final performance gates because React Native development mode adds runtime overhead.
+
 ## Expected runtime
 
-- Metro/dev client should already be running from `pnpm run dev:e2e`, which loads `apps/mobile/.env.e2e` before starting Expo.
-- Maestro prepares the emulator and then runs against that existing dev client session.
-- The visible local server row in Expo Dev Client should be `http://localhost:8081` on Android emulators.
+- Metro/dev client should already be running. `pnpm --filter mobile test:e2e` does not start Expo.
+- `pnpm --filter mobile dev:e2e` remains available for pipeline-style runs and loads `apps/mobile/.env.e2e` when that file exists.
+- Maestro prepares the emulator, reverses local ports, and then runs against the existing dev client session.
+- The default server row is `http://10.0.2.2:8081` on Android emulators. Override it with `EXPO_DEV_SERVER_LABEL` or `MAESTRO_EXPO_DEV_SERVER_LABEL` when reusing a LAN dev server.
 
 ## Fixtures
 
@@ -42,8 +58,8 @@ Use `apps/mobile/.maestro/fixtures.env.example` as the template.
 
 ## Notes
 
-- `pretest:e2e` and `pretest:e2e:flow` run `generate:maestro` automatically.
 - `pnpm --filter mobile maestro:prepare` preps the emulator, opens the Expo dev client into the running dev server, and handles the Android-side port reverses before Maestro starts.
+- Pipeline runners can set `MAESTRO_SKIP_PREPARE=1`, `MAESTRO_DEVICE_ID`, `MAESTRO_PLATFORM`, `EXPO_DEV_SERVER_LABEL`, and `MAESTRO_APP_ID` as needed.
 - `apps/mobile/.maestro/flows/reusable/expo_dev_client_setup.yaml` is the single Expo-specific setup flow; it dismisses transient Dev Client UI before app assertions run.
 - `apps/mobile/.maestro/flows/reusable/reset_to_home.yaml` gives flows a neutral authenticated start by returning the app to `Home` before tab-specific navigation.
 - `pnpm --filter mobile maestro -- <flow>` is the underlying local Maestro runner. It keeps output under `apps/mobile/.maestro/`.

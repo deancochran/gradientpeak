@@ -1,4 +1,4 @@
-import * as React from "react";
+import type * as React from "react";
 import { getNativeTestProps } from "../../lib/test-props";
 import { Progress as RegistryProgress } from "../../registry/native/progress";
 import type { ProgressProps as SharedProgressProps } from "./shared";

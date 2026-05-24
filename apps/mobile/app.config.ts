@@ -1,4 +1,4 @@
-import { ConfigContext, ExpoConfig } from "expo/config";
+import type { ConfigContext, ExpoConfig } from "expo/config";
 import { version } from "./package.json";
 
 const EAS_PROJECT_ID = "6d9b541c-ffca-46c3-b323-af579ff46b68";
@@ -13,9 +13,10 @@ const ADAPTIVE_ICON = "./assets/images/icons/splash-icon-prod.png";
 const SCHEME = "gradientpeak";
 
 export default ({ config }: ConfigContext): ExpoConfig => {
-  const { name, bundleIdentifier, icon, adaptiveIcon, packageName, scheme } = getDynamicAppConfig(
-    (process.env.APP_ENV as "development" | "preview" | "production") || "development",
-  );
+  const environment =
+    (process.env.APP_ENV as "development" | "preview" | "production") || "development";
+  const { name, bundleIdentifier, icon, adaptiveIcon, packageName, scheme } =
+    getDynamicAppConfig(environment);
 
   return {
     ...config,
@@ -44,22 +45,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         NSLocationWhenInUseUsageDescription: "This app needs your location to track activities.",
         NSMotionUsageDescription: "This app needs motion access to track your activity.",
         NSHealthShareUsageDescription:
-          "This app needs access to your health data to sync your workouts and biometrics.",
+          "This app needs access to your health data to sync your activities and biometrics.",
         NSHealthUpdateUsageDescription:
-          "This app needs access to update your health data with your workouts.",
+          "This app needs access to update your health data with your activities.",
         UNNotificationAlertStyle: "alert",
-        // Allow HTTP connections for development
-        NSAppTransportSecurity: {
-          NSAllowsArbitraryLoads: true,
-          NSExceptionDomains: {
-            localhost: {
-              NSExceptionAllowsInsecureHTTPLoads: true,
-            },
-            "100.119.109.24": {
-              NSExceptionAllowsInsecureHTTPLoads: true,
-            },
-          },
-        },
+        ...getDevelopmentTransportSecurity(environment),
       },
     },
     android: {
@@ -159,6 +149,28 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     owner: OWNER,
   };
 };
+
+export function getDevelopmentTransportSecurity(
+  environment: "development" | "preview" | "production",
+) {
+  if (environment === "production") {
+    return {};
+  }
+
+  return {
+    NSAppTransportSecurity: {
+      NSAllowsArbitraryLoads: true,
+      NSExceptionDomains: {
+        localhost: {
+          NSExceptionAllowsInsecureHTTPLoads: true,
+        },
+        "100.119.109.24": {
+          NSExceptionAllowsInsecureHTTPLoads: true,
+        },
+      },
+    },
+  };
+}
 
 export const getDynamicAppConfig = (environment: "development" | "preview" | "production") => {
   if (environment === "production") {

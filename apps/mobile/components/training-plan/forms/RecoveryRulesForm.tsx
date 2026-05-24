@@ -5,7 +5,6 @@ import { IntegerStepper } from "@repo/ui/components/integer-stepper";
 import { Label } from "@repo/ui/components/label";
 import { Text } from "@repo/ui/components/text";
 import { AlertCircle, Calendar, CheckCircle } from "lucide-react-native";
-import React from "react";
 import { View } from "react-native";
 
 interface RecoveryRulesFormProps {

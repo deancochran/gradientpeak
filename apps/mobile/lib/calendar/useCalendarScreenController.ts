@@ -12,7 +12,10 @@ import {
 import { ROUTES } from "@/lib/constants/routes";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useNavigationActionGuard } from "@/lib/navigation/useNavigationActionGuard";
-import { activitySelectionStore } from "@/lib/stores/activitySelectionStore";
+import {
+  activitySelectionStore,
+  type RecordingLaunchPayload,
+} from "@/lib/stores/activitySelectionStore";
 
 type EventMutationScope = "single" | "future" | "series";
 type ManualEventCreateType = "race_target" | "custom";
@@ -23,6 +26,7 @@ type CreateManualEventInput = {
   notes: string;
   startsAt: Date;
   allDay: boolean;
+  recurrence?: { rule: string; timezone: string };
 };
 
 type UseCalendarScreenControllerParams = {
@@ -52,6 +56,7 @@ type UseCalendarScreenControllerParams = {
     all_day: boolean;
     timezone: string;
     notes?: string;
+    recurrence?: { rule: string; timezone: string };
     lifecycle: { status: "scheduled" };
     read_only: boolean;
   }) => void;
@@ -189,11 +194,13 @@ export function useCalendarScreenController({
         return;
       }
 
-      const payload: ActivityPayload = {
+      const payload: RecordingLaunchPayload = {
+        launchSource: "calendar_event" as const,
         category: activityPlan.activity_category as ActivityPayload["category"],
         gpsRecordingEnabled: true,
         eventId: event.id,
         plan: activityPlan as ActivityPayload["plan"],
+        routeId: activityPlan.route_id ?? null,
       };
 
       activitySelectionStore.setSelection(payload);
@@ -294,7 +301,7 @@ export function useCalendarScreenController({
   );
 
   const submitManualCreate = useCallback(
-    ({ createType, title, notes, startsAt, allDay }: CreateManualEventInput) => {
+    ({ createType, title, notes, startsAt, allDay, recurrence }: CreateManualEventInput) => {
       const trimmedTitle = title.trim();
       const fallbackTitle = createType === "race_target" ? "Race target" : "Custom event";
 
@@ -305,6 +312,7 @@ export function useCalendarScreenController({
         all_day: allDay,
         timezone: "UTC",
         notes: notes.trim() || undefined,
+        recurrence,
         lifecycle: { status: "scheduled" },
         read_only: false,
       });

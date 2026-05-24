@@ -13,9 +13,35 @@ export interface MaterializedPlanEvent {
   starts_at: string;
   ends_at: string;
   title: string;
+  event_title_override: string | null;
   event_type: MaterializedPlanEventType;
   activity_plan_id: string | null;
   all_day: true;
+  source_day_offset: number;
+  source_path: string;
+}
+
+function getSessionTitleOverride(session: SessionSource): string | null {
+  if (
+    typeof session.event_title_override === "string" &&
+    session.event_title_override.trim().length > 0
+  ) {
+    return session.event_title_override.trim();
+  }
+
+  return null;
+}
+
+function getLegacySessionTitle(session: SessionSource): string | null {
+  if (typeof session.title === "string" && session.title.trim().length > 0) {
+    return session.title.trim();
+  }
+
+  if (typeof session.name === "string" && session.name.trim().length > 0) {
+    return session.name.trim();
+  }
+
+  return null;
 }
 
 function toDayStartIso(dateOnly: string): string {
@@ -124,7 +150,12 @@ export function materializePlanToEvents(
   const dedupe = new Set<string>();
   const materialized: MaterializedPlanEvent[] = [];
 
-  const pushSession = (session: SessionSource, baseDate: string, fallbackTitle: string) => {
+  const pushSession = (
+    session: SessionSource,
+    baseDate: string,
+    fallbackTitle: string,
+    sourcePath: Array<string | number>,
+  ) => {
     const scheduledDate = getSessionDate(session, baseDate);
     if (!scheduledDate) {
       return;
@@ -135,11 +166,8 @@ export function materializePlanToEvents(
     }
 
     const activityPlanId = isUuidString(session.activity_plan_id) ? session.activity_plan_id : null;
-
-    const title =
-      typeof session.title === "string" && session.title.trim().length > 0
-        ? session.title.trim()
-        : fallbackTitle;
+    const eventTitleOverride = getSessionTitleOverride(session);
+    const title = eventTitleOverride ?? getLegacySessionTitle(session) ?? fallbackTitle;
 
     const key = `${scheduledDate}|planned|${activityPlanId ?? "none"}|${title}`;
     if (dedupe.has(key)) {
@@ -152,13 +180,21 @@ export function materializePlanToEvents(
       starts_at: toDayStartIso(scheduledDate),
       ends_at: toNextDayStartIso(scheduledDate),
       title,
+      event_title_override: eventTitleOverride,
       event_type: "planned",
       activity_plan_id: activityPlanId,
       all_day: true,
+      source_day_offset: diffDateOnly(baseDate, scheduledDate),
+      source_path: sourcePath.join("."),
     });
   };
 
-  const traverse = (node: PlanNode, baseDate: string, fallbackTitle: string) => {
+  const traverse = (
+    node: PlanNode,
+    baseDate: string,
+    fallbackTitle: string,
+    sourcePath: Array<string | number>,
+  ) => {
     const nodeBaseDate = getNodeBaseDate(node, baseDate);
     const nodeTitle =
       typeof node.name === "string" && node.name.trim().length > 0
@@ -166,19 +202,30 @@ export function materializePlanToEvents(
         : fallbackTitle;
 
     const sessions = Array.isArray(node.sessions) ? (node.sessions as SessionSource[]) : [];
-    for (const session of sessions) {
-      pushSession(session, nodeBaseDate, nodeTitle);
+    for (const [index, session] of sessions.entries()) {
+      pushSession(session, nodeBaseDate, nodeTitle, [...sourcePath, "sessions", index]);
     }
 
     for (const key of nestedCollectionKeys) {
       const children = Array.isArray(node[key]) ? (node[key] as PlanNode[]) : [];
-      for (const child of children) {
-        traverse(child, nodeBaseDate, nodeTitle);
+      for (const [index, child] of children.entries()) {
+        traverse(child, nodeBaseDate, nodeTitle, [...sourcePath, key, index]);
       }
     }
   };
 
-  traverse(root, rootStartDate, "Planned Session");
+  traverse(root, rootStartDate, "Planned Session", []);
 
   return materialized.sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+}
+
+function diffDateOnly(startDate: string, endDate: string): number {
+  const start = Date.parse(`${startDate}T00:00:00.000Z`);
+  const end = Date.parse(`${endDate}T00:00:00.000Z`);
+
+  if (Number.isNaN(start) || Number.isNaN(end)) {
+    return 0;
+  }
+
+  return Math.round((end - start) / 86400000);
 }

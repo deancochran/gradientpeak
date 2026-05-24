@@ -1,13 +1,18 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../utils/profile-estimation-state", () => ({
   bumpProfileEstimationState: vi.fn(async () => undefined),
+  markProfileAnalysisDirty: vi.fn(async () => undefined),
 }));
 
+import { markProfileAnalysisDirty } from "../../utils/profile-estimation-state";
 import { profileMetricsRouter } from "../profile-metrics";
+
+const markProfileAnalysisDirtyMock = vi.mocked(markProfileAnalysisDirty);
 
 type QueryPlan = {
   selectResult?: unknown[];
+  countResult?: unknown[];
   insertResult?: unknown[];
   updateResult?: unknown[];
   deleteResult?: unknown;
@@ -39,33 +44,39 @@ function createProfileMetricRow(overrides: Record<string, unknown> = {}) {
 function createDbMock(plan: QueryPlan = {}) {
   const callLog: DbCall[] = [];
 
-  const selectBuilder: any = {
-    from: (table: unknown) => {
-      callLog.push({ operation: "select.from", value: table });
-      return selectBuilder;
-    },
-    where: (payload: unknown) => {
-      callLog.push({ operation: "select.where", payload });
-      return selectBuilder;
-    },
-    orderBy: (...payload: unknown[]) => {
-      callLog.push({ operation: "select.orderBy", payload });
-      return selectBuilder;
-    },
-    limit: (value: number) => {
-      callLog.push({ operation: "select.limit", value });
-      return selectBuilder;
-    },
-    offset: (value: number) => {
-      callLog.push({ operation: "select.offset", value });
-      return selectBuilder;
-    },
-    then: (onFulfilled: (value: unknown[]) => unknown) =>
-      Promise.resolve(plan.selectResult ?? []).then(onFulfilled),
+  const createSelectBuilder = (isCountSelect = false) => {
+    const selectBuilder: any = {
+      from: (table: unknown) => {
+        callLog.push({ operation: "select.from", value: table });
+        return selectBuilder;
+      },
+      where: (payload: unknown) => {
+        callLog.push({ operation: "select.where", payload });
+        return selectBuilder;
+      },
+      orderBy: (...payload: unknown[]) => {
+        callLog.push({ operation: "select.orderBy", payload });
+        return selectBuilder;
+      },
+      limit: (value: number) => {
+        callLog.push({ operation: "select.limit", value });
+        return selectBuilder;
+      },
+      offset: (value: number) => {
+        callLog.push({ operation: "select.offset", value });
+        return selectBuilder;
+      },
+      then: (onFulfilled: (value: unknown[]) => unknown) =>
+        Promise.resolve(isCountSelect ? (plan.countResult ?? []) : (plan.selectResult ?? [])).then(
+          onFulfilled,
+        ),
+    };
+
+    return selectBuilder;
   };
 
   const db = {
-    select: () => selectBuilder,
+    select: (selection?: Record<string, unknown>) => createSelectBuilder(Boolean(selection?.total)),
     insert: (table: unknown) => {
       callLog.push({ operation: "insert.into", value: table });
 
@@ -126,6 +137,10 @@ function createCaller(plan: QueryPlan = {}, userId = "11111111-1111-4111-8111-11
 }
 
 describe("profileMetricsRouter", () => {
+  beforeEach(() => {
+    markProfileAnalysisDirtyMock.mockClear();
+  });
+
   it("lists metrics and forwards pagination to the db query", async () => {
     const rows = [
       createProfileMetricRow(),
@@ -135,18 +150,19 @@ describe("profileMetricsRouter", () => {
         value: 71.9,
       }),
     ];
-    const { caller, callLog } = createCaller({ selectResult: rows });
+    const { caller, callLog } = createCaller({ selectResult: rows, countResult: [{ total: 2 }] });
 
     const result = await caller.list({
       metric_type: "weight_kg",
       start_date: new Date("2026-03-01T00:00:00.000Z"),
       end_date: new Date("2026-03-31T23:59:59.000Z"),
       limit: 10,
-      offset: 5,
+      cursor: "index:5",
     });
 
     expect(result.items).toEqual(rows);
     expect(result.total).toBe(2);
+    expect(result.nextCursor).toBeUndefined();
     expect(callLog).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ operation: "select.where" }),
@@ -239,6 +255,11 @@ describe("profileMetricsRouter", () => {
       }),
     );
     expect(result).toEqual(created);
+    expect(markProfileAnalysisDirtyMock).toHaveBeenCalledWith(expect.anything(), {
+      profileId: "11111111-1111-4111-8111-111111111111",
+      kinds: ["metrics"],
+      dirtySince: created.recorded_at,
+    });
   });
 
   it("fails when a returned db row does not match the public metric shape", async () => {
@@ -291,7 +312,11 @@ describe("profileMetricsRouter", () => {
   });
 
   it("deletes an owned metric", async () => {
-    const { caller, callLog } = createCaller();
+    const existing = createProfileMetricRow({
+      id: "00000000-0000-4000-8000-000000000006",
+      recorded_at: new Date("2026-03-05T07:00:00.000Z"),
+    });
+    const { caller, callLog } = createCaller({ selectResult: [existing] });
 
     const result = await caller.delete({
       id: "00000000-0000-4000-8000-000000000006",
@@ -304,5 +329,10 @@ describe("profileMetricsRouter", () => {
         expect.objectContaining({ operation: "delete.where" }),
       ]),
     );
+    expect(markProfileAnalysisDirtyMock).toHaveBeenCalledWith(expect.anything(), {
+      profileId: "11111111-1111-4111-8111-111111111111",
+      kinds: ["metrics"],
+      dirtySince: existing.recorded_at,
+    });
   });
 });

@@ -52,6 +52,6 @@ describe("goal validation", () => {
     expect(errors["goals.0.name"]).toBe("Goal name is required");
     expect(errors["goals.0.targetDate"]).toBe("Target date must be in the future");
     expect(errors["goals.0.priority"]).toBe("Priority must be between 0 and 10");
-    expect(errors["goals"]).toBe("Each goal must include valid target details");
+    expect(errors.goals).toBe("Each goal must include valid target details");
   });
 });

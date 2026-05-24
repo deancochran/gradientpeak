@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { formatSecondsToMmSs } from "../../lib/fitness-inputs";
 import { PaceInput } from "../pace-input/index.native";
 import type { PaceSecondsFieldProps } from "./shared";

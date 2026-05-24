@@ -13,7 +13,7 @@
  */
 
 import { Text } from "@repo/ui/components/text";
-import React, { useCallback, useState } from "react";
+import { useCallback, useState } from "react";
 import { Alert, Pressable, View } from "react-native";
 import { useCurrentReadings, usePlan } from "@/lib/hooks/useActivityRecorder";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
@@ -59,7 +59,7 @@ export function EllipticalControlUI({ service, controlMode, hasPlan }: Elliptica
     } else {
       Alert.alert("Error", "Failed to set resistance. Check elliptical connection.");
     }
-  }, [resistanceLevel, controlMode, supportsResistance]);
+  }, [resistanceLevel, controlMode, supportsResistance, service.applyManualTrainerResistance]);
 
   /**
    * Apply cadence target
@@ -82,7 +82,7 @@ export function EllipticalControlUI({ service, controlMode, hasPlan }: Elliptica
     } else {
       Alert.alert("Error", "Failed to set cadence. Check elliptical connection.");
     }
-  }, [targetCadence, controlMode, supportsCadence]);
+  }, [targetCadence, controlMode, supportsCadence, service.applyManualTrainerCadence]);
 
   const isDisabled = controlMode === "auto";
 

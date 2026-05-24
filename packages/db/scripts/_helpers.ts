@@ -15,6 +15,10 @@ export const defaultLocalDatabaseUrl = "postgresql://postgres:postgres@127.0.0.1
 const defaultEnvFiles = [
   resolve(dbPackageRoot, ".env.local"),
   resolve(dbPackageRoot, ".env"),
+  resolve(repoRoot, "apps/web/.env.local"),
+  resolve(repoRoot, "apps/web/.env"),
+  resolve(repoRoot, "apps/mobile/.env.local"),
+  resolve(repoRoot, "apps/mobile/.env"),
   resolve(supabaseCliRoot, ".env.local"),
   resolve(supabaseCliRoot, ".env"),
 ];
@@ -35,9 +39,9 @@ export function prepareDbEnv() {
   return databaseUrl;
 }
 
-export function runSupabaseCli(args: string[]) {
-  execFileSync("pnpm", ["dlx", "supabase", "--workdir", supabaseCliRoot, ...args], {
-    cwd: repoRoot,
+export function runSupabaseCli(args: string[], workdir = supabaseCliRoot) {
+  execFileSync("pnpm", ["dlx", "supabase", "--workdir", workdir, ...args], {
+    cwd: supabaseCliRoot,
     env: process.env,
     stdio: "inherit",
   });

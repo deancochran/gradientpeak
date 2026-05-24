@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { computeProjectionPointReadinessScores } from "../readiness";
+import { computeCompositeReadiness, computeProjectionPointReadinessScores } from "../readiness";
 import {
   createMockGoal,
   createMockProjectionPoint,
@@ -258,5 +258,81 @@ describe("Readiness Baseline - Determinism", () => {
     });
 
     expect(scores1).toEqual(scores2);
+  });
+
+  it("uses priority and date, not array order, for the primary goal timeline", () => {
+    const points = createTestScenario({
+      startDate: "2026-03-01",
+      durationDays: 45,
+      startingCtl: 50,
+      startingAtl: 48,
+      ctlProgression: "peak",
+    });
+
+    const lowPriorityFiveK = createMockGoal("2026-03-28", [
+      createRaceTarget("run", RACE_PRESETS["5K"].distance, RACE_PRESETS["5K"].times.moderate),
+    ]);
+    const highPriorityMarathon = {
+      ...createMockGoal("2026-04-14", [
+        createRaceTarget(
+          "run",
+          RACE_PRESETS.marathon.distance,
+          RACE_PRESETS.marathon.times.moderate,
+        ),
+      ]),
+      priority: 10,
+    };
+
+    const scoresA = computeProjectionPointReadinessScores({
+      points,
+      planReadinessScore: 85,
+      goals: [lowPriorityFiveK, highPriorityMarathon],
+    });
+
+    const scoresB = computeProjectionPointReadinessScores({
+      points,
+      planReadinessScore: 85,
+      goals: [highPriorityMarathon, lowPriorityFiveK],
+    });
+
+    expect(scoresA).toEqual(scoresB);
+  });
+
+  it("normalizes composite readiness weights from calibration overrides", () => {
+    const base = computeCompositeReadiness({
+      target_attainment_score: 80,
+      durability_score: 70,
+      evidence_score: 60,
+      envelope: {
+        envelope_score: 90,
+        envelope_state: "inside",
+        limiting_factors: [],
+      },
+      composite_weights: {
+        target_attainment_weight: 0.45,
+        envelope_weight: 0.3,
+        durability_weight: 0.15,
+        evidence_weight: 0.1,
+      },
+    });
+
+    const scaled = computeCompositeReadiness({
+      target_attainment_score: 80,
+      durability_score: 70,
+      evidence_score: 60,
+      envelope: {
+        envelope_score: 90,
+        envelope_state: "inside",
+        limiting_factors: [],
+      },
+      composite_weights: {
+        target_attainment_weight: 45,
+        envelope_weight: 30,
+        durability_weight: 15,
+        evidence_weight: 10,
+      },
+    });
+
+    expect(scaled.readiness_score).toBe(base.readiness_score);
   });
 });

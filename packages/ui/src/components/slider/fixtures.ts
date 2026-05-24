@@ -1,11 +1,11 @@
 export const sliderFixtures = {
   effort: {
-    accessibilityLabel: "Workout intensity",
-    id: "workout-intensity",
+    accessibilityLabel: "Activity intensity",
+    id: "activity-intensity",
     maximumValue: 10,
     minimumValue: 0,
     step: 0.5,
-    testId: "workout-intensity-slider",
+    testId: "activity-intensity-slider",
     value: 6.5,
   },
 } as const;

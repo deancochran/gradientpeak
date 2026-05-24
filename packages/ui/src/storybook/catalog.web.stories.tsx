@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react";
 import { Bell, CircleAlert, Info, LayoutGrid, Settings2 } from "lucide-react";
 import { ThemeProvider } from "next-themes";
-import * as React from "react";
+import type * as React from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -92,7 +92,7 @@ export const AccordionStory: Story = {
         <AccordionItem value="training-zones">
           <AccordionTrigger>Training zones</AccordionTrigger>
           <AccordionContent>
-            Build thresholds, recovery targets, and workout defaults from one shared primitive.
+            Build thresholds, recovery targets, and activity defaults from one shared primitive.
           </AccordionContent>
         </AccordionItem>
       </Accordion>
@@ -127,7 +127,7 @@ export const CommandStory: Story = {
   render: () => (
     <WebFrame>
       <Command className="rounded-lg border shadow-sm">
-        <CommandInput placeholder="Search workouts, routes, and inputs" />
+        <CommandInput placeholder="Search activities, routes, and inputs" />
         <CommandList>
           <CommandEmpty>No matching components.</CommandEmpty>
           <CommandGroup heading="Inputs">
@@ -175,14 +175,14 @@ export const DropdownMenuStory: Story = {
           <Button variant="outline">Open menu</Button>
         </DropdownMenu.DropdownMenuTrigger>
         <DropdownMenu.DropdownMenuContent>
-          <DropdownMenu.DropdownMenuLabel>Workout actions</DropdownMenu.DropdownMenuLabel>
+          <DropdownMenu.DropdownMenuLabel>Activity actions</DropdownMenu.DropdownMenuLabel>
           <DropdownMenu.DropdownMenuItem>Duplicate session</DropdownMenu.DropdownMenuItem>
           <DropdownMenu.DropdownMenuCheckboxItem checked>
             Show on calendar
           </DropdownMenu.DropdownMenuCheckboxItem>
           <DropdownMenu.DropdownMenuSeparator />
           <DropdownMenu.DropdownMenuItem variant="destructive">
-            Delete workout
+            Delete activity
           </DropdownMenu.DropdownMenuItem>
         </DropdownMenu.DropdownMenuContent>
       </DropdownMenu.DropdownMenu>
@@ -293,13 +293,13 @@ export const SheetStory: Story = {
       <Sheet.Sheet open>
         <Sheet.SheetContent>
           <Sheet.SheetHeader>
-            <Sheet.SheetTitle>Workout library</Sheet.SheetTitle>
+            <Sheet.SheetTitle>Activity library</Sheet.SheetTitle>
             <Sheet.SheetDescription>
               Review shared controls in the same slide-over used by the app.
             </Sheet.SheetDescription>
           </Sheet.SheetHeader>
           <Sheet.SheetFooter>
-            <Button>Add workout</Button>
+            <Button>Add activity</Button>
           </Sheet.SheetFooter>
         </Sheet.SheetContent>
       </Sheet.Sheet>

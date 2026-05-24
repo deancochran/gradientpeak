@@ -14,13 +14,19 @@ import { getRequiredDb } from "../db";
 import { createActivityAnalysisStore } from "../infrastructure/repositories";
 import { buildActivityDerivedSummaryMap } from "../lib/activity-analysis";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { buildIndexPageInfo, indexCursorSchema, parseIndexCursor } from "../utils/index-cursor";
 import { bumpProfileEstimationState } from "../utils/profile-estimation-state";
+import {
+  redactPrivateProfileDetailFields,
+  redactProfileListFields,
+} from "../utils/profile-privacy";
 
 const profileListFiltersSchema = z
   .object({
     username: z.string().optional(),
-    limit: z.number().min(1).max(100).default(20),
-    offset: z.number().min(0).default(0),
+    limit: z.number().int().min(1).max(50).default(25),
+    cursor: indexCursorSchema.optional(),
+    direction: z.enum(["forward", "backward"]).optional(),
   })
   .strict();
 
@@ -39,6 +45,7 @@ const trainingZonesUpdateSchema = z
 
 const uuidSchema = z.string().uuid();
 const nullableAvatarUrlSchema = z.string().nullable();
+const nullableCoverUrlSchema = z.string().nullable();
 const nullableUsernameSchema = z.string().nullable();
 const nullableBioSchema = z.string().nullable();
 const nullableGenderSchema = z.string().nullable();
@@ -51,6 +58,7 @@ const publicProfileSchema = z
     id: uuidSchema,
     username: nullableUsernameSchema,
     avatar_url: nullableAvatarUrlSchema,
+    cover_url: nullableCoverUrlSchema,
     bio: nullableBioSchema,
     gender: nullableGenderSchema,
     preferred_units: nullablePreferredUnitsSchema,
@@ -67,6 +75,7 @@ const publicProfileRowSchema = z
     id: uuidSchema,
     username: nullableUsernameSchema,
     avatar_url: nullableAvatarUrlSchema,
+    cover_url: nullableCoverUrlSchema,
     bio: nullableBioSchema,
     gender: nullableGenderSchema,
     preferred_units: nullablePreferredUnitsSchema,
@@ -79,6 +88,7 @@ const profileUpdateInputSchema = profileQuickUpdateSchema
   .partial()
   .extend({
     avatar_url: z.string().nullable().optional(),
+    cover_url: z.string().nullable().optional(),
     bio: z.string().max(500).nullable().optional(),
     dob: z.string().nullable().optional(),
     preferred_units: z.enum(["metric", "imperial"]).nullable().optional(),
@@ -97,6 +107,7 @@ const profileBaseSelect = {
   email: profiles.email,
   full_name: profiles.full_name,
   avatar_url: profiles.avatar_url,
+  cover_url: profiles.cover_url,
   bio: profiles.bio,
   dob: profiles.dob,
   gender: profiles.gender,
@@ -123,6 +134,7 @@ type ProfileBaseRow = Pick<
   | "email"
   | "full_name"
   | "avatar_url"
+  | "cover_url"
   | "bio"
   | "dob"
   | "gender"
@@ -158,6 +170,12 @@ function serializeProfile(
     threshold_hr: performance?.threshold_hr ?? null,
     weight_kg: performance?.weight_kg ?? null,
   };
+}
+
+function serializeProfileListItem(profile: ProfileBaseRow) {
+  const serialized = serializeProfile(profile);
+
+  return redactProfileListFields(serialized);
 }
 
 async function getProfileBaseById(db: DbClient, profileId: string) {
@@ -262,6 +280,7 @@ async function ensureProfileExists(db: DbClient, user: SessionUser) {
     full_name: null,
     username: null,
     avatar_url: null,
+    cover_url: null,
     bio: null,
     dob: null,
     gender: null,
@@ -439,6 +458,7 @@ export const profilesRouter = createTRPCRouter({
             id: profiles.id,
             username: profiles.username,
             avatar_url: profiles.avatar_url,
+            cover_url: profiles.cover_url,
             bio: profiles.bio,
             gender: profiles.gender,
             preferred_units: profiles.preferred_units,
@@ -460,6 +480,7 @@ export const profilesRouter = createTRPCRouter({
           id: profile.id,
           username: profile.username,
           avatar_url: profile.avatar_url,
+          cover_url: profile.cover_url,
           bio: profile.bio,
           gender: profile.gender,
           preferred_units: profile.preferred_units,
@@ -484,13 +505,11 @@ export const profilesRouter = createTRPCRouter({
           following_count: followingCount,
         };
 
-        if (!isSelf && isPrivate && !isAcceptedFollower) {
-          resultProfile.bio = null;
-          resultProfile.preferred_units = null;
-          resultProfile.language = null;
-        }
-
-        return publicProfileSchema.parse(resultProfile);
+        return publicProfileSchema.parse(
+          !isSelf && isPrivate && !isAcceptedFollower
+            ? redactPrivateProfileDetailFields(resultProfile)
+            : resultProfile,
+        );
       } catch (error) {
         if (error instanceof TRPCError) {
           throw error;
@@ -509,6 +528,7 @@ export const profilesRouter = createTRPCRouter({
     try {
       const profileUpdate = {
         avatar_url: input.avatar_url,
+        cover_url: input.cover_url,
         bio: input.bio,
         dob: input.dob === undefined ? undefined : input.dob === null ? null : new Date(input.dob),
         is_public: input.is_public,
@@ -581,18 +601,30 @@ export const profilesRouter = createTRPCRouter({
   list: protectedProcedure.input(profileListFiltersSchema).query(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
     void ctx;
+    const offset = parseIndexCursor(input.cursor);
 
     try {
-      const rows: ProfileBaseRow[] = input.username
+      const whereClause = input.username
+        ? sql`"profiles"."username" ilike ${`%${input.username}%`}`
+        : undefined;
+      const rows: ProfileBaseRow[] = whereClause
         ? await db
             .select(profileBaseSelect)
             .from(profiles)
-            .where(sql`"profiles"."username" ilike ${`%${input.username}%`}`)
+            .where(whereClause)
             .limit(input.limit)
-            .offset(input.offset)
-        : await db.select(profileBaseSelect).from(profiles).limit(input.limit).offset(input.offset);
+            .offset(offset)
+        : await db.select(profileBaseSelect).from(profiles).limit(input.limit).offset(offset);
+      const totalRows = whereClause
+        ? await db.select({ total: sql<number>`count(*)::int` }).from(profiles).where(whereClause)
+        : await db.select({ total: sql<number>`count(*)::int` }).from(profiles);
+      const total = Number(totalRows[0]?.total ?? 0);
 
-      return rows.map((profile) => serializeProfile(profile));
+      return {
+        items: rows.map((profile) => serializeProfileListItem(profile)),
+        total,
+        ...buildIndexPageInfo({ offset, limit: input.limit, total }),
+      };
     } catch (error) {
       if (error instanceof TRPCError) {
         throw error;

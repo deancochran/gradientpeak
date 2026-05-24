@@ -10,6 +10,7 @@ export interface BoundedNumberInputProps extends TestProps {
   value: string;
   onChange: (value: string) => void;
   onNumberChange?: (value: number | undefined) => void;
+  name?: string;
   min?: number;
   max?: number;
   decimals?: number;

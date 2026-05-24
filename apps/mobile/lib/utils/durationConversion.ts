@@ -29,7 +29,7 @@ export interface DurationUIInput {
  */
 export function convertUIToV2Duration(input: DurationUIInput): DurationV2 {
   switch (input.type) {
-    case "time":
+    case "time": {
       let seconds = input.value;
       if (input.unit === "minutes") {
         seconds = input.value * 60;
@@ -37,13 +37,15 @@ export function convertUIToV2Duration(input: DurationUIInput): DurationV2 {
         seconds = input.value * 3600;
       }
       return { type: "time", seconds: Math.round(seconds) };
+    }
 
-    case "distance":
+    case "distance": {
       let meters = input.value;
       if (input.unit === "km") {
         meters = input.value * 1000;
       }
       return { type: "distance", meters: Math.round(meters) };
+    }
 
     case "repetitions":
       return { type: "repetitions", count: Math.round(input.value) };

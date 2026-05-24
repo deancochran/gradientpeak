@@ -2,7 +2,6 @@ import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
-import React from "react";
 import { TouchableOpacity, View } from "react-native";
 import { isSameDay } from "@/lib/utils/plan/dateGrouping";
 

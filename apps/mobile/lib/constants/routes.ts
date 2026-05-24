@@ -12,7 +12,10 @@ export const ROUTES = {
     CALENDAR: "/(internal)/(tabs)/calendar" as const,
     CREATE: "/create-activity-plan" as const,
     SCHEDULED: "/scheduled-activities-list" as const,
-    CALENDAR_DAY: (date: string) => `/calendar-day?date=${date}` as const,
+    CALENDAR_DAY: (date: string) => ({ pathname: "/calendar-day", params: { date } }) as const,
+    AGENDA_CREATE: (date: string) => ({ pathname: "/agenda-create", params: { date } }) as const,
+    EVENT_CREATE: (date: string) =>
+      ({ pathname: "/event-detail", params: { mode: "create", date } }) as const,
 
     // Training Plan Routes
     TRAINING_PLAN: {
@@ -27,21 +30,35 @@ export const ROUTES = {
     CREATE_ACTIVITY_PLAN: {
       INDEX: "/create-activity-plan" as const,
     },
+    ACTIVITY_PLAN_LIST: "/activity-plans-list" as const,
 
     // Dynamic Routes (use with params)
     PLAN_DETAIL: (planId: string) => `/activity-plan-detail?id=${planId}` as const,
     ACTIVITY_DETAIL: (activityId: string) => `/event-detail?id=${activityId}` as const,
-    EVENT_DETAIL: (eventId: string, mode?: "view" | "edit") =>
-      mode
-        ? (`/event-detail?id=${eventId}&mode=${mode}` as const)
-        : (`/event-detail?id=${eventId}` as const),
+    EVENT_DETAIL: (eventId: string) => `/event-detail?id=${eventId}` as const,
+    EVENT_UPDATE: (eventId: string) => `/event-detail-update?id=${eventId}` as const,
     GOAL_DETAIL: (goalId: string) => `/goal-detail?id=${goalId}` as const,
   },
 
   // Activities Routes
   ACTIVITIES: {
     LIST: "/activities-list" as const,
+    IMPORT: "/activity-import" as const,
     DETAIL: (activityId: string) => `/activity-detail?id=${activityId}` as const,
+    EFFORTS_LIST: "/activity-efforts-list" as const,
+    EFFORT_DETAIL: (effortId: string) => `/activity-effort-detail?id=${effortId}` as const,
+  },
+
+  PROFILE_METRICS: {
+    LIST: "/profile-metrics-list" as const,
+    DETAIL: (metricId: string) => `/profile-metric-detail?id=${metricId}` as const,
+  },
+
+  GOALS: {
+    LIST: "/goals-list" as const,
+    CREATE: "/goal-create" as const,
+    DETAIL: (goalId: string) => `/goal-detail?id=${goalId}` as const,
+    EDIT: (goalId: string) => `/goal-edit?id=${goalId}` as const,
   },
 
   // Routes Routes
@@ -52,20 +69,24 @@ export const ROUTES = {
   },
 
   // Other Tab Routes
-  DISCOVER: "/(internal)/(tabs)/discover" as const,
+  SEARCH: "/search" as const,
+  DISCOVER: "/search" as const,
   CALENDAR: "/(internal)/(tabs)/calendar" as const,
 
   // Profile
+  PROFILE_SETTINGS: "/(internal)/(tabs)/profile" as const,
   USER_DETAIL: (userId: string) => `/user/${userId}` as const,
   PROFILE_EDIT: "/profile-edit" as const,
   INTEGRATIONS: "/integrations" as const,
   NOTIFICATIONS: "/notifications" as const,
+  MESSAGES: "/messages" as const,
+  MESSAGE_NEW: "/messages/new" as const,
 
   // Activity Recording
   RECORD: "/record" as const,
 
-  // Workout Management
-  WORKOUTS_REORDER: "/workouts-reorder" as const,
+  // Activity Management
+  ACTIVITIES_REORDER: "/activities-reorder" as const,
 } as const;
 
 /**

@@ -13,6 +13,10 @@ export const RECORDING_CONFIG = {
 
   // === Data Window ===
   BUFFER_WINDOW_SECONDS: 60, // Keep 60 seconds of data for calculations
+  MAX_READINGS_PER_METRIC: 2000, // Hard cap for unusually high-rate or stalled streams
+  ADVANCED_METRICS_SAMPLE_INTERVAL_MS: 5000, // Keep NP/TSS updates off the 1s critical path
+  ADVANCED_METRICS_SLOW_THRESHOLD_MS: 100, // Circuit-break advanced metrics if they block JS
+  ADVANCED_METRICS_COOLDOWN_MS: 60000, // Retry advanced metrics after the recorder stabilizes
 
   // === GPS Path Display ===
   MAX_GPS_PATH_POINTS: 1000, // Maximum GPS points to keep for map display (prevents memory leak)

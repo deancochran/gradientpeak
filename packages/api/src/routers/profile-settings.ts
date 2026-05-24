@@ -19,7 +19,7 @@ type ProfileTrainingSettingsSqlRow = Pick<
   "profile_id" | "settings" | "updated_at"
 >;
 
-function getSqlRows<T>(result: unknown) {
+function _getSqlRows<T>(result: unknown) {
   return ((result as { rows?: T[] }).rows ?? []) as T[];
 }
 

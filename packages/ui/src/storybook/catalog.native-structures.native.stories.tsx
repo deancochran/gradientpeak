@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react";
-import * as React from "react";
+import type * as React from "react";
 import { useForm } from "react-hook-form";
 import { View } from "react-native";
 
@@ -133,7 +133,7 @@ export const AlertDialogStory: Story = {
       <AlertDialog open>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Discard workout draft?</AlertDialogTitle>
+            <AlertDialogTitle>Discard activity draft?</AlertDialogTitle>
             <AlertDialogDescription>
               Leave Storybook with a fully mounted destructive dialog example.
             </AlertDialogDescription>
@@ -236,7 +236,7 @@ export const DropdownMenuStory: Story = {
         </DropdownMenuTrigger>
         <DropdownMenuContent>
           <DropdownMenuItem>
-            <Text>Schedule workout</Text>
+            <Text>Schedule activity</Text>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

@@ -6,5 +6,5 @@ appId: com.deancochran.gradientpeak.dev
     id: "tab-button-record"
 - extendedWaitUntil:
     visible:
-      id: "activity-selection-modal"
+      id: "record-screen-ready"
     timeout: 10000

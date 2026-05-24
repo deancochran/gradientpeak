@@ -1,5 +1,4 @@
 import { Text } from "@repo/ui/components/text";
-import React from "react";
 import { View } from "react-native";
 import { Bar, CartesianChart, Line } from "victory-native";
 

@@ -14,8 +14,9 @@ import {
   type RecordingTrainerIntentSource,
 } from "@repo/core";
 import { Buffer } from "buffer";
-import { Device } from "react-native-ble-plx";
+import type { Device } from "react-native-ble-plx";
 import { decodeBase64ToBytes, toDataView } from "./ble-bytes";
+import { DeviceGattQueueRegistry } from "./DeviceGattQueue";
 import type { RecordingTrainerCommandStatus } from "./types";
 
 export type { FTMSControlEvent, FTMSFeatures, FTMSResponse };
@@ -54,16 +55,28 @@ const FTMS_WRITE_ABORTED_MESSAGE = "Control point write aborted";
 
 export class FTMSController {
   private device: Device;
+  private deviceId: string;
+  private gattQueues: DeviceGattQueueRegistry;
   private currentControlMode?: ControlMode;
   private features?: FTMSFeatures;
   public controlEvents: FTMSControlEvent[] = [];
   private commandQueue: FTMSQueuedCommand[] = [];
   private isProcessingQueue = false;
   private queueSequence = 0;
+  private controlGranted = false;
   private lastCommandStatus: RecordingTrainerCommandStatus | null = null;
+  private controlPointSubscription?: { remove: () => void };
+  private pendingControlPointResponse?: {
+    requestOpCode: number;
+    resolve: (response: FTMSResponse) => void;
+    reject: (error: Error) => void;
+    timeout: ReturnType<typeof setTimeout>;
+  };
 
-  constructor(device: Device) {
+  constructor(device: Device, gattQueues: DeviceGattQueueRegistry = new DeviceGattQueueRegistry()) {
     this.device = device;
+    this.deviceId = device.id;
+    this.gattQueues = gattQueues;
   }
 
   // ==================== Setup & Feature Detection ====================
@@ -78,9 +91,15 @@ export class FTMSController {
    */
   async readFeatures(): Promise<FTMSFeatures> {
     try {
-      const characteristic = await this.device.readCharacteristicForService(
-        BLE_SERVICE_UUIDS.FITNESS_MACHINE,
-        FTMS_CHARACTERISTICS.FEATURE,
+      const characteristic = await this.gattQueues.enqueue(
+        this.deviceId,
+        "ftms:read-features",
+        () =>
+          this.device.readCharacteristicForService(
+            BLE_SERVICE_UUIDS.FITNESS_MACHINE,
+            FTMS_CHARACTERISTICS.FEATURE,
+          ),
+        { timeoutMs: 5000 },
       );
 
       if (!characteristic.value) {
@@ -263,10 +282,16 @@ export class FTMSController {
     try {
       // Read power range if supported
       if (this.features.powerTargetSettingSupported) {
-        const powerChar = await this.device
-          .readCharacteristicForService(
-            BLE_SERVICE_UUIDS.FITNESS_MACHINE,
-            FTMS_CHARACTERISTICS.SUPPORTED_POWER_RANGE,
+        const powerChar = await this.gattQueues
+          .enqueue(
+            this.deviceId,
+            "ftms:read-supported-power-range",
+            () =>
+              this.device.readCharacteristicForService(
+                BLE_SERVICE_UUIDS.FITNESS_MACHINE,
+                FTMS_CHARACTERISTICS.SUPPORTED_POWER_RANGE,
+              ),
+            { timeoutMs: 5000 },
           )
           .catch(() => null);
 
@@ -287,10 +312,16 @@ export class FTMSController {
 
       // Read speed range if supported
       if (this.features.speedTargetSettingSupported) {
-        const speedChar = await this.device
-          .readCharacteristicForService(
-            BLE_SERVICE_UUIDS.FITNESS_MACHINE,
-            FTMS_CHARACTERISTICS.SUPPORTED_SPEED_RANGE,
+        const speedChar = await this.gattQueues
+          .enqueue(
+            this.deviceId,
+            "ftms:read-supported-speed-range",
+            () =>
+              this.device.readCharacteristicForService(
+                BLE_SERVICE_UUIDS.FITNESS_MACHINE,
+                FTMS_CHARACTERISTICS.SUPPORTED_SPEED_RANGE,
+              ),
+            { timeoutMs: 5000 },
           )
           .catch(() => null);
 
@@ -311,10 +342,16 @@ export class FTMSController {
 
       // Read inclination range if supported
       if (this.features.inclinationTargetSettingSupported) {
-        const inclinationChar = await this.device
-          .readCharacteristicForService(
-            BLE_SERVICE_UUIDS.FITNESS_MACHINE,
-            FTMS_CHARACTERISTICS.SUPPORTED_INCLINATION_RANGE,
+        const inclinationChar = await this.gattQueues
+          .enqueue(
+            this.deviceId,
+            "ftms:read-supported-inclination-range",
+            () =>
+              this.device.readCharacteristicForService(
+                BLE_SERVICE_UUIDS.FITNESS_MACHINE,
+                FTMS_CHARACTERISTICS.SUPPORTED_INCLINATION_RANGE,
+              ),
+            { timeoutMs: 5000 },
           )
           .catch(() => null);
 
@@ -335,10 +372,16 @@ export class FTMSController {
 
       // Read resistance range if supported
       if (this.features.resistanceTargetSettingSupported) {
-        const resistanceChar = await this.device
-          .readCharacteristicForService(
-            BLE_SERVICE_UUIDS.FITNESS_MACHINE,
-            FTMS_CHARACTERISTICS.SUPPORTED_RESISTANCE_LEVEL_RANGE,
+        const resistanceChar = await this.gattQueues
+          .enqueue(
+            this.deviceId,
+            "ftms:read-supported-resistance-range",
+            () =>
+              this.device.readCharacteristicForService(
+                BLE_SERVICE_UUIDS.FITNESS_MACHINE,
+                FTMS_CHARACTERISTICS.SUPPORTED_RESISTANCE_LEVEL_RANGE,
+              ),
+            { timeoutMs: 5000 },
           )
           .catch(() => null);
 
@@ -359,10 +402,16 @@ export class FTMSController {
 
       // Read heart rate range if supported
       if (this.features.heartRateTargetSettingSupported) {
-        const hrChar = await this.device
-          .readCharacteristicForService(
-            BLE_SERVICE_UUIDS.FITNESS_MACHINE,
-            FTMS_CHARACTERISTICS.SUPPORTED_HEART_RATE_RANGE,
+        const hrChar = await this.gattQueues
+          .enqueue(
+            this.deviceId,
+            "ftms:read-supported-heart-rate-range",
+            () =>
+              this.device.readCharacteristicForService(
+                BLE_SERVICE_UUIDS.FITNESS_MACHINE,
+                FTMS_CHARACTERISTICS.SUPPORTED_HEART_RATE_RANGE,
+              ),
+            { timeoutMs: 5000 },
           )
           .catch(() => null);
 
@@ -391,12 +440,18 @@ export class FTMSController {
    * Must be called before sending any control commands
    */
   async requestControl(): Promise<boolean> {
-    return this.enqueueBooleanCommand({
+    if (this.controlGranted) {
+      return true;
+    }
+
+    const granted = await this.enqueueBooleanCommand({
       buffer: new Uint8Array([FTMS_OPCODES.REQUEST_CONTROL]),
       commandType: "request_control",
       controlType: "resistance",
       context: this.normalizeCommandContext(),
     });
+    this.controlGranted = granted;
+    return granted;
   }
 
   /**
@@ -404,12 +459,16 @@ export class FTMSController {
    * Recommended when switching control modes
    */
   async reset(): Promise<boolean> {
-    return this.enqueueBooleanCommand({
+    const reset = await this.enqueueBooleanCommand({
       buffer: new Uint8Array([FTMS_OPCODES.RESET]),
       commandType: "reset",
       controlType: "resistance",
       context: this.normalizeCommandContext(),
     });
+    if (reset) {
+      this.currentControlMode = undefined;
+    }
+    return reset;
   }
 
   // ==================== ERG Mode (Power Target) ====================
@@ -888,13 +947,13 @@ export class FTMSController {
 
   private async executeQueuedCommand(command: FTMSQueuedCommand): Promise<boolean> {
     try {
-      if (command.targetMode) {
-        const switched = await this.ensureControlMode(command.targetMode, command.context);
-        if (!switched) {
+      if (command.commandType !== "request_control" && !this.controlGranted) {
+        const controlGranted = await this.ensureControlGranted(command.context);
+        if (!controlGranted) {
           this.recordCommandResult(command, {
             requestOpCode: command.requestOpCode,
-            resultCode: FTMS_RESULT_CODES.OPERATION_FAILED,
-            resultCodeName: "Failed to switch control mode",
+            resultCode: FTMS_RESULT_CODES.CONTROL_NOT_PERMITTED,
+            resultCodeName: "Control Not Permitted",
             success: false,
           });
           return false;
@@ -915,46 +974,37 @@ export class FTMSController {
     }
   }
 
-  private async ensureControlMode(
-    targetMode: ControlMode,
-    context: Required<FTMSCommandContext>,
-  ): Promise<boolean> {
-    if (this.currentControlMode === targetMode) {
+  private async ensureControlGranted(context: Required<FTMSCommandContext>): Promise<boolean> {
+    if (this.controlGranted) {
       return true;
     }
 
-    const response = await this.writeControlPoint(new Uint8Array([FTMS_OPCODES.RESET]));
-    if (!response.success) {
-      this.lastCommandStatus = {
-        source: context.source,
-        commandType: "reset",
-        controlMode: this.currentControlMode ?? null,
-        outcome: this.mapResponseOutcome(response),
-        success: false,
-        errorMessage: response.resultCodeName,
-        resultCode: response.resultCode,
-        resultCodeName: response.resultCodeName,
-        queuedAt: Date.parse(context.createdAt),
-        completedAt: Date.now(),
-      };
-      return false;
-    }
-
-    this.currentControlMode = targetMode;
+    const response = await this.writeControlPoint(new Uint8Array([FTMS_OPCODES.REQUEST_CONTROL]));
+    this.controlGranted = response.success;
     this.lastCommandStatus = {
       source: context.source,
-      commandType: "reset",
-      controlMode: this.currentControlMode,
-      outcome: "success",
-      success: true,
+      commandType: "request_control",
+      controlMode: this.currentControlMode ?? null,
+      outcome: this.mapResponseOutcome(response),
+      success: response.success,
+      errorMessage: response.success ? undefined : response.resultCodeName,
+      resultCode: response.resultCode,
+      resultCodeName: response.resultCodeName,
       queuedAt: Date.parse(context.createdAt),
       completedAt: Date.now(),
     };
-    return true;
+
+    return response.success;
   }
 
   private recordCommandResult(command: FTMSQueuedCommand, response: FTMSResponse): void {
     const completedAt = Date.now();
+
+    if (command.commandType === "request_control") {
+      this.controlGranted = response.success;
+    } else if (response.success && command.targetMode) {
+      this.currentControlMode = command.targetMode;
+    }
 
     this.controlEvents.push({
       timestamp: completedAt,
@@ -993,101 +1043,23 @@ export class FTMSController {
 
     for (let attempt = 0; attempt < retries; attempt++) {
       try {
-        let abortResponseWait: (() => void) | undefined;
-
-        const responsePromise = new Promise<FTMSResponse>((resolve, reject) => {
-          let settled = false;
-          let subscription: { remove: () => void } | undefined;
-          let timeout: ReturnType<typeof setTimeout> | undefined;
-
-          const cleanup = () => {
-            if (timeout) {
-              clearTimeout(timeout);
-              timeout = undefined;
-            }
-            if (subscription) {
-              subscription.remove();
-              subscription = undefined;
-            }
-          };
-
-          const succeed = (response: FTMSResponse) => {
-            if (settled) return;
-            settled = true;
-            cleanup();
-            resolve(response);
-          };
-
-          const fail = (error: Error) => {
-            if (settled) return;
-            settled = true;
-            cleanup();
-            reject(error);
-          };
-
-          timeout = setTimeout(() => {
-            fail(new Error(FTMS_RESPONSE_TIMEOUT_MESSAGE));
-          }, 2000);
-
-          abortResponseWait = () => {
-            fail(new Error(FTMS_WRITE_ABORTED_MESSAGE));
-          };
-
-          subscription = this.device.monitorCharacteristicForService(
-            BLE_SERVICE_UUIDS.FITNESS_MACHINE,
-            FTMS_CHARACTERISTICS.CONTROL_POINT,
-            (error, characteristic) => {
-              if (error) {
-                fail(error instanceof Error ? error : new Error(String(error)));
-                return;
-              }
-
-              if (!characteristic?.value) return;
-
-              const responseBytes = decodeBase64ToBytes(characteristic.value);
-
-              if (responseBytes.byteLength < 1) {
-                return;
-              }
-
-              const responseOpCode = responseBytes[0];
-              if (responseOpCode !== FTMS_OPCODES.RESPONSE_CODE) {
-                return;
-              }
-
-              if (responseBytes.byteLength < 3) {
-                fail(new Error("Malformed FTMS response payload"));
-                return;
-              }
-
-              const receivedRequestOpCode = responseBytes[1];
-              if (receivedRequestOpCode !== requestOpCode) {
-                console.warn(
-                  `[FTMS] Ignoring response for opcode 0x${receivedRequestOpCode.toString(16)} while waiting for 0x${requestOpCode.toString(16)}`,
-                );
-                return;
-              }
-
-              const resultCode = responseBytes[2];
-              succeed({
-                requestOpCode,
-                resultCode,
-                resultCodeName: this.getResultCodeName(resultCode),
-                success: resultCode === FTMS_RESULT_CODES.SUCCESS,
-                parameters: responseBytes.byteLength > 3 ? responseBytes.slice(3) : undefined,
-              });
-            },
-          );
-        });
+        await this.ensureControlPointMonitor();
+        const responsePromise = this.waitForControlPointResponse(requestOpCode);
 
         try {
-          await this.device.writeCharacteristicWithResponseForService(
-            BLE_SERVICE_UUIDS.FITNESS_MACHINE,
-            FTMS_CHARACTERISTICS.CONTROL_POINT,
-            Buffer.from(buffer).toString("base64"),
+          await this.gattQueues.enqueue(
+            this.deviceId,
+            `ftms:write-control-point:0x${requestOpCode.toString(16)}`,
+            () =>
+              this.device.writeCharacteristicWithResponseForService(
+                BLE_SERVICE_UUIDS.FITNESS_MACHINE,
+                FTMS_CHARACTERISTICS.CONTROL_POINT,
+                Buffer.from(buffer).toString("base64"),
+              ),
+            { timeoutMs: 5000 },
           );
         } catch (writeError) {
-          abortResponseWait?.();
+          this.rejectPendingControlPointResponse(new Error(FTMS_WRITE_ABORTED_MESSAGE));
           throw writeError;
         }
 
@@ -1097,7 +1069,7 @@ export class FTMSController {
         console.warn(`[FTMS] Write attempt ${attempt + 1} failed:`, error);
 
         if (attempt < retries - 1) {
-          const delay = Math.pow(2, attempt) * 500;
+          const delay = 2 ** attempt * 500;
           await new Promise((resolve) => setTimeout(resolve, delay));
         }
       }
@@ -1109,6 +1081,92 @@ export class FTMSController {
       resultCodeName: "All retries failed",
       success: false,
     };
+  }
+
+  private async ensureControlPointMonitor(): Promise<void> {
+    if (this.controlPointSubscription) {
+      return;
+    }
+
+    this.controlPointSubscription = await this.gattQueues.enqueue(
+      this.deviceId,
+      "ftms:monitor-control-point",
+      async () =>
+        this.device.monitorCharacteristicForService(
+          BLE_SERVICE_UUIDS.FITNESS_MACHINE,
+          FTMS_CHARACTERISTICS.CONTROL_POINT,
+          (error, characteristic) => {
+            const pending = this.pendingControlPointResponse;
+            if (error) {
+              this.rejectPendingControlPointResponse(
+                error instanceof Error ? error : new Error(String(error)),
+              );
+              return;
+            }
+
+            if (!pending || !characteristic?.value) return;
+
+            const responseBytes = decodeBase64ToBytes(characteristic.value);
+            if (responseBytes.byteLength < 1) return;
+
+            const responseOpCode = responseBytes[0];
+            if (responseOpCode !== FTMS_OPCODES.RESPONSE_CODE) return;
+
+            if (responseBytes.byteLength < 3) {
+              this.rejectPendingControlPointResponse(new Error("Malformed FTMS response payload"));
+              return;
+            }
+
+            const receivedRequestOpCode = responseBytes[1];
+            if (receivedRequestOpCode !== pending.requestOpCode) {
+              console.warn(
+                `[FTMS] Ignoring response for opcode 0x${receivedRequestOpCode.toString(16)} while waiting for 0x${pending.requestOpCode.toString(16)}`,
+              );
+              return;
+            }
+
+            const resultCode = responseBytes[2];
+            clearTimeout(pending.timeout);
+            this.pendingControlPointResponse = undefined;
+            pending.resolve({
+              requestOpCode: pending.requestOpCode,
+              resultCode,
+              resultCodeName: this.getResultCodeName(resultCode),
+              success: resultCode === FTMS_RESULT_CODES.SUCCESS,
+              parameters: responseBytes.byteLength > 3 ? responseBytes.slice(3) : undefined,
+            });
+          },
+        ),
+      { timeoutMs: 5000 },
+    );
+  }
+
+  private waitForControlPointResponse(requestOpCode: number): Promise<FTMSResponse> {
+    this.rejectPendingControlPointResponse(new Error(FTMS_WRITE_ABORTED_MESSAGE));
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.rejectPendingControlPointResponse(new Error(FTMS_RESPONSE_TIMEOUT_MESSAGE));
+      }, 2000);
+
+      this.pendingControlPointResponse = {
+        requestOpCode,
+        resolve,
+        reject,
+        timeout,
+      };
+    });
+  }
+
+  private rejectPendingControlPointResponse(error: Error): void {
+    const pending = this.pendingControlPointResponse;
+    if (!pending) {
+      return;
+    }
+
+    clearTimeout(pending.timeout);
+    this.pendingControlPointResponse = undefined;
+    pending.reject(error);
   }
 
   /**
@@ -1164,42 +1222,55 @@ export class FTMSController {
    */
   async subscribeStatus(callback: (status: string) => void): Promise<void> {
     try {
-      this.device.monitorCharacteristicForService(
-        BLE_SERVICE_UUIDS.FITNESS_MACHINE,
-        FTMS_CHARACTERISTICS.STATUS,
-        (error, characteristic) => {
-          if (error) {
-            console.error("[FTMS] Status monitoring error:", error);
-            return;
-          }
+      await this.gattQueues.enqueue(
+        this.deviceId,
+        "ftms:monitor-status",
+        async () =>
+          this.device.monitorCharacteristicForService(
+            BLE_SERVICE_UUIDS.FITNESS_MACHINE,
+            FTMS_CHARACTERISTICS.STATUS,
+            (error, characteristic) => {
+              if (error) {
+                console.error("[FTMS] Status monitoring error:", error);
+                return;
+              }
 
-          if (!characteristic?.value) return;
+              if (!characteristic?.value) return;
 
-          const bytes = decodeBase64ToBytes(characteristic.value);
-          if (bytes.byteLength < 1) {
-            return;
-          }
+              const bytes = decodeBase64ToBytes(characteristic.value);
+              if (bytes.byteLength < 1) {
+                return;
+              }
 
-          const opCode = bytes[0];
+              const opCode = bytes[0];
 
-          const statusMessages: Record<number, string> = {
-            0x01: "Reset",
-            0x02: "Stopped by user",
-            0x03: "Stopped by safety key",
-            0x04: "Started by user",
-            0x07: "Target resistance changed",
-            0x08: "Target power changed",
-            0x12: "Indoor bike simulation parameters changed",
-          };
+              const statusMessages: Record<number, string> = {
+                1: "Reset",
+                2: "Stopped by user",
+                3: "Stopped by safety key",
+                4: "Started by user",
+                7: "Target resistance changed",
+                8: "Target power changed",
+                18: "Indoor bike simulation parameters changed",
+              };
 
-          const message = statusMessages[opCode] || `Unknown status (0x${opCode.toString(16)})`;
-          console.log("[FTMS] Status:", message);
-          callback(message);
-        },
+              const message = statusMessages[opCode] || `Unknown status (0x${opCode.toString(16)})`;
+              console.log("[FTMS] Status:", message);
+              callback(message);
+            },
+          ),
+        { timeoutMs: 5000 },
       );
     } catch (error) {
       console.error("[FTMS] Failed to subscribe to status:", error);
     }
+  }
+
+  dispose(): void {
+    this.controlGranted = false;
+    this.rejectPendingControlPointResponse(new Error(FTMS_WRITE_ABORTED_MESSAGE));
+    this.controlPointSubscription?.remove();
+    this.controlPointSubscription = undefined;
   }
 
   // ==================== Getters ====================

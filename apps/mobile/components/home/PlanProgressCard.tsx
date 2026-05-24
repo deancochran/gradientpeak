@@ -1,6 +1,6 @@
 import { Progress } from "@repo/ui/components/progress";
 import { Target } from "lucide-react-native";
-import React from "react";
+import type React from "react";
 import { Text, TouchableOpacity, View } from "react-native";
 
 interface PlanProgressCardProps {
@@ -26,11 +26,8 @@ const PlanProgressCard: React.FC<PlanProgressCardProps> = ({
       onPress={onPress}
       activeOpacity={onPress ? 0.7 : 1}
     >
-      {/* Header with Icon */}
       <View className="flex-row items-center mb-2">
-        <View className="bg-primary/10 p-2 rounded-full mr-2">
-          <Target className="text-primary" size={16} />
-        </View>
+        <Target className="mr-2 text-primary" size={16} />
         <View className="flex-1">
           <Text className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
             Active Plan

@@ -217,7 +217,7 @@ function UiPreviewSurface() {
             />
           </View>
           <View className="gap-2">
-            <Label htmlFor={uiPreviewFixtures.select.id}>Workout type</Label>
+            <Label htmlFor={uiPreviewFixtures.select.id}>Activity type</Label>
             <Select
               onValueChange={(nextValue) => setSelectedWorkoutType(nextValue)}
               value={selectedWorkoutType}

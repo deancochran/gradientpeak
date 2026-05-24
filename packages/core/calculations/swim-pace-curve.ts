@@ -190,7 +190,7 @@ export function parseSwimPace(paceString: string): number {
   const minutes = parseInt(minutesPart, 10);
   const seconds = parseInt(secondsPart, 10);
 
-  if (isNaN(minutes) || isNaN(seconds) || seconds < 0 || seconds >= 60) {
+  if (Number.isNaN(minutes) || Number.isNaN(seconds) || seconds < 0 || seconds >= 60) {
     throw new Error("Invalid pace values");
   }
 

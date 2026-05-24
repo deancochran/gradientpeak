@@ -1,2 +1,3 @@
 export type { GoalEditorDraft } from "@repo/core";
-export { GoalEditorModal } from "./GoalEditorModal";
+export type { GoalEditorFormHandle } from "./GoalEditorModal";
+export { GoalEditorForm, GoalEditorModal } from "./GoalEditorModal";

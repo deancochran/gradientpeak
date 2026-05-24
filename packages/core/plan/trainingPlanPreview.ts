@@ -41,9 +41,23 @@ export type PreviewReadinessSnapshot = {
   readiness_score: number;
   predicted_load_tss: number;
   predicted_fatigue_atl: number;
-  feasibility_state: "feasible" | "aggressive" | "unsafe";
+  feasibility_state: ProjectionFeasibilityState;
   tss_ramp_clamp_weeks: number;
   ctl_ramp_clamp_weeks: number;
+};
+
+export type ProjectionFeasibilityState = "feasible" | "aggressive" | "unsafe";
+
+export type ProjectionFeasibilitySummary = {
+  state: ProjectionFeasibilityState;
+  reasons: string[];
+  diagnostics: {
+    tss_ramp_near_cap_weeks: number;
+    ctl_ramp_near_cap_weeks: number;
+    tss_ramp_clamp_weeks: number;
+    ctl_ramp_clamp_weeks: number;
+    recovery_weeks: number;
+  };
 };
 
 type ReadinessDirection = "up" | "down" | "flat";
@@ -266,6 +280,94 @@ export function buildReadinessDeltaDiagnostics(input: {
   };
 }
 
+export function classifyProjectionFeasibility(input: {
+  microcycles: Array<{
+    metadata?: {
+      tss_ramp?: {
+        previous_week_tss: number;
+        requested_weekly_tss: number;
+        max_weekly_tss_ramp_pct: number;
+        clamped: boolean;
+      };
+      ctl_ramp?: {
+        requested_ctl_ramp: number;
+        max_ctl_ramp_per_week: number;
+        clamped: boolean;
+      };
+    };
+  }>;
+  constraint_summary?: {
+    tss_ramp_clamp_weeks: number;
+    ctl_ramp_clamp_weeks: number;
+    recovery_weeks: number;
+  };
+  near_cap_threshold?: number;
+}): ProjectionFeasibilitySummary {
+  const nearCapThreshold = input.near_cap_threshold ?? 0.9;
+  let tssNearCapWeeks = 0;
+  let ctlNearCapWeeks = 0;
+
+  for (const microcycle of input.microcycles) {
+    const tssRamp = microcycle.metadata?.tss_ramp;
+    const ctlRamp = microcycle.metadata?.ctl_ramp;
+    if (!tssRamp || !ctlRamp) {
+      continue;
+    }
+
+    if (!tssRamp.clamped && tssRamp.previous_week_tss > 0 && tssRamp.max_weekly_tss_ramp_pct > 0) {
+      const requestedRampPct =
+        ((tssRamp.requested_weekly_tss - tssRamp.previous_week_tss) / tssRamp.previous_week_tss) *
+        100;
+      if (requestedRampPct >= tssRamp.max_weekly_tss_ramp_pct * nearCapThreshold) {
+        tssNearCapWeeks += 1;
+      }
+    }
+
+    if (!ctlRamp.clamped && ctlRamp.max_ctl_ramp_per_week > 0) {
+      if (ctlRamp.requested_ctl_ramp >= ctlRamp.max_ctl_ramp_per_week * nearCapThreshold) {
+        ctlNearCapWeeks += 1;
+      }
+    }
+  }
+
+  const tssRampClampWeeks = input.constraint_summary?.tss_ramp_clamp_weeks ?? 0;
+  const ctlRampClampWeeks = input.constraint_summary?.ctl_ramp_clamp_weeks ?? 0;
+  const reasons: string[] = ["safety_first_best_safe_projection"];
+  let state: ProjectionFeasibilityState = "feasible";
+
+  if (tssRampClampWeeks > 0) {
+    state = "aggressive";
+    reasons.push("required_tss_ramp_exceeds_configured_cap");
+  }
+
+  if (ctlRampClampWeeks > 0) {
+    state = "aggressive";
+    reasons.push("required_ctl_ramp_exceeds_configured_cap");
+  }
+
+  if (tssNearCapWeeks > 0) {
+    state = "aggressive";
+    reasons.push("required_tss_ramp_near_configured_cap");
+  }
+
+  if (ctlNearCapWeeks > 0) {
+    state = "aggressive";
+    reasons.push("required_ctl_ramp_near_configured_cap");
+  }
+
+  return {
+    state,
+    reasons: [...new Set(reasons)],
+    diagnostics: {
+      tss_ramp_near_cap_weeks: tssNearCapWeeks,
+      ctl_ramp_near_cap_weeks: ctlNearCapWeeks,
+      tss_ramp_clamp_weeks: tssRampClampWeeks,
+      ctl_ramp_clamp_weeks: ctlRampClampWeeks,
+      recovery_weeks: input.constraint_summary?.recovery_weeks ?? 0,
+    },
+  };
+}
+
 export function buildPreviewReadinessSnapshot(input: {
   projectionChart: {
     points: Array<{
@@ -279,7 +381,7 @@ export function buildPreviewReadinessSnapshot(input: {
       ctl_ramp_clamp_weeks: number;
     };
   };
-  projectionFeasibilityState: "feasible" | "aggressive" | "unsafe";
+  projectionFeasibilityState: ProjectionFeasibilityState;
 }): PreviewReadinessSnapshot | null {
   const pointCount = input.projectionChart.points.length;
   if (pointCount === 0) {

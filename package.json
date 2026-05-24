@@ -7,7 +7,8 @@
     "knip": "^6.4.1",
     "lefthook": "^2.1.6",
     "turbo": "^2.6.3",
-    "typescript": "5.9.2"
+    "typescript": "5.9.2",
+    "vitest": "^4.0.18"
   },
   "engines": {
     "node": ">=18"
@@ -16,11 +17,17 @@
   "private": true,
   "scripts": {
     "build": "turbo run build",
+    "audit:forms": "node tooling/forms/audit-forms.mjs",
     "check": "biome check apps packages tooling .github README.md package.json pnpm-workspace.yaml turbo.json biome.json",
-    "dev": "turbo run dev",
+    "check:ci": "biome ci apps packages tooling .github README.md package.json pnpm-workspace.yaml turbo.json biome.json",
+    "dev": "pnpm --filter web dev",
+    "dev:all": "turbo run dev",
     "dev:clean": "pnpm exec k 3000 3100 8081 8082 || true && pnpm run self-host:down >/dev/null 2>&1 || true && printf '[dev-clean] local web/mobile dev servers and Supabase stopped\n'",
     "dev:e2e": "turbo run dev:e2e --parallel --ui tui",
     "dev:web": "pnpm --filter web dev",
+    "dev:wahoo-drain": "pnpm --filter web dev:wahoo-drain",
+    "dev:wahoo-drain:direct": "pnpm --filter web dev:wahoo-drain:direct",
+    "dev:wahoo-drain:once": "pnpm --filter web dev:wahoo-drain:once",
     "dev:web:scan": "pnpm --filter web dev:scan",
     "dev:mobile": "pnpm --filter mobile dev",
     "dev:e2e:web": "pnpm --filter web dev:e2e",
@@ -48,7 +55,9 @@
     "db:drizzle:studio": "pnpm --filter @repo/db db:drizzle:studio",
     "check-types": "turbo run check-types",
     "test": "turbo run test",
+    "test:parity": "pnpm exec vitest run --config vitest.parity.config.ts",
     "test:e2e:web": "pnpm --filter web test:e2e",
+    "quality:agent": "pnpm check && pnpm check-types && pnpm test && pnpm knip",
     "self-host:up": "pnpm --filter @repo/db self-host:up",
     "self-host:down": "pnpm --filter @repo/db self-host:down"
   },

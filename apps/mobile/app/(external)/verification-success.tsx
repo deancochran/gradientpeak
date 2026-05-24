@@ -2,7 +2,6 @@ import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
 import { useRouter } from "expo-router";
-import React from "react";
 import { KeyboardAvoidingView, Platform, View } from "react-native";
 
 export default function VerificationSuccessScreen() {

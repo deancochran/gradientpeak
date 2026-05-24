@@ -8,6 +8,10 @@ import { buildActivityDerivedSummaryMap } from "../lib/activity-analysis";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
 const timestampSchema = z.union([z.date(), z.string()]);
+const nullableNumericSchema = z.preprocess((value) => {
+  if (value === null || value === undefined || value === "") return null;
+  return Number(value);
+}, z.number().nullable());
 
 const feedDerivedSchema = z
   .object({
@@ -24,7 +28,7 @@ const feedProfileSchema = z.object({
 });
 
 const feedItemSchema = z.object({
-  cursor: z.string().datetime({ offset: true }).nullish(),
+  cursor: z.string().nullish(),
   limit: z.number().min(1).max(50).default(20),
 });
 
@@ -44,6 +48,7 @@ const feedActivityRowSchema = publicActivitiesRowSchema
     elevation_gain_meters: true,
     calories: true,
     polyline: true,
+    activity_file_path: true,
     likes_count: true,
     is_private: true,
   })
@@ -53,14 +58,21 @@ const feedActivityRowSchema = publicActivitiesRowSchema
     created_at: timestampSchema,
     profile_username: z.string().nullable(),
     profile_avatar_url: z.string().nullable(),
+    elevation_gain_meters: nullableNumericSchema,
+    max_power: nullableNumericSchema.optional(),
+    avg_speed_mps: nullableNumericSchema.optional(),
+    max_speed_mps: nullableNumericSchema.optional(),
+    normalized_power: nullableNumericSchema.optional(),
+    normalized_speed_mps: nullableNumericSchema.optional(),
+    normalized_graded_speed_mps: nullableNumericSchema.optional(),
   });
 
 const feedActivityDetailRowSchema = feedActivityRowSchema.extend({
   notes: publicActivitiesRowSchema.shape.notes,
-  max_power: publicActivitiesRowSchema.shape.max_power,
+  max_power: nullableNumericSchema,
   max_cadence: publicActivitiesRowSchema.shape.max_cadence,
-  normalized_power: publicActivitiesRowSchema.shape.normalized_power,
-  elevation_loss_meters: publicActivitiesRowSchema.shape.elevation_loss_meters,
+  normalized_power: nullableNumericSchema,
+  elevation_loss_meters: nullableNumericSchema,
   map_bounds: publicActivitiesRowSchema.shape.map_bounds,
   viewer_follows_owner: z.boolean(),
 });
@@ -100,6 +112,7 @@ const feedActivityDtoSchema = z.object({
   elevation_gain_meters: z.number().nullable(),
   calories: z.number().nullable(),
   polyline: z.string().nullable(),
+  activity_file_path: z.string().nullable(),
   likes_count: z.number(),
   comments_count: z.number().int().nonnegative(),
   is_private: z.boolean(),
@@ -166,6 +179,7 @@ function mapFeedActivity(
     elevation_gain_meters: activity.elevation_gain_meters,
     calories: activity.calories,
     polyline: activity.polyline,
+    activity_file_path: activity.activity_file_path,
     likes_count: activity.likes_count ?? 0,
     comments_count: options.commentCounts.get(activity.id) ?? 0,
     is_private: activity.is_private,
@@ -187,6 +201,28 @@ function buildUuidInList(values: string[]) {
   );
 }
 
+function encodeFeedCursor(activity: Pick<FeedActivity, "id" | "started_at">) {
+  return `${activity.started_at}|${activity.id}`;
+}
+
+function decodeFeedCursor(cursor: string | null | undefined) {
+  if (!cursor) {
+    return null;
+  }
+
+  const [startedAt, id] = cursor.split("|");
+  const startedAtDate = startedAt ? new Date(startedAt) : null;
+
+  if (!startedAtDate || Number.isNaN(startedAtDate.getTime())) {
+    return null;
+  }
+
+  return {
+    id: id && z.string().uuid().safeParse(id).success ? id : null,
+    startedAt: startedAtDate,
+  };
+}
+
 export const feedRouter = createTRPCRouter({
   /**
    * getFeed - Get paginated activity feed
@@ -204,7 +240,12 @@ export const feedRouter = createTRPCRouter({
     const cursor = input.cursor;
 
     try {
-      const cursorFilter = cursor ? sql`and a.started_at < ${new Date(cursor)}` : sql``;
+      const decodedCursor = decodeFeedCursor(cursor);
+      const cursorFilter = decodedCursor
+        ? decodedCursor.id
+          ? sql`and (a.started_at < ${decodedCursor.startedAt} or (a.started_at = ${decodedCursor.startedAt} and a.id < ${decodedCursor.id}::uuid))`
+          : sql`and a.started_at < ${decodedCursor.startedAt}`
+        : sql``;
 
       const activitiesResult = await db.execute(sql<FeedActivityRow>`
         select
@@ -220,10 +261,17 @@ export const feedRouter = createTRPCRouter({
           a.avg_heart_rate,
           a.max_heart_rate,
           a.avg_power,
+          a.max_power,
           a.avg_cadence,
+          a.avg_speed_mps,
+          a.max_speed_mps,
+          a.normalized_power,
+          a.normalized_speed_mps,
+          a.normalized_graded_speed_mps,
           a.elevation_gain_meters,
           a.calories,
           a.polyline,
+          a.activity_file_path,
           a.likes_count,
           a.is_private,
           a.created_at,
@@ -243,7 +291,7 @@ export const feedRouter = createTRPCRouter({
             )
           )
           ${cursorFilter}
-        order by a.started_at desc
+        order by a.started_at desc, a.id desc
         limit ${limit + 1}
       `);
 
@@ -303,7 +351,7 @@ export const feedRouter = createTRPCRouter({
       if (feedItems.length > limit) {
         const nextItem = feedItems[limit - 1];
         if (nextItem) {
-          nextCursor = nextItem.started_at;
+          nextCursor = encodeFeedCursor(nextItem);
         }
         feedItems = feedItems.slice(0, limit);
       }
@@ -330,7 +378,7 @@ export const feedRouter = createTRPCRouter({
    * Authorization:
    * - User must own the activity, OR
    * - Activity must be public, OR
-   * - User must follow the activity owner (accepted follow)
+   * - Activity must be public
    */
   getActivity: protectedProcedure
     .input(z.object({ activityId: z.string().uuid() }))
@@ -362,6 +410,7 @@ export const feedRouter = createTRPCRouter({
             a.elevation_loss_meters,
             a.calories,
             a.polyline,
+            a.activity_file_path,
             a.map_bounds,
             a.likes_count,
             a.is_private,
@@ -394,7 +443,7 @@ export const feedRouter = createTRPCRouter({
 
         const isActivityOwner = activity.profile_id === userId;
 
-        if (activity.is_private && !isActivityOwner && !activity.viewer_follows_owner) {
+        if (activity.is_private && !isActivityOwner) {
           throw new TRPCError({
             code: "FORBIDDEN",
             message: "You don't have permission to view this activity",
@@ -469,6 +518,7 @@ export const feedRouter = createTRPCRouter({
           elevation_loss_meters: activity.elevation_loss_meters,
           calories: activity.calories,
           polyline: activity.polyline,
+          activity_file_path: activity.activity_file_path,
           map_bounds: activity.map_bounds,
           likes_count: activity.likes_count ?? 0,
           is_private: activity.is_private,

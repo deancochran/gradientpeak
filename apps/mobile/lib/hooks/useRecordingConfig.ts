@@ -4,7 +4,11 @@
  * Provides capability-based feature flags for UI components
  */
 
-import type { RecordingCapabilities, RecordingConfiguration } from "@repo/core";
+import type {
+  RecordingCapabilities,
+  RecordingConfiguration,
+  RecordingSessionContract,
+} from "@repo/core";
 import { useMemo } from "react";
 import type { ActivityRecorderService } from "../services/ActivityRecorder";
 import { useSessionView } from "./useActivityRecorder";
@@ -30,6 +34,13 @@ export function useRecordingCapabilities(
 ): RecordingCapabilities | null {
   const config = useRecordingConfig(service);
   return config?.capabilities ?? null;
+}
+
+export function useRecordingSessionContract(
+  service: ActivityRecorderService | null,
+): RecordingSessionContract | null {
+  const config = useRecordingConfig(service);
+  return config?.session ?? null;
 }
 
 /**

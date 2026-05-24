@@ -1,7 +1,7 @@
 import { buildMobileCallbackUrl } from "@repo/auth/callbacks";
 import { createFileRoute } from "@tanstack/react-router";
 
-import { getConfiguredAppBaseUrl, getRequestBaseUrl } from "../../lib/app-url";
+import { getRequestBaseUrl } from "../../lib/app-url";
 
 const DEFAULT_MOBILE_DEEP_LINK = "gradientpeak://sign-in";
 
