@@ -206,6 +206,7 @@ describe("feedRouter", () => {
         intensity_factor: 0.91,
         computed_as_of: "2026-04-03T11:00:00.000Z",
       },
+      ingestion: null,
     });
     expect(analysisMocks.buildActivityDerivedSummaryMap).toHaveBeenCalledWith(
       expect.objectContaining({

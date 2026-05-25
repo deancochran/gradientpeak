@@ -186,6 +186,37 @@ function buildActivityImportRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function buildActivityFileIngestionRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "88888888-8888-4888-8888-888888888888",
+    activity_id: ACTIVITY_ID,
+    profile_id: OWNER_ID,
+    source: "mobile_recording",
+    provider: null,
+    external_id: null,
+    file_path: null,
+    file_size: 123456,
+    file_type: "fit",
+    status: "pending_upload",
+    attempt_count: 0,
+    last_error_code: null,
+    last_error_message: null,
+    requested_at: new Date("2026-01-01T00:00:00.000Z"),
+    started_at: null,
+    completed_at: null,
+    failed_at: null,
+    created_at: new Date("2026-01-01T00:00:00.000Z"),
+    updated_at: new Date("2026-01-01T00:00:00.000Z"),
+    ...overrides,
+  };
+}
+
+function findInsertedValue(db: any, tableName: string) {
+  return db.__spies.insertValues.mock.calls.find(
+    ([insertedTableName]: [string, unknown]) => insertedTableName === tableName,
+  )?.[1];
+}
+
 function buildActivityGeometryRow(overrides: Record<string, unknown> = {}) {
   return {
     activity_id: ACTIVITY_ID,
@@ -261,8 +292,10 @@ function createDbMock(options: {
   queryEventsFindFirst?: any[];
   queryLikesFindFirst?: any[];
   executeRows?: Array<{ id: string }>;
+  insertedRowsByTable?: Record<string, unknown[]>;
   updatedRows?: any[];
 }) {
+  const insertValues = vi.fn();
   const deleteWhere = vi.fn(() => Promise.resolve());
   const offset = vi.fn(() => Promise.resolve(options.activityRows ?? []));
   const limit = vi.fn(() => ({
@@ -353,10 +386,17 @@ function createDbMock(options: {
       };
     }),
     execute: vi.fn(async () => ({ rows: options.executeRows ?? [] })),
-    insert: vi.fn(() => ({
-      values: vi.fn(() => ({
-        returning: vi.fn(() => Promise.resolve(options.executeRows ?? [])),
-      })),
+    insert: vi.fn((table: unknown) => ({
+      values: vi.fn((values: unknown) => {
+        const tableName = getTableName(table);
+        insertValues(tableName, values);
+
+        return {
+          returning: vi.fn(() =>
+            Promise.resolve(options.insertedRowsByTable?.[tableName] ?? options.executeRows ?? []),
+          ),
+        };
+      }),
     })),
     transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback(db)),
     update: vi.fn(() => ({
@@ -394,6 +434,7 @@ function createDbMock(options: {
       limit,
       offset,
       orderBy,
+      insertValues,
     },
   };
 
@@ -647,6 +688,138 @@ describe("activitiesRouter", () => {
     expect(db.transaction).toHaveBeenCalledTimes(1);
   });
 
+  it("creates an activity from a mobile recording summary with pending ingestion", async () => {
+    const createdActivity = buildActivityRow({
+      id: ACTIVITY_ID,
+      activity_plan_id: PLAN_ID,
+      name: "Recorder Run",
+      notes: "Phone GPS",
+      type: "run",
+      is_private: true,
+      started_at: new Date("2026-01-15T09:00:00.000Z"),
+      finished_at: new Date("2026-01-15T10:00:00.000Z"),
+    });
+    const ingestion = buildActivityFileIngestionRow();
+    const db = createDbMock({
+      insertedRowsByTable: {
+        activities: [createdActivity],
+        activity_file_ingestions: [ingestion],
+      },
+    });
+
+    const caller = createCaller(db);
+    const result = await caller.createFromRecordingSummary({
+      profileId: OWNER_ID,
+      name: "Recorder Run",
+      notes: "Phone GPS",
+      is_private: true,
+      activityType: "run",
+      activityPlanId: PLAN_ID,
+      startedAt: "2026-01-15T09:00:00.000Z",
+      finishedAt: "2026-01-15T10:00:00.000Z",
+      durationSeconds: 3600,
+      movingSeconds: 3500,
+      distanceMeters: 10000,
+      calories: 640,
+      localFileMetadata: {
+        fileType: "fit",
+        fileSize: 123456,
+        filePath: null,
+      },
+    });
+
+    expect(result).toMatchObject({
+      id: ACTIVITY_ID,
+      profile_id: OWNER_ID,
+      activity_plan_id: PLAN_ID,
+      name: "Recorder Run",
+      notes: "Phone GPS",
+      is_private: true,
+      duration_seconds: 3600,
+      moving_seconds: 3500,
+      distance_meters: 10000,
+      calories: 640,
+      ingestion: {
+        id: ingestion.id,
+        status: "pending_upload",
+        source: "mobile_recording",
+      },
+    });
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+    expect(findInsertedValue(db, "activities")).toMatchObject({
+      profile_id: OWNER_ID,
+      activity_plan_id: PLAN_ID,
+      name: "Recorder Run",
+      notes: "Phone GPS",
+      type: "run",
+      is_private: true,
+    });
+    expect(findInsertedValue(db, "activity_summaries")).toMatchObject({
+      activity_id: ACTIVITY_ID,
+      profile_id: OWNER_ID,
+      duration_seconds: 3600,
+      moving_seconds: 3500,
+      distance_meters: 10000,
+      calories: 640,
+    });
+    expect(findInsertedValue(db, "activity_file_ingestions")).toMatchObject({
+      activity_id: ACTIVITY_ID,
+      profile_id: OWNER_ID,
+      source: "mobile_recording",
+      status: "pending_upload",
+      file_type: "fit",
+      file_size: 123456,
+      file_path: null,
+    });
+  });
+
+  it("rejects recording summary creation for another profile", async () => {
+    const caller = createCaller(createDbMock({}));
+
+    await expect(
+      caller.createFromRecordingSummary({
+        profileId: OTHER_ID,
+        name: "Other Run",
+        activityType: "run",
+        startedAt: "2026-01-15T09:00:00.000Z",
+        finishedAt: "2026-01-15T10:00:00.000Z",
+        durationSeconds: 3600,
+        movingSeconds: 3500,
+        distanceMeters: 10000,
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("rejects recording summary creation with invalid duration", async () => {
+    const caller = createCaller(createDbMock({}));
+
+    await expect(
+      caller.createFromRecordingSummary({
+        profileId: OWNER_ID,
+        name: "Bad Run",
+        activityType: "run",
+        startedAt: "2026-01-15T09:00:00.000Z",
+        finishedAt: "2026-01-15T10:00:00.000Z",
+        durationSeconds: 0,
+        movingSeconds: 0,
+        distanceMeters: 0,
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    await expect(
+      caller.createFromRecordingSummary({
+        profileId: OWNER_ID,
+        name: "Backwards Run",
+        activityType: "run",
+        startedAt: "2026-01-15T10:00:00.000Z",
+        finishedAt: "2026-01-15T09:00:00.000Z",
+        durationSeconds: 3600,
+        movingSeconds: 3500,
+        distanceMeters: 10000,
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
   it("returns a derived activity response for an accessible activity", async () => {
     const finishedAt = new Date("2026-01-09T08:45:00.000Z");
     const activity = buildActivityRow({
@@ -693,6 +866,7 @@ describe("activitiesRouter", () => {
           created_at: "2026-01-01T00:00:00.000Z",
           updated_at: "2026-01-02T00:00:00.000Z",
         },
+        ingestion: null,
       },
       has_liked: true,
       derived,

@@ -7,6 +7,7 @@ import {
 } from "@repo/core";
 import {
   activities,
+  activityFileIngestions,
   activityGeometry,
   activityImports,
   activityLaps,
@@ -22,6 +23,7 @@ import {
 import { TRPCError } from "@trpc/server";
 import { and, count, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
+import { createActivityFileIngestion } from "../application/activity-file-ingestion/ingestion-state";
 import { getRequiredDb } from "../db";
 import { createActivityAnalysisStore } from "../infrastructure/repositories";
 import {
@@ -58,16 +60,27 @@ const activityPlanReferenceSchema = publicActivityPlansRowSchema
   })
   .strict();
 
+const activityIngestionStatusSchema = z
+  .object({
+    id: z.string().uuid(),
+    status: z.string(),
+    source: z.string(),
+    last_error_message: z.string().nullable().optional(),
+  })
+  .strict();
+
 const activityListItemSchema = activityRowSchema
   .extend({
     has_liked: z.boolean(),
     derived: activityListDerivedSummarySchema.nullable(),
+    ingestion: activityIngestionStatusSchema.nullable().optional(),
   })
   .strict();
 
 const activityWithPlanSchema = activityRowSchema
   .extend({
     activity_plans: activityPlanReferenceSchema.nullable(),
+    ingestion: activityIngestionStatusSchema.nullable().optional(),
   })
   .strict();
 
@@ -108,6 +121,36 @@ const createInputSchema = ActivityUploadSchema.extend({
   startedAt: isoDatetimeSchema,
   finishedAt: isoDatetimeSchema,
 })
+  .strict()
+  .refine((data) => new Date(data.finishedAt) > new Date(data.startedAt), {
+    message: "finishedAt must be after startedAt",
+    path: ["finishedAt"],
+  });
+
+const createFromRecordingSummaryInputSchema = z
+  .object({
+    profileId: z.string().uuid(),
+    name: z.string().trim().min(1),
+    notes: z.string().nullable().optional(),
+    is_private: z.boolean().optional(),
+    activityType: publicActivityCategorySchema,
+    startedAt: isoDatetimeSchema,
+    finishedAt: isoDatetimeSchema,
+    durationSeconds: z.number().int().positive(),
+    movingSeconds: z.number().int().nonnegative(),
+    distanceMeters: z.number().int().nonnegative(),
+    calories: z.number().int().nonnegative().nullable().optional(),
+    activityPlanId: z.string().uuid().nullable().optional(),
+    localFileMetadata: z
+      .object({
+        fileType: z.string().trim().min(1).nullable().optional(),
+        fileSize: z.number().int().nonnegative().nullable().optional(),
+        filePath: z.string().trim().min(1).nullable().optional(),
+      })
+      .strict()
+      .optional(),
+    source: z.literal("mobile_recording").default("mobile_recording"),
+  })
   .strict()
   .refine((data) => new Date(data.finishedAt) > new Date(data.startedAt), {
     message: "finishedAt must be after startedAt",
@@ -656,6 +699,116 @@ export const activitiesRouter = createTRPCRouter({
     return data;
   }),
 
+  createFromRecordingSummary: protectedProcedure
+    .input(createFromRecordingSummaryInputSchema)
+    .mutation(async ({ input, ctx }) => {
+      const db = getRequiredDb(ctx);
+
+      if (input.profileId !== ctx.session.user.id) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Cannot create activities for other profiles",
+        });
+      }
+
+      const created = await db.transaction(async (tx) => {
+        const now = new Date();
+        const [activity] = await tx
+          .insert(activities)
+          .values({
+            id: randomUUID(),
+            profile_id: input.profileId,
+            activity_plan_id: input.activityPlanId ?? null,
+            name: input.name,
+            notes: input.notes ?? null,
+            type: input.activityType,
+            started_at: new Date(input.startedAt),
+            finished_at: new Date(input.finishedAt),
+            is_private: input.is_private ?? true,
+            created_at: now,
+            updated_at: now,
+          })
+          .returning();
+
+        if (!activity) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Failed to create activity",
+          });
+        }
+
+        const summary = {
+          activity_id: activity.id,
+          profile_id: input.profileId,
+          duration_seconds: input.durationSeconds,
+          moving_seconds: input.movingSeconds,
+          distance_meters: input.distanceMeters,
+          elevation_gain_meters: null,
+          elevation_loss_meters: null,
+          calories: input.calories ?? null,
+          avg_heart_rate: null,
+          max_heart_rate: null,
+          avg_power: null,
+          max_power: null,
+          normalized_power: null,
+          avg_cadence: null,
+          max_cadence: null,
+          avg_speed_mps: null,
+          max_speed_mps: null,
+          normalized_speed_mps: null,
+          normalized_graded_speed_mps: null,
+          avg_temperature: null,
+          avg_swolf: null,
+          efficiency_factor: null,
+          aerobic_decoupling: null,
+          pool_length: null,
+          total_strokes: null,
+          created_at: now,
+          updated_at: now,
+        };
+
+        await tx.insert(activitySummaries).values(summary);
+
+        const ingestion = await createActivityFileIngestion(tx, {
+          activityId: activity.id,
+          profileId: input.profileId,
+          source: input.source,
+          filePath: null,
+          fileSize: input.localFileMetadata?.fileSize ?? null,
+          fileType: input.localFileMetadata?.fileType ?? null,
+          now,
+        });
+
+        return {
+          activity,
+          summary,
+          ingestion,
+        };
+      });
+
+      const data = parseActivityRow(
+        mergeActivitySummary(
+          created.activity,
+          created.summary as typeof activitySummaries.$inferSelect,
+        ),
+      );
+
+      await markProfileAnalysisDirty(db, {
+        profileId: ctx.session.user.id,
+        kinds: ["fitness"],
+        dirtySince: data.started_at,
+      });
+
+      return {
+        ...data,
+        ingestion: {
+          id: created.ingestion.id,
+          status: created.ingestion.status,
+          source: created.ingestion.source,
+        },
+      };
+    }),
+
   getById: protectedProcedure.input(getByIdInputSchema).query(async ({ input, ctx }) => {
     const db = getRequiredDb(ctx);
     const userId = ctx.session.user.id;
@@ -670,7 +823,7 @@ export const activitiesRouter = createTRPCRouter({
       });
     }
 
-    const [activityRecord, likeData] = await Promise.all([
+    const [activityRecord, likeData, ingestion] = await Promise.all([
       db
         .select({
           activity: activities,
@@ -688,6 +841,19 @@ export const activitiesRouter = createTRPCRouter({
           eq(likes.entity_id, input.id),
         ),
       }),
+      db.query.activityFileIngestions?.findFirst({
+        columns: {
+          id: true,
+          status: true,
+          source: true,
+          last_error_message: true,
+        },
+        where: and(
+          eq(activityFileIngestions.activity_id, input.id),
+          eq(activityFileIngestions.profile_id, userId),
+        ),
+        orderBy: desc(activityFileIngestions.updated_at),
+      }) ?? Promise.resolve(undefined),
     ]);
 
     const row = activityRecord[0];
@@ -768,6 +934,7 @@ export const activitiesRouter = createTRPCRouter({
             updated_at: toIsoString(row.activityPlan.updated_at),
           }
         : null,
+      ingestion: ingestion ?? null,
     });
 
     const context = await resolveActivityContextAsOf({

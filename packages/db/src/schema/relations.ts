@@ -3,6 +3,7 @@ import { relations } from "drizzle-orm";
 import {
   activities,
   activityEfforts,
+  activityFileIngestions,
   activityGeometry,
   activityImports,
   activityLaps,
@@ -46,6 +47,7 @@ import {
 
 export const profilesRelations = relations(profiles, ({ many }) => ({
   activities: many(activities),
+  activityFileIngestions: many(activityFileIngestions),
   activityGeometry: many(activityGeometry),
   activityImports: many(activityImports),
   activityLaps: many(activityLaps),
@@ -367,6 +369,7 @@ export const activitiesRelations = relations(activities, ({ one, many }) => ({
     references: [activityGeometry.activity_id],
   }),
   laps: many(activityLaps),
+  fileIngestions: many(activityFileIngestions),
 }));
 
 export const activitySummariesRelations = relations(activitySummaries, ({ one }) => ({
@@ -409,6 +412,17 @@ export const activityLapsRelations = relations(activityLaps, ({ one }) => ({
   }),
   profile: one(profiles, {
     fields: [activityLaps.profile_id],
+    references: [profiles.id],
+  }),
+}));
+
+export const activityFileIngestionsRelations = relations(activityFileIngestions, ({ one }) => ({
+  activity: one(activities, {
+    fields: [activityFileIngestions.activity_id],
+    references: [activities.id],
+  }),
+  profile: one(profiles, {
+    fields: [activityFileIngestions.profile_id],
     references: [profiles.id],
   }),
 }));
@@ -615,6 +629,7 @@ export const relationsSchema = {
   activityImportsRelations,
   activityGeometryRelations,
   activityLapsRelations,
+  activityFileIngestionsRelations,
   activityEffortsRelations,
   integrationsRelations,
   integrationCredentialsRelations,

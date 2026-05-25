@@ -3,6 +3,7 @@ import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import type {
   activities,
   activityEfforts,
+  activityFileIngestions,
   activityGeometry,
   activityImports,
   activityLaps,
@@ -119,6 +120,9 @@ export type ActivityGeometryInsert = InferInsertModel<typeof activityGeometry>;
 
 export type ActivityLapRow = InferSelectModel<typeof activityLaps>;
 export type ActivityLapInsert = InferInsertModel<typeof activityLaps>;
+
+export type ActivityFileIngestionRow = InferSelectModel<typeof activityFileIngestions>;
+export type ActivityFileIngestionInsert = InferInsertModel<typeof activityFileIngestions>;
 
 type BaseEventRow = InferSelectModel<typeof events>;
 export type EventInsert = InferInsertModel<typeof events>;

@@ -192,4 +192,20 @@ describe("ActivityCard", () => {
 
     expect(screen.UNSAFE_getByType("StaticRouteMapPreview" as any)).toBeTruthy();
   });
+
+  it("shows lightweight ingestion state for feed and list cards", () => {
+    renderNative(
+      <ActivityCard
+        activity={{
+          id: "activity-1",
+          name: "Morning Run",
+          ingestion: { status: "pending_upload" },
+        }}
+        variant="list"
+      />,
+    );
+
+    expect(screen.getByTestId("activity-card-ingestion-status-activity-1")).toBeTruthy();
+    expect(screen.getByText("Queued for upload")).toBeTruthy();
+  });
 });

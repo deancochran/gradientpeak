@@ -25,6 +25,7 @@ const activityData = {
       name: "Threshold Builder",
       structure: { intervals: [] },
     },
+    ingestion: null as null | { status: string; last_error_message?: string | null },
     polyline: "encoded",
   },
   derived: {
@@ -208,6 +209,7 @@ jest.mock("lucide-react-native", () => ({
   Clock: createHost("Clock"),
   Ellipsis: createHost("Ellipsis"),
   Heart: createHost("Heart"),
+  Lock: createHost("Lock"),
   MapPin: createHost("MapPin"),
   MessageCircle: createHost("MessageCircle"),
   Route: createHost("Route"),
@@ -224,6 +226,7 @@ describe("activity detail screen", () => {
     deleteMutateMock.mockReset();
     toggleLikeMutateMock.mockReset();
     authState.user.id = "profile-1";
+    activityData.activity.ingestion = null;
     streamsData.laps = [];
   });
 
@@ -300,5 +303,13 @@ describe("activity detail screen", () => {
     fireEvent.press(screen.getByTestId("activity-detail-delete-confirm"));
 
     expect(deleteMutateMock).toHaveBeenCalledWith({ id: "11111111-1111-4111-8111-111111111111" });
+  });
+
+  it("shows processing state in the analysis charts section while ingestion is pending", () => {
+    activityData.activity.ingestion = { status: "processing" };
+
+    renderNative(<ActivityDetailScreen />);
+
+    expect(screen.getByText("Activity file is still processing.")).toBeTruthy();
   });
 });

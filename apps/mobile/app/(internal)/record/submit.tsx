@@ -56,8 +56,13 @@ function SubmitScreen() {
       submission.update({
         name: data.name,
         notes: data.notes ?? undefined,
+        is_private: data.is_private,
       });
-      const success = await submission.submit();
+      const success = await submission.submit({
+        name: data.name,
+        notes: data.notes ?? undefined,
+        is_private: data.is_private,
+      });
       if (!success) {
         return;
       }
@@ -92,8 +97,11 @@ function SubmitScreen() {
   // Memoize canSubmit to prevent unnecessary re-renders
   const activityName = String(form.watch("name") ?? "");
   const canSubmit = useMemo(
-    () => activityName.trim().length > 0 && !submission.isUploading,
-    [activityName, submission.isUploading],
+    () =>
+      Boolean(submission.artifact && submission.activity) &&
+      activityName.trim().length > 0 &&
+      !submission.isSubmitting,
+    [activityName, submission.activity, submission.artifact, submission.isSubmitting],
   );
 
   const submitForm = useZodFormSubmit<ActivitySubmissionFormData>({
@@ -128,9 +136,22 @@ function SubmitScreen() {
         {submission.activity ? (
           <Form {...form}>
             <View className="px-6 pt-6 space-y-6">
+              {submission.statusMessage ? (
+                <Text
+                  className={
+                    submission.isError
+                      ? "text-sm text-destructive"
+                      : "text-sm text-muted-foreground"
+                  }
+                  testID="activity-submit-status"
+                >
+                  {submission.statusMessage}
+                </Text>
+              ) : null}
+
               <FormTextField
                 control={form.control}
-                disabled={submission.isUploading}
+                disabled={submission.isSubmitting}
                 label="Activity Name"
                 name="name"
                 placeholder="Enter activity name"
@@ -141,7 +162,7 @@ function SubmitScreen() {
               <FormTextareaField
                 control={form.control}
                 description="Add notes about how the activity felt (optional)"
-                disabled={submission.isUploading}
+                disabled={submission.isSubmitting}
                 formatValue={(value) => value ?? ""}
                 label="Description"
                 name="notes"
@@ -155,7 +176,7 @@ function SubmitScreen() {
               <FormSegmentedSelectField
                 control={form.control}
                 description="Choose whether this activity is only visible to you or visible on your profile."
-                disabled={submission.isUploading}
+                disabled={submission.isSubmitting}
                 formatValue={(value) => (value ? "private" : "public")}
                 label="Visibility"
                 name="is_private"
@@ -171,7 +192,7 @@ function SubmitScreen() {
               <Button
                 variant="destructive"
                 onPress={handleDiscard}
-                disabled={submission.isUploading}
+                disabled={submission.isSubmitting}
                 className="w-full mt-8"
               >
                 <View className="flex-row items-center gap-2">
@@ -199,7 +220,7 @@ function SubmitScreen() {
         <LoadingButton
           onPress={submitForm.handleSubmit}
           disabled={submitButtonState.disabled}
-          loading={submission.isUploading || submitButtonState.loading}
+          loading={submission.isSubmitting || submitButtonState.loading}
           loadingLabel={submitButtonState.loadingLabel}
           className="w-full"
           size="lg"

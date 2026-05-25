@@ -3,6 +3,8 @@ import { z } from "zod";
 
 import {
   activityCategoryEnum,
+  activityFileIngestionSourceEnum,
+  activityFileIngestionStatusEnum,
   effortTypeEnum,
   eventStatusEnum,
   eventTypeEnum,
@@ -16,6 +18,7 @@ import {
 import {
   activities,
   activityEfforts,
+  activityFileIngestions,
   activityPlans,
   activityRoutes,
   comments,
@@ -40,6 +43,12 @@ import {
 } from "../schema/tables";
 
 export const publicActivityCategorySchema = z.enum(activityCategoryEnum.enumValues);
+export const publicActivityFileIngestionSourceSchema = z.enum(
+  activityFileIngestionSourceEnum.enumValues,
+);
+export const publicActivityFileIngestionStatusSchema = z.enum(
+  activityFileIngestionStatusEnum.enumValues,
+);
 export const publicEffortTypeSchema = z.enum(effortTypeEnum.enumValues);
 export const publicEventStatusSchema = z.enum(eventStatusEnum.enumValues);
 export const publicEventTypeSchema = z.enum(eventTypeEnum.enumValues);
@@ -84,6 +93,10 @@ export const publicActivitiesCreateSchema = publicActivitiesInsertSchema.partial
 export const publicActivityEffortsRowSchema = createSelectSchema(activityEfforts);
 export const publicActivityEffortsInsertSchema = createInsertSchema(activityEfforts);
 export const publicActivityEffortsUpdateSchema = createUpdateSchema(activityEfforts);
+
+export const publicActivityFileIngestionsRowSchema = createSelectSchema(activityFileIngestions);
+export const publicActivityFileIngestionsInsertSchema = createInsertSchema(activityFileIngestions);
+export const publicActivityFileIngestionsUpdateSchema = createUpdateSchema(activityFileIngestions);
 
 export const publicIntegrationsRowSchema = createSelectSchema(integrations);
 export const publicIntegrationsInsertSchema = createInsertSchema(integrations);
@@ -158,6 +171,12 @@ export const publicCommentsInsertSchema = createInsertSchema(comments);
 export const publicCommentsUpdateSchema = createUpdateSchema(comments);
 
 export type PublicActivityCategory = z.infer<typeof publicActivityCategorySchema>;
+export type PublicActivityFileIngestionSource = z.infer<
+  typeof publicActivityFileIngestionSourceSchema
+>;
+export type PublicActivityFileIngestionStatus = z.infer<
+  typeof publicActivityFileIngestionStatusSchema
+>;
 export type PublicEffortType = z.infer<typeof publicEffortTypeSchema>;
 export type PublicEventStatus = z.infer<typeof publicEventStatusSchema>;
 export type PublicEventType = z.infer<typeof publicEventTypeSchema>;
@@ -189,6 +208,13 @@ export type PublicActivitiesUpdate = z.infer<typeof publicActivitiesUpdateSchema
 export type PublicActivityEffortsRow = z.infer<typeof publicActivityEffortsRowSchema>;
 export type PublicActivityEffortsInsert = z.infer<typeof publicActivityEffortsInsertSchema>;
 export type PublicActivityEffortsUpdate = z.infer<typeof publicActivityEffortsUpdateSchema>;
+export type PublicActivityFileIngestionsRow = z.infer<typeof publicActivityFileIngestionsRowSchema>;
+export type PublicActivityFileIngestionsInsert = z.infer<
+  typeof publicActivityFileIngestionsInsertSchema
+>;
+export type PublicActivityFileIngestionsUpdate = z.infer<
+  typeof publicActivityFileIngestionsUpdateSchema
+>;
 export type PublicIntegrationsRow = z.infer<typeof publicIntegrationsRowSchema>;
 export type PublicIntegrationsInsert = z.infer<typeof publicIntegrationsInsertSchema>;
 export type PublicIntegrationsUpdate = z.infer<typeof publicIntegrationsUpdateSchema>;

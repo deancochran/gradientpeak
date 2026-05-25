@@ -49,6 +49,10 @@ export type ActivityCardActivity = {
       intensity_factor?: number | null;
     } | null;
   } | null;
+  ingestion?: {
+    status?: string | null;
+    last_error_message?: string | null;
+  } | null;
   profile?: ActivityCardOwner | null;
 };
 
@@ -111,6 +115,15 @@ function CompactRoutePreview({ coordinates }: { coordinates: RouteCoordinate[] }
 
 function getDerivedValue(activity: ActivityCardActivity, key: "tss" | "intensity_factor") {
   return activity.derived?.[key] ?? activity.derived?.stress?.[key] ?? null;
+}
+
+function getIngestionStatusText(activity: ActivityCardActivity): string | null {
+  const status = activity.ingestion?.status;
+
+  if (!status || status === "ready") return null;
+  if (status === "failed") return "Processing failed";
+  if (status === "pending_upload") return "Queued for upload";
+  return "Processing activity file";
 }
 
 function ActivityMetricsRow({
@@ -213,6 +226,7 @@ export function ActivityCard({
     }
   }, [activity.polyline, shouldShowCompactRoutePreview, shouldShowVisualPreview]);
   const routeCoordinates = decodedPolylineCoordinates;
+  const ingestionStatusText = getIngestionStatusText(activity);
 
   return (
     <ResourceCardShell contentClassName="gap-3 px-3" onPress={onPress} testID={testID}>
@@ -272,6 +286,19 @@ export function ActivityCard({
       />
 
       <ActivityMetricsRow activity={activity} compact={false} />
+
+      {ingestionStatusText ? (
+        <Text
+          className={
+            activity.ingestion?.status === "failed"
+              ? "text-xs font-medium text-destructive"
+              : "text-xs font-medium text-muted-foreground"
+          }
+          testID={`activity-card-ingestion-status-${activity.id}`}
+        >
+          {ingestionStatusText}
+        </Text>
+      ) : null}
 
       {shouldShowVisualPreview && routeCoordinates.length > 0 ? (
         <View
