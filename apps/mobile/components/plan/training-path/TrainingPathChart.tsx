@@ -9,15 +9,7 @@ import {
   useFont,
   vec,
 } from "@shopify/react-native-skia";
-import {
-  type ElementRef,
-  Fragment,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type LayoutChangeEvent,
   type NativeScrollEvent,
@@ -27,6 +19,8 @@ import {
 } from "react-native";
 import Animated, {
   type SharedValue,
+  scrollTo,
+  useAnimatedRef,
   useAnimatedScrollHandler,
   useDerivedValue,
   useSharedValue,
@@ -360,7 +354,7 @@ export function TrainingPathChart({
 }: TrainingPathChartProps) {
   const [chartWidth, setChartWidth] = useState(320);
   const [scrollViewportWidth, setScrollViewportWidth] = useState(240);
-  const scrollViewRef = useRef<ElementRef<typeof Animated.ScrollView> | null>(null);
+  const scrollViewRef = useAnimatedRef<Animated.ScrollView>();
   const centeredWeekIndexRef = useRef<number | null>(null);
   const latestScrollOffsetRef = useRef(0);
   const deferredCommitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -522,7 +516,7 @@ export function TrainingPathChart({
   const scrollToWeekIndex = useCallback((index: number, animated: boolean) => {
     const offset = getWeekScrollOffset(index, scrollWeekWidth);
     centeredWeekIndexRef.current = index;
-    scrollViewRef.current?.scrollTo({ x: offset, animated });
+    scrollTo(scrollViewRef, offset, 0, animated);
   }, []);
   const onWeekPress = (weekStart: string, index: number) => {
     if (!reviewWeeks || !onSelectedWeekChange) return;

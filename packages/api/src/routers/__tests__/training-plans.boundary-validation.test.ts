@@ -6,25 +6,13 @@ const TRAINING_PLAN_ID = "11111111-1111-4111-8111-111111111111";
 
 const VALID_TRAINING_PLAN_STRUCTURE = {
   id: TRAINING_PLAN_ID,
-  plan_type: "periodized",
-  name: "Shared Build",
-  start_date: "2026-01-01",
-  end_date: "2026-03-01",
-  fitness_progression: { starting_ctl: 45, target_ctl_at_peak: 60 },
-  activity_distribution: { run: { target_percentage: 1 } },
-  blocks: [
+  version: 1,
+  sessions: [
     {
-      id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-      name: "Base",
-      phase: "base",
-      start_date: "2026-01-01",
-      end_date: "2026-01-28",
-      goal_ids: [],
-      target_weekly_tss_range: { min: 280, max: 320 },
-      target_sessions_per_week_range: { min: 4, max: 5 },
+      offset_days: 0,
+      activity_plan_id: "22222222-2222-4222-8222-222222222222",
     },
   ],
-  goals: [],
 } as const;
 
 function createCaller() {
@@ -98,6 +86,37 @@ describe("trainingPlansRouter boundary validation", () => {
       caller.applyQuickAdjustment({
         id: TRAINING_PLAN_ID,
         adjustedStructure: { plan_type: "periodized" },
+      } as any),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(callLog).toHaveLength(0);
+  });
+
+  it("rejects old periodized create structures before hitting the database", async () => {
+    const { caller, callLog } = createCaller();
+
+    await expect(
+      caller.create({
+        name: "Old shape",
+        structure: {
+          plan_type: "periodized",
+          name: "Old periodized plan",
+          start_date: "2026-01-01",
+          end_date: "2026-03-01",
+          fitness_progression: { starting_ctl: 45 },
+          activity_distribution: { run: { target_percentage: 1 } },
+          blocks: [
+            {
+              id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+              name: "Base",
+              phase: "base",
+              start_date: "2026-01-01",
+              end_date: "2026-01-28",
+              goal_ids: [],
+              target_weekly_tss_range: { min: 280, max: 320 },
+            },
+          ],
+        },
       } as any),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
 

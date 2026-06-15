@@ -34,6 +34,7 @@ import {
   type InferredStateSnapshot,
   inferredStateSnapshotSchema,
   type LoadBootstrapState,
+  legacyStructuredTrainingPlanSchema,
   type MinimalTrainingPlanCreate,
   mapAthletePreferencesToCreationDefaults,
   materializePlanToEvents,
@@ -4007,7 +4008,7 @@ export async function getPlanTabProjectionService({
     plan = fetchedPlan as Record<string, unknown>;
   }
 
-  const parsedStructure = trainingPlanSchema.safeParse(plan?.structure);
+  const parsedStructure = legacyStructuredTrainingPlanSchema.safeParse(plan?.structure);
   const looseStructure = ((plan?.structure as {
     goals?: unknown;
     blocks?: unknown;
@@ -4523,7 +4524,7 @@ const trainingPlansProcedures = {
         ),
       };
 
-      const parsedPreviewPlan = trainingPlanSchema.safeParse(previewPlanWithId);
+      const parsedPreviewPlan = legacyStructuredTrainingPlanSchema.safeParse(previewPlanWithId);
       const planWarnings =
         parsedPreviewPlan.success && parsedPreviewPlan.data.plan_type === "periodized"
           ? validatePlanFeasibility(parsedPreviewPlan.data).warnings
@@ -4683,7 +4684,7 @@ const trainingPlansProcedures = {
           deriveProjectionDrivenConflicts: deriveProjectionDrivenConflicts as any,
           throwPathValidationError,
           parseTrainingPlanStructure: (value) => {
-            trainingPlanSchema.parse(value);
+            legacyStructuredTrainingPlanSchema.parse(value);
           },
         },
       })) as any;
@@ -4720,7 +4721,7 @@ const trainingPlansProcedures = {
           buildCreationPreviewSnapshotToken: buildCreationPreviewSnapshotToken as any,
           deriveProjectionDrivenConflicts: deriveProjectionDrivenConflicts as any,
           parseTrainingPlanStructure: (value) => {
-            trainingPlanSchema.parse(value);
+            legacyStructuredTrainingPlanSchema.parse(value);
           },
         },
       })) as any;
@@ -4751,7 +4752,7 @@ const trainingPlansProcedures = {
       };
 
       try {
-        trainingPlanSchema.parse(structureWithId);
+        legacyStructuredTrainingPlanSchema.parse(structureWithId);
       } catch (validationError) {
         throw new TRPCError({
           code: "BAD_REQUEST",
