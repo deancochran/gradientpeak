@@ -143,6 +143,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       // ],
     ],
     experiments: {
+      autolinkingModuleResolution: true,
       typedRoutes: true,
       buildCacheProvider: "eas",
     },
