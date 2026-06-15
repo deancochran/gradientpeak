@@ -33,7 +33,6 @@ export default function OnboardingScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <CurrentStep
-            connectionOverview={flow.connectionOverview}
             data={flow.data}
             fieldSources={flow.fieldSources}
             integrations={flow.integrations}
