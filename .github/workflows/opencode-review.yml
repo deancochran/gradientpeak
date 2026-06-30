@@ -32,6 +32,8 @@ jobs:
           persist-credentials: false
 
       - name: Run OpenCode PR review
+        id: opencode_review
+        continue-on-error: true
         uses: anomalyco/opencode/github@latest
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -53,3 +55,13 @@ jobs:
             - schema/auth/workflow/deploy changes require explicit human approval
 
             Comment only when there is actionable feedback, an unresolved risk, or a missing verification step.
+
+      - name: Explain advisory review fallback
+        if: steps.opencode_review.outcome == 'failure'
+        run: |
+          cat <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          OpenCode PR review could not post its review comment or reaction with
+          the current GitHub token permissions. Treat this check as advisory;
+          required validation remains covered by the Validate and CI workflows.
+          EOF
+          echo "::warning::OpenCode PR review is advisory until GitHub token comment permissions are available."
