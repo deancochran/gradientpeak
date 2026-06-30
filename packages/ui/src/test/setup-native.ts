@@ -197,6 +197,10 @@ jest.mock("react-native-reanimated", () => ({
   LayoutAnimationConfig: createHost("LayoutAnimationConfig"),
   LinearTransition: createAnimationBuilder(),
   interpolate: (_value: unknown, _input: unknown, output: [unknown, unknown]) => output[0],
+  runOnJS: <Args extends unknown[], Return>(callback: (...args: Args) => Return) => callback,
+  scrollTo: jest.fn(),
+  useAnimatedReaction: jest.fn(),
+  useAnimatedRef: () => ({ current: null }),
   useAnimatedStyle: (callback: () => unknown) => callback(),
   useAnimatedScrollHandler: (handler: unknown) => handler,
   useDerivedValue: (callback: () => unknown) => ({

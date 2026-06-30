@@ -19,9 +19,23 @@ jest.mock("@repo/ui/components/text", () => ({
   Text: createHost("Text"),
 }));
 
+type RecordingControlsMockProps = {
+  onStart?: () => void;
+  onPause?: () => void;
+  onResume?: () => void;
+  onLap?: () => void;
+  onFinish?: () => void;
+};
+
 jest.mock("@/components/recording/footer", () => ({
   __esModule: true,
-  RecordingControls: ({ onStart, onPause, onResume, onLap, onFinish }: any) => (
+  RecordingControls: ({
+    onStart,
+    onPause,
+    onResume,
+    onLap,
+    onFinish,
+  }: RecordingControlsMockProps) => (
     <>
       <Pressable testID="controls-start" onPress={onStart} />
       <Pressable testID="controls-pause" onPress={onPause} />
@@ -118,12 +132,12 @@ describe("RecordControlDock", () => {
       onOpenSensors,
     });
 
-    fireEvent.press(screen.getByTestId("button-activity-locked"));
-    fireEvent.press(screen.getByTestId("button-gps-on"));
-    fireEvent.press(screen.getByTestId("button-plan-attached"));
-    fireEvent.press(screen.getByTestId("button-route-attached"));
-    fireEvent.press(screen.getByTestId("button-trainer"));
-    fireEvent.press(screen.getByTestId("button-sensors"));
+    fireEvent.press(screen.getByTestId("record-dock-quick-action-activity"));
+    fireEvent.press(screen.getByTestId("record-dock-quick-action-gps"));
+    fireEvent.press(screen.getByTestId("record-dock-quick-action-plan"));
+    fireEvent.press(screen.getByTestId("record-dock-quick-action-route"));
+    fireEvent.press(screen.getByTestId("record-dock-quick-action-trainer"));
+    fireEvent.press(screen.getByTestId("record-dock-quick-action-sensors"));
 
     expect(onOpenActivity).toHaveBeenCalledTimes(1);
     expect(onGpsPress).toHaveBeenCalledTimes(1);
