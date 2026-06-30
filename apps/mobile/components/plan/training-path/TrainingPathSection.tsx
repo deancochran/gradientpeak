@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 import type { DailyTrainingAdjustmentPoint } from "@/lib/training-path/dailyTrainingPathModel";
 import { TrainingPathLoadChartSection } from "./TrainingPathLoadChartSection";
@@ -69,10 +69,10 @@ export function TrainingPathSection({
   const weekReviewLoading = selectedWeekLoading || chartScrolling;
   const hasDailyPoints = !!dailyPoints?.length;
 
-  const setDisplayedWeekStart = (weekStart: string | null) => {
+  const setDisplayedWeekStart = useCallback((weekStart: string | null) => {
     displayedWeekStartRef.current = weekStart;
     setDisplayedWeekStartState(weekStart);
-  };
+  }, []);
 
   useEffect(() => {
     const previousSelectedWeekStart = lastSelectedWeekStartRef.current;
@@ -88,7 +88,7 @@ export function TrainingPathSection({
     }
     if (chartScrolling) return;
     setDisplayedWeekStart(selectedWeek?.weekStart ?? null);
-  }, [chartScrolling, selectedWeek?.weekStart, selectedWeekLoading]);
+  }, [chartScrolling, selectedWeek?.weekStart, selectedWeekLoading, setDisplayedWeekStart]);
 
   const beginWeekProgress = (weekStart?: string) => {
     pendingSelectedWeekStartRef.current = weekStart ?? null;
