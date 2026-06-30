@@ -1,6 +1,6 @@
 import { Text } from "@repo/ui/components/text";
 import { type Dumbbell, Flag, SlidersHorizontal, User } from "lucide-react-native";
-import { memo } from "react";
+import { type ComponentProps, memo } from "react";
 import { Pressable, View } from "react-native";
 import { BuilderTrainingPathReviewSection } from "@/components/training-plan/create/BuilderTrainingPathReviewSection";
 import type { TrainingPlanBuilderController } from "@/components/training-plan/create/useTrainingPlanBuilderController";
@@ -13,6 +13,7 @@ type BuilderStrategyComposerProps = {
   onOpenAthleteContext?: () => void;
   onOpenGoals?: () => void;
   onOpenPlanningConstraints?: () => void;
+  renderBelowChart?: ComponentProps<typeof BuilderTrainingPathReviewSection>["renderBelowChart"];
 };
 
 export const BuilderStrategyComposer = memo(function BuilderStrategyComposer({
@@ -21,6 +22,7 @@ export const BuilderStrategyComposer = memo(function BuilderStrategyComposer({
   onOpenAthleteContext,
   onOpenGoals,
   onOpenPlanningConstraints,
+  renderBelowChart,
   state,
 }: BuilderStrategyComposerProps) {
   return (
@@ -53,7 +55,10 @@ export const BuilderStrategyComposer = memo(function BuilderStrategyComposer({
       </View>
 
       <View className="-mx-2">
-        <BuilderTrainingPathReviewSection chartReview={chartReview} />
+        <BuilderTrainingPathReviewSection
+          chartReview={chartReview}
+          renderBelowChart={renderBelowChart}
+        />
       </View>
     </View>
   );

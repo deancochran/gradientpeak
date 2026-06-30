@@ -17,6 +17,7 @@ import { getEventStatusLabel } from "@/lib/calendar/eventPresentation";
 import type { CalendarGroupEvent } from "@/lib/calendar/groupEventPlans";
 import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
 import type { DailyTrainingAdjustmentPoint } from "./DailyTrainingAdjustmentChart";
+import { TrainingPathSelectedDayPanel } from "./TrainingPathSelectedDayPanel";
 import {
   TrainingPathWeekReviewEmptyRow,
   TrainingPathWeekReviewSection,
@@ -81,21 +82,15 @@ function formatLoad(value: number) {
   return `${Math.round(value)} TSS`;
 }
 
-function formatSignedLoad(value: number) {
-  const rounded = Math.round(value);
-  if (rounded === 0) return "On target";
-  return `${rounded > 0 ? "+" : ""}${rounded} TSS`;
-}
-
 function valueOrZero(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
-function formatDateLabel(dateKey: string | null) {
-  if (!dateKey) return null;
+function formatFullDateLabel(dateKey: string | null) {
+  if (!dateKey) return "Selected day";
   const date = new Date(`${dateKey}T12:00:00.000Z`);
   if (Number.isNaN(date.getTime())) return dateKey;
-  return date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  return date.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
 }
 
 function RecordStatusPill({ label }: { label: string }) {
@@ -480,68 +475,29 @@ export function TrainingPathSelectedDaySummaryCard({
   const target = valueOrZero(point?.targetLoadTss);
   const planned = valueOrZero(point?.plannedLoadTss);
   const tentative = valueOrZero(point?.tentativePlannedLoadTss);
-  const completed = valueOrZero(point?.completedLoadTss);
-  const actualOrScheduled = valueOrZero(point?.actualOrScheduledLoadTss);
-  const delta = valueOrZero(point?.loadDeltaTss ?? actualOrScheduled - target);
+  const totalPlanned = planned + tentative;
+  const eventCount = goals.length + events.length + groupEvents.length + completedActivities.length;
   const hasContent =
     goals.length > 0 ||
     events.length > 0 ||
     groupEvents.length > 0 ||
     completedActivities.length > 0;
 
-  if (loading) {
-    return (
-      <TrainingPathWeekReviewShell
-        dateLabel={formatDateLabel(date)}
-        loading
-        loadingChildren={
-          <TrainingPathWeekReviewEmptyRow>Loading selected day.</TrainingPathWeekReviewEmptyRow>
-        }
-        testID="training-path-selected-day-summary"
-        title="Selected Day"
-      >
-        <TrainingPathWeekReviewEmptyRow>Loading selected day.</TrainingPathWeekReviewEmptyRow>
-      </TrainingPathWeekReviewShell>
-    );
-  }
+  const metrics = [
+    { label: "Recommended", value: formatLoad(target) },
+    { label: "Planned", value: formatLoad(totalPlanned) },
+  ];
+  const metadata = [`${eventCount} event${eventCount === 1 ? "" : "s"}`];
 
   return (
-    <TrainingPathWeekReviewShell
-      body="Recommended, planned, and completed work for the selected day."
-      dateLabel={formatDateLabel(date)}
+    <TrainingPathSelectedDayPanel
+      eventCount={eventCount}
+      loading={loading}
+      metadata={metadata}
+      metrics={metrics}
       testID="training-path-selected-day-summary"
-      title="Selected Day"
+      title={formatFullDateLabel(date)}
     >
-      <View className="gap-3 rounded-2xl bg-card px-3 py-3">
-        <View className="flex-row flex-wrap items-center gap-x-4 gap-y-2">
-          <InlineDayMetric label="Recommended" value={formatLoad(target)} />
-          <InlineDayMetric label="Planned" value={formatLoad(planned + tentative)} />
-          <InlineDayMetric label="Completed" value={formatLoad(completed)} />
-          <InlineDayMetric label="Delta" value={formatSignedLoad(delta)} />
-          {point?.formTsb != null ? (
-            <InlineDayMetric label="Form" value={point.formTsb.toFixed(1)} />
-          ) : null}
-          {point?.readinessScore != null ? (
-            <InlineDayMetric
-              label="Readiness"
-              value={`${Math.round(point.readinessScore * 100)}%`}
-            />
-          ) : null}
-        </View>
-        {point?.annotations?.length ? (
-          <View className="gap-1">
-            {point.annotations.map((annotation) => (
-              <Text
-                className="text-xs text-muted-foreground"
-                key={`${annotation.code}-${annotation.message ?? ""}`}
-              >
-                {annotation.message ?? annotation.code}
-              </Text>
-            ))}
-          </View>
-        ) : null}
-      </View>
-
       {goals.length > 0 ? (
         <TrainingPathWeekReviewSection title="Goals due this day">
           {goals.map((goal) => (
@@ -682,15 +638,6 @@ export function TrainingPathSelectedDaySummaryCard({
           No planned or completed work for this day.
         </TrainingPathWeekReviewEmptyRow>
       ) : null}
-    </TrainingPathWeekReviewShell>
-  );
-}
-
-function InlineDayMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <View className="flex-row items-baseline gap-1.5">
-      <Text className="text-[10px] font-medium text-muted-foreground">{label}</Text>
-      <Text className="text-xs font-semibold text-foreground">{value}</Text>
-    </View>
+    </TrainingPathSelectedDayPanel>
   );
 }

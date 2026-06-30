@@ -268,6 +268,7 @@ jest.mock("../BuilderStrategyComposer", () => ({
     onOpenAthleteContext,
     onOpenGoals,
     onOpenPlanningConstraints,
+    renderBelowChart,
     state,
   }: any) => (
     <View testID="builder-strategy-composer">
@@ -283,6 +284,7 @@ jest.mock("../BuilderStrategyComposer", () => ({
       <Pressable onPress={onOpenPlanningConstraints}>
         <Text>Preferences</Text>
       </Pressable>
+      {renderBelowChart?.({ selectedDayPoint: null })}
     </View>
   ),
 }));

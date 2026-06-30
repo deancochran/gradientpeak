@@ -200,8 +200,8 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
   });
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
-  const slotWidth = density === "compact" ? 32 : density === "detail" ? 44 : 38;
-  const barWidth = density === "compact" ? 16 : density === "detail" ? 26 : 22;
+  const slotWidth = density === "compact" ? 28 : density === "detail" ? 34 : 30;
+  const barWidth = density === "compact" ? 18 : density === "detail" ? 26 : 22;
   const resolvedHeight = height ?? (density === "compact" ? 190 : density === "detail" ? 270 : 230);
   const chartAreaHeight = Math.max(96, resolvedHeight);
   const resolvedSelectedDate = internalSelectedDate ?? selectedDate;
@@ -304,17 +304,32 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
       setViewportWidth((current) => (current === measuredWidth ? current : measuredWidth));
   }, []);
 
+  const scrollToDate = useCallback(
+    (date: string, animated = true) => {
+      const index = points.findIndex((point) => point.date === date);
+      if (index < 0) return;
+      scrollRef.current?.scrollTo({ animated, x: index * slotWidth, y: 0 });
+    },
+    [points, slotWidth],
+  );
+
   const selectPoint = useCallback(
     (date: string) => {
       previewDateRef.current = null;
       setPreviewSelectedDate(null);
+      scrollToDate(date);
       if (date === resolvedSelectedDate) return;
       if (!mountedRef.current) return;
       setInternalSelectedDate(date);
       onSelectedDateChange?.(date);
     },
-    [onSelectedDateChange, resolvedSelectedDate],
+    [onSelectedDateChange, resolvedSelectedDate, scrollToDate],
   );
+
+  useEffect(() => {
+    if (!hasMounted || !resolvedSelectedDate) return;
+    scrollToDate(resolvedSelectedDate, false);
+  }, [hasMounted, resolvedSelectedDate, scrollToDate]);
 
   const previewPointAtIndex = useCallback(
     (index: number) => {
@@ -362,12 +377,8 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const index = getNearestIndex(event);
       activeIndexRef.current = index;
-      const point = points[index];
-      if (!point || previewDateRef.current === point.date) return;
-      previewDateRef.current = point.date;
-      setPreviewSelectedDate(point.date);
     },
-    [getNearestIndex, points],
+    [getNearestIndex],
   );
 
   const selectNearestDay = useCallback(

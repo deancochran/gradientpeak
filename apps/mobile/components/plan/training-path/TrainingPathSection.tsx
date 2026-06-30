@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 import type { DailyTrainingAdjustmentPoint } from "@/lib/training-path/dailyTrainingPathModel";
 import { TrainingPathLoadChartSection } from "./TrainingPathLoadChartSection";
-import { TrainingPathSelectedDaySummaryCard } from "./TrainingPathWeekSummaryCard";
+import {
+  TrainingPathSelectedDaySummaryCard,
+  TrainingPathWeekSummaryCard,
+} from "./TrainingPathWeekSummaryCard";
 import type {
   TrainingPathCompletedActivity,
   TrainingPathScheduledItem,
@@ -64,6 +67,7 @@ export function TrainingPathSection({
     selectedWeek?.weekStart ?? null,
   );
   const weekReviewLoading = selectedWeekLoading || chartScrolling;
+  const hasDailyPoints = !!dailyPoints?.length;
 
   useEffect(() => {
     const previousSelectedWeekStart = lastSelectedWeekStartRef.current;
@@ -103,6 +107,27 @@ export function TrainingPathSection({
         }}
         onDisplayedWeekChange={setDisplayedWeekStart}
         renderBelowChart={(context) => {
+          if (!hasDailyPoints) {
+            const displayedWeekLabel = model.weeks.find(
+              (week) => week.weekStart === displayedWeekStart,
+            )?.label;
+            return (
+              <TrainingPathWeekSummaryCard
+                loading={weekReviewLoading}
+                loadingDateLabel={displayedWeekLabel ?? selectedWeek?.dateLabel}
+                summary={selectedWeek}
+                goals={selectedWeekGoals}
+                events={selectedWeekEvents}
+                groupEvents={selectedWeekGroupEvents}
+                completedActivities={selectedWeekCompletedActivities}
+                onOpenActivity={onOpenActivity}
+                onOpenGoal={onOpenGoal}
+                onOpenGroup={onOpenGroup}
+                onOpenGroupEvent={onOpenGroupEvent}
+                onOpenScheduledEvent={onOpenScheduledEvent}
+              />
+            );
+          }
           const selectedDayDate = context.selectedDate ?? selectedDate ?? null;
           return (
             <TrainingPathSelectedDaySummaryCard
