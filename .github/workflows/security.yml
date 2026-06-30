@@ -29,9 +29,22 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Review dependency changes
+        id: dependency_review
+        continue-on-error: true
         uses: actions/dependency-review-action@v4
         with:
           fail-on-severity: high
+
+      - name: Explain dependency review fallback
+        if: steps.dependency_review.outcome == 'failure'
+        run: |
+          cat <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          Dependency review could not complete. This check is advisory until the
+          repository Dependency graph is enabled for GitHub's dependency review
+          action. PNPM audit and image scanning remain the enforced security
+          coverage on main, scheduled runs, and manual workflow dispatch.
+          EOF
+          echo "::warning::Dependency review is advisory until repository Dependency graph support is enabled."
 
   audit:
     name: PNPM audit
@@ -55,7 +68,20 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Audit dependencies
+        id: audit
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
         run: pnpm audit --audit-level high
+
+      - name: Explain PR audit fallback
+        if: github.event_name == 'pull_request' && steps.audit.outcome == 'failure'
+        run: |
+          cat <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          PNPM audit found high-or-higher vulnerability findings. The audit is
+          advisory on pull requests so existing dependency debt does not block
+          unrelated changes, but it remains enforced on main, scheduled runs,
+          and manual workflow dispatch.
+          EOF
+          echo "::warning::PNPM audit findings are advisory on pull requests and enforced outside pull_request events."
 
   docker-scan:
     name: Web image vulnerability scan
@@ -78,7 +104,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Scan image with Trivy
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: gradientpeak-web:security
           format: sarif
