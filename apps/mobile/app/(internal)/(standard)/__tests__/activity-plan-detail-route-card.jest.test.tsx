@@ -13,10 +13,29 @@ const routerMock = {
   replace: jest.fn(),
 };
 const navigateToMock = jest.fn();
-const routeCardMock = jest.fn((props: any) =>
+
+type HostProps = {
+  children?: React.ReactNode;
+  options?: { headerRight?: () => React.ReactNode };
+  [key: string]: unknown;
+};
+
+type RouteCardProps = HostProps & {
+  onPress?: () => void;
+  route?: typeof routeMock;
+  routeFull?: typeof routeFullMock;
+};
+
+type ActivityPlanContentPreviewProps = HostProps & {
+  route?: typeof routeMock;
+  routeFull?: typeof routeFullMock;
+  showRoutePreview?: boolean;
+};
+
+const routeCardMock = jest.fn((props: RouteCardProps) =>
   React.createElement("RouteCard", props, props.children),
 );
-const contentPreviewMock = jest.fn((props: any) =>
+const contentPreviewMock = jest.fn((props: ActivityPlanContentPreviewProps) =>
   React.createElement("ActivityPlanContentPreview", props, props.children),
 );
 const routeGetUseQueryMock = jest.fn((_input?: unknown, _options?: unknown) => ({
@@ -60,7 +79,7 @@ jest.mock("@tanstack/react-query", () => ({
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: (props: any) =>
+    Screen: (props: HostProps) =>
       React.createElement(
         "StackScreen",
         props,
@@ -97,7 +116,7 @@ jest.mock("@/components/shared/ActivityPlanSummary", () => ({
 
 jest.mock("@/components/shared/RouteCard", () => ({
   __esModule: true,
-  RouteCard: (props: any) => routeCardMock(props),
+  RouteCard: (props: RouteCardProps) => routeCardMock(props),
 }));
 
 jest.mock("@/components/social/EntityCommentsSection", () => ({
@@ -153,9 +172,9 @@ jest.mock("@/lib/api", () => ({
       getById: { useQuery: () => ({ data: null, error: null, isLoading: false }) },
     },
     routes: {
-      get: { useQuery: (input: any, options: any) => routeGetUseQueryMock(input, options) },
+      get: { useQuery: (input: unknown, options: unknown) => routeGetUseQueryMock(input, options) },
       loadFull: {
-        useQuery: (input: any, options: any) => routeLoadFullUseQueryMock(input, options),
+        useQuery: (input: unknown, options: unknown) => routeLoadFullUseQueryMock(input, options),
       },
     },
     social: {
@@ -182,7 +201,7 @@ jest.mock("@/lib/activityPlanMetrics", () => ({
 
 jest.mock("@/components/activity-plan/ActivityPlanContentPreview", () => ({
   __esModule: true,
-  ActivityPlanContentPreview: (props: any) => contentPreviewMock(props),
+  ActivityPlanContentPreview: (props: ActivityPlanContentPreviewProps) => contentPreviewMock(props),
 }));
 
 jest.mock("@/components/activity-plan/useActivityPlanDetailViewModel", () => ({
@@ -275,7 +294,7 @@ describe("activity plan detail route card", () => {
     );
 
     act(() => {
-      routeCardMock.mock.calls[0][0].onPress();
+      routeCardMock.mock.calls[0]?.[0].onPress?.();
     });
 
     expect(navigateToMock).toHaveBeenCalledWith({

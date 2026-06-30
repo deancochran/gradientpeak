@@ -4,10 +4,19 @@ import { fireEvent, renderNative, screen } from "../../../../test/render-native"
 
 const deleteMutateMock = jest.fn();
 
+type StackScreenProps = {
+  options?: { headerRight?: () => React.ReactNode };
+  [key: string]: unknown;
+};
+
+type UnsafeTypeQuery = {
+  UNSAFE_getByType: (type: string) => unknown;
+};
+
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: (props: any) =>
+    Screen: (props: StackScreenProps) =>
       React.createElement(
         "StackScreen",
         props,
@@ -150,7 +159,9 @@ describe("activity effort detail screen", () => {
     expect(screen.getByText("Value: 400 W")).toBeTruthy();
     expect(screen.getByText("Hill Repeats")).toBeTruthy();
     expect(screen.queryByText("Segment duration")).toBeNull();
-    expect((rendered as any).UNSAFE_getByType("ActivityRouteMap")).toBeTruthy();
+    expect(
+      (rendered as unknown as UnsafeTypeQuery).UNSAFE_getByType("ActivityRouteMap"),
+    ).toBeTruthy();
   });
 
   it("uses a confirm modal before deleting an effort", () => {

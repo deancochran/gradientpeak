@@ -51,6 +51,29 @@ let mockActivityEfforts = [
   },
 ];
 
+type ActivityEffort = (typeof mockActivityEfforts)[number];
+
+type FlatListProps = {
+  data?: ActivityEffort[];
+  renderItem: (args: { item: ActivityEffort }) => React.ReactNode;
+  ListEmptyComponent?: React.ReactNode;
+  [key: string]: unknown;
+};
+
+type CompactInsightCardProps = {
+  children?: React.ReactNode;
+  onPress?: () => void;
+  testID?: string;
+  title?: string;
+  value?: string;
+};
+
+type DetailChartModalProps = {
+  children: (range: string) => React.ReactNode;
+  title?: string;
+  visible?: boolean;
+};
+
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: { Screen: mockCreateHost("StackScreen") },
@@ -60,11 +83,11 @@ jest.mock("expo-router", () => ({
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
-  FlatList: ({ data, renderItem, ListEmptyComponent, ...props }: any) =>
+  FlatList: ({ data, renderItem, ListEmptyComponent, ...props }: FlatListProps) =>
     React.createElement(
       "FlatList",
       props,
-      data?.length ? data.map((item: any) => renderItem({ item })) : ListEmptyComponent,
+      data?.length ? data.map((item) => renderItem({ item })) : ListEmptyComponent,
     ),
 }));
 
@@ -87,7 +110,7 @@ jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: mockCreat
 
 jest.mock("@/components/shared", () => ({
   __esModule: true,
-  CompactInsightCard: ({ children, onPress, testID, title, value }: any) =>
+  CompactInsightCard: ({ children, onPress, testID, title, value }: CompactInsightCardProps) =>
     React.createElement(
       "Pressable",
       { onPress, testID },
@@ -95,7 +118,7 @@ jest.mock("@/components/shared", () => ({
       React.createElement("Text", null, value),
       children,
     ),
-  DetailChartModal: ({ children, title, visible }: any) =>
+  DetailChartModal: ({ children, title, visible }: DetailChartModalProps) =>
     visible
       ? React.createElement("View", null, React.createElement("Text", null, title), children("all"))
       : null,

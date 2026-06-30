@@ -53,10 +53,35 @@ const streamsData = {
   laps: [] as Array<{ totalDistance: number; totalTimerTime: number }>,
 };
 
+type StackScreenProps = {
+  options?: { headerRight?: () => React.ReactNode };
+  [key: string]: unknown;
+};
+
+type TestNode<TProps = Record<string, unknown>> = {
+  props: TProps;
+};
+
+type ZoneDistributionCardProps = {
+  zones: Array<{ label?: string }>;
+};
+
+type ActivityPlanComparisonProps = {
+  onPress?: () => void;
+};
+
+type UnsafeTypeQuery = {
+  UNSAFE_getAllByType: (type: "ZoneDistributionCard") => Array<TestNode<ZoneDistributionCardProps>>;
+  UNSAFE_getByType: {
+    (type: "ActivityPlanComparison"): TestNode<ActivityPlanComparisonProps>;
+    (type: "ActivityRouteMap"): unknown;
+  };
+};
+
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: (props: any) =>
+    Screen: (props: StackScreenProps) =>
       React.createElement(
         "StackScreen",
         props,
@@ -232,6 +257,7 @@ describe("activity detail screen", () => {
 
   it("shows the new identity-first activity layout", () => {
     const rendered = renderNative(<ActivityDetailScreen />);
+    const unsafeRendered = rendered as unknown as UnsafeTypeQuery;
 
     expect(screen.getByTestId("activity-detail-options-delete")).toBeTruthy();
     expect(screen.getByTestId("activity-detail-like-button")).toBeTruthy();
@@ -243,17 +269,17 @@ describe("activity detail screen", () => {
     expect(screen.getAllByText("~84").length).toBeGreaterThan(0);
     expect(screen.getByText("IF")).toBeTruthy();
     expect(screen.getAllByText("~0.88").length).toBeGreaterThan(0);
-    expect((rendered as any).UNSAFE_getAllByType("ZoneDistributionCard")[0].props.zones).toEqual(
+    expect(unsafeRendered.UNSAFE_getAllByType("ZoneDistributionCard")[0]?.props.zones).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ label: "Zone 2 (Endurance)" }),
         expect.objectContaining({ label: "Zone 3 (Tempo)" }),
         expect.objectContaining({ label: "Zone 5 (VO2 Max)" }),
       ]),
     );
-    expect((rendered as any).UNSAFE_getByType("ActivityPlanComparison").props.onPress).toEqual(
+    expect(unsafeRendered.UNSAFE_getByType("ActivityPlanComparison").props.onPress).toEqual(
       expect.any(Function),
     );
-    expect((rendered as any).UNSAFE_getByType("ActivityRouteMap")).toBeTruthy();
+    expect(unsafeRendered.UNSAFE_getByType("ActivityRouteMap")).toBeTruthy();
   });
 
   it("routes likes through the social mutation", () => {

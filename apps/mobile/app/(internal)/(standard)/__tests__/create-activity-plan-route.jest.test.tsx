@@ -5,7 +5,17 @@ import { renderNative, screen } from "../../../../test/render-native";
 const resetMock = jest.fn();
 const paramsRef = { planId: undefined as string | undefined };
 
-(globalThis as any).React = React;
+type ActivityPlanCreationState = {
+  reset: () => void;
+};
+
+type ActivityPlanComposerScreenProps = {
+  mode?: "create" | "edit";
+  planId?: string;
+  testID?: string;
+};
+
+(globalThis as typeof globalThis & { React: typeof React }).React = React;
 
 jest.mock("expo-router", () => ({
   __esModule: true,
@@ -14,7 +24,7 @@ jest.mock("expo-router", () => ({
 
 jest.mock("@/lib/stores/activityPlanCreation", () => ({
   __esModule: true,
-  useActivityPlanCreationStore: (selector: any) =>
+  useActivityPlanCreationStore: <T,>(selector: (state: ActivityPlanCreationState) => T) =>
     selector({
       reset: resetMock,
     }),
@@ -22,7 +32,7 @@ jest.mock("@/lib/stores/activityPlanCreation", () => ({
 
 jest.mock("@/components/activity-plan/ActivityPlanComposerScreen", () => ({
   __esModule: true,
-  ActivityPlanComposerScreen: (props: any) =>
+  ActivityPlanComposerScreen: (props: ActivityPlanComposerScreenProps) =>
     React.createElement("ActivityPlanComposerScreen", {
       testID: "activity-plan-composer",
       ...props,
