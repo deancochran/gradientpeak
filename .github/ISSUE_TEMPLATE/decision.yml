@@ -1,0 +1,32 @@
+name: Decision request
+description: Capture a product or technical decision needed before implementation.
+title: "Decision: "
+labels: ["type:decision", "status:needs-decision"]
+body:
+  - type: textarea
+    id: decision
+    attributes:
+      label: Decision needed
+      description: What exact question needs an answer?
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why does this decision matter now?
+  - type: textarea
+    id: options
+    attributes:
+      label: Options considered
+      placeholder: "- Option A: ...\n- Option B: ..."
+  - type: input
+    id: spec
+    attributes:
+      label: Related spec
+      placeholder: specs/path-to-spec.md#open-questions
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact of decision
+      description: Files, features, users, data model, or verification affected.

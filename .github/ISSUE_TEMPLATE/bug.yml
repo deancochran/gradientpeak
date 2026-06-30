@@ -1,0 +1,33 @@
+name: Bug report
+description: Report behavior that contradicts expected or specified behavior.
+title: "Bug: "
+labels: ["type:bug"]
+body:
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: Link the spec if known.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      placeholder: "1. ..."
+  - type: input
+    id: spec
+    attributes:
+      label: Related spec
+      placeholder: specs/path-to-spec.md#section
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Logs, screenshots, affected route/screen, environment, or PR links.
