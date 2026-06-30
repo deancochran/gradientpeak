@@ -1,11 +1,6 @@
 name: OpenCode PR steward
 
 on:
-  workflow_run:
-    workflows:
-      - CI
-    types:
-      - completed
   schedule:
     - cron: "7 15 * * 1-5"
   workflow_dispatch:
