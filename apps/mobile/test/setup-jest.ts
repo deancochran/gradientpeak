@@ -9,6 +9,14 @@ type CartesianChartProps = Record<string, unknown> & {
   children?: React.ReactNode | ((context: Record<string, unknown>) => React.ReactNode);
   data?: Record<string, unknown>[];
 };
+type BottomSheetFlatListMockProps<Item = unknown> = Record<string, unknown> & {
+  data?: Item[];
+  keyExtractor?: (item: Item, index: number) => React.Key;
+  ListEmptyComponent?: React.ComponentType | React.ReactNode;
+  ListFooterComponent?: React.ComponentType | React.ReactNode;
+  ListHeaderComponent?: React.ComponentType | React.ReactNode;
+  renderItem: (info: { item: Item; index: number }) => React.ReactNode;
+};
 
 const createHost = (type: string) =>
   function HostComponent({ children, ...props }: HostProps) {
@@ -110,6 +118,7 @@ jest.mock("expo-haptics", () => ({
 jest.mock("react-native-gesture-handler", () => ({
   __esModule: true,
   GestureHandlerRootView: createHost("GestureHandlerRootView"),
+  ScrollView: createHost("GestureHandlerScrollView"),
 }));
 
 jest.mock("react-native-maps", () => ({
@@ -132,7 +141,7 @@ jest.mock("@gorhom/bottom-sheet", () => ({
     ListHeaderComponent,
     renderItem,
     ...props
-  }: any) =>
+  }: BottomSheetFlatListMockProps) =>
     React.createElement(
       "BottomSheetFlatList",
       props,
@@ -143,7 +152,7 @@ jest.mock("@gorhom/bottom-sheet", () => ({
         ? typeof ListEmptyComponent === "function"
           ? React.createElement(ListEmptyComponent)
           : ListEmptyComponent
-        : data.map((item: any, index: number) =>
+        : data.map((item, index) =>
             React.createElement(
               React.Fragment,
               { key: keyExtractor ? keyExtractor(item, index) : index },
