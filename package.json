@@ -8,7 +8,7 @@
     "lefthook": "^2.1.6",
     "turbo": "^2.6.3",
     "typescript": "5.9.2",
-    "vitest": "^4.0.18"
+    "vitest": "^4.1.0"
   },
   "engines": {
     "node": ">=18"

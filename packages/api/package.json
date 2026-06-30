@@ -30,7 +30,7 @@
     "@trpc/client": "^11.16.0",
     "@trpc/react-query": "^11.16.0",
     "@trpc/server": "^11.16.0",
-    "@xmldom/xmldom": "^0.8.11",
+    "@xmldom/xmldom": "^0.8.13",
     "drizzle-orm": "^0.45.2",
     "superjson": "^2.2.6",
     "zod": "^4.2.1"
@@ -38,6 +38,6 @@
   "devDependencies": {
     "@repo/typescript-config": "workspace:*",
     "typescript": "^5.5.2",
-    "vitest": "^4.0.18"
+    "vitest": "^4.1.0"
   }
 }

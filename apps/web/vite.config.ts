@@ -5,7 +5,7 @@ import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 
 import viteReact from "@vitejs/plugin-react";
 import { nitro } from "nitro/vite";
-import { defineConfig, loadEnv } from "vite";
+import { defineConfig, loadEnv, type UserConfig } from "vite";
 
 const config = defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
@@ -24,7 +24,7 @@ const config = defineConfig(({ mode }) => {
       host: "0.0.0.0",
       port: Number(process.env.PORT ?? 3000),
     },
-    resolve: { tsconfigPaths: true },
+    resolve: { tsconfigPaths: true } as unknown as NonNullable<UserConfig["resolve"]>,
     plugins: [
       devtools(),
       tailwindcss(),
