@@ -1,10 +1,9 @@
 import { Text } from "@repo/ui/components/text";
-import React, { useMemo } from "react";
-import { ActivityIndicator, View } from "react-native";
-import { TrainingPathChart } from "@/components/plan/training-path/TrainingPathChart";
-import { buildTrainingPathViewModel } from "@/components/plan/training-path/trainingPathUtils";
-import { useScrollableTrainingPathWindow } from "@/components/plan/training-path/useScrollableTrainingPathWindow";
+import React, { useMemo, useState } from "react";
+import { View } from "react-native";
+import { TrainingPathLoadChartSection } from "@/components/plan/training-path/TrainingPathLoadChartSection";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
+import { buildDailyTrainingAdjustmentPointsFromTrainingPathData } from "@/lib/training-path/dailyTrainingPathModel";
 import {
   buildTrainingPreferencesLoadTimeline,
   buildTrainingPreferencesProjectionPreview,
@@ -65,72 +64,17 @@ export const TrainingPreferencesProjectionPreview = React.memo(
     }, [previewResult.projectionChart, snapshot.insightTimeline?.timeline, snapshot]);
 
     const todayKey = toDateKey(new Date());
-    const goalMarkers = useMemo(() => {
-      const projectionMarkers = previewResult.projectionChart?.goal_markers ?? [];
-      if (projectionMarkers.length > 0) {
-        return projectionMarkers.map((marker) => ({
-          id: marker.id,
-          targetDate: marker.target_date,
-          label: marker.name,
-        }));
-      }
-
-      return snapshot.profileGoals
-        .filter((goal): goal is typeof goal & { target_date: string } => !!goal.target_date)
-        .map((goal) => ({
-          id: goal.id,
-          targetDate: goal.target_date,
-          label: goal.title,
-        }));
-    }, [previewResult.projectionChart?.goal_markers, snapshot.profileGoals]);
-    const trainingPathWindow = useScrollableTrainingPathWindow({ goalMarkers, todayKey });
-
-    const trainingPathModel = useMemo(
+    const [selectedDate, setSelectedDate] = useState<string | null>(todayKey);
+    const dailyAdjustmentPoints = useMemo(
       () =>
-        buildTrainingPathViewModel({
+        buildDailyTrainingAdjustmentPointsFromTrainingPathData({
           timeline: previewLoadTimeline,
           fitnessHistory,
-          projectedFitness: [],
           idealFitnessCurve: previewIdealCurve.length > 0 ? previewIdealCurve : idealFitnessCurve,
-          goalMarkers,
-          selectedWeekStart: null,
-          range: "season",
-          weekWindow: trainingPathWindow.resolvedWeekWindow,
-          todayKey,
+          startDate: previewLoadTimeline[0]?.date ?? todayKey,
+          endDate: previewLoadTimeline[previewLoadTimeline.length - 1]?.date ?? todayKey,
         }),
-      [
-        fitnessHistory,
-        goalMarkers,
-        idealFitnessCurve,
-        previewIdealCurve,
-        previewLoadTimeline,
-        trainingPathWindow.resolvedWeekWindow,
-        todayKey,
-      ],
-    );
-
-    const fixedDomainModel = useMemo(
-      () =>
-        buildTrainingPathViewModel({
-          timeline: previewLoadTimeline,
-          fitnessHistory,
-          projectedFitness: [],
-          idealFitnessCurve: previewIdealCurve.length > 0 ? previewIdealCurve : idealFitnessCurve,
-          goalMarkers,
-          selectedWeekStart: null,
-          range: "all",
-          weekWindow: trainingPathWindow.initialWeekWindow,
-          todayKey,
-        }),
-      [
-        fitnessHistory,
-        goalMarkers,
-        idealFitnessCurve,
-        previewIdealCurve,
-        previewLoadTimeline,
-        trainingPathWindow.initialWeekWindow,
-        todayKey,
-      ],
+      [fitnessHistory, idealFitnessCurve, previewIdealCurve, previewLoadTimeline, todayKey],
     );
 
     const projectionPreviewState = useMemo(() => {
@@ -161,7 +105,7 @@ export const TrainingPreferencesProjectionPreview = React.memo(
       if (idealFitnessCurve.length < 2) {
         return {
           tone: "ready" as const,
-          title: "Weekly Training Path",
+          title: "Daily Training Path",
           body: "",
         };
       }
@@ -176,7 +120,7 @@ export const TrainingPreferencesProjectionPreview = React.memo(
 
       return {
         tone: "ready" as const,
-        title: "Weekly Training Path",
+        title: "Daily Training Path",
         body: "",
       };
     }, [
@@ -189,31 +133,30 @@ export const TrainingPreferencesProjectionPreview = React.memo(
       snapshot.profileGoals.length,
     ]);
 
+    const chartEmptyState =
+      projectionPreviewState.tone === "ready"
+        ? undefined
+        : {
+            body: projectionPreviewState.body,
+            title: projectionPreviewState.title,
+            tone: projectionPreviewState.tone,
+          };
+
     return (
       <View className="gap-3" testID="training-preferences-load-analysis">
         <Text className="text-sm font-semibold text-foreground">Training Load Preview</Text>
-        {projectionPreviewState.tone === "ready" ? (
-          <TrainingPathChart
-            height={300}
-            domains={fixedDomainModel.domains}
-            model={trainingPathModel}
-            onScrollNearEnd={trainingPathWindow.extendWindowEnd}
-            onScrollNearStart={trainingPathWindow.extendWindowStart}
-            range="season"
-            reviewWeeks={false}
-            scrollX
-            showCompletedLoad={false}
-            showPlannedLoad={false}
-            showScheduledFitness={false}
-          />
-        ) : (
-          <View className="gap-2 rounded-md border border-dashed border-border bg-muted/20 px-4 py-5">
-            {projectionPreviewState.tone === "loading" ? <ActivityIndicator size="small" /> : null}
-            <Text className="text-sm font-semibold text-foreground">
-              {projectionPreviewState.title}
-            </Text>
-          </View>
-        )}
+        <TrainingPathLoadChartSection
+          chartHeight={96}
+          dailyDensity="compact"
+          dailyPoints={projectionPreviewState.tone === "ready" ? dailyAdjustmentPoints : undefined}
+          dailyTestID="training-preferences-daily-adjustment-chart"
+          emptyState={chartEmptyState}
+          onSelectedDateChange={setSelectedDate}
+          selectedDate={selectedDate}
+          selectionMode="day"
+          showHeader={false}
+          testID="training-preferences-daily-adjustment-chart"
+        />
       </View>
     );
   },

@@ -1,4 +1,5 @@
 import React from "react";
+import type { ZodFormSubmitProps } from "../../../test/mock-components";
 import { renderNative, screen } from "../../../test/render-native";
 
 const replaceMock = jest.fn();
@@ -18,14 +19,14 @@ jest.mock("react-native", () => {
   return {
     __esModule: true,
     ...actual,
-    Alert: { alert: (...args: any[]) => alertMock(...args) },
+    Alert: { alert: (...args: unknown[]) => alertMock(...args) },
   };
 });
 
 jest.mock("@/lib/auth/client", () => ({
   __esModule: true,
   authClient: {
-    resetPassword: (...args: any[]) => resetPasswordMock(...args),
+    resetPassword: (...args: unknown[]) => resetPasswordMock(...args),
   },
   signOutMobileAuth: () => signOutMobileAuthMock(),
 }));
@@ -58,59 +59,43 @@ jest.mock("@/lib/stores/auth-store", () => ({
 }));
 
 jest.mock("@repo/ui/components/alert", () => {
-  const React = require("react");
-  const host = (type: string) => (props: any) => React.createElement(type, props, props.children);
-  return { __esModule: true, Alert: host("Alert"), AlertDescription: host("AlertDescription") };
-});
-
-jest.mock("@repo/ui/components/button", () => ({
-  __esModule: true,
-  Button: ({ children, disabled, onPress, ...props }: any) =>
-    React.createElement(
-      "Pressable",
-      {
-        ...props,
-        disabled,
-        onPress: disabled ? undefined : onPress,
-        testID: props.testID ?? props.testId,
-      },
-      children,
-    ),
-}));
-
-jest.mock("@repo/ui/components/card", () => {
-  const React = require("react");
-  const host = (type: string) => (props: any) => React.createElement(type, props, props.children);
+  const { createHostComponent } = require("../../../test/mock-components");
   return {
     __esModule: true,
-    Card: host("Card"),
-    CardContent: host("CardContent"),
-    CardHeader: host("CardHeader"),
-    CardTitle: host("CardTitle"),
+    Alert: createHostComponent("Alert"),
+    AlertDescription: createHostComponent("AlertDescription"),
   };
 });
 
-jest.mock("@repo/ui/components/form", () => ({
-  __esModule: true,
-  Form: ({ children }: any) => children,
-  FormTextField: ({ control, name, placeholder, testId }: any) =>
-    React.createElement(
-      React.Fragment,
-      null,
-      React.createElement("TextInput", {
-        placeholder,
-        testID: testId ?? name,
-        value: control.values[name] ?? "",
-        onChangeText: (nextValue: string) => control.setValue(name, nextValue),
-      }),
-      control.errors[name] ? React.createElement("Text", null, control.errors[name].message) : null,
-    ),
-}));
+jest.mock("@repo/ui/components/button", () => {
+  const { createPressableHost } = require("../../../test/mock-components");
+  return { __esModule: true, Button: createPressableHost() };
+});
 
-jest.mock("@repo/ui/components/text", () => ({
-  __esModule: true,
-  Text: ({ children, ...props }: any) => React.createElement("Text", props, children),
-}));
+jest.mock("@repo/ui/components/card", () => {
+  const { createHostComponent } = require("../../../test/mock-components");
+  return {
+    __esModule: true,
+    Card: createHostComponent("Card"),
+    CardContent: createHostComponent("CardContent"),
+    CardHeader: createHostComponent("CardHeader"),
+    CardTitle: createHostComponent("CardTitle"),
+  };
+});
+
+jest.mock("@repo/ui/components/form", () => {
+  const { createFormTextField } = require("../../../test/mock-components");
+  return {
+    __esModule: true,
+    Form: ({ children }: { children?: React.ReactNode }) => children,
+    FormTextField: createFormTextField(),
+  };
+});
+
+jest.mock("@repo/ui/components/text", () => {
+  const { createHostComponent } = require("../../../test/mock-components");
+  return { __esModule: true, Text: createHostComponent("Text") };
+});
 
 jest.mock("@repo/ui/hooks", () => {
   const React = require("react");
@@ -136,7 +121,10 @@ jest.mock("@repo/ui/hooks", () => {
         handleSubmit: (onSubmit: (data: typeof values) => unknown) => () => onSubmit(values),
       };
     },
-    useZodFormSubmit: ({ form, onSubmit }: any) => ({
+    useZodFormSubmit: ({
+      form,
+      onSubmit,
+    }: ZodFormSubmitProps<{ confirmPassword: string; password: string }>) => ({
       handleSubmit: form.handleSubmit(onSubmit),
       isSubmitting: false,
     }),

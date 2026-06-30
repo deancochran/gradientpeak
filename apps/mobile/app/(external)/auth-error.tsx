@@ -1,7 +1,7 @@
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { KeyboardAvoidingView, Platform, View } from "react-native";
 
 export default function AuthErrorScreen() {
@@ -9,11 +9,11 @@ export default function AuthErrorScreen() {
   const params = useLocalSearchParams<{ error?: string }>();
 
   const handleGoBackPress = () => {
-    router.replace("/(external)/" as any);
+    router.replace("/(external)/" as Href);
   };
 
   const handleTryAgainPress = () => {
-    router.replace("/(external)/sign-in" as any);
+    router.replace("/(external)/sign-in" as Href);
   };
 
   return (

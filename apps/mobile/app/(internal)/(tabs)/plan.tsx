@@ -64,7 +64,10 @@ function PlanDashboardScreen() {
       >
         <View className="gap-5 px-2 pb-6 pt-3">
           <TrainingPathSection
+            dailyPoints={trainingPath.dailyTrainingPathPoints}
+            chartLoading={trainingPath.chartLoading}
             model={trainingPath.trainingPath}
+            selectedDate={trainingPath.selectedDate}
             selectedWeekGoals={trainingPath.selectedWeekGoals}
             selectedWeekEvents={trainingPath.selectedWeekEvents}
             selectedWeekGroupEvents={trainingPath.selectedWeekGroupEvents}
@@ -80,6 +83,7 @@ function PlanDashboardScreen() {
             onOpenScheduledEvent={navigateToScheduledEvent}
             onOpenSettings={navigateToTrainingPreferences}
             onWeekScrollStart={trainingPath.handleWeekScrollStart}
+            onSelectedDateChange={trainingPath.handleSelectedDateChange}
             onSelectedWeekChange={trainingPath.handleSelectedWeekChange}
           />
         </View>

@@ -1,3 +1,4 @@
+import type { HostProps } from "../../../test/mock-components";
 import { renderNative, waitFor } from "../../../test/render-native";
 
 const replaceMock = jest.fn();
@@ -15,9 +16,9 @@ const pathnameState = {
 jest.mock("expo-router", () => {
   const React = require("react");
 
-  const StackComponent = ({ children, ...props }: any) =>
+  const StackComponent = ({ children, ...props }: HostProps) =>
     React.createElement("Stack", props, children);
-  StackComponent.Screen = ({ children, ...props }: any) =>
+  StackComponent.Screen = ({ children, ...props }: HostProps) =>
     React.createElement("StackScreen", props, children);
 
   return {

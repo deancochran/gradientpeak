@@ -903,15 +903,14 @@ export default function TrainingPlanOverview() {
           <DropdownMenuItem onPress={handleEditStructure} testID="training-plan-options-edit">
             <Text>Edit Plan</Text>
           </DropdownMenuItem>
-        ) : (
-          <DropdownMenuItem
-            onPress={headerActions.handleDuplicate}
-            disabled={headerActions.duplicatePending}
-            testID="training-plan-options-duplicate"
-          >
-            <Text>{headerActions.duplicatePending ? "Duplicating..." : "Duplicate"}</Text>
-          </DropdownMenuItem>
-        )}
+        ) : null}
+        <DropdownMenuItem
+          onPress={headerActions.handleDuplicate}
+          disabled={headerActions.duplicatePending}
+          testID="training-plan-options-duplicate"
+        >
+          <Text>{headerActions.duplicatePending ? "Duplicating..." : "Duplicate"}</Text>
+        </DropdownMenuItem>
         <DropdownMenuItem
           onPress={() => scheduling.setShowApplyModal(true)}
           testID="training-plan-options-schedule"

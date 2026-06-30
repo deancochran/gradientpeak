@@ -1,7 +1,17 @@
-import { canonicalGoalActivityCategorySchema, canonicalGoalObjectiveSchema } from "@repo/core";
+import {
+  athletePlanningContextSchema,
+  dateOnlySchema,
+  plannedTrainingActivityPlanFactsSchema,
+  plannedTrainingEventOverridesSchema,
+  plannedTrainingSessionIntentSchema,
+  plannedTrainingSessionSchema,
+  planningGoalSchema,
+  planningPreferencesSchema,
+  planningScheduleSchema,
+  planningTrainingPlanCreateInputSchema,
+  planningTrainingPlanUpdateInputSchema,
+} from "@repo/core";
 import { z } from "zod";
-
-const uuidSchema = z.string().uuid();
 
 export const trainingPlanBuilderDetailsSchema = z
   .object({
@@ -11,55 +21,31 @@ export const trainingPlanBuilderDetailsSchema = z
   })
   .strict();
 
-export const trainingPlanBuilderScenarioAssumptionsSchema = z
+export const trainingPlanBuilderGoalBlueprintSchema = planningGoalSchema;
+
+export const trainingPlanBuilderGoalContextSchema = z
   .object({
-    label: z.string(),
-    weeklyAvailabilityDays: z.number().int().min(0).max(7).nullable(),
-    maxWeeklyLoadRampPct: z.number().min(0).max(100).nullable(),
+    selectedGoals: z.array(trainingPlanBuilderGoalBlueprintSchema),
   })
   .strict();
 
-export const trainingPlanBuilderGoalSchema = z
+export const trainingPlanBuilderProfileGoalDraftSchema = z
   .object({
-    localId: z.string().min(1),
-    title: z.string(),
-    targetDate: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/)
-      .nullable(),
-    priority: z.number().int().min(0).max(10).default(10),
-    activityCategory: canonicalGoalActivityCategorySchema.nullable(),
-    objective: canonicalGoalObjectiveSchema.nullable(),
+    title: z.string().trim().min(1, "Goal title is required."),
   })
   .strict();
 
-export const trainingPlanActivityPlanFactsSchema = z
-  .object({
-    id: uuidSchema,
-    name: z.string().min(1),
-    published: z.boolean(),
-    accessible: z.boolean(),
-    estimatedTss: z.number().min(0).nullable(),
-    estimatedDurationSeconds: z.number().int().min(0).nullable(),
-  })
-  .strict();
+export const trainingPlanBuilderPlanPreferencesSchema = planningPreferencesSchema;
 
-export const trainingPlanBuilderEventOverridesSchema = z
-  .object({
-    title: z.string().trim().min(1).max(255).optional(),
-    description: z.string().trim().min(1).max(1000).optional(),
-    start_time: z.string().optional(),
-  })
-  .strict();
+export const trainingPlanActivityPlanFactsSchema = plannedTrainingActivityPlanFactsSchema;
 
-export const trainingPlanBuilderSessionSchema = z
-  .object({
-    localId: z.string().min(1),
-    offsetDays: z.number().int(),
-    activityPlan: trainingPlanActivityPlanFactsSchema.nullable(),
-    eventOverrides: trainingPlanBuilderEventOverridesSchema.optional(),
-  })
-  .strict();
+export const trainingPlanBuilderEventOverridesSchema = plannedTrainingEventOverridesSchema;
+
+export const trainingPlanBuilderSessionIntentSchema = plannedTrainingSessionIntentSchema;
+
+export const trainingPlanBuilderSessionSchema = plannedTrainingSessionSchema;
+
+export const trainingPlanBuilderSchedulingSchema = planningScheduleSchema;
 
 export const trainingPlanBuilderSelectionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("overview") }).strict(),
@@ -72,13 +58,20 @@ export const trainingPlanBuilderSelectionSchema = z.discriminatedUnion("type", [
 export const trainingPlanBuilderStateSchema = z
   .object({
     details: trainingPlanBuilderDetailsSchema,
-    scenarioAssumptions: trainingPlanBuilderScenarioAssumptionsSchema,
-    goals: z.array(trainingPlanBuilderGoalSchema),
-    schedule: z
+    anchorDate: dateOnlySchema,
+    athleteContext: athletePlanningContextSchema,
+    planPreferences: trainingPlanBuilderPlanPreferencesSchema,
+    goalContext: trainingPlanBuilderGoalContextSchema,
+    structure: z
       .object({
         sessions: z.array(trainingPlanBuilderSessionSchema),
       })
       .strict(),
+    scheduling: trainingPlanBuilderSchedulingSchema,
     selection: trainingPlanBuilderSelectionSchema,
   })
   .strict();
+
+export const trainingPlanFinalCreatePayloadSchema = planningTrainingPlanCreateInputSchema;
+
+export const trainingPlanFinalUpdatePayloadSchema = planningTrainingPlanUpdateInputSchema;

@@ -50,6 +50,37 @@ describe("canonical training plan structure", () => {
     expect(parsed.structure).toEqual(canonicalStructure);
   });
 
+  it("accepts date-agnostic goal blueprints with target offsets", () => {
+    const structure = {
+      ...canonicalStructure,
+      goal_blueprints: [
+        {
+          title: "Peak for event",
+          priority: 10,
+          activity_category: "bike",
+          target_offset_days: 42,
+        },
+      ],
+    };
+
+    expect(canonicalTrainingPlanStructureSchema.parse(structure)).toEqual(structure);
+  });
+
+  it("rejects real target dates in reusable goal blueprints", () => {
+    const result = canonicalTrainingPlanStructureSchema.safeParse({
+      ...canonicalStructure,
+      goal_blueprints: [
+        {
+          title: "Peak for event",
+          priority: 10,
+          target_date: "2026-07-01",
+        },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
   it("requires persisted canonical structures to carry an id without changing session shape", () => {
     const parsed = trainingPlanSchema.parse({
       id: "33333333-3333-4333-8333-333333333333",

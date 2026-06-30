@@ -1,4 +1,4 @@
-import type { TrainingPlanBuilderState } from "./types";
+import type { TrainingPlanBuilderGoalBlueprint, TrainingPlanBuilderState } from "./types";
 import { validateTrainingPlanBuilderState } from "./validation";
 
 export type TrainingPlanBuilderSummary = {
@@ -11,11 +11,17 @@ export type TrainingPlanBuilderSummary = {
 };
 
 export function selectSessionById(state: TrainingPlanBuilderState, sessionId: string) {
-  return state.schedule.sessions.find((session) => session.localId === sessionId) ?? null;
+  return state.structure.sessions.find((session) => session.localId === sessionId) ?? null;
+}
+
+export function selectBuilderGoalBlueprints(
+  state: TrainingPlanBuilderState,
+): TrainingPlanBuilderGoalBlueprint[] {
+  return state.goalContext.selectedGoals;
 }
 
 export function selectBuilderSummary(state: TrainingPlanBuilderState): TrainingPlanBuilderSummary {
-  const sessions = state.schedule.sessions;
+  const sessions = state.structure.sessions;
   const latestOffsetDays = sessions.reduce(
     (latest, session) => Math.max(latest, session.offsetDays),
     -1,
@@ -25,7 +31,7 @@ export function selectBuilderSummary(state: TrainingPlanBuilderState): TrainingP
     sessionCount: sessions.length,
     durationDays: latestOffsetDays >= 0 ? latestOffsetDays + 1 : 0,
     assignedSessionCount: sessions.filter((session) => session.activityPlan !== null).length,
-    goalCount: state.goals.length,
+    goalCount: selectBuilderGoalBlueprints(state).length,
     totalEstimatedTss: sessions.reduce(
       (total, session) => total + (session.activityPlan?.estimatedTss ?? 0),
       0,

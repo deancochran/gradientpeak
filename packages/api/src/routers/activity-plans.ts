@@ -63,7 +63,7 @@ const listActivityPlansSchema = z
     includeOwnOnly: z.boolean().default(true),
     includeSystemTemplates: z.boolean().default(false),
     includeEstimation: z.boolean().default(true),
-    ownerScope: z.enum(["own", "system", "public", "all"]).optional(),
+    ownerScope: z.enum(["own", "system", "public", "discoverable", "all"]).optional(),
     visibility: z.enum(["private", "public"]).optional(),
     activityCategory: activityCategoryFilterSchema.optional(),
     activityCategories: activityCategoryFiltersSchema.optional(),
@@ -221,6 +221,14 @@ function buildAccessiblePlanCondition(userId: string) {
   );
 }
 
+function buildDiscoverablePlanCondition() {
+  return or(
+    eq(activityPlans.template_visibility, "public"),
+    eq(activityPlans.is_public, true),
+    eq(activityPlans.is_system_template, true),
+  );
+}
+
 function buildOwnedPlanCondition(userId: string) {
   return eq(activityPlans.profile_id, userId);
 }
@@ -352,6 +360,8 @@ export const activityPlansRouter = createTRPCRouter({
       conditions.push(eq(activityPlans.is_system_template, true));
     } else if (ownerScope === "public") {
       conditions.push(eq(activityPlans.template_visibility, "public"));
+    } else if (ownerScope === "discoverable") {
+      conditions.push(buildDiscoverablePlanCondition());
     } else if (ownerScope === "all") {
       conditions.push(buildAccessiblePlanCondition(ctx.session.user.id));
     }

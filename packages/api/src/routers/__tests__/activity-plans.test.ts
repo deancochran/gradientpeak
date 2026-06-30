@@ -289,6 +289,30 @@ describe("activityPlansRouter", () => {
     expect(result.nextCursor).toBe(`${firstPlan.created_at.toISOString()}_${firstPlan.id}`);
   });
 
+  it("list accepts discoverable owner scope for public and system picker surfaces", async () => {
+    const publicPlan = createActivityPlanRow({
+      id: "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      profile_id: OTHER_USER_ID,
+      template_visibility: "public",
+      is_public: true,
+    });
+    const { caller } = createCaller({
+      state: {
+        "select:activity_plans": [[publicPlan]],
+        "select:likes": [[]],
+        "select:profiles": [[createProfileRow({ id: OTHER_USER_ID, username: "Other" })]],
+      },
+    });
+
+    const result = await caller.list({ ownerScope: "discoverable", limit: 20 });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      id: publicPlan.id,
+      visibility: "public",
+    });
+  });
+
   it("getById rejects a private plan owned by another user", async () => {
     const { caller } = createCaller({
       state: {

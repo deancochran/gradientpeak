@@ -326,6 +326,72 @@ export type CanonicalTrainingPlanStructureSession = z.infer<
   typeof canonicalTrainingPlanStructureSessionSchema
 >;
 
+export const trainingPlanGoalBlueprintSchema = z
+  .object({
+    title: z.string().trim().min(1).max(255),
+    priority: z.number().int().min(0).max(10).default(10),
+    activity_category: z.string().trim().min(1).nullable().optional(),
+    target_offset_days: z.number().int().min(0).optional(),
+    objective: z.unknown().optional(),
+  })
+  .strict();
+
+export type TrainingPlanGoalBlueprint = z.infer<typeof trainingPlanGoalBlueprintSchema>;
+
+export const trainingPlanBuilderPlanningSnapshotSchema = z
+  .object({
+    version: z.literal(1),
+    plan_preferences: z
+      .object({
+        duration_weeks: z.number().int().min(1).max(104).nullable(),
+        weekly_session_count: z.number().int().min(1).max(14).nullable(),
+        target_weekly_hours: z.number().min(0).max(168).nullable(),
+        rest_days_per_week: z.number().int().min(0).max(7).nullable(),
+      })
+      .strict(),
+    scheduling: z
+      .object({
+        start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        preferred_weekdays: z.array(z.number().int().min(0).max(6)).max(7),
+      })
+      .strict(),
+    goal_context: z
+      .object({
+        selected_goals: z
+          .array(
+            z
+              .object({
+                title: z.string(),
+                target_offset_days: z.number().int().min(0).nullable(),
+                target_date: z
+                  .string()
+                  .regex(/^\d{4}-\d{2}-\d{2}$/)
+                  .nullable()
+                  .optional(),
+                priority: z.number().int().min(0).max(10),
+                activity_category: z.string().nullable(),
+                objective: z.unknown().nullable(),
+                source_profile_goal_id: z.string().min(1).nullable().optional(),
+              })
+              .strict(),
+          )
+          .default([]),
+      })
+      .strict(),
+    backend_planning: z
+      .object({
+        projection_source: z.enum(["backend", "local"]).nullable(),
+        preview_snapshot_token: z.string().min(1).nullable(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+export type TrainingPlanBuilderPlanningSnapshot = z.infer<
+  typeof trainingPlanBuilderPlanningSnapshotSchema
+>;
+
 export const canonicalTrainingPlanStructureSchema = z
   .object({
     version: z.literal(1),
@@ -339,6 +405,8 @@ export const canonicalTrainingPlanStructureSchema = z
       })
       .strict()
       .optional(),
+    goal_blueprints: z.array(trainingPlanGoalBlueprintSchema).optional(),
+    builder_planning_snapshot: trainingPlanBuilderPlanningSnapshotSchema.optional(),
     sessions: z.array(canonicalTrainingPlanStructureSessionSchema).min(1),
   })
   .strict()

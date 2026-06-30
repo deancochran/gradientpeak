@@ -4876,17 +4876,12 @@ const trainingPlansProcedures = {
   // ------------------------------
   getCurrentStatus: protectedProcedure.query(async ({ ctx }) => {
     const db = getRequiredDb(ctx);
-    // First check if user has a training plan
     const ownedPlans = await listTrainingPlans({
       db,
       profileId: ctx.session.user.id,
       ownerScope: "own",
     });
     const plan = ownedPlans[0] ?? null;
-
-    if (!plan) {
-      return null;
-    }
 
     // Get activities from the last 42 days (CTL time constant)
     const today = new Date();
@@ -5082,7 +5077,7 @@ const trainingPlansProcedures = {
       })) || [];
 
     // Get target TSS from current block in training plan structure
-    const structure = plan.structure as any;
+    const structure = plan?.structure as any;
     let targetTSS = plannedWeeklyTSS;
 
     // For periodized plans, find the current block

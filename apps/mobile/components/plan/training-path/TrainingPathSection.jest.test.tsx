@@ -548,8 +548,7 @@ describe("TrainingPathSection", () => {
     renderSection({ selectedWeekLoading: true });
 
     expect(screen.getByTestId("training-path-week-summary-loading")).toBeTruthy();
-    expect(screen.getByText("Loading")).toBeTruthy();
-    expect(screen.getAllByText("--")).toHaveLength(3);
+    expect(screen.getByTestId("training-path-week-summary-loading-indicator")).toBeTruthy();
     expect(screen.getByText("Loading goals.")).toBeTruthy();
     expect(screen.getByText("Loading events.")).toBeTruthy();
     expect(screen.getByText("Loading group events.")).toBeTruthy();

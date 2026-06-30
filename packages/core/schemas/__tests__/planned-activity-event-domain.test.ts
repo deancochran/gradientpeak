@@ -273,6 +273,16 @@ describe("planned activity event domain schemas", () => {
       },
     });
 
+    const nonRecurring = plannedActivityEventCreateSchema.safeParse({
+      event_type: "planned",
+      activity_plan_id: "2f3e7214-35ca-4ef5-a8ef-ef4f3efb1d15",
+      title: "Threshold session",
+      scheduled_date: "2026-03-12",
+      all_day: true,
+      timezone: "UTC",
+      recurrence: null,
+    });
+
     const timestamped = plannedActivityEventCreateSchema.safeParse({
       event_type: "planned",
       activity_plan_id: "2f3e7214-35ca-4ef5-a8ef-ef4f3efb1d15",
@@ -286,6 +296,7 @@ describe("planned activity event domain schemas", () => {
     expect(valid.success).toBe(true);
     expect(timed.success).toBe(false);
     expect(recurring.success).toBe(true);
+    expect(nonRecurring.success).toBe(true);
     expect(timestamped.success).toBe(false);
   });
 

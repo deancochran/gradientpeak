@@ -136,6 +136,9 @@ describe("analyticsRouter", () => {
   });
 
   it("predicts performance from the owned season-best curve", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
+
     const { caller } = createCaller([
       createEffortRow({ duration_seconds: 180, value: 250 + 15000 / 180 }),
       createEffortRow({ duration_seconds: 300, value: 250 + 15000 / 300 }),

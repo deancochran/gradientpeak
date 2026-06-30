@@ -1,0 +1,55 @@
+name: OpenCode PR review
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+
+concurrency:
+  group: opencode-review-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+  cancel-in-progress: true
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: read
+  issues: write
+
+jobs:
+  review:
+    name: Review pull request
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - name: Run OpenCode PR review
+        uses: anomalyco/opencode/github@latest
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          model: openai/gpt-5.5
+          agent: plan
+          use_github_token: true
+          prompt: |
+            Review this GradientPeak pull request as a read-only SDLC reviewer.
+
+            Enforce:
+            - package boundaries and validation rules from AGENTS.md
+            - GitHub issue/PR traceability and clear verification notes
+            - smallest-correct-change discipline
+            - no unrelated refactors
+            - no secrets or credentials
+            - tests for behavior changes
+            - schema/auth/workflow/deploy changes require explicit human approval
+
+            Comment only when there is actionable feedback, an unresolved risk, or a missing verification step.

@@ -1,5 +1,8 @@
+import { validateTrainingPlanCreationInput } from "@repo/core";
 import { ZodError } from "zod";
+import { isValidDateOnly } from "./date-utils";
 import { toTrainingPlanStructure } from "./mappers";
+import { trainingPlanBuilderPlanPreferencesSchema } from "./schemas";
 import type {
   TrainingPlanBuilderSaveBlocker,
   TrainingPlanBuilderState,
@@ -10,105 +13,62 @@ function createBlocker(blocker: TrainingPlanBuilderSaveBlocker): TrainingPlanBui
   return blocker;
 }
 
+function toBuilderTarget(issue: {
+  targetType: "overview" | "session" | "goal" | "assumptions";
+  targetId?: string;
+}): TrainingPlanBuilderSaveBlocker["target"] {
+  if (issue.targetType === "session" && issue.targetId) {
+    return { type: "session", sessionId: issue.targetId };
+  }
+  if (issue.targetType === "goal" && issue.targetId) {
+    return { type: "goal", goalId: issue.targetId };
+  }
+  if (issue.targetType === "assumptions") {
+    return { type: "assumptions" };
+  }
+  return { type: "overview" };
+}
+
 export function validateTrainingPlanBuilderState(
   state: TrainingPlanBuilderState,
 ): TrainingPlanBuilderValidationResult {
-  const blockers: TrainingPlanBuilderSaveBlocker[] = [];
-
-  if (state.details.name.trim().length === 0) {
-    blockers.push(
-      createBlocker({
-        code: "missing_plan_name",
-        message: "Add a training plan name before saving.",
-        target: { type: "overview" },
-      }),
-    );
-  }
-
-  if (state.schedule.sessions.length === 0) {
-    blockers.push(
-      createBlocker({
-        code: "no_sessions",
-        message: "Add at least one session before saving.",
-        target: { type: "overview" },
-      }),
-    );
-  }
-
-  const sessionKeys = new Map<string, string>();
-  for (const session of state.schedule.sessions) {
-    if (session.offsetDays < 0) {
-      blockers.push(
-        createBlocker({
-          code: "invalid_offset_days",
-          message: "Sessions must use a non-negative relative day offset.",
-          target: { type: "session", sessionId: session.localId },
-        }),
-      );
-    }
-
-    if (
-      session.eventOverrides?.start_time &&
-      !/^([01]\d|2[0-3]):[0-5]\d$/.test(session.eventOverrides.start_time)
-    ) {
-      blockers.push(
-        createBlocker({
-          code: "invalid_start_time",
-          message: "Session start times must use HH:mm format.",
-          target: { type: "session", sessionId: session.localId },
-        }),
-      );
-    }
-
-    if (!session.activityPlan) {
-      blockers.push(
-        createBlocker({
-          code: "missing_activity_plan",
-          message: "Assign an activity plan to every training plan session.",
-          target: { type: "session", sessionId: session.localId },
-        }),
-      );
-      continue;
-    }
-
-    if (!session.activityPlan.accessible) {
-      blockers.push(
-        createBlocker({
-          code: "inaccessible_activity_plan",
-          message: "Use only activity plans available to the athlete creating this plan.",
-          target: { type: "session", sessionId: session.localId },
-        }),
-      );
-    }
-
-    if (!session.activityPlan.published) {
-      blockers.push(
-        createBlocker({
-          code: "unpublished_activity_plan",
-          message: "Publish the activity plan before assigning it to a training plan.",
-          target: { type: "session", sessionId: session.localId },
-        }),
-      );
-    }
-
-    const sessionKey = [
-      session.offsetDays,
-      session.activityPlan.id,
-      session.eventOverrides?.start_time ?? "",
-    ].join("|");
-    const existingSessionId = sessionKeys.get(sessionKey);
-    if (existingSessionId) {
-      blockers.push(
-        createBlocker({
-          code: "duplicate_session",
-          message: "Sessions cannot duplicate the same activity plan, day, and start time.",
-          target: { type: "session", sessionId: session.localId },
-        }),
-      );
-    } else {
-      sessionKeys.set(sessionKey, session.localId);
-    }
-  }
+  const planPreferenceResult = trainingPlanBuilderPlanPreferencesSchema.safeParse(
+    state.planPreferences,
+  );
+  const blockers: TrainingPlanBuilderSaveBlocker[] = validateTrainingPlanCreationInput({
+    name: state.details.name,
+    anchorDateValid: isValidDateOnly(state.anchorDate),
+    profileBirthDateValid: true,
+    planPreferencesValid: planPreferenceResult.success,
+    planPreferencesMessage: planPreferenceResult.success
+      ? undefined
+      : planPreferenceResult.error.issues[0]?.message,
+    sessions: state.structure.sessions.map((session) => ({
+      localId: session.localId,
+      offsetDays: session.offsetDays,
+      plannedOffsetDays: null,
+      plannedDateValid: true,
+      activityPlan: session.activityPlan
+        ? {
+            id: session.activityPlan.id,
+            accessible: session.activityPlan.accessible,
+            published: session.activityPlan.published,
+          }
+        : null,
+      startTime: session.eventOverrides?.start_time ?? null,
+    })),
+    goals: state.goalContext.selectedGoals.map((goal) => ({
+      localId: goal.localId,
+      targetDateValid: goal.targetDate ? isValidDateOnly(goal.targetDate) : true,
+      targetOffsetDays: goal.targetOffsetDays,
+    })),
+  }).map((issue) =>
+    createBlocker({
+      code: issue.code,
+      message: issue.message,
+      target: toBuilderTarget(issue),
+    }),
+  );
 
   if (blockers.length === 0) {
     try {

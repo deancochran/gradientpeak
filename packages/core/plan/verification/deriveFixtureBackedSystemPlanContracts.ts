@@ -36,6 +36,8 @@ export interface FixtureBackedSystemPlanContract {
   tolerance_class: VerificationToleranceClass;
   expected_weekly_load: number;
   current_ctl: number;
+  start_date: string;
+  end_date: string;
   preference_profile?: AthletePreferenceProfile;
   goals: readonly FixtureBackedContractGoal[];
   expected_mode: "target_seeking" | "capacity_bounded";
@@ -97,6 +99,8 @@ export function deriveFixtureBackedSystemPlanContracts(
       tolerance_class: mappingFixture.tolerance_class,
       expected_weekly_load: override.expected_weekly_load,
       current_ctl: scenarioFixture.athlete_snapshot.starting_ctl,
+      start_date: scenarioFixture.projection_input.expanded_plan.start_date,
+      end_date: scenarioFixture.projection_input.expanded_plan.end_date,
       preference_profile: scenarioFixture.preference_profile,
       goals: scenarioFixture.projection_input.expanded_plan.goals,
       expected_mode: override.expected_mode,

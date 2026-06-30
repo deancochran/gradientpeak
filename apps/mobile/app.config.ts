@@ -77,9 +77,14 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         },
       },
     },
-    updates: {
-      url: `https://u.expo.dev/${EAS_PROJECT_ID}`,
-    },
+    updates:
+      environment === "development"
+        ? {
+            enabled: false,
+          }
+        : {
+            url: `https://u.expo.dev/${EAS_PROJECT_ID}`,
+          },
     runtimeVersion: {
       policy: "appVersion",
     },
@@ -99,9 +104,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       [
         "expo-dev-client",
         {
-          launchMode: "most-recent",
+          launchMode: environment === "development" ? "launcher" : "most-recent",
           android: {
-            launchMode: "most-recent",
+            launchMode: environment === "development" ? "launcher" : "most-recent",
           },
         },
       ],

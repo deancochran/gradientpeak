@@ -179,6 +179,11 @@ jest.mock("@/components/plan/training-path/TrainingPathChart", () => ({
   TrainingPathChart: createHost("TrainingPathChart"),
 }));
 
+jest.mock("@/components/plan/training-path/DailyTrainingAdjustmentChart", () => ({
+  __esModule: true,
+  DailyTrainingAdjustmentChart: createHost("DailyTrainingAdjustmentChart"),
+}));
+
 jest.mock("@/lib/training-plan-form/localPreview", () => ({
   __esModule: true,
   computeLocalCreationPreview: ({ profileSettings }: any) => {
@@ -302,7 +307,7 @@ const TrainingPreferencesScreen = require("../training-preferences").default;
 const getTextValues = () =>
   (screen as any).UNSAFE_getAllByType("Text").map((node: any) => getNodeText(node.props.children));
 
-const getChart = () => (screen as any).UNSAFE_getAllByType("TrainingPathChart")[0];
+const getChart = () => (screen as any).UNSAFE_getAllByType("DailyTrainingAdjustmentChart")[0];
 
 const getAllByTypeOrEmpty = (type: string) => {
   try {
@@ -473,12 +478,12 @@ describe("training preferences projection preview", () => {
     renderNative(<TrainingPreferencesScreen />);
 
     const initialChart = getChart();
-    const initialLastRecommendedLoad = initialChart.props.model.weeks
+    const initialLastRecommendedLoad = initialChart.props.points
       .toReversed()
-      .find((week: any) => week.targetLoad != null)?.targetLoad;
-    const initialLastScheduledLoad = initialChart.props.model.weeks
+      .find((point: any) => point.targetLoadTss != null)?.targetLoadTss;
+    const initialLastScheduledLoad = initialChart.props.points
       .toReversed()
-      .find((week: any) => week.plannedLoad != null)?.plannedLoad;
+      .find((point: any) => point.plannedLoadTss != null)?.plannedLoadTss;
 
     act(() => {
       getTab("Training style").props.onPress();
@@ -494,12 +499,12 @@ describe("training preferences projection preview", () => {
     });
 
     const updatedChart = getChart();
-    const updatedLastRecommendedLoad = updatedChart.props.model.weeks
+    const updatedLastRecommendedLoad = updatedChart.props.points
       .toReversed()
-      .find((week: any) => week.targetLoad != null)?.targetLoad;
-    const updatedLastScheduledLoad = updatedChart.props.model.weeks
+      .find((point: any) => point.targetLoadTss != null)?.targetLoadTss;
+    const updatedLastScheduledLoad = updatedChart.props.points
       .toReversed()
-      .find((week: any) => week.plannedLoad != null)?.plannedLoad;
+      .find((point: any) => point.plannedLoadTss != null)?.plannedLoadTss;
 
     expect(updatedLastRecommendedLoad).not.toEqual(initialLastRecommendedLoad);
     expect(updatedLastScheduledLoad).toEqual(initialLastScheduledLoad);
@@ -540,12 +545,8 @@ describe("training preferences projection preview", () => {
   it("renders the preview training path chart", () => {
     renderNative(<TrainingPreferencesScreen />);
 
-    expect(getChart().props.model.weeks.length).toBeGreaterThanOrEqual(3);
-    expect(getChart().props.model.goalMarkers).toEqual([
-      expect.objectContaining({ id: "goal-1", label: "Spring Bike Test" }),
-    ]);
-    expect(getChart().props.range).toBe("season");
-    expect(getChart().props.scrollX).toBe(true);
+    expect(getChart().props.points.length).toBeGreaterThanOrEqual(3);
+    expect(getChart().props.density).toBe("compact");
   });
 
   it("shows a clear empty state when there is no active plan", () => {
@@ -567,7 +568,7 @@ describe("training preferences projection preview", () => {
     expect(textValues).toContain("Training Load Preview");
     expect(textValues.some((value: string) => value.includes("Draft preview"))).toBe(false);
     expect(textValues.some((value: string) => value.includes("Preview unavailable"))).toBe(false);
-    expect(getAllByTypeOrEmpty("TrainingPathChart")).toHaveLength(1);
+    expect(getAllByTypeOrEmpty("DailyTrainingAdjustmentChart")).toHaveLength(1);
   });
 
   it("shows a baseline-curve message when projection data is missing", () => {

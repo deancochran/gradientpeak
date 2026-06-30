@@ -1,4 +1,5 @@
 export {
+  act,
   cleanup,
   fireEvent,
   render,

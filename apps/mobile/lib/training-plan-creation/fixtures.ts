@@ -1,7 +1,7 @@
 import { createDefaultTrainingPlanBuilderState } from "./defaults";
 import type {
   TrainingPlanActivityPlanFacts,
-  TrainingPlanBuilderGoal,
+  TrainingPlanBuilderGoalBlueprint,
   TrainingPlanBuilderSession,
   TrainingPlanBuilderState,
 } from "./types";
@@ -9,7 +9,10 @@ import type {
 const activityPlanId = "11111111-1111-4111-8111-111111111111";
 
 export function createTrainingPlanBuilderFixtures() {
-  const emptyState = createDefaultTrainingPlanBuilderState({ createId: () => "fixture-id" });
+  const emptyState: TrainingPlanBuilderState = {
+    ...createDefaultTrainingPlanBuilderState(),
+    anchorDate: "2026-01-01",
+  };
 
   function activityPlan(
     overrides: Partial<TrainingPlanActivityPlanFacts> = {},
@@ -26,13 +29,13 @@ export function createTrainingPlanBuilderFixtures() {
   }
 
   function localGoal(
-    overrides: Partial<TrainingPlanBuilderGoal> & { priority?: number | undefined } = {},
-  ): TrainingPlanBuilderGoal {
+    overrides: Partial<TrainingPlanBuilderGoalBlueprint> & { priority?: number | undefined } = {},
+  ): TrainingPlanBuilderGoalBlueprint {
     const { priority = 10, ...rest } = overrides;
     return {
       localId: "goal-1",
       title: "Build aerobic capacity",
-      targetDate: null,
+      targetOffsetDays: null,
       priority,
       activityCategory: null,
       objective: null,
@@ -69,7 +72,7 @@ export function createTrainingPlanBuilderFixtures() {
       name: "Four week base builder",
       description: "Reusable plan template",
     },
-    schedule: {
+    structure: {
       sessions: [
         assignedSession({
           localId: "session-1",
@@ -82,6 +85,7 @@ export function createTrainingPlanBuilderFixtures() {
 
   return {
     activityPlanId,
+    anchorDate: emptyState.anchorDate,
     emptyState,
     readyState,
     activityPlan,

@@ -9,12 +9,12 @@ export default defineConfig({
         replacement: path.resolve(__dirname, "."),
       },
       {
-        find: "@repo/core",
-        replacement: path.resolve(__dirname, "../../packages/core/index.ts"),
-      },
-      {
         find: /^@repo\/core\/(.*)$/,
         replacement: path.resolve(__dirname, "../../packages/core/$1"),
+      },
+      {
+        find: "@repo/core",
+        replacement: path.resolve(__dirname, "../../packages/core/index.ts"),
       },
       {
         find: "react-native",

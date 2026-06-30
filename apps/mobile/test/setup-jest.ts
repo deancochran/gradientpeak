@@ -124,6 +124,37 @@ jest.mock("@gorhom/bottom-sheet", () => ({
   __esModule: true,
   default: createHost("BottomSheet"),
   BottomSheetBackdrop: createLeafHost("BottomSheetBackdrop"),
+  BottomSheetFlatList: ({
+    data = [],
+    keyExtractor,
+    ListEmptyComponent,
+    ListFooterComponent,
+    ListHeaderComponent,
+    renderItem,
+    ...props
+  }: any) =>
+    React.createElement(
+      "BottomSheetFlatList",
+      props,
+      typeof ListHeaderComponent === "function"
+        ? React.createElement(ListHeaderComponent)
+        : ListHeaderComponent,
+      data.length === 0
+        ? typeof ListEmptyComponent === "function"
+          ? React.createElement(ListEmptyComponent)
+          : ListEmptyComponent
+        : data.map((item: any, index: number) =>
+            React.createElement(
+              React.Fragment,
+              { key: keyExtractor ? keyExtractor(item, index) : index },
+              renderItem({ item, index }),
+            ),
+          ),
+      typeof ListFooterComponent === "function"
+        ? React.createElement(ListFooterComponent)
+        : ListFooterComponent,
+    ),
+  BottomSheetFooter: createHost("BottomSheetFooter"),
   BottomSheetScrollView: createHost("BottomSheetScrollView"),
   BottomSheetView: createHost("BottomSheetView"),
 }));
@@ -269,6 +300,7 @@ jest.mock("victory-native", () => ({
             chartBounds: { bottom: 100, left: 0, right: 100, top: 0 },
             points: {
               actual: data,
+              actualFitness: pointSeries("actualFitness"),
               completedLoad: pointSeries("completedLoad"),
               fitness: pointSeries("fitness"),
               goal: data,
@@ -276,6 +308,8 @@ jest.mock("victory-native", () => ({
               plannedLoad: pointSeries("plannedLoad"),
               plannedLoadWithTentative: pointSeries("plannedLoadWithTentative"),
               projection: data,
+              projectedFitness: pointSeries("projectedFitness"),
+              recommendedFitness: pointSeries("recommendedFitness"),
               scheduledFitness: pointSeries("scheduledFitness"),
               targetFitness: pointSeries("targetFitness"),
               targetLoad: pointSeries("targetLoad"),
@@ -287,7 +321,16 @@ jest.mock("victory-native", () => ({
   },
   Line: createLeafHost("Line"),
   Scatter: createLeafHost("Scatter"),
-  useChartPressState: jest.fn(() => ({ isActive: false, state: {} })),
+  useChartPressState: jest.fn(() => ({
+    isActive: false,
+    state: {
+      isActive: { value: false },
+      matchedIndex: { value: -1 },
+      x: { position: { value: 0 }, value: { value: 0 } },
+      y: { targetLoad: { position: { value: 0 }, value: { value: 0 } } },
+      yIndex: { value: 0 },
+    },
+  })),
 }));
 
 jest.mock("react-native-svg", () => {

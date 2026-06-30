@@ -31,6 +31,10 @@ function round(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+function finiteNumber(value: number | undefined, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
 function assessAvailability(
   demand: EventDemand,
   preferenceProfile: AthletePreferenceProfile,
@@ -83,6 +87,7 @@ export function resolveTrajectoryMode(
 }
 
 export function assessFeasibility(input: AssessFeasibilityInput): FeasibilityAssessmentResult {
+  const currentCtl = finiteNumber(input.currentCtl, 0);
   const primaryDemand = [...input.resolvedDemands].sort(
     (left, right) => right.required_peak_ctl - left.required_peak_ctl,
   )[0];
@@ -91,8 +96,8 @@ export function assessFeasibility(input: AssessFeasibilityInput): FeasibilityAss
     const feasibility = feasibilityAssessmentSchema.parse({
       status: "feasible",
       limiting_constraints: [],
-      required_peak_ctl: input.currentCtl,
-      achievable_peak_ctl: input.currentCtl,
+      required_peak_ctl: currentCtl,
+      achievable_peak_ctl: currentCtl,
       readiness_gap_ctl: 0,
       rationale_codes: ["no_goals_capacity_bounded_baseline"],
     });
@@ -104,9 +109,11 @@ export function assessFeasibility(input: AssessFeasibilityInput): FeasibilityAss
     const feasibility = feasibilityAssessmentSchema.parse({
       status: "unsupported_goal_mapping",
       limiting_constraints: input.unsupportedGoalIds,
-      required_peak_ctl: primaryDemand.required_peak_ctl,
-      achievable_peak_ctl: input.currentCtl,
-      readiness_gap_ctl: round(primaryDemand.required_peak_ctl - input.currentCtl),
+      required_peak_ctl: finiteNumber(primaryDemand.required_peak_ctl, currentCtl),
+      achievable_peak_ctl: currentCtl,
+      readiness_gap_ctl: round(
+        finiteNumber(primaryDemand.required_peak_ctl, currentCtl) - currentCtl,
+      ),
       rationale_codes: ["unsupported_goal_mapping_detected"],
     });
 
@@ -123,16 +130,16 @@ export function assessFeasibility(input: AssessFeasibilityInput): FeasibilityAss
       preferenceProfile: input.preferenceProfile,
       sport: primaryDemand.sport,
     });
-  const weeksToPeak = Math.max(input.weeksToPeak, 1);
-  const requiredCtlRamp = (primaryDemand.required_peak_ctl - input.currentCtl) / weeksToPeak;
-  const achievablePeakCtl = round(
-    input.currentCtl + constraintProfile.effective_max_ctl_ramp_per_week * weeksToPeak,
-  );
+  const weeksToPeak = Math.max(finiteNumber(input.weeksToPeak, 1), 1);
+  const requiredPeakCtl = finiteNumber(primaryDemand.required_peak_ctl, currentCtl);
+  const maxCtlRampPerWeek = finiteNumber(constraintProfile.effective_max_ctl_ramp_per_week, 0);
+  const requiredCtlRamp = (requiredPeakCtl - currentCtl) / weeksToPeak;
+  const achievablePeakCtl = round(currentCtl + maxCtlRampPerWeek * weeksToPeak);
   let status: FeasibilityAssessment["status"] = "feasible";
   const limitingConstraints: string[] = [];
   const rationaleCodes = [...constraintProfile.rationale_codes];
 
-  if (requiredCtlRamp > constraintProfile.effective_max_ctl_ramp_per_week) {
+  if (requiredCtlRamp > maxCtlRampPerWeek) {
     status = "infeasible_ramp";
     limitingConstraints.push("ctl_ramp_limit");
     rationaleCodes.push("required_ctl_ramp_exceeds_effective_ramp_cap");
@@ -163,10 +170,9 @@ export function assessFeasibility(input: AssessFeasibilityInput): FeasibilityAss
   const feasibility = feasibilityAssessmentSchema.parse({
     status,
     limiting_constraints: limitingConstraints,
-    required_peak_ctl: primaryDemand.required_peak_ctl,
-    achievable_peak_ctl:
-      status === "feasible" ? primaryDemand.required_peak_ctl : achievablePeakCtl,
-    readiness_gap_ctl: round(Math.max(0, primaryDemand.required_peak_ctl - achievablePeakCtl)),
+    required_peak_ctl: requiredPeakCtl,
+    achievable_peak_ctl: status === "feasible" ? requiredPeakCtl : achievablePeakCtl,
+    readiness_gap_ctl: round(Math.max(0, requiredPeakCtl - achievablePeakCtl)),
     rationale_codes: rationaleCodes,
   });
 

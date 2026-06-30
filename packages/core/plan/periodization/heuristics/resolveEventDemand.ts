@@ -89,14 +89,21 @@ export function resolveEventDemand(goal: NormalizedPlanningGoal): EventDemandRes
       ...contribution,
     };
   });
-  const totalWeight = resolved.reduce((sum, item) => sum + item.weight, 0);
+  const rawTotalWeight = resolved.reduce((sum, item) => sum + item.weight, 0);
+  const totalWeight = rawTotalWeight > 0 ? rawTotalWeight : resolved.length;
   const maxCtl = Math.max(...resolved.map((item) => item.requiredPeakCtl));
   const weightedCtl =
-    resolved.reduce((sum, item) => sum + item.requiredPeakCtl * (item.weight / totalWeight), 0) ||
-    0;
+    resolved.reduce(
+      (sum, item) =>
+        sum + item.requiredPeakCtl * ((rawTotalWeight > 0 ? item.weight : 1) / totalWeight),
+      0,
+    ) || 0;
   const weightedDuration =
-    resolved.reduce((sum, item) => sum + item.durationMinutes * (item.weight / totalWeight), 0) ||
-    0;
+    resolved.reduce(
+      (sum, item) =>
+        sum + item.durationMinutes * ((rawTotalWeight > 0 ? item.weight : 1) / totalWeight),
+      0,
+    ) || 0;
   const requiredPeakCtl = round(
     maxCtl * MAX_BIASED_AGGREGATION_WEIGHT + weightedCtl * WEIGHTED_AVERAGE_AGGREGATION_WEIGHT,
   );
@@ -113,7 +120,7 @@ export function resolveEventDemand(goal: NormalizedPlanningGoal): EventDemandRes
       target_contributions: resolved.map((item) => ({
         target_type: item.target_type,
         weight: item.weight,
-        weight_share: round(item.weight / totalWeight),
+        weight_share: round((rawTotalWeight > 0 ? item.weight : 1) / totalWeight),
         required_peak_ctl: item.requiredPeakCtl,
         rationale_codes: item.rationale_codes,
       })),

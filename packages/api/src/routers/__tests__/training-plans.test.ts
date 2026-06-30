@@ -2690,13 +2690,22 @@ describe("trainingPlansRouter plan_start_date support", () => {
 describe("trainingPlansRouter analytics endpoints", () => {
   const planId = "11111111-1111-4111-8111-111111111111";
 
-  it("returns null current status when no plan exists", async () => {
+  it("returns current status even when no plan exists", async () => {
     const caller = createTrainingPlansCaller({
       training_plans: { data: null, error: null },
     });
 
     const result = await caller.getCurrentStatus();
-    expect(result).toBeNull();
+    expect(result).toMatchObject({
+      ctl: 0,
+      atl: 0,
+      tsb: 0,
+      weekProgress: {
+        completedTSS: 0,
+        plannedTSS: 0,
+        targetTSS: 0,
+      },
+    });
   });
 
   it("returns ideal curve projection payload shape", async () => {

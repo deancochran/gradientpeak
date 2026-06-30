@@ -1,0 +1,99 @@
+name: Mobile EAS
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: EAS build profile
+        required: true
+        default: preview
+        type: choice
+        options:
+          - preview
+          - production
+      platform:
+        description: Platform to build
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - ios
+          - android
+      submit:
+        description: Submit the latest production build after triggering/building
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+  push:
+    tags:
+      - "mobile-v*"
+
+concurrency:
+  group: mobile-eas-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  eas:
+    name: EAS build
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'push' && 'production' || inputs.profile }}
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Setup Expo and EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        working-directory: ${{ github.workspace }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck mobile
+        run: pnpm check-types
+
+      - name: Lint mobile
+        run: pnpm lint
+
+      - name: Run mobile tests
+        run: pnpm test -- --run
+
+      - name: Resolve build options
+        id: options
+        shell: bash
+        run: |
+          PROFILE="${{ inputs.profile || 'production' }}"
+          PLATFORM="${{ inputs.platform || 'all' }}"
+          echo "profile=${PROFILE}" >> "${GITHUB_OUTPUT}"
+          echo "platform=${PLATFORM}" >> "${GITHUB_OUTPUT}"
+
+      - name: Trigger EAS build
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.submit != 'true' }}
+        run: eas build --profile ${{ steps.options.outputs.profile }} --platform ${{ steps.options.outputs.platform }} --non-interactive --no-wait
+
+      - name: Build and submit production release
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.submit == 'true' && inputs.profile == 'production') || github.event_name == 'push' }}
+        run: eas build --profile production --platform ${{ steps.options.outputs.platform }} --auto-submit --non-interactive

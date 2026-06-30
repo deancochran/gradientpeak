@@ -1,4 +1,3 @@
-import type { ActivityPlanStructureV2 } from "@repo/core";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
@@ -26,7 +25,7 @@ export interface ActivityPlan {
   name: string;
   activity_category: string;
   description?: string | null;
-  structure?: ActivityPlanStructureV2;
+  structure?: unknown;
   authoritative_metrics?: {
     estimated_duration?: number | null;
     estimated_tss?: number | null;
@@ -41,9 +40,12 @@ export interface ActivityPlan {
   route_id?: string | null;
   notes?: string | null;
   profile_id?: string | null;
+  template_visibility?: string | null;
+  is_public?: boolean | null;
+  is_system_template?: boolean | null;
   created_at?: string;
   updated_at?: string;
-  likes_count?: number;
+  likes_count?: number | null;
   has_liked?: boolean;
   owner?: EntityOwner | null;
 }
@@ -82,7 +84,7 @@ export interface ActivityPlanCardData {
   name: string;
   activityType: string; // activity_category
   description?: string;
-  structure?: ActivityPlanStructureV2;
+  structure?: unknown;
   estimatedDuration?: number; // in seconds
   estimatedTss?: number;
   intensityFactor?: number;
@@ -97,7 +99,7 @@ export interface ActivityPlanCardData {
   scheduledDate?: string; // ISO date string
   isCompleted?: boolean;
 
-  likes_count?: number;
+  likes_count?: number | null;
   has_liked?: boolean;
   owner?: EntityOwner | null;
 }
@@ -147,11 +149,11 @@ export function ActivityPlanCard({
 
   const routeId = activity.routeId;
   const { data: fetchedRoute } = api.routes.get.useQuery(
-    { id: routeId! },
+    { id: routeId ?? "" },
     { enabled: loadRoutePreview && !!routeId && !routeProp },
   );
   const { data: routeFull } = api.routes.loadFull.useQuery(
-    { id: routeId! },
+    { id: routeId ?? "" },
     { enabled: loadRoutePreview && !!routeId && !routeFullProp },
   );
   const route = (routeProp ?? fetchedRoute ?? null) as ActivityPlanCardRoute | null;
@@ -276,7 +278,7 @@ function transformToCardData(
   }
 
   // Extract route info from structure if available
-  const routeInfo = (plan.structure as any)?.route;
+  const routeInfo = getStructureRouteInfo(plan.structure);
   const authoritativeMetrics = plan.authoritative_metrics;
   const planRoute = plan.route;
 
@@ -301,6 +303,23 @@ function transformToCardData(
     likes_count: plan.likes_count,
     has_liked: plan.has_liked,
     owner: plan.owner ?? null,
+  };
+}
+
+function getStructureRouteInfo(structure: unknown): { distance?: number; name?: string } | null {
+  if (!structure || typeof structure !== "object" || !("route" in structure)) {
+    return null;
+  }
+
+  const route = structure.route;
+  if (!route || typeof route !== "object") {
+    return null;
+  }
+
+  return {
+    distance:
+      "distance" in route && typeof route.distance === "number" ? route.distance : undefined,
+    name: "name" in route && typeof route.name === "string" ? route.name : undefined,
   };
 }
 

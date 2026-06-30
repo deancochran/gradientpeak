@@ -1,12 +1,12 @@
 {
   "name": "mobile",
-  "main": "expo-router/entry",
+  "main": "expo-router/entry.js",
   "version": "1.0.0",
   "scripts": {
     "dev": "pnpm exec expo start --dev-client -c --lan",
     "dev:e2e": "EXPO_NO_DOTENV=1 EXPO_PUBLIC_MAESTRO_E2E=1 sh -c 'if [ -f .env.e2e ]; then pnpm exec dotenv -e .env.e2e -- pnpm exec expo start -c --localhost --dev-client --port ${EXPO_PORT:-8081}; else pnpm exec expo start -c --localhost --dev-client --port ${EXPO_PORT:-8081}; fi'",
     "dev:e2e:perf": "EXPO_NO_DOTENV=1 EXPO_PUBLIC_MAESTRO_E2E=1 EXPO_PUBLIC_PERF_TEST=1 sh -c 'if [ -f .env.e2e ]; then pnpm exec dotenv -e .env.e2e -- pnpm exec expo start -c --localhost --dev-client --port ${EXPO_PORT:-8081}; else pnpm exec expo start -c --localhost --dev-client --port ${EXPO_PORT:-8081}; fi'",
-    "storybook": "EXPO_PUBLIC_STORYBOOK_ENABLED=1 pnpm exec expo start -c --lan",
+    "storybook:start": "EXPO_PUBLIC_STORYBOOK_ENABLED=1 pnpm exec expo start -c --lan",
     "storybook:generate": "EXPO_PUBLIC_STORYBOOK_ENABLED=1 pnpm exec sb-rn-get-stories --config-path ./.rnstorybook",
     "storybook:watch": "pnpm run storybook:generate && pnpm exec chokidar \"**/*.stories.{ts,tsx,js,jsx,mdx}\" \".rnstorybook/**/*.{ts,tsx,js,jsx}\" -c \"pnpm run storybook:generate\"",
     "android": "pnpm run android:install",
@@ -35,7 +35,6 @@
   "dependencies": {
     "@garmin/fitsdk": "^21.188.0",
     "@gorhom/bottom-sheet": "^5.2.8",
-    "@hookform/resolvers": "^5.2.2",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-community/datetimepicker": "8.4.4",
     "@react-native-community/netinfo": "^11.4.1",
@@ -98,7 +97,6 @@
     "expo-symbols": "~1.0.8",
     "expo-system-ui": "~6.0.9",
     "expo-task-manager": "~14.0.9",
-    "expo-updates": "~29.0.18",
     "expo-web-browser": "~15.0.11",
     "immer": "^10.2.0",
     "lodash": "^4.17.21",

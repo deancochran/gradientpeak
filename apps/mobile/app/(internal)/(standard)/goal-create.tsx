@@ -1,17 +1,24 @@
 import { invalidateGoalQueries } from "@repo/api/react";
-import { buildGoalCreatePayload, createEmptyGoalDraft, type GoalEditorDraft } from "@repo/core";
+import {
+  buildGoalCreatePayload,
+  canonicalGoalObjectiveSchema,
+  createEmptyGoalDraft,
+  type GoalEditorDraft,
+} from "@repo/core";
 import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
-import { Stack, useRouter } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useRef } from "react";
 import { Alert, KeyboardAvoidingView, Platform, View } from "react-native";
 import { GoalEditorForm, type GoalEditorFormHandle } from "@/components/goals";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAuthStore } from "@/lib/stores/auth-store";
+import { publishTrainingPlanGoalCreation } from "@/lib/training-plan-creation/goalCreationHandoff";
 
 export default function GoalCreateScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ returnToTrainingPlanCreate?: string }>();
   const utils = api.useUtils();
   const formRef = useRef<GoalEditorFormHandle>(null);
   const profileId = useAuthStore((state) => state.profile?.id ?? null);
@@ -19,6 +26,19 @@ export default function GoalCreateScreen() {
   const createGoalMutation = api.goals.create.useMutation({
     onSuccess: async (goal) => {
       await invalidateGoalQueries(utils, { goalId: goal.id });
+      if (params.returnToTrainingPlanCreate === "1") {
+        const parsedObjective = canonicalGoalObjectiveSchema.safeParse(goal.target_payload);
+        publishTrainingPlanGoalCreation({
+          id: goal.id,
+          title: goal.title,
+          target_date: goal.target_date,
+          priority: goal.priority,
+          activity_category: goal.activity_category,
+          objective: parsedObjective.success ? parsedObjective.data : null,
+        });
+        router.back();
+        return;
+      }
       router.replace(ROUTES.GOALS.DETAIL(goal.id) as never);
     },
   });

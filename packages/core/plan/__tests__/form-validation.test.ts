@@ -11,12 +11,12 @@ import {
 describe("training-plan form validation", () => {
   it("returns no errors for valid minimal form", () => {
     const errors = validateTrainingPlanForm({
-      planStartDate: "2026-02-14",
+      planStartDate: "2027-02-14",
       goals: [
         {
           id: "goal-1",
           name: "Spring race",
-          targetDate: "2026-06-01",
+          targetDate: "2027-06-01",
           priority: 1,
           targets: [
             {
