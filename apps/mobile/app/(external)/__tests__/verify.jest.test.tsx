@@ -8,6 +8,25 @@ const authState = {
   isEmailVerified: false,
 };
 
+type HostProps = {
+  children?: React.ReactNode;
+  disabled?: boolean;
+  onPress?: () => void;
+  testID?: string;
+  testId?: string;
+  [key: string]: unknown;
+};
+
+type FormControl = {
+  values: Record<string, string>;
+  setValue: (name: string, value: string) => void;
+};
+
+type ZodFormSubmitArgs = {
+  form: { handleSubmit: (onSubmit: (data: Record<string, string>) => unknown) => () => unknown };
+  onSubmit: (data: Record<string, string>) => unknown;
+};
+
 jest.mock("expo-router", () => ({
   __esModule: true,
   useLocalSearchParams: () => ({ email: "athlete@example.com", source: undefined }),
@@ -22,14 +41,15 @@ jest.mock("@/lib/hooks/useAuth", () => ({
 jest.mock("@/lib/auth/client", () => ({
   __esModule: true,
   authClient: {
-    sendVerificationEmail: (...args: any[]) => resendMock(...args),
+    sendVerificationEmail: (...args: unknown[]) => resendMock(...args),
   },
   getEmailVerificationCallbackUrl: jest.fn(() => "gradientpeak://callback"),
 }));
 
 jest.mock("@repo/ui/components/alert", () => {
   const React = require("react");
-  const host = (type: string) => (props: any) => React.createElement(type, props, props.children);
+  const host = (type: string) => (props: HostProps) =>
+    React.createElement(type, props, props.children);
 
   return {
     __esModule: true,
@@ -40,7 +60,7 @@ jest.mock("@repo/ui/components/alert", () => {
 
 jest.mock("@repo/ui/components/button", () => ({
   __esModule: true,
-  Button: ({ children, disabled, onPress, ...props }: any) =>
+  Button: ({ children, disabled, onPress, ...props }: HostProps) =>
     React.createElement(
       "Pressable",
       {
@@ -55,7 +75,8 @@ jest.mock("@repo/ui/components/button", () => ({
 
 jest.mock("@repo/ui/components/card", () => {
   const React = require("react");
-  const host = (type: string) => (props: any) => React.createElement(type, props, props.children);
+  const host = (type: string) => (props: HostProps) =>
+    React.createElement(type, props, props.children);
 
   return {
     __esModule: true,
@@ -68,8 +89,18 @@ jest.mock("@repo/ui/components/card", () => {
 
 jest.mock("@repo/ui/components/form", () => ({
   __esModule: true,
-  Form: ({ children }: any) => children,
-  FormTextField: ({ control, name, placeholder, testId }: any) =>
+  Form: ({ children }: { children?: React.ReactNode }) => children,
+  FormTextField: ({
+    control,
+    name,
+    placeholder,
+    testId,
+  }: {
+    control: FormControl;
+    name: string;
+    placeholder?: string;
+    testId?: string;
+  }) =>
     React.createElement("TextInput", {
       placeholder,
       testID: testId ?? name,
@@ -80,7 +111,7 @@ jest.mock("@repo/ui/components/form", () => ({
 
 jest.mock("@repo/ui/components/text", () => ({
   __esModule: true,
-  Text: ({ children, ...props }: any) => React.createElement("Text", props, children),
+  Text: ({ children, ...props }: HostProps) => React.createElement("Text", props, children),
 }));
 
 jest.mock("@repo/ui/hooks", () => {
@@ -109,7 +140,7 @@ jest.mock("@repo/ui/hooks", () => {
         handleSubmit: (onSubmit: (data: typeof values) => unknown) => () => onSubmit(values),
       };
     },
-    useZodFormSubmit: ({ form, onSubmit }: any) => ({
+    useZodFormSubmit: ({ form, onSubmit }: ZodFormSubmitArgs) => ({
       handleSubmit: form.handleSubmit(onSubmit),
     }),
   };

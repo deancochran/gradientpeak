@@ -10,7 +10,16 @@ const localSearchParamsMock = {
   activityPlan: '{"id":"activity-1"}',
 };
 
-const activityPlanDetailScreenMock = jest.fn((props?: any) =>
+type ActivityPlanDetailScreenProps = {
+  action?: string;
+  activityPlan?: string;
+  eventId?: string;
+  fallbackId?: string;
+  planId?: string;
+  template?: string;
+};
+
+const activityPlanDetailScreenMock = jest.fn((props?: ActivityPlanDetailScreenProps) =>
   React.createElement("ActivityPlanDetailScreen", props),
 );
 
@@ -21,7 +30,8 @@ jest.mock("expo-router", () => ({
 
 jest.mock("@/components/activity-plan/ActivityPlanDetailScreen", () => ({
   __esModule: true,
-  ActivityPlanDetailScreen: (props: any) => activityPlanDetailScreenMock(props),
+  ActivityPlanDetailScreen: (props: ActivityPlanDetailScreenProps) =>
+    activityPlanDetailScreenMock(props),
 }));
 
 const ActivityPlanDetailRoute = require("../activity-plan-detail").default;
@@ -34,7 +44,7 @@ describe("activity plan detail route", () => {
   it("passes normalized params into the feature screen", () => {
     renderNative(<ActivityPlanDetailRoute />);
 
-    expect((activityPlanDetailScreenMock.mock.calls as any[])[0]?.[0]).toEqual(
+    expect(activityPlanDetailScreenMock.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({
         planId: "plan-123",
         fallbackId: "fallback-456",
