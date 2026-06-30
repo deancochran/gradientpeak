@@ -2,7 +2,7 @@ name: SDLC work item
 description: Capture a feature, bug, maintenance task, or agent-ready work item.
 title: "[Work]: "
 labels:
-  - status:intake
+  - status:needs-spec
 body:
   - type: textarea
     id: request
@@ -29,6 +29,12 @@ body:
         - [ ] ...
     validations:
       required: true
+  - type: input
+    id: spec
+    attributes:
+      label: Canonical spec
+      description: Link/path to the canonical spec section if known; otherwise autopilot will triage spec drift.
+      placeholder: specs/path-to-spec.md#section
   - type: checkboxes
     id: affected-areas
     attributes:
