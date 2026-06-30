@@ -64,9 +64,15 @@ export function TrainingPathSection({
   const [chartScrolling, setChartScrolling] = useState(false);
   const lastSelectedWeekStartRef = useRef<string | null>(selectedWeek?.weekStart ?? null);
   const pendingSelectedWeekStartRef = useRef<string | null>(null);
-  const [, setDisplayedWeekStart] = useState<string | null>(selectedWeek?.weekStart ?? null);
+  const displayedWeekStartRef = useRef<string | null>(selectedWeek?.weekStart ?? null);
+  const [, setDisplayedWeekStartState] = useState<string | null>(selectedWeek?.weekStart ?? null);
   const weekReviewLoading = selectedWeekLoading || chartScrolling;
   const hasDailyPoints = !!dailyPoints?.length;
+
+  const setDisplayedWeekStart = (weekStart: string | null) => {
+    displayedWeekStartRef.current = weekStart;
+    setDisplayedWeekStartState(weekStart);
+  };
 
   useEffect(() => {
     const previousSelectedWeekStart = lastSelectedWeekStartRef.current;
@@ -110,7 +116,7 @@ export function TrainingPathSection({
         renderBelowChart={(context) => {
           if (!hasDailyPoints) {
             const displayedWeekLabel = model.weeks.find(
-              (week) => week.weekStart === displayedWeekStart,
+              (week) => week.weekStart === displayedWeekStartRef.current,
             )?.label;
             return (
               <TrainingPathWeekSummaryCard
