@@ -25,10 +25,18 @@ const config = withNativewind(getDefaultConfig(__dirname), {
 });
 
 const existingResolveRequest = config.resolver?.resolveRequest;
+const disabledStorybookModule = path.resolve(__dirname, "lib/storybook/disabled.tsx");
 
 config.resolver = {
   ...config.resolver,
   resolveRequest(context, moduleName, platform) {
+    if (!isStorybookEnabled && moduleName.includes(".rnstorybook")) {
+      return {
+        type: "sourceFile",
+        filePath: disabledStorybookModule,
+      };
+    }
+
     if (
       moduleName === "tty" ||
       moduleName === "node:tty" ||

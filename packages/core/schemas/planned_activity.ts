@@ -406,7 +406,7 @@ export const customEventCreateSchema = z
     timezone: z.string().min(1).max(120).default("UTC"),
     notes: z.string().max(2000).nullable().optional(),
     description: z.string().max(5000).nullable().optional(),
-    recurrence: persistableEventRecurrenceSchema.optional(),
+    recurrence: persistableEventRecurrenceSchema.nullable().optional(),
     lifecycle: eventLifecycleSchema.default({ status: "scheduled" }),
     read_only: z.boolean().optional().default(false),
   })
@@ -422,7 +422,7 @@ export const plannedActivityEventCreateSchema = z
     all_day: z.literal(true).default(true),
     timezone: z.string().min(1).max(120).default("UTC"),
     notes: z.string().max(2000).nullable().optional(),
-    recurrence: persistableEventRecurrenceSchema.optional(),
+    recurrence: persistableEventRecurrenceSchema.nullable().optional(),
     lifecycle: eventLifecycleSchema.default({ status: "scheduled" }),
     read_only: z.boolean().optional().default(false),
   })
@@ -496,7 +496,7 @@ export const plannedActivityCreateSchema = z.object({
   training_plan_id: z.string().uuid("Invalid training plan ID").optional(),
   notes: z.string().max(2000, "Notes are too long").nullable().optional(),
   event_type: editableEventTypeInputSchema.default("planned").optional(),
-  recurrence: persistableEventRecurrenceSchema.optional(),
+  recurrence: persistableEventRecurrenceSchema.nullable().optional(),
   lifecycle: eventLifecycleSchema.optional(),
   source: importedEventSourceMetadataSchema.optional(),
   read_only: z.boolean().optional(),
@@ -514,7 +514,7 @@ export const plannedActivityUpdateSchema = z.object({
     .optional(),
   notes: z.string().max(2000, "Notes are too long").nullable().optional(),
   event_type: editableEventTypeInputSchema.optional(),
-  recurrence: persistableEventRecurrenceSchema.optional(),
+  recurrence: persistableEventRecurrenceSchema.nullable().optional(),
   lifecycle: eventLifecycleSchema.optional(),
 });
 

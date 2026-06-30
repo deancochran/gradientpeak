@@ -31,7 +31,6 @@ import { invalidatePostActivityIngestionQueries, queryKeys } from "@repo/api/cli
 import { useQueryClient } from "@tanstack/react-query";
 import { Alert } from "react-native";
 import { api } from "@/lib/api";
-import { getServerConfig } from "@/lib/server-config";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
 import {
   clearPendingFinalizedArtifact,
@@ -44,13 +43,27 @@ import type { RecordingSessionArtifact } from "@/lib/services/ActivityRecorder/t
 import { useCallback, useEffect, useReducer } from "react";
 import type { PreparedRecordedActivityDraft } from "@/lib/contracts/activity-submission";
 import { useAuth } from "@/lib/hooks/useAuth";
+import {
+  type ActivitySubmissionQueueJob,
+  type ActivitySubmissionQueueJobStatus,
+  runActivitySubmissionQueueJob,
+  upsertActivitySubmissionQueueJob,
+} from "@/lib/services/activitySubmissionQueue";
 import { ActivityFileUploader } from "@/lib/services/fit/ActivityFileUploader";
 
 // ================================
 // Types
 // ================================
 
-type SubmissionPhase = "loading" | "ready" | "uploading" | "success" | "error";
+type SubmissionPhase =
+  | "loading"
+  | "ready"
+  | "preparing"
+  | "queued"
+  | "uploading"
+  | "processing"
+  | "success"
+  | "error";
 
 interface SubmissionState {
   phase: SubmissionPhase;
@@ -58,6 +71,8 @@ interface SubmissionState {
   activity: PreparedRecordedActivityDraft | null;
   error: string | null;
   hasStreams: boolean;
+  activityId: string | null;
+  queueStatus: ActivitySubmissionQueueJobStatus | null;
 }
 
 type Action =
@@ -71,8 +86,8 @@ type Action =
       type: "UPDATE";
       updates: { name?: string; notes?: string; is_private?: boolean };
     }
-  | { type: "UPLOADING" }
-  | { type: "SUCCESS" }
+  | { type: "QUEUE_STATUS"; status: ActivitySubmissionQueueJobStatus; activityId?: string | null }
+  | { type: "SUCCESS"; activityId?: string | null }
   | { type: "ERROR"; error: string };
 
 // ================================
@@ -88,6 +103,8 @@ function submissionReducer(state: SubmissionState, action: Action): SubmissionSt
         activity: action.activity,
         error: null,
         hasStreams: action.hasStreams,
+        activityId: null,
+        queueStatus: null,
       };
 
     case "UPDATE":
@@ -97,14 +114,31 @@ function submissionReducer(state: SubmissionState, action: Action): SubmissionSt
         activity: { ...state.activity, ...action.updates },
       };
 
-    case "UPLOADING":
-      return { ...state, phase: "uploading", error: null };
+    case "QUEUE_STATUS": {
+      const phaseByStatus: Record<ActivitySubmissionQueueJobStatus, SubmissionPhase> = {
+        draft: "preparing",
+        creating_activity: "preparing",
+        queued: "queued",
+        uploading: "uploading",
+        processing: "processing",
+        complete: "success",
+        failed: "error",
+      };
+
+      return {
+        ...state,
+        phase: phaseByStatus[action.status],
+        activityId: action.activityId ?? state.activityId,
+        error: action.status === "failed" ? state.error : null,
+        queueStatus: action.status,
+      };
+    }
 
     case "SUCCESS":
-      return { ...state, phase: "success" };
+      return { ...state, phase: "success", activityId: action.activityId ?? state.activityId };
 
     case "ERROR":
-      return { ...state, phase: "error", error: action.error };
+      return { ...state, phase: "error", error: action.error, queueStatus: "failed" };
 
     default:
       return state;
@@ -140,21 +174,43 @@ function buildActivityFromArtifact(args: {
   };
 }
 
-type ProcessActivityFileSubmission = {
-  activityType: PreparedRecordedActivityDraft["activityType"];
-  is_private?: boolean;
-  name: string;
-  notes?: string;
-};
-
-function toProcessActivityFileSubmission(
-  activity: PreparedRecordedActivityDraft,
-): ProcessActivityFileSubmission {
+function toQueueDraft(activity: PreparedRecordedActivityDraft) {
   return {
-    activityType: activity.activityType,
-    is_private: activity.is_private,
+    profileId: activity.profileId,
+    startedAt: activity.startedAt.toISOString(),
+    finishedAt: activity.finishedAt.toISOString(),
     name: activity.name,
-    notes: activity.notes ?? undefined,
+    activityType: activity.activityType,
+    durationSeconds: activity.durationSeconds,
+    movingSeconds: activity.movingSeconds,
+    distanceMeters: activity.distanceMeters,
+    calories: activity.calories ?? null,
+    notes: activity.notes ?? null,
+    is_private: activity.is_private,
+    activityPlanId: activity.activityPlanId ?? null,
+  };
+}
+
+function buildQueueJob(args: {
+  artifact: RecordingSessionArtifact;
+  activity: PreparedRecordedActivityDraft;
+  fileSize: number | null;
+  now: string;
+}): ActivitySubmissionQueueJob {
+  const artifactId = args.artifact.sessionId;
+
+  return {
+    id: artifactId,
+    artifactId,
+    sessionId: args.artifact.sessionId,
+    localActivityFilePath: args.artifact.activityFilePath ?? "",
+    localActivityFileSize: args.fileSize,
+    streamArtifactPaths: args.artifact.streamArtifactPaths,
+    draft: toQueueDraft(args.activity),
+    status: "queued",
+    attempts: 0,
+    createdAt: args.now,
+    updatedAt: args.now,
   };
 }
 
@@ -172,6 +228,8 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     activity: null,
     error: null,
     hasStreams: false,
+    activityId: null,
+    queueStatus: null,
   });
 
   // ================================
@@ -241,33 +299,26 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     dispatch({ type: "UPDATE", updates });
   }, []);
 
-  const processActivityFileMutation = api.activityFiles.processActivityFile.useMutation({
+  const createActivityMutation = api.activities.createFromRecordingSummary.useMutation();
+  const getSignedUrlMutation = api.activityFiles.getSignedUploadUrl.useMutation();
+  const markUploadedAndProcessMutation = api.activityFiles.markUploadedAndProcess.useMutation({
     onSuccess: async (data) => {
       await invalidatePostActivityIngestionQueries(queryClient);
 
-      // Set the new activity in cache
-      if (data.activity?.id) {
+      if (data?.activity?.id) {
         queryClient.setQueryData(queryKeys.activities.detail(data.activity.id), data.activity);
       }
-
-      console.log("[useActivitySubmission] Activity processed successfully via activity file.");
-    },
-    onError: (error) => {
-      // Don't show Alert here - let submitOnce handle it to avoid duplicate alerts
-      console.error("[useActivitySubmission] Processing failed:", error);
     },
   });
 
-  const getSignedUrlMutation = api.activityFiles.getSignedUploadUrl.useMutation();
-
   // ================================
-  // Single Upload Attempt (No Automatic Retry)
+  // Durable Queue Submission
   // ================================
 
   const submitOnce = useCallback(
     async (artifact: RecordingSessionArtifact, activity: PreparedRecordedActivityDraft) => {
       try {
-        console.log(`[useActivitySubmission] Uploading activity file:`, artifact.activityFilePath);
+        console.log(`[useActivitySubmission] Queueing activity file:`, artifact.activityFilePath);
 
         // Simple file verification
         const { File } = await import("expo-file-system");
@@ -287,63 +338,74 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
           throw new Error("Activity file is empty");
         }
 
-        console.log(`[useActivitySubmission] File verification successful: ${fileSize} bytes`);
-        const fileName = `${Date.now()}.fit`;
-
-        // 1. Get signed upload URL from backend
-        console.log("[useActivitySubmission] Requesting signed upload URL...");
-        const signedUrlData = await getSignedUrlMutation.mutateAsync({
-          fileName,
+        const queuedJob = buildQueueJob({
+          artifact,
+          activity,
           fileSize,
+          now: new Date().toISOString(),
+        });
+        await upsertActivitySubmissionQueueJob(queuedJob);
+        dispatch({ type: "QUEUE_STATUS", status: "queued" });
+
+        let resolveActivityCreated!: (activityId: string) => void;
+        const activityCreated = new Promise<string>((resolve) => {
+          resolveActivityCreated = resolve;
+        });
+        let createdActivityId: string | null = null;
+        const uploader = new ActivityFileUploader();
+
+        const completion = runActivitySubmissionQueueJob(queuedJob, {
+          createFromRecordingSummary: createActivityMutation.mutateAsync,
+          getSignedUploadUrl: (input) =>
+            getSignedUrlMutation.mutateAsync({
+              fileName: input.fileName,
+              fileSize: input.fileSize ?? 0,
+            }),
+          markUploadedAndProcess: markUploadedAndProcessMutation.mutateAsync,
+          uploadToSignedUrl: (localPath, signedUrl) =>
+            uploader.uploadToSignedUrl(localPath, signedUrl),
+          onJobUpdated: async (job) => {
+            dispatch({
+              type: "QUEUE_STATUS",
+              status: job.status,
+              activityId: job.activityId ?? null,
+            });
+
+            if (job.activityId && !createdActivityId) {
+              createdActivityId = job.activityId;
+              resolveActivityCreated(job.activityId);
+            }
+          },
         });
 
-        console.log("[useActivitySubmission] Got signed URL for path:", signedUrlData.filePath);
+        completion
+          .then(async (job) => {
+            if (job.status !== "complete") {
+              dispatch({ type: "ERROR", error: job.lastError || "Activity upload failed" });
+              return;
+            }
 
-        const supabaseUrl = getServerConfig().supabaseUrl;
-        const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
+            await clearPendingFinalizedArtifact();
+            await deleteFinalizedArtifactFiles(artifact);
+            await invalidatePostActivityIngestionQueries(queryClient);
+            dispatch({ type: "SUCCESS", activityId: job.activityId });
+          })
+          .catch((error) => {
+            dispatch({
+              type: "ERROR",
+              error: error instanceof Error ? error.message : String(error),
+            });
+          });
 
-        const uploader = new ActivityFileUploader(supabaseUrl, supabaseAnonKey, "activity-files");
-
-        // 2. Upload to signed URL
-        const uploadResult = await uploader.uploadToSignedUrl(
-          artifact.activityFilePath,
-          signedUrlData.signedUrl,
-        );
-
-        if (!uploadResult.success) {
-          throw new Error(uploadResult.error || "Failed to upload activity file");
-        }
-
-        console.log("[useActivitySubmission] Activity file uploaded successfully");
-
-        // CRITICAL: Wait for storage to sync (especially on iOS/Supabase)
-        // This prevents "Failed to download" errors when processing immediately after upload
-        const syncDelay = 1000; // 1 second should be sufficient
-        console.log(`[useActivitySubmission] Waiting ${syncDelay}ms for storage to sync...`);
-        await new Promise((resolve) => setTimeout(resolve, syncDelay));
-
-        // 3. Process the uploaded file
-        console.log(
-          "[useActivitySubmission] Calling API processActivityFile with path:",
-          signedUrlData.filePath,
-        );
-
-        const result = await processActivityFileMutation.mutateAsync({
-          activityFilePath: signedUrlData.filePath,
-          ...toProcessActivityFileSubmission(activity),
-        });
-
-        if (!result.success) {
-          throw new Error("Activity file processing failed");
-        }
-
-        await clearPendingFinalizedArtifact();
-        await deleteFinalizedArtifactFiles(artifact);
-
-        console.log(
-          "[useActivitySubmission] Activity processed, cache invalidated, and local artifacts deleted",
-        );
-        dispatch({ type: "SUCCESS" });
+        const activityId = await Promise.race([
+          activityCreated,
+          completion.then((job) => {
+            if (job.activityId) return job.activityId;
+            throw new Error(job.lastError || "Activity creation failed");
+          }),
+        ]);
+        console.log("[useActivitySubmission] Activity created; upload/process continues in queue");
+        return activityId;
       } catch (err) {
         console.error(`[useActivitySubmission] Upload failed:`, err);
 
@@ -383,36 +445,61 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         throw err;
       }
     },
-    [getSignedUrlMutation, processActivityFileMutation],
+    [createActivityMutation, getSignedUrlMutation, markUploadedAndProcessMutation, queryClient],
   );
 
-  const submit = useCallback(async () => {
-    if (!state.activity || !state.artifact) {
-      throw new Error("No data to submit");
-    }
-
-    dispatch({ type: "UPLOADING" });
-
-    try {
-      if (state.artifact.activityFilePath) {
-        await submitOnce(state.artifact, {
-          ...state.activity,
-          notes: state.activity.notes ?? undefined,
-        });
-        return true;
-      } else {
-        // No activity file found
-        console.error("[useActivitySubmission] No activity file found in recording metadata");
-        throw new Error("No activity file generated. Please try recording again.");
+  const submit = useCallback(
+    async (updates?: { name?: string; notes?: string; is_private?: boolean }) => {
+      if (!state.activity || !state.artifact) {
+        throw new Error("No data to submit");
       }
-    } catch (err) {
-      console.error("[useActivitySubmission] Upload failed:", err);
 
-      // Error state is already set by submitOnce
-      // Don't throw - keep the submission page available for manual retry
-      return false;
-    }
-  }, [state.activity, state.artifact, submitOnce]);
+      const activityForSubmit = { ...state.activity, ...updates };
+
+      dispatch({ type: "QUEUE_STATUS", status: "queued" });
+
+      try {
+        if (state.artifact.activityFilePath) {
+          await submitOnce(state.artifact, {
+            ...activityForSubmit,
+            notes: activityForSubmit.notes ?? undefined,
+          });
+          return true;
+        } else {
+          // No activity file found
+          console.error("[useActivitySubmission] No activity file found in recording metadata");
+          throw new Error("No activity file generated. Please try recording again.");
+        }
+      } catch (err) {
+        console.error("[useActivitySubmission] Upload failed:", err);
+
+        // Error state is already set by submitOnce
+        // Don't throw - keep the submission page available for manual retry
+        return false;
+      }
+    },
+    [state.activity, state.artifact, submitOnce],
+  );
+
+  const isSubmitting =
+    state.phase === "preparing" ||
+    state.phase === "queued" ||
+    state.phase === "uploading" ||
+    state.phase === "processing";
+  const statusMessage =
+    state.phase === "preparing"
+      ? "Preparing activity..."
+      : state.phase === "queued"
+        ? "Activity queued for upload."
+        : state.phase === "uploading"
+          ? "Uploading activity file..."
+          : state.phase === "processing"
+            ? "Processing activity details..."
+            : state.phase === "success"
+              ? "Activity saved. Upload processing is complete."
+              : state.phase === "error"
+                ? state.error || "Activity upload failed. You can retry."
+                : null;
 
   // ================================
   // Return Clean API
@@ -422,7 +509,8 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     // State flags
     isLoading: state.phase === "loading",
     isReady: state.phase === "ready",
-    isUploading: state.phase === "uploading",
+    isUploading: isSubmitting,
+    isSubmitting,
     isSuccess: state.phase === "success",
     isError: state.phase === "error",
 
@@ -431,6 +519,9 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
     activity: state.activity,
     error: state.error,
     hasStreams: state.hasStreams,
+    activityId: state.activityId,
+    queueStatus: state.queueStatus,
+    statusMessage,
 
     // Actions
     update,

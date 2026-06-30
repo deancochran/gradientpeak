@@ -6,8 +6,10 @@ import {
   defaultAthletePreferenceProfile,
   normalizeCreationConfig,
 } from "@repo/core";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildExpandedPlanFromMinimalGoal, computeLocalCreationPreview } from "./localPreview";
+
+const frozenToday = new Date("2026-01-01T00:00:00.000Z");
 
 const minimalPlan = {
   goals: [
@@ -54,6 +56,15 @@ const baseCreationInput: CreationNormalizationInput = {
 };
 
 describe("computeLocalCreationPreview", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(frozenToday);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("builds a local projection chart and conflict summary", () => {
     const preview = computeLocalCreationPreview({
       minimalPlan,

@@ -1,4 +1,4 @@
-FROM node:20-bookworm-slim AS builder
+FROM node:24-bookworm-slim AS builder
 
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
@@ -66,7 +66,7 @@ ENV AUTH_ALLOWED_DEEP_LINK_PREFIXES=$AUTH_ALLOWED_DEEP_LINK_PREFIXES
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter web build
 
-FROM node:20-bookworm-slim AS runner
+FROM node:24-bookworm-slim AS runner
 
 ENV NODE_ENV=production
 ENV PORT=3000

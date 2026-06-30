@@ -5,6 +5,7 @@ import { fireEvent, renderNative, screen, waitFor } from "../../../../test/rende
 const replaceMock = jest.fn();
 const completeOnboardingMock = jest.fn(async () => undefined);
 const completeOnboardingMutationMock = jest.fn(async () => ({ ok: true }));
+let importedOnboardingValuesMock: unknown = null;
 
 const ButtonHost = ({ children, disabled, onPress, ...props }: any) =>
   React.createElement(
@@ -57,7 +58,16 @@ jest.mock("expo-web-browser", () => ({
 
 jest.mock("@/lib/hooks/useAuth", () => ({
   __esModule: true,
-  useAuth: () => ({ completeOnboarding: completeOnboardingMock }),
+  useAuth: () => ({
+    completeOnboarding: completeOnboardingMock,
+    isAuthenticated: true,
+    isFullyLoaded: true,
+  }),
+}));
+
+jest.mock("@/lib/auth/auth-headers", () => ({
+  __esModule: true,
+  hasSessionAuthCredentials: () => true,
 }));
 
 jest.mock("@/lib/api", () => ({
@@ -80,7 +90,11 @@ jest.mock("@/lib/api", () => ({
         useMutation: () => ({ mutateAsync: completeOnboardingMutationMock }),
       },
       getImportedOnboardingValues: {
-        useQuery: () => ({ data: null, isLoading: false, refetch: jest.fn() }),
+        useQuery: () => ({
+          data: importedOnboardingValuesMock,
+          isLoading: false,
+          refetch: jest.fn(),
+        }),
       },
       getProviderEnrichmentStatus: {
         useQuery: () => ({ data: null, isLoading: false, refetch: jest.fn() }),
@@ -96,6 +110,9 @@ jest.mock("@/lib/api", () => ({
       list: {
         useQuery: () => ({ data: [], refetch: jest.fn(async () => ({ data: [] })) }),
       },
+      getConnectionOverview: {
+        useQuery: () => ({ data: [], refetch: jest.fn(async () => ({ data: [] })) }),
+      },
       getAuthUrl: {
         useMutation: () => ({
           mutateAsync: jest.fn(async () => ({ url: "https://example.test" })),
@@ -107,8 +124,8 @@ jest.mock("@/lib/api", () => ({
 
 jest.mock("@repo/core", () => ({
   __esModule: true,
-  estimateConservativeFTPFromWeight: jest.fn(() => 210),
-  estimateMaxHRFromDOB: jest.fn(() => 185),
+  estimateConservativeFTPFromWeight: jest.fn((weight?: number | null) => (weight ? 210 : null)),
+  estimateMaxHRFromDOB: jest.fn((dob?: string | null) => (dob ? 185 : null)),
   formatWeightForDisplay: jest.fn((weight: number) => `${weight} kg`),
 }));
 
@@ -167,27 +184,34 @@ jest.mock("lucide-react-native", () => ({
 
 const OnboardingScreen = require("../onboarding").default;
 
+const flushUsernameDebounce = async () => {
+  await new Promise((resolve) => setTimeout(resolve, 450));
+};
+
 describe("onboarding screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    importedOnboardingValuesMock = null;
   });
 
   const completeRequiredSteps = async () => {
+    fireEvent.changeText(screen.getByTestId("onboarding-full-name-input"), "Riley Chen");
+    fireEvent.changeText(screen.getByTestId("onboarding-username-input"), "riley_runs");
+    await flushUsernameDebounce();
+    await waitFor(() => {
+      expect(screen.getByTestId("onboarding-next-button").props.disabled).toBe(false);
+    });
+    fireEvent.press(screen.getByText("cycling"));
     fireEvent.press(screen.getByText("Next"));
     fireEvent.press(screen.getByText("Skip"));
     await waitFor(() => {
       expect(screen.getByText("beginner")).toBeTruthy();
     });
     fireEvent.press(screen.getByText("beginner"));
-    fireEvent.press(screen.getByText("Next"));
     fireEvent.press(screen.getByText("male"));
-    fireEvent.press(screen.getByText("Next"));
     fireEvent.changeText(screen.getByTestId("onboarding-dob"), "1990-01-01");
-    fireEvent.press(screen.getByText("Next"));
     fireEvent.changeText(screen.getByPlaceholderText("70.0"), "72");
     fireEvent(screen.getByPlaceholderText("70.0"), "blur");
-    fireEvent.press(screen.getByText("Next"));
-    fireEvent.press(screen.getByText("other"));
     fireEvent.press(screen.getByText("Next"));
   };
 
@@ -195,14 +219,15 @@ describe("onboarding screen", () => {
     renderNative(<OnboardingScreen />);
 
     await completeRequiredSteps();
-    fireEvent.press(screen.getByText("Next"));
-    fireEvent.press(screen.getByText("Next"));
     fireEvent.press(screen.getByText("Finish"));
 
     await waitFor(() => {
       expect(completeOnboardingMutationMock).toHaveBeenCalledWith(
         expect.objectContaining({
           experience_level: "beginner",
+          full_name: "Riley Chen",
+          ftp: 210,
+          max_hr: 185,
           weight_kg: 72,
           gender: "male",
         }),
@@ -215,23 +240,31 @@ describe("onboarding screen", () => {
   it("lets users skip optional onboarding steps", async () => {
     renderNative(<OnboardingScreen />);
 
-    await completeRequiredSteps();
+    fireEvent.changeText(screen.getByTestId("onboarding-full-name-input"), "Riley Chen");
+    fireEvent.changeText(screen.getByTestId("onboarding-username-input"), "riley_runs");
+    await flushUsernameDebounce();
+    fireEvent.press(screen.getByText("Next"));
 
     expect(screen.getByTestId("onboarding-skip-button").props.disabled).toBe(false);
 
     fireEvent.press(screen.getByTestId("onboarding-skip-button"));
 
-    expect(screen.getByText("Resting Heart Rate")).toBeTruthy();
+    expect(screen.getByText("Connect Accounts")).toBeTruthy();
   });
 
   it("lets users skip the signup onboarding flow after the intro", async () => {
     renderNative(<OnboardingScreen />);
 
+    expect(screen.getByTestId("onboarding-skip-button").props.disabled).toBe(true);
+
+    fireEvent.changeText(screen.getByTestId("onboarding-full-name-input"), "Riley Chen");
+    fireEvent.changeText(screen.getByTestId("onboarding-username-input"), "riley_runs");
+    await flushUsernameDebounce();
     fireEvent.press(screen.getByText("Next"));
 
     expect(screen.getByTestId("onboarding-skip-button").props.disabled).toBe(false);
 
-    for (let i = 0; i < 8; i += 1) {
+    for (let i = 0; i < 2; i += 1) {
       fireEvent.press(screen.getByTestId("onboarding-skip-button"));
     }
 
@@ -247,16 +280,82 @@ describe("onboarding screen", () => {
         dob: undefined,
         experience_level: "skip",
         ftp: undefined,
+        full_name: "Riley Chen",
         gender: undefined,
         max_hr: undefined,
         resting_hr: undefined,
         lthr: undefined,
         threshold_pace_seconds_per_km: undefined,
+        username: "riley_runs",
         vo2max: undefined,
         weight_kg: undefined,
       });
       expect(completeOnboardingMock).toHaveBeenCalled();
       expect(replaceMock).toHaveBeenCalledWith("/");
+    });
+  });
+
+  it("prefills provider-imported onboarding fields before submission", async () => {
+    importedOnboardingValuesMock = {
+      profile: {
+        dob: "1988-04-05",
+        gender: "female",
+        onboarded: false,
+      },
+      values: {
+        dob: "1988-04-05",
+        gender: "female",
+        weight_kg: 64,
+        ftp: 245,
+      },
+      sources: {
+        dob: {
+          provider: "wahoo",
+          label: "Wahoo",
+          sourceRecordedAt: "2026-04-03T11:05:00.000Z",
+        },
+        gender: {
+          provider: "wahoo",
+          label: "Wahoo",
+          sourceRecordedAt: "2026-04-03T11:05:00.000Z",
+        },
+        weight_kg: {
+          provider: "wahoo",
+          label: "Wahoo",
+          sourceRecordedAt: "2026-04-03T11:05:00.000Z",
+        },
+        ftp: {
+          provider: "wahoo",
+          label: "Wahoo",
+          sourceRecordedAt: "2026-04-03T11:05:00.000Z",
+        },
+      },
+    };
+
+    renderNative(<OnboardingScreen />);
+
+    fireEvent.changeText(screen.getByTestId("onboarding-full-name-input"), "Riley Chen");
+    fireEvent.changeText(screen.getByTestId("onboarding-username-input"), "riley_runs");
+    await flushUsernameDebounce();
+    fireEvent.press(screen.getByText("cycling"));
+    fireEvent.press(screen.getByText("Next"));
+    fireEvent.press(screen.getByText("Skip"));
+    await waitFor(() => {
+      expect(screen.getByText("beginner")).toBeTruthy();
+    });
+    fireEvent.press(screen.getByText("beginner"));
+    fireEvent.press(screen.getByText("Next"));
+    fireEvent.press(screen.getByText("Finish"));
+
+    await waitFor(() => {
+      expect(completeOnboardingMutationMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          dob: "1988-04-05T00:00:00.000Z",
+          ftp: 245,
+          gender: "female",
+          weight_kg: 64,
+        }),
+      );
     });
   });
 });

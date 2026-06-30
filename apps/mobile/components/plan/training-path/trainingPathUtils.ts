@@ -393,13 +393,23 @@ function computePositiveDomain(values: Array<number | null>, fallback: [number, 
 }
 
 function resolveEmptyState(
-  input: BuildTrainingPathInput,
+  input: NormalizedTrainingPathInput,
   weeks: TrainingPathWeek[],
 ): TrainingPathEmptyState | null {
-  if ((input.goalMarkers ?? []).length === 0) return "noGoal";
-  if ((input.fitnessHistory ?? []).length === 0) return "noActivityHistory";
-  if (!weeks.some((week) => (week.plannedLoad ?? 0) > 0)) return "noPlannedSessions";
   if (weeks.length === 0) return "noProjection";
+  const hasRenderablePathData = weeks.some(
+    (week) =>
+      (week.completedLoad ?? 0) > 0 ||
+      (week.plannedLoad ?? 0) > 0 ||
+      (week.tentativePlannedLoad ?? 0) > 0 ||
+      (week.targetLoad ?? 0) > 0 ||
+      typeof week.fitness === "number" ||
+      typeof week.scheduledFitness === "number" ||
+      typeof week.targetFitness === "number",
+  );
+  if (hasRenderablePathData) return null;
+  if (input.goalMarkers.length === 0) return "noGoal";
+  if (input.fitnessHistory.length === 0) return "noActivityHistory";
   return null;
 }
 

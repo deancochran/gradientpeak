@@ -1,0 +1,126 @@
+- name: status:intake
+  color: "d0d7de"
+  description: Newly created or not yet normalized.
+- name: status:needs-clarification
+  color: "fbca04"
+  description: Missing intent, acceptance criteria, constraints, or verification.
+- name: status:ready
+  color: "0e8a16"
+  description: Ready for planning or implementation.
+- name: status:planned
+  color: "1d76db"
+  description: Implementation approach is documented.
+- name: status:in-progress
+  color: "5319e7"
+  description: A branch or PR is actively being worked.
+- name: status:in-review
+  color: "0052cc"
+  description: Implementation PR is open and under review.
+- name: status:blocked
+  color: "b60205"
+  description: Blocked on a dependency or decision.
+- name: status:merged
+  color: "0e8a16"
+  description: Merged but release/follow-up may remain.
+- name: status:released
+  color: "006b75"
+  description: Released or otherwise delivered.
+- name: status:closed
+  color: "6e7781"
+  description: No further action required.
+- name: area:web
+  color: "c5def5"
+  description: Web app work.
+- name: area:mobile
+  color: "c5def5"
+  description: Mobile app work.
+- name: area:api
+  color: "c5def5"
+  description: API/backend work.
+- name: area:db
+  color: "c5def5"
+  description: Database schema, migrations, or persistence.
+- name: area:core
+  color: "c5def5"
+  description: Shared core domain logic.
+- name: area:ui
+  color: "c5def5"
+  description: Shared UI package work.
+- name: area:auth
+  color: "c5def5"
+  description: Authentication or authorization work.
+- name: area:infra
+  color: "c5def5"
+  description: CI/CD, deployment, or infrastructure.
+- name: area:docs
+  color: "c5def5"
+  description: Documentation work.
+- name: area:test
+  color: "c5def5"
+  description: Test-only or test infrastructure work.
+- name: type:feature
+  color: "a2eeef"
+  description: New user-facing or product capability.
+- name: type:bug
+  color: "d73a4a"
+  description: Defect fix.
+- name: type:refactor
+  color: "fef2c0"
+  description: Internal restructure without behavior change.
+- name: type:test
+  color: "fef2c0"
+  description: Test addition or adjustment.
+- name: type:docs
+  color: "0075ca"
+  description: Documentation change.
+- name: type:tech-debt
+  color: "fef2c0"
+  description: Maintenance or cleanup work.
+- name: type:security
+  color: "b60205"
+  description: Security-related change.
+- name: type:performance
+  color: "fef2c0"
+  description: Performance improvement.
+- name: type:maintenance
+  color: "fef2c0"
+  description: Routine maintenance.
+- name: risk:low
+  color: "0e8a16"
+  description: Isolated, reversible, well-tested, no sensitive behavior.
+- name: risk:medium
+  color: "fbca04"
+  description: Moderate behavior change or multiple areas.
+- name: risk:high
+  color: "b60205"
+  description: Broad, ambiguous, sensitive, or hard to reverse.
+- name: risk:schema
+  color: "b60205"
+  description: Database schema, migration, persistence contract, or backfill.
+- name: risk:auth
+  color: "b60205"
+  description: Authentication, authorization, session, token, or security-sensitive behavior.
+- name: risk:workflow
+  color: "b60205"
+  description: GitHub Actions, permissions, release, or agent automation.
+- name: risk:deploy
+  color: "b60205"
+  description: Production deployment, release, publishing, or infrastructure.
+- name: agent:triage
+  color: "bfdadc"
+  description: Needs or received agent triage.
+- name: agent:planning
+  color: "bfdadc"
+  description: Needs or received agent planning.
+- name: agent:implementation
+  color: "bfdadc"
+  description: Ready for or handled by implementation agent.
+- name: agent:review
+  color: "bfdadc"
+  description: Needs or received agent review.
+- name: agent:blocked
+  color: "b60205"
+  description: Agent is blocked.
+- name: agent:needs-human
+  color: "b60205"
+  description: Requires human decision or approval before proceeding.

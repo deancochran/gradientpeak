@@ -13,6 +13,7 @@ import { useProfileSettings } from "@/lib/hooks/useProfileSettings";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 import { refreshPlanTabData } from "@/lib/scheduling/refreshScheduleViews";
 import { useAuthStore } from "@/lib/stores/auth-store";
+import { buildDailyTrainingAdjustmentPointsFromTrainingPathData } from "@/lib/training-path/dailyTrainingPathModel";
 import {
   buildTrainingPreferencesLoadTimeline,
   buildTrainingPreferencesProjectionPreview,
@@ -29,7 +30,7 @@ import type {
   TrainingPathScheduledItem,
   TrainingPathSelectedGoal,
 } from "./trainingPathTypes";
-import { buildScheduledFitnessTrend } from "./trainingPathUtils";
+import { buildScheduledFitnessTrend, getWeekStartDateKey } from "./trainingPathUtils";
 import { useScrollableTrainingPathWindow } from "./useScrollableTrainingPathWindow";
 import { useTrainingPathViewModel } from "./useTrainingPathViewModel";
 
@@ -53,19 +54,18 @@ export function usePlanTrainingPathData() {
   const { profile, user } = useAuth();
   const [refreshing, setRefreshing] = useState(false);
   const [selectedWeekStart, setSelectedWeekStart] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [pendingSelectedWeekStart, setPendingSelectedWeekStart] = useState<string | null>(null);
   const lastProjectionRefreshKeyRef = useRef<string | null>(null);
   const eventsQueryEnabled = useAuthStore(
     (state) => state.ready && !!state.session && hasSessionAuthCredentials(),
   );
 
-  const { data: activePlan, refetch: refetchActivePlan } = api.trainingPlans.getActivePlan.useQuery(
-    undefined,
-    {
-      ...scheduleAwareReadQueryOptions,
-      enabled: eventsQueryEnabled,
-    },
-  );
+  const activePlanQuery = api.trainingPlans.getActivePlan.useQuery(undefined, {
+    ...scheduleAwareReadQueryOptions,
+    enabled: eventsQueryEnabled,
+  });
+  const { data: activePlan, refetch: refetchActivePlan } = activePlanQuery;
   const today = useMemo(() => new Date(), []);
   const todayKey = useMemo(() => getDateKey(today), [today]);
   const recentWindowStart = useMemo(() => {
@@ -237,6 +237,25 @@ export function usePlanTrainingPathData() {
     weekWindow: trainingPathWindow.resolvedWeekWindow,
     todayKey,
   });
+  const dailyTrainingPathPoints = useMemo(
+    () =>
+      buildDailyTrainingAdjustmentPointsFromTrainingPathData({
+        timeline: loadTimelinePoints,
+        fitnessHistory: dashboard.fitnessHistory,
+        idealFitnessCurve,
+        scheduledFitnessTrend,
+        startDate: loadTimelinePoints[0]?.date ?? recentWindowStart,
+        endDate: loadTimelinePoints[loadTimelinePoints.length - 1]?.date ?? upcomingWindowEnd,
+      }),
+    [
+      dashboard.fitnessHistory,
+      idealFitnessCurve,
+      loadTimelinePoints,
+      recentWindowStart,
+      scheduledFitnessTrend,
+      upcomingWindowEnd,
+    ],
+  );
 
   const selectedWeekRangeStart = trainingPath.selectedWeekSummary?.weekStart ?? null;
   const selectedWeekRangeEnd = trainingPath.selectedWeekSummary?.weekEnd ?? null;
@@ -315,6 +334,12 @@ export function usePlanTrainingPathData() {
   const selectedWeekLoading =
     !!pendingSelectedWeekStart &&
     pendingSelectedWeekStart !== trainingPath.selectedWeekSummary?.weekStart;
+  const chartLoading =
+    !eventsQueryEnabled ||
+    activePlanQuery.isLoading ||
+    upcomingPlannedEventsQuery.isLoading ||
+    recentPlannedEventsQuery.isLoading ||
+    profileSettings.isLoading;
 
   const resetTrainingPathChart = useCallback(() => {
     trainingPathWindow.resetWindow();
@@ -325,6 +350,15 @@ export function usePlanTrainingPathData() {
   }, [trainingPathWindow.resetWindow]);
 
   const handleSelectedWeekChange = useCallback((weekStart: string) => {
+    setPendingSelectedWeekStart(weekStart);
+    startTransition(() => {
+      setSelectedWeekStart(weekStart);
+    });
+  }, []);
+
+  const handleSelectedDateChange = useCallback((date: string) => {
+    setSelectedDate(date);
+    const weekStart = getWeekStartDateKey(date);
     setPendingSelectedWeekStart(weekStart);
     startTransition(() => {
       setSelectedWeekStart(weekStart);
@@ -421,6 +455,9 @@ export function usePlanTrainingPathData() {
     refreshing,
     handleRefresh,
     trainingPath,
+    dailyTrainingPathPoints,
+    chartLoading,
+    selectedDate: selectedDate ?? todayKey,
     selectedWeekGoals,
     selectedWeekEvents,
     selectedWeekGroupEvents,
@@ -429,6 +466,7 @@ export function usePlanTrainingPathData() {
     extendTrainingPathWindowEnd: trainingPathWindow.extendWindowEnd,
     extendTrainingPathWindowStart: trainingPathWindow.extendWindowStart,
     handleSelectedWeekChange,
+    handleSelectedDateChange,
     handleWeekScrollStart,
   };
 }

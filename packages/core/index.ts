@@ -167,6 +167,7 @@ export * from "./constants";
 // and will automatically pick up new files added to their directories
 
 export * from "./activity-analysis"; // Shared dynamic activity analysis contracts/helpers
+export * from "./activity-files"; // Runtime-neutral activity file ingestion contracts
 // ============================================================================
 // Legacy Server-Only Activity File Parsing
 // ============================================================================

@@ -5,9 +5,20 @@ import {
   getTopBlockingIssues,
   validateTrainingPlanForm,
 } from "@repo/core";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const frozenToday = new Date("2026-01-01T00:00:00.000Z");
 
 describe("training-plan form validation", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(frozenToday);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("returns no errors for valid minimal form", () => {
     const errors = validateTrainingPlanForm({
       planStartDate: "2026-02-14",

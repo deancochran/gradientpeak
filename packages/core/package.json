@@ -5,6 +5,8 @@
   "main": "./index.ts",
   "exports": {
     ".": "./index.ts",
+    "./activity-files": "./activity-files/index.ts",
+    "./activity-files/*": "./activity-files/*.ts",
     "./bluetooth": "./bluetooth/index.ts",
     "./bluetooth/*": "./bluetooth/*.ts",
     "./calculations": "./calculations/index.ts",
@@ -38,6 +40,8 @@
     "./notifications": "./notifications/index.ts",
     "./notifications/*": "./notifications/*.ts",
     "./parity": "./parity/index.ts",
+    "./testing": "./testing/index.ts",
+    "./testing/*": "./testing/*/index.ts",
     "./plan": "./plan/index.ts",
     "./plan/*": "./plan/*.ts",
     "./profile": "./profile/index.ts",

@@ -1,4 +1,4 @@
-import React from "react";
+import { clearRecord } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
 
 const replaceMock = jest.fn();
@@ -10,29 +10,31 @@ jest.mock("expo-router", () => ({
   useRouter: () => ({ replace: replaceMock }),
 }));
 
-jest.mock("@repo/ui/components/button", () => ({
-  __esModule: true,
-  Button: ({ children, onPress, ...props }: any) =>
-    React.createElement("Pressable", { onPress, ...props }, children),
-}));
+jest.mock("@repo/ui/components/button", () => {
+  const { createPressableHost } = require("../../../test/mock-components");
+  return { __esModule: true, Button: createPressableHost() };
+});
 
-jest.mock("@repo/ui/components/card", () => ({
-  __esModule: true,
-  Card: ({ children, ...props }: any) => React.createElement("Card", props, children),
-  CardContent: ({ children, ...props }: any) => React.createElement("CardContent", props, children),
-}));
+jest.mock("@repo/ui/components/card", () => {
+  const { createHostComponent } = require("../../../test/mock-components");
+  return {
+    __esModule: true,
+    Card: createHostComponent("Card"),
+    CardContent: createHostComponent("CardContent"),
+  };
+});
 
-jest.mock("@repo/ui/components/text", () => ({
-  __esModule: true,
-  Text: ({ children, ...props }: any) => React.createElement("Text", props, children),
-}));
+jest.mock("@repo/ui/components/text", () => {
+  const { createHostComponent } = require("../../../test/mock-components");
+  return { __esModule: true, Text: createHostComponent("Text") };
+});
 
 const AuthErrorScreen = require("../auth-error").default;
 
 describe("auth error screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    Object.keys(paramsState).forEach((key) => delete paramsState[key]);
+    clearRecord(paramsState);
   });
 
   it("replaces to sign-in when retry is pressed", () => {

@@ -26,9 +26,9 @@ export const experienceLevelSchema = z.enum([
 export type ExperienceLevel = z.infer<typeof experienceLevelSchema>;
 
 /**
- * Sport/activity type for primary sport selection.
+ * Sport/activity type for onboarding sport interests.
  */
-export const sportSchema = z.enum(["cycling", "running", "swimming", "triathlon", "other"]);
+export const sportSchema = z.enum(["cycling", "running", "swimming", "strength", "other"]);
 
 export type Sport = z.infer<typeof sportSchema>;
 
@@ -46,8 +46,11 @@ export type Sport = z.infer<typeof sportSchema>;
  * Used to calculate age and baseline performance estimates.
  */
 export const onboardingStep1Schema = z.object({
+  full_name: z.string().trim().min(1, { message: "Full name is required" }),
+  username: z.string().trim().min(1, { message: "Username is required" }),
+
   // Experience level (NEW - determines flow)
-  experience_level: experienceLevelSchema,
+  experience_level: experienceLevelSchema.default("skip"),
 
   // Basic profile data
   dob: z
@@ -100,10 +103,10 @@ export type OnboardingStep2 = z.infer<typeof onboardingStep2Schema>;
 /**
  * Step 3: Performance Metrics (Optional, Sport-Specific)
  *
- * Sport-specific performance data. Which fields are shown depends on primary_sport:
- * - Cycling/Triathlon: FTP
- * - Running/Triathlon: Threshold pace
- * - Swimming/Triathlon: CSS
+ * Sport-specific performance data. Which fields are shown depends on selected sport interests:
+ * - Cycling: FTP
+ * - Running: Threshold pace
+ * - Swimming: CSS
  * - All: VO2max
  *
  * Can be auto-estimated for beginners/intermediate or entered manually for advanced.
@@ -288,21 +291,7 @@ export function validateSportMetrics(
       }
       break;
 
-    case "triathlon":
-      // Triathlon requires at least one metric from any sport
-      if (
-        !metrics.ftp &&
-        !metrics.threshold_pace_seconds_per_km &&
-        !metrics.css_seconds_per_hundred_meters
-      ) {
-        return {
-          valid: false,
-          error:
-            "At least one performance metric is required for triathlon (FTP, threshold pace, or CSS)",
-        };
-      }
-      break;
-
+    case "strength":
     case "other":
       // No specific requirements for "other" sport
       break;

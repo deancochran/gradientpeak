@@ -9,29 +9,24 @@ import {
   useFont,
   vec,
 } from "@shopify/react-native-skia";
-import {
-  type ElementRef,
-  Fragment,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
-  TouchableOpacity,
   View,
 } from "react-native";
 import Animated, {
+  runOnJS,
   type SharedValue,
+  scrollTo,
+  useAnimatedReaction,
+  useAnimatedRef,
   useAnimatedScrollHandler,
   useDerivedValue,
   useSharedValue,
 } from "react-native-reanimated";
-import { CartesianChart, Line } from "victory-native";
+import { CartesianChart, Line, useChartPressState } from "victory-native";
 import { useTheme } from "@/lib/stores/theme-store";
 import {
   getCenteredWeekIndex,
@@ -94,6 +89,18 @@ const loadKeys: ChartYKey[] = [
   "targetLoad",
 ];
 const fitnessKeys: ChartYKey[] = ["fitness", "scheduledFitness", "targetFitness"];
+const initialChartPressState: { x: number; y: Record<ChartYKey, number> } = {
+  x: 0,
+  y: {
+    completedLoad: 0,
+    fitness: 0,
+    plannedLoad: 0,
+    plannedLoadWithTentative: 0,
+    scheduledFitness: 0,
+    targetFitness: 0,
+    targetLoad: 0,
+  },
+};
 const chartPadding = { left: 8, right: 8, top: 20, bottom: 26 };
 const fixedAxisWidth = 34;
 const scrollWeekWidth = 38;
@@ -138,9 +145,26 @@ function getBarGeometry(
     : previous
       ? current.x - previous.x
       : chartRight - chartLeft;
-  const left = Math.max(chartLeft, current.x - Math.abs(leftStep) / 2);
-  const right = Math.min(chartRight, current.x + Math.abs(rightStep) / 2);
-  return { center: current.x, width: Math.max(4, right - left) };
+  const chartWidth = Math.max(4, chartRight - chartLeft);
+  const slotWidth = Math.min(
+    chartWidth,
+    Math.max(4, Math.min(Math.abs(leftStep), Math.abs(rightStep)) || chartWidth),
+  );
+  return { center: current.x, width: slotWidth };
+}
+
+function getLoadBarGeometry(
+  pointsByKey: Partial<Record<ChartYKey, Array<{ x: number }>>>,
+  index: number,
+  chartLeft: number,
+  chartRight: number,
+) {
+  return (
+    getBarGeometry(pointsByKey.completedLoad ?? [], index, chartLeft, chartRight) ??
+    getBarGeometry(pointsByKey.plannedLoad ?? [], index, chartLeft, chartRight) ??
+    getBarGeometry(pointsByKey.plannedLoadWithTentative ?? [], index, chartLeft, chartRight) ??
+    getBarGeometry(pointsByKey.targetLoad ?? [], index, chartLeft, chartRight)
+  );
 }
 
 function getSleeveBarWidth(slotWidth: number, weekCount: number, fixedWidth?: number) {
@@ -149,6 +173,11 @@ function getSleeveBarWidth(slotWidth: number, weekCount: number, fixedWidth?: nu
   if (weekCount > 52) return Math.max(5, slotWidth * 0.82);
   if (weekCount > 30) return Math.max(6, slotWidth * 0.88);
   return Math.max(8, slotWidth * 0.94);
+}
+
+function getVisibleBarLeft(center: number, width: number, chartLeft: number, chartRight: number) {
+  if (width >= chartRight - chartLeft) return chartLeft;
+  return Math.max(chartLeft, Math.min(center - width / 2, chartRight - width));
 }
 
 function AnimatedFocusedRect({
@@ -305,6 +334,78 @@ function buildLinearTicks(domain: [number, number], count = 5) {
   return Array.from({ length: count }, (_, index) => max - ((max - min) * index) / (count - 1));
 }
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function expandDomainToValues(
+  domain: [number, number],
+  values: number[],
+  headroomRatio = 0.12,
+): [number, number] {
+  const finiteValues = values.filter(isFiniteNumber);
+  if (finiteValues.length === 0) return domain;
+
+  const min = Math.min(domain[0], 0, ...finiteValues);
+  const maxValue = Math.max(domain[1], ...finiteValues);
+  const span = Math.max(1, maxValue - min);
+  const paddedMax = maxValue + Math.max(4, span * headroomRatio);
+
+  return [min, paddedMax];
+}
+
+function getRenderedLoadDomain({
+  baseDomain,
+  chartData,
+  range,
+  showCompletedLoad,
+  showPlannedLoad,
+}: {
+  baseDomain: [number, number];
+  chartData: ChartDatum[];
+  range: TrainingPathRange;
+  showCompletedLoad: boolean;
+  showPlannedLoad: boolean;
+}) {
+  const values: number[] = [];
+  const showPlanningLayers = range !== "all";
+
+  for (const datum of chartData) {
+    if (showCompletedLoad && isFiniteNumber(datum.completedLoad)) values.push(datum.completedLoad);
+    if (showPlanningLayers && isFiniteNumber(datum.targetLoad)) values.push(datum.targetLoad);
+    if (showPlanningLayers && showPlannedLoad && isFiniteNumber(datum.plannedLoad)) {
+      values.push(datum.plannedLoad);
+    }
+    if (showPlanningLayers && showPlannedLoad && isFiniteNumber(datum.plannedLoadWithTentative)) {
+      values.push(datum.plannedLoadWithTentative);
+    }
+  }
+
+  return expandDomainToValues(baseDomain, values);
+}
+
+function getRenderedFitnessDomain({
+  baseDomain,
+  chartData,
+  showScheduledFitness,
+}: {
+  baseDomain: [number, number];
+  chartData: ChartDatum[];
+  showScheduledFitness: boolean;
+}) {
+  const values: number[] = [];
+
+  for (const datum of chartData) {
+    if (isFiniteNumber(datum.fitness)) values.push(datum.fitness);
+    if (isFiniteNumber(datum.targetFitness)) values.push(datum.targetFitness);
+    if (showScheduledFitness && isFiniteNumber(datum.scheduledFitness)) {
+      values.push(datum.scheduledFitness);
+    }
+  }
+
+  return expandDomainToValues(baseDomain, values, 0.08);
+}
+
 function FixedYAxisLabels({
   align = "right",
   domain,
@@ -360,7 +461,7 @@ export function TrainingPathChart({
 }: TrainingPathChartProps) {
   const [chartWidth, setChartWidth] = useState(320);
   const [scrollViewportWidth, setScrollViewportWidth] = useState(240);
-  const scrollViewRef = useRef<ElementRef<typeof Animated.ScrollView> | null>(null);
+  const scrollViewRef = useAnimatedRef<Animated.ScrollView>();
   const centeredWeekIndexRef = useRef<number | null>(null);
   const latestScrollOffsetRef = useRef(0);
   const deferredCommitTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -369,6 +470,7 @@ export function TrainingPathChart({
   const pendingStartExpansionRef = useRef(false);
   const pendingEndExpansionRef = useRef(false);
   const chartScrollX = useSharedValue(0);
+  const { state: chartPressState } = useChartPressState(initialChartPressState);
   const animatedScrollHandler = useAnimatedScrollHandler((event) => {
     chartScrollX.value = event.contentOffset.x;
   });
@@ -410,6 +512,26 @@ export function TrainingPathChart({
       })),
     [model.weeks],
   );
+  const effectiveLoadDomain = useMemo(
+    () =>
+      getRenderedLoadDomain({
+        baseDomain: domains.load,
+        chartData,
+        range,
+        showCompletedLoad,
+        showPlannedLoad,
+      }),
+    [chartData, domains.load, range, showCompletedLoad, showPlannedLoad],
+  );
+  const effectiveFitnessDomain = useMemo(
+    () =>
+      getRenderedFitnessDomain({
+        baseDomain: domains.fitness,
+        chartData,
+        showScheduledFitness,
+      }),
+    [chartData, domains.fitness, showScheduledFitness],
+  );
   const xTickIndexes = useMemo(
     () =>
       scrollX ? model.weeks.map((_, index) => index) : buildAxisTickIndexes(model.weeks.length),
@@ -433,6 +555,7 @@ export function TrainingPathChart({
     : model.weeks.length > 1
       ? (scrollableChartWidth - chartPadding.left - chartPadding.right) / (model.weeks.length - 1)
       : 0;
+  const chartAreaHeight = Math.max(120, height - 22);
   const onChartLayout = (event: LayoutChangeEvent) => {
     const measuredWidth = Math.floor(event.nativeEvent.layout.width);
     if (measuredWidth >= 220) setChartWidth(measuredWidth);
@@ -441,39 +564,45 @@ export function TrainingPathChart({
     const measuredWidth = Math.floor(event.nativeEvent.layout.width);
     if (measuredWidth >= 120) setScrollViewportWidth(measuredWidth);
   };
-  const commitCenteredWeek = (offsetX: number) => {
-    if (!reviewWeeks || !onSelectedWeekChange) return;
-    if (model.weeks.length === 0) return;
-    const centeredIndex = getCenteredWeekIndex(offsetX, scrollWeekWidth, model.weeks.length);
-    centeredWeekIndexRef.current = centeredIndex;
-    const centeredWeek = model.weeks[centeredIndex];
-    if (centeredWeek && !centeredWeek.isSelected) {
-      onSelectedWeekChange(centeredWeek.weekStart);
-    }
-  };
-  const publishDisplayedWeek = (offsetX: number) => {
-    if (!reviewWeeks) return;
-    if (model.weeks.length === 0) return;
-    const centeredIndex = getCenteredWeekIndex(offsetX, scrollWeekWidth, model.weeks.length);
-    if (displayedWeekIndexRef.current === centeredIndex) return;
-    displayedWeekIndexRef.current = centeredIndex;
-    const displayedWeek = model.weeks[centeredIndex];
-    if (displayedWeek) onDisplayedWeekChange?.(displayedWeek.weekStart);
-  };
-  const clearDeferredCommit = () => {
+  const commitCenteredWeek = useCallback(
+    (offsetX: number) => {
+      if (!reviewWeeks || !onSelectedWeekChange) return;
+      if (model.weeks.length === 0) return;
+      const centeredIndex = getCenteredWeekIndex(offsetX, scrollWeekWidth, model.weeks.length);
+      centeredWeekIndexRef.current = centeredIndex;
+      const centeredWeek = model.weeks[centeredIndex];
+      if (centeredWeek && !centeredWeek.isSelected) {
+        onSelectedWeekChange(centeredWeek.weekStart);
+      }
+    },
+    [model.weeks, onSelectedWeekChange, reviewWeeks],
+  );
+  const publishDisplayedWeek = useCallback(
+    (offsetX: number) => {
+      if (!reviewWeeks) return;
+      if (model.weeks.length === 0) return;
+      const centeredIndex = getCenteredWeekIndex(offsetX, scrollWeekWidth, model.weeks.length);
+      if (displayedWeekIndexRef.current === centeredIndex) return;
+      displayedWeekIndexRef.current = centeredIndex;
+      const displayedWeek = model.weeks[centeredIndex];
+      if (displayedWeek) onDisplayedWeekChange?.(displayedWeek.weekStart);
+    },
+    [model.weeks, onDisplayedWeekChange, reviewWeeks],
+  );
+  const clearDeferredCommit = useCallback(() => {
     if (!deferredCommitTimeoutRef.current) return;
     clearTimeout(deferredCommitTimeoutRef.current);
     deferredCommitTimeoutRef.current = null;
-  };
-  const beginScrollInteraction = () => {
+  }, []);
+  const beginScrollInteraction = useCallback(() => {
     userInteractingRef.current = true;
     clearDeferredCommit();
     onScrollInteractionStart?.();
-  };
-  const settleScrollInteraction = () => {
+  }, [clearDeferredCommit, onScrollInteractionStart]);
+  const settleScrollInteraction = useCallback(() => {
     userInteractingRef.current = false;
     onScrollInteractionSettled?.();
-  };
+  }, [onScrollInteractionSettled]);
   const onHorizontalScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
     latestScrollOffsetRef.current = contentOffset.x;
@@ -484,7 +613,7 @@ export function TrainingPathChart({
       pendingEndExpansionRef.current = true;
     }
   };
-  const flushPendingEdgeExpansion = () => {
+  const flushPendingEdgeExpansion = useCallback(() => {
     if (pendingStartExpansionRef.current) {
       pendingStartExpansionRef.current = false;
       onScrollNearStart?.();
@@ -493,7 +622,7 @@ export function TrainingPathChart({
       pendingEndExpansionRef.current = false;
       onScrollNearEnd?.();
     }
-  };
+  }, [onScrollNearEnd, onScrollNearStart]);
   const onHorizontalScrollSettled = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     clearDeferredCommit();
     publishDisplayedWeek(event.nativeEvent.contentOffset.x);
@@ -519,27 +648,62 @@ export function TrainingPathChart({
       settleScrollInteraction();
     }, 180);
   };
-  const scrollToWeekIndex = useCallback((index: number, animated: boolean) => {
-    const offset = getWeekScrollOffset(index, scrollWeekWidth);
-    centeredWeekIndexRef.current = index;
-    scrollViewRef.current?.scrollTo({ x: offset, animated });
-  }, []);
-  const onWeekPress = (weekStart: string, index: number) => {
-    if (!reviewWeeks || !onSelectedWeekChange) return;
-    if (scrollX) {
-      scrollToWeekIndex(index, true);
-      requestAnimationFrame(() => {
+  const scrollToWeekIndex = useCallback(
+    (index: number, animated: boolean) => {
+      const offset = getWeekScrollOffset(index, scrollWeekWidth);
+      centeredWeekIndexRef.current = index;
+      scrollTo(scrollViewRef, offset, 0, animated);
+    },
+    [scrollViewRef],
+  );
+  const selectWeekAtIndex = useCallback(
+    (index: number) => {
+      const boundedIndex = Math.max(0, Math.min(model.weeks.length - 1, Math.round(index)));
+      const week = model.weeks[boundedIndex];
+      if (!week) return;
+      if (!reviewWeeks || !onSelectedWeekChange) return;
+      if (scrollX) {
+        scrollToWeekIndex(boundedIndex, true);
         beginScrollInteraction();
-        publishDisplayedWeek(getWeekScrollOffset(index, scrollWeekWidth));
-        requestAnimationFrame(() => {
-          onSelectedWeekChange(weekStart);
-        });
-      });
-      return;
-    }
+        publishDisplayedWeek(getWeekScrollOffset(boundedIndex, scrollWeekWidth));
+        if (!week.isSelected) {
+          onSelectedWeekChange(week.weekStart);
+        }
+        clearDeferredCommit();
+        deferredCommitTimeoutRef.current = setTimeout(() => {
+          deferredCommitTimeoutRef.current = null;
+          settleScrollInteraction();
+        }, 260);
+        return;
+      }
 
-    onSelectedWeekChange(weekStart);
-  };
+      onSelectedWeekChange(week.weekStart);
+    },
+    [
+      beginScrollInteraction,
+      clearDeferredCommit,
+      model.weeks,
+      onSelectedWeekChange,
+      publishDisplayedWeek,
+      reviewWeeks,
+      scrollToWeekIndex,
+      scrollX,
+      settleScrollInteraction,
+    ],
+  );
+
+  useAnimatedReaction(
+    () => {
+      if (!chartPressState.isActive.value) return null;
+      const activeIndex = Number(chartPressState.x.value.value);
+      return Number.isFinite(activeIndex) ? Math.round(activeIndex) : null;
+    },
+    (activeIndex, previousIndex) => {
+      if (activeIndex == null || activeIndex === previousIndex) return;
+      runOnJS(selectWeekAtIndex)(activeIndex);
+    },
+    [selectWeekAtIndex],
+  );
 
   useEffect(() => {
     if (!reviewWeeks || !scrollX || selectedIndex < 0) return;
@@ -573,7 +737,7 @@ export function TrainingPathChart({
   }
 
   const chartContent = (
-    <View className="flex-1" style={{ width: scrollableChartWidth, height: "100%" }}>
+    <View style={{ width: scrollableChartWidth, height: chartAreaHeight }}>
       <CartesianChart<ChartDatum, "index", ChartYKey>
         data={chartData}
         xKey="index"
@@ -593,7 +757,7 @@ export function TrainingPathChart({
           {
             yKeys: loadKeys,
             axisSide: "left",
-            domain: domains.load,
+            domain: effectiveLoadDomain,
             tickCount: 5,
             font: scrollX ? null : axisFont,
             labelColor: chartColors.axisLabel,
@@ -604,7 +768,7 @@ export function TrainingPathChart({
           {
             yKeys: fitnessKeys,
             axisSide: "right",
-            domain: domains.fitness,
+            domain: effectiveFitnessDomain,
             tickCount: 5,
             font: scrollX ? null : axisFont,
             labelColor: chartColors.axisLabel,
@@ -616,13 +780,14 @@ export function TrainingPathChart({
           lineColor: chartColors.frame,
           lineWidth: { bottom: 1, left: scrollX ? 0 : 1, right: 0, top: 0 },
         }}
+        chartPressState={reviewWeeks ? chartPressState : undefined}
       >
         {({ points, chartBounds }) => (
           <>
             {reviewWeeks && !scrollX && selectedIndex >= 0
               ? (() => {
-                  const geometry = getBarGeometry(
-                    points.completedLoad,
+                  const geometry = getLoadBarGeometry(
+                    points,
                     selectedIndex,
                     chartBounds.left,
                     chartBounds.right,
@@ -633,9 +798,15 @@ export function TrainingPathChart({
                     model.weeks.length,
                     scrollX ? scrollBarWidth : undefined,
                   );
+                  const barLeft = getVisibleBarLeft(
+                    geometry.center,
+                    barWidth,
+                    chartBounds.left,
+                    chartBounds.right,
+                  );
                   return (
                     <SkiaRect
-                      x={geometry.center - barWidth / 2}
+                      x={barLeft}
                       y={chartBounds.top}
                       width={barWidth}
                       height={chartBounds.bottom - chartBounds.top}
@@ -645,8 +816,8 @@ export function TrainingPathChart({
                 })()
               : null}
             {model.weeks.map((week, index) => {
-              const geometry = getBarGeometry(
-                points.completedLoad,
+              const geometry = getLoadBarGeometry(
+                points,
                 index,
                 chartBounds.left,
                 chartBounds.right,
@@ -661,7 +832,12 @@ export function TrainingPathChart({
                 model.weeks.length,
                 scrollX ? scrollBarWidth : undefined,
               );
-              const barLeft = geometry.center - barWidth / 2;
+              const barLeft = getVisibleBarLeft(
+                geometry.center,
+                barWidth,
+                chartBounds.left,
+                chartBounds.right,
+              );
               const isDimmed =
                 reviewWeeks && !scrollX && selectedIndex >= 0 && index !== selectedIndex;
               const showPlanningLayers = range !== "all";
@@ -864,25 +1040,6 @@ export function TrainingPathChart({
           </>
         )}
       </CartesianChart>
-      {reviewWeeks ? (
-        <View
-          className="absolute inset-0 flex-row"
-          style={{ width: scrollableChartWidth }}
-          pointerEvents="box-none"
-        >
-          {model.weeks.map((week, index) => (
-            <TouchableOpacity
-              key={`select-${week.weekStart}`}
-              accessibilityRole="button"
-              accessibilityLabel={`Select week of ${week.label}`}
-              className="flex-1"
-              activeOpacity={1}
-              onPress={() => onWeekPress(week.weekStart, index)}
-              testID={`training-path-week-${week.weekStart}`}
-            />
-          ))}
-        </View>
-      ) : null}
       {scrollX ? (
         <View
           className="absolute bottom-0"
@@ -921,7 +1078,7 @@ export function TrainingPathChart({
       </View>
       {scrollX ? (
         <View className="flex-1 flex-row">
-          <FixedYAxisLabels domain={domains.load} />
+          <FixedYAxisLabels domain={effectiveLoadDomain} />
           <View className="flex-1" onLayout={onScrollViewportLayout}>
             <Animated.ScrollView
               ref={scrollViewRef}
@@ -944,7 +1101,7 @@ export function TrainingPathChart({
               {chartContent}
             </Animated.ScrollView>
           </View>
-          <FixedYAxisLabels align="left" domain={domains.fitness} />
+          <FixedYAxisLabels align="left" domain={effectiveFitnessDomain} />
         </View>
       ) : (
         chartContent

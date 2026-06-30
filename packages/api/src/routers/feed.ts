@@ -21,6 +21,13 @@ const feedDerivedSchema = z
   })
   .nullable();
 
+const feedIngestionSchema = z
+  .object({
+    status: z.string().nullable(),
+    last_error_message: z.string().nullable(),
+  })
+  .nullable();
+
 const feedProfileSchema = z.object({
   id: z.string().uuid(),
   username: z.string().nullable(),
@@ -65,6 +72,8 @@ const feedActivityRowSchema = publicActivitiesRowSchema
     normalized_power: nullableNumericSchema.optional(),
     normalized_speed_mps: nullableNumericSchema.optional(),
     normalized_graded_speed_mps: nullableNumericSchema.optional(),
+    ingestion_status: z.string().nullable().optional(),
+    ingestion_last_error_message: z.string().nullable().optional(),
   });
 
 const feedActivityDetailRowSchema = feedActivityRowSchema.extend({
@@ -120,6 +129,7 @@ const feedActivityDtoSchema = z.object({
   profile: feedProfileSchema,
   has_liked: z.boolean(),
   derived: feedDerivedSchema,
+  ingestion: feedIngestionSchema.optional(),
 });
 
 const feedResponseSchema = z.object({
@@ -191,6 +201,12 @@ function mapFeedActivity(
     },
     has_liked: options.likedActivityIds.has(activity.id),
     derived: options.derivedMap.get(activity.id) ?? null,
+    ingestion: activity.ingestion_status
+      ? {
+          status: activity.ingestion_status,
+          last_error_message: activity.ingestion_last_error_message ?? null,
+        }
+      : null,
   });
 }
 
@@ -276,9 +292,18 @@ export const feedRouter = createTRPCRouter({
           a.is_private,
           a.created_at,
           p.username as profile_username,
-          p.avatar_url as profile_avatar_url
+          p.avatar_url as profile_avatar_url,
+          afi.status as ingestion_status,
+          afi.last_error_message as ingestion_last_error_message
         from activities a
         left join profiles p on p.id = a.profile_id
+        left join lateral (
+          select status, last_error_message
+          from activity_file_ingestions
+          where activity_id = a.id and profile_id = a.profile_id
+          order by updated_at desc
+          limit 1
+        ) afi on true
         where a.is_private = false
           and (
             a.profile_id = ${userId}::uuid

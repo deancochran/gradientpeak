@@ -96,6 +96,70 @@ describe("trainingPathUtils", () => {
     expect(model.weeks.find((week) => week.weekStart === "2026-05-25")?.fitness).toBeNull();
   });
 
+  it("shows a path with recommended and completed load even without scheduled workouts", () => {
+    const model = buildTrainingPathViewModel({
+      timeline: [
+        { date: "2026-05-18", completed_load_tss: 80, recommended_load_tss: 120 },
+        { date: "2026-05-19", recommended_load_tss: 100 },
+      ],
+      fitnessHistory: [{ date: "2026-05-18", ctl: 42 }],
+      projectedFitness: [],
+      idealFitnessCurve: [{ date: "2026-05-18", ctl: 45 }],
+      goalMarkers,
+      range: "all",
+      todayKey: "2026-05-20",
+    });
+
+    expect(model.emptyState).toBeNull();
+    expect(model.weeks.find((week) => week.weekStart === "2026-05-18")).toMatchObject({
+      completedLoad: 80,
+      plannedLoad: 0,
+      targetLoad: 220,
+    });
+  });
+
+  it("does not require a goal to show completed or planned load", () => {
+    const model = buildTrainingPathViewModel({
+      timeline: [
+        { date: "2026-05-18", completed_load_tss: 80 },
+        { date: "2026-05-19", scheduled_load_tss: 45 },
+      ],
+      fitnessHistory: [{ date: "2026-05-18", ctl: 42 }],
+      projectedFitness: [],
+      idealFitnessCurve: [],
+      goalMarkers: [],
+      range: "all",
+      todayKey: "2026-05-20",
+    });
+
+    expect(model.emptyState).toBeNull();
+    expect(model.weeks.find((week) => week.weekStart === "2026-05-18")).toMatchObject({
+      completedLoad: 80,
+      plannedLoad: 45,
+      targetLoad: 0,
+    });
+  });
+
+  it("does not require completed activity history to show planned or recommended load", () => {
+    const model = buildTrainingPathViewModel({
+      timeline: [{ date: "2026-05-18", scheduled_load_tss: 75, recommended_load_tss: 120 }],
+      fitnessHistory: [],
+      projectedFitness: [],
+      idealFitnessCurve: [{ date: "2026-05-18", ctl: 45 }],
+      goalMarkers,
+      range: "all",
+      todayKey: "2026-05-20",
+    });
+
+    expect(model.emptyState).toBeNull();
+    expect(model.weeks.find((week) => week.weekStart === "2026-05-18")).toMatchObject({
+      completedLoad: 0,
+      plannedLoad: 75,
+      targetLoad: 120,
+      fitness: null,
+    });
+  });
+
   it("uses projected fitness for scheduled fitness trend weeks", () => {
     const model = buildTrainingPathViewModel({
       timeline: [

@@ -1,7 +1,11 @@
 import * as testingLibraryNative from "@testing-library/react-native/pure";
 import React from "react";
 
-(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+type HostProps = Record<string, unknown> & { children?: React.ReactNode };
+
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
 const originalConsoleError = console.error;
 
@@ -31,7 +35,7 @@ afterEach(() => {
 });
 
 const createHost = (type: string) =>
-  function MockComponent(props: any) {
+  function MockComponent(props: HostProps) {
     return React.createElement(type, props, props.children);
   };
 
@@ -156,7 +160,7 @@ jest.mock("@rn-primitives/slot", () => ({
 }));
 
 jest.mock("nativewind", () => ({
-  styled: (Component: any) => Component,
+  styled: <T>(Component: T) => Component,
 }));
 
 jest.mock(

@@ -35,7 +35,7 @@ export type CreateEventInput = {
   lifecycle: { status: "scheduled" };
   notes: string | null;
   read_only: false;
-  recurrence?: ReturnType<typeof buildRecurrenceFromFrequency>;
+  recurrence?: NonNullable<ReturnType<typeof buildRecurrenceFromFrequency>>;
   scheduled_date?: string;
   starts_at?: string;
   timezone: string;
@@ -96,6 +96,10 @@ export function buildCreateEventInput(
     read_only: false as const,
     timezone: "UTC",
   };
+  const recurrence = buildRecurrenceFromFrequency(
+    draft.recurrenceFrequency,
+    draft.recurrenceEndDate,
+  );
 
   if (draft.mode === "planned") {
     return {
@@ -103,7 +107,7 @@ export function buildCreateEventInput(
       event_type: "planned",
       activity_plan_id: draft.activityPlanId ?? undefined,
       all_day: true,
-      recurrence: buildRecurrenceFromFrequency(draft.recurrenceFrequency, draft.recurrenceEndDate),
+      ...(recurrence ? { recurrence } : {}),
       scheduled_date: draft.scheduledDate,
       title: draft.title.trim() || draft.activityPlanName?.trim() || "Planned Activity",
       training_plan_id: input.trainingPlanId,
@@ -116,6 +120,6 @@ export function buildCreateEventInput(
     all_day: draft.allDay,
     starts_at: draft.allDay ? buildAllDayStartIso(draft.startsAt) : draft.startsAt.toISOString(),
     title: draft.title.trim(),
-    recurrence: buildRecurrenceFromFrequency(draft.recurrenceFrequency, draft.recurrenceEndDate),
+    ...(recurrence ? { recurrence } : {}),
   };
 }

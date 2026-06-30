@@ -34,6 +34,7 @@ import {
   type InferredStateSnapshot,
   inferredStateSnapshotSchema,
   type LoadBootstrapState,
+  legacyStructuredTrainingPlanSchema,
   type MinimalTrainingPlanCreate,
   mapAthletePreferencesToCreationDefaults,
   materializePlanToEvents,
@@ -4007,7 +4008,7 @@ export async function getPlanTabProjectionService({
     plan = fetchedPlan as Record<string, unknown>;
   }
 
-  const parsedStructure = trainingPlanSchema.safeParse(plan?.structure);
+  const parsedStructure = legacyStructuredTrainingPlanSchema.safeParse(plan?.structure);
   const looseStructure = ((plan?.structure as {
     goals?: unknown;
     blocks?: unknown;
@@ -4523,7 +4524,7 @@ const trainingPlansProcedures = {
         ),
       };
 
-      const parsedPreviewPlan = trainingPlanSchema.safeParse(previewPlanWithId);
+      const parsedPreviewPlan = legacyStructuredTrainingPlanSchema.safeParse(previewPlanWithId);
       const planWarnings =
         parsedPreviewPlan.success && parsedPreviewPlan.data.plan_type === "periodized"
           ? validatePlanFeasibility(parsedPreviewPlan.data).warnings
@@ -4683,7 +4684,7 @@ const trainingPlansProcedures = {
           deriveProjectionDrivenConflicts: deriveProjectionDrivenConflicts as any,
           throwPathValidationError,
           parseTrainingPlanStructure: (value) => {
-            trainingPlanSchema.parse(value);
+            legacyStructuredTrainingPlanSchema.parse(value);
           },
         },
       })) as any;
@@ -4720,7 +4721,7 @@ const trainingPlansProcedures = {
           buildCreationPreviewSnapshotToken: buildCreationPreviewSnapshotToken as any,
           deriveProjectionDrivenConflicts: deriveProjectionDrivenConflicts as any,
           parseTrainingPlanStructure: (value) => {
-            trainingPlanSchema.parse(value);
+            legacyStructuredTrainingPlanSchema.parse(value);
           },
         },
       })) as any;
@@ -4751,7 +4752,7 @@ const trainingPlansProcedures = {
       };
 
       try {
-        trainingPlanSchema.parse(structureWithId);
+        legacyStructuredTrainingPlanSchema.parse(structureWithId);
       } catch (validationError) {
         throw new TRPCError({
           code: "BAD_REQUEST",
@@ -4875,17 +4876,12 @@ const trainingPlansProcedures = {
   // ------------------------------
   getCurrentStatus: protectedProcedure.query(async ({ ctx }) => {
     const db = getRequiredDb(ctx);
-    // First check if user has a training plan
     const ownedPlans = await listTrainingPlans({
       db,
       profileId: ctx.session.user.id,
       ownerScope: "own",
     });
     const plan = ownedPlans[0] ?? null;
-
-    if (!plan) {
-      return null;
-    }
 
     // Get activities from the last 42 days (CTL time constant)
     const today = new Date();
@@ -5081,7 +5077,7 @@ const trainingPlansProcedures = {
       })) || [];
 
     // Get target TSS from current block in training plan structure
-    const structure = plan.structure as any;
+    const structure = plan?.structure as any;
     let targetTSS = plannedWeeklyTSS;
 
     // For periodized plans, find the current block

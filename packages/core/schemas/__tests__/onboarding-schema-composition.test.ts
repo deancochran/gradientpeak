@@ -3,13 +3,16 @@ import { describe, expect, it } from "vitest";
 import { completeOnboardingSchema } from "../onboarding";
 
 describe("onboarding schema composition", () => {
-  it("keeps step 1 fields required while preserving later optional fields", () => {
+  it("defaults experience level while preserving later optional fields", () => {
     expect(
       completeOnboardingSchema.parse({
-        experience_level: "beginner",
+        full_name: "Athlete Example",
+        username: "athlete",
       }),
     ).toMatchObject({
-      experience_level: "beginner",
+      full_name: "Athlete Example",
+      username: "athlete",
+      experience_level: "skip",
     });
 
     const result = completeOnboardingSchema.safeParse({
@@ -20,7 +23,10 @@ describe("onboarding schema composition", () => {
     expect(result.error?.issues).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          path: ["experience_level"],
+          path: ["full_name"],
+        }),
+        expect.objectContaining({
+          path: ["username"],
         }),
       ]),
     );

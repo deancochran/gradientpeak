@@ -8,6 +8,20 @@ export const activityCategoryEnum = pgEnum("activity_category", [
   "other",
 ]);
 
+export const activityFileIngestionSourceEnum = pgEnum("activity_file_ingestion_source", [
+  "mobile_recording",
+  "manual_import",
+  "provider_sync",
+]);
+
+export const activityFileIngestionStatusEnum = pgEnum("activity_file_ingestion_status", [
+  "pending_upload",
+  "uploaded",
+  "processing",
+  "ready",
+  "failed",
+]);
+
 export const effortTypeEnum = pgEnum("effort_type", ["power", "speed"]);
 
 export const integrationProviderEnum = pgEnum("integration_provider", [

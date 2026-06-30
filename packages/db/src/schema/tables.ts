@@ -24,6 +24,8 @@ import { users } from "../auth-schema";
 
 import {
   activityCategoryEnum,
+  activityFileIngestionSourceEnum,
+  activityFileIngestionStatusEnum,
   effortTypeEnum,
   eventStatusEnum,
   eventTypeEnum,
@@ -1254,6 +1256,57 @@ export const activityLaps = pgTable(
     check("activity_laps_lap_index_check", sql`${table.lap_index} >= 0`),
     index("idx_activity_laps_activity_id").on(table.activity_id),
     index("idx_activity_laps_profile_id").on(table.profile_id),
+  ],
+);
+
+export const activityFileIngestions = pgTable(
+  "activity_file_ingestions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    activity_id: uuid("activity_id").notNull(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    source: activityFileIngestionSourceEnum("source").notNull(),
+    provider: integrationProviderEnum("provider"),
+    external_id: text("external_id"),
+    file_path: text("file_path"),
+    file_size: integer("file_size"),
+    file_type: text("file_type"),
+    status: activityFileIngestionStatusEnum("status").notNull().default("pending_upload"),
+    attempt_count: integer("attempt_count").notNull().default(0),
+    last_error_code: text("last_error_code"),
+    last_error_message: text("last_error_message"),
+    requested_at: timestamp("requested_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    started_at: timestamp("started_at", { withTimezone: true, mode: "date" }),
+    completed_at: timestamp("completed_at", { withTimezone: true, mode: "date" }),
+    failed_at: timestamp("failed_at", { withTimezone: true, mode: "date" }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.activity_id, table.profile_id],
+      foreignColumns: [activities.id, activities.profile_id],
+      name: "activity_file_ingestions_activity_profile_fkey",
+    }).onDelete("cascade"),
+    check(
+      "activity_file_ingestions_file_size_check",
+      sql`${table.file_size} is null or ${table.file_size} >= 0`,
+    ),
+    check("activity_file_ingestions_attempt_count_check", sql`${table.attempt_count} >= 0`),
+    index("idx_activity_file_ingestions_activity_id").on(table.activity_id),
+    index("idx_activity_file_ingestions_profile_id").on(table.profile_id),
+    index("idx_activity_file_ingestions_status").on(table.status),
+    index("idx_activity_file_ingestions_provider_external")
+      .on(table.provider, table.external_id)
+      .where(sql`${table.provider} is not null and ${table.external_id} is not null`),
   ],
 );
 

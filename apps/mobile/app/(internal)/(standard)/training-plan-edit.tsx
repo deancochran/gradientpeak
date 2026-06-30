@@ -1,39 +1,18 @@
 import { Text } from "@repo/ui/components/text";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Pressable, View } from "react-native";
-import { TrainingPlanComposerScreen } from "@/components/training-plan/create/TrainingPlanComposerScreen";
+import { TrainingPlanBuilderScreen } from "@/components/training-plan/create/TrainingPlanBuilderScreen";
 import { ROUTES } from "../../../lib/constants/routes";
 
 const isUuid = (value: string): boolean =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 
 export default function TrainingPlanEditRoute() {
-  const { id, initialTab, section } = useLocalSearchParams<{
+  const { id } = useLocalSearchParams<{
     id?: string;
-    initialTab?: string;
-    section?: string;
   }>();
   const router = useRouter();
   const hasValidId = Boolean(id && isUuid(id));
-
-  const resolvedInitialTab = (() => {
-    const tab = (initialTab || "").toLowerCase();
-    if (
-      tab === "plan" ||
-      tab === "availability" ||
-      tab === "constraints" ||
-      tab === "calibration" ||
-      tab === "review"
-    ) {
-      return tab as "plan" | "availability" | "constraints" | "calibration" | "review";
-    }
-
-    if ((section || "").toLowerCase() === "overview") {
-      return "plan" as const;
-    }
-
-    return "plan" as const;
-  })();
 
   if (!hasValidId) {
     return (
@@ -52,7 +31,5 @@ export default function TrainingPlanEditRoute() {
     );
   }
 
-  return (
-    <TrainingPlanComposerScreen mode="edit" planId={id as string} initialTab={resolvedInitialTab} />
-  );
+  return <TrainingPlanBuilderScreen mode="edit" planId={id as string} />;
 }

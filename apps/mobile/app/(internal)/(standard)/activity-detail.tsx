@@ -105,6 +105,36 @@ function VisualStateCard({
   );
 }
 
+function getIngestionMessage(
+  ingestion: unknown,
+): { state: "error" | "loading"; message: string } | null {
+  const status =
+    typeof (ingestion as { status?: unknown } | null)?.status === "string"
+      ? (ingestion as { status: string }).status
+      : null;
+
+  if (!status || status === "ready") {
+    return null;
+  }
+
+  if (status === "failed") {
+    const lastError = (ingestion as { last_error_message?: unknown } | null)?.last_error_message;
+    return {
+      state: "error",
+      message:
+        typeof lastError === "string" && lastError.trim().length > 0
+          ? `Activity processing failed: ${lastError}`
+          : "Activity processing failed. The original recording is still available for retry.",
+    };
+  }
+
+  if (status === "pending_upload") {
+    return { state: "loading", message: "Activity file is queued for upload." };
+  }
+
+  return { state: "loading", message: "Activity file is still processing." };
+}
+
 type ZoneDisplayEntry = {
   zone: number;
   time: number;
@@ -515,6 +545,7 @@ function ActivityDetailScreen() {
 
   // Get laps
   const laps = parseActivityLapRecords(streamsData?.laps ?? activity?.laps);
+  const ingestionMessage = getIngestionMessage((activity as { ingestion?: unknown }).ingestion);
 
   // Loading skeleton
   if (isLoadingActivity || !activity) {
@@ -771,7 +802,13 @@ function ActivityDetailScreen() {
           )}
 
           {/* Analysis Charts */}
-          {isDetailedContentLoading ? (
+          {ingestionMessage ? (
+            <VisualStateCard
+              title="Analysis Charts"
+              state={ingestionMessage.state}
+              message={ingestionMessage.message}
+            />
+          ) : isDetailedContentLoading ? (
             <VisualStateCard
               title="Analysis Charts"
               state="loading"

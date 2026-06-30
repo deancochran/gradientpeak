@@ -180,6 +180,8 @@ describe("onboardingRouter", () => {
     const { caller, insertCalls } = createCaller();
 
     const result = await caller.completeOnboarding({
+      full_name: "Test Athlete",
+      username: "test-athlete",
       experience_level: "beginner",
       dob: "1990-01-01T00:00:00.000Z",
       weight_kg: 70,
@@ -370,6 +372,8 @@ describe("onboardingRouter", () => {
     });
     await expect(
       caller.completeOnboarding({
+        full_name: "Test Athlete",
+        username: "testathlete",
         experience_level: "beginner",
         dob: "1990-01-01T00:00:00.000Z",
         weight_kg: 70,
@@ -422,6 +426,8 @@ describe("onboardingRouter", () => {
 
     await expect(
       caller.completeOnboarding({
+        full_name: "Test Athlete",
+        username: "testathlete",
         experience_level: "beginner",
         dob: "1990-01-01T00:00:00.000Z",
         weight_kg: 70,

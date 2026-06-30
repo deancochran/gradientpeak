@@ -1,121 +1,128 @@
 import React from "react";
 
-export function createHost(type: string) {
-  return function MockComponent(props: any) {
-    return React.createElement(type, props, props.children);
+export type HostProps = Record<string, unknown> & { children?: React.ReactNode };
+
+export type PressableHostProps = HostProps & {
+  disabled?: boolean;
+  onPress?: () => void;
+  testId?: string;
+  testID?: string;
+};
+
+export type MockFormControl<TValues extends Record<string, string>> = {
+  errors: Record<string, { message: string }>;
+  setValue: (name: string, value: string) => void;
+  values: TValues;
+};
+
+export type MockFormTextFieldProps<TValues extends Record<string, string>> = {
+  control: MockFormControl<TValues>;
+  name: keyof TValues & string;
+  placeholder?: string;
+  testId?: string;
+};
+
+export type ZodFormSubmitProps<TValues extends Record<string, string>> = {
+  form: {
+    handleSubmit: (onSubmit: (data: TValues) => unknown) => () => unknown;
+  };
+  onSubmit: (data: TValues) => unknown;
+};
+
+export function clearRecord(record: Record<string, unknown>) {
+  for (const key of Object.keys(record)) {
+    delete record[key];
+  }
+}
+
+export function createHostComponent(type: string) {
+  return function HostComponent({ children, ...props }: HostProps) {
+    return React.createElement(type, props, children);
   };
 }
 
-export function createModalHost(type: string) {
-  return function MockModal(props: any) {
-    if (!props.visible) {
-      return null;
-    }
+export const createHost = createHostComponent;
 
-    return React.createElement(type, props, props.children);
-  };
-}
-
-export function createFlatListHost(type = "FlatList") {
-  return function MockFlatList(props: any) {
-    const {
-      data = [],
-      renderItem,
-      ListEmptyComponent,
-      ListHeaderComponent,
-      ListFooterComponent,
-      keyExtractor,
-      ...rest
-    } = props;
-
-    const items = data.length
-      ? data.map((item: any, index: number) => {
-          const key = keyExtractor ? keyExtractor(item, index) : `${index}`;
-          return React.createElement(React.Fragment, { key }, renderItem({ item, index }));
-        })
-      : null;
-
+export function createPressableHost(type = "Pressable") {
+  return function PressableHost({
+    children,
+    disabled,
+    onPress,
+    testId,
+    testID,
+    ...props
+  }: PressableHostProps) {
     return React.createElement(
       type,
-      rest,
-      ListHeaderComponent,
-      items,
-      !data.length ? ListEmptyComponent : null,
-      ListFooterComponent,
-    );
-  };
-}
-
-export function getTextContent(children: any): string {
-  if (typeof children === "string" || typeof children === "number") {
-    return String(children);
-  }
-
-  if (Array.isArray(children)) {
-    return children
-      .map((child) => getTextContent(child))
-      .join(" ")
-      .trim();
-  }
-
-  if (children?.props?.children !== undefined) {
-    return getTextContent(children.props.children);
-  }
-
-  return "";
-}
-
-export function buttonTestId(label: string): string {
-  return `button-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
-}
-
-export function createButtonComponent() {
-  return function MockButton({ children, onPress, ...props }: any) {
-    return React.createElement(
-      "Pressable",
       {
-        onPress,
-        testID: props.testID ?? props.testId ?? buttonTestId(getTextContent(children)),
         ...props,
+        disabled,
+        onPress: disabled ? undefined : onPress,
+        testID: testID ?? testId,
       },
       children,
     );
   };
 }
 
+export const createButtonComponent = createPressableHost;
+
 export function createStackComponent() {
-  return Object.assign(createHost("Stack"), {
-    Screen: (props: any) =>
-      React.createElement("StackScreen", { testID: `stack-screen-${props.name}`, ...props }),
-  });
+  function Stack({ children, ...props }: HostProps) {
+    return React.createElement("Stack", props, children);
+  }
+
+  Stack.Screen = function StackScreen({
+    children,
+    name,
+    options,
+    ...props
+  }: HostProps & { name?: string; options?: unknown }) {
+    return React.createElement(
+      "StackScreen",
+      { ...props, name, options, testID: name ? `stack-screen-${name}` : undefined },
+      children,
+    );
+  };
+
+  return Stack;
 }
 
-function createControlledFieldHost(type: string, valueProp: string, changeProp?: string) {
-  return function MockControlledField({ control, name, testId, placeholder }: any) {
-    const { Controller } = require("react-hook-form");
-
-    return React.createElement(Controller, {
-      control,
-      name,
-      render: ({ field }: any) =>
-        React.createElement(type, {
-          testID: testId,
-          placeholder,
-          [valueProp]: field.value,
-          ...(changeProp ? { [changeProp]: field.onChange } : {}),
-        }),
-    });
+export function createFormTextField<TValues extends Record<string, string>>() {
+  return function MockFormTextField({
+    control,
+    name,
+    placeholder,
+    testId,
+  }: MockFormTextFieldProps<TValues>) {
+    return React.createElement(
+      React.Fragment,
+      null,
+      React.createElement("TextInput", {
+        onChangeText: (nextValue: string) => control.setValue(name, nextValue),
+        placeholder,
+        testID: testId ?? name,
+        value: control.values[name] ?? "",
+      }),
+      control.errors[name] ? React.createElement("Text", null, control.errors[name].message) : null,
+    );
   };
 }
 
 export function createFormComponentMocks() {
   return {
     __esModule: true,
-    Form: ({ children }: any) => children,
-    FormDateInputField: createControlledFieldHost("Text", "children"),
-    FormSwitchField: createControlledFieldHost("Switch", "checked", "onCheckedChange"),
-    FormTextareaField: createControlledFieldHost("Textarea", "value", "onChangeText"),
-    FormTextField: createControlledFieldHost("Input", "value", "onChangeText"),
-    FormTimeInputField: createControlledFieldHost("Text", "children"),
+    Form: ({ children }: { children?: React.ReactNode }) => children,
+    FormBoundedNumberField: createHost("FormBoundedNumberField"),
+    FormDateInputField: createHost("FormDateInputField"),
+    FormField: createHost("FormField"),
+    FormIntegerStepperField: createHost("FormIntegerStepperField"),
+    FormNumberField: createHost("FormNumberField"),
+    FormSegmentedSelectField: createHost("FormSegmentedSelectField"),
+    FormSelectField: createHost("FormSelectField"),
+    FormSwitchField: createHost("FormSwitchField"),
+    FormTextField: createHost("FormTextField"),
+    FormTextareaField: createHost("FormTextareaField"),
+    FormTimeInputField: createHost("FormTimeInputField"),
   };
 }

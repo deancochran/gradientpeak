@@ -27,6 +27,7 @@ import {
 import {
   activities,
   activityEfforts,
+  activityFileIngestions,
   activityGeometry,
   activityImports,
   activityLaps,
@@ -36,6 +37,12 @@ import {
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, isNotNull, lt, lte } from "drizzle-orm";
 import { z } from "zod";
+import {
+  markFailed,
+  markProcessing,
+  markReady,
+  markUploaded,
+} from "../application/activity-file-ingestion/ingestion-state";
 import { getRequiredDb } from "../db";
 import { logger } from "../lib/logger";
 import { getApiStorageService } from "../storage-service";
@@ -209,6 +216,16 @@ const processActivityFileInput = z
     activityType: z.string().trim().min(1, "Activity type is required"),
     is_private: z.boolean().optional(),
     importProvenance: manualHistoricalImportProvenanceSchema.optional(),
+  })
+  .strict();
+
+const markUploadedAndProcessInput = z
+  .object({
+    ingestionId: z.string().uuid(),
+    activityId: z.string().uuid(),
+    activityFilePath: activityStoragePathSchema,
+    fileSize: z.number().int().nonnegative().optional(),
+    fileType: z.enum(["fit", "gpx", "tcx"]).optional(),
   })
   .strict();
 
@@ -494,6 +511,373 @@ function buildActivityGeometry(records: Array<{ positionLat?: number; positionLo
     mapBounds: calculateBounds(coords),
     polyline: encodePolyline(simplified),
   };
+}
+
+type ParsedActivityFile = z.infer<typeof parsedActivityFileCompatibilitySchema>;
+
+async function parseStoredActivityFile(input: {
+  activityFilePath: string;
+  fileType?: ActivityFileType;
+  removeOnParseFailure: boolean;
+}) {
+  const { data: activityFile, error: downloadError } = await storageService.storage
+    .from(ACTIVITY_FILE_BUCKET)
+    .download(input.activityFilePath);
+
+  if (downloadError || !activityFile) {
+    if (input.removeOnParseFailure) {
+      await storageService.storage.from(ACTIVITY_FILE_BUCKET).remove([input.activityFilePath]);
+    }
+
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: `Failed to download activity file from storage: ${downloadError?.message || "Unknown error"}`,
+      cause: downloadError,
+    });
+  }
+
+  const activityFileType = input.fileType ?? getActivityFileTypeFromPath(input.activityFilePath);
+
+  try {
+    const activityFileBlob = requireBlobLike(activityFile);
+    const buffer = await toBufferFromBlobLike(activityFileBlob);
+    const parsedData = parsedActivityFileCompatibilitySchema.parse(
+      parseActivityFile({
+        data: buffer,
+        fileName: input.activityFilePath,
+        fileType: activityFileType,
+      }),
+    );
+
+    return { activityFile, activityFileType, parsedData };
+  } catch (parseError) {
+    if (input.removeOnParseFailure) {
+      await storageService.storage.from(ACTIVITY_FILE_BUCKET).remove([input.activityFilePath]);
+    }
+
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Failed to parse activity file: ${getErrorMessage(parseError)}`,
+      cause: parseError,
+    });
+  }
+}
+
+async function buildActivityFileEnrichment(
+  db: DbClient,
+  input: {
+    profileId: string;
+    activityId: string;
+    activityType: string;
+    parsedData: ParsedActivityFile;
+  },
+) {
+  const { summary, records } = input.parsedData;
+  const startTime = input.parsedData.metadata.startTime;
+  const duration = summary.totalTime;
+
+  if (duration <= 0) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Activity has zero duration and cannot be processed.",
+    });
+  }
+
+  const distance = summary.totalDistance || 0;
+  const activityCompletedAt = new Date(startTime.getTime() + duration * 1000);
+  const activityCompletedAtIso = activityCompletedAt.toISOString();
+  const powerStream: number[] = [];
+  const hrStream: number[] = [];
+  const timestamps: number[] = [];
+  const altitudeStream: number[] = [];
+  const speedStream: number[] = [];
+  const coords: { latitude: number; longitude: number }[] = [];
+  let tempSum = 0;
+  let tempCount = 0;
+
+  for (const record of records) {
+    if (record.timestamp !== undefined) timestamps.push(record.timestamp.getTime() / 1000);
+    if (record.power !== undefined) powerStream.push(record.power);
+    if (record.heartRate !== undefined) hrStream.push(record.heartRate);
+    if (record.altitude !== undefined) altitudeStream.push(record.altitude);
+    if (record.speed !== undefined) speedStream.push(record.speed);
+    if (record.temperature !== undefined) {
+      tempSum += record.temperature;
+      tempCount++;
+    }
+    if (
+      record.positionLat !== undefined &&
+      record.positionLong !== undefined &&
+      Math.abs(record.positionLat) <= 90 &&
+      Math.abs(record.positionLong) <= 180 &&
+      !(record.positionLat === 0 && record.positionLong === 0)
+    ) {
+      coords.push({ latitude: record.positionLat, longitude: record.positionLong });
+    }
+  }
+
+  const normalizedPower =
+    powerStream.length > 0 ? calculateNormalizedPower(powerStream) : undefined;
+  const normalizedSpeed = calculateNormalizedSpeed(distance, duration);
+  let normalizedGradedSpeed: number | null = null;
+  if (input.activityType === "run" && speedStream.length > 0 && altitudeStream.length > 0) {
+    normalizedGradedSpeed = calculateNGP(
+      calculateGradedSpeedStream(speedStream, altitudeStream, timestamps),
+    );
+  }
+
+  let efficiencyFactor: number | null = null;
+  if (summary.avgHeartRate && summary.avgHeartRate > 0) {
+    if (input.activityType === "bike" && normalizedPower) {
+      efficiencyFactor = calculateEfficiencyFactor(normalizedPower, summary.avgHeartRate);
+    } else if (input.activityType === "run" && normalizedGradedSpeed) {
+      efficiencyFactor = calculateEfficiencyFactor(normalizedGradedSpeed, summary.avgHeartRate);
+    }
+  }
+
+  let aerobicDecoupling: number | null = null;
+  if (powerStream.length > 0 && hrStream.length > 0) {
+    aerobicDecoupling = calculateDecouplingFromStreams(
+      powerStream,
+      hrStream,
+      timestamps,
+      calculateNormalizedPower,
+    );
+  } else if (input.activityType === "run" && speedStream.length > 0 && hrStream.length > 0) {
+    const runPowerStream = normalizedGradedSpeed
+      ? calculateGradedSpeedStream(speedStream, altitudeStream, timestamps)
+      : speedStream;
+    aerobicDecoupling = calculateDecouplingFromStreams(
+      runPowerStream,
+      hrStream,
+      timestamps,
+      calculateNGP,
+    );
+  }
+
+  let avgTemperature: number | null = tempCount > 0 ? tempSum / tempCount : null;
+  if (avgTemperature === null && coords[0]) {
+    avgTemperature = await fetchActivityTemperature(
+      coords[0].latitude,
+      coords[0].longitude,
+      startTime,
+    );
+  }
+
+  const lthr =
+    (await getLatestProfileMetricValue(db, {
+      profileId: input.profileId,
+      metricType: "lthr",
+      recordedAtLte: activityCompletedAt,
+    })) ?? 170;
+  const restingHR =
+    (await getLatestProfileMetricValue(db, {
+      profileId: input.profileId,
+      metricType: "resting_hr",
+      recordedAtLte: activityCompletedAt,
+    })) ?? 60;
+
+  const effortsToInsert: Array<typeof activityEfforts.$inferInsert> = [];
+  if (powerStream.length > 0) {
+    for (const effort of calculateBestEfforts(powerStream, timestamps)) {
+      effortsToInsert.push({
+        id: randomUUID(),
+        created_at: new Date(),
+        updated_at: new Date(),
+        activity_id: input.activityId,
+        profile_id: input.profileId,
+        recorded_at: activityCompletedAt,
+        activity_category:
+          input.activityType as typeof activityEfforts.$inferInsert.activity_category,
+        effort_type: "power",
+        duration_seconds: effort.duration,
+        start_offset:
+          effort.startIndex !== undefined
+            ? Math.round(timestamps[effort.startIndex]! - timestamps[0]!)
+            : null,
+        unit: "watts",
+        value: effort.value,
+      });
+    }
+  }
+
+  if (input.activityType === "run" && speedStream.length > 0) {
+    const streamToUse = normalizedGradedSpeed
+      ? calculateGradedSpeedStream(speedStream, altitudeStream, timestamps)
+      : speedStream;
+    for (const effort of calculateBestEfforts(streamToUse, timestamps)) {
+      effortsToInsert.push({
+        id: randomUUID(),
+        created_at: new Date(),
+        updated_at: new Date(),
+        activity_id: input.activityId,
+        profile_id: input.profileId,
+        recorded_at: activityCompletedAt,
+        activity_category:
+          input.activityType as typeof activityEfforts.$inferInsert.activity_category,
+        effort_type: "speed",
+        duration_seconds: effort.duration,
+        start_offset:
+          effort.startIndex !== undefined
+            ? Math.round(timestamps[effort.startIndex]! - timestamps[0]!)
+            : null,
+        unit: "meters_per_second",
+        value: effort.value,
+      });
+    }
+  }
+
+  const geometry = buildActivityGeometry(records);
+  const detectedLTHR = hrStream.length > 0 ? detectLTHR(hrStream, timestamps) : null;
+  if (summary.maxHeartRate && restingHR) void estimateVO2Max(summary.maxHeartRate, restingHR);
+
+  return {
+    activityCompletedAt,
+    activityCompletedAtIso,
+    detectedLTHR: detectedLTHR && detectedLTHR > lthr ? detectedLTHR : null,
+    effortsToInsert,
+    geometry,
+    summaryValues: {
+      activity_id: input.activityId,
+      profile_id: input.profileId,
+      duration_seconds: Math.round(duration),
+      moving_seconds: Math.round(duration),
+      distance_meters: Math.round(distance),
+      elevation_gain_meters: summary.totalAscent ? Math.round(summary.totalAscent) : null,
+      calories: summary.calories ? Math.round(summary.calories) : null,
+      avg_heart_rate: summary.avgHeartRate ? Math.round(summary.avgHeartRate) : null,
+      max_heart_rate: summary.maxHeartRate ? Math.round(summary.maxHeartRate) : null,
+      avg_power: summary.avgPower ? Math.round(summary.avgPower) : null,
+      max_power: summary.maxPower ? Math.round(summary.maxPower) : null,
+      normalized_power: normalizedPower ? Math.round(normalizedPower) : null,
+      avg_cadence: summary.avgCadence ? Math.round(summary.avgCadence) : null,
+      max_cadence: summary.maxCadence ? Math.round(summary.maxCadence) : null,
+      avg_speed_mps: summary.avgSpeed ?? (distance && duration ? distance / duration : null),
+      max_speed_mps: summary.maxSpeed ?? null,
+      normalized_speed_mps: normalizedSpeed || null,
+      normalized_graded_speed_mps: normalizedGradedSpeed || null,
+      efficiency_factor: efficiencyFactor || null,
+      aerobic_decoupling: aerobicDecoupling || null,
+      avg_temperature: avgTemperature ? Math.round(avgTemperature) : null,
+      updated_at: new Date(),
+    },
+    startedAt: startTime,
+  };
+}
+
+async function upsertExistingActivityFileEnrichment(
+  db: DbClient,
+  input: {
+    activityId: string;
+    profileId: string;
+    activityType: string;
+    activityFilePath: string;
+    activityFileSize: number | null;
+    activityFileType: ActivityFileType;
+    parsedData: ParsedActivityFile;
+  },
+) {
+  const enrichment = await buildActivityFileEnrichment(db, {
+    profileId: input.profileId,
+    activityId: input.activityId,
+    activityType: input.activityType,
+    parsedData: input.parsedData,
+  });
+  const now = new Date();
+
+  await db.transaction(async (tx) => {
+    await tx
+      .insert(activityImports)
+      .values({
+        activity_id: input.activityId,
+        profile_id: input.profileId,
+        activity_file_path: input.activityFilePath,
+        activity_file_size: input.activityFileSize,
+        import_file_type: input.activityFileType,
+        device_manufacturer: toStringOrNull(input.parsedData.metadata.manufacturer),
+        device_product: toStringOrNull(input.parsedData.metadata.product),
+        created_at: now,
+        updated_at: now,
+      })
+      .onConflictDoUpdate({
+        target: activityImports.activity_id,
+        set: {
+          activity_file_path: input.activityFilePath,
+          activity_file_size: input.activityFileSize,
+          import_file_type: input.activityFileType,
+          device_manufacturer: toStringOrNull(input.parsedData.metadata.manufacturer),
+          device_product: toStringOrNull(input.parsedData.metadata.product),
+          updated_at: now,
+        },
+      });
+
+    await tx
+      .insert(activitySummaries)
+      .values({ ...enrichment.summaryValues, created_at: now })
+      .onConflictDoUpdate({
+        target: activitySummaries.activity_id,
+        set: enrichment.summaryValues,
+      });
+
+    if (enrichment.geometry.mapBounds || enrichment.geometry.polyline) {
+      await tx
+        .insert(activityGeometry)
+        .values({
+          activity_id: input.activityId,
+          profile_id: input.profileId,
+          map_bounds: enrichment.geometry.mapBounds,
+          polyline: enrichment.geometry.polyline,
+          created_at: now,
+          updated_at: now,
+        })
+        .onConflictDoUpdate({
+          target: activityGeometry.activity_id,
+          set: {
+            map_bounds: enrichment.geometry.mapBounds,
+            polyline: enrichment.geometry.polyline,
+            updated_at: now,
+          },
+        });
+    }
+
+    await tx.delete(activityLaps).where(eq(activityLaps.activity_id, input.activityId));
+    if (input.parsedData.laps?.length) {
+      await tx.insert(activityLaps).values(
+        input.parsedData.laps.map((lap, index) => ({
+          id: randomUUID(),
+          activity_id: input.activityId,
+          profile_id: input.profileId,
+          lap_index: index,
+          payload: lap,
+          created_at: now,
+          updated_at: now,
+        })),
+      );
+    }
+
+    await tx.delete(activityEfforts).where(eq(activityEfforts.activity_id, input.activityId));
+    if (enrichment.effortsToInsert.length > 0) {
+      await tx.insert(activityEfforts).values(enrichment.effortsToInsert);
+    }
+
+    if (enrichment.detectedLTHR) {
+      await tx.insert(profileMetrics).values({
+        id: randomUUID(),
+        created_at: now,
+        profile_id: input.profileId,
+        metric_type: "lthr",
+        value: enrichment.detectedLTHR,
+        unit: "bpm",
+        recorded_at: enrichment.activityCompletedAt,
+      });
+    }
+  });
+
+  await markProfileAnalysisDirty(db, {
+    profileId: input.profileId,
+    kinds: ["fitness", "performance", "metrics"],
+    dirtySince: enrichment.activityCompletedAtIso,
+  });
 }
 
 export const activityFilesRouter = createTRPCRouter({
@@ -1145,6 +1529,163 @@ export const activityFilesRouter = createTRPCRouter({
           logger.error(
             "[processActivityFile] Failed to cleanup file after error",
             getErrorDetails(cleanupError),
+          );
+        }
+
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Activity file processing failed: ${getErrorMessage(error)}`,
+          cause: error,
+        });
+      }
+    }),
+
+  markUploadedAndProcess: protectedProcedure
+    .input(markUploadedAndProcessInput)
+    .mutation(async ({ ctx, input }) => {
+      const userId = ctx.session?.user?.id;
+      const db = getRequiredDb(ctx);
+
+      if (!userId) {
+        throwUnauthorizedActivityFileAccess();
+      }
+
+      if (!isOwnedActivityFilePath(userId, input.activityFilePath)) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Access denied: You can only process your own activity files",
+        });
+      }
+
+      const [ownerRow] = await db
+        .select({ activity: activities, ingestion: activityFileIngestions })
+        .from(activityFileIngestions)
+        .innerJoin(activities, eq(activityFileIngestions.activity_id, activities.id))
+        .where(
+          and(
+            eq(activityFileIngestions.id, input.ingestionId),
+            eq(activityFileIngestions.activity_id, input.activityId),
+            eq(activityFileIngestions.profile_id, userId),
+            eq(activities.profile_id, userId),
+          ),
+        )
+        .limit(1);
+
+      if (!ownerRow) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Activity file ingestion not found",
+        });
+      }
+
+      const activity = (ownerRow as any).activity ?? ownerRow;
+      const ingestion = (ownerRow as any).ingestion ?? ownerRow;
+      const activityFileType =
+        input.fileType ?? getActivityFileTypeFromPath(input.activityFilePath);
+      let processingIngestion = ingestion;
+
+      try {
+        await db
+          .update(activityFileIngestions)
+          .set({
+            file_path: input.activityFilePath,
+            file_size: input.fileSize ?? null,
+            file_type: activityFileType,
+            updated_at: new Date(),
+          })
+          .where(
+            and(
+              eq(activityFileIngestions.id, input.ingestionId),
+              eq(activityFileIngestions.activity_id, input.activityId),
+              eq(activityFileIngestions.profile_id, userId),
+            ),
+          );
+
+        const currentStatus = String(ingestion.status);
+        if (currentStatus === "pending_upload" || currentStatus === "failed") {
+          processingIngestion = await markUploaded(db, {
+            id: input.ingestionId,
+            profileId: userId,
+          });
+        }
+
+        if (String(processingIngestion.status) === "uploaded") {
+          processingIngestion = await markProcessing(db, {
+            id: input.ingestionId,
+            profileId: userId,
+          });
+        }
+
+        const { activityFile, parsedData } = await parseStoredActivityFile({
+          activityFilePath: input.activityFilePath,
+          fileType: activityFileType,
+          removeOnParseFailure: false,
+        });
+
+        await upsertExistingActivityFileEnrichment(db, {
+          activityId: input.activityId,
+          profileId: userId,
+          activityType: activity.type,
+          activityFilePath: input.activityFilePath,
+          activityFileSize: input.fileSize ?? activityFile.size ?? null,
+          activityFileType,
+          parsedData,
+        });
+
+        const readyIngestion = await markReady(db, {
+          id: input.ingestionId,
+          profileId: userId,
+        });
+
+        const updatedActivity =
+          (await db.query.activities.findFirst({ where: eq(activities.id, input.activityId) })) ??
+          activity;
+
+        return {
+          success: true,
+          activity: serializeActivityDates(updatedActivity),
+          ingestion: {
+            id: readyIngestion.id,
+            status: readyIngestion.status,
+            activityId: readyIngestion.activity_id,
+          },
+        };
+      } catch (error) {
+        if (
+          error instanceof TRPCError &&
+          error.code !== "FORBIDDEN" &&
+          error.code !== "NOT_FOUND"
+        ) {
+          try {
+            await markFailed(db, {
+              id: input.ingestionId,
+              profileId: userId,
+              errorCode: error.code === "BAD_REQUEST" ? "parse_failed" : "process_failed",
+              errorMessage: error.message,
+            });
+          } catch (transitionError) {
+            logger.error(
+              "Failed to mark activity file ingestion failed",
+              getErrorDetails(transitionError),
+            );
+          }
+        }
+
+        if (error instanceof TRPCError) {
+          throw error;
+        }
+
+        try {
+          await markFailed(db, {
+            id: input.ingestionId,
+            profileId: userId,
+            errorCode: "process_failed",
+            errorMessage: getErrorMessage(error),
+          });
+        } catch (transitionError) {
+          logger.error(
+            "Failed to mark activity file ingestion failed",
+            getErrorDetails(transitionError),
           );
         }
 

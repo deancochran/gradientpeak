@@ -41,6 +41,10 @@ jest.mock("react-native-reanimated", () => {
   return {
     __esModule: true,
     default: { ScrollView },
+    runOnJS: (fn: any) => fn,
+    scrollTo: () => interactionOrder.push("scrollTo"),
+    useAnimatedRef: () => React.useRef(null),
+    useAnimatedReaction: jest.fn(),
     useAnimatedScrollHandler: (handler: any) => handler,
     useDerivedValue: (factory: any) => ({ value: factory() }),
     useSharedValue: (value: any) => ({ value }),
@@ -49,7 +53,7 @@ jest.mock("react-native-reanimated", () => {
 
 jest.mock("victory-native", () => ({
   __esModule: true,
-  CartesianChart: ({ children, data, yKeys }: any) => {
+  CartesianChart: ({ chartPressConfig, chartPressState, children, data, yAxis, yKeys }: any) => {
     const points = Object.fromEntries(
       yKeys.map((key: string) => [
         key,
@@ -63,11 +67,21 @@ jest.mock("victory-native", () => ({
     );
     return React.createElement(
       "CartesianChart",
-      { data },
+      { chartPressConfig, chartPressState, data, yAxis },
       children({ points, chartBounds: { left: 0, right: 200, top: 0, bottom: 120 } }),
     );
   },
   Line: (props: any) => React.createElement("Line", props, props.children),
+  useChartPressState: jest.fn(() => ({
+    isActive: false,
+    state: {
+      isActive: { value: false },
+      matchedIndex: { value: -1 },
+      x: { position: { value: 0 }, value: { value: 0 } },
+      y: { targetLoad: { position: { value: 0 }, value: { value: 0 } } },
+      yIndex: { value: 0 },
+    },
+  })),
 }));
 
 jest.mock("@/assets/fonts/SpaceMono-Regular.ttf", () => ({
@@ -137,7 +151,7 @@ describe("TrainingPathChart interactions", () => {
     global.requestAnimationFrame = originalRequestAnimationFrame;
   });
 
-  it("issues native scroll before starting React selection work on bar tap", () => {
+  it("uses Victory chart press state instead of touch overlays for bar selection", () => {
     renderNative(
       <TrainingPathChart
         model={model}
@@ -148,11 +162,11 @@ describe("TrainingPathChart interactions", () => {
         onSelectedWeekChange={() => interactionOrder.push("selected")}
       />,
     );
-    interactionOrder.length = 0;
 
-    fireEvent.press(screen.getByTestId("training-path-week-2026-04-13"));
-
-    expect(interactionOrder).toEqual(["scrollTo", "scrollStart", "displayed", "selected"]);
+    const chart = (screen as any).UNSAFE_getByType("CartesianChart");
+    expect(chart.props.chartPressState).toBeTruthy();
+    expect(chart.props.chartPressConfig?.pan?.simultaneousWithExternalGesture).toBeTruthy();
+    expect(screen.queryByTestId("training-path-week-2026-04-13")).toBeNull();
   });
 
   it("does not publish React week changes from continuous scroll ticks", () => {
@@ -217,5 +231,81 @@ describe("TrainingPathChart interactions", () => {
 
     expect(dots.length).toBeGreaterThan(1);
     expect(strokedBars).toHaveLength(0);
+  });
+
+  it("renders planned and recommended bars independently when completed load is absent", () => {
+    const sparseModel: TrainingPathViewModel = {
+      ...model,
+      weeks: [
+        {
+          ...model.weeks[0],
+          completedLoad: null,
+          plannedLoad: 40,
+          targetLoad: 80,
+          isSelected: true,
+        },
+      ],
+    };
+
+    renderNative(
+      <TrainingPathChart
+        model={sparseModel}
+        range="season"
+        showCompletedLoad={false}
+        showPlannedLoad
+      />,
+    );
+
+    const renderedRects = (screen as any).UNSAFE_getAllByType("SkiaRect");
+    expect(renderedRects.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("renders sparse two-week planned bars without completed load anchors", () => {
+    const sparseModel: TrainingPathViewModel = {
+      ...model,
+      weeks: model.weeks.map((week) => ({
+        ...week,
+        completedLoad: null,
+        plannedLoad: week.plannedLoad ?? 0,
+        targetLoad: week.targetLoad ?? 0,
+      })),
+    };
+
+    renderNative(
+      <TrainingPathChart
+        model={sparseModel}
+        range="season"
+        scrollX
+        showCompletedLoad={false}
+        showPlannedLoad
+      />,
+    );
+
+    const renderedRects = (screen as any).UNSAFE_getAllByType("SkiaRect");
+    expect(renderedRects.length).toBeGreaterThanOrEqual(4);
+    const loadBarWidths = renderedRects
+      .map((rect: any) => rect.props.width)
+      .filter((width: unknown): width is number => typeof width === "number" && width > 0);
+    expect(loadBarWidths).toEqual(expect.arrayContaining([28, 28, 28, 28]));
+  });
+
+  it("expands the load domain to fit recommended load bars", () => {
+    const highTargetModel: TrainingPathViewModel = {
+      ...model,
+      domains: { ...model.domains, load: [0, 100] },
+      weeks: [
+        {
+          ...model.weeks[0],
+          completedLoad: 20,
+          plannedLoad: 40,
+          targetLoad: 240,
+        },
+      ],
+    };
+
+    renderNative(<TrainingPathChart model={highTargetModel} range="season" />);
+
+    const chart = (screen as any).UNSAFE_getByType("CartesianChart");
+    expect(chart.props.yAxis[0].domain[1]).toBeGreaterThan(240);
   });
 });

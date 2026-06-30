@@ -19,25 +19,12 @@ function buildWeeklySessions(weeks: ReadonlyArray<ReadonlyArray<SamplePlanSessio
   return weeks.flatMap((week, weekIndex) =>
     week.map((session) => ({
       offset_days: weekIndex * 7 + session.day,
-      title: session.title,
-      session_type: "planned" as const,
       activity_plan_id: session.activity_plan_id,
+      event_overrides: {
+        title: session.title,
+      },
     })),
   );
-}
-
-function addDays(dateOnly: string, days: number) {
-  const date = new Date(`${dateOnly}T00:00:00.000Z`);
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
-}
-
-function buildActivityDistribution(sports: readonly string[]) {
-  const weight = 1 / sports.length;
-
-  return Object.fromEntries(
-    sports.map((sport) => [sport, { target_percentage: weight }]),
-  ) as Record<string, { target_percentage: number }>;
 }
 
 function buildModernCompatibleTemplateStructure(input: {
@@ -55,29 +42,9 @@ function buildModernCompatibleTemplateStructure(input: {
 }) {
   return {
     version: 1,
-    plan_type: "maintenance" as const,
-    name: input.name,
-    description: input.description,
-    start_date: input.startDate,
-    end_date: addDays(input.startDate, input.durationWeeks * 7 - 1),
     sport: [...input.sports],
     experienceLevel: [...input.experienceLevel],
     durationWeeks: { recommended: input.durationWeeks },
-    activity_distribution: buildActivityDistribution(input.sports),
-    target_weekly_tss_range: input.weeklyTssRange,
-    target_sessions_per_week_range: {
-      min: input.sessionsPerWeekTarget,
-      max: input.sessionsPerWeekTarget,
-    },
-    constraints: {
-      min_rest_days_per_week: input.minRestDaysPerWeek,
-      max_consecutive_training_days: input.maxConsecutiveDays,
-    },
-    target_weekly_tss_min: input.weeklyTssRange.min,
-    target_weekly_tss_max: input.weeklyTssRange.max,
-    target_activities_per_week: input.sessionsPerWeekTarget,
-    max_consecutive_days: input.maxConsecutiveDays,
-    min_rest_days_per_week: input.minRestDaysPerWeek,
     sessions: input.sessions,
   };
 }
@@ -678,63 +645,53 @@ const RAW_SAMPLE_PLANS: SystemTrainingPlanTemplate[] = [
       sessions: [
         {
           offset_days: 1,
-          title: "Swim Technique",
-          session_type: "planned",
           activity_plan_id: "6c9d0e1f-2a3b-4c5d-6e7f-8a9b0c1d2e3f",
+          event_overrides: { title: "Swim Technique" },
         },
         {
           offset_days: 2,
-          title: "Bike Endurance",
-          session_type: "planned",
           activity_plan_id: "8c1d2e3f-4a5b-6c7d-8e9f-0a1b2c3d4e5f",
+          event_overrides: { title: "Bike Endurance" },
         },
         {
           offset_days: 4,
-          title: "Run Intervals",
-          session_type: "planned",
           activity_plan_id: "0a3b4c5d-6e7f-8a9b-0c1d-2e3f4a5b6c7d",
+          event_overrides: { title: "Run Intervals" },
         },
         {
           offset_days: 5,
-          title: "Swim Endurance",
-          session_type: "planned",
           activity_plan_id: "7d0e1f2a-3b4c-5d6e-7f8a-9b0c1d2e3f4a",
+          event_overrides: { title: "Swim Endurance" },
         },
         {
           offset_days: 6,
-          title: "Brick Session",
-          session_type: "planned",
           activity_plan_id: "b6c2d5e4-9f3a-8b7c-2d1e-3f0a6b5c4d2f",
+          event_overrides: { title: "Brick Session" },
         },
         {
           offset_days: 8,
-          title: "Swim Technique",
-          session_type: "planned",
           activity_plan_id: "6c9d0e1f-2a3b-4c5d-6e7f-8a9b0c1d2e3f",
+          event_overrides: { title: "Swim Technique" },
         },
         {
           offset_days: 9,
-          title: "Bike Tempo",
-          session_type: "planned",
           activity_plan_id: "0e3f4a5b-6c7d-8e9f-0a1b-2c3d4e5f6a7b",
+          event_overrides: { title: "Bike Tempo" },
         },
         {
           offset_days: 11,
-          title: "Run Endurance",
-          session_type: "planned",
           activity_plan_id: "d8e4f7a6-1b5c-0d9e-4f3a-5b2c8d7e6f4b",
+          event_overrides: { title: "Run Endurance" },
         },
         {
           offset_days: 12,
-          title: "Swim Endurance",
-          session_type: "planned",
           activity_plan_id: "7d0e1f2a-3b4c-5d6e-7f8a-9b0c1d2e3f4a",
+          event_overrides: { title: "Swim Endurance" },
         },
         {
           offset_days: 13,
-          title: "Brick Session",
-          session_type: "planned",
           activity_plan_id: "b6c2d5e4-9f3a-8b7c-2d1e-3f0a6b5c4d2f",
+          event_overrides: { title: "Brick Session" },
         },
       ],
     }),
@@ -761,57 +718,48 @@ const RAW_SAMPLE_PLANS: SystemTrainingPlanTemplate[] = [
       sessions: [
         {
           offset_days: 1,
-          title: "Aerobic Session",
-          session_type: "planned",
           activity_plan_id: "7b0c1d2e-3f4a-5b6c-7d8e-9f0a1b2c3d4e",
+          event_overrides: { title: "Aerobic Session" },
         },
         {
           offset_days: 3,
-          title: "Strength Session",
-          session_type: "planned",
           activity_plan_id: "aaaa1111-2222-3333-4444-555555555555",
+          event_overrides: { title: "Strength Session" },
         },
         {
           offset_days: 5,
-          title: "Long Easy Session",
-          session_type: "planned",
           activity_plan_id: "d8e4f7a6-1b5c-0d9e-4f3a-5b2c8d7e6f4b",
+          event_overrides: { title: "Long Easy Session" },
         },
         {
           offset_days: 8,
-          title: "Aerobic Session",
-          session_type: "planned",
           activity_plan_id: "7b0c1d2e-3f4a-5b6c-7d8e-9f0a1b2c3d4e",
+          event_overrides: { title: "Aerobic Session" },
         },
         {
           offset_days: 10,
-          title: "Strength Session",
-          session_type: "planned",
           activity_plan_id: "aaaa1111-2222-3333-4444-555555555555",
+          event_overrides: { title: "Strength Session" },
         },
         {
           offset_days: 12,
-          title: "Long Easy Session",
-          session_type: "planned",
           activity_plan_id: "d8e4f7a6-1b5c-0d9e-4f3a-5b2c8d7e6f4b",
+          event_overrides: { title: "Long Easy Session" },
         },
         {
           offset_days: 15,
-          title: "Aerobic Session",
-          session_type: "planned",
           activity_plan_id: "7b0c1d2e-3f4a-5b6c-7d8e-9f0a1b2c3d4e",
+          event_overrides: { title: "Aerobic Session" },
         },
         {
           offset_days: 17,
-          title: "Strength Session",
-          session_type: "planned",
           activity_plan_id: "aaaa1111-2222-3333-4444-555555555555",
+          event_overrides: { title: "Strength Session" },
         },
         {
           offset_days: 19,
-          title: "Long Easy Session",
-          session_type: "planned",
           activity_plan_id: "d8e4f7a6-1b5c-0d9e-4f3a-5b2c8d7e6f4b",
+          event_overrides: { title: "Long Easy Session" },
         },
       ],
     }),

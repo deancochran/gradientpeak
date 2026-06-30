@@ -288,8 +288,10 @@ export const onboardingRouter = createTRPCRouter({
       try {
         const profileUpdate = {
           dob: input.dob ? new Date(input.dob) : undefined,
+          full_name: input.full_name,
           gender: input.gender,
           onboarded: true,
+          username: input.username,
           updated_at: new Date(),
         };
 

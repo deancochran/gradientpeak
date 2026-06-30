@@ -59,6 +59,8 @@ export interface SystemPlanContractScenario {
   expectedWeeklyLoad: number;
   currentCtl: number;
   currentAtl?: number;
+  startDate: string;
+  endDate: string;
   preferenceProfile?: AthletePreferenceProfile;
   goals: readonly FixtureBackedContractGoal[];
   expectedMode: "target_seeking" | "capacity_bounded";
@@ -198,6 +200,8 @@ export const SYSTEM_PLAN_CONTRACT_MATRIX: SystemPlanContractScenario[] =
       expectedWeeklyLoad: contract.expected_weekly_load,
       currentCtl: contract.current_ctl,
       currentAtl: currentAtlByScenarioKey[scenarioKey],
+      startDate: contract.start_date,
+      endDate: contract.end_date,
       preferenceProfile: contract.preference_profile,
       goals: contract.goals,
       expectedMode: contract.expected_mode,
@@ -244,8 +248,8 @@ export function materializeSystemPlanScenario(scenario: SystemPlanContractScenar
   const plan = getPlanOrThrow(scenario.planName);
   const startDate =
     typeof (plan.structure as { start_date?: unknown }).start_date === "string"
-      ? ((plan.structure as { start_date: string }).start_date ?? "")
-      : "";
+      ? ((plan.structure as { start_date: string }).start_date ?? scenario.startDate)
+      : scenario.startDate;
 
   const materializedSessions = materializePlanToEvents(plan.structure, startDate)
     .filter((event) => event.event_type === "planned")
@@ -279,7 +283,7 @@ export function materializeSystemPlanScenario(scenario: SystemPlanContractScenar
     });
 
   const endDate =
-    materializedSessions[materializedSessions.length - 1]?.scheduled_date ?? startDate;
+    materializedSessions[materializedSessions.length - 1]?.scheduled_date ?? scenario.endDate;
   const weeklyActualLoad = aggregateWeeklyValues(
     materializedSessions.map((session) => ({
       date: session.scheduled_date,

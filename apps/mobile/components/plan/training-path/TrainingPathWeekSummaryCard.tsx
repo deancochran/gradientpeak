@@ -1,7 +1,6 @@
 import { Text } from "@repo/ui/components/text";
 import { CalendarDays, Users } from "lucide-react-native";
-import type React from "react";
-import { ActivityIndicator, View } from "react-native";
+import { View } from "react-native";
 import { ActivityPlanContentPreview } from "@/components/activity-plan/ActivityPlanContentPreview";
 import { CalendarEventCard } from "@/components/calendar/CalendarEventCard";
 import { GroupEventCard } from "@/components/groups/GroupEventCards";
@@ -17,6 +16,12 @@ import {
 import { getEventStatusLabel } from "@/lib/calendar/eventPresentation";
 import type { CalendarGroupEvent } from "@/lib/calendar/groupEventPlans";
 import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
+import type { DailyTrainingAdjustmentPoint } from "./DailyTrainingAdjustmentChart";
+import {
+  TrainingPathWeekReviewEmptyRow,
+  TrainingPathWeekReviewSection,
+  TrainingPathWeekReviewShell,
+} from "./TrainingPathWeekReviewShell";
 import type {
   TrainingPathCompletedActivity,
   TrainingPathScheduledItem,
@@ -32,6 +37,21 @@ type TrainingPathWeekSummaryCardProps = {
   completedActivities: TrainingPathCompletedActivity[];
   loading?: boolean;
   loadingDateLabel?: string;
+  onOpenActivity: (activityId: string) => void;
+  onOpenGoal: (goalId: string) => void;
+  onOpenGroup?: (groupId: string) => void;
+  onOpenGroupEvent: (eventId: string) => void;
+  onOpenScheduledEvent: (eventId: string) => void;
+};
+
+type TrainingPathSelectedDaySummaryCardProps = {
+  completedActivities: TrainingPathCompletedActivity[];
+  date: string | null;
+  events: TrainingPathScheduledItem[];
+  goals: TrainingPathSelectedGoal[];
+  groupEvents: TrainingPathScheduledItem[];
+  loading?: boolean;
+  point: DailyTrainingAdjustmentPoint | null;
   onOpenActivity: (activityId: string) => void;
   onOpenGoal: (goalId: string) => void;
   onOpenGroup?: (groupId: string) => void;
@@ -61,19 +81,21 @@ function formatLoad(value: number) {
   return `${Math.round(value)} TSS`;
 }
 
-function WeekReviewSection({ children, title }: { children: React.ReactNode; title: string }) {
-  return (
-    <View className="gap-2">
-      <Text className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-        {title}
-      </Text>
-      {children}
-    </View>
-  );
+function formatSignedLoad(value: number) {
+  const rounded = Math.round(value);
+  if (rounded === 0) return "On target";
+  return `${rounded > 0 ? "+" : ""}${rounded} TSS`;
 }
 
-function WeekReviewEmptyRow({ children }: { children: string }) {
-  return <Text className="text-xs text-muted-foreground">{children}</Text>;
+function valueOrZero(value: number | null | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function formatDateLabel(dateKey: string | null) {
+  if (!dateKey) return null;
+  const date = new Date(`${dateKey}T12:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) return dateKey;
+  return date.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 }
 
 function RecordStatusPill({ label }: { label: string }) {
@@ -238,38 +260,32 @@ function getGroupEventOwner(event: CalendarGroupEvent): EntityOwner | null {
 function WeekReviewStatusRows({ loading }: { loading?: boolean }) {
   return (
     <>
-      <WeekReviewEmptyRow>{loading ? "Loading goals." : "No goals this week."}</WeekReviewEmptyRow>
-      <WeekReviewEmptyRow>
+      <TrainingPathWeekReviewEmptyRow>
+        {loading ? "Loading goals." : "No goals this week."}
+      </TrainingPathWeekReviewEmptyRow>
+      <TrainingPathWeekReviewEmptyRow>
         {loading ? "Loading events." : "No events this week."}
-      </WeekReviewEmptyRow>
-      <WeekReviewEmptyRow>
+      </TrainingPathWeekReviewEmptyRow>
+      <TrainingPathWeekReviewEmptyRow>
         {loading ? "Loading group events." : "No group events this week."}
-      </WeekReviewEmptyRow>
-      <WeekReviewEmptyRow>
+      </TrainingPathWeekReviewEmptyRow>
+      <TrainingPathWeekReviewEmptyRow>
         {loading ? "Loading activities." : "No activities this week."}
-      </WeekReviewEmptyRow>
+      </TrainingPathWeekReviewEmptyRow>
     </>
   );
 }
 
 function WeekReviewLoadingState({ dateLabel }: { dateLabel?: string }) {
   return (
-    <View className="gap-4" testID="training-path-week-summary-loading">
-      <View className="gap-1">
-        <View className="flex-row items-center justify-between gap-3">
-          <View className="flex-row items-center gap-2">
-            <Text className="text-sm font-semibold text-foreground">Week Review</Text>
-            <ActivityIndicator size="small" testID="training-path-week-summary-loading-indicator" />
-          </View>
-          {dateLabel ? (
-            <Text className="text-xs font-medium text-muted-foreground" numberOfLines={1}>
-              {dateLabel}
-            </Text>
-          ) : null}
-        </View>
-      </View>
+    <TrainingPathWeekReviewShell
+      dateLabel={dateLabel}
+      loading
+      loadingChildren={<WeekReviewStatusRows loading />}
+      testID="training-path-week-summary"
+    >
       <WeekReviewStatusRows loading />
-    </View>
+    </TrainingPathWeekReviewShell>
   );
 }
 
@@ -296,20 +312,9 @@ export function TrainingPathWeekSummaryCard({
   }
 
   return (
-    <View className="gap-4" testID="training-path-week-summary">
-      <View className="gap-1">
-        <View className="flex-row items-center justify-between gap-3">
-          <Text className="text-sm font-semibold text-foreground">Week Review</Text>
-          <Text className="text-xs font-medium text-muted-foreground" numberOfLines={1}>
-            {summary.dateLabel}
-          </Text>
-        </View>
-        {summary.body ? (
-          <Text className="text-xs leading-5 text-muted-foreground">{summary.body}</Text>
-        ) : null}
-      </View>
+    <TrainingPathWeekReviewShell body={summary.body} dateLabel={summary.dateLabel}>
       {goals.length > 0 ? (
-        <WeekReviewSection title="Goals this week">
+        <TrainingPathWeekReviewSection title="Goals this week">
           {goals.map((goal) => (
             <GoalListItem
               key={goal.id}
@@ -326,12 +331,12 @@ export function TrainingPathWeekSummaryCard({
               testID={`training-path-week-goal-${goal.id}`}
             />
           ))}
-        </WeekReviewSection>
+        </TrainingPathWeekReviewSection>
       ) : (
-        <WeekReviewEmptyRow>No goals this week.</WeekReviewEmptyRow>
+        <TrainingPathWeekReviewEmptyRow>No goals this week.</TrainingPathWeekReviewEmptyRow>
       )}
       {events.length > 0 ? (
-        <WeekReviewSection title="Events this week">
+        <TrainingPathWeekReviewSection title="Events this week">
           {events.map((item) => {
             const activityPlanCardData = item.event
               ? getScheduledActivityPlanCardData(item.event)
@@ -374,12 +379,12 @@ export function TrainingPathWeekSummaryCard({
               </View>
             );
           })}
-        </WeekReviewSection>
+        </TrainingPathWeekReviewSection>
       ) : (
-        <WeekReviewEmptyRow>No events this week.</WeekReviewEmptyRow>
+        <TrainingPathWeekReviewEmptyRow>No events this week.</TrainingPathWeekReviewEmptyRow>
       )}
       {groupEvents.length > 0 ? (
-        <WeekReviewSection title="Group events this week">
+        <TrainingPathWeekReviewSection title="Group events this week">
           {groupEvents.map((item) => {
             const activityPlanCardData = item.groupEvent
               ? getGroupEventActivityPlanCardData(item.groupEvent)
@@ -422,12 +427,12 @@ export function TrainingPathWeekSummaryCard({
               </View>
             );
           })}
-        </WeekReviewSection>
+        </TrainingPathWeekReviewSection>
       ) : (
-        <WeekReviewEmptyRow>No group events this week.</WeekReviewEmptyRow>
+        <TrainingPathWeekReviewEmptyRow>No group events this week.</TrainingPathWeekReviewEmptyRow>
       )}
       {completedActivities.length > 0 ? (
-        <WeekReviewSection title="Activities this week">
+        <TrainingPathWeekReviewSection title="Activities this week">
           {completedActivities.map((activity) =>
             activity.activity ? (
               <ActivityCard
@@ -450,10 +455,242 @@ export function TrainingPathWeekSummaryCard({
               </View>
             ),
           )}
-        </WeekReviewSection>
+        </TrainingPathWeekReviewSection>
       ) : (
-        <WeekReviewEmptyRow>No activities this week.</WeekReviewEmptyRow>
+        <TrainingPathWeekReviewEmptyRow>No activities this week.</TrainingPathWeekReviewEmptyRow>
       )}
+    </TrainingPathWeekReviewShell>
+  );
+}
+
+export function TrainingPathSelectedDaySummaryCard({
+  completedActivities,
+  date,
+  events,
+  goals,
+  groupEvents,
+  loading = false,
+  point,
+  onOpenActivity,
+  onOpenGoal,
+  onOpenGroup,
+  onOpenGroupEvent,
+  onOpenScheduledEvent,
+}: TrainingPathSelectedDaySummaryCardProps) {
+  const target = valueOrZero(point?.targetLoadTss);
+  const planned = valueOrZero(point?.plannedLoadTss);
+  const tentative = valueOrZero(point?.tentativePlannedLoadTss);
+  const completed = valueOrZero(point?.completedLoadTss);
+  const actualOrScheduled = valueOrZero(point?.actualOrScheduledLoadTss);
+  const delta = valueOrZero(point?.loadDeltaTss ?? actualOrScheduled - target);
+  const hasContent =
+    goals.length > 0 ||
+    events.length > 0 ||
+    groupEvents.length > 0 ||
+    completedActivities.length > 0;
+
+  if (loading) {
+    return (
+      <TrainingPathWeekReviewShell
+        dateLabel={formatDateLabel(date)}
+        loading
+        loadingChildren={
+          <TrainingPathWeekReviewEmptyRow>Loading selected day.</TrainingPathWeekReviewEmptyRow>
+        }
+        testID="training-path-selected-day-summary"
+        title="Selected Day"
+      >
+        <TrainingPathWeekReviewEmptyRow>Loading selected day.</TrainingPathWeekReviewEmptyRow>
+      </TrainingPathWeekReviewShell>
+    );
+  }
+
+  return (
+    <TrainingPathWeekReviewShell
+      body="Recommended, planned, and completed work for the selected day."
+      dateLabel={formatDateLabel(date)}
+      testID="training-path-selected-day-summary"
+      title="Selected Day"
+    >
+      <View className="gap-3 rounded-2xl bg-card px-3 py-3">
+        <View className="flex-row flex-wrap items-center gap-x-4 gap-y-2">
+          <InlineDayMetric label="Recommended" value={formatLoad(target)} />
+          <InlineDayMetric label="Planned" value={formatLoad(planned + tentative)} />
+          <InlineDayMetric label="Completed" value={formatLoad(completed)} />
+          <InlineDayMetric label="Delta" value={formatSignedLoad(delta)} />
+          {point?.formTsb != null ? (
+            <InlineDayMetric label="Form" value={point.formTsb.toFixed(1)} />
+          ) : null}
+          {point?.readinessScore != null ? (
+            <InlineDayMetric
+              label="Readiness"
+              value={`${Math.round(point.readinessScore * 100)}%`}
+            />
+          ) : null}
+        </View>
+        {point?.annotations?.length ? (
+          <View className="gap-1">
+            {point.annotations.map((annotation) => (
+              <Text
+                className="text-xs text-muted-foreground"
+                key={`${annotation.code}-${annotation.message ?? ""}`}
+              >
+                {annotation.message ?? annotation.code}
+              </Text>
+            ))}
+          </View>
+        ) : null}
+      </View>
+
+      {goals.length > 0 ? (
+        <TrainingPathWeekReviewSection title="Goals due this day">
+          {goals.map((goal) => (
+            <GoalListItem
+              key={goal.id}
+              goal={{
+                id: goal.id,
+                title: goal.label,
+                target_date: goal.targetDate,
+                activity_category: goal.activityCategory,
+              }}
+              readinessPercent={goal.readinessPercent}
+              readinessTarget={goal.readinessTarget}
+              status={goal.status ?? undefined}
+              onPress={() => onOpenGoal(goal.id)}
+              testID={`training-path-day-goal-${goal.id}`}
+            />
+          ))}
+        </TrainingPathWeekReviewSection>
+      ) : null}
+
+      {events.length > 0 ? (
+        <TrainingPathWeekReviewSection title="Planned this day">
+          {events.map((item) => {
+            const activityPlanCardData = item.event
+              ? getScheduledActivityPlanCardData(item.event)
+              : null;
+
+            if (item.event && activityPlanCardData) {
+              return (
+                <ScheduledRecordPlanCard
+                  key={item.id}
+                  activity={activityPlanCardData}
+                  categoryLabel="Event"
+                  onPress={() => item.event && onOpenScheduledEvent(item.event.id)}
+                  owner={item.event.owner ?? null}
+                  recordLabel={item.event.title?.trim() || item.title || "Scheduled event"}
+                  statusLabel={getEventStatusLabel(item.event)}
+                  timestamp={item.event.starts_at ?? item.event.scheduled_date ?? item.date}
+                  testID={`training-path-day-event-activity-plan-${item.id}`}
+                  type="event"
+                />
+              );
+            }
+
+            return item.event ? (
+              <CalendarEventCard
+                key={item.id}
+                canStart={false}
+                event={item.event}
+                onPress={() => item.event && onOpenScheduledEvent(item.event.id)}
+              />
+            ) : (
+              <View key={item.id} className="flex-row items-center justify-between gap-3">
+                <Text className="flex-1 text-xs font-medium text-foreground" numberOfLines={1}>
+                  {item.title}
+                </Text>
+                <Text className="text-xs text-muted-foreground">
+                  {typeof item.estimatedLoad === "number"
+                    ? formatLoad(item.estimatedLoad)
+                    : item.date}
+                </Text>
+              </View>
+            );
+          })}
+        </TrainingPathWeekReviewSection>
+      ) : null}
+
+      {groupEvents.length > 0 ? (
+        <TrainingPathWeekReviewSection title="Group events this day">
+          {groupEvents.map((item) => {
+            const activityPlanCardData = item.groupEvent
+              ? getGroupEventActivityPlanCardData(item.groupEvent)
+              : null;
+
+            if (item.groupEvent && activityPlanCardData) {
+              return (
+                <ScheduledRecordPlanCard
+                  key={item.id}
+                  activity={activityPlanCardData}
+                  categoryLabel="Group event"
+                  onPress={() => item.groupEvent && onOpenGroupEvent(item.groupEvent.id)}
+                  owner={getGroupEventOwner(item.groupEvent)}
+                  recordLabel={
+                    item.groupEvent.group?.name ?? item.groupEvent.title ?? "Group event"
+                  }
+                  statusLabel={getGroupEventStatusLabel(item.groupEvent)}
+                  timestamp={item.groupEvent.starts_at}
+                  testID={`training-path-day-group-event-activity-plan-${item.id}`}
+                  type="groupEvent"
+                />
+              );
+            }
+
+            return item.groupEvent ? (
+              <GroupEventCard
+                key={item.id}
+                event={item.groupEvent}
+                onGroupPress={(group) => onOpenGroup?.(group.id)}
+                onPress={() => item.groupEvent && onOpenGroupEvent(item.groupEvent.id)}
+                testID={`training-path-day-group-event-${item.id}`}
+                variant="compact"
+              />
+            ) : null;
+          })}
+        </TrainingPathWeekReviewSection>
+      ) : null}
+
+      {completedActivities.length > 0 ? (
+        <TrainingPathWeekReviewSection title="Completed this day">
+          {completedActivities.map((activity) =>
+            activity.activity ? (
+              <ActivityCard
+                key={activity.id}
+                activity={activity.activity}
+                dateMode="absolute"
+                onPress={() => onOpenActivity(activity.id)}
+                showLike
+                testID={`training-path-day-activity-${activity.id}`}
+                variant="list"
+              />
+            ) : (
+              <View key={activity.id} className="flex-row items-center justify-between gap-3">
+                <Text className="flex-1 text-xs font-medium text-foreground" numberOfLines={1}>
+                  {activity.title}
+                </Text>
+                <Text className="text-xs text-muted-foreground">
+                  {typeof activity.load === "number" ? formatLoad(activity.load) : activity.date}
+                </Text>
+              </View>
+            ),
+          )}
+        </TrainingPathWeekReviewSection>
+      ) : null}
+
+      {!hasContent ? (
+        <TrainingPathWeekReviewEmptyRow>
+          No planned or completed work for this day.
+        </TrainingPathWeekReviewEmptyRow>
+      ) : null}
+    </TrainingPathWeekReviewShell>
+  );
+}
+
+function InlineDayMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <View className="flex-row items-baseline gap-1.5">
+      <Text className="text-[10px] font-medium text-muted-foreground">{label}</Text>
+      <Text className="text-xs font-semibold text-foreground">{value}</Text>
     </View>
   );
 }
