@@ -1,0 +1,28 @@
+name: Idea intake
+description: Capture an early product idea for spec review.
+title: "Idea: "
+labels: ["type:idea", "status:needs-spec"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: Idea
+      description: What should GradientPeak consider?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it matters
+      description: User value, pain, or opportunity.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence or examples
+      description: Links to screenshots, user feedback, related issues, or other external evidence.
+  - type: input
+    id: spec
+    attributes:
+      label: Related spec
+      description: Canonical spec path or leave blank for autopilot triage.
+      placeholder: specs/path-to-spec.md

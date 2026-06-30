@@ -1,0 +1,34 @@
+name: Enhancement request
+description: Request a scoped improvement that may become SDLC work.
+title: "Enhancement: "
+labels: ["type:enhancement", "status:needs-spec"]
+body:
+  - type: textarea
+    id: request
+    attributes:
+      label: Request
+      description: What behavior or capability should change?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: What must be true for this to be done?
+      placeholder: "- [ ] ..."
+  - type: input
+    id: spec
+    attributes:
+      label: Canonical spec
+      description: Link/path to the canonical spec section if known.
+      placeholder: specs/path-to-spec.md#section
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints or exclusions
+      description: What should not change?
+  - type: textarea
+    id: verification
+    attributes:
+      label: Suggested verification
+      description: Focused tests, manual checks, or acceptance review.
