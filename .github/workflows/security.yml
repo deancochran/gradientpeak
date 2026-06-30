@@ -104,6 +104,8 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Scan image with Trivy
+        id: trivy_scan
+        continue-on-error: ${{ github.event_name == 'pull_request' }}
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: gradientpeak-web:security
@@ -113,7 +115,19 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
 
+      - name: Explain PR image scan fallback
+        if: github.event_name == 'pull_request' && steps.trivy_scan.outcome == 'failure'
+        run: |
+          cat <<'EOF' >> "$GITHUB_STEP_SUMMARY"
+          Trivy found high-or-critical image vulnerability findings. The image
+          scan is advisory on pull requests so existing image vulnerability debt
+          does not block unrelated changes, but it remains enforced on main,
+          scheduled runs, and manual workflow dispatch.
+          EOF
+          echo "::warning::Trivy image findings are advisory on pull requests and enforced outside pull_request events."
+
       - name: Upload Trivy results
+        if: always()
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-results.sarif
