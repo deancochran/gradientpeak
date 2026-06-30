@@ -9,7 +9,15 @@ import {
   useFont,
   vec,
 } from "@shopify/react-native-skia";
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ComponentProps,
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   type LayoutChangeEvent,
   type NativeScrollEvent,
@@ -54,6 +62,13 @@ type ChartYKey =
   | "fitness"
   | "scheduledFitness"
   | "targetFitness";
+
+type TrainingPathCartesianChartProps = ComponentProps<
+  typeof CartesianChart<ChartDatum, "index", ChartYKey>
+>;
+type TrainingPathChartPressConfig = NonNullable<
+  TrainingPathCartesianChartProps["chartPressConfig"]
+>;
 
 type TrainingPathChartProps = {
   model: TrainingPathViewModel;
@@ -781,6 +796,15 @@ export function TrainingPathChart({
           lineWidth: { bottom: 1, left: scrollX ? 0 : 1, right: 0, top: 0 },
         }}
         chartPressState={reviewWeeks ? chartPressState : undefined}
+        chartPressConfig={
+          scrollX
+            ? ({
+                pan: {
+                  simultaneousWithExternalGesture: scrollViewRef,
+                },
+              } as unknown as TrainingPathChartPressConfig)
+            : undefined
+        }
       >
         {({ points, chartBounds }) => (
           <>
