@@ -63,9 +63,8 @@ export function TrainingPathSection({
   const selectedWeek = model.selectedWeekSummary;
   const [chartScrolling, setChartScrolling] = useState(false);
   const lastSelectedWeekStartRef = useRef<string | null>(selectedWeek?.weekStart ?? null);
-  const [displayedWeekStart, setDisplayedWeekStart] = useState<string | null>(
-    selectedWeek?.weekStart ?? null,
-  );
+  const pendingSelectedWeekStartRef = useRef<string | null>(null);
+  const [, setDisplayedWeekStart] = useState<string | null>(selectedWeek?.weekStart ?? null);
   const weekReviewLoading = selectedWeekLoading || chartScrolling;
   const hasDailyPoints = !!dailyPoints?.length;
 
@@ -76,15 +75,17 @@ export function TrainingPathSection({
     if (
       chartScrolling &&
       selectedWeek?.weekStart !== previousSelectedWeekStart &&
-      selectedWeek?.weekStart === displayedWeekStart
+      selectedWeek?.weekStart === pendingSelectedWeekStartRef.current
     ) {
+      pendingSelectedWeekStartRef.current = null;
       setChartScrolling(false);
     }
     if (chartScrolling) return;
     setDisplayedWeekStart(selectedWeek?.weekStart ?? null);
-  }, [chartScrolling, displayedWeekStart, selectedWeek?.weekStart, selectedWeekLoading]);
+  }, [chartScrolling, selectedWeek?.weekStart, selectedWeekLoading]);
 
   const beginWeekProgress = (weekStart?: string) => {
+    pendingSelectedWeekStartRef.current = weekStart ?? null;
     if (weekStart) setDisplayedWeekStart(weekStart);
     setChartScrolling(true);
     onWeekScrollStart?.();

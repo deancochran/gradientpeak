@@ -121,7 +121,12 @@ export function RecordControlDock({
         contentContainerClassName="gap-2 pr-6"
       >
         {chips.map((chip) => (
-          <QuickActionChip key={chip.action} label={chip.label} onPress={chip.onPress} />
+          <QuickActionChip
+            key={chip.action}
+            label={chip.label}
+            onPress={chip.onPress}
+            testID={`record-dock-quick-action-${chip.action}`}
+          />
         ))}
       </ScrollView>
 
@@ -157,9 +162,17 @@ export function RecordControlDock({
   );
 }
 
-function QuickActionChip({ label, onPress }: { label: string; onPress: () => void }) {
+function QuickActionChip({
+  label,
+  onPress,
+  testID,
+}: {
+  label: string;
+  onPress: () => void;
+  testID: string;
+}) {
   return (
-    <Button variant="outline" size="sm" onPress={onPress} className="rounded-full">
+    <Button variant="outline" size="sm" onPress={onPress} className="rounded-full" testID={testID}>
       <Text>{label}</Text>
     </Button>
   );
