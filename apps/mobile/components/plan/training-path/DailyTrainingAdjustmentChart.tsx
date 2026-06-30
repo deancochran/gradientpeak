@@ -76,6 +76,8 @@ const loadYKeys: ChartYKey[] = [
 const fitnessYKeys: ChartYKey[] = ["actualFitness", "projectedFitness", "recommendedFitness"];
 const axisWidth = 34;
 const chartPadding = { left: 8, right: 8, top: 18, bottom: 26 };
+const useChartAnimatedReaction: typeof useAnimatedReaction =
+  typeof useAnimatedReaction === "function" ? useAnimatedReaction : () => undefined;
 
 function valueOrNull(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -346,7 +348,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
     if (date) selectPoint(date);
   }, [selectPoint]);
 
-  useAnimatedReaction(
+  useChartAnimatedReaction(
     () => {
       if (!chartPressState.isActive.value) return -1;
       const activeIndex = Number(chartPressState.x.value.value);
