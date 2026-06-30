@@ -23,6 +23,38 @@ const expectedImportProvenance = {
   import_original_file_name: "morning-ride.fit",
 };
 
+type HostProps = {
+  children?: React.ReactNode;
+  disabled?: boolean;
+  loading?: boolean;
+  onChangeText?: (value: string) => void;
+  onPress?: () => void;
+  placeholder?: string;
+  testID?: string;
+  testId?: string;
+  value?: string;
+  [key: string]: unknown;
+};
+
+type FormField = {
+  onChange: (value: string) => void;
+  value?: string;
+};
+
+type ControllerRenderArgs = {
+  field: FormField;
+};
+
+type FormFieldProps = HostProps & {
+  control: unknown;
+  name: string;
+};
+
+type ZodFormSubmitArgs = {
+  form: { getValues: () => unknown };
+  onSubmit: (data: unknown) => unknown;
+};
+
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
@@ -40,7 +72,7 @@ jest.mock("@tanstack/react-query", () => ({
 
 jest.mock("expo-document-picker", () => ({
   __esModule: true,
-  getDocumentAsync: (...args: any[]) => getDocumentAsyncMock(...args),
+  getDocumentAsync: (...args: unknown[]) => getDocumentAsyncMock(...args),
 }));
 
 jest.mock("expo-file-system", () => ({
@@ -98,7 +130,7 @@ jest.mock("@repo/api/client", () => ({
 
 jest.mock("@repo/ui/components/button", () => ({
   __esModule: true,
-  Button: ({ children, onPress, ...props }: any) =>
+  Button: ({ children, onPress, ...props }: HostProps) =>
     React.createElement("Pressable", { onPress, ...props }, children),
 }));
 
@@ -110,13 +142,13 @@ jest.mock("@repo/ui/components/card", () => ({
 
 jest.mock("@repo/ui/components/form", () => ({
   __esModule: true,
-  Form: ({ children }: any) => children,
-  FormTextField: ({ control, name, testId, placeholder, ...props }: any) => {
+  Form: ({ children }: { children?: React.ReactNode }) => children,
+  FormTextField: ({ control, name, testId, placeholder, ...props }: FormFieldProps) => {
     const { Controller } = require("react-hook-form");
     return React.createElement(Controller, {
       control,
       name,
-      render: ({ field }: any) =>
+      render: ({ field }: ControllerRenderArgs) =>
         React.createElement("TextInput", {
           testID: testId,
           placeholder,
@@ -126,12 +158,12 @@ jest.mock("@repo/ui/components/form", () => ({
         }),
     });
   },
-  FormSelectField: ({ control, name, testId }: any) => {
+  FormSelectField: ({ control, name, testId }: FormFieldProps) => {
     const { Controller } = require("react-hook-form");
     return React.createElement(Controller, {
       control,
       name,
-      render: ({ field }: any) =>
+      render: ({ field }: ControllerRenderArgs) =>
         React.createElement("TextInput", {
           testID: testId,
           value: field.value,
@@ -139,12 +171,12 @@ jest.mock("@repo/ui/components/form", () => ({
         }),
     });
   },
-  FormSegmentedSelectField: ({ control, name, testId }: any) => {
+  FormSegmentedSelectField: ({ control, name, testId }: FormFieldProps) => {
     const { Controller } = require("react-hook-form");
     return React.createElement(Controller, {
       control,
       name,
-      render: ({ field }: any) =>
+      render: ({ field }: ControllerRenderArgs) =>
         React.createElement("TextInput", {
           testID: testId,
           value: field.value,
@@ -152,12 +184,12 @@ jest.mock("@repo/ui/components/form", () => ({
         }),
     });
   },
-  FormTextareaField: ({ control, name, testId, placeholder, ...props }: any) => {
+  FormTextareaField: ({ control, name, testId, placeholder, ...props }: FormFieldProps) => {
     const { Controller } = require("react-hook-form");
     return React.createElement(Controller, {
       control,
       name,
-      render: ({ field }: any) =>
+      render: ({ field }: ControllerRenderArgs) =>
         React.createElement("TextInput", {
           testID: testId,
           placeholder,
@@ -175,7 +207,7 @@ jest.mock("@repo/ui/hooks", () => {
   return {
     __esModule: true,
     ...actual,
-    useZodFormSubmit: ({ form, onSubmit }: any) => ({
+    useZodFormSubmit: ({ form, onSubmit }: ZodFormSubmitArgs) => ({
       handleSubmit: () => onSubmit(form.getValues()),
       isSubmitting: false,
     }),
@@ -184,7 +216,7 @@ jest.mock("@repo/ui/hooks", () => {
 
 jest.mock("@repo/ui/components/input", () => ({
   __esModule: true,
-  Input: ({ value, onChangeText, placeholder, ...props }: any) =>
+  Input: ({ value, onChangeText, placeholder, ...props }: HostProps) =>
     React.createElement("TextInput", {
       value,
       onChangeText,
@@ -195,7 +227,7 @@ jest.mock("@repo/ui/components/input", () => ({
 
 jest.mock("@repo/ui/components/loading", () => ({
   __esModule: true,
-  LoadingButton: ({ children, disabled, loading, onPress, ...props }: any) =>
+  LoadingButton: ({ children, disabled, loading, onPress, ...props }: HostProps) =>
     React.createElement(
       "Pressable",
       { disabled: disabled || loading, onPress, ...props },
@@ -205,14 +237,16 @@ jest.mock("@repo/ui/components/loading", () => ({
 
 jest.mock("@repo/ui/components/select", () => ({
   __esModule: true,
-  Select: ({ children, ...props }: any) => React.createElement("Select", props, children),
-  SelectContent: ({ children, ...props }: any) =>
+  Select: ({ children, ...props }: HostProps) => React.createElement("Select", props, children),
+  SelectContent: ({ children, ...props }: HostProps) =>
     React.createElement("SelectContent", props, children),
-  SelectGroup: ({ children, ...props }: any) => React.createElement("SelectGroup", props, children),
-  SelectItem: ({ children, ...props }: any) => React.createElement("SelectItem", props, children),
-  SelectTrigger: ({ children, ...props }: any) =>
+  SelectGroup: ({ children, ...props }: HostProps) =>
+    React.createElement("SelectGroup", props, children),
+  SelectItem: ({ children, ...props }: HostProps) =>
+    React.createElement("SelectItem", props, children),
+  SelectTrigger: ({ children, ...props }: HostProps) =>
     React.createElement("SelectTrigger", props, children),
-  SelectValue: (props: any) => React.createElement("SelectValue", props),
+  SelectValue: (props: HostProps) => React.createElement("SelectValue", props),
 }));
 
 jest.mock("@repo/ui/components/text", () => ({
@@ -222,7 +256,7 @@ jest.mock("@repo/ui/components/text", () => ({
 
 jest.mock("@repo/ui/components/textarea", () => ({
   __esModule: true,
-  Textarea: ({ value, onChangeText, placeholder, ...props }: any) =>
+  Textarea: ({ value, onChangeText, placeholder, ...props }: HostProps) =>
     React.createElement("TextInput", {
       value,
       onChangeText,

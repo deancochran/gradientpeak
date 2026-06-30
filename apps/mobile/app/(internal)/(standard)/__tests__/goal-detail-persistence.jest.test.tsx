@@ -5,6 +5,37 @@ import { fireEvent, renderNative, screen } from "../../../../test/render-native"
 
 const navigateMock = jest.fn();
 
+type StackScreenProps = {
+  options?: { headerRight?: () => React.ReactNode };
+  [key: string]: unknown;
+};
+
+type GoalDraft = {
+  activityCategory?: string;
+  importance?: number;
+  targetDate?: string;
+  title?: string;
+};
+
+type GoalReadinessPoint = {
+  date: string;
+  state_readiness?: number;
+};
+
+type GoalReadinessTrajectoryArgs = {
+  points: GoalReadinessPoint[];
+  currentGoalReadiness?: number | null;
+};
+
+type ReadinessViewModelArgs = {
+  value: number | null;
+};
+
+type HostProps = {
+  children?: React.ReactNode;
+  [key: string]: unknown;
+};
+
 jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
@@ -17,7 +48,7 @@ jest.mock("react-native", () => ({
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: (props: any) =>
+    Screen: (props: StackScreenProps) =>
       React.createElement(
         "StackScreen",
         props,
@@ -32,8 +63,8 @@ jest.mock("@repo/core", () => ({
   __esModule: true,
   createEmptyGoalDraft: jest.fn(() => ({ title: "", objective: null })),
   buildGoalDraftFromGoal: jest.fn(() => ({ title: "Spring 5K" })),
-  parseProfileGoalRecord: jest.fn((goal: any) => goal),
-  buildGoalUpdatePayload: jest.fn(({ draft }: any) => ({
+  parseProfileGoalRecord: jest.fn((goal: unknown) => goal),
+  buildGoalUpdatePayload: jest.fn(({ draft }: { draft: GoalDraft }) => ({
     target_date: draft.targetDate,
     title: draft.title,
     priority: draft.importance,
@@ -74,17 +105,18 @@ jest.mock("@repo/core", () => ({
     ],
     updatedAt: "2026-05-01T00:00:00.000Z",
   })),
-  buildGoalReadinessTrajectory: jest.fn(({ points, currentGoalReadiness }: any) =>
-    points.map((point: any, index: number) => ({
-      date: point.date,
-      goal_readiness:
-        index === points.length - 1 ? 100 : (currentGoalReadiness ?? point.state_readiness),
-      low: 88,
-      high: 100,
-    })),
+  buildGoalReadinessTrajectory: jest.fn(
+    ({ points, currentGoalReadiness }: GoalReadinessTrajectoryArgs) =>
+      points.map((point, index) => ({
+        date: point.date,
+        goal_readiness:
+          index === points.length - 1 ? 100 : (currentGoalReadiness ?? point.state_readiness),
+        low: 88,
+        high: 100,
+      })),
   ),
   resolveGoalReadinessTarget: jest.fn(() => 100),
-  resolveGoalReadinessViewModel: jest.fn(({ value }: any) => ({
+  resolveGoalReadinessViewModel: jest.fn(({ value }: ReadinessViewModelArgs) => ({
     value,
     target: 100,
     band: "building_toward_target",
@@ -135,7 +167,7 @@ jest.mock("react-native-svg", () => ({
 
 jest.mock("@/components/charts/PlanReadinessComparisonChart", () => ({
   __esModule: true,
-  PlanReadinessComparisonChart: (props: any) =>
+  PlanReadinessComparisonChart: (props: HostProps) =>
     React.createElement("PlanReadinessComparisonChart", props, props.children),
 }));
 

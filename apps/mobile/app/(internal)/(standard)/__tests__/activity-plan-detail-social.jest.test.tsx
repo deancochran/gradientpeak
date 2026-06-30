@@ -10,6 +10,24 @@ const toggleLikeMutateMock = jest.fn();
 const addCommentMutateMock = jest.fn();
 const refetchCommentsMock = jest.fn();
 
+type HostProps = {
+  children?: React.ReactNode;
+  options?: { headerRight?: () => React.ReactNode };
+  [key: string]: unknown;
+};
+
+type AddCommentMutationOptions = {
+  onSuccess?: () => void;
+};
+
+type TestNode = {
+  props?: { children?: React.ReactNode; onChangeText?: (value: string) => void };
+};
+
+type UnsafeTypeQuery = {
+  UNSAFE_getAllByType: (type: string) => TestNode[];
+};
+
 jest.mock("@tanstack/react-query", () => ({
   __esModule: true,
   ...jest.requireActual("@tanstack/react-query"),
@@ -19,7 +37,7 @@ jest.mock("@tanstack/react-query", () => ({
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: (props: any) =>
+    Screen: (props: HostProps) =>
       React.createElement(
         "StackScreen",
         props,
@@ -156,8 +174,8 @@ jest.mock("@/lib/api", () => ({
         }),
       },
       addComment: {
-        useMutation: (options: any) => ({
-          mutate: (input: any) => {
+        useMutation: (options: AddCommentMutationOptions) => ({
+          mutate: (input: unknown) => {
             addCommentMutateMock(input);
             options?.onSuccess?.();
           },
@@ -196,24 +214,26 @@ jest.mock("lucide-react-native", () => ({
 const ActivityPlanDetail = require("../activity-plan-detail").default;
 const nativeAlertMock = require("react-native").Alert.alert as jest.Mock;
 
-const getTextContent = (children: any): string => {
+const getTextContent = (children: React.ReactNode): string => {
   if (typeof children === "string") return children;
   if (typeof children === "number") return String(children);
   if (Array.isArray(children)) return children.map((child) => getTextContent(child)).join("");
-  if (children?.props?.children !== undefined) return getTextContent(children.props.children);
+  if (React.isValidElement<{ children?: React.ReactNode }>(children)) {
+    return getTextContent(children.props.children);
+  }
   return "";
 };
 
 const getAllByTypeOrEmpty = (type: string) => {
   try {
-    return (screen as any).UNSAFE_getAllByType(type);
+    return (screen as unknown as UnsafeTypeQuery).UNSAFE_getAllByType(type);
   } catch {
     return [];
   }
 };
 
 const _findButton = (matcher: (label: string) => boolean) =>
-  getAllByTypeOrEmpty("Button").find((node: any) => matcher(getTextContent(node.props?.children)));
+  getAllByTypeOrEmpty("Button").find((node) => matcher(getTextContent(node.props?.children)));
 
 describe("activity plan detail social orchestration", () => {
   beforeEach(() => {
@@ -225,7 +245,9 @@ describe("activity plan detail social orchestration", () => {
     routerMock.back.mockReset();
     routerMock.push.mockReset();
     routerMock.replace.mockReset();
-    Object.keys(localSearchParamsMock).forEach((key) => delete localSearchParamsMock[key]);
+    Object.keys(localSearchParamsMock).forEach((key) => {
+      delete localSearchParamsMock[key];
+    });
   });
 
   it("toggles like through the social mutation", () => {
@@ -282,7 +304,7 @@ describe("activity plan detail social orchestration", () => {
 
     const textarea = getAllByTypeOrEmpty("Textarea")[0];
     act(() => {
-      textarea.props.onChangeText("  Great work  ");
+      textarea?.props?.onChangeText?.("  Great work  ");
     });
 
     await act(async () => {

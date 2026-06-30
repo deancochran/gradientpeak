@@ -5,11 +5,40 @@ import { renderNative, screen } from "../../../../test/render-native";
 
 var alertMock = jest.fn();
 var duplicateMutateMock = jest.fn();
+type ActivityPlanMock = {
+  id?: string;
+  name?: string;
+  [key: string]: unknown;
+};
+
+type PlannedActivityMock = {
+  id?: string;
+  [key: string]: unknown;
+};
+
+type HostProps = {
+  children?: React.ReactNode;
+  options?: { headerRight?: () => React.ReactNode };
+  [key: string]: unknown;
+};
+
+type DuplicateMutationOptions = {
+  onSuccess?: (result: { id: string }) => void;
+};
+
+type TestNode = {
+  props?: { children?: React.ReactNode };
+};
+
+type UnsafeTypeQuery = {
+  UNSAFE_getAllByType: (type: string) => TestNode[];
+};
+
 var fetchedPlanMock = {
-  current: null as Record<string, any> | null,
+  current: null as ActivityPlanMock | null,
 };
 var plannedActivityMock = {
-  current: null as Record<string, any> | null,
+  current: null as PlannedActivityMock | null,
 };
 var localSearchParamsMock = {} as Record<string, string | undefined>;
 var routerMock = {
@@ -28,7 +57,7 @@ jest.mock("@tanstack/react-query", () => ({
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: (props: any) =>
+    Screen: (props: HostProps) =>
       React.createElement(
         "StackScreen",
         props,
@@ -145,8 +174,8 @@ jest.mock("@/lib/api", () => ({
         useQuery: () => ({ data: fetchedPlanMock.current, isLoading: false }),
       },
       duplicate: {
-        useMutation: (options: any) => ({
-          mutate: (input: any) => {
+        useMutation: (options: DuplicateMutationOptions) => ({
+          mutate: (input: unknown) => {
             duplicateMutateMock(input);
             options?.onSuccess?.({ id: "duplicated-plan-1" });
           },
@@ -231,7 +260,7 @@ jest.mock("lucide-react-native", () => ({
 const ActivityPlanDetail = require("../activity-plan-detail").default;
 const nativeAlertMock = require("react-native").Alert.alert as jest.Mock;
 
-const getTextContent = (children: any): string => {
+const getTextContent = (children: React.ReactNode): string => {
   if (typeof children === "string") {
     return children;
   }
@@ -241,7 +270,7 @@ const getTextContent = (children: any): string => {
   if (Array.isArray(children)) {
     return children.map((child) => getTextContent(child)).join("");
   }
-  if (children?.props?.children !== undefined) {
+  if (React.isValidElement<{ children?: React.ReactNode }>(children)) {
     return getTextContent(children.props.children);
   }
   return "";
@@ -249,14 +278,14 @@ const getTextContent = (children: any): string => {
 
 const getAllByTypeOrEmpty = (type: string) => {
   try {
-    return (screen as any).UNSAFE_getAllByType(type);
+    return (screen as unknown as UnsafeTypeQuery).UNSAFE_getAllByType(type);
   } catch {
     return [];
   }
 };
 
 const _findButton = (matcher: (label: string) => boolean) =>
-  getAllByTypeOrEmpty("Button").find((node: any) => matcher(getTextContent(node.props?.children)));
+  getAllByTypeOrEmpty("Button").find((node) => matcher(getTextContent(node.props?.children)));
 
 const resetTestState = () => {
   fetchedPlanMock.current = null;

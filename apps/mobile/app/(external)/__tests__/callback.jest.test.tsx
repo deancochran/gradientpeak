@@ -3,7 +3,7 @@ import { renderNative, waitFor } from "../../../test/render-native";
 
 const replaceMock = jest.fn();
 const parseMobileAuthCallbackMock = jest.fn();
-const refreshSessionMock = jest.fn(async (): Promise<any> => null);
+const refreshSessionMock = jest.fn(async (): Promise<unknown> => null);
 
 const paramsState: Record<string, string | undefined> = {};
 
@@ -15,13 +15,14 @@ jest.mock("expo-router", () => ({
 
 jest.mock("@/lib/auth/client", () => ({
   __esModule: true,
-  parseMobileAuthCallback: (...args: any[]) => parseMobileAuthCallbackMock(...args),
+  parseMobileAuthCallback: (...args: unknown[]) => parseMobileAuthCallbackMock(...args),
   refreshMobileAuthSession: () => refreshSessionMock(),
 }));
 
 jest.mock("@repo/ui/components/text", () => ({
   __esModule: true,
-  Text: ({ children, ...props }: any) => React.createElement("Text", props, children),
+  Text: ({ children, ...props }: { children?: React.ReactNode; [key: string]: unknown }) =>
+    React.createElement("Text", props, children),
 }));
 
 const AuthCallbackScreen = require("../callback").default;
@@ -29,7 +30,9 @@ const AuthCallbackScreen = require("../callback").default;
 describe("auth callback screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    Object.keys(paramsState).forEach((key) => delete paramsState[key]);
+    Object.keys(paramsState).forEach((key) => {
+      delete paramsState[key];
+    });
   });
 
   it("routes password-reset callbacks into reset-password", async () => {

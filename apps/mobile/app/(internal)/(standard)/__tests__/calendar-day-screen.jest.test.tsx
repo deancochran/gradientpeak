@@ -7,7 +7,7 @@ const pushMock = jest.fn();
 const setSelectionMock = jest.fn();
 const setActiveDateMock = jest.fn();
 const fixedNow = new Date("2026-03-23T12:00:00.000Z");
-const today = fixedNow.toISOString().split("T")[0]!;
+const [today] = fixedNow.toISOString().split("T");
 const tomorrow = "2026-03-24";
 let paramsState: {
   date?: string;
@@ -16,8 +16,51 @@ let paramsState: {
   planSuggestionTssDelta?: string;
   planSuggestionDescription?: string;
 } = { date: today };
-let eventItems: any[] = [];
-let groupEventItems: any[] = [];
+
+type CalendarEvent = {
+  id: string;
+  completed?: boolean;
+  activity_plan?: {
+    id: string;
+    name: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+};
+
+type StackScreenProps = {
+  options?: { headerRight?: () => React.ReactNode; title?: string };
+  [key: string]: unknown;
+};
+
+type CalendarStoreState = {
+  setActiveDate: typeof setActiveDateMock;
+};
+
+type AuthStoreState = {
+  ready: boolean;
+  session: { user: { id: string } };
+};
+
+type ActivityPlanCardNode = {
+  props: {
+    activityPlan: CalendarEvent["activity_plan"];
+  };
+};
+
+type StackScreenNode = {
+  props: { options: { title?: string } };
+};
+
+type UnsafeTypeQuery = {
+  UNSAFE_getByType: {
+    (type: "StackScreen"): StackScreenNode;
+    (type: "ActivityPlanCard"): ActivityPlanCardNode;
+  };
+};
+
+let eventItems: CalendarEvent[] = [];
+let groupEventItems: CalendarEvent[] = [];
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -30,7 +73,7 @@ jest.mock("react-native", () => ({
 jest.mock("expo-router", () => ({
   __esModule: true,
   Stack: {
-    Screen: (props: any) =>
+    Screen: (props: StackScreenProps) =>
       React.createElement(
         "StackScreen",
         props,
@@ -59,12 +102,13 @@ jest.mock("lucide-react-native", () => ({
 
 jest.mock("@/lib/stores/calendar-store", () => ({
   __esModule: true,
-  useCalendarStore: (selector: any) => selector({ setActiveDate: setActiveDateMock }),
+  useCalendarStore: <T,>(selector: (state: CalendarStoreState) => T) =>
+    selector({ setActiveDate: setActiveDateMock }),
 }));
 
 jest.mock("@/lib/stores/auth-store", () => ({
   __esModule: true,
-  useAuthStore: (selector: any) =>
+  useAuthStore: <T,>(selector: (state: AuthStoreState) => T) =>
     selector({ ready: true, session: { user: { id: "profile-1" } } }),
 }));
 
@@ -121,7 +165,7 @@ jest.mock("@/lib/utils/plan/colors", () => ({
 
 jest.mock("@/lib/utils/plan/dateGrouping", () => ({
   __esModule: true,
-  isActivityCompleted: (activity: any) => activity?.completed === true,
+  isActivityCompleted: (activity: CalendarEvent) => activity.completed === true,
 }));
 
 jest.mock("@/lib/api", () => ({
@@ -182,6 +226,8 @@ const CalendarDayScreen = require("../calendar-day").default;
 
 describe("calendar day screen", () => {
   beforeEach(() => {
+    jest.clearAllMocks();
+    paramsState = { date: today };
     eventItems = [
       {
         id: "event-1",
@@ -231,16 +277,11 @@ describe("calendar day screen", () => {
     jest.useRealTimers();
   });
 
-  beforeEach(() => {
-    jest.clearAllMocks();
-    paramsState = { date: today };
-  });
-
   it("sets the full-date header and persists the selected day", () => {
     const rendered = renderNative(<CalendarDayScreen />);
 
     expect(setActiveDateMock).toHaveBeenCalledWith(today);
-    const stackScreen = (rendered as any).UNSAFE_getByType("StackScreen");
+    const stackScreen = (rendered as unknown as UnsafeTypeQuery).UNSAFE_getByType("StackScreen");
     expect(stackScreen.props.options.title).toBe("Today, March 23");
   });
 
@@ -310,7 +351,10 @@ describe("calendar day screen", () => {
     expect(screen.getByText("Tempo Builder")).toBeTruthy();
     expect(screen.getByText("From training plan")).toBeTruthy();
     expect(screen.getByText("Linked activity plan")).toBeTruthy();
-    expect((rendered as any).UNSAFE_getByType("ActivityPlanCard").props.activityPlan).toEqual(
+    expect(
+      (rendered as unknown as UnsafeTypeQuery).UNSAFE_getByType("ActivityPlanCard").props
+        .activityPlan,
+    ).toEqual(
       expect.objectContaining({
         id: "plan-1",
         name: "Tempo Builder",
