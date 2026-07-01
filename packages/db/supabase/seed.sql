@@ -15,15 +15,21 @@ begin
             new.raw_user_meta_data->>'first_name',
             new.raw_user_meta_data->>'last_name'
         ), ''),
-        split_part(new.email, '@', 1)
+        split_part(new.email, '@', 1),
+        'user'
     );
 
     unique_suffix := substring(replace(new.id::text, '-', '') from 1 for 6);
     final_username := left(base_username || unique_suffix, 50);
 
-    insert into public.profiles (id, username, avatar_url)
+    insert into public.profiles (id, email, full_name, username, avatar_url)
     values (
         new.id,
+        new.email,
+        nullif(concat_ws(' ',
+            new.raw_user_meta_data->>'first_name',
+            new.raw_user_meta_data->>'last_name'
+        ), ''),
         final_username,
         new.raw_user_meta_data->>'avatar_url'
     );

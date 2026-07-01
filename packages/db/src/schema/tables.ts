@@ -42,8 +42,12 @@ export const profiles = pgTable(
   {
     id: uuid("id").primaryKey(),
     idx: integer("idx"),
-    created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
-    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
     email: text("email"),
     full_name: text("full_name"),
     username: text("username"),
@@ -55,7 +59,7 @@ export const profiles = pgTable(
     language: text("language"),
     preferred_units: text("preferred_units", { enum: ["metric", "imperial"] }),
     onboarded: boolean("onboarded"),
-    is_public: boolean("is_public").notNull(),
+    is_public: boolean("is_public").default(false).notNull(),
   },
   (table) => [
     uniqueIndex("profiles_username_unique_idx").on(table.username),
