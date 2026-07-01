@@ -1,4 +1,4 @@
-import { addDaysToDateKey, parseDateKey, toDateKey } from "../date-utils";
+import { addDaysDateOnlyUtc, formatDateOnlyUtc, parseDateOnlyUtc } from "@repo/core";
 import type { BuilderDailyTrainingPathChartViewModel } from "../view-model";
 import type { ActiveTrainingPlanProjection, TrainingPathChartProjectionResult } from "./types";
 
@@ -104,7 +104,7 @@ function aggregateBackendPointsToWeeks(
       );
       return {
         weekStart,
-        weekEnd: addDaysToDateKey(weekStart, 6),
+        weekEnd: addDaysDateOnlyUtc(weekStart, 6),
         label: localWeek?.label ?? `Week ${index + 1}`,
         completedLoad: localWeek?.completedLoad ?? null,
         plannedLoad,
@@ -123,8 +123,8 @@ function aggregateBackendPointsToWeeks(
 }
 
 function getMondayWeekStart(dateKey: string) {
-  const date = parseDateKey(dateKey);
+  const date = parseDateOnlyUtc(dateKey);
   const day = date.getUTCDay();
   date.setUTCDate(date.getUTCDate() - ((day + 6) % 7));
-  return toDateKey(date);
+  return formatDateOnlyUtc(date);
 }

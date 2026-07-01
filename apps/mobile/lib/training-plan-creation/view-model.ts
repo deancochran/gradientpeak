@@ -1,4 +1,5 @@
 import {
+  addDaysDateOnlyUtc,
   buildDailyTssByDateSeries,
   replayTrainingLoadByDate,
   type TrainingPlanCreationPreview,
@@ -364,10 +365,10 @@ function deriveDailyTrainingPathChart({
     lastGoalOffset + 1,
   );
   const startDate = state.scheduling.startDate;
-  const endDate = addDaysToDateKey(startDate, durationDays - 1);
+  const endDate = addDaysDateOnlyUtc(startDate, durationDays - 1);
   const plannedTssByDate = new Map<string, number>();
   for (const session of sessions) {
-    const date = addDaysToDateKey(startDate, session.offsetDays);
+    const date = addDaysDateOnlyUtc(startDate, session.offsetDays);
     plannedTssByDate.set(
       date,
       (plannedTssByDate.get(date) ?? 0) + (session.activityPlan?.estimatedTss ?? 0),
@@ -442,8 +443,8 @@ function deriveDailyTrainingPathChart({
       const weekPlannedSeries = plannedSeries.slice(startIndex, endIndex);
       const weekTargetSeries = targetSeries.slice(startIndex, endIndex);
       const lastFitnessIndex = Math.max(startIndex, endIndex - 1);
-      const weekStart = addDaysToDateKey(startDate, startIndex);
-      const weekEnd = addDaysToDateKey(startDate, endIndex - 1);
+      const weekStart = addDaysDateOnlyUtc(startDate, startIndex);
+      const weekEnd = addDaysDateOnlyUtc(startDate, endIndex - 1);
       const idealPoint = idealFitness[lastFitnessIndex];
       const plannedPoint = plannedFitness[lastFitnessIndex];
       return {
@@ -467,7 +468,7 @@ function deriveDailyTrainingPathChart({
     selectedWeekSummary: null,
     goalMarkers: goals.flatMap((goal) => {
       if (goal.targetOffsetDays === null) return [];
-      const targetDate = addDaysToDateKey(startDate, goal.targetOffsetDays);
+      const targetDate = addDaysDateOnlyUtc(startDate, goal.targetOffsetDays);
       return [{ id: goal.localId, label: goal.title, targetDate, weekStart: targetDate }];
     }),
     todayKey: startDate,
@@ -529,7 +530,7 @@ function buildRecommendedTssByDate({
     const baseDailyTss = Math.floor(weekTargetTss / activeWeekdays.length);
     let remainderTss = Math.round(weekTargetTss - baseDailyTss * activeWeekdays.length);
     for (const weekday of activeWeekdays.sort((left, right) => left - right)) {
-      const date = addDaysToDateKey(state.scheduling.startDate, weekStartOffset + weekday);
+      const date = addDaysDateOnlyUtc(state.scheduling.startDate, weekStartOffset + weekday);
       const extra = remainderTss > 0 ? 1 : 0;
       targetTssByDate.set(date, baseDailyTss + extra);
       remainderTss -= extra;
@@ -1119,15 +1120,6 @@ function roundToNearestTen(value: number) {
 
 function round1(value: number) {
   return Math.round(value * 10) / 10;
-}
-
-function addDaysToDateKey(dateKey: string, days: number) {
-  const date = new Date(`${dateKey}T12:00:00.000Z`);
-  if (Number.isNaN(date.getTime())) {
-    return dateKey;
-  }
-  date.setUTCDate(date.getUTCDate() + days);
-  return date.toISOString().slice(0, 10);
 }
 
 function formatTargetDelta(estimatedTss: number, recommendedLoad: BuilderRecommendedLoadViewModel) {

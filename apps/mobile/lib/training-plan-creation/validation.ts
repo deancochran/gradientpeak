@@ -1,6 +1,5 @@
-import { validateTrainingPlanCreationInput } from "@repo/core";
+import { isValidDateOnlyUtc, validateTrainingPlanCreationInput } from "@repo/core";
 import { ZodError } from "zod";
-import { isValidDateOnly } from "./date-utils";
 import { toTrainingPlanStructure } from "./mappers";
 import { trainingPlanBuilderPlanPreferencesSchema } from "./schemas";
 import type {
@@ -37,7 +36,7 @@ export function validateTrainingPlanBuilderState(
   );
   const blockers: TrainingPlanBuilderSaveBlocker[] = validateTrainingPlanCreationInput({
     name: state.details.name,
-    anchorDateValid: isValidDateOnly(state.anchorDate),
+    anchorDateValid: isValidDateOnlyUtc(state.anchorDate),
     profileBirthDateValid: true,
     planPreferencesValid: planPreferenceResult.success,
     planPreferencesMessage: planPreferenceResult.success
@@ -59,7 +58,7 @@ export function validateTrainingPlanBuilderState(
     })),
     goals: state.goalContext.selectedGoals.map((goal) => ({
       localId: goal.localId,
-      targetDateValid: goal.targetDate ? isValidDateOnly(goal.targetDate) : true,
+      targetDateValid: goal.targetDate ? isValidDateOnlyUtc(goal.targetDate) : true,
       targetOffsetDays: goal.targetOffsetDays,
     })),
   }).map((issue) =>

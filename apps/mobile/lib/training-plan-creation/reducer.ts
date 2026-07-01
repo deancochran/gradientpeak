@@ -1,10 +1,11 @@
 import {
   addAthletePlanningContextEffort,
+  addDaysDateOnlyUtc,
+  diffDateOnlyUtcDays,
   overrideAthletePlanningContextField,
   removeAthletePlanningContextEffort,
   removeAthletePlanningContextField,
 } from "@repo/core";
-import { addDaysToDateKey, diffDateOnlyDays } from "./date-utils";
 import type { TrainingPlanBuilderAction, TrainingPlanBuilderState } from "./types";
 
 export function trainingPlanBuilderReducer(
@@ -151,7 +152,7 @@ export function trainingPlanBuilderReducer(
           ...state.scheduling,
           sessionDateOverrides: {
             ...state.scheduling.sessionDateOverrides,
-            [action.sessionId]: addDaysToDateKey(state.scheduling.startDate, action.offsetDays),
+            [action.sessionId]: addDaysDateOnlyUtc(state.scheduling.startDate, action.offsetDays),
           },
         },
       };
@@ -190,7 +191,7 @@ export function trainingPlanBuilderReducer(
                   ...session,
                   offsetDays: Math.max(
                     0,
-                    diffDateOnlyDays(state.scheduling.startDate, action.date),
+                    diffDateOnlyUtcDays(state.scheduling.startDate, action.date),
                   ),
                 }
               : session,
@@ -218,14 +219,14 @@ export function trainingPlanBuilderReducer(
     case "scheduling.shiftPlan":
       return {
         ...state,
-        anchorDate: addDaysToDateKey(state.anchorDate, action.days),
+        anchorDate: addDaysDateOnlyUtc(state.anchorDate, action.days),
         scheduling: {
           ...state.scheduling,
-          startDate: addDaysToDateKey(state.scheduling.startDate, action.days),
+          startDate: addDaysDateOnlyUtc(state.scheduling.startDate, action.days),
           sessionDateOverrides: Object.fromEntries(
             Object.entries(state.scheduling.sessionDateOverrides).map(([sessionId, date]) => [
               sessionId,
-              addDaysToDateKey(date, action.days),
+              addDaysDateOnlyUtc(date, action.days),
             ]),
           ),
         },
