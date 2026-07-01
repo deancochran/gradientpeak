@@ -28,9 +28,6 @@ on:
         options:
           - "false"
           - "true"
-  push:
-    tags:
-      - "mobile-v*"
 
 concurrency:
   group: mobile-eas-${{ github.ref }}
@@ -43,7 +40,7 @@ jobs:
   eas:
     name: EAS build
     runs-on: ubuntu-latest
-    environment: ${{ github.event_name == 'push' && 'production' || inputs.profile }}
+    environment: ${{ inputs.profile }}
     defaults:
       run:
         working-directory: apps/mobile
@@ -95,5 +92,5 @@ jobs:
         run: eas build --profile ${{ steps.options.outputs.profile }} --platform ${{ steps.options.outputs.platform }} --non-interactive --no-wait
 
       - name: Build and submit production release
-        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.submit == 'true' && inputs.profile == 'production') || github.event_name == 'push' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.submit == 'true' && inputs.profile == 'production' }}
         run: eas build --profile production --platform ${{ steps.options.outputs.platform }} --auto-submit --non-interactive

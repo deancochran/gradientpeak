@@ -1,23 +1,6 @@
 name: Publish container image
 
 on:
-  push:
-    branches:
-      - main
-    tags:
-      - "v*"
-    paths:
-      - "apps/web/**"
-      - "packages/auth/**"
-      - "packages/core/**"
-      - "packages/api/**"
-      - "packages/db/**"
-      - "packages/ui/**"
-      - "tooling/**"
-      - "package.json"
-      - "turbo.json"
-      - "pnpm-lock.yaml"
-      - ".github/workflows/publish-container.yml"
   workflow_dispatch:
     inputs:
       push_image:
@@ -70,7 +53,7 @@ jobs:
         shell: bash
         run: |
           SHOULD_PUSH=true
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && "${{ inputs.push_image }}" == "false" ]]; then
+          if [[ "${{ inputs.push_image }}" == "false" ]]; then
             SHOULD_PUSH=false
           fi
           echo "push=${SHOULD_PUSH}" >> "${GITHUB_OUTPUT}"
