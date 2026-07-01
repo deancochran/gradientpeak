@@ -6,13 +6,13 @@ import type { TrainingPlanSchedulingPreview } from "@/lib/training-plan-creation
 import type { TrainingPlanBuilderState } from "@/lib/training-plan-creation/types";
 
 const WEEKDAYS = [
-  { value: 0, label: "Sun" },
-  { value: 1, label: "Mon" },
-  { value: 2, label: "Tue" },
-  { value: 3, label: "Wed" },
-  { value: 4, label: "Thu" },
-  { value: 5, label: "Fri" },
-  { value: 6, label: "Sat" },
+  { value: 0, label: "Mon" },
+  { value: 1, label: "Tue" },
+  { value: 2, label: "Wed" },
+  { value: 3, label: "Thu" },
+  { value: 4, label: "Fri" },
+  { value: 5, label: "Sat" },
+  { value: 6, label: "Sun" },
 ] as const;
 
 type BuilderSchedulePreviewContentProps = {
