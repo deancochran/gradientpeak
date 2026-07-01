@@ -1,10 +1,9 @@
 import type { CreationAvailabilityConfig, CreationProvenance } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
-import { DateInput as DateField } from "@repo/ui/components/date-input";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
 import { useEffect, useMemo, useRef } from "react";
-import { Controller, useWatch } from "react-hook-form";
+import { useWatch } from "react-hook-form";
 import { View } from "react-native";
 import { z } from "zod";
 
@@ -61,7 +60,6 @@ interface AvailabilityConfigSectionProps {
   availabilityProvenance: CreationProvenance;
   onChange: (values: AvailabilityConfigSectionValues) => void;
   onReset?: () => void;
-  planStartDateError?: string;
 }
 
 const areValuesEqual = (
@@ -105,7 +103,6 @@ export function AvailabilityConfigSection({
   availabilityProvenance,
   onChange,
   onReset,
-  planStartDateError,
 }: AvailabilityConfigSectionProps) {
   const defaultValues = useMemo(
     () => toDefaultValues({ planStartDate, availabilityConfig }),
@@ -121,16 +118,19 @@ export function AvailabilityConfigSection({
 
   const watchedValues = useWatch({ control: form.control });
   const syncingFromPropsRef = useRef(false);
-  const resolvedValues: AvailabilityConfigSectionFormValues = {
-    planStartDate: watchedValues?.planStartDate ?? form.getValues("planStartDate"),
-    monday: watchedValues?.monday ?? form.getValues("monday"),
-    tuesday: watchedValues?.tuesday ?? form.getValues("tuesday"),
-    wednesday: watchedValues?.wednesday ?? form.getValues("wednesday"),
-    thursday: watchedValues?.thursday ?? form.getValues("thursday"),
-    friday: watchedValues?.friday ?? form.getValues("friday"),
-    saturday: watchedValues?.saturday ?? form.getValues("saturday"),
-    sunday: watchedValues?.sunday ?? form.getValues("sunday"),
-  };
+  const resolvedValues: AvailabilityConfigSectionFormValues = useMemo(
+    () => ({
+      planStartDate: watchedValues?.planStartDate ?? form.getValues("planStartDate"),
+      monday: watchedValues?.monday ?? form.getValues("monday"),
+      tuesday: watchedValues?.tuesday ?? form.getValues("tuesday"),
+      wednesday: watchedValues?.wednesday ?? form.getValues("wednesday"),
+      thursday: watchedValues?.thursday ?? form.getValues("thursday"),
+      friday: watchedValues?.friday ?? form.getValues("friday"),
+      saturday: watchedValues?.saturday ?? form.getValues("saturday"),
+      sunday: watchedValues?.sunday ?? form.getValues("sunday"),
+    }),
+    [form, watchedValues],
+  );
 
   useEffect(() => {
     if (areValuesEqual(form.getValues(), defaultValues)) {
@@ -203,27 +203,9 @@ export function AvailabilityConfigSection({
         </Button>
       </View>
       <Text className="text-xs text-muted-foreground">
-        Set your plan start date and weekly availability.
+        Set weekly availability for this reusable Week/Day plan. Calendar anchoring happens when you
+        apply it to a schedule.
       </Text>
-
-      <Controller
-        control={form.control}
-        name="planStartDate"
-        render={({ field }) => (
-          <DateField
-            id="plan-start-date"
-            label="Plan start date"
-            value={field.value}
-            onChange={(nextDate) => {
-              field.onChange(normalizePlanStartDate(nextDate));
-            }}
-            placeholder="Use today (default)"
-            clearable
-            error={planStartDateError}
-            accessibilityHint="Sets your training plan start date. Format yyyy-mm-dd"
-          />
-        )}
-      />
 
       <Text className="text-xs text-muted-foreground">
         Training days ({selectedAvailabilityDays}/7)

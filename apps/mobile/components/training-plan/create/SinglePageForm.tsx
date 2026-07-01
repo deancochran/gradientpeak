@@ -1147,7 +1147,6 @@ export function SinglePageForm({
                 planStartDate={formData.planStartDate}
                 availabilityConfig={configData.availabilityConfig}
                 availabilityProvenance={configData.availabilityProvenance}
-                planStartDateError={getError("planStartDate")}
                 onChange={({ planStartDate, availabilityConfig, availabilityProvenance }) => {
                   onFormDataChange({
                     ...formData,

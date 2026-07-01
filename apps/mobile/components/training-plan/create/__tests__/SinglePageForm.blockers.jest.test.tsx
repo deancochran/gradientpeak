@@ -622,7 +622,7 @@ describe("SinglePageForm blocker surfacing", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it("syncs availability edits back through form and config callbacks", async () => {
+  it("syncs availability edits back through config callbacks", async () => {
     const onFormDataChange = jest.fn();
     const onConfigChange = jest.fn();
 
@@ -634,25 +634,6 @@ describe("SinglePageForm blocker surfacing", () => {
     });
 
     fireEvent.press(rendered.getByLabelText("Availability tab"));
-
-    const dateField = findMockNodes(rendered, "DateField").find(
-      (node: any) => node.props.id === "plan-start-date",
-    );
-
-    fireEvent(dateField!, "onChange", "2026-03-01");
-
-    await waitFor(() => {
-      expect(onFormDataChange).toHaveBeenCalledWith(
-        expect.objectContaining({
-          planStartDate: "2026-03-01",
-        }),
-      );
-    });
-
-    expect(onConfigChange).not.toHaveBeenCalled();
-
-    onFormDataChange.mockClear();
-    onConfigChange.mockClear();
 
     const tuesdayButton = findMockNodes(rendered, "Button").find(
       (node: any) => getNodeText(node.props.children) === "Tue",
@@ -745,11 +726,6 @@ describe("SinglePageForm blocker surfacing", () => {
     );
 
     await waitFor(() => {
-      const refreshedDateField = findMockNodes(rendered, "DateField").find(
-        (node: any) => node.props.id === "plan-start-date",
-      );
-      expect(refreshedDateField?.props.value).toBe("2026-02-20");
-
       const refreshedFridayButton = findMockNodes(rendered, "Button").find(
         (node: any) => getNodeText(node.props.children) === "Fri",
       );

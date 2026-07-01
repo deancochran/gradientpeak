@@ -269,6 +269,7 @@ jest.mock("../BuilderStrategyComposer", () => ({
     onOpenGoals,
     onOpenPlanningConstraints,
     renderBelowChart,
+    savePlan,
     state,
   }: any) => (
     <View testID="builder-strategy-composer">
@@ -284,6 +285,14 @@ jest.mock("../BuilderStrategyComposer", () => ({
       <Pressable onPress={onOpenPlanningConstraints}>
         <Text>Preferences</Text>
       </Pressable>
+      <View testID="builder-save-route-status">
+        <Text>Save route</Text>
+        <Text>
+          {savePlan?.route === "backend"
+            ? "Saving will create a backend training plan from this reusable Week/Day builder."
+            : "Saving will use the local/legacy plan path until backend creation inputs are available."}
+        </Text>
+      </View>
       {renderBelowChart?.({ selectedDayPoint: null })}
     </View>
   ),
@@ -502,7 +511,7 @@ describe("TrainingPlanBuilderScreen", () => {
     expect(screen.getByTestId("builder-planning-constraints-form")).toBeTruthy();
   });
 
-  it("opens plan settings with start date controls from the strategy composer", () => {
+  it("opens date-free plan settings from the strategy composer", () => {
     renderNative(<TrainingPlanBuilderScreen />);
 
     fireEvent.press(screen.getByText("Name your plan"));
@@ -510,7 +519,20 @@ describe("TrainingPlanBuilderScreen", () => {
     expect(
       screen.getByPlaceholderText("Base builder, race prep, return to training..."),
     ).toBeTruthy();
-    expect(screen.getByPlaceholderText("YYYY-MM-DD")).toBeTruthy();
+    expect(screen.queryByPlaceholderText("YYYY-MM-DD")).toBeNull();
+    expect(screen.queryByText("Start date")).toBeNull();
+  });
+
+  it("surfaces the deterministic save route on the main composer", () => {
+    renderNative(<TrainingPlanBuilderScreen />);
+
+    expect(screen.getByTestId("builder-save-route-status")).toBeTruthy();
+    expect(screen.getByText("Save route")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Saving will use the local/legacy plan path until backend creation inputs are available.",
+      ),
+    ).toBeTruthy();
   });
 
   it("opens activity assignment from the schedule editor", () => {

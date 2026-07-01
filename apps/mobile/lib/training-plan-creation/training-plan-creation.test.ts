@@ -356,6 +356,44 @@ describe("training plan creation domain", () => {
     expect(JSON.stringify(payload)).not.toContain("scheduled_date");
   });
 
+  it("derives date-free preview weekday conflicts from relative builder days", () => {
+    const state = {
+      ...createDefaultTrainingPlanBuilderState(),
+      anchorDate: "2026-07-01",
+      scheduling: {
+        startDate: "2026-07-01",
+        preferredWeekdays: [0],
+        sessionDateOverrides: {},
+      },
+      structure: {
+        sessions: [
+          {
+            localId: "session-1",
+            offsetDays: 0,
+            activityPlan: null,
+          },
+          {
+            localId: "session-2",
+            offsetDays: 1,
+            activityPlan: null,
+          },
+        ],
+      },
+    };
+
+    const preview = deriveTrainingPlanSchedulingPreview(state);
+
+    expect(preview.sessions.map((session) => session.date)).toEqual(["2026-07-01", "2026-07-02"]);
+    expect(preview.sessions.map((session) => session.weekday)).toEqual([0, 1]);
+    expect(preview.sessions[0]?.conflictCodes).not.toContain("non_preferred_day");
+    expect(preview.sessions[1]?.conflictCodes).toContain("non_preferred_day");
+    expect(preview.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "non_preferred_day", sessionId: "session-2" }),
+      ]),
+    );
+  });
+
   it("moves schedule preview sessions locally and shifts the preview anchor", () => {
     const baseState = {
       ...createDefaultTrainingPlanBuilderState(),
@@ -2235,7 +2273,7 @@ describe("training plan creation domain", () => {
       "Fitness 41 CTL",
       "1 goal",
       "4 weeks · 3 sessions/week",
-      "2026-01-05 · 2 preferred days",
+      "Reusable Week/Day plan · 2 preferred days",
     ]);
     expect(viewModel.sessionCanvasRows.map((row) => row.heightPercent)).toEqual([100, 50, 24]);
     expect(viewModel.recommendedLoad).toMatchObject({

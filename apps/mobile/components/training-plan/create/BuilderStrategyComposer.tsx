@@ -9,6 +9,7 @@ import type { TrainingPlanBuilderState } from "@/lib/training-plan-creation/type
 type BuilderStrategyComposerProps = {
   state: TrainingPlanBuilderState;
   chartReview: TrainingPlanBuilderController["chartReview"];
+  savePlan: TrainingPlanBuilderController["builder"]["derived"]["savePlan"];
   onEditMetadata?: () => void;
   onOpenAthleteContext?: () => void;
   onOpenGoals?: () => void;
@@ -23,6 +24,7 @@ export const BuilderStrategyComposer = memo(function BuilderStrategyComposer({
   onOpenGoals,
   onOpenPlanningConstraints,
   renderBelowChart,
+  savePlan,
   state,
 }: BuilderStrategyComposerProps) {
   return (
@@ -54,6 +56,8 @@ export const BuilderStrategyComposer = memo(function BuilderStrategyComposer({
         </View>
       </View>
 
+      <SaveRouteStatus route={savePlan.route} canSave={savePlan.canSave} />
+
       <View className="-mx-2">
         <BuilderTrainingPathReviewSection
           chartReview={chartReview}
@@ -63,6 +67,29 @@ export const BuilderStrategyComposer = memo(function BuilderStrategyComposer({
     </View>
   );
 });
+
+function SaveRouteStatus({ canSave, route }: { canSave: boolean; route: "backend" | "legacy" }) {
+  const status = route === "backend" ? "Backend create ready" : "Local fallback ready";
+  const detail =
+    route === "backend"
+      ? "Saving will create a backend training plan from this reusable Week/Day builder."
+      : "Saving will use the local/legacy plan path until backend creation inputs are available.";
+
+  return (
+    <View
+      className="gap-1 rounded-2xl border border-border bg-card px-3 py-2.5"
+      testID="builder-save-route-status"
+    >
+      <View className="flex-row items-center justify-between gap-3">
+        <Text className="text-xs font-semibold uppercase text-muted-foreground">Save route</Text>
+        <Text className="text-xs font-semibold text-foreground">
+          {canSave ? status : "Needs attention"}
+        </Text>
+      </View>
+      <Text className="text-xs leading-4 text-muted-foreground">{detail}</Text>
+    </View>
+  );
+}
 
 const PlanningChip = memo(function PlanningChip({
   icon: Icon,

@@ -9,7 +9,7 @@ import { TrainingPathSelectedDayPanel } from "@/components/plan/training-path/Tr
 import { BuilderTrainingPathReviewSection } from "@/components/training-plan/create/BuilderTrainingPathReviewSection";
 import { TrainingPlanBuilderEventCard } from "@/components/training-plan/create/TrainingPlanBuilderEventCard";
 import type { TrainingPlanBuilderController } from "@/components/training-plan/create/useTrainingPlanBuilderController";
-import { formatBuilderWeekday } from "@/lib/training-plan-creation/formatters";
+import { formatBuilderWeekdayWithWeek } from "@/lib/training-plan-creation/formatters";
 import type { BuilderPlanCreationViewModel } from "@/lib/training-plan-creation/view-model";
 
 type BuilderScheduleEditorProps = {
@@ -64,13 +64,11 @@ export function BuilderScheduleEditor({
   );
   const selectedDayPoint =
     chartReview.chart.dailyPoints?.find((point) => point.date === chartReview.selectedDate) ?? null;
-  const selectedDateLabel = chartReview.selectedDate
-    ? formatFullDateLabel(chartReview.selectedDate)
-    : null;
+  const selectedDayLabel = formatBuilderWeekdayWithWeek(selectedDayOffset);
 
   const renderSelectedDayPanel = (point: DailyTrainingAdjustmentPoint | null) => (
     <BuilderSelectedDayPlanningPanel
-      dateLabel={selectedDateLabel}
+      dateLabel={selectedDayLabel}
       estimateBySessionId={estimateBySessionId}
       onAddWorkout={() => onAddSessionAtOffset(selectedDayOffset)}
       onDuplicateSession={onDuplicateSession}
@@ -117,7 +115,7 @@ function BuilderSelectedDayPlanningPanel({
   const planned = valueOrZero(point?.plannedLoadTss) + valueOrZero(point?.tentativePlannedLoadTss);
   const recommended = valueOrZero(point?.targetLoadTss);
   const weekIndex = Math.floor(selectedDayOffset / 7);
-  const title = dateLabel ?? formatBuilderWeekday(selectedDayOffset);
+  const title = dateLabel ?? formatBuilderWeekdayWithWeek(selectedDayOffset);
 
   return (
     <TrainingPathSelectedDayPanel
@@ -190,10 +188,4 @@ function valueOrZero(value: number | null | undefined) {
 
 function formatTss(value: number) {
   return `${Math.round(value)} TSS`;
-}
-
-function formatFullDateLabel(dateKey: string) {
-  const date = new Date(`${dateKey}T12:00:00.000Z`);
-  if (Number.isNaN(date.getTime())) return dateKey;
-  return date.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
 }

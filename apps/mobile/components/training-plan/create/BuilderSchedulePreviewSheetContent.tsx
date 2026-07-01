@@ -1,25 +1,18 @@
 import { Button } from "@repo/ui/components/button";
-import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
-import {
-  AlertTriangle,
-  CalendarDays,
-  CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react-native";
+import { AlertTriangle, CheckCircle2 } from "lucide-react-native";
 import { View } from "react-native";
 import type { TrainingPlanSchedulingPreview } from "@/lib/training-plan-creation/scheduling-preview";
 import type { TrainingPlanBuilderState } from "@/lib/training-plan-creation/types";
 
 const WEEKDAYS = [
-  { value: 0, label: "Sun" },
-  { value: 1, label: "Mon" },
-  { value: 2, label: "Tue" },
-  { value: 3, label: "Wed" },
-  { value: 4, label: "Thu" },
-  { value: 5, label: "Fri" },
-  { value: 6, label: "Sat" },
+  { value: 0, label: "Mon" },
+  { value: 1, label: "Tue" },
+  { value: 2, label: "Wed" },
+  { value: 3, label: "Thu" },
+  { value: 4, label: "Fri" },
+  { value: 5, label: "Sat" },
+  { value: 6, label: "Sun" },
 ] as const;
 
 type BuilderSchedulePreviewContentProps = {
@@ -27,17 +20,13 @@ type BuilderSchedulePreviewContentProps = {
   state: TrainingPlanBuilderState;
   onClearSessionOverride: (sessionId: string) => void;
   onMoveSessionByDays: (sessionId: string, currentDate: string, days: number) => void;
-  onShiftPlan: (days: number) => void;
   onTogglePreferredWeekday: (weekday: number) => void;
-  onUpdateStartDate: (startDate: string) => void;
 };
 
 export function BuilderSchedulePreviewContent({
   onClearSessionOverride,
   onMoveSessionByDays,
-  onShiftPlan,
   onTogglePreferredWeekday,
-  onUpdateStartDate,
   preview,
   state,
 }: BuilderSchedulePreviewContentProps) {
@@ -46,25 +35,11 @@ export function BuilderSchedulePreviewContent({
   return (
     <View className="gap-4">
       <View className="gap-2">
-        <View className="flex-row items-center gap-2">
-          <CalendarDays size={16} className="text-foreground" />
-          <Text className="text-sm font-semibold text-foreground">Start date</Text>
-        </View>
-        <Input
-          value={state.scheduling.startDate}
-          onChangeText={onUpdateStartDate}
-          placeholder="YYYY-MM-DD"
-        />
-        <View className="flex-row flex-wrap gap-2">
-          <Button size="sm" variant="outline" onPress={() => onShiftPlan(-7)}>
-            <ChevronLeft size={14} className="text-foreground" />
-            <Text>Week earlier</Text>
-          </Button>
-          <Button size="sm" variant="outline" onPress={() => onShiftPlan(7)}>
-            <Text>Week later</Text>
-            <ChevronRight size={14} className="text-foreground" />
-          </Button>
-        </View>
+        <Text className="text-sm font-semibold text-foreground">Reusable week/day schedule</Text>
+        <Text className="text-xs leading-4 text-muted-foreground">
+          This builder uses relative weeks and days. Calendar anchoring stays internal until you
+          apply the plan to a schedule.
+        </Text>
       </View>
 
       <View className="gap-2 border-t border-border pt-4">
@@ -146,7 +121,7 @@ export function BuilderSchedulePreviewContent({
                   Week {week.weekIndex + 1}
                 </Text>
                 <Text className="text-xs text-muted-foreground">
-                  {week.startDate} to {week.endDate}
+                  Days {week.weekIndex * 7 + 1}-{week.weekIndex * 7 + 7}
                 </Text>
               </View>
               {week.sessions.map((previewSession, sessionIndex) => {
@@ -171,7 +146,7 @@ export function BuilderSchedulePreviewContent({
                           {previewSession.label}
                         </Text>
                         <Text className="text-xs text-muted-foreground">
-                          {previewSession.date} ·{" "}
+                          Day {previewSession.offsetDays + 1} ·{" "}
                           {WEEKDAYS.find((day) => day.value === previewSession.weekday)?.label}
                           {hasOverride ? " · moved" : ""}
                         </Text>
