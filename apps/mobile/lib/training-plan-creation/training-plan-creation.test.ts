@@ -2235,7 +2235,7 @@ describe("training plan creation domain", () => {
       "Fitness 41 CTL",
       "1 goal",
       "4 weeks · 3 sessions/week",
-      "2026-01-05 · 2 preferred days",
+      "Reusable Week/Day plan · 2 preferred days",
     ]);
     expect(viewModel.sessionCanvasRows.map((row) => row.heightPercent)).toEqual([100, 50, 24]);
     expect(viewModel.recommendedLoad).toMatchObject({

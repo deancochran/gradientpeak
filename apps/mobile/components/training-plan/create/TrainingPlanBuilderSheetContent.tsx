@@ -1,10 +1,8 @@
 import type { ActivityPlanPlanningEstimate } from "@repo/core";
-import { Button } from "@repo/ui/components/button";
 import { Form, FormTextField } from "@repo/ui/components/form";
 import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
-import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react-native";
 import {
   createContext,
   type Dispatch,
@@ -438,38 +436,6 @@ export function TrainingPlanBuilderSheetContent({
             />
           </View>
         </View>
-        <View className="gap-3 border-t border-border pt-4">
-          <View className="flex-row items-center gap-2">
-            <CalendarDays size={16} className="text-foreground" />
-            <Text className="text-sm font-semibold text-foreground">Schedule</Text>
-          </View>
-          <View className="gap-2">
-            <Text className="text-xs font-medium text-muted-foreground">Start date</Text>
-            <Input
-              value={state.scheduling.startDate}
-              onChangeText={builder.actions.updateScheduleStartDate}
-              placeholder="YYYY-MM-DD"
-            />
-          </View>
-          <View className="flex-row flex-wrap gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              onPress={() => builder.actions.shiftSchedulePreview(-7)}
-            >
-              <ChevronLeft size={14} className="text-foreground" />
-              <Text>Earlier</Text>
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onPress={() => builder.actions.shiftSchedulePreview(7)}
-            >
-              <Text>Later</Text>
-              <ChevronRight size={14} className="text-foreground" />
-            </Button>
-          </View>
-        </View>
       </View>
     );
   }
@@ -509,9 +475,7 @@ export function TrainingPlanBuilderSheetContent({
         state={state}
         onClearSessionOverride={builder.actions.clearSessionScheduleDateOverride}
         onMoveSessionByDays={builder.actions.moveSessionByDays}
-        onShiftPlan={builder.actions.shiftSchedulePreview}
         onTogglePreferredWeekday={builder.actions.togglePreferredScheduleWeekday}
-        onUpdateStartDate={builder.actions.updateScheduleStartDate}
       />
     );
   }

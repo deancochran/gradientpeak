@@ -1242,5 +1242,5 @@ function getGoalDetail(state: TrainingPlanBuilderState) {
 
 function getScheduleSummary(state: TrainingPlanBuilderState) {
   const dayCount = state.scheduling.preferredWeekdays.length;
-  return `${state.scheduling.startDate} · ${dayCount || "any"} preferred day${dayCount === 1 ? "" : "s"}`;
+  return `Reusable Week/Day plan · ${dayCount || "any"} preferred day${dayCount === 1 ? "" : "s"}`;
 }

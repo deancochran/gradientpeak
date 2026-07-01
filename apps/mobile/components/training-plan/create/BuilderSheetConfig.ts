@@ -13,7 +13,7 @@ export function getBuilderSheetTitle(input: {
   if (activeSheet === "localGoalCreate") return "Create Plan Goal";
   if (activeSheet === "profileGoalCreate") return "Create profile goal";
   if (activeSheet === "preferences") return "Preferences";
-  if (activeSheet === "schedulePreview") return "Start date";
+  if (activeSheet === "schedulePreview") return "Schedule preview";
   if (activeSheet === "session") return "Workout";
   if (activeSheet === "activityAssignment") {
     return selectedSession?.activityPlan ? "Change workout" : "Assign workout";
@@ -28,7 +28,7 @@ export function getBuilderSheetDescription(input: {
 }) {
   const { activeSheet, selectedSession } = input;
   if (activeSheet === "metadata") {
-    return "Name the plan and set its start date.";
+    return "Name the reusable plan.";
   }
   if (activeSheet === "athleteContext") {
     return "Adjust the athlete inputs used by this plan.";
@@ -42,7 +42,7 @@ export function getBuilderSheetDescription(input: {
     return "Set optional limits for this plan.";
   }
   if (activeSheet === "schedulePreview") {
-    return "Choose when this plan starts.";
+    return "Review relative Week/Day placement before applying the plan.";
   }
   if (activeSheet === "session") return undefined;
   if (activeSheet === "activityAssignment") {
