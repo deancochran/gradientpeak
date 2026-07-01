@@ -2,8 +2,8 @@ import type {
   AthletePlanningContextFieldKey,
   AthletePlanningContextFieldOverride,
 } from "@repo/core";
+import { addDaysDateOnlyUtc } from "@repo/core";
 import type { Dispatch } from "react";
-import { addDaysToDateKey } from "./date-utils";
 import {
   addTrainingPlanPreferenceField,
   applyTrainingPlanConstraintPreset,
@@ -104,7 +104,7 @@ export function createTrainingPlanBuilderActions(input: {
       dispatch({
         type: "scheduling.moveSessionToDate",
         sessionId,
-        date: addDaysToDateKey(currentDate, days),
+        date: addDaysDateOnlyUtc(currentDate, days),
       }),
     clearSessionScheduleDateOverride: (sessionId: string) =>
       dispatch({ type: "scheduling.clearSessionDateOverride", sessionId }),

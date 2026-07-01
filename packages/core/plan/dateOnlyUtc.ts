@@ -19,3 +19,16 @@ export function diffDateOnlyUtcDays(startDate: string, endDate: string): number 
   const end = parseDateOnlyUtc(endDate).getTime();
   return Math.floor((end - start) / DAY_MS);
 }
+
+export function isValidDateOnlyUtc(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+
+  const parsed = parseDateOnlyUtc(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return false;
+  }
+
+  return formatDateOnlyUtc(parsed) === value;
+}
