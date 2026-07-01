@@ -118,16 +118,19 @@ export function AvailabilityConfigSection({
 
   const watchedValues = useWatch({ control: form.control });
   const syncingFromPropsRef = useRef(false);
-  const resolvedValues: AvailabilityConfigSectionFormValues = {
-    planStartDate: watchedValues?.planStartDate ?? form.getValues("planStartDate"),
-    monday: watchedValues?.monday ?? form.getValues("monday"),
-    tuesday: watchedValues?.tuesday ?? form.getValues("tuesday"),
-    wednesday: watchedValues?.wednesday ?? form.getValues("wednesday"),
-    thursday: watchedValues?.thursday ?? form.getValues("thursday"),
-    friday: watchedValues?.friday ?? form.getValues("friday"),
-    saturday: watchedValues?.saturday ?? form.getValues("saturday"),
-    sunday: watchedValues?.sunday ?? form.getValues("sunday"),
-  };
+  const resolvedValues: AvailabilityConfigSectionFormValues = useMemo(
+    () => ({
+      planStartDate: watchedValues?.planStartDate ?? form.getValues("planStartDate"),
+      monday: watchedValues?.monday ?? form.getValues("monday"),
+      tuesday: watchedValues?.tuesday ?? form.getValues("tuesday"),
+      wednesday: watchedValues?.wednesday ?? form.getValues("wednesday"),
+      thursday: watchedValues?.thursday ?? form.getValues("thursday"),
+      friday: watchedValues?.friday ?? form.getValues("friday"),
+      saturday: watchedValues?.saturday ?? form.getValues("saturday"),
+      sunday: watchedValues?.sunday ?? form.getValues("sunday"),
+    }),
+    [form, watchedValues],
+  );
 
   useEffect(() => {
     if (areValuesEqual(form.getValues(), defaultValues)) {
