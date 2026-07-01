@@ -47,7 +47,7 @@ jobs:
 
             Enforce:
             - package boundaries and validation rules from AGENTS.md
-            - GitHub issue/PR traceability and clear verification notes
+            - Plane identifier traceability in branch names, PR titles/bodies, and verification notes
             - smallest-correct-change discipline
             - no unrelated refactors
             - no secrets or credentials
