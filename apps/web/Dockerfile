@@ -76,6 +76,13 @@ ENV NITRO_HOST=0.0.0.0
 
 RUN useradd --uid 1001 --create-home --shell /usr/sbin/nologin nodeapp
 
+# The production runtime only executes the built Nitro server with `node`.
+# Remove the bundled npm/npx toolchain from the final image to reduce attack
+# surface and avoid shipping npm's transitive dependencies in production.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+  /usr/local/bin/npm \
+  /usr/local/bin/npx
+
 WORKDIR /app
 
 COPY --from=builder /app/apps/web/.output /app/.output
