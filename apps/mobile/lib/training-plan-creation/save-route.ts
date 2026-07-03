@@ -3,16 +3,16 @@ import type {
   BackendUpdateCommitMappingResult,
 } from "./backend-planning-client";
 
-export type TrainingPlanSaveRoute = "backend" | "legacy";
+export type TrainingPlanSaveRoute = "backend" | "degraded";
 
 export function selectTrainingPlanCreateSaveRoute(
   commit: BackendCreateCommitMappingResult,
 ): TrainingPlanSaveRoute {
-  return commit.ok ? "backend" : "legacy";
+  return commit.ok ? "backend" : "degraded";
 }
 
 export function selectTrainingPlanUpdateSaveRoute(
   commit: BackendUpdateCommitMappingResult,
 ): TrainingPlanSaveRoute {
-  return commit.ok ? "backend" : "legacy";
+  return commit.ok ? "backend" : "degraded";
 }
