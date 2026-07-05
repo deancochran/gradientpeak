@@ -43,11 +43,13 @@ function createCaller(options?: {
   selectResult?: unknown;
   selectOneResult?: unknown[];
   insertResult?: unknown[];
+  updateResult?: unknown[];
   deleteResult?: unknown;
 }) {
   const selectResult = options?.selectResult ?? [];
   const selectOneResult = options?.selectOneResult ?? [];
   const insertResult = options?.insertResult ?? [];
+  const updateResult = options?.updateResult ?? [];
   const deleteResult = options?.deleteResult ?? [];
 
   const limit = vi.fn(async () => selectOneResult);
@@ -60,12 +62,18 @@ function createCaller(options?: {
   const values = vi.fn(() => ({ returning }));
   const insert = vi.fn(() => ({ values }));
 
+  const updateReturning = vi.fn(async () => updateResult);
+  const whereForUpdate = vi.fn(() => ({ returning: updateReturning }));
+  const set = vi.fn(() => ({ where: whereForUpdate }));
+  const update = vi.fn(() => ({ set }));
+
   const whereForDelete = vi.fn(async () => deleteResult);
   const del = vi.fn(() => ({ where: whereForDelete }));
 
   const db = {
     select,
     insert,
+    update,
     delete: del,
   };
 
@@ -89,6 +97,10 @@ function createCaller(options?: {
       insert,
       values,
       returning,
+      update,
+      set,
+      whereForUpdate,
+      updateReturning,
       delete: del,
       whereForDelete,
     },
@@ -161,6 +173,64 @@ describe("activityEffortsRouter", () => {
     });
   });
 
+  it("updates an owned effort, normalizes timestamps, and marks dirty from the earliest timestamp", async () => {
+    const oldRecordedAt = new Date("2026-03-01T10:00:00.000Z");
+    const newRecordedAt = "2026-03-02T12:34:56.000Z";
+    const updatedRow = buildEffortRow({
+      value: 4.8,
+      recorded_at: new Date(newRecordedAt),
+      updated_at: new Date("2026-03-03T01:02:03.000Z"),
+    });
+    const { caller, spies } = createCaller({
+      selectOneResult: [{ recorded_at: oldRecordedAt }],
+      updateResult: [updatedRow],
+    });
+
+    const result = await caller.update({
+      id: updatedRow.id,
+      value: 4.8,
+      recorded_at: newRecordedAt,
+    });
+
+    expect(result).toEqual(updatedRow);
+    expect(spies.select).toHaveBeenCalledOnce();
+    expect(spies.limit).toHaveBeenCalledOnce();
+    expect(spies.update).toHaveBeenCalledOnce();
+    expect(spies.set).toHaveBeenCalledOnce();
+    expect(spies.whereForUpdate).toHaveBeenCalledOnce();
+    expect(spies.updateReturning).toHaveBeenCalledOnce();
+
+    const updatePayload = (spies.set.mock.calls as any[][])[0]?.[0];
+    expect(updatePayload).toMatchObject({ value: 4.8 });
+    expect(updatePayload.recorded_at).toBeInstanceOf(Date);
+    expect(updatePayload.recorded_at.toISOString()).toBe(newRecordedAt);
+    expect(updatePayload.updated_at).toBeInstanceOf(Date);
+    expect(markProfileAnalysisDirtyMock).toHaveBeenCalledWith(expect.anything(), {
+      profileId: userId,
+      kinds: ["performance"],
+      dirtySince: oldRecordedAt,
+    });
+  });
+
+  it("returns null for update when the effort is not owned or not found without marking dirty", async () => {
+    const { caller, spies } = createCaller({
+      selectOneResult: [],
+      updateResult: [],
+    });
+
+    const result = await caller.update({
+      id: "22222222-2222-4222-8222-222222222222",
+      value: 4.8,
+    });
+
+    expect(result).toBeNull();
+    expect(spies.select).toHaveBeenCalledOnce();
+    expect(spies.limit).toHaveBeenCalledOnce();
+    expect(spies.update).toHaveBeenCalledOnce();
+    expect(spies.updateReturning).toHaveBeenCalledOnce();
+    expect(markProfileAnalysisDirtyMock).not.toHaveBeenCalled();
+  });
+
   it("returns a success payload after deleting an owned effort", async () => {
     const existing = buildEffortRow();
     const { caller, spies } = createCaller({ selectOneResult: [existing] });
@@ -178,6 +248,20 @@ describe("activityEffortsRouter", () => {
       kinds: ["performance"],
       dirtySince: existing.recorded_at,
     });
+  });
+
+  it("returns idempotent success for delete when the effort is not owned or not found without marking dirty", async () => {
+    const { caller, spies } = createCaller({ selectOneResult: [] });
+    const id = "22222222-2222-4222-8222-222222222222";
+
+    const result = await caller.delete({ id });
+
+    expect(result).toEqual({ success: true, deletedId: id });
+    expect(spies.select).toHaveBeenCalledOnce();
+    expect(spies.limit).toHaveBeenCalledOnce();
+    expect(spies.delete).toHaveBeenCalledOnce();
+    expect(spies.whereForDelete).toHaveBeenCalledOnce();
+    expect(markProfileAnalysisDirtyMock).not.toHaveBeenCalled();
   });
 
   it("rejects unexpected create input keys at the router boundary", async () => {
