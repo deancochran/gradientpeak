@@ -7,7 +7,28 @@ const completeOnboardingMock = jest.fn(async () => undefined);
 const completeOnboardingMutationMock = jest.fn(async () => ({ ok: true }));
 let importedOnboardingValuesMock: unknown = null;
 
-const ButtonHost = ({ children, disabled, onPress, ...props }: any) =>
+type MockPressableHandler = (...args: unknown[]) => unknown;
+
+type PressableMockProps = {
+  children?: React.ReactNode;
+  disabled?: boolean;
+  onPress?: MockPressableHandler;
+  testID?: string;
+  testId?: string;
+} & Record<string, unknown>;
+
+type DateInputMockProps = {
+  id?: string;
+  value?: string;
+  onChange: (nextValue: string) => void;
+};
+
+type PaceSecondsFieldMockProps = {
+  id?: string;
+  onChangeSeconds: (seconds: number) => void;
+};
+
+const ButtonHost = ({ children, disabled, onPress, ...props }: PressableMockProps) =>
   React.createElement(
     "Pressable",
     {
@@ -24,7 +45,7 @@ jest.mock("react-native", () => ({
   ...jest.requireActual("@repo/ui/test/react-native"),
   Alert: { alert: jest.fn() },
   ScrollView: createHost("ScrollView"),
-  TouchableOpacity: ({ children, onPress, ...props }: any) =>
+  TouchableOpacity: ({ children, onPress, ...props }: PressableMockProps) =>
     React.createElement("Pressable", { onPress, ...props }, children),
   View: createHost("View"),
 }));
@@ -142,7 +163,7 @@ jest.mock("@repo/ui/components/card", () => ({
 
 jest.mock("@repo/ui/components/date-input", () => ({
   __esModule: true,
-  DateInput: ({ id, value, onChange }: any) =>
+  DateInput: ({ id, value, onChange }: DateInputMockProps) =>
     React.createElement("TextInput", {
       testID: id,
       value,
@@ -157,7 +178,7 @@ jest.mock("@repo/ui/components/icon", () => ({
 
 jest.mock("@repo/ui/components/pace-seconds-field", () => ({
   __esModule: true,
-  PaceSecondsField: ({ id, onChangeSeconds }: any) =>
+  PaceSecondsField: ({ id, onChangeSeconds }: PaceSecondsFieldMockProps) =>
     React.createElement("TextInput", {
       testID: id,
       onChangeText: (nextValue: string) => onChangeSeconds(Number(nextValue)),
