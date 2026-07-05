@@ -58,8 +58,6 @@ const ACTIVITY_FILE_BUCKET_SIZE_LIMIT = "50MB";
 const ACTIVITY_FILE_TYPES = [".fit", ".gpx", ".tcx"];
 
 const ACTIVITY_FILE_NAME_PATTERN = /^[^/\\\0]+$/;
-const BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
-
 const activityFileNameSchema = z
   .string()
   .trim()
@@ -83,9 +81,42 @@ const activityStoragePathSchema = z
 const base64FileDataSchema = z
   .string()
   .min(1, "File data is required")
-  .refine((value) => value.length % 4 === 0 && BASE64_PATTERN.test(value), {
+  .refine((value) => isBase64FileData(value), {
     message: "File data must be valid base64",
   });
+
+function isBase64FileData(value: string): boolean {
+  if (value.length % 4 !== 0) return false;
+
+  const paddingStart = value.endsWith("==")
+    ? value.length - 2
+    : value.endsWith("=")
+      ? value.length - 1
+      : value.length;
+
+  for (let index = 0; index < paddingStart; index++) {
+    const code = value.charCodeAt(index);
+    const isUppercase = code >= 65 && code <= 90;
+    const isLowercase = code >= 97 && code <= 122;
+    const isDigit = code >= 48 && code <= 57;
+    const isPlusOrSlash = code === 43 || code === 47;
+
+    if (!(isUppercase || isLowercase || isDigit || isPlusOrSlash)) {
+      return false;
+    }
+  }
+
+  for (let index = paddingStart; index < value.length; index++) {
+    if (value[index] !== "=") return false;
+  }
+
+  return true;
+}
+
+function getBase64DecodedByteLength(value: string): number {
+  const paddingLength = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0;
+  return (value.length / 4) * 3 - paddingLength;
+}
 
 const blobLikeSchema = z
   .object({
@@ -192,7 +223,26 @@ const uploadActivityFileInput = z
     fileType: activityFileNameSchema,
     fileData: base64FileDataSchema,
   })
-  .strict();
+  .strict()
+  .superRefine(({ fileData, fileSize }, ctx) => {
+    const decodedByteLength = getBase64DecodedByteLength(fileData);
+
+    if (decodedByteLength > ACTIVITY_FILE_SIZE_LIMIT) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["fileData"],
+        message: `Decoded file data must be less than ${ACTIVITY_FILE_SIZE_LIMIT / (1024 * 1024)}MB`,
+      });
+    }
+
+    if (decodedByteLength !== fileSize) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["fileData"],
+        message: "Decoded file data size must match declared file size",
+      });
+    }
+  });
 
 const analyzeActivityFileInput = z
   .object({

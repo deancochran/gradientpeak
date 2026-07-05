@@ -439,6 +439,38 @@ describe("activityFilesRouter", () => {
     expect(result).toMatchObject({ success: true, size: 4 });
   });
 
+  it("rejects activity uploads when decoded bytes do not match declared file size", async () => {
+    const caller = createCaller();
+
+    await expect(
+      caller.uploadActivityFile({
+        fileName: "ride.fit",
+        fileSize: 3,
+        fileType: "ride.fit",
+        fileData: Buffer.from("test").toString("base64"),
+      }),
+    ).rejects.toThrow("Decoded file data size must match declared file size");
+
+    expect(mocks.storage.upload).not.toHaveBeenCalled();
+  });
+
+  it("rejects activity uploads when decoded bytes exceed the upload limit", async () => {
+    const caller = createCaller();
+    const decodedByteLength = 50 * 1024 * 1024 + 1;
+    const oversizedBase64 = `${"A".repeat(Math.floor(decodedByteLength / 3) * 4)}AA==`;
+
+    await expect(
+      caller.uploadActivityFile({
+        fileName: "ride.fit",
+        fileSize: 50 * 1024 * 1024,
+        fileType: "ride.fit",
+        fileData: oversizedBase64,
+      }),
+    ).rejects.toThrow("Decoded file data must be less than 50MB");
+
+    expect(mocks.storage.upload).not.toHaveBeenCalled();
+  });
+
   it("rejects processing activity files owned by another user", async () => {
     const { db } = createDbMock();
     const caller = createCaller({ db });
