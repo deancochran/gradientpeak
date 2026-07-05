@@ -350,11 +350,13 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
 
   useChartAnimatedReaction(
     () => {
+      "worklet";
       if (!chartPressState.isActive.value) return -1;
       const activeIndex = Number(chartPressState.x.value.value);
       return Number.isFinite(activeIndex) ? Math.round(activeIndex) : -1;
     },
     (activeIndex, previousIndex) => {
+      "worklet";
       if (activeIndex >= 0) {
         if (activeIndex !== previousIndex) runOnJS(previewPointAtIndex)(activeIndex);
         return;
