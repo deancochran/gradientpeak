@@ -7,7 +7,11 @@ import type {
   TrainingPathChartProjectionResult,
   TrainingPathProjectionStatus,
 } from "./backend-planning-client";
-import { selectTrainingPlanCreateSaveRoute, selectTrainingPlanUpdateSaveRoute } from "./save-route";
+import {
+  selectTrainingPlanCreateSaveRoute,
+  selectTrainingPlanUpdateSaveRoute,
+  type TrainingPlanSaveRoute,
+} from "./save-route";
 
 export type TrainingPlanProjectionFacade = {
   source: "backend" | "local";
@@ -21,10 +25,12 @@ export type TrainingPlanProjectionFacade = {
 };
 
 export type TrainingPlanSavePlanFacade = {
-  createRoute: "backend" | "legacy";
-  updateRoute: "backend" | "legacy";
+  createRoute: TrainingPlanSaveRoute;
+  updateRoute: TrainingPlanSaveRoute;
   createCommit: BackendCreateCommitMappingResult;
   updateCommit: BackendUpdateCommitMappingResult;
+  createDegradedReason: string | null;
+  updateDegradedReason: string | null;
 };
 
 export function createTrainingPlanProjectionFacade({
@@ -60,9 +66,11 @@ export function createTrainingPlanSavePlanFacade({
   updateCommit: BackendUpdateCommitMappingResult;
 }): TrainingPlanSavePlanFacade {
   return {
-    createRoute: selectTrainingPlanCreateSaveRoute(createCommit),
-    updateRoute: selectTrainingPlanUpdateSaveRoute(updateCommit),
     createCommit,
+    createDegradedReason: createCommit.ok ? null : createCommit.reason,
+    createRoute: selectTrainingPlanCreateSaveRoute(createCommit),
     updateCommit,
+    updateDegradedReason: updateCommit.ok ? null : updateCommit.reason,
+    updateRoute: selectTrainingPlanUpdateSaveRoute(updateCommit),
   };
 }

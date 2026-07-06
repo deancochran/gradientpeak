@@ -241,20 +241,16 @@ export function useTrainingPlanBuilderController({
   }, [builder.actions]);
 
   const handleSave = useCallback(async () => {
-    if (!builder.derived.saveReadiness.canSave) {
+    if (!builder.derived.savePlan.canSave) {
       Alert.alert(
         "Plan needs attention",
-        builder.derived.saveReadiness.blockers.map((blocker) => blocker.message).join("\n"),
+        builder.derived.savePlan.blockers.map((blocker) => blocker.message).join("\n"),
       );
       return;
     }
 
     await builder.derived.savePlan.execute();
-  }, [
-    builder.derived.savePlan,
-    builder.derived.saveReadiness.blockers,
-    builder.derived.saveReadiness.canSave,
-  ]);
+  }, [builder.derived.savePlan]);
 
   const selectActivityPlan = useCallback(
     (activityPlan: ActivityPlanListItem) => {

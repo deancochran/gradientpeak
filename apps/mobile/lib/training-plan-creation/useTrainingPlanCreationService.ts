@@ -18,8 +18,6 @@ import { subscribeToTrainingPlanGoalCreation } from "./goalCreationHandoff";
 import {
   createTrainingPlanBuilderStateFromExistingPlan,
   getTrainingPlanStructureActivityPlanIds,
-  toTrainingPlanCreatePayload,
-  toTrainingPlanUpdatePayload,
 } from "./mappers";
 import {
   createTrainingPlanProjectionFacade,
@@ -290,18 +288,6 @@ export function useTrainingPlanCreationService({
     () => deriveTrainingPlanLocalProjection(state, activityPlansById),
     [activityPlansById, state],
   );
-  const estimatedPayloadState = useMemo(() => {
-    const estimatedContext = localProjection.planningProjection.estimatedContext;
-    return {
-      ...state,
-      anchorDate: estimatedContext.anchorDate,
-      athleteContext: estimatedContext.athleteContext,
-      goalContext: { selectedGoals: estimatedContext.goals },
-      planPreferences: estimatedContext.preferences,
-      scheduling: estimatedContext.scheduling,
-      structure: { sessions: estimatedContext.sessions },
-    };
-  }, [localProjection.planningProjection.estimatedContext, state]);
   const { structureProposal } = localProjection;
   const debouncedBackendPlanningFingerprint = useDebouncedValue(
     localProjection.backendPlanning.contextFingerprint,
@@ -390,15 +376,6 @@ export function useTrainingPlanCreationService({
       trainingPathChartProjection.source,
     ],
   );
-  const builderPlanningSnapshotOptions = useMemo(
-    () => ({
-      backendPlanning: {
-        projectionSource: trainingPathProjectionStatus.source,
-        previewSnapshotToken: authoritativeProjection?.previewSnapshotToken ?? null,
-      },
-    }),
-    [authoritativeProjection?.previewSnapshotToken, trainingPathProjectionStatus.source],
-  );
   const projection = useMemo(
     () =>
       createTrainingPlanProjectionFacade({
@@ -422,6 +399,18 @@ export function useTrainingPlanCreationService({
         updateCommit: backendPlanningCommit.update,
       }),
     [backendPlanningCommit.create, backendPlanningCommit.update],
+  );
+  const activeSaveCommit =
+    mode === "edit" ? savePlanRoute.updateCommit : savePlanRoute.createCommit;
+  const backendSaveBlocker = useMemo(
+    () =>
+      activeSaveCommit.ok
+        ? null
+        : {
+            code: "backend_save_unavailable",
+            message: `Backend save is not ready: ${activeSaveCommit.reason}`,
+          },
+    [activeSaveCommit],
   );
   const activityPlanPickerState = useMemo(() => {
     return deriveActivityPlanPickerState({
@@ -453,16 +442,14 @@ export function useTrainingPlanCreationService({
       await createFromCreationConfigMutation.mutateAsync(savePlanRoute.createCommit.input);
       return;
     }
-    await createPlanMutation.mutateAsync(
-      toTrainingPlanCreatePayload(estimatedPayloadState, builderPlanningSnapshotOptions),
+    throw new Error(
+      `Backend save is not ready: ${savePlanRoute.createDegradedReason ?? "backend commit input is unavailable."}`,
     );
   }, [
-    builderPlanningSnapshotOptions,
     createFromCreationConfigMutation,
-    createPlanMutation,
     savePlanRoute.createCommit,
+    savePlanRoute.createDegradedReason,
     savePlanRoute.createRoute,
-    estimatedPayloadState,
   ]);
 
   const updatePlan = useCallback(async () => {
@@ -474,17 +461,15 @@ export function useTrainingPlanCreationService({
       await updateFromCreationConfigMutation.mutateAsync(savePlanRoute.updateCommit.input);
       return;
     }
-    await updatePlanMutation.mutateAsync(
-      toTrainingPlanUpdatePayload(planId, estimatedPayloadState, builderPlanningSnapshotOptions),
+    throw new Error(
+      `Backend save is not ready: ${savePlanRoute.updateDegradedReason ?? "backend commit input is unavailable."}`,
     );
   }, [
-    builderPlanningSnapshotOptions,
     planId,
     savePlanRoute.updateCommit,
+    savePlanRoute.updateDegradedReason,
     savePlanRoute.updateRoute,
-    estimatedPayloadState,
     updateFromCreationConfigMutation,
-    updatePlanMutation,
   ]);
 
   const savePlan = useMemo(
@@ -492,8 +477,12 @@ export function useTrainingPlanCreationService({
       ...savePlanRoute,
       mode,
       label: mode === "edit" ? "Save" : "Create",
-      canSave: localProjection.saveReadiness.canSave,
-      blockers: localProjection.saveReadiness.blockers,
+      canSave: localProjection.saveReadiness.canSave && activeSaveCommit.ok,
+      blockers: backendSaveBlocker
+        ? [...localProjection.saveReadiness.blockers, backendSaveBlocker]
+        : localProjection.saveReadiness.blockers,
+      degradedReason:
+        mode === "edit" ? savePlanRoute.updateDegradedReason : savePlanRoute.createDegradedReason,
       isPending:
         createPlanMutation.isPending ||
         updatePlanMutation.isPending ||
@@ -503,6 +492,8 @@ export function useTrainingPlanCreationService({
       execute: mode === "edit" ? updatePlan : createPlan,
     }),
     [
+      activeSaveCommit.ok,
+      backendSaveBlocker,
       createFromCreationConfigMutation.isPending,
       createPlan,
       createPlanMutation.isPending,
