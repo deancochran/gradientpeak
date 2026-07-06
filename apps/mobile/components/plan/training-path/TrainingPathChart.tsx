@@ -709,11 +709,13 @@ export function TrainingPathChart({
 
   useAnimatedReaction(
     () => {
+      "worklet";
       if (!chartPressState.isActive.value) return null;
       const activeIndex = Number(chartPressState.x.value.value);
       return Number.isFinite(activeIndex) ? Math.round(activeIndex) : null;
     },
     (activeIndex, previousIndex) => {
+      "worklet";
       if (activeIndex == null || activeIndex === previousIndex) return;
       runOnJS(selectWeekAtIndex)(activeIndex);
     },

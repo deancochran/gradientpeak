@@ -1039,14 +1039,15 @@ describe("training plan creation domain", () => {
     });
 
     expect(selectTrainingPlanCreateSaveRoute(backendCreate)).toBe("backend");
-    expect(selectTrainingPlanCreateSaveRoute(legacyCreate)).toBe("legacy");
+    expect(selectTrainingPlanCreateSaveRoute(legacyCreate)).toBe("degraded");
     expect(selectTrainingPlanUpdateSaveRoute(backendUpdate)).toBe("backend");
-    expect(selectTrainingPlanUpdateSaveRoute(legacyUpdate)).toBe("legacy");
+    expect(selectTrainingPlanUpdateSaveRoute(legacyUpdate)).toBe("degraded");
     expect(
       createTrainingPlanSavePlanFacade({ createCommit: backendCreate, updateCommit: legacyUpdate }),
     ).toMatchObject({
       createRoute: "backend",
-      updateRoute: "legacy",
+      updateRoute: "degraded",
+      updateDegradedReason: "Backend preview snapshot token is unavailable.",
     });
   });
 
