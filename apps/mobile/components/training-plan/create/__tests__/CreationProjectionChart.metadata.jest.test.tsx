@@ -23,10 +23,17 @@ jest.mock("@shopify/react-native-skia", () => ({
 
 jest.mock("victory-native", () => ({
   __esModule: true,
-  CartesianChart: ({ children, data }: any) =>
+  CartesianChart: ({ children, data, xAxis }: any) =>
     React.createElement(
       "CartesianChart",
       null,
+      data.map((datum: any) =>
+        React.createElement(
+          "Text",
+          { key: `x-axis-${datum.index}` },
+          xAxis.formatXLabel(datum.index),
+        ),
+      ),
       children({
         points: {
           loadTss: data,
@@ -111,6 +118,54 @@ describe("CreationProjectionChart metadata", () => {
       );
 
     expect(new Set(tabs.map((node: any) => node.props.accessibilityLabel)).size).toBe(2);
+  });
+
+  it("uses relative Week/Day labels instead of absolute dates for creation chart points", () => {
+    renderNative(
+      <CreationProjectionChart
+        projectionChart={
+          {
+            start_date: "2026-07-06",
+            end_date: "2026-07-20",
+            points: [
+              {
+                date: "2026-07-06",
+                predicted_load_tss: 420,
+                predicted_fitness_ctl: 55,
+                predicted_fatigue_atl: 62,
+                predicted_form_tsb: -7,
+                readiness_score: 74,
+              },
+              {
+                date: "2026-07-13",
+                predicted_load_tss: 440,
+                predicted_fitness_ctl: 57,
+                predicted_fatigue_atl: 64,
+                predicted_form_tsb: -7,
+                readiness_score: 76,
+              },
+            ],
+            goal_markers: [],
+            periodization_phases: [],
+            microcycles: [],
+          } as any
+        }
+      />,
+    );
+
+    const textNodes = getTextNodes();
+    expect(textNodes).toContain("W1 D1");
+    expect(textNodes).toContain("W2 D1");
+    expect(textNodes).toContain("Projection window: Week 1 Day 1 to Week 3 Day 1");
+    expect(textNodes.some((text: string) => /Jul|07\/|2026/.test(text))).toBe(false);
+
+    const tabs = (screen as any)
+      .UNSAFE_getAllByType("Pressable")
+      .filter((node: any) => node.props?.accessibilityRole === "tab");
+    expect(tabs.map((node: any) => node.props.accessibilityLabel)).toEqual([
+      "Point 1 of 2, W1 D1",
+      "Point 2 of 2, W2 D1",
+    ]);
   });
 
   it("keeps old readiness metadata card removed but shows confidence hint", () => {

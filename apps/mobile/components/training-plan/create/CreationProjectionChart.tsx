@@ -13,7 +13,6 @@ import { CartesianChart, Line } from "victory-native";
 import { useTheme } from "@/lib/stores/theme-store";
 import {
   formatCompactAxisNumber,
-  formatIsoDate,
   formatWeeklyTss,
   toPercentReductionLabel,
 } from "./projection-chart/formatters";
@@ -97,6 +96,7 @@ const markerEdgeInset = 0;
 const goalDateLabelWidth = 34;
 const goalDateLabelHalfWidth = goalDateLabelWidth / 2;
 const phaseAxisStripHeight = 2;
+const millisecondsPerDay = 24 * 60 * 60 * 1000;
 
 const roundUpAxisMax = (value: number) => {
   if (!Number.isFinite(value) || value <= 0) {
@@ -125,6 +125,56 @@ const getAxisFontSource = (): Parameters<typeof useFont>[0] => {
     return undefined;
   }
 };
+
+const toUtcDay = (date: string | undefined): number | undefined => {
+  if (!date) {
+    return undefined;
+  }
+
+  const [year, month, day] = date.split("-").map(Number);
+  if (!year || !month || !day) {
+    return undefined;
+  }
+
+  return Math.floor(Date.UTC(year, month - 1, day) / millisecondsPerDay);
+};
+
+const resolveRelativeDayOffset = (date: string | undefined, startDate: string | undefined) => {
+  const day = toUtcDay(date);
+  const startDay = toUtcDay(startDate);
+
+  if (day === undefined || startDay === undefined) {
+    return undefined;
+  }
+
+  return Math.max(0, day - startDay);
+};
+
+const formatRelativePlanDay = (
+  date: string | undefined,
+  startDate: string | undefined,
+  variant: "compact" | "long" = "long",
+) => {
+  const offset = resolveRelativeDayOffset(date, startDate);
+  if (offset === undefined) {
+    return variant === "compact" ? "W? D?" : "Week ? Day ?";
+  }
+
+  const week = Math.floor(offset / 7) + 1;
+  const day = (offset % 7) + 1;
+
+  return variant === "compact" ? `W${week} D${day}` : `Week ${week} Day ${day}`;
+};
+
+const formatRelativePlanRange = (
+  startDate: string | undefined,
+  endDate: string | undefined,
+  relativeStartDate: string | undefined,
+) =>
+  `${formatRelativePlanDay(startDate, relativeStartDate)} to ${formatRelativePlanDay(
+    endDate,
+    relativeStartDate,
+  )}`;
 
 type PlotBounds = {
   left: number;
@@ -211,6 +261,7 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
   );
   const [selectedPointIndex, setSelectedPointIndex] = useState(0);
   const [lineVisibility, setLineVisibility] = useState(defaultLineVisibility);
+  const relativePlanStartDate = projectionChart?.start_date ?? points[0]?.date;
 
   useEffect(() => {
     if (!points.length) {
@@ -299,7 +350,7 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
       if (!dedupedByIndex.has(placement.pointIndex)) {
         dedupedByIndex.set(
           placement.pointIndex,
-          formatIsoDate(placement.marker.target_date, "MMM d"),
+          formatRelativePlanDay(placement.marker.target_date, relativePlanStartDate, "compact"),
         );
       }
     }
@@ -316,7 +367,7 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
           dateLabel,
         };
       });
-  }, [goalPointPlacements, markerXForIndex]);
+  }, [goalPointPlacements, markerXForIndex, relativePlanStartDate]);
   const labelStride = useMemo(() => {
     if (!points.length) {
       return 1;
@@ -324,24 +375,25 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
     return Math.max(1, Math.floor(points.length / 6));
   }, [points.length]);
 
-  const shortDateLabels = useMemo(
-    () => points.map((point) => formatIsoDate(point.date, "MMM d")),
-    [points],
+  const compactRelativeDayLabels = useMemo(
+    () =>
+      points.map((point) => formatRelativePlanDay(point.date, relativePlanStartDate, "compact")),
+    [points, relativePlanStartDate],
   );
 
-  const longDateLabels = useMemo(
-    () => points.map((point) => formatIsoDate(point.date, "EEE, MMM d")),
-    [points],
+  const longRelativeDayLabels = useMemo(
+    () => points.map((point) => formatRelativePlanDay(point.date, relativePlanStartDate)),
+    [points, relativePlanStartDate],
   );
 
   const chartLabels = useMemo(
     () =>
-      points.map((point, index) => {
+      points.map((_point, index) => {
         const isShownLabel =
           index === 0 || index % labelStride === 0 || index === points.length - 1;
-        return isShownLabel ? (shortDateLabels[index] ?? point.date) : "";
+        return isShownLabel ? (compactRelativeDayLabels[index] ?? "") : "";
       }),
-    [labelStride, points, shortDateLabels],
+    [compactRelativeDayLabels, labelStride, points],
   );
 
   const rightAxisDomainMax = useMemo(() => {
@@ -474,7 +526,7 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
   const selectedReadiness = selectedPoint?.readiness_score;
   const projectionConfidenceHint = resolveProjectionConfidenceHint(projectionChart, selectedPoint);
   const selectedPointSummary = selectedPoint
-    ? `${longDateLabels[selectedPointIndex] ?? selectedPoint.date}. Weekly load ${formatWeeklyTss(selectedPoint.predicted_load_tss)} TSS. Fitness ${selectedPoint.predicted_fitness_ctl.toFixed(1)} CTL. Fatigue ${selectedPoint.predicted_fatigue_atl.toFixed(1)} ATL. Readiness ${Math.round(selectedReadiness ?? 0)} out of 100.`
+    ? `${longRelativeDayLabels[selectedPointIndex] ?? formatRelativePlanDay(selectedPoint.date, relativePlanStartDate)}. Weekly load ${formatWeeklyTss(selectedPoint.predicted_load_tss)} TSS. Fitness ${selectedPoint.predicted_fitness_ctl.toFixed(1)} CTL. Fatigue ${selectedPoint.predicted_fatigue_atl.toFixed(1)} ATL. Readiness ${Math.round(selectedReadiness ?? 0)} out of 100.`
     : "No point selected.";
   const activePhase = useMemo(() => {
     if (!projectionChart || !selectedPoint) {
@@ -487,12 +539,22 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
   }, [projectionChart, selectedPoint]);
 
   const activePhaseSummary = activePhase
-    ? `${activePhase.name}, ${formatIsoDate(activePhase.start_date, "MMM d")} to ${formatIsoDate(activePhase.end_date, "MMM d")}.`
+    ? `${activePhase.name}, ${formatRelativePlanRange(
+        activePhase.start_date,
+        activePhase.end_date,
+        relativePlanStartDate,
+      )}.`
     : "No active phase.";
 
   const goalDatesSummary = renderedGoalMarkers.length
     ? renderedGoalMarkers
-        .map((goal) => `${goal.name || "Goal"} on ${formatIsoDate(goal.target_date, "MMM d")}`)
+        .map(
+          (goal) =>
+            `${goal.name || "Goal"} on ${formatRelativePlanDay(
+              goal.target_date,
+              relativePlanStartDate,
+            )}`,
+        )
         .join(". ")
     : "No goal dates.";
 
@@ -510,14 +572,22 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
   );
 
   const selectedWeekSummary = selectedMicrocycle?.metadata
-    ? `${formatIsoDate(selectedMicrocycle.week_start_date, "MMM d")} to ${formatIsoDate(selectedMicrocycle.week_end_date, "MMM d")}. Requested ${formatWeeklyTss(selectedMicrocycle.metadata.tss_ramp.raw_requested_weekly_tss)} TSS${selectedMicrocycle.metadata.tss_ramp.floor_override_applied ? `, floored to ${formatWeeklyTss(selectedMicrocycle.metadata.tss_ramp.requested_weekly_tss)} TSS` : ""}, applied ${formatWeeklyTss(selectedMicrocycle.metadata.tss_ramp.applied_weekly_tss)} TSS${selectedMicrocycle.metadata.tss_ramp.floor_override_applied ? " (floor minimum applied)" : selectedMicrocycle.metadata.tss_ramp.clamped ? " due to load ramp cap" : " within load ramp cap"}. Requested CTL ramp ${selectedMicrocycle.metadata.ctl_ramp.requested_ctl_ramp.toFixed(2)}, applied ${selectedMicrocycle.metadata.ctl_ramp.applied_ctl_ramp.toFixed(2)}${selectedMicrocycle.metadata.ctl_ramp.clamped ? " due to CTL cap" : " within CTL cap"}.${selectedMicrocycle.metadata.recovery.active ? ` Recovery active at ${toPercentReductionLabel(selectedMicrocycle.metadata.recovery.reduction_factor)} load reduction.` : " Recovery not active."}`
+    ? `${formatRelativePlanRange(
+        selectedMicrocycle.week_start_date,
+        selectedMicrocycle.week_end_date,
+        relativePlanStartDate,
+      )}. Requested ${formatWeeklyTss(selectedMicrocycle.metadata.tss_ramp.raw_requested_weekly_tss)} TSS${selectedMicrocycle.metadata.tss_ramp.floor_override_applied ? `, floored to ${formatWeeklyTss(selectedMicrocycle.metadata.tss_ramp.requested_weekly_tss)} TSS` : ""}, applied ${formatWeeklyTss(selectedMicrocycle.metadata.tss_ramp.applied_weekly_tss)} TSS${selectedMicrocycle.metadata.tss_ramp.floor_override_applied ? " (floor minimum applied)" : selectedMicrocycle.metadata.tss_ramp.clamped ? " due to load ramp cap" : " within load ramp cap"}. Requested CTL ramp ${selectedMicrocycle.metadata.ctl_ramp.requested_ctl_ramp.toFixed(2)}, applied ${selectedMicrocycle.metadata.ctl_ramp.applied_ctl_ramp.toFixed(2)}${selectedMicrocycle.metadata.ctl_ramp.clamped ? " due to CTL cap" : " within CTL cap"}.${selectedMicrocycle.metadata.recovery.active ? ` Recovery active at ${toPercentReductionLabel(selectedMicrocycle.metadata.recovery.reduction_factor)} load reduction.` : " Recovery not active."}`
     : "No per-week safety metadata available for this point.";
 
   const recoverySegmentSummary = projectionChart?.recovery_segments?.length
     ? projectionChart.recovery_segments
         .map(
           (segment) =>
-            `${segment.goal_name} recovery ${formatIsoDate(segment.start_date, "MMM d")} to ${formatIsoDate(segment.end_date, "MMM d")}`,
+            `${segment.goal_name} recovery ${formatRelativePlanRange(
+              segment.start_date,
+              segment.end_date,
+              relativePlanStartDate,
+            )}`,
         )
         .join(". ")
     : "No explicit post-goal recovery windows.";
@@ -806,8 +876,12 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
                 determinations.
               </Text>
               <Text className="px-1 text-[11px] text-muted-foreground">
-                Projection window: {formatIsoDate(projectionChart.start_date, "MMM d, yyyy")} to{" "}
-                {formatIsoDate(projectionChart.end_date, "MMM d, yyyy")}
+                Projection window:{" "}
+                {formatRelativePlanRange(
+                  projectionChart.start_date,
+                  projectionChart.end_date,
+                  relativePlanStartDate,
+                )}
               </Text>
 
               <View
@@ -825,7 +899,7 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
                 <Text className="text-xs font-medium">Training state</Text>
                 <Text className="text-xs text-muted-foreground">
                   {selectedPoint
-                    ? `${longDateLabels[selectedPointIndex] ?? selectedPoint.date} - Weekly load ${formatWeeklyTss(selectedPoint.predicted_load_tss)} TSS - CTL ${selectedPoint.predicted_fitness_ctl.toFixed(1)} - ATL ${selectedPoint.predicted_fatigue_atl.toFixed(1)} - Readiness ${Math.round(selectedReadiness ?? 0)}/100`
+                    ? `${longRelativeDayLabels[selectedPointIndex] ?? formatRelativePlanDay(selectedPoint.date, relativePlanStartDate)} - Weekly load ${formatWeeklyTss(selectedPoint.predicted_load_tss)} TSS - CTL ${selectedPoint.predicted_fitness_ctl.toFixed(1)} - ATL ${selectedPoint.predicted_fatigue_atl.toFixed(1)} - Readiness ${Math.round(selectedReadiness ?? 0)}/100`
                     : "Tap a point to inspect projected details."}
                 </Text>
                 <Text className="text-xs text-muted-foreground">
@@ -850,8 +924,12 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
                 {selectedMicrocycle?.metadata ? (
                   <>
                     <Text className="text-[11px] text-muted-foreground">
-                      Week: {formatIsoDate(selectedMicrocycle.week_start_date, "MMM d")} -{" "}
-                      {formatIsoDate(selectedMicrocycle.week_end_date, "MMM d")}
+                      Week:{" "}
+                      {formatRelativePlanRange(
+                        selectedMicrocycle.week_start_date,
+                        selectedMicrocycle.week_end_date,
+                        relativePlanStartDate,
+                      )}
                     </Text>
                     <Text className="text-[11px] text-muted-foreground">
                       Weekly load: requested{" "}
@@ -914,7 +992,9 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
                 <View className="flex-row gap-2">
                   {points.map((point, index) => {
                     const isActive = index === selectedPointIndex;
-                    const dateLabel = shortDateLabels[index] ?? point.date;
+                    const dateLabel =
+                      compactRelativeDayLabels[index] ??
+                      formatRelativePlanDay(point.date, relativePlanStartDate, "compact");
                     return (
                       <Pressable
                         key={`${point.date}-${index}`}
@@ -955,7 +1035,8 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
                       className="rounded-full border border-amber-300 bg-amber-100/50 px-3 py-1"
                     >
                       <Text className="text-xs text-amber-900">
-                        {formatIsoDate(goal.target_date, "MMM d")}: {goal.name || "Goal"}
+                        {formatRelativePlanDay(goal.target_date, relativePlanStartDate)}:{" "}
+                        {goal.name || "Goal"}
                       </Text>
                     </View>
                   ))}
@@ -977,8 +1058,11 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
                         >
                           <Text className="text-xs font-medium">{phase.name}</Text>
                           <Text className="text-[11px] text-muted-foreground">
-                            {formatIsoDate(phase.start_date, "MMM d")} -{" "}
-                            {formatIsoDate(phase.end_date, "MMM d")}
+                            {formatRelativePlanRange(
+                              phase.start_date,
+                              phase.end_date,
+                              relativePlanStartDate,
+                            )}
                           </Text>
                           <Text className="text-[11px] text-muted-foreground">
                             {Math.round(phase.target_weekly_tss_min)}-
@@ -1002,8 +1086,11 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
                           className="rounded-md border border-border bg-muted/20 px-3 py-2"
                         >
                           <Text className="text-xs font-medium">
-                            {formatIsoDate(microcycle.week_start_date, "MMM d")} -{" "}
-                            {formatIsoDate(microcycle.week_end_date, "MMM d")}
+                            {formatRelativePlanRange(
+                              microcycle.week_start_date,
+                              microcycle.week_end_date,
+                              relativePlanStartDate,
+                            )}
                           </Text>
                           <Text className="text-[11px] capitalize text-muted-foreground">
                             {microcycle.phase} - {microcycle.pattern}
@@ -1126,8 +1213,12 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
                         className="rounded-full border border-emerald-300 bg-emerald-100/50 px-3 py-1"
                       >
                         <Text className="text-xs text-emerald-900">
-                          {segment.goal_name}: {formatIsoDate(segment.start_date, "MMM d")} -{" "}
-                          {formatIsoDate(segment.end_date, "MMM d")}
+                          {segment.goal_name}:{" "}
+                          {formatRelativePlanRange(
+                            segment.start_date,
+                            segment.end_date,
+                            relativePlanStartDate,
+                          )}
                         </Text>
                       </View>
                     ))}
