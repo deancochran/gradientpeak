@@ -290,7 +290,7 @@ jest.mock("../BuilderStrategyComposer", () => ({
         <Text>
           {savePlan?.route === "backend"
             ? "Saving will create a backend training plan from this reusable Week/Day builder."
-            : "Saving will use the local/legacy plan path until backend creation inputs are available."}
+            : `Saving is blocked until backend create/commit is ready. ${savePlan?.degradedReason ?? "Review goals and preferences, then wait for backend preview."}`}
         </Text>
       </View>
       {renderBelowChart?.({ selectedDayPoint: null })}
@@ -529,9 +529,7 @@ describe("TrainingPlanBuilderScreen", () => {
     expect(screen.getByTestId("builder-save-route-status")).toBeTruthy();
     expect(screen.getByText("Save route")).toBeTruthy();
     expect(
-      screen.getByText(
-        "Saving will use the local/legacy plan path until backend creation inputs are available.",
-      ),
+      screen.getByText(/Saving is blocked until backend create\/commit is ready/),
     ).toBeTruthy();
   });
 
@@ -596,7 +594,7 @@ describe("TrainingPlanBuilderScreen", () => {
     expect(mockMutations.create).not.toHaveBeenCalled();
   });
 
-  it("falls back to legacy create when backend preview snapshot is unavailable", async () => {
+  it("blocks create when backend preview snapshot is unavailable", async () => {
     renderNative(<TrainingPlanBuilderScreen />);
 
     act(() =>
@@ -630,7 +628,7 @@ describe("TrainingPlanBuilderScreen", () => {
     fireEvent.press(screen.getByText("Create"));
 
     await waitFor(() => {
-      expect(mockMutations.create).toHaveBeenCalledTimes(1);
+      expect(mockMutations.create).not.toHaveBeenCalled();
     });
     expect(mockMutations.createFromCreationConfig).not.toHaveBeenCalled();
   });

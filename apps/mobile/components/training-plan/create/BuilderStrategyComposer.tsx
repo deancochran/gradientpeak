@@ -56,7 +56,11 @@ export const BuilderStrategyComposer = memo(function BuilderStrategyComposer({
         </View>
       </View>
 
-      <SaveRouteStatus route={savePlan.route} canSave={savePlan.canSave} />
+      <SaveRouteStatus
+        route={savePlan.route}
+        canSave={savePlan.canSave}
+        degradedReason={savePlan.degradedReason}
+      />
 
       <View className="-mx-2">
         <BuilderTrainingPathReviewSection
@@ -68,12 +72,20 @@ export const BuilderStrategyComposer = memo(function BuilderStrategyComposer({
   );
 });
 
-function SaveRouteStatus({ canSave, route }: { canSave: boolean; route: "backend" | "legacy" }) {
-  const status = route === "backend" ? "Backend create ready" : "Local fallback ready";
+function SaveRouteStatus({
+  canSave,
+  degradedReason,
+  route,
+}: {
+  canSave: boolean;
+  degradedReason?: string | null;
+  route: "backend" | "degraded";
+}) {
+  const status = route === "backend" ? "Backend save ready" : "Backend save unavailable";
   const detail =
     route === "backend"
       ? "Saving will create a backend training plan from this reusable Week/Day builder."
-      : "Saving will use the local/legacy plan path until backend creation inputs are available.";
+      : `Saving is blocked until backend create/commit is ready. ${degradedReason ?? "Review goals and preferences, then wait for backend preview."}`;
 
   return (
     <View
@@ -83,7 +95,7 @@ function SaveRouteStatus({ canSave, route }: { canSave: boolean; route: "backend
       <View className="flex-row items-center justify-between gap-3">
         <Text className="text-xs font-semibold uppercase text-muted-foreground">Save route</Text>
         <Text className="text-xs font-semibold text-foreground">
-          {canSave ? status : "Needs attention"}
+          {canSave || route === "degraded" ? status : "Needs attention"}
         </Text>
       </View>
       <Text className="text-xs leading-4 text-muted-foreground">{detail}</Text>
