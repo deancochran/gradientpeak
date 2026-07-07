@@ -28,7 +28,7 @@ Run these from the repo root:
 
 ```bash
 pnpm --filter mobile dev
-pnpm --filter mobile storybook
+pnpm --filter mobile storybook:start
 pnpm --filter mobile check-types
 pnpm --filter mobile lint
 pnpm --filter mobile test
@@ -40,13 +40,13 @@ pnpm --filter mobile test:e2e
 
 ```bash
 pnpm --filter mobile android:dev
-pnpm --filter mobile android:e2e:build
-pnpm --filter mobile generate:maestro
-pnpm --filter mobile maestro:lane -- smoke
+pnpm --filter mobile maestro:prepare
+pnpm --filter mobile test:e2e
+pnpm --filter mobile test:e2e:flow -- .maestro/flows/main
 ```
 
 ## Related docs
 
-- `apps/mobile/.maestro/README.md` for Maestro flow execution.
+- `apps/mobile/scripts/maestro.mjs` wraps Maestro setup, launch, cleanup, and flow execution.
 - `README.md` for repo-level workflow and validation commands.
 - `packages/db/README.md` for local DB tooling used by app-backed workflows.
