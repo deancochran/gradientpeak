@@ -430,10 +430,8 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                   horizontal
                   contentContainerStyle={{ paddingHorizontal: sideInset }}
                   decelerationRate="fast"
-                  disableIntervalMomentum
                   onMomentumScrollEnd={selectNearestDay}
                   onScroll={previewNearestDay}
-                  onScrollEndDrag={selectNearestDay}
                   scrollEventThrottle={16}
                   showsHorizontalScrollIndicator={false}
                   snapToAlignment="start"
