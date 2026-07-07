@@ -11,6 +11,10 @@ node_modules/
 
 # Local env files
 .env*
+!.env.example
+!.env.*.example
+!**/.env.example
+!**/.env.*.example
 
 
 # Testing
