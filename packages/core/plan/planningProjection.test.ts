@@ -27,6 +27,7 @@ describe("planningProjection", () => {
           weeklySessionCount: 4,
           targetWeeklyHours: null,
           restDaysPerWeek: null,
+          maxSingleSessionDurationMinutes: null,
         },
         scheduling: {
           startDate: "2026-01-01",

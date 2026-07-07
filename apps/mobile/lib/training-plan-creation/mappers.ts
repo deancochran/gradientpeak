@@ -150,6 +150,7 @@ export function createTrainingPlanBuilderStateFromExistingPlan({
           weeklySessionCount: planningSnapshot.plan_preferences.weekly_session_count,
           targetWeeklyHours: planningSnapshot.plan_preferences.target_weekly_hours,
           restDaysPerWeek: planningSnapshot.plan_preferences.rest_days_per_week,
+          maxSingleSessionDurationMinutes: null,
         }
       : defaultState.planPreferences,
     structure: {

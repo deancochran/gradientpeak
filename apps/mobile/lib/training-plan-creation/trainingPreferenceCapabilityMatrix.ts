@@ -89,7 +89,7 @@ export const TRAINING_PREFERENCE_CAPABILITY_MATRIX: TrainingPreferenceCapability
   {
     path: "availability.hard_rest_days",
     label: "Hard rest days",
-    standalone: { status: "gap", rationale: "No standalone hard-rest-day picker is rendered yet." },
+    standalone: { status: "covered", testId: "preferences-hard-rest-days" },
     builderOverride: {
       status: "supported",
       fieldKey: "restDaysPerWeek",
@@ -121,9 +121,9 @@ export const TRAINING_PREFERENCE_CAPABILITY_MATRIX: TrainingPreferenceCapability
     label: "Longest activity duration",
     standalone: { status: "covered", testId: "preferences-max-duration" },
     builderOverride: {
-      status: "gap",
-      rationale:
-        "Creation constraints support this field but builder override sheet has no control yet.",
+      status: "supported",
+      fieldKey: "maxSingleSessionDurationMinutes",
+      rationale: "Builder max single-session duration maps to creation constraints.",
     },
   },
   {
@@ -131,9 +131,9 @@ export const TRAINING_PREFERENCE_CAPABILITY_MATRIX: TrainingPreferenceCapability
     label: "Weekly time budget",
     standalone: { status: "covered", testId: "preferences-max-weekly-duration" },
     builderOverride: {
-      status: "gap",
-      rationale:
-        "Builder exposes weekly hours, but creation constraints do not yet carry weekly duration.",
+      status: "supported",
+      fieldKey: "targetWeeklyHours",
+      rationale: "Builder weekly hours is exposed as plan-local load intent for preview/readiness.",
     },
   },
   {
@@ -167,10 +167,7 @@ export const TRAINING_PREFERENCE_CAPABILITY_MATRIX: TrainingPreferenceCapability
   {
     path: "training_style.key_session_density_preference",
     label: "Key session density preference",
-    standalone: {
-      status: "gap",
-      rationale: "Schema/default exists but no standalone field is rendered.",
-    },
+    standalone: { status: "covered", testId: "preferences-key-session-density" },
     builderOverride: {
       status: "not-applicable",
       rationale: "Not currently modeled as a plan-local creation constraint.",
@@ -215,10 +212,7 @@ export const TRAINING_PREFERENCE_CAPABILITY_MATRIX: TrainingPreferenceCapability
   {
     path: "recovery_preferences.double_day_tolerance",
     label: "Double-day tolerance",
-    standalone: {
-      status: "gap",
-      rationale: "Schema/default exists but no standalone field is rendered.",
-    },
+    standalone: { status: "covered", testId: "preferences-double-day-tolerance" },
     builderOverride: {
       status: "not-applicable",
       rationale: "Not currently modeled as a plan-local creation constraint.",
@@ -227,10 +221,7 @@ export const TRAINING_PREFERENCE_CAPABILITY_MATRIX: TrainingPreferenceCapability
   {
     path: "recovery_preferences.long_session_fatigue_tolerance",
     label: "Long-session fatigue tolerance",
-    standalone: {
-      status: "gap",
-      rationale: "Schema/default exists but no standalone field is rendered.",
-    },
+    standalone: { status: "covered", testId: "preferences-long-session-fatigue" },
     builderOverride: {
       status: "not-applicable",
       rationale: "Not currently modeled as a plan-local creation constraint.",
@@ -239,10 +230,7 @@ export const TRAINING_PREFERENCE_CAPABILITY_MATRIX: TrainingPreferenceCapability
   {
     path: "adaptation_preferences.recency_adaptation_preference",
     label: "Recency adaptation preference",
-    standalone: {
-      status: "gap",
-      rationale: "Schema/default exists but no standalone field is rendered.",
-    },
+    standalone: { status: "covered", testId: "preferences-recency-adaptation" },
     builderOverride: {
       status: "not-applicable",
       rationale: "Not currently modeled as a plan-local creation constraint.",
@@ -251,10 +239,7 @@ export const TRAINING_PREFERENCE_CAPABILITY_MATRIX: TrainingPreferenceCapability
   {
     path: "adaptation_preferences.plan_churn_tolerance",
     label: "Plan churn tolerance",
-    standalone: {
-      status: "gap",
-      rationale: "Schema/default exists but no standalone field is rendered.",
-    },
+    standalone: { status: "covered", testId: "preferences-plan-churn" },
     builderOverride: {
       status: "not-applicable",
       rationale: "Not currently modeled as a plan-local creation constraint.",
@@ -272,10 +257,7 @@ export const TRAINING_PREFERENCE_CAPABILITY_MATRIX: TrainingPreferenceCapability
   {
     path: "goal_strategy_preferences.priority_tradeoff_preference",
     label: "Priority tradeoff preference",
-    standalone: {
-      status: "gap",
-      rationale: "Schema/default exists but no standalone field is rendered.",
-    },
+    standalone: { status: "covered", testId: "preferences-priority-tradeoff" },
     builderOverride: {
       status: "not-applicable",
       rationale: "Not currently modeled as a plan-local creation constraint.",

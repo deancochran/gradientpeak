@@ -262,29 +262,22 @@ describe("training plan creation domain", () => {
   it("uses sparse descriptor-driven planning constraints", () => {
     const fixtures = createTrainingPlanBuilderFixtures();
     const emptyFields = selectTrainingPlanPreferenceFields(fixtures.emptyState.planPreferences);
-    const withDuration = addTrainingPlanPreferenceField(
-      fixtures.emptyState.planPreferences,
-      "durationWeeks",
-    );
     const withSessions = applyTrainingPlanPreferenceFieldOverride(
-      withDuration,
+      fixtures.emptyState.planPreferences,
       "weeklySessionCount",
       4.4,
     );
-    const withoutDuration = applyTrainingPlanPreferenceFieldOverride(
+    const withMaxDuration = applyTrainingPlanPreferenceFieldOverride(
       withSessions,
-      "durationWeeks",
-      null,
+      "maxSingleSessionDurationMinutes",
+      95,
     );
 
     expect(emptyFields.find((field) => field.key === "durationWeeks")).toMatchObject({
       visible: false,
-      canRemove: false,
-      value: { value: null, source: "unknown" },
     });
-    expect(withDuration.durationWeeks).toBe(4);
     expect(withSessions.weeklySessionCount).toBe(4);
-    expect(withoutDuration.durationWeeks).toBeNull();
+    expect(withMaxDuration.maxSingleSessionDurationMinutes).toBe(95);
     expect(
       selectTrainingPlanPreferenceFields(withSessions).find(
         (field) => field.key === "weeklySessionCount",

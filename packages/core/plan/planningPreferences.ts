@@ -10,6 +10,7 @@ export const planningPreferencesSchema = z
     weeklySessionCount: z.number().int().min(1).max(14).nullable(),
     targetWeeklyHours: z.number().min(0).max(168).nullable(),
     restDaysPerWeek: z.number().int().min(0).max(7).nullable(),
+    maxSingleSessionDurationMinutes: z.number().int().min(20).max(600).nullable(),
   })
   .strict();
 
@@ -104,6 +105,17 @@ export const PLANNING_PREFERENCE_FIELD_METADATA: Record<
     step: 1,
     helperText: "Days the builder should avoid when distributing sessions.",
     requiredDefault: 2,
+  },
+  maxSingleSessionDurationMinutes: {
+    key: "maxSingleSessionDurationMinutes",
+    label: "Longest activity",
+    shortLabel: "Longest activity",
+    unit: "min",
+    min: 20,
+    max: 600,
+    step: 5,
+    helperText: "Maximum single-session duration for this plan only.",
+    requiredDefault: 120,
   },
 };
 
@@ -228,6 +240,11 @@ export function mapPlanningPreferencesToCreationConstraints({
       ? {
           min_sessions_per_week: Math.max(0, preferences.weeklySessionCount - 1),
           max_sessions_per_week: preferences.weeklySessionCount,
+        }
+      : {}),
+    ...(preferences.maxSingleSessionDurationMinutes !== null
+      ? {
+          max_single_session_duration_minutes: preferences.maxSingleSessionDurationMinutes,
         }
       : {}),
     goal_difficulty_preference: "balanced",

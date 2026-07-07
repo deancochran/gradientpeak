@@ -18,6 +18,7 @@ describe("planningContext", () => {
         weeklySessionCount: 4,
         targetWeeklyHours: null,
         restDaysPerWeek: null,
+        maxSingleSessionDurationMinutes: null,
       },
       sessions: [],
       scheduling: {
@@ -39,6 +40,7 @@ describe("planningContext", () => {
           weeklySessionCount: 4,
           targetWeeklyHours: null,
           restDaysPerWeek: null,
+          maxSingleSessionDurationMinutes: null,
         },
         preferredWeekdays: [1, 3, 5],
       }),

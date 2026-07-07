@@ -35,6 +35,7 @@ function createContext(overrides: Partial<PlanningContext> = {}): PlanningContex
       weeklySessionCount: 4,
       targetWeeklyHours: null,
       restDaysPerWeek: null,
+      maxSingleSessionDurationMinutes: null,
     },
     sessions: [],
     scheduling: {
@@ -104,6 +105,7 @@ describe("planningBackendPreview", () => {
           weeklySessionCount: null,
           targetWeeklyHours: null,
           restDaysPerWeek: null,
+          maxSingleSessionDurationMinutes: null,
         },
       }),
     );
@@ -123,6 +125,7 @@ describe("planningBackendPreview", () => {
           weeklySessionCount: 5,
           targetWeeklyHours: null,
           restDaysPerWeek: null,
+          maxSingleSessionDurationMinutes: null,
         },
       }),
     );

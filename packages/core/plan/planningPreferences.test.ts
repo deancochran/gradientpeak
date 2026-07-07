@@ -19,6 +19,7 @@ describe("planning preference validation", () => {
       weeklySessionCount: 6,
       targetWeeklyHours: null,
       restDaysPerWeek: 2,
+      maxSingleSessionDurationMinutes: null,
     });
 
     expect(issues).toContainEqual(
@@ -37,6 +38,7 @@ describe("planning preference validation", () => {
         weeklySessionCount: 4,
         targetWeeklyHours: null,
         restDaysPerWeek: 2,
+        maxSingleSessionDurationMinutes: 180,
       },
       preferredWeekdays: [],
     });
@@ -44,6 +46,7 @@ describe("planning preference validation", () => {
     expect(constraints.hard_rest_days).toEqual(["sunday", "monday"]);
     expect(constraints.min_sessions_per_week).toBe(3);
     expect(constraints.max_sessions_per_week).toBe(4);
+    expect(constraints.max_single_session_duration_minutes).toBe(180);
   });
 
   it("validates standalone schedule dose-limit consistency with shared messages", () => {

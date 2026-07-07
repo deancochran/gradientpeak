@@ -37,6 +37,7 @@ function createContext(overrides: Partial<PlanningContext> = {}): PlanningContex
       weeklySessionCount: 4,
       targetWeeklyHours: null,
       restDaysPerWeek: null,
+      maxSingleSessionDurationMinutes: null,
     },
     sessions: [
       {

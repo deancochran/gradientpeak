@@ -26,6 +26,7 @@ export function createDefaultTrainingPlanBuilderState(): TrainingPlanBuilderStat
       weeklySessionCount: null,
       targetWeeklyHours: null,
       restDaysPerWeek: null,
+      maxSingleSessionDurationMinutes: null,
     },
     goalContext: {
       selectedGoals: [],
