@@ -101,4 +101,23 @@ describe("DailyTrainingAdjustmentChart", () => {
     expect(screen.getByText("2026-06-02")).toBeTruthy();
     expect(onSelectedDateChange).toHaveBeenCalledWith("2026-06-02");
   });
+
+  it("lets native momentum carry between snap points", () => {
+    render(
+      <DailyTrainingAdjustmentChart
+        points={[
+          { date: "2026-06-01", targetLoadTss: 40, actualOrScheduledLoadTss: 35 },
+          { date: "2026-06-02", targetLoadTss: 50, actualOrScheduledLoadTss: 65 },
+          { date: "2026-06-03", targetLoadTss: 50, actualOrScheduledLoadTss: 30 },
+        ]}
+      />,
+    );
+
+    const scrollView = screen.getByTestId("daily-training-adjustment-chart-scroll");
+
+    expect(scrollView.props.disableIntervalMomentum).toBeUndefined();
+    expect(scrollView.props.onScrollEndDrag).toBeUndefined();
+    expect(scrollView.props.decelerationRate).toBe("fast");
+    expect(scrollView.props.snapToInterval).toBeGreaterThan(0);
+  });
 });

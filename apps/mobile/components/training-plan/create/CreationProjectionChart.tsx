@@ -262,6 +262,9 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
   );
   const [selectedPointIndex, setSelectedPointIndex] = useState(0);
   const [lineVisibility, setLineVisibility] = useState(defaultLineVisibility);
+  const [pointSnapOffsets, setPointSnapOffsets] = useState<Record<number, number>>({});
+  const [phaseSnapOffsets, setPhaseSnapOffsets] = useState<Record<string, number>>({});
+  const [microcycleSnapOffsets, setMicrocycleSnapOffsets] = useState<Record<string, number>>({});
   const relativePlanStartDate = projectionChart?.start_date ?? points[0]?.date;
 
   useEffect(() => {
@@ -518,9 +521,41 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
       };
     });
   }, []);
+  const recordSnapOffset = useCallback(
+    <Key extends string | number>(
+      setOffsets: React.Dispatch<React.SetStateAction<Record<Key, number>>>,
+      key: Key,
+      event: LayoutChangeEvent,
+    ) => {
+      const offset = Math.max(0, Math.floor(event.nativeEvent.layout.x));
+      setOffsets((current) => (current[key] === offset ? current : { ...current, [key]: offset }));
+    },
+    [],
+  );
   const activeLineCount = useMemo(
     () => lineConfig.reduce((count, line) => count + (lineVisibility[line.key] ? 1 : 0), 0),
     [lineVisibility],
+  );
+  const orderedPointSnapOffsets = useMemo(
+    () =>
+      points
+        .map((_, index) => pointSnapOffsets[index])
+        .filter((offset): offset is number => typeof offset === "number"),
+    [pointSnapOffsets, points],
+  );
+  const orderedPhaseSnapOffsets = useMemo(
+    () =>
+      (projectionChart?.periodization_phases ?? [])
+        .map((phase) => phaseSnapOffsets[phase.id])
+        .filter((offset): offset is number => typeof offset === "number"),
+    [phaseSnapOffsets, projectionChart?.periodization_phases],
+  );
+  const orderedMicrocycleSnapOffsets = useMemo(
+    () =>
+      (projectionChart?.microcycles ?? [])
+        .map((microcycle) => microcycleSnapOffsets[microcycle.week_start_date])
+        .filter((offset): offset is number => typeof offset === "number"),
+    [microcycleSnapOffsets, projectionChart?.microcycles],
   );
 
   const handleSelectPoint = useCallback(
@@ -1020,6 +1055,12 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
+                decelerationRate="fast"
+                disableIntervalMomentum={false}
+                snapToAlignment="start"
+                snapToOffsets={
+                  orderedPointSnapOffsets.length > 1 ? orderedPointSnapOffsets : undefined
+                }
                 accessibilityRole="tablist"
                 accessibilityLabel="Projection points"
                 accessibilityHint="Swipe left or right to browse dates, then double tap to select"
@@ -1034,6 +1075,7 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
                       <Pressable
                         key={`${point.date}-${index}`}
                         onPress={() => handleSelectPoint(index)}
+                        onLayout={(event) => recordSnapOffset(setPointSnapOffsets, index, event)}
                         className={`rounded-full border px-3 py-1 ${isActive ? "border-primary bg-primary/10" : "border-border bg-background"}`}
                         accessibilityRole="tab"
                         accessibilityState={{ selected: isActive }}
@@ -1080,7 +1122,16 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
 
               <View className="gap-2">
                 <Text className="text-xs font-medium">Periodization phases</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  decelerationRate="fast"
+                  disableIntervalMomentum={false}
+                  snapToAlignment="start"
+                  snapToOffsets={
+                    orderedPhaseSnapOffsets.length > 1 ? orderedPhaseSnapOffsets : undefined
+                  }
+                >
                   <View className="flex-row gap-2">
                     {projectionChart.periodization_phases.map((phase) => {
                       const isActivePhase = selectedPoint
@@ -1089,6 +1140,9 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
                       return (
                         <View
                           key={phase.id}
+                          onLayout={(event) =>
+                            recordSnapOffset(setPhaseSnapOffsets, phase.id, event)
+                          }
                           className={`rounded-md border px-3 py-2 ${isActivePhase ? "border-primary bg-primary/10" : "border-border bg-muted/20"}`}
                         >
                           <Text className="text-xs font-medium">{phase.name}</Text>
@@ -1113,11 +1167,29 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
               {projectionChart.microcycles?.length ? (
                 <View className="gap-2">
                   <Text className="text-xs font-medium">Microcycles</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    decelerationRate="fast"
+                    disableIntervalMomentum={false}
+                    snapToAlignment="start"
+                    snapToOffsets={
+                      orderedMicrocycleSnapOffsets.length > 1
+                        ? orderedMicrocycleSnapOffsets
+                        : undefined
+                    }
+                  >
                     <View className="flex-row gap-2">
                       {projectionChart.microcycles.map((microcycle) => (
                         <View
                           key={`${microcycle.week_start_date}-${microcycle.week_end_date}`}
+                          onLayout={(event) =>
+                            recordSnapOffset(
+                              setMicrocycleSnapOffsets,
+                              microcycle.week_start_date,
+                              event,
+                            )
+                          }
                           className="rounded-md border border-border bg-muted/20 px-3 py-2"
                         >
                           <Text className="text-xs font-medium">
