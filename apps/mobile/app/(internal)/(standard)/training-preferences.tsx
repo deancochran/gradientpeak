@@ -75,6 +75,14 @@ const defaultAvailabilityWindow = {
   end_minute_of_day: 540,
 };
 
+function formatMinuteOfDay(minuteOfDay: number | null | undefined) {
+  if (typeof minuteOfDay !== "number" || !Number.isFinite(minuteOfDay)) return "--:--";
+  const boundedMinute = Math.max(0, Math.min(1440, Math.round(minuteOfDay)));
+  const hours = Math.floor(boundedMinute / 60);
+  const minutes = boundedMinute % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
 const defaultSportDoseOverride = {
   min_sessions_per_week: 0,
   max_sessions_per_week: 3,
@@ -180,6 +188,44 @@ function getSelectedPreferencePreset(draft: AthleteTrainingSettingsFormInput): P
   });
 
   return matchedPreset?.key ?? "custom";
+}
+
+function TrainingPreferencesTabs({
+  activeTab,
+  onSelectTab,
+}: {
+  activeTab: PreferencesTabKey;
+  onSelectTab: (tab: PreferencesTabKey) => void;
+}) {
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerClassName="gap-2 pr-2"
+      accessibilityRole="tablist"
+      accessibilityLabel="Training preference groups"
+    >
+      {preferenceTabs.map((tab) => {
+        const isActive = tab.key === activeTab;
+        return (
+          <Pressable
+            key={tab.key}
+            onPress={() => onSelectTab(tab.key)}
+            testID={`training-preferences-tab-${tab.key}`}
+            className={`border-b-2 px-1.5 py-1.5 ${isActive ? "border-primary" : "border-transparent"}`}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: isActive }}
+          >
+            <Text
+              className={`text-sm ${isActive ? "font-semibold text-foreground" : "text-muted-foreground"}`}
+            >
+              {tab.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </ScrollView>
+  );
 }
 
 export default function TrainingPreferencesScreen() {
@@ -428,33 +474,7 @@ export default function TrainingPreferencesScreen() {
             planId={activePlanQuery.data?.id}
           />
 
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerClassName="gap-2 pr-2"
-            accessibilityRole="tablist"
-            accessibilityLabel="Training preference groups"
-          >
-            {preferenceTabs.map((tab) => {
-              const isActive = tab.key === activeTab;
-              return (
-                <Pressable
-                  key={tab.key}
-                  onPress={() => setActiveTab(tab.key)}
-                  testID={`training-preferences-tab-${tab.key}`}
-                  className={`border-b-2 px-1.5 py-1.5 ${isActive ? "border-primary" : "border-transparent"}`}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: isActive }}
-                >
-                  <Text
-                    className={`text-sm ${isActive ? "font-semibold text-foreground" : "text-muted-foreground"}`}
-                  >
-                    {tab.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
+          <TrainingPreferencesTabs activeTab={activeTab} onSelectTab={setActiveTab} />
 
           <View className="gap-3 rounded-xl border border-border bg-card p-3">
             {activeTab === "preferences" ? (
@@ -574,6 +594,8 @@ export default function TrainingPreferencesScreen() {
                       const weeklyWindows = draft.availability.weekly_windows ?? [];
                       const windowIndex = weeklyWindows.findIndex((item) => item.day === day.key);
                       const enabled = windowIndex >= 0;
+                      const windowConfig = enabled ? weeklyWindows[windowIndex] : null;
+                      const firstWindow = windowConfig?.windows?.[0];
                       return (
                         <View
                           key={day.key}
@@ -594,6 +616,12 @@ export default function TrainingPreferencesScreen() {
                           </View>
                           {enabled ? (
                             <View className="gap-2">
+                              <Text className="text-xs leading-4 text-muted-foreground">
+                                {formatMinuteOfDay(firstWindow?.start_minute_of_day)}–
+                                {formatMinuteOfDay(firstWindow?.end_minute_of_day)} · max{" "}
+                                {windowConfig?.max_sessions ?? 0} session
+                                {(windowConfig?.max_sessions ?? 0) === 1 ? "" : "s"}
+                              </Text>
                               <View className="flex-row gap-2">
                                 <View className="flex-1">
                                   <FormIntegerStepperField

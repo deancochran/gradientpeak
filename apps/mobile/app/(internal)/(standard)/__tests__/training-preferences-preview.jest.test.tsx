@@ -493,16 +493,13 @@ describe("training preferences projection preview", () => {
       screen.getByTestId("preferences-availability-toggle-monday").props.onPress();
     });
     expect(
-      getByTypeAndId("IntegerStepperInput", "preferences-availability-window-monday-start").props
-        .label,
+      getByTypeAndId("IntegerStepper", "preferences-availability-window-monday-start").props.label,
     ).toBe("Start minute");
     expect(
-      getByTypeAndId("IntegerStepperInput", "preferences-availability-window-monday-end").props
-        .label,
+      getByTypeAndId("IntegerStepper", "preferences-availability-window-monday-end").props.label,
     ).toBe("End minute");
     expect(
-      getByTypeAndId("IntegerStepperInput", "preferences-availability-max-sessions-monday").props
-        .label,
+      getByTypeAndId("IntegerStepper", "preferences-availability-max-sessions-monday").props.label,
     ).toBe("Max sessions");
 
     act(() => {
@@ -524,20 +521,17 @@ describe("training preferences projection preview", () => {
       screen.getByTestId("preferences-sport-override-toggle-run").props.onPress();
     });
     expect(
-      getByTypeAndId("IntegerStepperInput", "preferences-sport-override-run-min-sessions").props
-        .label,
+      getByTypeAndId("IntegerStepper", "preferences-sport-override-run-min-sessions").props.label,
     ).toBe("Min sessions");
     expect(
-      getByTypeAndId("IntegerStepperInput", "preferences-sport-override-run-max-sessions").props
-        .label,
+      getByTypeAndId("IntegerStepper", "preferences-sport-override-run-max-sessions").props.label,
     ).toBe("Max sessions");
     expect(
-      getByTypeAndId("IntegerStepperInput", "preferences-sport-override-run-max-duration").props
-        .label,
+      getByTypeAndId("IntegerStepper", "preferences-sport-override-run-max-duration").props.label,
     ).toBe("Max session duration");
     expect(
-      getByTypeAndId("IntegerStepperInput", "preferences-sport-override-run-max-weekly-duration")
-        .props.label,
+      getByTypeAndId("IntegerStepper", "preferences-sport-override-run-max-weekly-duration").props
+        .label,
     ).toBe("Max weekly duration");
   });
 
