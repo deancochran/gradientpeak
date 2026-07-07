@@ -44,7 +44,7 @@ function TimeInput({
   label,
   name: _name,
   onChange,
-  pickerPresentation = "inline",
+  pickerPresentation = "modal",
   placeholder = "Select time",
   required = false,
   testId,
@@ -145,7 +145,7 @@ function TimeInput({
           value={selectedTime}
         />
       ) : null}
-      {usesModalPresentation && Platform.OS !== "android" ? (
+      {usesModalPresentation && Platform.OS !== "android" && isPickerVisible ? (
         <Modal
           animationType="fade"
           onRequestClose={() => setIsPickerVisible(false)}

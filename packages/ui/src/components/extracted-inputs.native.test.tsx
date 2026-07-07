@@ -24,6 +24,19 @@ import { TimeInput } from "./time-input/index.native";
 import { weightInputFieldFixtures } from "./weight-input-field/fixtures";
 import { WeightInputField } from "./weight-input-field/index.native";
 
+type NativeRenderWithTypeQueries = ReturnType<typeof renderNative> & {
+  queryAllByType?: (type: string) => unknown[];
+  UNSAFE_getAllByType: (type: string) => unknown[];
+};
+
+function getNativeNodesByType(rendered: ReturnType<typeof renderNative>, type: string) {
+  return (rendered as NativeRenderWithTypeQueries).UNSAFE_getAllByType(type);
+}
+
+function queryNativeNodesByType(rendered: ReturnType<typeof renderNative>, type: string) {
+  return (rendered as NativeRenderWithTypeQueries).queryAllByType?.(type) ?? [];
+}
+
 describe("extracted inputs native", () => {
   it("DateInput clears a selected value", () => {
     const onChange = jest.fn();
@@ -34,6 +47,18 @@ describe("extracted inputs native", () => {
     fireEvent.press(getByLabelText("Clear date"));
 
     expect(onChange).toHaveBeenCalledWith(undefined);
+  });
+
+  it("DateInput opens the native picker in a modal by default instead of inline below the field", () => {
+    const onChange = jest.fn();
+    const rendered = renderNative(<DateInput {...dateInputFixtures.raceDay} onChange={onChange} />);
+
+    expect(queryNativeNodesByType(rendered, "DateTimePicker")).toHaveLength(0);
+
+    fireEvent.press(rendered.getByTestId("race-day-input"));
+
+    expect(getNativeNodesByType(rendered, "DateTimePicker")).toHaveLength(1);
+    expect(rendered.getByText("Done")).toBeTruthy();
   });
 
   it("FileInput returns picked files", async () => {
@@ -163,12 +188,26 @@ describe("extracted inputs native", () => {
 
   it("TimeInput clears a selected value", () => {
     const onChange = jest.fn();
-    const { getByText } = renderNative(
+    const { getByLabelText } = renderNative(
       <TimeInput {...timeInputFixtures.startTime} clearable onChange={onChange} />,
     );
 
-    fireEvent.press(getByText("Clear"));
+    fireEvent.press(getByLabelText("Clear time"));
 
     expect(onChange).toHaveBeenCalledWith(undefined);
+  });
+
+  it("TimeInput opens the native picker in a modal by default instead of inline below the field", () => {
+    const onChange = jest.fn();
+    const rendered = renderNative(
+      <TimeInput {...timeInputFixtures.startTime} onChange={onChange} />,
+    );
+
+    expect(queryNativeNodesByType(rendered, "DateTimePicker")).toHaveLength(0);
+
+    fireEvent.press(rendered.getByTestId("start-time-input"));
+
+    expect(getNativeNodesByType(rendered, "DateTimePicker")).toHaveLength(1);
+    expect(rendered.getByText("Done")).toBeTruthy();
   });
 });

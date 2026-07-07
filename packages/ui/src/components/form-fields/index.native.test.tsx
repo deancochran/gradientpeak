@@ -1,3 +1,4 @@
+import type { ReactTestInstance } from "react-test-renderer";
 import { z } from "zod";
 
 import { useZodForm } from "../../hooks/use-zod-form";
@@ -31,6 +32,26 @@ const profileSchema = z.object({
   weight_kg: z.number().nullable(),
   username: z.string(),
 });
+
+function getPickerByMode(nodes: ReactTestInstance[], mode: "date" | "time"): ReactTestInstance {
+  const node = nodes.find((candidate) => candidate.props.mode === mode);
+
+  if (!node) {
+    throw new Error(`Expected ${mode} picker to be rendered`);
+  }
+
+  return node;
+}
+
+function getLastNode(nodes: ReactTestInstance[], label: string): ReactTestInstance {
+  const node = nodes.at(-1);
+
+  if (!node) {
+    throw new Error(`Expected ${label} to be rendered`);
+  }
+
+  return node;
+}
 
 function FormFieldsHarness() {
   const methods = useZodForm({
@@ -142,30 +163,30 @@ describe("Form fields native", () => {
   it("binds shared controlled wrappers to react-hook-form", () => {
     const { getAllByText, getByLabelText, getByTestId, getByText, UNSAFE_getAllByType } =
       renderNative(<FormFieldsHarness />);
+    const getAllByTypeName = UNSAFE_getAllByType as unknown as (
+      type: string,
+    ) => ReactTestInstance[];
 
     fireEvent(getByLabelText("Username"), "changeText", "Taylor");
     fireEvent(getByLabelText("Bio"), "changeText", "Coach");
     fireEvent.press(getByTestId("wake-time-field"));
-    const timePicker = (UNSAFE_getAllByType("DateTimePicker" as any) as any[])
-      .filter((node) => node.props.mode === "time")
-      .at(-1) as any;
+    const timePicker = getLastNode(
+      getAllByTypeName("DateTimePicker").filter((node) => node.props.mode === "time"),
+      "time picker",
+    );
     fireEvent(timePicker, "change", {}, new Date(2026, 2, 23, 3, 45));
-    fireEvent.press(getAllByText("Done").at(-1)!);
+    fireEvent.press(getLastNode(getAllByText("Done"), "Done button"));
     fireEvent(getByLabelText("Duration"), "changeText", "45:00");
     fireEvent(getByLabelText("Duration"), "blur");
     fireEvent.press(getByText("+"));
     fireEvent.press(getByTestId("recorded-at-field-date"));
-    const datePicker = (UNSAFE_getAllByType("DateTimePicker" as any) as any[]).find(
-      (node) => node.props.mode === "date",
-    ) as any;
+    const datePicker = getPickerByMode(getAllByTypeName("DateTimePicker"), "date");
     fireEvent(datePicker, "change", {}, new Date(2026, 2, 24, 0, 0));
-    fireEvent.press(getAllByText("Done")[0]!);
+    fireEvent.press(getLastNode(getAllByText("Done"), "Done button"));
     fireEvent.press(getByTestId("recorded-at-field-time"));
-    const recordedTimePicker = (UNSAFE_getAllByType("DateTimePicker" as any) as any[]).find(
-      (node) => node.props.mode === "time",
-    ) as any;
+    const recordedTimePicker = getPickerByMode(getAllByTypeName("DateTimePicker"), "time");
     fireEvent(recordedTimePicker, "change", {}, new Date(2026, 2, 24, 4, 15));
-    fireEvent.press(getAllByText("Done")[1]!);
+    fireEvent.press(getLastNode(getAllByText("Done"), "Done button"));
     fireEvent.press(getByTestId("activity-type-field-bike"));
     fireEvent(getByLabelText("FTP"), "changeText", "300");
     fireEvent(getByLabelText("FTP"), "blur");

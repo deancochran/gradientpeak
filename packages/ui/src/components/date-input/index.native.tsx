@@ -23,7 +23,7 @@ function DateInput({
   minimumDate,
   name: _name,
   onChange,
-  pickerPresentation = "inline",
+  pickerPresentation = "modal",
   placeholder = "Select date",
   required = false,
   testId,
@@ -120,7 +120,7 @@ function DateInput({
           value={selectedDate}
         />
       ) : null}
-      {usesModalPresentation && Platform.OS !== "android" ? (
+      {usesModalPresentation && Platform.OS !== "android" && isPickerVisible ? (
         <Modal
           animationType="fade"
           onRequestClose={() => setIsPickerVisible(false)}
