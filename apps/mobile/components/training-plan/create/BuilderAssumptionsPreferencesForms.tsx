@@ -367,7 +367,9 @@ export function BuilderPlanPreferencesContextForm({
   return (
     <View className="gap-4">
       <HelperCopy>
-        Edit the planning constraints used by the algorithm. Clear a value to leave it unset.
+        Edit plan-local overrides for this training plan only. Global athlete preferences stay in
+        Training Preferences. Clear a value to let the builder derive it from submitted goals,
+        sessions, and activities.
       </HelperCopy>
       {issues.length > 0 ? (
         <View className="gap-2 rounded-xl border border-amber-400/40 bg-amber-400/10 px-3 py-2">
