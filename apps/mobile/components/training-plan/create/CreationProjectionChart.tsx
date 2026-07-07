@@ -42,6 +42,7 @@ interface CreationProjectionChartProps {
 
 type ProjectionChartDatum = Record<string, unknown> & {
   index: number;
+  xLabel: string;
   loadTss: number;
   fitnessCtl: number;
   fatigueAtl: number;
@@ -439,12 +440,15 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
     (): ProjectionChartDatum[] =>
       points.map((point, index) => ({
         index,
+        xLabel:
+          compactRelativeDayLabels[index] ??
+          formatRelativePlanDay(point.date, relativePlanStartDate, "compact"),
         loadTss: point.predicted_load_tss,
         fitnessCtl: point.predicted_fitness_ctl,
         fatigueAtl: point.predicted_fatigue_atl,
         readinessScore: point.readiness_score,
       })),
-    [points],
+    [compactRelativeDayLabels, points, relativePlanStartDate],
   );
 
   const leftAxisUnitLabel = "TSS/wk";
@@ -457,15 +461,12 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
       axisSide: "bottom" as const,
       font: axisFont,
       tickCount: Math.min(6, Math.max(2, points.length)),
-      tickValues: chartLabels
-        .map((label, index) => (label ? index : undefined))
-        .filter((index): index is number => index !== undefined),
       labelColor: isDark ? "#a3a3a3" : "#737373",
       lineColor: isDark ? "rgba(38, 38, 38, 0.55)" : "rgba(228, 228, 228, 0.75)",
       lineWidth: 1,
-      formatXLabel: () => "",
+      formatXLabel: (value: unknown) => String(value ?? ""),
     }),
-    [axisFont, chartLabels, isDark, points.length],
+    [axisFont, isDark, points.length],
   );
 
   const yAxisConfig = useMemo(
@@ -747,9 +748,9 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
                   alignSelf: "center",
                 }}
               >
-                <CartesianChart<ProjectionChartDatum, "index", ChartYKey>
+                <CartesianChart<ProjectionChartDatum, "xLabel", ChartYKey>
                   data={chartData}
-                  xKey="index"
+                  xKey="xLabel"
                   yKeys={chartYKeys}
                   padding={chartPadding}
                   domainPadding={chartDomainPadding}
