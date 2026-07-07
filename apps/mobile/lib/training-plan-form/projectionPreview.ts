@@ -2,6 +2,10 @@ import { canonicalizeMinimalTrainingPlanCreate } from "@repo/core/plan/canonical
 import type { ProjectionChartPayload } from "@repo/core/plan/projectionTypes";
 import { withLegacyTrainingLoadAliases } from "@repo/core/plan/trainingLoadTimeline";
 import {
+  filterDateKeyedItemsToProjectionWindow,
+  resolveTrainingPlanProjectionWindow,
+} from "@repo/core/plan/trainingPlanProjectionBudgets";
+import {
   type AthleteTrainingSettings,
   type AthleteTrainingSettingsFormInput,
   athleteTrainingSettingsFormSchema,
@@ -78,6 +82,7 @@ function toGoalTargets(goal: TrainingPlanSnapshot["profileGoals"][number]): Goal
         case "hr":
           return [{ target_type: "hr_threshold", target_lthr_bpm: objective.value }];
       }
+      return [];
     }
     default:
       return [];
@@ -188,21 +193,35 @@ export function buildTrainingPreferencesLoadTimeline(input: {
   scheduledWindowStart?: string | null;
   scheduledWindowEnd?: string | null;
 }) {
+  const todayKey = toDateKey(new Date());
+  const projectionWindow = resolveTrainingPlanProjectionWindow({
+    anchorDate: todayKey,
+    requestedStartDate: input.scheduledWindowStart,
+    requestedEndDate: input.scheduledWindowEnd,
+  });
   const baselineTimeline = input.snapshot.insightTimeline?.timeline ?? [];
   const baselineByDate = new Map(baselineTimeline.map((point) => [point.date, point]));
   const previewByDate = new Map(
     (input.projectionChart?.display_points ?? []).map((point) => [point.date, point]),
   );
-  const dateSource = baselineTimeline.length > 0 ? baselineTimeline : [...previewByDate.values()];
-  const dates = new Set(dateSource.map((point) => point.date));
+  const dateSource: Array<{ date: string }> =
+    baselineTimeline.length > 0 ? baselineTimeline : [...previewByDate.values()];
+  const dates = new Set(
+    filterDateKeyedItemsToProjectionWindow(dateSource, {
+      window: projectionWindow,
+      getDate: (point) => point.date,
+    }).map((point) => point.date),
+  );
   const scheduledLoadAggregation = aggregateScheduledLoadByDate(input);
-  for (const date of scheduledLoadAggregation.dates) dates.add(date);
+  for (const date of scheduledLoadAggregation.dates) {
+    if (date >= projectionWindow.startDate && date <= projectionWindow.endDate) dates.add(date);
+  }
 
   const hasCalendarScheduleForDate = (date: string) =>
     !!input.scheduledWindowStart &&
     !!input.scheduledWindowEnd &&
-    date >= input.scheduledWindowStart &&
-    date <= input.scheduledWindowEnd;
+    date >= projectionWindow.startDate &&
+    date <= projectionWindow.endDate;
 
   return [...dates]
     .sort((left, right) => left.localeCompare(right))

@@ -1,3 +1,4 @@
+import { resolveTrainingPlanProjectionWindow } from "@repo/core";
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
@@ -68,16 +69,12 @@ export function usePlanTrainingPathData() {
   const { data: activePlan, refetch: refetchActivePlan } = activePlanQuery;
   const today = useMemo(() => new Date(), []);
   const todayKey = useMemo(() => getDateKey(today), [today]);
-  const recentWindowStart = useMemo(() => {
-    const start = new Date(today);
-    start.setDate(start.getDate() - 45);
-    return getDateKey(start);
-  }, [today]);
-  const upcomingWindowEnd = useMemo(() => {
-    const end = new Date(today);
-    end.setDate(end.getDate() + 365);
-    return getDateKey(end);
-  }, [today]);
+  const projectionWindow = useMemo(
+    () => resolveTrainingPlanProjectionWindow({ anchorDate: todayKey }),
+    [todayKey],
+  );
+  const recentWindowStart = projectionWindow.startDate;
+  const upcomingWindowEnd = projectionWindow.endDate;
 
   const upcomingPlannedEventsQuery = api.events.list.useQuery(
     {
