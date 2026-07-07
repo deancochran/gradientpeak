@@ -1,11 +1,10 @@
 // apps/mobile/app/(internal)/(tabs)/trends/components/charts/WeeklyProgressChart.tsx
 
 import { Text } from "@repo/ui/components/text";
-import { Dimensions, View } from "react-native";
-import { BarChart } from "react-native-chart-kit";
+import { useMemo } from "react";
+import { View } from "react-native";
+import { Bar, CartesianChart } from "victory-native";
 import { formatEstimatedTss } from "@/lib/estimatedMetrics";
-import { useTheme } from "@/lib/stores/theme-store";
-import { getResolvedThemeScale } from "@/lib/theme";
 
 export interface WeeklyData {
   weekStart: string;
@@ -21,10 +20,31 @@ export interface WeeklyProgressChartProps {
   height?: number;
 }
 
+type WeeklyChartDatum = Record<string, unknown> & {
+  index: number;
+  completedTSS: number;
+  label: string;
+  status: WeeklyData["status"];
+  weekStart: string;
+};
+
 export function WeeklyProgressChart({ data, height = 280 }: WeeklyProgressChartProps) {
-  const screenWidth = Dimensions.get("window").width;
-  const { resolvedTheme } = useTheme();
-  const theme = getResolvedThemeScale(resolvedTheme);
+  const recentData = useMemo(() => data?.slice(-8) ?? [], [data]);
+  const chartData = useMemo<WeeklyChartDatum[]>(
+    () =>
+      recentData.map((week, index) => ({
+        index,
+        completedTSS: week.completedTSS,
+        label: `W${recentData.length - index}`,
+        status: week.status,
+        weekStart: week.weekStart,
+      })),
+    [recentData],
+  );
+  const maxCompletedTss = useMemo(
+    () => Math.max(1, ...chartData.map((week) => week.completedTSS)),
+    [chartData],
+  );
 
   if (!data || data.length === 0) {
     return (
@@ -37,49 +57,6 @@ export function WeeklyProgressChart({ data, height = 280 }: WeeklyProgressChartP
     );
   }
 
-  // Show last 8 weeks for better readability
-  const recentData = data.slice(-8);
-
-  // Prepare chart data
-  const chartData = {
-    labels: recentData.map((_, index) => `W${recentData.length - index}`),
-    datasets: [
-      {
-        data: recentData.map((week) => week.completedTSS),
-        colors: recentData.map((week) => (opacity = 1) => {
-          switch (week.status) {
-            case "good":
-              return `rgba(16, 185, 129, ${opacity})`;
-            case "warning":
-              return `rgba(245, 158, 11, ${opacity})`;
-            case "poor":
-              return `rgba(239, 68, 68, ${opacity})`;
-            default:
-              return `rgba(59, 130, 246, ${opacity})`;
-          }
-        }),
-      },
-    ],
-  };
-
-  const chartConfig = {
-    backgroundColor: theme.card,
-    backgroundGradientFrom: theme.card,
-    backgroundGradientTo: theme.card,
-    decimalPlaces: 0,
-    color: (opacity = 1) => withOpacity(theme.mutedForeground, opacity),
-    labelColor: (opacity = 1) => withOpacity(theme.mutedForeground, opacity),
-    style: {
-      borderRadius: 8,
-    },
-    propsForBackgroundLines: {
-      strokeDasharray: "",
-      stroke: theme.border,
-      strokeWidth: 1,
-    },
-    barPercentage: 0.7,
-  };
-
   return (
     <View className="bg-card rounded-lg border border-border p-4">
       <Text className="text-base font-semibold text-foreground mb-2">Weekly TSS Progress</Text>
@@ -87,22 +64,30 @@ export function WeeklyProgressChart({ data, height = 280 }: WeeklyProgressChartP
         Completed Training Stress Score by week (last {recentData.length} weeks)
       </Text>
 
-      <BarChart
-        data={chartData}
-        width={screenWidth - 64}
-        height={height}
-        chartConfig={chartConfig}
-        style={{
-          marginVertical: 8,
-          borderRadius: 8,
-        }}
-        showBarTops={false}
-        withHorizontalLabels={true}
-        withVerticalLabels={true}
-        fromZero={true}
-        yAxisLabel=""
-        yAxisSuffix=""
-      />
+      <View style={{ height, marginVertical: 8 }}>
+        <CartesianChart<WeeklyChartDatum, "index", "completedTSS">
+          data={chartData}
+          xKey="index"
+          yKeys={["completedTSS"]}
+          domain={{ y: [0, maxCompletedTss] }}
+          domainPadding={{ left: 18, right: 18, top: 16 }}
+          padding={{ left: 4, right: 4, top: 4, bottom: 4 }}
+        >
+          {({ points, chartBounds }) => (
+            <>
+              {chartData.map((week, index) => (
+                <Bar
+                  key={week.weekStart}
+                  points={points.completedTSS.filter((_, pointIndex) => pointIndex === index)}
+                  chartBounds={chartBounds}
+                  color={weeklyStatusColor(week.status)}
+                  roundedCorners={{ topLeft: 4, topRight: 4 }}
+                />
+              ))}
+            </>
+          )}
+        </CartesianChart>
+      </View>
 
       {/* Legend */}
       <View className="flex-row justify-center mt-2 space-x-4">
@@ -127,7 +112,7 @@ export function WeeklyProgressChart({ data, height = 280 }: WeeklyProgressChartP
         </View>
         <View className="space-y-1">
           {recentData.slice(-3).map((week, index) => (
-            <View key={index} className="flex-row items-center justify-between">
+            <View key={week.weekStart} className="flex-row items-center justify-between">
               <Text className="text-xs text-muted-foreground">
                 Week {recentData.length - index}
               </Text>
@@ -186,16 +171,15 @@ export function WeeklyProgressChart({ data, height = 280 }: WeeklyProgressChartP
   );
 }
 
-function withOpacity(hexColor: string, opacity: number) {
-  const normalized = hexColor.replace("#", "");
-
-  if (normalized.length !== 6) {
-    return hexColor;
+function weeklyStatusColor(status: WeeklyData["status"]) {
+  switch (status) {
+    case "good":
+      return "#10b981";
+    case "warning":
+      return "#f59e0b";
+    case "poor":
+      return "#ef4444";
+    default:
+      return "#3b82f6";
   }
-
-  const red = Number.parseInt(normalized.slice(0, 2), 16);
-  const green = Number.parseInt(normalized.slice(2, 4), 16);
-  const blue = Number.parseInt(normalized.slice(4, 6), 16);
-
-  return `rgba(${red}, ${green}, ${blue}, ${opacity})`;
 }

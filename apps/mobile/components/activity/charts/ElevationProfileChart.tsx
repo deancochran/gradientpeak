@@ -4,7 +4,7 @@ import { Text } from "@repo/ui/components/text";
 import { LinearGradient, useFont, vec } from "@shopify/react-native-skia";
 import { useMemo } from "react";
 import { View } from "react-native";
-import { Area, CartesianChart, useChartPressState } from "victory-native";
+import { Area, CartesianChart, useChartPressState, useChartTransformState } from "victory-native";
 import { InteractiveChartValueTray } from "@/components/charts/InteractiveChartValueTray";
 import { useTheme } from "@/lib/stores/theme-store";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";
@@ -28,6 +28,7 @@ export function ElevationProfileChart({
 }: ElevationProfileChartProps) {
   const font = useFont(require("@/assets/fonts/SpaceMono-Regular.ttf"), 12);
   const { state, isActive } = useChartPressState({ x: 0, y: { elevation: 0 } });
+  const { state: transformState } = useChartTransformState();
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
 
@@ -160,6 +161,7 @@ export function ElevationProfileChart({
                 formatYLabel: (value) => `${value.toFixed(0)}m`,
               }}
               chartPressState={state}
+              transformState={transformState}
             >
               {({ points, chartBounds }) => (
                 <Area

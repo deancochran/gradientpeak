@@ -9,7 +9,8 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { CartesianChart, Line } from "victory-native";
+import { runOnJS, useAnimatedReaction } from "react-native-reanimated";
+import { CartesianChart, Line, useChartPressState } from "victory-native";
 import { useTheme } from "@/lib/stores/theme-store";
 import {
   formatCompactAxisNumber,
@@ -54,6 +55,14 @@ type ChartYKey = "loadTss" | "fitnessCtl" | "fatigueAtl";
 type ProjectionPoint = ProjectionChartPayload["points"][number];
 
 const chartYKeys: ChartYKey[] = ["loadTss", "fitnessCtl", "fatigueAtl"];
+const initialChartPressState: { x: number; y: Record<ChartYKey, number> } = {
+  x: 0,
+  y: {
+    fatigueAtl: 0,
+    fitnessCtl: 0,
+    loadTss: 0,
+  },
+};
 
 const lineConfig: Array<{
   key: ChartYKey;
@@ -253,6 +262,7 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
     );
   }, []);
   const axisFont = useFont(getAxisFontSource(), 9);
+  const { state: chartPressState } = useChartPressState(initialChartPressState);
   const points = useMemo(
     () =>
       buildDisplayedPoints({
@@ -467,9 +477,12 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
       labelColor: isDark ? "#a3a3a3" : "#737373",
       lineColor: isDark ? "rgba(38, 38, 38, 0.55)" : "rgba(228, 228, 228, 0.75)",
       lineWidth: 1,
-      formatXLabel: (value: unknown) => String(value ?? ""),
+      formatXLabel: (value: unknown) => {
+        const index = Math.round(Number(value));
+        return chartLabels[index] ?? "";
+      },
     }),
-    [axisFont, isDark, points.length],
+    [axisFont, chartLabels, isDark, points.length],
   );
 
   const yAxisConfig = useMemo(
@@ -574,6 +587,21 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
       });
     },
     [points.length],
+  );
+
+  useAnimatedReaction(
+    () => {
+      "worklet";
+      if (!chartPressState.isActive.value) return null;
+      const activeIndex = Number(chartPressState.x.value.value);
+      return Number.isFinite(activeIndex) ? Math.round(activeIndex) : null;
+    },
+    (activeIndex, previousIndex) => {
+      "worklet";
+      if (activeIndex == null || activeIndex === previousIndex) return;
+      runOnJS(handleSelectPoint)(activeIndex);
+    },
+    [handleSelectPoint],
   );
 
   const selectedPoint = points[selectedPointIndex];
@@ -783,14 +811,15 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
                   alignSelf: "center",
                 }}
               >
-                <CartesianChart<ProjectionChartDatum, "xLabel", ChartYKey>
+                <CartesianChart<ProjectionChartDatum, "index", ChartYKey>
                   data={chartData}
-                  xKey="xLabel"
+                  xKey="index"
                   yKeys={chartYKeys}
                   padding={chartPadding}
                   domainPadding={chartDomainPadding}
                   xAxis={xAxisConfig}
                   yAxis={yAxisConfig}
+                  chartPressState={chartPressState}
                 >
                   {({ points: plottedPoints, chartBounds }) => (
                     <>
@@ -1073,7 +1102,7 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
                       formatRelativePlanDay(point.date, relativePlanStartDate, "compact");
                     return (
                       <Pressable
-                        key={`${point.date}-${index}`}
+                        key={point.date}
                         onPress={() => handleSelectPoint(index)}
                         onLayout={(event) => recordSnapOffset(setPointSnapOffsets, index, event)}
                         className={`rounded-full border px-3 py-1 ${isActive ? "border-primary bg-primary/10" : "border-border bg-background"}`}
@@ -1106,9 +1135,9 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
               >
                 <Text className="text-xs font-medium">Goal dates</Text>
                 <View className="flex-row flex-wrap gap-2">
-                  {renderedGoalMarkers.map((goal, goalIndex) => (
+                  {renderedGoalMarkers.map((goal) => (
                     <View
-                      key={`${goal.id}-${goal.target_date}-${goalIndex}`}
+                      key={`${goal.id}-${goal.target_date}`}
                       className="rounded-full border border-amber-300 bg-amber-100/50 px-3 py-1"
                     >
                       <Text className="text-xs text-amber-900">

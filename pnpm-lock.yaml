@@ -290,9 +290,6 @@ importers:
       react-native-calendars:
         specifier: ^1.1313.0
         version: 1.1313.0(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.1.17)(bufferutil@4.1.0)(react@19.1.0))(react@19.1.0)
-      react-native-chart-kit:
-        specifier: ^6.12.0
-        version: 6.12.0(react-native-svg@15.12.1(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.1.17)(bufferutil@4.1.0)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.1.17)(bufferutil@4.1.0)(react@19.1.0))(react@19.1.0)
       react-native-css:
         specifier: ^3.0.6
         version: 3.0.6(@expo/metro-config@54.0.16(bufferutil@4.1.0)(expo@54.0.35))(lightningcss@1.30.1)(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.1.17)(bufferutil@4.1.0)(react@19.1.0))(react@19.1.0)
@@ -9567,10 +9564,6 @@ packages:
   pathe@2.0.3:
     resolution: {integrity: sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w==}
 
-  paths-js@0.4.11:
-    resolution: {integrity: sha512-3mqcLomDBXOo7Fo+UlaenG6f71bk1ZezPQy2JCmYHy2W2k5VKpP+Jbin9H0bjXynelTbglCqdFhSEkeIkKTYUA==}
-    engines: {node: '>=0.11.0'}
-
   pathval@2.0.1:
     resolution: {integrity: sha512-//nshmD55c46FuFw26xV/xFAaB5HF9Xdap7HJBBnrKdAd6/GxDBaNA1870O79+9ueg61cZLSVc+OaFlfmObYVQ==}
     engines: {node: '>= 14.16'}
@@ -9662,9 +9655,6 @@ packages:
   pngjs@3.4.0:
     resolution: {integrity: sha512-NCrCHhWmnQklfH4MtJMRjZ2a8c80qXeMlQMv2uVp9ISJMTt562SbGd6n2oq0PaPgKm7Z6pL9E2UlLIhC+SHL3w==}
     engines: {node: '>=4.0.0'}
-
-  point-in-polygon@1.1.0:
-    resolution: {integrity: sha512-3ojrFwjnnw8Q9242TzgXuTD+eKiutbzyslcq1ydfu82Db2y+Ogbmyrkpv0Hgj31qwT3lbS9+QAAO/pIQM35XRw==}
 
   polished@4.3.1:
     resolution: {integrity: sha512-OBatVyC/N7SCW/FaDHrSd+vn0o5cS855TOmYi4OkdWUMSJCET/xip//ch8xGUvtr3i44X9LVyWwQlRMTN3pwSA==}
@@ -9886,13 +9876,6 @@ packages:
   react-native-calendars@1.1313.0:
     resolution: {integrity: sha512-YQ7Vg57rBRVymolamYDTxZ0lPOELTDHQbTukTWdxR47aRBYJwKI6ocRbwcY5gYgyDwNgJS4uLGu5AvmYS74LYQ==}
     engines: {node: '>=18'}
-
-  react-native-chart-kit@6.12.0:
-    resolution: {integrity: sha512-nZLGyCFzZ7zmX0KjYeeSV1HKuPhl1wOMlTAqa0JhlyW62qV/1ZPXHgT8o9s8mkFaGxdqbspOeuaa6I9jUQDgnA==}
-    peerDependencies:
-      react: '> 16.7.0'
-      react-native: '>= 0.50.0'
-      react-native-svg: '> 6.4.1'
 
   react-native-css@3.0.6:
     resolution: {integrity: sha512-YhP3SGc9VRItWZ9TMt+QENor5ha2ym3z3QiyL/eRVrBmV3LCv9FyxOhw9c0SB8Ndvwc7KH0ch2XCQ7ZgZg5dNQ==}
@@ -23073,8 +23056,6 @@ snapshots:
 
   pathe@2.0.3: {}
 
-  paths-js@0.4.11: {}
-
   pathval@2.0.1: {}
 
   perfect-debounce@2.1.0: {}
@@ -23164,8 +23145,6 @@ snapshots:
       xmlbuilder: 15.1.1
 
   pngjs@3.4.0: {}
-
-  point-in-polygon@1.1.0: {}
 
   polished@4.3.1:
     dependencies:
@@ -23452,15 +23431,6 @@ snapshots:
     transitivePeerDependencies:
       - react
       - react-native
-
-  react-native-chart-kit@6.12.0(react-native-svg@15.12.1(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.1.17)(bufferutil@4.1.0)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.1.17)(bufferutil@4.1.0)(react@19.1.0))(react@19.1.0):
-    dependencies:
-      lodash: 4.17.21
-      paths-js: 0.4.11
-      point-in-polygon: 1.1.0
-      react: 19.1.0
-      react-native: 0.81.5(@babel/core@7.28.5)(@types/react@19.1.17)(bufferutil@4.1.0)(react@19.1.0)
-      react-native-svg: 15.12.1(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.1.17)(bufferutil@4.1.0)(react@19.1.0))(react@19.1.0)
 
   react-native-css@3.0.6(@expo/metro-config@54.0.16(bufferutil@4.1.0)(expo@54.0.35))(lightningcss@1.30.1)(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.1.17)(bufferutil@4.1.0)(react@19.1.0))(react@19.1.0):
     dependencies:

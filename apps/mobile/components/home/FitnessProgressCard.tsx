@@ -1,7 +1,7 @@
 import { Text } from "@repo/ui/components/text";
-import { Dimensions, TouchableOpacity, View } from "react-native";
-import { LineChart } from "react-native-chart-kit";
-import { useTheme } from "@/lib/stores/theme-store";
+import { useMemo } from "react";
+import { TouchableOpacity, View } from "react-native";
+import { CartesianChart, Line } from "victory-native";
 
 interface FitnessProgressCardProps {
   currentCTL: number;
@@ -13,6 +13,14 @@ interface FitnessProgressCardProps {
   onPress?: () => void;
 }
 
+type FitnessChartDatum = Record<string, unknown> & {
+  index: number;
+  actual: number | null;
+  ideal: number | null;
+};
+
+type FitnessChartYKey = "actual" | "ideal";
+
 export function FitnessProgressCard({
   currentCTL,
   projectedCTL,
@@ -22,11 +30,6 @@ export function FitnessProgressCard({
   behindSchedule,
   onPress,
 }: FitnessProgressCardProps) {
-  const screenWidth = Dimensions.get("window").width;
-  const chartWidth = screenWidth - 64; // Account for padding
-  const { resolvedTheme } = useTheme();
-  const isDark = resolvedTheme === "dark";
-
   const hasProjection = projectedCTL !== undefined && projectedCTL !== null;
   const hasGoal = goalCTL !== undefined && goalCTL !== null;
   const hasActualData = trendData && trendData.length > 0;
@@ -34,64 +37,45 @@ export function FitnessProgressCard({
 
   const CardWrapper = onPress ? TouchableOpacity : View;
 
-  // Build datasets for chart
-  const datasets: any[] = [];
+  const chartData = useMemo<FitnessChartDatum[]>(() => {
+    const pointCount = Math.max(trendData?.length ?? 0, idealTrendData?.length ?? 0);
 
-  // Add ideal curve first (so it renders behind)
-  if (hasIdealData) {
-    datasets.push({
-      data: idealTrendData,
-      color: () => `rgba(147, 197, 253, 0.6)`, // Light blue for ideal/planned
-      strokeWidth: 2,
-      withDots: false,
-    });
-  }
+    return Array.from({ length: pointCount }, (_, index) => ({
+      index,
+      actual: trendData?.[index] ?? null,
+      ideal: idealTrendData?.[index] ?? null,
+    }));
+  }, [idealTrendData, trendData]);
 
-  // Add actual data on top
-  if (hasActualData) {
-    datasets.push({
-      data: trendData,
-      color: () => `rgba(59, 130, 246, 1)`, // Solid blue for actual
-      strokeWidth: 3,
-    });
-  }
+  const chartYKeys = useMemo<FitnessChartYKey[]>(() => {
+    const keys: FitnessChartYKey[] = [];
+    if (hasIdealData) keys.push("ideal");
+    if (hasActualData) keys.push("actual");
+    return keys;
+  }, [hasActualData, hasIdealData]);
 
   return (
     <CardWrapper onPress={onPress} activeOpacity={0.7}>
       <View className="gap-3 rounded-xl border border-border bg-card px-4 py-4">
-        {datasets.length > 0 ? (
+        {chartData.length > 0 && chartYKeys.length > 0 ? (
           <View className="h-16 -mx-2">
-            <LineChart
-              data={{
-                labels: [],
-                datasets,
-              }}
-              width={chartWidth}
-              height={64}
-              withDots={false}
-              withInnerLines={false}
-              withOuterLines={false}
-              withVerticalLabels={false}
-              withHorizontalLabels={false}
-              chartConfig={{
-                backgroundColor: isDark ? "#0a0a0a" : "#ffffff",
-                backgroundGradientFrom: isDark ? "#0a0a0a" : "#ffffff",
-                backgroundGradientTo: isDark ? "#0a0a0a" : "#ffffff",
-                decimalPlaces: 0,
-                color: (opacity = 1) =>
-                  isDark ? `rgba(250, 250, 250, ${opacity})` : `rgba(10, 10, 10, ${opacity})`,
-                strokeWidth: 2,
-                propsForBackgroundLines: {
-                  strokeWidth: 0,
-                },
-              }}
-              bezier
-              style={{
-                paddingRight: 0,
-                paddingTop: 0,
-                paddingBottom: 0,
-              }}
-            />
+            <CartesianChart<FitnessChartDatum, "index", FitnessChartYKey>
+              data={chartData}
+              xKey="index"
+              yKeys={chartYKeys}
+              padding={{ left: 8, right: 8, top: 4, bottom: 4 }}
+            >
+              {({ points }) => (
+                <>
+                  {hasIdealData ? (
+                    <Line points={points.ideal} color="rgba(147, 197, 253, 0.6)" strokeWidth={2} />
+                  ) : null}
+                  {hasActualData ? (
+                    <Line points={points.actual} color="rgba(59, 130, 246, 1)" strokeWidth={3} />
+                  ) : null}
+                </>
+              )}
+            </CartesianChart>
           </View>
         ) : null}
 

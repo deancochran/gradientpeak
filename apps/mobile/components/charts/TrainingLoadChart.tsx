@@ -1,7 +1,7 @@
 import { Text } from "@repo/ui/components/text";
-import { Dimensions, View } from "react-native";
-import { LineChart } from "react-native-chart-kit";
-import { useTheme } from "@/lib/stores/theme-store";
+import { useMemo } from "react";
+import { View } from "react-native";
+import { CartesianChart, Line } from "victory-native";
 import type { InsightTimelinePoint } from "./PlanVsActualChart";
 
 export interface TrainingLoadData {
@@ -17,53 +17,38 @@ export interface TrainingLoadChartProps {
   height?: number;
 }
 
-export function TrainingLoadChart({ data, timeline, height = 250 }: TrainingLoadChartProps) {
-  const screenWidth = Dimensions.get("window").width;
-  const chartWidth = screenWidth - 48;
-  const { resolvedTheme } = useTheme();
-  const isDark = resolvedTheme === "dark";
+type TrainingLoadChartDatum = Record<string, unknown> &
+  TrainingLoadData & {
+    index: number;
+  };
 
+type TrainingLoadChartYKey = "ctl" | "atl" | "tsb";
+
+export function TrainingLoadChart({ data, timeline, height = 250 }: TrainingLoadChartProps) {
   const useTimeline = !!timeline && timeline.length > 0;
-  const normalizedData: TrainingLoadData[] = useTimeline
-    ? timeline.map((point) => {
-        const completedLoad = point.completed_load_tss ?? point.actual_tss ?? 0;
-        const scheduledLoad = point.scheduled_load_tss ?? point.scheduled_tss ?? 0;
-        return {
-          date: point.date,
-          ctl: completedLoad,
-          atl: scheduledLoad,
-          tsb: completedLoad - scheduledLoad,
-        };
-      })
-    : data || [];
+  const normalizedData = useMemo<TrainingLoadData[]>(
+    () =>
+      useTimeline
+        ? (timeline ?? []).map((point) => {
+            const completedLoad = point.completed_load_tss ?? point.actual_tss ?? 0;
+            const scheduledLoad = point.scheduled_load_tss ?? point.scheduled_tss ?? 0;
+            return {
+              date: point.date,
+              ctl: completedLoad,
+              atl: scheduledLoad,
+              tsb: completedLoad - scheduledLoad,
+            };
+          })
+        : data || [],
+    [data, timeline, useTimeline],
+  );
 
   const isEmpty = normalizedData.length === 0;
 
-  // Prepare data for chart - show last 30 days max for readability
-  const recentData = isEmpty ? [] : normalizedData.slice(-30);
-
-  // Extract datasets
-  const ctlData = recentData.map((d) => d.ctl);
-  const atlData = recentData.map((d) => d.atl);
-  const tsbData = recentData.map((d) => d.tsb);
-
-  const datasets = [
-    {
-      data: ctlData.length > 0 ? ctlData : [0],
-      color: () => `rgba(59, 130, 246, 1)`, // Blue for CTL
-      strokeWidth: 3,
-    },
-    {
-      data: atlData.length > 0 ? atlData : [0],
-      color: () => `rgba(245, 158, 11, 1)`, // Orange for ATL
-      strokeWidth: 3,
-    },
-    {
-      data: tsbData.length > 0 ? tsbData : [0],
-      color: () => `rgba(16, 185, 129, 1)`, // Green for TSB
-      strokeWidth: 2,
-    },
-  ];
+  const recentData = useMemo<TrainingLoadChartDatum[]>(
+    () => normalizedData.slice(-30).map((point, index) => ({ ...point, index })),
+    [normalizedData],
+  );
 
   return (
     <View className="bg-card rounded-lg border border-border p-4">
@@ -89,38 +74,21 @@ export function TrainingLoadChart({ data, timeline, height = 250 }: TrainingLoad
             </Text>
           </View>
         ) : (
-          <LineChart
-            data={{
-              labels: [],
-              datasets,
-            }}
-            width={chartWidth}
-            height={height - 100}
-            withDots={false}
-            withInnerLines={true}
-            withOuterLines={true}
-            withVerticalLines={false}
-            withHorizontalLines={true}
-            chartConfig={{
-              backgroundColor: isDark ? "#0a0a0a" : "#ffffff",
-              backgroundGradientFrom: isDark ? "#0a0a0a" : "#ffffff",
-              backgroundGradientTo: isDark ? "#0a0a0a" : "#ffffff",
-              decimalPlaces: 0,
-              color: (opacity = 1) =>
-                isDark ? `rgba(250, 250, 250, ${opacity})` : `rgba(10, 10, 10, ${opacity})`,
-              labelColor: (opacity = 1) =>
-                isDark ? `rgba(163, 163, 163, ${opacity})` : `rgba(115, 115, 115, ${opacity})`,
-              strokeWidth: 2,
-              propsForBackgroundLines: {
-                strokeWidth: 1,
-                stroke: isDark ? "rgba(38, 38, 38, 0.5)" : "rgba(228, 228, 228, 0.5)",
-              },
-            }}
-            bezier
-            style={{
-              paddingRight: 16,
-            }}
-          />
+          <CartesianChart<TrainingLoadChartDatum, "index", TrainingLoadChartYKey>
+            data={recentData}
+            xKey="index"
+            yKeys={["ctl", "atl", "tsb"]}
+            domainPadding={{ left: 8, right: 8, top: 12, bottom: 12 }}
+            padding={{ left: 4, right: 4, top: 4, bottom: 4 }}
+          >
+            {({ points }) => (
+              <>
+                <Line points={points.ctl} color="rgba(59, 130, 246, 1)" strokeWidth={3} />
+                <Line points={points.atl} color="rgba(245, 158, 11, 1)" strokeWidth={3} />
+                <Line points={points.tsb} color="rgba(16, 185, 129, 1)" strokeWidth={2} />
+              </>
+            )}
+          </CartesianChart>
         )}
       </View>
 

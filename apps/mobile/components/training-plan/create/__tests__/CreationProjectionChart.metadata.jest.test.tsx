@@ -46,6 +46,13 @@ jest.mock("victory-native", () => ({
       }),
     ),
   Line: (props: any) => React.createElement("Line", props),
+  useChartPressState: () => ({
+    state: {
+      isActive: { value: false },
+      x: { value: { value: 0 } },
+      y: {},
+    },
+  }),
 }));
 
 jest.mock("@/assets/fonts/SpaceMono-Regular.ttf", () => ({
