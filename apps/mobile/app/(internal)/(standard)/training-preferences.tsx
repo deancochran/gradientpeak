@@ -62,6 +62,11 @@ const weekdayOptions = [
   { key: "sunday", label: "Sun" },
 ] as const;
 
+const defaultAvailabilityWindow = {
+  start_minute_of_day: 360,
+  end_minute_of_day: 540,
+};
+
 const preferencePresets: Array<{
   key: Exclude<PreferencePresetKey, "custom">;
   label: string;
@@ -317,6 +322,30 @@ export default function TrainingPreferencesScreen() {
     },
     [form],
   );
+  const toggleAvailabilityDay = useCallback(
+    (day: (typeof weekdayOptions)[number]["key"]) => {
+      const currentWindows = form.getValues("availability.weekly_windows") ?? [];
+      const existingIndex = currentWindows.findIndex((item) => item.day === day);
+      const nextWindows =
+        existingIndex >= 0
+          ? currentWindows.filter((item) => item.day !== day)
+          : [
+              ...currentWindows,
+              {
+                day,
+                windows: [defaultAvailabilityWindow],
+                max_sessions: 1,
+              },
+            ];
+
+      form.setValue("availability.weekly_windows", nextWindows, {
+        shouldDirty: true,
+        shouldTouch: true,
+        shouldValidate: true,
+      });
+    },
+    [form],
+  );
 
   if (settingsQuery.isLoading) {
     return (
@@ -498,6 +527,77 @@ export default function TrainingPreferencesScreen() {
                       </Button>
                     );
                   })}
+                </View>
+                <View className="mt-2 gap-3 border-t border-border pt-3">
+                  <View className="gap-1">
+                    <Text className="text-sm font-semibold text-foreground">
+                      Weekly availability windows
+                    </Text>
+                    <Text className="text-xs leading-4 text-muted-foreground">
+                      Enable the days and time range the planner can use for training.
+                    </Text>
+                  </View>
+                  <View className="gap-3" testID="preferences-weekly-windows">
+                    {weekdayOptions.map((day) => {
+                      const weeklyWindows = draft.availability.weekly_windows ?? [];
+                      const windowIndex = weeklyWindows.findIndex((item) => item.day === day.key);
+                      const enabled = windowIndex >= 0;
+                      return (
+                        <View
+                          key={day.key}
+                          className="gap-2 rounded-xl border border-border bg-background px-3 py-2"
+                          testID={`preferences-availability-day-${day.key}`}
+                        >
+                          <View className="flex-row items-center justify-between gap-3">
+                            <Text className="text-sm font-medium text-foreground">{day.label}</Text>
+                            <Button
+                              accessibilityLabel={`${enabled ? "Disable" : "Enable"} ${day.label} availability`}
+                              onPress={() => toggleAvailabilityDay(day.key)}
+                              size="sm"
+                              testID={`preferences-availability-toggle-${day.key}`}
+                              variant={enabled ? "default" : "outline"}
+                            >
+                              <Text>{enabled ? "Available" : "Unavailable"}</Text>
+                            </Button>
+                          </View>
+                          {enabled ? (
+                            <View className="gap-2">
+                              <View className="flex-row gap-2">
+                                <View className="flex-1">
+                                  <FormIntegerStepperField
+                                    control={form.control}
+                                    label="Start minute"
+                                    max={1439}
+                                    min={0}
+                                    name={`availability.weekly_windows.${windowIndex}.windows.0.start_minute_of_day`}
+                                    testId={`preferences-availability-window-${day.key}-start`}
+                                  />
+                                </View>
+                                <View className="flex-1">
+                                  <FormIntegerStepperField
+                                    control={form.control}
+                                    label="End minute"
+                                    max={1440}
+                                    min={1}
+                                    name={`availability.weekly_windows.${windowIndex}.windows.0.end_minute_of_day`}
+                                    testId={`preferences-availability-window-${day.key}-end`}
+                                  />
+                                </View>
+                              </View>
+                              <FormIntegerStepperField
+                                control={form.control}
+                                label="Max sessions"
+                                max={3}
+                                min={0}
+                                name={`availability.weekly_windows.${windowIndex}.max_sessions`}
+                                testId={`preferences-availability-max-sessions-${day.key}`}
+                              />
+                            </View>
+                          ) : null}
+                        </View>
+                      );
+                    })}
+                  </View>
                 </View>
               </View>
             ) : null}
