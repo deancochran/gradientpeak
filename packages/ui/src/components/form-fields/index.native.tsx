@@ -371,65 +371,66 @@ function FormSelectField<TFieldValues extends FieldValues, TName extends FieldPa
       control={control}
       name={name}
       rules={rules}
-      render={({ field }) => (
-        <FormItem>
-          <FormLabel>
-            {label}
-            {required ? " *" : null}
-          </FormLabel>
-          <Select
-            disabled={disabled}
-            onValueChange={(option) => {
-              const nextValue = option?.value;
-              if (nextValue == null) {
-                return;
-              }
-              field.onChange(
-                parseValue
-                  ? parseValue(nextValue)
-                  : (nextValue as FieldPathValue<TFieldValues, TName>),
-              );
-            }}
-            value={
-              (formatValue
-                ? formatValue(field.value)
-                : field.value == null
+      render={({ field }) => {
+        const selectedValue = formatValue
+          ? formatValue(field.value)
+          : field.value == null
+            ? undefined
+            : String(field.value);
+
+        return (
+          <FormItem>
+            <FormLabel>
+              {label}
+              {required ? " *" : null}
+            </FormLabel>
+            <Select
+              disabled={disabled}
+              onValueChange={(option) => {
+                const nextValue = option?.value;
+                if (nextValue == null) {
+                  return;
+                }
+                field.onChange(
+                  parseValue
+                    ? parseValue(nextValue)
+                    : (nextValue as FieldPathValue<TFieldValues, TName>),
+                );
+              }}
+              value={
+                selectedValue == null
                   ? undefined
-                  : String(field.value)) == null
-                ? undefined
-                : ({
-                    label:
-                      options.find(
-                        (option) =>
-                          option.value ===
-                          (formatValue ? formatValue(field.value) : String(field.value)),
-                      )?.label ?? (formatValue ? formatValue(field.value) : String(field.value))!,
-                    value: (formatValue ? formatValue(field.value) : String(field.value))!,
-                  } as never)
-            }
-          >
-            <FormControl>
-              <SelectTrigger accessibilityLabel={label} testID={testId}>
-                <SelectValue placeholder={placeholder ?? ""} />
-              </SelectTrigger>
-            </FormControl>
-            <SelectContent>
-              {options.map((option) => (
-                <SelectItem
-                  key={option.value}
-                  disabled={option.disabled}
-                  label={option.label}
-                  value={option.value}
-                >
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {description ? <FormDescription>{description}</FormDescription> : null}
-          <FormMessage />
-        </FormItem>
-      )}
+                  : ({
+                      label:
+                        options.find((option) => option.value === selectedValue)?.label ??
+                        selectedValue,
+                      value: selectedValue,
+                    } as never)
+              }
+            >
+              <FormControl>
+                <SelectTrigger accessibilityLabel={label} testID={testId}>
+                  <SelectValue placeholder={placeholder ?? ""} />
+                </SelectTrigger>
+              </FormControl>
+              <SelectContent>
+                {options.map((option) => (
+                  <SelectItem
+                    key={option.value}
+                    disabled={option.disabled}
+                    label={option.label}
+                    value={option.value}
+                  >
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {description ? <FormDescription>{description}</FormDescription> : null}
+            <FormMessage />
+          </FormItem>
+        );
+      }}
     />
   );
 }
