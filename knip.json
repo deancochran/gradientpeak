@@ -25,7 +25,6 @@
         "lodash",
         "lucide-react",
         "react-native-calendars",
-        "react-native-chart-kit",
         "react-native-url-polyfill",
         "superjson",
         "tailwindcss-animate",
