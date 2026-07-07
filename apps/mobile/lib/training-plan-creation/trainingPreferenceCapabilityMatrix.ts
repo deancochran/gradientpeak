@@ -80,7 +80,7 @@ export const TRAINING_PREFERENCE_CAPABILITY_MATRIX: TrainingPreferenceCapability
   {
     path: "availability.weekly_windows",
     label: "Weekly availability windows",
-    standalone: { status: "gap", rationale: "No standalone weekly-window editor is rendered yet." },
+    standalone: { status: "covered", testId: "preferences-weekly-windows" },
     builderOverride: {
       status: "not-applicable",
       rationale: "Builder currently schedules by plan-local sessions/rest days, not time windows.",

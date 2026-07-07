@@ -487,6 +487,23 @@ describe("training preferences projection preview", () => {
       getTab("Availability").props.onPress();
     });
     expect(screen.getByTestId("preferences-hard-rest-days")).toBeTruthy();
+    expect(screen.getByTestId("preferences-weekly-windows")).toBeTruthy();
+    expect(screen.getByTestId("preferences-availability-day-monday")).toBeTruthy();
+    act(() => {
+      screen.getByTestId("preferences-availability-toggle-monday").props.onPress();
+    });
+    expect(
+      getByTypeAndId("IntegerStepperInput", "preferences-availability-window-monday-start").props
+        .label,
+    ).toBe("Start minute");
+    expect(
+      getByTypeAndId("IntegerStepperInput", "preferences-availability-window-monday-end").props
+        .label,
+    ).toBe("End minute");
+    expect(
+      getByTypeAndId("IntegerStepperInput", "preferences-availability-max-sessions-monday").props
+        .label,
+    ).toBe("Max sessions");
 
     act(() => {
       getTab("Preferences").props.onPress();

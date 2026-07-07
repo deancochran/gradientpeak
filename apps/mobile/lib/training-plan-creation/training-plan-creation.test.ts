@@ -568,7 +568,6 @@ describe("training plan creation domain", () => {
 
   it("makes current training preference capability gaps explicit", () => {
     expect(getTrainingPreferenceCapabilityGaps().map((capability) => capability.path)).toEqual([
-      "availability.weekly_windows",
       "dose_limits.sport_overrides",
     ]);
   });
