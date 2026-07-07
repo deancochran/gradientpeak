@@ -326,6 +326,7 @@ export function useTrainingPlanCreationService({
       authoritativeProjection,
       backendPreviewInput,
       isBackendPlanningInputStale,
+      localProjection.backendPlanning.status.available,
       localProjection.builderViewModel.dailyTrainingPathChart,
     ],
   );
@@ -374,7 +375,6 @@ export function useTrainingPlanCreationService({
       backendPlanningPreviewQuery.isFetching,
       backendPlanningPreviewQuery.isLoading,
       localProjection.backendPlanning.previewInput,
-      localProjection.backendPlanning.status.available,
       localProjection.backendPlanning.status.reason,
       trainingPathChartProjection.source,
     ],

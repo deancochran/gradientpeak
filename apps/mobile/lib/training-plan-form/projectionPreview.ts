@@ -82,6 +82,7 @@ function toGoalTargets(goal: TrainingPlanSnapshot["profileGoals"][number]): Goal
         case "hr":
           return [{ target_type: "hr_threshold", target_lthr_bpm: objective.value }];
       }
+      return [];
     }
     default:
       return [];
