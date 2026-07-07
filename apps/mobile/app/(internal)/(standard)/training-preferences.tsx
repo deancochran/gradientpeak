@@ -31,6 +31,7 @@ import { handleSubmitFormError } from "@/lib/utils/formErrors";
 
 type PreferencesTabKey =
   | "preferences"
+  | "availability"
   | "schedule"
   | "training-style"
   | "recovery"
@@ -43,12 +44,23 @@ type PreferencePresetKey = "custom" | "conservative" | "balanced" | "performance
 
 const preferenceTabs: Array<{ key: PreferencesTabKey; label: string }> = [
   { key: "preferences", label: "Preferences" },
+  { key: "availability", label: "Availability" },
   { key: "schedule", label: "Schedule" },
   { key: "training-style", label: "Training style" },
   { key: "recovery", label: "Recovery" },
   { key: "goal-strategy", label: "Goal strategy" },
   { key: "baseline-fitness", label: "Baseline fitness" },
 ];
+
+const weekdayOptions = [
+  { key: "monday", label: "Mon" },
+  { key: "tuesday", label: "Tue" },
+  { key: "wednesday", label: "Wed" },
+  { key: "thursday", label: "Thu" },
+  { key: "friday", label: "Fri" },
+  { key: "saturday", label: "Sat" },
+  { key: "sunday", label: "Sun" },
+] as const;
 
 const preferencePresets: Array<{
   key: Exclude<PreferencePresetKey, "custom">;
@@ -289,6 +301,22 @@ export default function TrainingPreferencesScreen() {
     },
     [form],
   );
+  const toggleHardRestDay = useCallback(
+    (day: (typeof weekdayOptions)[number]["key"]) => {
+      const currentDays = new Set(form.getValues("availability.hard_rest_days") ?? []);
+      if (currentDays.has(day)) {
+        currentDays.delete(day);
+      } else {
+        currentDays.add(day);
+      }
+      form.setValue("availability.hard_rest_days", Array.from(currentDays), {
+        shouldDirty: true,
+        shouldTouch: true,
+        shouldValidate: true,
+      });
+    },
+    [form],
+  );
 
   if (settingsQuery.isLoading) {
     return (
@@ -416,7 +444,62 @@ export default function TrainingPreferencesScreen() {
                     );
                   })}
                 </View>
+                <View className="gap-3 rounded-2xl border border-border bg-muted/10 p-3">
+                  <Text className="text-sm font-semibold text-foreground">Adaptation behavior</Text>
+                  <FormPercentSliderField
+                    control={form.control}
+                    decimals={0}
+                    label="Recency adaptation"
+                    max={100}
+                    min={0}
+                    name="adaptation_preferences.recency_adaptation_preference"
+                    showNumericInput={false}
+                    step={1}
+                    testId="preferences-recency-adaptation"
+                    valueMode="fraction"
+                  />
+                  <FormPercentSliderField
+                    control={form.control}
+                    decimals={0}
+                    label="Plan churn tolerance"
+                    max={100}
+                    min={0}
+                    name="adaptation_preferences.plan_churn_tolerance"
+                    showNumericInput={false}
+                    step={1}
+                    testId="preferences-plan-churn"
+                    valueMode="fraction"
+                  />
+                </View>
               </>
+            ) : null}
+
+            {activeTab === "availability" ? (
+              <View className="gap-3 rounded-2xl border border-border bg-card p-3">
+                <View className="gap-1">
+                  <Text className="text-sm font-semibold text-foreground">Hard rest days</Text>
+                  <Text className="text-xs leading-4 text-muted-foreground">
+                    Pick days the planner should protect from training when possible.
+                  </Text>
+                </View>
+                <View className="flex-row flex-wrap gap-2" testID="preferences-hard-rest-days">
+                  {weekdayOptions.map((day) => {
+                    const selected = (draft.availability.hard_rest_days ?? []).includes(day.key);
+                    return (
+                      <Button
+                        key={day.key}
+                        accessibilityLabel={`${selected ? "Remove" : "Add"} ${day.label} hard rest day`}
+                        onPress={() => toggleHardRestDay(day.key)}
+                        size="sm"
+                        testID={`preferences-hard-rest-day-${day.key}`}
+                        variant={selected ? "default" : "outline"}
+                      >
+                        <Text>{day.label}</Text>
+                      </Button>
+                    );
+                  })}
+                </View>
+              </View>
             ) : null}
 
             {activeTab === "schedule" ? (
@@ -515,6 +598,18 @@ export default function TrainingPreferencesScreen() {
                 <FormPercentSliderField
                   control={form.control}
                   decimals={0}
+                  label="Key session density"
+                  max={100}
+                  min={0}
+                  name="training_style.key_session_density_preference"
+                  showNumericInput={false}
+                  step={1}
+                  testId="preferences-key-session-density"
+                  valueMode="fraction"
+                />
+                <FormPercentSliderField
+                  control={form.control}
+                  decimals={0}
                   label="Strength integration priority"
                   max={100}
                   min={0}
@@ -559,6 +654,30 @@ export default function TrainingPreferencesScreen() {
                   showNumericInput={false}
                   step={1}
                   testId="preferences-systemic-fatigue"
+                  valueMode="fraction"
+                />
+                <FormPercentSliderField
+                  control={form.control}
+                  decimals={0}
+                  label="Double-day tolerance"
+                  max={100}
+                  min={0}
+                  name="recovery_preferences.double_day_tolerance"
+                  showNumericInput={false}
+                  step={1}
+                  testId="preferences-double-day-tolerance"
+                  valueMode="fraction"
+                />
+                <FormPercentSliderField
+                  control={form.control}
+                  decimals={0}
+                  label="Long-session fatigue tolerance"
+                  max={100}
+                  min={0}
+                  name="recovery_preferences.long_session_fatigue_tolerance"
+                  showNumericInput={false}
+                  step={1}
+                  testId="preferences-long-session-fatigue"
                   valueMode="fraction"
                 />
               </>

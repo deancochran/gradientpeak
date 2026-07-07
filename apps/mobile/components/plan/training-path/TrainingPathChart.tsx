@@ -1111,7 +1111,7 @@ export function TrainingPathChart({
               className="flex-1"
               contentContainerStyle={{ paddingHorizontal: scrollSideInset }}
               decelerationRate="fast"
-              disableIntervalMomentum={reviewWeeks}
+              disableIntervalMomentum={false}
               horizontal
               nestedScrollEnabled
               onScrollBeginDrag={onHorizontalDragBegin}

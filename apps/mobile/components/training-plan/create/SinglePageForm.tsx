@@ -26,7 +26,13 @@ import { useZodForm } from "@repo/ui/hooks";
 import { Flag, Plus, ShieldAlert, Trash2, Trophy } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
-import { Pressable, ScrollView, useWindowDimensions, View } from "react-native";
+import {
+  type LayoutChangeEvent,
+  Pressable,
+  ScrollView,
+  useWindowDimensions,
+  View,
+} from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { AvailabilityConfigSection } from "./AvailabilityConfigSection";
 import { BehaviorControlsConfigSection } from "./BehaviorControlsConfigSection";
@@ -657,6 +663,7 @@ export function SinglePageForm({
   const [activeTab, setActiveTab] = useState<FormTabKey>(() =>
     resolveActiveTab(initialTab ?? "plan"),
   );
+  const [tabSnapOffsets, setTabSnapOffsets] = useState<Partial<Record<FormTabKey, number>>>({});
 
   useEffect(() => {
     if (!initialTab) {
@@ -672,6 +679,12 @@ export function SinglePageForm({
 
   const handleTabChange = useCallback((tab: FormTabKey) => {
     setActiveTab(tab);
+  }, []);
+  const recordTabLayout = useCallback((tabKey: FormTabKey, event: LayoutChangeEvent) => {
+    const offset = Math.max(0, Math.floor(event.nativeEvent.layout.x));
+    setTabSnapOffsets((current) =>
+      current[tabKey] === offset ? current : { ...current, [tabKey]: offset },
+    );
   }, []);
 
   const noHistoryMetadata = projectionChart?.no_history;
@@ -977,6 +990,13 @@ export function SinglePageForm({
     () => visibleTabs.filter((tab) => tabIssueCounts[tab.key] > 0),
     [tabIssueCounts, visibleTabs],
   );
+  const orderedTabSnapOffsets = useMemo(
+    () =>
+      visibleTabs
+        .map((tab) => tabSnapOffsets[tab.key])
+        .filter((offset): offset is number => typeof offset === "number"),
+    [tabSnapOffsets, visibleTabs],
+  );
   const goalAssessments = projectionChart?.goal_assessments ?? [];
   const hasBlockingIssues = blockingIssues.length > 0;
   const projectionReviewDiagnostics = useMemo(
@@ -1011,6 +1031,10 @@ export function SinglePageForm({
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerClassName="gap-2 pr-2"
+          decelerationRate="fast"
+          disableIntervalMomentum={false}
+          snapToAlignment="start"
+          snapToOffsets={orderedTabSnapOffsets.length > 1 ? orderedTabSnapOffsets : undefined}
           accessibilityRole="tablist"
           accessibilityLabel="Training plan setup sections"
           accessibilityHint="Swipe horizontally to browse sections, then double tap to open one"
@@ -1023,6 +1047,7 @@ export function SinglePageForm({
               <Pressable
                 key={tab.key}
                 onPress={() => handleTabChange(tab.key)}
+                onLayout={(event) => recordTabLayout(tab.key, event)}
                 className={`border-b-2 px-1.5 py-2 ${isActive ? "border-primary" : hasIssues ? "border-amber-400" : "border-transparent"}`}
                 accessibilityRole="tab"
                 accessibilityState={{ selected: isActive }}
