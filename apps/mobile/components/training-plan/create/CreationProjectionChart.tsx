@@ -396,6 +396,24 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
     [compactRelativeDayLabels, labelStride, points],
   );
 
+  const chartLabelPlacements = useMemo(
+    () =>
+      chartLabels.flatMap((label, index) => {
+        if (!label) {
+          return [];
+        }
+
+        return [
+          {
+            key: `chart-date-${index}`,
+            left: markerXForIndex(index) - goalDateLabelHalfWidth,
+            label,
+          },
+        ];
+      }),
+    [chartLabels, markerXForIndex],
+  );
+
   const rightAxisDomainMax = useMemo(() => {
     if (!points.length) {
       return 100;
@@ -439,13 +457,13 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
       axisSide: "bottom" as const,
       font: axisFont,
       tickCount: Math.min(6, Math.max(2, points.length)),
+      tickValues: chartLabels
+        .map((label, index) => (label ? index : undefined))
+        .filter((index): index is number => index !== undefined),
       labelColor: isDark ? "#a3a3a3" : "#737373",
       lineColor: isDark ? "rgba(38, 38, 38, 0.55)" : "rgba(228, 228, 228, 0.75)",
       lineWidth: 1,
-      formatXLabel: (value: unknown) => {
-        const index = Math.round(Number(value));
-        return chartLabels[index] ?? "";
-      },
+      formatXLabel: () => "",
     }),
     [axisFont, chartLabels, isDark, points.length],
   );
@@ -835,6 +853,22 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
                   >
                     {rightAxisUnitLabel}
                   </Text>
+                  {chartLabelPlacements.map((label) => (
+                    <Text
+                      key={label.key}
+                      className="text-[9px] text-muted-foreground"
+                      numberOfLines={1}
+                      style={{
+                        position: "absolute",
+                        left: label.left,
+                        top: Math.min(resolvedChartHeight - 10, plotBounds.bottom + 2),
+                        width: goalDateLabelWidth,
+                        textAlign: "center",
+                      }}
+                    >
+                      {label.label}
+                    </Text>
+                  ))}
                   {goalDateLabelPlacements.map((label) => (
                     <Text
                       key={label.key}
@@ -843,7 +877,7 @@ export const CreationProjectionChart = React.memo(function CreationProjectionCha
                       style={{
                         position: "absolute",
                         left: label.left,
-                        top: Math.min(resolvedChartHeight - 10, plotBounds.bottom + 2),
+                        top: Math.min(resolvedChartHeight - 10, plotBounds.bottom + 12),
                         width: goalDateLabelWidth,
                         textAlign: "center",
                       }}
