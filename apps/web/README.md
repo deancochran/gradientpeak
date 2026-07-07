@@ -18,7 +18,8 @@ pnpm install
 Run the web app:
 
 ```bash
-pnpm --filter web dev
+pnpm --filter web dev:local
+pnpm --filter web dev:tunnel
 ```
 
 Run the main checks:
@@ -103,10 +104,10 @@ SMTP sinks.
 
 ## Container Publishing
 
-The production container workflow is defined in:
+Production container publishing should be defined in:
 
 - `.github/workflows/publish-container.yml`
 
-It now builds:
+When restored/enabled, it should build:
 
 - `apps/web/Dockerfile`
