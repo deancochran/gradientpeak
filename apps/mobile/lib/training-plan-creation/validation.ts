@@ -1,4 +1,8 @@
-import { isValidDateOnlyUtc, validateTrainingPlanCreationInput } from "@repo/core";
+import {
+  isValidDateOnlyUtc,
+  validatePlanningPreferencesConsistency,
+  validateTrainingPlanCreationInput,
+} from "@repo/core";
 import { ZodError } from "zod";
 import { toTrainingPlanStructure } from "./mappers";
 import { trainingPlanBuilderPlanPreferencesSchema } from "./schemas";
@@ -68,6 +72,19 @@ export function validateTrainingPlanBuilderState(
       target: toBuilderTarget(issue),
     }),
   );
+
+  if (planPreferenceResult.success) {
+    for (const issue of validatePlanningPreferencesConsistency(planPreferenceResult.data)) {
+      if (issue.severity !== "blocking") continue;
+      blockers.push(
+        createBlocker({
+          code: issue.code,
+          message: issue.message,
+          target: { type: "assumptions" },
+        }),
+      );
+    }
+  }
 
   if (blockers.length === 0) {
     try {

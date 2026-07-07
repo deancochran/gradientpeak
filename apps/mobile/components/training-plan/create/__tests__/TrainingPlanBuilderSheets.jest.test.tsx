@@ -53,6 +53,10 @@ const planningConstraintFields = [
     label: "Duration",
     inputKind: "number" as const,
     defaultUnit: "weeks",
+    helperText: "How many weeks this plan-local override should cover.",
+    min: 1,
+    max: 104,
+    step: 1,
     value: {
       value: null,
       source: "unknown" as const,
@@ -94,6 +98,14 @@ function DraftHarness() {
         testID="preferences-set-duration"
         onPress={() => drafts.updatePlanningConstraintDraft("durationWeeks", 8)}
       />
+      <Pressable
+        testID="preferences-set-impossible-frequency"
+        onPress={() => {
+          drafts.updatePlanningConstraintDraft("weeklySessionCount", 6);
+          drafts.updatePlanningConstraintDraft("restDaysPerWeek", 2);
+        }}
+      />
+      <Text testID="preferences-can-save">{drafts.canSavePlanningPreferences ? "yes" : "no"}</Text>
       <Pressable
         testID="preferences-cancel"
         onPress={() => drafts.cancelDraftForSheet("preferences")}
@@ -198,6 +210,20 @@ describe("TrainingPlanBuilderSheetDraftsProvider", () => {
       ...basePlanPreferences,
       durationWeeks: 8,
     });
+  });
+
+  it("blocks impossible planning preference drafts from applying", async () => {
+    const { onApplyPlanningPreferences } = renderDraftHarness({ activeSheet: "preferences" });
+
+    expect(screen.getByTestId("preferences-can-save").props.children).toBe("yes");
+    fireEvent.press(screen.getByTestId("preferences-set-impossible-frequency"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("preferences-can-save").props.children).toBe("no");
+    });
+
+    fireEvent.press(screen.getByTestId("preferences-apply"));
+    expect(onApplyPlanningPreferences).not.toHaveBeenCalled();
   });
 
   it("clears profile goal drafts on cancel and after save", async () => {

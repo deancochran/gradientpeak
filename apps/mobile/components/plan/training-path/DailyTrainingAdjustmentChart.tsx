@@ -189,6 +189,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
   const scrollRef = useRef<ScrollView>(null);
   const activeIndexRef = useRef(0);
   const previewDateRef = useRef<string | null>(null);
+  const lastProgrammaticScrollDateRef = useRef<string | null>(null);
   const mountedRef = useRef(false);
   const { state: chartPressState } = useChartPressState({
     x: 0,
@@ -208,7 +209,8 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
   const barWidth = density === "compact" ? 18 : density === "detail" ? 26 : 22;
   const resolvedHeight = height ?? (density === "compact" ? 190 : density === "detail" ? 270 : 230);
   const chartAreaHeight = Math.max(96, resolvedHeight);
-  const resolvedSelectedDate = internalSelectedDate ?? selectedDate;
+  const isSelectionControlled = selectedDate !== undefined;
+  const resolvedSelectedDate = isSelectionControlled ? selectedDate : internalSelectedDate;
   const selectedPoint = useMemo(
     () => points.find((point) => point.date === resolvedSelectedDate) ?? points[0] ?? null,
     [points, resolvedSelectedDate],
@@ -318,6 +320,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
     (date: string, animated = true) => {
       const index = points.findIndex((point) => point.date === date);
       if (index < 0) return;
+      lastProgrammaticScrollDateRef.current = date;
       scrollRef.current?.scrollTo({ animated, x: index * slotWidth, y: 0 });
     },
     [points, slotWidth],
@@ -330,14 +333,17 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
       scrollToDate(date);
       if (date === resolvedSelectedDate) return;
       if (!mountedRef.current) return;
-      setInternalSelectedDate(date);
+      if (!isSelectionControlled) {
+        setInternalSelectedDate(date);
+      }
       onSelectedDateChange?.(date);
     },
-    [onSelectedDateChange, resolvedSelectedDate, scrollToDate],
+    [isSelectionControlled, onSelectedDateChange, resolvedSelectedDate, scrollToDate],
   );
 
   useEffect(() => {
     if (!hasMounted || !resolvedSelectedDate) return;
+    if (lastProgrammaticScrollDateRef.current === resolvedSelectedDate) return;
     scrollToDate(resolvedSelectedDate, false);
   }, [hasMounted, resolvedSelectedDate, scrollToDate]);
 

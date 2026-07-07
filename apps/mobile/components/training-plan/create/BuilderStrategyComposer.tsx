@@ -57,9 +57,9 @@ export const BuilderStrategyComposer = memo(function BuilderStrategyComposer({
       </View>
 
       <SaveRouteStatus
-        route={savePlan.route}
-        canSave={savePlan.canSave}
-        degradedReason={savePlan.degradedReason}
+        detail={savePlan.readiness.detail}
+        label={savePlan.readiness.label}
+        status={savePlan.readiness.status}
       />
 
       <View className="-mx-2">
@@ -73,19 +73,22 @@ export const BuilderStrategyComposer = memo(function BuilderStrategyComposer({
 });
 
 function SaveRouteStatus({
-  canSave,
-  degradedReason,
-  route,
+  detail,
+  label,
+  status,
 }: {
-  canSave: boolean;
-  degradedReason?: string | null;
-  route: "backend" | "degraded";
+  detail: string;
+  label: string;
+  status: "blocked" | "pending" | "ready" | "review";
 }) {
-  const status = route === "backend" ? "Backend save ready" : "Backend save unavailable";
-  const detail =
-    route === "backend"
-      ? "Saving will create a backend training plan from this reusable Week/Day builder."
-      : `Saving is blocked until backend create/commit is ready. ${degradedReason ?? "Review goals and preferences, then wait for backend preview."}`;
+  const labelClass =
+    status === "ready"
+      ? "text-xs font-semibold text-success"
+      : status === "pending"
+        ? "text-xs font-semibold text-muted-foreground"
+        : status === "review"
+          ? "text-xs font-semibold text-foreground"
+          : "text-xs font-semibold text-destructive";
 
   return (
     <View
@@ -93,10 +96,10 @@ function SaveRouteStatus({
       testID="builder-save-route-status"
     >
       <View className="flex-row items-center justify-between gap-3">
-        <Text className="text-xs font-semibold uppercase text-muted-foreground">Save route</Text>
-        <Text className="text-xs font-semibold text-foreground">
-          {canSave || route === "degraded" ? status : "Needs attention"}
+        <Text className="text-xs font-semibold uppercase text-muted-foreground">
+          Plan readiness
         </Text>
+        <Text className={labelClass}>{label}</Text>
       </View>
       <Text className="text-xs leading-4 text-muted-foreground">{detail}</Text>
     </View>

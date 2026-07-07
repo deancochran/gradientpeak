@@ -1,4 +1,5 @@
-import type { ActivityPlanPlanningEstimate } from "@repo/core";
+import type { ActivityPlanPlanningEstimate, TrainingPreferenceValidationIssue } from "@repo/core";
+import { validatePlanningPreferencesConsistency } from "@repo/core";
 import { Form, FormTextField } from "@repo/ui/components/form";
 import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
@@ -53,10 +54,12 @@ type TrainingPlanBuilderService = ReturnType<typeof useTrainingPlanCreationServi
 
 type TrainingPlanBuilderSheetDraftsContextValue = {
   canResetActivityFilters: boolean;
+  canSavePlanningPreferences: boolean;
   canSaveProfileGoal: boolean;
   draftActivityPlanCategoryFilter: ActivityCategoryFilter;
   draftActivityPlanSort: ActivityPlanSort;
   draftPlanningConstraintFields: TrainingPlanBuilderService["derived"]["planningConstraintFields"];
+  planningPreferenceIssues: TrainingPreferenceValidationIssue[];
   planningPreferencesForm: UseFormReturn<TrainingPlanBuilderPlanPreferences>;
   profileGoalForm: UseFormReturn<TrainingPlanBuilderProfileGoalDraft>;
   applyActivityFiltersDraft: () => void;
@@ -115,6 +118,13 @@ export function TrainingPlanBuilderSheetDraftsProvider({
     mode: "onChange",
   });
   const draftPlanningPreferences = planningPreferencesForm.watch();
+  const planningPreferenceIssues = useMemo(
+    () => validatePlanningPreferencesConsistency(draftPlanningPreferences),
+    [draftPlanningPreferences],
+  );
+  const canSavePlanningPreferences = planningPreferenceIssues.every(
+    (issue) => issue.severity !== "blocking",
+  );
   const [draftActivityPlanCategoryFilter, setDraftActivityPlanCategoryFilter] =
     useState<ActivityCategoryFilter>(activityPlanCategoryFilter);
   const [draftActivityPlanSort, setDraftActivityPlanSort] = useState(activityPlanSort);
@@ -216,10 +226,13 @@ export function TrainingPlanBuilderSheetDraftsProvider({
   );
 
   const applyPlanningPreferencesDraft = useCallback(() => {
+    if (!canSavePlanningPreferences) {
+      return;
+    }
     onApplyPlanningPreferences(
       trainingPlanBuilderPlanPreferencesSchema.parse(planningPreferencesForm.getValues()),
     );
-  }, [onApplyPlanningPreferences, planningPreferencesForm]);
+  }, [canSavePlanningPreferences, onApplyPlanningPreferences, planningPreferencesForm]);
 
   const saveProfileGoalDraft = useCallback(
     (onSave: (title: string) => void) => {
@@ -243,10 +256,12 @@ export function TrainingPlanBuilderSheetDraftsProvider({
     () => ({
       canResetActivityFilters:
         draftActivityPlanCategoryFilter !== null || draftActivityPlanSort !== "newest",
+      canSavePlanningPreferences,
       canSaveProfileGoal: profileGoalTitle.trim().length > 0,
       draftActivityPlanCategoryFilter,
       draftActivityPlanSort,
       draftPlanningConstraintFields,
+      planningPreferenceIssues,
       planningPreferencesForm,
       profileGoalForm,
       applyActivityFiltersDraft,
@@ -266,9 +281,11 @@ export function TrainingPlanBuilderSheetDraftsProvider({
       draftActivityPlanCategoryFilter,
       draftActivityPlanSort,
       draftPlanningConstraintFields,
+      planningPreferenceIssues,
       planningPreferencesForm,
       profileGoalForm,
       profileGoalTitle,
+      canSavePlanningPreferences,
       applyActivityFiltersDraft,
       applyPlanningPreferencesDraft,
       cancelDraftForSheet,
@@ -460,6 +477,7 @@ export function TrainingPlanBuilderSheetContent({
     return (
       <BuilderPlanPreferencesContextForm
         fields={sheetDrafts.draftPlanningConstraintFields}
+        issues={sheetDrafts.planningPreferenceIssues}
         onAddField={sheetDrafts.addPlanningConstraintDraft}
         onChangeField={sheetDrafts.updatePlanningConstraintDraft}
         onClose={() => undefined}

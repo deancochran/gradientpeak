@@ -4,14 +4,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { api } from "@/lib/api";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
 import { deriveActivityPlanPickerState } from "./activity-plan-picker";
-import {
-  deriveTrainingPathChartFromActiveProjection,
-  deriveTrainingPathProjectionStatus,
-  mapBackendPlanningCreateCommitInput,
-  mapBackendPlanningUpdateCommitInput,
-  normalizeBackendPlanningPreview,
-  selectActiveTrainingPlanProjection,
-} from "./backend-planning-client";
+import { normalizeBackendPlanningPreview } from "./backend-planning-client";
 import { createTrainingPlanBuilderActions } from "./builder-actions";
 import { createDefaultTrainingPlanBuilderState } from "./defaults";
 import { subscribeToTrainingPlanGoalCreation } from "./goalCreationHandoff";
@@ -20,9 +13,9 @@ import {
   getTrainingPlanStructureActivityPlanIds,
 } from "./mappers";
 import {
-  createTrainingPlanProjectionFacade,
-  createTrainingPlanSavePlanFacade,
-} from "./planning-session";
+  deriveTrainingPlanCreationSession,
+  deriveTrainingPlanReadinessPresentation,
+} from "./planning-session-engine";
 import { trainingPlanBuilderReducer } from "./reducer";
 import type {
   TrainingPlanCreationProfileGoalSnapshot,
@@ -312,96 +305,35 @@ export function useTrainingPlanCreationService({
   );
   const isBackendPlanningInputStale =
     debouncedBackendPlanningFingerprint !== localProjection.backendPlanning.contextFingerprint;
-  const activeProjection = useMemo(
+  const planningSession = useMemo(
     () =>
-      selectActiveTrainingPlanProjection({
-        backendPreview: authoritativeProjection,
-        backendPreviewEnabled: backendPreviewInput !== null,
-        isBackendInputStale: isBackendPlanningInputStale,
-        localChart: localProjection.builderViewModel.dailyTrainingPathChart,
+      deriveTrainingPlanCreationSession({
+        authoritativeProjection,
+        backendPreviewInputEnabled: backendPreviewInput !== null,
+        isBackendPlanningInputStale,
+        localProjection,
+        planId,
+        previewQuery: {
+          error: backendPlanningPreviewQuery.error,
+          isFetching: backendPlanningPreviewQuery.isFetching,
+          isLoading: backendPlanningPreviewQuery.isLoading,
+        },
       }),
     [
       authoritativeProjection,
-      backendPreviewInput,
-      isBackendPlanningInputStale,
-      localProjection.builderViewModel.dailyTrainingPathChart,
-    ],
-  );
-  const backendPlanningCommit = useMemo(
-    () => ({
-      create: mapBackendPlanningCreateCommitInput({
-        previewInput: localProjection.backendPlanning.previewInput,
-        previewSnapshotToken: authoritativeProjection?.previewSnapshotToken,
-      }),
-      update: mapBackendPlanningUpdateCommitInput({
-        planId,
-        previewInput: localProjection.backendPlanning.previewInput,
-        previewSnapshotToken: authoritativeProjection?.previewSnapshotToken,
-      }),
-    }),
-    [
-      authoritativeProjection?.previewSnapshotToken,
-      localProjection.backendPlanning.previewInput,
-      planId,
-    ],
-  );
-  const trainingPathChartProjection = useMemo(
-    () =>
-      deriveTrainingPathChartFromActiveProjection({
-        activeProjection,
-        localChart: localProjection.builderViewModel.dailyTrainingPathChart,
-      }),
-    [activeProjection, localProjection.builderViewModel.dailyTrainingPathChart],
-  );
-  const trainingPathProjectionStatus = useMemo(
-    () =>
-      deriveTrainingPathProjectionStatus({
-        activeProjection,
-        backendInputAvailable: localProjection.backendPlanning.previewInput !== null,
-        backendPlanningReason: localProjection.backendPlanning.status.reason,
-        backendPreviewEnabled: backendPreviewInput !== null,
-        backendPreviewError: backendPlanningPreviewQuery.error,
-        backendPreviewLoading:
-          backendPlanningPreviewQuery.isLoading || backendPlanningPreviewQuery.isFetching,
-        chartSource: trainingPathChartProjection.source,
-      }),
-    [
-      activeProjection,
       backendPreviewInput,
       backendPlanningPreviewQuery.error,
       backendPlanningPreviewQuery.isFetching,
       backendPlanningPreviewQuery.isLoading,
-      localProjection.backendPlanning.previewInput,
-      localProjection.backendPlanning.status.reason,
-      trainingPathChartProjection.source,
+      isBackendPlanningInputStale,
+      localProjection,
+      planId,
     ],
   );
-  const projection = useMemo(
-    () =>
-      createTrainingPlanProjectionFacade({
-        activeProjection,
-        authoritativeProjection,
-        inspectorInsight: null,
-        trainingPathChartProjection,
-        trainingPathProjectionStatus,
-      }),
-    [
-      activeProjection,
-      authoritativeProjection,
-      trainingPathChartProjection,
-      trainingPathProjectionStatus,
-    ],
-  );
-  const savePlanRoute = useMemo(
-    () =>
-      createTrainingPlanSavePlanFacade({
-        createCommit: backendPlanningCommit.create,
-        updateCommit: backendPlanningCommit.update,
-      }),
-    [backendPlanningCommit.create, backendPlanningCommit.update],
-  );
+  const { previewLifecycle, projection, saveLifecycle, savePlanRoute } = planningSession;
   const activeSaveCommit =
     mode === "edit" ? savePlanRoute.updateCommit : savePlanRoute.createCommit;
+  const activeSaveLifecycle = mode === "edit" ? saveLifecycle.update : saveLifecycle.create;
   const backendSaveBlocker = useMemo(
     () =>
       activeSaveCommit.ok
@@ -488,11 +420,21 @@ export function useTrainingPlanCreationService({
         updatePlanMutation.isPending ||
         createFromCreationConfigMutation.isPending ||
         updateFromCreationConfigMutation.isPending,
+      previewLifecycle,
+      readiness: deriveTrainingPlanReadinessPresentation({
+        canSave: localProjection.saveReadiness.canSave && activeSaveCommit.ok,
+        localBlockerCount: localProjection.saveReadiness.blockers.length,
+        mode,
+        previewLifecycle,
+        saveLifecycle: activeSaveLifecycle,
+      }),
       route: mode === "edit" ? savePlanRoute.updateRoute : savePlanRoute.createRoute,
+      saveLifecycle: activeSaveLifecycle,
       execute: mode === "edit" ? updatePlan : createPlan,
     }),
     [
       activeSaveCommit.ok,
+      activeSaveLifecycle,
       backendSaveBlocker,
       createFromCreationConfigMutation.isPending,
       createPlan,
@@ -500,6 +442,7 @@ export function useTrainingPlanCreationService({
       localProjection.saveReadiness.blockers,
       localProjection.saveReadiness.canSave,
       mode,
+      previewLifecycle,
       savePlanRoute,
       updateFromCreationConfigMutation.isPending,
       updatePlan,

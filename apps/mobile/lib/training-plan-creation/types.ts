@@ -93,6 +93,11 @@ export type TrainingPlanBuilderSaveBlockerCode =
   | "unpublished_activity_plan"
   | "invalid_start_time"
   | "duplicate_session"
+  | "min_sessions_exceeds_max_sessions"
+  | "single_session_exceeds_weekly_budget"
+  | "sessions_and_rest_days_exceed_week"
+  | "average_session_duration_exceeds_budget"
+  | "high_average_session_duration"
   | "canonical_schema_failure";
 
 export type TrainingPlanBuilderSaveBlocker = {

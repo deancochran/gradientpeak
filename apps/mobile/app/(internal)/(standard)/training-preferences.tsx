@@ -1,3 +1,4 @@
+import { validateTrainingDoseLimitsConsistency } from "@repo/core";
 import type {
   AthleteTrainingSettings,
   AthleteTrainingSettingsFormInput,
@@ -205,47 +206,27 @@ export default function TrainingPreferencesScreen() {
   const isSaving = submitForm.isSubmitting || upsertMutation.isPending;
 
   const scheduleValidation = useMemo(() => {
-    const minSessions = draft.dose_limits.min_sessions_per_week ?? 0;
-    const maxSessions = draft.dose_limits.max_sessions_per_week ?? 0;
-    const maxSingleSessionDuration = draft.dose_limits.max_single_session_duration_minutes;
-    const maxWeeklyDuration = draft.dose_limits.max_weekly_duration_minutes;
-
-    const issues: string[] = [];
-
-    if (minSessions > maxSessions) {
-      issues.push("Fewest sessions per week cannot be higher than most sessions per week.");
-    }
-
-    if (
-      typeof maxSingleSessionDuration === "number" &&
-      typeof maxWeeklyDuration === "number" &&
-      maxSingleSessionDuration > maxWeeklyDuration
-    ) {
-      issues.push("Weekly time budget must be at least as long as your longest activity.");
-    }
+    const validationIssues = validateTrainingDoseLimitsConsistency(draft.dose_limits);
+    const issueMessages = validationIssues.map((issue) => issue.message);
+    const hasIssue = (code: (typeof validationIssues)[number]["code"]) =>
+      validationIssues.some((issue) => issue.code === code);
+    const hasSessionRangeIssue = hasIssue("min_sessions_exceeds_max_sessions");
+    const hasWeeklyBudgetIssue = hasIssue("single_session_exceeds_weekly_budget");
 
     return {
-      issues,
-      minSessionsError:
-        minSessions > maxSessions
-          ? "Choose a floor that stays at or below your weekly maximum."
-          : undefined,
-      maxSessionsError:
-        minSessions > maxSessions
-          ? "Raise this above the weekly minimum or lower the minimum."
-          : undefined,
-      maxSingleSessionError:
-        typeof maxSingleSessionDuration === "number" &&
-        typeof maxWeeklyDuration === "number" &&
-        maxSingleSessionDuration > maxWeeklyDuration
-          ? "A single activity cannot be longer than the full weekly time budget."
-          : undefined,
-      maxWeeklyDurationError:
-        typeof maxSingleSessionDuration === "number" &&
-        typeof maxWeeklyDuration === "number" &&
-        maxSingleSessionDuration > maxWeeklyDuration
-          ? "Increase this budget or shorten the longest activity."
-          : undefined,
+      issues: issueMessages,
+      minSessionsError: hasSessionRangeIssue
+        ? "Choose a floor that stays at or below your weekly maximum."
+        : undefined,
+      maxSessionsError: hasSessionRangeIssue
+        ? "Raise this above the weekly minimum or lower the minimum."
+        : undefined,
+      maxSingleSessionError: hasWeeklyBudgetIssue
+        ? "A single activity cannot be longer than the full weekly time budget."
+        : undefined,
+      maxWeeklyDurationError: hasWeeklyBudgetIssue
+        ? "Increase this budget or shorten the longest activity."
+        : undefined,
     };
   }, [draft]);
 

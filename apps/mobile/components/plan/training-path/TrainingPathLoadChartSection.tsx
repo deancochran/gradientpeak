@@ -8,6 +8,7 @@ import { AppFormModal } from "@/components/shared/AppFormModal";
 import { DailyTrainingAdjustmentChart } from "./DailyTrainingAdjustmentChart";
 import { TrainingPathChart } from "./TrainingPathChart";
 import { TrainingPathLegend } from "./TrainingPathLegend";
+import { deriveTrainingPathChartWindow } from "./trainingPathChartWindow";
 import type { TrainingPathViewModel } from "./trainingPathTypes";
 
 type ChartEmptyTone = "empty" | "loading" | "unavailable";
@@ -22,6 +23,8 @@ type SelectedWeekBucket = {
   weekEndDate: string;
   weekStartDate: string;
 };
+
+const maxDailyChartPoints = 120;
 
 export type TrainingPathChartSectionContext = {
   mode: TrainingPathSelectionMode;
@@ -99,23 +102,6 @@ const modelEmptyStateCopy: Record<NonNullable<TrainingPathViewModel["emptyState"
   noProjection: "Training path is still being calculated.",
 };
 
-const maxDailyChartPoints = 120;
-
-function getBoundedDailyPoints(points: DailyPoint[] | undefined, selectedDate?: string | null) {
-  if (!points?.length || points.length <= maxDailyChartPoints) return points;
-  const selectedIndex = Math.max(
-    0,
-    points.findIndex((point) => point.date === selectedDate),
-  );
-  const centerIndex = selectedIndex >= 0 ? selectedIndex : 0;
-  const halfWindow = Math.floor(maxDailyChartPoints / 2);
-  const start = Math.max(
-    0,
-    Math.min(centerIndex - halfWindow, points.length - maxDailyChartPoints),
-  );
-  return points.slice(start, start + maxDailyChartPoints);
-}
-
 export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartSection({
   chartHeight = 300,
   dailyDensity = "standard",
@@ -153,8 +139,14 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
       : emptyState;
   const canRenderDailyChart = preferDailyChart && !!dailyPoints?.length;
   const canRenderWeeklyChart = !!model && !model.emptyState && !!onSelectedWeekChange;
-  const chartDailyPoints = useMemo(
-    () => getBoundedDailyPoints(dailyPoints, selectedDate ?? model?.todayKey),
+  const chartWindow = useMemo(
+    () =>
+      deriveTrainingPathChartWindow({
+        anchorDate: model?.todayKey,
+        maxPoints: maxDailyChartPoints,
+        points: dailyPoints,
+        selectedDate,
+      }),
     [dailyPoints, model?.todayKey, selectedDate],
   );
   const belowChartContext = useMemo<TrainingPathChartSectionContext>(() => {
@@ -239,7 +231,7 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
             density={dailyDensity}
             height={chartHeight}
             formatDateLabel={dailyDateLabelFormatter}
-            points={chartDailyPoints ?? dailyPoints}
+            points={chartWindow.visiblePoints.length > 0 ? chartWindow.visiblePoints : dailyPoints}
             selectedDate={selectedDate ?? model?.todayKey}
             showSelectedPointTray={showSelectedPointTray}
             onSelectedDateChange={onSelectedDateChange}

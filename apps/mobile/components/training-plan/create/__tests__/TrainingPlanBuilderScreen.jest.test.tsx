@@ -286,12 +286,9 @@ jest.mock("../BuilderStrategyComposer", () => ({
         <Text>Preferences</Text>
       </Pressable>
       <View testID="builder-save-route-status">
-        <Text>Save route</Text>
-        <Text>
-          {savePlan?.route === "backend"
-            ? "Saving will create a backend training plan from this reusable Week/Day builder."
-            : `Saving is blocked until backend create/commit is ready. ${savePlan?.degradedReason ?? "Review goals and preferences, then wait for backend preview."}`}
-        </Text>
+        <Text>Plan readiness</Text>
+        <Text>{savePlan?.readiness?.label ?? "Needs setup"}</Text>
+        <Text>{savePlan?.readiness?.detail ?? "Add enough goals, preferences, and workouts."}</Text>
       </View>
       {renderBelowChart?.({ selectedDayPoint: null })}
     </View>
@@ -523,14 +520,12 @@ describe("TrainingPlanBuilderScreen", () => {
     expect(screen.queryByText("Start date")).toBeNull();
   });
 
-  it("surfaces the deterministic save route on the main composer", () => {
+  it("surfaces the lifecycle-derived readiness on the main composer", () => {
     renderNative(<TrainingPlanBuilderScreen />);
 
     expect(screen.getByTestId("builder-save-route-status")).toBeTruthy();
-    expect(screen.getByText("Save route")).toBeTruthy();
-    expect(
-      screen.getByText(/Saving is blocked until backend create\/commit is ready/),
-    ).toBeTruthy();
+    expect(screen.getByText("Plan readiness")).toBeTruthy();
+    expect(screen.getByText("Review plan")).toBeTruthy();
   });
 
   it("opens activity assignment from the schedule editor", () => {

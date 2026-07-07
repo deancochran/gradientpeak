@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react-native";
 import type React from "react";
 import { DailyTrainingAdjustmentChart } from "./DailyTrainingAdjustmentChart";
+import { deriveTrainingPathChartWindow } from "./trainingPathChartWindow";
 
 jest.mock("react-native-gesture-handler", () => ({
   __esModule: true,
@@ -15,6 +16,50 @@ jest.mock("react-native-reanimated", () => ({
 }));
 
 describe("DailyTrainingAdjustmentChart", () => {
+  it("derives a stable bounded chart window around the anchor date", () => {
+    const points = Array.from({ length: 10 }, (_, index) => ({
+      date: `2026-06-${String(index + 1).padStart(2, "0")}`,
+    }));
+
+    const window = deriveTrainingPathChartWindow({
+      anchorDate: "2026-06-06",
+      maxPoints: 4,
+      points,
+      selectedDate: "2026-06-10",
+    });
+
+    expect(window.startIndex).toBe(3);
+    expect(window.visiblePoints.map((point) => point.date)).toEqual([
+      "2026-06-04",
+      "2026-06-05",
+      "2026-06-06",
+      "2026-06-07",
+    ]);
+    expect(window.selectedDate).toBe("2026-06-10");
+  });
+
+  it("keeps the bounded chart window independent from transient selection", () => {
+    const points = Array.from({ length: 10 }, (_, index) => ({
+      date: `2026-06-${String(index + 1).padStart(2, "0")}`,
+    }));
+
+    const firstWindow = deriveTrainingPathChartWindow({
+      anchorDate: "2026-06-06",
+      maxPoints: 4,
+      points,
+      selectedDate: "2026-06-01",
+    });
+    const secondWindow = deriveTrainingPathChartWindow({
+      anchorDate: "2026-06-06",
+      maxPoints: 4,
+      points,
+      selectedDate: "2026-06-10",
+    });
+
+    expect(secondWindow.startIndex).toBe(firstWindow.startIndex);
+    expect(secondWindow.visiblePoints).toEqual(firstWindow.visiblePoints);
+  });
+
   it("renders the selected daily adjustment tray", () => {
     render(
       <DailyTrainingAdjustmentChart

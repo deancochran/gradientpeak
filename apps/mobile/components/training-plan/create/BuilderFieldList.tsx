@@ -18,6 +18,10 @@ export interface BuilderFieldDescriptor<TKey extends string = string> {
   reason: string | null;
   canRemove: boolean;
   defaultUnit?: string | null;
+  helperText?: string;
+  max?: number;
+  min?: number;
+  step?: number;
 }
 
 interface BuilderFieldListProps<TKey extends string> {
@@ -86,7 +90,8 @@ export function BuilderFieldList<TKey extends string>({
                 supportingText={
                   field.required
                     ? field.reason
-                    : formatFieldSource(field.value.source, field.value.overridden)
+                    : field.helperText ||
+                      formatFieldSource(field.value.source, field.value.overridden)
                 }
               >
                 {field.inputKind === "derived" ? (
@@ -96,6 +101,9 @@ export function BuilderFieldList<TKey extends string>({
                 ) : (
                   <CompactNumberControl
                     label={field.label}
+                    max={field.max}
+                    min={field.min}
+                    step={field.step}
                     value={field.value.value}
                     unitLabel={field.value.unit ?? field.defaultUnit ?? undefined}
                     onChange={(value) => onChangeField(field.key, value)}
@@ -133,25 +141,33 @@ export function BuilderFieldList<TKey extends string>({
 
 function CompactNumberControl({
   label,
+  max,
+  min = 0,
   onChange,
+  step: providedStep,
   unitLabel,
   value,
 }: {
   label: string;
+  max?: number;
+  min?: number;
   onChange: (value: number | null) => void;
+  step?: number;
   unitLabel?: string;
   value: number | null;
 }) {
-  const step = getBuilderNumberStep({ label, unitLabel });
-  const nextValue = value ?? 0;
+  const step = providedStep ?? getBuilderNumberStep({ label, unitLabel });
+  const nextValue = value ?? min;
+  const canDecrease = value !== null && value > min;
+  const canIncrease = max === undefined || nextValue < max;
   return (
     <View className="flex-row items-center justify-between gap-3 rounded-2xl bg-muted/30 px-3 py-2">
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`Decrease ${label}`}
         className="h-9 w-9 items-center justify-center rounded-full bg-background"
-        disabled={value === null || value <= 0}
-        onPress={() => onChange(value !== null && value - step > 0 ? value - step : null)}
+        disabled={!canDecrease}
+        onPress={() => onChange(value !== null && value - step >= min ? value - step : null)}
       >
         <Text className="text-lg font-medium text-foreground">−</Text>
       </Pressable>
@@ -164,7 +180,10 @@ function CompactNumberControl({
         accessibilityRole="button"
         accessibilityLabel={`Increase ${label}`}
         className="h-9 w-9 items-center justify-center rounded-full bg-background"
-        onPress={() => onChange(nextValue + step)}
+        disabled={!canIncrease}
+        onPress={() =>
+          onChange(max === undefined ? nextValue + step : Math.min(max, nextValue + step))
+        }
       >
         <Text className="text-lg font-medium text-foreground">+</Text>
       </Pressable>

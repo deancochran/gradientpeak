@@ -1,4 +1,8 @@
-import { type CreationConstraints, mapPlanningPreferencesToCreationConstraints } from "@repo/core";
+import {
+  type CreationConstraints,
+  mapPlanningPreferencesToCreationConstraints,
+  PLANNING_PREFERENCE_FIELD_METADATA,
+} from "@repo/core";
 import type { TrainingPlanBuilderPlanPreferences } from "./types";
 
 export type TrainingPlanPreferenceFieldKey =
@@ -18,6 +22,10 @@ export interface TrainingPlanPreferenceFieldDescriptor {
   label: string;
   inputKind: "number";
   defaultUnit: string | null;
+  helperText: string;
+  min: number;
+  max: number;
+  step: number;
   value: {
     value: number | null;
     source: "default" | "manual_override" | "unknown";
@@ -38,10 +46,26 @@ export const TRAINING_PLAN_PREFERENCE_FIELD_REGISTRY: Record<
     requiredDefault: number;
   }
 > = {
-  durationWeeks: { label: "Duration", defaultUnit: "weeks", requiredDefault: 4 },
-  weeklySessionCount: { label: "Sessions per week", defaultUnit: null, requiredDefault: 3 },
-  targetWeeklyHours: { label: "Weekly time", defaultUnit: "hr", requiredDefault: 5 },
-  restDaysPerWeek: { label: "Rest days", defaultUnit: "days", requiredDefault: 2 },
+  durationWeeks: {
+    label: PLANNING_PREFERENCE_FIELD_METADATA.durationWeeks.label,
+    defaultUnit: PLANNING_PREFERENCE_FIELD_METADATA.durationWeeks.unit,
+    requiredDefault: PLANNING_PREFERENCE_FIELD_METADATA.durationWeeks.requiredDefault,
+  },
+  weeklySessionCount: {
+    label: PLANNING_PREFERENCE_FIELD_METADATA.weeklySessionCount.label,
+    defaultUnit: PLANNING_PREFERENCE_FIELD_METADATA.weeklySessionCount.unit,
+    requiredDefault: PLANNING_PREFERENCE_FIELD_METADATA.weeklySessionCount.requiredDefault,
+  },
+  targetWeeklyHours: {
+    label: PLANNING_PREFERENCE_FIELD_METADATA.targetWeeklyHours.label,
+    defaultUnit: PLANNING_PREFERENCE_FIELD_METADATA.targetWeeklyHours.unit,
+    requiredDefault: PLANNING_PREFERENCE_FIELD_METADATA.targetWeeklyHours.requiredDefault,
+  },
+  restDaysPerWeek: {
+    label: PLANNING_PREFERENCE_FIELD_METADATA.restDaysPerWeek.label,
+    defaultUnit: PLANNING_PREFERENCE_FIELD_METADATA.restDaysPerWeek.unit,
+    requiredDefault: PLANNING_PREFERENCE_FIELD_METADATA.restDaysPerWeek.requiredDefault,
+  },
 };
 
 export const TRAINING_PLAN_CONSTRAINT_PRESETS: Array<{
@@ -91,6 +115,7 @@ export function selectTrainingPlanPreferenceFields(
     Object.keys(TRAINING_PLAN_PREFERENCE_FIELD_REGISTRY) as TrainingPlanPreferenceFieldKey[]
   ).map((key) => {
     const definition = TRAINING_PLAN_PREFERENCE_FIELD_REGISTRY[key];
+    const metadata = PLANNING_PREFERENCE_FIELD_METADATA[key];
     const rawValue = getPreferenceValue(preferences, key);
     const requiredReason = requirements[key]?.reason ?? null;
     const required = requiredReason !== null;
@@ -101,6 +126,10 @@ export function selectTrainingPlanPreferenceFields(
       label: definition.label,
       inputKind: "number",
       defaultUnit: definition.defaultUnit,
+      helperText: metadata.helperText,
+      min: metadata.min,
+      max: metadata.max,
+      step: metadata.step,
       value: {
         value,
         source:
@@ -130,9 +159,17 @@ export function applyTrainingPlanPreferenceFieldOverride(
     "weeklySessionCount",
     "restDaysPerWeek",
   ]);
+  const metadata = PLANNING_PREFERENCE_FIELD_METADATA[key];
+  const normalizedValue =
+    value === null
+      ? null
+      : Math.min(
+          metadata.max,
+          Math.max(metadata.min, integerKeys.has(key) ? Math.round(value) : value),
+        );
   return {
     ...preferences,
-    [key]: value === null ? null : integerKeys.has(key) ? Math.round(value) : value,
+    [key]: normalizedValue,
   };
 }
 

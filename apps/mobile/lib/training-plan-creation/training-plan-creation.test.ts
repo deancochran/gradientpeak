@@ -42,10 +42,15 @@ import {
   createTrainingPlanSavePlanFacade,
 } from "./planning-session";
 import {
+  deriveTrainingPlanCreationSession,
+  deriveTrainingPlanReadinessPresentation,
+} from "./planning-session-engine";
+import {
   addTrainingPlanPreferenceField,
   applyTrainingPlanConstraintPreset,
   applyTrainingPlanPreferenceFieldOverride,
   selectTrainingPlanPreferenceFields,
+  TRAINING_PLAN_PREFERENCE_FIELD_REGISTRY,
 } from "./preferences-context";
 import { trainingPlanBuilderReducer } from "./reducer";
 import { selectTrainingPlanCreateSaveRoute, selectTrainingPlanUpdateSaveRoute } from "./save-route";
@@ -58,6 +63,11 @@ import {
 } from "./schemas";
 import { selectBuilderSummary, selectSaveReadiness, selectSessionById } from "./selectors";
 import { deriveTrainingPlanStructureProposal } from "./structure-proposal";
+import {
+  getTrainingPreferenceCapabilityGaps,
+  TRAINING_PREFERENCE_CAPABILITY_MATRIX,
+  TRAINING_PREFERENCE_SCHEMA_CAPABILITY_PATHS,
+} from "./trainingPreferenceCapabilityMatrix";
 import { validateTrainingPlanBuilderState } from "./validation";
 import { deriveBuilderPlanCreationViewModel } from "./view-model";
 
@@ -488,6 +498,94 @@ describe("training plan creation domain", () => {
     expect(JSON.stringify(toTrainingPlanCreatePayload(fixtures.readyState))).not.toContain(
       "planningContext",
     );
+  });
+
+  it("derives planning session projection and save routing outside the service hook", () => {
+    const localProjection = deriveTrainingPlanLocalProjection(
+      createDefaultTrainingPlanBuilderState(),
+    );
+
+    const session = deriveTrainingPlanCreationSession({
+      authoritativeProjection: null,
+      backendPreviewInputEnabled: false,
+      isBackendPlanningInputStale: false,
+      localProjection,
+      previewQuery: {
+        error: null,
+        isFetching: false,
+        isLoading: false,
+      },
+    });
+
+    expect(session.projection.source).toBe("local");
+    expect(session.projection.chartSource).toBe("local");
+    expect(session.previewLifecycle).toMatchObject({
+      status: "backend_input_unavailable",
+    });
+    expect(session.savePlanRoute.createRoute).toBe("degraded");
+    expect(session.savePlanRoute.createDegradedReason).toBeTruthy();
+    expect(session.saveLifecycle.create.status).toBe("commit_blocked");
+  });
+
+  it("derives user-facing readiness copy from lifecycle state", () => {
+    expect(
+      deriveTrainingPlanReadinessPresentation({
+        canSave: true,
+        localBlockerCount: 0,
+        mode: "create",
+        previewLifecycle: { status: "backend_preview_ready", snapshotToken: "token" },
+        saveLifecycle: { status: "commit_ready" },
+      }),
+    ).toMatchObject({ label: "Ready to create", status: "ready" });
+
+    expect(
+      deriveTrainingPlanReadinessPresentation({
+        canSave: false,
+        localBlockerCount: 0,
+        mode: "create",
+        previewLifecycle: { status: "backend_preview_stale" },
+        saveLifecycle: { status: "commit_blocked", reason: "Preview token missing." },
+      }),
+    ).toMatchObject({ label: "Waiting for preview", status: "pending" });
+  });
+
+  it("keeps a golden matrix for every training preference schema capability", () => {
+    expect(TRAINING_PREFERENCE_CAPABILITY_MATRIX.map((capability) => capability.path)).toEqual(
+      TRAINING_PREFERENCE_SCHEMA_CAPABILITY_PATHS,
+    );
+
+    for (const capability of TRAINING_PREFERENCE_CAPABILITY_MATRIX) {
+      if (capability.standalone.status === "covered") {
+        expect(capability.standalone.testId).toMatch(/^preferences-/);
+      }
+      if (capability.standalone.status === "gap") {
+        expect(capability.standalone.rationale.length).toBeGreaterThan(12);
+      }
+      if (capability.builderOverride.status === "supported") {
+        expect(
+          TRAINING_PLAN_PREFERENCE_FIELD_REGISTRY[capability.builderOverride.fieldKey],
+        ).toBeDefined();
+      }
+      if (capability.builderOverride.status !== "supported") {
+        expect(capability.builderOverride.rationale.length).toBeGreaterThan(12);
+      }
+    }
+  });
+
+  it("makes current training preference capability gaps explicit", () => {
+    expect(getTrainingPreferenceCapabilityGaps().map((capability) => capability.path)).toEqual([
+      "availability.weekly_windows",
+      "availability.hard_rest_days",
+      "dose_limits.max_single_session_duration_minutes",
+      "dose_limits.max_weekly_duration_minutes",
+      "dose_limits.sport_overrides",
+      "training_style.key_session_density_preference",
+      "recovery_preferences.double_day_tolerance",
+      "recovery_preferences.long_session_fatigue_tolerance",
+      "adaptation_preferences.recency_adaptation_preference",
+      "adaptation_preferences.plan_churn_tolerance",
+      "goal_strategy_preferences.priority_tradeoff_preference",
+    ]);
   });
 
   it("scores and sorts activity plan picker items around selected session intent", () => {

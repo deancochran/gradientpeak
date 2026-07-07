@@ -94,7 +94,10 @@ export function TrainingPlanBuilderSheetFrame({
       headerAction={
         hasSaveAction ? (
           <Button
-            disabled={activeSheet === "profileGoalCreate" && !sheetDrafts.canSaveProfileGoal}
+            disabled={
+              (activeSheet === "profileGoalCreate" && !sheetDrafts.canSaveProfileGoal) ||
+              (activeSheet === "preferences" && !sheetDrafts.canSavePlanningPreferences)
+            }
             size="sm"
             variant="ghost"
             onPress={saveSheet}

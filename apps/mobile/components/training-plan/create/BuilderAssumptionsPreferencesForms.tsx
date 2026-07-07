@@ -1,6 +1,7 @@
 import type {
   AthletePlanningContextFieldDescriptor,
   AthletePlanningContextFieldKey,
+  TrainingPreferenceValidationIssue,
 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Input } from "@repo/ui/components/input";
@@ -104,6 +105,7 @@ export interface BuilderAthleteContextFormProps {
 
 export interface BuilderPlanPreferencesContextFormProps {
   fields: TrainingPlanPreferenceFieldDescriptor[];
+  issues?: TrainingPreferenceValidationIssue[];
   onAddField: (fieldKey: TrainingPlanPreferenceFieldKey) => void;
   onChangeField: (fieldKey: TrainingPlanPreferenceFieldKey, value: number | null) => void;
   onClose: () => void;
@@ -354,6 +356,7 @@ export function BuilderAthleteContextForm({
 
 export function BuilderPlanPreferencesContextForm({
   fields,
+  issues = [],
   onAddField,
   onChangeField,
   onClose,
@@ -366,6 +369,25 @@ export function BuilderPlanPreferencesContextForm({
       <HelperCopy>
         Edit the planning constraints used by the algorithm. Clear a value to leave it unset.
       </HelperCopy>
+      {issues.length > 0 ? (
+        <View className="gap-2 rounded-xl border border-amber-400/40 bg-amber-400/10 px-3 py-2">
+          <Text className="text-sm font-semibold text-foreground">
+            Review plan preference constraints
+          </Text>
+          {issues.map((issue) => (
+            <Text
+              key={`${issue.code}-${issue.fields.join("-")}`}
+              className={
+                issue.severity === "blocking"
+                  ? "text-xs leading-4 text-destructive"
+                  : "text-xs leading-4 text-muted-foreground"
+              }
+            >
+              {issue.message}
+            </Text>
+          ))}
+        </View>
+      ) : null}
       <BuilderFieldList
         addLabel="Additional preferences"
         emptyMessage="No planning preferences are available."
