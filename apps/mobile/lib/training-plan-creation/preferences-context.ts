@@ -9,7 +9,8 @@ export type TrainingPlanPreferenceFieldKey =
   | "durationWeeks"
   | "weeklySessionCount"
   | "targetWeeklyHours"
-  | "restDaysPerWeek";
+  | "restDaysPerWeek"
+  | "maxSingleSessionDurationMinutes";
 
 export type TrainingPlanPreferenceRequirements = Partial<
   Record<TrainingPlanPreferenceFieldKey, { reason: string }>
@@ -66,6 +67,12 @@ export const TRAINING_PLAN_PREFERENCE_FIELD_REGISTRY: Record<
     defaultUnit: PLANNING_PREFERENCE_FIELD_METADATA.restDaysPerWeek.unit,
     requiredDefault: PLANNING_PREFERENCE_FIELD_METADATA.restDaysPerWeek.requiredDefault,
   },
+  maxSingleSessionDurationMinutes: {
+    label: PLANNING_PREFERENCE_FIELD_METADATA.maxSingleSessionDurationMinutes.label,
+    defaultUnit: PLANNING_PREFERENCE_FIELD_METADATA.maxSingleSessionDurationMinutes.unit,
+    requiredDefault:
+      PLANNING_PREFERENCE_FIELD_METADATA.maxSingleSessionDurationMinutes.requiredDefault,
+  },
 };
 
 export const TRAINING_PLAN_CONSTRAINT_PRESETS: Array<{
@@ -76,14 +83,14 @@ export const TRAINING_PLAN_CONSTRAINT_PRESETS: Array<{
   {
     id: "derive",
     label: "Let builder derive",
-    description: "No fixed constraints. Use goals, sessions, and activity choices.",
+    description: "No fixed constraints. Use goals, submitted sessions, and activity choices.",
   },
-  { id: "light", label: "Light", description: "3 sessions per week across 4 weeks." },
-  { id: "balanced", label: "Balanced", description: "4 sessions per week across 6 weeks." },
+  { id: "light", label: "Light", description: "3 sessions per week." },
+  { id: "balanced", label: "Balanced", description: "4 sessions per week." },
   {
     id: "high_frequency",
     label: "High frequency",
-    description: "5 sessions per week across 8 weeks.",
+    description: "5 sessions per week.",
   },
 ];
 
@@ -158,6 +165,7 @@ export function applyTrainingPlanPreferenceFieldOverride(
     "durationWeeks",
     "weeklySessionCount",
     "restDaysPerWeek",
+    "maxSingleSessionDurationMinutes",
   ]);
   const metadata = PLANNING_PREFERENCE_FIELD_METADATA[key];
   const normalizedValue =
@@ -193,31 +201,35 @@ export function applyTrainingPlanConstraintPreset(
       weeklySessionCount: null,
       targetWeeklyHours: null,
       restDaysPerWeek: null,
+      maxSingleSessionDurationMinutes: null,
     };
   }
 
   if (preset === "light") {
     return {
-      durationWeeks: 4,
+      durationWeeks: null,
       weeklySessionCount: 3,
       targetWeeklyHours: null,
       restDaysPerWeek: null,
+      maxSingleSessionDurationMinutes: null,
     };
   }
 
   if (preset === "high_frequency") {
     return {
-      durationWeeks: 8,
+      durationWeeks: null,
       weeklySessionCount: 5,
       targetWeeklyHours: null,
       restDaysPerWeek: null,
+      maxSingleSessionDurationMinutes: null,
     };
   }
 
   return {
-    durationWeeks: 6,
+    durationWeeks: null,
     weeklySessionCount: 4,
     targetWeeklyHours: null,
     restDaysPerWeek: null,
+    maxSingleSessionDurationMinutes: null,
   };
 }

@@ -302,9 +302,10 @@ describe("training plan creation domain", () => {
       weeklySessionCount: null,
       targetWeeklyHours: null,
       restDaysPerWeek: null,
+      maxSingleSessionDurationMinutes: null,
     });
     expect(applyTrainingPlanConstraintPreset("balanced")).toMatchObject({
-      durationWeeks: 6,
+      durationWeeks: null,
       weeklySessionCount: 4,
       targetWeeklyHours: null,
       restDaysPerWeek: null,
@@ -575,16 +576,7 @@ describe("training plan creation domain", () => {
   it("makes current training preference capability gaps explicit", () => {
     expect(getTrainingPreferenceCapabilityGaps().map((capability) => capability.path)).toEqual([
       "availability.weekly_windows",
-      "availability.hard_rest_days",
-      "dose_limits.max_single_session_duration_minutes",
-      "dose_limits.max_weekly_duration_minutes",
       "dose_limits.sport_overrides",
-      "training_style.key_session_density_preference",
-      "recovery_preferences.double_day_tolerance",
-      "recovery_preferences.long_session_fatigue_tolerance",
-      "adaptation_preferences.recency_adaptation_preference",
-      "adaptation_preferences.plan_churn_tolerance",
-      "goal_strategy_preferences.priority_tradeoff_preference",
     ]);
   });
 
@@ -2211,6 +2203,7 @@ describe("training plan creation domain", () => {
       weeklySessionCount: 4,
       targetWeeklyHours: 6,
       restDaysPerWeek: 2,
+      maxSingleSessionDurationMinutes: null,
     });
     expect(state.scheduling).toMatchObject({
       startDate: "2026-03-02",

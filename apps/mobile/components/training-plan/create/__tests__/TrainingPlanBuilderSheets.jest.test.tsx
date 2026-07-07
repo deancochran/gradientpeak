@@ -45,6 +45,7 @@ const basePlanPreferences = {
   weeklySessionCount: null,
   targetWeeklyHours: null,
   restDaysPerWeek: null,
+  maxSingleSessionDurationMinutes: null,
 };
 
 const planningConstraintFields = [

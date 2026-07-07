@@ -700,6 +700,18 @@ export default function TrainingPreferencesScreen() {
                 <FormPercentSliderField
                   control={form.control}
                   decimals={0}
+                  label="Priority tradeoff"
+                  max={100}
+                  min={0}
+                  name="goal_strategy_preferences.priority_tradeoff_preference"
+                  showNumericInput={false}
+                  step={1}
+                  testId="preferences-priority-tradeoff"
+                  valueMode="fraction"
+                />
+                <FormPercentSliderField
+                  control={form.control}
+                  decimals={0}
                   label="Taper style"
                   max={100}
                   min={0}
