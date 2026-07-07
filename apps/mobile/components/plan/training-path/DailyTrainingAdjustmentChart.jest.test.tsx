@@ -119,5 +119,24 @@ describe("DailyTrainingAdjustmentChart", () => {
     expect(scrollView.props.onScrollEndDrag).toBeUndefined();
     expect(scrollView.props.decelerationRate).toBe("fast");
     expect(scrollView.props.snapToInterval).toBeGreaterThan(0);
+    expect(screen.getByTestId("daily-training-adjustment-chart-center-highlight")).toBeTruthy();
+  });
+
+  it("selects and centers a tapped bar", () => {
+    const onSelectedDateChange = jest.fn();
+    render(
+      <DailyTrainingAdjustmentChart
+        onSelectedDateChange={onSelectedDateChange}
+        points={[
+          { date: "2026-06-01", targetLoadTss: 40, actualOrScheduledLoadTss: 35 },
+          { date: "2026-06-02", targetLoadTss: 50, actualOrScheduledLoadTss: 65 },
+          { date: "2026-06-03", targetLoadTss: 50, actualOrScheduledLoadTss: 30 },
+        ]}
+      />,
+    );
+
+    fireEvent.press(screen.getByTestId("daily-training-adjustment-chart-bar-2"));
+
+    expect(onSelectedDateChange).toHaveBeenCalledWith("2026-06-03");
   });
 });

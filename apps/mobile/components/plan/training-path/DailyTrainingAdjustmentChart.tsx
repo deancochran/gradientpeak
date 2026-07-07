@@ -2,10 +2,9 @@ import { Text } from "@repo/ui/components/text";
 import { DashPathEffect, Rect as SkiaRect } from "@shopify/react-native-skia";
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent } from "react-native";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
 import { ScrollView } from "react-native-gesture-handler";
-import { runOnJS, useAnimatedReaction } from "react-native-reanimated";
-import { CartesianChart, Line, useChartPressState } from "victory-native";
+import { CartesianChart, Line } from "victory-native";
 import { useTheme } from "@/lib/stores/theme-store";
 import { DailyTrainingAdjustmentTray } from "./DailyTrainingAdjustmentTray";
 
@@ -77,8 +76,6 @@ const loadYKeys: ChartYKey[] = [
 const fitnessYKeys: ChartYKey[] = ["actualFitness", "projectedFitness", "recommendedFitness"];
 const axisWidth = 34;
 const chartPadding = { left: 8, right: 8, top: 18, bottom: 26 };
-const useChartAnimatedReaction: typeof useAnimatedReaction =
-  typeof useAnimatedReaction === "function" ? useAnimatedReaction : () => undefined;
 
 function valueOrNull(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -182,27 +179,13 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
   testID = "daily-training-adjustment-chart",
 }: DailyTrainingAdjustmentChartProps) {
   const [internalSelectedDate, setInternalSelectedDate] = useState<string | null>(null);
-  const [previewSelectedDate, setPreviewSelectedDate] = useState<string | null>(null);
   const [chartWidth, setChartWidth] = useState(320);
   const [viewportWidth, setViewportWidth] = useState(240);
   const [hasMounted, setHasMounted] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const activeIndexRef = useRef(0);
-  const previewDateRef = useRef<string | null>(null);
   const lastProgrammaticScrollDateRef = useRef<string | null>(null);
   const mountedRef = useRef(false);
-  const { state: chartPressState } = useChartPressState({
-    x: 0,
-    y: {
-      actualFitness: 0,
-      completedLoad: 0,
-      plannedLoad: 0,
-      plannedLoadWithTentative: 0,
-      projectedFitness: 0,
-      recommendedFitness: 0,
-      targetLoad: 0,
-    } satisfies Record<ChartYKey, number>,
-  });
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
   const slotWidth = density === "compact" ? 28 : density === "detail" ? 34 : 30;
@@ -215,7 +198,6 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
     () => points.find((point) => point.date === resolvedSelectedDate) ?? points[0] ?? null,
     [points, resolvedSelectedDate],
   );
-  const highlightedDate = previewSelectedDate ?? selectedPoint?.date ?? null;
 
   const chartData = useMemo<ChartDatum[]>(
     () =>
@@ -328,8 +310,6 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
 
   const selectPoint = useCallback(
     (date: string) => {
-      previewDateRef.current = null;
-      setPreviewSelectedDate(null);
       scrollToDate(date);
       if (date === resolvedSelectedDate) return;
       if (!mountedRef.current) return;
@@ -346,41 +326,6 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
     if (lastProgrammaticScrollDateRef.current === resolvedSelectedDate) return;
     scrollToDate(resolvedSelectedDate, false);
   }, [hasMounted, resolvedSelectedDate, scrollToDate]);
-
-  const previewPointAtIndex = useCallback(
-    (index: number) => {
-      const point = points[Math.max(0, Math.min(points.length - 1, Math.round(index)))];
-      if (!point || previewDateRef.current === point.date) return;
-      previewDateRef.current = point.date;
-      setPreviewSelectedDate(point.date);
-    },
-    [points],
-  );
-
-  const commitPreviewedPoint = useCallback(() => {
-    const date = previewDateRef.current;
-    if (date) selectPoint(date);
-  }, [selectPoint]);
-
-  useChartAnimatedReaction(
-    () => {
-      "worklet";
-      if (!chartPressState.isActive.value) return -1;
-      const activeIndex = Number(chartPressState.x.value.value);
-      return Number.isFinite(activeIndex) ? Math.round(activeIndex) : -1;
-    },
-    (activeIndex, previousIndex) => {
-      "worklet";
-      if (activeIndex >= 0) {
-        if (activeIndex !== previousIndex) runOnJS(previewPointAtIndex)(activeIndex);
-        return;
-      }
-      if (previousIndex != null && previousIndex >= 0) {
-        runOnJS(commitPreviewedPoint)();
-      }
-    },
-    [commitPreviewedPoint, previewPointAtIndex],
-  );
 
   const getNearestIndex = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) =>
@@ -487,14 +432,6 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                         lineColor: colors.frame,
                         lineWidth: { bottom: 1, left: 0, right: 0, top: 0 },
                       }}
-                      chartPressState={chartPressState}
-                      chartPressConfig={
-                        {
-                          pan: {
-                            simultaneousWithExternalGesture: scrollRef,
-                          },
-                        } as any
-                      }
                     >
                       {({ points: plottedPoints, chartBounds }) => (
                         <>
@@ -512,18 +449,8 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                             const completedPoint = plottedPoints.completedLoad[index];
                             if (!geometry) return null;
                             const left = geometry.center - barWidth / 2;
-                            const isSelected = point.date === highlightedDate;
                             return (
                               <Fragment key={`day-${point.date}`}>
-                                {isSelected ? (
-                                  <SkiaRect
-                                    x={left - 3}
-                                    y={chartBounds.top}
-                                    width={barWidth + 6}
-                                    height={chartBounds.bottom - chartBounds.top}
-                                    color={colors.selected}
-                                  />
-                                ) : null}
                                 {typeof targetPoint?.y === "number" ? (
                                   <SkiaRect
                                     x={left}
@@ -598,6 +525,33 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                       )}
                     </CartesianChart>
                     <View
+                      className="absolute"
+                      pointerEvents="box-none"
+                      style={{
+                        bottom: chartPadding.bottom,
+                        left: chartPadding.left,
+                        right: chartPadding.right,
+                        top: chartPadding.top,
+                      }}
+                    >
+                      {points.map((point, index) => (
+                        <Pressable
+                          accessibilityLabel={`Select ${labels[index] ?? point.date}`}
+                          accessibilityRole="button"
+                          key={`bar-hitbox-${point.date}`}
+                          onPress={() => selectPoint(point.date)}
+                          style={{
+                            bottom: 0,
+                            left: index * slotWidth - slotWidth / 2,
+                            position: "absolute",
+                            top: 0,
+                            width: slotWidth,
+                          }}
+                          testID={`${testID}-bar-${index}`}
+                        />
+                      ))}
+                    </View>
+                    <View
                       className="absolute bottom-0"
                       style={{
                         left: chartPadding.left,
@@ -627,6 +581,19 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                     </View>
                   </View>
                 </ScrollView>
+                <View
+                  pointerEvents="none"
+                  style={{
+                    backgroundColor: colors.selected,
+                    borderRadius: 6,
+                    bottom: chartPadding.bottom,
+                    left: viewportWidth / 2 - (barWidth + 6) / 2,
+                    position: "absolute",
+                    top: chartPadding.top,
+                    width: barWidth + 6,
+                  }}
+                  testID={`${testID}-center-highlight`}
+                />
               </View>
               <FixedYAxisLabels align="left" domain={fitnessDomain} />
             </View>

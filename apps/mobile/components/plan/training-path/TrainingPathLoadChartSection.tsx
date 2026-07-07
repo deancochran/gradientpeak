@@ -8,7 +8,6 @@ import { AppFormModal } from "@/components/shared/AppFormModal";
 import { DailyTrainingAdjustmentChart } from "./DailyTrainingAdjustmentChart";
 import { TrainingPathChart } from "./TrainingPathChart";
 import { TrainingPathLegend } from "./TrainingPathLegend";
-import { deriveTrainingPathChartWindow } from "./trainingPathChartWindow";
 import type { TrainingPathViewModel } from "./trainingPathTypes";
 
 type ChartEmptyTone = "empty" | "loading" | "unavailable";
@@ -23,8 +22,6 @@ type SelectedWeekBucket = {
   weekEndDate: string;
   weekStartDate: string;
 };
-
-const maxDailyChartPoints = 120;
 
 export type TrainingPathChartSectionContext = {
   mode: TrainingPathSelectionMode;
@@ -139,16 +136,6 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
       : emptyState;
   const canRenderDailyChart = preferDailyChart && !!dailyPoints?.length;
   const canRenderWeeklyChart = !!model && !model.emptyState && !!onSelectedWeekChange;
-  const chartWindow = useMemo(
-    () =>
-      deriveTrainingPathChartWindow({
-        anchorDate: model?.todayKey,
-        maxPoints: maxDailyChartPoints,
-        points: dailyPoints,
-        selectedDate,
-      }),
-    [dailyPoints, model?.todayKey, selectedDate],
-  );
   const belowChartContext = useMemo<TrainingPathChartSectionContext>(() => {
     const selectedDayPoint =
       dailyPoints?.find((point) => point.date === selectedDate) ?? dailyPoints?.[0] ?? null;
@@ -231,7 +218,7 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
             density={dailyDensity}
             height={chartHeight}
             formatDateLabel={dailyDateLabelFormatter}
-            points={chartWindow.visiblePoints.length > 0 ? chartWindow.visiblePoints : dailyPoints}
+            points={dailyPoints}
             selectedDate={selectedDate ?? model?.todayKey}
             showSelectedPointTray={showSelectedPointTray}
             onSelectedDateChange={onSelectedDateChange}
