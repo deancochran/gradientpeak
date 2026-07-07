@@ -113,17 +113,29 @@ function TimeInput({
           {required ? <Text className="text-destructive"> *</Text> : null}
         </Text>
       </Label>
-      <Pressable
-        accessibilityHint={accessibilityHint ?? "Opens time picker. Format hh:mm"}
-        accessibilityRole="button"
-        accessibilityState={{ disabled }}
-        className={`rounded-md border px-3 py-3 ${error ? "border-destructive bg-destructive/5" : "border-input bg-background"}`}
-        disabled={disabled}
-        onPress={handleOpenPicker}
-        {...nativeTestProps}
-      >
-        <Text className="text-foreground">{formattedValue}</Text>
-      </Pressable>
+      <View className="flex-row items-center gap-2">
+        <Pressable
+          accessibilityHint={accessibilityHint ?? "Opens time picker. Format hh:mm"}
+          accessibilityRole="button"
+          accessibilityState={{ disabled }}
+          className={`flex-1 rounded-md border px-3 py-3 ${error ? "border-destructive bg-destructive/5" : "border-input bg-background"}`}
+          disabled={disabled}
+          onPress={handleOpenPicker}
+          {...nativeTestProps}
+        >
+          <Text className="text-foreground">{formattedValue}</Text>
+        </Pressable>
+        {clearable && value ? (
+          <Button
+            accessibilityLabel="Clear time"
+            variant="ghost"
+            size="sm"
+            onPress={() => onChange(undefined)}
+          >
+            <Text className="text-muted-foreground">Clear</Text>
+          </Button>
+        ) : null}
+      </View>
       {isPickerVisible && !usesModalPresentation ? (
         <DateTimePicker
           display="default"
@@ -171,11 +183,6 @@ function TimeInput({
         </Modal>
       ) : null}
       {helperText ? <Text className="text-xs text-muted-foreground">{helperText}</Text> : null}
-      {clearable && value ? (
-        <Button variant="outline" size="sm" onPress={() => onChange(undefined)}>
-          <Text>Clear time</Text>
-        </Button>
-      ) : null}
       {error ? <Text className="text-xs text-destructive">Adjust this field: {error}</Text> : null}
     </View>
   );

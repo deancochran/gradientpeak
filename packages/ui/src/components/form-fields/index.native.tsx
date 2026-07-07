@@ -1,5 +1,6 @@
 import type { FieldPath, FieldPathValue, FieldValues } from "react-hook-form";
 
+import { cn } from "../../lib/cn";
 import { View } from "../../lib/react-native";
 import { BoundedNumberInput } from "../bounded-number-input/index.native";
 import { Button } from "../button/index.native";
@@ -174,6 +175,7 @@ function FormNumberField<TFieldValues extends FieldValues, TName extends FieldPa
 }
 
 function FormSwitchField<TFieldValues extends FieldValues, TName extends FieldPath<TFieldValues>>({
+  className,
   control,
   description,
   disabled,
@@ -189,9 +191,9 @@ function FormSwitchField<TFieldValues extends FieldValues, TName extends FieldPa
       name={name}
       rules={rules}
       render={({ field }) => (
-        <FormItem className="flex-row items-center justify-between rounded-lg border border-border p-4">
+        <FormItem className={cn("flex-row items-center justify-between gap-4 py-2", className)}>
           <FormItem className="flex-1 gap-0.5">
-            <FormLabel className="text-base">{label}</FormLabel>
+            <FormLabel>{label}</FormLabel>
             {description ? <FormDescription>{description}</FormDescription> : null}
           </FormItem>
           <FormControl>

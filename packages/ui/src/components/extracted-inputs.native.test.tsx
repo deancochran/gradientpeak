@@ -167,7 +167,7 @@ describe("extracted inputs native", () => {
       <TimeInput {...timeInputFixtures.startTime} clearable onChange={onChange} />,
     );
 
-    fireEvent.press(getByText("Clear time"));
+    fireEvent.press(getByText("Clear"));
 
     expect(onChange).toHaveBeenCalledWith(undefined);
   });
