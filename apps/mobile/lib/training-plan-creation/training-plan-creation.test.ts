@@ -567,9 +567,7 @@ describe("training plan creation domain", () => {
   });
 
   it("makes current training preference capability gaps explicit", () => {
-    expect(getTrainingPreferenceCapabilityGaps().map((capability) => capability.path)).toEqual([
-      "dose_limits.sport_overrides",
-    ]);
+    expect(getTrainingPreferenceCapabilityGaps()).toEqual([]);
   });
 
   it("scores and sorts activity plan picker items around selected session intent", () => {

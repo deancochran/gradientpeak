@@ -139,7 +139,7 @@ export const TRAINING_PREFERENCE_CAPABILITY_MATRIX: TrainingPreferenceCapability
   {
     path: "dose_limits.sport_overrides",
     label: "Sport-specific dose overrides",
-    standalone: { status: "gap", rationale: "No sport override editor is rendered yet." },
+    standalone: { status: "covered", testId: "preferences-sport-overrides" },
     builderOverride: {
       status: "not-applicable",
       rationale:

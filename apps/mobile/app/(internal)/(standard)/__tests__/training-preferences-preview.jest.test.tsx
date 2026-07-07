@@ -514,6 +514,31 @@ describe("training preferences projection preview", () => {
     expect(getByTypeAndId("PercentSliderInput", "preferences-plan-churn").props.label).toBe(
       "Plan churn tolerance",
     );
+
+    act(() => {
+      getTab("Schedule").props.onPress();
+    });
+    expect(screen.getByTestId("preferences-sport-overrides")).toBeTruthy();
+    expect(screen.getByTestId("preferences-sport-override-run")).toBeTruthy();
+    act(() => {
+      screen.getByTestId("preferences-sport-override-toggle-run").props.onPress();
+    });
+    expect(
+      getByTypeAndId("IntegerStepperInput", "preferences-sport-override-run-min-sessions").props
+        .label,
+    ).toBe("Min sessions");
+    expect(
+      getByTypeAndId("IntegerStepperInput", "preferences-sport-override-run-max-sessions").props
+        .label,
+    ).toBe("Max sessions");
+    expect(
+      getByTypeAndId("IntegerStepperInput", "preferences-sport-override-run-max-duration").props
+        .label,
+    ).toBe("Max session duration");
+    expect(
+      getByTypeAndId("IntegerStepperInput", "preferences-sport-override-run-max-weekly-duration")
+        .props.label,
+    ).toBe("Max weekly duration");
   });
 
   it("updates preview chart data when draft sliders change", () => {

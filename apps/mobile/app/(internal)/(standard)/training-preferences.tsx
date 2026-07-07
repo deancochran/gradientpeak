@@ -62,9 +62,24 @@ const weekdayOptions = [
   { key: "sunday", label: "Sun" },
 ] as const;
 
+const sportOverrideOptions = [
+  { key: "run", label: "Run" },
+  { key: "bike", label: "Bike" },
+  { key: "swim", label: "Swim" },
+  { key: "strength", label: "Strength" },
+  { key: "other", label: "Other" },
+] as const;
+
 const defaultAvailabilityWindow = {
   start_minute_of_day: 360,
   end_minute_of_day: 540,
+};
+
+const defaultSportDoseOverride = {
+  min_sessions_per_week: 0,
+  max_sessions_per_week: 3,
+  max_single_session_duration_minutes: 120,
+  max_weekly_duration_minutes: 240,
 };
 
 const preferencePresets: Array<{
@@ -339,6 +354,23 @@ export default function TrainingPreferencesScreen() {
             ];
 
       form.setValue("availability.weekly_windows", nextWindows, {
+        shouldDirty: true,
+        shouldTouch: true,
+        shouldValidate: true,
+      });
+    },
+    [form],
+  );
+  const toggleSportDoseOverride = useCallback(
+    (sport: (typeof sportOverrideOptions)[number]["key"]) => {
+      const currentOverrides = form.getValues("dose_limits.sport_overrides") ?? {};
+      const nextOverrides = { ...currentOverrides };
+      if (nextOverrides[sport]) {
+        delete nextOverrides[sport];
+      } else {
+        nextOverrides[sport] = defaultSportDoseOverride;
+      }
+      form.setValue("dose_limits.sport_overrides", nextOverrides, {
         shouldDirty: true,
         shouldTouch: true,
         shouldValidate: true,
@@ -666,6 +698,85 @@ export default function TrainingPreferencesScreen() {
                     {scheduleValidation.maxWeeklyDurationError}
                   </Text>
                 ) : null}
+                <View className="mt-2 gap-3 border-t border-border pt-3">
+                  <View className="gap-1">
+                    <Text className="text-sm font-semibold text-foreground">
+                      Sport-specific dose overrides
+                    </Text>
+                    <Text className="text-xs leading-4 text-muted-foreground">
+                      Tune weekly session and duration limits for specific training categories.
+                    </Text>
+                  </View>
+                  <View className="gap-3" testID="preferences-sport-overrides">
+                    {sportOverrideOptions.map((sport) => {
+                      const enabled = Boolean(draft.dose_limits.sport_overrides?.[sport.key]);
+                      return (
+                        <View
+                          key={sport.key}
+                          className="gap-2 rounded-xl border border-border bg-background px-3 py-2"
+                          testID={`preferences-sport-override-${sport.key}`}
+                        >
+                          <View className="flex-row items-center justify-between gap-3">
+                            <Text className="text-sm font-medium text-foreground">
+                              {sport.label}
+                            </Text>
+                            <Button
+                              accessibilityLabel={`${enabled ? "Disable" : "Enable"} ${sport.label} dose override`}
+                              onPress={() => toggleSportDoseOverride(sport.key)}
+                              size="sm"
+                              testID={`preferences-sport-override-toggle-${sport.key}`}
+                              variant={enabled ? "default" : "outline"}
+                            >
+                              <Text>{enabled ? "Enabled" : "Use global"}</Text>
+                            </Button>
+                          </View>
+                          {enabled ? (
+                            <View className="gap-2">
+                              <View className="flex-row gap-2">
+                                <View className="flex-1">
+                                  <FormIntegerStepperField
+                                    control={form.control}
+                                    label="Min sessions"
+                                    max={21}
+                                    min={0}
+                                    name={`dose_limits.sport_overrides.${sport.key}.min_sessions_per_week`}
+                                    testId={`preferences-sport-override-${sport.key}-min-sessions`}
+                                  />
+                                </View>
+                                <View className="flex-1">
+                                  <FormIntegerStepperField
+                                    control={form.control}
+                                    label="Max sessions"
+                                    max={21}
+                                    min={0}
+                                    name={`dose_limits.sport_overrides.${sport.key}.max_sessions_per_week`}
+                                    testId={`preferences-sport-override-${sport.key}-max-sessions`}
+                                  />
+                                </View>
+                              </View>
+                              <FormIntegerStepperField
+                                control={form.control}
+                                label="Max session duration"
+                                max={600}
+                                min={20}
+                                name={`dose_limits.sport_overrides.${sport.key}.max_single_session_duration_minutes`}
+                                testId={`preferences-sport-override-${sport.key}-max-duration`}
+                              />
+                              <FormIntegerStepperField
+                                control={form.control}
+                                label="Max weekly duration"
+                                max={10080}
+                                min={30}
+                                name={`dose_limits.sport_overrides.${sport.key}.max_weekly_duration_minutes`}
+                                testId={`preferences-sport-override-${sport.key}-max-weekly-duration`}
+                              />
+                            </View>
+                          ) : null}
+                        </View>
+                      );
+                    })}
+                  </View>
+                </View>
               </>
             ) : null}
 
