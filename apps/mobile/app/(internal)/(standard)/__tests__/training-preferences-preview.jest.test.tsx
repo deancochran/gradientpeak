@@ -416,6 +416,7 @@ describe("training preferences projection preview", () => {
     const tabLabels = getTextValues();
 
     expect(tabLabels).toContain("Preferences");
+    expect(tabLabels).toContain("Availability");
     expect(tabLabels).toContain("Schedule");
     expect(tabLabels).toContain("Training style");
     expect(tabLabels).toContain("Recovery");
@@ -429,6 +430,7 @@ describe("training preferences projection preview", () => {
     const tabLabels = getTextValues();
 
     expect(tabLabels).toContain("Preferences");
+    expect(tabLabels).toContain("Availability");
     expect(tabLabels).toContain("Schedule");
     expect(tabLabels).toContain("Training style");
     expect(tabLabels).toContain("Recovery");
@@ -450,7 +452,9 @@ describe("training preferences projection preview", () => {
       getByTypeAndId("PercentSliderInput", "preferences-strength-integration").props
         .showNumericInput,
     ).toBe(false);
-    expect(textValues).not.toContain("Key session density");
+    expect(
+      getByTypeAndId("PercentSliderInput", "preferences-key-session-density").props.label,
+    ).toBe("Key session density");
 
     act(() => {
       getTab("Recovery").props.onPress();
@@ -460,8 +464,12 @@ describe("training preferences projection preview", () => {
     expect(getByTypeAndId("PercentSliderInput", "preferences-systemic-fatigue").props.label).toBe(
       "Systemic fatigue tolerance",
     );
-    expect(textValues).not.toContain("Double day tolerance");
-    expect(textValues).not.toContain("Long session fatigue tolerance");
+    expect(
+      getByTypeAndId("PercentSliderInput", "preferences-double-day-tolerance").props.label,
+    ).toBe("Double-day tolerance");
+    expect(
+      getByTypeAndId("PercentSliderInput", "preferences-long-session-fatigue").props.label,
+    ).toBe("Long-session fatigue tolerance");
 
     act(() => {
       getTab("Goal strategy").props.onPress();
@@ -471,7 +479,24 @@ describe("training preferences projection preview", () => {
     expect(getByTypeAndId("PercentSliderInput", "preferences-taper-style").props.label).toBe(
       "Taper style",
     );
-    expect(textValues).not.toContain("Priority tradeoff");
+    expect(getByTypeAndId("PercentSliderInput", "preferences-priority-tradeoff").props.label).toBe(
+      "Priority tradeoff",
+    );
+
+    act(() => {
+      getTab("Availability").props.onPress();
+    });
+    expect(screen.getByTestId("preferences-hard-rest-days")).toBeTruthy();
+
+    act(() => {
+      getTab("Preferences").props.onPress();
+    });
+    expect(getByTypeAndId("PercentSliderInput", "preferences-recency-adaptation").props.label).toBe(
+      "Recency adaptation",
+    );
+    expect(getByTypeAndId("PercentSliderInput", "preferences-plan-churn").props.label).toBe(
+      "Plan churn tolerance",
+    );
   });
 
   it("updates preview chart data when draft sliders change", () => {
