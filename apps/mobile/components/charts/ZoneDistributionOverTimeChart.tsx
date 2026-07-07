@@ -1,6 +1,7 @@
 import { Text } from "@repo/ui/components/text";
+import { useMemo } from "react";
 import { View } from "react-native";
-import { Bar, CartesianChart } from "victory-native";
+import { CartesianChart, StackedBar } from "victory-native";
 
 export interface ZoneDistributionWeekData {
   weekStart: string;
@@ -21,68 +22,87 @@ interface ZoneDistributionOverTimeChartProps {
   height?: number;
 }
 
+const zoneKeys = [
+  "recovery",
+  "endurance",
+  "tempo",
+  "threshold",
+  "vo2max",
+  "anaerobic",
+  "neuromuscular",
+] as const;
+
+type ZoneKey = (typeof zoneKeys)[number];
+
+type ZoneChartDatum = Record<string, unknown> &
+  Record<ZoneKey, number> & {
+    index: number;
+  };
+
+const zoneColors: Record<ZoneKey, string> = {
+  recovery: "#22c55e",
+  endurance: "#3b82f6",
+  tempo: "#eab308",
+  threshold: "#f97316",
+  vo2max: "#ef4444",
+  anaerobic: "#dc2626",
+  neuromuscular: "#991b1b",
+};
+
+const zoneLabels: Record<ZoneKey, string> = {
+  recovery: "Recovery",
+  endurance: "Endurance",
+  tempo: "Tempo",
+  threshold: "Threshold",
+  vo2max: "VO2max",
+  anaerobic: "Anaerobic",
+  neuromuscular: "Neuro",
+};
+
+const emptyDistribution: Record<ZoneKey, number> = {
+  recovery: 0,
+  endurance: 0,
+  tempo: 0,
+  threshold: 0,
+  vo2max: 0,
+  anaerobic: 0,
+  neuromuscular: 0,
+};
+
 export function ZoneDistributionOverTimeChart({
   data,
   height = 350,
 }: ZoneDistributionOverTimeChartProps) {
   const isEmpty = !data || data.length === 0;
 
-  // Zone colors
-  const zoneColors = {
-    recovery: "#22c55e", // green
-    endurance: "#3b82f6", // blue
-    tempo: "#eab308", // yellow
-    threshold: "#f97316", // orange
-    vo2max: "#ef4444", // red
-    anaerobic: "#dc2626", // dark red
-    neuromuscular: "#991b1b", // darkest red
-  };
-
-  // Zone labels
-  const zoneLabels = {
-    recovery: "Recovery",
-    endurance: "Endurance",
-    tempo: "Tempo",
-    threshold: "Threshold",
-    vo2max: "VO2max",
-    anaerobic: "Anaerobic",
-    neuromuscular: "Neuro",
-  };
-
   // Transform data for stacked bar chart
-  const chartData = isEmpty
-    ? []
-    : data.map((week, index) => ({
-        index,
-        recovery: week.zones.recovery,
-        endurance: week.zones.endurance,
-        tempo: week.zones.tempo,
-        threshold: week.zones.threshold,
-        vo2max: week.zones.vo2max,
-        anaerobic: week.zones.anaerobic,
-        neuromuscular: week.zones.neuromuscular,
-      }));
+  const chartData = useMemo<ZoneChartDatum[]>(
+    () =>
+      isEmpty
+        ? []
+        : data.map((week, index) => ({
+            index,
+            recovery: week.zones.recovery,
+            endurance: week.zones.endurance,
+            tempo: week.zones.tempo,
+            threshold: week.zones.threshold,
+            vo2max: week.zones.vo2max,
+            anaerobic: week.zones.anaerobic,
+            neuromuscular: week.zones.neuromuscular,
+          })),
+    [data, isEmpty],
+  );
 
   // Calculate average distribution
-  const avgDistribution = isEmpty
-    ? {
-        recovery: 0,
-        endurance: 0,
-        tempo: 0,
-        threshold: 0,
-        vo2max: 0,
-        anaerobic: 0,
-        neuromuscular: 0,
-      }
-    : {
-        recovery: data.reduce((sum, w) => sum + w.zones.recovery, 0) / data.length,
-        endurance: data.reduce((sum, w) => sum + w.zones.endurance, 0) / data.length,
-        tempo: data.reduce((sum, w) => sum + w.zones.tempo, 0) / data.length,
-        threshold: data.reduce((sum, w) => sum + w.zones.threshold, 0) / data.length,
-        vo2max: data.reduce((sum, w) => sum + w.zones.vo2max, 0) / data.length,
-        anaerobic: data.reduce((sum, w) => sum + w.zones.anaerobic, 0) / data.length,
-        neuromuscular: data.reduce((sum, w) => sum + w.zones.neuromuscular, 0) / data.length,
-      };
+  const avgDistribution = useMemo<Record<ZoneKey, number>>(() => {
+    if (isEmpty) return emptyDistribution;
+
+    const distribution = { ...emptyDistribution };
+    for (const zone of zoneKeys) {
+      distribution[zone] = data.reduce((sum, week) => sum + week.zones[zone], 0) / data.length;
+    }
+    return distribution;
+  }, [data, isEmpty]);
 
   const easyPercentage = avgDistribution.recovery + avgDistribution.endurance;
   const hardPercentage =
@@ -99,15 +119,15 @@ export function ZoneDistributionOverTimeChart({
 
       {/* Legend */}
       <View className="flex-row flex-wrap gap-2 mb-2">
-        {Object.entries(zoneLabels).map(([key, label]) => (
+        {zoneKeys.map((key) => (
           <View key={key} className="flex-row items-center gap-1">
             <View
               className="w-3 h-3 rounded"
               style={{
-                backgroundColor: zoneColors[key as keyof typeof zoneColors],
+                backgroundColor: zoneColors[key],
               }}
             />
-            <Text className="text-xs text-muted-foreground">{label}</Text>
+            <Text className="text-xs text-muted-foreground">{zoneLabels[key]}</Text>
           </View>
         ))}
       </View>
@@ -124,50 +144,25 @@ export function ZoneDistributionOverTimeChart({
             </Text>
           </View>
         ) : (
-          <CartesianChart
+          <CartesianChart<ZoneChartDatum, "index", ZoneKey>
             data={chartData}
             xKey="index"
-            yKeys={[
-              "recovery",
-              "endurance",
-              "tempo",
-              "threshold",
-              "vo2max",
-              "anaerobic",
-              "neuromuscular",
-            ]}
+            yKeys={[...zoneKeys]}
+            domain={{ y: [0, 100] }}
+            domainPadding={{ left: 12, right: 12, top: 2, bottom: 0 }}
+            padding={{ left: 4, right: 4, top: 4, bottom: 4 }}
           >
             {({ points, chartBounds }) => (
-              <>
-                {/* Render stacked bars for each zone */}
-                <Bar
-                  points={points.recovery}
-                  chartBounds={chartBounds}
-                  color={zoneColors.recovery}
-                />
-                <Bar
-                  points={points.endurance}
-                  chartBounds={chartBounds}
-                  color={zoneColors.endurance}
-                />
-                <Bar points={points.tempo} chartBounds={chartBounds} color={zoneColors.tempo} />
-                <Bar
-                  points={points.threshold}
-                  chartBounds={chartBounds}
-                  color={zoneColors.threshold}
-                />
-                <Bar points={points.vo2max} chartBounds={chartBounds} color={zoneColors.vo2max} />
-                <Bar
-                  points={points.anaerobic}
-                  chartBounds={chartBounds}
-                  color={zoneColors.anaerobic}
-                />
-                <Bar
-                  points={points.neuromuscular}
-                  chartBounds={chartBounds}
-                  color={zoneColors.neuromuscular}
-                />
-              </>
+              <StackedBar
+                points={zoneKeys.map((zone) => points[zone])}
+                chartBounds={chartBounds}
+                colors={zoneKeys.map((zone) => zoneColors[zone])}
+                innerPadding={0.24}
+                animate={{ type: "timing", duration: 220 }}
+                barOptions={({ isTop }) => ({
+                  roundedCorners: isTop ? { topLeft: 4, topRight: 4 } : undefined,
+                })}
+              />
             )}
           </CartesianChart>
         )}

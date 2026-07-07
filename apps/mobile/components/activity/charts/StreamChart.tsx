@@ -4,7 +4,7 @@ import { Text } from "@repo/ui/components/text";
 import { Circle, useFont } from "@shopify/react-native-skia";
 import { useMemo } from "react";
 import { View } from "react-native";
-import { CartesianChart, Line, useChartPressState } from "victory-native";
+import { CartesianChart, Line, useChartPressState, useChartTransformState } from "victory-native";
 import { InteractiveChartValueTray } from "@/components/charts/InteractiveChartValueTray";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 
@@ -22,6 +22,11 @@ interface StreamData {
 }
 
 type ChartDatum = { x: number; [key: string]: number | null };
+type StreamPressDatum = {
+  position: number;
+  value?: { value?: unknown };
+};
+type StreamPressState = Record<string, StreamPressDatum | undefined>;
 
 function getGapThreshold(timestamps: number[]): number {
   const deltas = timestamps
@@ -76,6 +81,29 @@ function downsampleNullableStream(
   return { values: sampledValues, timestamps: sampledTimestamps };
 }
 
+function findClosestTimestamp(timestamps: number[], target: number) {
+  if (timestamps.length === 0) return null;
+
+  let low = 0;
+  let high = timestamps.length - 1;
+
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const value = timestamps[mid] ?? 0;
+    if (value === target) return value;
+    if (value < target) low = mid + 1;
+    else high = mid - 1;
+  }
+
+  const before = timestamps[Math.max(0, high)];
+  const after = timestamps[Math.min(timestamps.length - 1, low)];
+
+  if (typeof before !== "number") return after ?? null;
+  if (typeof after !== "number") return before;
+
+  return Math.abs(target - before) <= Math.abs(after - target) ? before : after;
+}
+
 interface StreamChartProps {
   title: string;
   streams: StreamData[];
@@ -93,6 +121,7 @@ export function StreamChart({
 }: StreamChartProps) {
   const font = useFont(require("@/assets/fonts/SpaceMono-Regular.ttf"), 12);
   const { state, isActive } = useChartPressState({ x: 0, y: {} });
+  const { state: transformState } = useChartTransformState();
 
   // Prepare chart data
   const chartData = useMemo(() => {
@@ -151,17 +180,9 @@ export function StreamChart({
       streamData.timestamps.forEach((timestamp, i) => {
         const _relativeTime = (timestamp - startTime) / 1000;
 
-        // Find closest point in reference stream
-        let closestTimestamp = referenceStream.timestamps[0];
-        let minDiff = Math.abs(timestamp - closestTimestamp);
-
-        for (const refTimestamp of referenceStream.timestamps) {
-          const diff = Math.abs(timestamp - refTimestamp);
-          if (diff < minDiff) {
-            minDiff = diff;
-            closestTimestamp = refTimestamp;
-          }
-        }
+        const closestTimestamp = findClosestTimestamp(referenceStream.timestamps, timestamp);
+        if (closestTimestamp === null) return;
+        const minDiff = Math.abs(timestamp - closestTimestamp);
 
         // Add value to existing point or create new one if within 1 second
         if (minDiff < 1000) {
@@ -226,8 +247,9 @@ export function StreamChart({
                 },
               }}
               chartPressState={state}
+              transformState={transformState}
             >
-              {({ points, chartBounds }) => (
+              {({ points }) => (
                 <>
                   {streams.map((stream) => (
                     <Line
@@ -241,7 +263,7 @@ export function StreamChart({
                   ))}
                   {isActive &&
                     streams.map((stream) => {
-                      const point = (state.y as any)[stream.type];
+                      const point = (state.y as StreamPressState)[stream.type];
                       if (!point) return null;
                       return (
                         <Circle
@@ -264,7 +286,7 @@ export function StreamChart({
           <InteractiveChartValueTray
             testID="stream-chart-active-values"
             items={streams.map((stream) => {
-              const value = (state.y as any)[stream.type]?.value?.value;
+              const value = (state.y as StreamPressState)[stream.type]?.value?.value;
               return {
                 key: stream.type,
                 label: stream.label,
