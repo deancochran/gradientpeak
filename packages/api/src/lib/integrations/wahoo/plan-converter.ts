@@ -224,9 +224,6 @@ function convertIntervals(intervals: IntervalV2[], options: ConvertOptions): Wah
   return wahooIntervals;
 }
 
-// Re-export from activity-type-utils for backwards compatibility
-export { isWahooSupported as isActivityTypeSupportedByWahoo } from "./activity-type-utils";
-
 /**
  * Convert a single V2 step to Wahoo interval
  */
@@ -477,7 +474,7 @@ function inferIntensityType(target: IntensityTargetV2): WahooInterval["intensity
 
 /**
  * Validate that the plan structure is compatible with Wahoo
- * Note: This assumes activity type has already been validated with isActivityTypeSupportedByWahoo
+ * Note: This assumes activity type has already been validated with isWahooSupported
  */
 export function validateWahooCompatibility(structure: ActivityPlanStructureV2): {
   compatible: boolean;

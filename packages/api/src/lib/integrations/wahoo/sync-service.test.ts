@@ -27,13 +27,22 @@ const {
 vi.mock("./client", () => ({
   createWahooClient: createWahooClientMock,
   refreshWahooAccessToken: refreshWahooAccessTokenMock,
+}));
+
+vi.mock("./activity-type-utils", () => ({
+  isWahooSupported: vi.fn(() => true),
   supportsRoutes: supportsRoutesMock,
+  toActivityType: vi.fn((category) => category),
+  toWahooWorkoutTypeId: vi.fn((activityType, options?: { hasRoute?: boolean }) => {
+    if (activityType === "bike") return options?.hasRoute ? 0 : 12;
+    if (activityType === "run") return options?.hasRoute ? 1 : 5;
+    return null;
+  }),
 }));
 
 vi.mock("./plan-converter", () => ({
   calculateWorkoutDuration: calculateWorkoutDurationMock,
   convertToWahooPlan: convertToWahooPlanMock,
-  isActivityTypeSupportedByWahoo: vi.fn(() => true),
   validateWahooCompatibility: validateWahooCompatibilityMock,
 }));
 

@@ -829,17 +829,12 @@ describe("activityFilesRouter", () => {
     expect(result).toEqual({ success: true });
   });
 
-  it("rejects activity stream access when the path only contains the user id", async () => {
+  it("requires activityId for stream access", async () => {
     const caller = createCaller();
 
-    await expect(
-      caller.getStreams({
-        activityFilePath: "tmp/11111111-1111-4111-8111-111111111111-ride.fit",
-      }),
-    ).rejects.toMatchObject({
-      code: "FORBIDDEN",
-      message: "Access denied: You can only access your own files",
-    });
+    await expect(caller.getStreams({} as Parameters<typeof caller.getStreams>[0])).rejects.toThrow(
+      /activityId/,
+    );
   });
 
   it("returns parsed streams for an owned activity", async () => {
@@ -865,7 +860,6 @@ describe("activityFilesRouter", () => {
 
     const caller = createCaller({ db });
     const result = await caller.getStreams({
-      activityFilePath: "11111111-1111-4111-8111-111111111111/ignored.fit",
       activityId,
     });
 
@@ -896,7 +890,6 @@ describe("activityFilesRouter", () => {
 
     await expect(
       caller.getStreams({
-        activityFilePath: "11111111-1111-4111-8111-111111111111/ignored.fit",
         activityId,
       }),
     ).rejects.toThrow("Activity does not have an associated activity file");
@@ -918,7 +911,6 @@ describe("activityFilesRouter", () => {
 
     await expect(
       caller.getStreams({
-        activityFilePath: "activities/11111111-1111-4111-8111-111111111111/uploads/ignored.fit",
         activityId,
       }),
     ).rejects.toThrow("Detailed activity streams are only available to the activity owner");

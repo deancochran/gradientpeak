@@ -197,14 +197,6 @@ export const onboardingRouter = createTRPCRouter({
       return service.getImportedOnboardingValues(ctx.session.user.id);
     }),
 
-  /** @deprecated Use getImportedOnboardingValues. */
-  getDraft: protectedProcedure
-    .output(importedOnboardingValuesOutputSchema)
-    .query(async ({ ctx }) => {
-      const service = getOnboardingProviderEnrichmentService(ctx);
-      return service.getImportedOnboardingValues(ctx.session.user.id);
-    }),
-
   clearProviderRequirement: protectedProcedure
     .input(clearProviderRequirementInputSchema)
     .output(providerEnrichmentStatusOutputSchema)

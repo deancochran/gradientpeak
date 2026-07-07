@@ -214,23 +214,46 @@ export function useCalendarTimelineController() {
   );
   const {
     data: completedActivitiesData,
+    fetchNextPage: fetchNextCompletedActivitiesPage,
+    hasNextPage: hasNextCompletedActivitiesPage,
+    isFetchingNextPage: fetchingNextCompletedActivitiesPage,
     isLoading: loadingCompletedActivities,
     refetch: refetchCompletedActivities,
-  } = api.activities.list.useQuery(
+  } = api.activities.listPaginated.useInfiniteQuery(
     {
       date_from: toCalendarQueryDateTime(rangeStart),
       date_to: toCalendarQueryDateTime(addDaysToDateKey(rangeEnd, 1)),
+      limit: 50,
     },
     {
       ...scheduleAwareReadQueryOptions,
       enabled: eventsQueryEnabled,
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
       placeholderData: keepPreviousData,
     },
   );
   const completedActivities = useMemo(
-    () => (completedActivitiesData ?? []) as CalendarActivity[],
-    [completedActivitiesData],
+    () =>
+      (completedActivitiesData?.pages.flatMap((page) => page.items) ?? []) as CalendarActivity[],
+    [completedActivitiesData?.pages],
   );
+
+  useEffect(() => {
+    if (
+      !eventsQueryEnabled ||
+      !hasNextCompletedActivitiesPage ||
+      fetchingNextCompletedActivitiesPage
+    ) {
+      return;
+    }
+
+    void fetchNextCompletedActivitiesPage();
+  }, [
+    eventsQueryEnabled,
+    fetchNextCompletedActivitiesPage,
+    fetchingNextCompletedActivitiesPage,
+    hasNextCompletedActivitiesPage,
+  ]);
   const activitiesByDate = useMemo(
     () => buildActivitiesByDate(completedActivities, linkedActivityIds),
     [completedActivities, linkedActivityIds],
