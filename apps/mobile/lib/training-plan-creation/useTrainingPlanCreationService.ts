@@ -294,6 +294,7 @@ export function useTrainingPlanCreationService({
     500,
   );
   const backendPreviewInput =
+    localProjection.backendPlanning.status.available &&
     debouncedBackendPlanningFingerprint === localProjection.backendPlanning.contextFingerprint
       ? localProjection.backendPlanning.previewInput
       : null;
@@ -316,7 +317,8 @@ export function useTrainingPlanCreationService({
     () =>
       selectActiveTrainingPlanProjection({
         backendPreview: authoritativeProjection,
-        backendPreviewEnabled: backendPreviewInput !== null,
+        backendPreviewEnabled:
+          localProjection.backendPlanning.status.available && backendPreviewInput !== null,
         isBackendInputStale: isBackendPlanningInputStale,
         localChart: localProjection.builderViewModel.dailyTrainingPathChart,
       }),
@@ -372,6 +374,7 @@ export function useTrainingPlanCreationService({
       backendPlanningPreviewQuery.isFetching,
       backendPlanningPreviewQuery.isLoading,
       localProjection.backendPlanning.previewInput,
+      localProjection.backendPlanning.status.available,
       localProjection.backendPlanning.status.reason,
       trainingPathChartProjection.source,
     ],
@@ -573,7 +576,7 @@ export function useTrainingPlanCreationService({
       backendPlanningPreview: {
         data: backendPlanningPreviewQuery.data,
         error: backendPlanningPreviewQuery.error,
-        isEnabled: backendPreviewInput !== null,
+        isEnabled: localProjection.backendPlanning.status.available && backendPreviewInput !== null,
         isFetching: backendPlanningPreviewQuery.isFetching,
         isLoading: backendPlanningPreviewQuery.isLoading,
         isStaleInput: isBackendPlanningInputStale,

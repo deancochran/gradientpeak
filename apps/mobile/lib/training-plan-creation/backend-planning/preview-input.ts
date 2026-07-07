@@ -21,10 +21,13 @@ export { createPlanningContextFingerprint, mapPlanningContextToPreviewCreationCo
 
 export function getBackendPlanningClientStatus(): BackendPlanningClientStatus {
   return {
-    available: false,
-    enabledOperations: [],
-    reason:
-      "Backend planning adapter scaffolded; local projection remains authoritative for this pass.",
+    available: true,
+    enabledOperations: [
+      "previewCreationConfig",
+      "createFromCreationConfig",
+      "updateFromCreationConfig",
+    ],
+    reason: "Backend planning preview and commit routes are available when input mapping succeeds.",
   };
 }
 
@@ -46,10 +49,13 @@ export function deriveBackendPlanningState(
   return {
     status: previewMapping.ok
       ? {
-          available: false,
-          enabledOperations: [],
-          reason:
-            "Backend planning input is mapped; network preview remains disabled for this pass.",
+          available: true,
+          enabledOperations: [
+            "previewCreationConfig",
+            "createFromCreationConfig",
+            "updateFromCreationConfig",
+          ],
+          reason: "Backend planning input is mapped and ready for authoritative preview.",
         }
       : {
           available: false,

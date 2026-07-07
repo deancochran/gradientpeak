@@ -61,6 +61,7 @@ export * from "./trainingLoadTimeline";
 export * from "./trainingPlanCreationPreview";
 export * from "./trainingPlanCreationValidation";
 export * from "./trainingPlanPreview";
+export * from "./trainingPlanProjectionBudgets";
 export * from "./trainingPlanSchedulingPreview";
 export * from "./trainingPlanStructureProposal";
 export * from "./trainingSettingsDefaults";

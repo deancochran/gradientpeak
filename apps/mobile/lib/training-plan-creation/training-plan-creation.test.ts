@@ -301,6 +301,28 @@ describe("training plan creation domain", () => {
     });
   });
 
+  it("uses core readiness blockers for incompatible planning preferences", () => {
+    const fixtures = createTrainingPlanBuilderFixtures();
+    const state = {
+      ...fixtures.readyState,
+      planPreferences: {
+        durationWeeks: 4,
+        weeklySessionCount: 6,
+        targetWeeklyHours: null,
+        restDaysPerWeek: 2,
+      },
+    };
+
+    expect(selectSaveReadiness(state).blockers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "weekly_session_rest_day_conflict",
+          target: { type: "assumptions" },
+        }),
+      ]),
+    );
+  });
+
   it("derives local schedule preview dates and conflict checks without persisting calendar fields", () => {
     const state = {
       ...createDefaultTrainingPlanBuilderState(),
@@ -660,10 +682,14 @@ describe("training plan creation domain", () => {
     const context = createTrainingPlanPlanningContext(fixtures.readyState);
 
     expect(getBackendPlanningClientStatus()).toEqual({
-      available: false,
-      enabledOperations: [],
+      available: true,
+      enabledOperations: [
+        "previewCreationConfig",
+        "createFromCreationConfig",
+        "updateFromCreationConfig",
+      ],
       reason:
-        "Backend planning adapter scaffolded; local projection remains authoritative for this pass.",
+        "Backend planning preview and commit routes are available when input mapping succeeds.",
     });
     expect(getPlannedBackendPlanningOperations()).toEqual([
       "getCreationSuggestions",
@@ -715,8 +741,17 @@ describe("training plan creation domain", () => {
     const context = createTrainingPlanPlanningContext(state);
 
     const result = mapPlanningContextToPreviewCreationConfigInput(context);
+    const backendState = deriveBackendPlanningState(context);
 
     expect(result).toMatchObject({ ok: true });
+    expect(backendState.status).toMatchObject({
+      available: true,
+      enabledOperations: [
+        "previewCreationConfig",
+        "createFromCreationConfig",
+        "updateFromCreationConfig",
+      ],
+    });
     if (!result.ok) throw new Error(result.reason);
     expect(result.input.minimal_plan).toMatchObject({
       plan_start_date: state.scheduling.startDate,
