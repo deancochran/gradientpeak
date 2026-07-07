@@ -36,6 +36,7 @@ export type DailyTrainingAdjustmentChartProps = {
   height?: number;
   showSelectedPointTray?: boolean;
   testID?: string;
+  formatDateLabel?: (dateKey: string, index: number) => string;
 };
 
 type ChartDatum = Record<string, unknown> & {
@@ -175,6 +176,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
   onSelectedDateChange,
   density = "standard",
   emptyState,
+  formatDateLabel,
   height,
   showSelectedPointTray = true,
   testID = "daily-training-adjustment-chart",
@@ -261,7 +263,13 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
       ),
     [chartData],
   );
-  const labels = useMemo(() => points.map((point) => formatDayLabel(point.date)), [points]);
+  const labels = useMemo(
+    () =>
+      points.map(
+        (point, index) => formatDateLabel?.(point.date, index) ?? formatDayLabel(point.date),
+      ),
+    [formatDateLabel, points],
+  );
   const scrollableChartWidth = Math.max(
     chartWidth,
     chartPadding.left + chartPadding.right + Math.max(1, points.length) * slotWidth,

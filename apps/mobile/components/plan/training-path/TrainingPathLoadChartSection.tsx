@@ -64,6 +64,7 @@ type TrainingPathLoadChartSectionProps = {
   dailyDensity?: ComponentProps<typeof DailyTrainingAdjustmentChart>["density"];
   dailyPoints?: ComponentProps<typeof DailyTrainingAdjustmentChart>["points"];
   dailyTestID?: string;
+  dailyDateLabelFormatter?: ComponentProps<typeof DailyTrainingAdjustmentChart>["formatDateLabel"];
   preferDailyChart?: boolean;
   renderBelowChart?: (context: TrainingPathChartSectionContext) => ReactNode;
   selectionMode?: TrainingPathSelectionMode;
@@ -118,6 +119,7 @@ function getBoundedDailyPoints(points: DailyPoint[] | undefined, selectedDate?: 
 export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartSection({
   chartHeight = 300,
   dailyDensity = "standard",
+  dailyDateLabelFormatter,
   dailyPoints,
   dailyTestID = "training-path-daily-adjustment-chart",
   emptyState,
@@ -236,6 +238,7 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
           <DailyTrainingAdjustmentChart
             density={dailyDensity}
             height={chartHeight}
+            formatDateLabel={dailyDateLabelFormatter}
             points={chartDailyPoints ?? dailyPoints}
             selectedDate={selectedDate ?? model?.todayKey}
             showSelectedPointTray={showSelectedPointTray}
