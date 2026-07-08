@@ -17,7 +17,6 @@ import {
 import { TRPCError } from "@trpc/server";
 import { and, asc, count, desc, eq, gt, ilike, inArray, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import type { Context } from "../context";
 import { getRequiredDb } from "../db";
 import { createEventReadRepository } from "../infrastructure/repositories";
 import { createContentAccessPermissions } from "../permissions/content-access";
