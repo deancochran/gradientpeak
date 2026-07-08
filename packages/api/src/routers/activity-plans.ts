@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import {
   type ActivityTargetCategory,
   activityPlanCreateSchema,
-  activityPlanStructureSchemaV2,
   activityPlanUpdateSchema,
   getActivityTargetCompatibilityIssues,
   saveableActivityPlanStructureSchemaV2,
@@ -131,10 +130,6 @@ function validateStructure(structure: unknown, activityCategory?: ActivityTarget
       })),
     );
   }
-}
-
-function getEstimationStore(ctx: Context) {
-  return createEventReadRepository(getRequiredDb(ctx));
 }
 
 const createActivityPlanInput = activityPlanCreateSchema.safeExtend({
