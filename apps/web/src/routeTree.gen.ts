@@ -22,6 +22,7 @@ import { Route as AuthLoginRouteImport } from './routes/auth/login'
 import { Route as AuthForgotPasswordRouteImport } from './routes/auth/forgot-password'
 import { Route as AuthErrorRouteImport } from './routes/auth/error'
 import { Route as AuthConfirmRouteImport } from './routes/auth/confirm'
+import { Route as ApiReadyRouteImport } from './routes/api/ready'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ProtectedSettingsRouteImport } from './routes/_protected/settings'
 import { Route as ProtectedSearchRouteImport } from './routes/_protected/search'
@@ -124,6 +125,11 @@ const AuthErrorRoute = AuthErrorRouteImport.update({
 const AuthConfirmRoute = AuthConfirmRouteImport.update({
   id: '/auth/confirm',
   path: '/auth/confirm',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiReadyRoute = ApiReadyRouteImport.update({
+  id: '/api/ready',
+  path: '/api/ready',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
@@ -355,6 +361,7 @@ export interface FileRoutesByFullPath {
   '/search': typeof ProtectedSearchRoute
   '/settings': typeof ProtectedSettingsRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/ready': typeof ApiReadyRoute
   '/auth/confirm': typeof AuthConfirmRoute
   '/auth/error': typeof AuthErrorRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
@@ -405,6 +412,7 @@ export interface FileRoutesByTo {
   '/search': typeof ProtectedSearchRoute
   '/settings': typeof ProtectedSettingsRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/ready': typeof ApiReadyRoute
   '/auth/confirm': typeof AuthConfirmRoute
   '/auth/error': typeof AuthErrorRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
@@ -460,6 +468,7 @@ export interface FileRoutesById {
   '/_protected/search': typeof ProtectedSearchRoute
   '/_protected/settings': typeof ProtectedSettingsRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/ready': typeof ApiReadyRoute
   '/auth/confirm': typeof AuthConfirmRoute
   '/auth/error': typeof AuthErrorRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
@@ -516,6 +525,7 @@ export interface FileRouteTypes {
     | '/search'
     | '/settings'
     | '/api/health'
+    | '/api/ready'
     | '/auth/confirm'
     | '/auth/error'
     | '/auth/forgot-password'
@@ -566,6 +576,7 @@ export interface FileRouteTypes {
     | '/search'
     | '/settings'
     | '/api/health'
+    | '/api/ready'
     | '/auth/confirm'
     | '/auth/error'
     | '/auth/forgot-password'
@@ -620,6 +631,7 @@ export interface FileRouteTypes {
     | '/_protected/search'
     | '/_protected/settings'
     | '/api/health'
+    | '/api/ready'
     | '/auth/confirm'
     | '/auth/error'
     | '/auth/forgot-password'
@@ -667,6 +679,7 @@ export interface RootRouteChildren {
   ProtectedRoute: typeof ProtectedRouteWithChildren
   AboutRoute: typeof AboutRoute
   ApiHealthRoute: typeof ApiHealthRoute
+  ApiReadyRoute: typeof ApiReadyRoute
   AuthConfirmRoute: typeof AuthConfirmRoute
   AuthErrorRoute: typeof AuthErrorRoute
   AuthForgotPasswordRoute: typeof AuthForgotPasswordRoute
@@ -778,6 +791,13 @@ declare module '@tanstack/react-router' {
       path: '/auth/confirm'
       fullPath: '/auth/confirm'
       preLoaderRoute: typeof AuthConfirmRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ready': {
+      id: '/api/ready'
+      path: '/api/ready'
+      fullPath: '/api/ready'
+      preLoaderRoute: typeof ApiReadyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/health': {
@@ -1168,6 +1188,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProtectedRoute: ProtectedRouteWithChildren,
   AboutRoute: AboutRoute,
   ApiHealthRoute: ApiHealthRoute,
+  ApiReadyRoute: ApiReadyRoute,
   AuthConfirmRoute: AuthConfirmRoute,
   AuthErrorRoute: AuthErrorRoute,
   AuthForgotPasswordRoute: AuthForgotPasswordRoute,
