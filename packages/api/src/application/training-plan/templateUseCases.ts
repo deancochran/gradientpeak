@@ -133,32 +133,6 @@ export async function listTrainingPlanTemplatesUseCase(input: {
   };
 }
 
-export async function auditTrainingPlanTemplateHealthUseCase(input: {
-  repository: TrainingPlanRepository;
-}) {
-  const templates = await input.repository.listPublicTemplateTrainingPlans();
-  const items = templates.map((template) => {
-    const health = auditTrainingPlanTemplateStructureHealth({ structure: template.structure });
-
-    return {
-      id: template.id,
-      name: template.name,
-      ...health,
-    };
-  });
-
-  return {
-    total: items.length,
-    healthy_count: items.filter((item) => item.isHealthy).length,
-    legacy_count: items.filter(
-      (item) => item.isPersistedCompatible && !item.isCurrentSchemaCompatible,
-    ).length,
-    invalid_count: items.filter((item) => !item.isPersistedCompatible).length,
-    metadata_gap_count: items.filter((item) => item.missingMetadata.length > 0).length,
-    items,
-  };
-}
-
 export async function getTrainingPlanTemplateUseCase(input: {
   id: string;
   repository: TrainingPlanRepository;

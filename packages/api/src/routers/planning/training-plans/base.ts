@@ -83,8 +83,6 @@ import { z } from "zod";
 import {
   applyQuickAdjustmentUseCase,
   applyTrainingPlanTemplateUseCase,
-  auditTrainingPlanTemplateHealthUseCase,
-  autoAddPeriodizationUseCase,
   createFromCreationConfigUseCase,
   createTrainingPlanUseCase,
   deleteTrainingPlanUseCase,
@@ -97,10 +95,6 @@ import {
   listTrainingPlansUseCase,
   listTrainingPlanTemplatesUseCase,
   previewCreationConfigUseCase,
-  regenerateAppliedScheduleUseCase,
-  removeAppliedScheduleUseCase,
-  shiftAppliedScheduleUseCase,
-  trainingPlanExistsUseCase,
   updateActivePlanStatusUseCase,
   updateFromCreationConfigUseCase,
   updateTrainingPlanUseCase,
@@ -4461,17 +4455,6 @@ const trainingPlansProcedures = {
     }),
 
   // ------------------------------
-  // Check if user has a training plan
-  // ------------------------------
-  exists: protectedProcedure.query(async ({ ctx }) => {
-    const db = getRequiredDb(ctx);
-    return trainingPlanExistsUseCase({
-      profileId: ctx.session.user.id,
-      repository: createTrainingPlanRepository(db),
-    });
-  }),
-
-  // ------------------------------
   // Create new training plan
   // Can create multiple plans; if is_active, deactivates others
   // ------------------------------
@@ -4484,108 +4467,6 @@ const trainingPlansProcedures = {
         profileId: ctx.session.user.id,
         values: input,
       });
-    }),
-
-  // ------------------------------
-  // Preview feasibility/safety from minimal goal payload
-  // ------------------------------
-  getFeasibilityPreview: protectedProcedure
-    .input(minimalTrainingPlanCreateSchema)
-    .query(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      const store = createActivityAnalysisStore(db);
-      const estimatedCurrentCtl = await estimateCurrentCtl({
-        db,
-        store,
-        profileId: ctx.session.user.id,
-      });
-      const expandedPlan = buildExpandedPlanFromMinimalGoal(input, {
-        startingCtl: estimatedCurrentCtl,
-      });
-      const normalizedGoals = expandedPlan.goals;
-
-      const referenceDate = formatDateOnlyUtc(new Date());
-
-      const assessmentGoals = normalizedGoals.map((goal) => ({
-        id: goal.id,
-        name: goal.name,
-        target_date: goal.target_date,
-        priority: goal.priority,
-      }));
-
-      const nextGoal = [...assessmentGoals].sort((a: any, b: any) =>
-        a.target_date.localeCompare(b.target_date),
-      )[0];
-
-      const previewPlanWithId = {
-        ...expandedPlan,
-        id: deterministicUuidFromSeed(
-          `${ctx.session.user.id}|${assessmentGoals.map((goal) => goal.id).join("|")}|preview-plan`,
-        ),
-      };
-
-      const parsedPreviewPlan = legacyStructuredTrainingPlanSchema.safeParse(previewPlanWithId);
-      const planWarnings =
-        parsedPreviewPlan.success && parsedPreviewPlan.data.plan_type === "periodized"
-          ? validatePlanFeasibility(parsedPreviewPlan.data).warnings
-          : [];
-
-      const blockRampWarnings = collectBlockRampWarnings(expandedPlan.blocks);
-      const assessments = buildPlanAssessments({
-        goals: assessmentGoals,
-        referenceDate,
-        currentCtl: estimatedCurrentCtl,
-        targetCtlAtPeak: expandedPlan.fitness_progression.target_ctl_at_peak,
-        planWarnings,
-        blockRampWarnings,
-      });
-
-      const planDurationDays = Math.max(
-        0,
-        diffDateOnlyUtcDays(expandedPlan.start_date, expandedPlan.end_date) + 1,
-      );
-      const targetWeeklyTssAvg =
-        expandedPlan.blocks.length > 0
-          ? expandedPlan.blocks.reduce((sum, block) => {
-              const range = block.target_weekly_tss_range;
-              return sum + (range.min + range.max) / 2;
-            }, 0) / expandedPlan.blocks.length
-          : 0;
-
-      return {
-        plan_assessment: {
-          feasibility: assessments.planFeasibility,
-          safety: assessments.planSafety,
-        },
-        goal_assessments: assessments.goalFeasibility.map((goalFeasibility) => {
-          const goalSafety = assessments.goalSafety.find(
-            (goal) => goal.goal_id === goalFeasibility.goal_id,
-          );
-
-          return {
-            goal_id: goalFeasibility.goal_id,
-            goal_name: goalFeasibility.goal_name,
-            feasibility: {
-              state: goalFeasibility.state,
-              reasons: goalFeasibility.reasons,
-            },
-            safety: {
-              state: goalSafety?.state ?? "safe",
-              reasons: goalSafety?.reasons ?? [],
-            },
-          };
-        }),
-        key_metrics: {
-          reference_date: referenceDate,
-          days_until_goal: nextGoal ? diffDateOnlyUtcDays(referenceDate, nextGoal.target_date) : 0,
-          plan_duration_days: planDurationDays,
-          block_count: expandedPlan.blocks.length,
-          goal_count: assessmentGoals.length,
-          estimated_current_ctl: estimatedCurrentCtl,
-          target_weekly_tss_avg: Math.round(targetWeeklyTssAvg),
-        },
-        normalized_goals: normalizedGoals,
-      };
     }),
 
   // ------------------------------
@@ -4728,48 +4609,6 @@ const trainingPlansProcedures = {
     }),
 
   // ------------------------------
-  // Create training plan from minimal goal payload
-  // ------------------------------
-  createFromMinimalGoal: protectedProcedure
-    .input(minimalTrainingPlanCreateSchema)
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      const store = createActivityAnalysisStore(db);
-      const repository = createTrainingPlanRepository(db);
-      const estimatedCurrentCtl = await estimateCurrentCtl({
-        db,
-        store,
-        profileId: ctx.session.user.id,
-      });
-      const expandedPlan = buildExpandedPlanFromMinimalGoal(input, {
-        startingCtl: estimatedCurrentCtl,
-      });
-
-      const planId = crypto.randomUUID();
-      const structureWithId = {
-        ...expandedPlan,
-        id: planId,
-      };
-
-      try {
-        legacyStructuredTrainingPlanSchema.parse(structureWithId);
-      } catch (validationError) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Generated training plan structure is invalid",
-          cause: validationError,
-        });
-      }
-
-      return repository.createTrainingPlan({
-        name: expandedPlan.name,
-        description: expandedPlan.description ?? null,
-        structure: structureWithId,
-        profileId: ctx.session.user.id,
-      });
-    }),
-
-  // ------------------------------
   // Canonical insight timeline (MVP deterministic baseline)
   // ------------------------------
   getInsightTimeline: protectedProcedure
@@ -4782,30 +4621,6 @@ const trainingPlansProcedures = {
         profileId: ctx.session.user.id,
         input,
       });
-    }),
-
-  simulateScheduleAdjustment: protectedProcedure
-    .input(scheduleAdjustmentSimulationInputSchema)
-    .query(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      const result = await getPlanTabProjectionService({
-        db,
-        store: createActivityAnalysisStore(db),
-        profileId: ctx.session.user.id,
-        input: {
-          training_plan_id: input.training_plan_id,
-          start_date: input.start_date,
-          end_date: input.end_date,
-          timezone: input.timezone,
-          schedule_adjustment: {
-            date: input.adjustment_date,
-            tss_delta: input.tss_delta,
-            comparison_date: input.comparison_date,
-          },
-        },
-      });
-
-      return result.schedule_simulation;
     }),
 
   // ------------------------------
@@ -5619,444 +5434,6 @@ const trainingPlansProcedures = {
     }),
 
   // ------------------------------
-  // Get intensity distribution (actual from completed activities)
-  // Uses 7-zone system: Recovery, Endurance, Tempo, Threshold, VO2max, Anaerobic, Neuromuscular
-  // ------------------------------
-  getIntensityDistribution: protectedProcedure
-    .input(
-      z.object({
-        training_plan_id: z.string().uuid().optional(),
-        start_date: z.string(),
-        end_date: z.string(),
-      }),
-    )
-    .query(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      // Get completed activities in date range with intensity_factor
-      const activities = await db
-        .select(activitySummaryColumns)
-        .from(schema.activities)
-        .innerJoin(
-          schema.activitySummaries,
-          eq(schema.activitySummaries.activity_id, schema.activities.id),
-        )
-        .where(
-          and(
-            eq(schema.activities.profile_id, ctx.session.user.id),
-            gte(schema.activities.started_at, new Date(input.start_date)),
-            lte(schema.activities.started_at, new Date(input.end_date)),
-          ),
-        )
-        .orderBy(desc(schema.activities.started_at));
-
-      const derivedMap = await buildActivityDerivedSummaryMap({
-        store: createActivityAnalysisStore(db),
-        profileId: ctx.session.user.id,
-        activities,
-      });
-
-      const totalActivities = activities.length;
-
-      // Initialize 7-zone distribution (TSS-weighted)
-      type IntensityZone =
-        | "recovery"
-        | "endurance"
-        | "tempo"
-        | "threshold"
-        | "vo2max"
-        | "anaerobic"
-        | "neuromuscular";
-      const zoneDistribution: Record<IntensityZone, number> = {
-        recovery: 0,
-        endurance: 0,
-        tempo: 0,
-        threshold: 0,
-        vo2max: 0,
-        anaerobic: 0,
-        neuromuscular: 0,
-      };
-
-      let totalTSS = 0;
-
-      // Calculate actual distribution from IF values
-      if (activities.length > 0) {
-        for (const activity of activities) {
-          const intensityFactorValue = derivedMap.get(activity.id)?.intensity_factor || 0;
-          const tss = derivedMap.get(activity.id)?.tss || 0;
-
-          if (!intensityFactorValue || !tss) {
-            continue;
-          }
-          const intensityFactor = intensityFactorValue;
-
-          // Get the zone for this IF value
-          const zone = getTrainingIntensityZone(intensityFactor) as IntensityZone;
-
-          // Add TSS to the appropriate zone
-          zoneDistribution[zone] = (zoneDistribution[zone] || 0) + tss;
-          totalTSS += tss;
-        }
-
-        // Convert TSS values to percentages
-        if (totalTSS > 0) {
-          for (const zone in zoneDistribution) {
-            const zoneKey = zone as IntensityZone;
-            zoneDistribution[zoneKey] = (zoneDistribution[zoneKey] / totalTSS) * 100;
-          }
-        }
-      }
-
-      // Generate recommendations based on training science
-      const recommendations: string[] = [];
-      const recoveryPct = zoneDistribution.recovery || 0;
-      const endurancePct = zoneDistribution.endurance || 0;
-      const hardPct =
-        (zoneDistribution.threshold || 0) +
-        (zoneDistribution.vo2max || 0) +
-        (zoneDistribution.anaerobic || 0) +
-        (zoneDistribution.neuromuscular || 0);
-
-      // Polarized training: ~80% easy (recovery + endurance), ~20% hard
-      const easyPct = recoveryPct + endurancePct;
-
-      if (totalActivities >= 5) {
-        // Only provide recommendations if we have enough data
-        if (easyPct < 70) {
-          recommendations.push(
-            "Consider adding more easy/recovery activities. Aim for ~80% of training at low intensity.",
-          );
-        } else if (easyPct > 90) {
-          recommendations.push(
-            "Consider adding some high-intensity sessions to stimulate adaptation.",
-          );
-        }
-
-        if (hardPct > 30) {
-          recommendations.push(
-            "High volume of hard training detected. Ensure adequate recovery to prevent overtraining.",
-          );
-        }
-
-        if ((zoneDistribution.tempo || 0) > 20) {
-          recommendations.push(
-            "High tempo training detected. This 'gray zone' may limit polarization benefits.",
-          );
-        }
-      } else if (totalActivities > 0) {
-        recommendations.push(
-          "Complete more activities to see meaningful intensity distribution analysis.",
-        );
-      } else {
-        recommendations.push(
-          "No completed activities in this date range. Start training to see your intensity distribution!",
-        );
-      }
-
-      return {
-        distribution: {
-          recovery: Math.round((zoneDistribution.recovery || 0) * 10) / 10,
-          endurance: Math.round((zoneDistribution.endurance || 0) * 10) / 10,
-          tempo: Math.round((zoneDistribution.tempo || 0) * 10) / 10,
-          threshold: Math.round((zoneDistribution.threshold || 0) * 10) / 10,
-          vo2max: Math.round((zoneDistribution.vo2max || 0) * 10) / 10,
-          anaerobic: Math.round((zoneDistribution.anaerobic || 0) * 10) / 10,
-          neuromuscular: Math.round((zoneDistribution.neuromuscular || 0) * 10) / 10,
-        },
-        totalActivities,
-        totalTSS: Math.round(totalTSS),
-        activitiesWithIntensity:
-          activities?.filter((a: any) => {
-            const intensityFactor = derivedMap.get(a.id)?.intensity_factor;
-            return intensityFactor !== null && intensityFactor !== undefined;
-          }).length || 0,
-        recommendations,
-      };
-    }),
-
-  // Get intensity trends over time
-  // ------------------------------
-  getIntensityTrends: protectedProcedure
-    .input(
-      z.object({
-        weeks_back: z.number().int().min(1).max(52).default(12),
-      }),
-    )
-    .query(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      const endDate = new Date();
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - input.weeks_back * 7);
-
-      // Get activities with IF values
-      const activities = await db
-        .select(activitySummaryColumns)
-        .from(schema.activities)
-        .innerJoin(
-          schema.activitySummaries,
-          eq(schema.activitySummaries.activity_id, schema.activities.id),
-        )
-        .where(
-          and(
-            eq(schema.activities.profile_id, ctx.session.user.id),
-            gte(schema.activities.started_at, startDate),
-            lte(schema.activities.started_at, endDate),
-          ),
-        )
-        .orderBy(asc(schema.activities.started_at));
-
-      const derivedMap = await buildActivityDerivedSummaryMap({
-        store: createActivityAnalysisStore(db),
-        profileId: ctx.session.user.id,
-        activities,
-      });
-
-      // Group by week
-      type IntensityZone =
-        | "recovery"
-        | "endurance"
-        | "tempo"
-        | "threshold"
-        | "vo2max"
-        | "anaerobic"
-        | "neuromuscular";
-      const weeklyData: Record<
-        string,
-        {
-          weekStart: string;
-          totalTSS: number;
-          avgIF: number;
-          activities: number;
-          zones: Record<IntensityZone, number>;
-        }
-      > = {};
-
-      if (activities.length > 0) {
-        for (const activity of activities) {
-          const date = new Date(activity.started_at);
-          // Get Monday of the week
-          const weekStart = new Date(date);
-          weekStart.setDate(date.getDate() - date.getDay() + 1);
-          const weekKey = weekStart.toISOString().split("T")[0] || "";
-
-          if (!weeklyData[weekKey]) {
-            weeklyData[weekKey] = {
-              weekStart: weekKey,
-              totalTSS: 0,
-              avgIF: 0,
-              activities: 0,
-              zones: {
-                recovery: 0,
-                endurance: 0,
-                tempo: 0,
-                threshold: 0,
-                vo2max: 0,
-                anaerobic: 0,
-                neuromuscular: 0,
-              },
-            };
-          }
-
-          const intensityFactorValue = derivedMap.get(activity.id)?.intensity_factor || 0;
-
-          if (!intensityFactorValue) continue;
-
-          const intensityFactor = intensityFactorValue; // Assuming float 0.85
-          const tss = derivedMap.get(activity.id)?.tss || 0;
-          const zone = getTrainingIntensityZone(intensityFactor) as IntensityZone;
-
-          const week = weeklyData[weekKey];
-          if (week && weekKey) {
-            week.totalTSS += tss;
-            week.avgIF += intensityFactor;
-            week.activities += 1;
-            week.zones[zone] = (week.zones[zone] || 0) + tss;
-          }
-        }
-
-        // Calculate averages and percentages
-        for (const week of Object.values(weeklyData)) {
-          week.avgIF = week.avgIF / week.activities;
-
-          // Convert zone TSS to percentages
-          if (week.totalTSS > 0) {
-            for (const zone in week.zones) {
-              const zoneKey = zone as IntensityZone;
-              week.zones[zoneKey] = (week.zones[zoneKey] / week.totalTSS) * 100;
-            }
-          }
-        }
-      }
-
-      return {
-        weeks: Object.values(weeklyData).sort(
-          (a, b) => new Date(a.weekStart).getTime() - new Date(b.weekStart).getTime(),
-        ),
-        totalActivities: activities.length,
-      };
-    }),
-
-  // Check hard activity spacing (retrospective analysis)
-  // ------------------------------
-  checkHardActivitySpacing: protectedProcedure
-    .input(
-      z.object({
-        start_date: z.string(),
-        end_date: z.string(),
-        min_hours: z.number().int().min(24).max(168).default(48),
-      }),
-    )
-    .query(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      // Get activities with IF >= 0.85 (threshold and above)
-      const allActivities = await db
-        .select({
-          ...activitySummaryColumns,
-          name: schema.activities.name,
-        })
-        .from(schema.activities)
-        .innerJoin(
-          schema.activitySummaries,
-          eq(schema.activitySummaries.activity_id, schema.activities.id),
-        )
-        .where(
-          and(
-            eq(schema.activities.profile_id, ctx.session.user.id),
-            gte(schema.activities.started_at, new Date(input.start_date)),
-            lte(schema.activities.started_at, new Date(input.end_date)),
-          ),
-        )
-        .orderBy(asc(schema.activities.started_at));
-
-      const derivedMap = await buildActivityDerivedSummaryMap({
-        store: createActivityAnalysisStore(db),
-        profileId: ctx.session.user.id,
-        activities: allActivities,
-      });
-
-      // Filter activities with IF >= 0.85
-      const activities = allActivities.filter(
-        (a: any) => (derivedMap.get(a.id)?.intensity_factor || 0) >= 0.85,
-      );
-
-      const violations: Array<{
-        activity1: {
-          id: string;
-          name: string;
-          started_at: string;
-          intensity_factor: number;
-        };
-        activity2: {
-          id: string;
-          name: string;
-          started_at: string;
-          intensity_factor: number;
-        };
-        hoursBetween: number;
-      }> = [];
-
-      if (activities && activities.length > 1) {
-        for (let i = 1; i < activities.length; i++) {
-          const prev = activities[i - 1];
-          const curr = activities[i];
-
-          if (!prev || !curr) continue;
-
-          const hoursBetween =
-            (new Date(curr.started_at).getTime() - new Date(prev.started_at).getTime()) /
-            (1000 * 60 * 60);
-
-          if (hoursBetween < input.min_hours) {
-            violations.push({
-              activity1: {
-                id: prev.id,
-                name: prev.name || "Unnamed activity",
-                started_at: prev.started_at.toISOString(),
-                intensity_factor: derivedMap.get(prev.id)?.intensity_factor ?? 0,
-              },
-              activity2: {
-                id: curr.id,
-                name: curr.name || "Unnamed activity",
-                started_at: curr.started_at.toISOString(),
-                intensity_factor: derivedMap.get(curr.id)?.intensity_factor ?? 0,
-              },
-              hoursBetween: Math.round(hoursBetween * 10) / 10,
-            });
-          }
-        }
-      }
-
-      return {
-        violations,
-        hardActivityCount: activities?.length || 0,
-        hasViolations: violations.length > 0,
-      };
-    }),
-
-  // ------------------------------
-  // Get weekly totals (distance, time, count) for current week
-  // ------------------------------
-  getWeeklyTotals: protectedProcedure
-    .input(
-      z
-        .object({
-          weekStartDate: z.string().optional(),
-        })
-        .optional(),
-    )
-    .query(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      // Calculate week boundaries (Sunday to Saturday)
-      const today = new Date();
-      const weekStart = input?.weekStartDate ? new Date(input.weekStartDate) : new Date(today);
-
-      // Set to start of week (Sunday)
-      if (!input?.weekStartDate) {
-        weekStart.setDate(today.getDate() - today.getDay());
-      }
-      weekStart.setHours(0, 0, 0, 0);
-
-      const weekEnd = new Date(weekStart);
-      weekEnd.setDate(weekStart.getDate() + 7);
-
-      // Get completed activities for this week
-      const activities = await db
-        .select({
-          distance_meters: schema.activitySummaries.distance_meters,
-          duration_seconds: schema.activitySummaries.duration_seconds,
-        })
-        .from(schema.activities)
-        .innerJoin(
-          schema.activitySummaries,
-          eq(schema.activitySummaries.activity_id, schema.activities.id),
-        )
-        .where(
-          and(
-            eq(schema.activities.profile_id, ctx.session.user.id),
-            gte(schema.activities.started_at, weekStart),
-            lt(schema.activities.started_at, weekEnd),
-          ),
-        );
-
-      // Sum totals
-      let totalDistance = 0;
-      let totalTime = 0;
-      const count = activities.length;
-
-      if (activities.length > 0) {
-        for (const activity of activities) {
-          totalDistance += activity.distance_meters || 0;
-          totalTime += activity.duration_seconds || 0;
-        }
-      }
-
-      return {
-        distance: Math.round(totalDistance * 100) / 100, // meters
-        time: Math.round(totalTime), // seconds
-        count,
-      };
-    }),
-
-  // ------------------------------
   // List training plan templates
   // ------------------------------
   listTemplates: protectedProcedure
@@ -6094,13 +5471,6 @@ const trainingPlansProcedures = {
         repository: createTrainingPlanRepository(db),
       });
     }),
-
-  auditTemplateHealth: protectedProcedure.query(async ({ ctx }) => {
-    const db = getRequiredDb(ctx);
-    return auditTrainingPlanTemplateHealthUseCase({
-      repository: createTrainingPlanRepository(db),
-    });
-  }),
 
   // ------------------------------
   // Get single training plan template
@@ -6152,106 +5522,43 @@ const trainingPlansProcedures = {
       });
     }),
 
-  removeAppliedSchedule: protectedProcedure
-    .input(applicationScopedScheduleInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      return removeAppliedScheduleUseCase({
-        db,
-        permissions: createContentAccessPermissions(db),
-        profileId: ctx.session.user.id,
-        userTrainingPlanId: input.user_training_plan_id,
-      });
-    }),
-
-  shiftAppliedSchedule: protectedProcedure
-    .input(shiftScheduledPlanInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      return shiftAppliedScheduleUseCase({
-        days: input.days,
-        db: getRequiredDb(ctx),
-        profileId: ctx.session.user.id,
-        userTrainingPlanId: input.user_training_plan_id,
-      });
-    }),
-
-  regenerateAppliedSchedule: protectedProcedure
-    .input(applicationScopedScheduleInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      return regenerateAppliedScheduleUseCase({
-        db,
-        permissions: createContentAccessPermissions(db),
-        profileId: ctx.session.user.id,
-        repository: createTrainingPlanRepository(db),
-        userTrainingPlanId: input.user_training_plan_id,
-      });
-    }),
-
   getActivePlan: protectedProcedure.query(async ({ ctx }) => {
     return getActivePlanUseCase({
       profileId: ctx.session.user.id,
       repository: createTrainingPlanRepository(getRequiredDb(ctx)),
     });
   }),
-
-  // ------------------------------
-  // Auto-add periodization to existing plan
-  // ------------------------------
-  autoAddPeriodization: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      return autoAddPeriodizationUseCase({
-        id: input.id,
-        profileId: ctx.session.user.id,
-        repository: createTrainingPlanRepository(db),
-      });
-    }),
 };
 
 export const trainingPlansCreationProcedures = {
-  getFeasibilityPreview: trainingPlansProcedures.getFeasibilityPreview,
   getCreationSuggestions: trainingPlansProcedures.getCreationSuggestions,
   previewCreationConfig: trainingPlansProcedures.previewCreationConfig,
   createFromCreationConfig: trainingPlansProcedures.createFromCreationConfig,
   updateFromCreationConfig: trainingPlansProcedures.updateFromCreationConfig,
-  createFromMinimalGoal: trainingPlansProcedures.createFromMinimalGoal,
 };
 
 export const trainingPlansCrudProcedures = {
   get: trainingPlansProcedures.get,
   list: trainingPlansProcedures.list,
-  exists: trainingPlansProcedures.exists,
   create: trainingPlansProcedures.create,
   update: trainingPlansProcedures.update,
   updateActivePlanStatus: trainingPlansProcedures.updateActivePlanStatus,
   getActivePlan: trainingPlansProcedures.getActivePlan,
-  removeAppliedSchedule: trainingPlansProcedures.removeAppliedSchedule,
-  shiftAppliedSchedule: trainingPlansProcedures.shiftAppliedSchedule,
-  regenerateAppliedSchedule: trainingPlansProcedures.regenerateAppliedSchedule,
   delete: trainingPlansProcedures.delete,
   duplicate: trainingPlansProcedures.duplicate,
   getById: trainingPlansProcedures.getById,
   applyQuickAdjustment: trainingPlansProcedures.applyQuickAdjustment,
   listTemplates: trainingPlansProcedures.listTemplates,
-  auditTemplateHealth: trainingPlansProcedures.auditTemplateHealth,
   getTemplate: trainingPlansProcedures.getTemplate,
   applyTemplate: trainingPlansProcedures.applyTemplate,
-  autoAddPeriodization: trainingPlansProcedures.autoAddPeriodization,
 };
 
 export const trainingPlansAnalyticsProcedures = {
   getInsightTimeline: trainingPlansProcedures.getInsightTimeline,
-  simulateScheduleAdjustment: trainingPlansProcedures.simulateScheduleAdjustment,
   getCurrentStatus: trainingPlansProcedures.getCurrentStatus,
   getIdealCurve: trainingPlansProcedures.getIdealCurve,
   getActualCurve: trainingPlansProcedures.getActualCurve,
   getWeeklySummary: trainingPlansProcedures.getWeeklySummary,
-  getIntensityDistribution: trainingPlansProcedures.getIntensityDistribution,
-  getIntensityTrends: trainingPlansProcedures.getIntensityTrends,
-  checkHardActivitySpacing: trainingPlansProcedures.checkHardActivitySpacing,
-  getWeeklyTotals: trainingPlansProcedures.getWeeklyTotals,
 };
 
 export const trainingPlansRouter = createTRPCRouter({
