@@ -4,6 +4,7 @@ import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { Activity, Calendar, X, Zap } from "lucide-react-native";
+import { useEffect } from "react";
 import {
   ActivityIndicator,
   InteractionManager,
@@ -59,15 +60,29 @@ export function ActivityListModal({
     : null;
 
   // Fetch activities for the date range
-  const { data: activities = [], isLoading } = api.activities.list.useQuery(
+  const {
+    data: activitiesData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+  } = api.activities.listPaginated.useInfiniteQuery(
     {
       date_from: dateFrom,
       date_to: dateTo,
+      limit: 50,
     },
     {
       enabled: visible,
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
     },
   );
+  const activities = activitiesData?.pages.flatMap((page) => page.items) ?? [];
+
+  useEffect(() => {
+    if (!visible || !hasNextPage || isFetchingNextPage) return;
+    void fetchNextPage();
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage, visible]);
 
   // Filter by intensity zone if specified
   const filteredActivities = intensityZone

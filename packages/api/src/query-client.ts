@@ -217,7 +217,7 @@ export function createQueryClient() {
  * Use these to ensure query keys are consistent across the app.
  *
  * @example
- * const { data } = trpc.activities.list.useQuery(
+ * const { data } = trpc.activities.listPaginated.useQuery(
  *   { limit: 10 },
  *   { queryKey: queryKeys.activities.list({ limit: 10 }) }
  * );

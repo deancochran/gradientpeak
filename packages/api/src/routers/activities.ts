@@ -92,15 +92,6 @@ const activityDerivedResponseSchema = z
   })
   .strict();
 
-const activityListResponseSchema = activityListItemSchema.array();
-
-const listInputSchema = z
-  .object({
-    date_from: isoDatetimeSchema,
-    date_to: isoDatetimeSchema,
-  })
-  .strict();
-
 const listPaginatedInputSchema = z
   .object({
     limit: z.number().int().min(1).max(50).default(25),
@@ -367,66 +358,6 @@ async function checkActivityAccess(
 }
 
 export const activitiesRouter = createTRPCRouter({
-  // List activities by date range (legacy - for trends/analytics)
-  list: protectedProcedure.input(listInputSchema).query(async ({ ctx, input }) => {
-    const db = getRequiredDb(ctx);
-    const rawRows = await db
-      .select()
-      .from(activities)
-      .where(
-        and(
-          eq(activities.profile_id, ctx.session.user.id),
-          gte(activities.started_at, new Date(input.date_from)),
-          lte(activities.started_at, new Date(input.date_to)),
-        ),
-      )
-      .orderBy(desc(activities.started_at));
-
-    const splitMaps = await loadActivityListSplitMaps(
-      db,
-      ctx.session.user.id,
-      rawRows.map((activity) => activity.id),
-    );
-
-    const data = parseActivityRows(
-      rawRows.map((activity) => mergeActivityListSplits(activity, splitMaps)),
-    );
-
-    const derivedMap = await buildActivityDerivedSummaryMap({
-      store: createActivityAnalysisStore(db),
-      profileId: ctx.session.user.id,
-      activities: (data || []) as any,
-    });
-
-    const activityIds = data.map((activity) => activity.id);
-    const likeRows = activityIds.length
-      ? await db
-          .select({ entity_id: likes.entity_id })
-          .from(likes)
-          .where(
-            and(
-              eq(likes.profile_id, ctx.session.user.id),
-              eq(likes.entity_type, "activity"),
-              inArray(likes.entity_id, activityIds),
-            ),
-          )
-      : [];
-
-    const parsedLikeRows = likeRowSchema.array().parse(likeRows);
-
-    const userLikes = new Set(parsedLikeRows.map((row) => row.entity_id));
-
-    return activityListResponseSchema.parse(
-      data.map((activity) =>
-        mapActivityToListDerivedResponse({
-          activity,
-          has_liked: userLikes.has(activity.id),
-          derived: derivedMap.get(activity.id) ?? null,
-        }),
-      ),
-    );
-  }),
-
   // Paginated list of activities with filters
   listPaginated: protectedProcedure
     .input(listPaginatedInputSchema)

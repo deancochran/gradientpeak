@@ -398,36 +398,45 @@ jest.mock("@/lib/api", () => ({
       },
     },
     activities: {
-      list: {
-        useQuery: (input?: any, options?: any) =>
+      listPaginated: {
+        useInfiniteQuery: (input?: any, options?: any) =>
           activitiesListUseQueryMock(input, options) ?? {
-            data: [
-              {
-                id: "activity-1",
-                name: "Morning miles",
-                type: "run",
-                started_at: `${today}T11:00:00.000Z`,
-                duration_seconds: 2700,
-                distance_meters: 8000,
-                moving_seconds: 2600,
-                avg_heart_rate: 145,
-                avg_power: null,
-                avg_cadence: 86,
-                elevation_gain_meters: 45,
-                calories: 520,
-                polyline: null,
-                activity_file_path: null,
-                likes_count: 0,
-                comments_count: 0,
-                is_private: false,
-                has_liked: false,
-                derived: {
-                  tss: 64,
-                  intensity_factor: 0.78,
-                  computed_as_of: `${today}T11:45:00.000Z`,
+            data: {
+              pages: [
+                {
+                  items: [
+                    {
+                      id: "activity-1",
+                      name: "Morning miles",
+                      type: "run",
+                      started_at: `${today}T11:00:00.000Z`,
+                      duration_seconds: 2700,
+                      distance_meters: 8000,
+                      moving_seconds: 2600,
+                      avg_heart_rate: 145,
+                      avg_power: null,
+                      avg_cadence: 86,
+                      elevation_gain_meters: 45,
+                      calories: 520,
+                      polyline: null,
+                      activity_file_path: null,
+                      likes_count: 0,
+                      comments_count: 0,
+                      is_private: false,
+                      has_liked: false,
+                      derived: {
+                        tss: 64,
+                        intensity_factor: 0.78,
+                        computed_as_of: `${today}T11:45:00.000Z`,
+                      },
+                    },
+                  ],
                 },
-              },
-            ],
+              ],
+            },
+            fetchNextPage: jest.fn(async () => undefined),
+            hasNextPage: false,
+            isFetchingNextPage: false,
             isLoading: false,
             refetch: jest.fn(async () => undefined),
           },
@@ -585,17 +594,26 @@ describe("calendar day timeline screen", () => {
 
   it("keeps completed activity load fields visible when derived values are unavailable", () => {
     activitiesListUseQueryMock.mockReturnValue({
-      data: [
-        {
-          id: "activity-missing-load",
-          name: "Easy spin",
-          type: "bike",
-          started_at: `${today}T13:00:00.000Z`,
-          duration_seconds: 1800,
-          distance_meters: 9000,
-          derived: null,
-        },
-      ],
+      data: {
+        pages: [
+          {
+            items: [
+              {
+                id: "activity-missing-load",
+                name: "Easy spin",
+                type: "bike",
+                started_at: `${today}T13:00:00.000Z`,
+                duration_seconds: 1800,
+                distance_meters: 9000,
+                derived: null,
+              },
+            ],
+          },
+        ],
+      },
+      fetchNextPage: jest.fn(async () => undefined),
+      hasNextPage: false,
+      isFetchingNextPage: false,
       isLoading: false,
       refetch: jest.fn(async () => undefined),
     });

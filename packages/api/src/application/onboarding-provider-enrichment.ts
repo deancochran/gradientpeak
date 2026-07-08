@@ -265,11 +265,6 @@ export class OnboardingProviderEnrichmentService {
     };
   }
 
-  /** @deprecated Use getImportedOnboardingValues. */
-  async getDraft(profileId: string): Promise<ImportedOnboardingValues> {
-    return this.getImportedOnboardingValues(profileId);
-  }
-
   async clearProviderRequirement(profileId: string, provider: PublicIntegrationProvider) {
     const integration = await this.getConnectedIntegration(profileId, provider);
 

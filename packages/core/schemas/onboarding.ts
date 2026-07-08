@@ -180,48 +180,6 @@ export const completeOnboardingSchema = z.object({
 export type CompleteOnboarding = z.infer<typeof completeOnboardingSchema>;
 
 /**
- * Estimate Metrics Input Schema
- *
- * Input for the estimateMetrics query. Used to provide real-time estimates
- * as the user fills out the onboarding form.
- */
-export const estimateMetricsInputSchema = z.object({
-  weight_kg: z.number().positive(),
-  gender: z.enum(["male", "female", "other"]),
-  age: z.number().int().positive().min(10).max(100),
-  experience_level: experienceLevelSchema.optional(),
-
-  // Optional: for more accurate VO2max estimation
-  max_hr: z.number().int().min(100).max(250).optional(),
-  resting_hr: z.number().int().min(30).max(120).optional(),
-});
-
-export type EstimateMetricsInput = z.infer<typeof estimateMetricsInputSchema>;
-
-/**
- * Estimate Metrics Output Schema
- *
- * Output from the estimateMetrics query.
- */
-export const estimateMetricsOutputSchema = z.object({
-  // Heart rate estimates
-  estimated_max_hr: z.number().int(),
-  estimated_resting_hr: z.number().int(),
-  estimated_lthr: z.number().int(),
-  estimated_vo2max: z.number(),
-
-  // Performance estimates (sport-specific)
-  estimated_ftp: z.number().optional(),
-  estimated_threshold_pace: z.number().optional(),
-  estimated_css: z.number().optional(),
-
-  // Metadata
-  confidence: z.enum(["high", "medium", "low"]),
-});
-
-export type EstimateMetricsOutput = z.infer<typeof estimateMetricsOutputSchema>;
-
-/**
  * Validation helpers for cross-field validation.
  */
 

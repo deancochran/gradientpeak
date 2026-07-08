@@ -457,7 +457,7 @@ beforeEach(() => {
 });
 
 describe("activitiesRouter", () => {
-  it("lists owned activities with like and derived summaries", async () => {
+  it("lists paginated owned activities with like and derived summaries", async () => {
     const rows = [buildActivityRow()];
     const derived = {
       tss: 72,
@@ -474,12 +474,12 @@ describe("activitiesRouter", () => {
     );
 
     const caller = createCaller(db);
-    const result = await caller.list({
+    const result = await caller.listPaginated({
       date_from: "2026-01-01T00:00:00.000Z",
       date_to: "2026-01-31T23:59:59.999Z",
     });
 
-    expect(result).toEqual([
+    expect(result.items).toEqual([
       {
         ...rows[0],
         has_liked: true,
@@ -494,7 +494,7 @@ describe("activitiesRouter", () => {
     );
   });
 
-  it("overlays split summary import and geometry values in list responses", async () => {
+  it("overlays split summary import and geometry values in paginated list responses", async () => {
     const rows = [
       buildActivityRow({
         distance_meters: 1,
@@ -528,12 +528,12 @@ describe("activitiesRouter", () => {
     });
 
     const caller = createCaller(db);
-    const result = await caller.list({
+    const result = await caller.listPaginated({
       date_from: "2026-01-01T00:00:00.000Z",
       date_to: "2026-01-31T23:59:59.999Z",
     });
 
-    expect(result[0]).toMatchObject({
+    expect(result.items[0]).toMatchObject({
       distance_meters: 12345,
       duration_seconds: 3600,
       provider: "wahoo",
@@ -973,11 +973,11 @@ describe("activitiesRouter", () => {
     expect(db.__spies.deleteWhere).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects non-ISO list date filters at the router boundary", async () => {
+  it("rejects non-ISO paginated list date filters at the router boundary", async () => {
     const caller = createCaller(createDbMock({}));
 
     await expect(
-      caller.list({
+      caller.listPaginated({
         date_from: "not-a-date",
         date_to: "2026-01-31T23:59:59.999Z",
       }),
@@ -1004,7 +1004,7 @@ describe("activitiesRouter", () => {
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 
-  it("rejects malformed activity rows before returning list results", async () => {
+  it("rejects malformed activity rows before returning paginated list results", async () => {
     const db = createDbMock({
       activityRows: [
         {
@@ -1016,7 +1016,7 @@ describe("activitiesRouter", () => {
     const caller = createCaller(db);
 
     await expect(
-      caller.list({
+      caller.listPaginated({
         date_from: "2026-01-01T00:00:00.000Z",
         date_to: "2026-01-31T23:59:59.999Z",
       }),

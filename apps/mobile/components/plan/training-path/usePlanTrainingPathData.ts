@@ -145,16 +145,39 @@ export function usePlanTrainingPathData() {
         .filter(isPresent),
     [groupCalendarEventsWithActivityPlans],
   );
-  const completedActivitiesQuery = api.activities.list.useQuery(
+  const completedActivitiesQuery = api.activities.listPaginated.useInfiniteQuery(
     {
       date_from: getDayStartIso(recentWindowStart),
       date_to: getDayEndIso(todayKey),
+      limit: 50,
     },
     {
       ...scheduleAwareReadQueryOptions,
       enabled: eventsQueryEnabled,
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
     },
   );
+  const completedActivities = useMemo(
+    () => completedActivitiesQuery.data?.pages.flatMap((page) => page.items) ?? [],
+    [completedActivitiesQuery.data?.pages],
+  );
+
+  useEffect(() => {
+    if (
+      !eventsQueryEnabled ||
+      !completedActivitiesQuery.hasNextPage ||
+      completedActivitiesQuery.isFetchingNextPage
+    ) {
+      return;
+    }
+
+    void completedActivitiesQuery.fetchNextPage();
+  }, [
+    completedActivitiesQuery.fetchNextPage,
+    completedActivitiesQuery.hasNextPage,
+    completedActivitiesQuery.isFetchingNextPage,
+    eventsQueryEnabled,
+  ]);
 
   const snapshot = useTrainingPlanSnapshot({
     planId: activePlan?.id,
@@ -286,11 +309,11 @@ export function usePlanTrainingPathData() {
   }, [groupCalendarEventsWithActivityPlans]);
   const completedReviewActivities = useMemo<TrainingPathCompletedActivity[]>(
     () =>
-      (completedActivitiesQuery.data ?? [])
+      completedActivities
         .map((activity) => toTrainingPathCompletedActivity(activity, activityOwner))
         .filter(isPresent)
         .sort((left, right) => left.date.localeCompare(right.date)),
-    [activityOwner, completedActivitiesQuery.data],
+    [activityOwner, completedActivities],
   );
   const selectedWeekGoals = useMemo<TrainingPathSelectedGoal[]>(() => {
     if (!selectedWeekRangeStart || !selectedWeekRangeEnd) return [];

@@ -2053,12 +2053,11 @@ export const activityFilesRouter = createTRPCRouter({
   getStreams: protectedProcedure
     .input(
       z.object({
-        activityFilePath: activityStoragePathSchema,
-        activityId: z.string().uuid().optional(),
+        activityId: z.string().uuid(),
       }),
     )
     .query(async ({ ctx, input }) => {
-      const { activityFilePath, activityId } = input;
+      const { activityId } = input;
       const userId = ctx.session?.user?.id;
       const supabase = storageService;
       const db = getRequiredDb(ctx);
@@ -2068,30 +2067,13 @@ export const activityFilesRouter = createTRPCRouter({
       }
 
       try {
-        let resolvedActivityFilePath = activityFilePath.trim();
+        const resolvedActivityFilePath = await canAccessActivityStreams(db, activityId, userId);
 
-        // If activityId is provided, use proper database-driven authorization
-        if (activityId) {
-          const authorizedActivityFilePath = await canAccessActivityStreams(db, activityId, userId);
-
-          if (!authorizedActivityFilePath) {
-            throw new TRPCError({
-              code: "NOT_FOUND",
-              message: "Activity does not have an associated activity file",
-            });
-          }
-
-          resolvedActivityFilePath = authorizedActivityFilePath;
-        } else {
-          // Fallback: legacy behavior - check file path ownership directly
-          const isOwnFile = isOwnedActivityFilePath(userId, resolvedActivityFilePath);
-
-          if (!isOwnFile) {
-            throw new TRPCError({
-              code: "FORBIDDEN",
-              message: "Access denied: You can only access your own files",
-            });
-          }
+        if (!resolvedActivityFilePath) {
+          throw new TRPCError({
+            code: "NOT_FOUND",
+            message: "Activity does not have an associated activity file",
+          });
         }
 
         // Download activity file from storage
