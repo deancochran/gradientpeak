@@ -23,10 +23,6 @@ import {
 } from "@/components/settings/training-preferences/sections/AvailabilitySection";
 import { BaselineFitnessSection } from "@/components/settings/training-preferences/sections/BaselineFitnessSection";
 import { GoalStrategySection } from "@/components/settings/training-preferences/sections/GoalStrategySection";
-import {
-  type PreferencePresetKey,
-  PreferencesOverviewSection,
-} from "@/components/settings/training-preferences/sections/PreferencesOverviewSection";
 import { RecoverySection } from "@/components/settings/training-preferences/sections/RecoverySection";
 import {
   ScheduleSection,
@@ -55,132 +51,6 @@ const defaultSportDoseOverride = {
   max_weekly_duration_minutes: 240,
 };
 
-const preferencePresets: Array<{
-  key: Exclude<PreferencePresetKey, "custom">;
-  label: string;
-  description: string;
-  values: Pick<
-    AthleteTrainingSettingsFormInput["training_style"],
-    "progression_pace" | "week_pattern_preference" | "strength_integration_priority"
-  > &
-    Pick<
-      AthleteTrainingSettingsFormInput["recovery_preferences"],
-      | "recovery_priority"
-      | "systemic_fatigue_tolerance"
-      | "double_day_tolerance"
-      | "long_session_fatigue_tolerance"
-    > &
-    Pick<
-      AthleteTrainingSettingsFormInput["goal_strategy_preferences"],
-      "target_surplus_preference" | "taper_style_preference"
-    >;
-}> = [
-  {
-    key: "conservative",
-    label: "Safer",
-    description: "Protect recovery and keep progression steady.",
-    values: {
-      progression_pace: 0.35,
-      week_pattern_preference: 0.35,
-      strength_integration_priority: 0.4,
-      recovery_priority: 0.75,
-      systemic_fatigue_tolerance: 0.35,
-      double_day_tolerance: 0.15,
-      long_session_fatigue_tolerance: 0.35,
-      target_surplus_preference: 0.15,
-      taper_style_preference: 0.75,
-    },
-  },
-  {
-    key: "balanced",
-    label: "Balanced",
-    description: "Use the default tradeoff between progress and recovery.",
-    values: {
-      progression_pace: 0.5,
-      week_pattern_preference: 0.5,
-      strength_integration_priority: 0.5,
-      recovery_priority: 0.6,
-      systemic_fatigue_tolerance: 0.5,
-      double_day_tolerance: 0.35,
-      long_session_fatigue_tolerance: 0.5,
-      target_surplus_preference: 0.25,
-      taper_style_preference: 0.5,
-    },
-  },
-  {
-    key: "performance",
-    label: "Push harder",
-    description: "Allow faster progression when the projection stays safe.",
-    values: {
-      progression_pace: 0.72,
-      week_pattern_preference: 0.65,
-      strength_integration_priority: 0.65,
-      recovery_priority: 0.45,
-      systemic_fatigue_tolerance: 0.68,
-      double_day_tolerance: 0.65,
-      long_session_fatigue_tolerance: 0.7,
-      target_surplus_preference: 0.45,
-      taper_style_preference: 0.35,
-    },
-  },
-];
-
-type PreferenceTemplateKey = Exclude<PreferencePresetKey, "custom">;
-
-type TemplateFieldDescriptor = {
-  section: PreferencesTabKey;
-  read: (draft: AthleteTrainingSettingsFormInput) => number | undefined;
-  readTemplate: (values: (typeof preferencePresets)[number]["values"]) => number | undefined;
-};
-
-const templateFieldDescriptors: TemplateFieldDescriptor[] = [
-  {
-    section: "training-style",
-    read: (draft) => draft.training_style.progression_pace,
-    readTemplate: (values) => values.progression_pace,
-  },
-  {
-    section: "training-style",
-    read: (draft) => draft.training_style.week_pattern_preference,
-    readTemplate: (values) => values.week_pattern_preference,
-  },
-  {
-    section: "training-style",
-    read: (draft) => draft.training_style.strength_integration_priority,
-    readTemplate: (values) => values.strength_integration_priority,
-  },
-  {
-    section: "recovery",
-    read: (draft) => draft.recovery_preferences.recovery_priority,
-    readTemplate: (values) => values.recovery_priority,
-  },
-  {
-    section: "recovery",
-    read: (draft) => draft.recovery_preferences.systemic_fatigue_tolerance,
-    readTemplate: (values) => values.systemic_fatigue_tolerance,
-  },
-  {
-    section: "recovery",
-    read: (draft) => draft.recovery_preferences.double_day_tolerance,
-    readTemplate: (values) => values.double_day_tolerance,
-  },
-  {
-    section: "recovery",
-    read: (draft) => draft.recovery_preferences.long_session_fatigue_tolerance,
-    readTemplate: (values) => values.long_session_fatigue_tolerance,
-  },
-  {
-    section: "goal-strategy",
-    read: (draft) => draft.goal_strategy_preferences.target_surplus_preference,
-    readTemplate: (values) => values.target_surplus_preference,
-  },
-  {
-    section: "goal-strategy",
-    read: (draft) => draft.goal_strategy_preferences.taper_style_preference,
-    readTemplate: (values) => values.taper_style_preference,
-  },
-];
-
 function createTrainingPreferencesFormDefaults(
   settings: AthleteTrainingSettings,
 ): AthleteTrainingSettingsFormInput {
@@ -194,74 +64,6 @@ function createTrainingPreferencesFormDefaults(
   };
 }
 
-function getPreferenceDirectionSummary(draft: AthleteTrainingSettingsFormInput) {
-  const progression = draft.training_style.progression_pace;
-  const recovery = draft.recovery_preferences.recovery_priority;
-  const surplus = draft.goal_strategy_preferences.target_surplus_preference;
-
-  if (recovery >= 0.7 && progression <= 0.45) {
-    return "Safer progression";
-  }
-
-  if (progression >= 0.65 || surplus >= 0.4) {
-    return "Performance leaning";
-  }
-
-  return "Balanced setup";
-}
-
-function getSelectedPreferencePreset(draft: AthleteTrainingSettingsFormInput): PreferencePresetKey {
-  const matchedPreset = preferencePresets.find((preset) => {
-    return (
-      draft.training_style.progression_pace === preset.values.progression_pace &&
-      draft.training_style.week_pattern_preference === preset.values.week_pattern_preference &&
-      draft.training_style.strength_integration_priority ===
-        preset.values.strength_integration_priority &&
-      draft.recovery_preferences.recovery_priority === preset.values.recovery_priority &&
-      draft.recovery_preferences.systemic_fatigue_tolerance ===
-        preset.values.systemic_fatigue_tolerance &&
-      draft.recovery_preferences.double_day_tolerance === preset.values.double_day_tolerance &&
-      draft.recovery_preferences.long_session_fatigue_tolerance ===
-        preset.values.long_session_fatigue_tolerance &&
-      draft.goal_strategy_preferences.target_surplus_preference ===
-        preset.values.target_surplus_preference &&
-      draft.goal_strategy_preferences.taper_style_preference ===
-        preset.values.taper_style_preference
-    );
-  });
-
-  return matchedPreset?.key ?? "custom";
-}
-
-function findPreferencePreset(key: PreferenceTemplateKey | null) {
-  return key ? preferencePresets.find((preset) => preset.key === key) : undefined;
-}
-
-function getModifiedTemplateSections({
-  draft,
-  templateKey,
-}: {
-  draft: AthleteTrainingSettingsFormInput;
-  templateKey: PreferenceTemplateKey | null;
-}) {
-  const template = findPreferencePreset(templateKey);
-  if (!template) {
-    return { modifiedFieldCount: 0, modifiedTabs: [] as PreferencesTabKey[] };
-  }
-
-  const modifiedSections = new Set<PreferencesTabKey>();
-  let modifiedFieldCount = 0;
-
-  for (const descriptor of templateFieldDescriptors) {
-    if (descriptor.read(draft) !== descriptor.readTemplate(template.values)) {
-      modifiedFieldCount += 1;
-      modifiedSections.add(descriptor.section);
-    }
-  }
-
-  return { modifiedFieldCount, modifiedTabs: Array.from(modifiedSections) };
-}
-
 type TrainingPreferencesEditorProps = {
   mode?: "global" | "plan-local";
   onClose?: () => void;
@@ -270,7 +72,6 @@ type TrainingPreferencesEditorProps = {
 };
 
 const planLocalVisibleTabs: PreferencesTabKey[] = [
-  "templates",
   "schedule",
   "training-style",
   "recovery",
@@ -285,10 +86,9 @@ export function TrainingPreferencesEditor({
 }: TrainingPreferencesEditorProps = {}) {
   const utils = api.useUtils();
   const settingsQuery = useProfileSettings();
-  const [activeTab, setActiveTab] = useState<PreferencesTabKey>("templates");
+  const [activeTab, setActiveTab] = useState<PreferencesTabKey>("preferences");
   const [isSheetVisible, setIsSheetVisible] = useState(true);
   const [showAdvancedBaselineControls, setShowAdvancedBaselineControls] = useState(false);
-  const [activeTemplateKey, setActiveTemplateKey] = useState<PreferenceTemplateKey | null>(null);
 
   const formDefaults = useMemo(
     () => createTrainingPreferencesFormDefaults(settingsQuery.settings),
@@ -304,13 +104,11 @@ export function TrainingPreferencesEditor({
 
   useEffect(() => {
     form.reset(formDefaults);
-    const defaultPreset = getSelectedPreferencePreset(formDefaults);
-    setActiveTemplateKey(defaultPreset === "custom" ? null : defaultPreset);
   }, [form, formDefaults]);
 
   useEffect(() => {
     if (mode === "plan-local" && !planLocalVisibleTabs.includes(activeTab)) {
-      setActiveTab("templates");
+      setActiveTab("schedule");
     }
   }, [activeTab, mode]);
 
@@ -336,10 +134,7 @@ export function TrainingPreferencesEditor({
         utils.trainingPlans.invalidate(),
         settingsQuery.refetch(),
       ]);
-      const savedDefaults = createTrainingPreferencesFormDefaults(settings);
-      form.reset(savedDefaults);
-      const savedPreset = getSelectedPreferencePreset(savedDefaults);
-      setActiveTemplateKey(savedPreset === "custom" ? activeTemplateKey : savedPreset);
+      form.reset(createTrainingPreferencesFormDefaults(settings));
     },
     onError: (error) =>
       handleSubmitFormError(form, error, { alertTitle: "Failed to save preferences" }),
@@ -384,19 +179,6 @@ export function TrainingPreferencesEditor({
     submittingLabel: "Saving...",
   });
 
-  const preferenceDirectionSummary = useMemo(() => getPreferenceDirectionSummary(draft), [draft]);
-  const selectedPreferencePreset = useMemo(() => getSelectedPreferencePreset(draft), [draft]);
-  const effectiveTemplateKey =
-    selectedPreferencePreset === "custom" ? activeTemplateKey : selectedPreferencePreset;
-  const activeTemplate = findPreferencePreset(effectiveTemplateKey);
-  const { modifiedFieldCount, modifiedTabs } = useMemo(
-    () =>
-      getModifiedTemplateSections({
-        draft,
-        templateKey: effectiveTemplateKey,
-      }),
-    [draft, effectiveTemplateKey],
-  );
   const manualBaselineCtlWarning = draft.baseline_fitness?.is_enabled
     ? getManualBaselineCtlWarning(draft.baseline_fitness.override_ctl)
     : null;
@@ -414,81 +196,6 @@ export function TrainingPreferencesEditor({
     onClose?.();
   }, [onClose, visible]);
 
-  const applyPreferencePreset = useCallback(
-    (presetKey: Exclude<PreferencePresetKey, "custom">) => {
-      const preset = preferencePresets.find((item) => item.key === presetKey);
-      if (!preset) {
-        return;
-      }
-
-      form.setValue("training_style.progression_pace", preset.values.progression_pace, {
-        shouldDirty: true,
-        shouldValidate: true,
-      });
-      form.setValue(
-        "training_style.week_pattern_preference",
-        preset.values.week_pattern_preference,
-        {
-          shouldDirty: true,
-          shouldValidate: true,
-        },
-      );
-      form.setValue(
-        "training_style.strength_integration_priority",
-        preset.values.strength_integration_priority,
-        {
-          shouldDirty: true,
-          shouldValidate: true,
-        },
-      );
-      form.setValue("recovery_preferences.recovery_priority", preset.values.recovery_priority, {
-        shouldDirty: true,
-        shouldValidate: true,
-      });
-      form.setValue(
-        "recovery_preferences.systemic_fatigue_tolerance",
-        preset.values.systemic_fatigue_tolerance,
-        {
-          shouldDirty: true,
-          shouldValidate: true,
-        },
-      );
-      form.setValue(
-        "recovery_preferences.double_day_tolerance",
-        preset.values.double_day_tolerance,
-        {
-          shouldDirty: true,
-          shouldValidate: true,
-        },
-      );
-      form.setValue(
-        "recovery_preferences.long_session_fatigue_tolerance",
-        preset.values.long_session_fatigue_tolerance,
-        {
-          shouldDirty: true,
-          shouldValidate: true,
-        },
-      );
-      form.setValue(
-        "goal_strategy_preferences.target_surplus_preference",
-        preset.values.target_surplus_preference,
-        {
-          shouldDirty: true,
-          shouldValidate: true,
-        },
-      );
-      form.setValue(
-        "goal_strategy_preferences.taper_style_preference",
-        preset.values.taper_style_preference,
-        {
-          shouldDirty: true,
-          shouldValidate: true,
-        },
-      );
-      setActiveTemplateKey(preset.key);
-    },
-    [form],
-  );
   const toggleHardRestDay = useCallback(
     (day: WeekdayKey) => {
       const currentDays = new Set(form.getValues("availability.hard_rest_days") ?? []);
@@ -569,11 +276,7 @@ export function TrainingPreferencesEditor({
         isSaveDisabled={saveButtonState.disabled}
         isSaving={isSaving || saveButtonState.loading}
         onClose={closeSheet}
-        onReset={() => {
-          form.reset(formDefaults);
-          const defaultPreset = getSelectedPreferencePreset(formDefaults);
-          setActiveTemplateKey(defaultPreset === "custom" ? null : defaultPreset);
-        }}
+        onReset={() => form.reset(formDefaults)}
         onSave={submitForm.handleSubmit}
         saveLabel={saveButtonState.label}
         saveLoadingLabel={saveButtonState.loadingLabel}
@@ -581,23 +284,11 @@ export function TrainingPreferencesEditor({
         <TrainingPreferencesContent>
           <TrainingPreferencesTabs
             activeTab={activeTab}
-            modifiedTabs={selectedPreferencePreset === "custom" ? modifiedTabs : []}
             onSelectTab={setActiveTab}
             visibleTabs={visibleTabs}
           />
 
           <View className="gap-3 rounded-xl border border-border bg-card p-3">
-            {activeTab === "templates" ? (
-              <PreferencesOverviewSection
-                activeTemplateLabel={activeTemplate?.label ?? null}
-                modifiedTemplateFieldCount={modifiedFieldCount}
-                onApplyPreset={applyPreferencePreset}
-                preferenceDirectionSummary={preferenceDirectionSummary}
-                presets={preferencePresets}
-                selectedPreferencePreset={selectedPreferencePreset}
-              />
-            ) : null}
-
             {activeTab === "preferences" ? (
               <AdaptationPreferencesSection control={form.control} />
             ) : null}

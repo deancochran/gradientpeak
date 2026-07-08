@@ -2,7 +2,6 @@ import { Text } from "@repo/ui/components/text";
 import { Pressable, ScrollView } from "react-native";
 
 export type PreferencesTabKey =
-  | "templates"
   | "preferences"
   | "availability"
   | "schedule"
@@ -12,7 +11,6 @@ export type PreferencesTabKey =
   | "baseline-fitness";
 
 export const preferenceTabs: Array<{ key: PreferencesTabKey; label: string }> = [
-  { key: "templates", label: "Templates" },
   { key: "preferences", label: "Adaptation" },
   { key: "availability", label: "Availability" },
   { key: "schedule", label: "Schedule" },
@@ -24,14 +22,12 @@ export const preferenceTabs: Array<{ key: PreferencesTabKey; label: string }> = 
 
 type TrainingPreferencesTabsProps = {
   activeTab: PreferencesTabKey;
-  modifiedTabs?: PreferencesTabKey[];
   onSelectTab: (tab: PreferencesTabKey) => void;
   visibleTabs?: PreferencesTabKey[];
 };
 
 export function TrainingPreferencesTabs({
   activeTab,
-  modifiedTabs = [],
   onSelectTab,
   visibleTabs,
 }: TrainingPreferencesTabsProps) {
@@ -49,7 +45,6 @@ export function TrainingPreferencesTabs({
     >
       {renderedTabs.map((tab) => {
         const isActive = tab.key === activeTab;
-        const modified = modifiedTabs.includes(tab.key);
         return (
           <Pressable
             key={tab.key}
@@ -63,7 +58,6 @@ export function TrainingPreferencesTabs({
               className={`text-sm ${isActive ? "font-semibold text-foreground" : "text-muted-foreground"}`}
             >
               {tab.label}
-              {modified ? " •" : ""}
             </Text>
           </Pressable>
         );

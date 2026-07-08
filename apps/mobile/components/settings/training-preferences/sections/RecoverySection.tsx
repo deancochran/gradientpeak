@@ -1,7 +1,6 @@
 import type { AthleteTrainingSettingsFormInput } from "@repo/core/schemas/settings/profile_settings";
-import { FormIntegerStepperField } from "@repo/ui/components/form";
+import { FormIntegerStepperField, FormPercentSliderField } from "@repo/ui/components/form";
 import type { Control } from "react-hook-form";
-import { PreferenceChoiceField } from "./PreferenceChoiceField";
 
 type RecoverySectionProps = {
   control: Control<AthleteTrainingSettingsFormInput>;
@@ -10,29 +9,17 @@ type RecoverySectionProps = {
 export function RecoverySection({ control }: RecoverySectionProps) {
   return (
     <>
-      <PreferenceChoiceField
+      <FormPercentSliderField
         control={control}
-        label="Recovery bias"
-        description="Choose how protective the plan should be when fatigue increases."
+        decimals={0}
+        label="Recovery priority"
+        max={100}
+        min={0}
         name="recovery_preferences.recovery_priority"
-        testID="preferences-recovery-priority"
-        options={[
-          {
-            label: "Push through",
-            description: "Allow moderate fatigue when the plan is progressing.",
-            value: 0.45,
-          },
-          {
-            label: "Balanced",
-            description: "Protect recovery without being overly conservative.",
-            value: 0.6,
-          },
-          {
-            label: "Protect recovery",
-            description: "Prefer easier adjustments when fatigue is elevated.",
-            value: 0.75,
-          },
-        ]}
+        showNumericInput={false}
+        step={1}
+        testId="preferences-recovery-priority"
+        valueMode="fraction"
       />
       <FormIntegerStepperField
         control={control}
@@ -42,53 +29,41 @@ export function RecoverySection({ control }: RecoverySectionProps) {
         name="recovery_preferences.post_goal_recovery_days"
         testId="preferences-recovery-days"
       />
-      <PreferenceChoiceField
+      <FormPercentSliderField
         control={control}
+        decimals={0}
         label="Systemic fatigue tolerance"
-        description="Set how much accumulated fatigue the planner may tolerate."
+        max={100}
+        min={0}
         name="recovery_preferences.systemic_fatigue_tolerance"
-        testID="preferences-systemic-fatigue"
-        options={[
-          { label: "Low", description: "Back off quickly as fatigue rises.", value: 0.35 },
-          { label: "Moderate", description: "Use a typical fatigue allowance.", value: 0.5 },
-          { label: "High", description: "Allow more fatigue before reducing load.", value: 0.68 },
-        ]}
+        showNumericInput={false}
+        step={1}
+        testId="preferences-systemic-fatigue"
+        valueMode="fraction"
       />
-      <PreferenceChoiceField
+      <FormPercentSliderField
         control={control}
+        decimals={0}
         label="Double-day tolerance"
-        description="Control whether two workouts can land on the same day."
+        max={100}
+        min={0}
         name="recovery_preferences.double_day_tolerance"
-        testID="preferences-double-day-tolerance"
-        options={[
-          { label: "Avoid", description: "Prefer one workout per day.", value: 0.15 },
-          { label: "Sometimes", description: "Use double days only when helpful.", value: 0.35 },
-          {
-            label: "Allowed",
-            description: "Permit double days when the plan benefits.",
-            value: 0.65,
-          },
-        ]}
+        showNumericInput={false}
+        step={1}
+        testId="preferences-double-day-tolerance"
+        valueMode="fraction"
       />
-      <PreferenceChoiceField
+      <FormPercentSliderField
         control={control}
+        decimals={0}
         label="Long-session fatigue tolerance"
-        description="Choose how much fatigue long workouts are allowed to create."
+        max={100}
+        min={0}
         name="recovery_preferences.long_session_fatigue_tolerance"
-        testID="preferences-long-session-fatigue"
-        options={[
-          {
-            label: "Conservative",
-            description: "Keep long sessions more controlled.",
-            value: 0.35,
-          },
-          { label: "Balanced", description: "Use normal long-session sizing.", value: 0.5 },
-          {
-            label: "Durability focus",
-            description: "Allow larger long sessions when appropriate.",
-            value: 0.7,
-          },
-        ]}
+        showNumericInput={false}
+        step={1}
+        testId="preferences-long-session-fatigue"
+        valueMode="fraction"
       />
     </>
   );
