@@ -22,7 +22,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   const sentryDsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
   const sentryOrganization = process.env.SENTRY_ORG;
   const sentryProject = process.env.SENTRY_PROJECT;
-  const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN;
+  const hasSentryAuthToken = Boolean(process.env.SENTRY_AUTH_TOKEN);
 
   const expoConfig: ExpoConfig = {
     ...config,
@@ -168,8 +168,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   };
 
   return withSentry(expoConfig, {
-    authToken: sentryAuthToken,
-    disableAutoUpload: !(sentryOrganization && sentryProject && sentryAuthToken),
+    disableAutoUpload: !(sentryOrganization && sentryProject && hasSentryAuthToken),
     organization: sentryOrganization,
     project: sentryProject,
     useNativeInit: Boolean(sentryDsn),
