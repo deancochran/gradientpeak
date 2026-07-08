@@ -20,6 +20,17 @@ function getSentryDsn() {
   return extra.sentryDsn ?? process.env.EXPO_PUBLIC_SENTRY_DSN;
 }
 
+function shouldEnableSentryReplay() {
+  if (__DEV__) {
+    return process.env.EXPO_PUBLIC_ENABLE_SENTRY_REPLAY_IN_DEV === "1";
+  }
+
+  return (
+    readSampleRate(process.env.EXPO_PUBLIC_SENTRY_REPLAYS_ON_ERROR_SAMPLE_RATE, 1) > 0 ||
+    readSampleRate(process.env.EXPO_PUBLIC_SENTRY_REPLAYS_SESSION_SAMPLE_RATE, 0) > 0
+  );
+}
+
 function shouldEnableSentry(): boolean {
   const dsn = getSentryDsn();
   if (!dsn) {
@@ -43,12 +54,25 @@ export function initSentry() {
     enableLogs: true,
     enableNativeFramesTracking: !isRunningInExpoGo(),
     environment,
-    integrations: [
-      Sentry.expoRouterIntegration({
-        enableTimeToInitialDisplay: !isRunningInExpoGo(),
-      }),
-      Sentry.mobileReplayIntegration(),
-    ],
+    integrations(integrations) {
+      integrations.push(
+        Sentry.expoRouterIntegration({
+          enableTimeToInitialDisplay: !isRunningInExpoGo(),
+        }),
+      );
+
+      if (shouldEnableSentryReplay()) {
+        integrations.push(
+          Sentry.mobileReplayIntegration({
+            maskAllImages: true,
+            maskAllText: true,
+            maskAllVectors: true,
+          }),
+        );
+      }
+
+      return integrations;
+    },
     replaysOnErrorSampleRate: readSampleRate(
       process.env.EXPO_PUBLIC_SENTRY_REPLAYS_ON_ERROR_SAMPLE_RATE,
       1,
