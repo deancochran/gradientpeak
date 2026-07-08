@@ -119,5 +119,6 @@ describe("DailyTrainingAdjustmentChart", () => {
     expect(scrollView.props.onScrollEndDrag).toBeUndefined();
     expect(scrollView.props.decelerationRate).toBe("fast");
     expect(scrollView.props.snapToInterval).toBeGreaterThan(0);
+    expect(screen.queryByTestId("daily-training-adjustment-chart-center-highlight")).toBeNull();
   });
 });

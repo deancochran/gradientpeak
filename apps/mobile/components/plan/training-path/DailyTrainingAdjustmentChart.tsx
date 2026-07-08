@@ -1,13 +1,13 @@
 import { Text } from "@repo/ui/components/text";
 import { DashPathEffect, Rect as SkiaRect } from "@shopify/react-native-skia";
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent } from "react-native";
+import { Fragment, memo, useCallback, useEffect, useMemo, useState } from "react";
+import type { LayoutChangeEvent } from "react-native";
 import { View } from "react-native";
 import { ScrollView } from "react-native-gesture-handler";
-import { runOnJS, useAnimatedReaction } from "react-native-reanimated";
-import { CartesianChart, Line, useChartPressState } from "victory-native";
+import { CartesianChart, Line } from "victory-native";
 import { useTheme } from "@/lib/stores/theme-store";
 import { DailyTrainingAdjustmentTray } from "./DailyTrainingAdjustmentTray";
+import { useCenteredChartSelection } from "./useCenteredChartSelection";
 
 export type DailyTrainingAdjustmentPoint = {
   date: string;
@@ -191,26 +191,28 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
   showSelectedPointTray = true,
   testID = "daily-training-adjustment-chart",
 }: DailyTrainingAdjustmentChartProps) {
-  const [internalSelectedDate, setInternalSelectedDate] = useState<string | null>(null);
   const [chartWidth, setChartWidth] = useState(320);
   const [viewportWidth, setViewportWidth] = useState(240);
   const [hasMounted, setHasMounted] = useState(false);
-  const scrollRef = useRef<ScrollView>(null);
-  const lastProgrammaticScrollDateRef = useRef<string | null>(null);
-  const mountedRef = useRef(false);
-  const { state: chartPressState } = useChartPressState(initialChartPressState);
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
   const slotWidth = density === "compact" ? 28 : density === "detail" ? 34 : 30;
   const barWidth = density === "compact" ? 18 : density === "detail" ? 26 : 22;
   const resolvedHeight = height ?? (density === "compact" ? 190 : density === "detail" ? 270 : 230);
   const chartAreaHeight = Math.max(96, resolvedHeight);
-  const isSelectionControlled = selectedDate !== undefined;
-  const resolvedSelectedDate = isSelectionControlled ? selectedDate : internalSelectedDate;
-  const selectedPoint = useMemo(
-    () => points.find((point) => point.date === resolvedSelectedDate) ?? points[0] ?? null,
-    [points, resolvedSelectedDate],
-  );
+  const {
+    chartPressConfig,
+    chartPressState,
+    scrollRef,
+    selectNearestFromScrollEvent,
+    selectedPoint,
+  } = useCenteredChartSelection({
+    initialChartPressState,
+    onSelectedDateChange,
+    points,
+    selectedDate,
+    slotWidth,
+  });
 
   const chartData = useMemo<ChartDatum[]>(
     () =>
@@ -290,97 +292,20 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
   );
 
   useEffect(() => {
-    mountedRef.current = true;
     setHasMounted(true);
-    return () => {
-      mountedRef.current = false;
-    };
   }, []);
 
   const onChartLayout = useCallback((event: LayoutChangeEvent) => {
-    if (!mountedRef.current) return;
     const measuredWidth = Math.floor(event.nativeEvent.layout.width);
     if (measuredWidth >= 220)
       setChartWidth((current) => (current === measuredWidth ? current : measuredWidth));
   }, []);
 
   const onViewportLayout = useCallback((event: LayoutChangeEvent) => {
-    if (!mountedRef.current) return;
     const measuredWidth = Math.floor(event.nativeEvent.layout.width);
     if (measuredWidth >= 120)
       setViewportWidth((current) => (current === measuredWidth ? current : measuredWidth));
   }, []);
-
-  const scrollToDate = useCallback(
-    (date: string, animated = true) => {
-      const index = points.findIndex((point) => point.date === date);
-      if (index < 0) return;
-      lastProgrammaticScrollDateRef.current = date;
-      scrollRef.current?.scrollTo({ animated, x: index * slotWidth, y: 0 });
-    },
-    [points, slotWidth],
-  );
-
-  const selectPoint = useCallback(
-    (date: string) => {
-      scrollToDate(date);
-      if (date === resolvedSelectedDate) return;
-      if (!mountedRef.current) return;
-      if (!isSelectionControlled) {
-        setInternalSelectedDate(date);
-      }
-      onSelectedDateChange?.(date);
-    },
-    [isSelectionControlled, onSelectedDateChange, resolvedSelectedDate, scrollToDate],
-  );
-
-  const selectPointAtIndex = useCallback(
-    (index: number) => {
-      const boundedIndex = Math.max(0, Math.min(points.length - 1, Math.round(index)));
-      const point = points[boundedIndex];
-      if (point) selectPoint(point.date);
-    },
-    [points, selectPoint],
-  );
-
-  useAnimatedReaction(
-    () => {
-      "worklet";
-      if (!chartPressState.isActive.value) return null;
-      const activeIndex = Number(chartPressState.x.value.value);
-      return Number.isFinite(activeIndex) ? Math.round(activeIndex) : null;
-    },
-    (activeIndex, previousIndex) => {
-      "worklet";
-      if (activeIndex != null || previousIndex == null) return;
-      runOnJS(selectPointAtIndex)(previousIndex);
-    },
-    [selectPointAtIndex],
-  );
-
-  useEffect(() => {
-    if (!hasMounted || !resolvedSelectedDate) return;
-    if (lastProgrammaticScrollDateRef.current === resolvedSelectedDate) return;
-    scrollToDate(resolvedSelectedDate, false);
-  }, [hasMounted, resolvedSelectedDate, scrollToDate]);
-
-  const getNearestIndex = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) =>
-      Math.max(
-        0,
-        Math.min(points.length - 1, Math.round(event.nativeEvent.contentOffset.x / slotWidth)),
-      ),
-    [points.length, slotWidth],
-  );
-
-  const selectNearestDay = useCallback(
-    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const index = getNearestIndex(event);
-      const point = points[index];
-      if (point) selectPoint(point.date);
-    },
-    [getNearestIndex, points, selectPoint],
-  );
 
   if (points.length === 0) {
     return (
@@ -409,7 +334,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                   horizontal
                   contentContainerStyle={{ paddingHorizontal: sideInset }}
                   decelerationRate="fast"
-                  onMomentumScrollEnd={selectNearestDay}
+                  onMomentumScrollEnd={selectNearestFromScrollEvent}
                   scrollEventThrottle={16}
                   showsHorizontalScrollIndicator={false}
                   snapToAlignment="start"
@@ -460,11 +385,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                         lineWidth: { bottom: 1, left: 0, right: 0, top: 0 },
                       }}
                       chartPressState={chartPressState}
-                      chartPressConfig={{
-                        pan: {
-                          failOffsetY: [-12, 12],
-                        },
-                      }}
+                      chartPressConfig={chartPressConfig}
                     >
                       {({ points: plottedPoints, chartBounds }) => (
                         <>
