@@ -1,12 +1,13 @@
 import { Text } from "@repo/ui/components/text";
 import { DashPathEffect, Rect as SkiaRect } from "@shopify/react-native-skia";
-import { Fragment, memo, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LayoutChangeEvent } from "react-native";
 import { View } from "react-native";
 import { ScrollView } from "react-native-gesture-handler";
 import { CartesianChart, Line } from "victory-native";
 import { useTheme } from "@/lib/stores/theme-store";
 import { DailyTrainingAdjustmentTray } from "./DailyTrainingAdjustmentTray";
+import { deriveTrainingPathChartWindow } from "./trainingPathChartWindow";
 import { useCenteredChartSelection } from "./useCenteredChartSelection";
 
 export type DailyTrainingAdjustmentPoint = {
@@ -37,6 +38,7 @@ export type DailyTrainingAdjustmentChartProps = {
   showSelectedPointTray?: boolean;
   testID?: string;
   formatDateLabel?: (dateKey: string, index: number) => string;
+  maxVisiblePoints?: number;
 };
 
 type ChartDatum = Record<string, unknown> & {
@@ -188,18 +190,42 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
   emptyState,
   formatDateLabel,
   height,
+  maxVisiblePoints = 56,
   showSelectedPointTray = true,
   testID = "daily-training-adjustment-chart",
 }: DailyTrainingAdjustmentChartProps) {
   const [chartWidth, setChartWidth] = useState(320);
   const [viewportWidth, setViewportWidth] = useState(240);
   const [hasMounted, setHasMounted] = useState(false);
+  const windowAnchorDateRef = useRef<string | null>(null);
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
   const slotWidth = density === "compact" ? 28 : density === "detail" ? 34 : 30;
   const barWidth = density === "compact" ? 18 : density === "detail" ? 26 : 22;
   const resolvedHeight = height ?? (density === "compact" ? 190 : density === "detail" ? 270 : 230);
   const chartAreaHeight = Math.max(96, resolvedHeight);
+  const nextAnchorDate = selectedDate ?? points[0]?.date ?? null;
+  if (
+    !windowAnchorDateRef.current ||
+    !points.some((point) => point.date === windowAnchorDateRef.current)
+  ) {
+    windowAnchorDateRef.current = nextAnchorDate;
+  }
+  const chartWindow = useMemo(
+    () =>
+      deriveTrainingPathChartWindow({
+        anchorDate: windowAnchorDateRef.current,
+        maxPoints: maxVisiblePoints,
+        points,
+        selectedDate,
+      }),
+    [maxVisiblePoints, points, selectedDate],
+  );
+  const visiblePoints = chartWindow.visiblePoints;
+  const visibleSelectedDate = visiblePoints.some((point) => point.date === selectedDate)
+    ? selectedDate
+    : (chartWindow.anchorDate ?? visiblePoints[0]?.date ?? null);
+
   const {
     chartPressConfig,
     chartPressState,
@@ -209,14 +235,14 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
   } = useCenteredChartSelection({
     initialChartPressState,
     onSelectedDateChange,
-    points,
-    selectedDate,
+    points: visiblePoints,
+    selectedDate: selectedDate === undefined ? undefined : visibleSelectedDate,
     slotWidth,
   });
 
   const chartData = useMemo<ChartDatum[]>(
     () =>
-      points.map((point, index) => {
+      visiblePoints.map((point, index) => {
         const planned = valueOrZero(point.plannedLoadTss);
         const tentative = valueOrZero(point.tentativePlannedLoadTss);
         return {
@@ -230,7 +256,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
           recommendedFitness: valueOrNull(point.targetFitnessCtl),
         };
       }),
-    [points],
+    [visiblePoints],
   );
 
   const loadDomain = useMemo(
@@ -264,14 +290,14 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
   );
   const labels = useMemo(
     () =>
-      points.map(
+      visiblePoints.map(
         (point, index) => formatDateLabel?.(point.date, index) ?? formatDayLabel(point.date),
       ),
-    [formatDateLabel, points],
+    [formatDateLabel, visiblePoints],
   );
   const scrollableChartWidth = Math.max(
     chartWidth,
-    chartPadding.left + chartPadding.right + Math.max(1, points.length) * slotWidth,
+    chartPadding.left + chartPadding.right + Math.max(1, visiblePoints.length) * slotWidth,
   );
   const sideInset = Math.max(0, viewportWidth / 2 - slotWidth / 2);
   const colors = useMemo(
@@ -307,7 +333,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
       setViewportWidth((current) => (current === measuredWidth ? current : measuredWidth));
   }, []);
 
-  if (points.length === 0) {
+  if (visiblePoints.length === 0) {
     return (
       <View className="rounded-2xl border border-border bg-card p-4" testID={testID}>
         {emptyState ?? (
@@ -389,7 +415,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                     >
                       {({ points: plottedPoints, chartBounds }) => (
                         <>
-                          {points.map((point, index) => {
+                          {visiblePoints.map((point, index) => {
                             const geometry = getLoadBarGeometry(
                               plottedPoints.targetLoad,
                               index,
@@ -499,7 +525,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                     >
                       {labels.map((label, index) => (
                         <View
-                          key={`x-label-${points[index]?.date ?? index}`}
+                          key={`x-label-${visiblePoints[index]?.date ?? index}`}
                           className="items-center"
                           style={{
                             left: index * slotWidth - slotWidth / 2,
