@@ -24,10 +24,7 @@ import {
   createEventReadRepository,
   createEventWriteRepository,
 } from "../infrastructure/repositories";
-import {
-  getEventPlannedWorkoutProviderStatuses,
-  type PlannedWorkoutQueueResult,
-} from "../lib/provider-sync/planned-workouts";
+import type { PlannedWorkoutQueueResult } from "../lib/provider-sync/planned-workouts";
 import { createContentAccessPermissions } from "../permissions/content-access";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import {
@@ -935,32 +932,6 @@ export const eventsRouter = createTRPCRouter({
       }
 
       return event;
-    }),
-
-  getProviderSyncStatus: protectedProcedure
-    .input(z.object({ eventId: z.string().uuid() }))
-    .query(async ({ ctx, input }) => {
-      const eventReadRepository = getEventReadRepository(ctx);
-      const event = await eventReadRepository.getOwnedEventById({
-        eventId: input.eventId,
-        profileId: ctx.session.user.id,
-      });
-
-      if (!event) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Event not found",
-        });
-      }
-
-      return {
-        eventId: input.eventId,
-        plannedWorkoutSync: await getEventPlannedWorkoutProviderStatuses({
-          db: getRequiredDb(ctx),
-          eventId: input.eventId,
-          profileId: ctx.session.user.id,
-        }),
-      };
     }),
 
   getToday: protectedProcedure.query(async ({ ctx }) => {
