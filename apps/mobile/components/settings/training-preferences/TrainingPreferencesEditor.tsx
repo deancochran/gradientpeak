@@ -16,6 +16,7 @@ import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useWatch } from "react-hook-form";
 import { ActivityIndicator, View } from "react-native";
+import { AdaptationPreferencesSection } from "@/components/settings/training-preferences/sections/AdaptationPreferencesSection";
 import {
   AvailabilitySection,
   type WeekdayKey,
@@ -269,6 +270,7 @@ type TrainingPreferencesEditorProps = {
 };
 
 const planLocalVisibleTabs: PreferencesTabKey[] = [
+  "templates",
   "schedule",
   "training-style",
   "recovery",
@@ -283,7 +285,7 @@ export function TrainingPreferencesEditor({
 }: TrainingPreferencesEditorProps = {}) {
   const utils = api.useUtils();
   const settingsQuery = useProfileSettings();
-  const [activeTab, setActiveTab] = useState<PreferencesTabKey>("preferences");
+  const [activeTab, setActiveTab] = useState<PreferencesTabKey>("templates");
   const [isSheetVisible, setIsSheetVisible] = useState(true);
   const [showAdvancedBaselineControls, setShowAdvancedBaselineControls] = useState(false);
   const [activeTemplateKey, setActiveTemplateKey] = useState<PreferenceTemplateKey | null>(null);
@@ -308,7 +310,7 @@ export function TrainingPreferencesEditor({
 
   useEffect(() => {
     if (mode === "plan-local" && !planLocalVisibleTabs.includes(activeTab)) {
-      setActiveTab("schedule");
+      setActiveTab("templates");
     }
   }, [activeTab, mode]);
 
@@ -585,16 +587,19 @@ export function TrainingPreferencesEditor({
           />
 
           <View className="gap-3 rounded-xl border border-border bg-card p-3">
-            {activeTab === "preferences" ? (
+            {activeTab === "templates" ? (
               <PreferencesOverviewSection
                 activeTemplateLabel={activeTemplate?.label ?? null}
-                control={form.control}
                 modifiedTemplateFieldCount={modifiedFieldCount}
                 onApplyPreset={applyPreferencePreset}
                 preferenceDirectionSummary={preferenceDirectionSummary}
                 presets={preferencePresets}
                 selectedPreferencePreset={selectedPreferencePreset}
               />
+            ) : null}
+
+            {activeTab === "preferences" ? (
+              <AdaptationPreferencesSection control={form.control} />
             ) : null}
 
             {activeTab === "availability" ? (

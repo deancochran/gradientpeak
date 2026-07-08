@@ -2,6 +2,7 @@ import { Text } from "@repo/ui/components/text";
 import { Pressable, ScrollView } from "react-native";
 
 export type PreferencesTabKey =
+  | "templates"
   | "preferences"
   | "availability"
   | "schedule"
@@ -11,7 +12,8 @@ export type PreferencesTabKey =
   | "baseline-fitness";
 
 export const preferenceTabs: Array<{ key: PreferencesTabKey; label: string }> = [
-  { key: "preferences", label: "Preferences" },
+  { key: "templates", label: "Templates" },
+  { key: "preferences", label: "Adaptation" },
   { key: "availability", label: "Availability" },
   { key: "schedule", label: "Schedule" },
   { key: "training-style", label: "Training style" },

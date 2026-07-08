@@ -1,7 +1,4 @@
-import type { AthleteTrainingSettingsFormInput } from "@repo/core/schemas/settings/profile_settings";
-import { FormPercentSliderField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
-import type { Control } from "react-hook-form";
 import { Pressable, View } from "react-native";
 
 export type PreferencePresetKey = "custom" | "conservative" | "balanced" | "performance";
@@ -13,7 +10,6 @@ export type PreferencePreset = {
 
 type PreferencesOverviewSectionProps = {
   activeTemplateLabel: string | null;
-  control: Control<AthleteTrainingSettingsFormInput>;
   modifiedTemplateFieldCount: number;
   onApplyPreset: (presetKey: Exclude<PreferencePresetKey, "custom">) => void;
   preferenceDirectionSummary: string;
@@ -23,7 +19,6 @@ type PreferencesOverviewSectionProps = {
 
 export function PreferencesOverviewSection({
   activeTemplateLabel,
-  control,
   modifiedTemplateFieldCount,
   onApplyPreset,
   preferenceDirectionSummary,
@@ -33,7 +28,7 @@ export function PreferencesOverviewSection({
   return (
     <>
       <View className="gap-1">
-        <Text className="text-sm font-semibold text-foreground">Quick templates</Text>
+        <Text className="text-sm font-semibold text-foreground">Training templates</Text>
         <Text className="text-xs leading-4 text-muted-foreground">
           Templates are starting points. Fine-tune any value afterward; modified groups are marked
           with a dot.
@@ -89,33 +84,6 @@ export function PreferencesOverviewSection({
               ? `Custom setup · started from ${activeTemplateLabel}. ${modifiedTemplateFieldCount} setting${modifiedTemplateFieldCount === 1 ? "" : "s"} changed.`
               : "Custom setup. Choose a template anytime to reset these planning behavior values."}
         </Text>
-      </View>
-      <View className="gap-3 rounded-2xl border border-border bg-muted/10 p-3">
-        <Text className="text-sm font-semibold text-foreground">Adaptation behavior</Text>
-        <FormPercentSliderField
-          control={control}
-          decimals={0}
-          label="Recency adaptation"
-          max={100}
-          min={0}
-          name="adaptation_preferences.recency_adaptation_preference"
-          showNumericInput={false}
-          step={1}
-          testId="preferences-recency-adaptation"
-          valueMode="fraction"
-        />
-        <FormPercentSliderField
-          control={control}
-          decimals={0}
-          label="Plan churn tolerance"
-          max={100}
-          min={0}
-          name="adaptation_preferences.plan_churn_tolerance"
-          showNumericInput={false}
-          step={1}
-          testId="preferences-plan-churn"
-          valueMode="fraction"
-        />
       </View>
     </>
   );
