@@ -38,6 +38,13 @@ function createContext(overrides: Partial<PlanningContext> = {}): PlanningContex
       targetWeeklyHours: null,
       restDaysPerWeek: null,
       maxSingleSessionDurationMinutes: null,
+      progressionPace: null,
+      recoveryPriority: null,
+      weekPatternPreference: null,
+      strengthIntegrationPriority: null,
+      doubleDayTolerance: null,
+      longSessionFatigueTolerance: null,
+      taperStylePreference: null,
     },
     sessions: [
       {

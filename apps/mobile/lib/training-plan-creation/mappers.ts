@@ -150,7 +150,17 @@ export function createTrainingPlanBuilderStateFromExistingPlan({
           weeklySessionCount: planningSnapshot.plan_preferences.weekly_session_count,
           targetWeeklyHours: planningSnapshot.plan_preferences.target_weekly_hours,
           restDaysPerWeek: planningSnapshot.plan_preferences.rest_days_per_week,
-          maxSingleSessionDurationMinutes: null,
+          maxSingleSessionDurationMinutes:
+            planningSnapshot.plan_preferences.max_single_session_duration_minutes ?? null,
+          progressionPace: planningSnapshot.plan_preferences.progression_pace ?? null,
+          recoveryPriority: planningSnapshot.plan_preferences.recovery_priority ?? null,
+          weekPatternPreference: planningSnapshot.plan_preferences.week_pattern_preference ?? null,
+          strengthIntegrationPriority:
+            planningSnapshot.plan_preferences.strength_integration_priority ?? null,
+          doubleDayTolerance: planningSnapshot.plan_preferences.double_day_tolerance ?? null,
+          longSessionFatigueTolerance:
+            planningSnapshot.plan_preferences.long_session_fatigue_tolerance ?? null,
+          taperStylePreference: planningSnapshot.plan_preferences.taper_style_preference ?? null,
         }
       : defaultState.planPreferences,
     structure: {

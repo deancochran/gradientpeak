@@ -10,7 +10,7 @@ const sportOverrideOptions = [
   { key: "bike", label: "Bike" },
   { key: "swim", label: "Swim" },
   { key: "strength", label: "Strength" },
-  { key: "other", label: "Other" },
+  { key: "other", label: "Conditioning / HIIT / Other" },
 ] as const;
 
 export type SportOverrideKey = (typeof sportOverrideOptions)[number]["key"];
@@ -106,7 +106,8 @@ export function ScheduleSection({
             Sport-specific dose overrides
           </Text>
           <Text className="text-xs leading-4 text-muted-foreground">
-            Tune weekly session and duration limits for specific training categories.
+            Tune weekly session and duration limits for run, bike, swim, strength, conditioning,
+            HIIT, or other training categories.
           </Text>
         </View>
         <View className="gap-3" testID="preferences-sport-overrides">

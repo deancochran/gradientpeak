@@ -160,6 +160,13 @@ function CompactNumberControl({
   const nextValue = value ?? min;
   const canDecrease = value !== null && value > min;
   const canIncrease = max === undefined || nextValue < max;
+  const displaysAsPercent = !unitLabel && max !== undefined && max <= 1;
+  const displayValue =
+    value === null
+      ? "Not set"
+      : displaysAsPercent
+        ? `${Math.round(value * 100)}%`
+        : `${value}${unitLabel ? ` ${unitLabel}` : ""}`;
   return (
     <View className="flex-row items-center justify-between gap-3 rounded-2xl bg-muted/30 px-3 py-2">
       <Pressable
@@ -172,9 +179,7 @@ function CompactNumberControl({
         <Text className="text-lg font-medium text-foreground">−</Text>
       </Pressable>
       <View className="min-w-0 flex-1 items-center">
-        <Text className="text-base font-semibold text-foreground">
-          {value === null ? "Not set" : `${value}${unitLabel ? ` ${unitLabel}` : ""}`}
-        </Text>
+        <Text className="text-base font-semibold text-foreground">{displayValue}</Text>
       </View>
       <Pressable
         accessibilityRole="button"

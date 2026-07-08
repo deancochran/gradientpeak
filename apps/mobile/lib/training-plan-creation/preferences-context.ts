@@ -10,7 +10,14 @@ export type TrainingPlanPreferenceFieldKey =
   | "weeklySessionCount"
   | "targetWeeklyHours"
   | "restDaysPerWeek"
-  | "maxSingleSessionDurationMinutes";
+  | "maxSingleSessionDurationMinutes"
+  | "progressionPace"
+  | "recoveryPriority"
+  | "weekPatternPreference"
+  | "strengthIntegrationPriority"
+  | "doubleDayTolerance"
+  | "longSessionFatigueTolerance"
+  | "taperStylePreference";
 
 export type TrainingPlanPreferenceRequirements = Partial<
   Record<TrainingPlanPreferenceFieldKey, { reason: string }>
@@ -72,6 +79,41 @@ export const TRAINING_PLAN_PREFERENCE_FIELD_REGISTRY: Record<
     defaultUnit: PLANNING_PREFERENCE_FIELD_METADATA.maxSingleSessionDurationMinutes.unit,
     requiredDefault:
       PLANNING_PREFERENCE_FIELD_METADATA.maxSingleSessionDurationMinutes.requiredDefault,
+  },
+  progressionPace: {
+    label: PLANNING_PREFERENCE_FIELD_METADATA.progressionPace.label,
+    defaultUnit: PLANNING_PREFERENCE_FIELD_METADATA.progressionPace.unit,
+    requiredDefault: PLANNING_PREFERENCE_FIELD_METADATA.progressionPace.requiredDefault,
+  },
+  recoveryPriority: {
+    label: PLANNING_PREFERENCE_FIELD_METADATA.recoveryPriority.label,
+    defaultUnit: PLANNING_PREFERENCE_FIELD_METADATA.recoveryPriority.unit,
+    requiredDefault: PLANNING_PREFERENCE_FIELD_METADATA.recoveryPriority.requiredDefault,
+  },
+  weekPatternPreference: {
+    label: PLANNING_PREFERENCE_FIELD_METADATA.weekPatternPreference.label,
+    defaultUnit: PLANNING_PREFERENCE_FIELD_METADATA.weekPatternPreference.unit,
+    requiredDefault: PLANNING_PREFERENCE_FIELD_METADATA.weekPatternPreference.requiredDefault,
+  },
+  strengthIntegrationPriority: {
+    label: PLANNING_PREFERENCE_FIELD_METADATA.strengthIntegrationPriority.label,
+    defaultUnit: PLANNING_PREFERENCE_FIELD_METADATA.strengthIntegrationPriority.unit,
+    requiredDefault: PLANNING_PREFERENCE_FIELD_METADATA.strengthIntegrationPriority.requiredDefault,
+  },
+  doubleDayTolerance: {
+    label: PLANNING_PREFERENCE_FIELD_METADATA.doubleDayTolerance.label,
+    defaultUnit: PLANNING_PREFERENCE_FIELD_METADATA.doubleDayTolerance.unit,
+    requiredDefault: PLANNING_PREFERENCE_FIELD_METADATA.doubleDayTolerance.requiredDefault,
+  },
+  longSessionFatigueTolerance: {
+    label: PLANNING_PREFERENCE_FIELD_METADATA.longSessionFatigueTolerance.label,
+    defaultUnit: PLANNING_PREFERENCE_FIELD_METADATA.longSessionFatigueTolerance.unit,
+    requiredDefault: PLANNING_PREFERENCE_FIELD_METADATA.longSessionFatigueTolerance.requiredDefault,
+  },
+  taperStylePreference: {
+    label: PLANNING_PREFERENCE_FIELD_METADATA.taperStylePreference.label,
+    defaultUnit: PLANNING_PREFERENCE_FIELD_METADATA.taperStylePreference.unit,
+    requiredDefault: PLANNING_PREFERENCE_FIELD_METADATA.taperStylePreference.requiredDefault,
   },
 };
 
@@ -202,6 +244,13 @@ export function applyTrainingPlanConstraintPreset(
       targetWeeklyHours: null,
       restDaysPerWeek: null,
       maxSingleSessionDurationMinutes: null,
+      progressionPace: null,
+      recoveryPriority: null,
+      weekPatternPreference: null,
+      strengthIntegrationPriority: null,
+      doubleDayTolerance: null,
+      longSessionFatigueTolerance: null,
+      taperStylePreference: null,
     };
   }
 
@@ -212,6 +261,13 @@ export function applyTrainingPlanConstraintPreset(
       targetWeeklyHours: null,
       restDaysPerWeek: null,
       maxSingleSessionDurationMinutes: null,
+      progressionPace: null,
+      recoveryPriority: null,
+      weekPatternPreference: null,
+      strengthIntegrationPriority: null,
+      doubleDayTolerance: null,
+      longSessionFatigueTolerance: null,
+      taperStylePreference: null,
     };
   }
 
@@ -222,6 +278,13 @@ export function applyTrainingPlanConstraintPreset(
       targetWeeklyHours: null,
       restDaysPerWeek: null,
       maxSingleSessionDurationMinutes: null,
+      progressionPace: null,
+      recoveryPriority: null,
+      weekPatternPreference: null,
+      strengthIntegrationPriority: null,
+      doubleDayTolerance: null,
+      longSessionFatigueTolerance: null,
+      taperStylePreference: null,
     };
   }
 
@@ -231,5 +294,12 @@ export function applyTrainingPlanConstraintPreset(
     targetWeeklyHours: null,
     restDaysPerWeek: null,
     maxSingleSessionDurationMinutes: null,
+    progressionPace: null,
+    recoveryPriority: null,
+    weekPatternPreference: null,
+    strengthIntegrationPriority: null,
+    doubleDayTolerance: null,
+    longSessionFatigueTolerance: null,
+    taperStylePreference: null,
   };
 }

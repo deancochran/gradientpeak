@@ -151,8 +151,9 @@ export const TRAINING_PREFERENCE_CAPABILITY_MATRIX: TrainingPreferenceCapability
     label: "Progression pace",
     standalone: { status: "covered", testId: "preferences-progression-pace" },
     builderOverride: {
-      status: "not-applicable",
-      rationale: "Not currently modeled as a plan-local creation constraint.",
+      status: "supported",
+      fieldKey: "progressionPace",
+      rationale: "Plan-local training approach maps to the mocked athlete preference profile.",
     },
   },
   {
@@ -160,8 +161,9 @@ export const TRAINING_PREFERENCE_CAPABILITY_MATRIX: TrainingPreferenceCapability
     label: "Week pattern preference",
     standalone: { status: "covered", testId: "preferences-week-pattern" },
     builderOverride: {
-      status: "not-applicable",
-      rationale: "Not currently modeled as a plan-local creation constraint.",
+      status: "supported",
+      fieldKey: "weekPatternPreference",
+      rationale: "Plan-local weekly rhythm maps to the mocked athlete preference profile.",
     },
   },
   {
@@ -178,8 +180,10 @@ export const TRAINING_PREFERENCE_CAPABILITY_MATRIX: TrainingPreferenceCapability
     label: "Strength integration priority",
     standalone: { status: "covered", testId: "preferences-strength-integration" },
     builderOverride: {
-      status: "not-applicable",
-      rationale: "Not currently modeled as a plan-local creation constraint.",
+      status: "supported",
+      fieldKey: "strengthIntegrationPriority",
+      rationale:
+        "Plan-local strength, conditioning, HIIT, and support-work priority maps to the mocked athlete preference profile.",
     },
   },
   {
@@ -187,8 +191,9 @@ export const TRAINING_PREFERENCE_CAPABILITY_MATRIX: TrainingPreferenceCapability
     label: "Recovery priority",
     standalone: { status: "covered", testId: "preferences-recovery-priority" },
     builderOverride: {
-      status: "not-applicable",
-      rationale: "Not currently modeled as a plan-local creation constraint.",
+      status: "supported",
+      fieldKey: "recoveryPriority",
+      rationale: "Plan-local recovery bias maps to the mocked athlete preference profile.",
     },
   },
   {
@@ -197,7 +202,7 @@ export const TRAINING_PREFERENCE_CAPABILITY_MATRIX: TrainingPreferenceCapability
     standalone: { status: "covered", testId: "preferences-recovery-days" },
     builderOverride: {
       status: "not-applicable",
-      rationale: "Not currently modeled as a plan-local creation constraint.",
+      rationale: "Global athlete recovery setting, not currently plan-local.",
     },
   },
   {
@@ -214,8 +219,9 @@ export const TRAINING_PREFERENCE_CAPABILITY_MATRIX: TrainingPreferenceCapability
     label: "Double-day tolerance",
     standalone: { status: "covered", testId: "preferences-double-day-tolerance" },
     builderOverride: {
-      status: "not-applicable",
-      rationale: "Not currently modeled as a plan-local creation constraint.",
+      status: "supported",
+      fieldKey: "doubleDayTolerance",
+      rationale: "Plan-local double-day tolerance maps to the mocked athlete preference profile.",
     },
   },
   {
@@ -223,8 +229,9 @@ export const TRAINING_PREFERENCE_CAPABILITY_MATRIX: TrainingPreferenceCapability
     label: "Long-session fatigue tolerance",
     standalone: { status: "covered", testId: "preferences-long-session-fatigue" },
     builderOverride: {
-      status: "not-applicable",
-      rationale: "Not currently modeled as a plan-local creation constraint.",
+      status: "supported",
+      fieldKey: "longSessionFatigueTolerance",
+      rationale: "Plan-local long-session tolerance maps to the mocked athlete preference profile.",
     },
   },
   {
@@ -268,8 +275,9 @@ export const TRAINING_PREFERENCE_CAPABILITY_MATRIX: TrainingPreferenceCapability
     label: "Taper style preference",
     standalone: { status: "covered", testId: "preferences-taper-style" },
     builderOverride: {
-      status: "not-applicable",
-      rationale: "Not currently modeled as a plan-local creation constraint.",
+      status: "supported",
+      fieldKey: "taperStylePreference",
+      rationale: "Plan-local taper style maps to the mocked athlete preference profile.",
     },
   },
   {

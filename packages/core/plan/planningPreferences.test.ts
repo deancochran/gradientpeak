@@ -20,6 +20,13 @@ describe("planning preference validation", () => {
       targetWeeklyHours: null,
       restDaysPerWeek: 2,
       maxSingleSessionDurationMinutes: null,
+      progressionPace: null,
+      recoveryPriority: null,
+      weekPatternPreference: null,
+      strengthIntegrationPriority: null,
+      doubleDayTolerance: null,
+      longSessionFatigueTolerance: null,
+      taperStylePreference: null,
     });
 
     expect(issues).toContainEqual(
@@ -39,6 +46,13 @@ describe("planning preference validation", () => {
         targetWeeklyHours: null,
         restDaysPerWeek: 2,
         maxSingleSessionDurationMinutes: 180,
+        progressionPace: null,
+        recoveryPriority: null,
+        weekPatternPreference: null,
+        strengthIntegrationPriority: null,
+        doubleDayTolerance: null,
+        longSessionFatigueTolerance: null,
+        taperStylePreference: null,
       },
       preferredWeekdays: [],
     });

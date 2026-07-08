@@ -347,6 +347,20 @@ export const trainingPlanBuilderPlanningSnapshotSchema = z
         weekly_session_count: z.number().int().min(1).max(14).nullable(),
         target_weekly_hours: z.number().min(0).max(168).nullable(),
         rest_days_per_week: z.number().int().min(0).max(7).nullable(),
+        max_single_session_duration_minutes: z
+          .number()
+          .int()
+          .min(20)
+          .max(600)
+          .nullable()
+          .optional(),
+        progression_pace: z.number().min(0).max(1).nullable().optional(),
+        recovery_priority: z.number().min(0).max(1).nullable().optional(),
+        week_pattern_preference: z.number().min(0).max(1).nullable().optional(),
+        strength_integration_priority: z.number().min(0).max(1).nullable().optional(),
+        double_day_tolerance: z.number().min(0).max(1).nullable().optional(),
+        long_session_fatigue_tolerance: z.number().min(0).max(1).nullable().optional(),
+        taper_style_preference: z.number().min(0).max(1).nullable().optional(),
       })
       .strict(),
     scheduling: z

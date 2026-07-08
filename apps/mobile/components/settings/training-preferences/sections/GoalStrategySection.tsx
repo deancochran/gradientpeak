@@ -1,6 +1,6 @@
 import type { AthleteTrainingSettingsFormInput } from "@repo/core/schemas/settings/profile_settings";
-import { FormPercentSliderField } from "@repo/ui/components/form";
 import type { Control } from "react-hook-form";
+import { PreferenceChoiceField } from "./PreferenceChoiceField";
 
 type GoalStrategySectionProps = {
   control: Control<AthleteTrainingSettingsFormInput>;
@@ -9,41 +9,57 @@ type GoalStrategySectionProps = {
 export function GoalStrategySection({ control }: GoalStrategySectionProps) {
   return (
     <>
-      <FormPercentSliderField
+      <PreferenceChoiceField
         control={control}
-        decimals={0}
-        label="Target surplus preference"
-        max={100}
-        min={0}
+        label="Goal cushion"
+        description="Choose whether plans should slightly exceed goal requirements."
         name="goal_strategy_preferences.target_surplus_preference"
-        showNumericInput={false}
-        step={1}
-        testId="preferences-target-surplus"
-        valueMode="fraction"
+        testID="preferences-target-surplus"
+        options={[
+          { label: "Exact", description: "Aim close to stated goal requirements.", value: 0.0 },
+          { label: "Small cushion", description: "Build in a little extra capacity.", value: 0.25 },
+          {
+            label: "Bigger cushion",
+            description: "Prefer extra readiness when recovery allows.",
+            value: 0.45,
+          },
+        ]}
       />
-      <FormPercentSliderField
+      <PreferenceChoiceField
         control={control}
-        decimals={0}
-        label="Priority tradeoff"
-        max={100}
-        min={0}
+        label="Goal priority tradeoff"
+        description="Set how much the planner may favor higher-priority goals."
         name="goal_strategy_preferences.priority_tradeoff_preference"
-        showNumericInput={false}
-        step={1}
-        testId="preferences-priority-tradeoff"
-        valueMode="fraction"
+        testID="preferences-priority-tradeoff"
+        options={[
+          {
+            label: "Keep balanced",
+            description: "Avoid sacrificing lower-priority goals too much.",
+            value: 0.35,
+          },
+          { label: "Balanced", description: "Use priority as one input among others.", value: 0.5 },
+          {
+            label: "Favor priority",
+            description: "Let top-priority goals win more tradeoffs.",
+            value: 0.7,
+          },
+        ]}
       />
-      <FormPercentSliderField
+      <PreferenceChoiceField
         control={control}
-        decimals={0}
         label="Taper style"
-        max={100}
-        min={0}
+        description="Choose how protective the plan should be before goal events."
         name="goal_strategy_preferences.taper_style_preference"
-        showNumericInput={false}
-        step={1}
-        testId="preferences-taper-style"
-        valueMode="fraction"
+        testID="preferences-taper-style"
+        options={[
+          { label: "Subtle", description: "Keep training steadier before goals.", value: 0.35 },
+          { label: "Balanced", description: "Use a moderate taper.", value: 0.5 },
+          {
+            label: "Protective",
+            description: "Reduce load more before important goals.",
+            value: 0.75,
+          },
+        ]}
       />
     </>
   );

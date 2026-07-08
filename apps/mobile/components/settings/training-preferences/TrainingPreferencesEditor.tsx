@@ -62,15 +62,18 @@ const preferencePresets: Array<{
   description: string;
   values: Pick<
     AthleteTrainingSettingsFormInput["training_style"],
-    "progression_pace" | "week_pattern_preference"
+    "progression_pace" | "week_pattern_preference" | "strength_integration_priority"
   > &
     Pick<
       AthleteTrainingSettingsFormInput["recovery_preferences"],
-      "recovery_priority" | "systemic_fatigue_tolerance"
+      | "recovery_priority"
+      | "systemic_fatigue_tolerance"
+      | "double_day_tolerance"
+      | "long_session_fatigue_tolerance"
     > &
     Pick<
       AthleteTrainingSettingsFormInput["goal_strategy_preferences"],
-      "target_surplus_preference"
+      "target_surplus_preference" | "taper_style_preference"
     >;
 }> = [
   {
@@ -80,9 +83,13 @@ const preferencePresets: Array<{
     values: {
       progression_pace: 0.35,
       week_pattern_preference: 0.35,
+      strength_integration_priority: 0.4,
       recovery_priority: 0.75,
       systemic_fatigue_tolerance: 0.35,
+      double_day_tolerance: 0.15,
+      long_session_fatigue_tolerance: 0.35,
       target_surplus_preference: 0.15,
+      taper_style_preference: 0.75,
     },
   },
   {
@@ -92,9 +99,13 @@ const preferencePresets: Array<{
     values: {
       progression_pace: 0.5,
       week_pattern_preference: 0.5,
+      strength_integration_priority: 0.5,
       recovery_priority: 0.6,
       systemic_fatigue_tolerance: 0.5,
+      double_day_tolerance: 0.35,
+      long_session_fatigue_tolerance: 0.5,
       target_surplus_preference: 0.25,
+      taper_style_preference: 0.5,
     },
   },
   {
@@ -104,9 +115,13 @@ const preferencePresets: Array<{
     values: {
       progression_pace: 0.72,
       week_pattern_preference: 0.65,
+      strength_integration_priority: 0.65,
       recovery_priority: 0.45,
       systemic_fatigue_tolerance: 0.68,
+      double_day_tolerance: 0.65,
+      long_session_fatigue_tolerance: 0.7,
       target_surplus_preference: 0.45,
+      taper_style_preference: 0.35,
     },
   },
 ];
@@ -145,11 +160,18 @@ function getSelectedPreferencePreset(draft: AthleteTrainingSettingsFormInput): P
     return (
       draft.training_style.progression_pace === preset.values.progression_pace &&
       draft.training_style.week_pattern_preference === preset.values.week_pattern_preference &&
+      draft.training_style.strength_integration_priority ===
+        preset.values.strength_integration_priority &&
       draft.recovery_preferences.recovery_priority === preset.values.recovery_priority &&
       draft.recovery_preferences.systemic_fatigue_tolerance ===
         preset.values.systemic_fatigue_tolerance &&
+      draft.recovery_preferences.double_day_tolerance === preset.values.double_day_tolerance &&
+      draft.recovery_preferences.long_session_fatigue_tolerance ===
+        preset.values.long_session_fatigue_tolerance &&
       draft.goal_strategy_preferences.target_surplus_preference ===
-        preset.values.target_surplus_preference
+        preset.values.target_surplus_preference &&
+      draft.goal_strategy_preferences.taper_style_preference ===
+        preset.values.taper_style_preference
     );
   });
 
@@ -304,6 +326,14 @@ export function TrainingPreferencesEditor({
           shouldValidate: true,
         },
       );
+      form.setValue(
+        "training_style.strength_integration_priority",
+        preset.values.strength_integration_priority,
+        {
+          shouldDirty: true,
+          shouldValidate: true,
+        },
+      );
       form.setValue("recovery_preferences.recovery_priority", preset.values.recovery_priority, {
         shouldDirty: true,
         shouldValidate: true,
@@ -317,8 +347,32 @@ export function TrainingPreferencesEditor({
         },
       );
       form.setValue(
+        "recovery_preferences.double_day_tolerance",
+        preset.values.double_day_tolerance,
+        {
+          shouldDirty: true,
+          shouldValidate: true,
+        },
+      );
+      form.setValue(
+        "recovery_preferences.long_session_fatigue_tolerance",
+        preset.values.long_session_fatigue_tolerance,
+        {
+          shouldDirty: true,
+          shouldValidate: true,
+        },
+      );
+      form.setValue(
         "goal_strategy_preferences.target_surplus_preference",
         preset.values.target_surplus_preference,
+        {
+          shouldDirty: true,
+          shouldValidate: true,
+        },
+      );
+      form.setValue(
+        "goal_strategy_preferences.taper_style_preference",
+        preset.values.taper_style_preference,
         {
           shouldDirty: true,
           shouldValidate: true,

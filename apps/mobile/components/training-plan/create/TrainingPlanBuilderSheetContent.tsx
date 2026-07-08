@@ -117,8 +117,10 @@ export function TrainingPlanBuilderSheetDraftsProvider({
     schema: trainingPlanBuilderPlanPreferencesSchema,
     defaultValues: planPreferences,
     mode: "onChange",
-  });
-  const draftPlanningPreferences = planningPreferencesForm.watch();
+  }) as UseFormReturn<TrainingPlanBuilderPlanPreferences>;
+  const draftPlanningPreferences = trainingPlanBuilderPlanPreferencesSchema.parse(
+    planningPreferencesForm.watch(),
+  );
   const canResetPlanningPreferences = planningPreferencesForm.formState.isDirty;
   const planningPreferenceIssues = useMemo(
     () => validatePlanningPreferencesConsistency(draftPlanningPreferences),
