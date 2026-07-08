@@ -1,6 +1,10 @@
 import { expoClient } from "@better-auth/expo/client";
 import { createAuthClient } from "better-auth/react";
 
+type AuthClientPlugin = NonNullable<
+  NonNullable<Parameters<typeof createAuthClient>[0]>["plugins"]
+>[number];
+
 export interface CreateGradientPeakExpoAuthClientOptions {
   baseURL: string;
   scheme: string;
@@ -20,7 +24,7 @@ export function createGradientPeakExpoAuthClient(options: CreateGradientPeakExpo
         scheme: options.scheme,
         storagePrefix: options.storagePrefix,
         storage: options.storage as any,
-      }),
+      }) as unknown as AuthClientPlugin,
     ],
   });
 }
