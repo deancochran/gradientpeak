@@ -239,12 +239,18 @@ const eventCreateInputSchema = z.unknown().transform((value, ctx): EventCreateMu
   const parsedLegacyPlannedCreate = plannedActivityCreateInputSchema.safeParse(value);
   if (parsedLegacyPlannedCreate.success) return parsedLegacyPlannedCreate.data;
 
+  const eventCreateMessage = parsedEventCreate.error.issues[0]?.message;
+  const legacyPlannedCreateMessage = parsedLegacyPlannedCreate.error.issues[0]?.message;
+  const validationDetails = [eventCreateMessage, legacyPlannedCreateMessage]
+    .filter((message): message is string => Boolean(message))
+    .filter((message, index, messages) => messages.indexOf(message) === index)
+    .join("; ");
+
   ctx.addIssue({
     code: "custom",
-    message:
-      parsedEventCreate.error.issues[0]?.message ??
-      parsedLegacyPlannedCreate.error.issues[0]?.message ??
-      "Invalid event create payload",
+    message: validationDetails
+      ? `Invalid event create payload: ${validationDetails}`
+      : "Invalid event create payload",
   });
 
   return z.NEVER;
