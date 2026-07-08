@@ -59,7 +59,6 @@ function ActivityDetailPage() {
   const streamsQuery = api.activityFiles.getStreams.useQuery(
     {
       activityId,
-      activityFilePath: activity?.activity_file_path ?? "placeholder.fit",
     },
     {
       enabled: Boolean(activity?.activity_file_path),

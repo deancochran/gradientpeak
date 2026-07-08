@@ -432,7 +432,6 @@ function ActivityDetailScreen() {
   } = api.activityFiles.getStreams.useQuery(
     canLoadDetailedStreams
       ? {
-          activityFilePath: activityFilePath,
           activityId: activityId,
         }
       : skipToken,

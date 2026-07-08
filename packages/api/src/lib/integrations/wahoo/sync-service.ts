@@ -5,12 +5,16 @@
 
 import type { ActivityPlanStructureV2 } from "@repo/core";
 import type { PublicActivityCategory } from "@repo/db";
-import { toActivityType, toWahooWorkoutTypeId } from "./activity-type-utils";
-import { createWahooClient, refreshWahooAccessToken, supportsRoutes } from "./client";
+import {
+  isWahooSupported,
+  supportsRoutes,
+  toActivityType,
+  toWahooWorkoutTypeId,
+} from "./activity-type-utils";
+import { createWahooClient, refreshWahooAccessToken } from "./client";
 import {
   calculateWorkoutDuration,
   convertToWahooPlan,
-  isActivityTypeSupportedByWahoo,
   validateWahooCompatibility,
 } from "./plan-converter";
 import {
@@ -289,7 +293,7 @@ export class WahooSyncService {
       // 4. Convert activity category to activity type
       const activityType = toActivityType(activityPlan.activity_category);
 
-      if (!isActivityTypeSupportedByWahoo(activityType)) {
+      if (!isWahooSupported(activityType)) {
         return {
           success: false,
           action: "no_change",

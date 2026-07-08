@@ -767,10 +767,13 @@ jest.mock("@/lib/api", () => ({
       },
     },
     activities: {
-      list: {
-        useQuery: () => ({
-          data: [],
+      listPaginated: {
+        useInfiniteQuery: () => ({
+          data: { pages: [{ items: [] }] },
           dataUpdatedAt: 1,
+          fetchNextPage: jest.fn(async () => undefined),
+          hasNextPage: false,
+          isFetchingNextPage: false,
           isFetching: false,
           refetch: jest.fn(async () => undefined),
         }),
