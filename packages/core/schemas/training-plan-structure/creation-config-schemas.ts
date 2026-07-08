@@ -311,6 +311,20 @@ export const creationConstraintsBaseSchema = z.object({
   min_sessions_per_week: z.number().int().min(0).max(21).optional(),
   max_sessions_per_week: z.number().int().min(0).max(21).optional(),
   max_single_session_duration_minutes: z.number().int().min(20).max(600).optional(),
+  max_weekly_duration_minutes: z.number().int().min(30).max(10080).optional(),
+  sport_overrides: z
+    .record(
+      z.string().min(1).max(40),
+      z
+        .object({
+          min_sessions_per_week: z.number().int().min(0).max(21).optional(),
+          max_sessions_per_week: z.number().int().min(0).max(21).optional(),
+          max_single_session_duration_minutes: z.number().int().min(20).max(600).optional(),
+          max_weekly_duration_minutes: z.number().int().min(30).max(10080).optional(),
+        })
+        .strict(),
+    )
+    .optional(),
   goal_difficulty_preference: creationGoalDifficultyPreferenceEnum.default("balanced"),
 });
 
@@ -346,6 +360,44 @@ export const creationConstraintsSchema = creationConstraintsBaseSchema.superRefi
       path: ["min_sessions_per_week"],
       message: "Minimum sessions exceed available training days after hard rest constraints",
     });
+  }
+
+  if (
+    data.max_single_session_duration_minutes !== undefined &&
+    data.max_weekly_duration_minutes !== undefined &&
+    data.max_single_session_duration_minutes > data.max_weekly_duration_minutes
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["max_single_session_duration_minutes"],
+      message: "Maximum single-session duration cannot exceed maximum weekly duration",
+    });
+  }
+
+  for (const [sport, override] of Object.entries(data.sport_overrides ?? {})) {
+    if (
+      override.min_sessions_per_week !== undefined &&
+      override.max_sessions_per_week !== undefined &&
+      override.min_sessions_per_week > override.max_sessions_per_week
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["sport_overrides", sport, "min_sessions_per_week"],
+        message: "Sport minimum sessions cannot exceed sport maximum sessions",
+      });
+    }
+
+    if (
+      override.max_single_session_duration_minutes !== undefined &&
+      override.max_weekly_duration_minutes !== undefined &&
+      override.max_single_session_duration_minutes > override.max_weekly_duration_minutes
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["sport_overrides", sport, "max_single_session_duration_minutes"],
+        message: "Sport single-session duration cannot exceed sport weekly duration",
+      });
+    }
   }
 });
 

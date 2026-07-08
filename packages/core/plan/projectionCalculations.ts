@@ -3276,7 +3276,11 @@ function buildDoseRecommendation(input: {
   goalAssessmentsCount: number;
   surplusApplied: boolean;
 }): ProjectionDoseRecommendation {
-  const averageLoad = resolveRecommendedWeeklyLoad(input.microcycles);
+  const rawAverageLoad = resolveRecommendedWeeklyLoad(input.microcycles);
+  const averageLoad = resolvePreferenceAdjustedWeeklyLoad({
+    averageLoad: rawAverageLoad,
+    ...optionalProperty("preferenceProfile", input.preferenceProfile),
+  });
   const recommendedMinutes = resolveRecommendedWeeklyDurationMinutes({
     averageLoad,
     ...optionalProperty("preferenceProfile", input.preferenceProfile),
@@ -3285,16 +3289,30 @@ function buildDoseRecommendation(input: {
     recommendedMinutes,
     ...optionalProperty("preferenceProfile", input.preferenceProfile),
   });
-  const keySessionCount = resolveKeySessionCount(recommendedSessions);
+  const keySessionCount = resolveKeySessionCount({
+    recommendedSessions,
+    ...optionalProperty("preferenceProfile", input.preferenceProfile),
+  });
   const longSessionCeilingMinutes = resolveLongSessionCeilingMinutes({
     recommendedMinutes,
     ...optionalProperty("preferenceProfile", input.preferenceProfile),
   });
   const recoveryPressure = round3(
     clamp01(
-      input.recoveryWeeks / Math.max(1, input.microcycles.length) + input.clampPressure * 0.45,
+      input.recoveryWeeks / Math.max(1, input.microcycles.length) +
+        input.clampPressure * 0.45 +
+        (input.preferenceProfile
+          ? (1 - input.preferenceProfile.recovery_preferences.systemic_fatigue_tolerance) * 0.12
+          : 0),
     ),
   );
+  const strengthPriority =
+    input.preferenceProfile?.training_style.strength_integration_priority ?? 0.5;
+  const hardShare =
+    0.04 +
+    clamp01(input.preferenceProfile?.training_style.key_session_density_preference ?? 0.5) * 0.08;
+  const moderateShare = 0.13 + clamp01(strengthPriority) * 0.08;
+  const easyShare = Math.max(0.6, 1 - moderateShare - hardShare);
 
   return {
     recommended_weekly_load: round1(averageLoad),
@@ -3303,9 +3321,9 @@ function buildDoseRecommendation(input: {
     key_session_count: keySessionCount,
     long_session_ceiling_minutes: longSessionCeilingMinutes,
     intensity_distribution_target: {
-      easy: 0.76,
-      moderate: 0.17,
-      hard: 0.07,
+      easy: round3(easyShare),
+      moderate: round3(moderateShare),
+      hard: round3(hardShare),
     },
     ramp_pressure: round3(clamp01(input.clampPressure + input.goalAssessmentsCount * 0.04)),
     recovery_pressure: recoveryPressure,
@@ -3314,6 +3332,12 @@ function buildDoseRecommendation(input: {
         ? "planning_to_slightly_exceed_raw_target_when_supported"
         : "planning_to_reliably_meet_raw_target",
       recoveryPressure > 0.45 ? "recovery_pressure_elevated" : "recovery_pressure_managed",
+      input.preferenceProfile?.dose_limits.max_weekly_duration_minutes !== undefined
+        ? "weekly_duration_cap_applied_from_preferences"
+        : "weekly_duration_uncapped_by_preferences",
+      (input.preferenceProfile?.recovery_preferences.double_day_tolerance ?? 0.25) < 0.33
+        ? "double_days_avoided_by_preference"
+        : "double_days_allowed_when_needed",
     ],
   };
 }
@@ -3448,12 +3472,11 @@ function resolveRecommendedWeeklyDurationMinutes(input: {
   const enduranceIntensityFactor = 0.72;
   const rawMinutes = (input.averageLoad / (enduranceIntensityFactor ** 2 * 100)) * 60;
 
-  return round1(
-    Math.max(
-      90,
-      maxWeeklyDuration === undefined ? rawMinutes : Math.min(maxWeeklyDuration, rawMinutes),
-    ),
-  );
+  if (maxWeeklyDuration !== undefined) {
+    return round1(Math.min(maxWeeklyDuration, Math.max(30, rawMinutes)));
+  }
+
+  return round1(Math.max(90, rawMinutes));
 }
 
 function resolveRecommendedSessionCount(input: {
@@ -3469,20 +3492,52 @@ function resolveRecommendedSessionCount(input: {
   );
 }
 
-function resolveKeySessionCount(recommendedSessions: number): number {
-  return Math.max(1, Math.min(3, Math.round(recommendedSessions * 0.4)));
+function resolveKeySessionCount(input: {
+  recommendedSessions: number;
+  preferenceProfile?: AthletePreferenceProfile;
+}): number {
+  const density = input.preferenceProfile?.training_style.key_session_density_preference ?? 0.5;
+  const keySessionShare = 0.24 + clamp01(density) * 0.36;
+  return Math.max(1, Math.min(5, Math.round(input.recommendedSessions * keySessionShare)));
 }
 
 function resolveLongSessionCeilingMinutes(input: {
   recommendedMinutes: number;
   preferenceProfile?: AthletePreferenceProfile;
 }): number {
+  const tolerance =
+    input.preferenceProfile?.recovery_preferences.long_session_fatigue_tolerance ?? 0.5;
+  const share = 0.22 + clamp01(tolerance) * 0.2;
   return Math.round(
     Math.min(
       input.preferenceProfile?.dose_limits.max_single_session_duration_minutes ?? 180,
-      Math.max(75, input.recommendedMinutes * 0.32),
+      Math.max(45, input.recommendedMinutes * share),
     ),
   );
+}
+
+function resolvePreferenceAdjustedWeeklyLoad(input: {
+  averageLoad: number;
+  preferenceProfile?: AthletePreferenceProfile;
+}): number {
+  const preferences = input.preferenceProfile;
+  if (!preferences) {
+    return input.averageLoad;
+  }
+
+  const progressionPace = clamp01(preferences.training_style.progression_pace);
+  const recoveryPriority = clamp01(preferences.recovery_preferences.recovery_priority);
+  const systemicFatigueTolerance = clamp01(
+    preferences.recovery_preferences.systemic_fatigue_tolerance,
+  );
+  const targetSurplus = clamp01(preferences.goal_strategy_preferences.target_surplus_preference);
+  const adjustment =
+    lerp(0.92, 1.08, progressionPace) *
+    lerp(1.06, 0.94, recoveryPriority) *
+    lerp(0.94, 1.06, systemicFatigueTolerance) *
+    lerp(1, 1.06, targetSurplus);
+
+  return input.averageLoad * adjustment;
 }
 
 function resolveRiskLevel(input: {
@@ -4575,6 +4630,10 @@ function round1(value: number): number {
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
+}
+
+function lerp(min: number, max: number, ratio: number): number {
+  return min + (max - min) * clamp01(ratio);
 }
 
 const TARGET_GOAL_READINESS_SCORE = 100;

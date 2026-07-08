@@ -84,6 +84,8 @@ export function resolveConstraintConflicts(
     max_sessions_per_week: input.locks?.max_sessions_per_week?.locked ?? false,
     max_single_session_duration_minutes:
       input.locks?.max_single_session_duration_minutes?.locked ?? false,
+    max_weekly_duration_minutes: false,
+    sport_overrides: false,
     goal_difficulty_preference: input.locks?.goal_difficulty_preference?.locked ?? false,
   };
 
@@ -117,12 +119,26 @@ export function resolveConstraintConflicts(
     defaultConstraints.goal_difficulty_preference,
     locks.goal_difficulty_preference,
   );
+  const maxWeeklyDuration = resolveValue(
+    input.user_constraints?.max_weekly_duration_minutes,
+    input.confirmed_suggestions?.max_weekly_duration_minutes,
+    defaultConstraints.max_weekly_duration_minutes,
+    locks.max_weekly_duration_minutes,
+  );
+  const sportOverrides = resolveValue(
+    input.user_constraints?.sport_overrides,
+    input.confirmed_suggestions?.sport_overrides,
+    defaultConstraints.sport_overrides,
+    locks.sport_overrides,
+  );
 
   const resolvedConstraints = creationConstraintsSchema.parse({
     hard_rest_days: hardRestDays.value,
     min_sessions_per_week: minSessions.value,
     max_sessions_per_week: maxSessions.value,
     max_single_session_duration_minutes: maxSessionDuration.value,
+    max_weekly_duration_minutes: maxWeeklyDuration.value,
+    sport_overrides: sportOverrides.value,
     goal_difficulty_preference: goalDifficulty.value,
   });
 
@@ -193,6 +209,8 @@ export function resolveConstraintConflicts(
       min_sessions_per_week: minSessions.source,
       max_sessions_per_week: maxSessions.source,
       max_single_session_duration_minutes: maxSessionDuration.source,
+      max_weekly_duration_minutes: maxWeeklyDuration.source,
+      sport_overrides: sportOverrides.source,
       goal_difficulty_preference: goalDifficulty.source,
     },
   };

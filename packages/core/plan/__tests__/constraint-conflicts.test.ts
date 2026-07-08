@@ -44,6 +44,8 @@ describe("resolveConstraintConflicts", () => {
       min_sessions_per_week: "user",
       max_sessions_per_week: "suggested",
       max_single_session_duration_minutes: "default",
+      max_weekly_duration_minutes: "default",
+      sport_overrides: "default",
       goal_difficulty_preference: "default",
     });
     expect(result.is_blocking).toBe(false);
