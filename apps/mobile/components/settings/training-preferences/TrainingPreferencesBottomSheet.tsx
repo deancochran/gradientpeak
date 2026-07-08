@@ -7,6 +7,7 @@ import { AppBottomSheet } from "@/components/shared/AppBottomSheet";
 
 type TrainingPreferencesBottomSheetProps = {
   children: ReactNode;
+  contentKey?: string;
   description?: string;
   isResetDisabled?: boolean;
   isSaveDisabled?: boolean;
@@ -23,6 +24,7 @@ type TrainingPreferencesBottomSheetProps = {
 
 export function TrainingPreferencesBottomSheet({
   children,
+  contentKey,
   description = "Tune how GradientPeak plans your training. Reset restores the values from when this sheet opened.",
   isResetDisabled = false,
   isSaveDisabled = false,
@@ -42,7 +44,10 @@ export function TrainingPreferencesBottomSheet({
       title={title}
       description={description}
       onClose={onClose}
-      contentKey={visible ? "training-preferences-open" : "training-preferences-closed"}
+      contentKey={
+        contentKey ?? (visible ? "training-preferences-open" : "training-preferences-closed")
+      }
+      contentPaddingBottom={180}
       snapPoints={["88%", "96%"]}
       footer={
         <View className="flex-row gap-3">

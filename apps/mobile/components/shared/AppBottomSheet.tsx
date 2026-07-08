@@ -28,6 +28,7 @@ type AppBottomSheetProps = {
   children: ReactNode;
   contentKey?: string;
   contentMode?: "scroll" | "custom";
+  contentPaddingBottom?: number;
   description?: string;
   footer?: ReactNode;
   headerAction?: ReactNode;
@@ -75,6 +76,7 @@ export function AppBottomSheetContent({
           paddingHorizontal,
           paddingTop,
           paddingBottom,
+          flexGrow: 1,
         },
         contentContainerStyle,
       ]}
@@ -91,6 +93,7 @@ export function AppBottomSheet({
   children,
   contentKey,
   contentMode = "scroll",
+  contentPaddingBottom,
   description,
   footer,
   headerAction,
@@ -208,7 +211,9 @@ export function AppBottomSheet({
           <AppBottomSheetContent
             contentKey={contentKey}
             enableFooterMarginAdjustment={Boolean(footer)}
-            paddingBottom={footer ? APP_BOTTOM_SHEET_ACTION_FOOTER_BOTTOM_INSET : 120}
+            paddingBottom={
+              contentPaddingBottom ?? (footer ? APP_BOTTOM_SHEET_ACTION_FOOTER_BOTTOM_INSET : 120)
+            }
           >
             {children}
           </AppBottomSheetContent>

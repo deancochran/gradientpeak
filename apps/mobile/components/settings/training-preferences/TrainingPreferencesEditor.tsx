@@ -189,6 +189,11 @@ export function TrainingPreferencesEditor({
       ? "Tune plan-local overrides for this training plan. Reset restores the values from when this sheet opened."
       : "Tune how GradientPeak plans your training. Reset restores the values from when this sheet opened.";
   const visibleTabs = mode === "plan-local" ? planLocalVisibleTabs : undefined;
+  const sheetContentKey = [
+    resolvedSheetVisible ? "open" : "closed",
+    activeTab,
+    showAdvancedBaselineControls ? "advanced-baseline" : "basic-baseline",
+  ].join(":");
   const closeSheet = useCallback(() => {
     if (visible === undefined) {
       setIsSheetVisible(false);
@@ -275,6 +280,7 @@ export function TrainingPreferencesEditor({
         isResetDisabled={!hasUnsavedChanges}
         isSaveDisabled={saveButtonState.disabled}
         isSaving={isSaving || saveButtonState.loading}
+        contentKey={sheetContentKey}
         onClose={closeSheet}
         onReset={() => form.reset(formDefaults)}
         onSave={submitForm.handleSubmit}
