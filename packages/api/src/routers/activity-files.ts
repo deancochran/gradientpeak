@@ -35,7 +35,7 @@ import {
   profileMetrics,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, isNotNull, lt, lte } from "drizzle-orm";
+import { and, desc, eq, lte } from "drizzle-orm";
 import { z } from "zod";
 import {
   markFailed,
@@ -77,46 +77,6 @@ const activityStoragePathSchema = z
   .refine((value) => !value.startsWith("/") && !value.includes(".."), {
     message: "File path must be a relative storage path",
   });
-
-const base64FileDataSchema = z
-  .string()
-  .min(1, "File data is required")
-  .refine((value) => isBase64FileData(value), {
-    message: "File data must be valid base64",
-  });
-
-function isBase64FileData(value: string): boolean {
-  if (value.length % 4 !== 0) return false;
-
-  const paddingStart = value.endsWith("==")
-    ? value.length - 2
-    : value.endsWith("=")
-      ? value.length - 1
-      : value.length;
-
-  for (let index = 0; index < paddingStart; index++) {
-    const code = value.charCodeAt(index);
-    const isUppercase = code >= 65 && code <= 90;
-    const isLowercase = code >= 97 && code <= 122;
-    const isDigit = code >= 48 && code <= 57;
-    const isPlusOrSlash = code === 43 || code === 47;
-
-    if (!(isUppercase || isLowercase || isDigit || isPlusOrSlash)) {
-      return false;
-    }
-  }
-
-  for (let index = paddingStart; index < value.length; index++) {
-    if (value[index] !== "=") return false;
-  }
-
-  return true;
-}
-
-function getBase64DecodedByteLength(value: string): number {
-  const paddingLength = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0;
-  return (value.length / 4) * 3 - paddingLength;
-}
 
 const blobLikeSchema = z
   .object({
@@ -189,12 +149,6 @@ const signedDownloadUrlDataSchema = z
   })
   .passthrough();
 
-const analyzeActivityFileResponseSchema = z
-  .object({
-    queued: z.boolean(),
-  })
-  .passthrough();
-
 async function ensureActivityFilesBucketExists() {
   const { error } = await storageService.storage.createBucket(ACTIVITY_FILE_BUCKET, {
     public: false,
@@ -208,49 +162,6 @@ async function ensureActivityFilesBucketExists() {
     });
   }
 }
-
-const uploadActivityFileInput = z
-  .object({
-    fileName: activityFileNameSchema,
-    fileSize: z
-      .number()
-      .int("File size must be an integer")
-      .positive("File size must be greater than zero")
-      .max(
-        ACTIVITY_FILE_SIZE_LIMIT,
-        `File size must be less than ${ACTIVITY_FILE_SIZE_LIMIT / (1024 * 1024)}MB`,
-      ),
-    fileType: activityFileNameSchema,
-    fileData: base64FileDataSchema,
-  })
-  .strict()
-  .superRefine(({ fileData, fileSize }, ctx) => {
-    const decodedByteLength = getBase64DecodedByteLength(fileData);
-
-    if (decodedByteLength > ACTIVITY_FILE_SIZE_LIMIT) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["fileData"],
-        message: `Decoded file data must be less than ${ACTIVITY_FILE_SIZE_LIMIT / (1024 * 1024)}MB`,
-      });
-    }
-
-    if (decodedByteLength !== fileSize) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["fileData"],
-        message: "Decoded file data size must match declared file size",
-      });
-    }
-  });
-
-const analyzeActivityFileInput = z
-  .object({
-    activityId: z.string().uuid(),
-    filePath: activityStoragePathSchema,
-    bucketName: z.literal(ACTIVITY_FILE_BUCKET).default(ACTIVITY_FILE_BUCKET),
-  })
-  .strict();
 
 const manualHistoricalImportProvenanceSchema = z.object({
   import_source: z.literal("manual_historical"),
@@ -1748,212 +1659,6 @@ export const activityFilesRouter = createTRPCRouter({
     }),
 
   /**
-   * Upload an activity file to Supabase Storage
-   */
-  uploadActivityFile: protectedProcedure
-    .input(uploadActivityFileInput)
-    .mutation(async ({ ctx, input }) => {
-      const { fileName, fileSize, fileData, fileType } = input;
-      const userId = ctx.session?.user?.id;
-      const supabase = storageService;
-
-      if (!userId) {
-        throwUnauthorizedActivityFileAccess();
-      }
-
-      try {
-        // Validate file type again (double security)
-        if (fileType.toLowerCase() !== fileName.toLowerCase()) {
-          throw new Error("File type must match file name");
-        }
-
-        inferActivityFileType(fileName);
-
-        // Convert base64 to buffer
-        const binaryString = atob(fileData);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-
-        // Create unique file path
-        const filePath = `${userId}/${Date.now()}-${fileName}`;
-
-        await ensureActivityFilesBucketExists();
-
-        // Upload to storage
-        const { error } = await supabase.storage
-          .from(ACTIVITY_FILE_BUCKET)
-          .upload(filePath, bytes, {
-            contentType: "application/octet-stream",
-            upsert: false,
-          });
-
-        if (error) {
-          throw new Error(`Failed to upload activity file: ${error.message}`);
-        }
-
-        return {
-          success: true,
-          filePath,
-          size: fileSize,
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
-
-        logger.error("Activity file upload error", getErrorDetails(error));
-        throw new Error(`Activity file upload failed: ${getErrorMessage(error)}`);
-      }
-    }),
-
-  /**
-   * Trigger activity file analysis via edge function
-   */
-  analyzeActivityFile: protectedProcedure
-    .input(analyzeActivityFileInput)
-    .mutation(async ({ ctx, input }) => {
-      const { activityId, filePath, bucketName } = input;
-      const userId = ctx.session?.user?.id;
-      const supabase = storageService;
-
-      if (!userId) {
-        throwUnauthorizedActivityFileAccess();
-      }
-
-      try {
-        const { data, error } = await supabase.functions.invoke("analyze-activity-file", {
-          body: {
-            activityId,
-            filePath,
-            bucketName,
-          },
-        });
-
-        if (error) {
-          throw new Error(`Edge function error: ${error.message}`);
-        }
-
-        return analyzeActivityFileResponseSchema.parse(data);
-      } catch (error) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
-
-        logger.error("Activity file analysis error", getErrorDetails(error));
-        throw new Error(`Activity file analysis failed: ${getErrorMessage(error)}`);
-      }
-    }),
-
-  /**
-   * Get activity file processing status
-   */
-  getActivityFileStatus: protectedProcedure
-    .input(z.object({ activityId: z.string().uuid() }))
-    .query(async ({ ctx, input }) => {
-      const { activityId } = input;
-      const userId = ctx.session?.user?.id;
-      const db = getRequiredDb(ctx);
-
-      if (!userId) {
-        throwUnauthorizedActivityFileAccess();
-      }
-
-      // Note: This will work once the migration is applied
-      // For now, return a placeholder response
-      try {
-        const activity = await db.query.activities.findFirst({
-          columns: {
-            id: true,
-            name: true,
-            type: true,
-            started_at: true,
-          },
-          where: and(eq(activities.id, activityId), eq(activities.profile_id, userId)),
-        });
-
-        if (!activity) {
-          throw new Error("Failed to get activity");
-        }
-
-        return {
-          processingStatus: "pending", // Placeholder
-          filePath: null, // Placeholder
-          fileSize: null, // Placeholder
-          version: null, // Placeholder
-          updatedAt: null, // Placeholder
-          activity: serializeActivityDates(activity), // Basic activity info
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
-
-        logger.error("Activity file status error", getErrorDetails(error));
-        throw new Error(`Failed to get activity file status: ${getErrorMessage(error)}`);
-      }
-    }),
-
-  /**
-   * List activity files for a user
-   */
-  listActivityFiles: protectedProcedure
-    .input(
-      z.object({
-        pageSize: z.number().min(1).max(100).default(20),
-        cursor: z.string().datetime({ offset: true }).optional(),
-      }),
-    )
-    .query(async ({ ctx, input }) => {
-      const { pageSize, cursor } = input;
-      const userId = ctx.session?.user?.id;
-      const db = getRequiredDb(ctx);
-
-      if (!userId) {
-        throwUnauthorizedActivityFileAccess();
-      }
-
-      try {
-        const conditions = [
-          eq(activities.profile_id, userId),
-          isNotNull(activityImports.activity_file_path),
-        ];
-
-        if (cursor) {
-          conditions.push(lt(activities.created_at, new Date(cursor)));
-        }
-
-        const data = await db
-          .select({
-            id: activities.id,
-            name: activities.name,
-            type: activities.type,
-            started_at: activities.started_at,
-            created_at: activities.created_at,
-          })
-          .from(activities)
-          .innerJoin(activityImports, eq(activities.id, activityImports.activity_id))
-          .where(and(...conditions))
-          .orderBy(desc(activities.created_at))
-          .limit(pageSize);
-
-        return {
-          files: data.map((file) => serializeActivityDates(file)),
-          nextCursor:
-            data.length === pageSize ? data[data.length - 1]?.created_at.toISOString() : null,
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
-
-        logger.error("List activity files error", getErrorDetails(error));
-        throw new Error(`Failed to list activity files: ${getErrorMessage(error)}`);
-      }
-    }),
-
-  /**
    * Get activity file download URL (presigned)
    */
   getActivityFileUrl: protectedProcedure
@@ -1998,51 +1703,6 @@ export const activityFilesRouter = createTRPCRouter({
 
         logger.error("Get activity file URL error", getErrorDetails(error));
         throw new Error(`Failed to generate download URL: ${getErrorMessage(error)}`);
-      }
-    }),
-
-  /**
-   * Delete an activity file from storage
-   */
-  deleteActivityFile: protectedProcedure
-    .input(
-      z.object({
-        filePath: activityStoragePathSchema,
-      }),
-    )
-    .mutation(async ({ ctx, input }) => {
-      const { filePath } = input;
-      const userId = ctx.session?.user?.id;
-      const supabase = storageService;
-
-      if (!userId) {
-        throwUnauthorizedActivityFileAccess();
-      }
-
-      try {
-        // Verify user owns this file
-        if (!isOwnedActivityFilePath(userId, filePath)) {
-          throw new TRPCError({
-            code: "FORBIDDEN",
-            message: "Access denied: You can only delete your own files",
-          });
-        }
-
-        // Delete from storage
-        const { error } = await supabase.storage.from(ACTIVITY_FILE_BUCKET).remove([filePath]);
-
-        if (error) {
-          throw new Error(`Failed to delete activity file: ${error.message}`);
-        }
-
-        return { success: true };
-      } catch (error) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
-
-        logger.error("Activity file deletion error", getErrorDetails(error));
-        throw new Error(`Activity file deletion failed: ${getErrorMessage(error)}`);
       }
     }),
 
