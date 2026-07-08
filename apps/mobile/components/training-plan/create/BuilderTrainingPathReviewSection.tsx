@@ -27,7 +27,7 @@ type BuilderTrainingPathReviewSectionProps = {
 };
 
 export function BuilderTrainingPathReviewSection({
-  chartHeight = 220,
+  chartHeight = 280,
   chartReview,
   onOpenSettings,
   renderBelowChart,

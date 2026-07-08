@@ -400,102 +400,104 @@ export function TrainingPreferencesEditor({
     );
   }
 
+  const sheet = (
+    <Form {...form}>
+      <TrainingPreferencesBottomSheet
+        visible={resolvedSheetVisible}
+        title={sheetTitle}
+        description={sheetDescription}
+        isResetDisabled={!hasUnsavedChanges}
+        isSaveDisabled={saveButtonState.disabled}
+        isSaving={isSaving || saveButtonState.loading}
+        onClose={closeSheet}
+        onReset={() => form.reset(formDefaults)}
+        onSave={submitForm.handleSubmit}
+        saveLabel={saveButtonState.label}
+        saveLoadingLabel={saveButtonState.loadingLabel}
+      >
+        <TrainingPreferencesContent>
+          <TrainingPreferencesProjectionPreview
+            draft={deferredDraft}
+            planId={activePlanQuery.data?.id}
+          />
+
+          <TrainingPreferencesTabs
+            activeTab={activeTab}
+            onSelectTab={setActiveTab}
+            visibleTabs={visibleTabs}
+          />
+
+          <View className="gap-3 rounded-xl border border-border bg-card p-3">
+            {activeTab === "preferences" ? (
+              <PreferencesOverviewSection
+                control={form.control}
+                onApplyPreset={applyPreferencePreset}
+                preferenceDirectionSummary={preferenceDirectionSummary}
+                presets={preferencePresets}
+                selectedPreferencePreset={selectedPreferencePreset}
+              />
+            ) : null}
+
+            {activeTab === "availability" ? (
+              <AvailabilitySection
+                availability={draft.availability}
+                control={form.control}
+                onToggleAvailabilityDay={toggleAvailabilityDay}
+                onToggleHardRestDay={toggleHardRestDay}
+              />
+            ) : null}
+
+            {activeTab === "schedule" ? (
+              <ScheduleSection
+                control={form.control}
+                doseLimits={draft.dose_limits}
+                onToggleSportDoseOverride={toggleSportDoseOverride}
+                scheduleValidation={scheduleValidation}
+              />
+            ) : null}
+
+            {activeTab === "training-style" ? (
+              <TrainingStyleSection control={form.control} />
+            ) : null}
+
+            {activeTab === "recovery" ? <RecoverySection control={form.control} /> : null}
+
+            {activeTab === "goal-strategy" ? <GoalStrategySection control={form.control} /> : null}
+
+            {activeTab === "baseline-fitness" ? (
+              <BaselineFitnessSection
+                baselineFitness={draft.baseline_fitness}
+                control={form.control}
+                manualBaselineCtlWarning={manualBaselineCtlWarning}
+                onToggleAdvancedControls={() => setShowAdvancedBaselineControls((value) => !value)}
+                showAdvancedControls={showAdvancedBaselineControls}
+              />
+            ) : null}
+          </View>
+        </TrainingPreferencesContent>
+      </TrainingPreferencesBottomSheet>
+    </Form>
+  );
+
+  if (!showLauncher) {
+    return sheet;
+  }
+
   return (
     <View className="flex-1 bg-background" testID="training-preferences-screen">
-      {showLauncher ? (
-        <View className="flex-1 items-center justify-center gap-3 px-5">
-          <Text className="text-center text-xl font-semibold text-foreground">
-            Training preferences
-          </Text>
-          <Text className="text-center text-sm leading-5 text-muted-foreground">
-            Preferences now open in a bottom sheet so editing works consistently from the Plan tab,
-            training plan creation, and settings surfaces.
-          </Text>
-          <Button onPress={() => setIsSheetVisible(true)} testID="training-preferences-open-sheet">
-            <Text className="text-primary-foreground font-semibold">Edit preferences</Text>
-          </Button>
-        </View>
-      ) : null}
-      <Form {...form}>
-        <TrainingPreferencesBottomSheet
-          visible={resolvedSheetVisible}
-          title={sheetTitle}
-          description={sheetDescription}
-          isResetDisabled={!hasUnsavedChanges}
-          isSaveDisabled={saveButtonState.disabled}
-          isSaving={isSaving || saveButtonState.loading}
-          onClose={closeSheet}
-          onReset={() => form.reset(formDefaults)}
-          onSave={submitForm.handleSubmit}
-          saveLabel={saveButtonState.label}
-          saveLoadingLabel={saveButtonState.loadingLabel}
-        >
-          <TrainingPreferencesContent>
-            <TrainingPreferencesProjectionPreview
-              draft={deferredDraft}
-              planId={activePlanQuery.data?.id}
-            />
-
-            <TrainingPreferencesTabs
-              activeTab={activeTab}
-              onSelectTab={setActiveTab}
-              visibleTabs={visibleTabs}
-            />
-
-            <View className="gap-3 rounded-xl border border-border bg-card p-3">
-              {activeTab === "preferences" ? (
-                <PreferencesOverviewSection
-                  control={form.control}
-                  onApplyPreset={applyPreferencePreset}
-                  preferenceDirectionSummary={preferenceDirectionSummary}
-                  presets={preferencePresets}
-                  selectedPreferencePreset={selectedPreferencePreset}
-                />
-              ) : null}
-
-              {activeTab === "availability" ? (
-                <AvailabilitySection
-                  availability={draft.availability}
-                  control={form.control}
-                  onToggleAvailabilityDay={toggleAvailabilityDay}
-                  onToggleHardRestDay={toggleHardRestDay}
-                />
-              ) : null}
-
-              {activeTab === "schedule" ? (
-                <ScheduleSection
-                  control={form.control}
-                  doseLimits={draft.dose_limits}
-                  onToggleSportDoseOverride={toggleSportDoseOverride}
-                  scheduleValidation={scheduleValidation}
-                />
-              ) : null}
-
-              {activeTab === "training-style" ? (
-                <TrainingStyleSection control={form.control} />
-              ) : null}
-
-              {activeTab === "recovery" ? <RecoverySection control={form.control} /> : null}
-
-              {activeTab === "goal-strategy" ? (
-                <GoalStrategySection control={form.control} />
-              ) : null}
-
-              {activeTab === "baseline-fitness" ? (
-                <BaselineFitnessSection
-                  baselineFitness={draft.baseline_fitness}
-                  control={form.control}
-                  manualBaselineCtlWarning={manualBaselineCtlWarning}
-                  onToggleAdvancedControls={() =>
-                    setShowAdvancedBaselineControls((value) => !value)
-                  }
-                  showAdvancedControls={showAdvancedBaselineControls}
-                />
-              ) : null}
-            </View>
-          </TrainingPreferencesContent>
-        </TrainingPreferencesBottomSheet>
-      </Form>
+      <View className="flex-1 items-center justify-center gap-3 px-5">
+        <Text className="text-center text-xl font-semibold text-foreground">
+          Training preferences
+        </Text>
+        <Text className="text-center text-sm leading-5 text-muted-foreground">
+          Preferences now open in a bottom sheet so editing works consistently from the Plan tab,
+          training plan creation, and settings surfaces.
+        </Text>
+        <Button onPress={() => setIsSheetVisible(true)} testID="training-preferences-open-sheet">
+          <Text className="text-primary-foreground font-semibold">Edit preferences</Text>
+        </Button>
+      </View>
+      {sheet}
     </View>
   );
 }

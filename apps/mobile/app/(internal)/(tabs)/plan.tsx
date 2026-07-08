@@ -1,19 +1,19 @@
 import { useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { RefreshControl, ScrollView, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { TrainingPathSection } from "@/components/plan/training-path/TrainingPathSection";
 import { usePlanTrainingPathData } from "@/components/plan/training-path/usePlanTrainingPathData";
-import { TrainingPreferencesEditor } from "@/components/settings/training-preferences/TrainingPreferencesEditor";
 import { AppHeader } from "@/components/shared";
 import { ROUTES } from "@/lib/constants/routes";
 import { usePerformanceScreenReady } from "@/lib/performance";
+import { useTrainingPreferencesSheetStore } from "@/lib/stores/trainingPreferencesSheetStore";
 
 function PlanDashboardScreen() {
   const router = useRouter();
-  const [trainingPreferencesVisible, setTrainingPreferencesVisible] = useState(false);
   usePerformanceScreenReady("route-plan");
   const trainingPath = usePlanTrainingPathData();
+  const openTrainingPreferences = useTrainingPreferencesSheetStore((state) => state.open);
 
   const navigateToActivity = useCallback(
     (activityId: string) =>
@@ -47,13 +47,12 @@ function PlanDashboardScreen() {
       router.navigate({ pathname: "/event-detail", params: { id: eventId } } as never),
     [router],
   );
-  const navigateToTrainingPreferences = useCallback(() => setTrainingPreferencesVisible(true), []);
-
   return (
     <View className="flex-1 bg-background" testID="plan-screen">
       <AppHeader title="Plan" />
       <ScrollView
         className="flex-1"
+        contentContainerStyle={{ flexGrow: 1 }}
         refreshControl={
           <RefreshControl
             refreshing={trainingPath.refreshing}
@@ -65,7 +64,6 @@ function PlanDashboardScreen() {
           <TrainingPathSection
             dailyPoints={trainingPath.dailyTrainingPathPoints}
             chartLoading={trainingPath.chartLoading}
-            chartHeight={220}
             model={trainingPath.trainingPath}
             selectedDate={trainingPath.selectedDate}
             selectedWeekGoals={trainingPath.selectedWeekGoals}
@@ -81,18 +79,13 @@ function PlanDashboardScreen() {
             onOpenGroup={navigateToGroup}
             onOpenGroupEvent={navigateToGroupEvent}
             onOpenScheduledEvent={navigateToScheduledEvent}
-            onOpenSettings={navigateToTrainingPreferences}
+            onOpenSettings={openTrainingPreferences}
             onWeekScrollStart={trainingPath.handleWeekScrollStart}
             onSelectedDateChange={trainingPath.handleSelectedDateChange}
             onSelectedWeekChange={trainingPath.handleSelectedWeekChange}
           />
         </View>
       </ScrollView>
-      <TrainingPreferencesEditor
-        visible={trainingPreferencesVisible}
-        showLauncher={false}
-        onClose={() => setTrainingPreferencesVisible(false)}
-      />
     </View>
   );
 }

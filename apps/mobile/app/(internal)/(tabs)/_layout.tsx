@@ -4,6 +4,7 @@ import { Text } from "@repo/ui/components/text";
 import { Tabs } from "expo-router";
 import { CalendarDays, Circle, Home, Route } from "lucide-react-native";
 import { TouchableOpacity, View } from "react-native";
+import { TrainingPreferencesEditor } from "@/components/settings/training-preferences/TrainingPreferencesEditor";
 import { useRecordingLifecycle } from "@/lib/hooks/useActivityRecorder";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
@@ -16,6 +17,7 @@ import {
   defaultRecordLaunchPayload,
 } from "@/lib/stores/activitySelectionStore";
 import { useTheme } from "@/lib/stores/theme-store";
+import { useTrainingPreferencesSheetStore } from "@/lib/stores/trainingPreferencesSheetStore";
 import { getNavigationTheme, getResolvedThemeScale } from "@/lib/theme";
 
 function MeasuredTabButton({ routeKey, testID, ...props }: any) {
@@ -55,6 +57,8 @@ export default function InternalLayout() {
   const navigateTo = useAppNavigate();
   const recorderService = useSharedActivityRecorder();
   const recordingLifecycle = useRecordingLifecycle(recorderService);
+  const trainingPreferencesVisible = useTrainingPreferencesSheetStore((state) => state.visible);
+  const closeTrainingPreferences = useTrainingPreferencesSheetStore((state) => state.close);
 
   const navTheme = getNavigationTheme(resolvedTheme);
   const currentTheme = getResolvedThemeScale(resolvedTheme);
@@ -147,6 +151,13 @@ export default function InternalLayout() {
           }}
         />
       </Tabs>
+      {trainingPreferencesVisible ? (
+        <TrainingPreferencesEditor
+          visible={trainingPreferencesVisible}
+          showLauncher={false}
+          onClose={closeTrainingPreferences}
+        />
+      ) : null}
     </View>
   );
 }
