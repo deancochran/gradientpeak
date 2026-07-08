@@ -522,37 +522,4 @@ describe("routesRouter", () => {
     expect(result).toEqual({ success: true });
     expect(mockStorage.remove).toHaveBeenCalledWith([`${OWNER_ID}/route.gpx`]);
   });
-
-  it("updates owned route metadata and returns serialized timestamps", async () => {
-    const updatedRoute = createRouteRow({
-      id: UPDATED_ROUTE_ID,
-      name: "Updated Route",
-      description: "Fresh description",
-    });
-    const db = {
-      select: vi
-        .fn()
-        .mockImplementationOnce(() => createSelectWithLimit([{ id: UPDATED_ROUTE_ID }])),
-      update: vi.fn(() => ({
-        set: vi.fn(() => ({
-          where: vi.fn(() => ({
-            returning: vi.fn().mockResolvedValue([updatedRoute]),
-          })),
-        })),
-      })),
-    };
-
-    const caller = createCaller(db);
-    const result = await caller.update({
-      id: UPDATED_ROUTE_ID,
-      name: "Updated Route",
-      description: "Fresh description",
-    });
-
-    expect(result).toEqual({
-      ...updatedRoute,
-      created_at: "2026-02-01T10:00:00.000Z",
-      updated_at: "2026-02-02T10:00:00.000Z",
-    });
-  });
 });

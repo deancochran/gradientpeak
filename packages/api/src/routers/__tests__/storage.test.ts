@@ -176,38 +176,4 @@ describe("storageRouter", () => {
       }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" } as Partial<TRPCError>);
   });
-
-  it("deletes a file owned by the current user", async () => {
-    const caller = createCaller();
-    const filePath = "11111111-1111-4111-8111-111111111111/avatar.png";
-
-    const result = await caller.deleteFile({ filePath });
-
-    expect(result).toEqual({ success: true });
-    expect(storageState.remove).toHaveBeenCalledWith([filePath]);
-  });
-
-  it("rejects deletion requests for another user's file", async () => {
-    const caller = createCaller();
-
-    await expect(
-      caller.deleteFile({
-        filePath: "22222222-2222-4222-8222-222222222222/avatar.png",
-      }),
-    ).rejects.toMatchObject({ code: "FORBIDDEN" } as Partial<TRPCError>);
-
-    expect(storageState.remove).not.toHaveBeenCalled();
-  });
-
-  it("rejects deletion requests for paths that only share a user id prefix", async () => {
-    const caller = createCaller();
-
-    await expect(
-      caller.deleteFile({
-        filePath: "11111111-1111-4111-8111-111111111111-malicious/avatar.png",
-      }),
-    ).rejects.toMatchObject({ code: "FORBIDDEN" } as Partial<TRPCError>);
-
-    expect(storageState.remove).not.toHaveBeenCalled();
-  });
 });

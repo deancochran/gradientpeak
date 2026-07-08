@@ -420,17 +420,6 @@ describe("socialRouter", () => {
     });
   });
 
-  it("deleteComment allows owners to remove their comment", async () => {
-    const { caller, calls } = createCaller({
-      execute: [[{ profile_id: SESSION_USER_ID }], []],
-    });
-
-    const result = await caller.deleteComment({ comment_id: COMMENT_ID });
-
-    expect(result).toEqual({ success: true });
-    expect(calls.executes).toHaveLength(2);
-  });
-
   it("getComments returns serialized comments with nested profile data", async () => {
     const createdAt = new Date("2026-04-03T14:00:00.000Z");
     const { caller } = createCaller({

@@ -203,37 +203,4 @@ export const storageRouter = createTRPCRouter({
         });
       }
     }),
-
-  deleteFile: protectedProcedure
-    .input(
-      z
-        .object({
-          filePath: filePathSchema,
-        })
-        .strict(),
-    )
-    .mutation(async ({ ctx, input }) => {
-      try {
-        assertOwnedFilePath(ctx.session.user.id, input.filePath);
-
-        const { error } = await storageService.storage.from(BUCKET_NAME).remove([input.filePath]);
-
-        if (error) {
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: `Failed to delete file: ${error.message}`,
-          });
-        }
-
-        return { success: true };
-      } catch (error) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to delete file",
-        });
-      }
-    }),
 });

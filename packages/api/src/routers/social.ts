@@ -846,44 +846,6 @@ export const socialRouter = createTRPCRouter({
       };
     }),
 
-  deleteComment: protectedProcedure
-    .input(z.object({ comment_id: z.string().uuid() }).strict())
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-
-      const commentResult = await db.execute(sql`
-        select profile_id
-        from comments
-        where id = ${input.comment_id}::uuid
-        limit 1
-      `);
-
-      const existingComment = commentResult.rows[0]
-        ? commentOwnerRowSchema.parse(commentResult.rows[0])
-        : null;
-
-      if (!existingComment) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Comment not found",
-        });
-      }
-
-      if (existingComment.profile_id !== ctx.session.user.id) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "You can only delete your own comments",
-        });
-      }
-
-      await db.execute(sql`
-        delete from comments
-        where id = ${input.comment_id}::uuid
-      `);
-
-      return { success: true };
-    }),
-
   getComments: protectedProcedure
     .input(
       z
