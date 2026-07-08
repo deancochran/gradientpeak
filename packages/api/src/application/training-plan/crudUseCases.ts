@@ -189,11 +189,3 @@ export async function listTrainingPlansUseCase(input: {
     ...pageInfo,
   };
 }
-
-export async function trainingPlanExistsUseCase(input: {
-  profileId: string;
-  repository: TrainingPlanRepository;
-}) {
-  const count = await input.repository.countOwnedTrainingPlans(input.profileId);
-  return { exists: count > 0, count };
-}

@@ -393,39 +393,3 @@ export async function applyQuickAdjustmentUseCase(input: {
 
   return data;
 }
-
-export async function autoAddPeriodizationUseCase(input: {
-  id: string;
-  profileId: string;
-  repository: TrainingPlanRepository;
-}) {
-  const existing = await input.repository.getOwnedTrainingPlan({
-    id: input.id,
-    profileId: input.profileId,
-  });
-
-  if (!existing) {
-    throw new TRPCError({
-      code: "NOT_FOUND",
-      message: "Training plan not found or you don't have permission to edit it",
-    });
-  }
-
-  const structure = existing.structure as {
-    plan_type?: unknown;
-    fitness_progression?: unknown;
-  } | null;
-
-  if (structure?.plan_type === "periodized" && structure?.fitness_progression) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "This plan already has periodization configured",
-    });
-  }
-
-  throw new TRPCError({
-    code: "BAD_REQUEST",
-    message:
-      "Auto-periodization is not yet implemented. Please create a new periodized training plan or manually configure periodization in settings.",
-  });
-}

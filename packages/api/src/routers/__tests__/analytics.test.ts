@@ -1,4 +1,3 @@
-import type { TRPCError } from "@trpc/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { analyticsRouter } from "../analytics";
 
@@ -133,51 +132,5 @@ describe("analyticsRouter", () => {
     expect(metadata.params).toEqual(
       expect.arrayContaining([OWNER_ID, "bike", "power", new Date("2026-03-04T12:00:00.000Z")]),
     );
-  });
-
-  it("predicts performance from the owned season-best curve", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
-
-    const { caller } = createCaller([
-      createEffortRow({ duration_seconds: 180, value: 250 + 15000 / 180 }),
-      createEffortRow({ duration_seconds: 300, value: 250 + 15000 / 300 }),
-      createEffortRow({ duration_seconds: 600, value: 250 + 15000 / 600 }),
-      createEffortRow({ duration_seconds: 1200, value: 250 + 15000 / 1200 }),
-    ]);
-
-    const result = await caller.predictPerformance({
-      activity_category: "bike",
-      effort_type: "power",
-      days: 90,
-      duration: 900,
-    });
-
-    expect(result).toMatchObject({
-      predicted_value: 267,
-      unit: "watts",
-      model: {
-        cp: 250,
-        wPrime: 15000,
-      },
-    });
-    expect(result.model.error).toBeGreaterThan(0.99);
-  });
-
-  it("rejects performance prediction when the curve lacks enough valid durations", async () => {
-    const { caller } = createCaller([createEffortRow({ duration_seconds: 300, value: 300 })]);
-
-    await expect(
-      caller.predictPerformance({
-        activity_category: "bike",
-        effort_type: "power",
-        days: 90,
-        duration: 900,
-      }),
-    ).rejects.toMatchObject({
-      code: "BAD_REQUEST",
-      message:
-        "Insufficient data to calculate performance model. Need at least 2 max efforts between 3 and 30 minutes.",
-    } as Partial<TRPCError>);
   });
 });

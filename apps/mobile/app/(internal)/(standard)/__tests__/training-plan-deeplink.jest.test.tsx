@@ -84,11 +84,6 @@ jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
     useUtils: () => ({
-      client: {
-        trainingPlans: {
-          autoAddPeriodization: { mutate: jest.fn() },
-        },
-      },
       trainingPlans: {
         invalidate: jest.fn(),
       },

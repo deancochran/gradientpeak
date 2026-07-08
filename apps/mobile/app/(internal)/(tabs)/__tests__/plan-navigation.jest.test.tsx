@@ -694,27 +694,6 @@ jest.mock("@/lib/api", () => ({
           };
         },
       },
-      simulateScheduleAdjustment: {
-        useQuery: (input: any, options: any) => ({
-          data: options?.enabled
-            ? {
-                adjustment: {
-                  date: input.adjustment_date,
-                  tss_delta: input.tss_delta,
-                  resulting_scheduled_load: 52 + input.tss_delta,
-                },
-                comparison_date: input.comparison_date ?? "2026-04-10",
-                scheduled_readiness: 70,
-                simulated_readiness: 75.5,
-                readiness_delta: input.tss_delta === 105 ? 6.4 : 5.5,
-                scheduled_load: 52,
-                simulated_load: 52 + input.tss_delta,
-                confidence: "medium",
-              }
-            : null,
-          isFetching: false,
-        }),
-      },
       list: {
         useInfiniteQuery: () => ({
           data: {

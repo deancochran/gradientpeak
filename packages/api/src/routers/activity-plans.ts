@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import {
   type ActivityTargetCategory,
   activityPlanCreateSchema,
-  activityPlanStructureSchemaV2,
   activityPlanUpdateSchema,
   getActivityTargetCompatibilityIssues,
   saveableActivityPlanStructureSchemaV2,
@@ -18,7 +17,6 @@ import {
 import { TRPCError } from "@trpc/server";
 import { and, asc, count, desc, eq, gt, ilike, inArray, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import type { Context } from "../context";
 import { getRequiredDb } from "../db";
 import { createEventReadRepository } from "../infrastructure/repositories";
 import { createContentAccessPermissions } from "../permissions/content-access";
@@ -133,10 +131,6 @@ function validateStructure(structure: unknown, activityCategory?: ActivityTarget
   }
 }
 
-function getEstimationStore(ctx: Context) {
-  return createEventReadRepository(getRequiredDb(ctx));
-}
-
 const createActivityPlanInput = activityPlanCreateSchema.safeExtend({
   structure: saveableActivityPlanStructureSchemaV2,
   template_visibility: templateVisibilitySchema.optional(),
@@ -168,17 +162,6 @@ const updateActivityPlanWithIdInput = updateActivityPlanInput
       });
     }
   });
-
-const importedTemplateInput = z
-  .object({
-    external_id: z.string().min(1).max(255),
-    name: z.string().min(1, "Plan name is required"),
-    activity_category: publicActivityCategorySchema,
-    description: z.string().max(1000).nullable().optional(),
-    notes: z.string().max(2000).optional(),
-    structure: activityPlanStructureSchemaV2,
-  })
-  .strict();
 
 function serializeActivityPlanRow(row: ActivityPlanRow | unknown) {
   return serializedActivityPlanSchema.parse(row);
@@ -892,172 +875,5 @@ export const activityPlansRouter = createTRPCRouter({
       );
 
       return withIdentityFields(planWithEstimation);
-    }),
-
-  importFromFitTemplate: protectedProcedure
-    .input(importedTemplateInput)
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      const estimationStore = getEstimationStore(ctx);
-      const provider = "fit";
-      const externalId = input.external_id.trim();
-
-      const [existingRow] = await db
-        .select()
-        .from(activityPlans)
-        .where(
-          and(
-            eq(activityPlans.profile_id, ctx.session.user.id),
-            eq(activityPlans.import_provider, provider),
-            eq(activityPlans.import_external_id, externalId),
-          ),
-        )
-        .limit(1);
-
-      const payload: Partial<ActivityPlanInsert> = {
-        updated_at: new Date(),
-        name: input.name,
-        description: input.description?.trim() ? input.description.trim() : null,
-        notes: input.notes ?? null,
-        activity_category: input.activity_category,
-        structure: input.structure,
-        version: "1.0",
-        profile_id: ctx.session.user.id,
-        template_visibility: "private",
-        import_provider: provider,
-        import_external_id: externalId,
-        is_system_template: false,
-        is_public: false,
-      };
-
-      const [persistedRow] = existingRow
-        ? await db
-            .update(activityPlans)
-            .set(payload)
-            .where(
-              and(
-                eq(activityPlans.id, existingRow.id),
-                eq(activityPlans.profile_id, ctx.session.user.id),
-              ),
-            )
-            .returning()
-        : await db
-            .insert(activityPlans)
-            .values({
-              id: randomUUID(),
-              created_at: new Date(),
-              ...payload,
-            } as ActivityPlanInsert)
-            .returning();
-
-      if (!persistedRow) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Failed to import FIT template",
-        });
-      }
-
-      let withEstimation: SerializedActivityPlan | EstimatedActivityPlan =
-        serializeActivityPlanRow(persistedRow);
-      try {
-        withEstimation = await getActivityPlanDerivedMetrics(
-          serializeActivityPlanRow(persistedRow),
-          db,
-          estimationStore,
-          ctx.session.user.id,
-        );
-      } catch (estimationError) {
-        console.warn(
-          "Failed to estimate activity import template; returning raw plan",
-          estimationError,
-        );
-      }
-
-      return {
-        action: existingRow ? "updated" : "created",
-        item: withIdentityFields(withEstimation),
-      };
-    }),
-
-  importFromZwoTemplate: protectedProcedure
-    .input(importedTemplateInput)
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      const estimationStore = getEstimationStore(ctx);
-      const provider = "zwo";
-      const externalId = input.external_id.trim();
-
-      const [existingRow] = await db
-        .select()
-        .from(activityPlans)
-        .where(
-          and(
-            eq(activityPlans.profile_id, ctx.session.user.id),
-            eq(activityPlans.import_provider, provider),
-            eq(activityPlans.import_external_id, externalId),
-          ),
-        )
-        .limit(1);
-
-      const payload: Partial<ActivityPlanInsert> = {
-        updated_at: new Date(),
-        name: input.name,
-        description: input.description?.trim() ? input.description.trim() : null,
-        notes: input.notes ?? null,
-        activity_category: input.activity_category,
-        structure: input.structure,
-        version: "1.0",
-        profile_id: ctx.session.user.id,
-        template_visibility: "private",
-        import_provider: provider,
-        import_external_id: externalId,
-        is_system_template: false,
-        is_public: false,
-      };
-
-      const [persistedRow] = existingRow
-        ? await db
-            .update(activityPlans)
-            .set(payload)
-            .where(
-              and(
-                eq(activityPlans.id, existingRow.id),
-                eq(activityPlans.profile_id, ctx.session.user.id),
-              ),
-            )
-            .returning()
-        : await db
-            .insert(activityPlans)
-            .values({
-              id: randomUUID(),
-              created_at: new Date(),
-              ...payload,
-            } as ActivityPlanInsert)
-            .returning();
-
-      if (!persistedRow) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Failed to import ZWO template",
-        });
-      }
-
-      let withEstimation: SerializedActivityPlan | EstimatedActivityPlan =
-        serializeActivityPlanRow(persistedRow);
-      try {
-        withEstimation = await getActivityPlanDerivedMetrics(
-          serializeActivityPlanRow(persistedRow),
-          db,
-          estimationStore,
-          ctx.session.user.id,
-        );
-      } catch (estimationError) {
-        console.warn("Failed to estimate ZWO import template; returning raw plan", estimationError);
-      }
-
-      return {
-        action: existingRow ? "updated" : "created",
-        item: withIdentityFields(withEstimation),
-      };
     }),
 });

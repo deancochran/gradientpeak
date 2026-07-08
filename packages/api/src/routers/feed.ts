@@ -1,4 +1,4 @@
-import { publicActivitiesRowSchema, publicCommentsRowSchema, schema } from "@repo/db";
+import { publicActivitiesRowSchema, schema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -76,33 +76,10 @@ const feedActivityRowSchema = publicActivitiesRowSchema
     ingestion_last_error_message: z.string().nullable().optional(),
   });
 
-const feedActivityDetailRowSchema = feedActivityRowSchema.extend({
-  notes: publicActivitiesRowSchema.shape.notes,
-  max_power: nullableNumericSchema,
-  max_cadence: publicActivitiesRowSchema.shape.max_cadence,
-  normalized_power: nullableNumericSchema,
-  elevation_loss_meters: nullableNumericSchema,
-  map_bounds: publicActivitiesRowSchema.shape.map_bounds,
-  viewer_follows_owner: z.boolean(),
-});
-
 const commentCountRowSchema = z.object({
   entity_id: z.string().uuid(),
   comments_count: z.coerce.number().int().nonnegative(),
 });
-
-const activityCommentRowSchema = publicCommentsRowSchema
-  .pick({
-    id: true,
-    content: true,
-    created_at: true,
-  })
-  .extend({
-    created_at: timestampSchema,
-    profile_id: z.string().uuid().nullable(),
-    profile_username: z.string().nullable(),
-    profile_avatar_url: z.string().nullable(),
-  });
 
 const feedActivityDtoSchema = z.object({
   id: z.string().uuid(),
@@ -138,27 +115,8 @@ const feedResponseSchema = z.object({
   hasMore: z.boolean(),
 });
 
-const activityCommentDtoSchema = z.object({
-  id: z.string().uuid(),
-  content: z.string(),
-  created_at: z.string(),
-  profile: feedProfileSchema.nullable(),
-});
-
-const feedActivityDetailDtoSchema = feedActivityDtoSchema.omit({ derived: true }).extend({
-  notes: z.string().nullable(),
-  max_power: z.number().nullable(),
-  max_cadence: z.number().nullable(),
-  normalized_power: z.number().nullable(),
-  elevation_loss_meters: z.number().nullable(),
-  map_bounds: publicActivitiesRowSchema.shape.map_bounds,
-  comments_count: z.number().int().nonnegative(),
-  comments: z.array(activityCommentDtoSchema),
-});
-
 export type FeedActivity = z.infer<typeof feedActivityDtoSchema>;
 type FeedActivityRow = z.infer<typeof feedActivityRowSchema>;
-type FeedActivityDetailRow = z.infer<typeof feedActivityDetailRowSchema>;
 
 function toIsoString(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : value;
@@ -396,175 +354,4 @@ export const feedRouter = createTRPCRouter({
       });
     }
   }),
-
-  /**
-   * getActivity - Get a single activity for the feed detail view
-   *
-   * Authorization:
-   * - User must own the activity, OR
-   * - Activity must be public, OR
-   * - Activity must be public
-   */
-  getActivity: protectedProcedure
-    .input(z.object({ activityId: z.string().uuid() }))
-    .query(async ({ ctx, input }) => {
-      const userId = ctx.session.user.id;
-      const db = getRequiredDb(ctx);
-
-      try {
-        const activityResult = await db.execute(sql<FeedActivityDetailRow>`
-          select
-            a.id,
-            a.profile_id,
-            a.name,
-            a.type,
-            a.notes,
-            a.started_at,
-            a.finished_at,
-            a.distance_meters,
-            a.duration_seconds,
-            a.moving_seconds,
-            a.avg_heart_rate,
-            a.max_heart_rate,
-            a.avg_power,
-            a.max_power,
-            a.avg_cadence,
-            a.max_cadence,
-            a.normalized_power,
-            a.elevation_gain_meters,
-            a.elevation_loss_meters,
-            a.calories,
-            a.polyline,
-            a.activity_file_path,
-            a.map_bounds,
-            a.likes_count,
-            a.is_private,
-            a.created_at,
-            p.username as profile_username,
-            p.avatar_url as profile_avatar_url,
-            exists (
-              select 1
-              from follows f
-              where f.follower_id = ${userId}::uuid
-                and f.following_id = a.profile_id
-                and f.status = 'accepted'
-            ) as viewer_follows_owner
-          from activities a
-          left join profiles p on p.id = a.profile_id
-          where a.id = ${input.activityId}::uuid
-          limit 1
-        `);
-
-        const activity = activityResult.rows[0]
-          ? feedActivityDetailRowSchema.parse(activityResult.rows[0])
-          : null;
-
-        if (!activity) {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Activity not found",
-          });
-        }
-
-        const isActivityOwner = activity.profile_id === userId;
-
-        if (activity.is_private && !isActivityOwner) {
-          throw new TRPCError({
-            code: "FORBIDDEN",
-            message: "You don't have permission to view this activity",
-          });
-        }
-
-        const [likeRows, commentsResult] = await Promise.all([
-          db
-            .select({ id: schema.likes.id })
-            .from(schema.likes)
-            .where(
-              and(
-                eq(schema.likes.profile_id, userId),
-                eq(schema.likes.entity_id, input.activityId),
-                eq(schema.likes.entity_type, "activity"),
-              ),
-            )
-            .limit(1),
-          db.execute(sql`
-            select
-              c.id,
-              c.content,
-              c.created_at,
-              p.id as profile_id,
-              p.username as profile_username,
-              p.avatar_url as profile_avatar_url
-            from comments c
-            left join profiles p on p.id = c.profile_id
-            where c.entity_id = ${input.activityId}::uuid
-              and c.entity_type = 'activity'
-            order by c.created_at asc
-          `),
-        ]);
-
-        const comments = z.array(activityCommentDtoSchema).parse(
-          z
-            .array(activityCommentRowSchema)
-            .parse(commentsResult.rows)
-            .map((comment) => ({
-              id: comment.id,
-              content: comment.content,
-              created_at: toIsoString(comment.created_at),
-              profile: comment.profile_id
-                ? {
-                    id: comment.profile_id,
-                    username: comment.profile_username,
-                    avatar_url: comment.profile_avatar_url,
-                  }
-                : null,
-            })),
-        );
-
-        return feedActivityDetailDtoSchema.parse({
-          id: activity.id,
-          profile_id: activity.profile_id,
-          name: activity.name,
-          type: activity.type,
-          notes: activity.notes,
-          started_at: toIsoString(activity.started_at),
-          finished_at: toIsoString(activity.finished_at),
-          distance_meters: activity.distance_meters,
-          duration_seconds: activity.duration_seconds,
-          moving_seconds: activity.moving_seconds,
-          avg_heart_rate: activity.avg_heart_rate,
-          max_heart_rate: activity.max_heart_rate,
-          avg_power: activity.avg_power,
-          max_power: activity.max_power,
-          avg_cadence: activity.avg_cadence,
-          max_cadence: activity.max_cadence,
-          normalized_power: activity.normalized_power,
-          elevation_gain_meters: activity.elevation_gain_meters,
-          elevation_loss_meters: activity.elevation_loss_meters,
-          calories: activity.calories,
-          polyline: activity.polyline,
-          activity_file_path: activity.activity_file_path,
-          map_bounds: activity.map_bounds,
-          likes_count: activity.likes_count ?? 0,
-          is_private: activity.is_private,
-          created_at: toIsoString(activity.created_at),
-          profile: {
-            id: activity.profile_id,
-            username: activity.profile_username,
-            avatar_url: activity.profile_avatar_url,
-          },
-          has_liked: likeRows.length > 0,
-          comments_count: comments.length,
-          comments,
-        });
-      } catch (error) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to fetch activity",
-        });
-      }
-    }),
 });
