@@ -22,12 +22,14 @@ export const preferenceTabs: Array<{ key: PreferencesTabKey; label: string }> = 
 
 type TrainingPreferencesTabsProps = {
   activeTab: PreferencesTabKey;
+  modifiedTabs?: PreferencesTabKey[];
   onSelectTab: (tab: PreferencesTabKey) => void;
   visibleTabs?: PreferencesTabKey[];
 };
 
 export function TrainingPreferencesTabs({
   activeTab,
+  modifiedTabs = [],
   onSelectTab,
   visibleTabs,
 }: TrainingPreferencesTabsProps) {
@@ -45,6 +47,7 @@ export function TrainingPreferencesTabs({
     >
       {renderedTabs.map((tab) => {
         const isActive = tab.key === activeTab;
+        const modified = modifiedTabs.includes(tab.key);
         return (
           <Pressable
             key={tab.key}
@@ -58,6 +61,7 @@ export function TrainingPreferencesTabs({
               className={`text-sm ${isActive ? "font-semibold text-foreground" : "text-muted-foreground"}`}
             >
               {tab.label}
+              {modified ? " •" : ""}
             </Text>
           </Pressable>
         );

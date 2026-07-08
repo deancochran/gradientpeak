@@ -12,7 +12,9 @@ export type PreferencePreset = {
 };
 
 type PreferencesOverviewSectionProps = {
+  activeTemplateLabel: string | null;
   control: Control<AthleteTrainingSettingsFormInput>;
+  modifiedTemplateFieldCount: number;
   onApplyPreset: (presetKey: Exclude<PreferencePresetKey, "custom">) => void;
   preferenceDirectionSummary: string;
   presets: PreferencePreset[];
@@ -20,7 +22,9 @@ type PreferencesOverviewSectionProps = {
 };
 
 export function PreferencesOverviewSection({
+  activeTemplateLabel,
   control,
+  modifiedTemplateFieldCount,
   onApplyPreset,
   preferenceDirectionSummary,
   presets,
@@ -28,6 +32,13 @@ export function PreferencesOverviewSection({
 }: PreferencesOverviewSectionProps) {
   return (
     <>
+      <View className="gap-1">
+        <Text className="text-sm font-semibold text-foreground">Quick templates</Text>
+        <Text className="text-xs leading-4 text-muted-foreground">
+          Templates are starting points. Fine-tune any value afterward; modified groups are marked
+          with a dot.
+        </Text>
+      </View>
       <Text className="text-sm font-semibold text-foreground">{preferenceDirectionSummary}</Text>
       <View className="flex-row flex-wrap gap-2">
         <View
@@ -69,6 +80,15 @@ export function PreferencesOverviewSection({
             </Pressable>
           );
         })}
+      </View>
+      <View className="rounded-xl border border-border bg-muted/20 px-3 py-2">
+        <Text className="text-xs leading-4 text-muted-foreground">
+          {selectedPreferencePreset !== "custom"
+            ? `${activeTemplateLabel ?? "Template"} template applied.`
+            : activeTemplateLabel
+              ? `Custom setup · started from ${activeTemplateLabel}. ${modifiedTemplateFieldCount} setting${modifiedTemplateFieldCount === 1 ? "" : "s"} changed.`
+              : "Custom setup. Choose a template anytime to reset these planning behavior values."}
+        </Text>
       </View>
       <View className="gap-3 rounded-2xl border border-border bg-muted/10 p-3">
         <Text className="text-sm font-semibold text-foreground">Adaptation behavior</Text>

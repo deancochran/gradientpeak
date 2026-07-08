@@ -124,6 +124,62 @@ const preferencePresets: Array<{
   },
 ];
 
+type PreferenceTemplateKey = Exclude<PreferencePresetKey, "custom">;
+
+type TemplateFieldDescriptor = {
+  section: PreferencesTabKey;
+  read: (draft: AthleteTrainingSettingsFormInput) => number | undefined;
+  readTemplate: (values: (typeof preferencePresets)[number]["values"]) => number | undefined;
+};
+
+const templateFieldDescriptors: TemplateFieldDescriptor[] = [
+  {
+    section: "training-style",
+    read: (draft) => draft.training_style.progression_pace,
+    readTemplate: (values) => values.progression_pace,
+  },
+  {
+    section: "training-style",
+    read: (draft) => draft.training_style.week_pattern_preference,
+    readTemplate: (values) => values.week_pattern_preference,
+  },
+  {
+    section: "training-style",
+    read: (draft) => draft.training_style.strength_integration_priority,
+    readTemplate: (values) => values.strength_integration_priority,
+  },
+  {
+    section: "recovery",
+    read: (draft) => draft.recovery_preferences.recovery_priority,
+    readTemplate: (values) => values.recovery_priority,
+  },
+  {
+    section: "recovery",
+    read: (draft) => draft.recovery_preferences.systemic_fatigue_tolerance,
+    readTemplate: (values) => values.systemic_fatigue_tolerance,
+  },
+  {
+    section: "recovery",
+    read: (draft) => draft.recovery_preferences.double_day_tolerance,
+    readTemplate: (values) => values.double_day_tolerance,
+  },
+  {
+    section: "recovery",
+    read: (draft) => draft.recovery_preferences.long_session_fatigue_tolerance,
+    readTemplate: (values) => values.long_session_fatigue_tolerance,
+  },
+  {
+    section: "goal-strategy",
+    read: (draft) => draft.goal_strategy_preferences.target_surplus_preference,
+    readTemplate: (values) => values.target_surplus_preference,
+  },
+  {
+    section: "goal-strategy",
+    read: (draft) => draft.goal_strategy_preferences.taper_style_preference,
+    readTemplate: (values) => values.taper_style_preference,
+  },
+];
+
 function createTrainingPreferencesFormDefaults(
   settings: AthleteTrainingSettings,
 ): AthleteTrainingSettingsFormInput {
@@ -176,6 +232,35 @@ function getSelectedPreferencePreset(draft: AthleteTrainingSettingsFormInput): P
   return matchedPreset?.key ?? "custom";
 }
 
+function findPreferencePreset(key: PreferenceTemplateKey | null) {
+  return key ? preferencePresets.find((preset) => preset.key === key) : undefined;
+}
+
+function getModifiedTemplateSections({
+  draft,
+  templateKey,
+}: {
+  draft: AthleteTrainingSettingsFormInput;
+  templateKey: PreferenceTemplateKey | null;
+}) {
+  const template = findPreferencePreset(templateKey);
+  if (!template) {
+    return { modifiedFieldCount: 0, modifiedTabs: [] as PreferencesTabKey[] };
+  }
+
+  const modifiedSections = new Set<PreferencesTabKey>();
+  let modifiedFieldCount = 0;
+
+  for (const descriptor of templateFieldDescriptors) {
+    if (descriptor.read(draft) !== descriptor.readTemplate(template.values)) {
+      modifiedFieldCount += 1;
+      modifiedSections.add(descriptor.section);
+    }
+  }
+
+  return { modifiedFieldCount, modifiedTabs: Array.from(modifiedSections) };
+}
+
 type TrainingPreferencesEditorProps = {
   mode?: "global" | "plan-local";
   onClose?: () => void;
@@ -183,7 +268,12 @@ type TrainingPreferencesEditorProps = {
   visible?: boolean;
 };
 
-const planLocalVisibleTabs: PreferencesTabKey[] = ["schedule"];
+const planLocalVisibleTabs: PreferencesTabKey[] = [
+  "schedule",
+  "training-style",
+  "recovery",
+  "goal-strategy",
+];
 
 export function TrainingPreferencesEditor({
   mode = "global",
@@ -196,6 +286,7 @@ export function TrainingPreferencesEditor({
   const [activeTab, setActiveTab] = useState<PreferencesTabKey>("preferences");
   const [isSheetVisible, setIsSheetVisible] = useState(true);
   const [showAdvancedBaselineControls, setShowAdvancedBaselineControls] = useState(false);
+  const [activeTemplateKey, setActiveTemplateKey] = useState<PreferenceTemplateKey | null>(null);
 
   const formDefaults = useMemo(
     () => createTrainingPreferencesFormDefaults(settingsQuery.settings),
@@ -211,6 +302,8 @@ export function TrainingPreferencesEditor({
 
   useEffect(() => {
     form.reset(formDefaults);
+    const defaultPreset = getSelectedPreferencePreset(formDefaults);
+    setActiveTemplateKey(defaultPreset === "custom" ? null : defaultPreset);
   }, [form, formDefaults]);
 
   useEffect(() => {
@@ -241,7 +334,10 @@ export function TrainingPreferencesEditor({
         utils.trainingPlans.invalidate(),
         settingsQuery.refetch(),
       ]);
-      form.reset(createTrainingPreferencesFormDefaults(settings));
+      const savedDefaults = createTrainingPreferencesFormDefaults(settings);
+      form.reset(savedDefaults);
+      const savedPreset = getSelectedPreferencePreset(savedDefaults);
+      setActiveTemplateKey(savedPreset === "custom" ? activeTemplateKey : savedPreset);
     },
     onError: (error) =>
       handleSubmitFormError(form, error, { alertTitle: "Failed to save preferences" }),
@@ -288,6 +384,17 @@ export function TrainingPreferencesEditor({
 
   const preferenceDirectionSummary = useMemo(() => getPreferenceDirectionSummary(draft), [draft]);
   const selectedPreferencePreset = useMemo(() => getSelectedPreferencePreset(draft), [draft]);
+  const effectiveTemplateKey =
+    selectedPreferencePreset === "custom" ? activeTemplateKey : selectedPreferencePreset;
+  const activeTemplate = findPreferencePreset(effectiveTemplateKey);
+  const { modifiedFieldCount, modifiedTabs } = useMemo(
+    () =>
+      getModifiedTemplateSections({
+        draft,
+        templateKey: effectiveTemplateKey,
+      }),
+    [draft, effectiveTemplateKey],
+  );
   const manualBaselineCtlWarning = draft.baseline_fitness?.is_enabled
     ? getManualBaselineCtlWarning(draft.baseline_fitness.override_ctl)
     : null;
@@ -376,6 +483,7 @@ export function TrainingPreferencesEditor({
           shouldValidate: true,
         },
       );
+      setActiveTemplateKey(preset.key);
     },
     [form],
   );
@@ -459,7 +567,11 @@ export function TrainingPreferencesEditor({
         isSaveDisabled={saveButtonState.disabled}
         isSaving={isSaving || saveButtonState.loading}
         onClose={closeSheet}
-        onReset={() => form.reset(formDefaults)}
+        onReset={() => {
+          form.reset(formDefaults);
+          const defaultPreset = getSelectedPreferencePreset(formDefaults);
+          setActiveTemplateKey(defaultPreset === "custom" ? null : defaultPreset);
+        }}
         onSave={submitForm.handleSubmit}
         saveLabel={saveButtonState.label}
         saveLoadingLabel={saveButtonState.loadingLabel}
@@ -467,6 +579,7 @@ export function TrainingPreferencesEditor({
         <TrainingPreferencesContent>
           <TrainingPreferencesTabs
             activeTab={activeTab}
+            modifiedTabs={selectedPreferencePreset === "custom" ? modifiedTabs : []}
             onSelectTab={setActiveTab}
             visibleTabs={visibleTabs}
           />
@@ -474,7 +587,9 @@ export function TrainingPreferencesEditor({
           <View className="gap-3 rounded-xl border border-border bg-card p-3">
             {activeTab === "preferences" ? (
               <PreferencesOverviewSection
+                activeTemplateLabel={activeTemplate?.label ?? null}
                 control={form.control}
+                modifiedTemplateFieldCount={modifiedFieldCount}
                 onApplyPreset={applyPreferencePreset}
                 preferenceDirectionSummary={preferenceDirectionSummary}
                 presets={preferencePresets}
