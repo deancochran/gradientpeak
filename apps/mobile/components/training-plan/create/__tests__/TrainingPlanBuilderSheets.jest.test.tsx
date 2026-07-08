@@ -1,4 +1,3 @@
-import React from "react";
 import { Pressable, Text, View } from "react-native";
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 import type {

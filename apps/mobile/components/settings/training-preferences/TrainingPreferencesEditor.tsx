@@ -42,8 +42,6 @@ import { api } from "@/lib/api";
 import { useProfileSettings } from "@/lib/hooks/useProfileSettings";
 import { handleSubmitFormError } from "@/lib/utils/formErrors";
 
-type TrainingPreferencesValues = AthleteTrainingSettings | AthleteTrainingSettingsFormInput;
-
 const defaultAvailabilityWindow = {
   start_minute_of_day: 360,
   end_minute_of_day: 540,

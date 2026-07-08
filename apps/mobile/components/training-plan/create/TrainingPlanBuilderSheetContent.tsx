@@ -290,6 +290,7 @@ export function TrainingPlanBuilderSheetDraftsProvider({
       planningPreferencesForm,
       profileGoalForm,
       profileGoalTitle,
+      canResetPlanningPreferences,
       canSavePlanningPreferences,
       applyActivityFiltersDraft,
       applyPlanningPreferencesDraft,

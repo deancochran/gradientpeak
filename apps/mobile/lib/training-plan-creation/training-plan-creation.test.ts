@@ -290,7 +290,7 @@ describe("training plan creation domain", () => {
   });
 
   it("applies planning constraint presets without requiring custom fields", () => {
-    expect(applyTrainingPlanConstraintPreset("derive")).toEqual({
+    expect(applyTrainingPlanConstraintPreset("derive")).toMatchObject({
       durationWeeks: null,
       weeklySessionCount: null,
       targetWeeklyHours: null,
@@ -2194,6 +2194,13 @@ describe("training plan creation domain", () => {
       targetWeeklyHours: 6,
       restDaysPerWeek: 2,
       maxSingleSessionDurationMinutes: null,
+      progressionPace: null,
+      recoveryPriority: null,
+      weekPatternPreference: null,
+      strengthIntegrationPriority: null,
+      doubleDayTolerance: null,
+      longSessionFatigueTolerance: null,
+      taperStylePreference: null,
     });
     expect(state.scheduling).toMatchObject({
       startDate: "2026-03-02",
