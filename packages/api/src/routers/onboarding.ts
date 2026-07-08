@@ -10,21 +10,8 @@
  */
 
 // Import calculation functions directly - they're exported from core package
-import {
-  calculateAgeFromDOB,
-  calculateVO2MaxFromHR,
-  estimateCSSFromGender,
-  estimateFTPFromWeight,
-  estimateLTHR,
-  estimateMaxHRFromAge,
-  estimateThresholdPaceFromGender,
-  getBaselineProfile,
-} from "@repo/core";
-import {
-  completeOnboardingSchema,
-  estimateMetricsInputSchema,
-  estimateMetricsOutputSchema,
-} from "@repo/core/schemas/onboarding";
+import { calculateAgeFromDOB, getBaselineProfile } from "@repo/core";
+import { completeOnboardingSchema } from "@repo/core/schemas/onboarding";
 import { activities, profiles, publicIntegrationProviderSchema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { desc, eq } from "drizzle-orm";
@@ -54,10 +41,6 @@ const completeOnboardingOutputSchema = z
     warnings: z.array(z.string()),
   })
   .strict();
-
-const estimateMetricsQueryInputSchema = estimateMetricsInputSchema.strict();
-
-const estimateMetricsQueryOutputSchema = estimateMetricsOutputSchema.strict();
 
 const providerEnrichmentOverallStatusSchema = z.enum([
   "idle",
@@ -191,14 +174,6 @@ export const onboardingRouter = createTRPCRouter({
     }),
 
   getImportedOnboardingValues: protectedProcedure
-    .output(importedOnboardingValuesOutputSchema)
-    .query(async ({ ctx }) => {
-      const service = getOnboardingProviderEnrichmentService(ctx);
-      return service.getImportedOnboardingValues(ctx.session.user.id);
-    }),
-
-  /** @deprecated Use getImportedOnboardingValues. */
-  getDraft: protectedProcedure
     .output(importedOnboardingValuesOutputSchema)
     .query(async ({ ctx }) => {
       const service = getOnboardingProviderEnrichmentService(ctx);
@@ -422,73 +397,6 @@ export const onboardingRouter = createTRPCRouter({
         baseline_used: !!baseline,
         confidence: baseline?.confidence || "high",
         warnings,
-      };
-    }),
-
-  /**
-   * Estimate metrics based on athlete profile.
-   *
-   * Provides real-time estimates as user fills out onboarding form.
-   * Used for showing suggested values and validation.
-   *
-   * @example
-   * estimateMetrics({
-   *   weight_kg: 70,
-   *   gender: 'male',
-   *   age: 30,
-   *   experience_level: 'intermediate',
-   *   primary_sport: 'cycling'
-   * })
-   * // Returns: { estimated_ftp: 193, estimated_max_hr: 190, ... }
-   */
-  estimateMetrics: protectedProcedure
-    .input(estimateMetricsQueryInputSchema)
-    .output(estimateMetricsQueryOutputSchema)
-    .query(async ({ input }) => {
-      const experienceLevel = input.experience_level || "intermediate";
-
-      // Calculate heart rate estimates
-      const estimatedMaxHR = input.max_hr || estimateMaxHRFromAge(input.age);
-      const estimatedRestingHR =
-        input.resting_hr ||
-        (experienceLevel === "beginner"
-          ? input.gender === "male"
-            ? 70
-            : 75
-          : input.gender === "male"
-            ? 60
-            : 65);
-
-      const estimatedLTHR = estimateLTHR(estimatedMaxHR);
-      const estimatedVO2Max = calculateVO2MaxFromHR(estimatedMaxHR, estimatedRestingHR);
-
-      // Calculate performance estimates based on sport
-      let estimatedFTP: number | undefined;
-      let estimatedThresholdPace: number | undefined;
-      let estimatedCSS: number | undefined;
-
-      // Use "intermediate" as default if "skip" is selected
-      const effectiveExperienceLevel =
-        input.experience_level === "skip" ? "intermediate" : input.experience_level;
-
-      estimatedFTP = estimateFTPFromWeight(input.weight_kg, input.gender, effectiveExperienceLevel);
-
-      estimatedThresholdPace = estimateThresholdPaceFromGender(
-        input.gender,
-        effectiveExperienceLevel,
-      );
-
-      estimatedCSS = estimateCSSFromGender(input.gender, effectiveExperienceLevel);
-
-      return {
-        estimated_max_hr: estimatedMaxHR,
-        estimated_resting_hr: estimatedRestingHR,
-        estimated_lthr: estimatedLTHR,
-        estimated_vo2max: estimatedVO2Max,
-        estimated_ftp: estimatedFTP,
-        estimated_threshold_pace: estimatedThresholdPace,
-        estimated_css: estimatedCSS,
-        confidence: experienceLevel === "beginner" ? ("low" as const) : ("medium" as const),
       };
     }),
 });

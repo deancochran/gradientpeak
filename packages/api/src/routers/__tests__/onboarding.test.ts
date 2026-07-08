@@ -382,33 +382,6 @@ describe("onboardingRouter", () => {
     ).resolves.toMatchObject({ success: true });
   });
 
-  it("surfaces invalid heart-rate combinations from estimateMetrics as a thrown error", async () => {
-    const { caller } = createCaller();
-
-    await expect(
-      caller.estimateMetrics({
-        weight_kg: 70,
-        gender: "male",
-        age: 30,
-        max_hr: 100,
-        resting_hr: 120,
-      }),
-    ).rejects.toThrow("Max HR must be greater than resting HR");
-  });
-
-  it("rejects unexpected fields on estimateMetrics", async () => {
-    const { caller } = createCaller();
-
-    await expect(
-      caller.estimateMetrics({
-        weight_kg: 70,
-        gender: "male",
-        age: 30,
-        unexpected: true,
-      } as any),
-    ).rejects.toThrow(/unrecognized/i);
-  });
-
   it("blocks completion while Wahoo onboarding enrichment is running", async () => {
     const userId = "11111111-1111-4111-8111-111111111111";
     const integrationId = "22222222-2222-4222-8222-222222222222";

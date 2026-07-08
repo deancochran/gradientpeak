@@ -165,9 +165,6 @@ export interface WahooRoute {
   created_at: string;
 }
 
-// Re-export supportsRoutes from activity-type-utils for backwards compatibility
-export { supportsRoutes } from "./activity-type-utils";
-
 export class WahooClient {
   private accessToken: string;
   private refreshToken?: string;
