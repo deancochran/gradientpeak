@@ -1,6 +1,8 @@
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import { View } from "react-native";
+import { TrainingPreferencesBottomSheet } from "@/components/settings/training-preferences/TrainingPreferencesBottomSheet";
+import { TrainingPreferencesContent } from "@/components/settings/training-preferences/TrainingPreferencesContent";
 import { BuilderActivityAssignmentSheetHeader } from "@/components/training-plan/create/BuilderActivityAssignmentSheetContent";
 import {
   builderSheetHasSaveAction,
@@ -54,31 +56,61 @@ function ActivityFiltersFooter() {
   );
 }
 
-function PlanningPreferencesFooter({ onClose }: { onClose: () => void }) {
+function TrainingPlanBuilderPreferencesSheet({
+  activeSheet,
+  activityPicker,
+  builder,
+  closeBuilderSheet,
+  goBackSheet,
+  selection,
+  pushSheet,
+}: {
+  activeSheet: BuilderSheet;
+  activityPicker: TrainingPlanBuilderController["activityPicker"];
+  builder: TrainingPlanBuilderController["builder"];
+  closeBuilderSheet: () => void;
+  goBackSheet: () => void;
+  selection: TrainingPlanBuilderController["selection"];
+  pushSheet: (sheet: BuilderSheet) => void;
+}) {
   const sheetDrafts = useTrainingPlanBuilderSheetDrafts();
 
   return (
-    <View className="flex-row gap-3">
-      <Button
-        className="flex-1"
-        onPress={() => sheetDrafts.cancelDraftForSheet("preferences")}
-        variant="outline"
-        testID="training-plan-builder-preferences-reset"
-      >
-        <Text>Reset</Text>
-      </Button>
-      <Button
-        className="flex-1"
-        disabled={!sheetDrafts.canSavePlanningPreferences}
-        onPress={() => {
-          sheetDrafts.applyPlanningPreferencesDraft();
-          onClose();
-        }}
-        testID="training-plan-builder-preferences-save"
-      >
-        <Text className="text-primary-foreground font-semibold">Save</Text>
-      </Button>
-    </View>
+    <TrainingPreferencesBottomSheet
+      visible={activeSheet === "preferences"}
+      title="Plan preferences"
+      description="Tune plan-local overrides for this training plan. Reset restores the values from when this sheet opened."
+      isResetDisabled={!sheetDrafts.canResetPlanningPreferences}
+      isSaveDisabled={
+        !sheetDrafts.canResetPlanningPreferences || !sheetDrafts.canSavePlanningPreferences
+      }
+      onClose={closeBuilderSheet}
+      onReset={() => sheetDrafts.cancelDraftForSheet("preferences")}
+      onSave={() => {
+        sheetDrafts.applyPlanningPreferencesDraft();
+        closeBuilderSheet();
+      }}
+      saveLabel="Save"
+      testID="training-plan-builder-preferences-sheet"
+    >
+      <TrainingPreferencesContent>
+        <TrainingPlanBuilderSheetContent
+          activeSheet={activeSheet}
+          activityPlanCategoryFilter={activityPicker.categoryFilter}
+          activityPlanEstimateById={activityPicker.estimateById}
+          activityPlanSearchQuery={activityPicker.searchQuery}
+          activityPlanSort={activityPicker.sort}
+          activityPlansById={activityPicker.plansById}
+          builder={builder}
+          goBackSheet={goBackSheet}
+          onSelectActivityPlan={activityPicker.selectPlan}
+          pushSheet={pushSheet}
+          selectedSessionId={selection.sessionId}
+          setActivityPlanSearchQuery={activityPicker.setSearchQuery}
+          setSelectedSessionId={selection.setSessionId}
+        />
+      </TrainingPreferencesContent>
+    </TrainingPreferencesBottomSheet>
   );
 }
 
@@ -114,59 +146,65 @@ export function TrainingPlanBuilderSheets({ controller }: TrainingPlanBuilderShe
       onApplyActivityFilters={activityPicker.applyFiltersDraft}
       onApplyPlanningPreferences={builder.actions.updatePlanningPreferences}
     >
-      <TrainingPlanBuilderSheetFrame
-        activeSheet={activeSheet}
-        builder={builder}
-        canGoBack={canGoBack}
-        closeSheet={closeBuilderSheet}
-        contentKey={activeSheet ?? "closed"}
-        contentMode={
-          activeSheet === "activityAssignment" || activeSheet === "session" ? "custom" : "scroll"
-        }
-        description={sheetDescription}
-        footer={
-          activeSheet === "activityFilters" ? (
-            <ActivityFiltersFooter />
-          ) : activeSheet === "preferences" ? (
-            <PlanningPreferencesFooter onClose={closeBuilderSheet} />
-          ) : null
-        }
-        goBackSheet={goBackSheet}
-        headerActionLabel={sheetActionLabel}
-        hasSaveAction={activeSheet === "preferences" ? false : sheetHasSaveAction}
-        headerContent={
-          activeSheet === "activityAssignment" ? (
-            <BuilderActivityAssignmentSheetHeader
-              activityPlanSort={activityPicker.sort}
-              categoryFilter={activityPicker.categoryFilter}
-              onClearSearch={() => activityPicker.setSearchQuery("")}
-              onOpenFilters={() => pushSheet("activityFilters")}
-              onSearchChange={activityPicker.setSearchQuery}
-              searchQuery={activityPicker.searchQuery}
-            />
-          ) : undefined
-        }
-        showTitleHeader={activeSheet !== "activityAssignment" && activeSheet !== "session"}
-        initialSnapIndex={sheetPresentation.initialSnapIndex}
-        snapPoints={sheetPresentation.snapPoints}
-        title={sheetTitle}
-      >
-        <TrainingPlanBuilderSheetContent
+      {activeSheet === "preferences" ? (
+        <TrainingPlanBuilderPreferencesSheet
           activeSheet={activeSheet}
-          activityPlanCategoryFilter={activityPicker.categoryFilter}
-          activityPlanEstimateById={activityPicker.estimateById}
-          activityPlanSearchQuery={activityPicker.searchQuery}
-          activityPlanSort={activityPicker.sort}
-          activityPlansById={activityPicker.plansById}
+          activityPicker={activityPicker}
           builder={builder}
+          closeBuilderSheet={closeBuilderSheet}
           goBackSheet={goBackSheet}
-          onSelectActivityPlan={activityPicker.selectPlan}
+          selection={selection}
           pushSheet={pushSheet}
-          selectedSessionId={selection.sessionId}
-          setActivityPlanSearchQuery={activityPicker.setSearchQuery}
-          setSelectedSessionId={selection.setSessionId}
         />
-      </TrainingPlanBuilderSheetFrame>
+      ) : (
+        <TrainingPlanBuilderSheetFrame
+          activeSheet={activeSheet}
+          builder={builder}
+          canGoBack={canGoBack}
+          closeSheet={closeBuilderSheet}
+          contentKey={activeSheet ?? "closed"}
+          contentMode={
+            activeSheet === "activityAssignment" || activeSheet === "session" ? "custom" : "scroll"
+          }
+          description={sheetDescription}
+          footer={activeSheet === "activityFilters" ? <ActivityFiltersFooter /> : null}
+          goBackSheet={goBackSheet}
+          headerActionLabel={sheetActionLabel}
+          hasSaveAction={sheetHasSaveAction}
+          headerContent={
+            activeSheet === "activityAssignment" ? (
+              <BuilderActivityAssignmentSheetHeader
+                activityPlanSort={activityPicker.sort}
+                categoryFilter={activityPicker.categoryFilter}
+                onClearSearch={() => activityPicker.setSearchQuery("")}
+                onOpenFilters={() => pushSheet("activityFilters")}
+                onSearchChange={activityPicker.setSearchQuery}
+                searchQuery={activityPicker.searchQuery}
+              />
+            ) : undefined
+          }
+          showTitleHeader={activeSheet !== "activityAssignment" && activeSheet !== "session"}
+          initialSnapIndex={sheetPresentation.initialSnapIndex}
+          snapPoints={sheetPresentation.snapPoints}
+          title={sheetTitle}
+        >
+          <TrainingPlanBuilderSheetContent
+            activeSheet={activeSheet}
+            activityPlanCategoryFilter={activityPicker.categoryFilter}
+            activityPlanEstimateById={activityPicker.estimateById}
+            activityPlanSearchQuery={activityPicker.searchQuery}
+            activityPlanSort={activityPicker.sort}
+            activityPlansById={activityPicker.plansById}
+            builder={builder}
+            goBackSheet={goBackSheet}
+            onSelectActivityPlan={activityPicker.selectPlan}
+            pushSheet={pushSheet}
+            selectedSessionId={selection.sessionId}
+            setActivityPlanSearchQuery={activityPicker.setSearchQuery}
+            setSelectedSessionId={selection.setSessionId}
+          />
+        </TrainingPlanBuilderSheetFrame>
+      )}
     </TrainingPlanBuilderSheetDraftsProvider>
   );
 }

@@ -16,6 +16,7 @@ type TrainingPreferencesBottomSheetProps = {
   onSave: () => void;
   saveLabel?: string;
   saveLoadingLabel?: string;
+  testID?: string;
   title?: string;
   visible: boolean;
 };
@@ -31,6 +32,7 @@ export function TrainingPreferencesBottomSheet({
   onSave,
   saveLabel = "Save",
   saveLoadingLabel = "Saving...",
+  testID = "training-preferences-bottom-sheet",
   title = "Training preferences",
   visible,
 }: TrainingPreferencesBottomSheetProps) {
@@ -65,7 +67,7 @@ export function TrainingPreferencesBottomSheet({
           </LoadingButton>
         </View>
       }
-      testID="training-preferences-bottom-sheet"
+      testID={testID}
     >
       {children}
     </AppBottomSheet>

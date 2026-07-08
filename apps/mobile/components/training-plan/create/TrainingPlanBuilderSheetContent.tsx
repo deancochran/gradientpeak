@@ -54,6 +54,7 @@ type TrainingPlanBuilderService = ReturnType<typeof useTrainingPlanCreationServi
 
 type TrainingPlanBuilderSheetDraftsContextValue = {
   canResetActivityFilters: boolean;
+  canResetPlanningPreferences: boolean;
   canSavePlanningPreferences: boolean;
   canSaveProfileGoal: boolean;
   draftActivityPlanCategoryFilter: ActivityCategoryFilter;
@@ -118,6 +119,7 @@ export function TrainingPlanBuilderSheetDraftsProvider({
     mode: "onChange",
   });
   const draftPlanningPreferences = planningPreferencesForm.watch();
+  const canResetPlanningPreferences = planningPreferencesForm.formState.isDirty;
   const planningPreferenceIssues = useMemo(
     () => validatePlanningPreferencesConsistency(draftPlanningPreferences),
     [draftPlanningPreferences],
@@ -256,6 +258,7 @@ export function TrainingPlanBuilderSheetDraftsProvider({
     () => ({
       canResetActivityFilters:
         draftActivityPlanCategoryFilter !== null || draftActivityPlanSort !== "newest",
+      canResetPlanningPreferences,
       canSavePlanningPreferences,
       canSaveProfileGoal: profileGoalTitle.trim().length > 0,
       draftActivityPlanCategoryFilter,

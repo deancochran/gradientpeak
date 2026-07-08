@@ -13,10 +13,9 @@ import { Button } from "@repo/ui/components/button";
 import { Form } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
-import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useWatch } from "react-hook-form";
 import { ActivityIndicator, View } from "react-native";
-import { TrainingPreferencesProjectionPreview } from "@/components/settings/TrainingPreferencesProjectionPreview";
 import {
   AvailabilitySection,
   type WeekdayKey,
@@ -174,7 +173,6 @@ export function TrainingPreferencesEditor({
 }: TrainingPreferencesEditorProps = {}) {
   const utils = api.useUtils();
   const settingsQuery = useProfileSettings();
-  const activePlanQuery = api.trainingPlans.getActivePlan.useQuery(undefined);
   const [activeTab, setActiveTab] = useState<PreferencesTabKey>("preferences");
   const [isSheetVisible, setIsSheetVisible] = useState(true);
   const [showAdvancedBaselineControls, setShowAdvancedBaselineControls] = useState(false);
@@ -203,7 +201,6 @@ export function TrainingPreferencesEditor({
 
   const draft = (useWatch({ control: form.control }) ??
     form.getValues()) as AthleteTrainingSettingsFormInput;
-  const deferredDraft = useDeferredValue(draft);
 
   const upsertMutation = api.profileSettings.upsert.useMutation();
   const submitForm = useZodFormSubmit<AthleteTrainingSettings>({
@@ -416,11 +413,6 @@ export function TrainingPreferencesEditor({
         saveLoadingLabel={saveButtonState.loadingLabel}
       >
         <TrainingPreferencesContent>
-          <TrainingPreferencesProjectionPreview
-            draft={deferredDraft}
-            planId={activePlanQuery.data?.id}
-          />
-
           <TrainingPreferencesTabs
             activeTab={activeTab}
             onSelectTab={setActiveTab}
