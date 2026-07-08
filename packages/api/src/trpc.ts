@@ -4,6 +4,7 @@ import superjson from "superjson";
 import z, { ZodError } from "zod";
 import type { Context } from "./context";
 import { isTrainingPlanCommitErrorCause } from "./lib/errors/trainingPlanCommitErrors";
+import { checkApiRateLimit } from "./lib/rate-limit";
 
 const t = initTRPC.context<Context>().create({
   sse: {
@@ -27,9 +28,20 @@ const t = initTRPC.context<Context>().create({
 });
 
 export const createTRPCRouter = t.router;
-export const publicProcedure = t.procedure;
+export const publicProcedure = t.procedure.use(async ({ ctx, next }) => {
+  const rateLimit = checkApiRateLimit(ctx);
 
-export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
+  if (!rateLimit.allowed) {
+    throw new TRPCError({
+      code: "TOO_MANY_REQUESTS",
+      message: `Rate limit exceeded. Retry after ${rateLimit.retryAfterSeconds} seconds.`,
+    });
+  }
+
+  return next();
+});
+
+export const protectedProcedure = publicProcedure.use(async ({ ctx, next }) => {
   if (!ctx.session?.user) {
     throw new TRPCError({ code: "UNAUTHORIZED" });
   }

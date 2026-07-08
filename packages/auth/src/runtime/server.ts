@@ -83,7 +83,7 @@ function resolveAuthSecret(explicitSecret?: string) {
     return `gradientpeak-${process.env["NODE_ENV"] ?? "unknown"}-fallback-auth-secret`;
   }
 
-  return undefined;
+  throw new Error("BETTER_AUTH_SECRET is required outside development/build-time auth setup.");
 }
 
 export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {

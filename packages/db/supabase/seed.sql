@@ -78,6 +78,10 @@ create trigger on_auth_user_created
 after insert on auth.users
 for each row execute procedure public.handle_new_user();
 
+revoke execute on function public.handle_new_user() from public;
+revoke execute on function public.handle_new_user() from anon;
+revoke execute on function public.handle_new_user() from authenticated;
+
 -- PROFILE AVATAR BUCKET
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
@@ -103,10 +107,6 @@ with check (
 );
 
 drop policy if exists "Anyone can view avatars" on storage.objects;
-create policy "Anyone can view avatars"
-on storage.objects
-for select
-using (bucket_id = 'profile-avatars');
 
 
 
