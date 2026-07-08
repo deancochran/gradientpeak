@@ -1,47 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { profileQuickUpdateSchema } from "@repo/core";
-import {
-  activities,
-  activityEfforts,
-  type PublicProfilesRow,
-  profileMetrics,
-  profiles,
-} from "@repo/db";
+import { activityEfforts, type PublicProfilesRow, profileMetrics, profiles } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
-import { createActivityAnalysisStore } from "../infrastructure/repositories";
-import { buildActivityDerivedSummaryMap } from "../lib/activity-analysis";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
-import { buildIndexPageInfo, indexCursorSchema, parseIndexCursor } from "../utils/index-cursor";
 import { bumpProfileEstimationState } from "../utils/profile-estimation-state";
 import {
   redactPrivateProfileDetailFields,
   redactProfileListFields,
 } from "../utils/profile-privacy";
-
-const profileListFiltersSchema = z
-  .object({
-    username: z.string().optional(),
-    limit: z.number().int().min(1).max(50).default(25),
-    cursor: indexCursorSchema.optional(),
-    direction: z.enum(["forward", "backward"]).optional(),
-  })
-  .strict();
-
-const profileStatsSchema = z
-  .object({
-    period: z.number().min(1).max(365).default(30),
-  })
-  .strict();
-
-const trainingZonesUpdateSchema = z
-  .object({
-    threshold_hr: z.number().int().positive().optional(),
-    ftp: z.number().int().positive().optional(),
-  })
-  .strict();
 
 const uuidSchema = z.string().uuid();
 const nullableAvatarUrlSchema = z.string().nullable();
@@ -598,101 +567,6 @@ export const profilesRouter = createTRPCRouter({
     }
   }),
 
-  list: protectedProcedure.input(profileListFiltersSchema).query(async ({ ctx, input }) => {
-    const db = getRequiredDb(ctx);
-    void ctx;
-    const offset = parseIndexCursor(input.cursor);
-
-    try {
-      const whereClause = input.username
-        ? sql`"profiles"."username" ilike ${`%${input.username}%`}`
-        : undefined;
-      const rows: ProfileBaseRow[] = whereClause
-        ? await db
-            .select(profileBaseSelect)
-            .from(profiles)
-            .where(whereClause)
-            .limit(input.limit)
-            .offset(offset)
-        : await db.select(profileBaseSelect).from(profiles).limit(input.limit).offset(offset);
-      const totalRows = whereClause
-        ? await db.select({ total: sql<number>`count(*)::int` }).from(profiles).where(whereClause)
-        : await db.select({ total: sql<number>`count(*)::int` }).from(profiles);
-      const total = Number(totalRows[0]?.total ?? 0);
-
-      return {
-        items: rows.map((profile) => serializeProfileListItem(profile)),
-        total,
-        ...buildIndexPageInfo({ offset, limit: input.limit, total }),
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) {
-        throw error;
-      }
-
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Failed to fetch profiles",
-      });
-    }
-  }),
-
-  getStats: protectedProcedure.input(profileStatsSchema).query(async ({ ctx, input }) => {
-    const db = getRequiredDb(ctx);
-
-    try {
-      const endDate = new Date();
-      const startDate = new Date();
-      startDate.setDate(endDate.getDate() - input.period);
-
-      const activityRows = await db
-        .select()
-        .from(activities)
-        .where(
-          and(
-            eq(activities.profile_id, ctx.session.user.id),
-            gte(activities.started_at, startDate),
-            lte(activities.started_at, endDate),
-          ),
-        );
-
-      const derivedMap = await buildActivityDerivedSummaryMap({
-        store: createActivityAnalysisStore(db),
-        profileId: ctx.session.user.id,
-        activities: activityRows,
-      });
-
-      const totalActivities = activityRows.length;
-      const totalDuration = activityRows.reduce((sum, activity) => {
-        return sum + (activity.duration_seconds || 0);
-      }, 0);
-      const totalDistance = activityRows.reduce((sum, activity) => {
-        return sum + (activity.distance_meters || 0);
-      }, 0);
-      const totalTSS = activityRows.reduce((sum, activity) => {
-        return sum + (derivedMap.get(activity.id)?.tss || 0);
-      }, 0);
-
-      return {
-        totalActivities,
-        totalDuration,
-        totalDistance,
-        totalTSS,
-        avgDuration: totalActivities > 0 ? totalDuration / totalActivities : 0,
-        period: input.period,
-      };
-    } catch (error) {
-      if (error instanceof TRPCError) {
-        throw error;
-      }
-
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Failed to get profile stats",
-      });
-    }
-  }),
-
   getZones: protectedProcedure.query(async ({ ctx }) => {
     const db = getRequiredDb(ctx);
 
@@ -798,48 +672,4 @@ export const profilesRouter = createTRPCRouter({
       });
     }
   }),
-
-  updateZones: protectedProcedure
-    .input(trainingZonesUpdateSchema)
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-
-      try {
-        await Promise.all([
-          input.threshold_hr === undefined
-            ? Promise.resolve()
-            : syncProfileMetric(db, {
-                profileId: ctx.session.user.id,
-                metricType: "lthr",
-                value: input.threshold_hr,
-              }),
-          input.ftp === undefined
-            ? Promise.resolve()
-            : syncManualFtp(db, {
-                profileId: ctx.session.user.id,
-                value: input.ftp,
-              }),
-        ]);
-
-        const profile = await getSerializedProfile(db, ctx.session.user.id);
-
-        if (!profile) {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Profile not found",
-          });
-        }
-
-        return profile;
-      } catch (error) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
-
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to update training zones",
-        });
-      }
-    }),
 });
