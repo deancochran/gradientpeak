@@ -8,6 +8,7 @@ import {
   buildProjectionChartPayloadFromDeterministicProjection,
   buildProjectionEngineInput,
   buildReadinessForecastTimeline,
+  type CanonicalSport,
   type CreationContextSummary,
   calculateTrainingLoadSeries,
   canonicalizeMinimalTrainingPlanCreate,
@@ -2495,7 +2496,7 @@ function buildSafeHrThresholdFallbackTarget(input?: {
 }
 
 function inferFallbackRaceTargetSpeedMps(input: {
-  activityCategory: "run" | "bike" | "swim" | "other";
+  activityCategory: CanonicalSport;
   distanceMeters: number;
 }): number {
   const distanceKm = input.distanceMeters / 1000;
@@ -2518,7 +2519,7 @@ function inferFallbackRaceTargetSpeedMps(input: {
 
 function buildRacePerformanceTarget(input: {
   distanceMeters: number;
-  activityCategory: "run" | "bike" | "swim" | "other";
+  activityCategory: CanonicalSport;
   targetTimeSeconds?: number;
   targetSpeedMps?: number;
 }): MinimalTrainingPlanCreate["goals"][number]["targets"][number] {

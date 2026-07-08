@@ -15,6 +15,7 @@ import type {
   ProjectionSafetyConfig,
   ProjectionSportLoadState,
 } from "./projectionCalculations";
+import type { TrainingPrescription } from "./trainingPrescription";
 
 export interface ProjectionPeriodizationPhase {
   id: string;
@@ -202,6 +203,7 @@ export interface ProjectionChartPayload {
   prediction_uncertainty?: ProjectionPredictionUncertainty;
   goal_target_distributions?: ProjectionGoalTargetDistribution[];
   optimization_tradeoff_summary?: ProjectionDiagnostics["optimization_tradeoff_summary"];
+  training_prescription?: TrainingPrescription;
   reference_trajectory?: ReferenceTrajectory;
   trajectory_mode?: TrajectoryMode;
   feasibility_assessment?: FeasibilityAssessment;
@@ -306,6 +308,7 @@ export function buildProjectionChartPayloadFromDeterministicProjection(input: {
     prediction_uncertainty: deterministicProjectionCompat.prediction_uncertainty,
     goal_target_distributions: deterministicProjectionCompat.goal_target_distributions,
     optimization_tradeoff_summary: deterministicProjection.optimization_tradeoff_summary,
+    training_prescription: deterministicProjection.training_prescription,
     reference_trajectory: deterministicProjection.reference_trajectory,
     trajectory_mode: deterministicProjection.trajectory_mode,
     feasibility_assessment: deterministicProjection.feasibility_assessment,

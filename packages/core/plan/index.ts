@@ -63,6 +63,7 @@ export * from "./trainingPlanCreationValidation";
 export * from "./trainingPlanPreview";
 export * from "./trainingPlanSchedulingPreview";
 export * from "./trainingPlanStructureProposal";
+export * from "./trainingPrescription";
 export * from "./trainingSettingsDefaults";
 export * from "./verification/activityTemplateCatalog";
 export * from "./verification/activityTemplateCoverageMatrix";

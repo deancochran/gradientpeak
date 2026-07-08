@@ -2,6 +2,7 @@ import {
   type PreviewCreationConfigInput,
   previewCreationConfigInputSchema,
 } from "../contracts/training-plan-creation/schemas";
+import type { CanonicalSport } from "../schemas/sport";
 import { addDaysDateOnlyUtc } from "./dateOnlyUtc";
 import type { PlanningContext } from "./planningContext";
 import type { PlanningGoal } from "./planningGoals";
@@ -215,19 +216,19 @@ function buildMinimalPlanGoal(goal: {
         target_type: "race_performance";
         distance_m: number;
         target_time_s: number;
-        activity_category: "run" | "bike" | "swim" | "other";
+        activity_category: CanonicalSport;
       }
     | {
         target_type: "power_threshold";
         target_watts: number;
         test_duration_s: number;
-        activity_category: "run" | "bike" | "swim" | "other";
+        activity_category: CanonicalSport;
       }
     | {
         target_type: "pace_threshold";
         target_speed_mps: number;
         test_duration_s: number;
-        activity_category: "run" | "bike" | "swim" | "other";
+        activity_category: CanonicalSport;
       }
     | { target_type: "hr_threshold"; target_lthr_bpm: number }
   >;

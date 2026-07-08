@@ -8,6 +8,7 @@ import {
   type AthletePreferenceProfile,
   defaultAthletePreferenceProfile,
 } from "../schemas/settings/profile_settings";
+import type { CanonicalSport } from "../schemas/sport";
 import type {
   CreationContextSummary,
   GoalTargetV2,
@@ -88,6 +89,11 @@ import {
 import { computeGoalGdi, computePlanGdi, type FeasibilityBand } from "./scoring/gdi";
 import { scoreGoalAssessment } from "./scoring/goalScore";
 import { scorePlanGoals } from "./scoring/planScore";
+import {
+  resolveTrainingPrescription,
+  type TrainingPrescription,
+  type TrainingPrescriptionGoalInput,
+} from "./trainingPrescription";
 
 export { computeCapacityEnvelope } from "./projection/capacity-envelope";
 export {
@@ -144,12 +150,14 @@ export type NoHistoryFitnessLevel = "weak" | "strong";
 export type NoHistoryGoalTier = "low" | "medium" | "high";
 export type BuildTimeFeasibility = "full" | "limited" | "insufficient";
 export type ProjectionFloorConfidence = "high" | "medium" | "low";
-export type ProjectionSport = "run" | "bike" | "swim" | "other";
+export type ProjectionSport = CanonicalSport;
 export type ProjectionLoadMethod =
   | "bike_power"
   | "run_pace"
   | "swim_threshold_speed"
   | "heart_rate"
+  | "strength_volume"
+  | "rpe_duration"
   | "manual_estimate";
 export type ProjectionFallbackMode =
   | "primary_method"
@@ -217,7 +225,7 @@ export interface NoHistoryAnchorContext {
   intensity_model?: Partial<NoHistoryIntensityModel>;
 }
 
-type ProjectionActivityCategory = "run" | "bike" | "swim" | "other";
+type ProjectionActivityCategory = "run" | "bike" | "swim" | "strength" | "other";
 
 export type NoHistoryGoalTargetInput =
   | {
@@ -1428,6 +1436,7 @@ export interface DeterministicProjectionPayload {
   load_resolution_summary?: ProjectionLoadResolutionSummary;
   projection_diagnostics?: ProjectionDiagnostics;
   optimization_tradeoff_summary?: ProjectionDiagnostics["optimization_tradeoff_summary"];
+  training_prescription?: TrainingPrescription;
   sport_load_states?: ProjectionSportLoadState[];
   dose_recommendation?: ProjectionDoseRecommendation;
   goal_assessments?: Array<{
@@ -1493,6 +1502,7 @@ export interface BuildDeterministicProjectionInput {
   starting_tsb?: number;
   creation_config?: ProjectionSafetyConfigInput;
   preference_profile?: AthletePreferenceProfile;
+  training_prescription?: TrainingPrescription;
   no_history_context?: NoHistoryAnchorContext;
   prior_inferred_snapshot?: PriorInferredStateSnapshotInput;
   disable_weekly_tss_optimizer?: boolean;
@@ -3114,6 +3124,7 @@ function resolveTargetSport(targets: GoalTargetV2[] | undefined): ProjectionSpor
     run: 0,
     bike: 0,
     swim: 0,
+    strength: 0,
     other: 0,
   };
 
@@ -3173,6 +3184,13 @@ function resolveSportLoadMethod(input: {
     };
   }
   if (input.sport !== "other" && input.evidenceScore >= 0.28) {
+    if (input.sport === "strength") {
+      return {
+        load_method: "strength_volume",
+        fallback_mode: weakEvidence ? "sparse_evidence" : "same_sport_fallback",
+        base_confidence: weakEvidence ? 0.5 : 0.64,
+      };
+    }
     return {
       load_method: "heart_rate",
       fallback_mode: weakEvidence ? "sparse_evidence" : "same_sport_fallback",
@@ -3214,13 +3232,28 @@ function buildSportLoadStates(input: {
   goals: BuildDeterministicProjectionInput["goals"];
   evidenceConfidenceScore: number;
   capabilityFactors?: ContinuousCapabilityFactors | null;
+  trainingPrescription?: TrainingPrescription;
 }): ProjectionSportLoadState[] {
-  const sports: ProjectionSport[] = ["run", "bike", "swim", "other"];
+  const prescribedSports = Object.keys(
+    input.trainingPrescription?.activity_categories ?? {},
+  ) as ProjectionSport[];
+  const sports: ProjectionSport[] = prescribedSports.length
+    ? prescribedSports
+    : ["run", "bike", "swim", "strength", "other"];
   const weights = new Map<ProjectionSport, number>(sports.map((sport) => [sport, 0]));
 
-  for (const goal of input.goals) {
-    const sport = resolveTargetSport(goal.targets);
-    weights.set(sport, (weights.get(sport) ?? 0) + getPriorityInfluenceWeight(goal.priority));
+  if (input.trainingPrescription) {
+    for (const sport of sports) {
+      weights.set(
+        sport,
+        input.trainingPrescription.activity_categories[sport]?.priority_weight ?? 0,
+      );
+    }
+  } else {
+    for (const goal of input.goals) {
+      const sport = resolveTargetSport(goal.targets);
+      weights.set(sport, (weights.get(sport) ?? 0) + getPriorityInfluenceWeight(goal.priority));
+    }
   }
 
   const totalWeight = [...weights.values()].reduce((sum, value) => sum + value, 0) || sports.length;
@@ -3230,11 +3263,19 @@ function buildSportLoadStates(input: {
   return sports.map((sport) => {
     const sportWeight = Math.max(0.08, (weights.get(sport) ?? 0) / totalWeight);
     const sportGoals = input.goals.filter((goal) => resolveTargetSport(goal.targets) === sport);
-    const { load_method, fallback_mode, base_confidence } = resolveSportLoadMethod({
-      sport,
-      targets: sportGoals.flatMap((goal) => goal.targets ?? []),
-      evidenceScore: input.evidenceConfidenceScore,
-    });
+    const prescribedLoadModel = input.trainingPrescription?.activity_categories[sport]?.load_model;
+    const resolvedLoadMethod = prescribedLoadModel
+      ? {
+          load_method: prescribedLoadModel.load_method,
+          fallback_mode: "primary_method" as const,
+          base_confidence: 0.9,
+        }
+      : resolveSportLoadMethod({
+          sport,
+          targets: sportGoals.flatMap((goal) => goal.targets ?? []),
+          evidenceScore: input.evidenceConfidenceScore,
+        });
+    const { load_method, fallback_mode, base_confidence } = resolvedLoadMethod;
     const rolling7 = round1(
       last1.reduce((sum, cycle) => sum + cycle.planned_weekly_tss * sportWeight, 0),
     );
@@ -3252,7 +3293,16 @@ function buildSportLoadStates(input: {
     );
     const load_confidence = round3(clamp01(base_confidence * source_quality));
     const mechanicalMultiplier =
-      sport === "run" ? 0.34 : sport === "other" ? 0.16 : sport === "bike" ? 0.08 : 0.05;
+      prescribedLoadModel?.mechanical_load_multiplier ??
+      (sport === "run"
+        ? 0.34
+        : sport === "strength"
+          ? 0.42
+          : sport === "other"
+            ? 0.16
+            : sport === "bike"
+              ? 0.08
+              : 0.05);
 
     return {
       sport,
@@ -4168,11 +4218,18 @@ function buildDeterministicProjectionPayloadInternal(
     projection_weeks: Math.max(1, microcycles.length),
     goal_count: goalMarkers.length,
   });
+  const trainingPrescription =
+    input.training_prescription ??
+    resolveTrainingPrescription({
+      goals: input.goals as TrainingPrescriptionGoalInput[],
+      ...optionalProperty("preferences", input.preference_profile),
+    });
   const sportLoadStates = buildSportLoadStates({
     microcycles,
     goals: input.goals,
     evidenceConfidenceScore,
     ...optionalProperty("capabilityFactors", noHistory?.capability_factors),
+    trainingPrescription,
   });
   const sportLoadStateBySport = new Map(sportLoadStates.map((state) => [state.sport, state]));
   const pointReadinessForScoring = computeProjectionPointReadinessScores({
@@ -4500,6 +4557,7 @@ function buildDeterministicProjectionPayloadInternal(
     load_resolution_summary: loadResolutionSummary,
     projection_diagnostics: projectionDiagnostics,
     optimization_tradeoff_summary: projectionDiagnostics.optimization_tradeoff_summary,
+    training_prescription: trainingPrescription,
     sport_load_states: sportLoadStates,
     dose_recommendation: doseRecommendation,
     goal_assessments: goalAssessments,

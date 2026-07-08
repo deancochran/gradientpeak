@@ -205,6 +205,7 @@ const DISTANCE_PRESETS_BY_ACTIVITY: Record<
     { label: "1500m", value: 1.5 },
     { label: "3.8K", value: 3.8 },
   ],
+  strength: [],
   other: [],
 };
 

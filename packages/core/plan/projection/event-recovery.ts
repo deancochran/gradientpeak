@@ -11,6 +11,7 @@
  * - ATL overload increases recovery time
  */
 
+import type { CanonicalSport } from "../../schemas/sport";
 import type { GoalTargetV2 } from "../../schemas/training_plan_structure";
 import { getGenderAdjustedRecoveryLoadMultiplier } from "../calibration-constants";
 import type { ProjectionPointReadinessInput } from "./readiness";
@@ -109,7 +110,7 @@ export interface PostEventFatigueInput {
 function estimateRaceIntensity(input: {
   distance_m: number;
   duration_s: number;
-  activity: "run" | "bike" | "swim" | "other";
+  activity: CanonicalSport;
 }): number {
   const durationHours = input.duration_s / 3600;
   const baseIntensity = clamp(96 - Math.log1p(Math.max(0.1, durationHours)) * 7.5, 70, 96);
@@ -122,7 +123,9 @@ function estimateRaceIntensity(input: {
         ? 0.9
         : input.activity === "swim"
           ? 0.95
-          : 0.85;
+          : input.activity === "strength"
+            ? 0.8
+            : 0.85;
 
   return Math.round(baseIntensity * activityFactor);
 }

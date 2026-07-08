@@ -1,3 +1,4 @@
+import type { CanonicalSport } from "@repo/core";
 import type { TrainingPlanBuilderGoalBlueprint } from "./types";
 
 export interface TrainingPlanCreationProfileGoalSnapshot {
@@ -5,7 +6,7 @@ export interface TrainingPlanCreationProfileGoalSnapshot {
   title: string;
   target_date?: string | null;
   priority?: number | null;
-  activity_category?: "run" | "bike" | "swim" | "other" | null;
+  activity_category?: CanonicalSport | null;
   objective?: TrainingPlanBuilderGoalBlueprint["objective"];
 }
 

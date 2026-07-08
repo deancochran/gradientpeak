@@ -1,4 +1,9 @@
-import { buildGoalCreatePayload, createEmptyGoalDraft, type GoalEditorDraft } from "@repo/core";
+import {
+  buildGoalCreatePayload,
+  type CanonicalSport,
+  createEmptyGoalDraft,
+  type GoalEditorDraft,
+} from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import { Plus, X } from "lucide-react-native";
@@ -18,7 +23,7 @@ export interface BuilderGoalProfileGoal {
   title: string;
   target_date?: string | null;
   priority?: number | null;
-  activity_category?: "run" | "bike" | "swim" | "other" | null;
+  activity_category?: CanonicalSport | null;
   objective?: TrainingPlanBuilderGoalBlueprint["objective"];
 }
 
