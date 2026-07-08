@@ -12,7 +12,7 @@ const bodySchema = z
   .strict();
 
 export const Route = createFileRoute(
-  "/api/internal/activity-plan-derived-metrics/drain-refresh-queue" as never,
+  "/api/internal/activity-plan-derived-metrics/drain-refresh-queue",
 )({
   server: {
     handlers: {

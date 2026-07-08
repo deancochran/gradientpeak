@@ -54,6 +54,34 @@ function ActivityFiltersFooter() {
   );
 }
 
+function PlanningPreferencesFooter({ onClose }: { onClose: () => void }) {
+  const sheetDrafts = useTrainingPlanBuilderSheetDrafts();
+
+  return (
+    <View className="flex-row gap-3">
+      <Button
+        className="flex-1"
+        onPress={() => sheetDrafts.cancelDraftForSheet("preferences")}
+        variant="outline"
+        testID="training-plan-builder-preferences-reset"
+      >
+        <Text>Reset</Text>
+      </Button>
+      <Button
+        className="flex-1"
+        disabled={!sheetDrafts.canSavePlanningPreferences}
+        onPress={() => {
+          sheetDrafts.applyPlanningPreferencesDraft();
+          onClose();
+        }}
+        testID="training-plan-builder-preferences-save"
+      >
+        <Text className="text-primary-foreground font-semibold">Save</Text>
+      </Button>
+    </View>
+  );
+}
+
 export function TrainingPlanBuilderSheets({ controller }: TrainingPlanBuilderSheetsProps) {
   const { builder } = controller;
   const { activityPicker, selection } = controller;
@@ -96,10 +124,16 @@ export function TrainingPlanBuilderSheets({ controller }: TrainingPlanBuilderShe
           activeSheet === "activityAssignment" || activeSheet === "session" ? "custom" : "scroll"
         }
         description={sheetDescription}
-        footer={activeSheet === "activityFilters" ? <ActivityFiltersFooter /> : null}
+        footer={
+          activeSheet === "activityFilters" ? (
+            <ActivityFiltersFooter />
+          ) : activeSheet === "preferences" ? (
+            <PlanningPreferencesFooter onClose={closeBuilderSheet} />
+          ) : null
+        }
         goBackSheet={goBackSheet}
         headerActionLabel={sheetActionLabel}
-        hasSaveAction={sheetHasSaveAction}
+        hasSaveAction={activeSheet === "preferences" ? false : sheetHasSaveAction}
         headerContent={
           activeSheet === "activityAssignment" ? (
             <BuilderActivityAssignmentSheetHeader

@@ -1,15 +1,17 @@
 import { useRouter } from "expo-router";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { RefreshControl, ScrollView, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { TrainingPathSection } from "@/components/plan/training-path/TrainingPathSection";
 import { usePlanTrainingPathData } from "@/components/plan/training-path/usePlanTrainingPathData";
+import { TrainingPreferencesEditor } from "@/components/settings/training-preferences/TrainingPreferencesEditor";
 import { AppHeader } from "@/components/shared";
 import { ROUTES } from "@/lib/constants/routes";
 import { usePerformanceScreenReady } from "@/lib/performance";
 
 function PlanDashboardScreen() {
   const router = useRouter();
+  const [trainingPreferencesVisible, setTrainingPreferencesVisible] = useState(false);
   usePerformanceScreenReady("route-plan");
   const trainingPath = usePlanTrainingPathData();
 
@@ -45,10 +47,7 @@ function PlanDashboardScreen() {
       router.navigate({ pathname: "/event-detail", params: { id: eventId } } as never),
     [router],
   );
-  const navigateToTrainingPreferences = useCallback(
-    () => router.navigate(ROUTES.PLAN.TRAINING_PREFERENCES as never),
-    [router],
-  );
+  const navigateToTrainingPreferences = useCallback(() => setTrainingPreferencesVisible(true), []);
 
   return (
     <View className="flex-1 bg-background" testID="plan-screen">
@@ -88,6 +87,11 @@ function PlanDashboardScreen() {
           />
         </View>
       </ScrollView>
+      <TrainingPreferencesEditor
+        visible={trainingPreferencesVisible}
+        showLauncher={false}
+        onClose={() => setTrainingPreferencesVisible(false)}
+      />
     </View>
   );
 }

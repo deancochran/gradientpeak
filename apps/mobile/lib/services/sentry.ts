@@ -1,258 +1,194 @@
-/**
- * Sentry Error Tracking Integration
- *
- * Provides production error tracking and monitoring for the mobile app.
- * Currently configured as a placeholder - install @sentry/react-native to enable.
- *
- * Installation:
- * 1. Run: npx expo install @sentry/react-native
- * 2. Add SENTRY_DSN to .env.local
- * 3. Uncomment the import and initialization code below
- *
- * @see https://docs.sentry.io/platforms/react-native/
- */
-
+import * as Sentry from "@sentry/react-native";
+import { isRunningInExpoGo } from "expo";
 import Constants from "expo-constants";
 
-// Uncomment when @sentry/react-native is installed
-// import * as Sentry from "@sentry/react-native";
+type SentryLevel = "info" | "warning" | "error";
 
-interface SentryConfig {
-  dsn: string;
-  environment: string;
-  enableInExpoDevelopment?: boolean;
-  tracesSampleRate?: number;
-  beforeSend?: (event: any, hint?: any) => any | null;
+const extra = Constants.expoConfig?.extra ?? {};
+let sentryInitialized = false;
+
+function readSampleRate(value: string | undefined, fallback: number) {
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-/**
- * Check if Sentry should be enabled
- */
+function getSentryDsn() {
+  return extra.sentryDsn ?? process.env.EXPO_PUBLIC_SENTRY_DSN;
+}
+
 function shouldEnableSentry(): boolean {
-  // Don't enable in development unless explicitly configured
-  if (__DEV__) {
+  const dsn = getSentryDsn();
+  if (!dsn) {
     return false;
   }
 
-  // Check if DSN is configured
-  const dsn = Constants.expoConfig?.extra?.sentryDsn;
-  if (!dsn || dsn === "") {
-    console.warn("Sentry DSN not configured. Error tracking disabled.");
-    return false;
-  }
-
-  return true;
+  return !__DEV__ || process.env.EXPO_PUBLIC_ENABLE_SENTRY_IN_DEV === "1";
 }
 
-/**
- * Initialize Sentry error tracking
- *
- * Call this early in your app initialization, typically in _layout.tsx
- */
 export function initSentry() {
-  if (!shouldEnableSentry()) {
+  if (!shouldEnableSentry() || sentryInitialized) {
     return;
   }
 
-  const _dsn = Constants.expoConfig?.extra?.sentryDsn;
-  const environment = __DEV__ ? "development" : "production";
+  const environment = String(
+    extra.appEnv ?? process.env.APP_ENV ?? (__DEV__ ? "development" : "production"),
+  );
 
-  console.log(`Initializing Sentry for ${environment} environment`);
-
-  // Uncomment when @sentry/react-native is installed
-  /*
   Sentry.init({
-    dsn,
+    dsn: String(getSentryDsn()),
+    enableLogs: true,
+    enableNativeFramesTracking: !isRunningInExpoGo(),
     environment,
-    enableNative: true,
-    tracesSampleRate: 0.2, // 20% of transactions for performance monitoring
-
-    // Don't send errors for common React Native warnings
-    beforeSend(event, hint) {
-      // Filter out expo-crypto warnings in development
-      if (event.message?.includes("expo-crypto") && __DEV__) {
-        return null;
-      }
-
-      // Filter out network errors in development
+    integrations: [
+      Sentry.expoRouterIntegration({
+        enableTimeToInitialDisplay: !isRunningInExpoGo(),
+      }),
+      Sentry.mobileReplayIntegration(),
+    ],
+    replaysOnErrorSampleRate: readSampleRate(
+      process.env.EXPO_PUBLIC_SENTRY_REPLAYS_ON_ERROR_SAMPLE_RATE,
+      1,
+    ),
+    replaysSessionSampleRate: readSampleRate(
+      process.env.EXPO_PUBLIC_SENTRY_REPLAYS_SESSION_SAMPLE_RATE,
+      0,
+    ),
+    sendDefaultPii: process.env.EXPO_PUBLIC_SENTRY_SEND_DEFAULT_PII === "1",
+    tracesSampleRate: readSampleRate(process.env.EXPO_PUBLIC_SENTRY_TRACES_SAMPLE_RATE, 1),
+    beforeSend(event) {
       if (event.message?.includes("Network request failed") && __DEV__) {
         return null;
       }
 
       return event;
     },
-
-    // Attach user context automatically
-    integrations: [
-      new Sentry.ReactNativeTracing({
-        routingInstrumentation: new Sentry.ReactNavigationInstrumentation(),
-      }),
-    ],
   });
-  */
+  sentryInitialized = true;
 }
 
-/**
- * Capture an exception manually
- */
-export function captureException(error: Error, context?: Record<string, any>) {
-  if (!shouldEnableSentry()) {
-    console.error("Error captured (Sentry disabled):", error, context);
+export function captureException(error: Error, context?: Record<string, unknown>) {
+  initSentry();
+
+  if (!sentryInitialized) {
+    if (__DEV__) {
+      console.error("Error captured (Sentry disabled):", error, context);
+    }
     return;
   }
 
-  // Uncomment when @sentry/react-native is installed
-  /*
-  Sentry.captureException(error, {
-    extra: context,
-  });
-  */
+  Sentry.captureException(error, { extra: context });
 }
 
-/**
- * Capture a message (for non-error events)
- */
 export function captureMessage(
   message: string,
-  level: "info" | "warning" | "error" = "info",
-  context?: Record<string, any>,
+  level: SentryLevel = "info",
+  context?: Record<string, unknown>,
 ) {
-  if (!shouldEnableSentry()) {
-    console.log(`Message captured (Sentry disabled) [${level}]:`, message, context);
+  initSentry();
+
+  if (!sentryInitialized) {
+    if (__DEV__) {
+      console.log(`Message captured (Sentry disabled) [${level}]:`, message, context);
+    }
     return;
   }
 
-  // Uncomment when @sentry/react-native is installed
-  /*
-  Sentry.captureMessage(message, {
-    level: level as Sentry.SeverityLevel,
-    extra: context,
+  Sentry.withScope((scope) => {
+    if (context) {
+      scope.setExtras(context);
+    }
+    Sentry.captureMessage(message, level);
   });
-  */
 }
 
-/**
- * Set user context for error tracking
- */
-export function setUser(_user: { id: string; email?: string; username?: string }) {
-  if (!shouldEnableSentry()) {
+export function setUser(user: { id: string; email?: string; username?: string }) {
+  initSentry();
+
+  if (!sentryInitialized) {
     return;
   }
 
-  // Uncomment when @sentry/react-native is installed
-  /*
   Sentry.setUser({
-    id: user.id,
     email: user.email,
+    id: user.id,
     username: user.username,
   });
-  */
 }
 
-/**
- * Clear user context (e.g., on logout)
- */
 export function clearUser() {
-  if (!shouldEnableSentry()) {
-    return;
-  }
+  initSentry();
 
-  // Uncomment when @sentry/react-native is installed
-  /*
-  Sentry.setUser(null);
-  */
+  if (sentryInitialized) {
+    Sentry.setUser(null);
+  }
 }
 
-/**
- * Add breadcrumb for debugging context
- */
-export function addBreadcrumb(_category: string, _message: string, _data?: Record<string, any>) {
-  if (!shouldEnableSentry()) {
+export function addBreadcrumb(category: string, message: string, data?: Record<string, unknown>) {
+  initSentry();
+
+  if (!sentryInitialized) {
     return;
   }
 
-  // Uncomment when @sentry/react-native is installed
-  /*
   Sentry.addBreadcrumb({
     category,
-    message,
     data,
     level: "info",
+    message,
   });
-  */
 }
 
-/**
- * Wrap a function with error boundary
- */
 export function withErrorBoundary<T extends (...args: any[]) => any>(fn: T, context?: string): T {
-  return ((...args: any[]) => {
+  return ((...args: Parameters<T>) => {
     try {
       const result = fn(...args);
 
-      // Handle async functions
       if (result instanceof Promise) {
         return result.catch((error) => {
-          captureException(error, { context, args });
+          captureException(error, { context });
           throw error;
         });
       }
 
       return result;
     } catch (error) {
-      captureException(error as Error, { context, args });
+      captureException(error as Error, { context });
       throw error;
     }
   }) as T;
 }
 
-/**
- * Performance monitoring utility
- */
-export function startTransaction(_name: string, _operation: string) {
-  if (!shouldEnableSentry()) {
+export function startTransaction(name: string, operation: string) {
+  initSentry();
+
+  if (!sentryInitialized) {
     return null;
   }
 
-  // Uncomment when @sentry/react-native is installed
-  /*
-  return Sentry.startTransaction({
-    name,
-    op: operation,
+  Sentry.addBreadcrumb({
+    category: "performance",
+    data: { operation },
+    level: "info",
+    message: name,
   });
-  */
 
   return null;
 }
 
-/**
- * Custom error class for app-specific errors
- */
 export class AppError extends Error {
   constructor(
     message: string,
     public code?: string,
-    public context?: Record<string, any>,
+    public context?: Record<string, unknown>,
   ) {
     super(message);
     this.name = "AppError";
   }
 }
 
-// Export placeholder Sentry for compatibility
-export const Sentry = {
-  captureException,
-  captureMessage,
-  setUser,
-  clearUser,
-  addBreadcrumb,
-  startTransaction,
-  Native: {
-    // Placeholder - will be real Sentry.Native when installed
-    nativeCrash: () => {
-      throw new Error("Native crash simulation - Sentry not installed");
-    },
-  },
-};
-
+export { Sentry };
 export default Sentry;

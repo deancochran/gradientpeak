@@ -19,11 +19,12 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AppBootstrapGate } from "@/components/auth/AppBootstrapGate";
 import { PerformanceBeacon } from "@/lib/performance";
 import { QueryProvider } from "@/lib/providers/QueryProvider";
+import { TelemetryProvider } from "@/lib/providers/TelemetryProvider";
 import { initializeServerConfig, useServerConfig } from "@/lib/server-config";
 import { LocationManager } from "@/lib/services/ActivityRecorder/location";
 import { StreamBuffer } from "@/lib/services/ActivityRecorder/StreamBuffer";
 import { GarminFitEncoder } from "@/lib/services/fit/GarminFitEncoder";
-import { initSentry } from "@/lib/services/sentry";
+import { initSentry, Sentry } from "@/lib/services/sentry";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useTheme } from "@/lib/stores/theme-store";
 import {
@@ -38,6 +39,10 @@ initSentry();
 
 // Export ErrorBoundary for the layout
 export function ErrorBoundary({ error, retry }: { error: Error; retry: () => void }) {
+  React.useEffect(() => {
+    Sentry.captureException(error);
+  }, [error]);
+
   return (
     <View className="flex-1 justify-center items-center p-5 bg-background">
       <Text className="text-destructive text-2xl font-bold mb-3 text-center">
@@ -108,7 +113,7 @@ function AppShell() {
   );
 }
 
-export default function RootLayout() {
+function RootLayout() {
   const { initialized } = useServerConfig();
   const authReady = useAuthStore((state) => state.ready);
   const initializeAuth = useAuthStore((state) => state.initialize);
@@ -144,10 +149,14 @@ export default function RootLayout() {
   }, [authReady, initializeAuth, initialized]);
 
   return (
-    <QueryProvider>
-      <AppBootstrapGate>
-        <AppShell />
-      </AppBootstrapGate>
-    </QueryProvider>
+    <TelemetryProvider>
+      <QueryProvider>
+        <AppBootstrapGate>
+          <AppShell />
+        </AppBootstrapGate>
+      </QueryProvider>
+    </TelemetryProvider>
   );
 }
+
+export default Sentry.wrap(RootLayout);

@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import { sentryTanstackStart } from "@sentry/tanstackstart-react/vite";
 import tailwindcss from "@tailwindcss/vite";
 import { devtools } from "@tanstack/devtools-vite";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
@@ -34,6 +35,11 @@ const config = defineConfig(({ mode }) => {
       tanstackStart(),
       viteReact(),
       nitro({ rollupConfig: { external: [/^@sentry\//] } }),
+      sentryTanstackStart({
+        authToken: env.SENTRY_AUTH_TOKEN,
+        org: env.SENTRY_ORG,
+        project: env.SENTRY_PROJECT,
+      }),
     ],
   };
 });

@@ -1,5 +1,5 @@
 const path = require("node:path");
-const { getDefaultConfig } = require("expo/metro-config");
+const { getSentryExpoConfig } = require("@sentry/react-native/metro");
 const { withNativewind } = require("nativewind/metro");
 
 const isStorybookEnabled = process.env.EXPO_PUBLIC_STORYBOOK_ENABLED === "1";
@@ -20,7 +20,7 @@ function getWithStorybook() {
 }
 
 /** @type {import('expo/metro-config').MetroConfig} */
-const config = withNativewind(getDefaultConfig(__dirname), {
+const config = withNativewind(getSentryExpoConfig(__dirname), {
   input: "./global.css",
 });
 

@@ -3,7 +3,7 @@ import { db } from "@repo/db/client";
 import { createFileRoute } from "@tanstack/react-router";
 import { isInternalProviderSyncAuthorized } from "../../../../../lib/internal-provider-sync-auth";
 
-export const Route = createFileRoute("/api/internal/provider-sync/wahoo/status" as never)({
+export const Route = createFileRoute("/api/internal/provider-sync/wahoo/status")({
   server: {
     handlers: {
       GET: async ({ request }) => {

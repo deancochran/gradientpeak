@@ -16,6 +16,7 @@ import {
 import { Text } from "@repo/ui/components/text";
 import type { ReactNode } from "react";
 import { Pressable, View } from "react-native";
+import { PlanLocalPreferencesSection } from "@/components/settings/training-preferences/sections/PlanLocalPreferencesSection";
 import {
   BuilderFieldList,
   getBuilderNumberStep,
@@ -359,47 +360,16 @@ export function BuilderPlanPreferencesContextForm({
   issues = [],
   onAddField,
   onChangeField,
-  onClose,
   onRemoveField,
 }: BuilderPlanPreferencesContextFormProps) {
-  const canonicalFields = fields.map((field) => ({ ...field, visible: true }));
-
   return (
-    <View className="gap-4">
-      <HelperCopy>
-        Edit plan-local overrides for this training plan only. Global athlete preferences stay in
-        Training Preferences. Clear a value to let the builder derive it from submitted goals,
-        sessions, and activities.
-      </HelperCopy>
-      {issues.length > 0 ? (
-        <View className="gap-2 rounded-xl border border-amber-400/40 bg-amber-400/10 px-3 py-2">
-          <Text className="text-sm font-semibold text-foreground">
-            Review plan preference constraints
-          </Text>
-          {issues.map((issue) => (
-            <Text
-              key={`${issue.code}-${issue.fields.join("-")}`}
-              className={
-                issue.severity === "blocking"
-                  ? "text-xs leading-4 text-destructive"
-                  : "text-xs leading-4 text-muted-foreground"
-              }
-            >
-              {issue.message}
-            </Text>
-          ))}
-        </View>
-      ) : null}
-      <BuilderFieldList
-        addLabel="Additional preferences"
-        emptyMessage="No planning preferences are available."
-        fields={canonicalFields}
-        onAddField={onAddField}
-        onChangeField={onChangeField}
-        onRemoveField={onRemoveField}
-      />
-      <DoneButton onClose={onClose} />
-    </View>
+    <PlanLocalPreferencesSection
+      fields={fields}
+      issues={issues}
+      onAddField={onAddField}
+      onChangeField={onChangeField}
+      onRemoveField={onRemoveField}
+    />
   );
 }
 

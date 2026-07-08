@@ -1,3 +1,4 @@
+import { withSentry } from "@sentry/react-native/expo";
 import type { ConfigContext, ExpoConfig } from "expo/config";
 import { version } from "./package.json";
 
@@ -18,7 +19,12 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   const { name, bundleIdentifier, icon, adaptiveIcon, packageName, scheme } =
     getDynamicAppConfig(environment);
 
-  return {
+  const sentryDsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
+  const sentryOrganization = process.env.SENTRY_ORG;
+  const sentryProject = process.env.SENTRY_PROJECT;
+  const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN;
+
+  const expoConfig: ExpoConfig = {
     ...config,
     name,
     version,
@@ -93,14 +99,20 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         projectId: EAS_PROJECT_ID,
       },
       // OAuth and API configuration
+      appEnv: environment,
       redirectUri: process.env.EXPO_PUBLIC_REDIRECT_URI || `${scheme}://integrations`,
       apiUrl: process.env.EXPO_PUBLIC_API_URL,
+      sentryDsn,
+      posthogKey: process.env.EXPO_PUBLIC_POSTHOG_KEY,
+      posthogHost: process.env.EXPO_PUBLIC_POSTHOG_HOST,
     },
     plugins: [
       "expo-router",
       "expo-web-browser",
       "expo-build-properties",
       "expo-secure-store",
+      "expo-localization",
+      "posthog-react-native/expo",
       [
         "expo-dev-client",
         {
@@ -154,6 +166,21 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
     owner: OWNER,
   };
+
+  return withSentry(expoConfig, {
+    authToken: sentryAuthToken,
+    disableAutoUpload: !(sentryOrganization && sentryProject && sentryAuthToken),
+    organization: sentryOrganization,
+    project: sentryProject,
+    useNativeInit: Boolean(sentryDsn),
+    options: sentryDsn
+      ? {
+          dsn: sentryDsn,
+          environment,
+          tracesSampleRate: Number(process.env.EXPO_PUBLIC_SENTRY_TRACES_SAMPLE_RATE ?? 1),
+        }
+      : undefined,
+  });
 };
 
 export function getDevelopmentTransportSecurity(

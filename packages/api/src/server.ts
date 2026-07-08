@@ -9,4 +9,10 @@ export { createQueryClient } from "./query-client";
 export type { AppRouter } from "./routers";
 export { appRouter } from "./routers";
 export { getApiStorageService } from "./storage-service";
+export {
+  captureApiError,
+  captureApiEvent,
+  getPostHogClient,
+  initServerTelemetry,
+} from "./telemetry";
 export { createTRPCRouter, protectedProcedure, publicProcedure } from "./trpc";

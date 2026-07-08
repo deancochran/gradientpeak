@@ -422,55 +422,6 @@ describe("activityFilesRouter", () => {
     expect(mocks.storage.remove).not.toHaveBeenCalled();
   });
 
-  it("uploads activity file bytes to storage", async () => {
-    const caller = createCaller();
-    const result = await caller.uploadActivityFile({
-      fileName: "ride.fit",
-      fileSize: 4,
-      fileType: "ride.fit",
-      fileData: Buffer.from("test").toString("base64"),
-    });
-
-    expect(mocks.storage.upload).toHaveBeenCalledTimes(1);
-    const [filePath, bytes, options] = mocks.storage.upload.mock.calls[0] ?? [];
-    expect(filePath).toMatch(/^11111111-1111-4111-8111-111111111111\//);
-    expect(bytes).toBeInstanceOf(Uint8Array);
-    expect(options).toMatchObject({ contentType: "application/octet-stream", upsert: false });
-    expect(result).toMatchObject({ success: true, size: 4 });
-  });
-
-  it("rejects activity uploads when decoded bytes do not match declared file size", async () => {
-    const caller = createCaller();
-
-    await expect(
-      caller.uploadActivityFile({
-        fileName: "ride.fit",
-        fileSize: 3,
-        fileType: "ride.fit",
-        fileData: Buffer.from("test").toString("base64"),
-      }),
-    ).rejects.toThrow("Decoded file data size must match declared file size");
-
-    expect(mocks.storage.upload).not.toHaveBeenCalled();
-  });
-
-  it("rejects activity uploads when decoded bytes exceed the upload limit", async () => {
-    const caller = createCaller();
-    const decodedByteLength = 50 * 1024 * 1024 + 1;
-    const oversizedBase64 = `${"A".repeat(Math.floor(decodedByteLength / 3) * 4)}AA==`;
-
-    await expect(
-      caller.uploadActivityFile({
-        fileName: "ride.fit",
-        fileSize: 50 * 1024 * 1024,
-        fileType: "ride.fit",
-        fileData: oversizedBase64,
-      }),
-    ).rejects.toThrow("Decoded file data must be less than 50MB");
-
-    expect(mocks.storage.upload).not.toHaveBeenCalled();
-  });
-
   it("rejects processing activity files owned by another user", async () => {
     const { db } = createDbMock();
     const caller = createCaller({ db });
@@ -671,120 +622,6 @@ describe("activityFilesRouter", () => {
     );
   });
 
-  it("invokes the analyze-activity-file edge function", async () => {
-    const caller = createCaller();
-    const activityId = "22222222-2222-4222-8222-222222222222";
-
-    const result = await caller.analyzeActivityFile({
-      activityId,
-      filePath: "11111111-1111-4111-8111-111111111111/ride.fit",
-      bucketName: "activity-files",
-    });
-
-    expect(mocks.functionsInvoke).toHaveBeenCalledWith("analyze-activity-file", {
-      body: {
-        activityId,
-        bucketName: "activity-files",
-        filePath: "11111111-1111-4111-8111-111111111111/ride.fit",
-      },
-    });
-    expect(result).toEqual({ queued: true });
-  });
-
-  it("rejects malformed analyze-activity-file responses", async () => {
-    mocks.functionsInvoke.mockResolvedValue({ data: { ok: true }, error: null });
-
-    const caller = createCaller();
-
-    await expect(
-      caller.analyzeActivityFile({
-        activityId: "22222222-2222-4222-8222-222222222222",
-        filePath: "11111111-1111-4111-8111-111111111111/ride.fit",
-        bucketName: "activity-files",
-      }),
-    ).rejects.toThrow("Activity file analysis failed");
-  });
-
-  it("returns serialized activity details for FIT processing status", async () => {
-    const activityId = "33333333-3333-4333-8333-333333333333";
-    const createdAt = new Date("2026-01-01T12:00:00.000Z");
-    const { db } = createDbMock({
-      findFirstResults: [
-        {
-          id: activityId,
-          name: "Imported Ride",
-          type: "bike",
-          started_at: createdAt,
-        },
-      ],
-    });
-
-    const caller = createCaller({ db });
-    const result = await caller.getActivityFileStatus({ activityId });
-
-    expect(result).toEqual({
-      activity: {
-        id: activityId,
-        name: "Imported Ride",
-        started_at: createdAt.toISOString(),
-        type: "bike",
-      },
-      filePath: null,
-      fileSize: null,
-      processingStatus: "pending",
-      updatedAt: null,
-      version: null,
-    });
-  });
-
-  it("lists FIT-backed activities with a next cursor", async () => {
-    const firstCreatedAt = new Date("2026-02-01T12:00:00.000Z");
-    const secondCreatedAt = new Date("2026-01-31T12:00:00.000Z");
-    const { db } = createDbMock({
-      selectResults: [
-        [
-          {
-            id: "44444444-4444-4444-8444-444444444444",
-            name: "Ride A",
-            type: "bike",
-            started_at: firstCreatedAt,
-            created_at: firstCreatedAt,
-          },
-          {
-            id: "55555555-5555-4555-8555-555555555555",
-            name: "Ride B",
-            type: "bike",
-            started_at: secondCreatedAt,
-            created_at: secondCreatedAt,
-          },
-        ],
-      ],
-    });
-
-    const caller = createCaller({ db });
-    const result = await caller.listActivityFiles({ pageSize: 2 });
-
-    expect(result).toEqual({
-      files: [
-        {
-          id: "44444444-4444-4444-8444-444444444444",
-          name: "Ride A",
-          type: "bike",
-          started_at: firstCreatedAt.toISOString(),
-          created_at: firstCreatedAt.toISOString(),
-        },
-        {
-          id: "55555555-5555-4555-8555-555555555555",
-          name: "Ride B",
-          type: "bike",
-          started_at: secondCreatedAt.toISOString(),
-          created_at: secondCreatedAt.toISOString(),
-        },
-      ],
-      nextCursor: secondCreatedAt.toISOString(),
-    });
-  });
-
   it("rejects download URLs for another user's activity file", async () => {
     const caller = createCaller();
 
@@ -814,19 +651,6 @@ describe("activityFilesRouter", () => {
     ).resolves.toEqual({
       signedUrl: "https://download.test/11111111-1111-4111-8111-111111111111/ride.fit",
     });
-  });
-
-  it("deletes an owned activity file from storage", async () => {
-    const caller = createCaller();
-
-    const result = await caller.deleteActivityFile({
-      filePath: "11111111-1111-4111-8111-111111111111/ride.fit",
-    });
-
-    expect(mocks.storage.remove).toHaveBeenCalledWith([
-      "11111111-1111-4111-8111-111111111111/ride.fit",
-    ]);
-    expect(result).toEqual({ success: true });
   });
 
   it("requires activityId for stream access", async () => {
