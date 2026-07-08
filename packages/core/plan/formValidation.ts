@@ -8,6 +8,7 @@ import {
 } from "../forms/input-parsers";
 import type { ProfileGoal } from "../schemas/goals/profile_goals";
 import type { AthleteTrainingSettings } from "../schemas/settings/profile_settings";
+import type { CanonicalSport } from "../schemas/sport";
 import type { CreationAvailabilityConfig } from "../schemas/training-plan-structure/creation-config-schemas";
 import type { CreationFeasibilitySafetySummary } from "../schemas/training-plan-structure/diagnostics-context-schemas";
 
@@ -21,7 +22,7 @@ const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 interface GoalTargetForValidation {
   id: string;
   targetType: "race_performance" | "pace_threshold" | "power_threshold" | "hr_threshold";
-  activityCategory?: "run" | "bike" | "swim" | "other";
+  activityCategory?: CanonicalSport;
   distanceKm?: string;
   completionTimeHms?: string;
   paceMmSs?: string;

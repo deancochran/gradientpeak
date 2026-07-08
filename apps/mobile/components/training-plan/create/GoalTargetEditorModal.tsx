@@ -51,6 +51,7 @@ const raceDistancePresetsByCategory: Record<ActivityCategory, { label: string; k
     { label: "1500m", km: "1.5" },
     { label: "5K", km: "5" },
   ],
+  strength: [],
   other: [
     { label: "1K", km: "1" },
     { label: "5K", km: "5" },

@@ -1,4 +1,5 @@
 import {
+  canonicalSportSchema,
   createEmptyGoalDraft,
   type GoalEditorDraft,
   type GoalEditorGoalType,
@@ -313,7 +314,7 @@ const goalEditorFormSchema = z.object({
     "hr_threshold",
     "consistency",
   ]),
-  activityCategory: z.enum(["run", "bike", "swim", "other"]),
+  activityCategory: canonicalSportSchema,
   raceDistanceKm: z.number().nullable().optional(),
   raceTargetMode: z.enum(["time", "pace"]).optional(),
   targetDuration: z.string().optional(),

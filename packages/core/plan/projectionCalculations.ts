@@ -94,6 +94,7 @@ import {
   type TrainingPrescription,
   type TrainingPrescriptionGoalInput,
 } from "./trainingPrescription";
+import { resolveWeeklyAllocation, type WeeklyAllocation } from "./weeklyAllocation";
 
 export { computeCapacityEnvelope } from "./projection/capacity-envelope";
 export {
@@ -1437,6 +1438,7 @@ export interface DeterministicProjectionPayload {
   projection_diagnostics?: ProjectionDiagnostics;
   optimization_tradeoff_summary?: ProjectionDiagnostics["optimization_tradeoff_summary"];
   training_prescription?: TrainingPrescription;
+  weekly_allocation?: WeeklyAllocation;
   sport_load_states?: ProjectionSportLoadState[];
   dose_recommendation?: ProjectionDoseRecommendation;
   goal_assessments?: Array<{
@@ -1503,6 +1505,7 @@ export interface BuildDeterministicProjectionInput {
   creation_config?: ProjectionSafetyConfigInput;
   preference_profile?: AthletePreferenceProfile;
   training_prescription?: TrainingPrescription;
+  weekly_allocation?: WeeklyAllocation;
   no_history_context?: NoHistoryAnchorContext;
   prior_inferred_snapshot?: PriorInferredStateSnapshotInput;
   disable_weekly_tss_optimizer?: boolean;
@@ -4224,6 +4227,12 @@ function buildDeterministicProjectionPayloadInternal(
       goals: input.goals as TrainingPrescriptionGoalInput[],
       ...optionalProperty("preferences", input.preference_profile),
     });
+  const weeklyAllocation =
+    input.weekly_allocation ??
+    resolveWeeklyAllocation({
+      prescription: trainingPrescription,
+      ...optionalProperty("preferences", input.preference_profile),
+    });
   const sportLoadStates = buildSportLoadStates({
     microcycles,
     goals: input.goals,
@@ -4558,6 +4567,7 @@ function buildDeterministicProjectionPayloadInternal(
     projection_diagnostics: projectionDiagnostics,
     optimization_tradeoff_summary: projectionDiagnostics.optimization_tradeoff_summary,
     training_prescription: trainingPrescription,
+    weekly_allocation: weeklyAllocation,
     sport_load_states: sportLoadStates,
     dose_recommendation: doseRecommendation,
     goal_assessments: goalAssessments,

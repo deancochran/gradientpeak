@@ -1,5 +1,6 @@
 import type {
   BlockingIssue,
+  CanonicalSport,
   CompositeWeightLocks,
   CreationAvailabilityConfig,
   CreationBehaviorControlsV1,
@@ -55,7 +56,7 @@ export type GoalTargetType =
 export interface GoalTargetFormData {
   id: string;
   targetType: GoalTargetType;
-  activityCategory?: "run" | "bike" | "swim" | "other";
+  activityCategory?: CanonicalSport;
   distanceKm?: string;
   completionTimeHms?: string;
   paceMmSs?: string;

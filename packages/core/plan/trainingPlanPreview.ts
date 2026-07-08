@@ -3,15 +3,14 @@ import {
   parseHmsToSeconds,
   parseMmSsToSeconds,
 } from "../forms/input-parsers";
+import type { CanonicalSport } from "../schemas/sport";
 import type { MinimalTrainingPlanCreate } from "../schemas/training_plan_structure";
 import { parseDateOnly } from "../utils/fitness-inputs";
 import { canonicalizeMinimalTrainingPlanCreate } from "./canonicalization";
 
-type PreviewActivityCategory = "run" | "bike" | "swim" | "other";
-
 export type PreviewGoalTargetInput = {
   targetType: "race_performance" | "pace_threshold" | "power_threshold" | "hr_threshold";
-  activityCategory?: PreviewActivityCategory;
+  activityCategory?: CanonicalSport;
   distanceKm?: string;
   completionTimeHms?: string;
   paceMmSs?: string;

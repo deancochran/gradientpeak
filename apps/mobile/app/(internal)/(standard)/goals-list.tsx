@@ -1,3 +1,4 @@
+import type { CanonicalSport } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import { Stack } from "expo-router";
 import { useMemo, useState } from "react";
@@ -43,9 +44,7 @@ function sortGoalsByNextDate<T extends { target_date?: string | null }>(
 function GoalsListScreen() {
   const navigateTo = useAppNavigate();
   const [searchQuery, setSearchQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<"run" | "bike" | "swim" | "other" | null>(
-    null,
-  );
+  const [categoryFilter, setCategoryFilter] = useState<CanonicalSport | null>(null);
   const [draftCategoryFilter, setDraftCategoryFilter] = useState<typeof categoryFilter>(null);
   const [sortBy, setSortBy] = useState<"created_at" | "target_date" | "priority">("target_date");
   const [draftSortBy, setDraftSortBy] = useState<typeof sortBy>("target_date");
@@ -196,6 +195,7 @@ function GoalsListScreen() {
               { id: "run", label: "Running" },
               { id: "bike", label: "Cycling" },
               { id: "swim", label: "Swimming" },
+              { id: "strength", label: "Strength" },
               { id: "other", label: "Other" },
             ].map((option) => (
               <FilterChip
@@ -204,7 +204,7 @@ function GoalsListScreen() {
                 isActive={draftCategoryFilter === option.id}
                 onPress={() =>
                   setDraftCategoryFilter(
-                    draftCategoryFilter === option.id ? null : (option.id as any),
+                    draftCategoryFilter === option.id ? null : (option.id as CanonicalSport),
                   )
                 }
                 testID={`goals-list-filter-category-${option.id}`}

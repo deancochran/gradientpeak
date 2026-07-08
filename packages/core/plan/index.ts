@@ -73,3 +73,4 @@ export * from "./verification/comparePlanLoadToHeuristic";
 export * from "./verification/materializeSystemPlanLoad";
 export * from "./verification/systemPlanAudit";
 export * from "./verification/trainingPlanTemplateVariety";
+export * from "./weeklyAllocation";

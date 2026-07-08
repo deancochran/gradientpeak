@@ -16,6 +16,7 @@ import type {
   ProjectionSportLoadState,
 } from "./projectionCalculations";
 import type { TrainingPrescription } from "./trainingPrescription";
+import type { WeeklyAllocation } from "./weeklyAllocation";
 
 export interface ProjectionPeriodizationPhase {
   id: string;
@@ -204,6 +205,7 @@ export interface ProjectionChartPayload {
   goal_target_distributions?: ProjectionGoalTargetDistribution[];
   optimization_tradeoff_summary?: ProjectionDiagnostics["optimization_tradeoff_summary"];
   training_prescription?: TrainingPrescription;
+  weekly_allocation?: WeeklyAllocation;
   reference_trajectory?: ReferenceTrajectory;
   trajectory_mode?: TrajectoryMode;
   feasibility_assessment?: FeasibilityAssessment;
@@ -309,6 +311,7 @@ export function buildProjectionChartPayloadFromDeterministicProjection(input: {
     goal_target_distributions: deterministicProjectionCompat.goal_target_distributions,
     optimization_tradeoff_summary: deterministicProjection.optimization_tradeoff_summary,
     training_prescription: deterministicProjection.training_prescription,
+    weekly_allocation: deterministicProjection.weekly_allocation,
     reference_trajectory: deterministicProjection.reference_trajectory,
     trajectory_mode: deterministicProjection.trajectory_mode,
     feasibility_assessment: deterministicProjection.feasibility_assessment,

@@ -1,3 +1,4 @@
+import { canonicalSportSchema } from "@repo/core";
 import { redirect } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
@@ -6,7 +7,7 @@ import { buildFlashHref } from "../flash";
 import { createServerActionCaller } from "../server-action-api";
 
 const goalActionSchema = z.object({
-  activity_category: z.enum(["run", "bike", "swim", "other"]),
+  activity_category: canonicalSportSchema,
   priority: z.coerce.number().int().min(0).max(10),
   profile_id: z.string().uuid(),
   redirectTo: z.string().optional(),
