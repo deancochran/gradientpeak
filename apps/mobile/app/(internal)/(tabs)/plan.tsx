@@ -65,6 +65,7 @@ function PlanDashboardScreen() {
           <TrainingPathSection
             dailyPoints={trainingPath.dailyTrainingPathPoints}
             chartLoading={trainingPath.chartLoading}
+            chartHeight={220}
             model={trainingPath.trainingPath}
             selectedDate={trainingPath.selectedDate}
             selectedWeekGoals={trainingPath.selectedWeekGoals}

@@ -23,6 +23,7 @@ type TrainingPathSectionProps = {
   selectedWeekCompletedActivities: TrainingPathCompletedActivity[];
   selectedWeekLoading?: boolean;
   chartLoading?: boolean;
+  chartHeight?: number;
   onScrollNearEnd?: () => void;
   onScrollNearStart?: () => void;
   onOpenActivity: (activityId: string) => void;
@@ -47,6 +48,7 @@ export function TrainingPathSection({
   selectedWeekCompletedActivities,
   selectedWeekLoading = false,
   chartLoading = false,
+  chartHeight = 300,
   onScrollNearEnd,
   onScrollNearStart,
   onOpenActivity,
@@ -102,6 +104,7 @@ export function TrainingPathSection({
       <TrainingPathLoadChartSection
         dailyPoints={dailyPoints}
         dailyDensity="standard"
+        chartHeight={chartHeight}
         loading={chartLoading}
         model={model}
         onCreateGoal={onCreateGoal}
