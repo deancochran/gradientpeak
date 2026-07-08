@@ -1,4 +1,4 @@
-import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from "@gorhom/bottom-sheet";
+import BottomSheet, { BottomSheetBackdrop } from "@gorhom/bottom-sheet";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   calculateActivityStatsV2,
@@ -20,6 +20,7 @@ import { StructureIntervalSheet } from "@/components/activity-plan/structure/Str
 import { useActivityPlanComposerProcess } from "@/components/activity-plan/useActivityPlanComposerProcess";
 import { useActivityPlanRouteUpload } from "@/components/activity-plan/useActivityPlanRouteUpload";
 import { StepEditorDialog } from "@/components/activity-plan/workout/StepEditorDialog";
+import { AppBottomSheetContent } from "@/components/shared/AppBottomSheet";
 import { api } from "@/lib/api";
 import { buildPlanRoute } from "@/lib/constants/routes";
 import { useActivityPlanForm } from "@/lib/hooks/forms/useActivityPlanForm";
@@ -464,10 +465,7 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
         )}
       >
         {selectedInterval ? (
-          <BottomSheetScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: 24 }}
-          >
+          <AppBottomSheetContent paddingHorizontal={0} paddingTop={0} paddingBottom={24}>
             <StructureIntervalSheet
               interval={selectedInterval}
               intervalIndex={selectedIntervalIndex >= 0 ? selectedIntervalIndex : 0}
@@ -496,7 +494,7 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
                 structureStepSheetRef.current?.close();
               }}
             />
-          </BottomSheetScrollView>
+          </AppBottomSheetContent>
         ) : null}
       </BottomSheet>
 

@@ -1,13 +1,10 @@
-import BottomSheet, {
-  BottomSheetBackdrop,
-  BottomSheetScrollView,
-  BottomSheetView,
-} from "@gorhom/bottom-sheet";
+import BottomSheet, { BottomSheetBackdrop, BottomSheetView } from "@gorhom/bottom-sheet";
 import { Text } from "@repo/ui/components/text";
 import type React from "react";
 import { useCallback, useMemo, useRef } from "react";
 import { TouchableOpacity, View } from "react-native";
 import { useTheme } from "@/lib/stores/theme-store";
+import { AppBottomSheetContent } from "./AppBottomSheet";
 
 const THEME_COLORS = {
   light: { background: "#ffffff", handleIndicator: "#888888" },
@@ -80,16 +77,13 @@ export function IndexFilterSheet({
       style={{ borderTopLeftRadius: 16, borderTopRightRadius: 16 }}
     >
       <BottomSheetView className="flex-1" testID={testID}>
-        <BottomSheetScrollView
-          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 6, paddingBottom: 120 }}
-          keyboardShouldPersistTaps="handled"
-        >
+        <AppBottomSheetContent paddingHorizontal={14} paddingTop={6} paddingBottom={120}>
           <View className="gap-1 border-b border-border pb-3">
             <Text className="text-lg font-semibold text-foreground">{title}</Text>
             <Text className="text-sm text-muted-foreground">{description}</Text>
           </View>
           <View className="mt-4 gap-3">{children}</View>
-        </BottomSheetScrollView>
+        </AppBottomSheetContent>
         <View className="border-t border-border bg-background px-4 pb-8 pt-3">
           <View className="flex-row gap-3">
             <TouchableOpacity

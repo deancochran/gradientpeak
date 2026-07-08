@@ -1,5 +1,5 @@
-import { BottomSheetScrollView } from "@gorhom/bottom-sheet";
 import type { ActivityPlan } from "@/components/shared/ActivityPlanCard";
+import { AppBottomSheetContent } from "@/components/shared/AppBottomSheet";
 import { TrainingPlanBuilderEventEditor } from "@/components/training-plan/create/TrainingPlanBuilderEventCard";
 import type { TrainingPlanBuilderSession } from "@/lib/training-plan-creation/types";
 
@@ -13,17 +13,7 @@ type BuilderSessionEditorContentProps = {
 
 export function BuilderSessionEditorContent(props: BuilderSessionEditorContentProps) {
   return (
-    <BottomSheetScrollView
-      enableFooterMarginAdjustment
-      keyboardShouldPersistTaps="handled"
-      style={{ flex: 1 }}
-      contentContainerStyle={{
-        paddingHorizontal: 16,
-        paddingTop: 16,
-        paddingBottom: 48,
-      }}
-      showsVerticalScrollIndicator
-    >
+    <AppBottomSheetContent enableFooterMarginAdjustment paddingBottom={48}>
       <TrainingPlanBuilderEventEditor
         activityPlan={props.activityPlan}
         event={props.session}
@@ -31,6 +21,6 @@ export function BuilderSessionEditorContent(props: BuilderSessionEditorContentPr
         onDuplicate={props.onDuplicate}
         onOpenActivityPicker={props.onOpenActivityPicker}
       />
-    </BottomSheetScrollView>
+    </AppBottomSheetContent>
   );
 }

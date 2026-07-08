@@ -19,6 +19,7 @@ import {
 } from "react-native";
 import Svg, { Circle, Line, Path } from "react-native-svg";
 import { AppHeader, CompactInsightCard } from "@/components/shared";
+import { AppBottomSheetContent } from "@/components/shared/AppBottomSheet";
 import { api } from "@/lib/api";
 import {
   buildActivityInsights,
@@ -869,57 +870,61 @@ function CustomRangeSheet({
       backdropComponent={renderBackdrop}
       onClose={onClose}
     >
-      <BottomSheetView className="flex-1 gap-5 px-5 pb-8 pt-2">
-        <View className="gap-1">
-          <Text className="text-lg font-semibold text-foreground">Custom date range</Text>
-          <Text className="text-sm text-muted-foreground">
-            Use YYYY-MM-DD for the start and end dates.
-          </Text>
-        </View>
+      <BottomSheetView className="flex-1">
+        <AppBottomSheetContent paddingHorizontal={20} paddingTop={8} paddingBottom={96}>
+          <View className="gap-5">
+            <View className="gap-1">
+              <Text className="text-lg font-semibold text-foreground">Custom date range</Text>
+              <Text className="text-sm text-muted-foreground">
+                Use YYYY-MM-DD for the start and end dates.
+              </Text>
+            </View>
 
-        <View className="gap-3">
-          <View className="gap-2">
-            <Text className="text-sm font-medium text-foreground">Start date</Text>
-            <TextInput
-              value={startValue}
-              onChangeText={setStartValue}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor="#737373"
-              className="rounded-2xl border border-border bg-card px-4 py-3 text-base text-foreground"
-              testID="trend-custom-start-date"
-            />
-          </View>
-          <View className="gap-2">
-            <Text className="text-sm font-medium text-foreground">End date</Text>
-            <TextInput
-              value={endValue}
-              onChangeText={setEndValue}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor="#737373"
-              className="rounded-2xl border border-border bg-card px-4 py-3 text-base text-foreground"
-              testID="trend-custom-end-date"
-            />
-          </View>
-        </View>
+            <View className="gap-3">
+              <View className="gap-2">
+                <Text className="text-sm font-medium text-foreground">Start date</Text>
+                <TextInput
+                  value={startValue}
+                  onChangeText={setStartValue}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor="#737373"
+                  className="rounded-2xl border border-border bg-card px-4 py-3 text-base text-foreground"
+                  testID="trend-custom-start-date"
+                />
+              </View>
+              <View className="gap-2">
+                <Text className="text-sm font-medium text-foreground">End date</Text>
+                <TextInput
+                  value={endValue}
+                  onChangeText={setEndValue}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor="#737373"
+                  className="rounded-2xl border border-border bg-card px-4 py-3 text-base text-foreground"
+                  testID="trend-custom-end-date"
+                />
+              </View>
+            </View>
 
-        <Pressable
-          onPress={() => {
-            const nextStart = new Date(`${startValue}T00:00:00`);
-            const nextEnd = new Date(`${endValue}T00:00:00`);
-            if (!Number.isNaN(nextStart.getTime()) && !Number.isNaN(nextEnd.getTime())) {
-              onApply(
-                nextStart <= nextEnd ? nextStart : nextEnd,
-                nextStart <= nextEnd ? nextEnd : nextStart,
-              );
-            }
-          }}
-          className="rounded-2xl bg-primary px-4 py-4"
-          testID="trend-custom-apply"
-        >
-          <Text className="text-center text-sm font-semibold text-primary-foreground">
-            Apply range
-          </Text>
-        </Pressable>
+            <Pressable
+              onPress={() => {
+                const nextStart = new Date(`${startValue}T00:00:00`);
+                const nextEnd = new Date(`${endValue}T00:00:00`);
+                if (!Number.isNaN(nextStart.getTime()) && !Number.isNaN(nextEnd.getTime())) {
+                  onApply(
+                    nextStart <= nextEnd ? nextStart : nextEnd,
+                    nextStart <= nextEnd ? nextEnd : nextStart,
+                  );
+                }
+              }}
+              className="rounded-2xl bg-primary px-4 py-4"
+              testID="trend-custom-apply"
+            >
+              <Text className="text-center text-sm font-semibold text-primary-foreground">
+                Apply range
+              </Text>
+            </Pressable>
+          </View>
+        </AppBottomSheetContent>
       </BottomSheetView>
     </BottomSheet>
   );

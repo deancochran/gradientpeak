@@ -11,6 +11,7 @@ import React from "react";
 import { Pressable, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { RecordingControls } from "@/components/recording/footer";
+import { AppBottomSheetContent } from "@/components/shared/AppBottomSheet";
 import type { RecordingSheetSetupItem } from "./model/recordingSheetModel";
 import {
   buildRecordingControlSheetModel,
@@ -151,30 +152,33 @@ export function RecordingControlSheet({
           />
         )}
 
-        <View
-          className="gap-2"
-          style={{ marginTop: RECORDING_SHEET_EXPANDED_CONTENT_GAP }}
-          testID="recording-setup-action-rail"
+        <AppBottomSheetContent
+          paddingHorizontal={0}
+          paddingTop={RECORDING_SHEET_EXPANDED_CONTENT_GAP}
+          paddingBottom={12}
+          showsVerticalScrollIndicator={false}
         >
-          {model.sections.flatMap((section) =>
-            section.items.map((item) => (
-              <SetupActionRow
-                key={item.id}
-                item={item}
-                statusLabel={getSetupStatusLabel(item.id, {
-                  gpsRecordingEnabled,
-                  sensorCount,
-                  sessionContract,
-                })}
-                onRemove={getSetupRemoveHandler(item.id, {
-                  onRemovePlan,
-                  onRemoveRoute,
-                  sessionContract,
-                })}
-              />
-            )),
-          )}
-        </View>
+          <View className="gap-2" testID="recording-setup-action-rail">
+            {model.sections.flatMap((section) =>
+              section.items.map((item) => (
+                <SetupActionRow
+                  key={item.id}
+                  item={item}
+                  statusLabel={getSetupStatusLabel(item.id, {
+                    gpsRecordingEnabled,
+                    sensorCount,
+                    sessionContract,
+                  })}
+                  onRemove={getSetupRemoveHandler(item.id, {
+                    onRemovePlan,
+                    onRemoveRoute,
+                    sessionContract,
+                  })}
+                />
+              )),
+            )}
+          </View>
+        </AppBottomSheetContent>
       </BottomSheetView>
     </BottomSheet>
   );

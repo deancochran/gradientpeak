@@ -1,7 +1,6 @@
 import BottomSheet, {
   BottomSheetBackdrop,
   type BottomSheetBackdropProps,
-  BottomSheetScrollView,
   BottomSheetView,
 } from "@gorhom/bottom-sheet";
 import { Input } from "@repo/ui/components/input";
@@ -9,6 +8,7 @@ import { Text } from "@repo/ui/components/text";
 import type React from "react";
 import { useCallback, useMemo, useRef } from "react";
 import { TouchableOpacity, View } from "react-native";
+import { AppBottomSheetContent } from "@/components/shared/AppBottomSheet";
 import {
   ACTIVITY_CATEGORY_OPTIONS,
   type ActivityPlanFilters,
@@ -170,10 +170,7 @@ export function DiscoverFilterSheet({
       style={bottomSheetStyles.container}
     >
       <BottomSheetView className="flex-1" testID="discover-filter-sheet">
-        <BottomSheetScrollView
-          contentContainerStyle={{ paddingHorizontal: 14, paddingTop: 6, paddingBottom: 156 }}
-          keyboardShouldPersistTaps="handled"
-        >
+        <AppBottomSheetContent paddingHorizontal={14} paddingTop={6} paddingBottom={156}>
           <View className="gap-1 border-b border-border pb-3">
             <Text className="text-lg font-semibold text-foreground">Sort & Filters</Text>
             <Text className="text-sm text-muted-foreground">
@@ -559,7 +556,7 @@ export function DiscoverFilterSheet({
               </FilterSection>
             </View>
           ) : null}
-        </BottomSheetScrollView>
+        </AppBottomSheetContent>
 
         <View className="border-t border-border bg-background px-4 pb-8 pt-3">
           <View className="flex-row gap-3">

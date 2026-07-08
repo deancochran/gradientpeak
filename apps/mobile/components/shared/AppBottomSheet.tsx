@@ -11,6 +11,7 @@ import { Text } from "@repo/ui/components/text";
 import { ChevronLeft } from "lucide-react-native";
 import type { ReactNode } from "react";
 import { useCallback, useMemo, useRef } from "react";
+import type { StyleProp, ViewStyle } from "react-native";
 import { View } from "react-native";
 import { useTheme } from "@/lib/stores/theme-store";
 
@@ -40,6 +41,51 @@ type AppBottomSheetProps = {
   title: string;
   visible: boolean;
 };
+
+type AppBottomSheetContentProps = {
+  children: ReactNode;
+  contentContainerStyle?: StyleProp<ViewStyle>;
+  contentKey?: string;
+  enableFooterMarginAdjustment?: boolean;
+  keyboardShouldPersistTaps?: "always" | "never" | "handled";
+  paddingBottom?: number;
+  paddingHorizontal?: number;
+  paddingTop?: number;
+  showsVerticalScrollIndicator?: boolean;
+};
+
+export function AppBottomSheetContent({
+  children,
+  contentContainerStyle,
+  contentKey,
+  enableFooterMarginAdjustment = false,
+  keyboardShouldPersistTaps = "handled",
+  paddingBottom = 120,
+  paddingHorizontal = 16,
+  paddingTop = 16,
+  showsVerticalScrollIndicator = true,
+}: AppBottomSheetContentProps) {
+  return (
+    <BottomSheetScrollView
+      key={contentKey}
+      enableFooterMarginAdjustment={enableFooterMarginAdjustment}
+      style={{ flex: 1 }}
+      contentContainerStyle={[
+        {
+          paddingHorizontal,
+          paddingTop,
+          paddingBottom,
+        },
+        contentContainerStyle,
+      ]}
+      keyboardShouldPersistTaps={keyboardShouldPersistTaps}
+      nestedScrollEnabled
+      showsVerticalScrollIndicator={showsVerticalScrollIndicator}
+    >
+      {children}
+    </BottomSheetScrollView>
+  );
+}
 
 export function AppBottomSheet({
   children,
@@ -159,21 +205,13 @@ export function AppBottomSheet({
       ) : (
         <BottomSheetView style={{ flex: 1 }} testID={testID}>
           {header}
-          <BottomSheetScrollView
-            key={contentKey}
+          <AppBottomSheetContent
+            contentKey={contentKey}
             enableFooterMarginAdjustment={Boolean(footer)}
-            style={{ flex: 1 }}
-            contentContainerStyle={{
-              paddingHorizontal: 16,
-              paddingTop: 16,
-              paddingBottom: footer ? APP_BOTTOM_SHEET_ACTION_FOOTER_BOTTOM_INSET : 120,
-            }}
-            keyboardShouldPersistTaps="handled"
-            nestedScrollEnabled
-            showsVerticalScrollIndicator
+            paddingBottom={footer ? APP_BOTTOM_SHEET_ACTION_FOOTER_BOTTOM_INSET : 120}
           >
             {children}
-          </BottomSheetScrollView>
+          </AppBottomSheetContent>
         </BottomSheetView>
       )}
     </BottomSheet>
