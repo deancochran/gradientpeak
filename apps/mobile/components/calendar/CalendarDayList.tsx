@@ -56,9 +56,11 @@ export function CalendarDayList(props: CalendarDayListProps) {
   const lastStartReachedRef = useRef<string | null>(null);
   const lastEndReachedRef = useRef<string | null>(null);
   const lastVisibleDayKeyRef = useRef(props.visibleDayKey);
+  const lastSettledDayKeyRef = useRef(props.visibleDayKey);
   const latestOnVisibleDayChangeRef = useRef(props.onVisibleDayChange);
   const latestOnVisibleDaySettledRef = useRef(props.onVisibleDaySettled);
   const lastScrollRequestRef = useRef<{ dateKey: string; animated: boolean } | null>(null);
+  const latestScrollOffsetYRef = useRef(0);
   const programmaticScrollTargetRef = useRef<string | null>(null);
   const pendingScrollEndSettleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dayOffsetsRef = useRef(new Map<string, number>());
@@ -146,6 +148,8 @@ export function CalendarDayList(props: CalendarDayListProps) {
 
   const handleScrollOffset = useCallback(
     (offsetY: number) => {
+      latestScrollOffsetYRef.current = offsetY;
+
       const dayOffsets = sortedDayOffsetsRef.current;
       if (dayOffsets.length === 0) {
         return;
@@ -166,12 +170,12 @@ export function CalendarDayList(props: CalendarDayListProps) {
       }
 
       const programmaticTarget = programmaticScrollTargetRef.current;
-      if (programmaticTarget && visibleDateKey !== programmaticTarget) {
+      if (!programmaticTarget) {
         return;
       }
 
-      if (programmaticTarget === visibleDateKey) {
-        programmaticScrollTargetRef.current = null;
+      if (visibleDateKey !== programmaticTarget) {
+        return;
       }
 
       publishVisibleDay(visibleDateKey);
@@ -179,17 +183,79 @@ export function CalendarDayList(props: CalendarDayListProps) {
     [publishVisibleDay],
   );
 
-  const handleScrollSettled = useCallback(() => {
-    if (pendingScrollEndSettleRef.current) {
-      clearTimeout(pendingScrollEndSettleRef.current);
-      pendingScrollEndSettleRef.current = null;
+  const findNearestDayOffset = useCallback((offsetY: number) => {
+    const dayOffsets = sortedDayOffsetsRef.current;
+    if (dayOffsets.length === 0) {
+      return null;
     }
 
-    const settledDateKey = programmaticScrollTargetRef.current ?? lastVisibleDayKeyRef.current;
-    programmaticScrollTargetRef.current = null;
-    publishVisibleDay(settledDateKey);
-    latestOnVisibleDaySettledRef.current(settledDateKey);
-  }, [publishVisibleDay]);
+    let closestDayOffset = dayOffsets[0] ?? null;
+    let closestDistance = closestDayOffset ? Math.abs(offsetY - closestDayOffset.y) : Infinity;
+
+    for (const dayOffset of dayOffsets) {
+      const distance = Math.abs(offsetY - dayOffset.y);
+      if (distance < closestDistance) {
+        closestDayOffset = dayOffset;
+        closestDistance = distance;
+      }
+    }
+
+    return closestDayOffset;
+  }, []);
+
+  const settleToDate = useCallback(
+    (dateKey: string) => {
+      programmaticScrollTargetRef.current = null;
+      publishVisibleDay(dateKey);
+      if (lastSettledDayKeyRef.current === dateKey) {
+        return;
+      }
+
+      lastSettledDayKeyRef.current = dateKey;
+      latestOnVisibleDaySettledRef.current(dateKey);
+    },
+    [publishVisibleDay],
+  );
+
+  const snapToNearestDay = useCallback(
+    (offsetY: number) => {
+      const programmaticTarget = programmaticScrollTargetRef.current;
+      if (programmaticTarget) {
+        const targetOffset = dayOffsetsRef.current.get(programmaticTarget);
+        if (typeof targetOffset === "number" && Math.abs(offsetY - targetOffset) > 2) {
+          listRef.current?.scrollToOffset({ animated: true, offset: targetOffset });
+        }
+        settleToDate(programmaticTarget);
+        return;
+      }
+
+      const nearestDayOffset = findNearestDayOffset(offsetY);
+      if (!nearestDayOffset) {
+        settleToDate(lastVisibleDayKeyRef.current);
+        return;
+      }
+
+      programmaticScrollTargetRef.current = nearestDayOffset.dateKey;
+      if (Math.abs(offsetY - nearestDayOffset.y) > 2) {
+        listRef.current?.scrollToOffset({ animated: true, offset: nearestDayOffset.y });
+      }
+      settleToDate(nearestDayOffset.dateKey);
+    },
+    [findNearestDayOffset, settleToDate],
+  );
+
+  const handleScrollSettled = useCallback(
+    (event?: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (pendingScrollEndSettleRef.current) {
+        clearTimeout(pendingScrollEndSettleRef.current);
+        pendingScrollEndSettleRef.current = null;
+      }
+
+      const settledOffsetY = event?.nativeEvent.contentOffset?.y ?? latestScrollOffsetYRef.current;
+      snapToNearestDay(settledOffsetY);
+    },
+    [snapToNearestDay],
+  );
 
   const cancelPendingScrollEndSettle = useCallback(() => {
     if (!pendingScrollEndSettleRef.current) {
@@ -202,10 +268,12 @@ export function CalendarDayList(props: CalendarDayListProps) {
 
   const handleScrollEndDrag = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      latestScrollOffsetYRef.current =
+        event.nativeEvent.contentOffset?.y ?? latestScrollOffsetYRef.current;
       const velocityY = event.nativeEvent.velocity?.y;
       if (typeof velocityY === "number") {
         if (Math.abs(velocityY) < 0.1) {
-          handleScrollSettled();
+          handleScrollSettled(event);
         }
         return;
       }
@@ -213,11 +281,16 @@ export function CalendarDayList(props: CalendarDayListProps) {
       cancelPendingScrollEndSettle();
       pendingScrollEndSettleRef.current = setTimeout(() => {
         pendingScrollEndSettleRef.current = null;
-        handleScrollSettled();
+        handleScrollSettled(event);
       }, 80);
     },
     [cancelPendingScrollEndSettle, handleScrollSettled],
   );
+
+  const handleScrollBeginDrag = useCallback(() => {
+    programmaticScrollTargetRef.current = null;
+    cancelPendingScrollEndSettle();
+  }, [cancelPendingScrollEndSettle]);
 
   const CellRendererComponent = useCallback(
     ({ children, index, onLayout, style, ...cellProps }: CalendarCellRendererProps) => (
@@ -363,12 +436,12 @@ export function CalendarDayList(props: CalendarDayListProps) {
       }
 
       const programmaticTarget = programmaticScrollTargetRef.current;
-      if (programmaticTarget && firstVisibleRow.dateKey !== programmaticTarget) {
+      if (!programmaticTarget && sortedDayOffsetsRef.current.length > 0) {
         return;
       }
 
-      if (programmaticTarget === firstVisibleRow.dateKey) {
-        programmaticScrollTargetRef.current = null;
+      if (programmaticTarget && firstVisibleRow.dateKey !== programmaticTarget) {
+        return;
       }
 
       publishVisibleDay(firstVisibleRow.dateKey);
@@ -431,6 +504,7 @@ export function CalendarDayList(props: CalendarDayListProps) {
         onEndReachedThreshold={0.35}
         onMomentumScrollBegin={cancelPendingScrollEndSettle}
         onMomentumScrollEnd={handleScrollSettled}
+        onScrollBeginDrag={handleScrollBeginDrag}
         onScrollEndDrag={handleScrollEndDrag}
         onScroll={scrollHandler}
         scrollEventThrottle={16}
