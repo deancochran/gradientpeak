@@ -7,8 +7,16 @@ import { ScrollView } from "react-native-gesture-handler";
 import { CartesianChart, Line } from "victory-native";
 import { useTheme } from "@/lib/stores/theme-store";
 import { DailyTrainingAdjustmentTray } from "./DailyTrainingAdjustmentTray";
+import {
+  type DailyTrainingAdjustmentChartDatum,
+  dailyTrainingAdjustmentChartYKeys,
+  dailyTrainingAdjustmentFitnessYKeys,
+  dailyTrainingAdjustmentLoadYKeys,
+  useDailyTrainingAdjustmentChartPresentation,
+} from "./dailyTrainingAdjustmentChartPresentation";
 import { deriveTrainingPathChartWindow } from "./trainingPathChartWindow";
-import { useCenteredChartSelection } from "./useCenteredChartSelection";
+import { useChartEdgePrefetch } from "./useChartEdgePrefetch";
+import { useInstantChartSelection } from "./useInstantChartSelection";
 
 export type DailyTrainingAdjustmentPoint = {
   date: string;
@@ -44,74 +52,13 @@ export type DailyTrainingAdjustmentChartProps = {
   onScrollNearStart?: () => void;
 };
 
-type ChartDatum = Record<string, unknown> & {
-  index: number;
-  completedLoad: number | null;
-  plannedLoad: number | null;
-  plannedLoadWithTentative: number | null;
-  targetLoad: number | null;
-  actualFitness: number | null;
-  projectedFitness: number | null;
-  recommendedFitness: number | null;
-};
-
-type ChartYKey =
-  | "completedLoad"
-  | "plannedLoad"
-  | "plannedLoadWithTentative"
-  | "targetLoad"
-  | "actualFitness"
-  | "projectedFitness"
-  | "recommendedFitness";
-
-const chartYKeys: ChartYKey[] = [
-  "completedLoad",
-  "plannedLoad",
-  "plannedLoadWithTentative",
-  "targetLoad",
-  "actualFitness",
-  "projectedFitness",
-  "recommendedFitness",
-];
-const loadYKeys: ChartYKey[] = [
-  "completedLoad",
-  "plannedLoad",
-  "plannedLoadWithTentative",
-  "targetLoad",
-];
-const fitnessYKeys: ChartYKey[] = ["actualFitness", "projectedFitness", "recommendedFitness"];
 const axisWidth = 34;
 const chartPadding = { left: 8, right: 8, top: 18, bottom: 26 };
-function valueOrNull(value: number | null | undefined) {
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function valueOrZero(value: number | null | undefined) {
-  return valueOrNull(value) ?? 0;
-}
-
-function formatDayLabel(dateKey: string) {
-  const [, month, day] = dateKey.split("-");
-  return `${month}/${day}`;
-}
 
 function buildTicks(domain: [number, number], count = 5) {
   const [min, max] = domain;
   if (count <= 1) return [max];
   return Array.from({ length: count }, (_, index) => max - ((max - min) * index) / (count - 1));
-}
-
-function expandDomain(
-  values: number[],
-  fallback: [number, number],
-  paddingRatio = 0.08,
-): [number, number] {
-  const finiteValues = values.filter((value) => Number.isFinite(value));
-  if (finiteValues.length === 0) return fallback;
-  const minValue = Math.min(...finiteValues, fallback[0]);
-  const maxValue = Math.max(...finiteValues, fallback[1]);
-  const span = Math.max(1, maxValue - minValue);
-  return [Math.max(0, minValue - span * paddingRatio), maxValue + span * paddingRatio];
 }
 
 function getLoadBarGeometry(
@@ -191,8 +138,6 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
   const [viewportWidth, setViewportWidth] = useState(240);
   const [hasMounted, setHasMounted] = useState(false);
   const windowAnchorDateRef = useRef<string | null>(null);
-  const lastEndPrefetchKeyRef = useRef<string | null>(null);
-  const lastStartPrefetchKeyRef = useRef<string | null>(null);
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
   const slotWidth = density === "compact" ? 28 : density === "detail" ? 34 : 30;
@@ -222,12 +167,12 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
     : (chartWindow.anchorDate ?? visiblePoints[0]?.date ?? null);
 
   const {
-    markSelecting,
+    beginPreview,
+    commitNearestFromScrollEvent,
     previewNearestFromScrollEvent,
     scrollRef,
-    selectNearestFromScrollEvent,
     selectedPoint,
-  } = useCenteredChartSelection({
+  } = useInstantChartSelection({
     onPreviewSelectedDateChange,
     onSelectedDateChange,
     points: visiblePoints,
@@ -235,66 +180,24 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
     slotWidth,
   });
 
-  const chartData = useMemo<ChartDatum[]>(
-    () =>
-      visiblePoints.map((point, index) => {
-        const planned = valueOrZero(point.plannedLoadTss);
-        const tentative = valueOrZero(point.tentativePlannedLoadTss);
-        return {
-          index,
-          completedLoad: valueOrNull(point.completedLoadTss),
-          plannedLoad: planned > 0 ? planned : null,
-          plannedLoadWithTentative: planned + tentative > 0 ? planned + tentative : null,
-          targetLoad: valueOrNull(point.targetLoadTss),
-          actualFitness: valueOrNull(point.fitnessCtl),
-          projectedFitness: valueOrNull(point.scheduledFitnessCtl),
-          recommendedFitness: valueOrNull(point.targetFitnessCtl),
-        };
-      }),
-    [visiblePoints],
-  );
-
-  const loadDomain = useMemo(
-    () =>
-      expandDomain(
-        chartData.flatMap((point) => [
-          valueOrZero(point.completedLoad as number | null),
-          valueOrZero(point.plannedLoad as number | null),
-          valueOrZero(point.plannedLoadWithTentative as number | null),
-          valueOrZero(point.targetLoad as number | null),
-        ]),
-        [0, 100],
-        0.1,
-      ),
-    [chartData],
-  );
-  const fitnessDomain = useMemo(
-    () =>
-      expandDomain(
-        chartData
-          .flatMap((point) => [
-            valueOrNull(point.actualFitness as number | null),
-            valueOrNull(point.projectedFitness as number | null),
-            valueOrNull(point.recommendedFitness as number | null),
-          ])
-          .filter((value): value is number => value !== null),
-        [0, 100],
-        0.12,
-      ),
-    [chartData],
-  );
-  const labels = useMemo(
-    () =>
-      visiblePoints.map(
-        (point, index) => formatDateLabel?.(point.date, index) ?? formatDayLabel(point.date),
-      ),
-    [formatDateLabel, visiblePoints],
-  );
+  const { chartData, fitnessDomain, labels, loadDomain } =
+    useDailyTrainingAdjustmentChartPresentation({
+      formatDateLabel,
+      points: visiblePoints,
+    });
   const scrollableChartWidth = Math.max(
     chartWidth,
     chartPadding.left + chartPadding.right + Math.max(1, visiblePoints.length) * slotWidth,
   );
   const sideInset = Math.max(0, viewportWidth / 2 - slotWidth / 2);
+  const prefetchNearEdge = useChartEdgePrefetch({
+    onScrollNearEnd,
+    onScrollNearStart,
+    points: visiblePoints,
+    preloadDistance: slotWidth * 14,
+    scrollableWidth: scrollableChartWidth,
+    viewportWidth,
+  });
   const colors = useMemo(
     () => ({
       axisLabel: isDark ? "rgba(226, 232, 240, 0.82)" : "rgba(15, 23, 42, 0.72)",
@@ -329,7 +232,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
   }, []);
 
   const handleScroll = useCallback(
-    (event: Parameters<typeof selectNearestFromScrollEvent>[0]) => {
+    (event: Parameters<typeof commitNearestFromScrollEvent>[0]) => {
       const offsetX = event.nativeEvent.contentOffset.x;
       const nearestIndex = Math.max(
         0,
@@ -338,32 +241,9 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
       windowAnchorDateRef.current =
         visiblePoints[nearestIndex]?.date ?? windowAnchorDateRef.current;
       previewNearestFromScrollEvent(event);
-      const maxOffsetX = Math.max(0, scrollableChartWidth - viewportWidth);
-      const preloadDistance = slotWidth * 14;
-      if (offsetX <= preloadDistance) {
-        const startKey = visiblePoints[0]?.date ?? null;
-        if (startKey && lastStartPrefetchKeyRef.current !== startKey) {
-          lastStartPrefetchKeyRef.current = startKey;
-          onScrollNearStart?.();
-        }
-      }
-      if (maxOffsetX - offsetX <= preloadDistance) {
-        const endKey = visiblePoints[visiblePoints.length - 1]?.date ?? null;
-        if (endKey && lastEndPrefetchKeyRef.current !== endKey) {
-          lastEndPrefetchKeyRef.current = endKey;
-          onScrollNearEnd?.();
-        }
-      }
+      prefetchNearEdge(offsetX);
     },
-    [
-      onScrollNearEnd,
-      onScrollNearStart,
-      previewNearestFromScrollEvent,
-      scrollableChartWidth,
-      slotWidth,
-      viewportWidth,
-      visiblePoints,
-    ],
+    [prefetchNearEdge, previewNearestFromScrollEvent, slotWidth, visiblePoints],
   );
 
   if (visiblePoints.length === 0) {
@@ -393,10 +273,10 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                   horizontal
                   contentContainerStyle={{ paddingHorizontal: sideInset }}
                   decelerationRate="fast"
-                  onMomentumScrollBegin={markSelecting}
-                  onMomentumScrollEnd={selectNearestFromScrollEvent}
+                  onMomentumScrollBegin={beginPreview}
+                  onMomentumScrollEnd={commitNearestFromScrollEvent}
                   onScroll={handleScroll}
-                  onScrollBeginDrag={markSelecting}
+                  onScrollBeginDrag={beginPreview}
                   scrollEventThrottle={16}
                   showsHorizontalScrollIndicator={false}
                   snapToAlignment="start"
@@ -404,10 +284,14 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                   testID={`${testID}-scroll`}
                 >
                   <View style={{ height: chartAreaHeight, width: scrollableChartWidth }}>
-                    <CartesianChart<ChartDatum, "index", ChartYKey>
+                    <CartesianChart<
+                      DailyTrainingAdjustmentChartDatum,
+                      "index",
+                      (typeof dailyTrainingAdjustmentChartYKeys)[number]
+                    >
                       data={chartData}
                       xKey="index"
-                      yKeys={chartYKeys}
+                      yKeys={dailyTrainingAdjustmentChartYKeys}
                       padding={chartPadding}
                       domainPadding={{ left: 2, right: 2, top: 10, bottom: 0 }}
                       xAxis={{
@@ -421,7 +305,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                       }}
                       yAxis={[
                         {
-                          yKeys: loadYKeys,
+                          yKeys: dailyTrainingAdjustmentLoadYKeys,
                           axisSide: "left",
                           domain: loadDomain,
                           tickCount: 5,
@@ -432,7 +316,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                           formatYLabel: (value: unknown) => `${Math.round(Number(value))}`,
                         },
                         {
-                          yKeys: fitnessYKeys,
+                          yKeys: dailyTrainingAdjustmentFitnessYKeys,
                           axisSide: "right",
                           domain: fitnessDomain,
                           tickCount: 5,
