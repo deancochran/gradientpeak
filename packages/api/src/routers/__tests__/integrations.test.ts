@@ -575,6 +575,67 @@ describe("integrationsRouter", () => {
     );
   });
 
+  it("getSyncOverview ignores stale token errors after a provider reconnect", async () => {
+    const caller = createCaller();
+    mocks.repositories.integrations.listByProfileId.mockResolvedValue([
+      {
+        id: "77777777-7777-4777-8777-777777777777",
+        idx: 1,
+        profile_id: SESSION_USER_ID,
+        provider: "wahoo",
+        external_id: "77",
+        access_token: "access-2",
+        refresh_token: "refresh-2",
+        expires_at: new Date("2026-04-02T10:00:00.000Z"),
+        scope: "workouts_read",
+        created_at: new Date("2026-04-01T10:00:00.000Z"),
+        updated_at: new Date("2026-04-01T13:00:00.000Z"),
+      },
+    ]);
+    mocks.providerSyncRepository.listSyncStateByIntegrationIds.mockResolvedValue([
+      {
+        consecutiveFailures: 1,
+        cursor: null,
+        highWatermark: null,
+        id: "88888888-8888-4888-8888-888888888888",
+        integrationId: "77777777-7777-4777-8777-777777777777",
+        lastError: "Access token has expired",
+        lastSyncFailedAt: "2026-04-01T12:01:00.000Z",
+        lastSyncStartedAt: "2026-04-01T12:00:00.000Z",
+        lastSyncSucceededAt: null,
+        metadata: {},
+        nextSyncAt: null,
+        provider: "wahoo",
+        publishHorizonDays: null,
+        resource: "historical_activities",
+        syncMode: "automatic",
+      },
+    ]);
+    mocks.providerSyncRepository.listJobs.mockResolvedValue([]);
+
+    const result = await caller.getSyncOverview();
+
+    expect(result).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          activityHistory: expect.objectContaining({
+            lastError: null,
+            status: "idle",
+          }),
+          provider: "wahoo",
+          providerHealth: expect.objectContaining({
+            lastError: null,
+            status: "connected",
+          }),
+          summary: expect.objectContaining({
+            badge: "Auto",
+            subtitle: "Connected",
+          }),
+        }),
+      ]),
+    );
+  });
+
   it("syncNow degrades when provider sync jobs are unavailable locally", async () => {
     const caller = createCaller();
     vi.spyOn(console, "warn").mockImplementation(() => {});

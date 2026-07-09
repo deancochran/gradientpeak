@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm run dev:local",
+    "dev": "pnpm run dev:tunnel",
     "dev:local": "pnpm run dev:app",
     "dev:tunnel": "concurrently \"pnpm run dev:app\" \"pnpm run dev:ngrok\"",
     "dev:app": "pnpm exec dotenv -e .env.local -- sh -c 'NODE_OPTIONS=\"--import ./instrument.server.mjs\" vite dev --host 0.0.0.0 --port 3000'",

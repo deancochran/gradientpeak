@@ -108,7 +108,23 @@ export default function IntegrationsScreen() {
     data: syncOverview,
     refetch: refetchSyncOverview,
     isLoading: integrationsLoading,
-  } = api.integrations.getSyncOverview.useQuery();
+  } = api.integrations.getSyncOverview.useQuery(undefined, {
+    refetchInterval: (query) => {
+      const overview = query.state.data as IntegrationOverviewItem[] | undefined;
+      const hasTransitionalState = overview?.some(
+        (integration) =>
+          integration.activityHistory.status === "queued" ||
+          integration.activityHistory.status === "importing" ||
+          integration.plannedWorkouts.status === "queued" ||
+          integration.plannedWorkouts.status === "syncing" ||
+          integration.setupData.status === "refreshing",
+      );
+
+      return hasTransitionalState ? 5000 : false;
+    },
+    refetchOnMount: "always",
+    refetchOnReconnect: true,
+  });
   const getAuthUrlMutation = useReliableMutation(api.integrations.getAuthUrl, {
     silent: true,
   });
@@ -125,7 +141,9 @@ export default function IntegrationsScreen() {
     () => (syncOverview ?? []).filter((integration) => integration.configured),
     [syncOverview],
   );
-  const connectedCount = visibleIntegrations.filter((integration) => integration.connected).length;
+  const readyCount = visibleIntegrations.filter(
+    (integration) => integration.providerHealth.status === "connected",
+  ).length;
 
   const handleDeepLink = useCallback(
     (event: { url: string }) => {
@@ -138,8 +156,12 @@ export default function IntegrationsScreen() {
 
         if (success === "true") {
           setStatusModal({ title: "Connected", description: provider ?? "Integration connected" });
+          void utils.integrations.getSyncOverview.invalidate();
+          void utils.integrations.list.invalidate();
           refetchSyncOverview();
         } else if (error) {
+          void utils.integrations.getSyncOverview.invalidate();
+          void utils.integrations.list.invalidate();
           refetchSyncOverview();
           let errorMessage = "Connection failed";
           switch (error) {
@@ -173,7 +195,7 @@ export default function IntegrationsScreen() {
         console.error("Failed to parse deep link:", err);
       }
     },
-    [refetchSyncOverview],
+    [refetchSyncOverview, utils],
   );
 
   const handleClose = useCallback(() => {
@@ -252,7 +274,7 @@ export default function IntegrationsScreen() {
           <Text className="text-sm text-muted-foreground">
             {integrationsLoading
               ? "Checking…"
-              : `${connectedCount}/${visibleIntegrations.length} connected`}
+              : `${readyCount}/${visibleIntegrations.length} ready`}
           </Text>
           {integrationsLoading ? <ActivityIndicator size="small" /> : null}
         </View>

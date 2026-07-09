@@ -269,7 +269,7 @@ describe("integrations screen", () => {
 
     expect(screen.getByTestId("integration-provider-strava")).toBeTruthy();
     expect(screen.getByTestId("integration-provider-wahoo")).toBeTruthy();
-    expect(screen.getByText("3/3 connected")).toBeTruthy();
+    expect(screen.getByText("2/3 ready")).toBeTruthy();
     expect(screen.getAllByText("Auto").length).toBeTruthy();
     expect(screen.queryByTestId("integration-sync-now-wahoo")).toBeNull();
     expect(screen.getByTestId("integration-disconnect-wahoo")).toBeTruthy();

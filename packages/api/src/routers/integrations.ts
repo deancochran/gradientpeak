@@ -442,6 +442,29 @@ function getSyncMetadataStatus(metadata: unknown): string | null {
   return typeof status === "string" ? status : null;
 }
 
+function toDateOrNull(value: Date | string | null | undefined): Date | null {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function getCurrentSyncError(input: {
+  integrationUpdatedAt: Date | string | null | undefined;
+  lastError: string | null | undefined;
+  lastSyncFailedAt: string | null | undefined;
+}): string | null {
+  if (!input.lastError) return null;
+
+  const integrationUpdatedAt = toDateOrNull(input.integrationUpdatedAt);
+  const lastSyncFailedAt = toDateOrNull(input.lastSyncFailedAt);
+
+  if (integrationUpdatedAt && lastSyncFailedAt && integrationUpdatedAt > lastSyncFailedAt) {
+    return null;
+  }
+
+  return input.lastError;
+}
+
 function looksLikeReconnectError(error: string | null | undefined): boolean {
   if (!error) return false;
   const normalized = error.toLowerCase();
@@ -695,13 +718,28 @@ export const integrationsRouter = createTRPCRouter({
         const activityHistorySupported = supportsActivityHistorySync(definition.id);
         const setupSupported = providerHasCapability(definition.id, "profile_enrichment_read");
         const plannedSupported = providerHasCapability(definition.id, "planned_activity_push");
+        const activityLastError = getCurrentSyncError({
+          integrationUpdatedAt: integration?.updated_at,
+          lastError: activityState?.lastError,
+          lastSyncFailedAt: activityState?.lastSyncFailedAt,
+        });
+        const setupLastError = getCurrentSyncError({
+          integrationUpdatedAt: integration?.updated_at,
+          lastError: setupState?.lastError,
+          lastSyncFailedAt: setupState?.lastSyncFailedAt,
+        });
+        const plannedLastError = getCurrentSyncError({
+          integrationUpdatedAt: integration?.updated_at,
+          lastError: plannedState?.lastError,
+          lastSyncFailedAt: plannedState?.lastSyncFailedAt,
+        });
         const activityHistoryStatus = !activityHistorySupported
           ? "unsupported"
           : activeActivityJob?.status === "running"
             ? "importing"
             : activeActivityJob?.status === "queued"
               ? "queued"
-              : activityState?.lastError
+              : activityLastError
                 ? "failed"
                 : activityState?.lastSyncSucceededAt
                   ? "synced"
@@ -710,7 +748,7 @@ export const integrationsRouter = createTRPCRouter({
           ? "unsupported"
           : getSyncMetadataStatus(setupState?.metadata) === "running"
             ? "refreshing"
-            : setupState?.lastError
+            : setupLastError
               ? "failed"
               : setupState?.lastSyncSucceededAt
                 ? "refreshed"
@@ -721,11 +759,10 @@ export const integrationsRouter = createTRPCRouter({
             ? "syncing"
             : activePlannedJob?.status === "queued"
               ? "queued"
-              : plannedState?.lastError
+              : plannedLastError
                 ? "failed"
                 : "automatic";
-        const providerHealthLastError =
-          activityState?.lastError ?? setupState?.lastError ?? plannedState?.lastError ?? null;
+        const providerHealthLastError = activityLastError ?? setupLastError ?? plannedLastError;
         const providerHealthStatus = !integration
           ? "unsupported"
           : looksLikeReconnectError(providerHealthLastError)
@@ -744,14 +781,14 @@ export const integrationsRouter = createTRPCRouter({
         return {
           actions: integration ? getConfigurableProviderActions(definition.id) : [],
           activityHistory: {
-            lastError: activityState?.lastError ?? null,
+            lastError: activityLastError,
             lastFailedAt: activityState?.lastSyncFailedAt ?? null,
             lastSucceededAt: activityState?.lastSyncSucceededAt ?? null,
             queuedJobId: activeActivityJob?.id ?? null,
             status: activityHistoryStatus,
           },
           plannedWorkouts: {
-            lastError: plannedState?.lastError ?? null,
+            lastError: plannedLastError,
             lastFailedAt: plannedState?.lastSyncFailedAt ?? null,
             lastSucceededAt: plannedState?.lastSyncSucceededAt ?? null,
             queuedJobId: activePlannedJob?.id ?? null,
@@ -763,7 +800,7 @@ export const integrationsRouter = createTRPCRouter({
           },
           configured: true,
           setupData: {
-            lastError: setupState?.lastError ?? null,
+            lastError: setupLastError,
             lastFailedAt: setupState?.lastSyncFailedAt ?? null,
             lastSucceededAt: setupState?.lastSyncSucceededAt ?? null,
             status: setupStatus,
