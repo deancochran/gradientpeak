@@ -8,6 +8,7 @@ export * from "./mutationUseCases";
 export * from "./planTabProjectionService";
 export * from "./previewCreationConfigUseCase";
 export * from "./scheduleGapActivityPlanMatches";
+export * from "./scheduleRecommendation";
 export * from "./schedulingUtils";
 export * from "./templateUseCases";
 export * from "./upcomingActivityImpact";

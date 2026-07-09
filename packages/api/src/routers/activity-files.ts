@@ -19,6 +19,7 @@ import {
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, lte } from "drizzle-orm";
 import { z } from "zod";
+import { persistExistingActivityFileEnrichment } from "../application/activity-file-ingestion/persist-existing-activity-file-enrichment";
 import { processUploadedActivityFile } from "../application/activity-file-ingestion/process-uploaded-activity-file";
 import {
   buildActivityFileBestEffortRows,
@@ -607,100 +608,15 @@ async function upsertExistingActivityFileEnrichment(
     activityType: input.activityType,
     parsedData: input.parsedData,
   });
-  const now = new Date();
 
-  await db.transaction(async (tx) => {
-    await tx
-      .insert(activityImports)
-      .values({
-        activity_id: input.activityId,
-        profile_id: input.profileId,
-        activity_file_path: input.activityFilePath,
-        activity_file_size: input.activityFileSize,
-        import_file_type: input.activityFileType,
-        device_manufacturer: toStringOrNull(input.parsedData.metadata.manufacturer),
-        device_product: toStringOrNull(input.parsedData.metadata.product),
-        created_at: now,
-        updated_at: now,
-      })
-      .onConflictDoUpdate({
-        target: activityImports.activity_id,
-        set: {
-          activity_file_path: input.activityFilePath,
-          activity_file_size: input.activityFileSize,
-          import_file_type: input.activityFileType,
-          device_manufacturer: toStringOrNull(input.parsedData.metadata.manufacturer),
-          device_product: toStringOrNull(input.parsedData.metadata.product),
-          updated_at: now,
-        },
-      });
-
-    await tx
-      .insert(activitySummaries)
-      .values({ ...enrichment.summaryValues, created_at: now })
-      .onConflictDoUpdate({
-        target: activitySummaries.activity_id,
-        set: enrichment.summaryValues,
-      });
-
-    if (enrichment.geometry.mapBounds || enrichment.geometry.polyline) {
-      await tx
-        .insert(activityGeometry)
-        .values({
-          activity_id: input.activityId,
-          profile_id: input.profileId,
-          map_bounds: enrichment.geometry.mapBounds,
-          polyline: enrichment.geometry.polyline,
-          created_at: now,
-          updated_at: now,
-        })
-        .onConflictDoUpdate({
-          target: activityGeometry.activity_id,
-          set: {
-            map_bounds: enrichment.geometry.mapBounds,
-            polyline: enrichment.geometry.polyline,
-            updated_at: now,
-          },
-        });
-    }
-
-    await tx.delete(activityLaps).where(eq(activityLaps.activity_id, input.activityId));
-    if (input.parsedData.laps?.length) {
-      await tx.insert(activityLaps).values(
-        input.parsedData.laps.map((lap, index) => ({
-          id: randomUUID(),
-          activity_id: input.activityId,
-          profile_id: input.profileId,
-          lap_index: index,
-          payload: lap,
-          created_at: now,
-          updated_at: now,
-        })),
-      );
-    }
-
-    await tx.delete(activityEfforts).where(eq(activityEfforts.activity_id, input.activityId));
-    if (enrichment.effortsToInsert.length > 0) {
-      await tx.insert(activityEfforts).values(enrichment.effortsToInsert);
-    }
-
-    if (enrichment.detectedLTHR) {
-      await tx.insert(profileMetrics).values({
-        id: randomUUID(),
-        created_at: now,
-        profile_id: input.profileId,
-        metric_type: "lthr",
-        value: enrichment.detectedLTHR,
-        unit: "bpm",
-        recorded_at: enrichment.activityCompletedAt,
-      });
-    }
-  });
-
-  await markProfileAnalysisDirty(db, {
+  await persistExistingActivityFileEnrichment(db, {
+    activityId: input.activityId,
     profileId: input.profileId,
-    kinds: ["fitness", "performance", "metrics"],
-    dirtySince: enrichment.activityCompletedAtIso,
+    activityFilePath: input.activityFilePath,
+    activityFileSize: input.activityFileSize,
+    activityFileType: input.activityFileType,
+    parsedData: input.parsedData,
+    enrichment,
   });
 }
 

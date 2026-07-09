@@ -4,6 +4,7 @@ import { type ActivityRow, activities, profiles, publicActivityCategorySchema } 
 import { and, asc, desc, eq, gte, isNotNull, lte } from "drizzle-orm";
 import { z } from "zod";
 import { buildConsistencyMetrics } from "../application/trends/consistencyMetrics";
+import { buildPeakPerformances } from "../application/trends/peakPerformances";
 import { buildVolumeTrends } from "../application/trends/volumeTrends";
 import { buildZoneDistributionTrends } from "../application/trends/zoneDistributionTrends";
 import { getRequiredDb } from "../db";
@@ -701,57 +702,8 @@ export const trendsRouter = createTRPCRouter({
             })
           : null;
 
-      // Map activities to performances with extracted values
-      const allPerformances = parsedActivityRows
-        .map((activity) => {
-          let value: number | null = null;
-          let unit = "";
-
-          switch (input.metric) {
-            case "distance":
-              value = activity.distance_meters;
-              unit = "m";
-              break;
-            case "speed":
-              value = activity.avg_speed_mps;
-              unit = "m/s";
-              break;
-            case "power":
-              value = activity.avg_power;
-              unit = "W";
-              break;
-            case "duration":
-              value = activity.moving_seconds;
-              unit = "s";
-              break;
-            case "tss":
-              value = derivedMap?.get(activity.id)?.tss ?? null;
-              unit = "TSS";
-              break;
-          }
-
-          return {
-            activityId: activity.id,
-            activityName: activity.name,
-            date: activity.started_at.toISOString(),
-            value,
-            unit,
-            category: activity.type,
-          };
-        })
-        .filter((performance) => performance.value !== null && performance.value !== undefined);
-
-      // Sort by value descending for JSONB metrics
-      if (["speed", "power", "tss"].includes(input.metric)) {
-        allPerformances.sort((a, b) => (b.value || 0) - (a.value || 0));
-      }
-
-      // Take top N and add ranks
-      const performances = allPerformances.slice(0, input.limit).map((perf, index) => ({
-        ...perf,
-        rank: index + 1,
-      }));
-
-      return peakPerformancesOutputSchema.parse({ performances });
+      return peakPerformancesOutputSchema.parse(
+        buildPeakPerformances(parsedActivityRows, input.metric, input.limit, derivedMap),
+      );
     }),
 });
