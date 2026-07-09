@@ -8,6 +8,7 @@ import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core/
 import { type ActivityRow, activities, profiles, publicActivityCategorySchema } from "@repo/db";
 import { and, asc, desc, eq, gte, isNotNull, lte } from "drizzle-orm";
 import { z } from "zod";
+import { buildVolumeTrends } from "../application/trends/volumeTrends";
 import { getRequiredDb } from "../db";
 import { createActivityAnalysisStore } from "../infrastructure/repositories";
 import { buildActivityDerivedSummaryMap, buildDynamicStressSeries } from "../lib/activity-analysis";
@@ -383,72 +384,7 @@ export const trendsRouter = createTRPCRouter({
         .orderBy(asc(activities.started_at)),
     );
 
-    if (activityRows.length === 0) {
-      return volumeTrendsOutputSchema.parse({ dataPoints: [], totals: null });
-    }
-
-    // Group activities by time period
-    const groupedData = new Map<
-      string,
-      {
-        date: string;
-        totalDistance: number;
-        totalTime: number;
-        activityCount: number;
-      }
-    >();
-
-    for (const activity of activityRows) {
-      const date = new Date(activity.started_at);
-      let groupKey: string;
-
-      switch (input.groupBy) {
-        case "day":
-          groupKey = toDateKey(date);
-          break;
-        case "week": {
-          // Get Monday of the week
-          const weekStart = new Date(date);
-          weekStart.setDate(date.getDate() - date.getDay() + 1);
-          groupKey = toDateKey(weekStart);
-          break;
-        }
-        case "month":
-          groupKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-01`;
-          break;
-      }
-
-      if (!groupedData.has(groupKey)) {
-        groupedData.set(groupKey, {
-          date: groupKey,
-          totalDistance: 0,
-          totalTime: 0,
-          activityCount: 0,
-        });
-      }
-
-      const group = groupedData.get(groupKey)!;
-      group.totalDistance += activity.distance_meters || 0;
-      group.totalTime += activity.moving_seconds || activity.duration_seconds || 0;
-      group.activityCount += 1;
-    }
-
-    // Convert to array and sort
-    const dataPoints = Array.from(groupedData.values()).sort(
-      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
-    );
-
-    // Calculate totals
-    const totals = {
-      totalDistance: activityRows.reduce((sum, a) => sum + (a.distance_meters || 0), 0),
-      totalTime: activityRows.reduce(
-        (sum, a) => sum + (a.moving_seconds || a.duration_seconds || 0),
-        0,
-      ),
-      totalActivities: activityRows.length,
-    };
-
-    return volumeTrendsOutputSchema.parse({ dataPoints, totals });
+    return volumeTrendsOutputSchema.parse(buildVolumeTrends(activityRows, input.groupBy));
   }),
 
   // ------------------------------
