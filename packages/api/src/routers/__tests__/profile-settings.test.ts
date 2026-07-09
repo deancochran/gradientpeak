@@ -3,6 +3,7 @@ import { profileTrainingSettings } from "@repo/db";
 import type { TRPCError } from "@trpc/server";
 import { describe, expect, it } from "vitest";
 
+import { createRouterCaller } from "../../test/router";
 import { profileSettingsRouter } from "../profile-settings";
 
 type DbPlan = {
@@ -84,13 +85,7 @@ function createCaller(params?: { userId?: string; plan?: DbPlan }) {
   const { userId = PROFILE_ID, plan = {} } = params ?? {};
   const { db, calls } = createDbMock(plan);
 
-  const caller = profileSettingsRouter.createCaller({
-    db: db as any,
-    session: { user: { id: userId } },
-    headers: new Headers(),
-    clientType: "test",
-    trpcSource: "vitest",
-  } as any);
+  const caller = createRouterCaller(profileSettingsRouter, { db, userId });
 
   return { caller, calls };
 }

@@ -6,6 +6,7 @@ import { getRequiredDb } from "../db";
 import { createActivityAnalysisStore } from "../infrastructure/repositories";
 import { buildActivityDerivedSummaryMap } from "../lib/activity-analysis";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { buildUuidInList, parseCountValue } from "../utils/sql";
 
 const timestampSchema = z.union([z.date(), z.string()]);
 const nullableNumericSchema = z.preprocess((value) => {
@@ -88,7 +89,7 @@ const feedActivityDetailRowSchema = feedActivityRowSchema.extend({
 
 const commentCountRowSchema = z.object({
   entity_id: z.string().uuid(),
-  comments_count: z.coerce.number().int().nonnegative(),
+  comments_count: z.preprocess(parseCountValue, z.number().int().nonnegative()),
 });
 
 const activityCommentRowSchema = publicCommentsRowSchema
@@ -208,13 +209,6 @@ function mapFeedActivity(
         }
       : null,
   });
-}
-
-function buildUuidInList(values: string[]) {
-  return sql.join(
-    values.map((value) => sql`${value}::uuid`),
-    sql`, `,
-  );
 }
 
 function encodeFeedCursor(activity: Pick<FeedActivity, "id" | "started_at">) {

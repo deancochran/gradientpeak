@@ -7,6 +7,7 @@ import { getRequiredDb } from "../db";
 import { createContentAccessPermissions } from "../permissions/content-access";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { buildIndexPageInfo, indexCursorSchema, parseIndexCursor } from "../utils/index-cursor";
+import { buildUuidInList, getSqlCount } from "../utils/sql";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 
@@ -60,10 +61,6 @@ const profileListItemSchema = z
   })
   .strict();
 
-const countRowSchema = z.object({
-  value: z.union([z.number(), z.string()]),
-});
-
 const commentInsertRowSchema = z
   .object({
     id: uuidSchema,
@@ -90,13 +87,6 @@ const commentListRowSchema = z
 
 function toIsoString(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : value;
-}
-
-function buildUuidInList(values: string[]) {
-  return sql.join(
-    values.map((value) => sql`${value}::uuid`),
-    sql`, `,
-  );
 }
 
 async function getFollowRecord(db: DbClient, followerId: string, followingId: string) {
@@ -147,12 +137,6 @@ async function createNotification(
     insert into notifications (user_id, actor_id, type)
     values (${input.user_id}::uuid, ${input.actor_id}::uuid, ${input.type})
   `);
-}
-
-async function getCount(resultPromise: Promise<{ rows: unknown[] }>) {
-  const result = await resultPromise;
-  const row = countRowSchema.parse(result.rows[0] ?? { value: 0 });
-  return Number(row.value ?? 0);
 }
 
 /**
@@ -538,7 +522,7 @@ export const socialRouter = createTRPCRouter({
         `);
 
         const followers = z.array(profileListItemSchema).parse(followersResult.rows);
-        const total = await getCount(
+        const total = await getSqlCount(
           db.execute(sql`
           select count(*)::int as value
           from follows
@@ -629,7 +613,7 @@ export const socialRouter = createTRPCRouter({
         `);
 
         const following = z.array(profileListItemSchema).parse(followingResult.rows);
-        const total = await getCount(
+        const total = await getSqlCount(
           db.execute(sql`
           select count(*)::int as value
           from follows
@@ -737,7 +721,7 @@ export const socialRouter = createTRPCRouter({
              `);
 
         const users = z.array(profileListItemSchema).parse(usersResult.rows);
-        const total = await getCount(
+        const total = await getSqlCount(
           trimmedQuery
             ? db.execute(sql`
                 select count(*)::int as value
@@ -963,7 +947,7 @@ export const socialRouter = createTRPCRouter({
       `);
 
       const comments = z.array(commentListRowSchema).parse(commentsResult.rows);
-      const total = await getCount(
+      const total = await getSqlCount(
         db.execute(sql`
         select count(*)::int as value
         from comments

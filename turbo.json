@@ -53,6 +53,10 @@
       "outputs": ["coverage/**"],
       "cache": true
     },
+    "verify:api": {
+      "outputs": [],
+      "cache": true
+    },
     "test:e2e:web": {
       "dependsOn": ["build"],
       "outputs": [],

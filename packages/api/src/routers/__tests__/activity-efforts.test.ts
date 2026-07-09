@@ -15,6 +15,7 @@ vi.mock("../../utils/profile-estimation-state", () => ({
   markProfileAnalysisDirty: vi.fn(async () => undefined),
 }));
 
+import { createRouterCaller } from "../../test/router";
 import { markProfileAnalysisDirty } from "../../utils/profile-estimation-state";
 import { activityEffortsRouter } from "../activity-efforts";
 
@@ -77,13 +78,7 @@ function createCaller(options?: {
     delete: del,
   };
 
-  const caller = activityEffortsRouter.createCaller({
-    db: db as any,
-    session: { user: { id: userId } },
-    headers: new Headers(),
-    clientType: "test",
-    trpcSource: "vitest",
-  } as any);
+  const caller = createRouterCaller(activityEffortsRouter, { db, userId });
 
   return {
     caller,

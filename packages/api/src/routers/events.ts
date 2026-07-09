@@ -17,7 +17,12 @@ import type {
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { createEventUseCase, enqueueProviderPlannedActivityJobs } from "../application/events";
+import {
+  createEventUseCase,
+  deleteEventUseCase,
+  enqueueProviderPlannedActivityJobs,
+  updateEventUseCase,
+} from "../application/events";
 import type { Context } from "../context";
 import { getRequiredDb } from "../db";
 import {
@@ -25,10 +30,7 @@ import {
   createEventReadRepository,
   createEventWriteRepository,
 } from "../infrastructure/repositories";
-import {
-  getEventPlannedWorkoutProviderStatuses,
-  type PlannedWorkoutQueueResult,
-} from "../lib/provider-sync/planned-workouts";
+import { getEventPlannedWorkoutProviderStatuses } from "../lib/provider-sync/planned-workouts";
 import { createContentAccessPermissions } from "../permissions/content-access";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import {
@@ -1144,412 +1146,46 @@ export const eventsRouter = createTRPCRouter({
   }),
 
   update: protectedProcedure.input(eventUpdateInputSchema).mutation(async ({ ctx, input }) => {
-    const id = input.id;
-    const scope = input.scope ?? "single";
-    const eventWriteRepository = getEventWriteRepository(ctx);
-    const completionRepository = getEventCompletionRepository(ctx);
-    const permissions = getContentPermissions(ctx);
-
-    const existing = await completionRepository.getOwnedEventForCompletion({
-      eventId: id,
-      profileId: ctx.session.user.id,
+    return updateEventUseCase({
+      ctx,
+      input,
+      dependencies: {
+        assertRestDayWritesBlocked,
+        buildInsightRefreshHint,
+        buildMaterializedRecurrenceOccurrences,
+        enqueueProviderPlannedActivityJobs,
+        ensurePersistableRecurrence,
+        getContentPermissions,
+        getEventCompletionRepository,
+        getEventWriteRepository,
+        hasInstantChanged,
+        mapEvent: (event) => mapEvent(event as PlannedEventRecord),
+        normalizeEventUpdatePatch,
+        plannedEventType,
+        toCoreEventType,
+        toDateKey,
+        toDayStartIso,
+        toDbEventType,
+        toNextDayStartIso,
+        toPersistableEventStatus,
+      },
     });
-
-    if (!existing) {
-      throw new TRPCError({
-        code: "NOT_FOUND",
-        message: "Event not found",
-      });
-    }
-
-    const existingEvent = existing as PlannedEventRecord;
-    const existingEventType = toCoreEventType(existingEvent.event_type);
-
-    assertRestDayWritesBlocked(existingEventType, "update");
-
-    if (existingEventType === "imported") {
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: "Imported events are read-only",
-      });
-    }
-
-    const { patch, scheduledDate } = normalizeEventUpdatePatch(input);
-    const targetEventType = patch.event_type ?? existingEventType;
-
-    assertRestDayWritesBlocked(targetEventType, "update");
-
-    const hasScheduledDateMove =
-      scheduledDate !== undefined &&
-      toDateKey(scheduledDate) !== toDateKey(existingEvent.starts_at);
-    const hasStartsAtMove = hasInstantChanged(patch.starts_at, existingEvent.starts_at);
-    const hasEndsAtMove = hasInstantChanged(patch.ends_at, existingEvent.ends_at);
-    const isMoveRescheduleUpdate = hasScheduledDateMove || hasStartsAtMove || hasEndsAtMove;
-    const isPlannedLikeEvent = existingEventType === "planned" || targetEventType === "planned";
-    const hasCompletionLinkage =
-      existingEvent.linked_activity_id !== null || existingEvent.status === "completed";
-
-    ensurePersistableRecurrence(patch.recurrence);
-
-    if (patch.recurrence !== undefined && scope === "single") {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: "Recurrence updates require future or series scope",
-      });
-    }
-
-    if (scope !== "single") {
-      if (!existingEvent.series_id) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: `Mutation scope "${scope}" requires an event series`,
-        });
-      }
-
-      if (
-        scheduledDate !== undefined ||
-        patch.starts_at !== undefined ||
-        patch.ends_at !== undefined
-      ) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Date/time updates are only supported with single scope",
-        });
-      }
-    }
-
-    const nextActivityPlanId =
-      patch.activity_plan_id !== undefined
-        ? patch.activity_plan_id
-        : existingEvent.activity_plan_id;
-
-    if (targetEventType === "planned" && !nextActivityPlanId) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: 'activity_plan_id is required when event_type is "planned"',
-      });
-    }
-
-    if (typeof patch.activity_plan_id === "string") {
-      if (permissions) {
-        await permissions.requireRead(
-          ctx.session.user.id,
-          { type: "activity_plan", id: patch.activity_plan_id },
-          "Activity plan not found or not accessible",
-        );
-      } else {
-        const activityPlan = await eventWriteRepository.getAccessibleActivityPlan({
-          activityPlanId: patch.activity_plan_id,
-          profileId: ctx.session.user.id,
-        });
-
-        if (!activityPlan) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Activity plan not found or not accessible",
-          });
-        }
-      }
-    }
-
-    if (typeof patch.training_plan_id === "string") {
-      if (permissions) {
-        await permissions.requireRead(
-          ctx.session.user.id,
-          { type: "training_plan", id: patch.training_plan_id },
-          "Training plan not found or not accessible",
-        );
-      } else {
-        const trainingPlan = await eventWriteRepository.getOwnedTrainingPlan({
-          profileId: ctx.session.user.id,
-          trainingPlanId: patch.training_plan_id,
-        });
-
-        if (!trainingPlan) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Training plan not found or not accessible",
-          });
-        }
-      }
-    }
-
-    const eventUpdates: Record<string, unknown> = {
-      ...(patch.event_type !== undefined ? { event_type: toDbEventType(patch.event_type) } : {}),
-      ...(patch.activity_plan_id !== undefined ? { activity_plan_id: patch.activity_plan_id } : {}),
-      ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
-      ...(patch.lifecycle !== undefined
-        ? { status: toPersistableEventStatus(patch.lifecycle) }
-        : {}),
-      ...(patch.title !== undefined ? { title: patch.title } : {}),
-      ...(patch.description !== undefined ? { description: patch.description } : {}),
-      ...(patch.all_day !== undefined ? { all_day: patch.all_day } : {}),
-      ...(patch.timezone !== undefined ? { timezone: patch.timezone } : {}),
-      ...(patch.training_plan_id !== undefined ? { training_plan_id: patch.training_plan_id } : {}),
-      ...(patch.starts_at !== undefined ? { starts_at: patch.starts_at } : {}),
-      ...(patch.ends_at !== undefined ? { ends_at: patch.ends_at } : {}),
-      ...(patch.recurrence !== undefined
-        ? {
-            recurrence_rule: patch.recurrence?.rule ?? null,
-            recurrence_timezone: patch.recurrence?.timezone ?? null,
-          }
-        : {}),
-    };
-
-    if (scheduledDate !== undefined) {
-      eventUpdates.starts_at = toDayStartIso(scheduledDate);
-      eventUpdates.ends_at = toNextDayStartIso(scheduledDate);
-    }
-
-    const nextAllDay = patch.all_day !== undefined ? Boolean(patch.all_day) : existingEvent.all_day;
-
-    if (
-      nextAllDay &&
-      patch.starts_at !== undefined &&
-      patch.ends_at === undefined &&
-      scheduledDate === undefined
-    ) {
-      eventUpdates.ends_at = toNextDayStartIso(toDateKey(patch.starts_at));
-    }
-
-    if (isMoveRescheduleUpdate && isPlannedLikeEvent && hasCompletionLinkage) {
-      eventUpdates.linked_activity_id = null;
-
-      if (existingEvent.status === "completed") {
-        eventUpdates.status = "scheduled";
-      }
-    }
-
-    let updatedRows;
-    try {
-      updatedRows = (await eventWriteRepository.updateOwnedEventsForScope({
-        anchorEvent: existingEvent,
-        eventUpdates,
-        profileId: ctx.session.user.id,
-        scope,
-      })) as PlannedEventRecord[];
-    } catch (error) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: error instanceof Error ? error.message : "Failed to update event",
-      });
-    }
-
-    if (updatedRows.length === 0) {
-      throw new TRPCError({
-        code: "NOT_FOUND",
-        message: "No matching events found for update scope",
-      });
-    }
-
-    const representative = updatedRows.find((row) => row.id === id) ?? updatedRows[0];
-    if (!representative) {
-      throw new TRPCError({
-        code: "NOT_FOUND",
-        message: "No matching events found for update scope",
-      });
-    }
-
-    if (patch.recurrence) {
-      try {
-        const existingSeriesRows = await eventWriteRepository.listOwnedEventsForSeries({
-          anchorEvent: representative,
-          profileId: ctx.session.user.id,
-        });
-
-        if (existingSeriesRows.length <= 1) {
-          const occurrences = buildMaterializedRecurrenceOccurrences({
-            startsAt: representative.starts_at,
-            endsAt: representative.ends_at,
-            recurrence: patch.recurrence,
-          });
-
-          for (const occurrence of occurrences.slice(1)) {
-            const occurrenceData = await eventWriteRepository.createOwnedEvent({
-              profileId: ctx.session.user.id,
-              eventType: representative.event_type,
-              title: representative.title,
-              allDay: representative.all_day,
-              timezone: representative.timezone,
-              startsAt: occurrence.startsAt,
-              endsAt: occurrence.endsAt,
-              status: representative.status,
-              activityPlanId: representative.activity_plan_id,
-              trainingPlanId: representative.training_plan_id,
-              notes: representative.notes,
-              description: representative.description,
-              recurrenceRule: representative.recurrence_rule,
-              recurrenceTimezone: representative.recurrence_timezone,
-              seriesId: representative.series_id ?? representative.id,
-              occurrenceKey: occurrence.occurrenceKey,
-              originalStartsAt: occurrence.startsAt,
-              sourceProvider: representative.source_provider,
-            });
-            updatedRows.push(occurrenceData as PlannedEventRecord);
-          }
-        }
-      } catch (error) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message:
-            error instanceof Error ? error.message : "Failed to materialize recurring events",
-        });
-      }
-    }
-
-    const event = mapEvent(representative);
-
-    if (permissions) {
-      await Promise.all(
-        updatedRows.map(async (row: any) => {
-          await permissions.revokeEventGrants(row.id);
-          await permissions.grantEventContentAccess({
-            actorProfileId: ctx.session.user.id,
-            granteeProfileId: row.profile_id,
-            eventId: row.id,
-            activityPlanId: row.activity_plan_id,
-            trainingPlanId: row.training_plan_id,
-          });
-        }),
-      );
-    }
-
-    let plannedWorkoutSyncResult: PlannedWorkoutQueueResult | null = null;
-    const updatedPlannedEventIds = updatedRows
-      .filter((row) => row.event_type === plannedEventType && row.activity_plan_id)
-      .map((row) => row.id);
-    const removedPlannedEventIds =
-      existingEvent.event_type === plannedEventType &&
-      existingEvent.activity_plan_id &&
-      (event.legacy_event_type !== plannedEventType || event.activity_plan_id === null)
-        ? updatedRows.map((row) => row.id)
-        : [];
-
-    if (updatedPlannedEventIds.length > 0 || removedPlannedEventIds.length > 0) {
-      try {
-        plannedWorkoutSyncResult =
-          updatedPlannedEventIds.length > 0
-            ? await enqueueProviderPlannedActivityJobs(ctx, {
-                eventIds: updatedPlannedEventIds,
-                operation: "publish",
-              })
-            : await enqueueProviderPlannedActivityJobs(ctx, {
-                eventIds: removedPlannedEventIds,
-                operation: "unsync",
-              });
-      } catch (error) {
-        console.error("Failed to enqueue planned workout update jobs:", error);
-        plannedWorkoutSyncResult = {
-          affectedCount: updatedPlannedEventIds.length || removedPlannedEventIds.length,
-          operation: updatedPlannedEventIds.length > 0 ? "publish" : "unsync",
-          queued: false,
-          success: false,
-          error:
-            error instanceof Error
-              ? error.message
-              : "Unknown error during planned workout sync queueing",
-        };
-      }
-    }
-
-    return {
-      ...event,
-      plannedWorkoutSync: plannedWorkoutSyncResult,
-      wahooSync: plannedWorkoutSyncResult,
-      mutation_scope: scope,
-      affected_count: updatedRows.length,
-      affected_event_ids: updatedRows.map((row: any) => row.id),
-      insight_refresh_hint: buildInsightRefreshHint({
-        trainingPlanId: event.training_plan_id,
-        changedDate: event.scheduled_date,
-        changeAt: event.updated_at,
-      }),
-    };
   }),
 
   delete: protectedProcedure.input(eventDeleteInputSchema).mutation(async ({ ctx, input }) => {
-    const completionRepository = getEventCompletionRepository(ctx);
-    const permissions = getContentPermissions(ctx);
-    const existing = await completionRepository.getOwnedEventForCompletion({
-      eventId: input.id,
-      profileId: ctx.session.user.id,
+    return deleteEventUseCase({
+      ctx,
+      input,
+      dependencies: {
+        buildInsightRefreshHint,
+        enqueueProviderPlannedActivityJobs,
+        getContentPermissions,
+        getEventCompletionRepository,
+        plannedEventType,
+        toCoreEventType,
+        toDateKey,
+      },
     });
-
-    if (!existing) {
-      throw new TRPCError({
-        code: "NOT_FOUND",
-        message: "Event not found",
-      });
-    }
-
-    const existingEvent = existing as PlannedEventRecord;
-    const existingEventType = toCoreEventType(existingEvent.event_type);
-    if (existingEventType === "imported") {
-      throw new TRPCError({
-        code: "FORBIDDEN",
-        message: "Imported events are read-only",
-      });
-    }
-
-    const scope = input.scope ?? "single";
-
-    let rowsToDelete;
-    try {
-      rowsToDelete = await completionRepository.listOwnedEventsForDeleteScope({
-        anchorEvent: existingEvent,
-        profileId: ctx.session.user.id,
-        scope,
-      });
-    } catch (error) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: error instanceof Error ? error.message : "Failed to scope events for delete",
-      });
-    }
-
-    try {
-      const plannedEventIds = rowsToDelete
-        .filter((row) => row.event_type === plannedEventType && row.activity_plan_id)
-        .map((row) => row.id);
-
-      if (plannedEventIds.length > 0) {
-        await enqueueProviderPlannedActivityJobs(ctx, {
-          eventIds: plannedEventIds,
-          operation: "unsync",
-        });
-      }
-    } catch (error) {
-      console.error("Failed to enqueue planned workout unsync jobs:", error);
-    }
-
-    try {
-      await completionRepository.deleteOwnedEventsForScope({
-        anchorEvent: existingEvent,
-        profileId: ctx.session.user.id,
-        scope,
-      });
-
-      if (permissions) {
-        await Promise.all(rowsToDelete.map((row: any) => permissions.revokeEventGrants(row.id)));
-      }
-    } catch (error) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: error instanceof Error ? error.message : "Failed to delete events",
-      });
-    }
-
-    return {
-      success: true,
-      mutation_scope: scope,
-      affected_count: rowsToDelete.length,
-      affected_event_ids: rowsToDelete.map((row: any) => row.id),
-      insight_refresh_hint: buildInsightRefreshHint({
-        trainingPlanId: existingEvent.training_plan_id,
-        changedDate: toDateKey(existingEvent.starts_at),
-        changeAt: existingEvent.updated_at,
-      }),
-    };
   }),
 
   linkCompletion: protectedProcedure

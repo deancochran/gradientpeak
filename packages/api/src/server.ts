@@ -1,3 +1,5 @@
+export type { HandleOAuthCallbackResult, OAuthCallbackCaller } from "./application/integrations";
+export { handleOAuthCallback } from "./application/integrations";
 export type {
   ApiContextAuth,
   Context,

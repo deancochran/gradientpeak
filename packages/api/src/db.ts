@@ -1,12 +1,9 @@
-import { TRPCError } from "@trpc/server";
 import type { Context } from "./context";
+import { internalServerError } from "./lib/errors/trpc";
 
 export function getRequiredDb(ctx: Context) {
   if (!ctx.db) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Database client unavailable",
-    });
+    throw internalServerError("Database client unavailable");
   }
 
   return ctx.db;

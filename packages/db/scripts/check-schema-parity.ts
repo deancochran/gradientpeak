@@ -3,22 +3,84 @@
 import { getTableColumns, getTableName } from "drizzle-orm";
 import { Pool } from "pg";
 import { schema } from "../src/schema";
+import * as enumSchema from "../src/schema/enums";
 import { prepareDbEnv } from "./_helpers";
 
 const databaseUrl = prepareDbEnv();
 
+type ExpectedColumn = {
+  name: string;
+  isNullable: boolean;
+  hasDefault: boolean;
+};
+
+type ActualColumn = {
+  name: string;
+  isNullable: boolean;
+  hasDefault: boolean;
+};
+
+type SchemaColumnMetadata = {
+  name: string;
+  notNull?: boolean;
+  hasDefault?: boolean;
+  default?: unknown;
+  defaultFn?: unknown;
+  generated?: unknown;
+};
+
+type SchemaEnumMetadata = {
+  enumName?: unknown;
+  enumValues?: unknown;
+};
+
 function getSchemaTables() {
   return Object.values(schema).flatMap((value) => {
     try {
-      const columns = Object.values(getTableColumns(value as never)).map(
-        (column: any) => column.name,
-      );
+      const columns = Object.values(getTableColumns(value as never)).map((column) => {
+        const metadata = column as SchemaColumnMetadata;
+
+        return {
+          name: metadata.name,
+          isNullable: !metadata.notNull,
+          hasDefault: Boolean(
+            metadata.hasDefault ||
+              metadata.default !== undefined ||
+              metadata.defaultFn ||
+              metadata.generated,
+          ),
+        };
+      });
       const tableName = getTableName(value as never);
 
-      return [{ tableName, columns: columns.sort() }];
+      return [
+        {
+          tableName,
+          columns: columns.sort((left, right) => left.name.localeCompare(right.name)),
+        },
+      ];
     } catch {
       return [];
     }
+  });
+}
+
+function getSchemaEnums() {
+  return Object.values(enumSchema).flatMap((value) => {
+    const metadata = value as SchemaEnumMetadata;
+
+    if (typeof metadata.enumName !== "string" || !Array.isArray(metadata.enumValues)) {
+      return [];
+    }
+
+    return [
+      {
+        enumName: metadata.enumName,
+        values: metadata.enumValues
+          .filter((enumValue): enumValue is string => typeof enumValue === "string")
+          .sort(),
+      },
+    ];
   });
 }
 
@@ -26,23 +88,58 @@ async function getActualColumnsByTable(pool: Pool) {
   const result = await pool.query<{
     table_name: string;
     column_name: string;
+    is_nullable: "YES" | "NO";
+    column_default: string | null;
   }>(
     `
-      select table_name, column_name
+      select table_name, column_name, is_nullable, column_default
       from information_schema.columns
       where table_schema = 'public'
       order by table_name asc, ordinal_position asc
     `,
   );
 
-  const columnsByTable = new Map<string, string[]>();
+  const columnsByTable = new Map<string, ActualColumn[]>();
   for (const row of result.rows) {
     const existing = columnsByTable.get(row.table_name) ?? [];
-    existing.push(row.column_name);
+    existing.push({
+      name: row.column_name,
+      isNullable: row.is_nullable === "YES",
+      hasDefault: row.column_default !== null,
+    });
     columnsByTable.set(row.table_name, existing);
   }
 
   return columnsByTable;
+}
+
+async function getActualEnums(pool: Pool) {
+  const result = await pool.query<{
+    enum_name: string;
+    enum_value: string;
+  }>(
+    `
+      select t.typname as enum_name, e.enumlabel as enum_value
+      from pg_type t
+      join pg_enum e on e.enumtypid = t.oid
+      join pg_namespace n on n.oid = t.typnamespace
+      where n.nspname = 'public'
+      order by t.typname asc, e.enumsortorder asc
+    `,
+  );
+
+  const valuesByEnum = new Map<string, string[]>();
+  for (const row of result.rows) {
+    const existing = valuesByEnum.get(row.enum_name) ?? [];
+    existing.push(row.enum_value);
+    valuesByEnum.set(row.enum_name, existing);
+  }
+
+  return valuesByEnum;
+}
+
+function formatColumns(columns: ExpectedColumn[] | ActualColumn[]) {
+  return columns.map((column) => column.name).join(", ");
 }
 
 async function main() {
@@ -51,15 +148,18 @@ async function main() {
   try {
     const expectedTables = getSchemaTables();
     const actualColumnsByTable = await getActualColumnsByTable(pool);
+    const expectedEnums = getSchemaEnums();
+    const actualEnums = await getActualEnums(pool);
     const driftMessages: string[] = [];
 
     for (const expectedTable of expectedTables) {
       const actualColumns = actualColumnsByTable.get(expectedTable.tableName) ?? [];
       const missingColumns = expectedTable.columns.filter(
-        (column) => !actualColumns.includes(column),
+        (column) => !actualColumns.some((actualColumn) => actualColumn.name === column.name),
       );
       const extraColumns = actualColumns.filter(
-        (column) => !expectedTable.columns.includes(column),
+        (column) =>
+          !expectedTable.columns.some((expectedColumn) => expectedColumn.name === column.name),
       );
 
       if (actualColumns.length === 0) {
@@ -69,13 +169,61 @@ async function main() {
 
       if (missingColumns.length > 0) {
         driftMessages.push(
-          `table ${expectedTable.tableName} is missing columns: ${missingColumns.join(", ")}`,
+          `table ${expectedTable.tableName} is missing columns: ${formatColumns(missingColumns)}`,
         );
       }
 
       if (extraColumns.length > 0) {
         driftMessages.push(
-          `table ${expectedTable.tableName} has unexpected columns: ${extraColumns.join(", ")}`,
+          `table ${expectedTable.tableName} has unexpected columns: ${formatColumns(extraColumns)}`,
+        );
+      }
+
+      for (const expectedColumn of expectedTable.columns) {
+        const actualColumn = actualColumns.find((column) => column.name === expectedColumn.name);
+
+        if (!actualColumn) {
+          continue;
+        }
+
+        if (actualColumn.isNullable !== expectedColumn.isNullable) {
+          driftMessages.push(
+            `table ${expectedTable.tableName}.${expectedColumn.name} nullability mismatch: expected ${
+              expectedColumn.isNullable ? "nullable" : "not null"
+            }, found ${actualColumn.isNullable ? "nullable" : "not null"}`,
+          );
+        }
+
+        if (expectedColumn.hasDefault && !actualColumn.hasDefault) {
+          driftMessages.push(
+            `table ${expectedTable.tableName}.${expectedColumn.name} is missing expected default`,
+          );
+        }
+      }
+    }
+
+    for (const expectedEnum of expectedEnums) {
+      const actualValues = actualEnums.get(expectedEnum.enumName) ?? [];
+
+      if (actualValues.length === 0) {
+        driftMessages.push(`enum ${expectedEnum.enumName} is missing`);
+        continue;
+      }
+
+      const expectedValues = [...expectedEnum.values].sort();
+      const sortedActualValues = [...actualValues].sort();
+      const missingValues = expectedValues.filter((value) => !sortedActualValues.includes(value));
+      const extraValues = sortedActualValues.filter((value) => !expectedValues.includes(value));
+
+      if (missingValues.length > 0) {
+        driftMessages.push(
+          `enum ${expectedEnum.enumName} is missing values: ${missingValues.join(", ")}`,
+        );
+      }
+
+      if (extraValues.length > 0) {
+        driftMessages.push(
+          `enum ${expectedEnum.enumName} has unexpected values: ${extraValues.join(", ")}`,
         );
       }
     }

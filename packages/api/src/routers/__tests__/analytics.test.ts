@@ -1,5 +1,6 @@
 import type { TRPCError } from "@trpc/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createRouterCaller } from "../../test/router";
 import { analyticsRouter } from "../analytics";
 
 const OWNER_ID = "11111111-1111-4111-8111-111111111111";
@@ -83,13 +84,7 @@ function createCaller(rows: ReturnType<typeof createEffortRow>[], userId = OWNER
     })),
   };
 
-  const caller = analyticsRouter.createCaller({
-    db: db as any,
-    session: { user: { id: userId } },
-    headers: new Headers(),
-    clientType: "test",
-    trpcSource: "vitest",
-  } as any);
+  const caller = createRouterCaller(analyticsRouter, { db, userId });
 
   return { caller, getWhereArg: () => whereArg };
 }

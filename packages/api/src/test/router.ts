@@ -2,32 +2,54 @@ type TestRouter = {
   createCaller: (...args: any[]) => any;
 };
 
-type CreateRouterCallerOptions = {
-  db: unknown;
+type TestSession = {
+  user: {
+    id: string;
+  };
+};
+
+export type TestRouterCallerContext = {
+  db?: unknown;
+  session: TestSession | null;
+  headers: Headers;
+  clientType: string;
+  trpcSource: string;
+} & Record<string, unknown>;
+
+export type CreateRouterCallerOptions = {
+  db?: unknown;
   userId?: string;
+  session?: TestSession | null;
   headers?: Headers;
   clientType?: string;
   trpcSource?: string;
   context?: Record<string, unknown>;
 };
 
-export function createRouterCaller<TRouter extends TestRouter>(
-  router: TRouter,
-  {
+export function createRouterCallerContext({
+  db,
+  userId = "profile-123",
+  session,
+  headers = new Headers(),
+  clientType = "test",
+  trpcSource = "vitest",
+  context,
+}: CreateRouterCallerOptions = {}): TestRouterCallerContext {
+  return {
     db,
-    userId = "profile-123",
-    headers = new Headers(),
-    clientType = "test",
-    trpcSource = "vitest",
-    context,
-  }: CreateRouterCallerOptions,
-) {
-  return router.createCaller({
-    db,
-    session: { user: { id: userId } },
+    session: session === undefined ? { user: { id: userId } } : session,
     headers,
     clientType,
     trpcSource,
     ...context,
-  }) as ReturnType<TRouter["createCaller"]>;
+  };
+}
+
+export function createRouterCaller<TRouter extends TestRouter>(
+  router: TRouter,
+  options: CreateRouterCallerOptions = {},
+) {
+  return router.createCaller(createRouterCallerContext(options)) as ReturnType<
+    TRouter["createCaller"]
+  >;
 }

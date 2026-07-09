@@ -5,14 +5,42 @@
   "type": "module",
   "main": "./index.ts",
   "exports": {
-    ".": "./index.ts",
-    "./client": "./src/client.ts",
-    "./context": "./src/context.ts",
-    "./maintenance": "./src/maintenance.ts",
-    "./react": "./src/react.ts",
-    "./server": "./src/server.ts",
-    "./telemetry": "./src/telemetry.ts",
-    "./webhooks": "./src/webhooks.ts"
+    ".": {
+      "types": "./index.ts",
+      "default": "./index.ts"
+    },
+    "./client": {
+      "types": "./src/client.ts",
+      "default": "./src/client.ts"
+    },
+    "./context": {
+      "types": "./src/context.ts",
+      "default": "./src/context.ts"
+    },
+    "./maintenance": {
+      "types": "./src/maintenance.ts",
+      "default": "./src/maintenance.ts"
+    },
+    "./query-client": {
+      "types": "./src/query-client.ts",
+      "default": "./src/query-client.ts"
+    },
+    "./react": {
+      "types": "./src/react.ts",
+      "default": "./src/react.ts"
+    },
+    "./server": {
+      "types": "./src/server.ts",
+      "default": "./src/server.ts"
+    },
+    "./telemetry": {
+      "types": "./src/telemetry.ts",
+      "default": "./src/telemetry.ts"
+    },
+    "./webhooks": {
+      "types": "./src/webhooks.ts",
+      "default": "./src/webhooks.ts"
+    }
   },
   "scripts": {
     "check-types": "tsc --noEmit",
@@ -20,7 +48,8 @@
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",
     "test": "vitest run",
-    "test:live-db": "vitest run --config vitest.live-db.config.ts"
+    "test:live-db": "vitest run --config vitest.live-db.config.ts",
+    "verify:api": "pnpm check-types && pnpm test"
   },
   "dependencies": {
     "@repo/auth": "workspace:*",
