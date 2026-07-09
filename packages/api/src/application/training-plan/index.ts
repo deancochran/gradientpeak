@@ -2,6 +2,7 @@ export * from "./appliedScheduleUseCases";
 export * from "./applyTemplateUseCase";
 export * from "./createFromCreationConfigUseCase";
 export * from "./crudUseCases";
+export * from "./currentStatusUseCase";
 export * from "./getCreationSuggestionsUseCase";
 export * from "./mutationUseCases";
 export * from "./planTabProjectionService";

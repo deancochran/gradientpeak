@@ -8,6 +8,7 @@ import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core/
 import { type ActivityRow, activities, profiles, publicActivityCategorySchema } from "@repo/db";
 import { and, asc, desc, eq, gte, isNotNull, lte } from "drizzle-orm";
 import { z } from "zod";
+import { buildConsistencyMetrics } from "../application/trends/consistencyMetrics";
 import { buildVolumeTrends } from "../application/trends/volumeTrends";
 import { getRequiredDb } from "../db";
 import { createActivityAnalysisStore } from "../infrastructure/repositories";
@@ -721,90 +722,9 @@ export const trendsRouter = createTRPCRouter({
         .orderBy(asc(activities.started_at)),
     );
 
-    if (activityRows.length === 0) {
-      return consistencyMetricsOutputSchema.parse({
-        activityDays: [],
-        weeklyAvg: 0,
-        currentStreak: 0,
-        longestStreak: 0,
-        totalActivities: 0,
-        totalDays: 0,
-      });
-    }
-
-    // Get unique activity days
-    const activityDaysSet = new Set<string>();
-    for (const activity of activityRows) {
-      const dateStr = toDateKey(new Date(activity.started_at));
-      if (dateStr) activityDaysSet.add(dateStr);
-    }
-
-    const activityDays = Array.from(activityDaysSet).sort();
-
-    // Calculate streaks
-    let currentStreak = 0;
-    let longestStreak = 0;
-    let tempStreak = 1;
-
-    const today = toDateKey(new Date());
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = toDateKey(yesterday);
-
-    // Check if current streak is active
-    if (activityDays.includes(today || "") || activityDays.includes(yesterdayStr || "")) {
-      currentStreak = 1;
-
-      // Count backwards from most recent day
-      for (let i = activityDays.length - 2; i >= 0; i--) {
-        const currentDate = new Date(activityDays[i]!);
-        const nextDate = new Date(activityDays[i + 1]!);
-        const diffDays = Math.round(
-          (nextDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24),
-        );
-
-        if (diffDays === 1) {
-          currentStreak++;
-        } else {
-          break;
-        }
-      }
-    }
-
-    // Calculate longest streak
-    for (let i = 1; i < activityDays.length; i++) {
-      const prevDate = new Date(activityDays[i - 1]!);
-      const currDate = new Date(activityDays[i]!);
-      const diffDays = Math.round(
-        (currDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24),
-      );
-
-      if (diffDays === 1) {
-        tempStreak++;
-        longestStreak = Math.max(longestStreak, tempStreak);
-      } else {
-        tempStreak = 1;
-      }
-    }
-
-    longestStreak = Math.max(longestStreak, tempStreak);
-
-    // Calculate weekly average
-    const startDate = new Date(input.start_date);
-    const endDate = new Date(input.end_date);
-    const totalDays =
-      Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-    const totalWeeks = totalDays / 7;
-    const weeklyAvg = totalWeeks > 0 ? Math.round((activityRows.length / totalWeeks) * 10) / 10 : 0;
-
-    return consistencyMetricsOutputSchema.parse({
-      activityDays,
-      weeklyAvg,
-      currentStreak,
-      longestStreak,
-      totalActivities: activityRows.length,
-      totalDays,
-    });
+    return consistencyMetricsOutputSchema.parse(
+      buildConsistencyMetrics(activityRows, new Date(input.start_date), new Date(input.end_date)),
+    );
   }),
 
   // ------------------------------

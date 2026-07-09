@@ -94,6 +94,7 @@ import {
   duplicateTrainingPlanUseCase,
   getActivePlanUseCase,
   getCreationSuggestionsUseCase,
+  getCurrentStatusTrainingPlanUseCase,
   getTrainingPlanByIdUseCase,
   getTrainingPlanTemplateUseCase,
   getTrainingPlanUseCase,
@@ -246,52 +247,6 @@ async function _getOwnedTrainingPlan(input: {
   `);
 
   return getSqlRows<TrainingPlanRow>(result)[0] ?? null;
-}
-
-async function listTrainingPlans(input: {
-  db: DbClient;
-  profileId: string;
-  ownerScope: "own" | "system" | "public" | "all";
-  visibility?: "private" | "public";
-}): Promise<TrainingPlanRow[]> {
-  const conditions = [sql`1 = 1`];
-
-  if (input.ownerScope === "own") {
-    conditions.push(sql`profile_id = ${input.profileId}::uuid`);
-  } else if (input.ownerScope === "system") {
-    conditions.push(sql`is_system_template = true`);
-  } else if (input.ownerScope === "public") {
-    conditions.push(sql`template_visibility = 'public'`);
-  } else {
-    conditions.push(sql`(
-      profile_id = ${input.profileId}::uuid
-      or is_system_template = true
-      or template_visibility = 'public'
-      or exists (
-        select 1
-        from content_access_grants
-        where content_access_grants.content_type = 'training_plan'
-          and content_access_grants.content_id = training_plans.id
-          and content_access_grants.grantee_profile_id = ${input.profileId}::uuid
-          and content_access_grants.access_level = 'read'
-          and content_access_grants.revoked_at is null
-          and (content_access_grants.expires_at is null or content_access_grants.expires_at > now())
-      )
-    )`);
-  }
-
-  if (input.visibility) {
-    conditions.push(sql`template_visibility = ${input.visibility}`);
-  }
-
-  const result = await input.db.execute(sql<TrainingPlanRow>`
-    select *
-    from training_plans
-    where ${sql.join(conditions, sql` and `)}
-    order by created_at desc
-  `);
-
-  return getSqlRows<TrainingPlanRow>(result);
 }
 
 async function _countOwnedTrainingPlans(db: DbClient, profileId: string): Promise<number> {
@@ -4594,12 +4549,10 @@ const trainingPlansProcedures = {
   // ------------------------------
   getCurrentStatus: protectedProcedure.query(async ({ ctx }) => {
     const db = getRequiredDb(ctx);
-    const ownedPlans = await listTrainingPlans({
-      db,
+    const plan = await getCurrentStatusTrainingPlanUseCase({
       profileId: ctx.session.user.id,
-      ownerScope: "own",
+      repository: createTrainingPlanRepository(db),
     });
-    const plan = ownedPlans[0] ?? null;
 
     // Get activities from the last 42 days (CTL time constant)
     const today = new Date();

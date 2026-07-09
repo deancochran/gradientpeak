@@ -5,14 +5,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import {
-  type ActivityFileType,
-  calculateBounds,
-  encodePolyline,
-  inferActivityFileType,
-  parseActivityFile,
-  simplifyCoordinates,
-} from "@repo/core";
+import { type ActivityFileType, inferActivityFileType, parseActivityFile } from "@repo/core";
 import {
   calculateBestEfforts,
   calculateDecouplingFromStreams,
@@ -37,6 +30,10 @@ import { TRPCError } from "@trpc/server";
 import { and, desc, eq, lte } from "drizzle-orm";
 import { z } from "zod";
 import { processUploadedActivityFile } from "../application/activity-file-ingestion/process-uploaded-activity-file";
+import {
+  buildActivityGeometry,
+  collectActivityFileStreamMetadata,
+} from "../application/activity-file-ingestion/stream-metadata";
 import { getRequiredDb } from "../db";
 import { logger } from "../lib/logger";
 import { getApiStorageService } from "../storage-service";
@@ -443,31 +440,6 @@ function getActivityFileTypeFromPath(filePath: string): ActivityFileType {
   return inferActivityFileType(filePath);
 }
 
-function buildActivityGeometry(records: Array<{ positionLat?: number; positionLong?: number }>) {
-  const coords = records
-    .filter(
-      (record) =>
-        record.positionLat !== undefined &&
-        record.positionLong !== undefined &&
-        Math.abs(record.positionLat) <= 90 &&
-        Math.abs(record.positionLong) <= 180 &&
-        !(record.positionLat === 0 && record.positionLong === 0),
-    )
-    .map((record) => ({ latitude: record.positionLat!, longitude: record.positionLong! }));
-
-  if (coords.length === 0) {
-    return { mapBounds: null, polyline: null };
-  }
-
-  const tolerance = coords.length <= 200 ? 0 : coords.length <= 1000 ? 0.0002 : 0.0005;
-  const simplified = simplifyCoordinates(coords, tolerance);
-
-  return {
-    mapBounds: calculateBounds(coords),
-    polyline: encodePolyline(simplified),
-  };
-}
-
 type ParsedActivityFile = z.infer<typeof parsedActivityFileCompatibilitySchema>;
 
 async function parseStoredActivityFile(input: {
@@ -541,35 +513,8 @@ async function buildActivityFileEnrichment(
   const distance = summary.totalDistance || 0;
   const activityCompletedAt = new Date(startTime.getTime() + duration * 1000);
   const activityCompletedAtIso = activityCompletedAt.toISOString();
-  const powerStream: number[] = [];
-  const hrStream: number[] = [];
-  const timestamps: number[] = [];
-  const altitudeStream: number[] = [];
-  const speedStream: number[] = [];
-  const coords: { latitude: number; longitude: number }[] = [];
-  let tempSum = 0;
-  let tempCount = 0;
-
-  for (const record of records) {
-    if (record.timestamp !== undefined) timestamps.push(record.timestamp.getTime() / 1000);
-    if (record.power !== undefined) powerStream.push(record.power);
-    if (record.heartRate !== undefined) hrStream.push(record.heartRate);
-    if (record.altitude !== undefined) altitudeStream.push(record.altitude);
-    if (record.speed !== undefined) speedStream.push(record.speed);
-    if (record.temperature !== undefined) {
-      tempSum += record.temperature;
-      tempCount++;
-    }
-    if (
-      record.positionLat !== undefined &&
-      record.positionLong !== undefined &&
-      Math.abs(record.positionLat) <= 90 &&
-      Math.abs(record.positionLong) <= 180 &&
-      !(record.positionLat === 0 && record.positionLong === 0)
-    ) {
-      coords.push({ latitude: record.positionLat, longitude: record.positionLong });
-    }
-  }
+  const { powerStream, hrStream, timestamps, altitudeStream, speedStream, coords, avgTemperature } =
+    collectActivityFileStreamMetadata(records);
 
   const normalizedPower =
     powerStream.length > 0 ? calculateNormalizedPower(powerStream) : undefined;
@@ -610,9 +555,9 @@ async function buildActivityFileEnrichment(
     );
   }
 
-  let avgTemperature: number | null = tempCount > 0 ? tempSum / tempCount : null;
-  if (avgTemperature === null && coords[0]) {
-    avgTemperature = await fetchActivityTemperature(
+  let resolvedAvgTemperature = avgTemperature;
+  if (resolvedAvgTemperature === null && coords[0]) {
+    resolvedAvgTemperature = await fetchActivityTemperature(
       coords[0].latitude,
       coords[0].longitude,
       startTime,
@@ -713,7 +658,7 @@ async function buildActivityFileEnrichment(
       normalized_graded_speed_mps: normalizedGradedSpeed || null,
       efficiency_factor: efficiencyFactor || null,
       aerobic_decoupling: aerobicDecoupling || null,
-      avg_temperature: avgTemperature ? Math.round(avgTemperature) : null,
+      avg_temperature: resolvedAvgTemperature ? Math.round(resolvedAvgTemperature) : null,
       updated_at: new Date(),
     },
     startedAt: startTime,
