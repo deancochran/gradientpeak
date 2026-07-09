@@ -171,6 +171,7 @@ export function CalendarDayList(props: CalendarDayListProps) {
 
       const programmaticTarget = programmaticScrollTargetRef.current;
       if (!programmaticTarget) {
+        publishVisibleDay(visibleDateKey);
         return;
       }
 
@@ -204,8 +205,10 @@ export function CalendarDayList(props: CalendarDayListProps) {
   }, []);
 
   const settleToDate = useCallback(
-    (dateKey: string) => {
-      programmaticScrollTargetRef.current = null;
+    (dateKey: string, options?: { clearProgrammaticTarget?: boolean }) => {
+      if (options?.clearProgrammaticTarget !== false) {
+        programmaticScrollTargetRef.current = null;
+      }
       publishVisibleDay(dateKey);
       if (lastSettledDayKeyRef.current === dateKey) {
         return;
@@ -222,10 +225,12 @@ export function CalendarDayList(props: CalendarDayListProps) {
       const programmaticTarget = programmaticScrollTargetRef.current;
       if (programmaticTarget) {
         const targetOffset = dayOffsetsRef.current.get(programmaticTarget);
-        if (typeof targetOffset === "number" && Math.abs(offsetY - targetOffset) > 2) {
+        const shouldSnapToTarget =
+          typeof targetOffset === "number" && Math.abs(offsetY - targetOffset) > 2;
+        if (shouldSnapToTarget) {
           listRef.current?.scrollToOffset({ animated: true, offset: targetOffset });
         }
-        settleToDate(programmaticTarget);
+        settleToDate(programmaticTarget, { clearProgrammaticTarget: !shouldSnapToTarget });
         return;
       }
 
@@ -236,10 +241,13 @@ export function CalendarDayList(props: CalendarDayListProps) {
       }
 
       programmaticScrollTargetRef.current = nearestDayOffset.dateKey;
-      if (Math.abs(offsetY - nearestDayOffset.y) > 2) {
+      const shouldSnapToNearestDay = Math.abs(offsetY - nearestDayOffset.y) > 2;
+      if (shouldSnapToNearestDay) {
         listRef.current?.scrollToOffset({ animated: true, offset: nearestDayOffset.y });
       }
-      settleToDate(nearestDayOffset.dateKey);
+      settleToDate(nearestDayOffset.dateKey, {
+        clearProgrammaticTarget: !shouldSnapToNearestDay,
+      });
     },
     [findNearestDayOffset, settleToDate],
   );
