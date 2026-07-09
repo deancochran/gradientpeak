@@ -1,4 +1,5 @@
 import type { AthletePreferenceProfile } from "../schemas/settings/profile_settings";
+import { type DailyFocusRecoveryRange, resolveDailyFocusTemplate } from "./dailyFocusTemplates";
 import type {
   DailyRecommendedLoadActivityCategory,
   DailyRecommendedLoadPrimaryFocus,
@@ -12,6 +13,8 @@ export interface DailyLoadDistributionWeeklyTarget {
   weekEndDate?: string;
   targetTss: number;
   phase?: string | null;
+  eventDate?: string | null;
+  recoveryRanges?: DailyFocusRecoveryRange[] | null;
 }
 
 export interface DailyLoadDistributionPoint {
@@ -139,18 +142,34 @@ function chooseTrainingDates(input: {
   return selected.sort((left, right) => left.date.localeCompare(right.date));
 }
 
-function focusForSelectedIndex(
-  index: number,
-  selectedCount: number,
-  phase: string | null | undefined,
-): DailyRecommendedLoadPrimaryFocus {
-  const normalizedPhase = phase?.toLowerCase() ?? "";
-  if (normalizedPhase.includes("recovery")) return index === 0 ? "recovery" : "mobility";
-  if (normalizedPhase.includes("taper")) return index === selectedCount - 1 ? "tempo" : "recovery";
-  if (selectedCount === 1) return "endurance";
-  if (index === selectedCount - 1) return "long_endurance";
-  if (selectedCount >= 3 && index === Math.floor(selectedCount / 2)) return "threshold";
-  return index === 0 ? "endurance" : "recovery";
+function ensureRequiredTrainingDate(
+  selected: ReturnType<typeof chooseTrainingDates>,
+  candidates: Parameters<typeof chooseTrainingDates>[0]["candidates"],
+  requiredDate: string | null | undefined,
+) {
+  if (!requiredDate || selected.some((day) => day.date === requiredDate)) {
+    return selected;
+  }
+
+  const requiredCandidate = candidates.find((day) => day.date === requiredDate);
+  if (!requiredCandidate) return selected;
+  if (selected.length === 0) return [requiredCandidate];
+
+  const replacementIndex = selected.reduce((worstIndex, day, index) => {
+    const worst = selected[worstIndex];
+    if (!worst) return index;
+    if (day.hasSession !== worst.hasSession) return day.hasSession ? worstIndex : index;
+    if (day.availabilityMinutes !== worst.availabilityMinutes) {
+      return day.availabilityMinutes < worst.availabilityMinutes ? index : worstIndex;
+    }
+    const distance = Math.abs(day.dayOffset - requiredCandidate.dayOffset);
+    const worstDistance = Math.abs(worst.dayOffset - requiredCandidate.dayOffset);
+    return distance > worstDistance ? index : worstIndex;
+  }, 0);
+
+  const next = [...selected];
+  next[replacementIndex] = requiredCandidate;
+  return next.sort((left, right) => left.date.localeCompare(right.date));
 }
 
 function weightForFocus(focus: DailyRecommendedLoadPrimaryFocus): number {
@@ -159,6 +178,7 @@ function weightForFocus(focus: DailyRecommendedLoadPrimaryFocus): number {
       return 1.55;
     case "threshold":
     case "tempo":
+    case "race_specific":
       return 1.25;
     case "endurance":
       return 1;
@@ -267,22 +287,34 @@ export function buildDailyLoadDistribution(
         ? [{ date, dayOffset, availabilityMinutes, hasSession: sessionDates.has(date) }]
         : [];
     }).flat();
-    const trainingDates = chooseTrainingDates({
-      candidates:
-        candidates.length > 0
-          ? candidates
-          : Array.from({ length: daysInWeek }, (_, dayOffset) => ({
-              date: addDaysDateOnlyUtc(weekStartDate, dayOffset),
-              dayOffset,
-              availabilityMinutes: 60,
-              hasSession: false,
-            })),
-      sessionCount: resolveSessionCount(input, candidates.length || daysInWeek),
-    });
-    const selectedByDate = new Map(trainingDates.map((date, index) => [date.date, index] as const));
-    const focuses = trainingDates.map((_, index) =>
-      focusForSelectedIndex(index, trainingDates.length, target?.phase),
+    const availableCandidates =
+      candidates.length > 0
+        ? candidates
+        : Array.from({ length: daysInWeek }, (_, dayOffset) => ({
+            date: addDaysDateOnlyUtc(weekStartDate, dayOffset),
+            dayOffset,
+            availabilityMinutes: 60,
+            hasSession: false,
+          }));
+    const eventDateInWeek =
+      target?.eventDate && target.eventDate >= weekStartDate && target.eventDate <= weekEndDate
+        ? target.eventDate
+        : null;
+    const trainingDates = ensureRequiredTrainingDate(
+      chooseTrainingDates({
+        candidates: availableCandidates,
+        sessionCount: resolveSessionCount(input, candidates.length || daysInWeek),
+      }),
+      availableCandidates,
+      eventDateInWeek,
     );
+    const selectedByDate = new Map(trainingDates.map((date, index) => [date.date, index] as const));
+    const focuses = resolveDailyFocusTemplate({
+      phase: target?.phase,
+      selectedDays: trainingDates,
+      eventDate: eventDateInWeek,
+      recoveryRanges: target?.recoveryRanges,
+    });
     const allocations = allocateWithCap(
       weeklyTss,
       focuses.map(weightForFocus),

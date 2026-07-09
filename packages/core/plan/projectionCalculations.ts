@@ -4245,15 +4245,41 @@ function buildDeterministicProjectionPayloadInternal(
       prescription: trainingPrescription,
       ...optionalProperty("preferences", input.preference_profile),
     });
-  const dailyLoadPoints = buildDailyLoadDistribution({
-    startDate,
-    endDate,
-    weeklyTargets: microcycles.map((microcycle) => ({
+  const dailyLoadWeeklyTargets = microcycles.map((microcycle) => {
+    const eventDate = goalMarkers.find(
+      (goal) =>
+        goal.target_date >= microcycle.week_start_date &&
+        goal.target_date <= microcycle.week_end_date,
+    )?.target_date;
+    const recoveryRanges = recoverySegments
+      .filter(
+        (segment) =>
+          segment.end_date >= microcycle.week_start_date &&
+          segment.start_date <= microcycle.week_end_date,
+      )
+      .map((segment) => ({
+        startDate:
+          segment.start_date < microcycle.week_start_date
+            ? microcycle.week_start_date
+            : segment.start_date,
+        endDate:
+          segment.end_date > microcycle.week_end_date ? microcycle.week_end_date : segment.end_date,
+      }))
+      .filter((segment) => segment.startDate <= segment.endDate);
+
+    return {
       weekStartDate: microcycle.week_start_date,
       weekEndDate: microcycle.week_end_date,
       targetTss: microcycle.planned_weekly_tss,
       phase: microcycle.pattern,
-    })),
+      ...optionalProperty("eventDate", eventDate),
+      ...optionalProperty("recoveryRanges", recoveryRanges.length > 0 ? recoveryRanges : undefined),
+    };
+  });
+  const dailyLoadPoints = buildDailyLoadDistribution({
+    startDate,
+    endDate,
+    weeklyTargets: dailyLoadWeeklyTargets,
     preferenceProfile: input.preference_profile,
     weeklyAllocation,
   });
