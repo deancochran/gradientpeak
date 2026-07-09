@@ -126,8 +126,8 @@ export const PLANNING_PREFERENCE_FIELD_METADATA: Record<
   },
   progressionPace: {
     key: "progressionPace",
-    label: "Training approach",
-    shortLabel: "Approach",
+    label: "Progression pace",
+    shortLabel: "Progression",
     unit: null,
     min: 0,
     max: 1,
@@ -137,7 +137,7 @@ export const PLANNING_PREFERENCE_FIELD_METADATA: Record<
   },
   recoveryPriority: {
     key: "recoveryPriority",
-    label: "Recovery bias",
+    label: "Recovery priority",
     shortLabel: "Recovery",
     unit: null,
     min: 0,
@@ -148,8 +148,8 @@ export const PLANNING_PREFERENCE_FIELD_METADATA: Record<
   },
   weekPatternPreference: {
     key: "weekPatternPreference",
-    label: "Weekly rhythm",
-    shortLabel: "Rhythm",
+    label: "Week pattern",
+    shortLabel: "Week pattern",
     unit: null,
     min: 0,
     max: 1,
@@ -182,7 +182,7 @@ export const PLANNING_PREFERENCE_FIELD_METADATA: Record<
   },
   longSessionFatigueTolerance: {
     key: "longSessionFatigueTolerance",
-    label: "Long-session tolerance",
+    label: "Long-session fatigue tolerance",
     shortLabel: "Long sessions",
     unit: null,
     min: 0,
