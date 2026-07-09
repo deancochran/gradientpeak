@@ -63,4 +63,56 @@ describe("buildDailyRecommendedLoad", () => {
     expect(recommendedTss).toBe(120);
     expect(recommendedFatigue).toBe(recommendedTss);
   });
+
+  it("emits high confidence reasons for explicit planned session days", () => {
+    const points = buildDailyRecommendedLoad({
+      startDate: "2026-01-05",
+      endDate: "2026-01-11",
+      preferredWeekdays: [1, 3, 5],
+      weeklyTargets: [{ weekIndex: 0, targetTss: 300 }],
+      sessions: [
+        {
+          offsetDays: 3,
+          estimatedTss: 90,
+          primaryFocus: "threshold",
+          activityCategory: "bike",
+        },
+      ],
+    });
+
+    const plannedDay = points[3];
+    expect(plannedDay?.confidence).toBe("high");
+    expect(plannedDay?.confidence_score).toBeGreaterThanOrEqual(80);
+    expect(plannedDay?.reasonCodes).toEqual([
+      "daily_recommended_load_v1",
+      "source_weekly_target",
+      "target_positive_tss",
+      "source_planned_session",
+      "planned_session_estimated_tss",
+      "planned_session_explicit_focus",
+      "planned_session_explicit_activity",
+      "source_preferred_weekdays",
+      "weekly_target_daily_distribution",
+    ]);
+  });
+
+  it("marks missing targets and default weekday fallback as low confidence", () => {
+    const points = buildDailyRecommendedLoad({
+      startDate: "2026-01-05",
+      endDate: "2026-01-07",
+      weeklyTargets: [],
+    });
+
+    expect(points[0]?.confidence).toBe("low");
+    expect(points[0]?.reasonCodes).toEqual([
+      "daily_recommended_load_v1",
+      "source_missing_weekly_target",
+      "target_zero_tss",
+      "partial_week_scaled",
+      "fallback_no_planned_session",
+      "fallback_missing_preferred_weekdays",
+      "fallback_default_all_weekdays",
+      "weekly_target_daily_distribution",
+    ]);
+  });
 });

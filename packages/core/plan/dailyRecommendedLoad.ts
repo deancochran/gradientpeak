@@ -69,6 +69,7 @@ export interface DailyRecommendedLoadPoint {
   completedLoadTss: number;
   loadDeltaTss: number;
   confidence: "low" | "medium" | "high";
+  confidence_score?: number;
   reasonCodes: string[];
 }
 
@@ -95,6 +96,91 @@ const WEEKDAY_TO_INDEX: Record<Exclude<DailyRecommendedLoadWeekday, number>, num
 
 function round1(value: number): number {
   return Math.round(value * 10) / 10;
+}
+
+type DailyRecommendedLoadConfidenceBucket = DailyRecommendedLoadPoint["confidence"];
+
+function confidenceBucketForScore(score: number): DailyRecommendedLoadConfidenceBucket {
+  if (score >= 80) return "high";
+  if (score >= 50) return "medium";
+  return "low";
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function orderedReasonCodes(reasons: string[]): string[] {
+  return [...new Set(reasons)];
+}
+
+function confidenceScoreForDay(input: {
+  hasWeeklyTarget: boolean;
+  weekTargetTss: number;
+  isPartialWeek: boolean;
+  hasSession: boolean;
+  hasEstimatedSessionTss: boolean;
+  hasExplicitSessionFocus: boolean;
+  hasExplicitSessionCategory: boolean;
+  hasPreferredWeekdays: boolean;
+  usedDefaultWeekdayFallback: boolean;
+  isHardRestDay: boolean;
+  hasScheduledLoad: boolean;
+  hasCompletedLoad: boolean;
+  isRestDay: boolean;
+}): number {
+  let score = 20;
+  if (input.hasWeeklyTarget) score += 25;
+  if (input.weekTargetTss > 0) score += 10;
+  if (input.hasSession) score += 20;
+  if (input.hasEstimatedSessionTss) score += 10;
+  if (input.hasExplicitSessionFocus) score += 5;
+  if (input.hasExplicitSessionCategory) score += 5;
+  if (input.hasPreferredWeekdays) score += 15;
+  if (input.hasScheduledLoad) score += 5;
+  if (input.hasCompletedLoad) score += 5;
+  if (!input.hasWeeklyTarget) score -= 15;
+  if (input.weekTargetTss <= 0) score -= 20;
+  if (input.usedDefaultWeekdayFallback) score -= 10;
+  if (input.isPartialWeek) score -= 5;
+  if (input.isHardRestDay) score -= 5;
+  if (input.isRestDay && !input.hasSession) score -= 5;
+  return clamp(score, 0, 100);
+}
+
+function reasonCodesForDay(input: {
+  hasWeeklyTarget: boolean;
+  weekTargetTss: number;
+  isPartialWeek: boolean;
+  hasSession: boolean;
+  hasEstimatedSessionTss: boolean;
+  hasExplicitSessionFocus: boolean;
+  hasExplicitSessionCategory: boolean;
+  hasPreferredWeekdays: boolean;
+  usedDefaultWeekdayFallback: boolean;
+  isHardRestDay: boolean;
+  hasScheduledLoad: boolean;
+  hasCompletedLoad: boolean;
+  isRestDay: boolean;
+}): string[] {
+  return orderedReasonCodes([
+    "daily_recommended_load_v1",
+    input.hasWeeklyTarget ? "source_weekly_target" : "source_missing_weekly_target",
+    input.weekTargetTss <= 0 ? "target_zero_tss" : "target_positive_tss",
+    ...(input.isPartialWeek ? ["partial_week_scaled"] : []),
+    input.hasSession ? "source_planned_session" : "fallback_no_planned_session",
+    ...(input.hasEstimatedSessionTss ? ["planned_session_estimated_tss"] : []),
+    ...(input.hasExplicitSessionFocus ? ["planned_session_explicit_focus"] : []),
+    ...(input.hasExplicitSessionCategory ? ["planned_session_explicit_activity"] : []),
+    input.hasPreferredWeekdays
+      ? "source_preferred_weekdays"
+      : "fallback_missing_preferred_weekdays",
+    ...(input.usedDefaultWeekdayFallback ? ["fallback_default_all_weekdays"] : []),
+    ...(input.isHardRestDay ? ["hard_rest_day_applied"] : []),
+    ...(input.hasScheduledLoad ? ["source_scheduled_load"] : []),
+    ...(input.hasCompletedLoad ? ["source_completed_load"] : []),
+    input.isRestDay ? "rest_day_allocation" : "weekly_target_daily_distribution",
+  ]);
 }
 
 function toFinitePositive(value: number | null | undefined): number {
@@ -274,6 +360,7 @@ export function buildDailyRecommendedLoad(
       if (preferredWeekdays.has(weekday) && !hardRestDays.has(weekday))
         candidateWeekdays.add(weekday);
     }
+    const usedDefaultWeekdayFallback = candidateWeekdays.size === 0;
     if (candidateWeekdays.size === 0) {
       for (let dayOffset = 0; dayOffset < daysInWeek; dayOffset += 1) {
         if (!hardRestDays.has(dayOffset)) candidateWeekdays.add(dayOffset);
@@ -285,6 +372,15 @@ export function buildDailyRecommendedLoad(
       const date = addDaysDateOnlyUtc(weekStartDate, dayOffset);
       const sessions = sessionsByDate.get(date) ?? [];
       const hasSession = sessions.length > 0;
+      const hasEstimatedSessionTss = sessions.some(
+        (session) => toFinitePositive(session.estimatedTss) > 0,
+      );
+      const hasExplicitSessionFocus = sessions.some(
+        (session) => session.primaryFocus !== undefined && session.primaryFocus !== null,
+      );
+      const hasExplicitSessionCategory = sessions.some(
+        (session) => session.activityCategory !== undefined && session.activityCategory !== null,
+      );
       const sessionFocuses = sessions
         .map(focusFromSession)
         .sort((left, right) => weightForFocus(right) - weightForFocus(left));
@@ -305,7 +401,17 @@ export function buildDailyRecommendedLoad(
         (focus.includes("strength") || ["hypertrophy", "max_strength", "power"].includes(focus)
           ? "strength"
           : "run");
-      return { date, focus, activityCategory, weight };
+      return {
+        date,
+        focus,
+        activityCategory,
+        weight,
+        hasSession,
+        hasEstimatedSessionTss,
+        hasExplicitSessionFocus,
+        hasExplicitSessionCategory,
+        isHardRestDay: hardRestDays.has(dayOffset),
+      };
     });
 
     const tss = allocateTotal(
@@ -328,6 +434,21 @@ export function buildDailyRecommendedLoad(
       const recommendedLoadTss = round1(tss[index] ?? 0);
       const completedLoadTss = round1(completedByDate.get(row.date) ?? 0);
       const scheduledLoadTss = round1(scheduledByDate.get(row.date) ?? 0);
+      const confidenceScore = confidenceScoreForDay({
+        hasWeeklyTarget: weeklyTarget !== undefined,
+        weekTargetTss,
+        isPartialWeek: daysInWeek < 7,
+        hasSession: row.hasSession,
+        hasEstimatedSessionTss: row.hasEstimatedSessionTss,
+        hasExplicitSessionFocus: row.hasExplicitSessionFocus,
+        hasExplicitSessionCategory: row.hasExplicitSessionCategory,
+        hasPreferredWeekdays: preferredWeekdays.size > 0,
+        usedDefaultWeekdayFallback,
+        isHardRestDay: row.isHardRestDay,
+        hasScheduledLoad: scheduledLoadTss > 0,
+        hasCompletedLoad: completedLoadTss > 0,
+        isRestDay: row.focus === "rest",
+      });
       results.push({
         date: row.date,
         recommendedLoadTss,
@@ -339,11 +460,23 @@ export function buildDailyRecommendedLoad(
         scheduledLoadTss,
         completedLoadTss,
         loadDeltaTss: round1(completedLoadTss - recommendedLoadTss),
-        confidence: input.sessions?.length ? "high" : preferredWeekdays.size ? "medium" : "low",
-        reasonCodes: [
-          "daily_recommended_load_v1",
-          row.focus === "rest" ? "rest_day_allocation" : "weekly_target_daily_distribution",
-        ],
+        confidence: confidenceBucketForScore(confidenceScore),
+        confidence_score: confidenceScore,
+        reasonCodes: reasonCodesForDay({
+          hasWeeklyTarget: weeklyTarget !== undefined,
+          weekTargetTss,
+          isPartialWeek: daysInWeek < 7,
+          hasSession: row.hasSession,
+          hasEstimatedSessionTss: row.hasEstimatedSessionTss,
+          hasExplicitSessionFocus: row.hasExplicitSessionFocus,
+          hasExplicitSessionCategory: row.hasExplicitSessionCategory,
+          hasPreferredWeekdays: preferredWeekdays.size > 0,
+          usedDefaultWeekdayFallback,
+          isHardRestDay: row.isHardRestDay,
+          hasScheduledLoad: scheduledLoadTss > 0,
+          hasCompletedLoad: completedLoadTss > 0,
+          isRestDay: row.focus === "rest",
+        }),
       });
     });
   }

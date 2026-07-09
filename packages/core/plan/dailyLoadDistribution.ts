@@ -20,6 +20,7 @@ export interface DailyLoadDistributionPoint {
   primary_focus: DailyRecommendedLoadPrimaryFocus;
   activity_category: DailyRecommendedLoadActivityCategory;
   confidence: "low" | "medium" | "high";
+  confidence_score?: number;
   reason_codes: string[];
 }
 
@@ -44,6 +45,8 @@ const WEEKDAY_NAMES = [
 
 const DEFAULT_WEEKLY_SESSION_COUNT = 3;
 
+type DailyLoadConfidenceBucket = DailyLoadDistributionPoint["confidence"];
+
 const SESSION_ANCHORS_BY_COUNT: Record<number, number[]> = {
   1: [3],
   2: [1, 5],
@@ -60,6 +63,73 @@ function clamp(value: number, min: number, max: number) {
 
 function round1(value: number): number {
   return Math.round(value * 10) / 10;
+}
+
+function confidenceBucketForScore(score: number): DailyLoadConfidenceBucket {
+  if (score >= 80) return "high";
+  if (score >= 50) return "medium";
+  return "low";
+}
+
+function orderedReasonCodes(reasons: string[]): string[] {
+  return [...new Set(reasons)];
+}
+
+function confidenceScoreForWeek(input: {
+  hasWeeklyTarget: boolean;
+  weeklyTss: number;
+  isPartialWeek: boolean;
+  hasPreferenceProfile: boolean;
+  hasAvailabilityWindows: boolean;
+  hasPlannedSessions: boolean;
+  hasWeeklyAllocation: boolean;
+  selectedHasPlannedSession: boolean;
+  isRestDay: boolean;
+}): number {
+  let score = 20;
+  if (input.hasWeeklyTarget) score += 25;
+  if (input.weeklyTss > 0) score += 10;
+  if (input.hasPreferenceProfile) score += 20;
+  if (input.hasAvailabilityWindows) score += 10;
+  if (input.hasPlannedSessions) score += 10;
+  if (input.selectedHasPlannedSession) score += 5;
+  if (input.hasWeeklyAllocation) score += 5;
+  if (!input.hasWeeklyTarget) score -= 15;
+  if (input.weeklyTss <= 0) score -= 20;
+  if (input.isPartialWeek) score -= 5;
+  if (input.isRestDay && !input.hasPlannedSessions) score -= 5;
+  return clamp(score, 0, 100);
+}
+
+function reasonCodesForPoint(input: {
+  hasWeeklyTarget: boolean;
+  weeklyTss: number;
+  isPartialWeek: boolean;
+  hasPreferenceProfile: boolean;
+  hasAvailabilityWindows: boolean;
+  hasHardRestDays: boolean;
+  hasPlannedSessions: boolean;
+  selectedHasPlannedSession: boolean;
+  hasWeeklyAllocation: boolean;
+  isRestDay: boolean;
+}): string[] {
+  return orderedReasonCodes([
+    "daily_load_distribution_v1",
+    input.hasWeeklyTarget ? "source_weekly_target" : "source_missing_weekly_target",
+    input.weeklyTss <= 0 ? "target_zero_tss" : "target_positive_tss",
+    ...(input.isPartialWeek ? ["partial_week_scaled"] : []),
+    input.hasPreferenceProfile
+      ? "source_preference_profile"
+      : "fallback_missing_preference_profile",
+    input.hasAvailabilityWindows ? "availability_windows_applied" : "availability_default_pattern",
+    ...(input.hasHardRestDays ? ["hard_rest_days_applied"] : []),
+    input.hasPlannedSessions ? "source_planned_session_dates" : "fallback_anchor_session_pattern",
+    ...(input.selectedHasPlannedSession ? ["planned_session_date_specific"] : []),
+    input.hasWeeklyAllocation
+      ? "source_weekly_allocation_activity_mix"
+      : "fallback_default_activity_category",
+    input.isRestDay ? "rest_day_allocation" : "profile_goal_weekly_distribution",
+  ]);
 }
 
 function weekdayNameForDate(date: string): (typeof WEEKDAY_NAMES)[number] {
@@ -257,6 +327,8 @@ export function buildDailyLoadDistribution(
     const daysInWeek = diffDateOnlyUtcDays(weekStartDate, weekEndDate) + 1;
     const target = targetByWeekStart.get(weekStartDate);
     const weeklyTss = Math.max(0, target?.targetTss ?? 0) * (daysInWeek / 7);
+    const hasWeeklyTarget = target !== undefined;
+    const isPartialWeek = daysInWeek < 7;
     const candidates = Array.from({ length: daysInWeek }, (_, dayOffset) => {
       const date = addDaysDateOnlyUtc(weekStartDate, dayOffset);
       const day = weekdayNameForDate(date);
@@ -293,16 +365,41 @@ export function buildDailyLoadDistribution(
       const date = addDaysDateOnlyUtc(weekStartDate, dayOffset);
       const selectedIndex = selectedByDate.get(date);
       const focus = selectedIndex === undefined ? "rest" : (focuses[selectedIndex] ?? "recovery");
+      const selectedHasPlannedSession = sessionDates.has(date) && selectedIndex !== undefined;
+      const confidenceScore = confidenceScoreForWeek({
+        hasWeeklyTarget,
+        weeklyTss,
+        isPartialWeek,
+        hasPreferenceProfile:
+          input.preferenceProfile !== null && input.preferenceProfile !== undefined,
+        hasAvailabilityWindows,
+        hasPlannedSessions: sessionDates.size > 0,
+        hasWeeklyAllocation:
+          input.weeklyAllocation !== null && input.weeklyAllocation !== undefined,
+        selectedHasPlannedSession,
+        isRestDay: selectedIndex === undefined,
+      });
       points.push({
         date,
         recommended_load_tss: selectedIndex === undefined ? 0 : (allocations[selectedIndex] ?? 0),
         primary_focus: focus,
         activity_category: focus === "rest" ? "other" : category,
-        confidence: input.preferenceProfile ? "high" : "medium",
-        reason_codes: [
-          "daily_load_distribution_v1",
-          selectedIndex === undefined ? "rest_day_allocation" : "profile_goal_weekly_distribution",
-        ],
+        confidence: confidenceBucketForScore(confidenceScore),
+        confidence_score: confidenceScore,
+        reason_codes: reasonCodesForPoint({
+          hasWeeklyTarget,
+          weeklyTss,
+          isPartialWeek,
+          hasPreferenceProfile:
+            input.preferenceProfile !== null && input.preferenceProfile !== undefined,
+          hasAvailabilityWindows,
+          hasHardRestDays: hardRestDays.size > 0,
+          hasPlannedSessions: sessionDates.size > 0,
+          selectedHasPlannedSession,
+          hasWeeklyAllocation:
+            input.weeklyAllocation !== null && input.weeklyAllocation !== undefined,
+          isRestDay: selectedIndex === undefined,
+        }),
       });
     }
   }
