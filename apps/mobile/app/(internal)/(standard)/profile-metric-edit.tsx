@@ -19,9 +19,10 @@ import { skipToken } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import React from "react";
 import type { Control } from "react-hook-form";
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
+import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { z } from "zod";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { handleSubmitFormError } from "@/lib/utils/formErrors";
@@ -166,7 +167,7 @@ function ProfileMetricEditScreen() {
   if (isEditMode && isLoading) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator />
+        <LoadingState message="Loading metric..." />
       </View>
     );
   }

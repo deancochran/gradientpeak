@@ -6,16 +6,16 @@ import type {
 } from "@repo/core/groups";
 import { Button } from "@repo/ui/components/button";
 import { DateInput } from "@repo/ui/components/date-input";
-import { Icon } from "@repo/ui/components/icon";
 import { Input } from "@repo/ui/components/input";
 import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { Textarea } from "@repo/ui/components/textarea";
 import { TimeInput } from "@repo/ui/components/time-input";
 import { format } from "date-fns";
-import { X } from "lucide-react-native";
-import { forwardRef, useEffect, useImperativeHandle, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from "react";
 import { Pressable, View } from "react-native";
+import { ClearFieldAction } from "@/components/shared/ClearFieldAction";
+import { InlineNotice, ScreenSection } from "@/components/shared/LayoutPrimitives";
 import { type ResourcePickerItem, ResourcePickerModal } from "@/components/shared/resource-picker";
 import { api } from "@/lib/api";
 import type { GroupEventDetail } from "@/lib/groups";
@@ -186,7 +186,7 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
       });
     };
 
-    const handleSubmit = async () => {
+    const handleSubmit = useCallback(async () => {
       const title = values.title.trim();
       if (!title) {
         setErrorMessage("Add a title for this event.");
@@ -246,7 +246,7 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
       }
 
       await onSubmit({ groupId, ...payload });
-    };
+    }, [event, groupId, isRecurringCreate, onSubmit, selectedActivityPlans, values]);
 
     useImperativeHandle(
       ref,
@@ -272,7 +272,10 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
             />
           </View>
           {!event ? (
-            <View className="gap-3 rounded-2xl border border-border bg-card p-3">
+            <ScreenSection
+              description="Choose whether this is a one-time meetup or a repeated group series."
+              title="Event cadence"
+            >
               <View className="flex-row gap-2">
                 <Button
                   className="flex-1"
@@ -370,7 +373,7 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
                   />
                 </View>
               ) : null}
-            </View>
+            </ScreenSection>
           ) : null}
           <View className="gap-2">
             <Text className="text-xs font-medium text-muted-foreground">Description</Text>
@@ -431,14 +434,11 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
                 </Text>
               </Pressable>
               {values.routeId ? (
-                <Pressable
+                <ClearFieldAction
                   accessibilityLabel="Remove route"
-                  accessibilityRole="button"
-                  className="min-h-10 min-w-10 items-center justify-center rounded-full bg-muted"
                   onPress={() => setValues((current) => ({ ...current, routeId: null }))}
-                >
-                  <Icon as={X} size={16} className="text-muted-foreground" />
-                </Pressable>
+                  variant="icon"
+                />
               ) : null}
             </View>
           </View>
@@ -460,16 +460,13 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
                           {option.name}
                         </Text>
                       </View>
-                      <Pressable
+                      <ClearFieldAction
                         accessibilityLabel={`Remove ${option.name}`}
-                        accessibilityRole="button"
-                        className="min-h-10 min-w-10 items-center justify-center rounded-full bg-muted"
                         onPress={() =>
                           toggleActivityPlan({ id: option.activityPlanId, name: option.name })
                         }
-                      >
-                        <Icon as={X} size={16} className="text-muted-foreground" />
-                      </Pressable>
+                        variant="icon"
+                      />
                     </View>
                   </View>
                 ))}
@@ -478,9 +475,7 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
           </View>
         </View>
 
-        {errorMessage ? (
-          <Text className="text-sm font-medium text-destructive">{errorMessage}</Text>
-        ) : null}
+        {errorMessage ? <InlineNotice tone="error">{errorMessage}</InlineNotice> : null}
 
         {showFooterActions ? (
           <View className="flex-row gap-3">

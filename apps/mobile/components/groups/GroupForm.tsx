@@ -239,11 +239,13 @@ export const GroupForm = forwardRef<GroupFormHandle, GroupFormProps>(function Gr
   const avatarUrl = form.watch("avatar_url");
   const coverUrl = form.watch("cover_url");
   const groupName = form.watch("name");
-  const previewAvatarUrl = nullableUrl(avatarUrl)
-    ? getReachableSupabaseStorageUrl(nullableUrl(avatarUrl)!)
+  const normalizedAvatarUrl = nullableUrl(avatarUrl);
+  const normalizedCoverUrl = nullableUrl(coverUrl);
+  const previewAvatarUrl = normalizedAvatarUrl
+    ? getReachableSupabaseStorageUrl(normalizedAvatarUrl)
     : null;
-  const previewCoverUrl = nullableUrl(coverUrl)
-    ? getReachableSupabaseStorageUrl(nullableUrl(coverUrl)!)
+  const previewCoverUrl = normalizedCoverUrl
+    ? getReachableSupabaseStorageUrl(normalizedCoverUrl)
     : null;
   const [uploadingImageField, setUploadingImageField] = useState<GroupImageFieldName | null>(null);
   const [imageSourceField, setImageSourceField] = useState<GroupImageFieldName | null>(null);

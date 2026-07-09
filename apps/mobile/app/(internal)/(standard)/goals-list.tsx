@@ -1,8 +1,8 @@
 import type { CanonicalSport } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
-import { Stack } from "expo-router";
+import { type Href, Stack } from "expo-router";
 import { useMemo, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, View } from "react-native";
+import { FlatList, Pressable, RefreshControl, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { GoalListItem } from "@/components/plan/GoalListItem";
 import { usePlanDashboardViewModel } from "@/components/plan/usePlanDashboardViewModel";
@@ -13,6 +13,7 @@ import {
   IndexResultsSummary,
   IndexSearchBar,
 } from "@/components/shared";
+import { EmptyState, ErrorState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { ROUTES } from "@/lib/constants/routes";
@@ -29,13 +30,15 @@ function sortGoalsByNextDate<T extends { target_date?: string | null }>(
   goals: T[],
   todayKey: string,
 ) {
-  const datedGoals = goals.filter((goal) => goal.target_date);
+  const datedGoals = goals.flatMap((goal) =>
+    typeof goal.target_date === "string" ? [{ ...goal, target_date: goal.target_date }] : [],
+  );
   const upcoming = datedGoals
-    .filter((goal) => goal.target_date! >= todayKey)
-    .sort((left, right) => left.target_date!.localeCompare(right.target_date!));
+    .filter((goal) => goal.target_date >= todayKey)
+    .sort((left, right) => left.target_date.localeCompare(right.target_date));
   const past = datedGoals
-    .filter((goal) => goal.target_date! < todayKey)
-    .sort((left, right) => right.target_date!.localeCompare(left.target_date!));
+    .filter((goal) => goal.target_date < todayKey)
+    .sort((left, right) => right.target_date.localeCompare(left.target_date));
   const undated = goals.filter((goal) => !goal.target_date);
 
   return [...upcoming, ...past, ...undated];
@@ -93,7 +96,7 @@ function GoalsListScreen() {
         className="flex-1 items-center justify-center bg-background"
         testID="goals-list-loading"
       >
-        <ActivityIndicator />
+        <LoadingState message="Loading goals..." />
       </View>
     );
   }
@@ -104,10 +107,11 @@ function GoalsListScreen() {
         className="flex-1 items-center justify-center bg-background px-6"
         testID="goals-list-error"
       >
-        <Text className="text-base font-semibold text-foreground">Goals could not be loaded</Text>
-        <Text className="mt-2 text-center text-sm text-muted-foreground">
-          Check your connection and try again.
-        </Text>
+        <ErrorState
+          description="Check your connection and try again."
+          onAction={() => void goals.refetch()}
+          title="Goals could not be loaded"
+        />
       </View>
     );
   }
@@ -118,7 +122,7 @@ function GoalsListScreen() {
         options={{
           headerRight: () => (
             <Pressable
-              onPress={() => navigateTo(ROUTES.GOALS.CREATE as any)}
+              onPress={() => navigateTo(ROUTES.GOALS.CREATE as Href)}
               className="mr-2 rounded-full px-2 py-1"
               testID="goals-list-create-button"
               accessibilityRole="button"
@@ -153,12 +157,11 @@ function GoalsListScreen() {
           <IndexResultsSummary count={orderedGoals.length} singularLabel="goal" />
         }
         ListEmptyComponent={
-          <View className="items-center justify-center py-12" testID="goals-list-empty">
-            <Text className="text-lg font-medium text-foreground">No goals yet</Text>
-            <Text className="mt-2 text-center text-sm text-muted-foreground">
-              Create a goal to start shaping your plan.
-            </Text>
-          </View>
+          <EmptyState
+            description="Create a goal to start shaping your plan."
+            testID="goals-list-empty"
+            title="No goals yet"
+          />
         }
         renderItem={({ item }) => (
           <GoalListItem
@@ -167,7 +170,7 @@ function GoalsListScreen() {
             readinessPercent={readinessByGoalId.get(item.id)?.readinessPercent ?? null}
             readinessTarget={readinessByGoalId.get(item.id)?.readinessTarget ?? null}
             status={readinessByGoalId.get(item.id)?.status}
-            onPress={() => navigateTo(ROUTES.GOALS.DETAIL(item.id) as any)}
+            onPress={() => navigateTo(ROUTES.GOALS.DETAIL(item.id) as Href)}
             testID={`goals-list-row-${item.id}`}
           />
         )}
