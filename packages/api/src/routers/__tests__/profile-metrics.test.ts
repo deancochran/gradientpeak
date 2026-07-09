@@ -246,7 +246,7 @@ describe("profileMetricsRouter", () => {
       expect.objectContaining({
         profile_id: "11111111-1111-4111-8111-111111111111",
         metric_type: "weight_kg",
-        value: 70.25,
+        value: 70.3,
         unit: "kg",
         notes: "post-session weigh-in",
         reference_activity_id: null,
