@@ -8,6 +8,7 @@ export * from "./classifyCreationFeasibility";
 export * from "./compositeCalibration";
 export * from "./computeLoadBootstrapState";
 export * from "./dailyLoadDistribution";
+export * from "./dailyLoadRecommendation";
 export * from "./dailyRecommendedLoad";
 export * from "./dailyTrainingAdjustmentSeries";
 export * from "./dateOnlyUtc";
