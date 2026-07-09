@@ -21,7 +21,6 @@ type UpcomingTrainingPlanEvent = {
   schedule_batch_id: string | null;
   starts_at: Date;
   training_plan_id: string | null;
-  user_training_plan_id: string | null;
 };
 
 function getSqlRows<T>(result: unknown) {
@@ -278,7 +277,6 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
         .select({
           training_plan_id: schema.eventScheduleLinks.training_plan_id,
           schedule_batch_id: schema.eventScheduleLinks.schedule_batch_id,
-          user_training_plan_id: schema.eventScheduleLinks.user_training_plan_id,
           starts_at: schema.events.starts_at,
         })
         .from(schema.events)
@@ -315,7 +313,6 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
       return {
         scheduleBatchId: nextScheduledPlanEvent.schedule_batch_id ?? null,
         trainingPlanId,
-        userTrainingPlanId: nextScheduledPlanEvent.user_training_plan_id ?? null,
         trainingPlan,
         nextEventAt: nextScheduledPlanEvent.starts_at.toISOString(),
       };

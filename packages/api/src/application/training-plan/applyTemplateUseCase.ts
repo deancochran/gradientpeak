@@ -125,13 +125,6 @@ export async function applyTrainingPlanTemplateUseCase(input: {
       operation: "unsync",
       profileId,
     });
-
-    if (activePlanLookup.userTrainingPlanId) {
-      await db
-        .update(schema.userTrainingPlans)
-        .set({ status: "abandoned", updated_at: new Date() })
-        .where(eq(schema.userTrainingPlans.id, activePlanLookup.userTrainingPlanId));
-    }
   }
 
   const templatePlan = await repository.getAccessibleTrainingPlan({
@@ -159,11 +152,7 @@ export async function applyTrainingPlanTemplateUseCase(input: {
     todayDate: todayDateOnlyUtc(),
   });
 
-  const appliedStructureId = crypto.randomUUID();
-  materializedApplication.snapshotStructure.id = appliedStructureId;
-
   const appliedPlanId = templatePlan.id as string;
-  const userTrainingPlanId = crypto.randomUUID();
   const materializedSessions = materializedApplication.materializedSessions;
   const candidatePlanIds = Array.from(
     new Set(
@@ -276,7 +265,6 @@ export async function applyTrainingPlanTemplateUseCase(input: {
           status: "scheduled" as const,
           activity_plan_id: session.activity_plan_id,
           training_plan_id: appliedPlanId,
-          user_training_plan_id: userTrainingPlanId,
           payload: {
             training_plan_generation: {
               application_mode: materializedApplication.applicationMode,
@@ -284,7 +272,6 @@ export async function applyTrainingPlanTemplateUseCase(input: {
               source_day_offset: session.source_day_offset,
               source_path: session.source_path,
               target_date: materializedApplication.targetDate,
-              user_training_plan_id: userTrainingPlanId,
             },
           },
         }) as any,
@@ -306,19 +293,6 @@ export async function applyTrainingPlanTemplateUseCase(input: {
             : "This training plan could not be scheduled because its linked activities are not available to your account.",
     });
   }
-
-  const now = new Date();
-  await db.insert(schema.userTrainingPlans).values({
-    id: userTrainingPlanId,
-    profile_id: profileId,
-    training_plan_id: appliedPlanId,
-    status: "active",
-    start_date: materializedApplication.appliedPlanStartDate,
-    target_date: materializedApplication.targetDate,
-    snapshot_structure: materializedApplication.snapshotStructure,
-    created_at: now,
-    updated_at: now,
-  });
 
   const insertedEvents = await db
     .insert(schema.events)
@@ -371,7 +345,6 @@ export async function applyTrainingPlanTemplateUseCase(input: {
   return {
     applied_plan_id: appliedPlanId,
     training_plan_id: templatePlan.id,
-    user_training_plan_id: userTrainingPlanId,
     application_mode: materializedApplication.applicationMode,
     schedule_batch_id,
     scheduled_sessions_created: insertedEvents.length,

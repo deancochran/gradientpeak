@@ -2407,12 +2407,12 @@ describe("training plan creation domain", () => {
         targetLoadTss: point.targetLoadTss,
       })),
     ).toEqual([
-      { date: "2026-01-05", targetLoadTss: 58 },
-      { date: "2026-01-06", targetLoadTss: 58 },
-      { date: "2026-01-07", targetLoadTss: 58 },
-      { date: "2026-01-08", targetLoadTss: 58 },
+      { date: "2026-01-05", targetLoadTss: 126 },
+      { date: "2026-01-06", targetLoadTss: 86 },
+      { date: "2026-01-07", targetLoadTss: 35 },
+      { date: "2026-01-08", targetLoadTss: 22 },
       { date: "2026-01-09", targetLoadTss: 0 },
-      { date: "2026-01-10", targetLoadTss: 58 },
+      { date: "2026-01-10", targetLoadTss: 21 },
       { date: "2026-01-11", targetLoadTss: 0 },
     ]);
     expect(viewModel.dailyTrainingPathChart.weeks[0]?.scheduledFitness ?? 0).toBeGreaterThan(30);

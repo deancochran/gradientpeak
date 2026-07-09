@@ -4,6 +4,7 @@ import {
   addDaysDateOnlyUtc,
   athletePreferenceProfileSchema,
   type BuildReadinessForecastTimelineInput,
+  buildDailyRecommendedLoad,
   buildDeterministicProjectionPayload,
   buildProjectionChartPayloadFromDeterministicProjection,
   buildProjectionEngineInput,
@@ -98,11 +99,8 @@ import {
   listTrainingPlansUseCase,
   listTrainingPlanTemplatesUseCase,
   previewCreationConfigUseCase,
-  regenerateAppliedScheduleUseCase,
   removeAppliedScheduleUseCase,
-  shiftAppliedScheduleUseCase,
   trainingPlanExistsUseCase,
-  updateActivePlanStatusUseCase,
   updateFromCreationConfigUseCase,
   updateTrainingPlanUseCase,
 } from "../../../application/training-plan";
@@ -372,21 +370,13 @@ function _todayDateOnlyUtc(): string {
 type ActivePlanLookup = {
   scheduleBatchId: string | null;
   trainingPlanId: string;
-  userTrainingPlanId: string | null;
   trainingPlan: TrainingPlanRow;
   nextEventAt: string;
 };
 
-const shiftScheduledPlanInputSchema = z
-  .object({
-    user_training_plan_id: z.string().uuid(),
-    days: z.number().int().min(-90).max(90),
-  })
-  .strict();
-
 const applicationScopedScheduleInputSchema = z
   .object({
-    user_training_plan_id: z.string().uuid(),
+    schedule_batch_id: z.string().uuid(),
   })
   .strict();
 
@@ -400,7 +390,6 @@ async function _getActivePlanFromFutureEvents(input: {
       .select({
         training_plan_id: schema.eventScheduleLinks.training_plan_id,
         schedule_batch_id: schema.eventScheduleLinks.schedule_batch_id,
-        user_training_plan_id: schema.eventScheduleLinks.user_training_plan_id,
         starts_at: schema.events.starts_at,
       })
       .from(schema.events)
@@ -442,7 +431,6 @@ async function _getActivePlanFromFutureEvents(input: {
     return {
       scheduleBatchId: nextScheduledPlanEvent.schedule_batch_id ?? null,
       trainingPlanId,
-      userTrainingPlanId: nextScheduledPlanEvent.user_training_plan_id ?? null,
       trainingPlan,
       nextEventAt: nextScheduledPlanEvent.starts_at.toISOString(),
     };
@@ -457,7 +445,7 @@ async function _getActivePlanFromFutureEvents(input: {
 
   let eventsQuery: any = input.supabase
     .from("events")
-    .select("training_plan_id, schedule_batch_id, user_training_plan_id, starts_at")
+    .select("training_plan_id, schedule_batch_id, starts_at")
     .eq("profile_id", input.profileId)
     .eq("event_type", plannedEventType);
 
@@ -515,8 +503,6 @@ async function _getActivePlanFromFutureEvents(input: {
   return {
     scheduleBatchId: ((nextScheduledPlanEvent as any).schedule_batch_id as string | null) ?? null,
     trainingPlanId,
-    userTrainingPlanId:
-      ((nextScheduledPlanEvent as any).user_training_plan_id as string | null) ?? null,
     trainingPlan: trainingPlan as TrainingPlanRow,
     nextEventAt,
   };
@@ -1583,6 +1569,104 @@ function resolveBaselineDailyTss(input: {
   }
 
   return conservativeStarterDailyTss;
+}
+
+function readPlanningSnapshotPreferredWeekdays(
+  structure: Record<string, unknown> | null | undefined,
+): number[] {
+  const snapshot =
+    structure?.builder_planning_snapshot && typeof structure.builder_planning_snapshot === "object"
+      ? (structure.builder_planning_snapshot as Record<string, unknown>)
+      : null;
+  const scheduling =
+    snapshot?.scheduling && typeof snapshot.scheduling === "object"
+      ? (snapshot.scheduling as Record<string, unknown>)
+      : null;
+  const preferredWeekdays = scheduling?.preferred_weekdays;
+  return Array.isArray(preferredWeekdays)
+    ? preferredWeekdays.filter(
+        (weekday): weekday is number =>
+          typeof weekday === "number" && Number.isInteger(weekday) && weekday >= 0 && weekday <= 6,
+      )
+    : [];
+}
+
+function readStructureSessionsForDailyRecommendedLoad(
+  structure: Record<string, unknown> | null | undefined,
+) {
+  const sessions = Array.isArray(structure?.sessions)
+    ? (structure.sessions as Array<Record<string, unknown>>)
+    : [];
+
+  return sessions.flatMap((session) => {
+    const offsetDays =
+      typeof session.offset_days === "number"
+        ? session.offset_days
+        : typeof session.offsetDays === "number"
+          ? session.offsetDays
+          : null;
+    if (offsetDays === null) return [];
+    const intent =
+      session.intent && typeof session.intent === "object"
+        ? (session.intent as Record<string, unknown>)
+        : null;
+    return [
+      {
+        offsetDays,
+        estimatedTss:
+          typeof session.estimated_tss === "number"
+            ? session.estimated_tss
+            : typeof intent?.targetTss === "number"
+              ? intent.targetTss
+              : typeof intent?.target_tss === "number"
+                ? intent.target_tss
+                : null,
+        estimatedDurationMinutes:
+          typeof session.estimated_duration_seconds === "number"
+            ? session.estimated_duration_seconds / 60
+            : typeof intent?.targetDurationSeconds === "number"
+              ? intent.targetDurationSeconds / 60
+              : typeof intent?.target_duration_seconds === "number"
+                ? intent.target_duration_seconds / 60
+                : null,
+        intentType: typeof intent?.type === "string" ? intent.type : null,
+      },
+    ];
+  });
+}
+
+function buildBaselineDailyRecommendedTssByDate(input: {
+  startDate: string;
+  endDate: string;
+  structure: Record<string, unknown> | null | undefined;
+  blocks: Array<{
+    start_date: string;
+    end_date: string;
+    target_weekly_tss_range?: { min: number; max: number };
+  }>;
+  hasActivityHistory: boolean;
+}): Map<string, number> {
+  const dates = buildDateRange(input.startDate, input.endDate);
+  const weeklyTargets = dates
+    .filter((_, index) => index % 7 === 0)
+    .map((date, weekIndex) => {
+      const structuredWeeklyTss = deriveStructureWeeklyTssTarget(input.structure, date);
+      const rawWeeklyTss =
+        structuredWeeklyTss ?? Math.max(0, estimateIdealDailyTss(date, input.blocks) * 7);
+      const targetTss = input.hasActivityHistory
+        ? rawWeeklyTss
+        : Math.min(rawWeeklyTss || conservativeStarterDailyTss * 7, conservativeStarterWeeklyTss);
+      return { weekIndex, targetTss };
+    });
+  const points = buildDailyRecommendedLoad({
+    startDate: input.startDate,
+    endDate: input.endDate,
+    weeklyTargets,
+    preferredWeekdays: readPlanningSnapshotPreferredWeekdays(input.structure),
+    sessions: readStructureSessionsForDailyRecommendedLoad(input.structure),
+  });
+
+  return new Map(points.map((point) => [point.date, point.recommendedLoadTss]));
 }
 
 function collectBlockRampWarnings(
@@ -4185,14 +4269,23 @@ export async function getPlanTabProjectionService({
   );
 
   const timelineDates = buildDateRange(input.start_date, input.end_date);
+  const baselineRecommendedTssByDate = buildBaselineDailyRecommendedTssByDate({
+    startDate: input.start_date,
+    endDate: input.end_date,
+    structure: looseStructure as Record<string, unknown>,
+    blocks,
+    hasActivityHistory,
+  });
   const timeline = timelineDates.map((date) => {
     const scheduled_tss = Math.round((scheduledByDate.get(date) || 0) * 10) / 10;
-    const ideal_tss = resolveBaselineDailyTss({
-      date,
-      structure: looseStructure as Record<string, unknown>,
-      blocks,
-      hasActivityHistory,
-    });
+    const ideal_tss =
+      baselineRecommendedTssByDate.get(date) ??
+      resolveBaselineDailyTss({
+        date,
+        structure: looseStructure as Record<string, unknown>,
+        blocks,
+        hasActivityHistory,
+      });
     const actual_tss = Math.round((actualByDate.get(date) || 0) * 10) / 10;
     const boundary = classifyBoundaryState(ideal_tss, scheduled_tss, actual_tss);
 
@@ -6130,29 +6223,6 @@ const trainingPlansProcedures = {
       });
     }),
 
-  // ------------------------------
-  // Auto-add periodization to existing plan
-  // ------------------------------
-  updateActivePlanStatus: protectedProcedure
-    .input(
-      z.object({
-        id: z.string().uuid(),
-        status: z.enum(["active", "paused", "completed", "abandoned"]),
-      }),
-    )
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      const permissions = createContentAccessPermissions(db);
-      return updateActivePlanStatusUseCase({
-        db,
-        id: input.id,
-        permissions,
-        profileId: ctx.session.user.id,
-        repository: createTrainingPlanRepository(db),
-        status: input.status,
-      });
-    }),
-
   removeAppliedSchedule: protectedProcedure
     .input(applicationScopedScheduleInputSchema)
     .mutation(async ({ ctx, input }) => {
@@ -6161,31 +6231,7 @@ const trainingPlansProcedures = {
         db,
         permissions: createContentAccessPermissions(db),
         profileId: ctx.session.user.id,
-        userTrainingPlanId: input.user_training_plan_id,
-      });
-    }),
-
-  shiftAppliedSchedule: protectedProcedure
-    .input(shiftScheduledPlanInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      return shiftAppliedScheduleUseCase({
-        days: input.days,
-        db: getRequiredDb(ctx),
-        profileId: ctx.session.user.id,
-        userTrainingPlanId: input.user_training_plan_id,
-      });
-    }),
-
-  regenerateAppliedSchedule: protectedProcedure
-    .input(applicationScopedScheduleInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      return regenerateAppliedScheduleUseCase({
-        db,
-        permissions: createContentAccessPermissions(db),
-        profileId: ctx.session.user.id,
-        repository: createTrainingPlanRepository(db),
-        userTrainingPlanId: input.user_training_plan_id,
+        scheduleBatchId: input.schedule_batch_id,
       });
     }),
 
@@ -6226,11 +6272,8 @@ export const trainingPlansCrudProcedures = {
   exists: trainingPlansProcedures.exists,
   create: trainingPlansProcedures.create,
   update: trainingPlansProcedures.update,
-  updateActivePlanStatus: trainingPlansProcedures.updateActivePlanStatus,
   getActivePlan: trainingPlansProcedures.getActivePlan,
   removeAppliedSchedule: trainingPlansProcedures.removeAppliedSchedule,
-  shiftAppliedSchedule: trainingPlansProcedures.shiftAppliedSchedule,
-  regenerateAppliedSchedule: trainingPlansProcedures.regenerateAppliedSchedule,
   delete: trainingPlansProcedures.delete,
   duplicate: trainingPlansProcedures.duplicate,
   getById: trainingPlansProcedures.getById,

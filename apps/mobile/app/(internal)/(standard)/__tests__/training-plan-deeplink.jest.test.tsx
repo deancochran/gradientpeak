@@ -7,7 +7,7 @@ import { renderNative, screen } from "../../../../test/render-native";
 var mockAlert = jest.fn();
 var mockApplyTemplateMutate = jest.fn();
 var mockDuplicateMutate = jest.fn();
-var mockUpdateActivePlanStatusMutate = jest.fn();
+var mockRemoveAppliedScheduleMutate = jest.fn();
 var mockUpdatePlanMutate = jest.fn();
 var mockActivePlanData: any = null;
 var mockApplyTemplateResult: any = null;
@@ -106,9 +106,9 @@ jest.mock("@/lib/api", () => ({
       update: {
         useMutation: () => ({ mutate: mockUpdatePlanMutate, isPending: false }),
       },
-      updateActivePlanStatus: {
+      removeAppliedSchedule: {
         useMutation: () => ({
-          mutate: mockUpdateActivePlanStatusMutate,
+          mutate: mockRemoveAppliedScheduleMutate,
           isPending: false,
         }),
       },
@@ -421,7 +421,7 @@ const resetTestState = () => {
   nativeAlertMock.mockReset();
   mockApplyTemplateMutate.mockReset();
   mockDuplicateMutate.mockReset();
-  mockUpdateActivePlanStatusMutate.mockReset();
+  mockRemoveAppliedScheduleMutate.mockReset();
   mockUpdatePlanMutate.mockReset();
   mockActivePlanData = null;
   mockApplyTemplateResult = null;
@@ -834,7 +834,10 @@ describe("TrainingPlanOverview deep-link routing", () => {
       structure: {},
     } as any;
     mockLocalSearchParams.id = "active-plan-2";
-    mockActivePlanData = { id: "active-plan-2" };
+    mockActivePlanData = {
+      id: "active-plan-2",
+      schedule_batch_id: "33333333-3333-4333-8333-333333333333",
+    };
 
     renderNative(<TrainingPlanOverview />);
 
@@ -846,9 +849,8 @@ describe("TrainingPlanOverview deep-link routing", () => {
       findButtonByTestId("training-plan-remove-scheduled-confirm").props.onPress();
     });
 
-    expect(mockUpdateActivePlanStatusMutate).toHaveBeenCalledWith({
-      id: "active-plan-2",
-      status: "abandoned",
+    expect(mockRemoveAppliedScheduleMutate).toHaveBeenCalledWith({
+      schedule_batch_id: "33333333-3333-4333-8333-333333333333",
     });
   });
 

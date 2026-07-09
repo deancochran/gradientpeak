@@ -511,7 +511,6 @@ describe("drizzle-event-read-repository", () => {
       linked_activity_id: "split-activity",
       route_id: "split-route",
       schedule_batch_id: "split-batch",
-      user_training_plan_id: "split-user-training-plan",
       created_at: new Date("2026-04-01T00:00:00.000Z"),
       updated_at: new Date("2026-04-01T00:00:00.000Z"),
     };

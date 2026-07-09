@@ -25,7 +25,6 @@ export interface ActiveTrainingPlanLookup {
   scheduleBatchId: string | null;
   trainingPlan: TrainingPlanRow;
   trainingPlanId: string;
-  userTrainingPlanId: string | null;
 }
 
 export interface CreateTrainingPlanRecordInput

@@ -91,9 +91,9 @@ export const webParityManifest = {
     "trainingPlans.getInsightTimeline": "missing",
     "trainingPlans.getTemplate": "missing",
     "trainingPlans.list": "implemented",
+    "trainingPlans.removeAppliedSchedule": "missing",
     "trainingPlans.listTemplates": "missing",
     "trainingPlans.update": "missing",
-    "trainingPlans.updateActivePlanStatus": "missing",
     "trainingPlans.updateFromCreationConfig": "missing",
   },
   features: {

@@ -48,7 +48,6 @@ import type {
   providerSyncState,
   providerWebhookReceipts,
   trainingPlans,
-  userTrainingPlans,
 } from "./tables";
 
 export type ProfileRow = InferSelectModel<typeof profiles>;
@@ -102,9 +101,6 @@ export type ActivityPlanRefreshQueueInsert = InferInsertModel<typeof activityPla
 
 export type TrainingPlanRow = InferSelectModel<typeof trainingPlans>;
 export type TrainingPlanInsert = InferInsertModel<typeof trainingPlans>;
-
-export type UserTrainingPlanRow = InferSelectModel<typeof userTrainingPlans>;
-export type UserTrainingPlanInsert = InferInsertModel<typeof userTrainingPlans>;
 
 type BaseActivityRow = InferSelectModel<typeof activities>;
 export type ActivityInsert = InferInsertModel<typeof activities>;
@@ -172,7 +168,6 @@ export type EventRow = BaseEventRow &
       | "route_id"
       | "schedule_batch_id"
       | "training_plan_id"
-      | "user_training_plan_id"
     >
   > &
   Partial<

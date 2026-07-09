@@ -1,5 +1,6 @@
 import {
   addDaysDateOnlyUtc,
+  buildDailyRecommendedLoad,
   buildDailyTssByDateSeries,
   replayTrainingLoadByDate,
   type TrainingPlanCreationPreview,
@@ -13,7 +14,6 @@ import {
   formatBuilderSessionTitle,
   formatBuilderWeekdayWithWeek,
   formatBuilderWeekLabel,
-  getBuilderWeekdayIndex,
 } from "./formatters";
 import { selectBuilderGoalBlueprints } from "./selectors";
 import type { TrainingPlanBuilderSession, TrainingPlanBuilderState } from "./types";
@@ -493,48 +493,38 @@ function buildRecommendedTssByDate({
 }) {
   const targetTssByDate = new Map<string, number>();
   if (recommendedWeeklyTss <= 0 || durationDays <= 0) return targetTssByDate;
-
-  const preferredWeekdays = new Set(state.scheduling.preferredWeekdays);
-  const weeklySessionCount = state.planPreferences.weeklySessionCount;
   const weekCount = Math.ceil(durationDays / 7);
-  const sessionWeekdaysByWeek = new Map<number, Set<number>>();
-  for (const session of sessions) {
-    if (session.offsetDays < 0 || session.offsetDays >= durationDays) continue;
-    const weekIndex = Math.floor(session.offsetDays / 7);
-    const weekdays = sessionWeekdaysByWeek.get(weekIndex) ?? new Set<number>();
-    weekdays.add(getBuilderWeekdayIndex(session.offsetDays));
-    sessionWeekdaysByWeek.set(weekIndex, weekdays);
-  }
 
-  for (let weekIndex = 0; weekIndex < weekCount; weekIndex += 1) {
-    const weekStartOffset = weekIndex * 7;
-    const daysInWeek = Math.min(7, durationDays - weekStartOffset);
-    const trainingWeekdays = new Set<number>([
-      ...preferredWeekdays,
-      ...(sessionWeekdaysByWeek.get(weekIndex) ?? []),
-    ]);
-    if (trainingWeekdays.size === 0 && weeklySessionCount && weeklySessionCount > 0) {
-      for (let weekday = 0; weekday < Math.min(7, weeklySessionCount); weekday += 1) {
-        trainingWeekdays.add(weekday);
-      }
-    }
-    if (trainingWeekdays.size === 0) {
-      for (let weekday = 0; weekday < daysInWeek; weekday += 1) {
-        trainingWeekdays.add(weekday);
-      }
-    }
+  const preferredWeekdays =
+    state.scheduling.preferredWeekdays.length > 0
+      ? state.scheduling.preferredWeekdays
+      : Array.from(
+          { length: Math.min(7, state.planPreferences.weeklySessionCount ?? 0) },
+          (_, index) => index,
+        );
+  const points = buildDailyRecommendedLoad({
+    startDate: state.scheduling.startDate,
+    endDate: addDaysDateOnlyUtc(state.scheduling.startDate, durationDays - 1),
+    preferredWeekdays,
+    weeklyTargets: Array.from({ length: weekCount }, (_, weekIndex) => ({
+      weekIndex,
+      targetTss: recommendedWeeklyTss,
+    })),
+    sessions: sessions.map((session) => ({
+      offsetDays: session.offsetDays,
+      estimatedTss: session.activityPlan?.estimatedTss ?? session.intent?.targetTss ?? null,
+      estimatedDurationMinutes:
+        typeof session.activityPlan?.estimatedDurationSeconds === "number"
+          ? session.activityPlan.estimatedDurationSeconds / 60
+          : typeof session.intent?.targetDurationSeconds === "number"
+            ? session.intent.targetDurationSeconds / 60
+            : null,
+      intentType: session.intent?.type,
+    })),
+  });
 
-    const activeWeekdays = [...trainingWeekdays].filter((weekday) => weekday < daysInWeek);
-    if (activeWeekdays.length === 0) continue;
-    const weekTargetTss = recommendedWeeklyTss * (daysInWeek / 7);
-    const baseDailyTss = Math.floor(weekTargetTss / activeWeekdays.length);
-    let remainderTss = Math.round(weekTargetTss - baseDailyTss * activeWeekdays.length);
-    for (const weekday of activeWeekdays.sort((left, right) => left - right)) {
-      const date = addDaysDateOnlyUtc(state.scheduling.startDate, weekStartOffset + weekday);
-      const extra = remainderTss > 0 ? 1 : 0;
-      targetTssByDate.set(date, baseDailyTss + extra);
-      remainderTss -= extra;
-    }
+  for (const point of points) {
+    targetTssByDate.set(point.date, point.recommendedLoadTss);
   }
 
   return targetTssByDate;

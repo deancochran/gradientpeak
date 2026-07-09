@@ -220,7 +220,7 @@ describe("training plan projection fallbacks", () => {
       },
     });
 
-    expect(result.timeline.map((point) => point.ideal_tss)).toEqual([20, 20, 20]);
+    expect(result.timeline.map((point) => point.ideal_tss)).toEqual([12, 21, 27]);
     expect(result.load_guidance).toMatchObject({
       mode: "baseline",
       goal_count: 0,
@@ -270,7 +270,7 @@ describe("training plan projection fallbacks", () => {
     });
 
     expect(result.timeline.map((point) => point.scheduled_tss)).toEqual([0, 55, 0]);
-    expect(result.timeline.map((point) => point.ideal_tss)).toEqual([20, 20, 20]);
+    expect(result.timeline.map((point) => point.ideal_tss)).toEqual([12, 21, 27]);
   });
 
   it("logs and skips invalid canonical profile goals before returning a safe fallback response", async () => {
@@ -339,7 +339,7 @@ describe("training plan projection fallbacks", () => {
       "Skipping invalid canonical profile goal for insight timeline projection.",
       expect.anything(),
     );
-    expect(result.timeline.map((point) => point.ideal_tss)).toEqual([20, 20, 20]);
+    expect(result.timeline.map((point) => point.ideal_tss)).toEqual([12, 21, 27]);
     expect(result.load_guidance).toMatchObject({
       mode: "baseline",
       goal_count: 0,
@@ -413,7 +413,7 @@ describe("training plan projection fallbacks", () => {
       },
     });
 
-    expect(result.timeline.map((point) => point.ideal_tss)).toEqual([20, 20, 20]);
+    expect(result.timeline.map((point) => point.ideal_tss)).toEqual([12, 21, 27]);
     expect(result.timeline.map((point) => point.scheduled_tss)).toEqual([0, 84, 0]);
     expect(result.load_guidance).toMatchObject({
       mode: "baseline",
@@ -518,7 +518,7 @@ describe("training plan projection fallbacks", () => {
       },
     });
 
-    expect(lowScheduled.timeline.map((point) => point.ideal_tss)).toEqual([20, 20, 20]);
+    expect(lowScheduled.timeline.map((point) => point.ideal_tss)).toEqual([12, 21, 27]);
     expect(highScheduled.timeline.map((point) => point.ideal_tss)).toEqual(
       lowScheduled.timeline.map((point) => point.ideal_tss),
     );
@@ -669,7 +669,7 @@ describe("training plan projection fallbacks", () => {
       interpretation:
         "Goals are evaluated separately; recommended load remains a baseline estimate instead of aggregating goal-derived planned load.",
     });
-    expect(result.timeline.map((point) => point.ideal_tss)).toEqual([20, 20, 20]);
+    expect(result.timeline.map((point) => point.ideal_tss)).toEqual([12, 21, 27]);
     expect(result.projection.diagnostics).toMatchObject({
       fallback_mode: "conservative_priors",
       load_provenance: {

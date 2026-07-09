@@ -42,7 +42,6 @@ import {
   providerSyncState,
   providerWebhookReceipts,
   trainingPlans,
-  userTrainingPlans,
 } from "./tables";
 
 export const profilesRelations = relations(profiles, ({ many }) => ({
@@ -84,7 +83,6 @@ export const profilesRelations = relations(profiles, ({ many }) => ({
   profileTrainingSettings: many(profileTrainingSettings),
   integrationResourceLinks: many(integrationResourceLinks),
   trainingPlans: many(trainingPlans),
-  userTrainingPlans: many(userTrainingPlans),
 }));
 
 export const groupsRelations = relations(groups, ({ one, many }) => ({
@@ -229,19 +227,6 @@ export const trainingPlansRelations = relations(trainingPlans, ({ one, many }) =
     references: [profiles.id],
   }),
   eventScheduleLinks: many(eventScheduleLinks),
-  userTrainingPlans: many(userTrainingPlans),
-}));
-
-export const userTrainingPlansRelations = relations(userTrainingPlans, ({ one, many }) => ({
-  profile: one(profiles, {
-    fields: [userTrainingPlans.profile_id],
-    references: [profiles.id],
-  }),
-  trainingPlan: one(trainingPlans, {
-    fields: [userTrainingPlans.training_plan_id],
-    references: [trainingPlans.id],
-  }),
-  eventScheduleLinks: many(eventScheduleLinks),
 }));
 
 export const eventsRelations = relations(events, ({ one, many }) => ({
@@ -297,10 +282,6 @@ export const eventScheduleLinksRelations = relations(eventScheduleLinks, ({ one 
   route: one(activityRoutes, {
     fields: [eventScheduleLinks.route_id],
     references: [activityRoutes.id],
-  }),
-  userTrainingPlan: one(userTrainingPlans, {
-    fields: [eventScheduleLinks.user_training_plan_id],
-    references: [userTrainingPlans.id],
   }),
 }));
 
@@ -618,7 +599,6 @@ export const relationsSchema = {
   activityRoutesRelations,
   activityPlansRelations,
   trainingPlansRelations,
-  userTrainingPlansRelations,
   eventsRelations,
   eventScheduleLinksRelations,
   eventExternalLinksRelations,

@@ -18,31 +18,11 @@ export type MaterializedApplication = {
   includedFromDate: string | null;
   materializedSessions: MaterializedPlanSession[];
   skippedSessions: number;
-  snapshotStructure: Record<string, unknown>;
   targetDate: string | null;
 };
 
 function maxDateOnlyUtc(left: string, right: string): string {
   return left >= right ? left : right;
-}
-
-function buildTrainingPlanSnapshotStructure(input: {
-  applicationMode: TrainingPlanApplicationMode;
-  appliedPlanStartDate: string;
-  includedFromDate: string | null;
-  structure: Record<string, unknown>;
-  targetDate: string | null;
-}) {
-  return {
-    ...input.structure,
-    start_date: input.appliedPlanStartDate,
-    _application: {
-      applied_start_date: input.appliedPlanStartDate,
-      application_mode: input.applicationMode,
-      included_from_date: input.includedFromDate,
-      target_date: input.targetDate,
-    },
-  } satisfies Record<string, unknown>;
 }
 
 export function materializeAppliedTrainingPlan(input: {
@@ -93,13 +73,6 @@ export function materializeAppliedTrainingPlan(input: {
     includedFromDate,
     materializedSessions,
     skippedSessions: allMaterializedSessions.length - materializedSessions.length,
-    snapshotStructure: buildTrainingPlanSnapshotStructure({
-      applicationMode: input.applicationMode,
-      appliedPlanStartDate,
-      includedFromDate,
-      structure: input.structure,
-      targetDate: input.targetDate ?? null,
-    }),
     targetDate: input.targetDate ?? null,
   };
 }

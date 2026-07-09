@@ -419,7 +419,7 @@ export const parityRegistry = [
       "trainingPlans.getIdealCurve",
       "trainingPlans.getActivePlan",
       "trainingPlans.applyTemplate",
-      "trainingPlans.updateActivePlanStatus",
+      "trainingPlans.removeAppliedSchedule",
       "trainingPlans.delete",
       "trainingPlans.update",
       "trainingPlans.duplicate",

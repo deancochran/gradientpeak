@@ -7,6 +7,7 @@ export * from "./canonicalization";
 export * from "./classifyCreationFeasibility";
 export * from "./compositeCalibration";
 export * from "./computeLoadBootstrapState";
+export * from "./dailyRecommendedLoad";
 export * from "./dailyTrainingAdjustmentSeries";
 export * from "./dateOnlyUtc";
 export * from "./deriveCreationContext";

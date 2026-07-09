@@ -401,7 +401,7 @@ export default function TrainingPlanOverview() {
       });
     },
   });
-  const removeScheduledPlanMutation = api.trainingPlans.updateActivePlanStatus.useMutation({
+  const removeScheduledPlanMutation = api.trainingPlans.removeAppliedSchedule.useMutation({
     onSuccess: async (result) => {
       await Promise.all([
         invalidateTrainingPlanQueries(utils),
@@ -1162,14 +1162,17 @@ export default function TrainingPlanOverview() {
               ? "Removing..."
               : "Remove Scheduled Sessions",
             onPress: () => {
-              removeScheduledPlanMutation.mutate({
-                id: plan.id,
-                status: "abandoned",
-              });
+              if (typeof scheduling.activePlan?.schedule_batch_id === "string") {
+                removeScheduledPlanMutation.mutate({
+                  schedule_batch_id: scheduling.activePlan.schedule_batch_id,
+                });
+              }
             },
             testID: "training-plan-remove-scheduled-confirm",
             variant: "destructive",
-            disabled: removeScheduledPlanMutation.isPending,
+            disabled:
+              removeScheduledPlanMutation.isPending ||
+              typeof scheduling.activePlan?.schedule_batch_id !== "string",
           }}
           secondaryAction={{
             label: "Cancel",

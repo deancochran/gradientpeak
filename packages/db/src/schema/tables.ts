@@ -658,34 +658,6 @@ export const trainingPlans = pgTable(
   ],
 );
 
-export const userTrainingPlans = pgTable(
-  "user_training_plans",
-  {
-    id: uuid("id").primaryKey(),
-    profile_id: uuid("profile_id")
-      .notNull()
-      .references(() => profiles.id, { onDelete: "cascade" }),
-    training_plan_id: uuid("training_plan_id")
-      .notNull()
-      .references(() => trainingPlans.id, { onDelete: "cascade" }),
-    status: text("status", { enum: ["active", "paused", "completed", "abandoned"] })
-      .notNull()
-      .default("active"),
-    start_date: date("start_date").notNull(),
-    target_date: date("target_date"),
-    snapshot_structure: jsonb("snapshot_structure"),
-    created_at: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
-    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
-  },
-  (table) => [
-    index("idx_user_training_plans_profile_id").on(table.profile_id),
-    index("idx_user_training_plans_training_plan_id").on(table.training_plan_id),
-    index("idx_user_training_plans_status")
-      .on(table.profile_id)
-      .where(sql`${table.status} = 'active'`),
-  ],
-);
-
 export const events = pgTable(
   "events",
   {
@@ -725,7 +697,6 @@ export const events = pgTable(
     external_calendar_id: text("external_calendar_id"),
     external_event_id: text("external_event_id"),
     schedule_batch_id: uuid("schedule_batch_id"),
-    user_training_plan_id: uuid("user_training_plan_id"),
     lifecycle: jsonb("lifecycle"),
     recurrence: jsonb("recurrence"),
     payload: jsonb("payload"),
@@ -763,9 +734,6 @@ export const eventScheduleLinks = pgTable(
     linked_activity_id: uuid("linked_activity_id").references(() => activities.id),
     route_id: uuid("route_id").references(() => activityRoutes.id),
     schedule_batch_id: uuid("schedule_batch_id"),
-    user_training_plan_id: uuid("user_training_plan_id").references(() => userTrainingPlans.id, {
-      onDelete: "set null",
-    }),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -795,9 +763,6 @@ export const eventScheduleLinks = pgTable(
     index("idx_event_schedule_links_schedule_batch")
       .on(table.profile_id, table.schedule_batch_id)
       .where(sql`${table.schedule_batch_id} is not null`),
-    index("idx_event_schedule_links_user_training_plan_id")
-      .on(table.user_training_plan_id)
-      .where(sql`${table.user_training_plan_id} is not null`),
   ],
 );
 
