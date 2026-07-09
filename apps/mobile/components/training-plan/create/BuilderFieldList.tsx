@@ -31,6 +31,7 @@ interface BuilderFieldListProps<TKey extends string> {
   onAddField: (fieldKey: TKey) => void;
   onChangeField: (fieldKey: TKey, value: number | null) => void;
   onRemoveField: (fieldKey: TKey) => void;
+  showSupportingText?: boolean;
 }
 
 function formatFieldSource(source: string, overridden?: boolean) {
@@ -71,6 +72,7 @@ export function BuilderFieldList<TKey extends string>({
   onAddField,
   onChangeField,
   onRemoveField,
+  showSupportingText = true,
 }: BuilderFieldListProps<TKey>) {
   const visibleFields = fields.filter((field) => field.visible);
   const addableFields = fields.filter((field) => !field.visible && field.inputKind === "number");
@@ -88,10 +90,12 @@ export function BuilderFieldList<TKey extends string>({
                 label={field.label}
                 onClear={field.canRemove ? () => onRemoveField(field.key) : undefined}
                 supportingText={
-                  field.required
-                    ? field.reason
-                    : field.helperText ||
-                      formatFieldSource(field.value.source, field.value.overridden)
+                  showSupportingText
+                    ? field.required
+                      ? field.reason
+                      : field.helperText ||
+                        formatFieldSource(field.value.source, field.value.overridden)
+                    : undefined
                 }
               >
                 {field.inputKind === "derived" ? (

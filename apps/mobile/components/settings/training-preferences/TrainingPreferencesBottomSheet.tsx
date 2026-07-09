@@ -25,7 +25,7 @@ type TrainingPreferencesBottomSheetProps = {
 export function TrainingPreferencesBottomSheet({
   children,
   contentKey,
-  description = "Tune how GradientPeak plans your training. Reset restores the values from when this sheet opened.",
+  description,
   isResetDisabled = false,
   isSaveDisabled = false,
   isSaving = false,

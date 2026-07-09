@@ -21,7 +21,6 @@ function formatRelativeWeekDay(dateKey: string, index: number, startDateKey: str
 type BuilderTrainingPathReviewSectionProps = {
   chartHeight?: number;
   chartReview: TrainingPlanBuilderController["chartReview"];
-  onOpenSettings?: () => void;
   renderBelowChart?: (context: TrainingPathChartSectionContext) => ReactNode;
   title?: string;
 };
@@ -29,7 +28,6 @@ type BuilderTrainingPathReviewSectionProps = {
 export function BuilderTrainingPathReviewSection({
   chartHeight = 280,
   chartReview,
-  onOpenSettings,
   renderBelowChart,
   title = "Weekly Training Path",
 }: BuilderTrainingPathReviewSectionProps) {
@@ -47,7 +45,6 @@ export function BuilderTrainingPathReviewSection({
       onDisplayedWeekChange={chartReview.selectWeekStart}
       onScrollNearEnd={chartReview.extendEnd}
       onScrollNearStart={chartReview.extendStart}
-      onOpenSettings={onOpenSettings}
       renderBelowChart={renderBelowChart}
       selectedDate={chartReview.selectedDate}
       selectionMode="day"

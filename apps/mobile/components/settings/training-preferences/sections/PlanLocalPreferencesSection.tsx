@@ -1,11 +1,45 @@
 import type { TrainingPreferenceValidationIssue } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
+import { useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
+import {
+  type PreferencesTabKey,
+  TrainingPreferencesTabs,
+} from "@/components/settings/training-preferences/TrainingPreferencesTabs";
 import { BuilderFieldList } from "@/components/training-plan/create/BuilderFieldList";
 import type {
   TrainingPlanPreferenceFieldDescriptor,
   TrainingPlanPreferenceFieldKey,
 } from "@/lib/training-plan-creation/preferences-context";
+
+const planLocalTabs: PreferencesTabKey[] = [
+  "schedule",
+  "training-style",
+  "recovery",
+  "goal-strategy",
+];
+
+const planLocalFieldGroups: Record<PreferencesTabKey, TrainingPlanPreferenceFieldKey[]> = {
+  preferences: [],
+  availability: [],
+  schedule: [
+    "durationWeeks",
+    "weeklySessionCount",
+    "targetWeeklyHours",
+    "restDaysPerWeek",
+    "maxSingleSessionDurationMinutes",
+  ],
+  "training-style": [
+    "progressionPace",
+    "weekPatternPreference",
+    "strengthIntegrationPriority",
+    "doubleDayTolerance",
+    "longSessionFatigueTolerance",
+  ],
+  recovery: ["recoveryPriority"],
+  "goal-strategy": ["taperStylePreference"],
+  "baseline-fitness": [],
+};
 
 type PlanLocalPreferencesSectionProps = {
   fields: TrainingPlanPreferenceFieldDescriptor[];
@@ -22,15 +56,29 @@ export function PlanLocalPreferencesSection({
   onChangeField,
   onRemoveField,
 }: PlanLocalPreferencesSectionProps) {
-  const canonicalFields = fields.map((field) => ({ ...field, visible: true }));
+  const [activeTab, setActiveTab] = useState<PreferencesTabKey>("schedule");
+  const fieldByKey = useMemo(
+    () => new Map(fields.map((field) => [field.key, field] as const)),
+    [fields],
+  );
+  const canonicalFields = planLocalFieldGroups[activeTab]
+    .map((fieldKey) => fieldByKey.get(fieldKey))
+    .filter((field): field is TrainingPlanPreferenceFieldDescriptor => Boolean(field))
+    .map((field) => ({ ...field, helperText: undefined, reason: null, visible: true }));
+
+  useEffect(() => {
+    if (!planLocalTabs.includes(activeTab)) {
+      setActiveTab("schedule");
+    }
+  }, [activeTab]);
 
   return (
     <View className="gap-4">
-      <Text className="text-sm leading-5 text-muted-foreground">
-        Edit plan-local overrides for this training plan only. Global athlete preferences stay in
-        Training Preferences. Clear a value to let the builder derive it from submitted goals,
-        sessions, and activities.
-      </Text>
+      <TrainingPreferencesTabs
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        visibleTabs={planLocalTabs}
+      />
       {issues.length > 0 ? (
         <View className="gap-2 rounded-xl border border-amber-400/40 bg-amber-400/10 px-3 py-2">
           <Text className="text-sm font-semibold text-foreground">
@@ -51,12 +99,13 @@ export function PlanLocalPreferencesSection({
         </View>
       ) : null}
       <BuilderFieldList
-        addLabel="Additional preferences"
-        emptyMessage="No planning preferences are available."
+        addLabel="Add preference"
+        emptyMessage="No preferences in this group."
         fields={canonicalFields}
         onAddField={onAddField}
         onChangeField={onChangeField}
         onRemoveField={onRemoveField}
+        showSupportingText={false}
       />
     </View>
   );

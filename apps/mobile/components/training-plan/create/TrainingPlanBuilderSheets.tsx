@@ -79,7 +79,6 @@ function TrainingPlanBuilderPreferencesSheet({
     <TrainingPreferencesBottomSheet
       visible={activeSheet === "preferences"}
       title="Plan preferences"
-      description="Tune plan-local overrides for this training plan. Reset restores the values from when this sheet opened."
       isResetDisabled={!sheetDrafts.canResetPlanningPreferences}
       isSaveDisabled={
         !sheetDrafts.canResetPlanningPreferences || !sheetDrafts.canSavePlanningPreferences
@@ -90,7 +89,8 @@ function TrainingPlanBuilderPreferencesSheet({
         sheetDrafts.applyPlanningPreferencesDraft();
         closeBuilderSheet();
       }}
-      saveLabel="Save"
+      saveLabel="Apply to this plan"
+      saveLoadingLabel="Applying..."
       testID="training-plan-builder-preferences-sheet"
     >
       <TrainingPreferencesContent>

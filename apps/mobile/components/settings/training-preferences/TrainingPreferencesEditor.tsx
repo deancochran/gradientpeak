@@ -175,7 +175,7 @@ export function TrainingPreferencesEditor({
     isSaving;
   const saveButtonState = submitForm.getSubmitButtonState({
     disabled: saveDisabled,
-    label: "Save",
+    label: "Save preferences",
     submittingLabel: "Saving...",
   });
 
@@ -184,10 +184,7 @@ export function TrainingPreferencesEditor({
     : null;
   const resolvedSheetVisible = visible ?? isSheetVisible;
   const sheetTitle = mode === "plan-local" ? "Plan preferences" : "Training preferences";
-  const sheetDescription =
-    mode === "plan-local"
-      ? "Tune plan-local overrides for this training plan. Reset restores the values from when this sheet opened."
-      : "Tune how GradientPeak plans your training. Reset restores the values from when this sheet opened.";
+  const sheetDescription = undefined;
   const visibleTabs = mode === "plan-local" ? planLocalVisibleTabs : undefined;
   const sheetContentKey = [
     resolvedSheetVisible ? "open" : "closed",
@@ -349,10 +346,6 @@ export function TrainingPreferencesEditor({
       <View className="flex-1 items-center justify-center gap-3 px-5">
         <Text className="text-center text-xl font-semibold text-foreground">
           Training preferences
-        </Text>
-        <Text className="text-center text-sm leading-5 text-muted-foreground">
-          Preferences now open in a bottom sheet so editing works consistently from the Plan tab,
-          training plan creation, and settings surfaces.
         </Text>
         <Button onPress={() => setIsSheetVisible(true)} testID="training-preferences-open-sheet">
           <Text className="text-primary-foreground font-semibold">Edit preferences</Text>
