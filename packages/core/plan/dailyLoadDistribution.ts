@@ -51,6 +51,13 @@ export interface DailyLoadDistributionSchedulingConstraints {
   availabilityDays?: DailyLoadDistributionAvailabilityDay[] | null;
 }
 
+export interface DailyLoadDistributionCapacityContext {
+  startingCtl?: number | null;
+  startingAtl?: number | null;
+  startingTsb?: number | null;
+  readinessScore?: number | null;
+}
+
 export interface BuildDailyLoadDistributionInput {
   startDate: string;
   endDate: string;
@@ -59,6 +66,7 @@ export interface BuildDailyLoadDistributionInput {
   weeklyAllocation?: WeeklyAllocation | null;
   plannedSessions?: DailyRecommendedLoadSession[] | null;
   schedulingConstraints?: DailyLoadDistributionSchedulingConstraints | null;
+  capacityContext?: DailyLoadDistributionCapacityContext | null;
 }
 
 /**

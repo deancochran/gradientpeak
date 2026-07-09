@@ -360,7 +360,7 @@ describe("buildDailyLoadDistribution", () => {
       "threshold",
       "long_endurance",
     ]);
-    expect(points.reduce((sum, point) => sum + point.recommended_load_tss, 0)).toBe(300);
+    expect(sumRecommendedLoad(points)).toBe(300);
   });
 
   it("uses explicit deload templates without hard workout focus", () => {
@@ -377,7 +377,7 @@ describe("buildDailyLoadDistribution", () => {
     expect(trainingFocuses).toEqual(["recovery", "endurance", "mobility", "recovery"]);
     expect(trainingFocuses).not.toContain("threshold");
     expect(trainingFocuses).not.toContain("tempo");
-    expect(points.reduce((sum, point) => sum + point.recommended_load_tss, 0)).toBe(180);
+    expect(sumRecommendedLoad(points)).toBe(180);
   });
 
   it("protects race day and degrades adjacent hard taper focus", () => {
@@ -399,7 +399,7 @@ describe("buildDailyLoadDistribution", () => {
     expect(points.find((point) => point.date === "2026-01-07")?.primary_focus).toBe(
       "race_specific",
     );
-    expect(points.reduce((sum, point) => sum + point.recommended_load_tss, 0)).toBe(140);
+    expect(sumRecommendedLoad(points)).toBe(140);
   });
 
   it("keeps event day in event weeks and assigns post-event recovery", () => {
@@ -424,7 +424,7 @@ describe("buildDailyLoadDistribution", () => {
     expect(
       points.find((point) => point.date === "2026-01-11")?.recommended_load_tss,
     ).toBeGreaterThan(0);
-    expect(points.reduce((sum, point) => sum + point.recommended_load_tss, 0)).toBe(210);
+    expect(sumRecommendedLoad(points)).toBe(210);
   });
 
   it("assigns post-event recovery later in the same event week", () => {
@@ -447,7 +447,7 @@ describe("buildDailyLoadDistribution", () => {
     );
     expect(points.find((point) => point.date === "2026-01-09")?.primary_focus).toBe("recovery");
     expect(points.find((point) => point.date === "2026-01-11")?.primary_focus).toBe("mobility");
-    expect(points.reduce((sum, point) => sum + point.recommended_load_tss, 0)).toBe(200);
+    expect(sumRecommendedLoad(points)).toBe(200);
   });
 
   it("marks recovery overlap ranges when projection metadata provides them", () => {
@@ -469,6 +469,172 @@ describe("buildDailyLoadDistribution", () => {
       .filter((point) => point.recommended_load_tss > 0)
       .map((point) => point.primary_focus);
     expect(trainingFocuses).toEqual(["recovery", "mobility", "recovery"]);
-    expect(points.reduce((sum, point) => sum + point.recommended_load_tss, 0)).toBe(120);
+    expect(sumRecommendedLoad(points)).toBe(120);
+  });
+
+  it("caps daily load by explicit availability duration", () => {
+    const points = buildDailyLoadDistribution({
+      startDate: "2026-01-05",
+      endDate: "2026-01-11",
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 300 }],
+      preferenceProfile: {
+        ...defaultAthletePreferenceProfile,
+        availability: {
+          weekly_windows: [
+            { day: "monday", windows: [{ start_minute_of_day: 360, end_minute_of_day: 390 }] },
+            { day: "wednesday", windows: [{ start_minute_of_day: 360, end_minute_of_day: 390 }] },
+            { day: "friday", windows: [{ start_minute_of_day: 360, end_minute_of_day: 390 }] },
+          ],
+          hard_rest_days: [],
+        },
+        dose_limits: {
+          ...defaultAthletePreferenceProfile.dose_limits,
+          min_sessions_per_week: 3,
+          max_sessions_per_week: 3,
+          max_single_session_duration_minutes: 120,
+        },
+      },
+    });
+
+    expect(points.find((point) => point.date === "2026-01-06")?.recommended_load_tss).toBe(0);
+    expect(Math.max(...points.map((point) => point.recommended_load_tss))).toBeLessThanOrEqual(
+      40.5,
+    );
+    expect(points.reduce((sum, point) => sum + point.recommended_load_tss, 0)).toBeLessThan(300);
+    expect(
+      points.some((point) =>
+        point.reason_codes.includes("weekly_target_under_allocated_daily_caps"),
+      ),
+    ).toBe(true);
+  });
+
+  it("caps daily load by max single session duration", () => {
+    const points = buildDailyLoadDistribution({
+      startDate: "2026-01-05",
+      endDate: "2026-01-11",
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 250 }],
+      preferenceProfile: {
+        ...defaultAthletePreferenceProfile,
+        dose_limits: {
+          ...defaultAthletePreferenceProfile.dose_limits,
+          min_sessions_per_week: 3,
+          max_sessions_per_week: 3,
+          max_single_session_duration_minutes: 30,
+        },
+      },
+    });
+
+    expect(Math.max(...points.map((point) => point.recommended_load_tss))).toBeLessThanOrEqual(
+      40.5,
+    );
+    expect(points.reduce((sum, point) => sum + point.recommended_load_tss, 0)).toBeLessThan(250);
+  });
+
+  it("keeps hard rest days at zero and under-allocates instead of spilling above caps", () => {
+    const points = buildDailyLoadDistribution({
+      startDate: "2026-01-05",
+      endDate: "2026-01-11",
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 400 }],
+      preferenceProfile: {
+        ...defaultAthletePreferenceProfile,
+        availability: {
+          weekly_windows: [
+            { day: "monday", windows: [{ start_minute_of_day: 360, end_minute_of_day: 420 }] },
+            { day: "tuesday", windows: [{ start_minute_of_day: 360, end_minute_of_day: 420 }] },
+          ],
+          hard_rest_days: ["tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"],
+        },
+        dose_limits: {
+          ...defaultAthletePreferenceProfile.dose_limits,
+          min_sessions_per_week: 1,
+          max_sessions_per_week: 1,
+          max_single_session_duration_minutes: 60,
+        },
+      },
+    });
+
+    expect(points.find((point) => point.date === "2026-01-06")?.recommended_load_tss).toBe(0);
+    expect(points.reduce((sum, point) => sum + point.recommended_load_tss, 0)).toBeLessThanOrEqual(
+      60,
+    );
+    expect(points.find((point) => point.date === "2026-01-06")?.reason_codes).toContain(
+      "hard_rest_day_cap",
+    );
+  });
+
+  it("caps daily load for low CTL and low readiness", () => {
+    const points = buildDailyLoadDistribution({
+      startDate: "2026-01-05",
+      endDate: "2026-01-11",
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 220 }],
+      preferenceProfile: {
+        ...defaultAthletePreferenceProfile,
+        dose_limits: {
+          ...defaultAthletePreferenceProfile.dose_limits,
+          min_sessions_per_week: 3,
+          max_sessions_per_week: 3,
+          max_single_session_duration_minutes: 120,
+        },
+      },
+      capacityContext: { startingCtl: 12, startingAtl: 20, startingTsb: -8, readinessScore: 30 },
+    });
+
+    expect(Math.max(...points.map((point) => point.recommended_load_tss))).toBeLessThanOrEqual(20);
+    expect(points.reduce((sum, point) => sum + point.recommended_load_tss, 0)).toBeLessThan(220);
+    expect(
+      points.some((point) => point.reason_codes.includes("athlete_capacity_cap_applied")),
+    ).toBe(true);
+  });
+
+  it("does not add rounding remainder above a binding daily cap", () => {
+    const points = buildDailyLoadDistribution({
+      startDate: "2026-01-05",
+      endDate: "2026-01-11",
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 100.1 }],
+      preferenceProfile: {
+        ...defaultAthletePreferenceProfile,
+        dose_limits: {
+          ...defaultAthletePreferenceProfile.dose_limits,
+          min_sessions_per_week: 2,
+          max_sessions_per_week: 2,
+          max_single_session_duration_minutes: 50,
+        },
+      },
+    });
+
+    expect(Math.max(...points.map((point) => point.recommended_load_tss))).toBeLessThanOrEqual(
+      60.1,
+    );
+    expect(points.reduce((sum, point) => sum + point.recommended_load_tss, 0)).toBeLessThanOrEqual(
+      100.1,
+    );
+  });
+
+  it("returns zero load when every profiled day is unavailable", () => {
+    const points = buildDailyLoadDistribution({
+      startDate: "2026-01-05",
+      endDate: "2026-01-11",
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 180 }],
+      preferenceProfile: {
+        ...defaultAthletePreferenceProfile,
+        availability: {
+          weekly_windows: [],
+          hard_rest_days: [
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday",
+          ],
+        },
+      },
+    });
+
+    expect(points.map((point) => point.recommended_load_tss)).toEqual([0, 0, 0, 0, 0, 0, 0]);
+    expect(
+      points.every((point) => point.reason_codes.includes("all_training_days_unavailable")),
+    ).toBe(true);
   });
 });

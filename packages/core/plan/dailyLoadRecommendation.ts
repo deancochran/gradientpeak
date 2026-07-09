@@ -59,6 +59,13 @@ export interface DailyLoadRecommendationSchedulingConstraints {
   availabilityDays?: DailyLoadRecommendationAvailabilityDay[] | null;
 }
 
+export interface DailyLoadRecommendationCapacityContext {
+  startingCtl?: number | null;
+  startingAtl?: number | null;
+  startingTsb?: number | null;
+  readinessScore?: number | null;
+}
+
 export interface DailyLoadRecommendationWeeklyTarget {
   weekIndex?: number;
   weekStartDate?: string;
@@ -126,6 +133,7 @@ export interface BuildDailyLoadDistributionRecommendationInput {
   weeklyAllocation?: WeeklyAllocation | null;
   plannedSessions?: DailyLoadRecommendationSession[] | null;
   schedulingConstraints?: DailyLoadRecommendationSchedulingConstraints | null;
+  capacityContext?: DailyLoadRecommendationCapacityContext | null;
 }
 
 export type BuildDailyLoadRecommendationInput =
@@ -163,6 +171,7 @@ const UTC_WEEKDAY_NAMES = [
 ] as const;
 
 const DEFAULT_WEEKLY_SESSION_COUNT = 3;
+const TSS_EPSILON = 0.000001;
 
 const ACTIVITY_CATEGORY_ORDER: DailyLoadRecommendationActivityCategory[] = [
   "run",
@@ -358,6 +367,132 @@ function distributionWeightForFocus(focus: DailyLoadRecommendationPrimaryFocus):
     default:
       return 0.85;
   }
+}
+
+function tssPerMinuteForFocus(focus: DailyLoadRecommendationPrimaryFocus): number {
+  switch (focus) {
+    case "threshold":
+    case "tempo":
+      return 1.35;
+    case "long_endurance":
+      return 1.1;
+    case "endurance":
+      return 1;
+    case "recovery":
+    case "mobility":
+      return 0.7;
+    default:
+      return 0.85;
+  }
+}
+
+function finitePositive(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function resolveCapacityMultiplier(
+  context: DailyLoadRecommendationCapacityContext | null | undefined,
+) {
+  const readiness = finitePositive(context?.readinessScore);
+  const tsb =
+    typeof context?.startingTsb === "number" && Number.isFinite(context.startingTsb)
+      ? context.startingTsb
+      : null;
+  let multiplier = 1;
+
+  if (readiness !== null) {
+    if (readiness < 35) multiplier *= 0.65;
+    else if (readiness < 55) multiplier *= 0.8;
+    else if (readiness > 80) multiplier *= 1.1;
+  }
+
+  if (tsb !== null) {
+    if (tsb < -25) multiplier *= 0.75;
+    else if (tsb < -10) multiplier *= 0.9;
+  }
+
+  return clamp(multiplier, 0.5, 1.15);
+}
+
+function resolveAthleteCapacityCap(
+  context: DailyLoadRecommendationCapacityContext | null | undefined,
+): number | null {
+  const ctl = finitePositive(context?.startingCtl);
+  if (ctl === null) return null;
+  const lowFitnessCap = ctl < 35 ? ctl * 1.25 + 10 : ctl * 1.6 + 15;
+  return Math.max(20, lowFitnessCap * resolveCapacityMultiplier(context));
+}
+
+function floor1(value: number): number {
+  return Math.floor((value + TSS_EPSILON) * 10) / 10;
+}
+
+function allocateWithCaps(total: number, weights: number[], caps: number[]) {
+  if (total <= 0 || weights.length === 0) return weights.map(() => 0);
+  const safeCaps = caps.map((cap) => Math.max(0, Number.isFinite(cap) ? cap : 0));
+  const capped = weights.map(() => false);
+  const allocation = weights.map(() => 0);
+  let remainingTotal = Math.min(
+    total,
+    safeCaps.reduce((sum, cap) => sum + cap, 0),
+  );
+
+  for (let iteration = 0; iteration < weights.length; iteration += 1) {
+    const activeWeightTotal = weights.reduce(
+      (sum, weight, index) => sum + (capped[index] ? 0 : Math.max(0, weight)),
+      0,
+    );
+    if (activeWeightTotal <= 0) break;
+    let changed = false;
+    for (let index = 0; index < weights.length; index += 1) {
+      if (capped[index]) continue;
+      const proposed = (remainingTotal * Math.max(0, weights[index] ?? 0)) / activeWeightTotal;
+      const cap = safeCaps[index] ?? 0;
+      if (proposed > cap) {
+        allocation[index] = cap;
+        capped[index] = true;
+        remainingTotal -= cap;
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+
+  const activeWeightTotal = weights.reduce(
+    (sum, weight, index) => sum + (capped[index] ? 0 : Math.max(0, weight)),
+    0,
+  );
+  for (let index = 0; index < weights.length; index += 1) {
+    if (capped[index]) continue;
+    allocation[index] =
+      activeWeightTotal > 0
+        ? Math.min(
+            safeCaps[index] ?? 0,
+            (remainingTotal * Math.max(0, weights[index] ?? 0)) / activeWeightTotal,
+          )
+        : 0;
+  }
+
+  const rounded = allocation.map((value, index) =>
+    Math.min(floor1(value), floor1(safeCaps[index] ?? 0)),
+  );
+  let remainingRounding = round1(
+    Math.min(
+      total,
+      safeCaps.reduce((sum, cap) => sum + cap, 0),
+    ) - rounded.reduce((sum, value) => sum + value, 0),
+  );
+
+  while (remainingRounding >= 0.1 - TSS_EPSILON) {
+    const nextIndex = rounded.findIndex(
+      (value, index) => value + 0.1 <= floor1(safeCaps[index] ?? 0) + TSS_EPSILON,
+    );
+    if (nextIndex < 0) break;
+    rounded[nextIndex] = round1((rounded[nextIndex] ?? 0) + 0.1);
+    remainingRounding = round1(remainingRounding - 0.1);
+  }
+
+  return rounded;
 }
 
 function buildLoadMap(points: DailyLoadRecommendationActualOrScheduledPoint[] | null | undefined) {
@@ -888,9 +1023,10 @@ function buildDistributionPoints(
         preferred && (!hardRestDays.has(day) || hasSession) && availabilityMinutes > 0;
       return available ? [{ date, dayOffset, availabilityMinutes, hasSession }] : [];
     }).flat();
+    const shouldUseFallbackTrainingDays = candidates.length === 0 && !input.preferenceProfile;
     const trainingDates = chooseTrainingDates({
       candidates:
-        candidates.length > 0
+        candidates.length > 0 || !shouldUseFallbackTrainingDays
           ? candidates
           : Array.from({ length: daysInWeek }, (_, dayOffset) => ({
               date: addDaysDateOnlyUtc(weekStartDate, dayOffset),
@@ -927,24 +1063,68 @@ function buildDistributionPoints(
         templateFocuses[index] ?? focusForSelectedIndex(index, trainingDates.length, target?.phase),
       );
     });
-    const allocations = allocateWithCap(
+    const shareCap = trainingDates.length >= 3 ? 0.45 : 0.6;
+    const athleteCapacityCap = resolveAthleteCapacityCap(input.capacityContext);
+    const caps = trainingDates.map((trainingDate, index) => {
+      const focus = focuses[index] ?? "recovery";
+      const shareTssCap = weeklyTss * shareCap;
+      const availabilityTssCap = hasAvailabilityWindows
+        ? trainingDate.availabilityMinutes * tssPerMinuteForFocus(focus)
+        : Number.POSITIVE_INFINITY;
+      const maxSingleSessionMinutes = finitePositive(
+        input.preferenceProfile?.dose_limits.max_single_session_duration_minutes,
+      );
+      const maxSingleSessionTssCap =
+        maxSingleSessionMinutes === null
+          ? Number.POSITIVE_INFINITY
+          : maxSingleSessionMinutes * tssPerMinuteForFocus(focus);
+      const capacityTssCap = athleteCapacityCap ?? Number.POSITIVE_INFINITY;
+      return Math.max(
+        0,
+        Math.min(shareTssCap, availabilityTssCap, maxSingleSessionTssCap, capacityTssCap),
+      );
+    });
+    const allocations = allocateWithCaps(
       weeklyTss,
       focuses.map(
         (focus, index) =>
           distributionWeightForFocus(focus) *
           (categoryAssignments[index]?.budget.loadMultiplier ?? 1),
       ),
-      trainingDates.length >= 3 ? 0.45 : 0.6,
+      caps,
     );
+    const allocatedWeeklyTss = round1(allocations.reduce((sum, load) => sum + load, 0));
+    const weeklyUnderAllocated = allocatedWeeklyTss + TSS_EPSILON < round1(weeklyTss);
 
     for (let dayOffset = 0; dayOffset < daysInWeek; dayOffset += 1) {
       const date = addDaysDateOnlyUtc(weekStartDate, dayOffset);
+      const day = weekdayNameForDate(date);
       const selectedIndex = selectedByDate.get(date);
       const focus = selectedIndex === undefined ? "rest" : (focuses[selectedIndex] ?? "recovery");
       const assignment =
         selectedIndex === undefined ? null : (categoryAssignments[selectedIndex] ?? null);
       const recommendedLoadTss =
         selectedIndex === undefined ? 0 : (allocations[selectedIndex] ?? 0);
+      const cap =
+        selectedIndex === undefined ? 0 : (caps[selectedIndex] ?? Number.POSITIVE_INFINITY);
+      const capReasonCodes: string[] = [];
+      if (input.preferenceProfile && hardRestDays.has(day))
+        capReasonCodes.push("hard_rest_day_cap");
+      if (selectedIndex !== undefined && hasAvailabilityWindows)
+        capReasonCodes.push("availability_duration_cap_applied");
+      if (
+        selectedIndex !== undefined &&
+        finitePositive(input.preferenceProfile?.dose_limits.max_single_session_duration_minutes) !==
+          null
+      )
+        capReasonCodes.push("max_single_session_duration_cap_applied");
+      if (selectedIndex !== undefined && athleteCapacityCap !== null)
+        capReasonCodes.push("athlete_capacity_cap_applied");
+      if (selectedIndex !== undefined && cap <= recommendedLoadTss + TSS_EPSILON)
+        capReasonCodes.push("daily_cap_binding");
+      if (weeklyUnderAllocated) capReasonCodes.push("weekly_target_under_allocated_daily_caps");
+      if (input.preferenceProfile && candidates.length === 0)
+        capReasonCodes.push("all_training_days_unavailable");
       points.push({
         date,
         recommendedLoadTss,
@@ -971,6 +1151,7 @@ function buildDistributionPoints(
             : selectedIndex === undefined
               ? []
               : ["weekly_allocation_category_budget"]),
+          ...capReasonCodes,
         ],
       });
     }
