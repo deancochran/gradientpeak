@@ -803,52 +803,6 @@ function assignCategoryBudgets(input: {
   });
 }
 
-function allocateWithCap(total: number, weights: number[], capShare: number) {
-  if (total <= 0 || weights.length === 0) return weights.map(() => 0);
-  const capped = weights.map(() => false);
-  const allocation = weights.map(() => 0);
-  let remainingTotal = total;
-
-  for (let iteration = 0; iteration < weights.length; iteration += 1) {
-    const activeWeightTotal = weights.reduce(
-      (sum, weight, index) => sum + (capped[index] ? 0 : Math.max(0, weight)),
-      0,
-    );
-    if (activeWeightTotal <= 0) break;
-    let changed = false;
-    for (let index = 0; index < weights.length; index += 1) {
-      if (capped[index]) continue;
-      const proposed = (remainingTotal * Math.max(0, weights[index] ?? 0)) / activeWeightTotal;
-      const cap = total * capShare;
-      if (proposed > cap && weights.length > 1) {
-        allocation[index] = cap;
-        capped[index] = true;
-        remainingTotal -= cap;
-        changed = true;
-      }
-    }
-    if (!changed) break;
-  }
-
-  const activeWeightTotal = weights.reduce(
-    (sum, weight, index) => sum + (capped[index] ? 0 : Math.max(0, weight)),
-    0,
-  );
-  for (let index = 0; index < weights.length; index += 1) {
-    if (capped[index]) continue;
-    allocation[index] =
-      activeWeightTotal > 0
-        ? (remainingTotal * Math.max(0, weights[index] ?? 0)) / activeWeightTotal
-        : 0;
-  }
-
-  const rounded = allocation.map(round1);
-  const delta = round1(total - rounded.reduce((sum, value) => sum + value, 0));
-  if (rounded.length > 0 && delta !== 0)
-    rounded[rounded.length - 1] = round1((rounded.at(-1) ?? 0) + delta);
-  return rounded;
-}
-
 function buildRecommendedLoadPoints(
   input: BuildDailyRecommendedLoadRecommendationInput,
 ): DailyLoadRecommendationPoint[] {
