@@ -87,9 +87,10 @@ export function useCenteredChartSelection<Point extends SelectableChartPoint>({
 
   useEffect(() => {
     if (!resolvedSelectedDate) return;
+    if (selectionPhase === "selecting") return;
     if (lastProgrammaticScrollDateRef.current === resolvedSelectedDate) return;
     scrollToDate(resolvedSelectedDate, false);
-  }, [resolvedSelectedDate, scrollToDate]);
+  }, [resolvedSelectedDate, scrollToDate, selectionPhase]);
 
   const getNearestIndex = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) =>

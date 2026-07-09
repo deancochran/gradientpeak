@@ -145,4 +145,34 @@ describe("DailyTrainingAdjustmentChart", () => {
     expect(onScrollNearStart).toHaveBeenCalledTimes(1);
     expect(onScrollNearEnd).toHaveBeenCalledTimes(1);
   });
+
+  it("keeps the chart anchored to the viewport instead of an old selected date while loading more days", () => {
+    const buildPoints = (length: number) =>
+      Array.from({ length }, (_, index) => ({
+        date: `2026-06-${String(index + 1).padStart(2, "0")}`,
+        targetLoadTss: 50,
+      }));
+
+    const { rerender } = render(
+      <DailyTrainingAdjustmentChart
+        maxVisiblePoints={10}
+        points={buildPoints(24)}
+        selectedDate="2026-06-15"
+      />,
+    );
+
+    const scrollView = screen.getByTestId("daily-training-adjustment-chart-scroll");
+    fireEvent(scrollView, "scrollBeginDrag");
+    fireEvent.scroll(scrollView, { nativeEvent: { contentOffset: { x: 270, y: 0 } } });
+
+    rerender(
+      <DailyTrainingAdjustmentChart
+        maxVisiblePoints={10}
+        points={buildPoints(40)}
+        selectedDate="2026-06-15"
+      />,
+    );
+
+    expect(screen.getByText("06/23")).toBeTruthy();
+  });
 });

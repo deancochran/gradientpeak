@@ -204,9 +204,6 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
   ) {
     windowAnchorDateRef.current = nextAnchorDate;
   }
-  if (selectedDate && points.some((point) => point.date === selectedDate)) {
-    windowAnchorDateRef.current = selectedDate;
-  }
   const chartWindow = useMemo(
     () =>
       deriveTrainingPathChartWindow({
@@ -326,6 +323,12 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
   const handleScroll = useCallback(
     (event: Parameters<typeof selectNearestFromScrollEvent>[0]) => {
       const offsetX = event.nativeEvent.contentOffset.x;
+      const nearestIndex = Math.max(
+        0,
+        Math.min(visiblePoints.length - 1, Math.round(offsetX / slotWidth)),
+      );
+      windowAnchorDateRef.current =
+        visiblePoints[nearestIndex]?.date ?? windowAnchorDateRef.current;
       const maxOffsetX = Math.max(0, scrollableChartWidth - viewportWidth);
       const preloadDistance = slotWidth * 14;
       if (offsetX <= preloadDistance) {
