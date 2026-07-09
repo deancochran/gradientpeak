@@ -6,7 +6,6 @@ import {
   GROUP_INVITATION_STATUSES,
   GROUP_JOIN_POLICIES,
   GROUP_JOIN_REQUEST_STATUSES,
-  GROUP_MEMBERSHIP_ROLES,
   GROUP_MEMBERSHIP_STATUSES,
   inviteProfilesInputSchema,
   listGroupsInputSchema,
@@ -18,8 +17,12 @@ import {
 } from "@repo/core/groups";
 import { groupInvitations, groupJoinRequests, groupMemberships, groups, profiles } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, count, desc, eq, ilike, inArray, isNull, lt, or } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNull, lt, or } from "drizzle-orm";
 import { z } from "zod";
+import {
+  getActiveGroupOwnerCount,
+  setGroupMembershipActive,
+} from "../../application/groups/membershipMutations";
 import { getRequiredDb } from "../../db";
 import { createTRPCRouter, protectedProcedure } from "../../trpc";
 import {
@@ -63,11 +66,9 @@ type GroupRow = typeof groups.$inferSelect;
 type MembershipRow = typeof groupMemberships.$inferSelect;
 type InvitationRow = typeof groupInvitations.$inferSelect;
 type JoinRequestRow = typeof groupJoinRequests.$inferSelect;
-type GroupsMutationDb = Pick<ReturnType<typeof getRequiredDb>, "select" | "insert" | "update">;
 
 const GROUP_JOIN_POLICY_OPEN = GROUP_JOIN_POLICIES[0];
 const GROUP_JOIN_POLICY_INVITE_ONLY = GROUP_JOIN_POLICIES[2];
-const GROUP_MEMBERSHIP_ROLE_MEMBER = GROUP_MEMBERSHIP_ROLES[2];
 const GROUP_MEMBERSHIP_STATUS_LEFT = GROUP_MEMBERSHIP_STATUSES[1];
 const GROUP_MEMBERSHIP_STATUS_REMOVED = GROUP_MEMBERSHIP_STATUSES[2];
 const GROUP_INVITATION_STATUS_ACCEPTED = GROUP_INVITATION_STATUSES[1];
@@ -170,70 +171,6 @@ async function generateUniqueActiveGroupSlug(db: ReturnType<typeof getRequiredDb
     code: "CONFLICT",
     message: "Could not generate a unique group slug",
   });
-}
-
-async function getActiveOwnerCount(db: GroupsMutationDb, groupId: string) {
-  const [row] = await db
-    .select({ value: count() })
-    .from(groupMemberships)
-    .where(
-      and(
-        eq(groupMemberships.group_id, groupId),
-        eq(groupMemberships.role, GROUP_MEMBERSHIP_ROLE_OWNER),
-        eq(groupMemberships.status, GROUP_MEMBERSHIP_STATUS_ACTIVE),
-      ),
-    );
-
-  return row?.value ?? 0;
-}
-
-async function setMembershipActive(
-  db: GroupsMutationDb,
-  input: {
-    groupId: string;
-    profileId: string;
-    role?: typeof GROUP_MEMBERSHIP_ROLE_MEMBER | typeof GROUP_MEMBERSHIP_ROLE_OWNER;
-  },
-) {
-  const role = input.role ?? GROUP_MEMBERSHIP_ROLE_MEMBER;
-  const now = new Date();
-  const [membership] = await db
-    .select()
-    .from(groupMemberships)
-    .where(
-      and(
-        eq(groupMemberships.group_id, input.groupId),
-        eq(groupMemberships.profile_id, input.profileId),
-      ),
-    )
-    .limit(1);
-
-  if (membership) {
-    const [updated] = await db
-      .update(groupMemberships)
-      .set({ role, status: GROUP_MEMBERSHIP_STATUS_ACTIVE, updated_at: now })
-      .where(
-        and(
-          eq(groupMemberships.group_id, input.groupId),
-          eq(groupMemberships.profile_id, input.profileId),
-        ),
-      )
-      .returning();
-
-    return updated as MembershipRow;
-  }
-
-  const [created] = await db
-    .insert(groupMemberships)
-    .values({
-      group_id: input.groupId,
-      profile_id: input.profileId,
-      role,
-      status: GROUP_MEMBERSHIP_STATUS_ACTIVE,
-    })
-    .returning();
-
-  return created as MembershipRow;
 }
 
 function pageResult<T>(items: T[], limit: number, getCursor: (item: T) => string) {
@@ -490,7 +427,10 @@ export const groupsRouter = createTRPCRouter({
       return { membership: serializeMembership(activeMembership as MembershipRow) };
     }
 
-    const updatedMembership = await setMembershipActive(db, { groupId: input.groupId, profileId });
+    const updatedMembership = await setGroupMembershipActive(db, {
+      groupId: input.groupId,
+      profileId,
+    });
     return { membership: serializeMembership(updatedMembership) };
   }),
 
@@ -506,7 +446,7 @@ export const groupsRouter = createTRPCRouter({
 
     if (
       membership.role === GROUP_MEMBERSHIP_ROLE_OWNER &&
-      (await getActiveOwnerCount(db, input.groupId)) <= 1
+      (await getActiveGroupOwnerCount(db, input.groupId)) <= 1
     ) {
       throw new TRPCError({
         code: "BAD_REQUEST",
@@ -636,7 +576,7 @@ export const groupsRouter = createTRPCRouter({
           .returning();
         const membership =
           input.decision === "approve"
-            ? await setMembershipActive(tx, {
+            ? await setGroupMembershipActive(tx, {
                 groupId: row.request.group_id,
                 profileId: row.request.profile_id,
               })
@@ -733,7 +673,7 @@ export const groupsRouter = createTRPCRouter({
       }
 
       const result = await db.transaction(async (tx) => {
-        const membership = await setMembershipActive(tx, {
+        const membership = await setGroupMembershipActive(tx, {
           groupId: row.invitation.group_id,
           profileId,
         });

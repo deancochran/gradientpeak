@@ -23,6 +23,10 @@ import {
 import { TRPCError } from "@trpc/server";
 import { and, count, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
+import {
+  deleteActivityForProfile,
+  updateActivityForProfile,
+} from "../application/activities/activity-mutations";
 import { createActivityFileIngestion } from "../application/activity-file-ingestion/ingestion-state";
 import { getRequiredDb } from "../db";
 import { createActivityAnalysisStore } from "../infrastructure/repositories";
@@ -909,31 +913,11 @@ export const activitiesRouter = createTRPCRouter({
   // Update activity (e.g., to set metrics after calculation)
   update: protectedProcedure.input(updateInputSchema).mutation(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
-    const { id, ...updates } = input;
-
-    const [data] = await db
-      .update(activities)
-      .set({
-        ...updates,
-        updated_at: new Date(),
-      })
-      .where(and(eq(activities.id, id), eq(activities.profile_id, ctx.session.user.id)))
-      .returning();
-
-    if (!data) {
-      throw new TRPCError({
-        code: "NOT_FOUND",
-        message: "Activity not found",
-      });
-    }
-
-    if (input.normalized_power !== undefined) {
-      await markProfileAnalysisDirty(db, {
-        profileId: ctx.session.user.id,
-        kinds: ["fitness"],
-        dirtySince: data.started_at,
-      });
-    }
+    const data = await updateActivityForProfile({
+      db,
+      input,
+      profileId: ctx.session.user.id,
+    });
 
     return parseActivityRow(data);
   }),
@@ -942,28 +926,10 @@ export const activitiesRouter = createTRPCRouter({
   // Activity streams are automatically deleted via cascade
   delete: protectedProcedure.input(deleteInputSchema).mutation(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
-
-    const activity = await db.query.activities.findFirst({
-      where: and(eq(activities.id, input.id), eq(activities.profile_id, ctx.session.user.id)),
-    });
-
-    if (!activity) {
-      throw new TRPCError({
-        code: "NOT_FOUND",
-        message: "Activity not found or you do not have permission to delete it.",
-      });
-    }
-
-    await db
-      .delete(activities)
-      .where(and(eq(activities.id, input.id), eq(activities.profile_id, ctx.session.user.id)));
-
-    await markProfileAnalysisDirty(db, {
+    return deleteActivityForProfile({
+      db,
+      activityId: input.id,
       profileId: ctx.session.user.id,
-      kinds: ["performance", "fitness"],
-      dirtySince: activity.started_at,
     });
-
-    return { success: true, deletedActivityId: input.id };
   }),
 });

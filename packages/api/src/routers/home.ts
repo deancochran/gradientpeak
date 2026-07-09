@@ -1,14 +1,9 @@
 import { calculateAge, calculateRollingTrainingQuality, getFormStatus } from "@repo/core";
 import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core/load";
-import {
-  type EventRow,
-  type ProfileTrainingSettingsRow,
-  type PublicActivityPlansRow,
-  schema,
-  type TrainingPlanRow,
-} from "@repo/db";
-import { and, asc, eq, gte, isNotNull, lt, lte, sql } from "drizzle-orm";
+import { type ProfileTrainingSettingsRow, schema, type TrainingPlanRow } from "@repo/db";
+import { and, asc, eq, gte, isNotNull, lte, sql } from "drizzle-orm";
 import { z } from "zod";
+import { loadPlannedActivitiesWithEstimations } from "../application/home/plannedActivities";
 import { getRequiredDb } from "../db";
 import {
   createActivityAnalysisStore,
@@ -17,7 +12,6 @@ import {
 import { buildDynamicStressSeries } from "../lib/activity-analysis";
 import { featureFlags } from "../lib/features";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
-import { getActivityPlansDerivedMetrics } from "../utils/activity-plan-derived-metrics";
 import { buildWorkloadEnvelopes } from "../utils/workload";
 
 const upcomingDaysSchema = z.object({
@@ -25,17 +19,6 @@ const upcomingDaysSchema = z.object({
 });
 
 const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-
-const activityPlanBoundarySchema = z
-  .object({
-    id: z.string(),
-    name: z.string().nullable().optional(),
-    activity_category: z.string().nullable().optional(),
-    estimated_distance: z.number().nullable().optional(),
-    estimated_duration: z.number().nullable().optional(),
-    estimated_tss: z.number().nullable().optional(),
-  })
-  .passthrough();
 
 const profileTrainingSettingsRowSchema = z
   .object({
@@ -84,16 +67,6 @@ const activitySummaryRowSchema = z
     normalized_power: z.number().nullable(),
     normalized_speed_mps: z.number().nullable(),
     normalized_graded_speed_mps: z.number().nullable(),
-  })
-  .strict();
-
-const plannedActivityRowSchema = z
-  .object({
-    id: z.string(),
-    starts_at: z.date(),
-    notes: z.string().nullable(),
-    activity_plan: activityPlanBoundarySchema.nullable(),
-    scheduled_date: isoDateSchema,
   })
   .strict();
 
@@ -302,12 +275,6 @@ type DashboardTrainingPlanRow = Pick<TrainingPlanRow, "id" | "name" | "descripti
 
 type ProfileTrainingSettingsSqlRow = Pick<ProfileTrainingSettingsRow, "settings">;
 
-type PlannedActivityRow = Pick<EventRow, "id" | "notes"> & {
-  starts_at: Date;
-  activity_plan: PublicActivityPlansRow | null;
-  scheduled_date: string;
-};
-
 async function getProfileTrainingSettings(db: ReturnType<typeof getRequiredDb>, profileId: string) {
   const result = await db.execute(sql<ProfileTrainingSettingsSqlRow>`
     select settings
@@ -338,47 +305,6 @@ async function getAccessibleTrainingPlan(
 
   const row = ((result as unknown as { rows: unknown[] }).rows ?? [])[0];
   return row ? dashboardTrainingPlanRowSchema.parse(row) : null;
-}
-
-async function listPlannedActivitiesInRange(
-  db: ReturnType<typeof getRequiredDb>,
-  input: {
-    profileId: string;
-    startsAtGte: Date;
-    startsAtLt: Date;
-  },
-): Promise<PlannedActivityRow[]> {
-  const rows = await db
-    .select({
-      id: schema.events.id,
-      starts_at: schema.events.starts_at,
-      notes: schema.events.notes,
-      activity_plan: schema.activityPlans,
-    })
-    .from(schema.events)
-    .leftJoin(schema.eventScheduleLinks, eq(schema.eventScheduleLinks.event_id, schema.events.id))
-    .leftJoin(
-      schema.activityPlans,
-      eq(schema.eventScheduleLinks.activity_plan_id, schema.activityPlans.id),
-    )
-    .where(
-      and(
-        eq(schema.events.profile_id, input.profileId),
-        eq(schema.events.event_type, "planned_activity"),
-        gte(schema.events.starts_at, input.startsAtGte),
-        lt(schema.events.starts_at, input.startsAtLt),
-      ),
-    )
-    .orderBy(asc(schema.events.starts_at));
-
-  return rows.map(
-    (row) =>
-      plannedActivityRowSchema.parse({
-        ...row,
-        activity_plan: (row.activity_plan as PublicActivityPlansRow | null) ?? null,
-        scheduled_date: row.starts_at.toISOString().split("T")[0] ?? "",
-      }) as PlannedActivityRow,
-  );
 }
 
 export const homeRouter = createTRPCRouter({
@@ -545,37 +471,13 @@ export const homeRouter = createTRPCRouter({
       // --- 4. Fetch Planned Activities (Future & Current Week) ---
       // We need planned activities for the Schedule (Future) AND for the Weekly Summary (Past days of this week)
       // So we fetch from startOfWeek to scheduleEnd
-      const plannedActivities = await listPlannedActivitiesInRange(db, {
-        profileId: userId,
-        startsAtGte: startOfWeek,
-        startsAtLt: scheduleEnd,
-      });
-
-      // --- 5. Process Estimations for Planned Activities ---
-      let activitiesWithEstimations = plannedActivities;
-      if (activitiesWithEstimations.length > 0) {
-        const plans = activitiesWithEstimations
-          .map((pa) => pa.activity_plan)
-          .filter((p): p is NonNullable<typeof p> => !!p);
-
-        if (plans.length > 0) {
-          const plansWithEstimation = await getActivityPlansDerivedMetrics(
-            plans,
-            db,
-            estimationStore,
-            userId,
-          );
-          const plansMap = new Map(plansWithEstimation.map((p) => [p.id, p]));
-
-          activitiesWithEstimations = activitiesWithEstimations.map((pa) => ({
-            ...pa,
-            activity_plan:
-              pa.activity_plan && plansMap.get(pa.activity_plan.id)
-                ? (plansMap.get(pa.activity_plan.id)! as unknown as typeof pa.activity_plan)
-                : pa.activity_plan,
-          }));
-        }
-      }
+      const { plannedActivities, activitiesWithEstimations } =
+        await loadPlannedActivitiesWithEstimations(db, {
+          estimationStore,
+          profileId: userId,
+          startsAtGte: startOfWeek,
+          startsAtLt: scheduleEnd,
+        });
 
       // --- 6. Calculate Fitness Trends (CTL/ATL/TSB) ---
       const fitnessTrends = [];
@@ -803,39 +705,15 @@ export const homeRouter = createTRPCRouter({
       projectionEnd.setDate(today.getDate() + projectionDays);
 
       // Fetch future planned activities for projection
-      const futureActivities = await listPlannedActivitiesInRange(db, {
-        profileId: userId,
-        startsAtGte: today,
-        startsAtLt: projectionEnd,
-      });
+      const { activitiesWithEstimations: futureWithEstimations } =
+        await loadPlannedActivitiesWithEstimations(db, {
+          estimationStore,
+          profileId: userId,
+          startsAtGte: today,
+          startsAtLt: projectionEnd,
+        });
 
       const projectedFitness = [];
-
-      // Process future activities with estimations
-      let futureWithEstimations = futureActivities;
-      if (futureWithEstimations.length > 0) {
-        const futurePlans = futureWithEstimations
-          .map((pa) => pa.activity_plan)
-          .filter((p): p is NonNullable<typeof p> => !!p);
-
-        if (futurePlans.length > 0) {
-          const futurePlansWithEstimation = await getActivityPlansDerivedMetrics(
-            futurePlans,
-            db,
-            estimationStore,
-            userId,
-          );
-          const futurePlansMap = new Map(futurePlansWithEstimation.map((p) => [p.id, p]));
-
-          futureWithEstimations = futureWithEstimations.map((pa) => ({
-            ...pa,
-            activity_plan:
-              pa.activity_plan && futurePlansMap.get(pa.activity_plan.id)
-                ? (futurePlansMap.get(pa.activity_plan.id)! as unknown as typeof pa.activity_plan)
-                : pa.activity_plan,
-          }));
-        }
-      }
 
       // Create map of future TSS by date
       const futureTssByDate = new Map<string, number>();
