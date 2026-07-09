@@ -251,13 +251,11 @@ function ProfileMetricsPage() {
         metricType={selectedMetricType}
         onClose={() => setEditingMetric(null)}
         onSubmit={(values) => {
-          const unit = PROFILE_METRIC_UNITS[editingMetric?.metric_type ?? selectedMetricType];
           if (editingMetric?.id) {
             updateMutation.mutate({
               id: editingMetric.id,
               notes: values.notes?.trim() || null,
               recorded_at: new Date(values.recorded_at).toISOString(),
-              unit,
               value: values.value,
             });
             return;
@@ -270,7 +268,6 @@ function ProfileMetricsPage() {
             profile_id: user.id,
             recorded_at: new Date(values.recorded_at).toISOString(),
             reference_activity_id: null,
-            unit,
             value: values.value,
           });
         }}

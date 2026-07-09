@@ -216,7 +216,6 @@ function ActivityEffortsPage() {
             duration_seconds: values.duration_seconds,
             effort_type: values.effort_type,
             recorded_at: new Date(values.recorded_at).toISOString(),
-            unit: values.unit.trim(),
             value: values.value,
           });
         }}
