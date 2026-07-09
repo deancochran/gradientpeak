@@ -24,6 +24,15 @@ export function createWahooSyncRuntime() {
     repository: wahooRepository,
     activityFileStorage: createWahooImportActivityFileStorage({
       async uploadActivityFile(input) {
+        const { error: bucketError } = await supabase.storage.createBucket("activity-files", {
+          public: false,
+          fileSizeLimit: "50MB",
+        });
+
+        if (bucketError && !bucketError.message.toLowerCase().includes("already exists")) {
+          throw bucketError;
+        }
+
         const { error } = await supabase.storage
           .from("activity-files")
           .upload(input.path, input.bytes, {

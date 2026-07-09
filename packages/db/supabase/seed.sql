@@ -138,45 +138,55 @@ with check (
 );
 
 
--- FIT FILES BUCKET
+-- ACTIVITY FILES BUCKET
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
-  'fit-files',
-  'fit-files',
+  'activity-files',
+  'activity-files',
   false,  -- keep private by default
   52428800,  -- 50MB limit
-  array['application/fit', 'application/octet-stream']::text[]
+  array[
+    'application/fit',
+    'application/gpx+xml',
+    'application/octet-stream',
+    'application/tcx+xml',
+    'application/xml',
+    'text/xml'
+  ]::text[]
 ) on conflict (id) do nothing;
 
--- Drop existing FIT file policies if any
-drop policy if exists "Users can upload their own FIT files" on storage.objects;
-drop policy if exists "Users can read their own FIT files" on storage.objects;
-drop policy if exists "Service role can manage all FIT files" on storage.objects;
+-- Drop existing activity file policies if any
+drop policy if exists "Users can upload their own activity files" on storage.objects;
+drop policy if exists "Users can read their own activity files" on storage.objects;
+drop policy if exists "Service role can manage all activity files" on storage.objects;
 
--- Users can upload their own FIT files
-create policy "Users can upload their own FIT files"
+-- Users can upload their own activity files
+create policy "Users can upload their own activity files"
 on storage.objects
 for insert
 with check (
-  bucket_id = 'fit-files'
-  and auth.uid()::text = (storage.foldername(name))[1]
+  bucket_id = 'activity-files'
+  and (storage.foldername(name))[1] = 'activities'
+  and auth.uid()::text = (storage.foldername(name))[2]
 );
 
--- Users can read their own FIT files
-create policy "Users can read their own FIT files"
+-- Users can read their own activity files
+create policy "Users can read their own activity files"
 on storage.objects
 for select
 using (
-  bucket_id = 'fit-files'
-  and auth.uid()::text = (storage.foldername(name))[1]
+  bucket_id = 'activity-files'
+  and (storage.foldername(name))[1] = 'activities'
+  and auth.uid()::text = (storage.foldername(name))[2]
 );
 
--- Service role can manage all FIT files
-create policy "Service role can manage all FIT files"
+-- Service role can manage all activity files
+create policy "Service role can manage all activity files"
 on storage.objects
 for all
-using (bucket_id = 'fit-files')
-with check (bucket_id = 'fit-files');
+to service_role
+using (bucket_id = 'activity-files')
+with check (bucket_id = 'activity-files');
 
 -- ============================================================================
 -- SYSTEM ACTIVITY PLAN TEMPLATES
