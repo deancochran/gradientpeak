@@ -121,4 +121,28 @@ describe("DailyTrainingAdjustmentChart", () => {
     expect(scrollView.props.snapToInterval).toBeGreaterThan(0);
     expect(screen.queryByTestId("daily-training-adjustment-chart-center-highlight")).toBeNull();
   });
+
+  it("prefetches more days before the user reaches either scroll edge", () => {
+    const onScrollNearStart = jest.fn();
+    const onScrollNearEnd = jest.fn();
+    render(
+      <DailyTrainingAdjustmentChart
+        maxVisiblePoints={20}
+        onScrollNearEnd={onScrollNearEnd}
+        onScrollNearStart={onScrollNearStart}
+        points={Array.from({ length: 40 }, (_, index) => ({
+          date: `2026-06-${String(index + 1).padStart(2, "0")}`,
+          targetLoadTss: 50,
+        }))}
+        selectedDate="2026-06-15"
+      />,
+    );
+
+    const scrollView = screen.getByTestId("daily-training-adjustment-chart-scroll");
+    fireEvent.scroll(scrollView, { nativeEvent: { contentOffset: { x: 0, y: 0 } } });
+    fireEvent.scroll(scrollView, { nativeEvent: { contentOffset: { x: 1000, y: 0 } } });
+
+    expect(onScrollNearStart).toHaveBeenCalledTimes(1);
+    expect(onScrollNearEnd).toHaveBeenCalledTimes(1);
+  });
 });

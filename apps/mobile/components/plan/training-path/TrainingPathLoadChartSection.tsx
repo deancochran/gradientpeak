@@ -221,6 +221,8 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
             points={dailyPoints}
             selectedDate={selectedDate ?? model?.todayKey}
             showSelectedPointTray={showSelectedPointTray}
+            onScrollNearEnd={onScrollNearEnd}
+            onScrollNearStart={onScrollNearStart}
             onSelectedDateChange={onSelectedDateChange}
             testID={dailyTestID}
           />

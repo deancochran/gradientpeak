@@ -196,6 +196,12 @@ export function usePlanTrainingPathData() {
     recentPlannedEvents: recentPlannedEventsQuery.data?.items,
     today,
   });
+  const trainingPathWindow = useScrollableTrainingPathWindow({
+    goalMarkers: dashboard.goalMarkers,
+    todayKey,
+  });
+  const scheduledWindowStart = trainingPathWindow.resolvedWeekWindow.start;
+  const scheduledWindowEnd = trainingPathWindow.resolvedWeekWindow.end;
   const localProjectionPreview = useMemo(
     () =>
       buildTrainingPreferencesProjectionPreview({
@@ -215,17 +221,17 @@ export function usePlanTrainingPathData() {
           ...(upcomingPlannedEventsQuery.data?.items ?? []),
           ...groupScheduledActivityPlanEvents,
         ],
-        scheduledWindowStart: recentWindowStart,
-        scheduledWindowEnd: upcomingWindowEnd,
+        scheduledWindowStart,
+        scheduledWindowEnd,
       }),
     [
       localProjectionPreview.projectionChart,
       groupScheduledActivityPlanEvents,
       recentPlannedEventsQuery.data?.items,
-      recentWindowStart,
+      scheduledWindowEnd,
+      scheduledWindowStart,
       snapshot,
       upcomingPlannedEventsQuery.data?.items,
-      upcomingWindowEnd,
     ],
   );
   const idealFitnessCurve = useMemo(
@@ -245,10 +251,6 @@ export function usePlanTrainingPathData() {
       }),
     [dashboard.fitnessHistory, idealFitnessCurve, loadTimelinePoints, todayKey],
   );
-  const trainingPathWindow = useScrollableTrainingPathWindow({
-    goalMarkers: dashboard.goalMarkers,
-    todayKey,
-  });
   const trainingPath = useTrainingPathViewModel({
     timeline: loadTimelinePoints,
     fitnessHistory: dashboard.fitnessHistory,
@@ -267,16 +269,16 @@ export function usePlanTrainingPathData() {
         fitnessHistory: dashboard.fitnessHistory,
         idealFitnessCurve,
         scheduledFitnessTrend,
-        startDate: loadTimelinePoints[0]?.date ?? recentWindowStart,
-        endDate: loadTimelinePoints[loadTimelinePoints.length - 1]?.date ?? upcomingWindowEnd,
+        startDate: loadTimelinePoints[0]?.date ?? scheduledWindowStart,
+        endDate: loadTimelinePoints[loadTimelinePoints.length - 1]?.date ?? scheduledWindowEnd,
       }),
     [
       dashboard.fitnessHistory,
       idealFitnessCurve,
       loadTimelinePoints,
-      recentWindowStart,
+      scheduledWindowEnd,
+      scheduledWindowStart,
       scheduledFitnessTrend,
-      upcomingWindowEnd,
     ],
   );
 

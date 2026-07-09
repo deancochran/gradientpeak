@@ -1,33 +1,31 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { NativeScrollEvent, NativeSyntheticEvent } from "react-native";
 import type { ScrollView } from "react-native-gesture-handler";
-import { runOnJS, useAnimatedReaction } from "react-native-reanimated";
-import { useChartPressState } from "victory-native";
 
 type SelectableChartPoint = {
   date: string;
 };
 
-type CenteredChartSelectionInput<Point extends SelectableChartPoint, YKey extends string> = {
-  initialChartPressState: { x: number; y: Record<YKey, number> };
+type CenteredChartSelectionInput<Point extends SelectableChartPoint> = {
   onSelectedDateChange?: (date: string) => void;
   points: Point[];
   selectedDate?: string | null;
   slotWidth: number;
 };
 
-export function useCenteredChartSelection<Point extends SelectableChartPoint, YKey extends string>({
-  initialChartPressState,
+export type CenteredChartSelectionPhase = "initializing" | "selecting" | "selected";
+
+export function useCenteredChartSelection<Point extends SelectableChartPoint>({
   onSelectedDateChange,
   points,
   selectedDate,
   slotWidth,
-}: CenteredChartSelectionInput<Point, YKey>) {
+}: CenteredChartSelectionInput<Point>) {
   const [internalSelectedDate, setInternalSelectedDate] = useState<string | null>(null);
+  const [selectionPhase, setSelectionPhase] = useState<CenteredChartSelectionPhase>("initializing");
   const scrollRef = useRef<ScrollView>(null);
   const lastProgrammaticScrollDateRef = useRef<string | null>(null);
   const mountedRef = useRef(false);
-  const { state: chartPressState } = useChartPressState(initialChartPressState);
   const isSelectionControlled = selectedDate !== undefined;
   const resolvedSelectedDate = isSelectionControlled ? selectedDate : internalSelectedDate;
   const selectedPoint = useMemo(
@@ -37,6 +35,7 @@ export function useCenteredChartSelection<Point extends SelectableChartPoint, YK
 
   useEffect(() => {
     mountedRef.current = true;
+    setSelectionPhase("selected");
     return () => {
       mountedRef.current = false;
     };
@@ -63,15 +62,18 @@ export function useCenteredChartSelection<Point extends SelectableChartPoint, YK
 
   const selectPoint = useCallback(
     (date: string) => {
-      scrollToDate(date);
-      if (date === resolvedSelectedDate) return;
+      if (date === resolvedSelectedDate) {
+        setSelectionPhase("selected");
+        return;
+      }
       if (!mountedRef.current) return;
       if (!isSelectionControlled) {
         setInternalSelectedDate(date);
       }
       onSelectedDateChange?.(date);
+      setSelectionPhase("selected");
     },
-    [isSelectionControlled, onSelectedDateChange, resolvedSelectedDate, scrollToDate],
+    [isSelectionControlled, onSelectedDateChange, resolvedSelectedDate],
   );
 
   const selectPointAtIndex = useCallback(
@@ -81,21 +83,6 @@ export function useCenteredChartSelection<Point extends SelectableChartPoint, YK
       if (point) selectPoint(point.date);
     },
     [points, selectPoint],
-  );
-
-  useAnimatedReaction(
-    () => {
-      "worklet";
-      if (!chartPressState.isActive.value) return null;
-      const activeIndex = Number(chartPressState.x.value.value);
-      return Number.isFinite(activeIndex) ? Math.round(activeIndex) : null;
-    },
-    (activeIndex, previousIndex) => {
-      "worklet";
-      if (activeIndex != null || previousIndex == null) return;
-      runOnJS(selectPointAtIndex)(previousIndex);
-    },
-    [selectPointAtIndex],
   );
 
   useEffect(() => {
@@ -120,16 +107,16 @@ export function useCenteredChartSelection<Point extends SelectableChartPoint, YK
     [getNearestIndex, selectPointAtIndex],
   );
 
+  const markSelecting = useCallback(() => {
+    setSelectionPhase("selecting");
+  }, []);
+
   return {
-    chartPressConfig: {
-      pan: {
-        failOffsetY: [-12, 12] as [number, number],
-      },
-    },
-    chartPressState,
+    markSelecting,
     resolvedSelectedDate,
     scrollRef,
     selectNearestFromScrollEvent,
+    selectionPhase,
     selectedPoint,
   };
 }

@@ -39,6 +39,8 @@ export type DailyTrainingAdjustmentChartProps = {
   testID?: string;
   formatDateLabel?: (dateKey: string, index: number) => string;
   maxVisiblePoints?: number;
+  onScrollNearEnd?: () => void;
+  onScrollNearStart?: () => void;
 };
 
 type ChartDatum = Record<string, unknown> & {
@@ -79,19 +81,6 @@ const loadYKeys: ChartYKey[] = [
 const fitnessYKeys: ChartYKey[] = ["actualFitness", "projectedFitness", "recommendedFitness"];
 const axisWidth = 34;
 const chartPadding = { left: 8, right: 8, top: 18, bottom: 26 };
-const initialChartPressState: { x: number; y: Record<ChartYKey, number> } = {
-  x: 0,
-  y: {
-    actualFitness: 0,
-    completedLoad: 0,
-    plannedLoad: 0,
-    plannedLoadWithTentative: 0,
-    projectedFitness: 0,
-    recommendedFitness: 0,
-    targetLoad: 0,
-  },
-};
-
 function valueOrNull(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -190,7 +179,9 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
   emptyState,
   formatDateLabel,
   height,
-  maxVisiblePoints = 56,
+  maxVisiblePoints = 168,
+  onScrollNearEnd,
+  onScrollNearStart,
   showSelectedPointTray = true,
   testID = "daily-training-adjustment-chart",
 }: DailyTrainingAdjustmentChartProps) {
@@ -198,6 +189,8 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
   const [viewportWidth, setViewportWidth] = useState(240);
   const [hasMounted, setHasMounted] = useState(false);
   const windowAnchorDateRef = useRef<string | null>(null);
+  const lastEndPrefetchKeyRef = useRef<string | null>(null);
+  const lastStartPrefetchKeyRef = useRef<string | null>(null);
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
   const slotWidth = density === "compact" ? 28 : density === "detail" ? 34 : 30;
@@ -210,6 +203,9 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
     !points.some((point) => point.date === windowAnchorDateRef.current)
   ) {
     windowAnchorDateRef.current = nextAnchorDate;
+  }
+  if (selectedDate && points.some((point) => point.date === selectedDate)) {
+    windowAnchorDateRef.current = selectedDate;
   }
   const chartWindow = useMemo(
     () =>
@@ -226,19 +222,13 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
     ? selectedDate
     : (chartWindow.anchorDate ?? visiblePoints[0]?.date ?? null);
 
-  const {
-    chartPressConfig,
-    chartPressState,
-    scrollRef,
-    selectNearestFromScrollEvent,
-    selectedPoint,
-  } = useCenteredChartSelection({
-    initialChartPressState,
-    onSelectedDateChange,
-    points: visiblePoints,
-    selectedDate: selectedDate === undefined ? undefined : visibleSelectedDate,
-    slotWidth,
-  });
+  const { markSelecting, scrollRef, selectNearestFromScrollEvent, selectionPhase, selectedPoint } =
+    useCenteredChartSelection({
+      onSelectedDateChange,
+      points: visiblePoints,
+      selectedDate: selectedDate === undefined ? undefined : visibleSelectedDate,
+      slotWidth,
+    });
 
   const chartData = useMemo<ChartDatum[]>(
     () =>
@@ -333,6 +323,36 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
       setViewportWidth((current) => (current === measuredWidth ? current : measuredWidth));
   }, []);
 
+  const handleScroll = useCallback(
+    (event: Parameters<typeof selectNearestFromScrollEvent>[0]) => {
+      const offsetX = event.nativeEvent.contentOffset.x;
+      const maxOffsetX = Math.max(0, scrollableChartWidth - viewportWidth);
+      const preloadDistance = slotWidth * 14;
+      if (offsetX <= preloadDistance) {
+        const startKey = visiblePoints[0]?.date ?? null;
+        if (startKey && lastStartPrefetchKeyRef.current !== startKey) {
+          lastStartPrefetchKeyRef.current = startKey;
+          onScrollNearStart?.();
+        }
+      }
+      if (maxOffsetX - offsetX <= preloadDistance) {
+        const endKey = visiblePoints[visiblePoints.length - 1]?.date ?? null;
+        if (endKey && lastEndPrefetchKeyRef.current !== endKey) {
+          lastEndPrefetchKeyRef.current = endKey;
+          onScrollNearEnd?.();
+        }
+      }
+    },
+    [
+      onScrollNearEnd,
+      onScrollNearStart,
+      scrollableChartWidth,
+      slotWidth,
+      viewportWidth,
+      visiblePoints,
+    ],
+  );
+
   if (visiblePoints.length === 0) {
     return (
       <View className="rounded-2xl border border-border bg-card p-4" testID={testID}>
@@ -360,7 +380,10 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                   horizontal
                   contentContainerStyle={{ paddingHorizontal: sideInset }}
                   decelerationRate="fast"
+                  onMomentumScrollBegin={markSelecting}
                   onMomentumScrollEnd={selectNearestFromScrollEvent}
+                  onScroll={handleScroll}
+                  onScrollBeginDrag={markSelecting}
                   scrollEventThrottle={16}
                   showsHorizontalScrollIndicator={false}
                   snapToAlignment="start"
@@ -410,8 +433,6 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                         lineColor: colors.frame,
                         lineWidth: { bottom: 1, left: 0, right: 0, top: 0 },
                       }}
-                      chartPressState={chartPressState}
-                      chartPressConfig={chartPressConfig}
                     >
                       {({ points: plottedPoints, chartBounds }) => (
                         <>
@@ -429,7 +450,8 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                             const completedPoint = plottedPoints.completedLoad[index];
                             if (!geometry) return null;
                             const left = geometry.center - barWidth / 2;
-                            const isSelected = point.date === selectedPoint?.date;
+                            const isSelected =
+                              selectionPhase === "selected" && point.date === selectedPoint?.date;
                             return (
                               <Fragment key={`day-${point.date}`}>
                                 {isSelected ? (

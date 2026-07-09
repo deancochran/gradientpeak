@@ -295,10 +295,10 @@ export function buildScrollableTrainingPathWindow(input: {
   const markers = buildTrainingPathGoalMarkers(input.goalMarkers ?? []);
   const lastGoal = markers[markers.length - 1] ?? null;
   return {
-    start: addDays(currentWeekStart, -(input.pastWeeks ?? 4) * 7),
+    start: addDays(currentWeekStart, -(input.pastWeeks ?? 12) * 7),
     end: lastGoal
-      ? addDays(lastGoal.weekStart, (input.futureWeeksAfterLastGoal ?? 4) * 7)
-      : addDays(currentWeekStart, (input.fallbackFutureWeeks ?? 26) * 7),
+      ? addDays(lastGoal.weekStart, (input.futureWeeksAfterLastGoal ?? 8) * 7)
+      : addDays(currentWeekStart, (input.fallbackFutureWeeks ?? 52) * 7),
   };
 }
 
