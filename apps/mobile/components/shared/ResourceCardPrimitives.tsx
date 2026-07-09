@@ -1,10 +1,10 @@
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { differenceInHours, format, formatDistanceToNow } from "date-fns";
 import { Heart } from "lucide-react-native";
 import type { ComponentType, ReactNode } from "react";
 import { Pressable, TouchableOpacity, View } from "react-native";
+import { formatSmartTimestamp, formatTimestamp } from "@/lib/display/formatters";
 import { type EntityOwner, EntityOwnerRow } from "./EntityOwnerRow";
 
 type ResourceCardShellProps = {
@@ -18,6 +18,8 @@ type ResourceCardShellProps = {
   testID?: string;
 };
 
+type IconComponent = ComponentType<{ className?: string; color?: string; size?: number }>;
+
 type ResourceCardHeaderProps = {
   accessory?: ReactNode;
   compact?: boolean;
@@ -25,7 +27,7 @@ type ResourceCardHeaderProps = {
   descriptionFallback?: string | null;
   descriptionNumberOfLines?: number;
   detail?: boolean;
-  icon?: ComponentType<any>;
+  icon?: IconComponent;
   iconClassName?: string;
   iconContainerClassName?: string;
   meta?: ReactNode;
@@ -56,7 +58,7 @@ type ResourceAttributionRowProps = {
 
 type ResourceOwnerActionRowProps = {
   actions?: ReactNode;
-  categoryIcon?: ComponentType<any>;
+  categoryIcon?: IconComponent;
   categoryIconClassName?: string;
   categoryLabel?: string | null;
   compact?: boolean;
@@ -90,34 +92,6 @@ type ResourceTagRowProps = {
   tags: ResourceTag[];
   testID?: string;
 };
-
-function formatTimestamp(timestamp?: string | Date | null, prefix = "Updated") {
-  if (!timestamp) return null;
-
-  const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return null;
-
-  return `${prefix} ${format(date, "MMM d, yyyy")}`;
-}
-
-function formatSmartTimestamp(timestamp?: string | Date | null) {
-  if (!timestamp) return null;
-
-  const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return null;
-
-  const hoursAgo = differenceInHours(new Date(), date);
-
-  if (hoursAgo >= 0 && hoursAgo < 24) {
-    return formatDistanceToNow(date, { addSuffix: true });
-  }
-
-  if (hoursAgo >= 24 && hoursAgo < 48) {
-    return `Yesterday at ${format(date, "h:mm a")}`;
-  }
-
-  return format(date, "MMM d, yyyy • h:mm a");
-}
 
 export function ResourceOwnerActionRow({
   actions,

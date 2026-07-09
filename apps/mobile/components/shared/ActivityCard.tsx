@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { useMemo } from "react";
 import { Pressable, View } from "react-native";
 import { getActivityCategoryConfig } from "@/lib/constants/activities";
+import { formatDistanceMeters } from "@/lib/display/formatters";
 import { formatEstimatedIntensityFactor, formatEstimatedTss } from "@/lib/estimatedMetrics";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
 import {
@@ -85,14 +86,6 @@ type ActivityCardProps = {
   variant?: "detail" | "list";
 };
 
-function formatDistance(meters: number) {
-  if (meters < 1000) {
-    return `${Math.round(meters)} m`;
-  }
-
-  return `${(meters / 1000).toFixed(2)} km`;
-}
-
 function CompactRoutePreview({ coordinates }: { coordinates: RouteCoordinate[] }) {
   if (coordinates.length < 2) {
     return null;
@@ -138,7 +131,7 @@ function ActivityMetricsRow({
   const metrics: ResourceMetric[] = [];
 
   if (typeof activity.distance_meters === "number" && activity.distance_meters > 0) {
-    metrics.push({ label: "Distance", value: formatDistance(activity.distance_meters) });
+    metrics.push({ label: "Distance", value: formatDistanceMeters(activity.distance_meters) });
   }
 
   if (typeof activity.duration_seconds === "number" && activity.duration_seconds > 0) {
@@ -328,5 +321,5 @@ export function ActivityCard({
 
 export const activityCardFormatters = {
   duration: formatDurationSec,
-  distance: formatDistance,
+  distance: formatDistanceMeters,
 };

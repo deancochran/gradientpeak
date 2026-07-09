@@ -14,6 +14,7 @@ import { format } from "date-fns";
 import { useEffect, useState } from "react";
 import { Modal, Pressable, ScrollView, TouchableOpacity, View } from "react-native";
 import { z } from "zod";
+import { InlineNotice, SettingsRow } from "@/components/shared/LayoutPrimitives";
 
 export type ManualEventCreateType = "race_target" | "custom";
 
@@ -195,7 +196,7 @@ export function CalendarManualCreateModal({
             activeOpacity={0.8}
             testID="close-manual-create"
           >
-            <Text className="text-xs">Close</Text>
+            <Text className="text-xs text-foreground">Close</Text>
           </TouchableOpacity>
         </View>
 
@@ -254,32 +255,30 @@ export function CalendarManualCreateModal({
                   testId="manual-create-notes-input"
                 />
 
-                <View className="rounded-xl border border-border bg-card px-3 py-3">
-                  <View className="flex-row items-center justify-between gap-3">
-                    <View className="flex-1 gap-1">
-                      <Text className="text-sm font-medium text-foreground">Repeat weekly</Text>
-                      <Text className="text-xs text-muted-foreground">
-                        Create this event every week on the selected day.
-                      </Text>
-                    </View>
-                    <Pressable
-                      accessibilityRole="switch"
-                      accessibilityState={{ checked: repeatWeekly }}
-                      className={`rounded-full px-3 py-2 ${repeatWeekly ? "bg-primary" : "bg-muted"}`}
-                      disabled={submitting}
-                      onPress={() => setRepeatWeekly((current) => !current)}
-                      testID="manual-create-repeat-weekly-toggle"
-                    >
-                      <Text
-                        className={`text-xs font-semibold ${repeatWeekly ? "text-primary-foreground" : "text-foreground"}`}
+                <View className="gap-3">
+                  <SettingsRow
+                    description="Create this event every week on the selected day."
+                    label="Repeat weekly"
+                    accessory={
+                      <Pressable
+                        accessibilityRole="switch"
+                        accessibilityState={{ checked: repeatWeekly }}
+                        className={`rounded-full px-3 py-2 ${repeatWeekly ? "bg-primary" : "bg-muted"}`}
+                        disabled={submitting}
+                        onPress={() => setRepeatWeekly((current) => !current)}
+                        testID="manual-create-repeat-weekly-toggle"
                       >
-                        {repeatWeekly ? "On" : "Off"}
-                      </Text>
-                    </Pressable>
-                  </View>
+                        <Text
+                          className={`text-xs font-semibold ${repeatWeekly ? "text-primary-foreground" : "text-foreground"}`}
+                        >
+                          {repeatWeekly ? "On" : "Off"}
+                        </Text>
+                      </Pressable>
+                    }
+                  />
 
                   {repeatWeekly ? (
-                    <View className="mt-3 gap-2 border-t border-border pt-3">
+                    <View className="gap-2 rounded-xl border border-border bg-card px-3 py-3">
                       <Text className="text-xs font-medium text-muted-foreground">
                         Ends after {repeatOccurrenceCount} occurrences
                       </Text>
@@ -311,18 +310,14 @@ export function CalendarManualCreateModal({
               </View>
             </Form>
 
-            {errorMessage ? (
-              <View className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2">
-                <Text className="text-xs text-destructive">{errorMessage}</Text>
-              </View>
-            ) : null}
+            {errorMessage ? <InlineNotice tone="error">{errorMessage}</InlineNotice> : null}
           </View>
         </ScrollView>
 
         <View className="border-t border-border px-4 py-4">
           <View className="flex-row gap-2">
             <Button variant="outline" className="flex-1" onPress={onClose} disabled={submitting}>
-              <Text>Cancel</Text>
+              <Text className="text-foreground">Cancel</Text>
             </Button>
             <LoadingButton
               className="flex-1"

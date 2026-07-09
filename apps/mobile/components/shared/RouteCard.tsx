@@ -12,6 +12,7 @@ import {
 } from "@/components/shared/ResourceCardPrimitives";
 import { StaticRouteMapPreview } from "@/components/shared/StaticRouteMapPreview";
 import { getActivityCategoryConfig } from "@/lib/constants/activities";
+import { formatDistanceMeters, formatElevationMeters } from "@/lib/display/formatters";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
 
 type RouteCoordinate = {
@@ -57,10 +58,6 @@ type RouteCardProps = {
   showLike?: boolean;
   variant?: "default" | "compact" | "detail";
 };
-
-function formatDistance(meters: number) {
-  return `${(meters / 1000).toFixed(2)} km`;
-}
 
 export function RouteCard({
   headerAccessory,
@@ -149,20 +146,14 @@ export function RouteCard({
       <ResourceMetricsRow
         compact={isCompact}
         metrics={[
-          { label: "Distance", value: formatDistance(route.total_distance ?? 0) },
+          { label: "Distance", value: formatDistanceMeters(route.total_distance ?? 0) },
           {
             label: "Climb",
-            value:
-              route.total_ascent != null && route.total_ascent > 0
-                ? `${route.total_ascent}m`
-                : "--",
+            value: formatElevationMeters(route.total_ascent),
           },
           {
             label: "Descent",
-            value:
-              route.total_descent != null && route.total_descent > 0
-                ? `${route.total_descent}m`
-                : "--",
+            value: formatElevationMeters(route.total_descent),
           },
         ]}
       />
