@@ -104,15 +104,16 @@ function PlanPage() {
               <>
                 <div>
                   <p className="text-xl font-semibold">
-                    {activePlanQuery.data.training_plan?.name ?? "Untitled plan"}
+                    {activePlanQuery.data.name ?? "Untitled plan"}
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    {activePlanQuery.data.training_plan?.description?.trim() ||
-                      "No plan description yet."}
+                    {activePlanQuery.data.description?.trim() || "No plan description yet."}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Badge variant="secondary">{activePlanQuery.data.status}</Badge>
+                  {activePlanQuery.data.schedule_batch_id ? (
+                    <Badge variant="secondary">Scheduled batch</Badge>
+                  ) : null}
                   {activePlanQuery.data.next_event_at ? (
                     <Badge variant="outline">
                       Next event {new Date(activePlanQuery.data.next_event_at).toLocaleDateString()}
