@@ -42,7 +42,9 @@ describe("buildDailyRecommendedLoad", () => {
       completedLoads: [{ date: "2026-01-05", tss: 20 }],
     });
 
-    const firstDay = points[0]!;
+    const firstDay = points[0];
+    expect(firstDay).toBeDefined();
+    if (!firstDay) return;
     expect(firstDay.loadDeltaTss).toBe(firstDay.completedLoadTss - firstDay.recommendedLoadTss);
     expect(firstDay.reasonCodes.join(" ")).not.toMatch(/miss|skip/i);
   });

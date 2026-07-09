@@ -8,7 +8,10 @@ import { logger } from "../../lib/logger";
 import { enqueuePlannedWorkoutSyncAfterCalendarMutation } from "../../lib/provider-sync/planned-workouts";
 import { needsContentGrantForRow } from "../../permissions/content-access";
 import type { TrainingPlanRepository } from "../../repositories";
-import { materializeAppliedTrainingPlan } from "./schedulingUtils";
+import {
+  materializeAppliedTrainingPlan,
+  type TrainingPlanApplicationMode,
+} from "./schedulingUtils";
 
 const plannedEventType = "planned_activity" as const;
 
@@ -26,6 +29,27 @@ type ContentPermissions = {
 };
 
 type InsertedEventIdentity = { id: string };
+type PlannedEventInsertRow = {
+  profile_id: string;
+  event_type: typeof plannedEventType;
+  title: string;
+  all_day: boolean;
+  timezone: "UTC";
+  starts_at: string;
+  ends_at: string;
+  status: "scheduled";
+  activity_plan_id: string | null;
+  training_plan_id: string;
+  payload: {
+    training_plan_generation: {
+      application_mode: TrainingPlanApplicationMode;
+      applied_start_date: string;
+      source_day_offset: number;
+      source_path: string;
+      target_date: string | null;
+    };
+  };
+};
 
 function getSqlRows<T>(result: unknown) {
   return ((result as { rows?: T[] }).rows ?? []) as T[];
@@ -246,38 +270,35 @@ export async function applyTrainingPlanTemplateUseCase(input: {
     });
   }
 
-  const eventRows = materializedSessions
+  const eventRows: PlannedEventInsertRow[] = materializedSessions
     .filter((session) => session.event_type === "planned")
     .filter((session) => !session.activity_plan_id || allowedPlanIds.has(session.activity_plan_id))
-    .map(
-      (session) =>
-        ({
-          profile_id: profileId,
-          event_type: plannedEventType,
-          title:
-            session.event_title_override ??
-            (session.activity_plan_id
-              ? allowedPlanNameById.get(session.activity_plan_id)
-              : undefined) ??
-            session.title,
-          all_day: session.all_day,
-          timezone: "UTC",
-          starts_at: session.starts_at,
-          ends_at: session.ends_at,
-          status: "scheduled" as const,
-          activity_plan_id: session.activity_plan_id,
-          training_plan_id: appliedPlanId,
-          payload: {
-            training_plan_generation: {
-              application_mode: materializedApplication.applicationMode,
-              applied_start_date: materializedApplication.appliedPlanStartDate,
-              source_day_offset: session.source_day_offset,
-              source_path: session.source_path,
-              target_date: materializedApplication.targetDate,
-            },
-          },
-        }) as any,
-    );
+    .map((session) => ({
+      profile_id: profileId,
+      event_type: plannedEventType,
+      title:
+        session.event_title_override ??
+        (session.activity_plan_id
+          ? allowedPlanNameById.get(session.activity_plan_id)
+          : undefined) ??
+        session.title,
+      all_day: session.all_day,
+      timezone: "UTC",
+      starts_at: session.starts_at,
+      ends_at: session.ends_at,
+      status: "scheduled" as const,
+      activity_plan_id: session.activity_plan_id,
+      training_plan_id: appliedPlanId,
+      payload: {
+        training_plan_generation: {
+          application_mode: materializedApplication.applicationMode,
+          applied_start_date: materializedApplication.appliedPlanStartDate,
+          source_day_offset: session.source_day_offset,
+          source_path: session.source_path,
+          target_date: materializedApplication.targetDate,
+        },
+      },
+    }));
 
   const schedule_batch_id = crypto.randomUUID();
   if (eventRows.length === 0) {
@@ -297,9 +318,14 @@ export async function applyTrainingPlanTemplateUseCase(input: {
   }
 
   const insertedEvents = await db.transaction(async (tx): Promise<InsertedEventIdentity[]> => {
+    const eventInsertRows = eventRows.map((eventRow) => ({
+      ...eventRow,
+      schedule_batch_id,
+    })) as unknown as Array<typeof schema.events.$inferInsert>;
+
     const events = await tx
       .insert(schema.events)
-      .values(eventRows.map((eventRow) => ({ ...eventRow, schedule_batch_id })) as any)
+      .values(eventInsertRows)
       .returning({ id: schema.events.id });
 
     if (events.length !== eventRows.length) {
@@ -310,8 +336,9 @@ export async function applyTrainingPlanTemplateUseCase(input: {
     }
 
     await tx.insert(schema.eventScheduleLinks).values(
-      events.map((event, index) => {
-        const eventRow = eventRows[index]!;
+      events.flatMap((event, index) => {
+        const eventRow = eventRows[index];
+        if (!eventRow) return [];
         return {
           event_id: event.id,
           profile_id: profileId,

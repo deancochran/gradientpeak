@@ -243,7 +243,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
   });
 
   it("returns explicit scheduled-session removal counts when abandoning an active scheduled set", async () => {
-    const { caller, callLog } = createCaller({
+    const { caller } = createCaller({
       events: {
         data: [{ id: "removed-1" }, { id: "removed-2" }],
         error: null,
@@ -596,7 +596,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
   });
 
   it("removes a grouped scheduled batch without touching completed history", async () => {
-    const { caller, callLog } = createCaller({
+    const { caller } = createCaller({
       events: {
         data: [{ id: "event-1" }, { id: "event-2" }],
         error: null,

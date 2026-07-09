@@ -119,10 +119,6 @@ function normalizeWeekdaySet(
   return result;
 }
 
-function weekIndexForDate(startDate: string, date: string): number {
-  return Math.max(0, Math.floor(diffDateOnlyUtcDays(startDate, date) / 7));
-}
-
 function dateForSession(input: { session: DailyRecommendedLoadSession; startDate: string }) {
   if (input.session.date) return input.session.date;
   if (typeof input.session.offsetDays === "number" && Number.isFinite(input.session.offsetDays)) {
@@ -289,10 +285,11 @@ export function buildDailyRecommendedLoad(
       const date = addDaysDateOnlyUtc(weekStartDate, dayOffset);
       const sessions = sessionsByDate.get(date) ?? [];
       const hasSession = sessions.length > 0;
+      const sessionFocuses = sessions
+        .map(focusFromSession)
+        .sort((left, right) => weightForFocus(right) - weightForFocus(left));
       const focus = hasSession
-        ? sessions
-            .map(focusFromSession)
-            .sort((left, right) => weightForFocus(right) - weightForFocus(left))[0]!
+        ? (sessionFocuses[0] ?? "recovery")
         : activeWeekdays.includes(dayOffset)
           ? fallbackFocusForWeekday(dayOffset, activeWeekdays)
           : "rest";
