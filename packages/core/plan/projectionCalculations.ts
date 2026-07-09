@@ -29,7 +29,9 @@ import {
 import {
   buildDailyLoadDistribution,
   type DailyLoadDistributionPoint,
+  type DailyLoadDistributionSchedulingConstraints,
 } from "./dailyLoadDistribution";
+import type { DailyRecommendedLoadSession } from "./dailyRecommendedLoad";
 import { addDaysDateOnlyUtc, diffDateOnlyUtcDays } from "./dateOnlyUtc";
 import { resolveGoalReadinessTarget } from "./goalReadinessTrajectory";
 import {
@@ -1518,6 +1520,8 @@ export interface BuildDeterministicProjectionInput {
   preference_profile?: AthletePreferenceProfile;
   training_prescription?: TrainingPrescription;
   weekly_allocation?: WeeklyAllocation;
+  planned_sessions?: DailyRecommendedLoadSession[];
+  scheduling_constraints?: DailyLoadDistributionSchedulingConstraints;
   no_history_context?: NoHistoryAnchorContext;
   prior_inferred_snapshot?: PriorInferredStateSnapshotInput;
   disable_weekly_tss_optimizer?: boolean;
@@ -4256,6 +4260,8 @@ function buildDeterministicProjectionPayloadInternal(
     })),
     preferenceProfile: input.preference_profile,
     weeklyAllocation,
+    plannedSessions: input.planned_sessions,
+    schedulingConstraints: input.scheduling_constraints,
   });
   const sportLoadStates = buildSportLoadStates({
     microcycles,

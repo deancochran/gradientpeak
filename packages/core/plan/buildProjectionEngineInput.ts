@@ -4,6 +4,8 @@ import type {
   InferredStateSnapshot,
   TrainingPlanCreationConfig,
 } from "../schemas/training_plan_structure";
+import type { DailyLoadDistributionSchedulingConstraints } from "./dailyLoadDistribution";
+import type { DailyRecommendedLoadSession } from "./dailyRecommendedLoad";
 import type { NoHistoryAnchorContext } from "./projection/no-history";
 import type { BuildDeterministicProjectionInput } from "./projectionCalculations";
 
@@ -28,7 +30,12 @@ type ExpandedPlanInput = {
 
 type ProjectionRelevantCreationConfig = Pick<
   TrainingPlanCreationConfig,
-  "optimization_profile" | "post_goal_recovery_days" | "behavior_controls_v1" | "calibration"
+  | "optimization_profile"
+  | "post_goal_recovery_days"
+  | "behavior_controls_v1"
+  | "calibration"
+  | "availability_config"
+  | "constraints"
 >;
 
 export interface BuildProjectionEngineInputShape {
@@ -38,8 +45,34 @@ export interface BuildProjectionEngineInputShape {
   starting_atl?: number;
   prior_inferred_snapshot?: InferredStateSnapshot;
   preference_profile?: AthletePreferenceProfile;
+  planned_sessions?: DailyRecommendedLoadSession[];
+  scheduling_constraints?: DailyLoadDistributionSchedulingConstraints;
   no_history_context?: NoHistoryAnchorContext;
   disable_weekly_tss_optimizer?: boolean;
+}
+
+function buildSchedulingConstraintsFromCreationConfig(
+  config: ProjectionRelevantCreationConfig | undefined,
+): DailyLoadDistributionSchedulingConstraints | undefined {
+  if (!config) return undefined;
+
+  const availabilityConfig = config.availability_config;
+  const constraints = config.constraints;
+  if (!availabilityConfig && !constraints) return undefined;
+
+  return {
+    ...optionalProperty(
+      "availabilityDays",
+      availabilityConfig?.days.map((day) => ({
+        day: day.day,
+        windows: day.windows,
+        maxSessions: day.max_sessions,
+      })),
+    ),
+    hardRestDays: constraints?.hard_rest_days,
+    minSessionsPerWeek: constraints?.min_sessions_per_week,
+    maxSessionsPerWeek: constraints?.max_sessions_per_week,
+  };
 }
 
 function optionalProperty<Key extends string, Value>(
@@ -85,6 +118,12 @@ export function buildProjectionEngineInput(
     ...optionalProperty("starting_atl", input.starting_atl),
     ...optionalProperty("prior_inferred_snapshot", input.prior_inferred_snapshot),
     ...optionalProperty("preference_profile", input.preference_profile),
+    ...optionalProperty("planned_sessions", input.planned_sessions),
+    ...optionalProperty(
+      "scheduling_constraints",
+      input.scheduling_constraints ??
+        buildSchedulingConstraintsFromCreationConfig(input.normalized_creation_config),
+    ),
     ...optionalProperty("no_history_context", input.no_history_context),
     ...optionalProperty(
       "creation_config",

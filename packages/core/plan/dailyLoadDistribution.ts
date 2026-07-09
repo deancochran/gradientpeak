@@ -3,6 +3,7 @@ import type {
   DailyRecommendedLoadActivityCategory,
   DailyRecommendedLoadPrimaryFocus,
   DailyRecommendedLoadSession,
+  DailyRecommendedLoadWeekday,
 } from "./dailyRecommendedLoad";
 import { addDaysDateOnlyUtc, diffDateOnlyUtcDays, parseDateOnlyUtc } from "./dateOnlyUtc";
 import type { WeeklyAllocation } from "./weeklyAllocation";
@@ -23,6 +24,30 @@ export interface DailyLoadDistributionPoint {
   reason_codes: string[];
 }
 
+export type DailyLoadDistributionWeekday = DailyRecommendedLoadWeekday;
+
+export interface DailyLoadDistributionAvailabilityWindow {
+  start_minute_of_day: number;
+  end_minute_of_day: number;
+}
+
+export interface DailyLoadDistributionAvailabilityDay {
+  /** Weekday name, or number where 0 = Monday and 6 = Sunday. */
+  day: DailyLoadDistributionWeekday;
+  windows?: DailyLoadDistributionAvailabilityWindow[] | null;
+  availableMinutes?: number | null;
+  maxSessions?: number | null;
+}
+
+export interface DailyLoadDistributionSchedulingConstraints {
+  /** Preferred training weekdays. Numeric values use the builder convention: 0 = Monday, 6 = Sunday. */
+  preferredWeekdays?: DailyLoadDistributionWeekday[] | null;
+  hardRestDays?: DailyLoadDistributionWeekday[] | null;
+  minSessionsPerWeek?: number | null;
+  maxSessionsPerWeek?: number | null;
+  availabilityDays?: DailyLoadDistributionAvailabilityDay[] | null;
+}
+
 export interface BuildDailyLoadDistributionInput {
   startDate: string;
   endDate: string;
@@ -30,6 +55,7 @@ export interface BuildDailyLoadDistributionInput {
   preferenceProfile?: AthletePreferenceProfile | null;
   weeklyAllocation?: WeeklyAllocation | null;
   plannedSessions?: DailyRecommendedLoadSession[] | null;
+  schedulingConstraints?: DailyLoadDistributionSchedulingConstraints | null;
 }
 
 const WEEKDAY_NAMES = [
@@ -40,6 +66,16 @@ const WEEKDAY_NAMES = [
   "thursday",
   "friday",
   "saturday",
+] as const;
+
+const WEEKDAY_NAMES_MONDAY_FIRST = [
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
 ] as const;
 
 const DEFAULT_WEEKLY_SESSION_COUNT = 3;
@@ -66,6 +102,29 @@ function weekdayNameForDate(date: string): (typeof WEEKDAY_NAMES)[number] {
   return WEEKDAY_NAMES[parseDateOnlyUtc(date).getUTCDay()] ?? "monday";
 }
 
+function normalizeWeekdayName(
+  value: DailyLoadDistributionWeekday,
+): (typeof WEEKDAY_NAMES_MONDAY_FIRST)[number] | null {
+  if (typeof value === "number") {
+    return Number.isInteger(value) && value >= 0 && value <= 6
+      ? (WEEKDAY_NAMES_MONDAY_FIRST[value] ?? null)
+      : null;
+  }
+
+  return WEEKDAY_NAMES_MONDAY_FIRST.includes(value) ? value : null;
+}
+
+function normalizeWeekdaySet(
+  values: DailyLoadDistributionWeekday[] | null | undefined,
+): Set<string> {
+  const result = new Set<string>();
+  for (const value of values ?? []) {
+    const day = normalizeWeekdayName(value);
+    if (day) result.add(day);
+  }
+  return result;
+}
+
 function buildPlannedSessionDateSet(input: BuildDailyLoadDistributionInput) {
   const dates = new Set<string>();
   for (const session of input.plannedSessions ?? []) {
@@ -79,33 +138,67 @@ function buildPlannedSessionDateSet(input: BuildDailyLoadDistributionInput) {
   return dates;
 }
 
-function resolveAvailableMinutesByDay(
-  preferenceProfile: AthletePreferenceProfile | null | undefined,
+function sumAvailabilityMinutes(
+  windows: DailyLoadDistributionAvailabilityWindow[] | null | undefined,
 ) {
+  return (windows ?? []).reduce(
+    (sum, window) => sum + Math.max(0, window.end_minute_of_day - window.start_minute_of_day),
+    0,
+  );
+}
+
+function resolveAvailableMinutesByDay(input: BuildDailyLoadDistributionInput) {
   const map = new Map<string, number>();
-  for (const day of preferenceProfile?.availability.weekly_windows ?? []) {
-    const minutes = day.windows.reduce(
-      (sum, window) => sum + Math.max(0, window.end_minute_of_day - window.start_minute_of_day),
-      0,
-    );
-    map.set(day.day, minutes);
+
+  if (input.schedulingConstraints?.availabilityDays !== undefined) {
+    for (const day of input.schedulingConstraints.availabilityDays ?? []) {
+      const dayName = normalizeWeekdayName(day.day);
+      if (!dayName) continue;
+      map.set(
+        dayName,
+        typeof day.availableMinutes === "number" && Number.isFinite(day.availableMinutes)
+          ? Math.max(0, day.availableMinutes)
+          : sumAvailabilityMinutes(day.windows),
+      );
+    }
+    return map;
+  }
+
+  for (const day of input.preferenceProfile?.availability.weekly_windows ?? []) {
+    map.set(day.day, sumAvailabilityMinutes(day.windows));
   }
   return map;
+}
+
+function resolveHardRestDays(input: BuildDailyLoadDistributionInput) {
+  if (input.schedulingConstraints?.hardRestDays !== undefined) {
+    return normalizeWeekdaySet(input.schedulingConstraints.hardRestDays);
+  }
+  return new Set(input.preferenceProfile?.availability.hard_rest_days ?? []);
+}
+
+function resolvePreferredWeekdays(input: BuildDailyLoadDistributionInput) {
+  return normalizeWeekdaySet(input.schedulingConstraints?.preferredWeekdays);
 }
 
 function resolveSessionCount(
   input: BuildDailyLoadDistributionInput,
   candidateCount: number,
+  plannedCount: number,
 ): number {
-  const minSessions = input.preferenceProfile?.dose_limits.min_sessions_per_week;
-  const maxSessions = input.preferenceProfile?.dose_limits.max_sessions_per_week;
+  const minSessions =
+    input.schedulingConstraints?.minSessionsPerWeek ??
+    input.preferenceProfile?.dose_limits.min_sessions_per_week;
+  const maxSessions =
+    input.schedulingConstraints?.maxSessionsPerWeek ??
+    input.preferenceProfile?.dose_limits.max_sessions_per_week;
   const boundedMin = typeof minSessions === "number" ? clamp(minSessions, 1, 7) : null;
   const boundedMax = typeof maxSessions === "number" ? clamp(maxSessions, 1, 7) : null;
   const derived =
     boundedMin !== null && boundedMax !== null
       ? Math.round((boundedMin + boundedMax) / 2)
       : (boundedMax ?? boundedMin ?? DEFAULT_WEEKLY_SESSION_COUNT);
-  return clamp(derived, 1, Math.max(1, candidateCount));
+  return clamp(Math.max(derived, plannedCount), 1, Math.max(1, candidateCount));
 }
 
 function chooseTrainingDates(input: {
@@ -118,8 +211,12 @@ function chooseTrainingDates(input: {
   sessionCount: number;
 }) {
   const anchors = SESSION_ANCHORS_BY_COUNT[input.sessionCount] ?? [0, 1, 2, 3, 4, 5, 6];
-  const remaining = [...input.candidates];
-  const selected: typeof input.candidates = [];
+  const selected: typeof input.candidates = input.candidates
+    .filter((candidate) => candidate.hasSession)
+    .sort((left, right) => left.date.localeCompare(right.date))
+    .slice(0, input.sessionCount);
+  const selectedDates = new Set(selected.map((candidate) => candidate.date));
+  const remaining = input.candidates.filter((candidate) => !selectedDates.has(candidate.date));
 
   for (const anchor of anchors) {
     if (selected.length >= input.sessionCount || remaining.length === 0) break;
@@ -230,7 +327,7 @@ function allocateWithCap(total: number, weights: number[], capShare: number) {
 
 /**
  * Builds daily recommended load points from weekly projection targets and
- * profile-derived planning constraints.
+ * profile-derived and explicit scheduling constraints.
  *
  * The returned load values are daily TSS values suitable for day-level charts;
  * weekly projection summaries should not be rendered as daily bars.
@@ -241,10 +338,12 @@ export function buildDailyLoadDistribution(
   const dayCount = diffDateOnlyUtcDays(input.startDate, input.endDate) + 1;
   if (dayCount <= 0) return [];
 
-  const availableMinutesByDay = resolveAvailableMinutesByDay(input.preferenceProfile);
+  const availableMinutesByDay = resolveAvailableMinutesByDay(input);
   const hasAvailabilityWindows = availableMinutesByDay.size > 0;
-  const hardRestDays = new Set(input.preferenceProfile?.availability.hard_rest_days ?? []);
+  const hardRestDays = resolveHardRestDays(input);
+  const preferredWeekdays = resolvePreferredWeekdays(input);
   const sessionDates = buildPlannedSessionDateSet(input);
+  const hasExplicitSchedulingConstraints = Boolean(input.schedulingConstraints);
   const targetByWeekStart = new Map(
     input.weeklyTargets.map((target) => [target.weekStartDate, target]),
   );
@@ -262,10 +361,11 @@ export function buildDailyLoadDistribution(
       const day = weekdayNameForDate(date);
       const availabilityMinutes =
         availableMinutesByDay.get(day) ?? (hasAvailabilityWindows ? 0 : 60);
-      const available = !hardRestDays.has(day) && availabilityMinutes > 0;
-      return available
-        ? [{ date, dayOffset, availabilityMinutes, hasSession: sessionDates.has(date) }]
-        : [];
+      const hasSession = sessionDates.has(date);
+      const preferred = preferredWeekdays.size === 0 || preferredWeekdays.has(day) || hasSession;
+      const available =
+        preferred && (!hardRestDays.has(day) || hasSession) && availabilityMinutes > 0;
+      return available ? [{ date, dayOffset, availabilityMinutes, hasSession }] : [];
     }).flat();
     const trainingDates = chooseTrainingDates({
       candidates:
@@ -277,7 +377,11 @@ export function buildDailyLoadDistribution(
               availabilityMinutes: 60,
               hasSession: false,
             })),
-      sessionCount: resolveSessionCount(input, candidates.length || daysInWeek),
+      sessionCount: resolveSessionCount(
+        input,
+        candidates.length || daysInWeek,
+        candidates.filter((candidate) => candidate.hasSession).length,
+      ),
     });
     const selectedByDate = new Map(trainingDates.map((date, index) => [date.date, index] as const));
     const focuses = trainingDates.map((_, index) =>
@@ -298,9 +402,11 @@ export function buildDailyLoadDistribution(
         recommended_load_tss: selectedIndex === undefined ? 0 : (allocations[selectedIndex] ?? 0),
         primary_focus: focus,
         activity_category: focus === "rest" ? "other" : category,
-        confidence: input.preferenceProfile ? "high" : "medium",
+        confidence: hasExplicitSchedulingConstraints || input.preferenceProfile ? "high" : "medium",
         reason_codes: [
           "daily_load_distribution_v1",
+          ...(hasExplicitSchedulingConstraints ? ["explicit_scheduling_constraints_applied"] : []),
+          ...(sessionDates.has(date) ? ["planned_session_date_applied"] : []),
           selectedIndex === undefined ? "rest_day_allocation" : "profile_goal_weekly_distribution",
         ],
       });

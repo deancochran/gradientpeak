@@ -96,6 +96,45 @@ describe("projection calculations", () => {
     expect(projection.feasibility_assessment?.status).toBeDefined();
   });
 
+  it("feeds scheduling constraints and planned sessions into projection daily load points", () => {
+    const projection = buildDeterministicProjectionPayload({
+      timeline: {
+        start_date: "2026-01-05",
+        end_date: "2026-01-11",
+      },
+      blocks: [
+        {
+          name: "Build",
+          phase: "build",
+          start_date: "2026-01-05",
+          end_date: "2026-01-11",
+          target_weekly_tss_range: { min: 260, max: 300 },
+        },
+      ],
+      goals: [
+        {
+          id: "goal-1",
+          name: "Sunday race",
+          target_date: "2026-01-11",
+          priority: 1,
+        },
+      ],
+      starting_ctl: 35,
+      scheduling_constraints: {
+        preferredWeekdays: [0, 2],
+        minSessionsPerWeek: 2,
+        maxSessionsPerWeek: 2,
+      },
+      planned_sessions: [{ date: "2026-01-11", estimatedTss: 90 }],
+    });
+
+    const dailyLoadPoints = projection.daily_load_points ?? [];
+    expect(
+      dailyLoadPoints.find((point) => point.date === "2026-01-11")?.recommended_load_tss,
+    ).toBeGreaterThan(0);
+    expect(dailyLoadPoints.filter((point) => point.recommended_load_tss > 0)).toHaveLength(2);
+  });
+
   it("surfaces named weekly load resolution terms without changing selected load", () => {
     const projection = buildDeterministicProjectionPayload({
       timeline: {
