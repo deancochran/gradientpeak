@@ -1,6 +1,13 @@
+import {
+  formatProfileMetricValue,
+  getProfileMetricDefinition,
+  isProfileMetricType,
+  profileMetricTypes,
+} from "@repo/core/athlete-inputs";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
-import { HeartPulse, Scale, TrendingUp } from "lucide-react-native";
+import { type Href, Stack } from "expo-router";
+import { HeartPulse, Plus, Scale, TrendingUp } from "lucide-react-native";
 import React from "react";
 import { ActivityIndicator, Pressable, ScrollView, useColorScheme, View } from "react-native";
 import Svg, { Circle, Line, Path, Text as SvgText } from "react-native-svg";
@@ -49,20 +56,7 @@ const DETAIL_CHART_FRAME: ChartFrame = {
   paddingBottom: 42,
 };
 
-const PROFILE_METRIC_OPTIONS = [
-  "weight_kg",
-  "resting_hr",
-  "sleep_hours",
-  "hrv_rmssd",
-  "vo2_max",
-  "body_fat_percentage",
-  "hydration_level",
-  "stress_score",
-  "soreness_level",
-  "wellness_score",
-  "max_hr",
-  "lthr",
-] as const;
+const PROFILE_METRIC_OPTIONS = profileMetricTypes;
 
 type PolicyMetricType = "weight_kg" | "vo2_max" | "resting_hr" | "hrv_rmssd" | "sleep_hours";
 
@@ -89,13 +83,9 @@ function getMetricVisualPolicy(metricType: string) {
 }
 
 function getMetricLabel(metricType: string) {
-  return metricType
-    .replace(/_/g, " ")
-    .replace(/kg/g, "kg")
-    .replace(/hrv rmssd/i, "HRV RMSSD")
-    .replace(/vo2 max/i, "VO2 Max")
-    .replace(/lthr/i, "LTHR")
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+  return isProfileMetricType(metricType)
+    ? getProfileMetricDefinition(metricType).label
+    : metricType;
 }
 
 function getMetricIcon(metricType: string) {
@@ -108,7 +98,11 @@ function getMetricIcon(metricType: string) {
 
 function formatMetricValue(metric?: ProfileMetricRow) {
   if (!metric) return "--";
-  return `${Number(metric.value).toLocaleString(undefined, { maximumFractionDigits: 1 })} ${metric.unit}`;
+  return formatProfileMetricValue({
+    metric_type: metric.metric_type,
+    value: Number(metric.value),
+    unit: metric.unit,
+  });
 }
 
 function formatAxisValue(value: number) {
@@ -429,6 +423,9 @@ export default function ProfileMetricsListScreen() {
     },
     [navigateTo],
   );
+  const openCreateMetric = React.useCallback(() => {
+    navigateTo(ROUTES.PROFILE_METRICS.CREATE as Href);
+  }, [navigateTo]);
 
   if (isLoading) {
     return (
@@ -450,68 +447,86 @@ export default function ProfileMetricsListScreen() {
   }
 
   return (
-    <ScrollView
-      className="flex-1 bg-background"
-      contentContainerClassName="gap-5 p-4 pb-8"
-      onScrollEndDrag={() => {
-        if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
-      }}
-    >
-      <View className="gap-1">
-        <Text className="text-xl font-semibold text-foreground">Profile metric trends</Text>
-        <Text className="text-sm text-muted-foreground">
-          Tap a metric type to open its chart and the records behind that trend.
-        </Text>
-      </View>
-
-      <View className="flex-row flex-wrap gap-4">
-        {metricGroups.map((group) => {
-          const MetricIcon = getMetricIcon(group.id);
-          const policy = getMetricVisualPolicy(group.id);
-          const delta =
-            group.latest && group.previous ? group.latest.value - group.previous.value : null;
-          return (
-            <CompactInsightCard
-              key={group.id}
-              title={getMetricLabel(group.id)}
-              value={formatMetricValue(group.latest)}
-              icon={MetricIcon}
-              hasData={Boolean(group.latest)}
-              layout={policy.compactLayout}
-              summary={
-                delta === null
-                  ? group.records.length === 0
-                    ? "No records yet"
-                    : `${group.records.length} records`
-                  : `${delta > 0 ? "+" : ""}${delta.toFixed(1)} since last`
-              }
-              visualPolicy={{ source: policy.source, visualType: policy.visualType }}
-              onPress={() => setSelectedMetricType(group.id)}
-              testID={`profile-metric-type-${group.id}`}
+    <>
+      <Stack.Screen
+        options={{
+          headerRight: () => (
+            <Pressable
+              accessibilityLabel="Add profile metric"
+              accessibilityRole="button"
+              className="rounded-full p-2"
+              hitSlop={8}
+              onPress={openCreateMetric}
+              testID="profile-metric-add"
             >
-              <MiniTrendVisual points={group.points} />
-            </CompactInsightCard>
-          );
-        })}
-      </View>
-
-      <DetailChartModal
-        visible={!!selectedGroup}
-        onClose={() => setSelectedMetricType(null)}
-        title={selectedGroup ? getMetricLabel(selectedGroup.id) : "Profile metric"}
-        defaultDateRange="all"
-      >
-        {(dateRange) => {
-          if (!selectedGroup) return null;
-          const rangeRecords = filterRecordsByRange(selectedGroup.records, dateRange);
-          return (
-            <View className="gap-4">
-              <DetailTrendChart group={selectedGroup} records={rangeRecords} />
-              <ProfileMetricRecords records={rangeRecords} onOpenRecord={openRecord} />
-            </View>
-          );
+              <Plus size={20} className="text-foreground" />
+            </Pressable>
+          ),
         }}
-      </DetailChartModal>
-    </ScrollView>
+      />
+      <ScrollView
+        className="flex-1 bg-background"
+        contentContainerClassName="gap-5 p-4 pb-8"
+        onScrollEndDrag={() => {
+          if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
+        }}
+      >
+        <View className="gap-1">
+          <Text className="text-xl font-semibold text-foreground">Profile metric trends</Text>
+          <Text className="text-sm text-muted-foreground">
+            Tap a metric type to open its chart and the records behind that trend.
+          </Text>
+        </View>
+
+        <View className="flex-row flex-wrap gap-4">
+          {metricGroups.map((group) => {
+            const MetricIcon = getMetricIcon(group.id);
+            const policy = getMetricVisualPolicy(group.id);
+            const delta =
+              group.latest && group.previous ? group.latest.value - group.previous.value : null;
+            return (
+              <CompactInsightCard
+                key={group.id}
+                title={getMetricLabel(group.id)}
+                value={formatMetricValue(group.latest)}
+                icon={MetricIcon}
+                hasData={Boolean(group.latest)}
+                layout={policy.compactLayout}
+                summary={
+                  delta === null
+                    ? group.records.length === 0
+                      ? "No records yet"
+                      : `${group.records.length} records`
+                    : `${delta > 0 ? "+" : ""}${delta.toFixed(1)} since last`
+                }
+                visualPolicy={{ source: policy.source, visualType: policy.visualType }}
+                onPress={() => setSelectedMetricType(group.id)}
+                testID={`profile-metric-type-${group.id}`}
+              >
+                <MiniTrendVisual points={group.points} />
+              </CompactInsightCard>
+            );
+          })}
+        </View>
+
+        <DetailChartModal
+          visible={!!selectedGroup}
+          onClose={() => setSelectedMetricType(null)}
+          title={selectedGroup ? getMetricLabel(selectedGroup.id) : "Profile metric"}
+          defaultDateRange="all"
+        >
+          {(dateRange) => {
+            if (!selectedGroup) return null;
+            const rangeRecords = filterRecordsByRange(selectedGroup.records, dateRange);
+            return (
+              <View className="gap-4">
+                <DetailTrendChart group={selectedGroup} records={rangeRecords} />
+                <ProfileMetricRecords records={rangeRecords} onOpenRecord={openRecord} />
+              </View>
+            );
+          }}
+        </DetailChartModal>
+      </ScrollView>
+    </>
   );
 }

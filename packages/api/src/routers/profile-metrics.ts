@@ -7,16 +7,13 @@
 
 import { randomUUID } from "node:crypto";
 import {
-  isProfileMetricValueWithinBusinessRange,
-  profileMetricNotesSchema,
-  profileMetricRecordedAtSchema,
+  createProfileMetricInputSchema as coreCreateProfileMetricInputSchema,
+  getProfileMetricDefinition,
+  isProfileMetricValueWithinRange,
+  profileMetricTypeSchema,
   updateProfileMetricInputSchema,
-} from "@repo/core/schemas/profile-metrics";
-import {
-  profileMetrics,
-  publicProfileMetricsRowSchema,
-  publicProfileMetricTypeSchema,
-} from "@repo/db";
+} from "@repo/core/athlete-inputs";
+import { profileMetrics, publicProfileMetricsRowSchema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, count, desc, eq, gte, lte } from "drizzle-orm";
 import { z } from "zod";
@@ -26,31 +23,12 @@ import { buildIndexPageInfo, indexCursorSchema, parseIndexCursor } from "../util
 import { markProfileAnalysisDirty } from "../utils/profile-estimation-state";
 
 const createProfileMetricInputSchema = z
-  .object({
-    metric_type: publicProfileMetricTypeSchema,
-    notes: profileMetricNotesSchema,
-    profile_id: z.string().uuid("Invalid profile ID"),
-    recorded_at: profileMetricRecordedAtSchema,
-    reference_activity_id: z.string().uuid("Invalid activity ID").nullable().optional(),
-    unit: z.string().min(1, "Unit is required"),
-    value: z.number(),
-  })
-  .strict()
-  .superRefine((data, ctx) => {
-    if (isProfileMetricValueWithinBusinessRange(data.metric_type, data.value)) {
-      return;
-    }
-
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Value out of valid range for metric type",
-      path: ["value"],
-    });
-  });
+  .object({ profile_id: z.string().uuid("Invalid profile ID") })
+  .and(coreCreateProfileMetricInputSchema);
 
 const listProfileMetricsInputSchema = z
   .object({
-    metric_type: publicProfileMetricTypeSchema.optional(),
+    metric_type: profileMetricTypeSchema.optional(),
     start_date: z.date().optional(),
     end_date: z.date().optional(),
     limit: z.number().int().min(1).max(50).default(25),
@@ -61,7 +39,7 @@ const listProfileMetricsInputSchema = z
 
 const getProfileMetricAtDateInputSchema = z
   .object({
-    metric_type: publicProfileMetricTypeSchema,
+    metric_type: profileMetricTypeSchema,
     date: z.date(),
   })
   .strict();
@@ -225,12 +203,25 @@ export const profileMetricsRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       const [existing] = await db
-        .select({ recorded_at: profileMetrics.recorded_at })
+        .select({
+          metric_type: profileMetrics.metric_type,
+          recorded_at: profileMetrics.recorded_at,
+        })
         .from(profileMetrics)
         .where(
           and(eq(profileMetrics.id, input.id), eq(profileMetrics.profile_id, ctx.session.user.id)),
         )
         .limit(1);
+
+      if (input.value !== undefined && existing) {
+        if (!isProfileMetricValueWithinRange(existing.metric_type, input.value)) {
+          const definition = getProfileMetricDefinition(existing.metric_type);
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `${definition.label} must be between ${definition.min} and ${definition.max} ${definition.unit}`,
+          });
+        }
+      }
 
       const [data] = await db
         .update(profileMetrics)

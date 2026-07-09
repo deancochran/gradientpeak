@@ -1,27 +1,16 @@
 import { z } from "zod";
+import {
+  activityEffortTypeSchema,
+  createActivityEffortInputSchema,
+  updateActivityEffortInputSchema,
+} from "../athlete-inputs/activity-efforts";
 import { canonicalSportSchema } from "./sport";
 
-export const effortTypeSchema = z.enum(["power", "speed"]);
+export const effortTypeSchema = activityEffortTypeSchema;
 
-const activityEffortWritableFieldsSchema = z
-  .object({
-    activity_id: z.string().uuid().optional().nullable(),
-    activity_category: canonicalSportSchema,
-    duration_seconds: z.number().int().positive(),
-    effort_type: effortTypeSchema,
-    value: z.number(),
-    unit: z.string().min(1),
-    start_offset: z.number().int().nonnegative().optional().nullable(),
-    recorded_at: z.string().datetime(),
-  })
-  .strict();
+export const activityEffortCreateInputSchema = createActivityEffortInputSchema;
 
-export const activityEffortCreateInputSchema = activityEffortWritableFieldsSchema;
-
-export const activityEffortUpdateInputSchema = activityEffortWritableFieldsSchema
-  .partial()
-  .extend({ id: z.string().uuid() })
-  .strict();
+export const activityEffortUpdateInputSchema = updateActivityEffortInputSchema;
 
 // Domain/calculation input only. Persisted row ownership lives in @repo/db.
 export const BestEffortSchema = z.object({

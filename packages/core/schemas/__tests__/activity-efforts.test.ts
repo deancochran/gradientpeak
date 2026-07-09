@@ -19,7 +19,7 @@ describe("activity effort input schemas", () => {
   it("accepts the shared create input shape", () => {
     const parsed = activityEffortCreateInputSchema.parse(validCreateInput);
 
-    expect(parsed).toEqual(validCreateInput);
+    expect(parsed).toEqual({ ...validCreateInput, unit: "W" });
   });
 
   it("rejects unknown create keys", () => {

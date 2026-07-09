@@ -1,3 +1,8 @@
+import {
+  formatProfileMetricValue,
+  getProfileMetricDefinition,
+  isProfileMetricType,
+} from "@repo/core/athlete-inputs";
 import { Card, CardContent } from "@repo/ui/components/card";
 import {
   DropdownMenu,
@@ -8,7 +13,7 @@ import {
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { skipToken } from "@tanstack/react-query";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { Ellipsis, HeartPulse, Scale, TrendingUp } from "lucide-react-native";
 import React from "react";
 import { ActivityIndicator, Alert, ScrollView, View } from "react-native";
@@ -20,13 +25,9 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 function getMetricLabel(metricType: string) {
-  return metricType
-    .replace(/_/g, " ")
-    .replace(/kg/g, "kg")
-    .replace(/hrv rmssd/i, "HRV RMSSD")
-    .replace(/vo2 max/i, "VO2 Max")
-    .replace(/lthr/i, "LTHR")
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+  return isProfileMetricType(metricType)
+    ? getProfileMetricDefinition(metricType).label
+    : metricType;
 }
 
 function getMetricIcon(metricType: string) {
@@ -76,24 +77,31 @@ export default function ProfileMetricDetailScreen() {
     setShowDeleteConfirm(true);
   };
 
-  const renderHeaderActions = () => (
-    <DropdownMenu>
-      <DropdownMenuTrigger testID="profile-metric-detail-options-trigger">
-        <View className="rounded-full p-2">
-          <Icon as={Ellipsis} size={18} className="text-foreground" />
-        </View>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" sideOffset={6}>
-        <DropdownMenuItem
-          onPress={handleDelete}
-          variant="destructive"
-          testID="profile-metric-detail-options-delete"
-        >
-          <Text>{deleteMutation.isPending ? "Deleting..." : "Delete Metric"}</Text>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+  const renderHeaderActions = () =>
+    !metric ? null : (
+      <DropdownMenu>
+        <DropdownMenuTrigger testID="profile-metric-detail-options-trigger">
+          <View className="rounded-full p-2">
+            <Icon as={Ellipsis} size={18} className="text-foreground" />
+          </View>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" sideOffset={6}>
+          <DropdownMenuItem
+            onPress={() => navigateTo(ROUTES.PROFILE_METRICS.EDIT(metric.id) as Href)}
+            testID="profile-metric-detail-options-edit"
+          >
+            <Text>Edit Metric</Text>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onPress={handleDelete}
+            variant="destructive"
+            testID="profile-metric-detail-options-delete"
+          >
+            <Text>{deleteMutation.isPending ? "Deleting..." : "Delete Metric"}</Text>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
 
   if (isLoading) {
     return (
@@ -137,7 +145,7 @@ export default function ProfileMetricDetailScreen() {
               <View className="flex-row flex-wrap gap-2">
                 <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
                   <Text className="text-xs font-medium text-foreground">
-                    Value: {metric.value} {metric.unit}
+                    Value: {formatProfileMetricValue(metric)}
                   </Text>
                 </View>
                 <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">

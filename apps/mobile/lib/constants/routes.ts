@@ -51,7 +51,9 @@ export const ROUTES = {
 
   PROFILE_METRICS: {
     LIST: "/profile-metrics-list" as const,
+    CREATE: "/profile-metric-edit" as const,
     DETAIL: (metricId: string) => `/profile-metric-detail?id=${metricId}` as const,
+    EDIT: (metricId: string) => `/profile-metric-edit?id=${metricId}` as const,
   },
 
   GOALS: {

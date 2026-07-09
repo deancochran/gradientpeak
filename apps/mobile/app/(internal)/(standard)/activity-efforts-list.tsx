@@ -1,3 +1,4 @@
+import { formatActivityEffortValue, formatEffortDuration } from "@repo/core/athlete-inputs";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
@@ -71,13 +72,11 @@ function formatDate(value: string | Date) {
 }
 
 function formatValue(effort: ActivityEffortRow) {
-  return `${Number(effort.value).toLocaleString(undefined, { maximumFractionDigits: 1 })} ${effort.unit}`;
+  return formatActivityEffortValue(effort);
 }
 
 function formatDuration(seconds: number) {
-  if (seconds < 60) return `${seconds}s`;
-  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
-  return `${Number(seconds / 3600).toLocaleString(undefined, { maximumFractionDigits: 1 })}h`;
+  return formatEffortDuration(seconds);
 }
 
 function buildPath(points: Array<{ x: number; y: number }>) {

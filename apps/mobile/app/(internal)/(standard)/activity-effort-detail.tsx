@@ -1,4 +1,5 @@
 import { decodePolyline } from "@repo/core";
+import { formatActivityEffortValue, formatEffortDuration } from "@repo/core/athlete-inputs";
 import { Card, CardContent } from "@repo/ui/components/card";
 import {
   DropdownMenu,
@@ -20,15 +21,6 @@ import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
-
-function formatDuration(seconds: number) {
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-  if (minutes === 0) {
-    return `${remainingSeconds}s`;
-  }
-  return `${minutes}m ${remainingSeconds.toString().padStart(2, "0")}s`;
-}
 
 function formatEffortTitle(category: string, type: string) {
   return `${category.replace(/_/g, " ")} ${type}`;
@@ -145,18 +137,18 @@ export default function ActivityEffortDetailScreen() {
               <View className="flex-row flex-wrap gap-2">
                 <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
                   <Text className="text-xs font-medium text-foreground">
-                    Value: {effort.value} {effort.unit}
+                    Value: {formatActivityEffortValue(effort)}
                   </Text>
                 </View>
                 <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
                   <Text className="text-xs font-medium text-foreground">
-                    Duration: {formatDuration(effort.duration_seconds)}
+                    Duration: {formatEffortDuration(effort.duration_seconds)}
                   </Text>
                 </View>
                 {effort.start_offset != null ? (
                   <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
                     <Text className="text-xs font-medium text-foreground">
-                      Started at: {formatDuration(effort.start_offset)}
+                      Started at: {formatEffortDuration(effort.start_offset)}
                     </Text>
                   </View>
                 ) : null}

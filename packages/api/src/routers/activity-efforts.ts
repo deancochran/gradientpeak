@@ -1,10 +1,9 @@
 import { randomUUID } from "node:crypto";
 import {
-  activityEfforts,
-  publicActivityCategorySchema,
-  publicActivityEffortsRowSchema,
-  publicEffortTypeSchema,
-} from "@repo/db";
+  createActivityEffortInputSchema,
+  updateActivityEffortInputSchema,
+} from "@repo/core/athlete-inputs";
+import { activityEfforts, publicActivityEffortsRowSchema } from "@repo/db";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
@@ -18,24 +17,6 @@ const getActivityEffortByIdInputSchema = z
   .object({
     id: z.string().uuid(),
   })
-  .strict();
-
-const createActivityEffortInputSchema = z
-  .object({
-    activity_id: z.string().uuid().optional().nullable(),
-    activity_category: publicActivityCategorySchema,
-    duration_seconds: z.number().int().positive(),
-    effort_type: publicEffortTypeSchema,
-    value: z.number(),
-    unit: z.string().min(1),
-    start_offset: z.number().int().nonnegative().optional().nullable(),
-    recorded_at: z.string().datetime(),
-  })
-  .strict();
-
-const updateActivityEffortInputSchema = createActivityEffortInputSchema
-  .partial()
-  .extend({ id: z.string().uuid() })
   .strict();
 
 const deleteActivityEffortInputSchema = z
