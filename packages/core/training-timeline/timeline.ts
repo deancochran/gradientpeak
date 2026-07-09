@@ -52,7 +52,7 @@ function roundSignedTss(value: number | null | undefined) {
 }
 
 function sumTss(values: Array<number | null | undefined>) {
-  return roundTss(values.reduce((sum, value) => sum + roundTss(value), 0));
+  return roundTss(values.reduce<number>((sum, value) => sum + roundTss(value), 0));
 }
 
 function dateKeyRange(startDate: string, endDate: string) {
