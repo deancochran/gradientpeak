@@ -27,7 +27,6 @@ import {
 import {
   activities,
   activityEfforts,
-  activityFileIngestions,
   activityGeometry,
   activityImports,
   activityLaps,
@@ -37,12 +36,7 @@ import {
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, lte } from "drizzle-orm";
 import { z } from "zod";
-import {
-  markFailed,
-  markProcessing,
-  markReady,
-  markUploaded,
-} from "../application/activity-file-ingestion/ingestion-state";
+import { processUploadedActivityFile } from "../application/activity-file-ingestion/process-uploaded-activity-file";
 import { getRequiredDb } from "../db";
 import { logger } from "../lib/logger";
 import { getApiStorageService } from "../storage-service";
@@ -1518,144 +1512,35 @@ export const activityFilesRouter = createTRPCRouter({
         });
       }
 
-      const [ownerRow] = await db
-        .select({ activity: activities, ingestion: activityFileIngestions })
-        .from(activityFileIngestions)
-        .innerJoin(activities, eq(activityFileIngestions.activity_id, activities.id))
-        .where(
-          and(
-            eq(activityFileIngestions.id, input.ingestionId),
-            eq(activityFileIngestions.activity_id, input.activityId),
-            eq(activityFileIngestions.profile_id, userId),
-            eq(activities.profile_id, userId),
-          ),
-        )
-        .limit(1);
-
-      if (!ownerRow) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Activity file ingestion not found",
-        });
-      }
-
-      const activity = (ownerRow as any).activity ?? ownerRow;
-      const ingestion = (ownerRow as any).ingestion ?? ownerRow;
       const activityFileType =
         input.fileType ?? getActivityFileTypeFromPath(input.activityFilePath);
-      let processingIngestion = ingestion;
 
-      try {
-        await db
-          .update(activityFileIngestions)
-          .set({
-            file_path: input.activityFilePath,
-            file_size: input.fileSize ?? null,
-            file_type: activityFileType,
-            updated_at: new Date(),
-          })
-          .where(
-            and(
-              eq(activityFileIngestions.id, input.ingestionId),
-              eq(activityFileIngestions.activity_id, input.activityId),
-              eq(activityFileIngestions.profile_id, userId),
-            ),
-          );
-
-        const currentStatus = String(ingestion.status);
-        if (currentStatus === "pending_upload" || currentStatus === "failed") {
-          processingIngestion = await markUploaded(db, {
-            id: input.ingestionId,
-            profileId: userId,
-          });
-        }
-
-        if (String(processingIngestion.status) === "uploaded") {
-          processingIngestion = await markProcessing(db, {
-            id: input.ingestionId,
-            profileId: userId,
-          });
-        }
-
-        const { activityFile, parsedData } = await parseStoredActivityFile({
-          activityFilePath: input.activityFilePath,
-          fileType: activityFileType,
-          removeOnParseFailure: false,
-        });
-
-        await upsertExistingActivityFileEnrichment(db, {
+      const result = await processUploadedActivityFile(
+        db,
+        {
+          userId,
+          ingestionId: input.ingestionId,
           activityId: input.activityId,
-          profileId: userId,
-          activityType: activity.type,
           activityFilePath: input.activityFilePath,
-          activityFileSize: input.fileSize ?? activityFile.size ?? null,
-          activityFileType,
-          parsedData,
-        });
+          fileSize: input.fileSize,
+          fileType: activityFileType,
+        },
+        {
+          parseStoredActivityFile,
+          upsertExistingActivityFileEnrichment,
+          logger,
+        },
+      );
 
-        const readyIngestion = await markReady(db, {
-          id: input.ingestionId,
-          profileId: userId,
-        });
-
-        const updatedActivity =
-          (await db.query.activities.findFirst({ where: eq(activities.id, input.activityId) })) ??
-          activity;
-
-        return {
-          success: true,
-          activity: serializeActivityDates(updatedActivity),
-          ingestion: {
-            id: readyIngestion.id,
-            status: readyIngestion.status,
-            activityId: readyIngestion.activity_id,
-          },
-        };
-      } catch (error) {
-        if (
-          error instanceof TRPCError &&
-          error.code !== "FORBIDDEN" &&
-          error.code !== "NOT_FOUND"
-        ) {
-          try {
-            await markFailed(db, {
-              id: input.ingestionId,
-              profileId: userId,
-              errorCode: error.code === "BAD_REQUEST" ? "parse_failed" : "process_failed",
-              errorMessage: error.message,
-            });
-          } catch (transitionError) {
-            logger.error(
-              "Failed to mark activity file ingestion failed",
-              getErrorDetails(transitionError),
-            );
-          }
-        }
-
-        if (error instanceof TRPCError) {
-          throw error;
-        }
-
-        try {
-          await markFailed(db, {
-            id: input.ingestionId,
-            profileId: userId,
-            errorCode: "process_failed",
-            errorMessage: getErrorMessage(error),
-          });
-        } catch (transitionError) {
-          logger.error(
-            "Failed to mark activity file ingestion failed",
-            getErrorDetails(transitionError),
-          );
-        }
-
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: `Activity file processing failed: ${getErrorMessage(error)}`,
-          cause: error,
-        });
-      }
+      return {
+        success: true,
+        activity: serializeActivityDates(result.activity),
+        ingestion: {
+          id: result.ingestion.id,
+          status: result.ingestion.status,
+          activityId: result.ingestion.activity_id,
+        },
+      };
     }),
 
   /**

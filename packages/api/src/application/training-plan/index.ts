@@ -6,6 +6,7 @@ export * from "./getCreationSuggestionsUseCase";
 export * from "./mutationUseCases";
 export * from "./planTabProjectionService";
 export * from "./previewCreationConfigUseCase";
+export * from "./scheduleGapActivityPlanMatches";
 export * from "./schedulingUtils";
 export * from "./templateUseCases";
 export * from "./updateFromCreationConfigUseCase";
