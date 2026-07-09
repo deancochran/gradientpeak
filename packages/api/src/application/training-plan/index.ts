@@ -4,6 +4,7 @@ export * from "./createFromCreationConfigUseCase";
 export * from "./crudUseCases";
 export * from "./getCreationSuggestionsUseCase";
 export * from "./mutationUseCases";
+export * from "./planTabProjectionService";
 export * from "./previewCreationConfigUseCase";
 export * from "./schedulingUtils";
 export * from "./templateUseCases";

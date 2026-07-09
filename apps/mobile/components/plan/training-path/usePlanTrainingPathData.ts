@@ -1,3 +1,4 @@
+import { buildTrainingTimelineWindowFromLoadTimeline } from "@repo/core/training-timeline";
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
@@ -13,7 +14,7 @@ import { useProfileSettings } from "@/lib/hooks/useProfileSettings";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 import { refreshPlanTabData } from "@/lib/scheduling/refreshScheduleViews";
 import { useAuthStore } from "@/lib/stores/auth-store";
-import { buildDailyTrainingAdjustmentPointsFromTrainingPathData } from "@/lib/training-path/dailyTrainingPathModel";
+import { buildDailyTrainingAdjustmentPointsFromTimelineWindow } from "@/lib/training-path/trainingTimelineAdapters";
 import {
   buildTrainingPreferencesLoadTimeline,
   buildTrainingPreferencesProjectionPreview,
@@ -251,6 +252,16 @@ export function usePlanTrainingPathData() {
       }),
     [dashboard.fitnessHistory, idealFitnessCurve, loadTimelinePoints, todayKey],
   );
+  const canonicalTimelineWindow = useMemo(
+    () =>
+      buildTrainingTimelineWindowFromLoadTimeline({
+        today: todayKey,
+        startDate: loadTimelinePoints[0]?.date ?? scheduledWindowStart,
+        endDate: loadTimelinePoints[loadTimelinePoints.length - 1]?.date ?? scheduledWindowEnd,
+        timeline: loadTimelinePoints,
+      }),
+    [loadTimelinePoints, scheduledWindowEnd, scheduledWindowStart, todayKey],
+  );
   const trainingPath = useTrainingPathViewModel({
     timeline: loadTimelinePoints,
     fitnessHistory: dashboard.fitnessHistory,
@@ -264,22 +275,13 @@ export function usePlanTrainingPathData() {
   });
   const dailyTrainingPathPoints = useMemo(
     () =>
-      buildDailyTrainingAdjustmentPointsFromTrainingPathData({
-        timeline: loadTimelinePoints,
+      buildDailyTrainingAdjustmentPointsFromTimelineWindow({
+        timelineWindow: canonicalTimelineWindow,
         fitnessHistory: dashboard.fitnessHistory,
         idealFitnessCurve,
         scheduledFitnessTrend,
-        startDate: loadTimelinePoints[0]?.date ?? scheduledWindowStart,
-        endDate: loadTimelinePoints[loadTimelinePoints.length - 1]?.date ?? scheduledWindowEnd,
       }),
-    [
-      dashboard.fitnessHistory,
-      idealFitnessCurve,
-      loadTimelinePoints,
-      scheduledWindowEnd,
-      scheduledWindowStart,
-      scheduledFitnessTrend,
-    ],
+    [canonicalTimelineWindow, dashboard.fitnessHistory, idealFitnessCurve, scheduledFitnessTrend],
   );
 
   const selectedWeekRangeStart = trainingPath.selectedWeekSummary?.weekStart ?? null;

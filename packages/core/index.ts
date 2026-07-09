@@ -226,6 +226,7 @@ export {
 export * from "./samples"; // Sample data for testing and development
 export * from "./schemas"; // Zod schemas and types (includes formatDuration for DurationV2)
 export * from "./sports"; // Canonical sport registry and heuristics
+export * from "./training-timeline"; // Canonical training timeline read model
 export type { StandardActivity } from "./types/normalization";
 export * from "./utils"; // Utility functions
 export * from "./zones"; // Canonical zones and threshold metadata
@@ -253,5 +254,6 @@ export * as RecordingMetrics from "./recording-metrics";
 export * as Samples from "./samples";
 export * as Schemas from "./schemas";
 export * as Sports from "./sports";
+export * as TrainingTimeline from "./training-timeline";
 export * as Utils from "./utils";
 export * as Zones from "./zones";

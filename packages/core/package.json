@@ -28,6 +28,8 @@
     "./messaging/*": "./messaging/*.ts",
     "./sports": "./sports/index.ts",
     "./sports/*": "./sports/*.ts",
+    "./training-timeline": "./training-timeline/index.ts",
+    "./training-timeline/*": "./training-timeline/*.ts",
     "./zones": "./zones/index.ts",
     "./zones/*": "./zones/*.ts",
     "./estimation": "./estimation/index.ts",
