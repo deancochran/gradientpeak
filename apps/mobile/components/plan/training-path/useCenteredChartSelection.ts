@@ -7,6 +7,7 @@ type SelectableChartPoint = {
 };
 
 type CenteredChartSelectionInput<Point extends SelectableChartPoint> = {
+  onPreviewSelectedDateChange?: (date: string) => void;
   onSelectedDateChange?: (date: string) => void;
   points: Point[];
   selectedDate?: string | null;
@@ -16,21 +17,28 @@ type CenteredChartSelectionInput<Point extends SelectableChartPoint> = {
 export type CenteredChartSelectionPhase = "initializing" | "selecting" | "selected";
 
 export function useCenteredChartSelection<Point extends SelectableChartPoint>({
+  onPreviewSelectedDateChange,
   onSelectedDateChange,
   points,
   selectedDate,
   slotWidth,
 }: CenteredChartSelectionInput<Point>) {
   const [internalSelectedDate, setInternalSelectedDate] = useState<string | null>(null);
+  const [previewSelectedDate, setPreviewSelectedDate] = useState<string | null>(null);
   const [selectionPhase, setSelectionPhase] = useState<CenteredChartSelectionPhase>("initializing");
+  const lastPreviewSelectedDateRef = useRef<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const lastProgrammaticScrollDateRef = useRef<string | null>(null);
   const mountedRef = useRef(false);
   const isSelectionControlled = selectedDate !== undefined;
   const resolvedSelectedDate = isSelectionControlled ? selectedDate : internalSelectedDate;
+  const displaySelectedDate =
+    selectionPhase === "selecting"
+      ? (previewSelectedDate ?? resolvedSelectedDate)
+      : resolvedSelectedDate;
   const selectedPoint = useMemo(
-    () => points.find((point) => point.date === resolvedSelectedDate) ?? points[0] ?? null,
-    [points, resolvedSelectedDate],
+    () => points.find((point) => point.date === displaySelectedDate) ?? points[0] ?? null,
+    [displaySelectedDate, points],
   );
 
   useEffect(() => {
@@ -62,6 +70,8 @@ export function useCenteredChartSelection<Point extends SelectableChartPoint>({
 
   const selectPoint = useCallback(
     (date: string) => {
+      lastPreviewSelectedDateRef.current = date;
+      setPreviewSelectedDate(date);
       if (date === resolvedSelectedDate) {
         setSelectionPhase("selected");
         return;
@@ -76,6 +86,20 @@ export function useCenteredChartSelection<Point extends SelectableChartPoint>({
     [isSelectionControlled, onSelectedDateChange, resolvedSelectedDate],
   );
 
+  const previewPointAtIndex = useCallback(
+    (index: number) => {
+      const boundedIndex = Math.max(0, Math.min(points.length - 1, Math.round(index)));
+      const point = points[boundedIndex];
+      if (!point) return;
+      setSelectionPhase("selecting");
+      if (lastPreviewSelectedDateRef.current === point.date) return;
+      lastPreviewSelectedDateRef.current = point.date;
+      setPreviewSelectedDate(point.date);
+      onPreviewSelectedDateChange?.(point.date);
+    },
+    [onPreviewSelectedDateChange, points],
+  );
+
   const selectPointAtIndex = useCallback(
     (index: number) => {
       const boundedIndex = Math.max(0, Math.min(points.length - 1, Math.round(index)));
@@ -88,6 +112,8 @@ export function useCenteredChartSelection<Point extends SelectableChartPoint>({
   useEffect(() => {
     if (!resolvedSelectedDate) return;
     if (selectionPhase === "selecting") return;
+    lastPreviewSelectedDateRef.current = resolvedSelectedDate;
+    setPreviewSelectedDate(resolvedSelectedDate);
     if (lastProgrammaticScrollDateRef.current === resolvedSelectedDate) return;
     scrollToDate(resolvedSelectedDate, false);
   }, [resolvedSelectedDate, scrollToDate, selectionPhase]);
@@ -108,12 +134,20 @@ export function useCenteredChartSelection<Point extends SelectableChartPoint>({
     [getNearestIndex, selectPointAtIndex],
   );
 
+  const previewNearestFromScrollEvent = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      previewPointAtIndex(getNearestIndex(event));
+    },
+    [getNearestIndex, previewPointAtIndex],
+  );
+
   const markSelecting = useCallback(() => {
     setSelectionPhase("selecting");
   }, []);
 
   return {
     markSelecting,
+    previewNearestFromScrollEvent,
     resolvedSelectedDate,
     scrollRef,
     selectNearestFromScrollEvent,

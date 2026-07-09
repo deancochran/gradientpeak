@@ -119,7 +119,33 @@ describe("DailyTrainingAdjustmentChart", () => {
     expect(scrollView.props.onScrollEndDrag).toBeUndefined();
     expect(scrollView.props.decelerationRate).toBe("fast");
     expect(scrollView.props.snapToInterval).toBeGreaterThan(0);
-    expect(screen.queryByTestId("daily-training-adjustment-chart-center-highlight")).toBeNull();
+  });
+
+  it("previews the selected day instantly while scrolling without committing until settle", () => {
+    const onSelectedDateChange = jest.fn();
+    render(
+      <DailyTrainingAdjustmentChart
+        onSelectedDateChange={onSelectedDateChange}
+        points={[
+          { date: "2026-06-01", targetLoadTss: 40, actualOrScheduledLoadTss: 35 },
+          { date: "2026-06-02", targetLoadTss: 50, actualOrScheduledLoadTss: 65 },
+          { date: "2026-06-03", targetLoadTss: 50, actualOrScheduledLoadTss: 30 },
+        ]}
+      />,
+    );
+
+    const scrollView = screen.getByTestId("daily-training-adjustment-chart-scroll");
+    fireEvent(scrollView, "scrollBeginDrag");
+    fireEvent.scroll(scrollView, { nativeEvent: { contentOffset: { x: 60, y: 0 } } });
+
+    expect(screen.getByText("2026-06-03")).toBeTruthy();
+    expect(onSelectedDateChange).not.toHaveBeenCalled();
+
+    fireEvent(scrollView, "momentumScrollEnd", {
+      nativeEvent: { contentOffset: { x: 60, y: 0 } },
+    });
+
+    expect(onSelectedDateChange).toHaveBeenCalledWith("2026-06-03");
   });
 
   it("prefetches more days before the user reaches either scroll edge", () => {

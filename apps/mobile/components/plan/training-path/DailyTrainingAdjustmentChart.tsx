@@ -39,6 +39,7 @@ export type DailyTrainingAdjustmentChartProps = {
   testID?: string;
   formatDateLabel?: (dateKey: string, index: number) => string;
   maxVisiblePoints?: number;
+  onPreviewSelectedDateChange?: (date: string) => void;
   onScrollNearEnd?: () => void;
   onScrollNearStart?: () => void;
 };
@@ -180,6 +181,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
   formatDateLabel,
   height,
   maxVisiblePoints = 168,
+  onPreviewSelectedDateChange,
   onScrollNearEnd,
   onScrollNearStart,
   showSelectedPointTray = true,
@@ -219,13 +221,19 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
     ? selectedDate
     : (chartWindow.anchorDate ?? visiblePoints[0]?.date ?? null);
 
-  const { markSelecting, scrollRef, selectNearestFromScrollEvent, selectionPhase, selectedPoint } =
-    useCenteredChartSelection({
-      onSelectedDateChange,
-      points: visiblePoints,
-      selectedDate: selectedDate === undefined ? undefined : visibleSelectedDate,
-      slotWidth,
-    });
+  const {
+    markSelecting,
+    previewNearestFromScrollEvent,
+    scrollRef,
+    selectNearestFromScrollEvent,
+    selectedPoint,
+  } = useCenteredChartSelection({
+    onPreviewSelectedDateChange,
+    onSelectedDateChange,
+    points: visiblePoints,
+    selectedDate: selectedDate === undefined ? undefined : visibleSelectedDate,
+    slotWidth,
+  });
 
   const chartData = useMemo<ChartDatum[]>(
     () =>
@@ -329,6 +337,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
       );
       windowAnchorDateRef.current =
         visiblePoints[nearestIndex]?.date ?? windowAnchorDateRef.current;
+      previewNearestFromScrollEvent(event);
       const maxOffsetX = Math.max(0, scrollableChartWidth - viewportWidth);
       const preloadDistance = slotWidth * 14;
       if (offsetX <= preloadDistance) {
@@ -349,6 +358,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
     [
       onScrollNearEnd,
       onScrollNearStart,
+      previewNearestFromScrollEvent,
       scrollableChartWidth,
       slotWidth,
       viewportWidth,
@@ -453,8 +463,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                             const completedPoint = plottedPoints.completedLoad[index];
                             if (!geometry) return null;
                             const left = geometry.center - barWidth / 2;
-                            const isSelected =
-                              selectionPhase === "selected" && point.date === selectedPoint?.date;
+                            const isSelected = point.date === selectedPoint?.date;
                             return (
                               <Fragment key={`day-${point.date}`}>
                                 {isSelected ? (

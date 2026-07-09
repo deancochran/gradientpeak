@@ -2,7 +2,7 @@ import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { HelpCircle, Plus, Settings } from "lucide-react-native";
 import type { ComponentProps, ReactNode } from "react";
-import { memo, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, TouchableOpacity, View } from "react-native";
 import { AppFormModal } from "@/components/shared/AppFormModal";
 import { DailyTrainingAdjustmentChart } from "./DailyTrainingAdjustmentChart";
@@ -128,6 +128,7 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
   title = "Daily Training Path",
 }: TrainingPathLoadChartSectionProps) {
   const [legendOpen, setLegendOpen] = useState(false);
+  const [previewSelectedDate, setPreviewSelectedDate] = useState<string | null>(null);
   const modelEmptyState = loading ? null : (model?.emptyState ?? null);
   const resolvedEmptyState = modelEmptyState
     ? { title: modelEmptyStateCopy[modelEmptyState], tone: "empty" as const }
@@ -136,15 +137,21 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
       : emptyState;
   const canRenderDailyChart = preferDailyChart && !!dailyPoints?.length;
   const canRenderWeeklyChart = !!model && !model.emptyState && !!onSelectedWeekChange;
+  const contextSelectedDate = previewSelectedDate ?? selectedDate;
+
+  useEffect(() => {
+    setPreviewSelectedDate((current) => (current === selectedDate ? null : current));
+  }, [selectedDate]);
+
   const belowChartContext = useMemo<TrainingPathChartSectionContext>(() => {
     const selectedDayPoint =
-      dailyPoints?.find((point) => point.date === selectedDate) ?? dailyPoints?.[0] ?? null;
+      dailyPoints?.find((point) => point.date === contextSelectedDate) ?? dailyPoints?.[0] ?? null;
     const selectedWeek =
       model?.weeks.find((week) => {
         if (selectionMode === "week") {
           return week.isSelected || week.weekStart === model.selectedWeekSummary?.weekStart;
         }
-        const date = selectedDayPoint?.date ?? selectedDate;
+        const date = selectedDayPoint?.date ?? contextSelectedDate;
         return !!date && date >= week.weekStart && date <= week.weekEnd;
       }) ??
       model?.weeks.find((week) => week.isSelected) ??
@@ -161,13 +168,13 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
 
     return {
       mode: selectionMode,
-      selectedDate: selectedDayPoint?.date ?? selectedDate ?? null,
+      selectedDate: selectedDayPoint?.date ?? contextSelectedDate ?? null,
       selectedDayPoint,
       selectedWeek,
       selectedWeekBucket,
       selectedWeekStart,
     };
-  }, [dailyPoints, model, selectedDate, selectionMode]);
+  }, [contextSelectedDate, dailyPoints, model, selectionMode]);
 
   return (
     <View className="gap-4" testID={testID}>
@@ -221,6 +228,7 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
             points={dailyPoints}
             selectedDate={selectedDate ?? model?.todayKey}
             showSelectedPointTray={showSelectedPointTray}
+            onPreviewSelectedDateChange={setPreviewSelectedDate}
             onScrollNearEnd={onScrollNearEnd}
             onScrollNearStart={onScrollNearStart}
             onSelectedDateChange={onSelectedDateChange}
