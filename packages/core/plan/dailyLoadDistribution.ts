@@ -44,6 +44,41 @@ const WEEKDAY_NAMES = [
 
 const DEFAULT_WEEKLY_SESSION_COUNT = 3;
 
+const ACTIVITY_CATEGORY_ORDER: DailyRecommendedLoadActivityCategory[] = [
+  "run",
+  "bike",
+  "swim",
+  "strength",
+  "other",
+];
+
+type WeeklyAllocationCategory = NonNullable<
+  WeeklyAllocation["activity_categories"][keyof WeeklyAllocation["activity_categories"]]
+>;
+
+interface PlannedSessionAssignment {
+  activityCategory?: DailyRecommendedLoadActivityCategory;
+  primaryFocus?: DailyRecommendedLoadPrimaryFocus;
+}
+
+interface CategoryBudget {
+  activityCategory: DailyRecommendedLoadActivityCategory;
+  targetSessions: number;
+  targetDurationMinutes: number;
+  role: WeeklyAllocationCategory["role"] | "fallback";
+  keyExposureTypes: string[];
+  loadMultiplier: number;
+}
+
+const FALLBACK_CATEGORY_BUDGET: CategoryBudget = {
+  activityCategory: "run",
+  targetSessions: DEFAULT_WEEKLY_SESSION_COUNT,
+  targetDurationMinutes: 180,
+  role: "fallback",
+  keyExposureTypes: [],
+  loadMultiplier: 1,
+};
+
 const SESSION_ANCHORS_BY_COUNT: Record<number, number[]> = {
   1: [3],
   2: [1, 5],
@@ -66,17 +101,39 @@ function weekdayNameForDate(date: string): (typeof WEEKDAY_NAMES)[number] {
   return WEEKDAY_NAMES[parseDateOnlyUtc(date).getUTCDay()] ?? "monday";
 }
 
-function buildPlannedSessionDateSet(input: BuildDailyLoadDistributionInput) {
-  const dates = new Set<string>();
+function normalizeActivityCategory(
+  category: string | null | undefined,
+): DailyRecommendedLoadActivityCategory | null {
+  if (
+    category === "run" ||
+    category === "bike" ||
+    category === "swim" ||
+    category === "strength" ||
+    category === "other"
+  ) {
+    return category;
+  }
+  return null;
+}
+
+function buildPlannedSessionByDate(input: BuildDailyLoadDistributionInput) {
+  const byDate = new Map<string, PlannedSessionAssignment>();
   for (const session of input.plannedSessions ?? []) {
     const date =
       session.date ??
       (typeof session.offsetDays === "number" && Number.isFinite(session.offsetDays)
         ? addDaysDateOnlyUtc(input.startDate, session.offsetDays)
         : null);
-    if (date && date >= input.startDate && date <= input.endDate) dates.add(date);
+    if (!date || date < input.startDate || date > input.endDate) continue;
+
+    const existing = byDate.get(date) ?? {};
+    const activityCategory = normalizeActivityCategory(session.activityCategory);
+    byDate.set(date, {
+      activityCategory: existing.activityCategory ?? activityCategory ?? undefined,
+      primaryFocus: existing.primaryFocus ?? session.primaryFocus ?? undefined,
+    });
   }
-  return dates;
+  return byDate;
 }
 
 function resolveAvailableMinutesByDay(
@@ -93,10 +150,28 @@ function resolveAvailableMinutesByDay(
   return map;
 }
 
+function preferenceBoundedSessionCount(
+  input: BuildDailyLoadDistributionInput,
+  sessionCount: number,
+  candidateCount: number,
+): number {
+  const minSessions = input.preferenceProfile?.dose_limits.min_sessions_per_week;
+  const maxSessions = input.preferenceProfile?.dose_limits.max_sessions_per_week;
+  const boundedMin = typeof minSessions === "number" ? clamp(minSessions, 1, 7) : null;
+  const boundedMax = typeof maxSessions === "number" ? clamp(maxSessions, 1, 7) : null;
+  const derived = clamp(sessionCount, boundedMin ?? 1, boundedMax ?? 7);
+  return clamp(derived, 1, Math.max(1, candidateCount));
+}
+
 function resolveSessionCount(
   input: BuildDailyLoadDistributionInput,
   candidateCount: number,
 ): number {
+  const allocationTarget = input.weeklyAllocation?.totals.target_sessions;
+  if (typeof allocationTarget === "number" && allocationTarget > 0) {
+    return preferenceBoundedSessionCount(input, allocationTarget, candidateCount);
+  }
+
   const minSessions = input.preferenceProfile?.dose_limits.min_sessions_per_week;
   const maxSessions = input.preferenceProfile?.dose_limits.max_sessions_per_week;
   const boundedMin = typeof minSessions === "number" ? clamp(minSessions, 1, 7) : null;
@@ -105,7 +180,7 @@ function resolveSessionCount(
     boundedMin !== null && boundedMax !== null
       ? Math.round((boundedMin + boundedMax) / 2)
       : (boundedMax ?? boundedMin ?? DEFAULT_WEEKLY_SESSION_COUNT);
-  return clamp(derived, 1, Math.max(1, candidateCount));
+  return preferenceBoundedSessionCount(input, derived, candidateCount);
 }
 
 function chooseTrainingDates(input: {
@@ -118,8 +193,12 @@ function chooseTrainingDates(input: {
   sessionCount: number;
 }) {
   const anchors = SESSION_ANCHORS_BY_COUNT[input.sessionCount] ?? [0, 1, 2, 3, 4, 5, 6];
-  const remaining = [...input.candidates];
-  const selected: typeof input.candidates = [];
+  const selected = [...input.candidates]
+    .filter((candidate) => candidate.hasSession)
+    .sort((left, right) => left.date.localeCompare(right.date))
+    .slice(0, input.sessionCount);
+  const selectedDates = new Set(selected.map((candidate) => candidate.date));
+  const remaining = input.candidates.filter((candidate) => !selectedDates.has(candidate.date));
 
   for (const anchor of anchors) {
     if (selected.length >= input.sessionCount || remaining.length === 0) break;
@@ -170,16 +249,120 @@ function weightForFocus(focus: DailyRecommendedLoadPrimaryFocus): number {
   }
 }
 
-function primaryActivityCategory(
+function durationMinutesForCategory(category: WeeklyAllocationCategory): number {
+  if (category.volume.duration_minutes) return category.volume.duration_minutes.target;
+  if (category.volume.unit === "minutes") return category.volume.target;
+  if (category.volume.unit === "sets") return category.volume.target * 6;
+  return category.volume.target;
+}
+
+function buildCategoryBudgets(
   weeklyAllocation: WeeklyAllocation | null | undefined,
-): DailyRecommendedLoadActivityCategory {
-  const categories = Object.entries(weeklyAllocation?.activity_categories ?? {}).sort(
-    ([, left], [, right]) => (right.sessions?.target ?? 0) - (left.sessions?.target ?? 0),
+): CategoryBudget[] {
+  const budgets: CategoryBudget[] = [];
+  for (const [rawCategory, category] of Object.entries(
+    weeklyAllocation?.activity_categories ?? {},
+  )) {
+    const activityCategory = normalizeActivityCategory(rawCategory);
+    if (!activityCategory || !category) continue;
+    budgets.push({
+      activityCategory,
+      targetSessions: Math.max(0, category.sessions.target),
+      targetDurationMinutes: durationMinutesForCategory(category),
+      role: category.role,
+      keyExposureTypes: category.key_exposures.map((exposure) => exposure.type),
+      loadMultiplier: Math.max(0.1, category.load_model.fatigue_cost_multiplier),
+    });
+  }
+  budgets.sort(compareCategoryBudgets);
+
+  if (budgets.length > 0) return budgets;
+
+  return [FALLBACK_CATEGORY_BUDGET];
+}
+
+function rolePriority(role: CategoryBudget["role"]): number {
+  switch (role) {
+    case "primary":
+      return 0;
+    case "secondary":
+      return 1;
+    case "support":
+      return 2;
+    default:
+      return 3;
+  }
+}
+
+function categoryOrder(category: DailyRecommendedLoadActivityCategory): number {
+  const index = ACTIVITY_CATEGORY_ORDER.indexOf(category);
+  return index === -1 ? ACTIVITY_CATEGORY_ORDER.length : index;
+}
+
+function compareCategoryBudgets(left: CategoryBudget, right: CategoryBudget): number {
+  const roleBias = rolePriority(left.role) - rolePriority(right.role);
+  if (roleBias !== 0) return roleBias;
+  const sessionBias = right.targetSessions - left.targetSessions;
+  if (sessionBias !== 0) return sessionBias;
+  const durationBias = right.targetDurationMinutes - left.targetDurationMinutes;
+  if (durationBias !== 0) return durationBias;
+  return categoryOrder(left.activityCategory) - categoryOrder(right.activityCategory);
+}
+
+function focusFromBudget(
+  budget: CategoryBudget,
+  fallbackFocus: DailyRecommendedLoadPrimaryFocus,
+): DailyRecommendedLoadPrimaryFocus {
+  if (budget.activityCategory === "strength") {
+    if (budget.keyExposureTypes.includes("strength_heavy")) return "max_strength";
+    if (budget.keyExposureTypes.includes("strength_hypertrophy")) return "hypertrophy";
+    if (budget.keyExposureTypes.includes("strength_power")) return "power";
+    if (budget.keyExposureTypes.includes("mobility")) return "mobility";
+    return "strength_endurance";
+  }
+
+  if (budget.keyExposureTypes.includes("vo2_interval")) return "vo2";
+  if (budget.keyExposureTypes.includes("threshold_interval")) return "threshold";
+  if (budget.keyExposureTypes.includes("race_specific")) return "race_specific";
+  if (budget.keyExposureTypes.includes("long_session")) return "long_endurance";
+  if (budget.keyExposureTypes.includes("recovery")) return "recovery";
+  if (budget.keyExposureTypes.includes("technique")) return "endurance";
+  return fallbackFocus;
+}
+
+function assignCategoryBudgets(input: {
+  trainingDates: Array<{ date: string }>;
+  budgets: CategoryBudget[];
+  plannedSessionByDate: Map<string, PlannedSessionAssignment>;
+}) {
+  const fallbackBudget = input.budgets[0] ?? FALLBACK_CATEGORY_BUDGET;
+  const assignedCounts = new Map<DailyRecommendedLoadActivityCategory, number>(
+    input.budgets.map((budget) => [budget.activityCategory, 0] as const),
   );
-  const category = categories[0]?.[0];
-  if (category === "bike" || category === "swim" || category === "strength") return category;
-  if (category === "run") return "run";
-  return "run";
+
+  return input.trainingDates.map((trainingDate) => {
+    const pinnedCategory = input.plannedSessionByDate.get(trainingDate.date)?.activityCategory;
+    const budget =
+      (pinnedCategory
+        ? input.budgets.find((candidate) => candidate.activityCategory === pinnedCategory)
+        : undefined) ??
+      [...input.budgets].sort((left, right) => {
+        const leftTarget = Math.max(1, left.targetSessions);
+        const rightTarget = Math.max(1, right.targetSessions);
+        const fillBias =
+          (assignedCounts.get(left.activityCategory) ?? 0) / leftTarget -
+          (assignedCounts.get(right.activityCategory) ?? 0) / rightTarget;
+        if (fillBias !== 0) return fillBias;
+        return compareCategoryBudgets(left, right);
+      })[0] ??
+      fallbackBudget;
+
+    assignedCounts.set(
+      budget.activityCategory,
+      (assignedCounts.get(budget.activityCategory) ?? 0) + 1,
+    );
+    return { budget, pinned: pinnedCategory === budget.activityCategory };
+  });
 }
 
 function allocateWithCap(total: number, weights: number[], capShare: number) {
@@ -244,11 +427,11 @@ export function buildDailyLoadDistribution(
   const availableMinutesByDay = resolveAvailableMinutesByDay(input.preferenceProfile);
   const hasAvailabilityWindows = availableMinutesByDay.size > 0;
   const hardRestDays = new Set(input.preferenceProfile?.availability.hard_rest_days ?? []);
-  const sessionDates = buildPlannedSessionDateSet(input);
+  const plannedSessionByDate = buildPlannedSessionByDate(input);
   const targetByWeekStart = new Map(
     input.weeklyTargets.map((target) => [target.weekStartDate, target]),
   );
-  const category = primaryActivityCategory(input.weeklyAllocation);
+  const categoryBudgets = buildCategoryBudgets(input.weeklyAllocation);
   const points: DailyLoadDistributionPoint[] = [];
 
   for (let offset = 0; offset < dayCount; offset += 7) {
@@ -264,7 +447,7 @@ export function buildDailyLoadDistribution(
         availableMinutesByDay.get(day) ?? (hasAvailabilityWindows ? 0 : 60);
       const available = !hardRestDays.has(day) && availabilityMinutes > 0;
       return available
-        ? [{ date, dayOffset, availabilityMinutes, hasSession: sessionDates.has(date) }]
+        ? [{ date, dayOffset, availabilityMinutes, hasSession: plannedSessionByDate.has(date) }]
         : [];
     }).flat();
     const trainingDates = chooseTrainingDates({
@@ -280,12 +463,25 @@ export function buildDailyLoadDistribution(
       sessionCount: resolveSessionCount(input, candidates.length || daysInWeek),
     });
     const selectedByDate = new Map(trainingDates.map((date, index) => [date.date, index] as const));
-    const focuses = trainingDates.map((_, index) =>
-      focusForSelectedIndex(index, trainingDates.length, target?.phase),
-    );
+    const categoryAssignments = assignCategoryBudgets({
+      trainingDates,
+      budgets: categoryBudgets,
+      plannedSessionByDate,
+    });
+    const focuses = trainingDates.map((trainingDate, index) => {
+      const plannedFocus = plannedSessionByDate.get(trainingDate.date)?.primaryFocus;
+      if (plannedFocus) return plannedFocus;
+      return focusFromBudget(
+        categoryAssignments[index]?.budget ?? categoryBudgets[0] ?? FALLBACK_CATEGORY_BUDGET,
+        focusForSelectedIndex(index, trainingDates.length, target?.phase),
+      );
+    });
     const allocations = allocateWithCap(
       weeklyTss,
-      focuses.map(weightForFocus),
+      focuses.map(
+        (focus, index) =>
+          weightForFocus(focus) * (categoryAssignments[index]?.budget.loadMultiplier ?? 1),
+      ),
       trainingDates.length >= 3 ? 0.45 : 0.6,
     );
 
@@ -293,15 +489,21 @@ export function buildDailyLoadDistribution(
       const date = addDaysDateOnlyUtc(weekStartDate, dayOffset);
       const selectedIndex = selectedByDate.get(date);
       const focus = selectedIndex === undefined ? "rest" : (focuses[selectedIndex] ?? "recovery");
+      const assignment =
+        selectedIndex === undefined ? null : (categoryAssignments[selectedIndex] ?? null);
       points.push({
         date,
         recommended_load_tss: selectedIndex === undefined ? 0 : (allocations[selectedIndex] ?? 0),
         primary_focus: focus,
-        activity_category: focus === "rest" ? "other" : category,
+        activity_category:
+          focus === "rest" ? "other" : (assignment?.budget.activityCategory ?? "run"),
         confidence: input.preferenceProfile ? "high" : "medium",
         reason_codes: [
           "daily_load_distribution_v1",
           selectedIndex === undefined ? "rest_day_allocation" : "profile_goal_weekly_distribution",
+          ...(assignment?.pinned
+            ? ["planned_session_category_pin"]
+            : ["weekly_allocation_category_budget"]),
         ],
       });
     }
