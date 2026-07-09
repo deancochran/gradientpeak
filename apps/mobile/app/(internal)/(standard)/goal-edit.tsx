@@ -6,13 +6,13 @@ import {
   type GoalEditorDraft,
   parseProfileGoalRecord,
 } from "@repo/core";
-import { Button } from "@repo/ui/components/button";
 import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useRef } from "react";
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, View } from "react-native";
+import { Alert, KeyboardAvoidingView, Platform, View } from "react-native";
 import { GoalEditorForm, type GoalEditorFormHandle } from "@/components/goals";
+import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 
@@ -70,8 +70,7 @@ export default function GoalEditScreen() {
   if (goalQuery.isLoading) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator size="large" />
-        <Text className="mt-3 text-sm text-muted-foreground">Loading goal...</Text>
+        <LoadingState message="Loading goal..." />
       </View>
     );
   }
@@ -79,13 +78,12 @@ export default function GoalEditScreen() {
   if (!goalRecord) {
     return (
       <View className="flex-1 items-center justify-center bg-background px-6">
-        <Text className="text-lg font-semibold text-foreground">Goal not found</Text>
-        <Text className="mt-2 text-center text-sm text-muted-foreground">
-          This goal may have been removed.
-        </Text>
-        <Button className="mt-4" onPress={() => router.back()}>
-          <Text className="text-primary-foreground">Go Back</Text>
-        </Button>
+        <EmptyState
+          actionLabel="Go back"
+          description="This goal may have been removed."
+          onAction={() => router.back()}
+          title="Goal not found"
+        />
       </View>
     );
   }

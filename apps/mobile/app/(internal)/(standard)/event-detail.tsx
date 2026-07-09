@@ -13,7 +13,7 @@ import { format } from "date-fns";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { CheckCircle2, Ellipsis } from "lucide-react-native";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native";
+import { Alert, Pressable, ScrollView, View } from "react-native";
 import {
   type CreateEventDefaults,
   CreateEventFlow,
@@ -27,6 +27,7 @@ import {
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { AppConfirmModal, AppFormModal } from "@/components/shared/AppFormModal";
 import { type ResourcePickerItem, ResourcePickerModal } from "@/components/shared/resource-picker";
+import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
@@ -480,10 +481,7 @@ export default function EventDetailScreen() {
   if ((!startsInCreateMode && isLoading) || isRedirecting) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator size="large" />
-        <Text className="text-sm text-muted-foreground mt-3">
-          {isRedirecting ? "Closing event..." : "Loading event..."}
-        </Text>
+        <LoadingState message={isRedirecting ? "Closing event..." : "Loading event..."} />
       </View>
     );
   }
@@ -491,13 +489,12 @@ export default function EventDetailScreen() {
   if (accessDenied) {
     return (
       <View className="flex-1 items-center justify-center px-6 bg-background">
-        <Text className="text-lg font-semibold text-foreground">Event unavailable</Text>
-        <Text className="text-sm text-muted-foreground text-center mt-2">
-          You do not have permission to view this event.
-        </Text>
-        <Button className="mt-4" onPress={() => router.back()}>
-          <Text className="text-primary-foreground">Go Back</Text>
-        </Button>
+        <EmptyState
+          actionLabel="Go back"
+          description="You do not have permission to view this event."
+          onAction={() => router.back()}
+          title="Event unavailable"
+        />
       </View>
     );
   }
@@ -505,13 +502,12 @@ export default function EventDetailScreen() {
   if (!startsInCreateMode && !event) {
     return (
       <View className="flex-1 items-center justify-center px-6 bg-background">
-        <Text className="text-lg font-semibold text-foreground">Event not found</Text>
-        <Text className="text-sm text-muted-foreground text-center mt-2">
-          This event may have been removed.
-        </Text>
-        <Button className="mt-4" onPress={() => router.back()}>
-          <Text className="text-primary-foreground">Go Back</Text>
-        </Button>
+        <EmptyState
+          actionLabel="Go back"
+          description="This event may have been removed."
+          onAction={() => router.back()}
+          title="Event not found"
+        />
       </View>
     );
   }

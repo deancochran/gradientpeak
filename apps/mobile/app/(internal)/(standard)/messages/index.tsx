@@ -8,7 +8,8 @@ import { Badge } from "@repo/ui/components/badge";
 import { Text } from "@repo/ui/components/text";
 import { cn } from "@repo/ui/lib/cn";
 import { Stack } from "expo-router";
-import { ActivityIndicator, FlatList, Pressable, View } from "react-native";
+import { FlatList, Pressable, View } from "react-native";
+import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { formatRelativeTime } from "@/lib/utils";
@@ -147,7 +148,7 @@ export default function MessagesScreen() {
       />
       {isLoading ? (
         <View className="flex-1 items-center justify-center" testID="messages-loading-state">
-          <ActivityIndicator size="large" className="text-muted-foreground" />
+          <LoadingState message="Loading messages..." />
         </View>
       ) : (
         <FlatList
@@ -173,15 +174,11 @@ export default function MessagesScreen() {
             />
           )}
           ListEmptyComponent={
-            <View
-              className="flex-1 items-center justify-center py-12"
+            <EmptyState
+              description="Your conversations will appear here once you start messaging."
               testID="messages-empty-state"
-            >
-              <Text className="text-base font-medium text-foreground">No conversations yet</Text>
-              <Text className="mt-2 text-center text-sm text-muted-foreground">
-                Your conversations will appear here once you start messaging.
-              </Text>
-            </View>
+              title="No conversations yet"
+            />
           }
         />
       )}
