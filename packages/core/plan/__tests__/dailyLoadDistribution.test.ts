@@ -637,4 +637,57 @@ describe("buildDailyLoadDistribution", () => {
       points.every((point) => point.reason_codes.includes("all_training_days_unavailable")),
     ).toBe(true);
   });
+
+  it("emits deterministic high confidence provenance for profile-backed planned dates", () => {
+    const points = buildDailyLoadDistribution({
+      startDate: "2026-01-05",
+      endDate: "2026-01-11",
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 300 }],
+      preferenceProfile: defaultAthletePreferenceProfile,
+      plannedSessions: [{ date: "2026-01-07", estimatedTss: 80 }],
+    });
+
+    const plannedDay = points.find((point) => point.date === "2026-01-07");
+    expect(plannedDay).toBeDefined();
+    if (!plannedDay) return;
+    expect(plannedDay.confidence).toBe("high");
+    expect(plannedDay.confidence_score).toBeGreaterThanOrEqual(80);
+    expect(plannedDay.reason_codes).toEqual([
+      "daily_load_distribution_v1",
+      "source_weekly_target",
+      "target_positive_tss",
+      "source_preference_profile",
+      "availability_default_pattern",
+      "source_planned_session_dates",
+      "planned_session_date_applied",
+      "planned_session_date_specific",
+      "fallback_default_activity_category",
+      "profile_goal_weekly_distribution",
+      "weekly_allocation_category_budget",
+      "max_single_session_duration_cap_applied",
+    ]);
+  });
+
+  it("marks missing weekly targets and default patterns as low confidence", () => {
+    const points = buildDailyLoadDistribution({
+      startDate: "2026-01-05",
+      endDate: "2026-01-07",
+      weeklyTargets: [],
+    });
+
+    expect(points[0]?.confidence).toBe("low");
+    expect(points[0]?.reason_codes).toEqual([
+      "daily_load_distribution_v1",
+      "source_missing_weekly_target",
+      "target_zero_tss",
+      "partial_week_scaled",
+      "fallback_missing_preference_profile",
+      "availability_default_pattern",
+      "fallback_anchor_session_pattern",
+      "fallback_default_activity_category",
+      "profile_goal_weekly_distribution",
+      "weekly_allocation_category_budget",
+      "daily_cap_binding",
+    ]);
+  });
 });

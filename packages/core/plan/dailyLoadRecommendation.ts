@@ -109,6 +109,7 @@ export interface DailyLoadRecommendationPoint {
   completedLoadTss: number;
   loadDeltaTss: number;
   confidence: "low" | "medium" | "high";
+  confidence_score?: number;
   reasonCodes: string[];
 }
 
@@ -173,6 +174,8 @@ const UTC_WEEKDAY_NAMES = [
 const DEFAULT_WEEKLY_SESSION_COUNT = 3;
 const TSS_EPSILON = 0.000001;
 
+type DailyLoadConfidenceBucket = DailyLoadRecommendationPoint["confidence"];
+
 const ACTIVITY_CATEGORY_ORDER: DailyLoadRecommendationActivityCategory[] = [
   "run",
   "bike",
@@ -220,6 +223,113 @@ const SESSION_ANCHORS_BY_COUNT: Record<number, number[]> = {
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
+}
+
+function confidenceBucketForScore(score: number): DailyLoadConfidenceBucket {
+  if (score >= 80) return "high";
+  if (score >= 50) return "medium";
+  return "low";
+}
+
+function orderedReasonCodes(reasons: string[]): string[] {
+  return [...new Set(reasons)];
+}
+
+function confidenceScoreForRecommendedDay(input: {
+  hasWeeklyTarget: boolean;
+  weekTargetTss: number;
+  isPartialWeek: boolean;
+  hasSession: boolean;
+  hasEstimatedSessionTss: boolean;
+  hasExplicitSessionFocus: boolean;
+  hasExplicitSessionCategory: boolean;
+  hasPreferredWeekdays: boolean;
+  usedDefaultWeekdayFallback: boolean;
+  isHardRestDay: boolean;
+  hasScheduledLoad: boolean;
+  hasCompletedLoad: boolean;
+  isRestDay: boolean;
+}): number {
+  let score = 20;
+  if (input.hasWeeklyTarget) score += 25;
+  if (input.weekTargetTss > 0) score += 10;
+  if (input.hasSession) score += 20;
+  if (input.hasEstimatedSessionTss) score += 10;
+  if (input.hasExplicitSessionFocus) score += 5;
+  if (input.hasExplicitSessionCategory) score += 5;
+  if (input.hasPreferredWeekdays) score += 15;
+  if (input.hasScheduledLoad) score += 5;
+  if (input.hasCompletedLoad) score += 5;
+  if (!input.hasWeeklyTarget) score -= 15;
+  if (input.weekTargetTss <= 0) score -= 20;
+  if (input.usedDefaultWeekdayFallback) score -= 10;
+  if (input.isPartialWeek) score -= 5;
+  if (input.isHardRestDay) score -= 5;
+  if (input.isRestDay && !input.hasSession) score -= 5;
+  return clamp(score, 0, 100);
+}
+
+function reasonCodesForRecommendedDay(input: {
+  hasWeeklyTarget: boolean;
+  weekTargetTss: number;
+  isPartialWeek: boolean;
+  hasSession: boolean;
+  hasEstimatedSessionTss: boolean;
+  hasExplicitSessionFocus: boolean;
+  hasExplicitSessionCategory: boolean;
+  hasPreferredWeekdays: boolean;
+  usedDefaultWeekdayFallback: boolean;
+  isHardRestDay: boolean;
+  hasScheduledLoad: boolean;
+  hasCompletedLoad: boolean;
+  isRestDay: boolean;
+}): string[] {
+  return orderedReasonCodes([
+    "daily_recommended_load_v1",
+    input.hasWeeklyTarget ? "source_weekly_target" : "source_missing_weekly_target",
+    input.weekTargetTss <= 0 ? "target_zero_tss" : "target_positive_tss",
+    ...(input.isPartialWeek ? ["partial_week_scaled"] : []),
+    input.hasSession ? "source_planned_session" : "fallback_no_planned_session",
+    ...(input.hasEstimatedSessionTss ? ["planned_session_estimated_tss"] : []),
+    ...(input.hasExplicitSessionFocus ? ["planned_session_explicit_focus"] : []),
+    ...(input.hasExplicitSessionCategory ? ["planned_session_explicit_activity"] : []),
+    input.hasPreferredWeekdays
+      ? "source_preferred_weekdays"
+      : "fallback_missing_preferred_weekdays",
+    ...(input.usedDefaultWeekdayFallback ? ["fallback_default_all_weekdays"] : []),
+    ...(input.isHardRestDay ? ["hard_rest_day_applied"] : []),
+    ...(input.hasScheduledLoad ? ["source_scheduled_load"] : []),
+    ...(input.hasCompletedLoad ? ["source_completed_load"] : []),
+    input.isRestDay ? "rest_day_allocation" : "weekly_target_daily_distribution",
+  ]);
+}
+
+function confidenceScoreForDistributionPoint(input: {
+  hasWeeklyTarget: boolean;
+  weeklyTss: number;
+  isPartialWeek: boolean;
+  hasPreferenceProfile: boolean;
+  hasAvailabilityWindows: boolean;
+  hasPlannedSessions: boolean;
+  hasWeeklyAllocation: boolean;
+  selectedHasPlannedSession: boolean;
+  hasExplicitSchedulingConstraints: boolean;
+  isRestDay: boolean;
+}): number {
+  let score = 20;
+  if (input.hasWeeklyTarget) score += 25;
+  if (input.weeklyTss > 0) score += 10;
+  if (input.hasPreferenceProfile) score += 20;
+  if (input.hasExplicitSchedulingConstraints) score += 15;
+  if (input.hasAvailabilityWindows) score += 10;
+  if (input.hasPlannedSessions) score += 10;
+  if (input.selectedHasPlannedSession) score += 5;
+  if (input.hasWeeklyAllocation) score += 5;
+  if (!input.hasWeeklyTarget) score -= 15;
+  if (input.weeklyTss <= 0) score -= 20;
+  if (input.isPartialWeek) score -= 5;
+  if (input.isRestDay && !input.hasPlannedSessions) score -= 5;
+  return clamp(score, 0, 100);
 }
 
 function round1(value: number): number {
@@ -860,7 +970,8 @@ function buildRecommendedLoadPoints(
       if (preferredWeekdays.has(weekday) && !hardRestDays.has(weekday))
         candidateWeekdays.add(weekday);
     }
-    if (candidateWeekdays.size === 0) {
+    const usedDefaultWeekdayFallback = candidateWeekdays.size === 0;
+    if (usedDefaultWeekdayFallback) {
       for (let dayOffset = 0; dayOffset < daysInWeek; dayOffset += 1) {
         if (!hardRestDays.has(dayOffset)) candidateWeekdays.add(dayOffset);
       }
@@ -891,7 +1002,7 @@ function buildRecommendedLoadPoints(
         (focus.includes("strength") || ["hypertrophy", "max_strength", "power"].includes(focus)
           ? "strength"
           : "run");
-      return { date, focus, activityCategory, weight };
+      return { date, dayOffset, focus, activityCategory, weight };
     });
 
     const tss = allocateTotal(
@@ -914,6 +1025,30 @@ function buildRecommendedLoadPoints(
       const recommendedLoadTss = round1(tss[index] ?? 0);
       const completedLoadTss = round1(completedByDate.get(row.date) ?? 0);
       const scheduledLoadTss = round1(scheduledByDate.get(row.date) ?? 0);
+      const sessions = sessionsByDate.get(row.date) ?? [];
+      const hasSession = sessions.length > 0;
+      const hasEstimatedSessionTss = sessions.some(
+        (session) => toFinitePositive(session.estimatedTss) > 0,
+      );
+      const hasExplicitSessionFocus = sessions.some((session) => Boolean(session.primaryFocus));
+      const hasExplicitSessionCategory = sessions.some((session) =>
+        Boolean(session.activityCategory),
+      );
+      const confidenceScore = confidenceScoreForRecommendedDay({
+        hasWeeklyTarget: Boolean(weeklyTarget),
+        weekTargetTss,
+        isPartialWeek: daysInWeek < 7,
+        hasSession,
+        hasEstimatedSessionTss,
+        hasExplicitSessionFocus,
+        hasExplicitSessionCategory,
+        hasPreferredWeekdays: preferredWeekdays.size > 0,
+        usedDefaultWeekdayFallback,
+        isHardRestDay: hardRestDays.has(row.dayOffset),
+        hasScheduledLoad: scheduledLoadTss > 0,
+        hasCompletedLoad: completedLoadTss > 0,
+        isRestDay: row.focus === "rest",
+      });
       results.push({
         date: row.date,
         recommendedLoadTss,
@@ -925,11 +1060,23 @@ function buildRecommendedLoadPoints(
         scheduledLoadTss,
         completedLoadTss,
         loadDeltaTss: round1(completedLoadTss - recommendedLoadTss),
-        confidence: input.sessions?.length ? "high" : preferredWeekdays.size ? "medium" : "low",
-        reasonCodes: [
-          "daily_recommended_load_v1",
-          row.focus === "rest" ? "rest_day_allocation" : "weekly_target_daily_distribution",
-        ],
+        confidence: confidenceBucketForScore(confidenceScore),
+        confidence_score: confidenceScore,
+        reasonCodes: reasonCodesForRecommendedDay({
+          hasWeeklyTarget: Boolean(weeklyTarget),
+          weekTargetTss,
+          isPartialWeek: daysInWeek < 7,
+          hasSession,
+          hasEstimatedSessionTss,
+          hasExplicitSessionFocus,
+          hasExplicitSessionCategory,
+          hasPreferredWeekdays: preferredWeekdays.size > 0,
+          usedDefaultWeekdayFallback,
+          isHardRestDay: hardRestDays.has(row.dayOffset),
+          hasScheduledLoad: scheduledLoadTss > 0,
+          hasCompletedLoad: completedLoadTss > 0,
+          isRestDay: row.focus === "rest",
+        }),
       });
     });
   }
@@ -1079,6 +1226,21 @@ function buildDistributionPoints(
       if (weeklyUnderAllocated) capReasonCodes.push("weekly_target_under_allocated_daily_caps");
       if (input.preferenceProfile && candidates.length === 0)
         capReasonCodes.push("all_training_days_unavailable");
+      const isRestDay = selectedIndex === undefined;
+      const selectedHasPlannedSession = sessionDates.has(date);
+      const confidenceScore = confidenceScoreForDistributionPoint({
+        hasWeeklyTarget: Boolean(target),
+        weeklyTss,
+        isPartialWeek: daysInWeek < 7,
+        hasPreferenceProfile: Boolean(input.preferenceProfile),
+        hasAvailabilityWindows,
+        hasPlannedSessions: sessionDates.size > 0,
+        hasWeeklyAllocation:
+          Object.keys(input.weeklyAllocation?.activity_categories ?? {}).length > 0,
+        selectedHasPlannedSession,
+        hasExplicitSchedulingConstraints,
+        isRestDay,
+      });
       points.push({
         date,
         recommendedLoadTss,
@@ -1094,19 +1256,36 @@ function buildDistributionPoints(
         scheduledLoadTss: 0,
         completedLoadTss: 0,
         loadDeltaTss: round1(0 - recommendedLoadTss),
-        confidence: hasExplicitSchedulingConstraints || input.preferenceProfile ? "high" : "medium",
-        reasonCodes: [
+        confidence: confidenceBucketForScore(confidenceScore),
+        confidence_score: confidenceScore,
+        reasonCodes: orderedReasonCodes([
           "daily_load_distribution_v1",
+          target ? "source_weekly_target" : "source_missing_weekly_target",
+          weeklyTss <= 0 ? "target_zero_tss" : "target_positive_tss",
+          ...(daysInWeek < 7 ? ["partial_week_scaled"] : []),
+          input.preferenceProfile
+            ? "source_preference_profile"
+            : "fallback_missing_preference_profile",
+          hasAvailabilityWindows ? "availability_windows_applied" : "availability_default_pattern",
+          ...(hardRestDays.size > 0 ? ["hard_rest_days_applied"] : []),
+          sessionDates.size > 0
+            ? "source_planned_session_dates"
+            : "fallback_anchor_session_pattern",
           ...(hasExplicitSchedulingConstraints ? ["explicit_scheduling_constraints_applied"] : []),
-          ...(sessionDates.has(date) ? ["planned_session_date_applied"] : []),
-          selectedIndex === undefined ? "rest_day_allocation" : "profile_goal_weekly_distribution",
+          ...(selectedHasPlannedSession
+            ? ["planned_session_date_applied", "planned_session_date_specific"]
+            : []),
+          Object.keys(input.weeklyAllocation?.activity_categories ?? {}).length > 0
+            ? "source_weekly_allocation_activity_mix"
+            : "fallback_default_activity_category",
+          isRestDay ? "rest_day_allocation" : "profile_goal_weekly_distribution",
           ...(assignment?.pinned
             ? ["planned_session_category_pin"]
-            : selectedIndex === undefined
+            : isRestDay
               ? []
               : ["weekly_allocation_category_budget"]),
           ...capReasonCodes,
-        ],
+        ]),
       });
     }
   }

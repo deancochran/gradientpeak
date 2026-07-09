@@ -24,6 +24,7 @@ export interface DailyLoadDistributionPoint {
   primary_focus: DailyRecommendedLoadPrimaryFocus;
   activity_category: DailyRecommendedLoadActivityCategory;
   confidence: "low" | "medium" | "high";
+  confidence_score?: number;
   reason_codes: string[];
 }
 
@@ -85,6 +86,9 @@ export function buildDailyLoadDistribution(
     primary_focus: point.primaryFocus,
     activity_category: point.activityCategory,
     confidence: point.confidence,
+    ...(typeof point.confidence_score === "number"
+      ? { confidence_score: point.confidence_score }
+      : {}),
     reason_codes: point.reasonCodes,
   }));
 }
