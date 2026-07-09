@@ -4256,6 +4256,11 @@ function buildDeterministicProjectionPayloadInternal(
     })),
     preferenceProfile: input.preference_profile,
     weeklyAllocation,
+    capacityContext: {
+      startingCtl: points[0]?.predicted_fitness_ctl ?? null,
+      startingAtl: points[0]?.predicted_fatigue_atl ?? null,
+      startingTsb: points[0]?.predicted_form_tsb ?? null,
+    },
   });
   const sportLoadStates = buildSportLoadStates({
     microcycles,
