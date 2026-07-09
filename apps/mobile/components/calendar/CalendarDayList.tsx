@@ -1,6 +1,16 @@
 import type { ProfileGoal } from "@repo/core";
-import { useCallback, useEffect, useMemo, useRef } from "react";
-import { FlatList, type ListRenderItemInfo, View, type ViewToken } from "react-native";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  FlatList,
+  type LayoutChangeEvent,
+  type ListRenderItemInfo,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  View,
+  type ViewProps,
+  type ViewToken,
+} from "react-native";
+import Animated, { runOnJS, useAnimatedScrollHandler } from "react-native-reanimated";
 import type { CalendarGroupEvent } from "@/lib/calendar/groupEventPlans";
 import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
 import {
@@ -9,6 +19,13 @@ import {
   type CalendarTimelineRow,
 } from "./CalendarTimelineModel";
 import { CalendarDayHeaderRow, CalendarScheduleObjectRow } from "./CalendarTimelineRows";
+
+const AnimatedCalendarFlatList = Animated.createAnimatedComponent(FlatList<CalendarTimelineRow>);
+
+type CalendarCellRendererProps = ViewProps & {
+  children?: ReactNode;
+  index?: number;
+};
 
 export type CalendarDayListProps = {
   rangeStart: string;
@@ -25,6 +42,7 @@ export type CalendarDayListProps = {
   onReachStart: () => void;
   onReachEnd: () => void;
   onVisibleDayChange: (dateKey: string) => void;
+  onVisibleDaySettled: (dateKey: string) => void;
   onPressDay: (dateKey: string) => void;
   onPressActivity: (activity: CalendarActivity) => void;
   onPressEvent: (event: CalendarEvent) => void;
@@ -39,7 +57,11 @@ export function CalendarDayList(props: CalendarDayListProps) {
   const lastEndReachedRef = useRef<string | null>(null);
   const lastVisibleDayKeyRef = useRef(props.visibleDayKey);
   const latestOnVisibleDayChangeRef = useRef(props.onVisibleDayChange);
+  const latestOnVisibleDaySettledRef = useRef(props.onVisibleDaySettled);
   const lastScrollRequestRef = useRef<{ dateKey: string; animated: boolean } | null>(null);
+  const pendingScrollEndSettleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dayOffsetsRef = useRef(new Map<string, number>());
+  const sortedDayOffsetsRef = useRef<{ dateKey: string; y: number }[]>([]);
   const viewabilityConfigRef = useRef({
     itemVisiblePercentThreshold: 35,
     minimumViewTime: 80,
@@ -92,6 +114,125 @@ export function CalendarDayList(props: CalendarDayListProps) {
     lastEndReachedRef.current = props.rangeEnd;
     props.onReachEnd();
   }, [props.onReachEnd, props.rangeEnd]);
+
+  const publishVisibleDay = useCallback((dateKey: string) => {
+    if (lastVisibleDayKeyRef.current === dateKey) {
+      return;
+    }
+
+    lastVisibleDayKeyRef.current = dateKey;
+    latestOnVisibleDayChangeRef.current(dateKey);
+  }, []);
+
+  const rebuildSortedDayOffsets = useCallback(() => {
+    sortedDayOffsetsRef.current = [...dayOffsetsRef.current.entries()]
+      .map(([dateKey, y]) => ({ dateKey, y }))
+      .sort((left, right) => left.y - right.y);
+  }, []);
+
+  const handleDayLayout = useCallback(
+    (dateKey: string, y: number) => {
+      const previousY = dayOffsetsRef.current.get(dateKey);
+      if (previousY === y) {
+        return;
+      }
+
+      dayOffsetsRef.current.set(dateKey, y);
+      rebuildSortedDayOffsets();
+    },
+    [rebuildSortedDayOffsets],
+  );
+
+  const handleScrollOffset = useCallback(
+    (offsetY: number) => {
+      const dayOffsets = sortedDayOffsetsRef.current;
+      if (dayOffsets.length === 0) {
+        return;
+      }
+
+      const selectionY = Math.max(0, offsetY + 8);
+      let visibleDateKey = dayOffsets[0]?.dateKey;
+
+      for (const dayOffset of dayOffsets) {
+        if (dayOffset.y > selectionY) {
+          break;
+        }
+        visibleDateKey = dayOffset.dateKey;
+      }
+
+      if (visibleDateKey) {
+        publishVisibleDay(visibleDateKey);
+      }
+    },
+    [publishVisibleDay],
+  );
+
+  const handleScrollSettled = useCallback(() => {
+    if (pendingScrollEndSettleRef.current) {
+      clearTimeout(pendingScrollEndSettleRef.current);
+      pendingScrollEndSettleRef.current = null;
+    }
+    latestOnVisibleDaySettledRef.current(lastVisibleDayKeyRef.current);
+  }, []);
+
+  const cancelPendingScrollEndSettle = useCallback(() => {
+    if (!pendingScrollEndSettleRef.current) {
+      return;
+    }
+
+    clearTimeout(pendingScrollEndSettleRef.current);
+    pendingScrollEndSettleRef.current = null;
+  }, []);
+
+  const handleScrollEndDrag = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const velocityY = event.nativeEvent.velocity?.y;
+      if (typeof velocityY === "number") {
+        if (Math.abs(velocityY) < 0.1) {
+          handleScrollSettled();
+        }
+        return;
+      }
+
+      cancelPendingScrollEndSettle();
+      pendingScrollEndSettleRef.current = setTimeout(() => {
+        pendingScrollEndSettleRef.current = null;
+        handleScrollSettled();
+      }, 80);
+    },
+    [cancelPendingScrollEndSettle, handleScrollSettled],
+  );
+
+  const CellRendererComponent = useCallback(
+    ({ children, index, onLayout, style, ...cellProps }: CalendarCellRendererProps) => (
+      <View
+        {...cellProps}
+        style={style}
+        onLayout={(event: LayoutChangeEvent) => {
+          onLayout?.(event);
+          const row = typeof index === "number" ? rows[index] : null;
+          if (row?.type === "day") {
+            handleDayLayout(row.dateKey, event.nativeEvent.layout.y);
+          }
+        }}
+      >
+        {children}
+      </View>
+    ),
+    [handleDayLayout, rows],
+  );
+
+  const scrollHandler = useAnimatedScrollHandler<{ lastPublishedY: number }>({
+    onScroll: (event, context) => {
+      const nextY = event.contentOffset.y;
+      if (Math.abs(nextY - (context.lastPublishedY ?? -64)) < 16) {
+        return;
+      }
+
+      context.lastPublishedY = nextY;
+      runOnJS(handleScrollOffset)(nextY);
+    },
+  });
 
   const renderItem = useCallback(
     ({ item }: ListRenderItemInfo<CalendarTimelineRow>) => {
@@ -186,25 +327,46 @@ export function CalendarDayList(props: CalendarDayListProps) {
 
   const handleViewableItemsChangedRef = useRef(
     ({ viewableItems }: { viewableItems: ViewToken<CalendarTimelineRow>[] }) => {
-      const firstVisibleRow = [...viewableItems]
-        .filter((token) => token.isViewable)
-        .sort((left, right) => (left.index ?? 0) - (right.index ?? 0))[0]?.item;
+      let firstVisibleToken: ViewToken<CalendarTimelineRow> | null = null;
+      for (const token of viewableItems) {
+        if (!token.isViewable) {
+          continue;
+        }
+        if (
+          (token.index ?? Number.MAX_SAFE_INTEGER) <
+          (firstVisibleToken?.index ?? Number.MAX_SAFE_INTEGER)
+        ) {
+          firstVisibleToken = token;
+        }
+      }
+
+      const firstVisibleRow = firstVisibleToken?.item;
       if (!firstVisibleRow) {
         return;
       }
-
-      if (lastVisibleDayKeyRef.current === firstVisibleRow.dateKey) {
-        return;
-      }
-
-      lastVisibleDayKeyRef.current = firstVisibleRow.dateKey;
-      latestOnVisibleDayChangeRef.current(firstVisibleRow.dateKey);
+      publishVisibleDay(firstVisibleRow.dateKey);
     },
   );
 
   useEffect(() => {
     latestOnVisibleDayChangeRef.current = props.onVisibleDayChange;
   }, [props.onVisibleDayChange]);
+
+  useEffect(() => {
+    latestOnVisibleDaySettledRef.current = props.onVisibleDaySettled;
+  }, [props.onVisibleDaySettled]);
+
+  useEffect(() => cancelPendingScrollEndSettle, [cancelPendingScrollEndSettle]);
+
+  useEffect(() => {
+    const dateKeys = new Set(rows.filter((row) => row.type === "day").map((row) => row.dateKey));
+    for (const dateKey of dayOffsetsRef.current.keys()) {
+      if (!dateKeys.has(dateKey)) {
+        dayOffsetsRef.current.delete(dateKey);
+      }
+    }
+    rebuildSortedDayOffsets();
+  }, [rebuildSortedDayOffsets, rows]);
 
   useEffect(() => {
     lastVisibleDayKeyRef.current = props.selectedDateKey;
@@ -222,8 +384,9 @@ export function CalendarDayList(props: CalendarDayListProps) {
 
   return (
     <View className="flex-1">
-      <FlatList
+      <AnimatedCalendarFlatList
         ref={listRef}
+        CellRendererComponent={CellRendererComponent}
         data={rows}
         keyExtractor={(item) => item.key}
         renderItem={renderItem}
@@ -237,6 +400,11 @@ export function CalendarDayList(props: CalendarDayListProps) {
         windowSize={5}
         onEndReached={handleReachEnd}
         onEndReachedThreshold={0.35}
+        onMomentumScrollBegin={cancelPendingScrollEndSettle}
+        onMomentumScrollEnd={handleScrollSettled}
+        onScrollEndDrag={handleScrollEndDrag}
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
         onViewableItemsChanged={handleViewableItemsChangedRef.current}
         onStartReached={handleReachStart}
         onStartReachedThreshold={0.35}

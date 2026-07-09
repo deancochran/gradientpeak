@@ -352,9 +352,12 @@ export function useCalendarTimelineController() {
     [navigateTo, selectDate],
   );
 
-  const handleVisibleDayChange = useCallback(
+  const handleVisibleDayChange = useCallback((dateKey: string) => {
+    setVisibleDateKey(dateKey);
+  }, []);
+
+  const handleVisibleDaySettled = useCallback(
     (dateKey: string) => {
-      setVisibleDateKey(dateKey);
       setVisibleAnchor(dateKey);
     },
     [setVisibleAnchor],
@@ -433,6 +436,7 @@ export function useCalendarTimelineController() {
       onReachStart: extendDayRangeBackward,
       onReachEnd: extendDayRangeForward,
       onVisibleDayChange: handleVisibleDayChange,
+      onVisibleDaySettled: handleVisibleDaySettled,
       onPressDay: handleDayPress,
       onPressActivity: handleOpenActivity,
       onPressEvent: handleOpenEvent,
@@ -449,6 +453,7 @@ export function useCalendarTimelineController() {
       groupEventsByDate,
       handleDayPress,
       handleVisibleDayChange,
+      handleVisibleDaySettled,
       handleOpenActivity,
       handleOpenEvent,
       handleOpenGroupEvent,

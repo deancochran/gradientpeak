@@ -89,6 +89,15 @@ jest.mock("react-native", () => ({
   View: createHost("View"),
 }));
 
+jest.mock("react-native-reanimated", () => ({
+  __esModule: true,
+  default: {
+    createAnimatedComponent: (Component: unknown) => Component,
+  },
+  runOnJS: (callback: (...args: unknown[]) => unknown) => callback,
+  useAnimatedScrollHandler: (handler: unknown) => handler,
+}));
+
 jest.mock("expo-router", () => ({
   __esModule: true,
   useRouter: () => ({ push: pushMock, replace: replaceMock }),
@@ -525,6 +534,53 @@ describe("calendar day timeline screen", () => {
     expect((rendered as any).UNSAFE_getByType("AppHeader").props.title).toBe("Calendar");
     expect(screen.getByTestId("calendar-visible-month-label").props.children).toBe("April 2026");
     expect(screen.getByTestId("calendar-week-day-selected-2026-04-01")).toBeTruthy();
+  });
+
+  it("uses the topmost visible agenda row when viewability tokens are unsorted", () => {
+    renderNative(<CalendarScreenWithErrorBoundary />);
+    const list = screen.getByTestId("calendar-day-list");
+    const aprilRow = { key: "day:2026-04-01", type: "day", dateKey: "2026-04-01" };
+    const laterRow = { key: "day:2026-04-08", type: "day", dateKey: "2026-04-08" };
+
+    act(() => {
+      list.props.onViewableItemsChanged({
+        viewableItems: [
+          { item: laterRow, key: laterRow.key, index: 28, isViewable: true },
+          { item: aprilRow, key: aprilRow.key, index: 20, isViewable: true },
+        ],
+      });
+    });
+
+    expect(screen.getByTestId("calendar-week-day-selected-2026-04-01")).toBeTruthy();
+  });
+
+  it("defers persisted visible anchor updates until agenda scroll settles", () => {
+    renderNative(<CalendarScreenWithErrorBoundary />);
+    const list = screen.getByTestId("calendar-day-list");
+    const aprilRow = { key: "day:2026-04-01", type: "day", dateKey: "2026-04-01" };
+
+    act(() => {
+      list.props.onViewableItemsChanged({
+        viewableItems: [{ item: aprilRow, key: aprilRow.key, index: 20, isViewable: true }],
+      });
+    });
+
+    expect(screen.getByTestId("calendar-week-day-selected-2026-04-01")).toBeTruthy();
+    expect(useCalendarStore.getState().visibleAnchor).toBe(today);
+
+    act(() => {
+      list.props.onScrollEndDrag({ nativeEvent: {} });
+      list.props.onMomentumScrollBegin();
+      jest.runOnlyPendingTimers();
+    });
+
+    expect(useCalendarStore.getState().visibleAnchor).toBe(today);
+
+    act(() => {
+      list.props.onMomentumScrollEnd();
+    });
+
+    expect(useCalendarStore.getState().visibleAnchor).toBe("2026-04-01");
   });
 
   it("updates the selected week date when agenda scrolling reveals non-header rows", () => {
