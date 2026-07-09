@@ -25,6 +25,8 @@ type ContentPermissions = {
   revokeEventGrants(eventId: string): Promise<unknown>;
 };
 
+type InsertedEventIdentity = { id: string };
+
 function getSqlRows<T>(result: unknown) {
   return ((result as { rows?: T[] }).rows ?? []) as T[];
 }
@@ -294,10 +296,34 @@ export async function applyTrainingPlanTemplateUseCase(input: {
     });
   }
 
-  const insertedEvents = await db
-    .insert(schema.events)
-    .values(eventRows.map((eventRow) => ({ ...eventRow, schedule_batch_id })) as any)
-    .returning({ id: schema.events.id });
+  const insertedEvents = await db.transaction(async (tx): Promise<InsertedEventIdentity[]> => {
+    const events = await tx
+      .insert(schema.events)
+      .values(eventRows.map((eventRow) => ({ ...eventRow, schedule_batch_id })) as any)
+      .returning({ id: schema.events.id });
+
+    if (events.length !== eventRows.length) {
+      throw new TRPCError({
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Failed to create the full scheduled training plan event set.",
+      });
+    }
+
+    await tx.insert(schema.eventScheduleLinks).values(
+      events.map((event, index) => {
+        const eventRow = eventRows[index]!;
+        return {
+          event_id: event.id,
+          profile_id: profileId,
+          training_plan_id: appliedPlanId,
+          activity_plan_id: eventRow.activity_plan_id ?? null,
+          schedule_batch_id,
+        };
+      }) satisfies Array<typeof schema.eventScheduleLinks.$inferInsert>,
+    );
+
+    return events;
+  });
 
   await Promise.all(
     insertedEvents.map((event, index) => {

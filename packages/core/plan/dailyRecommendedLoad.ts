@@ -264,8 +264,10 @@ export function buildDailyRecommendedLoad(
     const weekTargetTss = toFinitePositive(weeklyTarget?.targetTss) * partialWeekScale;
     const weekTargetDuration =
       toFinitePositive(weeklyTarget?.targetDurationMinutes) * partialWeekScale;
-    const weekTargetFatigue =
-      (toFinitePositive(weeklyTarget?.targetFatigueCost) || weekTargetTss) * partialWeekScale;
+    const explicitWeekTargetFatigue = toFinitePositive(weeklyTarget?.targetFatigueCost);
+    const weekTargetFatigue = explicitWeekTargetFatigue
+      ? explicitWeekTargetFatigue * partialWeekScale
+      : weekTargetTss;
     const weekTargetStrengthSets =
       toFinitePositive(weeklyTarget?.targetStrengthSets) * partialWeekScale;
     const candidateWeekdays = new Set<number>();

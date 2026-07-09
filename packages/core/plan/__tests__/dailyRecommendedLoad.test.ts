@@ -46,4 +46,19 @@ describe("buildDailyRecommendedLoad", () => {
     expect(firstDay.loadDeltaTss).toBe(firstDay.completedLoadTss - firstDay.recommendedLoadTss);
     expect(firstDay.reasonCodes.join(" ")).not.toMatch(/miss|skip/i);
   });
+
+  it("uses scaled TSS as the fatigue fallback for partial weeks", () => {
+    const points = buildDailyRecommendedLoad({
+      startDate: "2026-01-05",
+      endDate: "2026-01-07",
+      preferredWeekdays: [0, 1, 2],
+      weeklyTargets: [{ weekIndex: 0, targetTss: 280 }],
+    });
+
+    const recommendedTss = points.reduce((sum, point) => sum + point.recommendedLoadTss, 0);
+    const recommendedFatigue = points.reduce((sum, point) => sum + point.recommendedFatigueCost, 0);
+
+    expect(recommendedTss).toBe(120);
+    expect(recommendedFatigue).toBe(recommendedTss);
+  });
 });

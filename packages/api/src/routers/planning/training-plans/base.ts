@@ -80,7 +80,7 @@ import {
   type TrainingPlanRow,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, asc, desc, eq, gte, inArray, isNotNull, lt, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   applyQuickAdjustmentUseCase,
@@ -367,146 +367,11 @@ function _todayDateOnlyUtc(): string {
   return formatDateOnlyUtc(new Date());
 }
 
-type ActivePlanLookup = {
-  scheduleBatchId: string | null;
-  trainingPlanId: string;
-  trainingPlan: TrainingPlanRow;
-  nextEventAt: string;
-};
-
 const applicationScopedScheduleInputSchema = z
   .object({
     schedule_batch_id: z.string().uuid(),
   })
   .strict();
-
-async function _getActivePlanFromFutureEvents(input: {
-  db?: DbClient;
-  supabase?: LegacyPlanningReader;
-  profileId: string;
-}): Promise<ActivePlanLookup | null> {
-  if (input.db) {
-    const upcomingEvents = await input.db
-      .select({
-        training_plan_id: schema.eventScheduleLinks.training_plan_id,
-        schedule_batch_id: schema.eventScheduleLinks.schedule_batch_id,
-        starts_at: schema.events.starts_at,
-      })
-      .from(schema.events)
-      .innerJoin(
-        schema.eventScheduleLinks,
-        eq(schema.eventScheduleLinks.event_id, schema.events.id),
-      )
-      .where(
-        and(
-          eq(schema.events.profile_id, input.profileId),
-          eq(schema.events.event_type, plannedEventType),
-          isNotNull(schema.eventScheduleLinks.training_plan_id),
-          gte(schema.events.starts_at, new Date(todayStartIsoUtc())),
-        ),
-      )
-      .orderBy(asc(schema.events.starts_at))
-      .limit(50);
-
-    const nextScheduledPlanEvent = upcomingEvents.find(
-      (event) => isUuidString(event.training_plan_id) && event.starts_at instanceof Date,
-    );
-
-    if (!nextScheduledPlanEvent) {
-      return null;
-    }
-
-    const trainingPlanId = nextScheduledPlanEvent.training_plan_id as string;
-
-    const trainingPlan = await getAccessibleTrainingPlan({
-      db: input.db,
-      planId: trainingPlanId,
-      profileId: input.profileId,
-    });
-
-    if (!trainingPlan) {
-      return null;
-    }
-
-    return {
-      scheduleBatchId: nextScheduledPlanEvent.schedule_batch_id ?? null,
-      trainingPlanId,
-      trainingPlan,
-      nextEventAt: nextScheduledPlanEvent.starts_at.toISOString(),
-    };
-  }
-
-  if (!input.supabase) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Database client unavailable",
-    });
-  }
-
-  let eventsQuery: any = input.supabase
-    .from("events")
-    .select("training_plan_id, schedule_batch_id, starts_at")
-    .eq("profile_id", input.profileId)
-    .eq("event_type", plannedEventType);
-
-  if (typeof eventsQuery.gte === "function") {
-    eventsQuery = eventsQuery.gte("starts_at", todayStartIsoUtc());
-  }
-
-  if (typeof eventsQuery.order === "function") {
-    eventsQuery = eventsQuery.order("starts_at", { ascending: true });
-  }
-
-  if (typeof eventsQuery.limit === "function") {
-    eventsQuery = eventsQuery.limit(50);
-  }
-
-  const { data: upcomingEvents, error: eventsError } = await eventsQuery;
-
-  if (eventsError) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: eventsError.message,
-    });
-  }
-
-  const nextScheduledPlanEvent = (upcomingEvents ?? []).find(
-    (event: any) =>
-      isUuidString((event as any).training_plan_id) && typeof (event as any).starts_at === "string",
-  );
-
-  if (!nextScheduledPlanEvent) {
-    return null;
-  }
-
-  const trainingPlanId = (nextScheduledPlanEvent as any).training_plan_id as string;
-  const nextEventAt = (nextScheduledPlanEvent as any).starts_at as string;
-
-  const { data: trainingPlan, error: planError } = await input.supabase
-    .from("training_plans")
-    .select("*")
-    .eq("id", trainingPlanId)
-    .or(`profile_id.eq.${input.profileId},is_system_template.eq.true,template_visibility.eq.public`)
-    .maybeSingle();
-
-  if (planError) {
-    throw new TRPCError({
-      code: "INTERNAL_SERVER_ERROR",
-      message: planError.message,
-    });
-  }
-
-  if (!trainingPlan) {
-    return null;
-  }
-
-  return {
-    scheduleBatchId: ((nextScheduledPlanEvent as any).schedule_batch_id as string | null) ?? null,
-    trainingPlanId,
-    trainingPlan: trainingPlan as TrainingPlanRow,
-    nextEventAt,
-  };
-}
 
 type InsightContributorImpact = "positive" | "neutral" | "negative";
 
