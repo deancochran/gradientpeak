@@ -59,6 +59,7 @@ export function CalendarDayList(props: CalendarDayListProps) {
   const latestOnVisibleDayChangeRef = useRef(props.onVisibleDayChange);
   const latestOnVisibleDaySettledRef = useRef(props.onVisibleDaySettled);
   const lastScrollRequestRef = useRef<{ dateKey: string; animated: boolean } | null>(null);
+  const programmaticScrollTargetRef = useRef<string | null>(null);
   const pendingScrollEndSettleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dayOffsetsRef = useRef(new Map<string, number>());
   const sortedDayOffsetsRef = useRef<{ dateKey: string; y: number }[]>([]);
@@ -160,9 +161,20 @@ export function CalendarDayList(props: CalendarDayListProps) {
         visibleDateKey = dayOffset.dateKey;
       }
 
-      if (visibleDateKey) {
-        publishVisibleDay(visibleDateKey);
+      if (!visibleDateKey) {
+        return;
       }
+
+      const programmaticTarget = programmaticScrollTargetRef.current;
+      if (programmaticTarget && visibleDateKey !== programmaticTarget) {
+        return;
+      }
+
+      if (programmaticTarget === visibleDateKey) {
+        programmaticScrollTargetRef.current = null;
+      }
+
+      publishVisibleDay(visibleDateKey);
     },
     [publishVisibleDay],
   );
@@ -172,8 +184,12 @@ export function CalendarDayList(props: CalendarDayListProps) {
       clearTimeout(pendingScrollEndSettleRef.current);
       pendingScrollEndSettleRef.current = null;
     }
-    latestOnVisibleDaySettledRef.current(lastVisibleDayKeyRef.current);
-  }, []);
+
+    const settledDateKey = programmaticScrollTargetRef.current ?? lastVisibleDayKeyRef.current;
+    programmaticScrollTargetRef.current = null;
+    publishVisibleDay(settledDateKey);
+    latestOnVisibleDaySettledRef.current(settledDateKey);
+  }, [publishVisibleDay]);
 
   const cancelPendingScrollEndSettle = useCallback(() => {
     if (!pendingScrollEndSettleRef.current) {
@@ -319,6 +335,7 @@ export function CalendarDayList(props: CalendarDayListProps) {
       }
 
       lastScrollRequestRef.current = { dateKey, animated };
+      programmaticScrollTargetRef.current = dateKey;
       listRef.current?.scrollToIndex({ index: targetIndex, animated, viewPosition: 0 });
       return true;
     },
@@ -344,6 +361,16 @@ export function CalendarDayList(props: CalendarDayListProps) {
       if (!firstVisibleRow) {
         return;
       }
+
+      const programmaticTarget = programmaticScrollTargetRef.current;
+      if (programmaticTarget && firstVisibleRow.dateKey !== programmaticTarget) {
+        return;
+      }
+
+      if (programmaticTarget === firstVisibleRow.dateKey) {
+        programmaticScrollTargetRef.current = null;
+      }
+
       publishVisibleDay(firstVisibleRow.dateKey);
     },
   );
@@ -372,6 +399,7 @@ export function CalendarDayList(props: CalendarDayListProps) {
     lastVisibleDayKeyRef.current = props.selectedDateKey;
   }, [props.selectedDateKey]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: scrollTargetVersion intentionally retriggers same-date scroll requests.
   useEffect(() => {
     if (!props.scrollTargetDateKey) {
       return;
@@ -379,8 +407,9 @@ export function CalendarDayList(props: CalendarDayListProps) {
 
     if (!scrollToDate(props.scrollTargetDateKey, true)) {
       lastScrollRequestRef.current = { dateKey: props.scrollTargetDateKey, animated: true };
+      programmaticScrollTargetRef.current = props.scrollTargetDateKey;
     }
-  }, [props.scrollTargetDateKey, scrollToDate]);
+  }, [props.scrollTargetDateKey, props.scrollTargetVersion, scrollToDate]);
 
   return (
     <View className="flex-1">

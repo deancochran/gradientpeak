@@ -640,6 +640,31 @@ describe("calendar day timeline screen", () => {
     expect(screen.getByTestId("calendar-week-day-selected-2026-03-24")).toBeTruthy();
   });
 
+  it("keeps a tapped week strip day selected during programmatic agenda scrolling", () => {
+    renderNative(<CalendarScreenWithErrorBoundary />);
+    const list = screen.getByTestId("calendar-day-list");
+    const todayRow = { key: `day:${today}`, type: "day", dateKey: today };
+
+    act(() => {
+      fireEvent.press(screen.getByTestId("calendar-week-day-2026-03-24"));
+    });
+
+    act(() => {
+      list.props.onViewableItemsChanged({
+        viewableItems: [{ item: todayRow, key: todayRow.key, index: 21, isViewable: true }],
+      });
+    });
+
+    expect(screen.getByTestId("calendar-week-day-selected-2026-03-24")).toBeTruthy();
+    expect(screen.queryByTestId(`calendar-week-day-selected-${today}`)).toBeNull();
+
+    act(() => {
+      list.props.onMomentumScrollEnd();
+    });
+
+    expect(useCalendarStore.getState().visibleAnchor).toBe("2026-03-24");
+  });
+
   it("opens completed activity rows from the calendar timeline", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 
