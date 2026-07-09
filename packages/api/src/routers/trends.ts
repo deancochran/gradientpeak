@@ -1,15 +1,11 @@
-import {
-  calculateAge,
-  calculateRollingTrainingQuality,
-  getFormStatus,
-  getTrainingIntensityZone,
-} from "@repo/core";
+import { calculateAge, calculateRollingTrainingQuality, getFormStatus } from "@repo/core";
 import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core/load";
 import { type ActivityRow, activities, profiles, publicActivityCategorySchema } from "@repo/db";
 import { and, asc, desc, eq, gte, isNotNull, lte } from "drizzle-orm";
 import { z } from "zod";
 import { buildConsistencyMetrics } from "../application/trends/consistencyMetrics";
 import { buildVolumeTrends } from "../application/trends/volumeTrends";
+import { buildZoneDistributionTrends } from "../application/trends/zoneDistributionTrends";
 import { getRequiredDb } from "../db";
 import { createActivityAnalysisStore } from "../infrastructure/repositories";
 import { buildActivityDerivedSummaryMap, buildDynamicStressSeries } from "../lib/activity-analysis";
@@ -605,102 +601,15 @@ export const trendsRouter = createTRPCRouter({
 
       const activityRows = parseTrendActivityRows(rawActivityRows);
 
-      if (activityRows.length === 0) {
-        return zoneDistributionOutputSchema.parse({ weeklyData: [] });
-      }
-
       const derivedMap = await buildActivityDerivedSummaryMap({
         store: createActivityAnalysisStore(db),
         profileId: ctx.session.user.id,
         activities: rawActivityRows,
       });
 
-      // Group by week
-      type IntensityZone =
-        | "recovery"
-        | "endurance"
-        | "tempo"
-        | "threshold"
-        | "vo2max"
-        | "anaerobic"
-        | "neuromuscular";
-
-      const weeklyData = new Map<
-        string,
-        {
-          weekStart: string;
-          totalTSS: number;
-          zones: Record<IntensityZone, number>;
-        }
-      >();
-
-      for (const activity of activityRows) {
-        const derived = derivedMap.get(activity.id);
-        const intensityFactor = derived?.intensity_factor ?? null;
-        const tss = derived?.tss ?? null;
-
-        // Skip activities without both IF and TSS
-        if (!intensityFactor || !tss) continue;
-
-        const date = new Date(activity.started_at);
-        // Get Monday of the week
-        const weekStart = new Date(date);
-        weekStart.setDate(date.getDate() - date.getDay() + 1);
-        const weekKey = toDateKey(weekStart);
-
-        if (!weeklyData.has(weekKey)) {
-          weeklyData.set(weekKey, {
-            weekStart: weekKey,
-            totalTSS: 0,
-            zones: {
-              recovery: 0,
-              endurance: 0,
-              tempo: 0,
-              threshold: 0,
-              vo2max: 0,
-              anaerobic: 0,
-              neuromuscular: 0,
-            },
-          });
-        }
-
-        const week = weeklyData.get(weekKey)!;
-        const zone = getTrainingIntensityZone(intensityFactor) as IntensityZone;
-        week.zones[zone] += tss;
-        week.totalTSS += tss;
-      }
-
-      // Convert TSS values to percentages
-      const weeklyDataArray = Array.from(weeklyData.values()).map((week) => {
-        const zones: Record<IntensityZone, number> = {
-          recovery: 0,
-          endurance: 0,
-          tempo: 0,
-          threshold: 0,
-          vo2max: 0,
-          anaerobic: 0,
-          neuromuscular: 0,
-        };
-
-        if (week.totalTSS > 0) {
-          for (const zone in week.zones) {
-            const zoneKey = zone as IntensityZone;
-            zones[zoneKey] = Math.round((week.zones[zoneKey] / week.totalTSS) * 1000) / 10;
-          }
-        }
-
-        return {
-          weekStart: week.weekStart,
-          totalTSS: Math.round(week.totalTSS),
-          zones,
-        };
-      });
-
-      return zoneDistributionOutputSchema.parse({
-        weeklyData: weeklyDataArray.sort(
-          (a, b) => new Date(a.weekStart).getTime() - new Date(b.weekStart).getTime(),
-        ),
-      });
+      return zoneDistributionOutputSchema.parse(
+        buildZoneDistributionTrends(activityRows, derivedMap),
+      );
     }),
 
   // ------------------------------

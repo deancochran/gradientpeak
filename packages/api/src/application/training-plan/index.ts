@@ -10,4 +10,5 @@ export * from "./previewCreationConfigUseCase";
 export * from "./scheduleGapActivityPlanMatches";
 export * from "./schedulingUtils";
 export * from "./templateUseCases";
+export * from "./upcomingActivityImpact";
 export * from "./updateFromCreationConfigUseCase";

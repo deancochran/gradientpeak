@@ -6,17 +6,7 @@
 
 import { randomUUID } from "node:crypto";
 import { type ActivityFileType, inferActivityFileType, parseActivityFile } from "@repo/core";
-import {
-  calculateBestEfforts,
-  calculateDecouplingFromStreams,
-  calculateEfficiencyFactor,
-  calculateGradedSpeedStream,
-  calculateNGP,
-  calculateNormalizedPower,
-  calculateNormalizedSpeed,
-  detectLTHR,
-  estimateVO2Max,
-} from "@repo/core/calculations";
+import { detectLTHR, estimateVO2Max } from "@repo/core/calculations";
 import {
   activities,
   activityEfforts,
@@ -30,6 +20,11 @@ import { TRPCError } from "@trpc/server";
 import { and, desc, eq, lte } from "drizzle-orm";
 import { z } from "zod";
 import { processUploadedActivityFile } from "../application/activity-file-ingestion/process-uploaded-activity-file";
+import {
+  buildActivityFileBestEffortRows,
+  calculateActivityFileStreamDerivedCalculations,
+  calculateActivityFileStreamDerivedMetrics,
+} from "../application/activity-file-ingestion/stream-derived-calculations";
 import {
   buildActivityGeometry,
   collectActivityFileStreamMetadata,
@@ -516,44 +511,23 @@ async function buildActivityFileEnrichment(
   const { powerStream, hrStream, timestamps, altitudeStream, speedStream, coords, avgTemperature } =
     collectActivityFileStreamMetadata(records);
 
-  const normalizedPower =
-    powerStream.length > 0 ? calculateNormalizedPower(powerStream) : undefined;
-  const normalizedSpeed = calculateNormalizedSpeed(distance, duration);
-  let normalizedGradedSpeed: number | null = null;
-  if (input.activityType === "run" && speedStream.length > 0 && altitudeStream.length > 0) {
-    normalizedGradedSpeed = calculateNGP(
-      calculateGradedSpeedStream(speedStream, altitudeStream, timestamps),
-    );
-  }
-
-  let efficiencyFactor: number | null = null;
-  if (summary.avgHeartRate && summary.avgHeartRate > 0) {
-    if (input.activityType === "bike" && normalizedPower) {
-      efficiencyFactor = calculateEfficiencyFactor(normalizedPower, summary.avgHeartRate);
-    } else if (input.activityType === "run" && normalizedGradedSpeed) {
-      efficiencyFactor = calculateEfficiencyFactor(normalizedGradedSpeed, summary.avgHeartRate);
-    }
-  }
-
-  let aerobicDecoupling: number | null = null;
-  if (powerStream.length > 0 && hrStream.length > 0) {
-    aerobicDecoupling = calculateDecouplingFromStreams(
-      powerStream,
-      hrStream,
-      timestamps,
-      calculateNormalizedPower,
-    );
-  } else if (input.activityType === "run" && speedStream.length > 0 && hrStream.length > 0) {
-    const runPowerStream = normalizedGradedSpeed
-      ? calculateGradedSpeedStream(speedStream, altitudeStream, timestamps)
-      : speedStream;
-    aerobicDecoupling = calculateDecouplingFromStreams(
-      runPowerStream,
-      hrStream,
-      timestamps,
-      calculateNGP,
-    );
-  }
+  const {
+    normalizedPower,
+    normalizedSpeed,
+    normalizedGradedSpeed,
+    efficiencyFactor,
+    aerobicDecoupling,
+    effortsToInsert,
+  } = calculateActivityFileStreamDerivedCalculations({
+    activityId: input.activityId,
+    profileId: input.profileId,
+    activityType: input.activityType,
+    distance,
+    duration,
+    avgHeartRate: summary.avgHeartRate,
+    recordedAt: activityCompletedAt,
+    streamMetadata: { powerStream, hrStream, timestamps, altitudeStream, speedStream },
+  });
 
   let resolvedAvgTemperature = avgTemperature;
   if (resolvedAvgTemperature === null && coords[0]) {
@@ -576,56 +550,6 @@ async function buildActivityFileEnrichment(
       metricType: "resting_hr",
       recordedAtLte: activityCompletedAt,
     })) ?? 60;
-
-  const effortsToInsert: Array<typeof activityEfforts.$inferInsert> = [];
-  if (powerStream.length > 0) {
-    for (const effort of calculateBestEfforts(powerStream, timestamps)) {
-      effortsToInsert.push({
-        id: randomUUID(),
-        created_at: new Date(),
-        updated_at: new Date(),
-        activity_id: input.activityId,
-        profile_id: input.profileId,
-        recorded_at: activityCompletedAt,
-        activity_category:
-          input.activityType as typeof activityEfforts.$inferInsert.activity_category,
-        effort_type: "power",
-        duration_seconds: effort.duration,
-        start_offset:
-          effort.startIndex !== undefined
-            ? Math.round(timestamps[effort.startIndex]! - timestamps[0]!)
-            : null,
-        unit: "watts",
-        value: effort.value,
-      });
-    }
-  }
-
-  if (input.activityType === "run" && speedStream.length > 0) {
-    const streamToUse = normalizedGradedSpeed
-      ? calculateGradedSpeedStream(speedStream, altitudeStream, timestamps)
-      : speedStream;
-    for (const effort of calculateBestEfforts(streamToUse, timestamps)) {
-      effortsToInsert.push({
-        id: randomUUID(),
-        created_at: new Date(),
-        updated_at: new Date(),
-        activity_id: input.activityId,
-        profile_id: input.profileId,
-        recorded_at: activityCompletedAt,
-        activity_category:
-          input.activityType as typeof activityEfforts.$inferInsert.activity_category,
-        effort_type: "speed",
-        duration_seconds: effort.duration,
-        start_offset:
-          effort.startIndex !== undefined
-            ? Math.round(timestamps[effort.startIndex]! - timestamps[0]!)
-            : null,
-        unit: "meters_per_second",
-        value: effort.value,
-      });
-    }
-  }
 
   const geometry = buildActivityGeometry(records);
   const detectedLTHR = hrStream.length > 0 ? detectLTHR(hrStream, timestamps) : null;
@@ -1006,7 +930,6 @@ export const activityFilesRouter = createTRPCRouter({
         const powerStream: number[] = [];
         const hrStream: number[] = [];
         const timestamps: number[] = [];
-        const cadenceStream: number[] = [];
         const altitudeStream: number[] = [];
         const speedStream: number[] = [];
         const coords: { latitude: number; longitude: number }[] = [];
@@ -1020,9 +943,6 @@ export const activityFilesRouter = createTRPCRouter({
           }
           if (record.heartRate !== undefined) {
             hrStream.push(record.heartRate);
-          }
-          if (record.cadence !== undefined) {
-            cadenceStream.push(record.cadence);
           }
           if (record.altitude !== undefined) {
             altitudeStream.push(record.altitude);
@@ -1098,61 +1018,19 @@ export const activityFilesRouter = createTRPCRouter({
             recordedAtLte: activityCompletedAt,
           })) ?? 60;
 
-        let normalizedPower: number | undefined;
-        // Preserve activity-local derived metrics that remain durable.
-        normalizedPower =
-          powerStream.length > 0 ? calculateNormalizedPower(powerStream) : undefined;
-
-        // ========================================================================
-        // T-5.1, T-5.2: Calculate Advanced Metrics
-        // ========================================================================
-
-        // 1. Normalized Speed (All activities)
-        const normalizedSpeed = calculateNormalizedSpeed(distance, duration);
-
-        // 2. Normalized Graded Pace (Run)
-        let normalizedGradedSpeed: number | null = null;
-        if (activityType === "run" && speedStream.length > 0 && altitudeStream.length > 0) {
-          const gradedSpeedStream = calculateGradedSpeedStream(
-            speedStream,
-            altitudeStream,
-            timestamps,
-          );
-          normalizedGradedSpeed = calculateNGP(gradedSpeedStream);
-        }
-
-        // 3. Efficiency Factor (EF)
-        // EF = Normalized Power / Avg HR (Bike) or Normalized Graded Speed / Avg HR (Run)
-        let efficiencyFactor: number | null = null;
-        if (avgHeartRate && avgHeartRate > 0) {
-          if (activityType === "bike" && normalizedPower) {
-            efficiencyFactor = calculateEfficiencyFactor(normalizedPower, avgHeartRate);
-          } else if (activityType === "run" && normalizedGradedSpeed) {
-            efficiencyFactor = calculateEfficiencyFactor(normalizedGradedSpeed, avgHeartRate);
-          }
-        }
-
-        // 4. Aerobic Decoupling (Pa:HR)
-        let aerobicDecoupling: number | null = null;
-        if (powerStream.length > 0 && hrStream.length > 0) {
-          aerobicDecoupling = calculateDecouplingFromStreams(
-            powerStream,
-            hrStream,
-            timestamps,
-            calculateNormalizedPower,
-          );
-        } else if (activityType === "run" && speedStream.length > 0 && hrStream.length > 0) {
-          // For run, use graded speed if available, else speed
-          const runPowerStream = normalizedGradedSpeed
-            ? calculateGradedSpeedStream(speedStream, altitudeStream, timestamps)
-            : speedStream;
-          aerobicDecoupling = calculateDecouplingFromStreams(
-            runPowerStream,
-            hrStream,
-            timestamps,
-            calculateNGP,
-          );
-        }
+        const {
+          normalizedPower,
+          normalizedSpeed,
+          normalizedGradedSpeed,
+          efficiencyFactor,
+          aerobicDecoupling,
+        } = calculateActivityFileStreamDerivedMetrics({
+          activityType,
+          distance,
+          duration,
+          avgHeartRate,
+          streamMetadata: { powerStream, hrStream, timestamps, altitudeStream, speedStream },
+        });
 
         // ========================================================================
         // T-5.3: Fetch Weather
@@ -1291,75 +1169,19 @@ export const activityFilesRouter = createTRPCRouter({
         // T-5.4, T-5.5, T-5.6: Post-Processing (Best Efforts, Profile Metrics, Notifications)
         // ========================================================================
 
-        // 1. Calculate Best Efforts
-        const effortsToInsert: any[] = [];
-
-        // Power Efforts
-        if (powerStream.length > 0) {
-          const bestPowers = calculateBestEfforts(powerStream, timestamps);
-          for (const effort of bestPowers) {
-            effortsToInsert.push({
-              activity_id: createdActivity.id,
-              profile_id: userId,
-              activity_category: activityType,
-              duration_seconds: effort.duration,
-              effort_type: "power",
-              value: effort.value,
-              unit: "watts",
-              start_offset:
-                effort.startIndex !== undefined
-                  ? Math.round(timestamps[effort.startIndex]! - timestamps[0]!)
-                  : null,
-              recorded_at: activityCompletedAtIso,
-            });
-          }
-        }
-
-        // Speed/Pace Efforts (Run)
-        if (activityType === "run" && speedStream.length > 0) {
-          // Use graded speed if available for "effort"
-          const streamToUse = normalizedGradedSpeed
-            ? calculateGradedSpeedStream(speedStream, altitudeStream, timestamps)
-            : speedStream;
-          const bestSpeeds = calculateBestEfforts(streamToUse, timestamps);
-          for (const effort of bestSpeeds) {
-            effortsToInsert.push({
-              activity_id: createdActivity.id,
-              profile_id: userId,
-              activity_category: activityType,
-              duration_seconds: effort.duration,
-              effort_type: "speed",
-              value: effort.value,
-              unit: "meters_per_second",
-              start_offset:
-                effort.startIndex !== undefined
-                  ? Math.round(timestamps[effort.startIndex]! - timestamps[0]!)
-                  : null,
-              recorded_at: activityCompletedAtIso,
-            });
-          }
-        }
+        const effortsToInsert = buildActivityFileBestEffortRows({
+          activityId: createdActivity.id,
+          profileId: userId,
+          activityType,
+          recordedAt: activityCompletedAt,
+          normalizedGradedSpeed,
+          streamMetadata: { powerStream, timestamps, altitudeStream, speedStream },
+        });
 
         // Bulk insert efforts
         if (effortsToInsert.length > 0) {
           try {
-            await db.insert(activityEfforts).values(
-              effortsToInsert.map((effort) => ({
-                id: randomUUID(),
-                created_at: new Date(),
-                updated_at: new Date(),
-                activity_id: createdActivity.id,
-                profile_id: userId,
-                recorded_at: new Date(activityCompletedAtIso),
-                activity_category:
-                  effort.activity_category as typeof activityEfforts.$inferInsert.activity_category,
-                effort_type: effort.effort_type,
-                duration_seconds: effort.duration_seconds,
-                start_offset: effort.start_offset,
-                unit: effort.unit,
-                value: effort.value,
-              })),
-            );
+            await db.insert(activityEfforts).values(effortsToInsert);
             await markProfileAnalysisDirty(db, {
               profileId: userId,
               kinds: ["performance"],
