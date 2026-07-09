@@ -12,13 +12,12 @@ import {
   FormTextareaField,
   FormTextField,
 } from "@repo/ui/components/form";
-import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import * as DocumentPicker from "expo-document-picker";
-import { useRouter } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { AlertCircle, CheckCircle, FileText, Upload } from "lucide-react-native";
-import { ScrollView, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
 import { api } from "@/lib/api";
 import { getErrorMessage, handleSubmitFormError } from "@/lib/utils/formErrors";
 import { type RouteUploadFormValues, routeUploadFormSchema } from "@/lib/validation/route-upload";
@@ -118,6 +117,30 @@ export default function UploadRouteScreen() {
 
   return (
     <View className="flex-1 bg-background" testID="route-upload-screen">
+      <Stack.Screen
+        options={{
+          headerRight: () => (
+            <Pressable
+              onPress={submitForm.handleSubmit}
+              disabled={submitButtonState.disabled}
+              className="mr-2 rounded-full px-2 py-1"
+              testID="route-upload-submit-button"
+            >
+              <Text
+                className={
+                  submitButtonState.disabled
+                    ? "text-sm font-medium text-muted-foreground"
+                    : "text-sm font-medium text-primary"
+                }
+              >
+                {submitButtonState.loading
+                  ? submitButtonState.loadingLabel
+                  : submitButtonState.label}
+              </Text>
+            </Pressable>
+          ),
+        }}
+      />
       <ScrollView className="flex-1 p-4" keyboardShouldPersistTaps="handled">
         <Form {...form}>
           <View className="gap-6">
@@ -138,7 +161,9 @@ export default function UploadRouteScreen() {
                             testID="route-upload-pick-file-button"
                           >
                             <Upload className="text-foreground" size={20} />
-                            <Text>Choose GPX or TCX File</Text>
+                            <Text className="text-sm font-medium text-foreground">
+                              Choose GPX or TCX File
+                            </Text>
                           </Button>
                         ) : (
                           <View className="flex-row items-center gap-2 rounded-lg bg-muted p-3">
@@ -205,33 +230,6 @@ export default function UploadRouteScreen() {
           </View>
         </Form>
       </ScrollView>
-
-      <View className="border-t border-border bg-card p-4">
-        <View className="flex-row gap-3">
-          <Button
-            variant="outline"
-            className="flex-1"
-            onPress={() => {
-              form.clearErrors("root");
-              router.back();
-            }}
-            disabled={isSubmitting}
-            testID="route-upload-cancel-button"
-          >
-            <Text>Cancel</Text>
-          </Button>
-          <LoadingButton
-            className="flex-1"
-            onPress={submitForm.handleSubmit}
-            disabled={submitButtonState.disabled}
-            loading={isSubmitting || submitButtonState.loading}
-            loadingLabel={submitButtonState.loadingLabel}
-            testID="route-upload-submit-button"
-          >
-            <Text className="text-primary-foreground">{submitButtonState.label}</Text>
-          </LoadingButton>
-        </View>
-      </View>
     </View>
   );
 }

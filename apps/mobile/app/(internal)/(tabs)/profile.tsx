@@ -294,7 +294,9 @@ export default function ProfileTabScreen() {
                 testID="profile-tab-email-input"
               />
               <Button onPress={handleUpdateEmail} testID="profile-tab-email-submit-button">
-                <Text>Send Verification Email</Text>
+                <Text className="text-sm font-medium text-primary-foreground">
+                  Send Verification Email
+                </Text>
               </Button>
             </View>
           ) : null}
@@ -335,7 +337,7 @@ export default function ProfileTabScreen() {
                 testID="profile-tab-confirm-password-input"
               />
               <Button onPress={handleUpdatePassword} testID="profile-tab-password-submit-button">
-                <Text>Update Password</Text>
+                <Text className="text-sm font-medium text-primary-foreground">Update Password</Text>
               </Button>
             </View>
           ) : null}

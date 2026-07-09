@@ -324,28 +324,38 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - changes
-    if: needs.changes.outputs.docs_only != 'true' && needs.changes.outputs.mobile_runtime_related == 'true'
+    if: needs.changes.outputs.docs_only != 'true'
 
     steps:
       - name: Checkout
+        if: needs.changes.outputs.mobile_runtime_related == 'true'
         uses: actions/checkout@v4
 
       - name: Setup pnpm
+        if: needs.changes.outputs.mobile_runtime_related == 'true'
         uses: pnpm/action-setup@v4
         with:
           version: 10.33.0
 
       - name: Setup Node
+        if: needs.changes.outputs.mobile_runtime_related == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
 
       - name: Install dependencies
+        if: needs.changes.outputs.mobile_runtime_related == 'true'
         run: pnpm install --frozen-lockfile
 
       - name: Run mobile Jest tests
+        if: needs.changes.outputs.mobile_runtime_related == 'true'
         run: pnpm --filter mobile test:jest
+
+      - name: Skip mobile Jest when mobile runtime is unchanged
+        if: needs.changes.outputs.mobile_runtime_related != 'true'
+        run: |
+          printf 'No mobile runtime changes detected; skipping mobile Jest tests.\n'
 
   full-validation-suite:
     name: Full Validation Suite
@@ -358,6 +368,7 @@ jobs:
       - unit-and-integration
       - db-schema-parity
       - api-live-db
+      - mobile-component-and-jest
     if: needs.changes.outputs.docs_only != 'true'
 
     steps:

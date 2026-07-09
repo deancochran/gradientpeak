@@ -47,6 +47,7 @@ export default function NewMessageScreen() {
     (user) => !selectedRecipients.some((recipient) => recipient.id === user.id),
   );
   const isSubmitting = getOrCreateDMMutation.isPending || createConversationMutation.isPending;
+  const submitError = getOrCreateDMMutation.error ?? createConversationMutation.error;
 
   const toggleRecipient = (user: {
     id: string;
@@ -171,7 +172,9 @@ export default function NewMessageScreen() {
                     >
                       <Avatar alt={item.username ?? "User"} className="h-10 w-10">
                         <AvatarFallback>
-                          <Text>{getInitials(item.username ?? "User")}</Text>
+                          <Text className="text-sm font-semibold text-foreground">
+                            {getInitials(item.username ?? "User")}
+                          </Text>
                         </AvatarFallback>
                       </Avatar>
                       <View className="flex-1 gap-1">
@@ -215,6 +218,14 @@ export default function NewMessageScreen() {
               placeholder="Optional group name"
               testId="messages-new-group-name-input"
             />
+          </View>
+        ) : null}
+
+        {submitError ? (
+          <View className="rounded-2xl border border-destructive/30 bg-destructive/10 p-3">
+            <Text className="text-sm font-medium text-destructive">
+              {submitError.message || "Unable to start this conversation."}
+            </Text>
           </View>
         ) : null}
       </ScrollView>

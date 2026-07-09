@@ -29,8 +29,7 @@ env:
     id: "route-upload-name-input"
 - assertVisible:
     id: "route-upload-submit-button"
-- tapOn:
-    id: "route-upload-cancel-button"
+- back
 - extendedWaitUntil:
     visible:
       id: "routes-list-screen"
