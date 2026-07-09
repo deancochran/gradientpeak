@@ -1,4 +1,5 @@
 import type { AthletePreferenceProfile } from "../schemas/settings/profile_settings";
+import type { DailyFocusRecoveryRange } from "./dailyFocusTemplates";
 import { buildDailyLoadRecommendation } from "./dailyLoadRecommendation";
 import type {
   DailyRecommendedLoadActivityCategory,
@@ -13,6 +14,8 @@ export interface DailyLoadDistributionWeeklyTarget {
   weekEndDate?: string;
   targetTss: number;
   phase?: string | null;
+  eventDate?: string | null;
+  recoveryRanges?: DailyFocusRecoveryRange[] | null;
 }
 
 export interface DailyLoadDistributionPoint {

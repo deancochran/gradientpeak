@@ -1,4 +1,5 @@
 import type { AthletePreferenceProfile } from "../schemas/settings/profile_settings";
+import { type DailyFocusRecoveryRange, resolveDailyFocusTemplate } from "./dailyFocusTemplates";
 import { addDaysDateOnlyUtc, diffDateOnlyUtcDays, parseDateOnlyUtc } from "./dateOnlyUtc";
 import type { WeeklyAllocation } from "./weeklyAllocation";
 
@@ -68,6 +69,8 @@ export interface DailyLoadRecommendationWeeklyTarget {
   targetFatigueCost?: number | null;
   targetStrengthSets?: number | null;
   phase?: string | null;
+  eventDate?: string | null;
+  recoveryRanges?: DailyFocusRecoveryRange[] | null;
 }
 
 export interface DailyLoadRecommendationSession {
@@ -508,6 +511,7 @@ function chooseTrainingDates(input: {
 
   for (const anchor of anchors) {
     if (selected.length >= input.sessionCount || remaining.length === 0) break;
+    if (selected.some((candidate) => candidate.dayOffset === anchor)) continue;
     remaining.sort((left, right) => {
       const anchorDistance = Math.abs(left.dayOffset - anchor) - Math.abs(right.dayOffset - anchor);
       if (anchorDistance !== 0) return anchorDistance;
@@ -868,13 +872,17 @@ function buildDistributionPoints(
     const weekEndDate = addDaysDateOnlyUtc(input.startDate, Math.min(offset + 6, dayCount - 1));
     const daysInWeek = diffDateOnlyUtcDays(weekStartDate, weekEndDate) + 1;
     const target = targetByWeekStart.get(weekStartDate);
+    const eventDateInWeek =
+      target?.eventDate && target.eventDate >= weekStartDate && target.eventDate <= weekEndDate
+        ? target.eventDate
+        : null;
     const weeklyTss = Math.max(0, target?.targetTss ?? 0) * (daysInWeek / 7);
     const candidates = Array.from({ length: daysInWeek }, (_, dayOffset) => {
       const date = addDaysDateOnlyUtc(weekStartDate, dayOffset);
       const day = weekdayNameForDate(date);
       const availabilityMinutes =
         availableMinutesByDay.get(day) ?? (hasAvailabilityWindows ? 0 : 60);
-      const hasSession = sessionDates.has(date);
+      const hasSession = sessionDates.has(date) || date === eventDateInWeek;
       const preferred = preferredWeekdays.size === 0 || preferredWeekdays.has(day) || hasSession;
       const available =
         preferred && (!hardRestDays.has(day) || hasSession) && availabilityMinutes > 0;
@@ -902,12 +910,21 @@ function buildDistributionPoints(
       budgets: categoryBudgets,
       plannedSessionByDate,
     });
+    const templateFocuses = resolveDailyFocusTemplate({
+      phase: target?.phase,
+      selectedDays: trainingDates.map((trainingDate) => ({
+        date: trainingDate.date,
+        dayOffset: trainingDate.dayOffset,
+      })),
+      eventDate: eventDateInWeek,
+      recoveryRanges: target?.recoveryRanges,
+    });
     const focuses = trainingDates.map((trainingDate, index) => {
       const plannedFocus = plannedSessionByDate.get(trainingDate.date)?.primaryFocus;
       if (plannedFocus) return plannedFocus;
       return focusFromBudget(
         categoryAssignments[index]?.budget ?? categoryBudgets[0] ?? FALLBACK_CATEGORY_BUDGET,
-        focusForSelectedIndex(index, trainingDates.length, target?.phase),
+        templateFocuses[index] ?? focusForSelectedIndex(index, trainingDates.length, target?.phase),
       );
     });
     const allocations = allocateWithCap(
