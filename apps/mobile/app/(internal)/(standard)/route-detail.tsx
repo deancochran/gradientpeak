@@ -1,7 +1,6 @@
-import { Text } from "@repo/ui/components/text";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, Alert, InteractionManager, View } from "react-native";
+import { Alert, InteractionManager } from "react-native";
 import { ElevationProfileChart } from "@/components/activity/charts/ElevationProfileChart";
 import {
   DetailDeleteConfirmModal,
@@ -9,6 +8,7 @@ import {
   DetailScaffold,
 } from "@/components/shared/detail";
 import { RouteCard } from "@/components/shared/RouteCard";
+import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
 import { api } from "@/lib/api";
 import { useRecordingLifecycle } from "@/lib/hooks/useActivityRecorder";
@@ -60,7 +60,10 @@ function buildRouteStreams(
 
   elevatedCoordinates.forEach((point, index) => {
     if (index > 0) {
-      cumulativeDistance += calculateCoordinateDistance(elevatedCoordinates[index - 1]!, point);
+      const previousPoint = elevatedCoordinates[index - 1];
+      if (previousPoint) {
+        cumulativeDistance += calculateCoordinateDistance(previousPoint, point);
+      }
     }
 
     distanceValues.push(cumulativeDistance);
@@ -267,17 +270,12 @@ export default function RouteDetailScreen() {
           showHeader={false}
         />
       ) : !shouldLoadGeometry || isFetchingRouteFull ? (
-        <View className="items-center gap-3 rounded-2xl border border-border bg-muted/20 px-4 py-6">
-          <ActivityIndicator size="small" className="text-primary" />
-          <Text className="text-sm text-muted-foreground">Loading route geometry...</Text>
-        </View>
+        <LoadingState message="Loading route geometry..." />
       ) : (
-        <View className="items-center gap-2 rounded-2xl border border-border bg-muted/20 px-4 py-6">
-          <Text className="text-sm font-medium text-foreground">No elevation profile</Text>
-          <Text className="text-center text-sm text-muted-foreground">
-            This route does not have enough elevation data to draw a profile.
-          </Text>
-        </View>
+        <EmptyState
+          description="This route does not have enough elevation data to draw a profile."
+          title="No elevation profile"
+        />
       )}
 
       <EntityCommentsSection

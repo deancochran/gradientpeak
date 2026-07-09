@@ -8,8 +8,9 @@ import { cn } from "@repo/ui/lib/cn";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { Send } from "lucide-react-native";
 import React, { useState } from "react";
-import { ActivityIndicator, FlatList, KeyboardAvoidingView, Platform, View } from "react-native";
+import { FlatList, KeyboardAvoidingView, Platform, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
 
@@ -144,16 +145,17 @@ export default function ChatScreen() {
 
       {isLoading ? (
         <View className="flex-1 items-center justify-center" testID="message-thread-loading-state">
-          <ActivityIndicator size="large" className="text-muted-foreground" />
+          <LoadingState message="Loading conversation..." />
         </View>
       ) : messages.length === 0 ? (
         <View
           className="flex-1 items-center justify-center p-8"
           testID="message-thread-empty-state"
         >
-          <Text className="text-muted-foreground text-center">
-            No messages yet.{"\n"}Send a message to start the conversation!
-          </Text>
+          <EmptyState
+            description="Send a message to start the conversation."
+            title="No messages yet"
+          />
         </View>
       ) : (
         <FlatList

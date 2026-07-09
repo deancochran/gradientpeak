@@ -168,9 +168,9 @@ describe("route detail screen", () => {
     expect(screen.getByText("Distance")).toBeTruthy();
     expect(screen.getByText("10.20 km")).toBeTruthy();
     expect(screen.getByText("Climb")).toBeTruthy();
-    expect(screen.getByText("180m")).toBeTruthy();
+    expect(screen.getByText("180 m")).toBeTruthy();
     expect(screen.getByText("Descent")).toBeTruthy();
-    expect(screen.getByText("175m")).toBeTruthy();
+    expect(screen.getByText("175 m")).toBeTruthy();
     expect(screen.getByText("4")).toBeTruthy();
   });
 

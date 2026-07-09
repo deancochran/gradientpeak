@@ -9,6 +9,7 @@ import React, { useMemo, useState } from "react";
 import { ActivityIndicator, ScrollView, TouchableOpacity, View } from "react-native";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { AppConfirmModal } from "@/components/shared/AppFormModal";
+import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import { useAuthStore } from "@/lib/stores/auth-store";
@@ -176,8 +177,7 @@ export default function WorkoutsReorder() {
           <Text className="text-xl font-bold">Reorder Activities</Text>
         </View>
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" />
-          <Text className="text-muted-foreground mt-4">Loading activities...</Text>
+          <LoadingState message="Loading activities..." />
         </View>
       </View>
     );
@@ -195,13 +195,11 @@ export default function WorkoutsReorder() {
           <Text className="text-xl font-bold">Reorder Activities</Text>
         </View>
         <View className="flex-1 items-center justify-center p-6">
-          <View className="bg-muted rounded-full p-6 mb-4">
-            <Icon as={Calendar} size={48} className="text-muted-foreground" />
-          </View>
-          <Text className="text-xl font-semibold mb-2">No Scheduled Activities</Text>
-          <Text className="text-sm text-muted-foreground text-center">
-            Schedule some activities from your training plan to reorder them.
-          </Text>
+          <EmptyState
+            description="Schedule some activities from your training plan to reorder them."
+            icon={Calendar}
+            title="No scheduled activities"
+          />
         </View>
       </View>
     );
