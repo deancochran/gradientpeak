@@ -100,4 +100,50 @@ describe("resolveWeeklyAllocation", () => {
     expect(allocation.activity_categories.strength?.load_model.load_method).toBe("strength_volume");
     expect(allocation.activity_categories.run).toBeUndefined();
   });
+
+  it("keeps mixed activity categories in their own allocation buckets", () => {
+    const prescription = resolveTrainingPrescription({
+      goals: [
+        {
+          id: "44444444-4444-4444-8444-444444444444",
+          name: "Duathlon Run",
+          target_date: "2027-09-01",
+          priority: 9,
+          targets: [
+            {
+              target_type: "race_performance",
+              activity_category: "run",
+              distance_m: 10_000,
+              target_time_s: 2700,
+            },
+          ],
+        },
+        {
+          id: "55555555-5555-4555-8555-555555555555",
+          name: "Bike FTP",
+          target_date: "2027-09-01",
+          priority: 7,
+          targets: [
+            {
+              target_type: "power_threshold",
+              activity_category: "bike",
+              target_watts: 250,
+              test_duration_s: 1200,
+            },
+          ],
+        },
+      ],
+    });
+
+    const allocation = resolveWeeklyAllocation({ prescription });
+
+    expect(allocation.activity_categories.run?.role).toBe("primary");
+    expect(allocation.activity_categories.bike?.role).toBe("secondary");
+    expect(allocation.activity_categories.run?.load_model.load_method).toBe("run_pace");
+    expect(allocation.activity_categories.bike?.load_model.load_method).toBe("bike_power");
+    expect(allocation.totals.target_sessions).toBeGreaterThanOrEqual(
+      (allocation.activity_categories.run?.sessions.target ?? 0) +
+        (allocation.activity_categories.bike?.sessions.target ?? 0),
+    );
+  });
 });

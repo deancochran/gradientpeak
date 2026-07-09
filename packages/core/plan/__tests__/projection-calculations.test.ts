@@ -148,6 +148,63 @@ describe("projection calculations", () => {
     );
   });
 
+  it("emits canonical daily load points that stay contiguous and bounded by projection weeks", () => {
+    const projection = buildDeterministicProjectionPayload({
+      timeline: {
+        start_date: "2026-01-05",
+        end_date: "2026-01-14",
+      },
+      blocks: [
+        {
+          name: "Build",
+          phase: "build",
+          start_date: "2026-01-05",
+          end_date: "2026-01-14",
+          target_weekly_tss_range: { min: 280, max: 280 },
+        },
+      ],
+      goals: [
+        {
+          id: "goal-1",
+          name: "Short Build",
+          target_date: "2026-01-14",
+          priority: 6,
+        },
+      ],
+      starting_ctl: 35,
+      disable_weekly_tss_optimizer: true,
+    });
+
+    const dailyLoadPoints = projection.daily_load_points ?? [];
+
+    expect(dailyLoadPoints.map((point) => point.date)).toEqual([
+      "2026-01-05",
+      "2026-01-06",
+      "2026-01-07",
+      "2026-01-08",
+      "2026-01-09",
+      "2026-01-10",
+      "2026-01-11",
+      "2026-01-12",
+      "2026-01-13",
+      "2026-01-14",
+    ]);
+    expect(dailyLoadPoints.every((point) => point.recommended_load_tss >= 0)).toBe(true);
+    expect(new Set(dailyLoadPoints.map((point) => point.date)).size).toBe(dailyLoadPoints.length);
+
+    const firstWeekLoad = dailyLoadPoints
+      .slice(0, 7)
+      .reduce((sum, point) => sum + point.recommended_load_tss, 0);
+    const partialWeekLoad = dailyLoadPoints
+      .slice(7)
+      .reduce((sum, point) => sum + point.recommended_load_tss, 0);
+    expect(firstWeekLoad).toBeCloseTo(projection.microcycles[0]?.planned_weekly_tss ?? 0, 1);
+    expect(partialWeekLoad).toBeCloseTo(
+      ((projection.microcycles[1]?.planned_weekly_tss ?? 0) * 3) / 7,
+      1,
+    );
+  });
+
   it("prorates partial projection weeks when simulating CTL", () => {
     const startingCtl = 50;
     const weeklyTss = 700;

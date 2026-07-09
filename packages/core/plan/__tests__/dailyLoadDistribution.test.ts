@@ -3,6 +3,17 @@ import { defaultAthletePreferenceProfile } from "../../schemas/settings/profile_
 import { buildDailyLoadDistribution } from "../dailyLoadDistribution";
 
 describe("buildDailyLoadDistribution", () => {
+  it("returns no points for inverted date ranges", () => {
+    expect(
+      buildDailyLoadDistribution({
+        startDate: "2026-01-12",
+        endDate: "2026-01-05",
+        weeklyTargets: [{ weekStartDate: "2026-01-12", targetTss: 300 }],
+        preferenceProfile: defaultAthletePreferenceProfile,
+      }),
+    ).toEqual([]);
+  });
+
   it("distributes derived weekly load across available training days", () => {
     const points = buildDailyLoadDistribution({
       startDate: "2026-01-05",
@@ -36,6 +47,35 @@ describe("buildDailyLoadDistribution", () => {
     expect(points.find((point) => point.date === "2026-01-09")?.recommended_load_tss).toBe(0);
     expect(points.find((point) => point.date === "2026-01-11")?.recommended_load_tss).toBe(0);
     expect(points.reduce((sum, point) => sum + point.recommended_load_tss, 0)).toBe(210);
+  });
+
+  it("prorates weekly targets across partial weeks while keeping the date range contiguous", () => {
+    const points = buildDailyLoadDistribution({
+      startDate: "2026-01-05",
+      endDate: "2026-01-14",
+      weeklyTargets: [
+        { weekStartDate: "2026-01-05", targetTss: 210 },
+        { weekStartDate: "2026-01-12", targetTss: 280 },
+      ],
+      preferenceProfile: defaultAthletePreferenceProfile,
+    });
+
+    expect(points.map((point) => point.date)).toEqual([
+      "2026-01-05",
+      "2026-01-06",
+      "2026-01-07",
+      "2026-01-08",
+      "2026-01-09",
+      "2026-01-10",
+      "2026-01-11",
+      "2026-01-12",
+      "2026-01-13",
+      "2026-01-14",
+    ]);
+    expect(points.slice(0, 7).reduce((sum, point) => sum + point.recommended_load_tss, 0)).toBe(
+      210,
+    );
+    expect(points.slice(7).reduce((sum, point) => sum + point.recommended_load_tss, 0)).toBe(120);
   });
 
   it("uses profile dose limits when preferences are unadjusted elsewhere", () => {
