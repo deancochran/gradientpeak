@@ -36,6 +36,28 @@ export type DailyLoadRecommendationWeekday =
   | "saturday"
   | "sunday";
 
+export interface DailyLoadRecommendationAvailabilityWindow {
+  start_minute_of_day: number;
+  end_minute_of_day: number;
+}
+
+export interface DailyLoadRecommendationAvailabilityDay {
+  /** Weekday name, or number where 0 = Monday and 6 = Sunday. */
+  day: DailyLoadRecommendationWeekday;
+  windows?: DailyLoadRecommendationAvailabilityWindow[] | null;
+  availableMinutes?: number | null;
+  maxSessions?: number | null;
+}
+
+export interface DailyLoadRecommendationSchedulingConstraints {
+  /** Preferred training weekdays. Numeric values use the builder convention: 0 = Monday, 6 = Sunday. */
+  preferredWeekdays?: DailyLoadRecommendationWeekday[] | null;
+  hardRestDays?: DailyLoadRecommendationWeekday[] | null;
+  minSessionsPerWeek?: number | null;
+  maxSessionsPerWeek?: number | null;
+  availabilityDays?: DailyLoadRecommendationAvailabilityDay[] | null;
+}
+
 export interface DailyLoadRecommendationWeeklyTarget {
   weekIndex?: number;
   weekStartDate?: string;
@@ -100,6 +122,7 @@ export interface BuildDailyLoadDistributionRecommendationInput {
   preferenceProfile?: AthletePreferenceProfile | null;
   weeklyAllocation?: WeeklyAllocation | null;
   plannedSessions?: DailyLoadRecommendationSession[] | null;
+  schedulingConstraints?: DailyLoadRecommendationSchedulingConstraints | null;
 }
 
 export type BuildDailyLoadRecommendationInput =
@@ -115,6 +138,16 @@ const MONDAY_WEEKDAY_TO_INDEX: Record<Exclude<DailyLoadRecommendationWeekday, nu
   saturday: 5,
   sunday: 6,
 };
+
+const MONDAY_WEEKDAY_NAMES = [
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
+] as const;
 
 const UTC_WEEKDAY_NAMES = [
   "sunday",
@@ -164,6 +197,28 @@ function normalizeMondayWeekdaySet(
   for (const value of values ?? []) {
     const normalized = normalizeMondayWeekday(value);
     if (normalized !== null) result.add(normalized);
+  }
+  return result;
+}
+
+function normalizeWeekdayName(
+  value: DailyLoadRecommendationWeekday,
+): (typeof MONDAY_WEEKDAY_NAMES)[number] | null {
+  if (typeof value === "number") {
+    return Number.isInteger(value) && value >= 0 && value <= 6
+      ? (MONDAY_WEEKDAY_NAMES[value] ?? null)
+      : null;
+  }
+  return MONDAY_WEEKDAY_TO_INDEX[value] !== undefined ? value : null;
+}
+
+function normalizeWeekdayNameSet(
+  values: DailyLoadRecommendationWeekday[] | null | undefined,
+): Set<string> {
+  const result = new Set<string>();
+  for (const value of values ?? []) {
+    const normalized = normalizeWeekdayName(value);
+    if (normalized) result.add(normalized);
   }
   return result;
 }
@@ -289,18 +344,49 @@ function allocateTotal(total: number, weights: number[]): number[] {
   return rounded;
 }
 
-function resolveAvailableMinutesByDay(
-  preferenceProfile: AthletePreferenceProfile | null | undefined,
+function sumAvailabilityMinutes(
+  windows: DailyLoadRecommendationAvailabilityWindow[] | null | undefined,
 ) {
+  return (windows ?? []).reduce(
+    (sum, window) => sum + Math.max(0, window.end_minute_of_day - window.start_minute_of_day),
+    0,
+  );
+}
+
+function resolveAvailableMinutesByDay(input: BuildDailyLoadDistributionRecommendationInput) {
   const map = new Map<string, number>();
-  for (const day of preferenceProfile?.availability.weekly_windows ?? []) {
-    const minutes = day.windows.reduce(
-      (sum, window) => sum + Math.max(0, window.end_minute_of_day - window.start_minute_of_day),
-      0,
-    );
-    map.set(day.day, minutes);
+
+  if (input.schedulingConstraints?.availabilityDays !== undefined) {
+    for (const day of input.schedulingConstraints.availabilityDays ?? []) {
+      const dayName = normalizeWeekdayName(day.day);
+      if (!dayName) continue;
+      map.set(
+        dayName,
+        typeof day.availableMinutes === "number" && Number.isFinite(day.availableMinutes)
+          ? Math.max(0, day.availableMinutes)
+          : sumAvailabilityMinutes(day.windows),
+      );
+    }
+    return map;
+  }
+
+  for (const day of input.preferenceProfile?.availability.weekly_windows ?? []) {
+    map.set(day.day, sumAvailabilityMinutes(day.windows));
   }
   return map;
+}
+
+function resolveDistributionHardRestDays(input: BuildDailyLoadDistributionRecommendationInput) {
+  if (input.schedulingConstraints?.hardRestDays !== undefined) {
+    return normalizeWeekdayNameSet(input.schedulingConstraints.hardRestDays);
+  }
+  return new Set(input.preferenceProfile?.availability.hard_rest_days ?? []);
+}
+
+function resolveDistributionPreferredWeekdays(
+  input: BuildDailyLoadDistributionRecommendationInput,
+) {
+  return normalizeWeekdayNameSet(input.schedulingConstraints?.preferredWeekdays);
 }
 
 function buildPlannedSessionDateSet(input: BuildDailyLoadDistributionRecommendationInput) {
@@ -315,16 +401,21 @@ function buildPlannedSessionDateSet(input: BuildDailyLoadDistributionRecommendat
 function resolveSessionCount(
   input: BuildDailyLoadDistributionRecommendationInput,
   candidateCount: number,
+  plannedCount = 0,
 ): number {
-  const minSessions = input.preferenceProfile?.dose_limits.min_sessions_per_week;
-  const maxSessions = input.preferenceProfile?.dose_limits.max_sessions_per_week;
+  const minSessions =
+    input.schedulingConstraints?.minSessionsPerWeek ??
+    input.preferenceProfile?.dose_limits.min_sessions_per_week;
+  const maxSessions =
+    input.schedulingConstraints?.maxSessionsPerWeek ??
+    input.preferenceProfile?.dose_limits.max_sessions_per_week;
   const boundedMin = typeof minSessions === "number" ? clamp(minSessions, 1, 7) : null;
   const boundedMax = typeof maxSessions === "number" ? clamp(maxSessions, 1, 7) : null;
   const derived =
     boundedMin !== null && boundedMax !== null
       ? Math.round((boundedMin + boundedMax) / 2)
       : (boundedMax ?? boundedMin ?? DEFAULT_WEEKLY_SESSION_COUNT);
-  return clamp(derived, 1, Math.max(1, candidateCount));
+  return clamp(Math.max(derived, plannedCount), 1, Math.max(1, candidateCount));
 }
 
 function chooseTrainingDates(input: {
@@ -337,8 +428,12 @@ function chooseTrainingDates(input: {
   sessionCount: number;
 }) {
   const anchors = SESSION_ANCHORS_BY_COUNT[input.sessionCount] ?? [0, 1, 2, 3, 4, 5, 6];
-  const remaining = [...input.candidates];
-  const selected: typeof input.candidates = [];
+  const selected: typeof input.candidates = input.candidates
+    .filter((candidate) => candidate.hasSession)
+    .sort((left, right) => left.date.localeCompare(right.date))
+    .slice(0, input.sessionCount);
+  const selectedDates = new Set(selected.map((candidate) => candidate.date));
+  const remaining = input.candidates.filter((candidate) => !selectedDates.has(candidate.date));
 
   for (const anchor of anchors) {
     if (selected.length >= input.sessionCount || remaining.length === 0) break;
@@ -570,10 +665,12 @@ function buildDistributionPoints(
   const dayCount = diffDateOnlyUtcDays(input.startDate, input.endDate) + 1;
   if (dayCount <= 0) return [];
 
-  const availableMinutesByDay = resolveAvailableMinutesByDay(input.preferenceProfile);
+  const availableMinutesByDay = resolveAvailableMinutesByDay(input);
   const hasAvailabilityWindows = availableMinutesByDay.size > 0;
-  const hardRestDays = new Set(input.preferenceProfile?.availability.hard_rest_days ?? []);
+  const hardRestDays = resolveDistributionHardRestDays(input);
+  const preferredWeekdays = resolveDistributionPreferredWeekdays(input);
   const sessionDates = buildPlannedSessionDateSet(input);
+  const hasExplicitSchedulingConstraints = Boolean(input.schedulingConstraints);
   const targetByWeekStart = new Map(
     input.weeklyTargets.map((target) => [target.weekStartDate ?? target.startDate, target]),
   );
@@ -591,10 +688,11 @@ function buildDistributionPoints(
       const day = weekdayNameForDate(date);
       const availabilityMinutes =
         availableMinutesByDay.get(day) ?? (hasAvailabilityWindows ? 0 : 60);
-      const available = !hardRestDays.has(day) && availabilityMinutes > 0;
-      return available
-        ? [{ date, dayOffset, availabilityMinutes, hasSession: sessionDates.has(date) }]
-        : [];
+      const hasSession = sessionDates.has(date);
+      const preferred = preferredWeekdays.size === 0 || preferredWeekdays.has(day) || hasSession;
+      const available =
+        preferred && (!hardRestDays.has(day) || hasSession) && availabilityMinutes > 0;
+      return available ? [{ date, dayOffset, availabilityMinutes, hasSession }] : [];
     }).flat();
     const trainingDates = chooseTrainingDates({
       candidates:
@@ -606,7 +704,11 @@ function buildDistributionPoints(
               availabilityMinutes: 60,
               hasSession: false,
             })),
-      sessionCount: resolveSessionCount(input, candidates.length || daysInWeek),
+      sessionCount: resolveSessionCount(
+        input,
+        candidates.length || daysInWeek,
+        candidates.filter((candidate) => candidate.hasSession).length,
+      ),
     });
     const selectedByDate = new Map(trainingDates.map((date, index) => [date.date, index] as const));
     const focuses = trainingDates.map((_, index) =>
@@ -635,9 +737,11 @@ function buildDistributionPoints(
         scheduledLoadTss: 0,
         completedLoadTss: 0,
         loadDeltaTss: round1(0 - recommendedLoadTss),
-        confidence: input.preferenceProfile ? "high" : "medium",
+        confidence: hasExplicitSchedulingConstraints || input.preferenceProfile ? "high" : "medium",
         reasonCodes: [
           "daily_load_distribution_v1",
+          ...(hasExplicitSchedulingConstraints ? ["explicit_scheduling_constraints_applied"] : []),
+          ...(sessionDates.has(date) ? ["planned_session_date_applied"] : []),
           selectedIndex === undefined ? "rest_day_allocation" : "profile_goal_weekly_distribution",
         ],
       });

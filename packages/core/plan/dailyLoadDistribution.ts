@@ -4,6 +4,7 @@ import type {
   DailyRecommendedLoadActivityCategory,
   DailyRecommendedLoadPrimaryFocus,
   DailyRecommendedLoadSession,
+  DailyRecommendedLoadWeekday,
 } from "./dailyRecommendedLoad";
 import type { WeeklyAllocation } from "./weeklyAllocation";
 
@@ -23,6 +24,30 @@ export interface DailyLoadDistributionPoint {
   reason_codes: string[];
 }
 
+export type DailyLoadDistributionWeekday = DailyRecommendedLoadWeekday;
+
+export interface DailyLoadDistributionAvailabilityWindow {
+  start_minute_of_day: number;
+  end_minute_of_day: number;
+}
+
+export interface DailyLoadDistributionAvailabilityDay {
+  /** Weekday name, or number where 0 = Monday and 6 = Sunday. */
+  day: DailyLoadDistributionWeekday;
+  windows?: DailyLoadDistributionAvailabilityWindow[] | null;
+  availableMinutes?: number | null;
+  maxSessions?: number | null;
+}
+
+export interface DailyLoadDistributionSchedulingConstraints {
+  /** Preferred training weekdays. Numeric values use the builder convention: 0 = Monday, 6 = Sunday. */
+  preferredWeekdays?: DailyLoadDistributionWeekday[] | null;
+  hardRestDays?: DailyLoadDistributionWeekday[] | null;
+  minSessionsPerWeek?: number | null;
+  maxSessionsPerWeek?: number | null;
+  availabilityDays?: DailyLoadDistributionAvailabilityDay[] | null;
+}
+
 export interface BuildDailyLoadDistributionInput {
   startDate: string;
   endDate: string;
@@ -30,11 +55,12 @@ export interface BuildDailyLoadDistributionInput {
   preferenceProfile?: AthletePreferenceProfile | null;
   weeklyAllocation?: WeeklyAllocation | null;
   plannedSessions?: DailyRecommendedLoadSession[] | null;
+  schedulingConstraints?: DailyLoadDistributionSchedulingConstraints | null;
 }
 
 /**
  * Builds daily recommended load points from weekly projection targets and
- * profile-derived planning constraints.
+ * profile-derived and explicit scheduling constraints.
  *
  * The returned load values are daily TSS values suitable for day-level charts;
  * weekly projection summaries should not be rendered as daily bars.

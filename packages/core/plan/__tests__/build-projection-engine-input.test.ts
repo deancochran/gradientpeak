@@ -126,6 +126,16 @@ describe("buildProjectionEngineInput", () => {
       behavior_controls_v1: normalizedConfig.behavior_controls_v1,
       calibration: normalizedConfig.calibration,
     });
+    expect(first.scheduling_constraints).toEqual({
+      availabilityDays: normalizedConfig.availability_config.days.map((day) => ({
+        day: day.day,
+        windows: day.windows,
+        maxSessions: day.max_sessions,
+      })),
+      hardRestDays: normalizedConfig.constraints.hard_rest_days,
+      minSessionsPerWeek: normalizedConfig.constraints.min_sessions_per_week,
+      maxSessionsPerWeek: normalizedConfig.constraints.max_sessions_per_week,
+    });
     expect(first.timeline).toEqual({
       start_date: expandedPlan.start_date,
       end_date: expandedPlan.end_date,
@@ -141,7 +151,27 @@ describe("buildProjectionEngineInput", () => {
     });
 
     expect(shapedInput.creation_config).toBeUndefined();
+    expect(shapedInput.scheduling_constraints).toBeUndefined();
     expect(shapedInput.timeline.start_date).toBe(expandedPlan.start_date);
     expect(shapedInput.timeline.end_date).toBe(expandedPlan.end_date);
+  });
+
+  it("passes explicit scheduling constraints and planned sessions through unchanged", () => {
+    const schedulingConstraints = {
+      preferredWeekdays: [0, "wednesday" as const],
+      hardRestDays: ["friday" as const],
+      minSessionsPerWeek: 2,
+      maxSessionsPerWeek: 3,
+    };
+    const plannedSessions = [{ date: "2026-03-02", estimatedTss: 72 }];
+
+    const shapedInput = buildProjectionEngineInput({
+      expanded_plan: expandedPlan,
+      scheduling_constraints: schedulingConstraints,
+      planned_sessions: plannedSessions,
+    });
+
+    expect(shapedInput.scheduling_constraints).toBe(schedulingConstraints);
+    expect(shapedInput.planned_sessions).toBe(plannedSessions);
   });
 });
