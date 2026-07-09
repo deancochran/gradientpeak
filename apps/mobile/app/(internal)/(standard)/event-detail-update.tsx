@@ -2,11 +2,12 @@ import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef } from "react";
-import { ActivityIndicator, View } from "react-native";
+import { View } from "react-native";
 import {
   CreateEventFlow,
   type CreateEventFlowHandle,
 } from "@/components/event/create/CreateEventFlow";
+import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { ROUTES } from "@/lib/constants/routes";
@@ -41,10 +42,7 @@ export default function EventDetailUpdateScreen() {
   if (isLoading || isRedirecting) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator size="large" />
-        <Text className="text-sm text-muted-foreground mt-3">
-          {isRedirecting ? "Closing event..." : "Loading event..."}
-        </Text>
+        <LoadingState message={isRedirecting ? "Closing event..." : "Loading event..."} />
       </View>
     );
   }
@@ -52,13 +50,12 @@ export default function EventDetailUpdateScreen() {
   if (!event) {
     return (
       <View className="flex-1 items-center justify-center px-6 bg-background">
-        <Text className="text-lg font-semibold text-foreground">Event not found</Text>
-        <Text className="text-sm text-muted-foreground text-center mt-2">
-          This event may have been removed.
-        </Text>
-        <Button className="mt-4" onPress={() => router.back()}>
-          <Text className="text-primary-foreground">Go Back</Text>
-        </Button>
+        <EmptyState
+          actionLabel="Go back"
+          description="This event may have been removed."
+          onAction={() => router.back()}
+          title="Event not found"
+        />
       </View>
     );
   }
@@ -66,13 +63,12 @@ export default function EventDetailUpdateScreen() {
   if (event.event_type === "imported") {
     return (
       <View className="flex-1 items-center justify-center px-6 bg-background">
-        <Text className="text-lg font-semibold text-foreground">Imported event</Text>
-        <Text className="mt-2 text-center text-sm text-muted-foreground">
-          Imported events are read-only and cannot be updated here.
-        </Text>
-        <Button className="mt-4" onPress={() => router.replace(ROUTES.PLAN.EVENT_DETAIL(event.id))}>
-          <Text className="text-primary-foreground">Back to Event</Text>
-        </Button>
+        <EmptyState
+          actionLabel="Back to event"
+          description="Imported events are read-only and cannot be updated here."
+          onAction={() => router.replace(ROUTES.PLAN.EVENT_DETAIL(event.id))}
+          title="Imported event"
+        />
       </View>
     );
   }

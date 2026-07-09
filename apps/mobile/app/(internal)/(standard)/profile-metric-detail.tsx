@@ -16,11 +16,13 @@ import { skipToken } from "@tanstack/react-query";
 import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { Ellipsis, HeartPulse, Scale, TrendingUp } from "lucide-react-native";
 import React from "react";
-import { ActivityIndicator, Alert, ScrollView, View } from "react-native";
-import { ActivityCard } from "@/components/shared/ActivityCard";
+import { Alert, ScrollView, View } from "react-native";
+import { ActivityCard, type ActivityCardActivity } from "@/components/shared/ActivityCard";
 import { AppConfirmModal } from "@/components/shared/AppFormModal";
+import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
+import { formatDateStamp } from "@/lib/display/formatters";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
@@ -40,6 +42,7 @@ function getMetricIcon(metricType: string) {
 
 export default function ProfileMetricDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const metricId = typeof id === "string" ? id : "";
   const router = useRouter();
   const navigateTo = useAppNavigate();
   const { profile, user } = useAuth();
@@ -55,8 +58,8 @@ export default function ProfileMetricDetailScreen() {
     : null;
 
   const { data: metric, isLoading } = api.profileMetrics.getById.useQuery(
-    { id: id! },
-    { enabled: !!id },
+    { id: metricId },
+    { enabled: !!metricId },
   );
   const { data: activityData } = api.activities.getById.useQuery(
     metric?.reference_activity_id ? { id: metric.reference_activity_id } : skipToken,
@@ -106,7 +109,7 @@ export default function ProfileMetricDetailScreen() {
   if (isLoading) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator />
+        <LoadingState message="Loading metric..." />
       </View>
     );
   }
@@ -114,12 +117,19 @@ export default function ProfileMetricDetailScreen() {
   if (!metric) {
     return (
       <View className="flex-1 items-center justify-center bg-background px-6">
-        <Text className="text-lg font-semibold text-foreground">Profile metric not found</Text>
+        <EmptyState title="Profile metric not found" />
       </View>
     );
   }
 
   const MetricIcon = getMetricIcon(metric.metric_type);
+  const linkedActivity = activityData?.activity;
+  const linkedActivityCard: ActivityCardActivity | null = linkedActivity
+    ? {
+        ...linkedActivity,
+        derived: { stress: activityData.derived?.stress ?? null },
+      }
+    : null;
 
   return (
     <View className="flex-1 bg-background" testID="profile-metric-detail-screen">
@@ -137,7 +147,7 @@ export default function ProfileMetricDetailScreen() {
                     {getMetricLabel(metric.metric_type)}
                   </Text>
                   <Text className="text-sm text-muted-foreground">
-                    Recorded {new Date(metric.recorded_at).toLocaleDateString()}
+                    Recorded {formatDateStamp(metric.recorded_at, "Unknown date")}
                   </Text>
                 </View>
               </View>
@@ -166,19 +176,11 @@ export default function ProfileMetricDetailScreen() {
             </Card>
           ) : null}
 
-          {metric.reference_activity_id && activityData?.activity ? (
+          {metric.reference_activity_id && linkedActivityCard ? (
             <ActivityCard
-              activity={{
-                ...(activityData.activity as any),
-                derived: {
-                  ...((activityData.activity as any).derived ?? {}),
-                  stress: activityData.derived?.stress ?? null,
-                },
-              }}
+              activity={linkedActivityCard}
               dateMode="absolute"
-              onPress={() =>
-                navigateTo(ROUTES.ACTIVITIES.DETAIL(metric.reference_activity_id!) as any)
-              }
+              onPress={() => navigateTo(ROUTES.ACTIVITIES.DETAIL(linkedActivityCard.id) as Href)}
               owner={activityOwner}
               testID="profile-metric-open-activity"
               variant="list"

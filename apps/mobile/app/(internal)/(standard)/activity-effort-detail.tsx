@@ -10,15 +10,17 @@ import {
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { skipToken } from "@tanstack/react-query";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { type Href, useLocalSearchParams, useRouter } from "expo-router";
 import { Ellipsis, Zap } from "lucide-react-native";
 import { useMemo, useState } from "react";
-import { ActivityIndicator, Alert, ScrollView, View } from "react-native";
+import { Alert, ScrollView, View } from "react-native";
 import { ActivityRouteMap } from "@/components/activity/maps/ActivityRouteMap";
-import { ActivityCard } from "@/components/shared/ActivityCard";
+import { ActivityCard, type ActivityCardActivity } from "@/components/shared/ActivityCard";
 import { AppConfirmModal } from "@/components/shared/AppFormModal";
+import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
+import { formatDateStamp } from "@/lib/display/formatters";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
@@ -28,6 +30,7 @@ function formatEffortTitle(category: string, type: string) {
 
 export default function ActivityEffortDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const effortId = typeof id === "string" ? id : "";
   const router = useRouter();
   const navigateTo = useAppNavigate();
   const { profile, user } = useAuth();
@@ -36,8 +39,8 @@ export default function ActivityEffortDetailScreen() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const { data: effort, isLoading } = api.activityEfforts.getById.useQuery(
-    { id: id! },
-    { enabled: !!id },
+    { id: effortId },
+    { enabled: !!effortId },
   );
   const { data: activityData } = api.activities.getById.useQuery(
     effort?.activity_id ? { id: effort.activity_id } : skipToken,
@@ -90,7 +93,7 @@ export default function ActivityEffortDetailScreen() {
   if (isLoading) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator />
+        <LoadingState message="Loading effort..." />
       </View>
     );
   }
@@ -98,12 +101,19 @@ export default function ActivityEffortDetailScreen() {
   if (!effort) {
     return (
       <View className="flex-1 items-center justify-center bg-background px-6">
-        <Text className="text-lg font-semibold text-foreground">Effort not found</Text>
+        <EmptyState title="Effort not found" />
       </View>
     );
   }
 
   const linkedActivity = activityData?.activity;
+  const derived = activityData?.derived;
+  const linkedActivityCard: ActivityCardActivity | null = linkedActivity
+    ? {
+        ...linkedActivity,
+        derived: { stress: derived?.stress ?? null },
+      }
+    : null;
   const activityOwner = user?.id
     ? {
         avatar_url: profile?.avatar_url ?? null,
@@ -111,8 +121,6 @@ export default function ActivityEffortDetailScreen() {
         username: profile?.username ?? user.email?.split("@")[0] ?? "You",
       }
     : null;
-  const derived = activityData?.derived;
-
   return (
     <View className="flex-1 bg-background" testID="activity-effort-detail-screen">
       <Stack.Screen options={{ headerRight: renderHeaderActions }} />
@@ -129,7 +137,7 @@ export default function ActivityEffortDetailScreen() {
                     {formatEffortTitle(effort.activity_category, effort.effort_type)}
                   </Text>
                   <Text className="text-sm text-muted-foreground">
-                    Recorded {new Date(effort.recorded_at).toLocaleDateString()}
+                    Recorded {formatDateStamp(effort.recorded_at, "Unknown date")}
                   </Text>
                 </View>
               </View>
@@ -156,17 +164,11 @@ export default function ActivityEffortDetailScreen() {
             </CardContent>
           </Card>
 
-          {linkedActivity ? (
+          {linkedActivityCard ? (
             <ActivityCard
-              activity={{
-                ...(linkedActivity as any),
-                derived: {
-                  ...((linkedActivity as any).derived ?? {}),
-                  stress: derived?.stress ?? null,
-                },
-              }}
+              activity={linkedActivityCard}
               dateMode="absolute"
-              onPress={() => navigateTo(ROUTES.ACTIVITIES.DETAIL(linkedActivity.id) as any)}
+              onPress={() => navigateTo(ROUTES.ACTIVITIES.DETAIL(linkedActivityCard.id) as Href)}
               owner={activityOwner}
               testID="activity-effort-open-activity"
               variant="list"
