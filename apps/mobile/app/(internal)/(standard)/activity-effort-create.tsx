@@ -54,31 +54,44 @@ function ActivityEffortCreate() {
       effortType: selectedEffortType,
     }) ?? getDefaultActivityEffortDefinition(selectedCategory);
   const valueDescriptor = activityEffortToInputDescriptor(effortDefinition);
+  const previousDefinitionIdRef = React.useRef(effortDefinition.id);
 
   React.useEffect(() => {
     if (effortDefinitions.some((definition) => definition.effortType === selectedEffortType))
       return;
     const nextDefinition =
       effortDefinitions[0] ?? getDefaultActivityEffortDefinition(selectedCategory);
-    form.setValue("effort_type", nextDefinition.effortType);
-    form.setValue("duration_seconds", nextDefinition.durationPresets[0] ?? 60);
+    previousDefinitionIdRef.current = nextDefinition.id;
+    form.setValue("effort_type", nextDefinition.effortType, { shouldValidate: true });
+    form.setValue("duration_seconds", nextDefinition.defaultDurationSeconds, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    form.setValue("value", nextDefinition.defaultValue, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
   }, [effortDefinitions, form, selectedCategory, selectedEffortType]);
+
+  React.useEffect(() => {
+    if (previousDefinitionIdRef.current === effortDefinition.id) return;
+    previousDefinitionIdRef.current = effortDefinition.id;
+    form.setValue("duration_seconds", effortDefinition.defaultDurationSeconds, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    form.setValue("value", effortDefinition.defaultValue, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+  }, [effortDefinition, form]);
 
   const createMutation = api.activityEfforts.create.useMutation();
   const submitForm = useZodFormSubmit<FormValues>({
     form,
     shouldRethrow: false,
     onSubmit: async (data) => {
-      const definition =
-        getActivityEffortDefinition({
-          activityCategory: data.activity_category,
-          effortType: data.effort_type,
-        }) ?? getDefaultActivityEffortDefinition(data.activity_category);
-
-      await createMutation.mutateAsync({
-        ...data,
-        unit: definition.unit,
-      });
+      await createMutation.mutateAsync(data);
       await Promise.all([
         utils.activityEfforts.invalidate(),
         utils.activities.invalidate(),

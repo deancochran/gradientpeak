@@ -2,42 +2,28 @@ import { formatActivityEffortValue, formatEffortDuration } from "@repo/core/athl
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
-import { Stack } from "expo-router";
+import { type Href, Stack } from "expo-router";
 import { CheckCircle2, Timer, Zap } from "lucide-react-native";
 import React from "react";
 import { Pressable, ScrollView, useColorScheme, View } from "react-native";
 import Svg, { Circle, Line, Path, Text as SvgText } from "react-native-svg";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { CompactInsightCard, type DateRange, DetailChartModal } from "@/components/shared";
+import {
+  type ActivityEffortCurve,
+  type ActivityEffortCurvePoint,
+  type ActivityEffortCurveRow,
+  buildActivityEffortCurves,
+  buildBestActivityEffortCurve,
+  getActivityEffortCurveBest,
+} from "@/lib/activity-efforts/curves";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { getActivityInsightVisualPolicy } from "@/lib/insights/visualPolicy";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
-type ActivityEffortRow = {
-  id: string;
-  activity_category: string;
-  duration_seconds: number;
-  effort_type: string;
-  recorded_at: string | Date;
-  unit: string;
-  value: number;
-};
-
-type EffortPoint = {
-  effortId: string;
-  label: string;
-  duration: number;
-  value: number;
-};
-
-type ActivityEffortCurve = {
-  id: string;
-  title: string;
-  unit: string;
-  records: ActivityEffortRow[];
-  points: EffortPoint[];
-};
+type ActivityEffortRow = ActivityEffortCurveRow;
+type EffortPoint = ActivityEffortCurvePoint;
 
 type ChartPoint = { x: number; y: number };
 
@@ -48,7 +34,6 @@ type EffortChartBounds = {
   maxValue: number;
 };
 
-const EFFORT_CURVE_OPTIONS = ["power", "speed"] as const;
 const EFFORT_CURVE_DURATION_TICKS = [5, 15, 30, 60, 120, 300, 600, 1200, 1800, 3600, 7200, 14400];
 
 function getEffortChartColors(isDark: boolean) {
@@ -59,12 +44,6 @@ function getEffortChartColors(isDark: boolean) {
     label: isDark ? "#94a3b8" : "#64748b",
     previous: isDark ? "#94a3b8" : "#94a3b8",
   };
-}
-
-function getCurveTitle(effortType: string) {
-  if (effortType === "power") return "Power curve";
-  if (effortType === "speed") return "Pace / speed curve";
-  return `${effortType.replace(/_/g, " ")} curve`;
 }
 
 function formatDate(value: string | Date) {
@@ -173,26 +152,6 @@ function filterRecordsByRange(records: ActivityEffortRow[], dateRange: DateRange
   return records.filter((record) => new Date(record.recorded_at) >= cutoff);
 }
 
-function buildBestCurve(records: ActivityEffortRow[]) {
-  const bestByDuration = new Map<number, ActivityEffortRow>();
-
-  for (const record of records) {
-    const current = bestByDuration.get(record.duration_seconds);
-    if (!current || record.value > current.value) {
-      bestByDuration.set(record.duration_seconds, record);
-    }
-  }
-
-  return [...bestByDuration.entries()]
-    .sort(([durationA], [durationB]) => durationA - durationB)
-    .map(([duration, record]) => ({
-      duration,
-      effortId: record.id,
-      label: formatDuration(duration),
-      value: Number(record.value),
-    }));
-}
-
 function buildEarliestComparableCurve(records: ActivityEffortRow[]) {
   if (records.length === 0) return [];
 
@@ -202,24 +161,17 @@ function buildEarliestComparableCurve(records: ActivityEffortRow[]) {
   const earliestDay = new Date(chronological[0]?.recorded_at);
   earliestDay.setHours(23, 59, 59, 999);
 
-  return buildBestCurve(
+  return buildBestActivityEffortCurve(
     chronological.filter(
       (record) => new Date(record.recorded_at).getTime() <= earliestDay.getTime(),
     ),
   );
 }
 
-function getCurveBest(records: ActivityEffortRow[]) {
-  return records.reduce<ActivityEffortRow | null>((best, record) => {
-    if (!best || record.value > best.value) return record;
-    return best;
-  }, null);
-}
-
 function getCurveEffortIds(records: ActivityEffortRow[]) {
   return new Set([
     ...buildEarliestComparableCurve(records).map((point) => point.effortId),
-    ...buildBestCurve(records).map((point) => point.effortId),
+    ...buildBestActivityEffortCurve(records).map((point) => point.effortId),
   ]);
 }
 
@@ -257,7 +209,7 @@ function EffortDetailChart({
   const width = 340;
   const height = 260;
   const colors = getEffortChartColors(useColorScheme() === "dark");
-  const presentPoints = buildBestCurve(records);
+  const presentPoints = buildBestActivityEffortCurve(records);
   const earliestPoints = buildEarliestComparableCurve(records);
   const allPoints = [...presentPoints, ...earliestPoints];
   const padding = { top: 20, right: 18, bottom: 44, left: 54 };
@@ -286,7 +238,7 @@ function EffortDetailChart({
     bounds.minValue,
   ];
   const durationTicks = getDurationTicks(bounds.minDuration, bounds.maxDuration);
-  const best = getCurveBest(records);
+  const best = getActivityEffortCurveBest(records);
 
   return (
     <Card className="rounded-3xl border border-border bg-card">
@@ -480,33 +432,14 @@ function ActivityEffortsList() {
   const navigateTo = useAppNavigate();
   const { data: effortsData, isLoading, error } = api.activityEfforts.getForProfile.useQuery();
   const efforts = (effortsData ?? []) as ActivityEffortRow[];
-  const effortCurves = React.useMemo(() => {
-    const curves = new Map<string, ActivityEffortRow[]>();
-    for (const effort of efforts) {
-      curves.set(effort.effort_type, [...(curves.get(effort.effort_type) ?? []), effort]);
-    }
-
-    return EFFORT_CURVE_OPTIONS.map((id) => {
-      const records = curves.get(id) ?? [];
-      const sorted = [...records].sort(
-        (a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime(),
-      );
-      return {
-        id,
-        title: getCurveTitle(id),
-        unit: sorted[0]?.unit ?? (id === "power" ? "W" : "speed"),
-        records: sorted,
-        points: buildBestCurve(sorted),
-      } satisfies ActivityEffortCurve;
-    });
-  }, [efforts]);
+  const effortCurves = React.useMemo(() => buildActivityEffortCurves(efforts), [efforts]);
   const [selectedCurveId, setSelectedCurveId] = React.useState<string | null>(null);
   const selectedCurve = effortCurves.find((curve) => curve.id === selectedCurveId) ?? null;
   const handleOpenRecord = React.useCallback(
     (recordId: string) => {
       setSelectedCurveId(null);
       requestAnimationFrame(() => {
-        navigateTo(ROUTES.ACTIVITIES.EFFORT_DETAIL(recordId) as any);
+        navigateTo(ROUTES.ACTIVITIES.EFFORT_DETAIL(recordId) as Href);
       });
     },
     [navigateTo],
@@ -535,7 +468,7 @@ function ActivityEffortsList() {
         options={{
           headerRight: () => (
             <Pressable
-              onPress={() => navigateTo("/(internal)/(standard)/activity-effort-create" as any)}
+              onPress={() => navigateTo("/(internal)/(standard)/activity-effort-create" as Href)}
               className="mr-2 rounded-full px-2 py-1"
               testID="activity-efforts-list-add-trigger"
             >
@@ -555,13 +488,13 @@ function ActivityEffortsList() {
         <View className="flex-row flex-wrap gap-4">
           {effortCurves.map((curve) => {
             const policy = getActivityInsightVisualPolicy("activityEfforts");
-            const best = getCurveBest(curve.records);
+            const best = getActivityEffortCurveBest(curve.records);
             return (
               <CompactInsightCard
                 key={curve.id}
                 title={curve.title}
                 value={best ? `Best ${formatValue(best)}` : "--"}
-                icon={curve.id === "power" ? Zap : Timer}
+                icon={curve.id === "bike_power" ? Zap : Timer}
                 hasData={Boolean(best)}
                 layout={policy.compactLayout}
                 summary={

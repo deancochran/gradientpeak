@@ -7,9 +7,11 @@
 
 import { randomUUID } from "node:crypto";
 import {
-  createProfileMetricInputSchema as coreCreateProfileMetricInputSchema,
   getProfileMetricDefinition,
   isProfileMetricValueWithinRange,
+  normalizeProfileMetricCreate,
+  normalizeProfileMetricUpdate,
+  profileMetricCreatePayloadSchema,
   profileMetricTypeSchema,
   updateProfileMetricInputSchema,
 } from "@repo/core/athlete-inputs";
@@ -22,9 +24,17 @@ import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { buildIndexPageInfo, indexCursorSchema, parseIndexCursor } from "../utils/index-cursor";
 import { markProfileAnalysisDirty } from "../utils/profile-estimation-state";
 
-const createProfileMetricInputSchema = z
-  .object({ profile_id: z.string().uuid("Invalid profile ID") })
-  .and(coreCreateProfileMetricInputSchema);
+const createProfileMetricInputSchema = profileMetricCreatePayloadSchema
+  .extend({ profile_id: z.string().uuid("Invalid profile ID") })
+  .superRefine((data, ctx) => {
+    if (isProfileMetricValueWithinRange(data.metric_type, data.value)) return;
+    const definition = getProfileMetricDefinition(data.metric_type);
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `${definition.label} must be between ${definition.min} and ${definition.max} ${definition.unit}`,
+      path: ["value"],
+    });
+  });
 
 const listProfileMetricsInputSchema = z
   .object({
@@ -166,19 +176,22 @@ export const profileMetricsRouter = createTRPCRouter({
         });
       }
 
+      const { profile_id: _profileId, ...metricInput } = input;
+      const normalizedMetric = normalizeProfileMetricCreate(metricInput);
+
       const [data] = await db
         .insert(profileMetrics)
         .values({
           id: randomUUID(),
           profile_id: input.profile_id,
-          metric_type: input.metric_type,
-          value: input.value,
-          unit: input.unit,
-          reference_activity_id: input.reference_activity_id || null,
-          notes: input.notes || null,
+          metric_type: normalizedMetric.metric_type,
+          value: normalizedMetric.value,
+          unit: normalizedMetric.unit,
+          reference_activity_id: normalizedMetric.reference_activity_id || null,
+          notes: normalizedMetric.notes || null,
           created_at: new Date(),
           updated_at: new Date(),
-          recorded_at: new Date(input.recorded_at || new Date().toISOString()),
+          recorded_at: new Date(normalizedMetric.recorded_at || new Date().toISOString()),
         })
         .returning();
 
@@ -213,23 +226,30 @@ export const profileMetricsRouter = createTRPCRouter({
         )
         .limit(1);
 
-      if (input.value !== undefined && existing) {
-        if (!isProfileMetricValueWithinRange(existing.metric_type, input.value)) {
-          const definition = getProfileMetricDefinition(existing.metric_type);
+      if (!existing) {
+        return null;
+      }
+
+      const normalizedPatch = (() => {
+        try {
+          return normalizeProfileMetricUpdate(existing, input);
+        } catch (error) {
           throw new TRPCError({
             code: "BAD_REQUEST",
-            message: `${definition.label} must be between ${definition.min} and ${definition.max} ${definition.unit}`,
+            message: error instanceof Error ? error.message : "Invalid profile metric update",
           });
         }
-      }
+      })();
 
       const [data] = await db
         .update(profileMetrics)
         .set({
-          value: input.value,
-          unit: input.unit,
-          notes: input.notes,
-          recorded_at: input.recorded_at ? new Date(input.recorded_at) : undefined,
+          value: normalizedPatch.value,
+          unit: normalizedPatch.unit,
+          notes: normalizedPatch.notes,
+          recorded_at: normalizedPatch.recorded_at
+            ? new Date(normalizedPatch.recorded_at)
+            : undefined,
           updated_at: new Date(),
         })
         .where(

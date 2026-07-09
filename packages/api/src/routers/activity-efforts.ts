@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import {
   createActivityEffortInputSchema,
+  normalizeActivityEffortUpdate,
   updateActivityEffortInputSchema,
 } from "@repo/core/athlete-inputs";
 import { activityEfforts, publicActivityEffortsRowSchema } from "@repo/db";
+import { TRPCError } from "@trpc/server";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getRequiredDb } from "../db";
@@ -100,18 +102,42 @@ export const activityEffortsRouter = createTRPCRouter({
     .output(activityEffortRowSchema.nullable())
     .mutation(async ({ input, ctx }) => {
       const db = getRequiredDb(ctx);
-      const { id, recorded_at, ...values } = input;
+      const { id, ...patch } = input;
       const [existing] = await db
-        .select({ recorded_at: activityEfforts.recorded_at })
+        .select({
+          activity_category: activityEfforts.activity_category,
+          activity_id: activityEfforts.activity_id,
+          duration_seconds: activityEfforts.duration_seconds,
+          effort_type: activityEfforts.effort_type,
+          recorded_at: activityEfforts.recorded_at,
+          start_offset: activityEfforts.start_offset,
+          value: activityEfforts.value,
+        })
         .from(activityEfforts)
         .where(and(eq(activityEfforts.id, id), eq(activityEfforts.profile_id, ctx.session.user.id)))
         .limit(1);
 
+      if (!existing) return null;
+
+      const normalizedPatch = (() => {
+        try {
+          return normalizeActivityEffortUpdate(existing, input);
+        } catch (error) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: error instanceof Error ? error.message : "Invalid activity effort update",
+          });
+        }
+      })();
+
       const [data] = await db
         .update(activityEfforts)
         .set({
-          ...values,
-          recorded_at: recorded_at ? new Date(recorded_at) : undefined,
+          ...patch,
+          ...normalizedPatch,
+          recorded_at: normalizedPatch.recorded_at
+            ? new Date(normalizedPatch.recorded_at)
+            : undefined,
           updated_at: new Date(),
         })
         .where(and(eq(activityEfforts.id, id), eq(activityEfforts.profile_id, ctx.session.user.id)))

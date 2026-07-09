@@ -100,12 +100,13 @@ function ProfileMetricEditScreen() {
     schema: profileMetricEditSchema,
     defaultValues: {
       metric_type: "weight_kg",
-      value: 70,
+      value: getProfileMetricDefinition("weight_kg").defaultValue,
       recorded_at: toDateTimeInputValue(null),
       notes: null,
     },
   });
   const selectedMetricType = form.watch("metric_type");
+  const previousMetricTypeRef = React.useRef<ProfileMetricType>(selectedMetricType);
 
   React.useEffect(() => {
     if (!metric) return;
@@ -117,16 +118,24 @@ function ProfileMetricEditScreen() {
     });
   }, [form, metric]);
 
+  React.useEffect(() => {
+    if (isEditMode) return;
+    if (previousMetricTypeRef.current === selectedMetricType) return;
+    previousMetricTypeRef.current = selectedMetricType;
+    form.setValue("value", getProfileMetricDefinition(selectedMetricType).defaultValue, {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+  }, [form, isEditMode, selectedMetricType]);
+
   const submitForm = useZodFormSubmit<ProfileMetricEditForm>({
     form,
     shouldRethrow: false,
     onSubmit: async (data) => {
-      const definition = getProfileMetricDefinition(data.metric_type);
       if (isEditMode && id) {
         await updateMutation.mutateAsync({
           id,
           value: data.value,
-          unit: definition.unit,
           recorded_at: toSubmitDateTime(data.recorded_at),
           notes: data.notes || null,
         });
@@ -136,7 +145,6 @@ function ProfileMetricEditScreen() {
           profile_id: user.id,
           metric_type: data.metric_type,
           value: data.value,
-          unit: definition.unit,
           recorded_at: toSubmitDateTime(data.recorded_at),
           notes: data.notes || null,
         });

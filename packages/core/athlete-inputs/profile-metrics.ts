@@ -28,6 +28,7 @@ export interface ProfileMetricDefinition {
   min: number;
   max: number;
   decimals: number;
+  defaultValue: number;
   description?: string;
 }
 
@@ -40,6 +41,7 @@ export const profileMetricDefinitions = {
     min: 30,
     max: 300,
     decimals: 1,
+    defaultValue: 70,
   },
   ftp: {
     type: "ftp",
@@ -49,6 +51,7 @@ export const profileMetricDefinitions = {
     min: 50,
     max: 1000,
     decimals: 0,
+    defaultValue: 250,
   },
   resting_hr: {
     type: "resting_hr",
@@ -58,6 +61,7 @@ export const profileMetricDefinitions = {
     min: 30,
     max: 120,
     decimals: 0,
+    defaultValue: 60,
   },
   sleep_hours: {
     type: "sleep_hours",
@@ -67,6 +71,7 @@ export const profileMetricDefinitions = {
     min: 0,
     max: 24,
     decimals: 1,
+    defaultValue: 7,
   },
   hrv_rmssd: {
     type: "hrv_rmssd",
@@ -76,6 +81,7 @@ export const profileMetricDefinitions = {
     min: 0,
     max: 300,
     decimals: 0,
+    defaultValue: 40,
   },
   vo2_max: {
     type: "vo2_max",
@@ -85,6 +91,7 @@ export const profileMetricDefinitions = {
     min: 10,
     max: 100,
     decimals: 1,
+    defaultValue: 45,
   },
   body_fat_percentage: {
     type: "body_fat_percentage",
@@ -94,6 +101,7 @@ export const profileMetricDefinitions = {
     min: 0,
     max: 100,
     decimals: 1,
+    defaultValue: 18,
   },
   hydration_level: {
     type: "hydration_level",
@@ -103,6 +111,7 @@ export const profileMetricDefinitions = {
     min: 0,
     max: 10,
     decimals: 0,
+    defaultValue: 5,
   },
   stress_score: {
     type: "stress_score",
@@ -112,6 +121,7 @@ export const profileMetricDefinitions = {
     min: 0,
     max: 10,
     decimals: 0,
+    defaultValue: 5,
   },
   soreness_level: {
     type: "soreness_level",
@@ -121,6 +131,7 @@ export const profileMetricDefinitions = {
     min: 0,
     max: 10,
     decimals: 0,
+    defaultValue: 3,
   },
   wellness_score: {
     type: "wellness_score",
@@ -130,6 +141,7 @@ export const profileMetricDefinitions = {
     min: 0,
     max: 10,
     decimals: 0,
+    defaultValue: 5,
   },
   max_hr: {
     type: "max_hr",
@@ -139,6 +151,7 @@ export const profileMetricDefinitions = {
     min: 100,
     max: 250,
     decimals: 0,
+    defaultValue: 185,
   },
   lthr: {
     type: "lthr",
@@ -148,6 +161,7 @@ export const profileMetricDefinitions = {
     min: 80,
     max: 220,
     decimals: 0,
+    defaultValue: 165,
   },
 } as const satisfies Record<ProfileMetricType, ProfileMetricDefinition>;
 
@@ -198,40 +212,84 @@ export const profileMetricNotesSchema = z
 
 export const profileMetricRecordedAtSchema = z.string().datetime("Invalid datetime").optional();
 
-export const createProfileMetricInputSchema = z
+export const profileMetricCreatePayloadSchema = z
   .object({
     metric_type: profileMetricTypeSchema,
     notes: profileMetricNotesSchema,
     recorded_at: profileMetricRecordedAtSchema,
     reference_activity_id: z.string().uuid("Invalid activity ID").nullable().optional(),
-    unit: z.string().min(1, "Unit is required").optional(),
     value: z.number().finite(),
   })
-  .passthrough()
+  .strict();
+
+function addProfileMetricValueRangeIssue(
+  data: z.output<typeof profileMetricCreatePayloadSchema>,
+  ctx: z.RefinementCtx,
+) {
+  if (isProfileMetricValueWithinRange(data.metric_type, data.value)) return;
+  const definition = getProfileMetricDefinition(data.metric_type);
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: `${definition.label} must be between ${definition.min} and ${definition.max} ${definition.unit}`,
+    path: ["value"],
+  });
+}
+
+export const createProfileMetricInputSchema = profileMetricCreatePayloadSchema
   .superRefine((data, ctx) => {
-    if (isProfileMetricValueWithinRange(data.metric_type, data.value)) return;
-    const definition = getProfileMetricDefinition(data.metric_type);
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: `${definition.label} must be between ${definition.min} and ${definition.max} ${definition.unit}`,
-      path: ["value"],
-    });
+    addProfileMetricValueRangeIssue(data, ctx);
   })
   .transform((data) => ({
     ...data,
-    unit: data.unit ?? getProfileMetricDefinition(data.metric_type).unit,
+    unit: getProfileMetricDefinition(data.metric_type).unit,
     value: normalizeProfileMetricValue(data.metric_type, data.value),
   }));
+
+export function normalizeProfileMetricCreate(
+  input: z.output<typeof profileMetricCreatePayloadSchema>,
+): z.output<typeof createProfileMetricInputSchema> {
+  return createProfileMetricInputSchema.parse(input);
+}
 
 export const updateProfileMetricInputSchema = z
   .object({
     id: z.string().uuid("Invalid metric ID"),
     value: z.number().finite().optional(),
-    unit: z.string().min(1, "Unit is required").optional(),
     notes: profileMetricNotesSchema,
     recorded_at: profileMetricRecordedAtSchema,
   })
   .strict();
+
+export interface ProfileMetricUpdateExisting {
+  metric_type: ProfileMetricType;
+}
+
+export function normalizeProfileMetricUpdate(
+  existing: ProfileMetricUpdateExisting,
+  patch: z.output<typeof updateProfileMetricInputSchema>,
+) {
+  const definition = getProfileMetricDefinition(existing.metric_type);
+  const normalizedValue =
+    patch.value === undefined
+      ? undefined
+      : normalizeProfileMetricValue(existing.metric_type, patch.value);
+
+  if (
+    normalizedValue !== undefined &&
+    !isProfileMetricValueWithinRange(existing.metric_type, normalizedValue)
+  ) {
+    throw new Error(
+      `${definition.label} must be between ${definition.min} and ${definition.max} ${definition.unit}`,
+    );
+  }
+
+  return {
+    value: normalizedValue,
+    unit: definition.unit,
+    notes: patch.notes,
+    recorded_at: patch.recorded_at,
+  };
+}
 
 export type CreateProfileMetricInput = z.infer<typeof createProfileMetricInputSchema>;
 export type UpdateProfileMetricInput = z.infer<typeof updateProfileMetricInputSchema>;

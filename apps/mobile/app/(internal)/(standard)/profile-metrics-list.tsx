@@ -2,7 +2,6 @@ import {
   formatProfileMetricValue,
   getProfileMetricDefinition,
   isProfileMetricType,
-  profileMetricTypes,
 } from "@repo/core/athlete-inputs";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
@@ -11,32 +10,24 @@ import { HeartPulse, Plus, Scale, TrendingUp } from "lucide-react-native";
 import React from "react";
 import { ActivityIndicator, Pressable, ScrollView, useColorScheme, View } from "react-native";
 import Svg, { Circle, Line, Path, Text as SvgText } from "react-native-svg";
-import { CompactInsightCard, type DateRange, DetailChartModal } from "@/components/shared";
+import { CompactInsightCard, DetailChartModal } from "@/components/shared";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { getProfileMetricVisualPolicy } from "@/lib/insights/visualPolicy";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import {
+  buildProfileMetricTrendGroups,
+  buildProfileMetricTrendPoints,
+  filterProfileMetricRecordsByRange,
+  formatProfileMetricTrendDate,
+  type ProfileMetricTrendGroup,
+  type ProfileMetricTrendPoint,
+  type ProfileMetricTrendRow,
+} from "@/lib/profile-metrics/trends";
 
-type ProfileMetricRow = {
-  id: string;
-  metric_type: string;
-  recorded_at: string | Date;
-  unit: string;
-  value: number;
-};
-
-type MetricPoint = {
-  label: string;
-  value: number;
-};
-
-type ProfileMetricGroup = {
-  id: string;
-  latest?: ProfileMetricRow;
-  previous?: ProfileMetricRow;
-  records: ProfileMetricRow[];
-  points: MetricPoint[];
-};
+type ProfileMetricRow = ProfileMetricTrendRow;
+type MetricPoint = ProfileMetricTrendPoint;
+type ProfileMetricGroup = ProfileMetricTrendGroup;
 
 type ChartFrame = {
   width: number;
@@ -55,8 +46,6 @@ const DETAIL_CHART_FRAME: ChartFrame = {
   paddingTop: 22,
   paddingBottom: 42,
 };
-
-const PROFILE_METRIC_OPTIONS = profileMetricTypes;
 
 type PolicyMetricType = "weight_kg" | "vo2_max" | "resting_hr" | "hrv_rmssd" | "sleep_hours";
 
@@ -109,9 +98,7 @@ function formatAxisValue(value: number) {
   return Number(value).toLocaleString(undefined, { maximumFractionDigits: 1 });
 }
 
-function formatDate(value: string | Date) {
-  return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
+const formatDate = formatProfileMetricTrendDate;
 
 function buildPath(points: Array<{ x: number; y: number }>) {
   return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
@@ -152,21 +139,8 @@ function getDetailCoordinates(points: MetricPoint[], frame: ChartFrame) {
   }));
 }
 
-function filterRecordsByRange(records: ProfileMetricRow[], dateRange: DateRange) {
-  if (dateRange === "all") return records;
-
-  const days = dateRange === "7d" ? 7 : dateRange === "30d" ? 30 : 90;
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - days);
-  cutoff.setHours(0, 0, 0, 0);
-
-  return records.filter((record) => new Date(record.recorded_at) >= cutoff);
-}
-
 function buildPoints(records: ProfileMetricRow[]) {
-  return [...records]
-    .reverse()
-    .map((record) => ({ label: formatDate(record.recorded_at), value: Number(record.value) }));
+  return buildProfileMetricTrendPoints(records);
 }
 
 function MiniTrendVisual({ points }: { points: MetricPoint[] }) {
@@ -383,42 +357,14 @@ export default function ProfileMetricsListScreen() {
       { getNextPageParam: (lastPage: any) => lastPage.nextCursor },
     );
   const metrics = (data?.pages.flatMap((page) => page.items) ?? []) as ProfileMetricRow[];
-  const metricGroups = React.useMemo(() => {
-    const recordsByType = new Map<string, ProfileMetricRow[]>();
-    for (const metric of metrics) {
-      recordsByType.set(metric.metric_type, [
-        ...(recordsByType.get(metric.metric_type) ?? []),
-        metric,
-      ]);
-    }
-
-    const groups = PROFILE_METRIC_OPTIONS.map((metricType) => {
-      const records = recordsByType.get(metricType) ?? [];
-      const sorted = [...records].sort(
-        (a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime(),
-      );
-      const chronological = [...sorted].reverse();
-      return {
-        id: metricType,
-        latest: sorted[0],
-        previous: sorted[1],
-        records: sorted,
-        points: chronological.map((record) => ({
-          label: formatDate(record.recorded_at),
-          value: Number(record.value),
-        })),
-      } satisfies ProfileMetricGroup;
-    });
-
-    return groups.sort((a, b) => Number(Boolean(b.latest)) - Number(Boolean(a.latest)));
-  }, [metrics]);
+  const metricGroups = React.useMemo(() => buildProfileMetricTrendGroups(metrics), [metrics]);
   const [selectedMetricType, setSelectedMetricType] = React.useState<string | null>(null);
   const selectedGroup = metricGroups.find((group) => group.id === selectedMetricType) ?? null;
   const openRecord = React.useCallback(
     (recordId: string) => {
       setSelectedMetricType(null);
       requestAnimationFrame(() => {
-        navigateTo(ROUTES.PROFILE_METRICS.DETAIL(recordId) as any);
+        navigateTo(ROUTES.PROFILE_METRICS.DETAIL(recordId) as Href);
       });
     },
     [navigateTo],
@@ -517,7 +463,10 @@ export default function ProfileMetricsListScreen() {
         >
           {(dateRange) => {
             if (!selectedGroup) return null;
-            const rangeRecords = filterRecordsByRange(selectedGroup.records, dateRange);
+            const rangeRecords = filterProfileMetricRecordsByRange(
+              selectedGroup.records,
+              dateRange,
+            );
             return (
               <View className="gap-4">
                 <DetailTrendChart group={selectedGroup} records={rangeRecords} />

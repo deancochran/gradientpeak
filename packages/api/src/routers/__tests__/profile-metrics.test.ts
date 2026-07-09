@@ -236,7 +236,6 @@ describe("profileMetricsRouter", () => {
       metric_type: "weight_kg",
       recorded_at: "2026-03-18T06:30:00.000Z",
       reference_activity_id: undefined,
-      unit: "kg",
       notes: "post-session weigh-in",
       value: 70.25,
     });
@@ -277,7 +276,6 @@ describe("profileMetricsRouter", () => {
         metric_type: "weight_kg",
         recorded_at: "2026-03-18T06:30:00.000Z",
         reference_activity_id: undefined,
-        unit: "kg",
         notes: "post-session weigh-in",
         value: 70.25,
       }),
@@ -290,12 +288,11 @@ describe("profileMetricsRouter", () => {
       value: 68.8,
       notes: "cutback week",
     });
-    const { caller, callLog } = createCaller({ updateResult: [updated] });
+    const { caller, callLog } = createCaller({ selectResult: [updated], updateResult: [updated] });
 
     const result = await caller.update({
       id: "00000000-0000-4000-8000-000000000005",
       value: 68.8,
-      unit: "kg",
       notes: "cutback week",
       recorded_at: "2026-03-20T07:15:00.000Z",
     });

@@ -132,7 +132,6 @@ describe("activityEffortsRouter", () => {
       duration_seconds: 600,
       effort_type: "speed" as const,
       value: 4.2,
-      unit: "m/s",
       start_offset: 30,
       recorded_at: "2026-03-02T12:34:56.000Z",
     };
@@ -182,7 +181,7 @@ describe("activityEffortsRouter", () => {
       updated_at: new Date("2026-03-03T01:02:03.000Z"),
     });
     const { caller, spies } = createCaller({
-      selectOneResult: [{ recorded_at: oldRecordedAt }],
+      selectOneResult: [buildEffortRow({ recorded_at: oldRecordedAt })],
       updateResult: [updatedRow],
     });
 
@@ -202,6 +201,7 @@ describe("activityEffortsRouter", () => {
 
     const updatePayload = (spies.set.mock.calls as any[][])[0]?.[0];
     expect(updatePayload).toMatchObject({ value: 4.8 });
+    expect(updatePayload.unit).toBe("m/s");
     expect(updatePayload.recorded_at).toBeInstanceOf(Date);
     expect(updatePayload.recorded_at.toISOString()).toBe(newRecordedAt);
     expect(updatePayload.updated_at).toBeInstanceOf(Date);
@@ -226,8 +226,8 @@ describe("activityEffortsRouter", () => {
     expect(result).toBeNull();
     expect(spies.select).toHaveBeenCalledOnce();
     expect(spies.limit).toHaveBeenCalledOnce();
-    expect(spies.update).toHaveBeenCalledOnce();
-    expect(spies.updateReturning).toHaveBeenCalledOnce();
+    expect(spies.update).not.toHaveBeenCalled();
+    expect(spies.updateReturning).not.toHaveBeenCalled();
     expect(markProfileAnalysisDirtyMock).not.toHaveBeenCalled();
   });
 
@@ -274,7 +274,6 @@ describe("activityEffortsRouter", () => {
         duration_seconds: 600,
         effort_type: "speed",
         value: 4.2,
-        unit: "m/s",
         start_offset: 30,
         recorded_at: "2026-03-02T12:34:56.000Z",
         extra: true,

@@ -10,7 +10,6 @@ const validCreateInput = {
   duration_seconds: 1200,
   effort_type: "power",
   value: 285,
-  unit: "w",
   start_offset: 60,
   recorded_at: "2026-07-05T19:00:00.000Z",
 } as const;
@@ -35,13 +34,13 @@ describe("activity effort input schemas", () => {
     const parsed = activityEffortUpdateInputSchema.parse({
       id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
       duration_seconds: 900,
-      unit: "w",
+      value: 300,
     });
 
     expect(parsed).toEqual({
       id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
       duration_seconds: 900,
-      unit: "w",
+      value: 300,
     });
   });
 
@@ -54,11 +53,11 @@ describe("activity effort input schemas", () => {
     ).toBe(false);
   });
 
-  it("requires a nonempty unit", () => {
+  it("rejects caller-supplied units", () => {
     expect(
       activityEffortCreateInputSchema.safeParse({
         ...validCreateInput,
-        unit: "",
+        unit: "W",
       }).success,
     ).toBe(false);
   });
