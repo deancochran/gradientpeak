@@ -24,7 +24,7 @@ function mapBackendProjectionChartToTrainingPathChart(
   localChart: BuilderDailyTrainingPathChartViewModel,
 ): BuilderDailyTrainingPathChartViewModel | null {
   if (!projectionChart || typeof projectionChart !== "object") return null;
-  const chart = projectionChart as Record<string, any>;
+  const chart = projectionChart as Record<string, unknown>;
   const points = Array.isArray(chart.display_points)
     ? chart.display_points
     : Array.isArray(chart.points)
@@ -35,6 +35,7 @@ function mapBackendProjectionChartToTrainingPathChart(
 
   const weeks = aggregateBackendPointsToWeeks(validPoints, localChart);
   if (weeks.length === 0) return null;
+  const dailyPoints = mapBackendDailyLoadPoints(chart.daily_load_points, validPoints, localChart);
 
   const loadMax = Math.max(
     1,
@@ -52,6 +53,7 @@ function mapBackendProjectionChartToTrainingPathChart(
 
   return {
     ...localChart,
+    dailyPoints,
     weeks,
     domains: { load: [0, Math.ceil(loadMax * 1.15)], fitness: [0, Math.ceil(fitnessMax * 1.15)] },
   };
@@ -63,6 +65,11 @@ type BackendProjectionPoint = {
   predicted_fitness_ctl: number;
   predicted_fatigue_atl: number;
   predicted_form_tsb: number;
+};
+
+type BackendDailyLoadPoint = {
+  date: string;
+  recommended_load_tss: number;
 };
 
 function isBackendProjectionPoint(value: unknown): value is BackendProjectionPoint {
@@ -120,6 +127,54 @@ function aggregateBackendPointsToWeeks(
         isSelected: localWeek?.isSelected ?? index === 0,
       };
     });
+}
+
+function isBackendDailyLoadPoint(value: unknown): value is BackendDailyLoadPoint {
+  if (!value || typeof value !== "object") return false;
+  const point = value as Record<string, unknown>;
+  return typeof point.date === "string" && typeof point.recommended_load_tss === "number";
+}
+
+function mapBackendDailyLoadPoints(
+  dailyLoadPoints: unknown,
+  projectionPoints: BackendProjectionPoint[],
+  localChart: BuilderDailyTrainingPathChartViewModel,
+): BuilderDailyTrainingPathChartViewModel["dailyPoints"] {
+  const validDailyLoadPoints = Array.isArray(dailyLoadPoints)
+    ? dailyLoadPoints.filter(isBackendDailyLoadPoint)
+    : [];
+  if (validDailyLoadPoints.length === 0) return localChart.dailyPoints;
+
+  const projectionByDate = new Map(projectionPoints.map((point) => [point.date, point] as const));
+  const localByDate = new Map(localChart.dailyPoints.map((point) => [point.date, point] as const));
+
+  return validDailyLoadPoints.map((dailyPoint) => {
+    const projectionPoint = projectionByDate.get(dailyPoint.date);
+    const localPoint = localByDate.get(dailyPoint.date);
+    const plannedLoadTss = localPoint?.plannedLoadTss ?? 0;
+    const tentativePlannedLoadTss = localPoint?.tentativePlannedLoadTss ?? 0;
+    const completedLoadTss = localPoint?.completedLoadTss ?? 0;
+    const targetLoadTss = Math.round(dailyPoint.recommended_load_tss);
+    return {
+      date: dailyPoint.date,
+      plannedLoadTss,
+      tentativePlannedLoadTss,
+      completedLoadTss,
+      targetLoadTss,
+      actualOrScheduledLoadTss: completedLoadTss + plannedLoadTss + tentativePlannedLoadTss,
+      loadDeltaTss: completedLoadTss + plannedLoadTss + tentativePlannedLoadTss - targetLoadTss,
+      plannedDeltaTss: plannedLoadTss + tentativePlannedLoadTss - targetLoadTss,
+      fitnessCtl: localPoint?.fitnessCtl ?? null,
+      scheduledFitnessCtl:
+        projectionPoint?.predicted_fitness_ctl ?? localPoint?.scheduledFitnessCtl ?? null,
+      targetFitnessCtl:
+        localPoint?.targetFitnessCtl ?? projectionPoint?.predicted_fitness_ctl ?? null,
+      fatigueAtl: projectionPoint?.predicted_fatigue_atl ?? localPoint?.fatigueAtl ?? null,
+      formTsb: projectionPoint?.predicted_form_tsb ?? localPoint?.formTsb ?? null,
+      readinessScore: localPoint?.readinessScore ?? null,
+      annotations: localPoint?.annotations ?? [],
+    };
+  });
 }
 
 function getMondayWeekStart(dateKey: string) {

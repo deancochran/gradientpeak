@@ -26,6 +26,10 @@ import {
   READINESS_CALCULATION,
   resolveNoHistoryStartingPrior,
 } from "./calibration-constants";
+import {
+  buildDailyLoadDistribution,
+  type DailyLoadDistributionPoint,
+} from "./dailyLoadDistribution";
 import { addDaysDateOnlyUtc, diffDateOnlyUtcDays } from "./dateOnlyUtc";
 import { resolveGoalReadinessTarget } from "./goalReadinessTrajectory";
 import {
@@ -1376,6 +1380,14 @@ export interface DeterministicProjectionPayload {
   end_date: string;
   points: DeterministicProjectionPoint[];
   display_points?: DeterministicProjectionPoint[];
+  /**
+   * Daily recommended load suitable for day-level charts.
+   *
+   * Prefer this over `display_points` when rendering daily load. `points` and
+   * legacy `display_points` may represent projection milestones or weekly
+   * summaries.
+   */
+  daily_load_points?: DailyLoadDistributionPoint[];
   goal_markers: DeterministicProjectionGoalMarker[];
   microcycles: DeterministicProjectionMicrocycle[];
   recovery_segments: ProjectionRecoverySegment[];
@@ -4233,6 +4245,18 @@ function buildDeterministicProjectionPayloadInternal(
       prescription: trainingPrescription,
       ...optionalProperty("preferences", input.preference_profile),
     });
+  const dailyLoadPoints = buildDailyLoadDistribution({
+    startDate,
+    endDate,
+    weeklyTargets: microcycles.map((microcycle) => ({
+      weekStartDate: microcycle.week_start_date,
+      weekEndDate: microcycle.week_end_date,
+      targetTss: microcycle.planned_weekly_tss,
+      phase: microcycle.pattern,
+    })),
+    preferenceProfile: input.preference_profile,
+    weeklyAllocation,
+  });
   const sportLoadStates = buildSportLoadStates({
     microcycles,
     goals: input.goals,
@@ -4517,6 +4541,7 @@ function buildDeterministicProjectionPayloadInternal(
     end_date: endDate,
     points: pointsWithReadiness,
     display_points: pointsWithReadiness,
+    daily_load_points: dailyLoadPoints,
     goal_markers: goalMarkers,
     microcycles,
     recovery_segments: recoverySegments,

@@ -77,6 +77,8 @@ function toGoalTargets(goal: TrainingPlanSnapshot["profileGoals"][number]): Goal
             : [];
         case "hr":
           return [{ target_type: "hr_threshold", target_lthr_bpm: objective.value }];
+        default:
+          return [];
       }
     }
     default:
@@ -193,8 +195,15 @@ export function buildTrainingPreferencesLoadTimeline(input: {
   const previewByDate = new Map(
     (input.projectionChart?.display_points ?? []).map((point) => [point.date, point]),
   );
+  const dailyRecommendedLoadByDate = new Map(
+    (input.projectionChart?.daily_load_points ?? []).map((point) => [
+      point.date,
+      point.recommended_load_tss,
+    ]),
+  );
   const dateSource = baselineTimeline.length > 0 ? baselineTimeline : [...previewByDate.values()];
   const dates = new Set(dateSource.map((point) => point.date));
+  for (const date of dailyRecommendedLoadByDate.keys()) dates.add(date);
   const scheduledLoadAggregation = aggregateScheduledLoadByDate(input);
   for (const date of scheduledLoadAggregation.dates) dates.add(date);
 
@@ -219,7 +228,10 @@ export function buildTrainingPreferencesLoadTimeline(input: {
       return withLegacyTrainingLoadAliases({
         date,
         recommended_load_tss: Math.round(
-          previewPoint?.predicted_load_tss ?? baseline?.ideal_tss ?? 0,
+          dailyRecommendedLoadByDate.get(date) ??
+            previewPoint?.predicted_load_tss ??
+            baseline?.ideal_tss ??
+            0,
         ),
         scheduled_load_tss: Math.round(scheduledLoad),
         tentative_scheduled_load_tss: Math.round(tentativeScheduledLoad),
