@@ -21,6 +21,10 @@ import {
   createWahooRepository,
 } from "../infrastructure/repositories";
 import { IcalSyncError, IcalSyncService } from "../lib/integrations/ical/sync-service";
+import {
+  isProviderOAuthConfigured,
+  requireProviderOAuthConfig,
+} from "../lib/integrations/oauth-config";
 import { createWahooRouteStorage, WahooSyncService } from "../lib/integrations/wahoo/sync-service";
 import { logger } from "../lib/logger";
 import { WahooSyncJobService } from "../lib/provider-sync/wahoo-job-service";
@@ -171,6 +175,7 @@ const syncOverviewSchema = z.array(
           status: z.enum(["connected", "needs_reconnect", "unsupported"]),
         })
         .strict(),
+      configured: z.boolean(),
       setupData: z
         .object({
           lastError: z.string().nullable(),
@@ -182,7 +187,23 @@ const syncOverviewSchema = z.array(
       connected: z.boolean(),
       integrationId: z.string().uuid().nullable(),
       label: z.string().min(1),
+      primaryAction: z.enum(["connect", "disconnect", "reconnect"]).nullable(),
       provider: providerSchema,
+      summary: z
+        .object({
+          badge: z.string().min(1),
+          health: z.enum([
+            "connected",
+            "syncing",
+            "queued",
+            "needs_reconnect",
+            "failed",
+            "unavailable",
+          ]),
+          subtitle: z.string().min(1),
+          title: z.string().min(1),
+        })
+        .strict(),
     })
     .strict(),
 );
@@ -433,6 +454,80 @@ function looksLikeReconnectError(error: string | null | undefined): boolean {
   );
 }
 
+function getCompactProviderSummary(input: {
+  activityStatus: "idle" | "queued" | "importing" | "synced" | "failed" | "unsupported";
+  connected: boolean;
+  label: string;
+  plannedStatus: "automatic" | "queued" | "syncing" | "failed" | "unsupported";
+  providerHealthStatus: "connected" | "needs_reconnect" | "unsupported";
+  setupStatus: "idle" | "refreshing" | "refreshed" | "failed" | "unsupported";
+}) {
+  if (!input.connected) {
+    return {
+      badge: "Ready",
+      health: "unavailable" as const,
+      subtitle: "Connect",
+      title: input.label,
+    };
+  }
+
+  if (input.providerHealthStatus === "needs_reconnect") {
+    return {
+      badge: "Reconnect",
+      health: "needs_reconnect" as const,
+      subtitle: "Sync paused",
+      title: input.label,
+    };
+  }
+
+  if (
+    input.activityStatus === "failed" ||
+    input.plannedStatus === "failed" ||
+    input.setupStatus === "failed"
+  ) {
+    return {
+      badge: "Issue",
+      health: "failed" as const,
+      subtitle: "Needs attention",
+      title: input.label,
+    };
+  }
+
+  if (input.activityStatus === "importing" || input.plannedStatus === "syncing") {
+    return {
+      badge: "Syncing",
+      health: "syncing" as const,
+      subtitle: "In progress",
+      title: input.label,
+    };
+  }
+
+  if (input.activityStatus === "queued" || input.plannedStatus === "queued") {
+    return {
+      badge: "Queued",
+      health: "queued" as const,
+      subtitle: "Waiting",
+      title: input.label,
+    };
+  }
+
+  return {
+    badge: "Auto",
+    health: "connected" as const,
+    subtitle: "Connected",
+    title: input.label,
+  };
+}
+
+function getPrimaryProviderAction(input: {
+  connected: boolean;
+  providerHealthStatus: "connected" | "needs_reconnect" | "unsupported";
+}): "connect" | "disconnect" | "reconnect" {
+  if (!input.connected) return "connect";
+  if (input.providerHealthStatus === "needs_reconnect") return "reconnect";
+  return "disconnect";
+}
+
 async function enqueueActivityHistoryReconcile(input: {
   integrationId: string;
   profileId: string;
@@ -559,113 +654,131 @@ export const integrationsRouter = createTRPCRouter({
       integrations.map((integration) => [integration.provider, integration]),
     );
 
-    const overview = providerCapabilityRegistry.map((definition) => {
-      const integration = integrationsByProvider.get(definition.id);
-      const activityState = integration
-        ? syncStates.find(
-            (candidate) =>
-              candidate.integrationId === integration.id &&
-              candidate.resource === activityHistoryResource,
-          )
-        : null;
-      const setupState = integration
-        ? syncStates.find(
-            (candidate) =>
-              candidate.integrationId === integration.id &&
-              candidate.resource === profileEnrichmentResource,
-          )
-        : null;
-      const plannedState = integration
-        ? syncStates.find(
-            (candidate) =>
-              candidate.integrationId === integration.id &&
-              candidate.resource === plannedWorkoutsResource,
-          )
-        : null;
-      const activeActivityJob = integration
-        ? activeJobs.find(
-            (job) =>
-              job.integrationId === integration.id && job.jobType === wahooActivityHistoryJobType,
-          )
-        : null;
-      const activePlannedJob = integration
-        ? activeJobs.find(
-            (job) =>
-              job.integrationId === integration.id && wahooPlannedWorkoutJobTypes.has(job.jobType),
-          )
-        : null;
-      const activityHistorySupported = supportsActivityHistorySync(definition.id);
-      const setupSupported = providerHasCapability(definition.id, "profile_enrichment_read");
-      const plannedSupported = providerHasCapability(definition.id, "planned_activity_push");
-      const activityHistoryStatus = !activityHistorySupported
-        ? "unsupported"
-        : activeActivityJob?.status === "running"
-          ? "importing"
-          : activeActivityJob?.status === "queued"
-            ? "queued"
-            : activityState?.lastError
+    const overview = providerCapabilityRegistry
+      .filter((definition) => isProviderOAuthConfigured(definition.id))
+      .map((definition) => {
+        const integration = integrationsByProvider.get(definition.id);
+        const activityState = integration
+          ? syncStates.find(
+              (candidate) =>
+                candidate.integrationId === integration.id &&
+                candidate.resource === activityHistoryResource,
+            )
+          : null;
+        const setupState = integration
+          ? syncStates.find(
+              (candidate) =>
+                candidate.integrationId === integration.id &&
+                candidate.resource === profileEnrichmentResource,
+            )
+          : null;
+        const plannedState = integration
+          ? syncStates.find(
+              (candidate) =>
+                candidate.integrationId === integration.id &&
+                candidate.resource === plannedWorkoutsResource,
+            )
+          : null;
+        const activeActivityJob = integration
+          ? activeJobs.find(
+              (job) =>
+                job.integrationId === integration.id && job.jobType === wahooActivityHistoryJobType,
+            )
+          : null;
+        const activePlannedJob = integration
+          ? activeJobs.find(
+              (job) =>
+                job.integrationId === integration.id &&
+                wahooPlannedWorkoutJobTypes.has(job.jobType),
+            )
+          : null;
+        const activityHistorySupported = supportsActivityHistorySync(definition.id);
+        const setupSupported = providerHasCapability(definition.id, "profile_enrichment_read");
+        const plannedSupported = providerHasCapability(definition.id, "planned_activity_push");
+        const activityHistoryStatus = !activityHistorySupported
+          ? "unsupported"
+          : activeActivityJob?.status === "running"
+            ? "importing"
+            : activeActivityJob?.status === "queued"
+              ? "queued"
+              : activityState?.lastError
+                ? "failed"
+                : activityState?.lastSyncSucceededAt
+                  ? "synced"
+                  : "idle";
+        const setupStatus = !setupSupported
+          ? "unsupported"
+          : getSyncMetadataStatus(setupState?.metadata) === "running"
+            ? "refreshing"
+            : setupState?.lastError
               ? "failed"
-              : activityState?.lastSyncSucceededAt
-                ? "synced"
+              : setupState?.lastSyncSucceededAt
+                ? "refreshed"
                 : "idle";
-      const setupStatus = !setupSupported
-        ? "unsupported"
-        : getSyncMetadataStatus(setupState?.metadata) === "running"
-          ? "refreshing"
-          : setupState?.lastError
-            ? "failed"
-            : setupState?.lastSyncSucceededAt
-              ? "refreshed"
-              : "idle";
-      const plannedStatus = !plannedSupported
-        ? "unsupported"
-        : activePlannedJob?.status === "running"
-          ? "syncing"
-          : activePlannedJob?.status === "queued"
-            ? "queued"
-            : plannedState?.lastError
-              ? "failed"
-              : "automatic";
-      const providerHealthLastError =
-        activityState?.lastError ?? setupState?.lastError ?? plannedState?.lastError ?? null;
-      const providerHealthStatus = !integration
-        ? "unsupported"
-        : looksLikeReconnectError(providerHealthLastError)
-          ? "needs_reconnect"
-          : "connected";
+        const plannedStatus = !plannedSupported
+          ? "unsupported"
+          : activePlannedJob?.status === "running"
+            ? "syncing"
+            : activePlannedJob?.status === "queued"
+              ? "queued"
+              : plannedState?.lastError
+                ? "failed"
+                : "automatic";
+        const providerHealthLastError =
+          activityState?.lastError ?? setupState?.lastError ?? plannedState?.lastError ?? null;
+        const providerHealthStatus = !integration
+          ? "unsupported"
+          : looksLikeReconnectError(providerHealthLastError)
+            ? "needs_reconnect"
+            : "connected";
+        const label = getProviderCapabilityDefinition(definition.id).label;
+        const summary = getCompactProviderSummary({
+          activityStatus: activityHistoryStatus,
+          connected: Boolean(integration),
+          label,
+          plannedStatus,
+          providerHealthStatus,
+          setupStatus,
+        });
 
-      return {
-        actions: integration ? getConfigurableProviderActions(definition.id) : [],
-        activityHistory: {
-          lastError: activityState?.lastError ?? null,
-          lastFailedAt: activityState?.lastSyncFailedAt ?? null,
-          lastSucceededAt: activityState?.lastSyncSucceededAt ?? null,
-          queuedJobId: activeActivityJob?.id ?? null,
-          status: activityHistoryStatus,
-        },
-        plannedWorkouts: {
-          lastError: plannedState?.lastError ?? null,
-          lastFailedAt: plannedState?.lastSyncFailedAt ?? null,
-          lastSucceededAt: plannedState?.lastSyncSucceededAt ?? null,
-          queuedJobId: activePlannedJob?.id ?? null,
-          status: plannedStatus,
-        },
-        providerHealth: {
-          lastError: providerHealthLastError,
-          status: providerHealthStatus,
-        },
-        setupData: {
-          lastError: setupState?.lastError ?? null,
-          lastFailedAt: setupState?.lastSyncFailedAt ?? null,
-          lastSucceededAt: setupState?.lastSyncSucceededAt ?? null,
-          status: setupStatus,
-        },
-        connected: Boolean(integration),
-        integrationId: integration?.id ?? null,
-        label: getProviderCapabilityDefinition(definition.id).label,
-        provider: definition.id,
-      };
-    });
+        return {
+          actions: integration ? getConfigurableProviderActions(definition.id) : [],
+          activityHistory: {
+            lastError: activityState?.lastError ?? null,
+            lastFailedAt: activityState?.lastSyncFailedAt ?? null,
+            lastSucceededAt: activityState?.lastSyncSucceededAt ?? null,
+            queuedJobId: activeActivityJob?.id ?? null,
+            status: activityHistoryStatus,
+          },
+          plannedWorkouts: {
+            lastError: plannedState?.lastError ?? null,
+            lastFailedAt: plannedState?.lastSyncFailedAt ?? null,
+            lastSucceededAt: plannedState?.lastSyncSucceededAt ?? null,
+            queuedJobId: activePlannedJob?.id ?? null,
+            status: plannedStatus,
+          },
+          providerHealth: {
+            lastError: providerHealthLastError,
+            status: providerHealthStatus,
+          },
+          configured: true,
+          setupData: {
+            lastError: setupState?.lastError ?? null,
+            lastFailedAt: setupState?.lastSyncFailedAt ?? null,
+            lastSucceededAt: setupState?.lastSyncSucceededAt ?? null,
+            status: setupStatus,
+          },
+          connected: Boolean(integration),
+          integrationId: integration?.id ?? null,
+          label,
+          primaryAction: getPrimaryProviderAction({
+            connected: Boolean(integration),
+            providerHealthStatus,
+          }),
+          provider: definition.id,
+          summary,
+        };
+      });
 
     return parseBoundaryValue(syncOverviewSchema, overview, "Sync overview was invalid");
   }),
@@ -736,6 +849,13 @@ export const integrationsRouter = createTRPCRouter({
   getAuthUrl: protectedProcedure.input(getAuthUrlInputSchema).mutation(async ({ ctx, input }) => {
     const repositories = getIntegrationsRepositories(ctx);
     const now = new Date();
+
+    if (!isProviderOAuthConfigured(input.provider)) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: "Integration is not configured on this server",
+      });
+    }
 
     await repositories.oauthStates.deleteExpired({
       profileId: ctx.session.user.id,
@@ -1253,51 +1373,7 @@ function buildOAuthUrl(
   state: string,
   callbackUrl: string,
 ): string {
-  const configs = {
-    strava: {
-      authUrl: "https://www.strava.com/oauth/authorize",
-      clientId: process.env.STRAVA_CLIENT_ID!,
-      scopes: ["activity:read_all"],
-    },
-    wahoo: {
-      authUrl: "https://api.wahooligan.com/oauth/authorize",
-      clientId: process.env.WAHOO_CLIENT_ID!,
-      scopes: [
-        "email",
-        "user_write",
-        "power_zones_read",
-        "power_zones_write",
-        "workouts_read",
-        "workouts_write",
-        "plans_read",
-        "plans_write",
-        "routes_read",
-        "routes_write",
-        "user_read",
-        "offline_data",
-      ],
-    },
-    trainingpeaks: {
-      authUrl: "https://oauth.trainingpeaks.com/oauth/authorize",
-      clientId: process.env.TRAININGPEAKS_CLIENT_ID!,
-      scopes: ["activities:read", "metrics:read"],
-    },
-    garmin: {
-      authUrl: "https://connect.garmin.com/oauthConfirm",
-      clientId: process.env.GARMIN_CLIENT_ID!,
-      scopes: ["activity_read"],
-    },
-    zwift: {
-      authUrl: "https://secure.zwift.com/oauth/authorize",
-      clientId: process.env.ZWIFT_CLIENT_ID!,
-      scopes: ["activity:read"],
-    },
-  };
-
-  const config = configs[provider];
-  if (!config) {
-    throw new Error(`Unknown provider: ${provider}`);
-  }
+  const config = requireProviderOAuthConfig(provider);
 
   const params = new URLSearchParams({
     client_id: config.clientId,
@@ -1318,38 +1394,7 @@ async function refreshProviderToken(
   refresh_token?: string;
   expires_at?: string;
 }> {
-  const configs = {
-    strava: {
-      tokenUrl: "https://www.strava.com/api/v3/oauth/token",
-      clientId: process.env.STRAVA_CLIENT_ID!,
-      clientSecret: process.env.STRAVA_CLIENT_SECRET!,
-    },
-    wahoo: {
-      tokenUrl: "https://api.wahooligan.com/oauth/token",
-      clientId: process.env.WAHOO_CLIENT_ID!,
-      clientSecret: process.env.WAHOO_CLIENT_SECRET!,
-    },
-    trainingpeaks: {
-      tokenUrl: "https://oauth.trainingpeaks.com/oauth/token",
-      clientId: process.env.TRAININGPEAKS_CLIENT_ID!,
-      clientSecret: process.env.TRAININGPEAKS_CLIENT_SECRET!,
-    },
-    garmin: {
-      tokenUrl: "https://connectapi.garmin.com/oauth-service/oauth/access_token",
-      clientId: process.env.GARMIN_CLIENT_ID!,
-      clientSecret: process.env.GARMIN_CLIENT_SECRET!,
-    },
-    zwift: {
-      tokenUrl: "https://secure.zwift.com/oauth/token",
-      clientId: process.env.ZWIFT_CLIENT_ID!,
-      clientSecret: process.env.ZWIFT_CLIENT_SECRET!,
-    },
-  };
-
-  const config = configs[provider];
-  if (!config) {
-    throw new Error(`Unknown provider: ${provider}`);
-  }
+  const config = requireProviderOAuthConfig(provider);
 
   const body = new URLSearchParams({
     grant_type: "refresh_token",

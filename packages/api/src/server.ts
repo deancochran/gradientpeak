@@ -5,6 +5,12 @@ export type {
 } from "./context";
 export { createApiContext } from "./context";
 export { getRequiredDb } from "./db";
+export {
+  getProviderOAuthConfig,
+  isProviderOAuthConfigured,
+  isSupportedOAuthProvider,
+  requireProviderOAuthConfig,
+} from "./lib/integrations/oauth-config";
 export { createQueryClient } from "./query-client";
 export type { AppRouter } from "./routers";
 export { appRouter } from "./routers";

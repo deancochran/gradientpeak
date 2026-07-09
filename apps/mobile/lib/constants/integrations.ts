@@ -1,9 +1,5 @@
-export const integrationProviders = [
-  "strava",
-  "wahoo",
-  "trainingpeaks",
-  "garmin",
-  "zwift",
-] as const;
+import { type IntegrationProviderId, providerCapabilityRegistry } from "@repo/core";
 
-export type IntegrationProvider = (typeof integrationProviders)[number];
+export const integrationProviders = providerCapabilityRegistry.map((provider) => provider.id);
+
+export type IntegrationProvider = IntegrationProviderId;

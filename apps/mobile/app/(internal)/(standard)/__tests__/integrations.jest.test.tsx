@@ -1,7 +1,7 @@
 import React from "react";
 
 import { createHost } from "../../../../test/mock-components";
-import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
+import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const backMock = jest.fn();
 const refetchMock = jest.fn();
@@ -71,6 +71,7 @@ jest.mock("@/lib/api", () => ({
           data: [
             {
               actions: ["disconnect"],
+              configured: true,
               activityHistory: {
                 lastError: null,
                 lastFailedAt: null,
@@ -98,10 +99,18 @@ jest.mock("@/lib/api", () => ({
               connected: true,
               integrationId: "integration-strava",
               label: "Strava",
+              primaryAction: "disconnect",
               provider: "strava",
+              summary: {
+                badge: "Auto",
+                health: "connected",
+                subtitle: "Connected",
+                title: "Strava",
+              },
             },
             {
               actions: ["disconnect", "sync_now"],
+              configured: true,
               activityHistory: {
                 lastError: null,
                 lastFailedAt: null,
@@ -129,10 +138,18 @@ jest.mock("@/lib/api", () => ({
               connected: true,
               integrationId: "integration-wahoo",
               label: "Wahoo",
+              primaryAction: "disconnect",
               provider: "wahoo",
+              summary: {
+                badge: "Auto",
+                health: "connected",
+                subtitle: "Connected",
+                title: "Wahoo",
+              },
             },
             {
               actions: ["disconnect"],
+              configured: true,
               activityHistory: {
                 lastError: "401 unauthorized",
                 lastFailedAt: "2026-05-17T12:00:00.000Z",
@@ -160,7 +177,14 @@ jest.mock("@/lib/api", () => ({
               connected: true,
               integrationId: "integration-garmin",
               label: "Garmin Connect",
+              primaryAction: "reconnect",
               provider: "garmin",
+              summary: {
+                badge: "Reconnect",
+                health: "needs_reconnect",
+                subtitle: "Sync paused",
+                title: "Garmin Connect",
+              },
             },
           ],
           refetch: refetchMock,
@@ -226,6 +250,10 @@ jest.mock("lucide-react-native", () => ({
   Check: createHost("Check"),
   ChevronLeft: createHost("ChevronLeft"),
   ChevronRight: createHost("ChevronRight"),
+  AlertCircle: createHost("AlertCircle"),
+  Link: createHost("Link"),
+  RefreshCcw: createHost("RefreshCcw"),
+  Unlink: createHost("Unlink"),
 }));
 
 const IntegrationsScreen = require("../integrations").default;
@@ -236,34 +264,16 @@ describe("integrations screen", () => {
     refetchMock.mockReset();
   });
 
-  it("renders provider connections with sync status actions instead of import setup", () => {
+  it("renders compact provider cards with one action", () => {
     renderNative(<IntegrationsScreen />);
 
     expect(screen.getByTestId("integration-provider-strava")).toBeTruthy();
-    expect(screen.queryByTestId("integration-refresh-setup-wahoo")).toBeNull();
-    expect(screen.getByTestId("integration-sync-now-wahoo")).toBeTruthy();
-    expect(screen.queryByTestId("integration-refresh-setup-strava")).toBeNull();
-    expect(screen.queryByTestId("integration-sync-now-strava")).toBeNull();
-    expect(screen.queryByText("Import FIT Activity")).toBeNull();
-    expect(screen.getByText("Automatic history import")).toBeTruthy();
-    expect(screen.getByText("Setup data: Refreshed safely.")).toBeTruthy();
-    expect(screen.getByText("Planned workouts: Automatic when connected.")).toBeTruthy();
+    expect(screen.getByTestId("integration-provider-wahoo")).toBeTruthy();
+    expect(screen.getByText("3/3 connected")).toBeTruthy();
+    expect(screen.getAllByText("Auto").length).toBeTruthy();
+    expect(screen.queryByTestId("integration-sync-now-wahoo")).toBeNull();
+    expect(screen.getByTestId("integration-disconnect-wahoo")).toBeTruthy();
     expect(screen.getByTestId("integration-reconnect-garmin")).toBeTruthy();
-    expect(screen.queryByTestId("integration-sync-now-garmin")).toBeNull();
-  });
-
-  it("shows sync now queued copy", async () => {
-    renderNative(<IntegrationsScreen />);
-
-    fireEvent.press(screen.getByTestId("integration-sync-now-wahoo"));
-
-    await waitFor(() => {
-      expect(
-        screen.getAllByText(
-          "Updated weight and FTP from Wahoo. Kept your existing GradientPeak date of birth because Wahoo differs. Recent history sync has been queued.",
-        ).length,
-      ).toBeTruthy();
-    });
   });
 
   it("navigates back from the custom header", () => {
@@ -279,9 +289,7 @@ describe("integrations screen", () => {
     fireEvent.press(screen.getByTestId("integration-disconnect-strava"));
 
     expect(
-      screen.getAllByText(
-        "Disconnect Strava? Existing GradientPeak activities, files, plans, and metrics stay in your account. Future provider sync will stop until you reconnect.",
-      ).length,
+      screen.getAllByText("Disconnect Strava? Your GradientPeak data stays. Sync stops.").length,
     ).toBeTruthy();
   });
 });

@@ -426,6 +426,31 @@ describe("integrationsRouter", () => {
     );
   });
 
+  it("getSyncOverview hides providers without server OAuth credentials", async () => {
+    const caller = createCaller();
+    delete process.env.WAHOO_CLIENT_ID;
+    delete process.env.WAHOO_CLIENT_SECRET;
+    mocks.repositories.integrations.listByProfileId.mockResolvedValue([]);
+    mocks.providerSyncRepository.listSyncStateByIntegrationIds.mockResolvedValue([]);
+    mocks.providerSyncRepository.listJobs.mockResolvedValue([]);
+
+    const result = await caller.getSyncOverview();
+
+    expect(result.some((provider) => provider.provider === "wahoo")).toBe(false);
+    expect(result.some((provider) => provider.provider === "strava")).toBe(true);
+  });
+
+  it("getAuthUrl rejects unconfigured providers before storing OAuth state", async () => {
+    const caller = createCaller();
+    delete process.env.WAHOO_CLIENT_ID;
+    delete process.env.WAHOO_CLIENT_SECRET;
+
+    await expect(caller.getAuthUrl({ provider: "wahoo" })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+    expect(mocks.repositories.oauthStates.create).not.toHaveBeenCalled();
+  });
+
   it("syncNow enqueues manual Wahoo history reconciliation", async () => {
     const caller = createCaller();
     vi.useFakeTimers();

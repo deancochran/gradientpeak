@@ -1,4 +1,9 @@
-import { appRouter, createApiContext } from "@repo/api/server";
+import {
+  appRouter,
+  createApiContext,
+  getProviderOAuthConfig,
+  isSupportedOAuthProvider,
+} from "@repo/api/server";
 import { resolveAuthSession } from "@repo/auth/server";
 import type { PublicIntegrationProvider } from "@repo/db";
 import { db } from "@repo/db/client";
@@ -14,38 +19,6 @@ class OAuthTokenExchangeError extends Error {
   }
 }
 
-const OAUTH_CONFIGS = {
-  strava: {
-    tokenUrl: "https://www.strava.com/api/v3/oauth/token",
-    clientId: process.env.STRAVA_CLIENT_ID!,
-    clientSecret: process.env.STRAVA_CLIENT_SECRET!,
-  },
-  wahoo: {
-    tokenUrl: "https://api.wahooligan.com/oauth/token",
-    clientId: process.env.WAHOO_CLIENT_ID!,
-    clientSecret: process.env.WAHOO_CLIENT_SECRET!,
-  },
-  trainingpeaks: {
-    tokenUrl: "https://oauth.trainingpeaks.com/oauth/token",
-    clientId: process.env.TRAININGPEAKS_CLIENT_ID!,
-    clientSecret: process.env.TRAININGPEAKS_CLIENT_SECRET!,
-  },
-  garmin: {
-    tokenUrl: "https://connectapi.garmin.com/oauth-service/oauth/access_token",
-    clientId: process.env.GARMIN_CLIENT_ID!,
-    clientSecret: process.env.GARMIN_CLIENT_SECRET!,
-  },
-  zwift: {
-    tokenUrl: "https://secure.zwift.com/oauth/token",
-    clientId: process.env.ZWIFT_CLIENT_ID!,
-    clientSecret: process.env.ZWIFT_CLIENT_SECRET!,
-  },
-};
-
-function isSupportedProvider(provider: string): provider is PublicIntegrationProvider {
-  return provider in OAUTH_CONFIGS;
-}
-
 function buildRedirectUrl(baseUrl: string, params: Record<string, string | null | undefined>) {
   const redirectUrl = new URL(baseUrl);
 
@@ -59,7 +32,11 @@ function buildRedirectUrl(baseUrl: string, params: Record<string, string | null 
 }
 
 async function exchangeCodeForTokens(provider: PublicIntegrationProvider, code: string) {
-  const config = OAUTH_CONFIGS[provider];
+  const config = getProviderOAuthConfig(provider);
+
+  if (!config) {
+    throw new OAuthTokenExchangeError("OAuth credentials are not configured", "not_configured");
+  }
 
   const baseUrl =
     process.env.OAUTH_CALLBACK_BASE_URL ||
@@ -138,7 +115,7 @@ export const Route = createFileRoute("/api/integrations/callback/$provider")({
         const fallbackRedirect =
           process.env.NEXT_PUBLIC_MOBILE_REDIRECT_FALLBACK || "gradientpeak://integrations";
 
-        if (!isSupportedProvider(provider)) {
+        if (!isSupportedOAuthProvider(provider)) {
           return Response.redirect(
             buildRedirectUrl(fallbackRedirect, { error: "invalid_provider" }),
             302,
