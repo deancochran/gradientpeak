@@ -358,7 +358,6 @@ export function BuilderAthleteContextForm({
 export function BuilderPlanPreferencesContextForm({
   fields,
   issues = [],
-  onAddField,
   onChangeField,
   onRemoveField,
 }: BuilderPlanPreferencesContextFormProps) {
@@ -366,7 +365,6 @@ export function BuilderPlanPreferencesContextForm({
     <PlanLocalPreferencesSection
       fields={fields}
       issues={issues}
-      onAddField={onAddField}
       onChangeField={onChangeField}
       onRemoveField={onRemoveField}
     />

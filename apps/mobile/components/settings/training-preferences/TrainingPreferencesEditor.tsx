@@ -31,6 +31,7 @@ import {
 import { TrainingStyleSection } from "@/components/settings/training-preferences/sections/TrainingStyleSection";
 import { TrainingPreferencesBottomSheet } from "@/components/settings/training-preferences/TrainingPreferencesBottomSheet";
 import { TrainingPreferencesContent } from "@/components/settings/training-preferences/TrainingPreferencesContent";
+import { TrainingPreferencesPanel } from "@/components/settings/training-preferences/TrainingPreferencesPanel";
 import {
   type PreferencesTabKey,
   TrainingPreferencesTabs,
@@ -291,7 +292,7 @@ export function TrainingPreferencesEditor({
             visibleTabs={visibleTabs}
           />
 
-          <View className="gap-3 rounded-xl border border-border bg-card p-3">
+          <TrainingPreferencesPanel>
             {activeTab === "preferences" ? (
               <AdaptationPreferencesSection control={form.control} />
             ) : null}
@@ -331,7 +332,7 @@ export function TrainingPreferencesEditor({
                 showAdvancedControls={showAdvancedBaselineControls}
               />
             ) : null}
-          </View>
+          </TrainingPreferencesPanel>
         </TrainingPreferencesContent>
       </TrainingPreferencesBottomSheet>
     </Form>
