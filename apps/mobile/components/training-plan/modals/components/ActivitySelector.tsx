@@ -1,9 +1,10 @@
 // apps/mobile/app/(internal)/(tabs)/plan/training-plan/modals/components/ActivitySelector.tsx
 
+import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
+import { Search } from "lucide-react-native";
 import { useState } from "react";
 import { FlatList, Pressable, View } from "react-native";
-import { SearchField } from "@/components/shared/SearchField";
 import { formatEstimatedDurationSeconds, formatEstimatedTss } from "@/lib/estimatedMetrics";
 
 export interface ActivityOption {
@@ -163,13 +164,14 @@ export function ActivitySelector({
 
       {/* Search Input */}
       <View className="relative mb-3">
-        <SearchField
-          accessibilityLabel="Search activities"
+        <View className="absolute left-3 top-3 z-10">
+          <Search size={20} className="text-muted-foreground" />
+        </View>
+        <Input
           value={searchQuery}
           onChangeText={setSearchQuery}
-          onClear={() => setSearchQuery("")}
           placeholder="Search activities..."
-          className="h-12 text-base"
+          className="h-12 pl-10 pr-4 text-base"
           editable={!disabled}
         />
       </View>

@@ -44,11 +44,6 @@ jest.mock("@/components/shared/ActivityPlanCard", () => ({
   },
 }));
 
-jest.mock("@/components/shared/SearchField", () => ({
-  __esModule: true,
-  SearchField: createHost("SearchField"),
-}));
-
 const { CalendarPlannedActivityPickerModal } = require("../CalendarPlannedActivityPickerModal");
 
 jest.mock("@/lib/api", () => ({

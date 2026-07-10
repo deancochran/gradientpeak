@@ -26,10 +26,10 @@ import {
 } from "./social/index";
 
 export const appRouter = createTRPCRouter({
+  athleteIntelligence: athleteIntelligenceRouter,
   coaching: coachingRouter,
   profiles: profilesRouter,
   analytics: analyticsRouter,
-  athleteIntelligence: athleteIntelligenceRouter,
 
   onboarding: onboardingRouter,
   profileMetrics: profileMetricsRouter,

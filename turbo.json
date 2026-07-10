@@ -11,12 +11,6 @@
     "SUPABASE_DB_URL",
     "SUPABASE_SERVICE_ROLE_KEY"
   ],
-  "globalPassThroughEnv": [
-    "INTERNAL_PROVIDER_SYNC_SECRET",
-    "WAHOO_PROVIDER_SYNC_DRAIN_INTERVAL_MS",
-    "WAHOO_PROVIDER_SYNC_STARTUP_RETRY_MS",
-    "WAHOO_PROVIDER_SYNC_DRAIN_URL"
-  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
