@@ -9,6 +9,10 @@ import { profileGoals } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, asc, count, desc, eq, ilike } from "drizzle-orm";
 import { z } from "zod";
+import {
+  getProfileGoalById,
+  type ProfileGoalRecord,
+} from "../application/goals/getProfileGoalById";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { buildIndexPageInfo, indexCursorSchema, parseIndexCursor } from "../utils/index-cursor";
@@ -85,8 +89,6 @@ const profileGoalUpdateInputSchema = z
   })
   .strict();
 
-type ProfileGoalRecord = z.infer<typeof profileGoalRecordSchema>;
-
 function buildGoalListConditions(input: {
   profileId: string;
   search?: string;
@@ -142,30 +144,6 @@ async function listProfileGoals(input: {
     .offset(input.offset);
 
   return profileGoalRecordSchema.array().parse(rows);
-}
-
-async function getProfileGoalById(input: {
-  db: ReturnType<typeof getRequiredDb>;
-  id: string;
-}): Promise<ProfileGoalRecord | null> {
-  const row =
-    (
-      await input.db
-        .select({
-          id: profileGoals.id,
-          profile_id: profileGoals.profile_id,
-          target_date: profileGoals.target_date,
-          title: profileGoals.title,
-          priority: profileGoals.priority,
-          activity_category: profileGoals.activity_category,
-          target_payload: profileGoals.target_payload,
-        })
-        .from(profileGoals)
-        .where(eq(profileGoals.id, input.id))
-        .limit(1)
-    )[0] ?? null;
-
-  return row ? profileGoalRecordSchema.parse(row) : null;
 }
 
 async function createProfileGoal(input: {
@@ -286,10 +264,7 @@ export const goalsRouter = createTRPCRouter({
   getById: protectedProcedure.input(goalIdInputSchema).query(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
 
-    const goal = await getProfileGoalById({
-      db,
-      id: input.id,
-    });
+    const goal = await getProfileGoalById(db, input.id);
 
     if (!goal) {
       throw new TRPCError({
@@ -353,10 +328,7 @@ export const goalsRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
 
-      const existingGoal = await getProfileGoalById({
-        db,
-        id: input.id,
-      });
+      const existingGoal = await getProfileGoalById(db, input.id);
 
       if (!existingGoal) {
         throw new TRPCError({
@@ -406,10 +378,7 @@ export const goalsRouter = createTRPCRouter({
   delete: protectedProcedure.input(goalIdInputSchema).mutation(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
 
-    const existingGoal = await getProfileGoalById({
-      db,
-      id: input.id,
-    });
+    const existingGoal = await getProfileGoalById(db, input.id);
 
     if (!existingGoal) {
       throw new TRPCError({

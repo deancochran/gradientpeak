@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { profileQuickUpdateSchema } from "@repo/core";
-import { activities, activityEfforts, profileMetrics, profiles } from "@repo/db";
+import { activityEfforts, profileMetrics, profiles } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
+import { getProfileStats } from "../application/profiles/getProfileStats";
 import {
   ensureProfileExists,
   getProfilePerformanceSnapshot,
@@ -12,8 +13,6 @@ import {
   listProfiles,
 } from "../application/profiles/readProfiles";
 import { getRequiredDb } from "../db";
-import { createActivityAnalysisStore } from "../infrastructure/repositories";
-import { buildActivityDerivedSummaryMap } from "../lib/activity-analysis";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { indexCursorSchema } from "../utils/index-cursor";
 import { bumpProfileEstimationState } from "../utils/profile-estimation-state";
@@ -307,46 +306,10 @@ export const profilesRouter = createTRPCRouter({
     const db = getRequiredDb(ctx);
 
     try {
-      const endDate = new Date();
-      const startDate = new Date();
-      startDate.setDate(endDate.getDate() - input.period);
-
-      const activityRows = await db
-        .select()
-        .from(activities)
-        .where(
-          and(
-            eq(activities.profile_id, ctx.session.user.id),
-            gte(activities.started_at, startDate),
-            lte(activities.started_at, endDate),
-          ),
-        );
-
-      const derivedMap = await buildActivityDerivedSummaryMap({
-        store: createActivityAnalysisStore(db),
+      return await getProfileStats(db, {
         profileId: ctx.session.user.id,
-        activities: activityRows,
-      });
-
-      const totalActivities = activityRows.length;
-      const totalDuration = activityRows.reduce((sum, activity) => {
-        return sum + (activity.duration_seconds || 0);
-      }, 0);
-      const totalDistance = activityRows.reduce((sum, activity) => {
-        return sum + (activity.distance_meters || 0);
-      }, 0);
-      const totalTSS = activityRows.reduce((sum, activity) => {
-        return sum + (derivedMap.get(activity.id)?.tss || 0);
-      }, 0);
-
-      return {
-        totalActivities,
-        totalDuration,
-        totalDistance,
-        totalTSS,
-        avgDuration: totalActivities > 0 ? totalDuration / totalActivities : 0,
         period: input.period,
-      };
+      });
     } catch (error) {
       if (error instanceof TRPCError) {
         throw error;

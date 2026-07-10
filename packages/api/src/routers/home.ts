@@ -1,8 +1,9 @@
 import { calculateAge, calculateRollingTrainingQuality, getFormStatus } from "@repo/core";
 import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core/load";
 import { type ProfileTrainingSettingsRow, schema, type TrainingPlanRow } from "@repo/db";
-import { and, asc, eq, gte, isNotNull, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gte, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
+import { listActivitySummariesInRange } from "../application/home/activitySummaries";
 import { loadPlannedActivitiesWithEstimations } from "../application/home/plannedActivities";
 import { getRequiredDb } from "../db";
 import {
@@ -46,27 +47,6 @@ const profileRowSchema = z
   .object({
     dob: z.date().nullable().optional(),
     gender: z.enum(["male", "female"]).nullable().optional(),
-  })
-  .strict();
-
-const activitySummaryRowSchema = z
-  .object({
-    id: z.string(),
-    type: z.string(),
-    started_at: z.date(),
-    finished_at: z.date().nullable(),
-    duration_seconds: z.number().nullable(),
-    moving_seconds: z.number().nullable(),
-    distance_meters: z.number().nullable(),
-    avg_heart_rate: z.number().nullable(),
-    max_heart_rate: z.number().nullable(),
-    avg_power: z.number().nullable(),
-    max_power: z.number().nullable(),
-    avg_speed_mps: z.number().nullable(),
-    max_speed_mps: z.number().nullable(),
-    normalized_power: z.number().nullable(),
-    normalized_speed_mps: z.number().nullable(),
-    normalized_graded_speed_mps: z.number().nullable(),
   })
   .strict();
 
@@ -251,26 +231,6 @@ const dashboardResponseSchema = z
   })
   .strict();
 
-type ActivitySummaryRow = Pick<
-  typeof schema.activities.$inferSelect,
-  "id" | "type" | "started_at" | "finished_at"
-> &
-  Pick<
-    typeof schema.activitySummaries.$inferSelect,
-    | "duration_seconds"
-    | "moving_seconds"
-    | "distance_meters"
-    | "avg_heart_rate"
-    | "max_heart_rate"
-    | "avg_power"
-    | "max_power"
-    | "avg_speed_mps"
-    | "max_speed_mps"
-    | "normalized_power"
-    | "normalized_speed_mps"
-    | "normalized_graded_speed_mps"
-  >;
-
 type DashboardTrainingPlanRow = Pick<TrainingPlanRow, "id" | "name" | "description" | "structure">;
 
 type ProfileTrainingSettingsSqlRow = Pick<ProfileTrainingSettingsRow, "settings">;
@@ -415,40 +375,11 @@ export const homeRouter = createTRPCRouter({
 
       // --- 3. Fetch Activities (Actual) ---
       // Fetching enough history for trends and current week stats
-      const activities = activitySummaryRowSchema.array().parse(
-        await db
-          .select({
-            id: schema.activities.id,
-            type: schema.activities.type,
-            started_at: schema.activities.started_at,
-            finished_at: schema.activities.finished_at,
-            duration_seconds: schema.activitySummaries.duration_seconds,
-            moving_seconds: schema.activitySummaries.moving_seconds,
-            distance_meters: schema.activitySummaries.distance_meters,
-            avg_heart_rate: schema.activitySummaries.avg_heart_rate,
-            max_heart_rate: schema.activitySummaries.max_heart_rate,
-            avg_power: schema.activitySummaries.avg_power,
-            max_power: schema.activitySummaries.max_power,
-            avg_speed_mps: schema.activitySummaries.avg_speed_mps,
-            max_speed_mps: schema.activitySummaries.max_speed_mps,
-            normalized_power: schema.activitySummaries.normalized_power,
-            normalized_speed_mps: schema.activitySummaries.normalized_speed_mps,
-            normalized_graded_speed_mps: schema.activitySummaries.normalized_graded_speed_mps,
-          })
-          .from(schema.activities)
-          .innerJoin(
-            schema.activitySummaries,
-            eq(schema.activitySummaries.activity_id, schema.activities.id),
-          )
-          .where(
-            and(
-              eq(schema.activities.profile_id, userId),
-              gte(schema.activities.started_at, historyStart),
-              lte(schema.activities.started_at, today),
-            ),
-          )
-          .orderBy(asc(schema.activities.started_at)),
-      ) as ActivitySummaryRow[];
+      const activities = await listActivitySummariesInRange(db, {
+        profileId: userId,
+        startedAtGte: historyStart,
+        startedAtLte: today,
+      });
 
       const { byActivityId: derivedActivityMap, byDate: tssByDate } =
         await buildDynamicStressSeries({
