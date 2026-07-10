@@ -12,9 +12,6 @@ import type {
   activityPlans,
   activityRoutes,
   activitySummaries,
-  athleteIntelligencePredictions,
-  athleteIntelligenceRecomputeJobs,
-  athleteIntelligenceSnapshots,
   coachesAthletes,
   coachingInvitations,
   comments,
@@ -91,25 +88,6 @@ export type CoachAthleteInsert = InferInsertModel<typeof coachesAthletes>;
 
 export type ActivityPlanRow = InferSelectModel<typeof activityPlans>;
 export type ActivityPlanInsert = InferInsertModel<typeof activityPlans>;
-
-export type AthleteIntelligenceSnapshotRow = InferSelectModel<typeof athleteIntelligenceSnapshots>;
-export type AthleteIntelligenceSnapshotInsert = InferInsertModel<
-  typeof athleteIntelligenceSnapshots
->;
-
-export type AthleteIntelligencePredictionRow = InferSelectModel<
-  typeof athleteIntelligencePredictions
->;
-export type AthleteIntelligencePredictionInsert = InferInsertModel<
-  typeof athleteIntelligencePredictions
->;
-
-export type AthleteIntelligenceRecomputeJobRow = InferSelectModel<
-  typeof athleteIntelligenceRecomputeJobs
->;
-export type AthleteIntelligenceRecomputeJobInsert = InferInsertModel<
-  typeof athleteIntelligenceRecomputeJobs
->;
 
 export type ActivityPlanDerivedMetricsCacheRow = InferSelectModel<
   typeof activityPlanDerivedMetricsCache

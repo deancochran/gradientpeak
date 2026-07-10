@@ -10,9 +10,6 @@ import {
   activityPlans,
   activityRoutes,
   activitySummaries,
-  athleteIntelligencePredictions,
-  athleteIntelligenceRecomputeJobs,
-  athleteIntelligenceSnapshots,
   comments,
   conversationParticipants,
   conversations,
@@ -49,9 +46,6 @@ import {
 
 export const profilesRelations = relations(profiles, ({ many }) => ({
   activities: many(activities),
-  athleteIntelligencePredictions: many(athleteIntelligencePredictions),
-  athleteIntelligenceRecomputeJobs: many(athleteIntelligenceRecomputeJobs),
-  athleteIntelligenceSnapshots: many(athleteIntelligenceSnapshots),
   activityFileIngestions: many(activityFileIngestions),
   activityGeometry: many(activityGeometry),
   activityImports: many(activityImports),
@@ -484,41 +478,6 @@ export const providerSyncJobsRelations = relations(providerSyncJobs, ({ one }) =
   }),
 }));
 
-export const athleteIntelligenceSnapshotsRelations = relations(
-  athleteIntelligenceSnapshots,
-  ({ one, many }) => ({
-    profile: one(profiles, {
-      fields: [athleteIntelligenceSnapshots.profile_id],
-      references: [profiles.id],
-    }),
-    predictions: many(athleteIntelligencePredictions),
-  }),
-);
-
-export const athleteIntelligencePredictionsRelations = relations(
-  athleteIntelligencePredictions,
-  ({ one }) => ({
-    profile: one(profiles, {
-      fields: [athleteIntelligencePredictions.profile_id],
-      references: [profiles.id],
-    }),
-    snapshot: one(athleteIntelligenceSnapshots, {
-      fields: [athleteIntelligencePredictions.snapshot_id],
-      references: [athleteIntelligenceSnapshots.id],
-    }),
-  }),
-);
-
-export const athleteIntelligenceRecomputeJobsRelations = relations(
-  athleteIntelligenceRecomputeJobs,
-  ({ one }) => ({
-    profile: one(profiles, {
-      fields: [athleteIntelligenceRecomputeJobs.profile_id],
-      references: [profiles.id],
-    }),
-  }),
-);
-
 export const providerWebhookReceiptsRelations = relations(providerWebhookReceipts, ({ one }) => ({
   integration: one(integrations, {
     fields: [providerWebhookReceipts.integration_id],
@@ -647,9 +606,6 @@ export const relationsSchema = {
   eventPayloadsRelations,
   activitiesRelations,
   activitySummariesRelations,
-  athleteIntelligencePredictionsRelations,
-  athleteIntelligenceRecomputeJobsRelations,
-  athleteIntelligenceSnapshotsRelations,
   activityImportsRelations,
   activityGeometryRelations,
   activityLapsRelations,

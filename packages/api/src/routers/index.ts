@@ -12,6 +12,7 @@ import {
   activityFilesRouter,
   routesRouter,
 } from "./activity";
+import { athleteIntelligenceRouter } from "./athlete-intelligence";
 import { groupsRouter } from "./groups";
 import { analyticsRouter, homeRouter, trendsRouter } from "./insights";
 import { activityPlansRouter, eventsRouter, goalsRouter, trainingPlansRouter } from "./planning";
@@ -25,6 +26,7 @@ import {
 } from "./social/index";
 
 export const appRouter = createTRPCRouter({
+  athleteIntelligence: athleteIntelligenceRouter,
   coaching: coachingRouter,
   profiles: profilesRouter,
   analytics: analyticsRouter,
