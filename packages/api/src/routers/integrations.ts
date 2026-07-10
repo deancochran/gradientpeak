@@ -1,4 +1,3 @@
-import { providerHasCapability } from "@repo/core";
 import {
   type PublicIntegrationProvider,
   publicIntegrationProviderSchema,
@@ -6,7 +5,12 @@ import {
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { getProviderSyncOverview, supportsActivityHistorySync } from "../application/integrations";
+import {
+  enqueueActivityHistoryReconcile,
+  getProviderSyncOverview,
+  supportsActivityHistorySync,
+  syncIntegrationNow,
+} from "../application/integrations";
 import { OnboardingProviderEnrichmentService } from "../application/onboarding-provider-enrichment";
 import type { Context } from "../context";
 import { getRequiredDb } from "../db";
@@ -37,8 +41,6 @@ const timestampStringSchema = z
   .transform((value) => (value instanceof Date ? value.toISOString() : value));
 
 const strictSuccessSchema = z.object({ success: z.literal(true) }).strict();
-
-const wahooActivityHistoryJobType = "wahoo.activity_history_reconcile";
 
 const integrationRowSchema = publicIntegrationsRowSchema;
 
@@ -347,15 +349,6 @@ function normalizeWahooEventSyncStatus(status: unknown) {
   };
 }
 
-function isProviderSyncPersistenceUnavailable(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return (
-    message.includes("provider_sync_jobs") ||
-    message.includes("provider_sync_state") ||
-    message.includes("Failed query")
-  );
-}
-
 function getIntegrationsRepositories(ctx: Context) {
   return createIntegrationsRepositories(getRequiredDb(ctx));
 }
@@ -387,72 +380,6 @@ function getWahooSyncJobService(ctx: Context) {
     syncService: getWahooSyncService(ctx),
     wahooRepository: createWahooRepository({ db: getRequiredDb(ctx) }),
   });
-}
-
-async function enqueueActivityHistoryReconcile(input: {
-  integrationId: string;
-  profileId: string;
-  provider: PublicIntegrationProvider;
-  providerSyncRepository: ReturnType<typeof createProviderSyncRepository>;
-  trigger: "connect" | "manual";
-}) {
-  if (input.provider !== "wahoo" || !supportsActivityHistorySync(input.provider)) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "Activity history sync is not available for this provider",
-    });
-  }
-
-  let job: { id: string; status: string };
-  try {
-    job = await input.providerSyncRepository.enqueueJob({
-      dedupeKey: `provider-history-reconcile:${input.integrationId}:activity`,
-      integrationId: input.integrationId,
-      jobType: wahooActivityHistoryJobType,
-      payload: {
-        trigger: input.trigger,
-        windowMonths: 12,
-      },
-      profileId: input.profileId,
-      provider: "wahoo",
-      resourceKind: "activity",
-      runAt: new Date().toISOString(),
-    });
-  } catch (error) {
-    if (!isProviderSyncPersistenceUnavailable(error)) {
-      throw error;
-    }
-
-    logger.warn("Provider sync jobs are unavailable; skipping activity history enqueue", {
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
-    return {
-      jobId: null,
-      queued: false,
-    };
-  }
-
-  return {
-    jobId: job.id,
-    queued: job.status === "queued",
-  };
-}
-
-async function refreshProviderSetupForSyncNow(input: {
-  profileId: string;
-  provider: PublicIntegrationProvider;
-  service: OnboardingProviderEnrichmentService;
-}) {
-  if (!providerHasCapability(input.provider, "profile_enrichment_read")) return null;
-
-  const result = await input.service.refreshSetupData(input.profileId, input.provider);
-  return {
-    fieldsFilled: result.fieldsFilled,
-    fieldsKept: result.fieldsKept,
-    fieldsUpdated: result.fieldsUpdated,
-    keptExistingValues: result.keptExistingValues,
-    status: result.status,
-  };
 }
 
 const wahooQueuedJobResultSchema = z
@@ -508,39 +435,13 @@ export const integrationsRouter = createTRPCRouter({
   }),
 
   syncNow: protectedProcedure.input(syncNowInputSchema).mutation(async ({ ctx, input }) => {
-    const repositories = getIntegrationsRepositories(ctx);
-    const integration = await repositories.integrations.findByProfileIdAndProvider({
+    const result = await syncIntegrationNow({
+      db: getRequiredDb(ctx),
       profileId: ctx.session.user.id,
       provider: input.provider,
     });
 
-    if (!integration) {
-      throw new TRPCError({
-        code: "NOT_FOUND",
-        message: "Integration not found",
-      });
-    }
-
-    const providerSyncRepository = createProviderSyncRepository({ db: getRequiredDb(ctx) });
-    const service = new OnboardingProviderEnrichmentService({ db: getRequiredDb(ctx) });
-    const setupRefresh = await refreshProviderSetupForSyncNow({
-      profileId: ctx.session.user.id,
-      provider: input.provider,
-      service,
-    });
-    const historySync = await enqueueActivityHistoryReconcile({
-      integrationId: integration.id,
-      profileId: ctx.session.user.id,
-      provider: input.provider,
-      providerSyncRepository,
-      trigger: "manual",
-    });
-
-    return parseBoundaryValue(
-      syncNowResultSchema,
-      { ...historySync, setupRefresh },
-      "Sync now result was invalid",
-    );
+    return parseBoundaryValue(syncNowResultSchema, result, "Sync now result was invalid");
   }),
 
   refreshSetupData: protectedProcedure

@@ -12,6 +12,7 @@ import type { z } from "zod";
 import { logger } from "../../lib/logger";
 import { enqueuePlannedWorkoutSyncAfterCalendarMutation } from "../../lib/provider-sync/planned-workouts";
 import type { TrainingPlanRepository } from "../../repositories";
+import { mapTrainingPlanContentIdentity } from "./trainingPlanMapping";
 
 const plannedEventType = "planned_activity" as const;
 
@@ -39,28 +40,6 @@ function parseTrainingPlanStructureOrThrow(input: {
     message: input.message,
     cause: parsed.error,
   });
-}
-
-function withTrainingPlanIdentity<
-  T extends {
-    id: string;
-    profile_id: string | null;
-    template_visibility?: string | null;
-    is_system_template?: boolean | null;
-  },
->(plan: T) {
-  return {
-    ...plan,
-    content_type: "training_plan" as const,
-    content_id: plan.id,
-    owner_profile_id: plan.profile_id,
-    visibility:
-      plan.template_visibility === "private" || plan.template_visibility === "public"
-        ? plan.template_visibility
-        : plan.is_system_template
-          ? "public"
-          : "private",
-  };
 }
 
 async function enqueuePlannedWorkoutSyncForCalendarWrite(input: {
@@ -358,7 +337,7 @@ export async function duplicateTrainingPlanUseCase(input: {
     },
   });
 
-  return withTrainingPlanIdentity(data);
+  return mapTrainingPlanContentIdentity(data);
 }
 
 export async function applyQuickAdjustmentUseCase(input: {

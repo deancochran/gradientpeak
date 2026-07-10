@@ -1,12 +1,13 @@
-import { persistedTrainingPlanStructureSchema } from "@repo/core";
-import type { TrainingPlanRow } from "@repo/db";
 import type { DrizzleDbClient } from "@repo/db/client";
 import { TRPCError } from "@trpc/server";
-import type { z } from "zod";
-import { logger } from "../../lib/logger";
 import type { TrainingPlanOwnerScope, TrainingPlanRepository } from "../../repositories";
 import { buildIndexPageInfo, parseIndexCursor } from "../../utils/index-cursor";
-import { loadProfileIdentityMap, type profileIdentitySchema } from "../../utils/profile-identity";
+import { loadProfileIdentityMap } from "../../utils/profile-identity";
+import {
+  mapTrainingPlanContentIdentity,
+  mapTrainingPlanOwnerIdentity,
+  serializeTrainingPlanForViewer,
+} from "./trainingPlanMapping";
 
 type TrainingPlanListOwnerScope = TrainingPlanOwnerScope | "none";
 
@@ -20,73 +21,6 @@ type TrainingPlanListInput = {
   search?: string;
   visibility?: "private" | "public";
 };
-
-function withTrainingPlanIdentity<
-  T extends {
-    id: string;
-    profile_id: string | null;
-    template_visibility?: string | null;
-    is_system_template?: boolean | null;
-  },
->(plan: T) {
-  return {
-    ...plan,
-    content_type: "training_plan" as const,
-    content_id: plan.id,
-    owner_profile_id: plan.profile_id,
-    visibility:
-      plan.template_visibility === "private" || plan.template_visibility === "public"
-        ? plan.template_visibility
-        : plan.is_system_template
-          ? "public"
-          : "private",
-  };
-}
-
-function withTrainingPlanOwnerIdentity<T extends { profile_id: string | null }>(
-  plan: T,
-  profileIdentityMap: Map<string, z.infer<typeof profileIdentitySchema>>,
-) {
-  return {
-    ...plan,
-    owner: plan.profile_id ? (profileIdentityMap.get(plan.profile_id) ?? null) : null,
-  };
-}
-
-function validatePersistedStructure(plan: TrainingPlanRow) {
-  try {
-    if (plan.structure) {
-      persistedTrainingPlanStructureSchema.parse(plan.structure);
-    }
-  } catch (validationError) {
-    logger.error("Invalid structure in database for training plan", {
-      planId: plan.id,
-      error: validationError instanceof Error ? validationError.message : "Unknown error",
-    });
-  }
-}
-
-async function serializeTrainingPlanForViewer(input: {
-  db: DrizzleDbClient;
-  plan: TrainingPlanRow;
-  profileId: string;
-  repository: TrainingPlanRepository;
-}) {
-  validatePersistedStructure(input.plan);
-
-  const [hasLiked, profileIdentityMap] = await Promise.all([
-    input.repository.hasTrainingPlanLike({
-      profileId: input.profileId,
-      planId: input.plan.id,
-    }),
-    loadProfileIdentityMap(input.db, [input.plan.profile_id]),
-  ]);
-
-  return {
-    ...withTrainingPlanOwnerIdentity(input.plan, profileIdentityMap),
-    has_liked: hasLiked,
-  };
-}
 
 function resolveOwnerScope(input: TrainingPlanListInput): TrainingPlanListOwnerScope {
   if (input.ownerScope) {
@@ -182,7 +116,7 @@ export async function listTrainingPlansUseCase(input: {
 
   return {
     items: pageItems.map((plan) => ({
-      ...withTrainingPlanOwnerIdentity(withTrainingPlanIdentity(plan), profileIdentityMap),
+      ...mapTrainingPlanOwnerIdentity(mapTrainingPlanContentIdentity(plan), profileIdentityMap),
       has_liked: userLikes.includes(plan.id),
     })),
     total,
