@@ -11,16 +11,10 @@ import { skipToken, useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ellipsis } from "lucide-react-native";
 import React, { useCallback, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { AppConfirmModal } from "@/components/shared/AppFormModal";
+import { ErrorState, LoadingState } from "@/components/shared/ScreenState";
 import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
 import { TrainingPlanDetailFocusBanner } from "@/components/training-plan/TrainingPlanDetailFocusBanner";
 import { TrainingPlanDetailHeaderActionsSection } from "@/components/training-plan/TrainingPlanDetailHeaderActionsSection";
@@ -849,8 +843,7 @@ export default function TrainingPlanOverview() {
   if (loadingPlan) {
     return (
       <View className="flex-1 bg-background items-center justify-center">
-        <ActivityIndicator size="large" />
-        <Text className="text-muted-foreground mt-4">Loading training plan...</Text>
+        <LoadingState message="Loading training plan..." />
       </View>
     );
   }
@@ -858,16 +851,11 @@ export default function TrainingPlanOverview() {
   if (snapshot.hasSharedDependencyError) {
     return (
       <View className="flex-1 bg-background items-center justify-center px-6 gap-3">
-        <Text className="text-muted-foreground text-center">
-          Unable to load training plan right now.
-        </Text>
-        <TouchableOpacity
-          onPress={() => void snapshot.refetch()}
-          className="px-4 py-2 rounded-full border border-border bg-card"
-          activeOpacity={0.8}
-        >
-          <Text className="text-foreground">Retry</Text>
-        </TouchableOpacity>
+        <ErrorState
+          description="Unable to load training plan right now."
+          onAction={() => void snapshot.refetch()}
+          title="Training plan unavailable"
+        />
       </View>
     );
   }
@@ -876,8 +864,7 @@ export default function TrainingPlanOverview() {
     if (!id) {
       return (
         <View className="flex-1 bg-background items-center justify-center">
-          <ActivityIndicator size="large" />
-          <Text className="text-muted-foreground mt-4">Opening plan creation...</Text>
+          <LoadingState message="Opening plan creation..." />
         </View>
       );
     }

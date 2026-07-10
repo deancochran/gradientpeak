@@ -3,7 +3,8 @@ import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
 import { Stack } from "expo-router";
 import { useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
+import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
@@ -154,7 +155,7 @@ export default function NewMessageScreen() {
             <View className="border-t border-border" testID="messages-new-suggestions">
               {isLoading ? (
                 <View className="items-center justify-center py-8">
-                  <ActivityIndicator />
+                  <LoadingState message="Loading people..." />
                 </View>
               ) : suggestedUsers.length > 0 ? (
                 <>
@@ -202,7 +203,7 @@ export default function NewMessageScreen() {
                 </>
               ) : (
                 <View className="items-center justify-center py-8">
-                  <Text className="text-sm text-muted-foreground">No users match that search.</Text>
+                  <EmptyState title="No users match that search." />
                 </View>
               )}
             </View>

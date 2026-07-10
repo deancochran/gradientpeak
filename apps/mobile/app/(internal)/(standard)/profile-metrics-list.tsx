@@ -8,9 +8,10 @@ import { Text } from "@repo/ui/components/text";
 import { type Href, Stack } from "expo-router";
 import { HeartPulse, Plus, Scale, TrendingUp } from "lucide-react-native";
 import React from "react";
-import { ActivityIndicator, Pressable, ScrollView, useColorScheme, View } from "react-native";
+import { Pressable, ScrollView, useColorScheme, View } from "react-native";
 import Svg, { Circle, Line, Path, Text as SvgText } from "react-native-svg";
 import { CompactInsightCard, DetailChartModal } from "@/components/shared";
+import { ErrorState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { getProfileMetricVisualPolicy } from "@/lib/insights/visualPolicy";
@@ -376,7 +377,7 @@ export default function ProfileMetricsListScreen() {
   if (isLoading) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator />
+        <LoadingState message="Loading profile metrics..." />
       </View>
     );
   }
@@ -384,10 +385,7 @@ export default function ProfileMetricsListScreen() {
   if (error) {
     return (
       <View className="flex-1 items-center justify-center bg-background px-6">
-        <Text className="text-base font-semibold text-foreground">
-          Unable to load profile metrics
-        </Text>
-        <Text className="mt-2 text-sm text-muted-foreground">{error.message}</Text>
+        <ErrorState description={error.message} title="Unable to load profile metrics" />
       </View>
     );
   }
