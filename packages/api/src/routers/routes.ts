@@ -1,14 +1,12 @@
 import { randomUUID } from "node:crypto";
-import {
-  type ActivityRouteRow,
-  activityPlans,
-  activityRoutes,
-  likes,
-  publicActivityRoutesRowSchema,
-} from "@repo/db";
+import { type ActivityRouteRow, activityPlans, activityRoutes, likes } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, asc, count, desc, eq, gt, gte, ilike, inArray, lt, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
+import {
+  serializeActivityRouteRow,
+  serializedActivityRouteSchema,
+} from "../application/routes/serializeActivityRouteRow";
 import { getRequiredDb } from "../db";
 import {
   buildRouteFileArtifacts,
@@ -63,15 +61,6 @@ const routeCursorSchema = z.string().superRefine((value, ctx) => {
     });
   }
 });
-
-const serializedActivityRouteSchema = z
-  .object({
-    ...publicActivityRoutesRowSchema.shape,
-    idx: z.number().int().nonnegative().default(0),
-    created_at: z.string().datetime(),
-    updated_at: z.string().datetime(),
-  })
-  .strip();
 
 const activityRouteWithLikeSchema = serializedActivityRouteSchema
   .extend({
@@ -186,15 +175,6 @@ const uploadRouteSchema = z
     fileName: z.string().min(1),
   })
   .strict();
-
-function serializeActivityRouteRow(row: ActivityRouteRow) {
-  return serializedActivityRouteSchema.parse({
-    ...row,
-    idx: row.idx ?? 0,
-    created_at: row.created_at.toISOString(),
-    updated_at: row.updated_at.toISOString(),
-  });
-}
 
 export const routesRouter = createTRPCRouter({
   // ------------------------------

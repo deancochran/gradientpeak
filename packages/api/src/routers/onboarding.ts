@@ -12,10 +12,14 @@
 // Import calculation functions directly - they're exported from core package
 import { calculateAgeFromDOB, getBaselineProfile } from "@repo/core";
 import { completeOnboardingSchema } from "@repo/core/schemas/onboarding";
-import { activities, profiles, publicIntegrationProviderSchema } from "@repo/db";
+import { activities, publicIntegrationProviderSchema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
+import {
+  OnboardingProfileNotFoundError,
+  persistOnboardingProfile,
+} from "../application/onboarding/persist-onboarding-profile";
 import { OnboardingProviderEnrichmentService } from "../application/onboarding-provider-enrichment";
 import type { Context } from "../context";
 import { getRequiredDb } from "../db";
@@ -259,37 +263,14 @@ export const onboardingRouter = createTRPCRouter({
           )
         : null;
 
-      // 1. Update profiles table - ONLY with provided values.
+      // 1. Update the authenticated user's profile with the supplied onboarding values.
       try {
-        const profileUpdate = {
-          dob: input.dob ? new Date(input.dob) : undefined,
-          full_name: input.full_name,
-          gender: input.gender,
-          onboarded: true,
-          username: input.username,
-          updated_at: new Date(),
-        };
-
-        if (Object.values(profileUpdate).some((value) => value !== undefined)) {
-          const [updatedProfile] = await db
-            .update(profiles)
-            .set(profileUpdate)
-            .where(eq(profiles.id, userId))
-            .returning({ id: profiles.id });
-
-          if (!updatedProfile?.id) {
-            throw new TRPCError({
-              code: "NOT_FOUND",
-              message: "Profile not found",
-            });
-          }
-        } else {
-          throw new TRPCError({
-            code: "NOT_FOUND",
-            message: "Profile not found",
-          });
-        }
+        await persistOnboardingProfile({ db, profileId: userId, input });
       } catch (error) {
+        if (error instanceof OnboardingProfileNotFoundError) {
+          throw new TRPCError({ code: "NOT_FOUND", message: error.message });
+        }
+
         if (error instanceof TRPCError) {
           throw error;
         }
