@@ -6,51 +6,9 @@ import {
 import { coachesAthletes, coachingInvitations, profiles } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
+import { getCoachingInvitationById } from "../application/coaching/getCoachingInvitationById";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
-
-function toIsoString(value: string | Date) {
-  return value instanceof Date ? value.toISOString() : value;
-}
-
-function serializeInvitationRow(row: {
-  athlete_id: string;
-  coach_id: string;
-  created_at: Date | string;
-  id: string;
-  status: "pending" | "accepted" | "declined";
-  updated_at: Date | string;
-}) {
-  return {
-    ...row,
-    created_at: toIsoString(row.created_at),
-    updated_at: toIsoString(row.updated_at),
-  };
-}
-
-async function getInvitationById(db: ReturnType<typeof getRequiredDb>, invitationId: string) {
-  const row =
-    (
-      await db
-        .select({
-          id: coachingInvitations.id,
-          athlete_id: coachingInvitations.athlete_id,
-          coach_id: coachingInvitations.coach_id,
-          status: coachingInvitations.status,
-          created_at: coachingInvitations.created_at,
-          updated_at: coachingInvitations.updated_at,
-        })
-        .from(coachingInvitations)
-        .where(eq(coachingInvitations.id, invitationId))
-        .limit(1)
-    )[0] ?? null;
-
-  if (!row) {
-    return null;
-  }
-
-  return serializeInvitationRow(row);
-}
 
 function toRosterEntry(row: {
   athlete_id: string;
@@ -125,7 +83,7 @@ export const coachingRouter = createTRPCRouter({
   respond: protectedProcedure.input(RespondToInvitationSchema).mutation(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
 
-    const invitation = await getInvitationById(db, input.invitation_id);
+    const invitation = await getCoachingInvitationById(db, input.invitation_id);
 
     if (!invitation) {
       throw new TRPCError({

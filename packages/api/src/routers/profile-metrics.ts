@@ -17,11 +17,12 @@ import {
 } from "@repo/core/athlete-inputs";
 import { profileMetrics, publicProfileMetricsRowSchema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, count, desc, eq, gte, lte } from "drizzle-orm";
+import { and, desc, eq, lte } from "drizzle-orm";
 import { z } from "zod";
+import { listProfileMetricHistory } from "../application/profile-metrics/listProfileMetricHistory";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
-import { buildIndexPageInfo, indexCursorSchema, parseIndexCursor } from "../utils/index-cursor";
+import { indexCursorSchema } from "../utils/index-cursor";
 import { markProfileAnalysisDirty } from "../utils/profile-estimation-state";
 
 const createProfileMetricInputSchema = profileMetricCreatePayloadSchema
@@ -86,32 +87,13 @@ export const profileMetricsRouter = createTRPCRouter({
    */
   list: protectedProcedure.input(listProfileMetricsInputSchema).query(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
-    const offset = parseIndexCursor(input.cursor);
-
-    const conditions = [eq(profileMetrics.profile_id, ctx.session.user.id)];
-
-    if (input.metric_type) conditions.push(eq(profileMetrics.metric_type, input.metric_type));
-    if (input.start_date) conditions.push(gte(profileMetrics.recorded_at, input.start_date));
-    if (input.end_date) conditions.push(lte(profileMetrics.recorded_at, input.end_date));
-
-    const whereClause = and(...conditions);
-    const [data, totalRows] = await Promise.all([
-      db
-        .select()
-        .from(profileMetrics)
-        .where(whereClause)
-        .orderBy(desc(profileMetrics.recorded_at))
-        .limit(input.limit)
-        .offset(offset),
-      db.select({ total: count() }).from(profileMetrics).where(whereClause),
-    ]);
-    const total = Number(totalRows[0]?.total ?? 0);
-    const pageInfo = buildIndexPageInfo({ offset, limit: input.limit, total });
+    const history = await listProfileMetricHistory(db, ctx.session.user.id, input);
 
     return profileMetricListOutputSchema.parse({
-      items: profileMetricRowArraySchema.parse(data ?? []),
-      total,
-      ...pageInfo,
+      items: profileMetricRowArraySchema.parse(history.items),
+      total: history.total,
+      hasMore: history.hasMore,
+      nextCursor: history.nextCursor,
     });
   }),
 
