@@ -14,11 +14,7 @@ import { useCallback, useMemo, useRef } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 import { View } from "react-native";
 import { useTheme } from "@/lib/stores/theme-store";
-
-const THEME_COLORS = {
-  light: { background: "#ffffff", handleIndicator: "#888888" },
-  dark: { background: "#18181b", handleIndicator: "#888888" },
-} as const;
+import { getNativeBottomSheetVisualTokens } from "@/lib/theme/native-bottom-sheet";
 
 export const APP_BOTTOM_SHEET_CUSTOM_CONTENT_TOP_INSET = 88;
 export const APP_BOTTOM_SHEET_SEARCH_HEADER_CONTENT_TOP_INSET = 96;
@@ -115,7 +111,7 @@ export function AppBottomSheet({
     Math.max(snapPoints.length - 1, 0),
   );
   const { resolvedTheme } = useTheme();
-  const themeColors = THEME_COLORS[resolvedTheme === "dark" ? "dark" : "light"];
+  const nativeVisualTokens = getNativeBottomSheetVisualTokens(resolvedTheme);
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
       <BottomSheetBackdrop
@@ -187,9 +183,9 @@ export function AppBottomSheet({
         width: 40,
         height: 4,
         borderRadius: 2,
-        backgroundColor: themeColors.handleIndicator,
+        ...nativeVisualTokens.handleIndicatorStyle,
       }}
-      backgroundStyle={{ backgroundColor: themeColors.background }}
+      backgroundStyle={nativeVisualTokens.backgroundStyle}
       style={{ borderTopLeftRadius: 16, borderTopRightRadius: 16 }}
     >
       {contentMode === "custom" ? (

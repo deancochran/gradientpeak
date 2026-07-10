@@ -1,15 +1,15 @@
-import BottomSheet, { BottomSheetBackdrop, BottomSheetView } from "@gorhom/bottom-sheet";
+import BottomSheet, {
+  BottomSheetBackdrop,
+  type BottomSheetBackdropProps,
+  BottomSheetView,
+} from "@gorhom/bottom-sheet";
 import { Text } from "@repo/ui/components/text";
 import type React from "react";
 import { useCallback, useMemo, useRef } from "react";
 import { TouchableOpacity, View } from "react-native";
 import { useTheme } from "@/lib/stores/theme-store";
+import { getNativeBottomSheetVisualTokens } from "@/lib/theme/native-bottom-sheet";
 import { AppBottomSheetContent } from "./AppBottomSheet";
-
-const THEME_COLORS = {
-  light: { background: "#ffffff", handleIndicator: "#888888" },
-  dark: { background: "#18181b", handleIndicator: "#888888" },
-} as const;
 
 interface IndexFilterSheetProps {
   visible: boolean;
@@ -39,9 +39,9 @@ export function IndexFilterSheet({
   const bottomSheetRef = useRef<BottomSheet>(null);
   const snapPoints = useMemo(() => ["78%"], []);
   const { resolvedTheme } = useTheme();
-  const themeColors = THEME_COLORS[resolvedTheme === "dark" ? "dark" : "light"];
+  const nativeVisualTokens = getNativeBottomSheetVisualTokens(resolvedTheme);
   const renderBackdrop = useCallback(
-    (props: any) => (
+    (props: BottomSheetBackdropProps) => (
       <BottomSheetBackdrop
         {...props}
         appearsOnIndex={0}
@@ -71,9 +71,9 @@ export function IndexFilterSheet({
         width: 40,
         height: 4,
         borderRadius: 2,
-        backgroundColor: themeColors.handleIndicator,
+        ...nativeVisualTokens.handleIndicatorStyle,
       }}
-      backgroundStyle={{ backgroundColor: themeColors.background }}
+      backgroundStyle={nativeVisualTokens.backgroundStyle}
       style={{ borderTopLeftRadius: 16, borderTopRightRadius: 16 }}
     >
       <BottomSheetView className="flex-1" testID={testID}>

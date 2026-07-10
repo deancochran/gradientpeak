@@ -56,10 +56,28 @@ jest.mock("@/lib/api", () => ({
   api: {
     activityPlans: {
       list: {
-        useQuery: () => ({
-          data: { items: activityPlansState.items },
-          isLoading: activityPlansState.isLoading,
+        useInfiniteQuery: () => ({
+          data: { pages: [{ items: activityPlansState.items }] },
           error: activityPlansState.error,
+          fetchNextPage: jest.fn(),
+          hasNextPage: false,
+          isFetching: false,
+          isFetchingNextPage: false,
+          isLoading: activityPlansState.isLoading,
+          refetch: jest.fn(),
+        }),
+      },
+    },
+    routes: {
+      list: {
+        useInfiniteQuery: () => ({
+          data: { pages: [] },
+          error: null,
+          fetchNextPage: jest.fn(),
+          hasNextPage: false,
+          isFetching: false,
+          isFetchingNextPage: false,
+          isLoading: false,
           refetch: jest.fn(),
         }),
       },
@@ -197,5 +215,59 @@ describe("CalendarPlannedActivityPickerModal", () => {
     expect(screen.getByTestId("calendar-planned-activity-section-search-results")).toBeTruthy();
     expect(screen.getByText("Brick Builder")).toBeTruthy();
     expect(screen.queryByText("Threshold Builder")).toBeNull();
+  });
+
+  it("selects a plan through the canonical picker result", () => {
+    const onSelectPlan = jest.fn();
+    renderNative(
+      <CalendarPlannedActivityPickerModal
+        visible
+        selectedDate="2026-03-21"
+        onClose={jest.fn()}
+        onSelectPlan={onSelectPlan}
+      />,
+    );
+
+    fireEvent.press(screen.getByTestId("calendar-planned-activity-option-favorite-1"));
+
+    expect(onSelectPlan).toHaveBeenCalledWith("favorite-1");
+  });
+
+  it("keeps loading, error, and empty states in the canonical picker", () => {
+    activityPlansState.items = [];
+    activityPlansState.isLoading = true;
+    const { rerender } = renderNative(
+      <CalendarPlannedActivityPickerModal
+        visible
+        selectedDate="2026-03-21"
+        onClose={jest.fn()}
+        onSelectPlan={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Loading...")).toBeTruthy();
+
+    activityPlansState.isLoading = false;
+    activityPlansState.error = new Error("Unavailable");
+    rerender(
+      <CalendarPlannedActivityPickerModal
+        visible
+        selectedDate="2026-03-21"
+        onClose={jest.fn()}
+        onSelectPlan={jest.fn()}
+      />,
+    );
+    expect(screen.getByText("Could not load resources.")).toBeTruthy();
+
+    activityPlansState.error = null;
+    rerender(
+      <CalendarPlannedActivityPickerModal
+        visible
+        selectedDate="2026-03-21"
+        onClose={jest.fn()}
+        onSelectPlan={jest.fn()}
+      />,
+    );
+    expect(screen.getByText("No visible activity plans found.")).toBeTruthy();
   });
 });

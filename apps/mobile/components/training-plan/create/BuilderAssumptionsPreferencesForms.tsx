@@ -184,9 +184,16 @@ function LocalSelect<TValue extends string>({
 
   return (
     <View className="gap-2">
-      <Label>
-        <Text className="text-sm font-medium text-foreground">{label}</Text>
-      </Label>
+      <View className="flex-row items-center justify-between gap-2">
+        <Label>
+          <Text className="text-sm font-medium text-foreground">{label}</Text>
+        </Label>
+        {value ? (
+          <Button accessibilityLabel={`Clear ${label}`} size="sm" variant="ghost" onPress={onClear}>
+            <Text className="text-xs text-muted-foreground">Clear</Text>
+          </Button>
+        ) : null}
+      </View>
       <Select
         value={selectedOption}
         onValueChange={(option) => {
@@ -206,13 +213,6 @@ function LocalSelect<TValue extends string>({
           ))}
         </SelectContent>
       </Select>
-      {value ? (
-        <View className="items-start">
-          <Button size="sm" variant="ghost" onPress={onClear}>
-            <Text className="text-xs text-muted-foreground">Clear</Text>
-          </Button>
-        </View>
-      ) : null}
     </View>
   );
 }

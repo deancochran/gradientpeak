@@ -2,35 +2,16 @@ import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
 import { Heart, Sparkles } from "lucide-react-native";
-import { useMemo, useState } from "react";
-import { ActivityIndicator, ScrollView, TouchableOpacity, View } from "react-native";
+import { useState } from "react";
+import { ScrollView, TouchableOpacity, View } from "react-native";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
-import { AppSelectionModal } from "@/components/shared/AppSelectionModal";
-import { SearchField } from "@/components/shared/SearchField";
-import { api } from "@/lib/api";
-
-type ActivityPlanListItem = {
-  id: string;
-  name: string;
-  activity_category?: string | null;
-  authoritative_metrics?: {
-    estimated_duration?: number | null;
-    estimated_tss?: number | null;
-    intensity_factor?: number | null;
-    estimated_distance?: number | null;
-  } | null;
-  description?: string | null;
-  created_at?: string | null;
-  updated_at?: string | null;
-  likes_count?: number | null;
-  has_liked?: boolean | null;
-};
+import { type ResourcePickerItem, ResourcePickerModal } from "@/components/shared/resource-picker";
 
 type PlanSection = {
   key: string;
   title: string;
   subtitle: string;
-  plans: ActivityPlanListItem[];
+  plans: ResourcePickerItem[];
   accent: "default" | "suggested" | "favorites";
 };
 
@@ -63,7 +44,7 @@ function toTimestamp(value?: string | null): number {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-function dedupePlans(plans: ActivityPlanListItem[]): ActivityPlanListItem[] {
+function dedupePlans(plans: ResourcePickerItem[]): ResourcePickerItem[] {
   const seen = new Set<string>();
   return plans.filter((plan) => {
     if (seen.has(plan.id)) {
@@ -75,20 +56,20 @@ function dedupePlans(plans: ActivityPlanListItem[]): ActivityPlanListItem[] {
   });
 }
 
-function sortByRecency(plans: ActivityPlanListItem[]): ActivityPlanListItem[] {
+function sortByRecency(plans: ResourcePickerItem[]): ResourcePickerItem[] {
   return [...plans].sort(
     (left, right) =>
-      toTimestamp(right.updated_at ?? right.created_at) -
-      toTimestamp(left.updated_at ?? left.created_at),
+      toTimestamp(right.updatedAt ?? right.createdAt) -
+      toTimestamp(left.updatedAt ?? left.createdAt),
   );
 }
 
-function sortBySuggestionScore(plans: ActivityPlanListItem[]): ActivityPlanListItem[] {
+function sortBySuggestionScore(plans: ResourcePickerItem[]): ResourcePickerItem[] {
   return [...plans].sort((left, right) => {
-    const leftEstimatedTss = left.authoritative_metrics?.estimated_tss ?? 0;
-    const leftEstimatedDuration = left.authoritative_metrics?.estimated_duration ?? 0;
-    const rightEstimatedTss = right.authoritative_metrics?.estimated_tss ?? 0;
-    const rightEstimatedDuration = right.authoritative_metrics?.estimated_duration ?? 0;
+    const leftEstimatedTss = left.estimatedTss ?? 0;
+    const leftEstimatedDuration = left.estimatedDuration ?? 0;
+    const rightEstimatedTss = right.estimatedTss ?? 0;
+    const rightEstimatedDuration = right.estimatedDuration ?? 0;
     const leftScore = leftEstimatedTss + leftEstimatedDuration / 600 + (left.description ? 10 : 0);
     const rightScore =
       rightEstimatedTss + rightEstimatedDuration / 600 + (right.description ? 10 : 0);
@@ -101,12 +82,9 @@ function sortBySuggestionScore(plans: ActivityPlanListItem[]): ActivityPlanListI
   });
 }
 
-function buildBrowseSections(plans: ActivityPlanListItem[]): PlanSection[] {
+function buildBrowseSections(plans: ResourcePickerItem[]): PlanSection[] {
   const favoritePlans = dedupePlans(
-    sortByRecency(plans.filter((plan) => plan.has_liked || (plan.likes_count ?? 0) > 0)).slice(
-      0,
-      4,
-    ),
+    sortByRecency(plans.filter((plan) => plan.hasLiked || (plan.likesCount ?? 0) > 0)).slice(0, 4),
   );
   const favoriteIds = new Set(favoritePlans.map((plan) => plan.id));
 
@@ -169,68 +147,27 @@ export function CalendarPlannedActivityPickerModal({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
 
-  const {
-    data: activityPlansData,
-    isLoading,
-    error,
-    refetch,
-  } = api.activityPlans.list.useQuery(
-    {
-      ownerScope: "own",
-      limit: 100,
-    },
-    {
-      enabled: visible,
-    },
-  );
-
-  const filteredPlans = useMemo(() => {
-    const plans = (activityPlansData?.items ?? []) as ActivityPlanListItem[];
+  const filterItems = (plans: ResourcePickerItem[]) => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
     const categoryFilteredPlans =
       selectedCategory === "all"
         ? plans
-        : plans.filter((plan) => plan.activity_category === selectedCategory);
+        : plans.filter((plan) => plan.activityCategory === selectedCategory);
 
     if (!normalizedQuery) {
       return categoryFilteredPlans;
     }
 
     return categoryFilteredPlans.filter((plan) => {
-      const haystacks = [plan.name, plan.description, plan.activity_category]
+      const haystacks = [plan.name, plan.description, plan.activityCategory]
         .filter((value): value is string => typeof value === "string")
         .map((value) => value.toLowerCase());
 
       return haystacks.some((value) => value.includes(normalizedQuery));
     });
-  }, [activityPlansData?.items, searchQuery, selectedCategory]);
+  };
 
-  const categoryOptions = useMemo(() => {
-    const plans = (activityPlansData?.items ?? []) as ActivityPlanListItem[];
-    const categories = Array.from(
-      new Set(plans.map((plan) => plan.activity_category).filter(Boolean)),
-    ) as string[];
-
-    return ["all", ...categories.sort()];
-  }, [activityPlansData?.items]);
-
-  const browseSections = useMemo(() => {
-    if (searchQuery.trim().length > 0) {
-      return [
-        {
-          key: "search-results",
-          title: "Search Results",
-          subtitle: `Matching plans for ${searchQuery.trim()}.`,
-          plans: filteredPlans,
-          accent: "default" as const,
-        },
-      ];
-    }
-
-    return buildBrowseSections(filteredPlans);
-  }, [filteredPlans, searchQuery]);
-
-  const renderPlanCard = (plan: ActivityPlanListItem, sectionKey: string) => {
+  const renderPlanCard = (plan: ResourcePickerItem, sectionKey: string) => {
     const recommendationLabel =
       sectionKey === "suggested"
         ? "Good next pick"
@@ -246,7 +183,18 @@ export function CalendarPlannedActivityPickerModal({
           </Text>
         ) : null}
         <ActivityPlanCard
-          activityPlan={plan as any}
+          activityPlan={{
+            ...plan,
+            activity_category: plan.activityCategory ?? "other",
+            created_at: plan.createdAt ?? undefined,
+            authoritative_metrics: {
+              estimated_duration: plan.estimatedDuration,
+              estimated_tss: plan.estimatedTss,
+            },
+            has_liked: plan.hasLiked ?? undefined,
+            likes_count: plan.likesCount,
+            updated_at: plan.updatedAt ?? undefined,
+          }}
           onPress={() => onSelectPlan(plan.id)}
           testID={`calendar-planned-activity-option-${plan.id}`}
           variant="compact"
@@ -255,145 +203,124 @@ export function CalendarPlannedActivityPickerModal({
     );
   };
 
-  if (!visible) {
-    return null;
-  }
-
   return (
-    <AppSelectionModal
+    <ResourcePickerModal
+      activityPlanQueryOptions={{ limit: 100, ownerScope: "own" }}
       description={`Stay on ${toDisplayDateLabel(selectedDate)} and choose one of your saved activity plans.`}
-      onClose={onClose}
-      onRefresh={() => void refetch()}
-      refreshDisabled={isLoading}
-      testID="calendar-planned-activity-modal"
-      title="Schedule Activity"
-    >
-      <View className="gap-4">
-        <SearchField
-          accessibilityLabel="Search your activity plans"
-          className="rounded-lg border-border bg-card"
-          onChangeText={setSearchQuery}
-          onClear={() => setSearchQuery("")}
-          placeholder="Search your activity plans"
-          testID="calendar-planned-activity-search"
-          value={searchQuery}
+      filterItems={filterItems}
+      filterSlot={({ allItems }) => (
+        <CategoryFilters
+          categories={
+            Array.from(
+              new Set(allItems.map((plan) => plan.activityCategory).filter(Boolean)),
+            ).sort() as string[]
+          }
+          onSelectCategory={setSelectedCategory}
+          selectedCategory={selectedCategory}
         />
-
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerClassName="gap-2"
-        >
-          {categoryOptions.map((category) => {
-            const isSelected = selectedCategory === category;
-            return (
-              <TouchableOpacity
-                key={category}
-                onPress={() => setSelectedCategory(category)}
-                className={`rounded-full border px-3 py-2 ${
-                  isSelected ? "border-primary bg-primary/10" : "border-border bg-background"
-                }`}
-                activeOpacity={0.8}
-                testID={`calendar-planned-activity-filter-${category}`}
-              >
-                <Text
-                  className={`text-xs font-semibold ${
-                    isSelected ? "text-primary" : "text-foreground"
-                  }`}
-                >
-                  {category === "all" ? "All Sports" : toCategoryLabel(category)}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-
-        <ScrollView
-          className="flex-1"
-          contentContainerClassName="gap-3"
-          keyboardShouldPersistTaps="handled"
-        >
-          {isLoading ? (
-            <View className="items-center gap-3 rounded-xl border border-border bg-card px-4 py-8">
-              <ActivityIndicator />
-              <Text className="text-sm text-muted-foreground">Loading your activity plans...</Text>
-            </View>
-          ) : null}
-
-          {!isLoading && error ? (
-            <View className="gap-3 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-4">
-              <Text className="text-sm font-medium text-destructive">
-                Could not load your activity plans.
-              </Text>
-              <TouchableOpacity
-                onPress={() => void refetch()}
-                className="self-start rounded-md border border-border bg-background px-3 py-2"
-                activeOpacity={0.8}
-                testID="calendar-planned-activity-retry"
-              >
-                <Text className="text-xs font-medium text-foreground">Try again</Text>
-              </TouchableOpacity>
-            </View>
-          ) : null}
-
-          {!isLoading && !error && filteredPlans.length === 0 ? (
-            <View className="gap-2 rounded-xl border border-dashed border-border bg-card px-4 py-6">
-              <Text className="text-sm font-medium text-foreground">
-                {searchQuery.trim().length > 0
-                  ? "No matching activity plans"
-                  : "No saved activity plans yet"}
-              </Text>
-              <Text className="text-sm text-muted-foreground">
-                {searchQuery.trim().length > 0
-                  ? "Try a different search term."
-                  : "Create an activity plan first, then come back here to schedule it."}
-              </Text>
-            </View>
-          ) : null}
-
-          {!isLoading && !error
-            ? browseSections.map((section) => (
-                <View
-                  key={section.key}
-                  className={`gap-3 rounded-2xl border px-4 py-4 ${
-                    section.accent === "suggested"
-                      ? "border-primary/20 bg-primary/5"
-                      : section.accent === "favorites"
-                        ? "border-border bg-muted/30"
-                        : "border-border bg-background"
-                  }`}
-                  testID={`calendar-planned-activity-section-${section.key}`}
-                >
-                  <View className="flex-row items-start gap-3">
-                    <View className="flex-1 gap-1">
-                      <View className="flex-row items-center gap-2">
-                        {section.key === "suggested" ? (
-                          <Icon as={Sparkles} size={14} className="text-primary" />
-                        ) : null}
-                        {section.key === "favorites" ? (
-                          <Icon as={Heart} size={14} className="text-muted-foreground" />
-                        ) : null}
-                        <Text className="text-sm font-semibold text-foreground">
-                          {section.title}
-                        </Text>
-                      </View>
-                      <Text className="text-xs text-muted-foreground">{section.subtitle}</Text>
-                    </View>
-                    <Text className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      {section.plans.length} {section.plans.length === 1 ? "plan" : "plans"}
-                    </Text>
-                  </View>
-
-                  {section.plans.map((plan) => renderPlanCard(plan, section.key))}
-                </View>
-              ))
-            : null}
-        </ScrollView>
-
+      )}
+      footerSlot={
         <Text className="text-center text-xs text-muted-foreground">
           Choose a plan to continue into the scheduling form.
         </Text>
-      </View>
-    </AppSelectionModal>
+      }
+      onClose={onClose}
+      onSearchQueryChange={setSearchQuery}
+      onSelect={(plan) => onSelectPlan(plan.id)}
+      recommendationSlot={({ items }) => {
+        const browseSections =
+          searchQuery.trim().length > 0
+            ? [
+                {
+                  key: "search-results",
+                  title: "Search Results",
+                  subtitle: `Matching plans for ${searchQuery.trim()}.`,
+                  plans: items,
+                  accent: "default" as const,
+                },
+              ]
+            : buildBrowseSections(items);
+
+        return (
+          <View className="gap-3">
+            {browseSections.map((section) => (
+              <View
+                key={section.key}
+                className={`gap-3 rounded-2xl border px-4 py-4 ${
+                  section.accent === "suggested"
+                    ? "border-primary/20 bg-primary/5"
+                    : section.accent === "favorites"
+                      ? "border-border bg-muted/30"
+                      : "border-border bg-background"
+                }`}
+                testID={`calendar-planned-activity-section-${section.key}`}
+              >
+                <View className="flex-row items-start gap-3">
+                  <View className="flex-1 gap-1">
+                    <View className="flex-row items-center gap-2">
+                      {section.key === "suggested" ? (
+                        <Icon as={Sparkles} size={14} className="text-primary" />
+                      ) : null}
+                      {section.key === "favorites" ? (
+                        <Icon as={Heart} size={14} className="text-muted-foreground" />
+                      ) : null}
+                      <Text className="text-sm font-semibold text-foreground">{section.title}</Text>
+                    </View>
+                    <Text className="text-xs text-muted-foreground">{section.subtitle}</Text>
+                  </View>
+                  <Text className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {section.plans.length} {section.plans.length === 1 ? "plan" : "plans"}
+                  </Text>
+                </View>
+                {section.plans.map((plan) => renderPlanCard(plan, section.key))}
+              </View>
+            ))}
+          </View>
+        );
+      }}
+      scope="activityPlans"
+      searchQuery={searchQuery}
+      searchTestID="calendar-planned-activity-search"
+      testID="calendar-planned-activity-modal"
+      title="Schedule Activity"
+      visible={visible}
+    />
+  );
+}
+
+function CategoryFilters({
+  categories,
+  onSelectCategory,
+  selectedCategory,
+}: {
+  categories: string[];
+  onSelectCategory: (category: string) => void;
+  selectedCategory: string;
+}) {
+  const categoryOptions = ["all", ...categories];
+
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2">
+      {categoryOptions.map((category) => {
+        const isSelected = selectedCategory === category;
+        return (
+          <TouchableOpacity
+            key={category}
+            activeOpacity={0.8}
+            className={`rounded-full border px-3 py-2 ${
+              isSelected ? "border-primary bg-primary/10" : "border-border bg-background"
+            }`}
+            onPress={() => onSelectCategory(category)}
+            testID={`calendar-planned-activity-filter-${category}`}
+          >
+            <Text
+              className={`text-xs font-semibold ${isSelected ? "text-primary" : "text-foreground"}`}
+            >
+              {category === "all" ? "All Sports" : toCategoryLabel(category)}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+    </ScrollView>
   );
 }

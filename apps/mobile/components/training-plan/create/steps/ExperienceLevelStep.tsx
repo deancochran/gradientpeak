@@ -1,10 +1,3 @@
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
 import { Activity, ChevronDown, ChevronUp, Sprout, Trophy } from "lucide-react-native";
 import { useState } from "react";
@@ -114,36 +107,36 @@ export function ExperienceLevelStep({
 
           return (
             <Pressable
+              accessibilityLabel={`${level.label}: ${level.description}`}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: isSelected }}
               key={level.value}
               onPress={() => onExperienceLevelChange(level.value)}
-              className={`rounded-xl border p-4 active:opacity-80 ${
-                isSelected ? "bg-primary/5 border-primary" : "bg-card border-border"
+              className={`rounded-lg border px-3 py-2.5 active:opacity-80 ${
+                isSelected ? "border-primary bg-primary/5" : "border-border bg-background"
               }`}
             >
               <View className="flex-row items-start gap-3">
-                {/* Icon */}
-                <View className={`p-3 rounded-full ${isSelected ? "bg-primary" : "bg-muted"}`}>
+                <View className="pt-0.5">
                   <IconComponent
-                    size={24}
-                    className={isSelected ? "text-primary-foreground" : "text-muted-foreground"}
+                    size={20}
+                    className={isSelected ? "text-primary" : "text-muted-foreground"}
                   />
                 </View>
 
-                {/* Content */}
                 <View className="flex-1">
                   <Text
-                    className={`text-lg font-semibold mb-1 ${
+                    className={`text-base font-semibold ${
                       isSelected ? "text-primary" : "text-foreground"
                     }`}
                   >
                     {level.label}
                   </Text>
-                  <Text className="text-sm text-muted-foreground mb-2">{level.description}</Text>
+                  <Text className="text-sm text-muted-foreground">{level.description}</Text>
 
-                  {/* Bullets */}
-                  <View className="gap-1">
-                    {level.bullets.map((bullet, idx) => (
-                      <View key={idx} className="flex-row items-start gap-2">
+                  <View className="mt-1.5 gap-0.5">
+                    {level.bullets.map((bullet) => (
+                      <View key={bullet} className="flex-row items-start gap-2">
                         <Text className="text-primary text-xs mt-0.5">●</Text>
                         <Text className="text-xs text-muted-foreground flex-1">{bullet}</Text>
                       </View>
@@ -151,12 +144,7 @@ export function ExperienceLevelStep({
                   </View>
                 </View>
 
-                {/* Selection Indicator */}
-                {isSelected && (
-                  <View className="bg-primary rounded-full w-6 h-6 items-center justify-center">
-                    <Text className="text-primary-foreground text-xs font-bold">✓</Text>
-                  </View>
-                )}
+                {isSelected && <Text className="text-sm font-semibold text-primary">Selected</Text>}
               </View>
             </Pressable>
           );
@@ -164,35 +152,36 @@ export function ExperienceLevelStep({
       </View>
 
       {/* Advanced: Intensity Preset */}
-      <Card>
+      <View className="rounded-lg border border-border">
         <Pressable
+          accessibilityLabel="Intensity distribution options"
+          accessibilityRole="button"
+          accessibilityState={{ expanded: showIntensityOptions }}
           onPress={() => setShowIntensityOptions(!showIntensityOptions)}
-          className="active:bg-accent"
+          className="px-3 py-2.5 active:bg-accent"
         >
-          <CardHeader>
-            <View className="flex-row items-center justify-between">
-              <View className="flex-1">
-                <CardTitle className="text-base">Intensity Distribution</CardTitle>
-                <CardDescription>
-                  {INTENSITY_PRESETS.find((p) => p.value === intensityPreset)?.label || "Pyramidal"}{" "}
-                  (
-                  {INTENSITY_PRESETS.find((p) => p.value === intensityPreset)?.description ||
-                    "Default"}
-                  )
-                </CardDescription>
-              </View>
-              {showIntensityOptions ? (
-                <ChevronUp size={20} className="text-muted-foreground" />
-              ) : (
-                <ChevronDown size={20} className="text-muted-foreground" />
-              )}
+          <View className="flex-row items-center justify-between">
+            <View className="flex-1">
+              <Text className="text-base font-semibold text-foreground">
+                Intensity distribution
+              </Text>
+              <Text className="text-sm text-muted-foreground">
+                {INTENSITY_PRESETS.find((p) => p.value === intensityPreset)?.label || "Pyramidal"} ·{" "}
+                {INTENSITY_PRESETS.find((p) => p.value === intensityPreset)?.description ||
+                  "Default"}
+              </Text>
             </View>
-          </CardHeader>
+            {showIntensityOptions ? (
+              <ChevronUp size={20} className="text-muted-foreground" />
+            ) : (
+              <ChevronDown size={20} className="text-muted-foreground" />
+            )}
+          </View>
         </Pressable>
 
         {showIntensityOptions && (
-          <CardContent>
-            <View className="gap-2 mb-3">
+          <View className="gap-3 border-t border-border px-3 py-3">
+            <View>
               <Text className="text-sm text-muted-foreground">
                 Choose how your training intensity will be distributed. Most athletes do well with
                 Pyramidal.
@@ -205,10 +194,13 @@ export function ExperienceLevelStep({
 
                 return (
                   <Pressable
+                    accessibilityLabel={`${preset.label}: ${preset.description}`}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: isSelected }}
                     key={preset.value}
                     onPress={() => onIntensityPresetChange(preset.value)}
-                    className={`p-3 rounded-lg border ${
-                      isSelected ? "bg-primary/10 border-primary" : "bg-background border-border"
+                    className={`rounded-md border px-3 py-2 ${
+                      isSelected ? "border-primary bg-primary/10" : "border-border bg-background"
                     }`}
                   >
                     <View className="flex-row items-center justify-between mb-1">
@@ -226,19 +218,16 @@ export function ExperienceLevelStep({
                 );
               })}
             </View>
-          </CardContent>
+          </View>
         )}
-      </Card>
+      </View>
 
-      {/* Helpful Info */}
-      <Card className="bg-muted/30">
-        <CardContent className="p-4">
-          <Text className="text-sm text-muted-foreground">
-            💡 Your experience level helps us determine appropriate training volume, intensity
-            progression, and recovery needs. You can always adjust your plan later.
-          </Text>
-        </CardContent>
-      </Card>
+      <View className="rounded-lg bg-muted/30 px-3 py-2.5">
+        <Text className="text-sm text-muted-foreground">
+          Your experience level helps determine appropriate volume, intensity progression, and
+          recovery needs. You can adjust your plan later.
+        </Text>
+      </View>
     </WizardStep>
   );
 }

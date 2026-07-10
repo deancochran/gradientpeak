@@ -1,12 +1,5 @@
 import type { WizardConstraintsInput } from "@repo/core";
 import { Alert, AlertDescription } from "@repo/ui/components/alert";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@repo/ui/components/card";
 import { Form, FormNumberField } from "@repo/ui/components/form";
 import { Label } from "@repo/ui/components/label";
 import { Text } from "@repo/ui/components/text";
@@ -25,6 +18,8 @@ interface AvailabilityStepProps {
   currentStep: number;
   totalSteps: number;
 }
+
+type AvailableDay = NonNullable<WizardConstraintsInput["available_days"]>[number];
 
 const LIFESTYLE_PRESETS = [
   {
@@ -124,15 +119,15 @@ export function AvailabilityStep({
     });
   };
 
-  const handleDayToggle = (day: string) => {
+  const handleDayToggle = (day: AvailableDay) => {
     const currentDays = constraints.available_days || [];
-    const newDays = currentDays.includes(day as any)
+    const newDays = currentDays.includes(day)
       ? currentDays.filter((d) => d !== day)
-      : [...currentDays, day as any];
+      : [...currentDays, day];
 
     onConstraintsChange({
       ...constraints,
-      available_days: newDays.length > 0 ? (newDays as any) : undefined,
+      available_days: newDays.length > 0 ? newDays : undefined,
     });
   };
 
@@ -152,137 +147,146 @@ export function AvailabilityStep({
     >
       {/* Lifestyle Presets */}
       <View className="gap-2">
-        <Label>Choose a training commitment level:</Label>
+        <Label>Choose a training commitment level</Label>
         <View className="gap-2">
-          {LIFESTYLE_PRESETS.map((preset) => (
-            <Pressable
-              key={preset.name}
-              onPress={() => handlePresetSelect(preset)}
-              className={`bg-card border rounded-lg p-4 active:bg-accent ${
-                constraints.max_hours_per_week === preset.hours &&
-                constraints.max_sessions_per_week === preset.sessions
-                  ? "border-primary bg-primary/5"
-                  : "border-border"
-              }`}
-            >
-              <View className="flex-row items-start justify-between mb-1">
-                <Text className="text-foreground font-semibold">{preset.name}</Text>
-                <View className="flex-row gap-3">
-                  <View className="items-end">
-                    <Text className="text-primary font-bold">{preset.hours}h</Text>
-                    <Text className="text-xs text-muted-foreground">/week</Text>
-                  </View>
-                  <View className="items-end">
-                    <Text className="text-primary font-bold">{preset.sessions}x</Text>
-                    <Text className="text-xs text-muted-foreground">/week</Text>
+          {LIFESTYLE_PRESETS.map((preset) => {
+            const isSelected =
+              constraints.max_hours_per_week === preset.hours &&
+              constraints.max_sessions_per_week === preset.sessions;
+
+            return (
+              <Pressable
+                accessibilityLabel={`${preset.name}: ${preset.description}`}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: isSelected }}
+                key={preset.name}
+                onPress={() => handlePresetSelect(preset)}
+                className={`rounded-lg border px-3 py-2.5 active:bg-accent ${
+                  isSelected ? "border-primary bg-primary/5" : "border-border bg-background"
+                }`}
+              >
+                <View className="flex-row items-start justify-between mb-1">
+                  <Text className="text-foreground font-semibold">{preset.name}</Text>
+                  <View className="flex-row gap-3">
+                    <View className="items-end">
+                      <Text className="text-primary font-bold">{preset.hours}h</Text>
+                      <Text className="text-xs text-muted-foreground">/week</Text>
+                    </View>
+                    <View className="items-end">
+                      <Text className="text-primary font-bold">{preset.sessions}x</Text>
+                      <Text className="text-xs text-muted-foreground">/week</Text>
+                    </View>
                   </View>
                 </View>
-              </View>
-              <Text className="text-sm text-muted-foreground">{preset.description}</Text>
-            </Pressable>
-          ))}
+                <Text className="text-sm text-muted-foreground">{preset.description}</Text>
+              </Pressable>
+            );
+          })}
         </View>
       </View>
 
-      {/* Custom Values */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Custom Values</CardTitle>
-          <CardDescription>Adjust to match your exact availability</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Form {...form}>
-            <View className="gap-4">
-              {/* Hours per Week */}
-              <FormNumberField
-                control={form.control}
-                label="Hours per Week"
-                name="max_hours_per_week"
-                placeholder="e.g., 8"
-                allowDecimal
-                min={0}
-              />
-
-              {/* Sessions per Week */}
-              <FormNumberField
-                control={form.control}
-                label="Sessions per Week"
-                name="max_sessions_per_week"
-                placeholder="e.g., 5"
-                allowDecimal={false}
-                min={0}
-              />
-
-              {/* Min Rest Days */}
-              <View className="gap-2">
+      <View className="gap-3 rounded-lg border border-border bg-muted/20 p-3">
+        <View className="gap-0.5">
+          <Text className="text-base font-semibold text-foreground">Custom values</Text>
+          <Text className="text-sm text-muted-foreground">
+            Adjust to match your exact availability.
+          </Text>
+        </View>
+        <Form {...form}>
+          <View className="gap-3">
+            <View className="flex-row gap-3">
+              <View className="flex-1">
                 <FormNumberField
                   control={form.control}
-                  label="Minimum Rest Days per Week"
-                  name="min_rest_days_per_week"
-                  placeholder="e.g., 1"
+                  label="Hours per week"
+                  name="max_hours_per_week"
+                  placeholder="e.g., 8"
+                  allowDecimal
+                  min={0}
+                />
+              </View>
+              <View className="flex-1">
+                <FormNumberField
+                  control={form.control}
+                  label="Sessions per week"
+                  name="max_sessions_per_week"
+                  placeholder="e.g., 5"
                   allowDecimal={false}
                   min={0}
                 />
-                <Text className="text-xs text-muted-foreground">
-                  Recovery is essential for improvement
-                </Text>
               </View>
             </View>
-          </Form>
-        </CardContent>
-      </Card>
+            <FormNumberField
+              control={form.control}
+              description="Recovery is essential for improvement."
+              label="Minimum rest days per week"
+              name="min_rest_days_per_week"
+              placeholder="e.g., 1"
+              allowDecimal={false}
+              min={0}
+            />
+          </View>
+        </Form>
+      </View>
 
-      {/* Advanced Options */}
-      <Card>
-        <Pressable onPress={() => setShowAdvanced(!showAdvanced)} className="active:bg-accent">
-          <CardHeader>
-            <View className="flex-row items-center justify-between">
-              <CardTitle className="text-base">Advanced Options</CardTitle>
-              {showAdvanced ? (
-                <ChevronUp size={20} className="text-muted-foreground" />
-              ) : (
-                <ChevronDown size={20} className="text-muted-foreground" />
-              )}
+      <View className="rounded-lg border border-border">
+        <Pressable
+          accessibilityLabel="Advanced availability options"
+          accessibilityRole="button"
+          accessibilityState={{ expanded: showAdvanced }}
+          onPress={() => setShowAdvanced(!showAdvanced)}
+          className="px-3 py-2.5 active:bg-accent"
+        >
+          <View className="flex-row items-center justify-between">
+            <View className="flex-1">
+              <Text className="text-base font-semibold text-foreground">
+                Available training days
+              </Text>
+              <Text className="text-sm text-muted-foreground">Optional</Text>
             </View>
-            <CardDescription>Specify which days you can train (optional)</CardDescription>
-          </CardHeader>
+            {showAdvanced ? (
+              <ChevronUp size={20} className="text-muted-foreground" />
+            ) : (
+              <ChevronDown size={20} className="text-muted-foreground" />
+            )}
+          </View>
         </Pressable>
 
         {showAdvanced && (
-          <CardContent>
-            <View className="gap-2">
-              <Label>Available Training Days</Label>
-              <View className="flex-row flex-wrap gap-2">
-                {DAYS_OF_WEEK.map((day) => {
-                  const isSelected = constraints.available_days?.includes(day.key as any) || false;
+          <View className="gap-2 border-t border-border px-3 py-3">
+            <View className="flex-row flex-wrap gap-2">
+              {DAYS_OF_WEEK.map((day) => {
+                const isSelected = constraints.available_days?.includes(day.key) || false;
 
-                  return (
-                    <Pressable
-                      key={day.key}
-                      onPress={() => handleDayToggle(day.key)}
-                      className={`px-4 py-2 rounded-lg border ${
-                        isSelected ? "bg-primary border-primary" : "bg-background border-border"
+                return (
+                  <Pressable
+                    accessibilityLabel={day.fullLabel}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: isSelected }}
+                    key={day.key}
+                    onPress={() => handleDayToggle(day.key)}
+                    className={`px-4 py-2 rounded-lg border ${
+                      isSelected ? "bg-primary border-primary" : "bg-background border-border"
+                    }`}
+                  >
+                    <Text
+                      className={`text-sm font-medium ${
+                        isSelected ? "text-primary-foreground" : "text-foreground"
                       }`}
                     >
-                      <Text
-                        className={`text-sm font-medium ${
-                          isSelected ? "text-primary-foreground" : "text-foreground"
-                        }`}
-                      >
-                        {day.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-
-              <Text className="text-xs text-muted-foreground mt-2">
-                Leave empty to allow training any day of the week
-              </Text>
+                      {day.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
             </View>
-          </CardContent>
+
+            <Text className="text-xs text-muted-foreground mt-2">
+              Leave empty to allow training any day of the week
+            </Text>
+          </View>
         )}
-      </Card>
+      </View>
 
       {/* Validation Warning */}
       {!isValid && (

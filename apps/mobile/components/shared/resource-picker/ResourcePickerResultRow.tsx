@@ -87,13 +87,17 @@ export function mapActivityPlanToResourcePickerItem(plan: any): ResourcePickerIt
   const metrics = getAuthoritativeActivityPlanMetrics(plan);
   return {
     activityCategory: plan.activity_category,
+    createdAt: plan.created_at,
     description: plan.description,
     estimatedDuration: metrics.estimated_duration,
     estimatedTss: metrics.estimated_tss,
     id: plan.id,
+    hasLiked: plan.has_liked,
     isPublic: plan.template_visibility === "public" || plan.is_public,
     isSystem: plan.is_system_template,
+    likesCount: plan.likes_count,
     name: plan.name,
+    updatedAt: plan.updated_at,
   };
 }
 

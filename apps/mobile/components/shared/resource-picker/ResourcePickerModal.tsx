@@ -16,14 +16,39 @@ import {
 } from "./ResourcePickerResultRow";
 import type { ResourcePickerItem, ResourcePickerScope } from "./resourcePickerTypes";
 
+type ActivityPlanQueryOptions = {
+  includeEstimation?: boolean;
+  includeSystemTemplates?: boolean;
+  limit?: number;
+  ownerScope?: "all" | "own";
+};
+
+export type ResourcePickerRenderContext = {
+  allItems: ResourcePickerItem[];
+  error: unknown;
+  hasSearch: boolean;
+  isLoading: boolean;
+  items: ResourcePickerItem[];
+  refetch: () => void;
+};
+
 type ResourcePickerModalProps = {
+  activityPlanQueryOptions?: ActivityPlanQueryOptions;
   description?: string;
+  filterItems?: (items: ResourcePickerItem[]) => ResourcePickerItem[];
+  filterSlot?: (context: ResourcePickerRenderContext) => ReactNode;
   footerAction?: ReactNode;
+  footerSlot?: ReactNode;
   onClose: () => void;
+  onSearchQueryChange?: (query: string) => void;
   onSelect: (item: ResourcePickerItem) => void;
+  recommendationSlot?: (context: ResourcePickerRenderContext) => ReactNode;
+  searchQuery?: string;
+  searchTestID?: string;
   scope: ResourcePickerScope;
   selectedId?: string | null;
   selectedIds?: string[];
+  testID?: string;
   title: string;
   visible: boolean;
 };
@@ -50,17 +75,33 @@ function getEmptyLabel(scope: ResourcePickerScope, hasSearch: boolean) {
 }
 
 export function ResourcePickerModal({
+  activityPlanQueryOptions,
   description,
+  filterItems,
+  filterSlot,
   footerAction,
+  footerSlot,
   onClose,
+  onSearchQueryChange,
   onSelect,
+  recommendationSlot,
+  searchQuery: controlledSearchQuery,
+  searchTestID,
   scope,
   selectedId,
   selectedIds,
+  testID,
   title,
   visible,
 }: ResourcePickerModalProps) {
-  const [searchQuery, setSearchQuery] = useState("");
+  const [uncontrolledSearchQuery, setUncontrolledSearchQuery] = useState("");
+  const searchQuery = controlledSearchQuery ?? uncontrolledSearchQuery;
+  const setSearchQuery = (query: string) => {
+    if (controlledSearchQuery === undefined) {
+      setUncontrolledSearchQuery(query);
+    }
+    onSearchQueryChange?.(query);
+  };
   const debouncedSearch = useDebouncedValue(searchQuery.trim(), 300);
   const hasSearch = debouncedSearch.length > 0;
 
@@ -80,10 +121,10 @@ export function ResourcePickerModal({
 
   const activityPlanQuery = api.activityPlans.list.useInfiniteQuery(
     {
-      includeEstimation: true,
-      includeSystemTemplates: true,
-      limit: PAGE_SIZE,
-      ownerScope: "all",
+      includeEstimation: activityPlanQueryOptions?.includeEstimation ?? true,
+      includeSystemTemplates: activityPlanQueryOptions?.includeSystemTemplates ?? true,
+      limit: activityPlanQueryOptions?.limit ?? PAGE_SIZE,
+      ownerScope: activityPlanQueryOptions?.ownerScope ?? "all",
       search: hasSearch ? debouncedSearch : undefined,
     },
     {
@@ -95,7 +136,7 @@ export function ResourcePickerModal({
 
   const query = scope === "routes" ? routeQuery : activityPlanQuery;
   const isUpdatingItems = query.isFetching && !query.isLoading && !query.isFetchingNextPage;
-  const items = useMemo<ResourcePickerItem[]>(() => {
+  const unfilteredItems = useMemo<ResourcePickerItem[]>(() => {
     if (scope === "routes") {
       return (
         routeQuery.data?.pages.flatMap((page) => page.items.map(mapRouteToResourcePickerItem)) ?? []
@@ -108,15 +149,30 @@ export function ResourcePickerModal({
       ) ?? []
     );
   }, [activityPlanQuery.data?.pages, routeQuery.data?.pages, scope]);
+  const items = useMemo(
+    () => (filterItems ? filterItems(unfilteredItems) : unfilteredItems),
+    [filterItems, unfilteredItems],
+  );
+  const renderContext: ResourcePickerRenderContext = {
+    allItems: unfilteredItems,
+    error: query.error,
+    hasSearch,
+    isLoading: query.isLoading,
+    items,
+    refetch: () => void query.refetch(),
+  };
 
   if (!visible) return null;
 
   return (
     <AppFormModal
       description={description ?? getDefaultDescription(scope)}
-      footerContent={footerAction ? <View className="gap-2">{footerAction}</View> : undefined}
+      footerContent={
+        footerSlot ?? (footerAction ? <View className="gap-2">{footerAction}</View> : undefined)
+      }
       onClose={onClose}
       scrollProps={{ contentContainerClassName: "gap-3 p-4" }}
+      testID={testID}
       title={title}
     >
       <View className="gap-2">
@@ -125,6 +181,7 @@ export function ResourcePickerModal({
           onChangeText={setSearchQuery}
           onClear={() => setSearchQuery("")}
           placeholder={getPlaceholder(scope)}
+          testID={searchTestID}
           value={searchQuery}
         />
         <View className="flex-row items-center justify-between gap-3">
@@ -133,12 +190,26 @@ export function ResourcePickerModal({
           </Text>
           <InlineLoadingStatus loading={isUpdatingItems} label="Updating..." />
         </View>
+        {filterSlot?.(renderContext)}
       </View>
 
       {query.isLoading ? (
         <LoadingState />
+      ) : query.error ? (
+        <View className="gap-3 rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-4">
+          <Text className="text-sm font-medium text-destructive">Could not load resources.</Text>
+          <Pressable
+            accessibilityRole="button"
+            className="self-start rounded-md border border-border bg-background px-3 py-2"
+            onPress={() => void query.refetch()}
+          >
+            <Text className="text-xs font-medium text-foreground">Try again</Text>
+          </Pressable>
+        </View>
       ) : items.length === 0 ? (
         <EmptyState title={getEmptyLabel(scope, hasSearch)} />
+      ) : recommendationSlot ? (
+        recommendationSlot(renderContext)
       ) : (
         <View className="gap-2">
           {items.map((item) => (
