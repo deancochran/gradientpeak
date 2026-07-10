@@ -37,7 +37,7 @@ export function createWahooSyncRuntime() {
           .from("activity-files")
           .upload(input.path, input.bytes, {
             contentType: input.contentType,
-            upsert: false,
+            upsert: true,
           });
 
         if (error) {
