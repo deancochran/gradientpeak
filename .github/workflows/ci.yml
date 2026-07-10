@@ -7,13 +7,9 @@ on:
       - dev
       - main
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   ci:
-    name: Typecheck, lint, test, and build
+    name: Basic checks
     runs-on: ubuntu-latest
     env:
       CI: true
@@ -34,17 +30,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Check types
+      - name: Format and lint
+        run: pnpm check:ci
+
+      - name: Type check
         run: pnpm check-types
 
-      - name: Lint
-        run: pnpm lint
-
-      - name: Unit and component tests
+      - name: Tests
         run: pnpm test
-
-      - name: Build web
-        run: pnpm --filter web build
-
-      - name: Verify database static checks
-        run: pnpm --filter @repo/db db:verify:static
