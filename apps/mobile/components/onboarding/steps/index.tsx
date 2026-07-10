@@ -7,17 +7,19 @@ import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { DateInput as DateField } from "@repo/ui/components/date-input";
+import { Form, FormTextField } from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
-import { Input } from "@repo/ui/components/input";
 import { PaceSecondsField } from "@repo/ui/components/pace-seconds-field";
 import { Text } from "@repo/ui/components/text";
 import { WeightInputField } from "@repo/ui/components/weight-input-field";
+import { useZodForm } from "@repo/ui/hooks";
 import Constants from "expo-constants";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
 import { Activity, Check, ChevronRight } from "lucide-react-native";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, TouchableOpacity, View } from "react-native";
+import { z } from "zod";
 import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
 import { integrationProviders } from "@/lib/constants/integrations";
@@ -87,14 +89,6 @@ function getMobileRedirectUri(): string {
   return Linking.createURL("integrations");
 }
 
-function RequiredLabel({ children }: { children: string }) {
-  return (
-    <Text className="text-sm font-medium text-foreground">
-      {children} <Text className="text-destructive">*</Text>
-    </Text>
-  );
-}
-
 function SectionHeading({ title, description }: { title: string; description?: string }) {
   return (
     <View className="gap-1">
@@ -103,6 +97,20 @@ function SectionHeading({ title, description }: { title: string; description?: s
     </View>
   );
 }
+
+const identityStepSchema = z.object({
+  full_name: z
+    .string()
+    .refine((value) => value.trim().length <= 50, "Full name must be 50 characters or less"),
+  username: z
+    .string()
+    .refine(
+      (value) => value.length === 0 || isValidOnboardingUsername(value),
+      "Username must be 3-30 letters, numbers, or underscores",
+    ),
+});
+
+type IdentityStepForm = z.infer<typeof identityStepSchema>;
 
 export const IntroStep = () => (
   <View className="items-center justify-center flex-1 py-8">
@@ -117,10 +125,61 @@ export const IntroStep = () => (
 );
 
 export const IdentityStep = ({ data, updateData, usernameAvailability }: StepProps) => {
-  const fullName = data.full_name.trim();
-  const username = data.username.trim();
-  const isUsernameInvalid = username.length > 0 && !isValidOnboardingUsername(username);
-  const isUsernameTaken = usernameAvailability?.available === false;
+  const form = useZodForm({
+    schema: identityStepSchema,
+    defaultValues: {
+      full_name: data.full_name,
+      username: data.username,
+    },
+    mode: "onChange",
+  });
+  const fullName = form.watch("full_name");
+  const username = form.watch("username");
+  const lastSyncedValues = useRef<IdentityStepForm>({
+    full_name: data.full_name,
+    username: data.username,
+  });
+  const isSyncingFromParent = useRef(false);
+
+  useEffect(() => {
+    const values = { full_name: data.full_name, username: data.username };
+
+    if (
+      values.full_name !== lastSyncedValues.current.full_name ||
+      values.username !== lastSyncedValues.current.username
+    ) {
+      isSyncingFromParent.current = true;
+      lastSyncedValues.current = values;
+      form.reset(values);
+    }
+  }, [data.full_name, data.username, form]);
+
+  useEffect(() => {
+    if (isSyncingFromParent.current) {
+      isSyncingFromParent.current = false;
+      return;
+    }
+
+    const values = { full_name: fullName, username };
+
+    if (
+      values.full_name !== lastSyncedValues.current.full_name ||
+      values.username !== lastSyncedValues.current.username
+    ) {
+      lastSyncedValues.current = values;
+      updateData(values);
+    }
+  }, [fullName, updateData, username]);
+
+  useEffect(() => {
+    const trimmedUsername = username.trim();
+
+    if (isValidOnboardingUsername(trimmedUsername) && usernameAvailability?.available === false) {
+      form.setError("username", { message: "That username is already taken", type: "manual" });
+    } else if (isValidOnboardingUsername(trimmedUsername)) {
+      form.clearErrors("username");
+    }
+  }, [form, username, usernameAvailability?.available]);
 
   return (
     <View className="gap-4">
@@ -131,46 +190,38 @@ export const IdentityStep = ({ data, updateData, usernameAvailability }: StepPro
         </Text>
       </View>
 
-      <View className="gap-2">
-        <RequiredLabel>Full name</RequiredLabel>
-        <Input
-          accessibilityLabel="Full name"
-          onChangeText={(full_name) => updateData({ full_name })}
-          placeholder="Enter full name"
-          testID="onboarding-full-name-input"
-          value={data.full_name}
-        />
-        {fullName.length > 50 ? (
-          <Text className="text-xs text-destructive">Full name must be 50 characters or less</Text>
-        ) : null}
-      </View>
-
-      <View className="gap-2">
-        <RequiredLabel>Username</RequiredLabel>
-        <Input
-          accessibilityLabel="Username"
-          autoCapitalize="none"
-          onChangeText={(username) => updateData({ username })}
-          placeholder="Enter username"
-          testID="onboarding-username-input"
-          value={data.username}
-        />
-        {usernameAvailability?.isChecking ? (
-          <ActivityIndicator
-            accessibilityLabel="Checking username"
-            className="self-start text-muted-foreground"
-            size="small"
-            testID="onboarding-username-checking"
+      <Form {...form}>
+        <View className="gap-4">
+          <FormTextField
+            control={form.control}
+            label="Full name"
+            name="full_name"
+            placeholder="Enter full name"
+            required
+            testId="onboarding-full-name-input"
           />
-        ) : null}
-        {isUsernameInvalid ? (
-          <Text className="text-xs text-destructive">
-            Username must be 3-30 letters, numbers, or underscores
-          </Text>
-        ) : isUsernameTaken ? (
-          <Text className="text-xs text-destructive">That username is already taken</Text>
-        ) : null}
-      </View>
+
+          <View className="gap-2">
+            <FormTextField
+              control={form.control}
+              autoCapitalize="none"
+              label="Username"
+              name="username"
+              placeholder="Enter username"
+              required
+              testId="onboarding-username-input"
+            />
+            {usernameAvailability?.isChecking ? (
+              <ActivityIndicator
+                accessibilityLabel="Checking username"
+                className="self-start text-muted-foreground"
+                size="small"
+                testID="onboarding-username-checking"
+              />
+            ) : null}
+          </View>
+        </View>
+      </Form>
     </View>
   );
 };
