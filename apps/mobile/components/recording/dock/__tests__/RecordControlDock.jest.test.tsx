@@ -159,6 +159,41 @@ describe("RecordControlDock", () => {
     expect(onChangeSurface).toHaveBeenNthCalledWith(2, "metrics");
   });
 
+  it("exposes descriptive, touch-friendly accessible dock controls", () => {
+    renderDock();
+
+    const activity = screen.getByTestId("record-dock-quick-action-activity");
+    const gps = screen.getByTestId("record-dock-quick-action-gps");
+    const route = screen.getByTestId("record-dock-surface-route");
+    const metrics = screen.getByTestId("record-dock-surface-metrics");
+
+    expect(activity.props).toMatchObject({
+      accessibilityLabel: "View locked activity settings",
+      accessibilityRole: "button",
+    });
+    expect(gps.props).toMatchObject({
+      accessibilityLabel: "Open GPS settings, GPS is on",
+      accessibilityRole: "button",
+    });
+    expect(activity.props.className).toContain("h-11");
+    expect(activity.props.className).toContain("active:opacity-80");
+    expect(route.props).toMatchObject({
+      accessibilityHint: "Currently selected",
+      accessibilityLabel: "Show route recording surface",
+      accessibilityRole: "button",
+      accessibilityState: { selected: true },
+    });
+    expect(metrics.props).toMatchObject({
+      accessibilityHint: "Switches the recording view",
+      accessibilityLabel: "Show metrics recording surface",
+      accessibilityRole: "button",
+      accessibilityState: { selected: false },
+    });
+    expect(route.props.className).toContain("min-h-11");
+    expect(route.props.className).toContain("min-w-11");
+    expect(route.props.className).toContain("active:opacity-80");
+  });
+
   it("forwards primary recording control actions", () => {
     const onStart = jest.fn();
     const onPause = jest.fn();

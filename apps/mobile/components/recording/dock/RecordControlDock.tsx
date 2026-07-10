@@ -54,36 +54,53 @@ export function RecordControlDock({
           return {
             action,
             label: sessionContract.editing.canEditActivity ? "Activity" : "Activity locked",
+            accessibilityLabel: sessionContract.editing.canEditActivity
+              ? "Open activity settings"
+              : "View locked activity settings",
             onPress: onOpenActivity,
           };
         case "gps":
           return {
             action,
             label: sessionContract.guidance.routeMode === "live_navigation" ? "GPS on" : "GPS",
+            accessibilityLabel:
+              sessionContract.guidance.routeMode === "live_navigation"
+                ? "Open GPS settings, GPS is on"
+                : "Open GPS settings",
             onPress: onGpsPress,
           };
         case "plan":
           return {
             action,
             label: sessionContract.guidance.hasPlan ? "Plan attached" : "Add plan",
+            accessibilityLabel: sessionContract.guidance.hasPlan
+              ? "Open plan settings, plan attached"
+              : "Open plan settings",
             onPress: onOpenPlan,
           };
         case "route":
           return {
             action,
             label: sessionContract.guidance.hasRoute ? "Route attached" : "Add route",
+            accessibilityLabel: sessionContract.guidance.hasRoute
+              ? "Open route settings, route attached"
+              : "Open route settings",
             onPress: onOpenRoute,
           };
         case "trainer":
           return {
             action,
             label: sessionContract.devices.hasTrainer ? "Trainer" : "No trainer",
+            accessibilityLabel: sessionContract.devices.hasTrainer
+              ? "Open trainer controls, trainer connected"
+              : "Open trainer controls, no trainer connected",
             onPress: onOpenFtms,
           };
         default:
           return {
             action,
             label: "Sensors",
+            accessibilityLabel: "Open sensor controls",
             onPress: onOpenSensors,
           };
       }
@@ -124,6 +141,7 @@ export function RecordControlDock({
           <QuickActionChip
             key={chip.action}
             label={chip.label}
+            accessibilityLabel={chip.accessibilityLabel}
             onPress={chip.onPress}
             testID={`record-dock-quick-action-${chip.action}`}
           />
@@ -139,7 +157,11 @@ export function RecordControlDock({
               <Pressable
                 key={surface}
                 onPress={() => onChangeSurface(surface)}
-                className={`rounded-full border px-3 py-2 ${
+                accessibilityLabel={`Show ${surface} recording surface`}
+                accessibilityHint={isActive ? "Currently selected" : "Switches the recording view"}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isActive }}
+                className={`min-h-11 min-w-11 rounded-full border px-3 py-2 active:opacity-80 ${
                   isActive ? "border-foreground bg-foreground" : "border-border bg-card"
                 }`}
                 testID={`record-dock-surface-${surface}`}
@@ -164,15 +186,25 @@ export function RecordControlDock({
 
 function QuickActionChip({
   label,
+  accessibilityLabel,
   onPress,
   testID,
 }: {
   label: string;
+  accessibilityLabel: string;
   onPress: () => void;
   testID: string;
 }) {
   return (
-    <Button variant="outline" size="sm" onPress={onPress} className="rounded-full" testID={testID}>
+    <Button
+      variant="outline"
+      size="sm"
+      onPress={onPress}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      className="h-11 min-w-11 rounded-full active:opacity-80"
+      testID={testID}
+    >
       <Text>{label}</Text>
     </Button>
   );

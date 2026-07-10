@@ -13,8 +13,8 @@ import { DiscoverFilterSheet } from "@/components/discover/DiscoverFilterSheet";
 import { GroupCard } from "@/components/groups";
 import { ProfileCard } from "@/components/profile/ProfileCard";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
-import { RouteCard as SharedRouteCard } from "@/components/shared/RouteCard";
-import { TrainingPlanCard as SharedTrainingPlanCard } from "@/components/shared/TrainingPlanCard";
+import { RouteCard } from "@/components/shared/RouteCard";
+import { TrainingPlanCard } from "@/components/shared/TrainingPlanCard";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import {
@@ -705,17 +705,22 @@ export default function DiscoverPage() {
         <ActivityPlanCard
           activityPlan={result.item}
           onPress={() => handleTemplatePress(result.item)}
-          variant="default"
+          variant="list"
         />
       ) : null}
       {result.type === "trainingPlans" ? (
         <TrainingPlanCard
-          template={result.item}
+          plan={result.item}
           onPress={() => handleTrainingPlanPress(result.item)}
+          variant="list"
         />
       ) : null}
       {result.type === "routes" ? (
-        <RouteCard route={result.item} onPress={() => handleRoutePress(result.item)} />
+        <RouteCard
+          route={result.item}
+          onPress={() => handleRoutePress(result.item)}
+          variant="list"
+        />
       ) : null}
       {result.type === "groups" ? (
         <GroupCard group={result.item} onPress={() => handleGroupPress(result.item)} />
@@ -793,31 +798,6 @@ export default function DiscoverPage() {
       />
     </View>
   );
-}
-
-interface TrainingPlanCardProps {
-  template: DiscoverTrainingPlanItem;
-  onPress: () => void;
-}
-
-function TrainingPlanCard({ template, onPress }: TrainingPlanCardProps) {
-  return (
-    <SharedTrainingPlanCard
-      plan={template}
-      onPress={onPress}
-      variant="compact"
-      headerAccessory={<Icon as={ChevronRight} size={18} className="mt-1 text-muted-foreground" />}
-    />
-  );
-}
-
-interface RouteCardProps {
-  route: DiscoverRouteItem;
-  onPress: () => void;
-}
-
-function RouteCard({ route, onPress }: RouteCardProps) {
-  return <SharedRouteCard route={route} onPress={onPress} />;
 }
 
 interface UserCardProps {

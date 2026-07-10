@@ -3,6 +3,27 @@ import { createButtonComponent, createHost } from "../../../../test/mock-compone
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
 
 const pushMock = jest.fn();
+const activityPlanCardMock = jest.fn(({ activityPlan, onPress, variant }: any) =>
+  React.createElement(
+    "Pressable",
+    { onPress, testID: `activity-plan-${activityPlan.id}`, variant },
+    React.createElement("Text", null, activityPlan.name),
+  ),
+);
+const trainingPlanCardMock = jest.fn(({ plan, onPress, variant }: any) =>
+  React.createElement(
+    "Pressable",
+    { onPress, testID: `training-plan-${plan.id}`, variant },
+    React.createElement("Text", null, plan.name),
+  ),
+);
+const routeCardMock = jest.fn(({ route, onPress, variant }: any) =>
+  React.createElement(
+    "Pressable",
+    { onPress, testID: `route-${route.id}`, variant },
+    React.createElement("Text", null, route.name),
+  ),
+);
 const activityPlansUseInfiniteQueryMock = jest.fn((_input?: unknown, _options?: unknown) => ({
   data: { pages: [{ items: activityPlans, nextCursor: undefined }] },
   isLoading: false,
@@ -149,22 +170,17 @@ jest.mock("@/components/shared", () => ({
 
 jest.mock("@/components/shared/ActivityPlanCard", () => ({
   __esModule: true,
-  ActivityPlanCard: ({ activityPlan, onPress }: any) =>
-    React.createElement(
-      "Pressable",
-      { onPress, testID: `activity-plan-${activityPlan.id}` },
-      React.createElement("Text", null, activityPlan.name),
-    ),
+  ActivityPlanCard: activityPlanCardMock,
 }));
 
 jest.mock("@/components/shared/RouteCard", () => ({
   __esModule: true,
-  RouteCard: ({ route, onPress }: any) =>
-    React.createElement(
-      "Pressable",
-      { onPress, testID: `route-${route.id}` },
-      React.createElement("Text", null, route.name),
-    ),
+  RouteCard: routeCardMock,
+}));
+
+jest.mock("@/components/shared/TrainingPlanCard", () => ({
+  __esModule: true,
+  TrainingPlanCard: trainingPlanCardMock,
 }));
 
 jest.mock("@repo/ui/components/avatar", () => ({
@@ -313,6 +329,22 @@ describe("discover screen", () => {
     expect(screen.queryByTestId("discover-feed-item-users-user-1")).toBeNull();
     expect(screen.queryByTestId("discover-feed-item-trainingPlans-tp-1")).toBeNull();
     expect(screen.queryByTestId("discover-feed-item-routes-route-1")).toBeNull();
+  });
+
+  it("uses list cards for activity plans, training plans, and routes", async () => {
+    renderNative(<DiscoverScreen />);
+
+    expect(screen.getByTestId("activity-plan-ap-1").props.variant).toBe("list");
+
+    fireEvent.press(screen.getByTestId("discover-scope-trainingPlans"));
+    await waitFor(() => {
+      expect(screen.getByTestId("training-plan-tp-1").props.variant).toBe("list");
+    });
+
+    fireEvent.press(screen.getByTestId("discover-scope-routes"));
+    await waitFor(() => {
+      expect(screen.getByTestId("route-route-1").props.variant).toBe("list");
+    });
   });
 
   it("fetches all scopes in parallel while rendering the selected scope", async () => {
