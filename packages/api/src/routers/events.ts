@@ -21,6 +21,7 @@ import {
   createEventUseCase,
   deleteEventUseCase,
   enqueueProviderPlannedActivityJobs,
+  listVisibleOwnedEvents,
   updateEventUseCase,
 } from "../application/events";
 import type { Context } from "../context";
@@ -594,49 +595,6 @@ function assertRestDayWritesBlocked(eventType: CoreEventType, action: "create" |
     code: "BAD_REQUEST",
     message: `Cannot ${action} rest_day events; rest is inferred from dates without scheduled planned events`,
   });
-}
-
-async function listVisibleOwnedEvents(
-  repository: ReturnType<typeof getEventReadRepository>,
-  input: Parameters<ReturnType<typeof getEventReadRepository>["listOwnedEvents"]>[0],
-): Promise<{ rows: PlannedEventRecord[]; hasMore: boolean }> {
-  const requestedCount = input.limit;
-  const visibleRows: PlannedEventRecord[] = [];
-  let cursor = input.cursor;
-  let hasMore = false;
-
-  while (visibleRows.length < requestedCount + 1) {
-    const batch = (await repository.listOwnedEvents({
-      ...input,
-      cursor,
-      limit: requestedCount + 1,
-    })) as PlannedEventRecord[] | null;
-
-    const rawRows = batch ?? [];
-    if (rawRows.length === 0) break;
-
-    visibleRows.push(...rawRows.filter((row) => !isLegacyRestDayEvent(row)));
-
-    const lastRawRow = rawRows[rawRows.length - 1];
-    if (!lastRawRow) break;
-
-    if (rawRows.length < requestedCount + 1) break;
-
-    cursor = {
-      startsAt: toCanonicalInstantIso(lastRawRow.starts_at),
-      id: lastRawRow.id,
-    };
-
-    if (visibleRows.length > requestedCount) {
-      hasMore = true;
-      break;
-    }
-  }
-
-  return {
-    rows: visibleRows.slice(0, requestedCount + 1),
-    hasMore: hasMore || visibleRows.length > requestedCount,
-  };
 }
 
 async function countVisibleOwnedEventsInRange(
@@ -1525,29 +1483,37 @@ export const eventsRouter = createTRPCRouter({
       };
     }
 
-    const { rows, hasMore } = await listVisibleOwnedEvents(eventReadRepository, {
-      profileId: ctx.session.user.id,
-      limit,
-      includeAdhoc: input.include_adhoc,
-      trainingPlanId: input.training_plan_id,
-      activityPlanId: input.activity_plan_id,
-      activityCategory: input.activity_category as
-        | "run"
-        | "bike"
-        | "swim"
-        | "strength"
-        | "other"
-        | undefined,
-      dateFrom: input.date_from ? toDayStartIso(input.date_from) : undefined,
-      dateTo: input.date_to ? toNextDayStartIso(input.date_to) : undefined,
-      eventTypes:
-        input.event_types && input.event_types.length > 0
-          ? [...new Set(input.event_types.map((eventType) => toDbEventType(eventType)))]
-          : undefined,
-      cursor:
-        cursorDate && cursorId
-          ? { startsAt: toCanonicalInstantIso(cursorDate), id: cursorId }
-          : undefined,
+    const { rows, hasMore } = await listVisibleOwnedEvents({
+      repository: eventReadRepository,
+      query: {
+        profileId: ctx.session.user.id,
+        limit,
+        includeAdhoc: input.include_adhoc,
+        trainingPlanId: input.training_plan_id,
+        activityPlanId: input.activity_plan_id,
+        activityCategory: input.activity_category as
+          | "run"
+          | "bike"
+          | "swim"
+          | "strength"
+          | "other"
+          | undefined,
+        dateFrom: input.date_from ? toDayStartIso(input.date_from) : undefined,
+        dateTo: input.date_to ? toNextDayStartIso(input.date_to) : undefined,
+        eventTypes:
+          input.event_types && input.event_types.length > 0
+            ? [...new Set(input.event_types.map((eventType) => toDbEventType(eventType)))]
+            : undefined,
+        cursor:
+          cursorDate && cursorId
+            ? { startsAt: toCanonicalInstantIso(cursorDate), id: cursorId }
+            : undefined,
+      },
+      isVisible: (row) => !isLegacyRestDayEvent(row as PlannedEventRecord),
+      buildCursor: (row) => ({
+        startsAt: toCanonicalInstantIso(row.starts_at),
+        id: row.id,
+      }),
     });
 
     const events = mapEvents((hasMore ? rows.slice(0, limit) : rows) as PlannedEventRecord[]);

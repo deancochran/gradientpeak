@@ -2,18 +2,20 @@ import {
   CreateConversationSchema,
   CreateMessageSchema,
   normalizeConversationSummaryList,
-  normalizeMessageList,
 } from "@repo/core";
 import {
   conversationParticipants,
   conversations,
   messages,
   publicConversationsRowSchema,
-  publicMessagesRowSchema,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, asc, count, eq, isNull, ne, sql } from "drizzle-orm";
+import { and, count, eq, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
+import {
+  getConversationMessagesForViewer,
+  requireConversationParticipant,
+} from "../application/messaging/getConversationMessages";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
@@ -35,16 +37,6 @@ const conversationRowSchema = z.object({
   group_name: publicConversationsRowSchema.shape.group_name,
   created_at: timestampSchema,
   last_message_at: timestampSchema.nullable(),
-});
-
-const messageRowSchema = z.object({
-  id: publicMessagesRowSchema.shape.id,
-  conversation_id: publicMessagesRowSchema.shape.conversation_id,
-  sender_id: publicMessagesRowSchema.shape.sender_id,
-  content: publicMessagesRowSchema.shape.content,
-  created_at: timestampSchema,
-  deleted_at: timestampSchema.nullable().optional(),
-  read_at: timestampSchema.nullable().optional(),
 });
 
 const conversationSummaryRowSchema = z.object({
@@ -82,44 +74,6 @@ function toConversation(value: z.infer<typeof conversationRowSchema>) {
     created_at: toIsoString(value.created_at),
     last_message_at: toIsoString(value.last_message_at),
   };
-}
-
-function toMessage(value: z.infer<typeof messageRowSchema>) {
-  return {
-    id: value.id,
-    conversation_id: value.conversation_id,
-    sender_id: value.sender_id,
-    content: value.content,
-    created_at: toIsoString(value.created_at),
-    deleted_at: toIsoString(value.deleted_at),
-    read_at: toIsoString(value.read_at),
-  };
-}
-
-async function requireConversationParticipant(
-  db: ReturnType<typeof getRequiredDb>,
-  input: {
-    conversationId: string;
-    userId: string;
-  },
-) {
-  const membership = await db
-    .select({ user_id: conversationParticipants.user_id })
-    .from(conversationParticipants)
-    .where(
-      and(
-        eq(conversationParticipants.conversation_id, input.conversationId),
-        eq(conversationParticipants.user_id, input.userId),
-      ),
-    )
-    .limit(1);
-
-  if (!membership[0]) {
-    throw new TRPCError({
-      code: "NOT_FOUND",
-      message: "Conversation not found",
-    });
-  }
 }
 
 export const messagingRouter = createTRPCRouter({
@@ -372,28 +326,10 @@ export const messagingRouter = createTRPCRouter({
     const db = getRequiredDb(ctx);
 
     try {
-      await requireConversationParticipant(db, {
+      return await getConversationMessagesForViewer(db, {
         conversationId: input.conversation_id,
-        userId: ctx.session.user.id,
+        viewerId: ctx.session.user.id,
       });
-
-      const rows = await db
-        .select({
-          id: messages.id,
-          conversation_id: messages.conversation_id,
-          sender_id: messages.sender_id,
-          content: messages.content,
-          created_at: messages.created_at,
-          deleted_at: messages.deleted_at,
-          read_at: messages.read_at,
-        })
-        .from(messages)
-        .where(
-          and(eq(messages.conversation_id, input.conversation_id), isNull(messages.deleted_at)),
-        )
-        .orderBy(asc(messages.created_at));
-
-      return normalizeMessageList(rows.map((row) => toMessage(messageRowSchema.parse(row))));
     } catch (error) {
       if (error instanceof TRPCError) {
         throw error;
