@@ -7,4 +7,6 @@ export * from "./gap-evaluator";
 export * from "./goal-demand-policy-contracts";
 export * from "./goal-requirements";
 export * from "./lineage";
+export * from "./model-input-contracts";
+export * from "./projection-contracts";
 export * from "./uncertainty";

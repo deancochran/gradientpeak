@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { canonicalSportSchema } from "../schemas/sport";
 import { lineageGroupIdSchema, sourceIdSchema } from "./lineage";
 
 export const evidenceSourceTypeSchema = z.enum([
@@ -27,6 +28,8 @@ export const evidenceCompatibilityStateSchema = z.enum([
   "unsupported",
 ]);
 
+export const evidenceSportSchema = canonicalSportSchema.nullable();
+
 /** The raw measurement is frozen and never contains freshness or influence. */
 export const rawObservationSchema = z
   .object({
@@ -43,7 +46,7 @@ export const evidenceItemSchema = z
     lineageGroupId: lineageGroupIdSchema,
     observedAt: z.string().datetime(),
     rawObservation: rawObservationSchema,
-    sport: z.string().min(1).nullable(),
+    sport: evidenceSportSchema,
     modality: z.string().min(1),
     sourceType: evidenceSourceTypeSchema,
     qualityState: evidenceQualityStateSchema,
@@ -92,6 +95,7 @@ export type EvidenceSourceType = z.infer<typeof evidenceSourceTypeSchema>;
 export type EvidenceQualityState = z.infer<typeof evidenceQualityStateSchema>;
 export type EvidenceValidityState = z.infer<typeof evidenceValidityStateSchema>;
 export type EvidenceCompatibilityState = z.infer<typeof evidenceCompatibilityStateSchema>;
+export type EvidenceSport = z.infer<typeof evidenceSportSchema>;
 export type RawObservation = z.infer<typeof rawObservationSchema>;
 export type EvidenceItem = z.infer<typeof evidenceItemSchema>;
 export type CalculationEligibleEvidence = z.infer<typeof calculationEligibleEvidenceSchema>;

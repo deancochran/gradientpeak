@@ -7,6 +7,7 @@ import {
   evidenceEligibilitySchema,
   evidenceExclusionReasonCodeSchema,
   evidenceItemSchema,
+  evidenceSportSchema,
   rawObservationSchema,
   resolveEvidenceEligibility,
 } from "../evidence-contracts";
@@ -21,7 +22,7 @@ function evidence(overrides: Record<string, unknown> = {}) {
     lineageGroupId: "metric:ftp-history",
     observedAt,
     rawObservation: { value: 250, unit: "W" },
-    sport: "cycling",
+    sport: "bike",
     modality: "power",
     sourceType: "profile_metric",
     qualityState: "known",
@@ -32,6 +33,37 @@ function evidence(overrides: Record<string, unknown> = {}) {
 }
 
 describe("evidence contracts", () => {
+  it.each([
+    "run",
+    "bike",
+    "swim",
+    "strength",
+    "other",
+    null,
+  ])("accepts canonical evidence sport %s", (sport) => {
+    expect(evidenceSportSchema.parse(sport)).toBe(sport);
+    expect(evidence({ sport }).sport).toBe(sport);
+  });
+
+  it("rejects non-canonical cycling as an evidence sport", () => {
+    expect(evidenceSportSchema.safeParse("cycling").success).toBe(false);
+    expect(
+      evidenceItemSchema.safeParse({
+        athleteId: "athlete-1",
+        sourceId: "metric:external:ftp:2026-07-10",
+        lineageGroupId: "metric:ftp-history",
+        observedAt,
+        rawObservation: { value: 250, unit: "W" },
+        sport: "cycling",
+        modality: "power",
+        sourceType: "profile_metric",
+        qualityState: "known",
+        validityState: "valid",
+        compatibilityState: "compatible",
+      }).success,
+    ).toBe(false);
+  });
+
   it("keeps unknown evidence distinct from numeric zero", () => {
     const unknown = resolveEvidenceEligibility({
       evidence: evidence({ rawObservation: { value: null, unit: "W" } }),
