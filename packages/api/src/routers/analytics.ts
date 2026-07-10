@@ -1,14 +1,8 @@
 import { calculateCriticalPower, calculateSeasonBestCurve } from "@repo/core/calculations";
-import { type BestEffort, BestEffortSchema } from "@repo/core/schemas/activity_efforts";
-import {
-  activityEfforts,
-  publicActivityCategorySchema,
-  publicActivityEffortsRowSchema,
-  publicEffortTypeSchema,
-} from "@repo/db";
+import { publicActivityCategorySchema, publicEffortTypeSchema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, eq, gte, isNotNull } from "drizzle-orm";
 import { z } from "zod";
+import { getOwnedBestEfforts } from "../application/analytics/getOwnedBestEfforts";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 
@@ -31,40 +25,6 @@ const predictPerformanceOutputSchema = z.object({
     error: z.number(),
   }),
 });
-
-async function getOwnedBestEfforts(
-  db: ReturnType<typeof getRequiredDb>,
-  input: z.infer<typeof analyticsInputSchema>,
-  profileId: string,
-): Promise<BestEffort[]> {
-  const cutoffDate = new Date(Date.now() - input.days * 24 * 60 * 60 * 1000);
-
-  const rows = await db
-    .select()
-    .from(activityEfforts)
-    .where(
-      and(
-        eq(activityEfforts.profile_id, profileId),
-        eq(activityEfforts.activity_category, input.activity_category),
-        eq(activityEfforts.effort_type, input.effort_type),
-        gte(activityEfforts.recorded_at, cutoffDate),
-        isNotNull(activityEfforts.activity_id),
-      ),
-    );
-
-  return rows.map((row) => toBestEffort(publicActivityEffortsRowSchema.parse(row)));
-}
-
-function toBestEffort(row: z.infer<typeof publicActivityEffortsRowSchema>): BestEffort {
-  return BestEffortSchema.parse({
-    activity_category: row.activity_category,
-    duration_seconds: row.duration_seconds,
-    effort_type: row.effort_type,
-    value: row.value,
-    unit: row.unit,
-    recorded_at: row.recorded_at.toISOString(),
-  });
-}
 
 export const analyticsRouter = createTRPCRouter({
   getSeasonBestCurve: protectedProcedure

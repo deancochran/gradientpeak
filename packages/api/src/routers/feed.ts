@@ -2,6 +2,7 @@ import { publicActivitiesRowSchema, publicCommentsRowSchema, schema } from "@rep
 import { TRPCError } from "@trpc/server";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
+import { buildFeedPage, decodeFeedCursor } from "../application/feed/feedPage";
 import { getRequiredDb } from "../db";
 import { createActivityAnalysisStore } from "../infrastructure/repositories";
 import { buildActivityDerivedSummaryMap } from "../lib/activity-analysis";
@@ -211,28 +212,6 @@ function mapFeedActivity(
   });
 }
 
-function encodeFeedCursor(activity: Pick<FeedActivity, "id" | "started_at">) {
-  return `${activity.started_at}|${activity.id}`;
-}
-
-function decodeFeedCursor(cursor: string | null | undefined) {
-  if (!cursor) {
-    return null;
-  }
-
-  const [startedAt, id] = cursor.split("|");
-  const startedAtDate = startedAt ? new Date(startedAt) : null;
-
-  if (!startedAtDate || Number.isNaN(startedAtDate.getTime())) {
-    return null;
-  }
-
-  return {
-    id: id && z.string().uuid().safeParse(id).success ? id : null,
-    startedAt: startedAtDate,
-  };
-}
-
 export const feedRouter = createTRPCRouter({
   /**
    * getFeed - Get paginated activity feed
@@ -357,29 +336,18 @@ export const feedRouter = createTRPCRouter({
         activities: activities as any,
       });
 
-      let feedItems = activities.map((activity) =>
-        mapFeedActivity(activity, {
-          commentCounts,
-          derivedMap,
-          likedActivityIds,
+      return feedResponseSchema.parse(
+        buildFeedPage({
+          rows: activities,
+          limit,
+          mapRow: (activity) =>
+            mapFeedActivity(activity, {
+              commentCounts,
+              derivedMap,
+              likedActivityIds,
+            }),
         }),
       );
-
-      // Determine if there are more items
-      let nextCursor: string | null = null;
-      if (feedItems.length > limit) {
-        const nextItem = feedItems[limit - 1];
-        if (nextItem) {
-          nextCursor = encodeFeedCursor(nextItem);
-        }
-        feedItems = feedItems.slice(0, limit);
-      }
-
-      return feedResponseSchema.parse({
-        items: feedItems,
-        nextCursor,
-        hasMore: nextCursor !== null,
-      });
     } catch (error) {
       if (error instanceof TRPCError) {
         throw error;
