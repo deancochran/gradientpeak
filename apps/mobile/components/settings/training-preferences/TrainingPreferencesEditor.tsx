@@ -16,19 +16,13 @@ import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useWatch } from "react-hook-form";
 import { ActivityIndicator, View } from "react-native";
-import { AdaptationPreferencesSection } from "@/components/settings/training-preferences/sections/AdaptationPreferencesSection";
+import { GlobalTrainingPreferenceCatalogSection } from "@/components/settings/training-preferences/GlobalTrainingPreferenceCatalogSection";
 import {
   AvailabilitySection,
   type WeekdayKey,
 } from "@/components/settings/training-preferences/sections/AvailabilitySection";
 import { BaselineFitnessSection } from "@/components/settings/training-preferences/sections/BaselineFitnessSection";
-import { GoalStrategySection } from "@/components/settings/training-preferences/sections/GoalStrategySection";
-import { RecoverySection } from "@/components/settings/training-preferences/sections/RecoverySection";
-import {
-  ScheduleSection,
-  type SportOverrideKey,
-} from "@/components/settings/training-preferences/sections/ScheduleSection";
-import { TrainingStyleSection } from "@/components/settings/training-preferences/sections/TrainingStyleSection";
+import type { SportOverrideKey } from "@/components/settings/training-preferences/sections/ScheduleSection";
 import { TrainingPreferencesBottomSheet } from "@/components/settings/training-preferences/TrainingPreferencesBottomSheet";
 import { TrainingPreferencesContent } from "@/components/settings/training-preferences/TrainingPreferencesContent";
 import { TrainingPreferencesPanel } from "@/components/settings/training-preferences/TrainingPreferencesPanel";
@@ -294,7 +288,13 @@ export function TrainingPreferencesEditor({
 
           <TrainingPreferencesPanel>
             {activeTab === "preferences" ? (
-              <AdaptationPreferencesSection control={form.control} />
+              <GlobalTrainingPreferenceCatalogSection
+                activeTab={activeTab}
+                control={form.control}
+                doseLimits={draft.dose_limits}
+                onToggleSportDoseOverride={toggleSportDoseOverride}
+                scheduleValidation={scheduleValidation}
+              />
             ) : null}
 
             {activeTab === "availability" ? (
@@ -307,7 +307,8 @@ export function TrainingPreferencesEditor({
             ) : null}
 
             {activeTab === "schedule" ? (
-              <ScheduleSection
+              <GlobalTrainingPreferenceCatalogSection
+                activeTab={activeTab}
                 control={form.control}
                 doseLimits={draft.dose_limits}
                 onToggleSportDoseOverride={toggleSportDoseOverride}
@@ -316,12 +317,34 @@ export function TrainingPreferencesEditor({
             ) : null}
 
             {activeTab === "training-style" ? (
-              <TrainingStyleSection control={form.control} />
+              <GlobalTrainingPreferenceCatalogSection
+                activeTab={activeTab}
+                control={form.control}
+                doseLimits={draft.dose_limits}
+                onToggleSportDoseOverride={toggleSportDoseOverride}
+                scheduleValidation={scheduleValidation}
+              />
             ) : null}
 
-            {activeTab === "recovery" ? <RecoverySection control={form.control} /> : null}
+            {activeTab === "recovery" ? (
+              <GlobalTrainingPreferenceCatalogSection
+                activeTab={activeTab}
+                control={form.control}
+                doseLimits={draft.dose_limits}
+                onToggleSportDoseOverride={toggleSportDoseOverride}
+                scheduleValidation={scheduleValidation}
+              />
+            ) : null}
 
-            {activeTab === "goal-strategy" ? <GoalStrategySection control={form.control} /> : null}
+            {activeTab === "goal-strategy" ? (
+              <GlobalTrainingPreferenceCatalogSection
+                activeTab={activeTab}
+                control={form.control}
+                doseLimits={draft.dose_limits}
+                onToggleSportDoseOverride={toggleSportDoseOverride}
+                scheduleValidation={scheduleValidation}
+              />
+            ) : null}
 
             {activeTab === "baseline-fitness" ? (
               <BaselineFitnessSection
