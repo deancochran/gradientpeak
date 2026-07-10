@@ -5,7 +5,7 @@ import { useZodForm } from "@repo/ui/hooks";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { useWatch } from "react-hook-form";
+import { type Control, useWatch } from "react-hook-form";
 import { AccessibilityInfo } from "react-native";
 import { z } from "zod";
 import { AppFormModal } from "@/components/shared/AppFormModal";
@@ -38,8 +38,13 @@ const createEventMainFormSchema = z.object({
   customTime: z.string(),
   notes: z.string(),
   plannedDate: z.string(),
+  recurrenceEndDate: z.string().nullable(),
   title: z.string(),
 });
+
+type CreateEventFormValues = CreateEventMainFormValues & {
+  recurrenceEndDate: string | null;
+};
 
 export type CreateEventDefaults = {
   createEventType?: CreateEventMode | null;
@@ -109,7 +114,7 @@ function applyDateOnlyToDate(current: Date, dateOnly: string) {
   return next;
 }
 
-function toMainFormValues(draft: CreateEventDraft): CreateEventMainFormValues {
+function toMainFormValues(draft: CreateEventDraft): CreateEventFormValues {
   if (draft.mode === "planned") {
     return {
       allDay: true,
@@ -117,6 +122,7 @@ function toMainFormValues(draft: CreateEventDraft): CreateEventMainFormValues {
       customTime: "12:00",
       notes: draft.notes,
       plannedDate: draft.scheduledDate,
+      recurrenceEndDate: draft.recurrenceEndDate,
       title: draft.title,
     };
   }
@@ -127,18 +133,20 @@ function toMainFormValues(draft: CreateEventDraft): CreateEventMainFormValues {
     customTime: format(draft.startsAt, "HH:mm"),
     notes: draft.notes,
     plannedDate: toDateOnly(draft.startsAt),
+    recurrenceEndDate: draft.recurrenceEndDate,
     title: draft.title,
   };
 }
 
 function applyMainFormValues(
   draft: CreateEventDraft,
-  values: CreateEventMainFormValues,
+  values: CreateEventFormValues,
 ): CreateEventDraft {
   if (draft.mode === "planned") {
     return {
       ...draft,
       notes: values.notes,
+      recurrenceEndDate: values.recurrenceEndDate,
       scheduledDate: values.plannedDate || draft.scheduledDate,
       title: values.title,
     };
@@ -156,18 +164,20 @@ function applyMainFormValues(
     ...draft,
     allDay: values.allDay,
     notes: values.notes,
+    recurrenceEndDate: values.recurrenceEndDate,
     startsAt,
     title: values.title,
   };
 }
 
-function areMainFormValuesEqual(left: CreateEventMainFormValues, right: CreateEventMainFormValues) {
+function areMainFormValuesEqual(left: CreateEventFormValues, right: CreateEventFormValues) {
   return (
     left.allDay === right.allDay &&
     left.customDate === right.customDate &&
     left.customTime === right.customTime &&
     left.notes === right.notes &&
     left.plannedDate === right.plannedDate &&
+    left.recurrenceEndDate === right.recurrenceEndDate &&
     left.title === right.title
   );
 }
@@ -257,11 +267,11 @@ export const CreateEventFlow = forwardRef<
   const [activityPlanPickerOpen, setActivityPlanPickerOpen] = useState(false);
   const [saveScopeModalVisible, setSaveScopeModalVisible] = useState(false);
   const [pendingUpdateDraft, setPendingUpdateDraft] = useState<CreateEventDraft | null>(null);
-  const form = useZodForm<CreateEventMainFormValues>({
+  const form = useZodForm<CreateEventFormValues>({
     schema: createEventMainFormSchema,
     defaultValues: toMainFormValues(draft),
   });
-  const watchedFormValues = useWatch({ control: form.control }) as CreateEventMainFormValues;
+  const watchedFormValues = useWatch({ control: form.control }) as CreateEventFormValues;
   const syncingFormFromDraftRef = useRef(false);
 
   const createMutation = api.events.create.useMutation({
@@ -549,12 +559,9 @@ export const CreateEventFlow = forwardRef<
   if (step === "repeat") {
     return (
       <RepeatStep
+        control={form.control}
         errorMessage={recurrenceErrorMessage}
         onBack={() => setStep("main")}
-        onChangeEndDate={(recurrenceEndDate) => {
-          setDraft({ ...draft, recurrenceEndDate } as CreateEventDraft);
-          setRecurrenceErrorMessage(null);
-        }}
         onChangeFrequency={(recurrenceFrequency) => {
           setDraft({
             ...draft,
@@ -563,7 +570,6 @@ export const CreateEventFlow = forwardRef<
           } as CreateEventDraft);
           setRecurrenceErrorMessage(null);
         }}
-        recurrenceEndDate={draft.recurrenceEndDate}
         recurrenceFrequency={draft.recurrenceFrequency}
         testIDPrefix={testIDPrefix}
       />
@@ -574,7 +580,7 @@ export const CreateEventFlow = forwardRef<
     <>
       <Form {...form}>
         <CreateEventMainStep
-          control={form.control}
+          control={form.control as unknown as Control<CreateEventMainFormValues>}
           draft={draft}
           formErrorMessage={formErrorMessage}
           helperText={

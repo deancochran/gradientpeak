@@ -123,7 +123,7 @@ jest.mock("@repo/ui/components/card", () => ({
 jest.mock("@repo/ui/components/form", () => ({
   __esModule: true,
   Form: ({ children }: any) => children,
-  FormDateInputField: ({ control, name, testId }: any) => {
+  FormDateInputField: ({ accessibilityHint, clearable, control, name, testId }: any) => {
     const { Controller } = require("react-hook-form");
     return React.createElement(Controller, {
       control,
@@ -131,7 +131,13 @@ jest.mock("@repo/ui/components/form", () => ({
       render: ({ field }: any) =>
         React.createElement(
           "Text",
-          { testID: testId },
+          {
+            accessibilityHint,
+            clearable,
+            onChange: field.onChange,
+            testID: testId,
+            value: field.value,
+          },
           field.value === "2026-03-24" ? "Tuesday, Mar 24, 2026" : field.value,
         ),
     });
@@ -394,6 +400,44 @@ describe("event detail create mode", () => {
           scheduled_date: "2026-03-24",
         }),
       );
+    });
+  });
+
+  it("uses the shared date field to set and clear a recurrence end date", async () => {
+    renderNative(<EventDetailScreen />);
+
+    fireEvent.press(screen.getByTestId("event-detail-type-custom"));
+    fireEvent(screen.getByTestId("event-detail-title-input"), "changeText", "Swim test");
+    fireEvent.press(screen.getByTestId("event-detail-repeat-row"));
+    fireEvent.press(screen.getByTestId("event-detail-recurrence-weekly"));
+
+    const recurrenceEndDate = screen.getByTestId("event-detail-recurrence-end-date-button");
+    expect(recurrenceEndDate.props.accessibilityHint).toBe("Choose when this series should end");
+    expect(recurrenceEndDate.props.clearable).toBe(true);
+
+    await act(async () => {
+      recurrenceEndDate.props.onChange("2026-04-01");
+    });
+    fireEvent.press(screen.getByTestId("event-detail-repeat-done-button"));
+    fireEvent.press(screen.getByTestId("event-detail-save-button"));
+
+    await waitFor(() => {
+      expect(createEventMutateMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          recurrence: { frequency: "weekly", endDate: "2026-04-01" },
+        }),
+      );
+    });
+
+    fireEvent.press(screen.getByTestId("event-detail-repeat-row"));
+    await act(async () => {
+      screen.getByTestId("event-detail-recurrence-end-date-button").props.onChange(null);
+    });
+    fireEvent.press(screen.getByTestId("event-detail-repeat-done-button"));
+    fireEvent.press(screen.getByTestId("event-detail-save-button"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Choose when this repeating series should end.")).toBeTruthy();
     });
   });
 

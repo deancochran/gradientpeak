@@ -1,9 +1,9 @@
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
-import { DateInput } from "@repo/ui/components/date-input";
+import { FormDateInputField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
+import type { Control, FieldPath } from "react-hook-form";
 import { Pressable, View } from "react-native";
-import { ClearFieldAction } from "@/components/shared/ClearFieldAction";
 import type { EventRecurrenceFrequency } from "../EventEditorCard";
 
 const recurrenceOptions: Array<[EventRecurrenceFrequency, string]> = [
@@ -13,20 +13,22 @@ const recurrenceOptions: Array<[EventRecurrenceFrequency, string]> = [
   ["monthly", "Every month"],
 ];
 
-export function RepeatStep({
+type RecurrenceEndDateFormValues = {
+  recurrenceEndDate: string | null;
+};
+
+export function RepeatStep<TFormValues extends RecurrenceEndDateFormValues>({
+  control,
   errorMessage,
   onBack,
-  onChangeEndDate,
   onChangeFrequency,
-  recurrenceEndDate,
   recurrenceFrequency,
   testIDPrefix,
 }: {
+  control: Control<TFormValues>;
   errorMessage?: string | null;
   onBack: () => void;
-  onChangeEndDate: (value: string | null) => void;
   onChangeFrequency: (value: EventRecurrenceFrequency) => void;
-  recurrenceEndDate: string | null;
   recurrenceFrequency: EventRecurrenceFrequency;
   testIDPrefix: string;
 }) {
@@ -65,23 +67,16 @@ export function RepeatStep({
 
         {recurrenceFrequency !== "none" ? (
           <View className="gap-2">
-            <DateInput
+            <FormDateInputField
               accessibilityHint="Choose when this series should end"
-              id={`${testIDPrefix}-recurrence-end-date`}
+              clearable
+              control={control}
               label="Repeat until"
               minimumDate={new Date()}
-              onChange={(value) => onChangeEndDate(value ?? null)}
+              name={"recurrenceEndDate" as FieldPath<TFormValues>}
               pickerPresentation="modal"
               testId={`${testIDPrefix}-recurrence-end-date-button`}
-              value={recurrenceEndDate ?? ""}
             />
-            {recurrenceEndDate ? (
-              <ClearFieldAction
-                accessibilityLabel="Clear repeat end date"
-                onPress={() => onChangeEndDate(null)}
-                testID={`${testIDPrefix}-recurrence-end-date-clear`}
-              />
-            ) : null}
             {errorMessage ? <Text className="text-xs text-destructive">{errorMessage}</Text> : null}
           </View>
         ) : null}
