@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react-native";
 import type React from "react";
 import { DailyTrainingAdjustmentChart } from "./DailyTrainingAdjustmentChart";
+import { hasCompletedActivityWithoutLoad } from "./dailyTrainingAdjustmentChartPresentation";
 import { deriveTrainingPathChartWindow } from "./trainingPathChartWindow";
 
 jest.mock("react-native-gesture-handler", () => ({
@@ -16,6 +17,55 @@ jest.mock("react-native-reanimated", () => ({
 }));
 
 describe("DailyTrainingAdjustmentChart", () => {
+  it("identifies completed activity dates without a completed-load overlay", () => {
+    expect(
+      hasCompletedActivityWithoutLoad({
+        date: "2026-06-01",
+        hasCompletedActivity: true,
+        completedLoadTss: 0,
+      }),
+    ).toBe(true);
+    expect(
+      hasCompletedActivityWithoutLoad({
+        date: "2026-06-01",
+        hasCompletedActivity: true,
+        completedLoadTss: 42,
+      }),
+    ).toBe(false);
+    expect(
+      hasCompletedActivityWithoutLoad({
+        date: "2026-06-01",
+        hasCompletedActivity: false,
+        completedLoadTss: 0,
+      }),
+    ).toBe(false);
+  });
+
+  it("renders an accessible marker for a completed activity without load", () => {
+    render(
+      <DailyTrainingAdjustmentChart
+        points={[
+          {
+            date: "2026-06-01",
+            completedLoadTss: 0,
+            hasCompletedActivity: true,
+            targetLoadTss: 40,
+          },
+          {
+            date: "2026-06-02",
+            completedLoadTss: 42,
+            hasCompletedActivity: true,
+            targetLoadTss: 40,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByTestId("completed-activity-marker-label-2026-06-01")).toBeTruthy();
+    expect(screen.getByLabelText("Completed activity without load on 2026-06-01")).toBeTruthy();
+    expect(screen.queryByTestId("completed-activity-marker-label-2026-06-02")).toBeNull();
+  });
+
   it("derives a stable bounded chart window around the anchor date", () => {
     const points = Array.from({ length: 10 }, (_, index) => ({
       date: `2026-06-${String(index + 1).padStart(2, "0")}`,

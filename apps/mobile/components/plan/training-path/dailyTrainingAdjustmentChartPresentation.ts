@@ -52,6 +52,14 @@ function valueOrZero(value: number | null | undefined) {
   return valueOrNull(value) ?? 0;
 }
 
+export function hasCompletedActivityWithoutLoad(
+  point: Pick<DailyTrainingAdjustmentPoint, "completedLoadTss" | "hasCompletedActivity"> & {
+    date?: string;
+  },
+) {
+  return point.hasCompletedActivity === true && valueOrZero(point.completedLoadTss) <= 0;
+}
+
 function formatDayLabel(dateKey: string) {
   const [, month, day] = dateKey.split("-");
   return `${month}/${day}`;

@@ -262,6 +262,17 @@ export function usePlanTrainingPathData() {
       }),
     [loadTimelinePoints, scheduledWindowEnd, scheduledWindowStart, todayKey],
   );
+  const completedActivityDates = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          completedActivities
+            .map((activity) => toTrainingPathCompletedActivity(activity, null)?.date)
+            .filter(isPresent),
+        ),
+      ),
+    [completedActivities],
+  );
   const trainingPath = useTrainingPathViewModel({
     timeline: loadTimelinePoints,
     fitnessHistory: dashboard.fitnessHistory,
@@ -276,12 +287,19 @@ export function usePlanTrainingPathData() {
   const dailyTrainingPathPoints = useMemo(
     () =>
       buildDailyTrainingAdjustmentPointsFromTimelineWindow({
+        completedActivityDates,
         timelineWindow: canonicalTimelineWindow,
         fitnessHistory: dashboard.fitnessHistory,
         idealFitnessCurve,
         scheduledFitnessTrend,
       }),
-    [canonicalTimelineWindow, dashboard.fitnessHistory, idealFitnessCurve, scheduledFitnessTrend],
+    [
+      canonicalTimelineWindow,
+      completedActivityDates,
+      dashboard.fitnessHistory,
+      idealFitnessCurve,
+      scheduledFitnessTrend,
+    ],
   );
 
   const selectedWeekRangeStart = trainingPath.selectedWeekSummary?.weekStart ?? null;

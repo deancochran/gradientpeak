@@ -10,6 +10,7 @@ export type DailyTrainingAdjustmentAnnotation = {
 
 export type DailyTrainingAdjustmentPoint = {
   date: string;
+  hasCompletedActivity?: boolean;
   plannedLoadTss: number;
   tentativePlannedLoadTss: number;
   completedLoadTss: number;
@@ -133,6 +134,7 @@ export function normalizeDailyTrainingAdjustmentPoints(input: {
 
     return {
       date,
+      hasCompletedActivity: raw?.hasCompletedActivity === true,
       plannedLoadTss,
       tentativePlannedLoadTss,
       completedLoadTss,

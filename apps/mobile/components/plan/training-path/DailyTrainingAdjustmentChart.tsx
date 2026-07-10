@@ -1,5 +1,5 @@
 import { Text } from "@repo/ui/components/text";
-import { DashPathEffect, Rect as SkiaRect } from "@shopify/react-native-skia";
+import { DashPathEffect, Circle as SkiaCircle, Rect as SkiaRect } from "@shopify/react-native-skia";
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LayoutChangeEvent } from "react-native";
 import { View } from "react-native";
@@ -12,6 +12,7 @@ import {
   dailyTrainingAdjustmentChartYKeys,
   dailyTrainingAdjustmentFitnessYKeys,
   dailyTrainingAdjustmentLoadYKeys,
+  hasCompletedActivityWithoutLoad,
   useDailyTrainingAdjustmentChartPresentation,
 } from "./dailyTrainingAdjustmentChartPresentation";
 import { deriveTrainingPathChartWindow } from "./trainingPathChartWindow";
@@ -20,6 +21,7 @@ import { useInstantChartSelection } from "./useInstantChartSelection";
 
 export type DailyTrainingAdjustmentPoint = {
   date: string;
+  hasCompletedActivity?: boolean;
   plannedLoadTss?: number | null;
   tentativePlannedLoadTss?: number | null;
   completedLoadTss?: number | null;
@@ -345,6 +347,8 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                             const plannedWithTentativePoint =
                               plottedPoints.plannedLoadWithTentative[index];
                             const completedPoint = plottedPoints.completedLoad[index];
+                            const showCompletedActivityMarker =
+                              hasCompletedActivityWithoutLoad(point);
                             if (!geometry) return null;
                             const left = geometry.center - barWidth / 2;
                             const isSelected = point.date === selectedPoint?.date;
@@ -400,6 +404,16 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                                     color={colors.completed}
                                   />
                                 ) : null}
+                                {showCompletedActivityMarker ? (
+                                  <SkiaCircle
+                                    cx={geometry.center}
+                                    cy={chartBounds.bottom - 5}
+                                    r={4}
+                                    color={colors.completed}
+                                    style="stroke"
+                                    strokeWidth={2}
+                                  />
+                                ) : null}
                               </Fragment>
                             );
                           })}
@@ -432,6 +446,15 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                         </>
                       )}
                     </CartesianChart>
+                    {visiblePoints.filter(hasCompletedActivityWithoutLoad).map((point) => (
+                      <View
+                        key={`completed-activity-marker-label-${point.date}`}
+                        accessibilityLabel={`Completed activity without load on ${point.date}`}
+                        accessibilityRole="image"
+                        style={{ height: 0, width: 0 }}
+                        testID={`completed-activity-marker-label-${point.date}`}
+                      />
+                    ))}
                     <View
                       className="absolute bottom-0"
                       style={{
