@@ -9,6 +9,11 @@ import {
 import { Text } from "@repo/ui/components/text";
 import type { Control, FieldPath } from "react-hook-form";
 import { View } from "react-native";
+import {
+  AvailabilitySection,
+  type WeekdayKey,
+} from "@/components/settings/training-preferences/sections/AvailabilitySection";
+import { BaselineFitnessSection } from "@/components/settings/training-preferences/sections/BaselineFitnessSection";
 import type { SportOverrideKey } from "@/components/settings/training-preferences/sections/ScheduleSection";
 import { SportDoseOverridesSection } from "@/components/settings/training-preferences/sections/ScheduleSection";
 import { TrainingPreferenceFieldRenderer } from "@/components/settings/training-preferences/TrainingPreferenceFieldRenderer";
@@ -23,10 +28,17 @@ type ScheduleValidation = {
 
 type GlobalTrainingPreferenceCatalogSectionProps = {
   activeTab: TrainingPreferenceTab;
+  availability: AthleteTrainingSettingsFormInput["availability"];
+  baselineFitness: AthleteTrainingSettingsFormInput["baseline_fitness"];
   control: Control<AthleteTrainingSettingsFormInput>;
   doseLimits: AthleteTrainingSettingsFormInput["dose_limits"];
+  manualBaselineCtlWarning: string | null;
+  onToggleAdvancedBaselineControls: () => void;
+  onToggleAvailabilityDay: (day: WeekdayKey) => void;
+  onToggleHardRestDay: (day: WeekdayKey) => void;
   onToggleSportDoseOverride: (sport: SportOverrideKey) => void;
   scheduleValidation: ScheduleValidation;
+  showAdvancedBaselineControls: boolean;
 };
 
 function getGlobalFieldError(fieldId: string, scheduleValidation: ScheduleValidation) {
@@ -125,10 +137,17 @@ function GlobalTrainingPreferenceField({
 
 export function GlobalTrainingPreferenceCatalogSection({
   activeTab,
+  availability,
+  baselineFitness,
   control,
   doseLimits,
+  manualBaselineCtlWarning,
+  onToggleAdvancedBaselineControls,
+  onToggleAvailabilityDay,
+  onToggleHardRestDay,
   onToggleSportDoseOverride,
   scheduleValidation,
+  showAdvancedBaselineControls,
 }: GlobalTrainingPreferenceCatalogSectionProps) {
   const fields = trainingPreferenceCatalog.filter((field) => field.tab === activeTab);
 
@@ -145,6 +164,22 @@ export function GlobalTrainingPreferenceCatalogSection({
         </View>
       ) : null}
       {fields.map((field) => {
+        if (field.id === "hardRestDays") {
+          return (
+            <AvailabilitySection
+              key={field.id}
+              availability={availability}
+              control={control}
+              onToggleAvailabilityDay={onToggleAvailabilityDay}
+              onToggleHardRestDay={onToggleHardRestDay}
+            />
+          );
+        }
+
+        if (field.id === "weeklyAvailabilityWindows") {
+          return null;
+        }
+
         if (field.control === "sport-overrides") {
           return (
             <SportDoseOverridesSection
@@ -154,6 +189,23 @@ export function GlobalTrainingPreferenceCatalogSection({
               onToggleSportDoseOverride={onToggleSportDoseOverride}
             />
           );
+        }
+
+        if (field.id === "baselineFitnessEnabled") {
+          return (
+            <BaselineFitnessSection
+              key={field.id}
+              baselineFitness={baselineFitness}
+              control={control}
+              manualBaselineCtlWarning={manualBaselineCtlWarning}
+              onToggleAdvancedControls={onToggleAdvancedBaselineControls}
+              showAdvancedControls={showAdvancedBaselineControls}
+            />
+          );
+        }
+
+        if (field.tab === "baseline-fitness") {
+          return null;
         }
 
         return (

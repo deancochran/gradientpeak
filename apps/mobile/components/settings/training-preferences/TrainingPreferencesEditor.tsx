@@ -17,11 +17,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useWatch } from "react-hook-form";
 import { ActivityIndicator, View } from "react-native";
 import { GlobalTrainingPreferenceCatalogSection } from "@/components/settings/training-preferences/GlobalTrainingPreferenceCatalogSection";
-import {
-  AvailabilitySection,
-  type WeekdayKey,
-} from "@/components/settings/training-preferences/sections/AvailabilitySection";
-import { BaselineFitnessSection } from "@/components/settings/training-preferences/sections/BaselineFitnessSection";
+import type { WeekdayKey } from "@/components/settings/training-preferences/sections/AvailabilitySection";
 import type { SportOverrideKey } from "@/components/settings/training-preferences/sections/ScheduleSection";
 import { TrainingPreferencesBottomSheet } from "@/components/settings/training-preferences/TrainingPreferencesBottomSheet";
 import { TrainingPreferencesContent } from "@/components/settings/training-preferences/TrainingPreferencesContent";
@@ -290,69 +286,63 @@ export function TrainingPreferencesEditor({
             {activeTab === "preferences" ? (
               <GlobalTrainingPreferenceCatalogSection
                 activeTab={activeTab}
+                availability={draft.availability}
+                baselineFitness={draft.baseline_fitness}
                 control={form.control}
                 doseLimits={draft.dose_limits}
+                manualBaselineCtlWarning={manualBaselineCtlWarning}
+                onToggleAdvancedBaselineControls={() =>
+                  setShowAdvancedBaselineControls((value) => !value)
+                }
+                onToggleAvailabilityDay={toggleAvailabilityDay}
+                onToggleHardRestDay={toggleHardRestDay}
                 onToggleSportDoseOverride={toggleSportDoseOverride}
                 scheduleValidation={scheduleValidation}
+                showAdvancedBaselineControls={showAdvancedBaselineControls}
               />
             ) : null}
 
             {activeTab === "availability" ? (
-              <AvailabilitySection
+              <GlobalTrainingPreferenceCatalogSection
+                activeTab={activeTab}
                 availability={draft.availability}
-                control={form.control}
-                onToggleAvailabilityDay={toggleAvailabilityDay}
-                onToggleHardRestDay={toggleHardRestDay}
-              />
-            ) : null}
-
-            {activeTab === "schedule" ? (
-              <GlobalTrainingPreferenceCatalogSection
-                activeTab={activeTab}
-                control={form.control}
-                doseLimits={draft.dose_limits}
-                onToggleSportDoseOverride={toggleSportDoseOverride}
-                scheduleValidation={scheduleValidation}
-              />
-            ) : null}
-
-            {activeTab === "training-style" ? (
-              <GlobalTrainingPreferenceCatalogSection
-                activeTab={activeTab}
-                control={form.control}
-                doseLimits={draft.dose_limits}
-                onToggleSportDoseOverride={toggleSportDoseOverride}
-                scheduleValidation={scheduleValidation}
-              />
-            ) : null}
-
-            {activeTab === "recovery" ? (
-              <GlobalTrainingPreferenceCatalogSection
-                activeTab={activeTab}
-                control={form.control}
-                doseLimits={draft.dose_limits}
-                onToggleSportDoseOverride={toggleSportDoseOverride}
-                scheduleValidation={scheduleValidation}
-              />
-            ) : null}
-
-            {activeTab === "goal-strategy" ? (
-              <GlobalTrainingPreferenceCatalogSection
-                activeTab={activeTab}
-                control={form.control}
-                doseLimits={draft.dose_limits}
-                onToggleSportDoseOverride={toggleSportDoseOverride}
-                scheduleValidation={scheduleValidation}
-              />
-            ) : null}
-
-            {activeTab === "baseline-fitness" ? (
-              <BaselineFitnessSection
                 baselineFitness={draft.baseline_fitness}
                 control={form.control}
+                doseLimits={draft.dose_limits}
                 manualBaselineCtlWarning={manualBaselineCtlWarning}
-                onToggleAdvancedControls={() => setShowAdvancedBaselineControls((value) => !value)}
-                showAdvancedControls={showAdvancedBaselineControls}
+                onToggleAdvancedBaselineControls={() =>
+                  setShowAdvancedBaselineControls((value) => !value)
+                }
+                onToggleAvailabilityDay={toggleAvailabilityDay}
+                onToggleHardRestDay={toggleHardRestDay}
+                onToggleSportDoseOverride={toggleSportDoseOverride}
+                scheduleValidation={scheduleValidation}
+                showAdvancedBaselineControls={showAdvancedBaselineControls}
+              />
+            ) : null}
+
+            {[
+              "schedule",
+              "training-style",
+              "recovery",
+              "goal-strategy",
+              "baseline-fitness",
+            ].includes(activeTab) ? (
+              <GlobalTrainingPreferenceCatalogSection
+                activeTab={activeTab}
+                availability={draft.availability}
+                baselineFitness={draft.baseline_fitness}
+                control={form.control}
+                doseLimits={draft.dose_limits}
+                manualBaselineCtlWarning={manualBaselineCtlWarning}
+                onToggleAdvancedBaselineControls={() =>
+                  setShowAdvancedBaselineControls((value) => !value)
+                }
+                onToggleAvailabilityDay={toggleAvailabilityDay}
+                onToggleHardRestDay={toggleHardRestDay}
+                onToggleSportDoseOverride={toggleSportDoseOverride}
+                scheduleValidation={scheduleValidation}
+                showAdvancedBaselineControls={showAdvancedBaselineControls}
               />
             ) : null}
           </TrainingPreferencesPanel>
