@@ -6,8 +6,9 @@ import {
 } from "@repo/core/athlete-inputs";
 import { activityEfforts, publicActivityEffortsRowSchema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
+import { listOwnedActivityEfforts } from "../application/activity-efforts/listOwnedActivityEfforts";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { markProfileAnalysisDirty } from "../utils/profile-estimation-state";
@@ -37,14 +38,9 @@ const deleteActivityEffortOutputSchema = z
 export const activityEffortsRouter = createTRPCRouter({
   getForProfile: protectedProcedure.output(getForProfileOutputSchema).query(async ({ ctx }) => {
     const db = getRequiredDb(ctx);
+    const efforts = await listOwnedActivityEfforts(db, ctx.session.user.id);
 
-    const rows = await db
-      .select()
-      .from(activityEfforts)
-      .where(eq(activityEfforts.profile_id, ctx.session.user.id))
-      .orderBy(desc(activityEfforts.recorded_at));
-
-    return getForProfileOutputSchema.parse(rows);
+    return getForProfileOutputSchema.parse(efforts);
   }),
 
   getById: protectedProcedure

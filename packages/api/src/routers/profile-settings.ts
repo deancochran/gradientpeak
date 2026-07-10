@@ -1,76 +1,14 @@
 import { athleteTrainingSettingsSchema, profileTrainingSettingsRecordSchema } from "@repo/core";
-import { type ProfileTrainingSettingsRow, profileTrainingSettings } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { eq } from "drizzle-orm";
 import { z } from "zod";
+import {
+  normalizeProfileTrainingSettingsRow,
+  readProfileTrainingSettings,
+  upsertProfileTrainingSettings,
+} from "../application/profile-settings/profileTrainingSettings";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { assertProfileAccess } from "./account/profile-access";
-
-type DbClient = ReturnType<typeof getRequiredDb>;
-
-type ProfileTrainingSettingsSqlRow = Pick<
-  ProfileTrainingSettingsRow,
-  "profile_id" | "settings" | "updated_at"
->;
-
-function _getSqlRows<T>(result: unknown) {
-  return ((result as { rows?: T[] }).rows ?? []) as T[];
-}
-
-function normalizeProfileSettingsRow(row: ProfileTrainingSettingsSqlRow) {
-  return profileSettingsRecordDtoSchema.parse({
-    profile_id: row.profile_id,
-    settings: row.settings,
-    updated_at:
-      row.updated_at instanceof Date
-        ? row.updated_at.toISOString()
-        : typeof row.updated_at === "string"
-          ? row.updated_at
-          : undefined,
-  });
-}
-
-async function getProfileTrainingSettingsRow(db: DbClient, profileId: string) {
-  const [row] = await db
-    .select({
-      profile_id: profileTrainingSettings.profile_id,
-      settings: profileTrainingSettings.settings,
-      updated_at: profileTrainingSettings.updated_at,
-    })
-    .from(profileTrainingSettings)
-    .where(eq(profileTrainingSettings.profile_id, profileId))
-    .limit(1);
-
-  return (row as ProfileTrainingSettingsSqlRow | undefined) ?? null;
-}
-
-async function upsertProfileTrainingSettingsRow(
-  db: DbClient,
-  input: { profile_id: string; settings: z.infer<typeof athleteTrainingSettingsSchema> },
-) {
-  const [row] = await db
-    .insert(profileTrainingSettings)
-    .values({
-      profile_id: input.profile_id,
-      settings: input.settings,
-      updated_at: new Date(),
-    })
-    .onConflictDoUpdate({
-      target: profileTrainingSettings.profile_id,
-      set: {
-        settings: input.settings,
-        updated_at: new Date(),
-      },
-    })
-    .returning({
-      profile_id: profileTrainingSettings.profile_id,
-      settings: profileTrainingSettings.settings,
-      updated_at: profileTrainingSettings.updated_at,
-    });
-
-  return (row as ProfileTrainingSettingsSqlRow | undefined) ?? null;
-}
 
 const profileIdSchema = z.string().uuid();
 
@@ -115,14 +53,14 @@ export const profileSettingsRouter = createTRPCRouter({
         profileId: input.profile_id,
       });
 
-      const data = await getProfileTrainingSettingsRow(db, input.profile_id);
+      const data = await readProfileTrainingSettings(db, input.profile_id);
 
       if (!data) {
         return null;
       }
 
       const parsed = profileTrainingSettingsRecordSchema.safeParse(
-        normalizeProfileSettingsRow(data),
+        profileSettingsRecordDtoSchema.parse(normalizeProfileTrainingSettingsRow(data)),
       );
 
       if (!parsed.success) {
@@ -146,7 +84,7 @@ export const profileSettingsRouter = createTRPCRouter({
         profileId: input.profile_id,
       });
 
-      const data = await upsertProfileTrainingSettingsRow(db, input);
+      const data = await upsertProfileTrainingSettings(db, input);
 
       if (!data) {
         throw new TRPCError({
@@ -156,7 +94,7 @@ export const profileSettingsRouter = createTRPCRouter({
       }
 
       const parsed = profileTrainingSettingsRecordSchema.safeParse(
-        normalizeProfileSettingsRow(data),
+        profileSettingsRecordDtoSchema.parse(normalizeProfileTrainingSettingsRow(data)),
       );
 
       if (!parsed.success) {
