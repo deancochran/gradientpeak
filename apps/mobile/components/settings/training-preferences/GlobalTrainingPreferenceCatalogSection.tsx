@@ -170,6 +170,7 @@ export function GlobalTrainingPreferenceCatalogSection({
               key={field.id}
               availability={availability}
               control={control}
+              mode="global-edit"
               onToggleAvailabilityDay={onToggleAvailabilityDay}
               onToggleHardRestDay={onToggleHardRestDay}
             />
@@ -197,6 +198,7 @@ export function GlobalTrainingPreferenceCatalogSection({
               key={field.id}
               baselineFitness={baselineFitness}
               control={control}
+              mode="global-edit"
               manualBaselineCtlWarning={manualBaselineCtlWarning}
               onToggleAdvancedControls={onToggleAdvancedBaselineControls}
               showAdvancedControls={showAdvancedBaselineControls}

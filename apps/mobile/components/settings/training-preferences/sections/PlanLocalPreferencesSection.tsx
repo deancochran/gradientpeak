@@ -8,6 +8,8 @@ import {
 import { Text } from "@repo/ui/components/text";
 import { useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
+import { AvailabilitySection } from "@/components/settings/training-preferences/sections/AvailabilitySection";
+import { BaselineFitnessSection } from "@/components/settings/training-preferences/sections/BaselineFitnessSection";
 import { TrainingPreferenceFieldRenderer } from "@/components/settings/training-preferences/TrainingPreferenceFieldRenderer";
 import { TrainingPreferencesPanel } from "@/components/settings/training-preferences/TrainingPreferencesPanel";
 import {
@@ -69,7 +71,11 @@ export function PlanLocalPreferencesSection({
             ))}
           </View>
         ) : null}
-        {canonicalFields.length > 0 ? (
+        {activeTab === "availability" ? (
+          <AvailabilitySection fields={canonicalFields} mode="plan-local-readonly" />
+        ) : activeTab === "baseline-fitness" ? (
+          <BaselineFitnessSection fields={canonicalFields} mode="plan-local-readonly" />
+        ) : canonicalFields.length > 0 ? (
           canonicalFields.map((field) => (
             <PlanLocalCatalogPreferenceField
               key={field.id}

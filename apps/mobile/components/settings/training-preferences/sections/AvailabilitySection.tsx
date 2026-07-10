@@ -1,9 +1,11 @@
+import type { TrainingPreferenceField } from "@repo/core";
 import type { AthleteTrainingSettingsFormInput } from "@repo/core/schemas/settings/profile_settings";
 import { Button } from "@repo/ui/components/button";
 import { FormIntegerStepperField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
 import type { Control } from "react-hook-form";
 import { View } from "react-native";
+import { ReadOnlyTrainingPreferenceField } from "@/components/settings/training-preferences/TrainingPreferenceFieldRenderer";
 
 export const weekdayOptions = [
   { key: "monday", label: "Mon" },
@@ -25,19 +27,42 @@ function formatMinuteOfDay(minuteOfDay: number | null | undefined) {
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
 
-type AvailabilitySectionProps = {
+type GlobalAvailabilitySectionProps = {
+  mode?: "global-edit";
   availability: AthleteTrainingSettingsFormInput["availability"];
   control: Control<AthleteTrainingSettingsFormInput>;
   onToggleAvailabilityDay: (day: WeekdayKey) => void;
   onToggleHardRestDay: (day: WeekdayKey) => void;
 };
 
-export function AvailabilitySection({
-  availability,
-  control,
-  onToggleAvailabilityDay,
-  onToggleHardRestDay,
-}: AvailabilitySectionProps) {
+type PlanLocalAvailabilitySectionProps = {
+  fields: TrainingPreferenceField[];
+  mode: "plan-local-readonly";
+};
+
+type AvailabilitySectionProps = GlobalAvailabilitySectionProps | PlanLocalAvailabilitySectionProps;
+
+export function AvailabilitySection(props: AvailabilitySectionProps) {
+  if (props.mode === "plan-local-readonly") {
+    return (
+      <View className="gap-3 rounded-2xl border border-border bg-card p-3">
+        {props.fields.map((field) => (
+          <ReadOnlyTrainingPreferenceField
+            key={field.id}
+            field={field}
+            disabledReason={
+              field.planLocalSupport === "derived"
+                ? "Derived from plan-specific preferences."
+                : "Profile-level preference."
+            }
+          />
+        ))}
+      </View>
+    );
+  }
+
+  const { availability, control, onToggleAvailabilityDay, onToggleHardRestDay } = props;
+
   return (
     <View className="gap-3 rounded-2xl border border-border bg-card p-3">
       <View className="gap-1">

@@ -61,7 +61,7 @@ function FieldFrame({
   );
 }
 
-function DisabledPreferenceField({
+export function ReadOnlyTrainingPreferenceField({
   disabledReason,
   field,
 }: {
@@ -89,7 +89,7 @@ export function TrainingPreferenceFieldRenderer({
 }: TrainingPreferenceFieldRendererProps) {
   if (disabledReason || !onChange) {
     return (
-      <DisabledPreferenceField
+      <ReadOnlyTrainingPreferenceField
         disabledReason={disabledReason ?? "Profile-level only"}
         field={field}
       />
@@ -156,5 +156,5 @@ export function TrainingPreferenceFieldRenderer({
     );
   }
 
-  return <DisabledPreferenceField disabledReason="Profile-level only" field={field} />;
+  return <ReadOnlyTrainingPreferenceField disabledReason="Profile-level only" field={field} />;
 }

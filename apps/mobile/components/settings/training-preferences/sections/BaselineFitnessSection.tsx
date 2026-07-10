@@ -1,3 +1,4 @@
+import type { TrainingPreferenceField } from "@repo/core";
 import type { AthleteTrainingSettingsFormInput } from "@repo/core/schemas/settings/profile_settings";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -8,8 +9,10 @@ import {
 import { Text } from "@repo/ui/components/text";
 import type { Control } from "react-hook-form";
 import { View } from "react-native";
+import { ReadOnlyTrainingPreferenceField } from "@/components/settings/training-preferences/TrainingPreferenceFieldRenderer";
 
-type BaselineFitnessSectionProps = {
+type GlobalBaselineFitnessSectionProps = {
+  mode?: "global-edit";
   baselineFitness: AthleteTrainingSettingsFormInput["baseline_fitness"];
   control: Control<AthleteTrainingSettingsFormInput>;
   manualBaselineCtlWarning: string | null;
@@ -17,13 +20,38 @@ type BaselineFitnessSectionProps = {
   showAdvancedControls: boolean;
 };
 
-export function BaselineFitnessSection({
-  baselineFitness,
-  control,
-  manualBaselineCtlWarning,
-  onToggleAdvancedControls,
-  showAdvancedControls,
-}: BaselineFitnessSectionProps) {
+type PlanLocalBaselineFitnessSectionProps = {
+  fields: TrainingPreferenceField[];
+  mode: "plan-local-readonly";
+};
+
+type BaselineFitnessSectionProps =
+  | GlobalBaselineFitnessSectionProps
+  | PlanLocalBaselineFitnessSectionProps;
+
+export function BaselineFitnessSection(props: BaselineFitnessSectionProps) {
+  if (props.mode === "plan-local-readonly") {
+    return (
+      <View className="gap-3">
+        {props.fields.map((field) => (
+          <ReadOnlyTrainingPreferenceField
+            key={field.id}
+            field={field}
+            disabledReason="Profile-level preference."
+          />
+        ))}
+      </View>
+    );
+  }
+
+  const {
+    baselineFitness,
+    control,
+    manualBaselineCtlWarning,
+    onToggleAdvancedControls,
+    showAdvancedControls,
+  } = props;
+
   return (
     <>
       <FormSwitchField
