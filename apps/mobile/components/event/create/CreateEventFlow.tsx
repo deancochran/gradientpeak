@@ -1,9 +1,13 @@
 import { Button } from "@repo/ui/components/button";
+import { Form } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
+import { useZodForm } from "@repo/ui/hooks";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { useWatch } from "react-hook-form";
 import { AccessibilityInfo } from "react-native";
+import { z } from "zod";
 import { AppFormModal } from "@/components/shared/AppFormModal";
 import { type ResourcePickerItem, ResourcePickerModal } from "@/components/shared/resource-picker";
 import { api } from "@/lib/api";
@@ -16,7 +20,7 @@ import {
   parseRecurrenceEndDate,
   parseRecurrenceFrequency,
 } from "../EventEditorCard";
-import { CreateEventMainStep } from "./CreateEventMainStep";
+import { type CreateEventMainFormValues, CreateEventMainStep } from "./CreateEventMainStep";
 import {
   buildCreateEventInput,
   type CreateEventDraft,
@@ -27,6 +31,15 @@ import { RepeatStep } from "./RepeatStep";
 
 type CreateEventStep = "main" | "repeat";
 type EventMutationScope = "single" | "future" | "series";
+
+const createEventMainFormSchema = z.object({
+  allDay: z.boolean(),
+  customDate: z.string(),
+  customTime: z.string(),
+  notes: z.string(),
+  plannedDate: z.string(),
+  title: z.string(),
+});
 
 export type CreateEventDefaults = {
   createEventType?: CreateEventMode | null;
@@ -83,6 +96,80 @@ function buildDraftFromEvent(event: any): CreateEventDraft {
 function buildStartsAtFromDateOnly(dateOnly: string) {
   const [year, month, day] = dateOnly.split("-").map(Number);
   return new Date(year ?? 1970, (month ?? 1) - 1, day ?? 1, 12, 0, 0, 0);
+}
+
+function applyDateOnlyToDate(current: Date, dateOnly: string) {
+  const [year, month, day] = dateOnly.split("-").map(Number);
+  const next = new Date(current);
+  next.setFullYear(
+    year ?? current.getFullYear(),
+    (month ?? current.getMonth() + 1) - 1,
+    day ?? current.getDate(),
+  );
+  return next;
+}
+
+function toMainFormValues(draft: CreateEventDraft): CreateEventMainFormValues {
+  if (draft.mode === "planned") {
+    return {
+      allDay: true,
+      customDate: draft.scheduledDate,
+      customTime: "12:00",
+      notes: draft.notes,
+      plannedDate: draft.scheduledDate,
+      title: draft.title,
+    };
+  }
+
+  return {
+    allDay: draft.allDay,
+    customDate: toDateOnly(draft.startsAt),
+    customTime: format(draft.startsAt, "HH:mm"),
+    notes: draft.notes,
+    plannedDate: toDateOnly(draft.startsAt),
+    title: draft.title,
+  };
+}
+
+function applyMainFormValues(
+  draft: CreateEventDraft,
+  values: CreateEventMainFormValues,
+): CreateEventDraft {
+  if (draft.mode === "planned") {
+    return {
+      ...draft,
+      notes: values.notes,
+      scheduledDate: values.plannedDate || draft.scheduledDate,
+      title: values.title,
+    };
+  }
+
+  const startsAt = values.customDate
+    ? applyDateOnlyToDate(draft.startsAt, values.customDate)
+    : draft.startsAt;
+  const [hours, minutes] = values.customTime.split(":").map(Number);
+  if (values.customTime) {
+    startsAt.setHours(hours ?? startsAt.getHours(), minutes ?? startsAt.getMinutes(), 0, 0);
+  }
+
+  return {
+    ...draft,
+    allDay: values.allDay,
+    notes: values.notes,
+    startsAt,
+    title: values.title,
+  };
+}
+
+function areMainFormValuesEqual(left: CreateEventMainFormValues, right: CreateEventMainFormValues) {
+  return (
+    left.allDay === right.allDay &&
+    left.customDate === right.customDate &&
+    left.customTime === right.customTime &&
+    left.notes === right.notes &&
+    left.plannedDate === right.plannedDate &&
+    left.title === right.title
+  );
 }
 
 function buildUpdatePatch(draft: CreateEventDraft) {
@@ -170,6 +257,12 @@ export const CreateEventFlow = forwardRef<
   const [activityPlanPickerOpen, setActivityPlanPickerOpen] = useState(false);
   const [saveScopeModalVisible, setSaveScopeModalVisible] = useState(false);
   const [pendingUpdateDraft, setPendingUpdateDraft] = useState<CreateEventDraft | null>(null);
+  const form = useZodForm<CreateEventMainFormValues>({
+    schema: createEventMainFormSchema,
+    defaultValues: toMainFormValues(draft),
+  });
+  const watchedFormValues = useWatch({ control: form.control }) as CreateEventMainFormValues;
+  const syncingFormFromDraftRef = useRef(false);
 
   const createMutation = api.events.create.useMutation({
     onSuccess: async (createdEvent) => {
@@ -271,6 +364,39 @@ export const CreateEventFlow = forwardRef<
     setTitleErrorMessage(null);
     setRecurrenceErrorMessage(null);
   }, [createDate, defaults?.title, initialMode, initialNotes, updateEvent]);
+
+  useEffect(() => {
+    const formValues = toMainFormValues(draft);
+    if (areMainFormValuesEqual(form.getValues(), formValues)) {
+      syncingFormFromDraftRef.current = false;
+      return;
+    }
+
+    syncingFormFromDraftRef.current = true;
+    form.reset(formValues);
+  }, [draft, form]);
+
+  useEffect(() => {
+    const formValues = watchedFormValues ?? form.getValues();
+    if (syncingFormFromDraftRef.current) {
+      if (areMainFormValuesEqual(formValues, toMainFormValues(draft))) {
+        syncingFormFromDraftRef.current = false;
+      }
+      return;
+    }
+
+    const nextDraft = applyMainFormValues(draft, formValues);
+    if (areMainFormValuesEqual(toMainFormValues(nextDraft), toMainFormValues(draft))) {
+      if (!areMainFormValuesEqual(formValues, toMainFormValues(draft))) {
+        form.reset(toMainFormValues(draft));
+      }
+      return;
+    }
+
+    setDraft(nextDraft);
+    setFormErrorMessage(null);
+    setTitleErrorMessage(null);
+  }, [draft, form, watchedFormValues]);
 
   const handleChangeMode = (mode: CreateEventMode) => {
     setFormErrorMessage(null);
@@ -446,31 +572,29 @@ export const CreateEventFlow = forwardRef<
 
   return (
     <>
-      <CreateEventMainStep
-        draft={draft}
-        formErrorMessage={formErrorMessage}
-        helperText={
-          preselectedActivityPlanId
-            ? `Review ${selectedCreateActivityPlan?.name ?? "the selected activity plan"} before creating this event.`
-            : (defaults?.helperText ?? null)
-        }
-        isPending={pending}
-        onCancel={onCancel}
-        onChangeDraft={(nextDraft) => {
-          setDraft(nextDraft);
-          setFormErrorMessage(null);
-          setTitleErrorMessage(null);
-        }}
-        onChangeMode={handleChangeMode}
-        onOpenActivityPlan={() => setActivityPlanPickerOpen(true)}
-        onRemoveActivityPlan={handleRemoveActivityPlan}
-        onOpenRepeat={() => setStep("repeat")}
-        onSubmit={submitCreate}
-        selectedActivityPlan={selectedCreateActivityPlan}
-        showFooterActions={showFooterActions}
-        testIDPrefix={testIDPrefix}
-        titleErrorMessage={titleErrorMessage}
-      />
+      <Form {...form}>
+        <CreateEventMainStep
+          control={form.control}
+          draft={draft}
+          formErrorMessage={formErrorMessage}
+          helperText={
+            preselectedActivityPlanId
+              ? `Review ${selectedCreateActivityPlan?.name ?? "the selected activity plan"} before creating this event.`
+              : (defaults?.helperText ?? null)
+          }
+          isPending={pending}
+          onCancel={onCancel}
+          onChangeMode={handleChangeMode}
+          onOpenActivityPlan={() => setActivityPlanPickerOpen(true)}
+          onRemoveActivityPlan={handleRemoveActivityPlan}
+          onOpenRepeat={() => setStep("repeat")}
+          onSubmit={submitCreate}
+          selectedActivityPlan={selectedCreateActivityPlan}
+          showFooterActions={showFooterActions}
+          testIDPrefix={testIDPrefix}
+          titleErrorMessage={titleErrorMessage}
+        />
+      </Form>
       <ResourcePickerModal
         visible={activityPlanPickerOpen}
         scope="activityPlans"

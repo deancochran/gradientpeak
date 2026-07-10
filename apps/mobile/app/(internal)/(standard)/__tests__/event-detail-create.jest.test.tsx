@@ -309,10 +309,6 @@ jest.mock("@/lib/api", () => ({
 }));
 
 describe("event detail create mode", () => {
-  function getDateInput(rendered: any, id: string) {
-    return rendered.UNSAFE_getAllByType("DateInput").find((node: any) => node.props.id === id);
-  }
-
   beforeEach(() => {
     jest.clearAllMocks();
     paramsState = { mode: "create", date: "2026-03-24" };
@@ -336,7 +332,9 @@ describe("event detail create mode", () => {
     expect((rendered as any).UNSAFE_getByType("StackScreen").props.options.title).toBe(
       "Create Event",
     );
-    expect(getDateInput(rendered, "event-detail-start-date").props.value).toBe("2026-03-24");
+    expect(screen.getByTestId("event-detail-start-date-button").props.children).toBe(
+      "Tuesday, Mar 24, 2026",
+    );
 
     fireEvent.press(screen.getByTestId("event-detail-type-custom"));
     fireEvent(screen.getByTestId("event-detail-title-input"), "changeText", "Swim test");

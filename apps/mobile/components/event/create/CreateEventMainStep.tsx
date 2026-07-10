@@ -1,29 +1,29 @@
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
-import { DateInput } from "@repo/ui/components/date-input";
+import {
+  FormDateInputField,
+  FormSwitchField,
+  FormTextareaField,
+  FormTextField,
+  FormTimeInputField,
+} from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
-import { Input } from "@repo/ui/components/input";
-import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
-import { Textarea } from "@repo/ui/components/textarea";
-import { TimeInput } from "@repo/ui/components/time-input";
-import { format } from "date-fns";
 import { X } from "lucide-react-native";
+import type { Control } from "react-hook-form";
 import { Pressable, View } from "react-native";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import type { ActivityPlanListItem, EventRecurrenceFrequency } from "../EventEditorCard";
-import { type CreateEventDraft, type CreateEventMode, toDateOnly } from "./createEventDraft";
+import type { CreateEventDraft, CreateEventMode } from "./createEventDraft";
 
-function applyDateOnlyToDate(current: Date, dateOnly: string) {
-  const [year, month, day] = dateOnly.split("-").map(Number);
-  const next = new Date(current);
-  next.setFullYear(
-    year ?? current.getFullYear(),
-    (month ?? current.getMonth() + 1) - 1,
-    day ?? current.getDate(),
-  );
-  return next;
-}
+export type CreateEventMainFormValues = {
+  allDay: boolean;
+  customDate: string;
+  customTime: string;
+  notes: string;
+  plannedDate: string;
+  title: string;
+};
 
 function repeatLabel(frequency: EventRecurrenceFrequency, endDate: string | null) {
   if (frequency === "none") return "Never";
@@ -60,12 +60,12 @@ function SummaryRow({
 }
 
 export function CreateEventMainStep({
+  control,
   draft,
   formErrorMessage,
   helperText,
   isPending,
   onCancel,
-  onChangeDraft,
   onChangeMode,
   onOpenActivityPlan,
   onRemoveActivityPlan,
@@ -76,12 +76,12 @@ export function CreateEventMainStep({
   testIDPrefix,
   titleErrorMessage,
 }: {
+  control: Control<CreateEventMainFormValues>;
   draft: CreateEventDraft;
   formErrorMessage?: string | null;
   helperText?: string | null;
   isPending: boolean;
   onCancel: () => void;
-  onChangeDraft: (draft: CreateEventDraft) => void;
   onChangeMode: (mode: CreateEventMode) => void;
   onOpenActivityPlan: () => void;
   onRemoveActivityPlan?: () => void;
@@ -177,17 +177,13 @@ export function CreateEventMainStep({
                 </Pressable>
               )}
             </View>
-            <DateInput
+            <FormDateInputField
               accessibilityHint="Choose the scheduled activity date"
-              id={`${testIDPrefix}-start-date`}
+              control={control}
               label="Scheduled Date"
-              onChange={(value) => {
-                if (!value) return;
-                onChangeDraft({ ...draft, scheduledDate: value });
-              }}
+              name="plannedDate"
               pickerPresentation="modal"
               testId={`${testIDPrefix}-start-date-button`}
-              value={draft.scheduledDate}
             />
             <SummaryRow
               label="Repeat"
@@ -195,72 +191,49 @@ export function CreateEventMainStep({
               testID={`${testIDPrefix}-repeat-row`}
               value={repeatLabel(draft.recurrenceFrequency, draft.recurrenceEndDate)}
             />
-            <View className="gap-2">
-              <Text className="text-xs text-muted-foreground">Title</Text>
-              <Input
-                value={draft.title}
-                onChangeText={(title) => onChangeDraft({ ...draft, title })}
-                placeholder="Activity title"
-                testID={`${testIDPrefix}-title-input`}
-              />
-            </View>
+            <FormTextField
+              control={control}
+              label="Title"
+              name="title"
+              placeholder="Activity title"
+              testId={`${testIDPrefix}-title-input`}
+            />
           </>
         ) : (
           <>
-            <View className="gap-2">
-              <Text className="text-xs text-muted-foreground">Title</Text>
-              <Input
-                value={draft.title}
-                onChangeText={(title) => onChangeDraft({ ...draft, title })}
-                placeholder="Event title"
-                testID={`${testIDPrefix}-title-input`}
-              />
-            </View>
-            <DateInput
+            <FormTextField
+              control={control}
+              label="Title"
+              name="title"
+              placeholder="Event title"
+              testId={`${testIDPrefix}-title-input`}
+            />
+            <FormDateInputField
               accessibilityHint="Choose when this event starts"
-              id={`${testIDPrefix}-start-date`}
+              control={control}
               label="Starts"
-              onChange={(value) => {
-                if (!value) return;
-                onChangeDraft({ ...draft, startsAt: applyDateOnlyToDate(draft.startsAt, value) });
-              }}
+              name="customDate"
               pickerPresentation="modal"
               testId={`${testIDPrefix}-start-date-button`}
-              value={toDateOnly(draft.startsAt)}
             />
             {!draft.allDay ? (
-              <TimeInput
+              <FormTimeInputField
                 accessibilityHint="Choose when this event starts"
-                id={`${testIDPrefix}-start-time`}
+                control={control}
                 label="Start time"
-                onChange={(value) => {
-                  if (!value) return;
-                  const [hours, minutes] = value.split(":").map(Number);
-                  const startsAt = new Date(draft.startsAt);
-                  startsAt.setHours(
-                    hours ?? startsAt.getHours(),
-                    minutes ?? startsAt.getMinutes(),
-                    0,
-                    0,
-                  );
-                  onChangeDraft({ ...draft, startsAt });
-                }}
+                name="customTime"
                 pickerPresentation="modal"
                 testId={`${testIDPrefix}-start-time-button`}
-                value={format(draft.startsAt, "HH:mm")}
               />
             ) : null}
-            <View className="flex-row items-center justify-between rounded-2xl border border-border bg-card px-3 py-3">
-              <View>
-                <Text className="text-sm font-medium text-foreground">All day</Text>
-                <Text className="text-xs text-muted-foreground">Hide time for this event</Text>
-              </View>
-              <Switch
-                checked={draft.allDay}
-                onCheckedChange={(allDay) => onChangeDraft({ ...draft, allDay })}
-                testId={`${testIDPrefix}-all-day-switch`}
-              />
-            </View>
+            <FormSwitchField
+              control={control}
+              description="Hide time for this event"
+              label="All day"
+              name="allDay"
+              switchLabel="All day"
+              testId={`${testIDPrefix}-all-day-switch`}
+            />
             <SummaryRow
               label="Repeat"
               onPress={onOpenRepeat}
@@ -274,15 +247,13 @@ export function CreateEventMainStep({
           <Text className="text-xs text-destructive">{titleErrorMessage}</Text>
         ) : null}
 
-        <View className="gap-2">
-          <Text className="text-xs text-muted-foreground">Notes</Text>
-          <Textarea
-            value={draft.notes}
-            onChangeText={(notes) => onChangeDraft({ ...draft, notes })}
-            placeholder="Optional notes"
-            testID={`${testIDPrefix}-notes-input`}
-          />
-        </View>
+        <FormTextareaField
+          control={control}
+          label="Notes"
+          name="notes"
+          placeholder="Optional notes"
+          testId={`${testIDPrefix}-notes-input`}
+        />
 
         {formErrorMessage ? (
           <Text className="text-xs text-destructive">{formErrorMessage}</Text>
