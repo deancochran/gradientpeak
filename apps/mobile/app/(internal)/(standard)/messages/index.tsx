@@ -9,6 +9,7 @@ import { Text } from "@repo/ui/components/text";
 import { cn } from "@repo/ui/lib/cn";
 import { Stack } from "expo-router";
 import { FlatList, Pressable, View } from "react-native";
+import { HeaderTextAction } from "@/components/shared/HeaderAction";
 import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
@@ -136,13 +137,12 @@ export default function MessagesScreen() {
         options={{
           title: "Messages",
           headerRight: () => (
-            <Pressable
+            <HeaderTextAction
+              accessibilityLabel="New message"
+              label="New Message"
               onPress={() => navigateTo("/messages/new" as any)}
-              className="mr-2 rounded-full px-2 py-1"
               testID="messages-new-trigger"
-            >
-              <Text className="text-sm font-medium text-primary">New Message</Text>
-            </Pressable>
+            />
           ),
         }}
       />

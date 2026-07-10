@@ -1,5 +1,4 @@
 import { formatActivityEffortValue, formatEffortDuration } from "@repo/core/athlete-inputs";
-import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { type Href, Stack } from "expo-router";
@@ -241,148 +240,151 @@ function EffortDetailChart({
   const best = getActivityEffortCurveBest(records);
 
   return (
-    <Card className="rounded-3xl border border-border bg-card">
-      <CardContent className="gap-4 p-4">
-        <View className="flex-row items-start justify-between gap-3">
-          <View className="gap-1">
-            <Text className="text-lg font-semibold capitalize text-foreground">{curve.title}</Text>
-            <Text className="text-sm text-muted-foreground">
-              Your best curve compared with your first recorded curve from {records.length} records.
-            </Text>
-          </View>
-          <Text className="text-lg font-semibold text-foreground">
-            {best ? `Best ${formatValue(best)}` : "No data"}
+    <View className="gap-4">
+      <View className="flex-row items-start justify-between gap-3">
+        <View className="flex-1 gap-1">
+          <Text className="text-lg font-semibold capitalize text-foreground">{curve.title}</Text>
+          <Text className="text-sm text-muted-foreground">
+            Your best curve compared with your first recorded curve from {records.length} records.
           </Text>
         </View>
-        {presentPoints.length < 2 ? (
-          <View className="h-[260px] items-center justify-center rounded-2xl bg-muted/20">
-            <Text className="text-center text-sm font-medium text-foreground">
-              Not enough data to draw this curve yet.
-            </Text>
-            <Text className="mt-2 px-6 text-center text-xs text-muted-foreground">
-              Save efforts at two or more durations to compute a curve. Available efforts are listed
-              below.
-            </Text>
-          </View>
-        ) : (
-          <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
-            {valueTicks.map((tick) => {
-              const valueRange = bounds.maxValue - bounds.minValue || 1;
-              const y =
-                chartTop + (1 - (tick - bounds.minValue) / valueRange) * (chartBottom - chartTop);
-              return (
-                <React.Fragment key={`value-${tick}`}>
-                  <Line
-                    x1={chartLeft}
-                    x2={chartRight}
-                    y1={y}
-                    y2={y}
-                    stroke={colors.grid}
-                    strokeWidth={1}
-                  />
-                  <SvgText
-                    x={chartLeft - 8}
-                    y={y + 4}
-                    fill={colors.label}
-                    fontSize={10}
-                    textAnchor="end"
-                  >
-                    {formatAxisValue(tick, curve.unit)}
-                  </SvgText>
-                </React.Fragment>
-              );
-            })}
-            <Line
-              x1={chartLeft}
-              x2={chartLeft}
-              y1={chartTop}
-              y2={chartBottom}
-              stroke={colors.axis}
-              strokeWidth={1.5}
-            />
-            <Line
-              x1={chartLeft}
-              x2={chartRight}
-              y1={chartBottom}
-              y2={chartBottom}
-              stroke={colors.axis}
-              strokeWidth={1.5}
-            />
-            {durationTicks.map((tick) => {
-              const x =
-                chartLeft +
-                scaleDuration(tick, bounds.minDuration, bounds.maxDuration) *
-                  (chartRight - chartLeft);
-              return (
-                <React.Fragment key={`duration-${tick}`}>
-                  <Line
-                    x1={x}
-                    x2={x}
-                    y1={chartBottom}
-                    y2={chartBottom + 4}
-                    stroke={colors.axis}
-                    strokeWidth={1}
-                  />
-                  <SvgText
-                    x={x}
-                    y={chartBottom + 18}
-                    fill={colors.label}
-                    fontSize={10}
-                    textAnchor="middle"
-                  >
-                    {formatDuration(Math.round(tick))}
-                  </SvgText>
-                </React.Fragment>
-              );
-            })}
-            <SvgText
-              x={(chartLeft + chartRight) / 2}
-              y={height - 4}
-              fill={colors.label}
-              fontSize={11}
-              textAnchor="middle"
-            >
-              Duration
-            </SvgText>
-            <Path
-              d={buildPath(earliestCoordinates)}
-              stroke={colors.previous}
-              strokeWidth={3}
-              fill="none"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            <Path
-              d={buildPath(presentCoordinates)}
-              stroke={colors.current}
-              strokeWidth={4}
-              fill="none"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            {presentCoordinates.map((point, index) => (
+        <Text className="text-lg font-semibold text-foreground">
+          {best ? `Best ${formatValue(best)}` : "No data"}
+        </Text>
+      </View>
+      {presentPoints.length < 2 ? (
+        <View className="h-[260px] items-center justify-center rounded-2xl bg-muted/20">
+          <Text className="text-center text-sm font-medium text-foreground">
+            Not enough data to draw this curve yet.
+          </Text>
+          <Text className="mt-2 px-6 text-center text-xs text-muted-foreground">
+            Save efforts at two or more durations to compute a curve. Available efforts are listed
+            below.
+          </Text>
+        </View>
+      ) : (
+        <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
+          {valueTicks.map((tick) => {
+            const valueRange = bounds.maxValue - bounds.minValue || 1;
+            const y =
+              chartTop + (1 - (tick - bounds.minValue) / valueRange) * (chartBottom - chartTop);
+            return (
+              <React.Fragment key={`value-${tick}`}>
+                <Line
+                  x1={chartLeft}
+                  x2={chartRight}
+                  y1={y}
+                  y2={y}
+                  stroke={colors.grid}
+                  strokeWidth={1}
+                />
+                <SvgText
+                  x={chartLeft - 8}
+                  y={y + 4}
+                  fill={colors.label}
+                  fontSize={10}
+                  textAnchor="end"
+                >
+                  {formatAxisValue(tick, curve.unit)}
+                </SvgText>
+              </React.Fragment>
+            );
+          })}
+          <Line
+            x1={chartLeft}
+            x2={chartLeft}
+            y1={chartTop}
+            y2={chartBottom}
+            stroke={colors.axis}
+            strokeWidth={1.5}
+          />
+          <Line
+            x1={chartLeft}
+            x2={chartRight}
+            y1={chartBottom}
+            y2={chartBottom}
+            stroke={colors.axis}
+            strokeWidth={1.5}
+          />
+          {durationTicks.map((tick) => {
+            const x =
+              chartLeft +
+              scaleDuration(tick, bounds.minDuration, bounds.maxDuration) *
+                (chartRight - chartLeft);
+            return (
+              <React.Fragment key={`duration-${tick}`}>
+                <Line
+                  x1={x}
+                  x2={x}
+                  y1={chartBottom}
+                  y2={chartBottom + 4}
+                  stroke={colors.axis}
+                  strokeWidth={1}
+                />
+                <SvgText
+                  x={x}
+                  y={chartBottom + 18}
+                  fill={colors.label}
+                  fontSize={10}
+                  textAnchor="middle"
+                >
+                  {formatDuration(Math.round(tick))}
+                </SvgText>
+              </React.Fragment>
+            );
+          })}
+          <SvgText
+            x={(chartLeft + chartRight) / 2}
+            y={height - 4}
+            fill={colors.label}
+            fontSize={11}
+            textAnchor="middle"
+          >
+            Duration
+          </SvgText>
+          <Path
+            d={buildPath(earliestCoordinates)}
+            stroke={colors.previous}
+            strokeWidth={3}
+            fill="none"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <Path
+            d={buildPath(presentCoordinates)}
+            stroke={colors.current}
+            strokeWidth={4}
+            fill="none"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          {presentPoints.map((effortPoint, index) => {
+            const point = presentCoordinates[index];
+            if (!point) return null;
+
+            return (
               <Circle
-                key={`${curve.id}-${index}`}
+                key={effortPoint.effortId}
                 cx={point.x}
                 cy={point.y}
                 r={3.5}
                 fill={colors.current}
               />
-            ))}
-          </Svg>
-        )}
-        <View className="flex-row gap-4">
-          <View className="flex-row items-center gap-2">
-            <View className="h-2 w-5 rounded-full bg-slate-400" />
-            <Text className="text-xs text-muted-foreground">First records</Text>
-          </View>
-          <View className="flex-row items-center gap-2">
-            <View className="h-2 w-5 rounded-full bg-orange-500" />
-            <Text className="text-xs text-muted-foreground">Best so far</Text>
-          </View>
+            );
+          })}
+        </Svg>
+      )}
+      <View className="flex-row gap-4">
+        <View className="flex-row items-center gap-2">
+          <View className="h-2 w-5 rounded-full bg-slate-400" />
+          <Text className="text-xs text-muted-foreground">First records</Text>
         </View>
-      </CardContent>
-    </Card>
+        <View className="flex-row items-center gap-2">
+          <View className="h-2 w-5 rounded-full bg-orange-500" />
+          <Text className="text-xs text-muted-foreground">Best so far</Text>
+        </View>
+      </View>
+    </View>
   );
 }
 
@@ -396,35 +398,33 @@ function EffortRecords({
   const curveEffortIds = React.useMemo(() => getCurveEffortIds(records), [records]);
 
   return (
-    <Card className="rounded-3xl border border-border bg-card">
-      <CardContent className="gap-3 p-4">
-        <Text className="text-base font-semibold text-foreground">Effort records</Text>
-        {records.length === 0 ? (
-          <Text className="text-sm text-muted-foreground">No records in this range.</Text>
-        ) : null}
-        {records.map((record) => (
-          <Pressable
-            key={record.id}
-            onPress={() => onOpenRecord(record.id)}
-            className="flex-row items-center justify-between gap-3 rounded-2xl border border-border bg-muted/10 px-4 py-3"
-            testID={`activity-effort-record-${record.id}`}
-          >
-            <View className="flex-1 gap-1">
-              <View className="flex-row items-center gap-2">
-                <Text className="text-sm font-semibold text-foreground">{formatValue(record)}</Text>
-                {curveEffortIds.has(record.id) ? (
-                  <Icon as={CheckCircle2} size={14} className="text-primary" />
-                ) : null}
-              </View>
-              <Text className="text-xs text-muted-foreground">
-                {formatDate(record.recorded_at)} • {record.duration_seconds}s
-              </Text>
+    <View className="gap-3 border-t border-border pt-5">
+      <Text className="text-base font-semibold text-foreground">Effort records</Text>
+      {records.length === 0 ? (
+        <Text className="text-sm text-muted-foreground">No records in this range.</Text>
+      ) : null}
+      {records.map((record) => (
+        <Pressable
+          key={record.id}
+          onPress={() => onOpenRecord(record.id)}
+          className="flex-row items-center justify-between gap-3 rounded-2xl border border-border bg-muted/10 px-4 py-3"
+          testID={`activity-effort-record-${record.id}`}
+        >
+          <View className="flex-1 gap-1">
+            <View className="flex-row items-center gap-2">
+              <Text className="text-sm font-semibold text-foreground">{formatValue(record)}</Text>
+              {curveEffortIds.has(record.id) ? (
+                <Icon as={CheckCircle2} size={14} className="text-primary" />
+              ) : null}
             </View>
-            <Text className="text-xs font-medium text-primary">Open</Text>
-          </Pressable>
-        ))}
-      </CardContent>
-    </Card>
+            <Text className="text-xs text-muted-foreground">
+              {formatDate(record.recorded_at)} • {record.duration_seconds}s
+            </Text>
+          </View>
+          <Text className="text-xs font-medium text-primary">Open</Text>
+        </Pressable>
+      ))}
+    </View>
   );
 }
 
@@ -485,32 +485,46 @@ function ActivityEffortsList() {
           </Text>
         </View>
 
-        <View className="flex-row flex-wrap gap-4">
-          {effortCurves.map((curve) => {
-            const policy = getActivityInsightVisualPolicy("activityEfforts");
-            const best = getActivityEffortCurveBest(curve.records);
-            return (
-              <CompactInsightCard
-                key={curve.id}
-                title={curve.title}
-                value={best ? `Best ${formatValue(best)}` : "--"}
-                icon={curve.id === "bike_power" ? Zap : Timer}
-                hasData={Boolean(best)}
-                layout={policy.compactLayout}
-                summary={
-                  curve.records.length === 0
-                    ? "No efforts yet"
-                    : `${curve.records.length} efforts across ${curve.points.length} durations`
-                }
-                visualPolicy={{ source: policy.source, visualType: policy.visualType }}
-                onPress={() => setSelectedCurveId(curve.id)}
-                testID={`activity-effort-curve-${curve.id}`}
-              >
-                <MiniEffortVisual points={curve.points} />
-              </CompactInsightCard>
-            );
-          })}
-        </View>
+        {efforts.length === 0 ? (
+          <View
+            className="items-center rounded-2xl bg-muted/20 px-6 py-10"
+            testID="activity-efforts-empty-state"
+          >
+            <Text className="text-center text-base font-semibold text-foreground">
+              No efforts yet
+            </Text>
+            <Text className="mt-2 text-center text-sm text-muted-foreground">
+              Add an effort to start tracking your power, pace, speed, and other trends.
+            </Text>
+          </View>
+        ) : (
+          <View className="flex-row flex-wrap gap-4">
+            {effortCurves.map((curve) => {
+              const policy = getActivityInsightVisualPolicy("activityEfforts");
+              const best = getActivityEffortCurveBest(curve.records);
+              return (
+                <CompactInsightCard
+                  key={curve.id}
+                  title={curve.title}
+                  value={best ? `Best ${formatValue(best)}` : "--"}
+                  icon={curve.id === "bike_power" ? Zap : Timer}
+                  hasData={Boolean(best)}
+                  layout={policy.compactLayout}
+                  summary={
+                    curve.records.length === 0
+                      ? "No efforts yet"
+                      : `${curve.records.length} efforts across ${curve.points.length} durations`
+                  }
+                  visualPolicy={{ source: policy.source, visualType: policy.visualType }}
+                  onPress={() => setSelectedCurveId(curve.id)}
+                  testID={`activity-effort-curve-${curve.id}`}
+                >
+                  <MiniEffortVisual points={curve.points} />
+                </CompactInsightCard>
+              );
+            })}
+          </View>
+        )}
 
         <DetailChartModal
           visible={!!selectedCurve}

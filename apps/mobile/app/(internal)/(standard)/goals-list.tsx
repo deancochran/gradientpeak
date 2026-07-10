@@ -1,8 +1,7 @@
 import type { CanonicalSport } from "@repo/core";
-import { Text } from "@repo/ui/components/text";
 import { type Href, Stack } from "expo-router";
 import { useMemo, useState } from "react";
-import { FlatList, Pressable, RefreshControl, View } from "react-native";
+import { FlatList, RefreshControl, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { GoalListItem } from "@/components/plan/GoalListItem";
 import { usePlanDashboardViewModel } from "@/components/plan/usePlanDashboardViewModel";
@@ -13,6 +12,7 @@ import {
   IndexResultsSummary,
   IndexSearchBar,
 } from "@/components/shared";
+import { HeaderTextAction } from "@/components/shared/HeaderAction";
 import { EmptyState, ErrorState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
@@ -121,15 +121,12 @@ function GoalsListScreen() {
       <Stack.Screen
         options={{
           headerRight: () => (
-            <Pressable
-              onPress={() => navigateTo(ROUTES.GOALS.CREATE as Href)}
-              className="mr-2 rounded-full px-2 py-1"
-              testID="goals-list-create-button"
-              accessibilityRole="button"
+            <HeaderTextAction
               accessibilityLabel="Create goal"
-            >
-              <Text className="text-sm font-medium text-primary">Create</Text>
-            </Pressable>
+              label="Create"
+              onPress={() => navigateTo(ROUTES.GOALS.CREATE as Href)}
+              testID="goals-list-create-button"
+            />
           ),
         }}
       />

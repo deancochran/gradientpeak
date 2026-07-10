@@ -50,7 +50,17 @@ describe("header buttons", () => {
   it("navigates to messages without stacking duplicate inbox routes", () => {
     renderNative(<MessagesHeaderButton />);
 
-    fireEvent.press(screen.getByTestId("messages-header-button"));
+    const button = screen.getByTestId("messages-header-button");
+
+    expect(button.props).toMatchObject({
+      accessibilityLabel: "Messages",
+      accessibilityRole: "button",
+      accessibilityValue: { text: "2 unread messages" },
+      activeOpacity: 0.7,
+    });
+    expect(button.props.className).toContain("w-11 h-11");
+
+    fireEvent.press(button);
 
     expect(navigateMock).toHaveBeenCalledWith("/messages");
   });
@@ -58,7 +68,17 @@ describe("header buttons", () => {
   it("navigates to notifications without stacking duplicate hub routes", () => {
     renderNative(<NotificationsHeaderButton />);
 
-    fireEvent.press(screen.getByTestId("notifications-header-button"));
+    const button = screen.getByTestId("notifications-header-button");
+
+    expect(button.props).toMatchObject({
+      accessibilityLabel: "Notifications",
+      accessibilityRole: "button",
+      accessibilityValue: { text: "3 unread notifications" },
+      activeOpacity: 0.7,
+    });
+    expect(button.props.className).toContain("w-11 h-11");
+
+    fireEvent.press(button);
 
     expect(navigateMock).toHaveBeenCalledWith("/notifications");
   });
@@ -66,7 +86,16 @@ describe("header buttons", () => {
   it("navigates to global search without using the Discover tab", () => {
     renderNative(<SearchHeaderButton />);
 
-    fireEvent.press(screen.getByTestId("search-header-button"));
+    const button = screen.getByTestId("search-header-button");
+
+    expect(button.props).toMatchObject({
+      accessibilityLabel: "Search",
+      accessibilityRole: "button",
+      activeOpacity: 0.7,
+    });
+    expect(button.props.className).toContain("w-11 h-11");
+
+    fireEvent.press(button);
 
     expect(navigateMock).toHaveBeenCalledWith("/search");
   });

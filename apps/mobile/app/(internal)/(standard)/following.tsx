@@ -1,9 +1,10 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Text } from "@repo/ui/components/text";
 import { useLocalSearchParams } from "expo-router";
-import { Loader2 } from "lucide-react-native";
-import { FlatList, TouchableOpacity, View } from "react-native";
+import { TouchableOpacity, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
+import { ResourceList } from "@/components/shared/ResourceList";
+import { EmptyState, ErrorState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
@@ -18,10 +19,13 @@ function FollowingScreen() {
   const {
     data: followingData,
     isLoading,
-    isFetching,
+    isError,
+    isFetchingNextPage,
+    isRefetching,
     error,
     hasNextPage,
     fetchNextPage,
+    refetch,
   } = api.social.getFollowing.useInfiniteQuery(
     { user_id: targetUserId, limit },
     { enabled: !!targetUserId, getNextPageParam: (lastPage: any) => lastPage.nextCursor },
@@ -29,16 +33,8 @@ function FollowingScreen() {
 
   const users = followingData?.pages.flatMap((page) => page.users) || [];
   const total = followingData?.pages[0]?.total || 0;
-  const hasMore = hasNextPage || false;
-
   const handleUserPress = (profileUserId: string) => {
     navigateTo(`/user/${profileUserId}` as any);
-  };
-
-  const handleLoadMore = () => {
-    if (hasMore && !isFetching) {
-      void fetchNextPage();
-    }
   };
 
   const renderItem = ({
@@ -74,31 +70,6 @@ function FollowingScreen() {
     </View>
   );
 
-  const renderEmpty = () => {
-    if (isLoading) {
-      return (
-        <View className="flex-1 items-center justify-center p-8">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </View>
-      );
-    }
-
-    return (
-      <View className="flex-1 items-center justify-center p-8">
-        <Text className="text-muted-foreground text-center">Not following anyone yet</Text>
-      </View>
-    );
-  };
-
-  const renderFooter = () => {
-    if (!hasMore) return null;
-    return (
-      <View className="p-4 items-center">
-        {isFetching && <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />}
-      </View>
-    );
-  };
-
   if (!targetUserId) {
     return (
       <View className="flex-1 items-center justify-center bg-background p-6">
@@ -107,35 +78,61 @@ function FollowingScreen() {
     );
   }
 
-  if (error) {
+  if (isLoading) {
+    return (
+      <View
+        className="flex-1 items-center justify-center bg-background"
+        testID="following-loading-state"
+      >
+        <LoadingState message="Loading following..." />
+      </View>
+    );
+  }
+
+  if (isError && error) {
     const isPrivate = error.data?.code === "FORBIDDEN";
 
     return (
       <View className="flex-1 items-center justify-center bg-background p-6">
-        <Text className="text-base font-semibold text-foreground">
-          {isPrivate ? "Following is private" : "Unable to load following"}
-        </Text>
-        <Text className="mt-2 text-center text-sm text-muted-foreground">
-          {isPrivate
-            ? "Follow requests must be accepted before you can see who this profile follows."
-            : "Please try again."}
-        </Text>
+        {isPrivate ? (
+          <EmptyState
+            description="Follow requests must be accepted before you can see who this profile follows."
+            testID="following-private-state"
+            title="Following is private"
+          />
+        ) : (
+          <ErrorState
+            description="Check your connection and try again."
+            onAction={() => void refetch()}
+            testID="following-error-state"
+            title="Unable to load following"
+          />
+        )}
       </View>
     );
   }
 
   return (
-    <FlatList
+    <ResourceList
+      testID="following-list"
       data={users}
-      renderItem={renderItem}
+      renderItem={(item) => renderItem({ item })}
       keyExtractor={(item) => item.id}
-      ListHeaderComponent={renderHeader}
-      ListEmptyComponent={renderEmpty}
-      ListFooterComponent={renderFooter}
-      onEndReached={handleLoadMore}
-      onEndReachedThreshold={0.5}
-      className="flex-1 bg-background"
-      contentContainerClassName="flex-grow-1"
+      ListHeaderComponent={renderHeader()}
+      contentContainerClassName="flex-grow gap-4 pb-6"
+      emptyComponent={
+        <EmptyState
+          description="People you follow will appear here."
+          testID="following-empty-state"
+          title="Not following anyone yet"
+        />
+      }
+      hasNextPage={hasNextPage}
+      isFetchingNextPage={isFetchingNextPage}
+      loadingMoreLabel="Loading more people..."
+      onLoadMore={() => void fetchNextPage()}
+      onRefresh={() => refetch()}
+      refreshing={isRefetching}
     />
   );
 }

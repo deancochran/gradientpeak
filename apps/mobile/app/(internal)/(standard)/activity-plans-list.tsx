@@ -1,9 +1,10 @@
 import { Text } from "@repo/ui/components/text";
 import { Stack } from "expo-router";
 import { useState } from "react";
-import { Pressable, View } from "react-native";
+import { View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
+import { HeaderTextAction } from "@/components/shared/HeaderAction";
 import { IndexFilterSheet } from "@/components/shared/IndexFilterSheet";
 import {
   FilterChip,
@@ -40,13 +41,12 @@ function ActivityPlansListScreen() {
       <Stack.Screen
         options={{
           headerRight: () => (
-            <Pressable
+            <HeaderTextAction
+              accessibilityLabel="Create activity plan"
+              label="Create"
               onPress={() => navigateTo(ROUTES.PLAN.CREATE_ACTIVITY_PLAN.INDEX as any)}
-              className="mr-2 rounded-full px-2 py-1"
               testID="activity-plans-list-create-trigger"
-            >
-              <Text className="text-sm font-medium text-primary">Create</Text>
-            </Pressable>
+            />
           ),
         }}
       />

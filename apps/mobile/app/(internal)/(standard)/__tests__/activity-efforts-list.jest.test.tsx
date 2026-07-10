@@ -6,7 +6,7 @@ const pushMock = jest.fn();
 let mockActivityEfforts = [
   {
     id: "effort-1",
-    activity_category: "run",
+    activity_category: "bike",
     effort_type: "power",
     recorded_at: "2026-03-01T00:00:00.000Z",
     duration_seconds: 15,
@@ -15,7 +15,7 @@ let mockActivityEfforts = [
   },
   {
     id: "effort-2",
-    activity_category: "run",
+    activity_category: "bike",
     effort_type: "power",
     recorded_at: "2026-03-02T00:00:00.000Z",
     duration_seconds: 60,
@@ -24,7 +24,7 @@ let mockActivityEfforts = [
   },
   {
     id: "effort-3",
-    activity_category: "run",
+    activity_category: "bike",
     effort_type: "power",
     recorded_at: "2026-03-03T00:00:00.000Z",
     duration_seconds: 300,
@@ -33,7 +33,7 @@ let mockActivityEfforts = [
   },
   {
     id: "effort-4",
-    activity_category: "run",
+    activity_category: "bike",
     effort_type: "power",
     recorded_at: "2026-03-04T00:00:00.000Z",
     duration_seconds: 1200,
@@ -42,7 +42,7 @@ let mockActivityEfforts = [
   },
   {
     id: "effort-5",
-    activity_category: "run",
+    activity_category: "bike",
     effort_type: "power",
     recorded_at: "2026-03-05T00:00:00.000Z",
     duration_seconds: 3600,
@@ -100,13 +100,14 @@ jest.mock("react-native-svg", () => ({
   Text: mockCreateHost("Text"),
 }));
 
-jest.mock("@repo/ui/components/card", () => ({
-  __esModule: true,
-  Card: mockCreateHost("Card"),
-  CardContent: mockCreateHost("CardContent"),
-}));
 jest.mock("@repo/ui/components/icon", () => ({ __esModule: true, Icon: mockCreateHost("Icon") }));
 jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: mockCreateHost("Text") }));
+
+jest.mock("@/components/ErrorBoundary", () => ({
+  __esModule: true,
+  ErrorBoundary: ({ children }: { children: React.ReactNode }) => children,
+  ScreenErrorFallback: mockCreateHost("ScreenErrorFallback"),
+}));
 
 jest.mock("@/components/shared", () => ({
   __esModule: true,
@@ -160,7 +161,7 @@ describe("activity efforts list", () => {
     mockActivityEfforts = [
       {
         id: "effort-1",
-        activity_category: "run",
+        activity_category: "bike",
         effort_type: "power",
         recorded_at: "2026-03-01T00:00:00.000Z",
         duration_seconds: 15,
@@ -169,7 +170,7 @@ describe("activity efforts list", () => {
       },
       {
         id: "effort-2",
-        activity_category: "run",
+        activity_category: "bike",
         effort_type: "power",
         recorded_at: "2026-03-02T00:00:00.000Z",
         duration_seconds: 60,
@@ -178,7 +179,7 @@ describe("activity efforts list", () => {
       },
       {
         id: "effort-3",
-        activity_category: "run",
+        activity_category: "bike",
         effort_type: "power",
         recorded_at: "2026-03-03T00:00:00.000Z",
         duration_seconds: 300,
@@ -187,7 +188,7 @@ describe("activity efforts list", () => {
       },
       {
         id: "effort-4",
-        activity_category: "run",
+        activity_category: "bike",
         effort_type: "power",
         recorded_at: "2026-03-04T00:00:00.000Z",
         duration_seconds: 1200,
@@ -196,7 +197,7 @@ describe("activity efforts list", () => {
       },
       {
         id: "effort-5",
-        activity_category: "run",
+        activity_category: "bike",
         effort_type: "power",
         recorded_at: "2026-03-05T00:00:00.000Z",
         duration_seconds: 3600,
@@ -209,27 +210,27 @@ describe("activity efforts list", () => {
   it("opens a power curve sheet when tapping the curve card", () => {
     renderNative(<ActivityEffortsList />);
 
-    fireEvent.press(screen.getByTestId("activity-effort-curve-power"));
+    fireEvent.press(screen.getByTestId("activity-effort-curve-bike_power"));
 
-    expect(screen.getAllByText("Power curve").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Bike power curve").length).toBeGreaterThan(0);
   });
 
   it("shows nonlinear effort duration ticks across sprint, tempo, and endurance", () => {
     renderNative(<ActivityEffortsList />);
 
-    fireEvent.press(screen.getByTestId("activity-effort-curve-power"));
+    fireEvent.press(screen.getByTestId("activity-effort-curve-bike_power"));
 
     expect(screen.getByText("15s")).toBeTruthy();
-    expect(screen.getByText("5m")).toBeTruthy();
-    expect(screen.getByText("20m")).toBeTruthy();
-    expect(screen.getByText("1h")).toBeTruthy();
+    expect(screen.getByText("5m 00s")).toBeTruthy();
+    expect(screen.getByText("20m 00s")).toBeTruthy();
+    expect(screen.getByText("1h 00m")).toBeTruthy();
   });
 
   it("does not force beginner-length efforts onto a one-hour x-axis", () => {
     mockActivityEfforts = [
       {
         id: "effort-short-1",
-        activity_category: "run",
+        activity_category: "bike",
         effort_type: "power",
         recorded_at: "2026-03-01T00:00:00.000Z",
         duration_seconds: 60,
@@ -238,7 +239,7 @@ describe("activity efforts list", () => {
       },
       {
         id: "effort-short-2",
-        activity_category: "run",
+        activity_category: "bike",
         effort_type: "power",
         recorded_at: "2026-03-02T00:00:00.000Z",
         duration_seconds: 300,
@@ -248,10 +249,19 @@ describe("activity efforts list", () => {
     ];
 
     renderNative(<ActivityEffortsList />);
-    fireEvent.press(screen.getByTestId("activity-effort-curve-power"));
+    fireEvent.press(screen.getByTestId("activity-effort-curve-bike_power"));
 
-    expect(screen.getByText("1m")).toBeTruthy();
-    expect(screen.getByText("5m")).toBeTruthy();
-    expect(screen.queryByText("1h")).toBeNull();
+    expect(screen.getByText("1m 00s")).toBeTruthy();
+    expect(screen.getByText("5m 00s")).toBeTruthy();
+    expect(screen.queryByText("1h 00m")).toBeNull();
+  });
+
+  it("shows an empty state when no efforts have been saved", () => {
+    mockActivityEfforts = [];
+
+    renderNative(<ActivityEffortsList />);
+
+    expect(screen.getByTestId("activity-efforts-empty-state")).toBeTruthy();
+    expect(screen.getByText("No efforts yet")).toBeTruthy();
   });
 });

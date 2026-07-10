@@ -45,6 +45,10 @@ export function GroupCard({ group, onPress, testID, viewer }: GroupCardProps) {
   return (
     <TouchableOpacity
       activeOpacity={0.85}
+      accessibilityLabel={`View group ${group.name?.trim() || "Group"}`}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: !onPress }}
+      className="min-h-[44px]"
       disabled={!onPress}
       onPress={() => onPress?.(group)}
       testID={testID}
@@ -82,6 +86,10 @@ export function GroupCompactCard({ group, onPress, testID, viewer }: GroupCardPr
   return (
     <TouchableOpacity
       activeOpacity={0.85}
+      accessibilityLabel={`View group ${group.name?.trim() || "Group"}`}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: !onPress }}
+      className="min-h-[44px]"
       disabled={!onPress}
       onPress={() => onPress?.(group)}
       testID={testID}

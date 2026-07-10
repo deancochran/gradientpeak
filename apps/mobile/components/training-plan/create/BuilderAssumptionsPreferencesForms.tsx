@@ -3,6 +3,7 @@ import type {
   AthletePlanningContextFieldKey,
   TrainingPreferenceValidationIssue,
 } from "@repo/core";
+import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Button } from "@repo/ui/components/button";
 import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
@@ -15,12 +16,9 @@ import {
 } from "@repo/ui/components/select";
 import { Text } from "@repo/ui/components/text";
 import type { ReactNode } from "react";
-import { Pressable, View } from "react-native";
+import { View } from "react-native";
 import { PlanLocalPreferencesSection } from "@/components/settings/training-preferences/sections/PlanLocalPreferencesSection";
-import {
-  BuilderFieldList,
-  getBuilderNumberStep,
-} from "@/components/training-plan/create/BuilderFieldList";
+import { BuilderFieldList } from "@/components/training-plan/create/BuilderFieldList";
 import type {
   TrainingPlanPreferenceFieldDescriptor,
   TrainingPlanPreferenceFieldKey,
@@ -238,97 +236,18 @@ function NumberField({
   unitLabel?: string;
   value?: string;
 }) {
-  const numericValue = value && Number.isFinite(Number(value)) ? Number(value) : null;
-  const updateValue = (nextValue: number | null) => {
-    onChange(nextValue === null ? "" : String(nextValue));
-  };
-
   return (
-    <CompactNumberRow
-      label={label}
-      min={min}
-      max={max}
-      unitLabel={unitLabel}
-      placeholder={placeholder}
+    <BoundedNumberInput
+      decimals={0}
       helperText={helperText}
-      value={numericValue}
-      onChange={updateValue}
+      label={label}
+      max={max}
+      min={min}
+      onChange={onChange}
+      placeholder={placeholder}
+      unitLabel={unitLabel}
+      value={value ?? ""}
     />
-  );
-}
-
-function CompactNumberRow({
-  helperText,
-  label,
-  max,
-  min = 0,
-  onChange,
-  placeholder,
-  unitLabel,
-  value,
-}: {
-  helperText?: string;
-  label: string;
-  max?: number;
-  min?: number;
-  onChange: (value: number | null) => void;
-  placeholder?: string;
-  unitLabel?: string;
-  value: number | null;
-}) {
-  const step = getBuilderNumberStep({ label, unitLabel });
-  const canDecrease = value !== null && value > min;
-  const decrease = () => {
-    if (value === null) return;
-    const nextValue = value - step;
-    onChange(nextValue >= min ? nextValue : null);
-  };
-  const increase = () => {
-    const startValue = value ?? min;
-    const nextValue = startValue + step;
-    onChange(max !== undefined ? Math.min(max, nextValue) : nextValue);
-  };
-
-  return (
-    <View className="gap-2 border-b border-border/70 py-3 last:border-b-0">
-      <View className="flex-row items-center justify-between gap-3">
-        <View className="min-w-0 flex-1 gap-0.5">
-          <Text className="text-sm font-medium text-foreground">{label}</Text>
-          {helperText ? <Text className="text-xs text-muted-foreground">{helperText}</Text> : null}
-        </View>
-        {value !== null ? (
-          <Pressable accessibilityRole="button" hitSlop={8} onPress={() => onChange(null)}>
-            <Text className="text-xs font-medium text-muted-foreground">Clear</Text>
-          </Pressable>
-        ) : null}
-      </View>
-      <View className="flex-row items-center justify-between gap-3 rounded-2xl bg-muted/30 px-3 py-2">
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Decrease ${label}`}
-          className="h-9 w-9 items-center justify-center rounded-full bg-background"
-          disabled={!canDecrease}
-          onPress={decrease}
-        >
-          <Text className="text-lg font-medium text-foreground">−</Text>
-        </Pressable>
-        <View className="min-w-0 flex-1 items-center">
-          <Text className="text-base font-semibold text-foreground">
-            {value === null
-              ? (placeholder ?? "Not set")
-              : `${value}${unitLabel ? ` ${unitLabel}` : ""}`}
-          </Text>
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Increase ${label}`}
-          className="h-9 w-9 items-center justify-center rounded-full bg-background"
-          onPress={increase}
-        >
-          <Text className="text-lg font-medium text-foreground">+</Text>
-        </Pressable>
-      </View>
-    </View>
   );
 }
 

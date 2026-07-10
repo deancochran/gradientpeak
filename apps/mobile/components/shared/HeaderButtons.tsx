@@ -17,8 +17,10 @@ export function SearchHeaderButton({ className }: HeaderButtonProps = {}) {
     <TouchableOpacity
       onPress={() => router.navigate("/search")}
       testID="search-header-button"
-      className={cn("w-10 h-10 items-center justify-center mr-2", className)}
+      className={cn("w-11 h-11 items-center justify-center mr-2", className)}
+      accessibilityRole="button"
       accessibilityLabel="Search"
+      activeOpacity={0.7}
     >
       <Icon as={Search} size={24} className="text-foreground" />
     </TouchableOpacity>
@@ -33,7 +35,16 @@ export function MessagesHeaderButton({ className }: HeaderButtonProps = {}) {
     <TouchableOpacity
       onPress={() => router.navigate("/messages")}
       testID="messages-header-button"
-      className={cn("w-10 h-10 items-center justify-center mr-2", className)}
+      className={cn("w-11 h-11 items-center justify-center mr-2", className)}
+      accessibilityRole="button"
+      accessibilityLabel="Messages"
+      accessibilityValue={{
+        text:
+          unreadCount > 0
+            ? `${unreadCount} unread message${unreadCount === 1 ? "" : "s"}`
+            : "No unread messages",
+      }}
+      activeOpacity={0.7}
     >
       <Icon as={MessageSquare} size={24} className="text-foreground" />
       {unreadCount > 0 && (
@@ -55,7 +66,16 @@ export function NotificationsHeaderButton({ className }: HeaderButtonProps = {})
     <TouchableOpacity
       onPress={() => router.navigate("/notifications")}
       testID="notifications-header-button"
-      className={cn("w-10 h-10 items-center justify-center mr-2", className)}
+      className={cn("w-11 h-11 items-center justify-center mr-2", className)}
+      accessibilityRole="button"
+      accessibilityLabel="Notifications"
+      accessibilityValue={{
+        text:
+          unreadCount > 0
+            ? `${unreadCount} unread notification${unreadCount === 1 ? "" : "s"}`
+            : "No unread notifications",
+      }}
+      activeOpacity={0.7}
     >
       <Icon as={Bell} size={24} className="text-foreground" />
       {unreadCount > 0 && (
