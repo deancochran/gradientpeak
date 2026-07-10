@@ -17,44 +17,65 @@ jest.mock("react-native-reanimated", () => ({
 }));
 
 describe("DailyTrainingAdjustmentChart", () => {
-  it("identifies completed activity dates without a completed-load overlay", () => {
+  it("identifies an unavailable completed activity load", () => {
     expect(
       hasCompletedActivityWithoutLoad({
         date: "2026-06-01",
-        hasCompletedActivity: true,
-        completedLoadTss: 0,
+        hasCompletedActivityWithoutLoad: true,
       }),
     ).toBe(true);
+  });
+
+  it("does not mark a known zero completed load as unavailable", () => {
     expect(
       hasCompletedActivityWithoutLoad({
         date: "2026-06-01",
-        hasCompletedActivity: true,
-        completedLoadTss: 42,
-      }),
-    ).toBe(false);
-    expect(
-      hasCompletedActivityWithoutLoad({
-        date: "2026-06-01",
-        hasCompletedActivity: false,
-        completedLoadTss: 0,
+        hasCompletedActivityWithoutLoad: false,
       }),
     ).toBe(false);
   });
 
-  it("renders an accessible marker for a completed activity without load", () => {
+  it("keeps an unavailable marker alongside a known completed aggregate load", () => {
+    expect(
+      hasCompletedActivityWithoutLoad({
+        date: "2026-06-01",
+        hasCompletedActivityWithoutLoad: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("does not mark creation-like points without a completed activity", () => {
+    expect(
+      hasCompletedActivityWithoutLoad({
+        date: "2026-06-01",
+        hasCompletedActivityWithoutLoad: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("renders accessible markers only for unavailable completed activity loads", () => {
     render(
       <DailyTrainingAdjustmentChart
         points={[
           {
             date: "2026-06-01",
             completedLoadTss: 0,
-            hasCompletedActivity: true,
+            hasCompletedActivityWithoutLoad: true,
             targetLoadTss: 40,
           },
           {
             date: "2026-06-02",
             completedLoadTss: 42,
-            hasCompletedActivity: true,
+            hasCompletedActivityWithoutLoad: true,
+            targetLoadTss: 40,
+          },
+          {
+            date: "2026-06-03",
+            completedLoadTss: 0,
+            targetLoadTss: 40,
+          },
+          {
+            date: "2026-06-04",
             targetLoadTss: 40,
           },
         ]}
@@ -63,7 +84,9 @@ describe("DailyTrainingAdjustmentChart", () => {
 
     expect(screen.getByTestId("completed-activity-marker-label-2026-06-01")).toBeTruthy();
     expect(screen.getByLabelText("Completed activity without load on 2026-06-01")).toBeTruthy();
-    expect(screen.queryByTestId("completed-activity-marker-label-2026-06-02")).toBeNull();
+    expect(screen.getByTestId("completed-activity-marker-label-2026-06-02")).toBeTruthy();
+    expect(screen.queryByTestId("completed-activity-marker-label-2026-06-03")).toBeNull();
+    expect(screen.queryByTestId("completed-activity-marker-label-2026-06-04")).toBeNull();
   });
 
   it("derives a stable bounded chart window around the anchor date", () => {

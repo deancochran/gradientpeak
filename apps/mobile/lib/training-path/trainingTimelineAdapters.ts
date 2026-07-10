@@ -6,13 +6,13 @@ import {
 } from "./dailyTrainingPathModel";
 
 export function buildDailyTrainingAdjustmentPointsFromTimelineWindow(input: {
-  completedActivityDates?: readonly string[];
+  completedActivityDatesWithoutLoad?: readonly string[];
   timelineWindow: TrainingTimelineWindow;
   fitnessHistory?: TrainingPathDailyFitnessInput[] | null;
   idealFitnessCurve?: TrainingPathDailyFitnessInput[] | null;
   scheduledFitnessTrend?: TrainingPathDailyFitnessInput[] | null;
 }): DailyTrainingAdjustmentPoint[] {
-  const completedActivityDates = new Set(input.completedActivityDates);
+  const completedActivityDatesWithoutLoad = new Set(input.completedActivityDatesWithoutLoad);
   const fitnessByDate = new Map((input.fitnessHistory ?? []).map((point) => [point.date, point]));
   const targetFitnessByDate = new Map(
     (input.idealFitnessCurve ?? []).map((point) => [point.date, point]),
@@ -30,7 +30,7 @@ export function buildDailyTrainingAdjustmentPointsFromTimelineWindow(input: {
       const scheduledFitness = scheduledFitnessByDate.get(day.date);
       return {
         date: day.date,
-        hasCompletedActivity: completedActivityDates.has(day.date),
+        hasCompletedActivityWithoutLoad: completedActivityDatesWithoutLoad.has(day.date),
         plannedLoadTss: day.load.scheduledTss,
         tentativePlannedLoadTss: day.load.tentativeScheduledTss,
         completedLoadTss: day.load.completedTss,

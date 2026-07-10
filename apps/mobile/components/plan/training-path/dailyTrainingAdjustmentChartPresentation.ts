@@ -53,11 +53,11 @@ function valueOrZero(value: number | null | undefined) {
 }
 
 export function hasCompletedActivityWithoutLoad(
-  point: Pick<DailyTrainingAdjustmentPoint, "completedLoadTss" | "hasCompletedActivity"> & {
+  point: Pick<DailyTrainingAdjustmentPoint, "hasCompletedActivityWithoutLoad"> & {
     date?: string;
   },
 ) {
-  return point.hasCompletedActivity === true && valueOrZero(point.completedLoadTss) <= 0;
+  return point.hasCompletedActivityWithoutLoad === true;
 }
 
 function formatDayLabel(dateKey: string) {

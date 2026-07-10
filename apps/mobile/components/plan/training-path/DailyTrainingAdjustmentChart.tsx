@@ -21,7 +21,7 @@ import { useInstantChartSelection } from "./useInstantChartSelection";
 
 export type DailyTrainingAdjustmentPoint = {
   date: string;
-  hasCompletedActivity?: boolean;
+  hasCompletedActivityWithoutLoad?: boolean;
   plannedLoadTss?: number | null;
   tentativePlannedLoadTss?: number | null;
   completedLoadTss?: number | null;

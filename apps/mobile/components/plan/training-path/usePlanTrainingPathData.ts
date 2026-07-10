@@ -262,13 +262,18 @@ export function usePlanTrainingPathData() {
       }),
     [loadTimelinePoints, scheduledWindowEnd, scheduledWindowStart, todayKey],
   );
-  const completedActivityDates = useMemo(
+  const completedActivityDatesWithoutLoad = useMemo(
     () =>
       Array.from(
         new Set(
           completedActivities
-            .map((activity) => toTrainingPathCompletedActivity(activity, null)?.date)
-            .filter(isPresent),
+            .map((activity) => toTrainingPathCompletedActivity(activity, null))
+            .filter(
+              (activity): activity is TrainingPathCompletedActivity =>
+                activity !== null &&
+                (typeof activity.load !== "number" || !Number.isFinite(activity.load)),
+            )
+            .map((activity) => activity.date),
         ),
       ),
     [completedActivities],
@@ -287,7 +292,7 @@ export function usePlanTrainingPathData() {
   const dailyTrainingPathPoints = useMemo(
     () =>
       buildDailyTrainingAdjustmentPointsFromTimelineWindow({
-        completedActivityDates,
+        completedActivityDatesWithoutLoad,
         timelineWindow: canonicalTimelineWindow,
         fitnessHistory: dashboard.fitnessHistory,
         idealFitnessCurve,
@@ -295,7 +300,7 @@ export function usePlanTrainingPathData() {
       }),
     [
       canonicalTimelineWindow,
-      completedActivityDates,
+      completedActivityDatesWithoutLoad,
       dashboard.fitnessHistory,
       idealFitnessCurve,
       scheduledFitnessTrend,
