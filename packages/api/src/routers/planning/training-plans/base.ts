@@ -90,6 +90,7 @@ import {
   buildScheduleGapActivityPlanMatches,
   buildScheduleRecommendation,
   buildUpcomingActivityImpact,
+  buildWeeklyLoadComparison,
   createFromCreationConfigUseCase,
   createTrainingPlanUseCase,
   deleteTrainingPlanUseCase,
@@ -1780,19 +1781,6 @@ type ProjectionDashboardSummary = {
   }>;
 };
 
-type WeeklyLoadComparison = {
-  weeks: Array<{
-    week_start: string;
-    week_end: string;
-    actual_load: number | null;
-    scheduled_load: number | null;
-    recommended_load: number | null;
-    safety_cap?: number | null;
-    is_recovery_week?: boolean;
-    has_goal?: boolean;
-  }>;
-};
-
 type ScheduleSimulation = ReturnType<typeof simulateReadinessScheduleAdjustment>;
 
 function mapDailyLoadFromDateTotals(map: Map<string, number>): ReadinessDailyLoadInput[] {
@@ -1822,57 +1810,6 @@ function mapRecommendedDailyLoadFromTimeline(
     .filter((point) => Number.isFinite(point.ideal_tss) && point.ideal_tss > 0)
     .map((point) => ({ date: point.date, tss: Math.round(point.ideal_tss * 10) / 10 }))
     .sort((left, right) => left.date.localeCompare(right.date));
-}
-
-function buildWeeklyLoadComparison(input: {
-  timeline: Array<{ date: string; actual_tss: number; scheduled_tss: number; ideal_tss: number }>;
-  goals: Array<{ target_date: string }>;
-  dashboard: ProjectionDashboardSummary | null;
-}): WeeklyLoadComparison | null {
-  if (input.timeline.length === 0) {
-    return null;
-  }
-
-  const microcycleByWeek = new Map(
-    (input.dashboard?.microcycles ?? []).map((microcycle) => [
-      microcycle.week_start_date,
-      microcycle,
-    ]),
-  );
-  const goalWeeks = new Set(input.goals.map((goal) => getWeekStartDateOnly(goal.target_date)));
-  const buckets = new Map<
-    string,
-    { actual: number; scheduled: number; recommended: number; dates: string[] }
-  >();
-
-  for (const point of input.timeline) {
-    const weekStart = getWeekStartDateOnly(point.date);
-    const bucket = buckets.get(weekStart) ?? { actual: 0, scheduled: 0, recommended: 0, dates: [] };
-    bucket.actual += point.actual_tss || 0;
-    bucket.scheduled += point.scheduled_tss || 0;
-    bucket.recommended += point.ideal_tss || 0;
-    bucket.dates.push(point.date);
-    buckets.set(weekStart, bucket);
-  }
-
-  return {
-    weeks: [...buckets.entries()]
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([weekStart, bucket]) => {
-        const microcycle = microcycleByWeek.get(weekStart);
-        return {
-          week_start: weekStart,
-          week_end: addDaysDateOnlyUtc(weekStart, 6),
-          actual_load: bucket.actual > 0 ? Math.round(bucket.actual * 10) / 10 : null,
-          scheduled_load: bucket.scheduled > 0 ? Math.round(bucket.scheduled * 10) / 10 : null,
-          recommended_load:
-            bucket.recommended > 0 ? Math.round(bucket.recommended * 10) / 10 : null,
-          safety_cap: microcycle?.demand_floor_tss ?? null,
-          is_recovery_week: microcycle?.recovery_active ?? false,
-          has_goal: goalWeeks.has(weekStart),
-        };
-      }),
-  };
 }
 
 function buildScheduleSimulation(input: {
@@ -3850,7 +3787,7 @@ export async function getPlanTabProjectionService({
   const loadComparison = buildWeeklyLoadComparison({
     timeline,
     goals,
-    dashboard: projectionGoalContext.dashboard,
+    microcycles: projectionGoalContext.dashboard?.microcycles ?? null,
   });
   const upcomingImpact = buildUpcomingActivityImpact({
     plannedActivities: plannedActivitiesRaw || [],

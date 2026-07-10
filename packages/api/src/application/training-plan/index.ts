@@ -13,3 +13,4 @@ export * from "./schedulingUtils";
 export * from "./templateUseCases";
 export * from "./upcomingActivityImpact";
 export * from "./updateFromCreationConfigUseCase";
+export * from "./weeklyLoadComparison";
