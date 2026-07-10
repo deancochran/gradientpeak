@@ -1,0 +1,13 @@
+appId: com.deancochran.gradientpeak.dev
+---
+- runFlow:
+    file: ../reusable/authenticated_home.yaml
+- startRecording: ${MAESTRO_EVIDENCE_VIDEO_PATH}
+- takeScreenshot: evidence-home
+- runFlow:
+    file: ../reusable/open_plan_tab.yaml
+- takeScreenshot: evidence-plan-tab
+- runFlow:
+    file: ../reusable/open_calendar_tab.yaml
+- takeScreenshot: evidence-calendar-tab
+- stopRecording
