@@ -156,6 +156,7 @@ jest.mock("@gorhom/bottom-sheet", () => {
   return {
     __esModule: true,
     default: BottomSheet,
+    BottomSheetScrollView: createHost("BottomSheetScrollView"),
     BottomSheetView: createHost("BottomSheetView"),
   };
 });
@@ -676,6 +677,46 @@ describe("recording cockpit", () => {
 
     expect(screen.queryByLabelText("Minimize recording cards")).toBeNull();
     expect(screen.getByTestId("recording-card-workout_interval-surface")).toBeTruthy();
+  });
+
+  it("exposes accessible 44-point panel controls with expansion state and pressed feedback", () => {
+    renderNative(
+      <RecordingFloatingPanel
+        bottomObstructionHeight={80}
+        hasPlan
+        sensorCount={2}
+        service={buildService()}
+        sessionContract={buildContract({
+          guidance: { hasPlan: true, hasStructuredSteps: true },
+          ui: {
+            floatingPanel: {
+              defaultCard: "workout_interval",
+              availableCards: ["workout_interval", "metrics"],
+              forcedExpanded: false,
+              canMinimize: true,
+            },
+          },
+        })}
+      />,
+    );
+
+    const expandSurface = screen.getByTestId("recording-card-workout_interval-surface");
+
+    expect(expandSurface.props.accessibilityHint).toBe("Shows the full recording cards view");
+    expect(expandSurface.props.accessibilityState).toEqual({ expanded: false });
+    expect(expandSurface.props.className).toContain("active:opacity-80");
+
+    fireEvent.press(expandSurface);
+
+    const minimizeButton = screen.getByTestId("recording-card-minimize-button");
+
+    expect(minimizeButton.props.accessibilityHint).toBe(
+      "Returns to the compact recording cards view",
+    );
+    expect(minimizeButton.props.accessibilityState).toEqual({ expanded: true });
+    expect(minimizeButton.props.className).toContain("h-11");
+    expect(minimizeButton.props.className).toContain("w-11");
+    expect(minimizeButton.props.className).toContain("active:opacity-80");
   });
 
   it("renders route progress cards when route context is attached", () => {

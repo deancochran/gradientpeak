@@ -163,9 +163,11 @@ export function RecordingFloatingPanel({
       <View className={panelClassName} pointerEvents="auto" style={panelStyle}>
         {effectiveExpanded && model.canMinimize && !model.forcedExpanded ? (
           <Pressable
+            accessibilityHint="Returns to the compact recording cards view"
             accessibilityLabel="Minimize recording cards"
             accessibilityRole="button"
-            className="absolute z-10 h-10 w-10 items-center justify-center rounded-full border border-border bg-card/95 active:opacity-80"
+            accessibilityState={{ expanded: true }}
+            className="absolute z-10 h-11 w-11 items-center justify-center rounded-full border border-border bg-card/95 active:opacity-80"
             hitSlop={8}
             onPress={handleMinimize}
             style={{ right: expandedHorizontalInset, top: expandedTopInset }}
@@ -238,8 +240,11 @@ export function RecordingFloatingPanel({
             return (
               <Pressable
                 key={availableCard}
+                accessibilityHint="Shows the full recording cards view"
                 accessibilityLabel="Expand recording cards"
                 accessibilityRole="button"
+                accessibilityState={{ expanded: false }}
+                className="active:opacity-80"
                 onPress={handleExpand}
                 style={cardStyle}
                 testID={`recording-card-${availableCard}-surface`}
