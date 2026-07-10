@@ -8,12 +8,17 @@ import {
   type IntervalV2,
 } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
+import { useZodForm } from "@repo/ui/hooks";
 import { randomUUID } from "expo-crypto";
 import { useNavigation, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, View } from "react-native";
 import { NestableScrollContainer } from "react-native-draggable-flatlist";
-import { ActivityPlanBasicsSection } from "@/components/activity-plan/ActivityPlanBasicsSection";
+import { z } from "zod";
+import {
+  type ActivityPlanBasicsFormData,
+  ActivityPlanBasicsSection,
+} from "@/components/activity-plan/ActivityPlanBasicsSection";
 import { ActivityPlanRouteSection } from "@/components/activity-plan/ActivityPlanRouteSection";
 import { StructureBuilderCard } from "@/components/activity-plan/structure/StructureBuilderCard";
 import { StructureIntervalSheet } from "@/components/activity-plan/structure/StructureIntervalSheet";
@@ -38,6 +43,10 @@ export type ActivityPlanComposerModeContract =
 
 type ActivityCategory = "run" | "bike" | "swim" | "strength" | "other";
 const STRUCTURE_CHART_HINT_KEY = "activity-plan-structure-chart-hint-seen-v1";
+const activityPlanBasicsSchema = z.object({
+  name: z.string().trim().min(1, "Plan name is required."),
+  description: z.string(),
+});
 
 const createDefaultTarget = (category: ActivityCategory): IntensityTargetV2 => {
   if (category === "bike") {
@@ -135,6 +144,47 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
       );
     },
   });
+
+  const basicsForm = useZodForm<ActivityPlanBasicsFormData>({
+    schema: activityPlanBasicsSchema,
+    defaultValues: {
+      name: form.name,
+      description: form.description,
+    },
+    mode: "onChange",
+  });
+  const basicsName = basicsForm.watch("name");
+  const basicsDescription = basicsForm.watch("description");
+
+  useEffect(() => {
+    if (basicsName !== form.name) {
+      setName(basicsName);
+    }
+  }, [basicsName, form.name, setName]);
+
+  useEffect(() => {
+    if (basicsDescription !== form.description) {
+      setDescription(basicsDescription);
+    }
+  }, [basicsDescription, form.description, setDescription]);
+
+  useEffect(() => {
+    if (form.name !== basicsForm.getValues("name")) {
+      basicsForm.setValue("name", form.name);
+    }
+    if (form.description !== basicsForm.getValues("description")) {
+      basicsForm.setValue("description", form.description);
+    }
+  }, [basicsForm, form.description, form.name]);
+
+  useEffect(() => {
+    const nameError = validation.errors.name;
+    if (nameError) {
+      basicsForm.setError("name", { message: nameError });
+      return;
+    }
+    basicsForm.clearErrors("name");
+  }, [basicsForm, validation.errors.name]);
 
   const showUndoToast = (message: string, onUndo: () => void) => {
     if (undoTimeoutRef.current) {
@@ -402,14 +452,11 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
         <View className="gap-4 pb-10">
           <ActivityPlanBasicsSection
             activityCategory={form.activityCategory}
-            description={form.description}
-            errors={validation.errors}
-            name={form.name}
+            activityCategoryError={validation.errors.activity_category}
+            form={basicsForm}
             onChangeActivityCategory={(category) =>
               setActivityCategory(category as ActivityCategory)
             }
-            onChangeDescription={setDescription}
-            onChangeName={setName}
           />
 
           <ActivityPlanRouteSection
