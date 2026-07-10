@@ -1,5 +1,5 @@
 import { createHost } from "../../../test/mock-components";
-import { renderNative, screen } from "../../../test/render-native";
+import { fireEvent, renderNative, screen } from "../../../test/render-native";
 import { ActivityPlanCard } from "../ActivityPlanCard";
 
 jest.mock("react-native", () => ({
@@ -118,5 +118,57 @@ describe("ActivityPlanCard", () => {
     expect(screen.queryByText("By")).toBeNull();
     expect(screen.getByText("Coach Kim")).toBeTruthy();
     expect(screen.queryByText("Updated Mar 21, 2026")).toBeNull();
+  });
+
+  it("renders list cards as a dense, tappable identity and metrics scan", () => {
+    const onPress = jest.fn();
+
+    renderNative(
+      <ActivityPlanCard
+        activityPlan={{
+          id: "plan-list-1",
+          name: "Tempo Builder",
+          description: "Progressive tempo with a strong finish.",
+          activity_category: "outdoor_run",
+          authoritative_metrics: {
+            estimated_duration: 3600,
+            estimated_tss: 72,
+            intensity_factor: 0.82,
+          },
+          route_id: "route-1",
+          structure: { route: { name: "River Loop" } },
+          created_at: "2026-03-21T08:00:00.000",
+          owner: {
+            id: "owner-1",
+            username: "Coach Kim",
+            avatar_url: null,
+          },
+        }}
+        loadRoutePreview
+        onPress={onPress}
+        showScheduleInfo
+        testID="activity-plan-list-card"
+        variant="list"
+      />,
+    );
+
+    expect(screen.getByTestId("activity-plan-list-card")).toBeTruthy();
+    expect(screen.getByText("Outdoor Run")).toBeTruthy();
+    expect(screen.getByText("Tempo Builder")).toBeTruthy();
+    expect(screen.getByText("Duration")).toBeTruthy();
+    expect(screen.getByText("~1h")).toBeTruthy();
+    expect(screen.getByText("TSS")).toBeTruthy();
+    expect(screen.getByText("~72")).toBeTruthy();
+    expect(screen.getByText("Intensity")).toBeTruthy();
+    expect(screen.getByText("~0.82")).toBeTruthy();
+    expect(screen.queryByTestId("resource-owner-action-row")).toBeNull();
+    expect(screen.queryByText("Coach Kim")).toBeNull();
+    expect(screen.queryByText("Like")).toBeNull();
+    expect(screen.queryByText("Progressive tempo with a strong finish.")).toBeNull();
+    expect(screen.queryByText("River Loop")).toBeNull();
+    expect(screen.queryByText("Mar 21, 2026 • 8:00 AM")).toBeNull();
+
+    fireEvent.press(screen.getByTestId("activity-plan-list-card"));
+    expect(onPress).toHaveBeenCalledTimes(1);
   });
 });

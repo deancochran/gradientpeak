@@ -24,6 +24,7 @@ type FlatListProps = {
 type ActivityPlanCardNode = {
   props: {
     activityPlan: ActivityPlan;
+    variant: "list";
   };
 };
 
@@ -144,14 +145,16 @@ describe("activity plans list screen", () => {
   it("renders owner identity on each plan card", () => {
     const rendered = renderNative(<ActivityPlansListScreen />);
 
-    expect(
-      (rendered as unknown as UnsafeTypeQuery).UNSAFE_getByType("ActivityPlanCard").props
-        .activityPlan.owner,
-    ).toEqual(
+    const activityPlanCard = (rendered as unknown as UnsafeTypeQuery).UNSAFE_getByType(
+      "ActivityPlanCard",
+    );
+
+    expect(activityPlanCard.props.activityPlan.owner).toEqual(
       expect.objectContaining({
         id: "owner-1",
         username: "Owner",
       }),
     );
+    expect(activityPlanCard.props.variant).toBe("list");
   });
 });

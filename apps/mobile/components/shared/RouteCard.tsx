@@ -56,7 +56,7 @@ type RouteCardProps = {
   onPress?: () => void;
   showAttribution?: boolean;
   showLike?: boolean;
-  variant?: "default" | "compact" | "detail";
+  variant?: "default" | "compact" | "detail" | "list";
 };
 
 export function RouteCard({
@@ -68,13 +68,17 @@ export function RouteCard({
   route,
   routeFull,
   onPress,
-  showAttribution = true,
-  showLike = true,
+  showAttribution,
+  showLike,
   variant = "default",
 }: RouteCardProps) {
   const activityConfig = getActivityCategoryConfig(route.activity_category || "other");
   const isCompact = variant === "compact";
   const isDetail = variant === "detail";
+  const isList = variant === "list";
+  const isDense = isCompact || isList;
+  const shouldShowAttribution = showAttribution ?? !isList;
+  const shouldShowLike = showLike ?? !isList;
   const {
     isLiked: internalLiked,
     isPending: internalLikePending,
@@ -109,42 +113,62 @@ export function RouteCard({
   }, [route.polyline, routeFull?.coordinates]);
 
   return (
-    <ResourceCardShell compact={isCompact} onPress={onPress}>
-      <ResourceOwnerActionRow
-        actions={
-          <>
-            {headerAccessory}
-            {showLike ? (
-              <ResourceLikeButton
-                disabled={resolvedLikePending}
-                isLiked={resolvedLiked}
-                likeCount={resolvedLikesCount}
-                onPress={handleLikePress}
-                testID={`route-card-like-button-${route.id}`}
-              />
-            ) : null}
-          </>
-        }
-        categoryIcon={activityConfig.icon}
-        categoryIconClassName={activityConfig.color}
-        categoryLabel={activityConfig.name}
-        compact={isCompact}
-        fallbackLabel="GradientPeak"
-        owner={showAttribution ? (route.owner ?? null) : null}
-        timestamp={showAttribution ? (route.created_at ?? route.updated_at ?? null) : null}
-      />
+    <ResourceCardShell compact={isDense} onPress={onPress}>
+      {!isList || shouldShowAttribution ? (
+        <ResourceOwnerActionRow
+          actions={
+            isList ? undefined : (
+              <>
+                {headerAccessory}
+                {shouldShowLike ? (
+                  <ResourceLikeButton
+                    disabled={resolvedLikePending}
+                    isLiked={resolvedLiked}
+                    likeCount={resolvedLikesCount}
+                    onPress={handleLikePress}
+                    testID={`route-card-like-button-${route.id}`}
+                  />
+                ) : null}
+              </>
+            )
+          }
+          categoryIcon={activityConfig.icon}
+          categoryIconClassName={activityConfig.color}
+          categoryLabel={activityConfig.name}
+          compact={isDense}
+          fallbackLabel="GradientPeak"
+          owner={shouldShowAttribution ? (route.owner ?? null) : null}
+          timestamp={shouldShowAttribution ? (route.created_at ?? route.updated_at ?? null) : null}
+        />
+      ) : null}
 
       <ResourceCardHeader
-        compact={isCompact}
-        description={route.description}
-        descriptionFallback={`${activityConfig.name} route`}
+        accessory={
+          isList ? (
+            <>
+              {headerAccessory}
+              {shouldShowLike ? (
+                <ResourceLikeButton
+                  disabled={resolvedLikePending}
+                  isLiked={resolvedLiked}
+                  likeCount={resolvedLikesCount}
+                  onPress={handleLikePress}
+                  testID={`route-card-like-button-${route.id}`}
+                />
+              ) : null}
+            </>
+          ) : undefined
+        }
+        compact={isDense}
+        description={isList ? undefined : route.description}
+        descriptionFallback={isList ? undefined : `${activityConfig.name} route`}
         detail={isDetail}
         title={route.name}
         titleFallback="Untitled route"
       />
 
       <ResourceMetricsRow
-        compact={isCompact}
+        compact={isDense}
         metrics={[
           { label: "Distance", value: formatDistanceMeters(route.total_distance ?? 0) },
           {
@@ -158,22 +182,25 @@ export function RouteCard({
         ]}
       />
 
-      <View className="overflow-hidden rounded-2xl border border-border bg-card">
-        <View className="aspect-[16/9] bg-muted">
-          {coordinates.length > 0 ? (
-            <StaticRouteMapPreview
-              coordinates={coordinates}
-              showMarkers={true}
-              strokeColor="#f97316"
-              strokeWidth={4}
-            />
-          ) : (
-            <View className="flex-1 items-center justify-center">
-              <Text className="text-muted-foreground">No GPS data available</Text>
-            </View>
-          )}
+      {!isList ? (
+        <View className="overflow-hidden rounded-2xl border border-border bg-card">
+          <View className="aspect-[16/9] bg-muted">
+            {coordinates.length > 0 ? (
+              <StaticRouteMapPreview
+                coordinates={coordinates}
+                showMarkers={true}
+                strokeColor="#f97316"
+                strokeWidth={4}
+                testID={`route-card-map-preview-${route.id}`}
+              />
+            ) : (
+              <View className="flex-1 items-center justify-center">
+                <Text className="text-muted-foreground">No GPS data available</Text>
+              </View>
+            )}
+          </View>
         </View>
-      </View>
+      ) : null}
     </ResourceCardShell>
   );
 }

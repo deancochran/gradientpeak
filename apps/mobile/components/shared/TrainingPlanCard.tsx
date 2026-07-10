@@ -42,7 +42,7 @@ type TrainingPlanCardProps = {
   onPress?: () => void;
   headerAccessory?: ReactNode;
   showAttribution?: boolean;
-  variant?: "default" | "compact";
+  variant?: "default" | "compact" | "list";
 };
 
 export function TrainingPlanCard({
@@ -52,6 +52,7 @@ export function TrainingPlanCard({
   showAttribution = true,
   variant = "default",
 }: TrainingPlanCardProps) {
+  const isList = variant === "list";
   const isCompact = variant === "compact";
   const summaryMetrics = useMemo(() => deriveTrainingPlanSummaryMetrics(plan), [plan]);
   const visualModel = useMemo(
@@ -71,52 +72,76 @@ export function TrainingPlanCard({
   });
 
   return (
-    <ResourceCardShell compact={isCompact} onPress={onPress}>
-      <ResourceOwnerActionRow
-        actions={
-          <>
-            {headerAccessory}
-            <ResourceLikeButton
-              disabled={isLikePending}
-              isLiked={isLiked}
-              likeCount={likeCount}
-              onPress={toggleLike}
-              testID={`training-plan-card-like-button-${plan.id}`}
-            />
-          </>
-        }
-        categoryIcon={CalendarRange}
-        categoryIconClassName="text-primary"
-        categoryLabel="Training plan"
-        compact={isCompact}
-        fallbackLabel="GradientPeak"
-        owner={showAttribution ? (plan.owner ?? null) : null}
-        timestamp={showAttribution ? (plan.created_at ?? plan.updated_at ?? null) : null}
-      />
+    <ResourceCardShell compact={isCompact || isList} onPress={onPress}>
+      {isList ? (
+        <>
+          <ResourceCardHeader
+            compact
+            icon={CalendarRange}
+            title={plan.name}
+            titleFallback="Untitled training plan"
+            titleNumberOfLines={1}
+          />
+          <ResourceMetricsRow
+            compact
+            maxItems={3}
+            metrics={[
+              { label: "Duration", value: summaryMetrics.durationLabel },
+              { label: "Sessions", value: summaryMetrics.sessionsLabel },
+              { label: "Sport", value: summaryMetrics.sportLabel },
+              { label: "Level", value: summaryMetrics.experienceLabel },
+            ]}
+          />
+        </>
+      ) : (
+        <>
+          <ResourceOwnerActionRow
+            actions={
+              <>
+                {headerAccessory}
+                <ResourceLikeButton
+                  disabled={isLikePending}
+                  isLiked={isLiked}
+                  likeCount={likeCount}
+                  onPress={toggleLike}
+                  testID={`training-plan-card-like-button-${plan.id}`}
+                />
+              </>
+            }
+            categoryIcon={CalendarRange}
+            categoryIconClassName="text-primary"
+            categoryLabel="Training plan"
+            compact={isCompact}
+            fallbackLabel="GradientPeak"
+            owner={showAttribution ? (plan.owner ?? null) : null}
+            timestamp={showAttribution ? (plan.created_at ?? plan.updated_at ?? null) : null}
+          />
 
-      <ResourceCardHeader
-        compact={isCompact}
-        description={plan.description}
-        descriptionFallback="Structured plan template with enough detail to preview before scheduling."
-        descriptionNumberOfLines={isCompact ? 2 : undefined}
-        title={plan.name}
-        titleFallback="Untitled training plan"
-      />
+          <ResourceCardHeader
+            compact={isCompact}
+            description={plan.description}
+            descriptionFallback="Structured plan template with enough detail to preview before scheduling."
+            descriptionNumberOfLines={isCompact ? 2 : undefined}
+            title={plan.name}
+            titleFallback="Untitled training plan"
+          />
 
-      <ResourceMetricsRow
-        compact={isCompact}
-        metrics={[
-          { label: "Duration", value: summaryMetrics.durationLabel },
-          { label: "Sessions", value: summaryMetrics.sessionsLabel },
-          { label: "Sport", value: summaryMetrics.sportLabel },
-          { label: "Level", value: summaryMetrics.experienceLabel },
-        ]}
-      />
+          <ResourceMetricsRow
+            compact={isCompact}
+            metrics={[
+              { label: "Duration", value: summaryMetrics.durationLabel },
+              { label: "Sessions", value: summaryMetrics.sessionsLabel },
+              { label: "Sport", value: summaryMetrics.sportLabel },
+              { label: "Level", value: summaryMetrics.experienceLabel },
+            ]}
+          />
 
-      <View className="gap-2">
-        <Text className="text-sm font-medium text-foreground">Plan snapshot</Text>
-        <TrainingPlanPeriodizationPreview compact={isCompact} model={visualModel} />
-      </View>
+          <View className="gap-2">
+            <Text className="text-sm font-medium text-foreground">Plan snapshot</Text>
+            <TrainingPlanPeriodizationPreview compact={isCompact} model={visualModel} />
+          </View>
+        </>
+      )}
     </ResourceCardShell>
   );
 }

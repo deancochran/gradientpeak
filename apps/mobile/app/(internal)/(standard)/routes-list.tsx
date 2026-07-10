@@ -88,6 +88,7 @@ export default function RoutesLibraryScreen() {
         renderItem={(item: any) => (
           <RouteCard
             route={item}
+            variant="list"
             onPress={() => navigateTo(`/route-detail?id=${item.id}` as any)}
           />
         )}

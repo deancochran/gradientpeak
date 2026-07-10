@@ -103,6 +103,44 @@ describe("TrainingPlanCard", () => {
     expect(screen.getByText("Mar 21, 2026 • 8:00 AM")).toBeTruthy();
   });
 
+  it("renders a dense list card without social, attribution, or visual content", () => {
+    const onPress = jest.fn();
+
+    renderNative(
+      <TrainingPlanCard
+        onPress={onPress}
+        plan={{
+          id: "training-plan-1",
+          name: "Half Marathon Build",
+          description: "Ten weeks of progressive threshold and long-run work.",
+          sessions_per_week_target: 4,
+          durationWeeks: { recommended: 10 },
+          sport: ["run"],
+          experienceLevel: ["intermediate"],
+          likes_count: 3,
+          updated_at: "2026-03-21T08:00:00.000",
+          owner: { id: "owner-1", username: "Coach Kim", avatar_url: null },
+        }}
+        variant="list"
+      />,
+    );
+
+    expect(screen.getByText("Half Marathon Build")).toBeTruthy();
+    expect(screen.getByText("10 weeks")).toBeTruthy();
+    expect(screen.getByText("4/week")).toBeTruthy();
+    expect(screen.getByText("run")).toBeTruthy();
+    expect(screen.queryByText("Level")).toBeNull();
+    expect(screen.queryByTestId("training-plan-card-like-button-training-plan-1")).toBeNull();
+    expect(screen.queryByText("Coach Kim")).toBeNull();
+    expect(screen.queryByText("Mar 21, 2026 • 8:00 AM")).toBeNull();
+    expect(screen.queryByText("Plan snapshot")).toBeNull();
+    expect(screen.queryByTestId("training-plan-periodization-preview")).toBeNull();
+
+    fireEvent.press(screen.getByText("Half Marathon Build"));
+
+    expect(onPress).toHaveBeenCalledTimes(1);
+  });
+
   it("toggles likes using the training_plan entity type", () => {
     renderNative(
       <TrainingPlanCard

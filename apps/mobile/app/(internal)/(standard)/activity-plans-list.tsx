@@ -90,7 +90,7 @@ function ActivityPlansListScreen() {
             activityPlan={item as any}
             onPress={() => navigateTo(ROUTES.PLAN.PLAN_DETAIL(item.id) as any)}
             testID={`activity-plan-list-item-${item.id}`}
-            variant="compact"
+            variant="list"
           />
         )}
       />

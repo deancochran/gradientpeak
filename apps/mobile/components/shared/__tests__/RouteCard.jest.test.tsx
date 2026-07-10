@@ -87,4 +87,86 @@ describe("RouteCard", () => {
     expect(screen.getByText("Coach Kim")).toBeTruthy();
     expect(screen.getByText("Mar 21, 2026 • 8:00 AM")).toBeTruthy();
   });
+
+  it("renders a dense list card without preview, social, or attribution metadata", () => {
+    renderNative(
+      <RouteCard
+        route={{
+          id: "route-2",
+          name: "Lunch Climb",
+          description: "A scenic route",
+          activity_category: "outdoor_ride",
+          total_distance: 42000,
+          total_ascent: 850,
+          total_descent: 850,
+          created_at: "2026-03-21T08:00:00.000",
+          likes_count: 12,
+          owner: {
+            id: "owner-2",
+            username: "Coach Lee",
+          },
+        }}
+        variant="list"
+      />,
+    );
+
+    expect(screen.getByText("Lunch Climb")).toBeTruthy();
+    expect(screen.getByText("Distance")).toBeTruthy();
+    expect(screen.getByText("Climb")).toBeTruthy();
+    expect(screen.getByText("Descent")).toBeTruthy();
+    expect(screen.queryByText("A scenic route")).toBeNull();
+    expect(screen.queryByText("Coach Lee")).toBeNull();
+    expect(screen.queryByText("12")).toBeNull();
+    expect(screen.queryByTestId("route-card-like-button-route-2")).toBeNull();
+    expect(screen.queryByTestId("route-card-map-preview-route-2")).toBeNull();
+  });
+
+  it("allows list attribution and likes when explicitly requested", () => {
+    renderNative(
+      <RouteCard
+        route={{
+          id: "route-3",
+          name: "City Run",
+          activity_category: "outdoor_run",
+          total_distance: 5000,
+          created_at: "2026-03-21T08:00:00.000",
+          likes_count: 3,
+          owner: {
+            id: "owner-3",
+            username: "Coach Ari",
+          },
+        }}
+        showAttribution
+        showLike
+        variant="list"
+      />,
+    );
+
+    expect(screen.getByText("Coach Ari")).toBeTruthy();
+    expect(screen.getByText("Mar 21, 2026 • 8:00 AM")).toBeTruthy();
+    expect(screen.getByTestId("route-card-like-button-route-3")).toBeTruthy();
+  });
+
+  it("allows likes without adding attribution to a list card", () => {
+    renderNative(
+      <RouteCard
+        route={{
+          id: "route-4",
+          name: "Track Session",
+          activity_category: "outdoor_run",
+          total_distance: 5000,
+          likes_count: 3,
+          owner: {
+            id: "owner-4",
+            username: "Coach Rey",
+          },
+        }}
+        showLike
+        variant="list"
+      />,
+    );
+
+    expect(screen.getByTestId("route-card-like-button-route-4")).toBeTruthy();
+    expect(screen.queryByText("Coach Rey")).toBeNull();
+  });
 });

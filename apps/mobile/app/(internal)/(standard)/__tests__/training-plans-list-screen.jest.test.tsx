@@ -95,15 +95,11 @@ jest.mock("@/lib/api", () => ({
 
 jest.mock("@/components/shared/TrainingPlanCard", () => ({
   __esModule: true,
-  TrainingPlanCard: ({ plan, onPress }: any) =>
+  TrainingPlanCard: ({ plan, onPress, variant }: any) =>
     React.createElement(
       "TrainingPlanCard",
-      { onPress, testID: `mock-training-plan-card-${plan.id}` },
+      { onPress, testID: `mock-training-plan-card-${plan.id}`, variant },
       React.createElement("Text", null, plan.name),
-      React.createElement("Text", null, "Plan snapshot"),
-      React.createElement("Text", null, "16 weeks"),
-      React.createElement("Text", null, "5/week"),
-      React.createElement("View", { testID: "training-plan-periodization-preview" }),
     ),
 }));
 
@@ -133,12 +129,9 @@ describe("training plans list screen", () => {
     expect(screen.getByText("1 plan")).toBeTruthy();
   });
 
-  it("renders richer preview metadata on each plan card", () => {
+  it("renders each training plan with the dense list card variant", () => {
     renderNative(<TrainingPlansListScreenWithBoundary />);
 
-    expect(screen.getByText("Plan snapshot")).toBeTruthy();
-    expect(screen.getByTestId("training-plan-periodization-preview")).toBeTruthy();
-    expect(screen.getByText("16 weeks")).toBeTruthy();
-    expect(screen.getByText("5/week")).toBeTruthy();
+    expect(screen.getByTestId("mock-training-plan-card-plan-1").props.variant).toBe("list");
   });
 });

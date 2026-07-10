@@ -108,7 +108,7 @@ function TrainingPlansListScreen() {
             <TrainingPlanCard
               plan={plan as any}
               onPress={() => navigateTo(ROUTES.PLAN.TRAINING_PLAN.DETAIL(plan.id) as any)}
-              variant="default"
+              variant="list"
             />
           </View>
         )}
