@@ -20,6 +20,7 @@ import { Pressable, View } from "react-native";
 import { type ActivityPlan, ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { ClearFieldAction } from "@/components/shared/ClearFieldAction";
 import { EmptyState, ErrorState, LoadingState } from "@/components/shared/ScreenState";
+import { SearchField } from "@/components/shared/SearchField";
 
 export type CreateEventType = "custom" | "planned";
 export type EventRecurrenceFrequency = "none" | "daily" | "weekly" | "monthly";
@@ -276,9 +277,11 @@ export function EventEditorCard({
             onSelectActivityPlan ? (
               <View className="gap-3">
                 <Text className="text-xs text-muted-foreground">Search activity plans</Text>
-                <Input
-                  value={activityPlanSearchQuery}
+                <SearchField
+                  accessibilityLabel="Search your activity plans"
+                  value={activityPlanSearchQuery ?? ""}
                   onChangeText={onChangeActivityPlanSearchQuery}
+                  onClear={() => onChangeActivityPlanSearchQuery("")}
                   placeholder="Search your activity plans"
                   testID={`${testIDPrefix}-activity-plan-search-input`}
                 />
