@@ -175,6 +175,7 @@ export * from "./activity-files"; // Runtime-neutral activity file ingestion con
 // server-only exports here; use `@repo/core/server` or its server subpaths so
 // runtime-neutral consumers can avoid Node/FIT-SDK dependencies.
 export * from "./activity-files/activity-file-parser";
+export * from "./athlete-intelligence"; // Deterministic athlete intelligence contracts and evaluation
 export * from "./bluetooth"; // Canonical BLE parsers
 export * from "./calculations/critical-power";
 // Performance curves (power, pace, HR)
