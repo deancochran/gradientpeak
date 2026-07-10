@@ -198,6 +198,21 @@ describe("athleteIntelligenceRouter.evaluate", () => {
     expect(result.gaps.dimensions.technical.status).toBe("missing_evidence");
   });
 
+  it("treats a zero profile metric as missing capability evidence", async () => {
+    const { db } = createDb({
+      profile_goals: [goalRow()],
+      activities: [],
+      profile_metrics: [
+        { metric_type: "ftp", recorded_at: new Date("2026-07-01T00:00:00.000Z"), value: 0 },
+      ],
+    });
+
+    const result = await createCaller(db).evaluate({ goalId: GOAL_ID });
+
+    expect(result.capabilities.capabilities.threshold.value).toBeNull();
+    expect(result.gaps.dimensions.threshold.status).toBe("missing_evidence");
+  });
+
   it("does not query schedule data and reports the explicit lazy schedule state", async () => {
     const { calls, db } = createDb({
       profile_goals: [goalRow()],

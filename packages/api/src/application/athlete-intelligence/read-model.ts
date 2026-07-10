@@ -106,7 +106,7 @@ export async function evaluateAthleteIntelligence(input: {
     metrics: metricRows
       .filter(
         (metric): metric is typeof metric & { metric_type: "ftp" | "vo2_max" } =>
-          metric.metric_type === "ftp" || metric.metric_type === "vo2_max",
+          metric.value > 0 && (metric.metric_type === "ftp" || metric.metric_type === "vo2_max"),
       )
       .map((metric) => ({
         metricType: metric.metric_type,
