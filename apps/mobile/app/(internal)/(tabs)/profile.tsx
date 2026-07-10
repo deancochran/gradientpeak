@@ -1,9 +1,11 @@
 import { Button } from "@repo/ui/components/button";
-import { Input } from "@repo/ui/components/input";
+import { Form, FormTextField } from "@repo/ui/components/form";
 import { SettingItem, SettingsGroup } from "@repo/ui/components/settings-group";
 import { Text } from "@repo/ui/components/text";
+import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useState } from "react";
 import { Alert, ScrollView, View } from "react-native";
+import { z } from "zod";
 import { ProfileGroupsSection } from "@/components/profile/ProfileGroupsSection";
 import { ProfileSummaryCard } from "@/components/profile/ProfileSummaryCard";
 import { AppHeader } from "@/components/shared";
@@ -53,6 +55,56 @@ const contentLinks = [
   },
 ] as const;
 
+const updateEmailSchema = z.object({
+  email: z
+    .string()
+    .trim()
+    .min(1, "Please enter a new email address")
+    .regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, "Please enter a valid email address"),
+});
+
+const updatePasswordSchema = z
+  .object({
+    confirmPassword: z.string(),
+    currentPassword: z.string().refine((value) => value.trim().length > 0, {
+      message: "Please enter your current password",
+    }),
+    newPassword: z.string().min(6, "New password must be at least 6 characters"),
+  })
+  .superRefine(({ confirmPassword, currentPassword, newPassword }, context) => {
+    if (newPassword !== confirmPassword) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "New passwords do not match",
+        path: ["confirmPassword"],
+      });
+    }
+
+    if (currentPassword === newPassword && newPassword === confirmPassword) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "New password must be different from current password",
+        path: ["newPassword"],
+      });
+    }
+  });
+
+type UpdateEmailFormData = z.infer<typeof updateEmailSchema>;
+type UpdatePasswordFormData = z.infer<typeof updatePasswordSchema>;
+
+function getValidationErrorMessage(error: unknown, fallback: string) {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "message" in error &&
+    typeof error.message === "string"
+  ) {
+    return error.message;
+  }
+
+  return fallback;
+}
+
 export default function ProfileTabScreen() {
   const navigateTo = useAppNavigate();
   usePerformanceScreenReady("route-profile");
@@ -69,10 +121,18 @@ export default function ProfileTabScreen() {
   const { resolvedTheme, setTheme } = useTheme();
   const [emailFormVisible, setEmailFormVisible] = useState(false);
   const [passwordFormVisible, setPasswordFormVisible] = useState(false);
-  const [newEmail, setNewEmail] = useState("");
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const emailForm = useZodForm({
+    schema: updateEmailSchema,
+    defaultValues: { email: "" },
+  });
+  const passwordForm = useZodForm({
+    schema: updatePasswordSchema,
+    defaultValues: {
+      confirmPassword: "",
+      currentPassword: "",
+      newPassword: "",
+    },
+  });
   const { data: publicProfile } = api.profiles.getPublicById.useQuery(
     { id: user?.id ?? "" },
     { enabled: Boolean(user?.id) },
@@ -93,61 +153,56 @@ export default function ProfileTabScreen() {
     ]);
   };
 
-  const handleUpdateEmail = () => {
-    const email = newEmail.trim();
-    if (!email) {
-      Alert.alert("Error", "Please enter a new email address");
-      return;
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      Alert.alert("Error", "Please enter a valid email address");
-      return;
-    }
-
-    void updateEmail({ newEmail: email })
-      .then(() => {
+  const emailSubmitForm = useZodFormSubmit<UpdateEmailFormData>({
+    form: emailForm,
+    shouldRethrow: false,
+    onSubmit: async ({ email }) => {
+      try {
+        await updateEmail({ newEmail: email });
         Alert.alert(
           "Verification Sent",
           `We sent email change instructions for ${email}. Follow the link in your inbox to complete the update.`,
         );
         setEmailFormVisible(false);
-        setNewEmail("");
-      })
-      .catch((error: unknown) => {
+        emailForm.reset();
+      } catch (error) {
         Alert.alert("Error", error instanceof Error ? error.message : "Failed to update email");
-      });
-  };
+      }
+    },
+    onValidationError: (errors) => {
+      Alert.alert(
+        "Error",
+        getValidationErrorMessage(errors.email, "Please enter a valid email address"),
+      );
+    },
+  });
 
-  const handleUpdatePassword = () => {
-    if (!currentPassword.trim()) {
-      Alert.alert("Error", "Please enter your current password");
-      return;
-    }
-    if (newPassword.length < 6) {
-      Alert.alert("Error", "New password must be at least 6 characters");
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      Alert.alert("Error", "New passwords do not match");
-      return;
-    }
-    if (currentPassword === newPassword) {
-      Alert.alert("Error", "New password must be different from current password");
-      return;
-    }
-
-    void updatePassword({ currentPassword, newPassword })
-      .then(() => {
+  const passwordSubmitForm = useZodFormSubmit<UpdatePasswordFormData>({
+    form: passwordForm,
+    shouldRethrow: false,
+    onSubmit: async ({ currentPassword, newPassword }) => {
+      try {
+        await updatePassword({ currentPassword, newPassword });
         Alert.alert("Password Updated", "Your password has been successfully changed.");
         setPasswordFormVisible(false);
-        setCurrentPassword("");
-        setNewPassword("");
-        setConfirmPassword("");
-      })
-      .catch((error: unknown) => {
+        passwordForm.reset();
+      } catch (error) {
         Alert.alert("Error", error instanceof Error ? error.message : "Failed to update password");
-      });
-  };
+      }
+    },
+    onValidationError: (errors) => {
+      Alert.alert(
+        "Error",
+        getValidationErrorMessage(
+          errors.currentPassword,
+          getValidationErrorMessage(
+            errors.newPassword,
+            getValidationErrorMessage(errors.confirmPassword, "Please check your password details"),
+          ),
+        ),
+      );
+    },
+  });
 
   const handleDeleteAccount = () => {
     Alert.alert(
@@ -285,15 +340,22 @@ export default function ProfileTabScreen() {
           {emailFormVisible ? (
             <View className="mb-4 gap-3 rounded-2xl border border-border bg-card p-4">
               <Text className="text-sm font-medium text-foreground">Update Email Address</Text>
-              <Input
-                value={newEmail}
-                onChangeText={setNewEmail}
-                placeholder="New email address"
-                autoCapitalize="none"
-                keyboardType="email-address"
-                testID="profile-tab-email-input"
-              />
-              <Button onPress={handleUpdateEmail} testID="profile-tab-email-submit-button">
+              <Form {...emailForm}>
+                <FormTextField
+                  control={emailForm.control}
+                  label="New email address"
+                  name="email"
+                  placeholder="New email address"
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  testId="profile-tab-email-input"
+                />
+              </Form>
+              <Button
+                disabled={emailSubmitForm.isSubmitting}
+                onPress={emailSubmitForm.handleSubmit}
+                testID="profile-tab-email-submit-button"
+              >
                 <Text className="text-sm font-medium text-primary-foreground">
                   Send Verification Email
                 </Text>
@@ -312,31 +374,42 @@ export default function ProfileTabScreen() {
           {passwordFormVisible ? (
             <View className="mb-4 gap-3 rounded-2xl border border-border bg-card p-4">
               <Text className="text-sm font-medium text-foreground">Change Your Password</Text>
-              <Input
-                value={currentPassword}
-                onChangeText={setCurrentPassword}
-                placeholder="Current password"
-                secureTextEntry
-                autoCapitalize="none"
-                testID="profile-tab-current-password-input"
-              />
-              <Input
-                value={newPassword}
-                onChangeText={setNewPassword}
-                placeholder="New password"
-                secureTextEntry
-                autoCapitalize="none"
-                testID="profile-tab-new-password-input"
-              />
-              <Input
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                placeholder="Confirm new password"
-                secureTextEntry
-                autoCapitalize="none"
-                testID="profile-tab-confirm-password-input"
-              />
-              <Button onPress={handleUpdatePassword} testID="profile-tab-password-submit-button">
+              <Form {...passwordForm}>
+                <View className="gap-3">
+                  <FormTextField
+                    control={passwordForm.control}
+                    label="Current password"
+                    name="currentPassword"
+                    placeholder="Current password"
+                    secureTextEntry
+                    autoCapitalize="none"
+                    testId="profile-tab-current-password-input"
+                  />
+                  <FormTextField
+                    control={passwordForm.control}
+                    label="New password"
+                    name="newPassword"
+                    placeholder="New password"
+                    secureTextEntry
+                    autoCapitalize="none"
+                    testId="profile-tab-new-password-input"
+                  />
+                  <FormTextField
+                    control={passwordForm.control}
+                    label="Confirm new password"
+                    name="confirmPassword"
+                    placeholder="Confirm new password"
+                    secureTextEntry
+                    autoCapitalize="none"
+                    testId="profile-tab-confirm-password-input"
+                  />
+                </View>
+              </Form>
+              <Button
+                disabled={passwordSubmitForm.isSubmitting}
+                onPress={passwordSubmitForm.handleSubmit}
+                testID="profile-tab-password-submit-button"
+              >
                 <Text className="text-sm font-medium text-primary-foreground">Update Password</Text>
               </Button>
             </View>
