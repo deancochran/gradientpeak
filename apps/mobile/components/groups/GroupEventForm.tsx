@@ -5,15 +5,20 @@ import type {
   UpdateOneOffGroupEventInput,
 } from "@repo/core/groups";
 import { Button } from "@repo/ui/components/button";
-import { DateInput } from "@repo/ui/components/date-input";
-import { Input } from "@repo/ui/components/input";
+import {
+  Form,
+  FormDateInputField,
+  FormTextareaField,
+  FormTextField,
+  FormTimeInputField,
+} from "@repo/ui/components/form";
 import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
-import { Textarea } from "@repo/ui/components/textarea";
-import { TimeInput } from "@repo/ui/components/time-input";
+import { useZodForm } from "@repo/ui/hooks";
 import { format } from "date-fns";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from "react";
 import { Pressable, View } from "react-native";
+import { z } from "zod";
 import { ClearFieldAction } from "@/components/shared/ClearFieldAction";
 import { InlineNotice, ScreenSection } from "@/components/shared/LayoutPrimitives";
 import { type ResourcePickerItem, ResourcePickerModal } from "@/components/shared/resource-picker";
@@ -22,17 +27,19 @@ import type { GroupEventDetail } from "@/lib/groups";
 
 type RecurrenceFrequency = "none" | "daily" | "weekly" | "monthly";
 
-type GroupEventFormValues = {
-  date: string;
-  description: string;
-  endsTime: string;
-  locationName: string;
-  recurrenceEndDate: string;
-  recurrenceFrequency: RecurrenceFrequency;
-  routeId: string | null;
-  startsTime: string;
-  title: string;
-};
+const groupEventFormSchema = z.object({
+  date: z.string(),
+  description: z.string(),
+  endsTime: z.string().nullable(),
+  locationName: z.string(),
+  recurrenceEndDate: z.string().nullable(),
+  recurrenceFrequency: z.enum(["none", "daily", "weekly", "monthly"]),
+  routeId: z.string().nullable(),
+  startsTime: z.string(),
+  title: z.string(),
+});
+
+type GroupEventFormValues = z.infer<typeof groupEventFormSchema>;
 
 type SelectedActivityPlanOption = {
   activityPlanId: string;
@@ -109,9 +116,9 @@ function toFormValues(event?: GroupEventDetail | null): GroupEventFormValues {
   return {
     date: toDateKey(Number.isNaN(startsAt.getTime()) ? new Date() : startsAt),
     description: event?.description ?? "",
-    endsTime: endsAt && !Number.isNaN(endsAt.getTime()) ? toTimeKey(endsAt) : "",
+    endsTime: endsAt && !Number.isNaN(endsAt.getTime()) ? toTimeKey(endsAt) : null,
     locationName: event?.location_name ?? "",
-    recurrenceEndDate: parseRecurrenceEndDate(event?.recurrence_rule),
+    recurrenceEndDate: parseRecurrenceEndDate(event?.recurrence_rule) || null,
     recurrenceFrequency: parseRecurrenceFrequency(event?.recurrence_rule),
     routeId: event?.route_id ?? null,
     startsTime: toTimeKey(Number.isNaN(startsAt.getTime()) ? new Date() : startsAt),
@@ -145,7 +152,11 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
     },
     ref,
   ) {
-    const [values, setValues] = useState(() => toFormValues(event));
+    const form = useZodForm({
+      schema: groupEventFormSchema,
+      defaultValues: toFormValues(event),
+    });
+    const [recurrenceFrequency, routeId] = form.watch(["recurrenceFrequency", "routeId"]);
     const [selectedActivityPlans, setSelectedActivityPlans] = useState<
       SelectedActivityPlanOption[]
     >(() => toSelectedActivityPlanOptions(event));
@@ -153,21 +164,17 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
     const [isRecurringCreate, setIsRecurringCreate] = useState(false);
     const [pickerScope, setPickerScope] = useState<"route" | "activityPlans" | null>(null);
     const { data: selectedRoute } = api.routes.get.useQuery(
-      { id: values.routeId ?? "" },
-      { enabled: Boolean(values.routeId) },
+      { id: routeId ?? "" },
+      { enabled: Boolean(routeId) },
     );
 
     useEffect(() => {
-      setValues(toFormValues(event));
+      form.reset(toFormValues(event));
       setSelectedActivityPlans(toSelectedActivityPlanOptions(event));
-    }, [event]);
-
-    const updateValue = (key: keyof GroupEventFormValues, value: string) => {
-      setValues((current) => ({ ...current, [key]: value }));
-    };
+    }, [event, form]);
 
     const selectRoute = (item: ResourcePickerItem) => {
-      setValues((current) => ({ ...current, routeId: item.id }));
+      form.setValue("routeId", item.id, { shouldDirty: true });
       setPickerScope(null);
     };
 
@@ -186,67 +193,72 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
       });
     };
 
-    const handleSubmit = useCallback(async () => {
-      const title = values.title.trim();
-      if (!title) {
-        setErrorMessage("Add a title for this event.");
-        return;
-      }
-      if (!values.date || !values.startsTime) {
-        setErrorMessage("Choose a start date and time.");
-        return;
-      }
-
-      const startsAt = buildIso(values.date, values.startsTime);
-      const endsAt = values.endsTime ? buildIso(values.date, values.endsTime) : null;
-      if (endsAt && new Date(endsAt).getTime() <= new Date(startsAt).getTime()) {
-        setErrorMessage("End time must be after start time.");
-        return;
-      }
-
-      setErrorMessage(null);
-      const payload = {
-        title,
-        description: values.description.trim() || null,
-        startsAt,
-        endsAt,
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC",
-        locationName: values.locationName.trim() || null,
-        routeId: values.routeId,
-        activityPlans: selectedActivityPlans.map((option, index) => ({
-          activityPlanId: option.activityPlanId,
-          label: option.label,
-          sortOrder: index,
-        })),
-      };
-
-      if (event) {
-        await onSubmit({ groupEventId: event.id, ...payload });
-        return;
-      }
-
-      if (isRecurringCreate) {
-        const recurrenceRule = buildRecurrenceRule(
-          values.recurrenceFrequency,
-          values.recurrenceEndDate,
-        );
-        if (!recurrenceRule) {
-          setErrorMessage("Choose how often this event repeats and when the series ends.");
+    const submitForm = useCallback(
+      async (values: GroupEventFormValues) => {
+        const title = values.title.trim();
+        if (!title) {
+          setErrorMessage("Add a title for this event.");
+          return;
+        }
+        if (!values.date || !values.startsTime) {
+          setErrorMessage("Choose a start date and time.");
           return;
         }
 
-        await onSubmit({
-          groupId,
-          ...payload,
-          recurrenceRule,
-          recurrenceTimezone: payload.timezone || "UTC",
-          timezone: payload.timezone || "UTC",
-        });
-        return;
-      }
+        const startsAt = buildIso(values.date, values.startsTime);
+        const endsAt = values.endsTime ? buildIso(values.date, values.endsTime) : null;
+        if (endsAt && new Date(endsAt).getTime() <= new Date(startsAt).getTime()) {
+          setErrorMessage("End time must be after start time.");
+          return;
+        }
 
-      await onSubmit({ groupId, ...payload });
-    }, [event, groupId, isRecurringCreate, onSubmit, selectedActivityPlans, values]);
+        setErrorMessage(null);
+        const payload = {
+          title,
+          description: values.description.trim() || null,
+          startsAt,
+          endsAt,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC",
+          locationName: values.locationName.trim() || null,
+          routeId: values.routeId,
+          activityPlans: selectedActivityPlans.map((option, index) => ({
+            activityPlanId: option.activityPlanId,
+            label: option.label,
+            sortOrder: index,
+          })),
+        };
+
+        if (event) {
+          await onSubmit({ groupEventId: event.id, ...payload });
+          return;
+        }
+
+        if (isRecurringCreate) {
+          const recurrenceRule = buildRecurrenceRule(
+            values.recurrenceFrequency,
+            values.recurrenceEndDate ?? "",
+          );
+          if (!recurrenceRule) {
+            setErrorMessage("Choose how often this event repeats and when the series ends.");
+            return;
+          }
+
+          await onSubmit({
+            groupId,
+            ...payload,
+            recurrenceRule,
+            recurrenceTimezone: payload.timezone || "UTC",
+            timezone: payload.timezone || "UTC",
+          });
+          return;
+        }
+
+        await onSubmit({ groupId, ...payload });
+      },
+      [event, groupId, isRecurringCreate, onSubmit, selectedActivityPlans],
+    );
+
+    const handleSubmit = form.handleSubmit(submitForm);
 
     useImperativeHandle(
       ref,
@@ -262,218 +274,210 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
 
     return (
       <View className="gap-5">
-        <View className="gap-4">
-          <View className="gap-2">
-            <Text className="text-xs font-medium text-muted-foreground">Title</Text>
-            <Input
-              onChangeText={(value) => updateValue("title", value)}
+        <Form {...form}>
+          <View className="gap-4">
+            <FormTextField
+              control={form.control}
+              label="Title"
+              name="title"
               placeholder="Sunday long run"
-              value={values.title}
+              required
             />
-          </View>
-          {!event ? (
-            <ScreenSection
-              description="Choose whether this is a one-time meetup or a repeated group series."
-              title="Event cadence"
-            >
-              <View className="flex-row gap-2">
-                <Button
-                  className="flex-1"
-                  onPress={() => setIsRecurringCreate(false)}
-                  variant={isRecurringCreate ? "outline" : "default"}
-                >
-                  <Text
-                    className={
-                      isRecurringCreate
-                        ? "text-sm font-semibold text-foreground"
-                        : "text-sm font-semibold text-primary-foreground"
-                    }
+            {!event ? (
+              <ScreenSection
+                description="Choose whether this is a one-time meetup or a repeated group series."
+                title="Event cadence"
+              >
+                <View className="flex-row gap-2">
+                  <Button
+                    className="flex-1"
+                    onPress={() => setIsRecurringCreate(false)}
+                    variant={isRecurringCreate ? "outline" : "default"}
                   >
-                    One-time
-                  </Text>
-                </Button>
-                <Button
-                  className="flex-1"
-                  onPress={() => {
-                    setIsRecurringCreate(true);
-                    setValues((current) => ({
-                      ...current,
-                      recurrenceFrequency:
-                        current.recurrenceFrequency === "none"
-                          ? "weekly"
-                          : current.recurrenceFrequency,
-                    }));
-                  }}
-                  variant={isRecurringCreate ? "default" : "outline"}
-                >
-                  <Text
-                    className={
-                      isRecurringCreate
-                        ? "text-sm font-semibold text-primary-foreground"
-                        : "text-sm font-semibold text-foreground"
-                    }
+                    <Text
+                      className={
+                        isRecurringCreate
+                          ? "text-sm font-semibold text-foreground"
+                          : "text-sm font-semibold text-primary-foreground"
+                      }
+                    >
+                      One-time
+                    </Text>
+                  </Button>
+                  <Button
+                    className="flex-1"
+                    onPress={() => {
+                      setIsRecurringCreate(true);
+                      if (recurrenceFrequency === "none") {
+                        form.setValue("recurrenceFrequency", "weekly", { shouldDirty: true });
+                      }
+                    }}
+                    variant={isRecurringCreate ? "default" : "outline"}
                   >
-                    Recurring
-                  </Text>
-                </Button>
-              </View>
-              {isRecurringCreate ? (
-                <View className="gap-3">
-                  <View className="gap-2">
-                    <Text className="text-xs font-medium text-muted-foreground">Repeats</Text>
-                    <View className="flex-row flex-wrap gap-2">
-                      {(
-                        [
-                          ["daily", "Daily"],
-                          ["weekly", "Weekly"],
-                          ["monthly", "Monthly"],
-                        ] as Array<[RecurrenceFrequency, string]>
-                      ).map(([frequency, label]) => {
-                        const isSelected = values.recurrenceFrequency === frequency;
-                        return (
-                          <Pressable
-                            accessibilityRole="button"
-                            accessibilityState={{ selected: isSelected }}
-                            className={
-                              isSelected
-                                ? "rounded-xl border border-primary bg-primary/10 px-3 py-2"
-                                : "rounded-xl border border-border bg-card px-3 py-2"
-                            }
-                            key={frequency}
-                            onPress={() =>
-                              setValues((current) => ({
-                                ...current,
-                                recurrenceFrequency: frequency,
-                              }))
-                            }
-                          >
-                            <Text
+                    <Text
+                      className={
+                        isRecurringCreate
+                          ? "text-sm font-semibold text-primary-foreground"
+                          : "text-sm font-semibold text-foreground"
+                      }
+                    >
+                      Recurring
+                    </Text>
+                  </Button>
+                </View>
+                {isRecurringCreate ? (
+                  <View className="gap-3">
+                    <View className="gap-2">
+                      <Text className="text-xs font-medium text-muted-foreground">Repeats</Text>
+                      <View className="flex-row flex-wrap gap-2">
+                        {(
+                          [
+                            ["daily", "Daily"],
+                            ["weekly", "Weekly"],
+                            ["monthly", "Monthly"],
+                          ] as Array<[RecurrenceFrequency, string]>
+                        ).map(([frequency, label]) => {
+                          const isSelected = recurrenceFrequency === frequency;
+                          return (
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityState={{ selected: isSelected }}
                               className={
                                 isSelected
-                                  ? "text-sm font-semibold text-primary"
-                                  : "text-sm font-semibold text-foreground"
+                                  ? "rounded-xl border border-primary bg-primary/10 px-3 py-2"
+                                  : "rounded-xl border border-border bg-card px-3 py-2"
+                              }
+                              key={frequency}
+                              onPress={() =>
+                                form.setValue("recurrenceFrequency", frequency, {
+                                  shouldDirty: true,
+                                })
                               }
                             >
-                              {label}
-                            </Text>
-                          </Pressable>
-                        );
-                      })}
+                              <Text
+                                className={
+                                  isSelected
+                                    ? "text-sm font-semibold text-primary"
+                                    : "text-sm font-semibold text-foreground"
+                                }
+                              >
+                                {label}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
                     </View>
+                    <FormDateInputField
+                      accessibilityHint="Choose when this repeating group event should end"
+                      control={form.control}
+                      label="Repeat until"
+                      minimumDate={new Date()}
+                      name="recurrenceEndDate"
+                      pickerPresentation="modal"
+                      testId="group-event-recurrence-end-date-button"
+                    />
                   </View>
-                  <DateInput
-                    accessibilityHint="Choose when this repeating group event should end"
-                    id="group-event-recurrence-end-date"
-                    label="Repeat until"
-                    minimumDate={new Date()}
-                    onChange={(value) => updateValue("recurrenceEndDate", value ?? "")}
-                    pickerPresentation="modal"
-                    testId="group-event-recurrence-end-date-button"
-                    value={values.recurrenceEndDate}
+                ) : null}
+              </ScreenSection>
+            ) : null}
+            <FormTextareaField
+              className="min-h-[120px]"
+              control={form.control}
+              label="Description"
+              name="description"
+              placeholder="Share the plan, pace, or meetup notes."
+            />
+            <FormDateInputField
+              accessibilityHint="Choose the group event date"
+              control={form.control}
+              label="Date"
+              name="date"
+              pickerPresentation="modal"
+              required
+              testId="group-event-date-button"
+            />
+            <View className="flex-row gap-3">
+              <View className="flex-1">
+                <FormTimeInputField
+                  accessibilityHint="Choose the event start time"
+                  control={form.control}
+                  label="Start time"
+                  name="startsTime"
+                  pickerPresentation="modal"
+                  required
+                  testId="group-event-start-time-button"
+                />
+              </View>
+              <View className="flex-1">
+                <FormTimeInputField
+                  accessibilityHint="Choose the event end time"
+                  control={form.control}
+                  label="End time"
+                  name="endsTime"
+                  pickerPresentation="modal"
+                  testId="group-event-end-time-button"
+                />
+              </View>
+            </View>
+            <FormTextField
+              control={form.control}
+              label="Location"
+              name="locationName"
+              placeholder="Trailhead, track, cafe..."
+            />
+            <View className="gap-2">
+              <Text className="text-xs font-medium text-muted-foreground">Route</Text>
+              <View className="flex-row items-center gap-2 rounded-2xl border border-border bg-card px-3 py-2">
+                <Pressable className="min-w-0 flex-1 py-1" onPress={() => setPickerScope("route")}>
+                  <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
+                    {selectedRoute?.name ?? (routeId ? "Selected route" : "Choose route")}
+                  </Text>
+                </Pressable>
+                {routeId ? (
+                  <ClearFieldAction
+                    accessibilityLabel="Remove route"
+                    onPress={() => form.setValue("routeId", null, { shouldDirty: true })}
+                    variant="icon"
                   />
+                ) : null}
+              </View>
+            </View>
+            <View className="gap-2">
+              <Text className="text-xs font-medium text-muted-foreground">
+                Activity plan options
+              </Text>
+              <Button onPress={() => setPickerScope("activityPlans")} variant="outline">
+                <Text className="text-sm font-semibold text-foreground">Add activity plan</Text>
+              </Button>
+              {selectedActivityPlans.length > 0 ? (
+                <View className="gap-2">
+                  {selectedActivityPlans.map((option) => (
+                    <View
+                      className="rounded-2xl border border-border bg-card p-3"
+                      key={option.activityPlanId}
+                    >
+                      <View className="flex-row items-start justify-between gap-3">
+                        <View className="min-w-0 flex-1">
+                          <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
+                            {option.name}
+                          </Text>
+                        </View>
+                        <ClearFieldAction
+                          accessibilityLabel={`Remove ${option.name}`}
+                          onPress={() =>
+                            toggleActivityPlan({ id: option.activityPlanId, name: option.name })
+                          }
+                          variant="icon"
+                        />
+                      </View>
+                    </View>
+                  ))}
                 </View>
               ) : null}
-            </ScreenSection>
-          ) : null}
-          <View className="gap-2">
-            <Text className="text-xs font-medium text-muted-foreground">Description</Text>
-            <Textarea
-              className="min-h-[120px]"
-              onChangeText={(value) => updateValue("description", value)}
-              placeholder="Share the plan, pace, or meetup notes."
-              value={values.description}
-            />
-          </View>
-          <DateInput
-            accessibilityHint="Choose the group event date"
-            id="group-event-date"
-            label="Date"
-            onChange={(value) => value && updateValue("date", value)}
-            pickerPresentation="modal"
-            testId="group-event-date-button"
-            value={values.date}
-          />
-          <View className="flex-row gap-3">
-            <View className="flex-1">
-              <TimeInput
-                accessibilityHint="Choose the event start time"
-                id="group-event-start-time"
-                label="Start time"
-                onChange={(value) => value && updateValue("startsTime", value)}
-                pickerPresentation="modal"
-                testId="group-event-start-time-button"
-                value={values.startsTime}
-              />
-            </View>
-            <View className="flex-1">
-              <TimeInput
-                accessibilityHint="Choose the event end time"
-                id="group-event-end-time"
-                label="End time"
-                onChange={(value) => updateValue("endsTime", value ?? "")}
-                pickerPresentation="modal"
-                testId="group-event-end-time-button"
-                value={values.endsTime || undefined}
-              />
             </View>
           </View>
-          <View className="gap-2">
-            <Text className="text-xs font-medium text-muted-foreground">Location</Text>
-            <Input
-              onChangeText={(value) => updateValue("locationName", value)}
-              placeholder="Trailhead, track, cafe..."
-              value={values.locationName}
-            />
-          </View>
-          <View className="gap-2">
-            <Text className="text-xs font-medium text-muted-foreground">Route</Text>
-            <View className="flex-row items-center gap-2 rounded-2xl border border-border bg-card px-3 py-2">
-              <Pressable className="min-w-0 flex-1 py-1" onPress={() => setPickerScope("route")}>
-                <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
-                  {selectedRoute?.name ?? (values.routeId ? "Selected route" : "Choose route")}
-                </Text>
-              </Pressable>
-              {values.routeId ? (
-                <ClearFieldAction
-                  accessibilityLabel="Remove route"
-                  onPress={() => setValues((current) => ({ ...current, routeId: null }))}
-                  variant="icon"
-                />
-              ) : null}
-            </View>
-          </View>
-          <View className="gap-2">
-            <Text className="text-xs font-medium text-muted-foreground">Activity plan options</Text>
-            <Button onPress={() => setPickerScope("activityPlans")} variant="outline">
-              <Text className="text-sm font-semibold text-foreground">Add activity plan</Text>
-            </Button>
-            {selectedActivityPlans.length > 0 ? (
-              <View className="gap-2">
-                {selectedActivityPlans.map((option) => (
-                  <View
-                    className="rounded-2xl border border-border bg-card p-3"
-                    key={option.activityPlanId}
-                  >
-                    <View className="flex-row items-start justify-between gap-3">
-                      <View className="min-w-0 flex-1">
-                        <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
-                          {option.name}
-                        </Text>
-                      </View>
-                      <ClearFieldAction
-                        accessibilityLabel={`Remove ${option.name}`}
-                        onPress={() =>
-                          toggleActivityPlan({ id: option.activityPlanId, name: option.name })
-                        }
-                        variant="icon"
-                      />
-                    </View>
-                  </View>
-                ))}
-              </View>
-            ) : null}
-          </View>
-        </View>
+        </Form>
 
         {errorMessage ? <InlineNotice tone="error">{errorMessage}</InlineNotice> : null}
 
@@ -505,7 +509,7 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
           onClose={() => setPickerScope(null)}
           onSelect={selectRoute}
           scope="routes"
-          selectedId={values.routeId}
+          selectedId={routeId}
           title="Choose route"
           visible={pickerScope === "route"}
         />
