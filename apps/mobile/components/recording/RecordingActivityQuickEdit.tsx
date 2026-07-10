@@ -153,7 +153,12 @@ export const RecordingActivityQuickEdit = memo(function RecordingActivityQuickEd
     <Modal visible={visible} animationType="slide" transparent={true} onRequestClose={onClose}>
       <View className="flex-1 bg-black/50">
         {/* Backdrop - tap to close */}
-        <Pressable className="flex-1" onPress={onClose} />
+        <Pressable
+          accessible={false}
+          importantForAccessibility="no-hide-descendants"
+          className="flex-1"
+          onPress={onClose}
+        />
 
         {/* Sheet Content */}
         <View className="bg-background rounded-t-3xl pb-8" testID="recording-activity-quick-edit">
@@ -165,7 +170,13 @@ export const RecordingActivityQuickEdit = memo(function RecordingActivityQuickEd
                 Quick edits apply to this recording session.
               </Text>
             </View>
-            <Pressable onPress={onClose} hitSlop={12}>
+            <Pressable
+              onPress={onClose}
+              accessibilityRole="button"
+              accessibilityLabel="Close activity and GPS quick edit"
+              accessibilityHint="Dismisses this quick edit panel."
+              className="h-11 w-11 items-center justify-center rounded-full active:opacity-70"
+            >
               <Icon as={X} size={24} className="text-muted-foreground" />
             </Pressable>
           </View>
@@ -201,9 +212,20 @@ export const RecordingActivityQuickEdit = memo(function RecordingActivityQuickEd
                       testID="gps-on-option"
                       isFirst
                       disabled={!canEditGps}
-                      className={`flex-1 py-3 ${
+                      accessibilityRole="button"
+                      accessibilityState={{
+                        disabled: !canEditGps,
+                        selected: currentGpsRecordingEnabled,
+                      }}
+                      accessibilityLabel="GPS recording on"
+                      accessibilityHint={
+                        canEditGps
+                          ? "Sets GPS recording to on for this session."
+                          : "GPS recording is locked for the active session."
+                      }
+                      className={`min-h-11 flex-1 py-3 ${
                         currentGpsRecordingEnabled ? "bg-background shadow-sm" : ""
-                      }`}
+                      } ${canEditGps ? "active:opacity-80" : ""}`}
                     >
                       <View className="flex-row items-center gap-2">
                         <ToggleGroupIcon
@@ -228,9 +250,20 @@ export const RecordingActivityQuickEdit = memo(function RecordingActivityQuickEd
                       testID="gps-off-option"
                       isLast
                       disabled={!canEditGps}
-                      className={`flex-1 py-3 ${
+                      accessibilityRole="button"
+                      accessibilityState={{
+                        disabled: !canEditGps,
+                        selected: !currentGpsRecordingEnabled,
+                      }}
+                      accessibilityLabel="GPS recording off"
+                      accessibilityHint={
+                        canEditGps
+                          ? "Sets GPS recording to off for this session."
+                          : "GPS recording is locked for the active session."
+                      }
+                      className={`min-h-11 flex-1 py-3 ${
                         !currentGpsRecordingEnabled ? "bg-background shadow-sm" : ""
-                      }`}
+                      } ${canEditGps ? "active:opacity-80" : ""}`}
                     >
                       <View className="flex-row items-center gap-2">
                         <ToggleGroupIcon
@@ -269,9 +302,17 @@ export const RecordingActivityQuickEdit = memo(function RecordingActivityQuickEd
                       onPress={() => handleCategorySelect(activity.category)}
                       disabled={!canEditActivity}
                       testID={`activity-select-${activity.category}`}
-                      className={`flex-row items-center p-4 rounded-xl border-2 ${
+                      accessibilityRole="button"
+                      accessibilityState={{ disabled: !canEditActivity, selected: isSelected }}
+                      accessibilityLabel={`${getActivityDisplayName(activity.category, true)} activity`}
+                      accessibilityHint={
+                        canEditActivity
+                          ? `Sets this recording session to ${getActivityDisplayName(activity.category, true)}.`
+                          : "Activity category is locked by the attached plan."
+                      }
+                      className={`min-h-11 flex-row items-center rounded-xl border-2 p-4 ${
                         isSelected ? "border-primary bg-primary/10" : "border-border bg-card"
-                      }`}
+                      } ${canEditActivity ? "active:opacity-80" : ""}`}
                       style={{ opacity: canEditActivity || isSelected ? 1 : 0.5 }}
                     >
                       <View

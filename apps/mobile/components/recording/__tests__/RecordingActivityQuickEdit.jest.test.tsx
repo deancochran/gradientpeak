@@ -1,4 +1,5 @@
 import React from "react";
+import { Pressable } from "react-native";
 
 import { createHost } from "../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
@@ -84,5 +85,41 @@ describe("RecordingActivityQuickEdit", () => {
 
     expect(screen.getByTestId("gps-on-option").props.disabled).toBe(true);
     expect(screen.getByTestId("gps-off-option").props.disabled).toBe(true);
+  });
+
+  it("provides accessible controls and hides the visual dismissal backdrop", () => {
+    renderNative(
+      <RecordingActivityQuickEdit
+        visible
+        onClose={jest.fn()}
+        onActivitySelect={jest.fn()}
+        currentCategory="bike"
+        currentGpsRecordingEnabled={true}
+        canEditActivity={true}
+        canEditGps={true}
+      />,
+    );
+
+    expect(screen.getByLabelText("Close activity and GPS quick edit").props).toMatchObject({
+      accessibilityRole: "button",
+      accessibilityHint: "Dismisses this quick edit panel.",
+    });
+    expect(screen.getByTestId("gps-on-option").props).toMatchObject({
+      accessibilityRole: "button",
+      accessibilityState: { disabled: false, selected: true },
+    });
+    expect(screen.getByTestId("gps-off-option").props.accessibilityState).toEqual({
+      disabled: false,
+      selected: false,
+    });
+    expect(screen.getByTestId("activity-select-bike").props).toMatchObject({
+      accessibilityRole: "button",
+      accessibilityState: { disabled: false, selected: true },
+    });
+    const [backdrop] = screen.UNSAFE_getAllByType(Pressable);
+    expect(backdrop?.props).toMatchObject({
+      accessible: false,
+      importantForAccessibility: "no-hide-descendants",
+    });
   });
 });

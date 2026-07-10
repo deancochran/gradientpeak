@@ -551,10 +551,18 @@ function PlanStepButton({
       ? "text-sm font-bold text-foreground"
       : "text-sm font-bold text-background";
   const label = icon === "back" ? "Back" : "Skip";
+  const accessibilityHint = disabled
+    ? icon === "back"
+      ? "There is no previous interval available."
+      : "There is no next interval available."
+    : icon === "back"
+      ? "Moves to the previous interval."
+      : "Skips the current interval and moves to the next interval.";
 
   return (
     <Pressable
       accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
       accessibilityRole="button"
       accessibilityState={{ disabled }}
       disabled={disabled}
@@ -567,7 +575,7 @@ function PlanStepButton({
       style={
         large
           ? { height: 56, width: fullWidth ? undefined : 72 }
-          : { height: 36, width: fullWidth ? undefined : 48 }
+          : { height: 44, width: fullWidth ? undefined : 48 }
       }
     >
       <Icon size={large ? 24 : 18} className={iconClassName} />

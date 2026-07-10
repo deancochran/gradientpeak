@@ -583,6 +583,17 @@ describe("recording cockpit", () => {
     expect(screen.getByText("10m @ 220W")).toBeTruthy();
     expect(screen.getByLabelText("Previous interval")).toBeTruthy();
     expect(screen.getByLabelText("Skip interval")).toBeTruthy();
+    expect(screen.getByLabelText("Previous interval").props).toMatchObject({
+      accessibilityHint: "Moves to the previous interval.",
+      accessibilityState: { disabled: false },
+      style: { height: 44 },
+    });
+    expect(screen.getByLabelText("Skip interval").props).toMatchObject({
+      accessibilityHint: "Skips the current interval and moves to the next interval.",
+      accessibilityState: { disabled: false },
+      style: { height: 44 },
+    });
+    expect(screen.getByLabelText("Skip interval").props.className).toContain("active:opacity-80");
     expect(screen.getByTestId("activity-plan-interval-progress-bar")).toBeTruthy();
     expect(screen.getAllByText("245").length).toBeGreaterThan(0);
     expect(screen.getAllByText("W").length).toBeGreaterThan(0);
