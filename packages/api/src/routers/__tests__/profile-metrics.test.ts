@@ -37,6 +37,11 @@ function createProfileMetricRow(overrides: Record<string, unknown> = {}) {
     notes: null,
     reference_activity_id: null,
     value: 72.4,
+    source: null,
+    method: null,
+    calculation_version: null,
+    quality_score: null,
+    provenance: null,
     ...overrides,
   };
 }

@@ -36,6 +36,11 @@ function buildEffortRow(overrides: Record<string, unknown> = {}) {
     start_offset: 30,
     unit: "m/s",
     value: 4.2,
+    source: null,
+    method: null,
+    calculation_version: null,
+    quality_score: null,
+    provenance: null,
     ...overrides,
   };
 }

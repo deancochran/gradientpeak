@@ -15,6 +15,11 @@ type EffortRowOverrides = Partial<{
   duration_seconds: number;
   unit: string;
   value: number;
+  source: null;
+  method: null;
+  calculation_version: null;
+  quality_score: null;
+  provenance: null;
 }>;
 
 function createEffortRow(overrides: EffortRowOverrides = {}) {
@@ -31,6 +36,11 @@ function createEffortRow(overrides: EffortRowOverrides = {}) {
     start_offset: null,
     unit: overrides.unit ?? "watts",
     value: overrides.value ?? 250,
+    source: overrides.source ?? null,
+    method: overrides.method ?? null,
+    calculation_version: overrides.calculation_version ?? null,
+    quality_score: overrides.quality_score ?? null,
+    provenance: overrides.provenance ?? null,
   };
 }
 
