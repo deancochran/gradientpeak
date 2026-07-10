@@ -12,7 +12,8 @@ jest.mock("react-native", () => ({
 
 jest.mock("@repo/ui/components/button", () => ({
   __esModule: true,
-  Button: (props: ButtonProps) => createElement("Button", props, props.children),
+  Button: (props: ButtonProps) =>
+    createElement("Button", props, typeof props.children === "function" ? null : props.children),
 }));
 
 jest.mock("@repo/ui/components/input", () => ({
