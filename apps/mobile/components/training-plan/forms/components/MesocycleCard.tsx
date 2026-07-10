@@ -1,14 +1,17 @@
 import type { Mesocycle, TrainingPhase } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
+import { Form, FormTextField } from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
-import { Input } from "@repo/ui/components/input";
 import { Label } from "@repo/ui/components/label";
 import { Slider } from "@repo/ui/components/slider";
 import { Text } from "@repo/ui/components/text";
+import { useZodForm } from "@repo/ui/hooks";
 import { Activity, ChevronDown, ChevronUp, Clock, Trash2 } from "lucide-react-native";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useWatch } from "react-hook-form";
 import { Pressable, View } from "react-native";
+import { z } from "zod";
 
 interface MesocycleCardProps {
   mesocycle: Mesocycle;
@@ -29,6 +32,60 @@ const PHASE_OPTIONS: Array<{
   { value: "recovery", label: "Recovery", emoji: "🛌" },
   { value: "maintenance", label: "Maintenance", emoji: "⚙️" },
 ];
+
+const phaseNameSchema = z.object({
+  name: z.string(),
+});
+
+interface PhaseNameFieldProps {
+  name: string;
+  onChange: (name: string) => void;
+}
+
+function PhaseNameField({ name, onChange }: PhaseNameFieldProps) {
+  const form = useZodForm({
+    schema: phaseNameSchema,
+    defaultValues: { name },
+    mode: "onChange",
+    reValidateMode: "onChange",
+  });
+  const formName = useWatch({ control: form.control, name: "name" });
+  const syncingFromMesocycleRef = useRef(false);
+
+  useEffect(() => {
+    if (form.getValues("name") === name) {
+      syncingFromMesocycleRef.current = false;
+      return;
+    }
+
+    syncingFromMesocycleRef.current = true;
+    form.reset({ name });
+  }, [form, name]);
+
+  useEffect(() => {
+    if (syncingFromMesocycleRef.current) {
+      if (formName === name) {
+        syncingFromMesocycleRef.current = false;
+      }
+      return;
+    }
+
+    if (formName !== name) {
+      onChange(formName);
+    }
+  }, [formName, name, onChange]);
+
+  return (
+    <Form {...form}>
+      <FormTextField
+        control={form.control}
+        label="Phase Name"
+        name="name"
+        placeholder="e.g., Base Building"
+      />
+    </Form>
+  );
+}
 
 export function MesocycleCard({ mesocycle, index, onChange, onRemove }: MesocycleCardProps) {
   const [isExpanded, setIsExpanded] = useState(index === 0); // First card expanded by default
@@ -78,14 +135,10 @@ export function MesocycleCard({ mesocycle, index, onChange, onRemove }: Mesocycl
         {isExpanded && (
           <View className="px-4 pb-4 gap-4 border-t border-border pt-4">
             {/* Phase Name */}
-            <View className="gap-2">
-              <Label className="text-sm font-medium">Phase Name</Label>
-              <Input
-                value={mesocycle.name}
-                onChangeText={(text) => onChange({ ...mesocycle, name: text })}
-                placeholder="e.g., Base Building"
-              />
-            </View>
+            <PhaseNameField
+              name={mesocycle.name}
+              onChange={(name) => onChange({ ...mesocycle, name })}
+            />
 
             {/* Phase Type */}
             <View className="gap-2">

@@ -1,8 +1,12 @@
 import type { ActivityPlanPlanningEstimate } from "@repo/core";
-import { Input } from "@repo/ui/components/input";
+import { Form, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
+import { useZodForm } from "@repo/ui/hooks";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
+import { useCallback, useEffect } from "react";
+import { useWatch } from "react-hook-form";
 import { Pressable, ScrollView, View } from "react-native";
+import { z } from "zod";
 import { type ActivityPlan, ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import type { ResourceMetric } from "@/components/shared/ResourceCardPrimitives";
 import { TrainingPlanEventCard } from "@/components/training-plan/TrainingPlanEventCard";
@@ -21,6 +25,10 @@ const TIME_PRESETS = [
   { label: "Midday", value: "12:00" },
   { label: "Evening", value: "18:00" },
 ] as const;
+
+const workoutTitleSchema = z.object({
+  title: z.string(),
+});
 
 type TrainingPlanBuilderEventCardProps = {
   event: TrainingPlanBuilderSession;
@@ -109,12 +117,6 @@ function compactOverrides(
   return Object.keys(next).length > 0 ? next : undefined;
 }
 
-function formatTimeSummary(startTime: string | null | undefined) {
-  if (!startTime) return "No specific time preference";
-  const preset = TIME_PRESETS.find((option) => option.value === startTime);
-  return preset ? `${preset.label} · ${startTime}` : startTime;
-}
-
 function ChoicePill({
   children,
   className,
@@ -178,21 +180,43 @@ export function TrainingPlanBuilderEventEditor({
   onChange,
   onOpenActivityPicker,
 }: TrainingPlanBuilderEventEditorProps) {
-  const updateEvent = (patch: Partial<TrainingPlanBuilderSession>) => {
-    onChange({ ...event, ...patch });
-  };
-  const updateOverride = (field: keyof TrainingPlanBuilderEventOverrides, value: string) => {
-    updateEvent({
-      eventOverrides: compactOverrides({
-        ...event.eventOverrides,
-        [field]: value,
-      }),
-    });
-  };
+  const updateEvent = useCallback(
+    (patch: Partial<TrainingPlanBuilderSession>) => {
+      onChange({ ...event, ...patch });
+    },
+    [event, onChange],
+  );
+  const updateOverride = useCallback(
+    (field: keyof TrainingPlanBuilderEventOverrides, value: string) => {
+      updateEvent({
+        eventOverrides: compactOverrides({
+          ...event.eventOverrides,
+          [field]: value,
+        }),
+      });
+    },
+    [event.eventOverrides, updateEvent],
+  );
   const selectedWeekdayIndex = getBuilderWeekdayIndex(event.offsetDays);
   const weekOffset = Math.floor(event.offsetDays / 7) * 7;
   const weekIndex = Math.floor(event.offsetDays / 7);
   const titlePlaceholder = event.activityPlan?.name ?? "Unassigned workout";
+  const title = event.eventOverrides?.title ?? "";
+  const workoutTitleForm = useZodForm({
+    schema: workoutTitleSchema,
+    values: { title },
+  });
+  const workoutTitle = useWatch({
+    control: workoutTitleForm.control,
+    name: "title",
+  });
+
+  useEffect(() => {
+    if (workoutTitle !== title) {
+      updateOverride("title", workoutTitle);
+    }
+  }, [title, updateOverride, workoutTitle]);
+
   const setWeekday = (weekdayIndex: number) => {
     updateEvent({ offsetDays: weekOffset + weekdayIndex });
   };
@@ -211,14 +235,16 @@ export function TrainingPlanBuilderEventEditor({
 
   return (
     <View className="gap-4 pb-1" testID="builder-session-editor-modal">
-      <Input
-        accessibilityLabel="Workout title"
-        className="border-0 bg-transparent px-0 text-2xl font-semibold text-foreground"
-        onChangeText={(title) => updateOverride("title", title)}
-        placeholder={titlePlaceholder}
-        testID="builder-session-editor-title"
-        value={event.eventOverrides?.title ?? ""}
-      />
+      <Form {...workoutTitleForm}>
+        <FormTextField
+          className="border-0 bg-transparent px-0 text-2xl font-semibold text-foreground"
+          control={workoutTitleForm.control}
+          label="Workout title"
+          name="title"
+          placeholder={titlePlaceholder}
+          testId="builder-session-editor-title"
+        />
+      </Form>
 
       {activityPlan ? (
         <View className="gap-2">
