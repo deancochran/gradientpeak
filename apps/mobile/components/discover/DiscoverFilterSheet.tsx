@@ -3,7 +3,7 @@ import BottomSheet, {
   type BottomSheetBackdropProps,
   BottomSheetView,
 } from "@gorhom/bottom-sheet";
-import { Input } from "@repo/ui/components/input";
+import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Text } from "@repo/ui/components/text";
 import type React from "react";
 import { useCallback, useMemo, useRef } from "react";
@@ -315,7 +315,7 @@ export function DiscoverFilterSheet({
                   }
                   minPlaceholder="Min IF"
                   maxPlaceholder="Max IF"
-                  keyboardType="decimal-pad"
+                  decimals={2}
                   unitLabel="intensity factor"
                   testIDPrefix="discover-filter-activityPlans-if"
                 />
@@ -497,7 +497,7 @@ export function DiscoverFilterSheet({
                   }
                   minPlaceholder="Min km"
                   maxPlaceholder="Max km"
-                  keyboardType="decimal-pad"
+                  decimals={2}
                   unitLabel="kilometers"
                   testIDPrefix="discover-filter-routes-distance"
                 />
@@ -734,7 +734,7 @@ function RangeInputRow({
   maxPlaceholder,
   unitLabel,
   testIDPrefix,
-  keyboardType = "numeric",
+  decimals = 0,
 }: {
   minValue: number | null;
   maxValue: number | null;
@@ -744,36 +744,30 @@ function RangeInputRow({
   maxPlaceholder: string;
   unitLabel?: string;
   testIDPrefix: string;
-  keyboardType?: "numeric" | "decimal-pad";
+  decimals?: number;
 }) {
   return (
     <View className="gap-2">
       {unitLabel ? <Text className="text-[11px] text-muted-foreground">{unitLabel}</Text> : null}
       <View className="flex-row gap-2.5">
-        <View className="flex-1 gap-1.5">
-          <Text className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            Min
-          </Text>
-          <Input
-            value={minValue?.toString() ?? ""}
-            onChangeText={onMinChange}
+        <View className="flex-1">
+          <BoundedNumberInput
+            decimals={decimals}
+            label="Min"
+            onChange={onMinChange}
             placeholder={minPlaceholder}
-            keyboardType={keyboardType}
             testID={`${testIDPrefix}-min`}
-            className="h-10 rounded-lg border border-border/80 bg-background px-3 text-sm text-foreground"
+            value={minValue?.toString() ?? ""}
           />
         </View>
-        <View className="flex-1 gap-1.5">
-          <Text className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            Max
-          </Text>
-          <Input
-            value={maxValue?.toString() ?? ""}
-            onChangeText={onMaxChange}
+        <View className="flex-1">
+          <BoundedNumberInput
+            decimals={decimals}
+            label="Max"
+            onChange={onMaxChange}
             placeholder={maxPlaceholder}
-            keyboardType={keyboardType}
             testID={`${testIDPrefix}-max`}
-            className="h-10 rounded-lg border border-border/80 bg-background px-3 text-sm text-foreground"
+            value={maxValue?.toString() ?? ""}
           />
         </View>
       </View>

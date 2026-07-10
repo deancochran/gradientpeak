@@ -27,6 +27,8 @@ function BoundedNumberInput({
   placeholder,
   presets,
   required = false,
+  testID,
+  testId,
   unitLabel,
   value,
 }: BoundedNumberInputProps) {
@@ -91,8 +93,9 @@ function BoundedNumberInput({
             onChange(nextValue);
             onNumberChange?.(parseNumberOrUndefined(nextValue));
           }}
-          keyboardType="numbers-and-punctuation"
+          keyboardType={decimals > 0 ? "decimal-pad" : "numeric"}
           placeholder={placeholder}
+          testId={testID ?? testId}
         />
         {unitLabel ? <Text className="text-xs text-muted-foreground">{unitLabel}</Text> : null}
       </View>

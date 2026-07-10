@@ -22,6 +22,8 @@ function BoundedNumberInput({
   placeholder,
   presets,
   required = false,
+  testID,
+  testId,
   unitLabel,
   value,
 }: BoundedNumberInputProps) {
@@ -91,6 +93,7 @@ function BoundedNumberInput({
             );
           }}
           placeholder={placeholder}
+          testId={testID ?? testId}
           type="text"
           value={draftValue}
         />

@@ -91,6 +91,12 @@ describe("extracted inputs web", () => {
     expect(onChange).toHaveBeenCalledWith("285");
   });
 
+  it("BoundedNumberInput forwards test IDs", () => {
+    renderWeb(<BoundedNumberInput label="FTP" onChange={vi.fn()} testID="ftp-input" value="" />);
+
+    expect(screen.getByTestId("ftp-input")).toBeInTheDocument();
+  });
+
   it("IntegerStepper increments with the plus button", () => {
     const onChange = vi.fn();
 

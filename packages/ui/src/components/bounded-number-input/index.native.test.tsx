@@ -56,6 +56,30 @@ describe("BoundedNumberInput native", () => {
     expect(onChange).toHaveBeenLastCalledWith("250");
   });
 
+  it("forwards the test ID and uses the matching numeric keyboard", () => {
+    const { getByTestId } = renderNative(
+      <>
+        <BoundedNumberInput
+          decimals={0}
+          label="FTP"
+          onChange={jest.fn()}
+          testID="ftp-input"
+          value=""
+        />
+        <BoundedNumberInput
+          decimals={2}
+          label="Intensity factor"
+          onChange={jest.fn()}
+          testID="intensity-factor-input"
+          value=""
+        />
+      </>,
+    );
+
+    expect(getByTestId("ftp-input").props.keyboardType).toBe("numeric");
+    expect(getByTestId("intensity-factor-input").props.keyboardType).toBe("decimal-pad");
+  });
+
   it("blocks changes, commits, and presets while disabled", () => {
     const onChange = jest.fn();
     const onNumberChange = jest.fn();
