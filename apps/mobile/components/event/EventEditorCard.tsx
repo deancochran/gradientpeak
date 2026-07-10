@@ -1,7 +1,14 @@
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { DateInput } from "@repo/ui/components/date-input";
-import { Form, FormSwitchField, FormTextareaField, FormTextField } from "@repo/ui/components/form";
+import {
+  Form,
+  FormDateInputField,
+  FormSwitchField,
+  FormTextareaField,
+  FormTextField,
+  FormTimeInputField,
+} from "@repo/ui/components/form";
 import { Input } from "@repo/ui/components/input";
 import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
@@ -365,45 +372,25 @@ export function EventEditorCard({
               />
 
               <View className="gap-2">
-                <DateInput
+                <FormDateInputField
                   accessibilityHint="Choose when this event starts"
-                  id={`${testIDPrefix}-start-date`}
+                  control={form.control}
+                  disabled={isPending}
                   label="Starts"
-                  onChange={(value) => {
-                    if (!value) {
-                      return;
-                    }
-
-                    onChangeStartsAt(applyDateOnlyToDate(startsAt, value));
-                  }}
+                  name="start_date"
                   pickerPresentation="modal"
                   testId={`${testIDPrefix}-start-date-button`}
-                  value={toDateOnly(startsAt)}
                 />
 
                 {!allDay ? (
-                  <TimeInput
+                  <FormTimeInputField
                     accessibilityHint="Choose when this event starts"
-                    id={`${testIDPrefix}-start-time`}
+                    control={form.control}
+                    disabled={isPending}
                     label="Start time"
-                    onChange={(value) => {
-                      if (!value) {
-                        return;
-                      }
-
-                      const [hours, minutes] = value.split(":").map(Number);
-                      const next = new Date(startsAt);
-                      next.setHours(
-                        hours ?? startsAt.getHours(),
-                        minutes ?? startsAt.getMinutes(),
-                        0,
-                        0,
-                      );
-                      onChangeStartsAt(next);
-                    }}
+                    name="start_time"
                     pickerPresentation="modal"
                     testId={`${testIDPrefix}-start-time-button`}
-                    value={format(startsAt, "HH:mm")}
                   />
                 ) : null}
               </View>
