@@ -1,7 +1,6 @@
 import type { ActivityPlanPlanningEstimate, TrainingPreferenceValidationIssue } from "@repo/core";
 import { validatePlanningPreferencesConsistency } from "@repo/core";
-import { Form, FormTextField } from "@repo/ui/components/form";
-import { Input } from "@repo/ui/components/input";
+import { Form, FormTextareaField, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
 import {
@@ -13,10 +12,12 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
-import type { UseFormReturn } from "react-hook-form";
+import { type UseFormReturn, useWatch } from "react-hook-form";
 import { View } from "react-native";
+import { z } from "zod";
 import type { ActivityPlan } from "@/components/shared/ActivityPlanCard";
 import {
   type ActivityCategoryFilter,
@@ -51,6 +52,13 @@ import type { useTrainingPlanCreationService } from "@/lib/training-plan-creatio
 import type { BuilderSheet } from "./BuilderSheetTypes";
 
 type TrainingPlanBuilderService = ReturnType<typeof useTrainingPlanCreationService>;
+
+const trainingPlanBuilderMetadataSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+});
+
+type TrainingPlanBuilderMetadataFormValues = z.infer<typeof trainingPlanBuilderMetadataSchema>;
 
 type TrainingPlanBuilderSheetDraftsContextValue = {
   canResetActivityFilters: boolean;
@@ -320,6 +328,95 @@ export function useTrainingPlanBuilderSheetDrafts() {
   return context;
 }
 
+function TrainingPlanBuilderMetadataSheetContent({
+  builder,
+}: {
+  builder: TrainingPlanBuilderService;
+}) {
+  const { details } = builder.state;
+  const metadataForm = useZodForm({
+    schema: trainingPlanBuilderMetadataSchema,
+    defaultValues: {
+      name: details.name,
+      description: details.description,
+    },
+    mode: "onChange",
+  });
+  const metadataValues = useWatch({ control: metadataForm.control });
+  const pendingBuilderSyncRef = useRef<TrainingPlanBuilderMetadataFormValues | null>(null);
+
+  useEffect(() => {
+    const builderValues = {
+      name: details.name,
+      description: details.description,
+    };
+
+    if (
+      metadataForm.getValues("name") === builderValues.name &&
+      metadataForm.getValues("description") === builderValues.description
+    ) {
+      return;
+    }
+
+    pendingBuilderSyncRef.current = builderValues;
+    metadataForm.reset(builderValues);
+  }, [details.description, details.name, metadataForm]);
+
+  useEffect(() => {
+    const formValues = {
+      name: metadataValues.name ?? "",
+      description: metadataValues.description ?? "",
+    };
+    const pendingBuilderSync = pendingBuilderSyncRef.current;
+
+    if (pendingBuilderSync) {
+      if (
+        formValues.name === pendingBuilderSync.name &&
+        formValues.description === pendingBuilderSync.description
+      ) {
+        pendingBuilderSyncRef.current = null;
+      }
+      return;
+    }
+
+    if (formValues.name !== details.name) {
+      builder.actions.updateDetails({ name: formValues.name });
+    }
+    if (formValues.description !== details.description) {
+      builder.actions.updateDetails({ description: formValues.description });
+    }
+  }, [
+    builder.actions,
+    details.description,
+    details.name,
+    metadataValues.description,
+    metadataValues.name,
+  ]);
+
+  return (
+    <Form {...metadataForm}>
+      <View className="gap-4">
+        <View className="gap-3">
+          <Text className="text-sm font-semibold text-foreground">Identity</Text>
+          <FormTextField
+            control={metadataForm.control}
+            label="Plan name"
+            name="name"
+            placeholder="Base builder, race prep, return to training..."
+          />
+          <FormTextareaField
+            className="min-h-24"
+            control={metadataForm.control}
+            label="Description"
+            name="description"
+            placeholder="What this plan is designed to do"
+          />
+        </View>
+      </View>
+    </Form>
+  );
+}
+
 type TrainingPlanBuilderSheetContentProps = {
   activeSheet: BuilderSheet | null;
   activityPlanCategoryFilter: ActivityCategoryFilter;
@@ -436,31 +533,7 @@ export function TrainingPlanBuilderSheetContent({
   }
 
   if (activeSheet === "metadata") {
-    return (
-      <View className="gap-4">
-        <View className="gap-3">
-          <Text className="text-sm font-semibold text-foreground">Identity</Text>
-          <View className="gap-2">
-            <Text className="text-xs font-medium text-muted-foreground">Plan name</Text>
-            <Input
-              value={state.details.name}
-              onChangeText={(name) => builder.actions.updateDetails({ name })}
-              placeholder="Base builder, race prep, return to training..."
-            />
-          </View>
-          <View className="gap-2">
-            <Text className="text-xs font-medium text-muted-foreground">Description</Text>
-            <Input
-              value={state.details.description}
-              onChangeText={(description) => builder.actions.updateDetails({ description })}
-              placeholder="What this plan is designed to do"
-              multiline
-              className="min-h-24"
-            />
-          </View>
-        </View>
-      </View>
-    );
+    return <TrainingPlanBuilderMetadataSheetContent builder={builder} />;
   }
 
   if (activeSheet === "athleteContext") {
