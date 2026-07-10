@@ -422,6 +422,37 @@ describe("SinglePageForm blocker surfacing", () => {
     });
   });
 
+  it("syncs the active Goal name through its RHF field and shows form validation", async () => {
+    const onFormDataChange = jest.fn();
+    const rendered = renderSinglePageForm({
+      formData: baseFormData,
+      onFormDataChange,
+      configData: baseConfigData,
+      onConfigChange: jest.fn(),
+      errors: { "goals.0.name": "Goal name is required." },
+    });
+
+    fireEvent.press(rendered.getByLabelText("Goals tab"));
+
+    const goalNameInput = findMockNodes(rendered, "Input").find(
+      (node: any) => node.props.accessibilityLabel === "Goal name",
+    );
+    fireEvent(goalNameInput!, "changeText", "Summer race");
+
+    await waitFor(() => {
+      expect(onFormDataChange).toHaveBeenCalledWith({
+        ...baseFormData,
+        goals: [{ ...baseFormData.goals[0], name: "Summer race" }],
+      });
+
+      const textNodes = findMockNodes(rendered, "Text");
+      const allText = textNodes.map((node: any) => getNodeText(node.props.children)).join("\n");
+      expect(allText).toContain("Goal name is required.");
+    });
+
+    expect(goalNameInput?.props.maxLength).toBe(100);
+  });
+
   it("shows behavior controls inline without mode switching", () => {
     const rendered = renderSinglePageForm({
       formData: baseFormData,

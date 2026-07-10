@@ -19,14 +19,14 @@ import type {
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import { DateInput as DateField } from "@repo/ui/components/date-input";
-import { Input } from "@repo/ui/components/input";
+import { Form, FormTextField } from "@repo/ui/components/form";
 import { NumberSliderInput } from "@repo/ui/components/number-slider-input";
 import { Switch } from "@repo/ui/components/switch";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
 import { Flag, Plus, ShieldAlert, Trash2, Trophy } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { UseFormReturn } from "react-hook-form";
+import { type UseFormReturn, useWatch } from "react-hook-form";
 import {
   type LayoutChangeEvent,
   Pressable,
@@ -35,6 +35,7 @@ import {
   View,
 } from "react-native";
 import Svg, { Circle } from "react-native-svg";
+import { z } from "zod";
 import { AvailabilityConfigSection } from "./AvailabilityConfigSection";
 import { BehaviorControlsConfigSection } from "./BehaviorControlsConfigSection";
 import { ConstraintsConfigSection } from "./ConstraintsConfigSection";
@@ -133,6 +134,10 @@ interface EditingTargetRef {
 }
 
 type FormTabKey = "plan" | "goals" | "availability" | "constraints" | "calibration" | "review";
+
+const goalNameFormSchema = z.object({
+  name: z.string().max(100),
+});
 
 const allFormTabs: { key: FormTabKey; label: string }[] = [
   { key: "plan", label: "Plan" },
@@ -771,12 +776,15 @@ export function SinglePageForm({
     };
   }, [editingTargetRef, formData.goals]);
 
-  const updateGoal = (goalId: string, updates: Partial<GoalFormData>) => {
-    onFormDataChange({
-      ...formData,
-      goals: formData.goals.map((goal) => (goal.id === goalId ? { ...goal, ...updates } : goal)),
-    });
-  };
+  const updateGoal = useCallback(
+    (goalId: string, updates: Partial<GoalFormData>) => {
+      onFormDataChange({
+        ...formData,
+        goals: formData.goals.map((goal) => (goal.id === goalId ? { ...goal, ...updates } : goal)),
+      });
+    },
+    [formData, onFormDataChange],
+  );
 
   const updateTarget = (goalId: string, targetId: string, updates: Partial<GoalTargetFormData>) => {
     onFormDataChange({
@@ -904,6 +912,32 @@ export function SinglePageForm({
   const activeGoalIndex = activeGoal
     ? formData.goals.findIndex((goal) => goal.id === activeGoal.id)
     : -1;
+  const goalNameForm = useZodForm({
+    schema: goalNameFormSchema,
+    values: { name: activeGoal?.name ?? "" },
+  });
+  const goalName = useWatch({
+    control: goalNameForm.control,
+    name: "name",
+  });
+  const activeGoalNameError =
+    activeGoalIndex >= 0 ? getError(`goals.${activeGoalIndex}.name`) : undefined;
+
+  useEffect(() => {
+    if (activeGoal && goalName !== activeGoal.name) {
+      updateGoal(activeGoal.id, { name: goalName });
+    }
+  }, [activeGoal, goalName, updateGoal]);
+
+  useEffect(() => {
+    if (activeGoalNameError) {
+      goalNameForm.setError("name", { message: activeGoalNameError });
+      return;
+    }
+
+    goalNameForm.clearErrors("name");
+  }, [activeGoalNameError, goalNameForm]);
+
   const closeTargetEditor = () => setEditingTargetRef(null);
 
   const getActiveGoalTargetRowError = useCallback(
@@ -1587,26 +1621,16 @@ export function SinglePageForm({
             {activeGoal && activeGoalIndex >= 0 ? (
               <View className="gap-2 rounded-md border border-border bg-muted/20 p-2.5">
                 <View className="flex-row items-center gap-2">
-                  <View className="flex-1 gap-1.5">
-                    <Input
-                      accessibilityLabel="Goal name"
-                      placeholder="Goal name"
-                      value={activeGoal.name}
-                      onChangeText={(value) => {
-                        updateGoal(activeGoal.id, { name: value });
-                      }}
-                      maxLength={100}
-                      className={
-                        getError(`goals.${activeGoalIndex}.name`)
-                          ? "border-destructive bg-destructive/5"
-                          : undefined
-                      }
-                    />
-                    {getError(`goals.${activeGoalIndex}.name`) && (
-                      <Text className="text-xs text-destructive">
-                        {getError(`goals.${activeGoalIndex}.name`)}
-                      </Text>
-                    )}
+                  <View className="flex-1">
+                    <Form {...goalNameForm}>
+                      <FormTextField
+                        control={goalNameForm.control}
+                        label="Goal name"
+                        maxLength={100}
+                        name="name"
+                        placeholder="Goal name"
+                      />
+                    </Form>
                   </View>
                   <Button
                     variant="outline"
