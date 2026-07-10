@@ -1,4 +1,5 @@
 import type { Mesocycle } from "@repo/core";
+import { THEME } from "@repo/tailwindcss/native";
 import { Alert, AlertDescription } from "@repo/ui/components/alert";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
@@ -8,6 +9,7 @@ import { AlertCircle, X } from "lucide-react-native";
 import React, { useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, View } from "react-native";
 import { FitnessProjectionChart } from "@/components/charts";
+import { useTheme } from "@/lib/stores/theme-store";
 import { ActivityDistributionForm } from "./forms/ActivityDistributionForm";
 import { MesocycleBuilderForm } from "./forms/MesocycleBuilderForm";
 import { PeriodizationForm } from "./forms/PeriodizationForm";
@@ -58,6 +60,7 @@ export function AdvancedConfigSheet({
   isSaving = false,
   currentCTL = 0,
 }: AdvancedConfigSheetProps) {
+  const { resolvedTheme } = useTheme();
   const [activeTab, setActiveTab] = useState("targets");
   const [formData, setFormData] = useState<AdvancedConfigData>(initialData);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
@@ -289,7 +292,7 @@ export function AdvancedConfigSheet({
             </Button>
             <Button className="flex-1" onPress={handleSave} disabled={isSaving}>
               {isSaving ? (
-                <ActivityIndicator size="small" color="white" />
+                <ActivityIndicator size="small" color={THEME[resolvedTheme].primaryForeground} />
               ) : (
                 <Text className="text-primary-foreground font-semibold">Save Changes</Text>
               )}

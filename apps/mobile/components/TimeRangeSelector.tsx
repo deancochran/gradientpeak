@@ -41,7 +41,7 @@ interface TimeRangeSelectorProps {
 export function TimeRangeSelector({ value, onChange, disabled = false }: TimeRangeSelectorProps) {
   return (
     <View className="mb-4">
-      <View className="rounded-lg bg-gray-100 p-1">
+      <View className="rounded-lg bg-muted p-1">
         <ToggleGroup
           type="single"
           value={value}
@@ -69,7 +69,7 @@ export function TimeRangeSelector({ value, onChange, disabled = false }: TimeRan
                 <Text
                   className={`
                    text-center font-medium text-sm
-                   ${isSelected ? "text-blue-600 dark:text-blue-300" : "text-muted-foreground"}
+                    ${isSelected ? "text-primary" : "text-muted-foreground"}
                  `}
                 >
                   {option.label}

@@ -39,7 +39,7 @@ export function WeeklyTab({ weeklySummary, weeklyLoading, onWeekPress }: WeeklyT
         icon={Calendar}
         title="No Weekly Data"
         description="Complete activities throughout the week to see your weekly progress and statistics."
-        iconColor="text-green-500"
+        iconColor="text-primary"
       />
     );
   }

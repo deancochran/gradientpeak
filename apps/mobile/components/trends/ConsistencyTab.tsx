@@ -4,6 +4,7 @@ import { Separator } from "@repo/ui/components/separator";
 import { Text } from "@repo/ui/components/text";
 import { View } from "react-native";
 import { type ConsistencyData, ConsistencyHeatmap } from "@/components/charts";
+import { insightTone } from "./insightTone";
 
 interface ConsistencyTabProps {
   consistencyData: ConsistencyData | null;
@@ -70,8 +71,16 @@ export function ConsistencyTab({
                 {restDaysPercentage.toFixed(1)}%
               </Text>
             </View>
-            <Progress value={restDaysPercentage} className="h-3" indicatorClassName="bg-gray-400" />
-            <Progress value={restDaysPercentage} className="h-3" indicatorClassName="bg-gray-400" />
+            <Progress
+              value={restDaysPercentage}
+              className="h-3"
+              indicatorClassName="bg-muted-foreground"
+            />
+            <Progress
+              value={restDaysPercentage}
+              className="h-3"
+              indicatorClassName="bg-muted-foreground"
+            />
             <Text className="text-xs text-muted-foreground mt-1">
               {(consistencyData?.totalDays ?? 0) - (consistencyData?.totalActivities ?? 0)} of{" "}
               {consistencyData?.totalDays ?? 0} days
@@ -102,11 +111,11 @@ export function ConsistencyTab({
           )}
 
           {consistencyData && consistencyData.longestStreak > consistencyData.currentStreak && (
-            <View className="p-3 bg-blue-50 rounded-lg">
-              <Text className="text-sm font-medium text-blue-900 mb-1">
+            <View className={`p-3 rounded-lg ${insightTone.container}`}>
+              <Text className={`text-sm font-medium mb-1 ${insightTone.title}`}>
                 🏆 Longest Streak: {consistencyData.longestStreak} days
               </Text>
-              <Text className="text-xs text-blue-700">
+              <Text className={`text-xs ${insightTone.body}`}>
                 {consistencyData.currentStreak > 0
                   ? `${consistencyData.longestStreak - consistencyData.currentStreak} more days to beat your record!`
                   : "Try to beat your personal best!"}

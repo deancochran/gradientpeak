@@ -1,4 +1,5 @@
 import { ADJUSTMENT_PRESETS, type AdjustmentType, getAdjustmentSummary } from "@repo/core/plan";
+import { THEME } from "@repo/tailwindcss/native";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
@@ -10,6 +11,7 @@ import { ROUTES } from "@/lib/constants/routes";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
 import type { SmartSuggestion } from "@/lib/hooks/useSmartSuggestions";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
+import { useTheme } from "@/lib/stores/theme-store";
 
 interface QuickAdjustSheetProps {
   visible: boolean;
@@ -24,6 +26,7 @@ export function QuickAdjustSheet({
   plan,
   smartSuggestion,
 }: QuickAdjustSheetProps) {
+  const { resolvedTheme } = useTheme();
   const _router = useRouter();
   const navigateTo = useAppNavigate();
   const utils = api.useUtils();
@@ -143,7 +146,10 @@ export function QuickAdjustSheet({
                       className="w-full"
                     >
                       {applyAdjustmentMutation.isPending ? (
-                        <ActivityIndicator size="small" color="white" />
+                        <ActivityIndicator
+                          size="small"
+                          color={THEME[resolvedTheme].primaryForeground}
+                        />
                       ) : (
                         <Text className="text-primary-foreground font-semibold">
                           Apply Suggestion

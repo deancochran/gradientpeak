@@ -41,21 +41,21 @@ export function VolumeTab({ volumeData, volumeLoading, timeRange }: VolumeTabPro
             label="Total Distance"
             subtitle={`Avg: ${(avgDistance / 1000).toFixed(1)} km per activity`}
             value={`${(totals.totalDistance / 1000).toFixed(1)} km`}
-            valueClassName="text-blue-600"
+            valueClassName="text-foreground"
           />
           <View className="h-px bg-border" />
           <VolumeMetricRow
             label="Total Time"
             subtitle={`Avg: ${(avgTime / 3600).toFixed(1)} h per activity`}
             value={`${(totals.totalTime / 3600).toFixed(1)} h`}
-            valueClassName="text-green-600"
+            valueClassName="text-foreground"
           />
           <View className="h-px bg-border" />
           <VolumeMetricRow
             label="Total Activities"
             subtitle={`${dataPoints.length} weeks of data`}
             value={`${totals.totalActivities}`}
-            valueClassName="text-orange-600"
+            valueClassName="text-foreground"
           />
         </View>
       )}

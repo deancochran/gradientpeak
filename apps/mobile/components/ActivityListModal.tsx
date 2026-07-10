@@ -160,16 +160,16 @@ export function ActivityListModal({
 
           {/* Filter info */}
           <View className="flex-row items-center gap-2 mt-2">
-            <View className="flex-row items-center gap-1 px-2 py-1 bg-blue-50 rounded">
-              <Icon as={Calendar} size={12} className="text-blue-600" />
-              <Text className="text-xs text-blue-600">
+            <View className="flex-row items-center gap-1 px-2 py-1 bg-muted rounded">
+              <Icon as={Calendar} size={12} className="text-muted-foreground" />
+              <Text className="text-xs text-muted-foreground">
                 {formatDate(dateFrom)} - {formatDate(dateTo)}
               </Text>
             </View>
             {intensityZone && (
-              <View className="flex-row items-center gap-1 px-2 py-1 bg-purple-50 rounded">
-                <Icon as={Zap} size={12} className="text-purple-600" />
-                <Text className="text-xs text-purple-600 capitalize">{intensityZone}</Text>
+              <View className="flex-row items-center gap-1 px-2 py-1 bg-muted rounded">
+                <Icon as={Zap} size={12} className="text-muted-foreground" />
+                <Text className="text-xs text-muted-foreground capitalize">{intensityZone}</Text>
               </View>
             )}
           </View>
@@ -198,17 +198,17 @@ export function ActivityListModal({
           <ScrollView className="flex-1">
             <View className="p-4">
               {/* Summary */}
-              <View className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+              <View className="bg-muted border border-border rounded-lg p-4 mb-4">
                 <View className="flex-row items-center justify-around">
                   <View className="items-center">
-                    <Text className="text-2xl font-bold text-blue-900">
+                    <Text className="text-2xl font-bold text-foreground">
                       {filteredActivities.length}
                     </Text>
-                    <Text className="text-xs text-blue-600 mt-1">Activities</Text>
+                    <Text className="text-xs text-muted-foreground mt-1">Activities</Text>
                   </View>
-                  <View className="w-px h-8 bg-blue-200" />
+                  <View className="w-px h-8 bg-border" />
                   <View className="items-center">
-                    <Text className="text-2xl font-bold text-blue-900">
+                    <Text className="text-2xl font-bold text-foreground">
                       {formatEstimatedTss(
                         filteredActivities.reduce(
                           (sum, a) => sum + (getDerivedActivityMetric(a, "tss") || 0),
@@ -217,16 +217,16 @@ export function ActivityListModal({
                         { includeUnit: false },
                       )}
                     </Text>
-                    <Text className="text-xs text-blue-600 mt-1">Total TSS</Text>
+                    <Text className="text-xs text-muted-foreground mt-1">Total TSS</Text>
                   </View>
-                  <View className="w-px h-8 bg-blue-200" />
+                  <View className="w-px h-8 bg-border" />
                   <View className="items-center">
-                    <Text className="text-2xl font-bold text-blue-900">
+                    <Text className="text-2xl font-bold text-foreground">
                       {formatDuration(
                         filteredActivities.reduce((sum, a) => sum + (a.duration_seconds || 0), 0),
                       )}
                     </Text>
-                    <Text className="text-xs text-blue-600 mt-1">Total Time</Text>
+                    <Text className="text-xs text-muted-foreground mt-1">Total Time</Text>
                   </View>
                 </View>
               </View>

@@ -89,7 +89,7 @@ export function StructureBuilderCard({
                 accessibilityHint="Hides this onboarding tip"
               >
                 <View className="flex-1 flex-row items-center gap-2 pr-2">
-                  <Info size={13} color="#2563EB" />
+                  <Icon as={Info} size={13} className="text-primary" />
                   <Text className="text-[11px] text-muted-foreground">
                     Tip: Tap interval regions directly on the chart to edit.
                   </Text>

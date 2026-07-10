@@ -12,6 +12,8 @@ import { Pressable, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { RecordingControls } from "@/components/recording/footer";
 import { AppBottomSheetContent } from "@/components/shared/AppBottomSheet";
+import { useTheme } from "@/lib/stores/theme-store";
+import { getResolvedThemeScale, type ResolvedThemeMode } from "@/lib/theme";
 import type { RecordingSheetSetupItem } from "./model/recordingSheetModel";
 import {
   buildRecordingControlSheetModel,
@@ -41,6 +43,20 @@ export interface RecordingControlSheetProps {
   sessionContract: RecordingSessionContract | null;
 }
 
+/** Resolves semantic theme tokens for native-only BottomSheet and Lucide color props. */
+function getNativeVisualTokens(mode: ResolvedThemeMode) {
+  const theme = getResolvedThemeScale(mode);
+
+  return {
+    bottomSheetBackground: theme.popover,
+    icon: {
+      destructive: theme.destructive,
+      foreground: theme.foreground,
+      success: theme.chart2,
+    },
+  };
+}
+
 export function RecordingControlSheet({
   activityCategory,
   gpsRecordingEnabled,
@@ -63,6 +79,8 @@ export function RecordingControlSheet({
 }: RecordingControlSheetProps) {
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
+  const { resolvedTheme } = useTheme();
+  const nativeVisualTokens = getNativeVisualTokens(resolvedTheme);
   const actionHandlers = React.useMemo(
     () => ({
       onGpsPress,
@@ -102,7 +120,7 @@ export function RecordingControlSheet({
       enableDynamicSizing
       enablePanDownToClose={false}
       maxDynamicContentSize={Math.round(height * 0.82)}
-      backgroundStyle={{ backgroundColor: "rgba(10, 10, 10, 0.96)" }}
+      backgroundStyle={{ backgroundColor: nativeVisualTokens.bottomSheetBackground }}
       handleComponent={null}
     >
       <BottomSheetView
@@ -127,6 +145,7 @@ export function RecordingControlSheet({
           <View className="flex-row gap-3">
             <ActivityControlButton
               disabled={Boolean(sessionContract && !sessionContract.editing.canEditActivity)}
+              iconColor={nativeVisualTokens.icon.foreground}
               label={formatActivityLabel(activityCategory)}
               onPress={onOpenActivity}
             />
@@ -164,6 +183,7 @@ export function RecordingControlSheet({
                 <SetupActionRow
                   key={item.id}
                   item={item}
+                  iconColors={nativeVisualTokens.icon}
                   statusLabel={getSetupStatusLabel(item.id, {
                     gpsRecordingEnabled,
                     sensorCount,
@@ -186,10 +206,12 @@ export function RecordingControlSheet({
 
 function ActivityControlButton({
   disabled,
+  iconColor,
   label,
   onPress,
 }: {
   disabled: boolean;
+  iconColor: string;
   label: string;
   onPress: () => void;
 }) {
@@ -206,7 +228,7 @@ function ActivityControlButton({
       }`}
       testID="recording-activity-control-button"
     >
-      <Activity size={18} color="#f8fafc" />
+      <Activity size={18} color={iconColor} />
       <Text className="mt-0.5 text-xs font-bold capitalize text-foreground" numberOfLines={1}>
         {label}
       </Text>
@@ -215,10 +237,12 @@ function ActivityControlButton({
 }
 
 function SetupActionRow({
+  iconColors,
   item,
   onRemove,
   statusLabel,
 }: {
+  iconColors: { destructive: string; foreground: string; success: string };
   item: RecordingSheetSetupItem;
   onRemove?: () => void;
   statusLabel: string;
@@ -255,7 +279,16 @@ function SetupActionRow({
             isActive ? "bg-primary/20" : isWarning ? "bg-destructive/20" : "bg-muted"
           }`}
         >
-          <Icon size={18} color={isActive ? "#22c55e" : isWarning ? "#ef4444" : "#f8fafc"} />
+          <Icon
+            size={18}
+            color={
+              isActive
+                ? iconColors.success
+                : isWarning
+                  ? iconColors.destructive
+                  : iconColors.foreground
+            }
+          />
         </View>
         <View className="min-w-0 flex-1">
           <View className="flex-row items-center justify-between gap-2">
@@ -291,7 +324,7 @@ function SetupActionRow({
           className="min-h-11 w-11 items-center justify-center border-l border-border active:opacity-80"
           testID={`recording-setup-remove-${item.id}`}
         >
-          <Trash2 size={15} color="#ef4444" />
+          <Trash2 size={15} color={iconColors.destructive} />
         </Pressable>
       ) : null}
     </View>

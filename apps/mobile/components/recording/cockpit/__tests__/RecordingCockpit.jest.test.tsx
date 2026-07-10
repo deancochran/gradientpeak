@@ -1,3 +1,4 @@
+import { THEME } from "@repo/tailwindcss/native";
 import React from "react";
 import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
@@ -141,6 +142,11 @@ jest.mock("react-native-maps", () => {
 jest.mock("react-native-safe-area-context", () => ({
   __esModule: true,
   useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+}));
+
+jest.mock("@/lib/stores/theme-store", () => ({
+  __esModule: true,
+  useTheme: () => ({ resolvedTheme: "light" }),
 }));
 
 jest.mock("@gorhom/bottom-sheet", () => {
@@ -1183,5 +1189,47 @@ describe("recording cockpit", () => {
       .filter((node: any) => node.props.accessibilityState?.disabled === true);
 
     expect(disabledActions).toHaveLength(3);
+  });
+
+  it("resolves native control-sheet colors from semantic theme tokens", () => {
+    const result = renderNative(
+      <RecordingControlSheet
+        activityCategory="bike"
+        gpsRecordingEnabled
+        onGpsPress={jest.fn()}
+        onOpenActivity={jest.fn()}
+        onOpenFtms={jest.fn()}
+        onOpenPlan={jest.fn()}
+        onOpenRoute={jest.fn()}
+        onOpenSensors={jest.fn()}
+        onRemovePlan={jest.fn()}
+        onRemoveRoute={jest.fn()}
+        onStart={jest.fn()}
+        onPause={jest.fn()}
+        onResume={jest.fn()}
+        onLap={jest.fn()}
+        onFinish={jest.fn()}
+        recordingState="not_started"
+        sensorCount={0}
+        sessionContract={buildContract({
+          guidance: { hasPlan: true },
+          ui: { controls: { quickActions: ["gps", "plan"] } },
+        })}
+      />,
+    );
+
+    const getHostProps = (type: string) =>
+      result.UNSAFE_getByType(type as never).props as {
+        backgroundStyle?: unknown;
+        color?: string;
+      };
+
+    expect(getHostProps("BottomSheet").backgroundStyle).toEqual({
+      backgroundColor: THEME.light.popover,
+    });
+    expect(getHostProps("Activity").color).toBe(THEME.light.foreground);
+    expect(getHostProps("MapPin").color).toBe(THEME.light.foreground);
+    expect(getHostProps("CalendarDays").color).toBe(THEME.light.chart2);
+    expect(getHostProps("Trash2").color).toBe(THEME.light.destructive);
   });
 });

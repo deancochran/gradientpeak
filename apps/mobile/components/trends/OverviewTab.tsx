@@ -76,7 +76,7 @@ export function OverviewTab({
         icon={TrendingUp}
         title="No Training Data"
         description="Start tracking your activities to see your training trends and progress metrics."
-        iconColor="text-blue-500"
+        iconColor="text-primary"
       />
     );
   }

@@ -125,7 +125,7 @@ export function FitnessTab({
           subtitle="Peak performance zone"
         />
         <StatusGuideRow
-          colorClassName="bg-gray-600"
+          colorClassName="bg-muted-foreground"
           title="Neutral (-10 to +5)"
           subtitle="Balanced training state"
         />

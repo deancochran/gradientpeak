@@ -5,6 +5,7 @@ import {
   type GroupAccessLevel,
   type GroupJoinPolicy,
 } from "@repo/core/groups";
+import { THEME } from "@repo/tailwindcss/native";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -27,6 +28,7 @@ import { AppSelectionModal } from "@/components/shared/AppSelectionModal";
 import { api } from "@/lib/api";
 import type { GroupDetail } from "@/lib/groups";
 import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
+import { useTheme } from "@/lib/stores/theme-store";
 
 const groupFormSchema = createGroupInputSchema.extend({
   description: z.string().trim().nullable().optional(),
@@ -134,6 +136,7 @@ function GroupImageUploadField({
   onClear: () => void;
   onOpenSourcePicker: () => void;
 }) {
+  const { resolvedTheme } = useTheme();
   const isAvatar = aspect[0] === aspect[1];
 
   return (
@@ -158,7 +161,7 @@ function GroupImageUploadField({
             </Avatar>
             <View className="absolute bottom-0 right-0 rounded-full bg-primary p-2">
               {isUploading ? (
-                <ActivityIndicator color="white" size="small" />
+                <ActivityIndicator color={THEME[resolvedTheme].primaryForeground} size="small" />
               ) : (
                 <Icon as={Camera} className="text-primary-foreground" size={18} />
               )}

@@ -1,4 +1,5 @@
 import type { MetricFamily, MetricSourceCandidate, MetricSourceSelection } from "@repo/core";
+import { THEME } from "@repo/tailwindcss/native";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
@@ -28,8 +29,10 @@ import {
   checkAllPermissions,
   requestPermission,
 } from "@/lib/services/permissions-check";
+import { useTheme } from "@/lib/stores/theme-store";
 
 function SensorsScreen() {
+  const { resolvedTheme } = useTheme();
   const service = useSharedActivityRecorder();
   const { sensors: connectedSensors } = useSensors(service);
   const knownSensors = useKnownSensors(service);
@@ -278,7 +281,7 @@ function SensorsScreen() {
         >
           <View className="flex-row items-center gap-2">
             {isScanning ? (
-              <ActivityIndicator size="small" color="white" />
+              <ActivityIndicator size="small" color={THEME[resolvedTheme].primaryForeground} />
             ) : (
               <Icon as={RefreshCw} size={16} className="text-primary-foreground" />
             )}
@@ -399,7 +402,10 @@ function SensorsScreen() {
                           className="h-8"
                         >
                           {isConnecting ? (
-                            <ActivityIndicator size="small" color="white" />
+                            <ActivityIndicator
+                              size="small"
+                              color={THEME[resolvedTheme].primaryForeground}
+                            />
                           ) : (
                             <Text className="text-xs text-primary-foreground">Connect</Text>
                           )}
@@ -496,6 +502,8 @@ function KnownSensorRow({
   onConnect: (deviceId: string) => Promise<void>;
   onForget: (deviceId: string) => Promise<void>;
 }) {
+  const { resolvedTheme } = useTheme();
+
   return (
     <View className="rounded-xl border border-border bg-background p-3">
       <View className="flex-row items-start justify-between gap-3">
@@ -513,7 +521,7 @@ function KnownSensorRow({
             className="h-8"
           >
             {isConnecting ? (
-              <ActivityIndicator size="small" color="white" />
+              <ActivityIndicator size="small" color={THEME[resolvedTheme].primaryForeground} />
             ) : (
               <Text className="text-xs text-primary-foreground">Connect</Text>
             )}

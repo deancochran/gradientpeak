@@ -1,3 +1,4 @@
+import { THEME } from "@repo/tailwindcss/native";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import {
@@ -35,6 +36,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
+import { useTheme } from "@/lib/stores/theme-store";
 import { handleSubmitFormError } from "@/lib/utils/formErrors";
 
 const profileEditSchema = z.object({
@@ -64,6 +66,7 @@ function isAbsoluteUrl(value: string) {
 }
 
 function ProfileEditScreen() {
+  const { resolvedTheme } = useTheme();
   const router = useRouter();
   const { profile, refreshProfile } = useAuth();
   const [uploadingImageField, setUploadingImageField] = useState<ProfileImageFieldName | null>(
@@ -379,7 +382,10 @@ function ProfileEditScreen() {
                       </Avatar>
                       <View className="absolute bottom-0 right-0 rounded-full bg-primary p-2">
                         {uploadingImageField === "avatar_url" ? (
-                          <ActivityIndicator color="white" size="small" />
+                          <ActivityIndicator
+                            color={THEME[resolvedTheme].primaryForeground}
+                            size="small"
+                          />
                         ) : (
                           <Icon as={Camera} size={18} className="text-primary-foreground" />
                         )}

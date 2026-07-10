@@ -48,12 +48,12 @@ export function PerformanceTab({
             <TouchableOpacity
               onPress={() => setSelectedMetric("speed")}
               className={`flex-1 py-2 px-3 rounded ${
-                selectedMetric === "speed" ? "bg-blue-500" : "bg-muted"
+                selectedMetric === "speed" ? "bg-primary" : "bg-muted"
               }`}
             >
               <Text
                 className={`text-center text-sm font-medium ${
-                  selectedMetric === "speed" ? "text-white" : "text-muted-foreground"
+                  selectedMetric === "speed" ? "text-primary-foreground" : "text-muted-foreground"
                 }`}
               >
                 Speed
@@ -64,12 +64,12 @@ export function PerformanceTab({
             <TouchableOpacity
               onPress={() => setSelectedMetric("power")}
               className={`flex-1 py-2 px-3 rounded ${
-                selectedMetric === "power" ? "bg-purple-500" : "bg-muted"
+                selectedMetric === "power" ? "bg-primary" : "bg-muted"
               }`}
             >
               <Text
                 className={`text-center text-sm font-medium ${
-                  selectedMetric === "power" ? "text-white" : "text-muted-foreground"
+                  selectedMetric === "power" ? "text-primary-foreground" : "text-muted-foreground"
                 }`}
               >
                 Power
@@ -80,12 +80,14 @@ export function PerformanceTab({
             <TouchableOpacity
               onPress={() => setSelectedMetric("heartrate")}
               className={`flex-1 py-2 px-3 rounded ${
-                selectedMetric === "heartrate" ? "bg-red-500" : "bg-muted"
+                selectedMetric === "heartrate" ? "bg-primary" : "bg-muted"
               }`}
             >
               <Text
                 className={`text-center text-sm font-medium ${
-                  selectedMetric === "heartrate" ? "text-white" : "text-muted-foreground"
+                  selectedMetric === "heartrate"
+                    ? "text-primary-foreground"
+                    : "text-muted-foreground"
                 }`}
               >
                 Heart Rate

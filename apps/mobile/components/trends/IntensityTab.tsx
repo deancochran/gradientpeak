@@ -5,6 +5,7 @@ import { Activity } from "lucide-react-native";
 import { View } from "react-native";
 import { IntensityDistributionChart } from "@/components/charts";
 import { formatEstimatedTss } from "@/lib/estimatedMetrics";
+import { insightTone } from "./insightTone";
 
 interface IntensityDistribution {
   recovery: number;
@@ -53,7 +54,7 @@ export function IntensityTab({
         icon={Activity}
         title="No Intensity Data"
         description="Complete activities with power data to see your training intensity distribution and zones."
-        iconColor="text-purple-500"
+        iconColor="text-primary"
       />
     );
   }
@@ -154,11 +155,11 @@ export function IntensityTab({
       />
 
       {/* Info Banner */}
-      <View className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <Text className="text-sm font-semibold text-blue-900 mb-1">
+      <View className={`rounded-lg p-4 ${insightTone.container}`}>
+        <Text className={`text-sm font-semibold mb-1 ${insightTone.title}`}>
           📊 Intensity Calculated from IF
         </Text>
-        <Text className="text-xs text-blue-700">
+        <Text className={`text-xs ${insightTone.body}`}>
           Zones are calculated from your actual Intensity Factor (IF) after each activity. This
           shows your real training distribution.
         </Text>
@@ -179,10 +180,12 @@ export function IntensityTab({
 
       {/* Recommendations */}
       {recommendations.length > 0 && (
-        <View className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <Text className="text-sm font-semibold text-blue-900 mb-2">💡 Training Insights</Text>
+        <View className={`rounded-lg p-4 ${insightTone.container}`}>
+          <Text className={`text-sm font-semibold mb-2 ${insightTone.title}`}>
+            💡 Training Insights
+          </Text>
           {recommendations.map((rec, index) => (
-            <Text key={index} className="text-xs text-blue-700 mb-1">
+            <Text key={index} className={`text-xs mb-1 ${insightTone.body}`}>
               • {rec}
             </Text>
           ))}

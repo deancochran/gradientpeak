@@ -1,3 +1,4 @@
+import { THEME } from "@repo/tailwindcss/native";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
@@ -13,9 +14,11 @@ import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
 import { useAuthStore } from "@/lib/stores/auth-store";
+import { useTheme } from "@/lib/stores/theme-store";
 import { normalizeDate } from "@/lib/utils/plan/dateGrouping";
 
 export default function WorkoutsReorder() {
+  const { resolvedTheme } = useTheme();
   const router = useRouter();
   const utils = api.useUtils();
   const eventsQueryEnabled = useAuthStore(
@@ -307,7 +310,7 @@ export default function WorkoutsReorder() {
               disabled={saving}
             >
               {saving ? (
-                <ActivityIndicator size="small" color="white" />
+                <ActivityIndicator size="small" color={THEME[resolvedTheme].primaryForeground} />
               ) : (
                 <>
                   <Icon as={Save} size={18} className="text-primary-foreground" />

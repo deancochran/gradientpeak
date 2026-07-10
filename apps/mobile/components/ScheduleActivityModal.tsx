@@ -72,6 +72,7 @@
  * ```
  */
 
+import { THEME } from "@repo/tailwindcss/native";
 import { Button } from "@repo/ui/components/button";
 import {
   Form,
@@ -94,6 +95,7 @@ import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { AppFormModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
 import { refreshScheduleWithCallbacks } from "@/lib/scheduling/refreshScheduleViews";
+import { useTheme } from "@/lib/stores/theme-store";
 import { applyServerFormErrors, getErrorMessage } from "@/lib/utils/formErrors";
 import { ConstraintValidator } from "./training-plan/modals/components/ConstraintValidator";
 
@@ -290,6 +292,7 @@ export function ScheduleActivityModal({
   trainingPlanId,
   editScope,
 }: ScheduleActivityModalProps) {
+  const { resolvedTheme } = useTheme();
   if (!visible) {
     return null;
   }
@@ -558,7 +561,11 @@ export function ScheduleActivityModal({
               testID="schedule-submit-button"
             >
               {isSubmitting ? (
-                <ActivityIndicator size="small" color="#fff" className="mr-2" />
+                <ActivityIndicator
+                  size="small"
+                  color={THEME[resolvedTheme].primaryForeground}
+                  className="mr-2"
+                />
               ) : null}
               <Text className="text-primary-foreground font-semibold">
                 {trainingPlanId && validation && !validation.canSchedule

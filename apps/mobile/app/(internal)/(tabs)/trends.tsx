@@ -21,6 +21,8 @@ import Svg, { Circle, Line, Path } from "react-native-svg";
 import { AppHeader, CompactInsightCard } from "@/components/shared";
 import { AppBottomSheetContent } from "@/components/shared/AppBottomSheet";
 import { api } from "@/lib/api";
+import { useTheme } from "@/lib/stores/theme-store";
+import { getResolvedThemeScale, type ResolvedThemeMode } from "@/lib/theme";
 import {
   buildActivityInsights,
   buildProfileInsights,
@@ -30,6 +32,19 @@ import {
   type Tone,
   toIsoDate,
 } from "@/lib/trends/insights";
+
+/** Resolves semantic theme colors for native props that cannot consume class tokens. */
+export function getTrendNativeVisualTokens(mode: ResolvedThemeMode) {
+  const theme = getResolvedThemeScale(mode);
+
+  return {
+    activityIndicatorColor: theme.primary,
+    bottomSheetBackgroundStyle: { backgroundColor: theme.popover },
+    bottomSheetHandleIndicatorStyle: { backgroundColor: theme.mutedForeground },
+    inputPlaceholderColor: theme.mutedForeground,
+    refreshControlColor: theme.primary,
+  };
+}
 
 function getToneAccentClass(tone: Tone) {
   switch (tone) {
@@ -841,6 +856,8 @@ function CustomRangeSheet({
   const [startValue, setStartValue] = React.useState(toInputDate(start));
   const [endValue, setEndValue] = React.useState(toInputDate(end));
   const snapPoints = React.useMemo(() => ["42%"], []);
+  const { resolvedTheme } = useTheme();
+  const nativeVisualTokens = getTrendNativeVisualTokens(resolvedTheme);
   const renderBackdrop = React.useCallback(
     (props: BottomSheetBackdropProps) => (
       <BottomSheetBackdrop
@@ -869,6 +886,8 @@ function CustomRangeSheet({
       enablePanDownToClose
       backdropComponent={renderBackdrop}
       onClose={onClose}
+      backgroundStyle={nativeVisualTokens.bottomSheetBackgroundStyle}
+      handleIndicatorStyle={nativeVisualTokens.bottomSheetHandleIndicatorStyle}
     >
       <BottomSheetView className="flex-1">
         <AppBottomSheetContent paddingHorizontal={20} paddingTop={8} paddingBottom={96}>
@@ -887,7 +906,7 @@ function CustomRangeSheet({
                   value={startValue}
                   onChangeText={setStartValue}
                   placeholder="YYYY-MM-DD"
-                  placeholderTextColor="#737373"
+                  placeholderTextColor={nativeVisualTokens.inputPlaceholderColor}
                   className="rounded-2xl border border-border bg-card px-4 py-3 text-base text-foreground"
                   testID="trend-custom-start-date"
                 />
@@ -898,7 +917,7 @@ function CustomRangeSheet({
                   value={endValue}
                   onChangeText={setEndValue}
                   placeholder="YYYY-MM-DD"
-                  placeholderTextColor="#737373"
+                  placeholderTextColor={nativeVisualTokens.inputPlaceholderColor}
                   className="rounded-2xl border border-border bg-card px-4 py-3 text-base text-foreground"
                   testID="trend-custom-end-date"
                 />
@@ -1018,6 +1037,8 @@ type TrendsInsightsSurfaceProps = {
 export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfaceProps) {
   const [selectedInsight, setSelectedInsight] = React.useState<Insight | null>(null);
   const [refreshing, setRefreshing] = React.useState(false);
+  const { resolvedTheme } = useTheme();
+  const nativeVisualTokens = getTrendNativeVisualTokens(resolvedTheme);
   const range = React.useMemo(() => {
     const end = new Date();
     const start = new Date();
@@ -1138,7 +1159,7 @@ export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfac
               : "flex-1 items-center justify-center"
           }
         >
-          <ActivityIndicator />
+          <ActivityIndicator color={nativeVisualTokens.activityIndicatorColor} />
           <Text className="mt-3 text-sm text-muted-foreground">Building your insight cards...</Text>
         </View>
       ) : hasError ? (
@@ -1154,7 +1175,14 @@ export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfac
         ) : (
           <ScrollView
             contentContainerClassName="flex-grow items-center justify-center px-6"
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                colors={[nativeVisualTokens.refreshControlColor]}
+                tintColor={nativeVisualTokens.refreshControlColor}
+              />
+            }
           >
             <Text className="text-center text-lg font-semibold text-foreground">
               Unable to load trends
@@ -1177,7 +1205,14 @@ export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfac
       ) : (
         <ScrollView
           contentContainerClassName="gap-5 p-5 pb-10"
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              colors={[nativeVisualTokens.refreshControlColor]}
+              tintColor={nativeVisualTokens.refreshControlColor}
+            />
+          }
           showsVerticalScrollIndicator={false}
         >
           <View className="flex-row flex-wrap gap-4">

@@ -120,7 +120,7 @@ export default function Avatar({ url, size = 150, onUpload }: Props) {
           style={[avatarSize, styles.avatar, styles.image]}
         />
       ) : (
-        <View style={[avatarSize, styles.avatar, styles.noImage]} />
+        <View className="border border-border bg-muted" style={[avatarSize, styles.avatar]} />
       )}
       <View>
         <Button
@@ -142,12 +142,5 @@ const styles = StyleSheet.create({
   image: {
     objectFit: "cover",
     paddingTop: 0,
-  },
-  noImage: {
-    backgroundColor: "#333",
-    borderWidth: 1,
-    borderStyle: "solid",
-    borderColor: "rgb(200, 200, 200)",
-    borderRadius: 5,
   },
 });

@@ -1,5 +1,6 @@
 // apps/mobile/app/(internal)/(tabs)/plan/training-plan/modals/AddActivityModal.tsx
 
+import { THEME } from "@repo/tailwindcss/native";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import { X } from "lucide-react-native";
@@ -7,6 +8,7 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, View } from "react-native";
 import { api } from "@/lib/api";
 import { useReliableMutation } from "@/lib/hooks/useReliableMutation";
+import { useTheme } from "@/lib/stores/theme-store";
 import { type ActivityOption, ActivitySelector } from "./components/ActivitySelector";
 import { ConstraintValidator } from "./components/ConstraintValidator";
 
@@ -55,6 +57,7 @@ export function AddActivityModal({
   trainingPlanId,
   onSuccess,
 }: AddActivityModalProps) {
+  const { resolvedTheme } = useTheme();
   const [selectedActivity, setSelectedActivity] = useState<ActivityOption | null>(null);
 
   // Reset state when modal closes
@@ -226,7 +229,7 @@ export function AddActivityModal({
               className="flex-1"
             >
               {scheduleMutation.isPending ? (
-                <ActivityIndicator color="white" />
+                <ActivityIndicator color={THEME[resolvedTheme].primaryForeground} />
               ) : (
                 <Text className="text-white">
                   {validation && !validation.canSchedule ? "Schedule Anyway" : "Schedule Activity"}
