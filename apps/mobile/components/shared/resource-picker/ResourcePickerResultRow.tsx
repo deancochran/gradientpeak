@@ -66,8 +66,8 @@ export function ResourcePickerResultRow({
   scope,
 }: ResourcePickerResultRowProps) {
   const isActivityPlan = scope === "activityPlans";
-  const card = isActivityPlan ? (
-    item.activityPlanCardData ? (
+  const card =
+    item.presentation === "canonical" && isActivityPlan && "activityPlanCardData" in item ? (
       <ActivityPlanCard
         activity={{
           activityType: item.activityPlanCardData.activityType,
@@ -83,17 +83,22 @@ export function ResourcePickerResultRow({
         }}
         variant="list"
       />
-    ) : null
-  ) : item.routeCardData ? (
-    <RouteCard route={item.routeCardData} showAttribution={false} showLike={false} variant="list" />
-  ) : null;
+    ) : item.presentation === "canonical" && scope === "routes" && "routeCardData" in item ? (
+      <RouteCard
+        route={item.routeCardData}
+        showAttribution={false}
+        showLike={false}
+        variant="list"
+      />
+    ) : null;
 
   if (card) {
     return (
       <Pressable
+        accessibilityLabel={`Select ${item.name || "resource"}`}
         accessibilityRole="button"
         accessibilityState={{ disabled, selected: isSelected }}
-        className="relative rounded-xl"
+        className="relative min-h-11 rounded-xl"
         disabled={disabled}
         onPress={onPress}
         testID={`resource-picker-result-${item.id}`}
@@ -112,8 +117,10 @@ export function ResourcePickerResultRow({
     );
   }
 
-  // Legacy/external picker items may omit a card contract. Keep this compact fallback
-  // until their query mapper supplies the corresponding canonical card data.
+  if (item.presentation !== "external") return null;
+
+  // This is intentionally limited to imported/external results that cannot provide
+  // canonical card data. All in-app activity-plan and route query mappers use cards.
   const activityConfig = getActivityCategoryConfig(item.activityCategory || "other");
   const metadata =
     scope === "routes"
@@ -130,9 +137,10 @@ export function ResourcePickerResultRow({
 
   return (
     <Pressable
+      accessibilityLabel={`Select ${item.name || "resource"}`}
       accessibilityRole="button"
       accessibilityState={{ disabled, selected: isSelected }}
-      className={`rounded-2xl border p-3 ${
+      className={`min-h-11 rounded-2xl border p-3 ${
         isSelected ? "border-primary bg-primary/10" : "border-border bg-card"
       }`}
       disabled={disabled}
@@ -196,6 +204,7 @@ export function mapActivityPlanToResourcePickerItem(
     isSystem: plan.is_system_template,
     likesCount: plan.likes_count,
     name: plan.name,
+    presentation: "canonical",
     updatedAt: plan.updated_at,
   };
 }
@@ -208,6 +217,7 @@ export function mapRouteToResourcePickerItem(route: RoutePickerSource): Resource
     isPublic: route.is_public,
     isSystem: route.is_system_template,
     name: route.name,
+    presentation: "canonical",
     routeCardData: {
       activity_category: route.activity_category,
       description: route.description,

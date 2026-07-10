@@ -1,6 +1,10 @@
 import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
-import { ResourcePickerResultRow } from "../ResourcePickerResultRow";
+import {
+  mapActivityPlanToResourcePickerItem,
+  mapRouteToResourcePickerItem,
+  ResourcePickerResultRow,
+} from "../ResourcePickerResultRow";
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -61,6 +65,7 @@ describe("ResourcePickerResultRow", () => {
           },
           id: "plan-1",
           name: "Tempo Builder",
+          presentation: "canonical",
         }}
         onPress={onPress}
         scope="activityPlans"
@@ -80,6 +85,7 @@ describe("ResourcePickerResultRow", () => {
         item={{
           id: "route-1",
           name: "River Loop",
+          presentation: "canonical",
           routeCardData: { id: "route-1", name: "River Loop", total_distance: 5000 },
         }}
         onPress={jest.fn()}
@@ -93,12 +99,12 @@ describe("ResourcePickerResultRow", () => {
     expect(routeCard.props.showLike).toBe(false);
   });
 
-  it("keeps legacy items selectable and disabled when canonical card data is unavailable", () => {
+  it("keeps explicit external items selectable and disabled with accessible minimum hit target parity", () => {
     renderNative(
       <ResourcePickerResultRow
         disabled
         isSelected={false}
-        item={{ id: "legacy-route", name: "Imported route" }}
+        item={{ id: "legacy-route", name: "Imported route", presentation: "external" }}
         onPress={jest.fn()}
         scope="routes"
       />,
@@ -106,6 +112,25 @@ describe("ResourcePickerResultRow", () => {
 
     const result = screen.getByTestId("resource-picker-result-legacy-route");
     expect(result.props.disabled).toBe(true);
+    expect(result.props.accessibilityLabel).toBe("Select Imported route");
+    expect(result.props.className).toContain("min-h-11");
     expect(screen.queryByTestId("resource-picker-route-card")).toBeNull();
+  });
+
+  it("maps every current query result to its canonical card presentation", () => {
+    expect(
+      mapActivityPlanToResourcePickerItem({
+        id: "plan-2",
+        name: "Endurance",
+        activity_category: "ride",
+      }),
+    ).toMatchObject({
+      activityPlanCardData: { id: "plan-2", name: "Endurance" },
+      presentation: "canonical",
+    });
+    expect(mapRouteToResourcePickerItem({ id: "route-2", name: "Park Loop" })).toMatchObject({
+      routeCardData: { id: "route-2", name: "Park Loop" },
+      presentation: "canonical",
+    });
   });
 });

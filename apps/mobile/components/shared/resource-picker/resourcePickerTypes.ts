@@ -25,9 +25,8 @@ export type ResourcePickerRouteCardData = {
   total_distance?: number | null;
 };
 
-export type ResourcePickerItem = {
+type ResourcePickerItemBase = {
   activityCategory?: string | null;
-  activityPlanCardData?: ResourcePickerActivityPlanCardData;
   createdAt?: string | null;
   description?: string | null;
   estimatedDuration?: number | null;
@@ -38,8 +37,40 @@ export type ResourcePickerItem = {
   hasLiked?: boolean | null;
   likesCount?: number | null;
   name: string;
-  routeCardData?: ResourcePickerRouteCardData;
   totalAscent?: number | null;
   totalDistance?: number | null;
   updatedAt?: string | null;
 };
+
+/** A picker result backed by one of the canonical resource cards. */
+export type ResourcePickerCanonicalItem =
+  | (ResourcePickerItemBase & {
+      activityPlanCardData: ResourcePickerActivityPlanCardData;
+      presentation: "canonical";
+    })
+  | (ResourcePickerItemBase & {
+      presentation: "canonical";
+      routeCardData: ResourcePickerRouteCardData;
+    });
+
+/**
+ * A compact result from an external/imported source that cannot supply a
+ * canonical resource card. Query mappers must use `ResourcePickerCanonicalItem`.
+ */
+export type ResourcePickerExternalItem = ResourcePickerItemBase & {
+  presentation: "external";
+};
+
+/**
+ * Backwards-compatible selection payload used by existing callbacks. It cannot
+ * render a result row: callers that render an external item must opt in with
+ * `presentation: "external"`.
+ */
+export type ResourcePickerSelectionItem = ResourcePickerItemBase & {
+  presentation?: undefined;
+};
+
+export type ResourcePickerItem =
+  | ResourcePickerCanonicalItem
+  | ResourcePickerExternalItem
+  | ResourcePickerSelectionItem;

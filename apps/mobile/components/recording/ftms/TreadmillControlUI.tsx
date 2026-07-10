@@ -25,7 +25,7 @@ export interface TreadmillControlUIProps {
   hasPlan: boolean;
 }
 
-export function TreadmillControlUI({ service, controlMode, hasPlan }: TreadmillControlUIProps) {
+export function TreadmillControlUI({ service, controlMode }: TreadmillControlUIProps) {
   const plan = usePlan(service);
 
   // Treadmill control state
@@ -154,6 +154,10 @@ export function TreadmillControlUI({ service, controlMode, hasPlan }: TreadmillC
             <Pressable
               onPress={() => setSpeedKmh(Math.max(0, speedKmh - 0.5))}
               disabled={isDisabled}
+              accessibilityRole="button"
+              accessibilityLabel="Decrease speed by 0.5 kilometers per hour"
+              accessibilityState={{ disabled: isDisabled }}
+              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
               className={`w-12 h-12 items-center justify-center rounded ${
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
@@ -171,6 +175,10 @@ export function TreadmillControlUI({ service, controlMode, hasPlan }: TreadmillC
             <Pressable
               onPress={() => setSpeedKmh(Math.min(maxSpeed, speedKmh + 0.5))}
               disabled={isDisabled}
+              accessibilityRole="button"
+              accessibilityLabel="Increase speed by 0.5 kilometers per hour"
+              accessibilityState={{ disabled: isDisabled }}
+              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
               className={`w-12 h-12 items-center justify-center rounded ${
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
@@ -184,7 +192,11 @@ export function TreadmillControlUI({ service, controlMode, hasPlan }: TreadmillC
           <Pressable
             onPress={applySpeed}
             disabled={isDisabled}
-            className={`py-3 rounded ${isDisabled ? "bg-muted" : "bg-primary"}`}
+            accessibilityRole="button"
+            accessibilityLabel="Apply speed in kilometers per hour"
+            accessibilityState={{ disabled: isDisabled }}
+            style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+            className={`h-12 items-center justify-center rounded ${isDisabled ? "bg-muted" : "bg-primary"}`}
           >
             <Text
               className={`text-center font-medium ${
@@ -210,6 +222,10 @@ export function TreadmillControlUI({ service, controlMode, hasPlan }: TreadmillC
             <Pressable
               onPress={() => setInclinePercent(Math.max(-5, inclinePercent - 0.5))}
               disabled={isDisabled}
+              accessibilityRole="button"
+              accessibilityLabel="Decrease incline by 0.5 percent"
+              accessibilityState={{ disabled: isDisabled }}
+              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
               className={`w-12 h-12 items-center justify-center rounded ${
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
@@ -226,6 +242,10 @@ export function TreadmillControlUI({ service, controlMode, hasPlan }: TreadmillC
             <Pressable
               onPress={() => setInclinePercent(Math.min(maxIncline, inclinePercent + 0.5))}
               disabled={isDisabled}
+              accessibilityRole="button"
+              accessibilityLabel="Increase incline by 0.5 percent"
+              accessibilityState={{ disabled: isDisabled }}
+              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
               className={`w-12 h-12 items-center justify-center rounded ${
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
@@ -239,7 +259,11 @@ export function TreadmillControlUI({ service, controlMode, hasPlan }: TreadmillC
           <Pressable
             onPress={applyIncline}
             disabled={isDisabled}
-            className={`py-3 rounded ${isDisabled ? "bg-muted" : "bg-primary"}`}
+            accessibilityRole="button"
+            accessibilityLabel="Apply incline in percent"
+            accessibilityState={{ disabled: isDisabled }}
+            style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+            className={`h-12 items-center justify-center rounded ${isDisabled ? "bg-muted" : "bg-primary"}`}
           >
             <Text
               className={`text-center font-medium ${

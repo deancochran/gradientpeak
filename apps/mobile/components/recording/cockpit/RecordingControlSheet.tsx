@@ -200,6 +200,7 @@ function ActivityControlButton({
       accessibilityRole="button"
       accessibilityState={{ disabled }}
       accessibilityLabel={`Activity: ${label}`}
+      accessibilityHint="Adjust the session activity."
       className={`h-14 w-28 items-center justify-center rounded-lg border border-border bg-card ${
         disabled ? "opacity-50" : "active:opacity-80"
       }`}
@@ -285,8 +286,9 @@ function SetupActionRow({
         <Pressable
           onPress={onRemove}
           accessibilityRole="button"
+          accessibilityState={{ disabled: false }}
           accessibilityLabel={`Remove ${item.title}`}
-          className="w-11 items-center justify-center border-l border-border active:opacity-80"
+          className="min-h-11 w-11 items-center justify-center border-l border-border active:opacity-80"
           testID={`recording-setup-remove-${item.id}`}
         >
           <Trash2 size={15} color="#ef4444" />

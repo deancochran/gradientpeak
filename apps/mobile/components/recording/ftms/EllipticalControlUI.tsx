@@ -24,7 +24,7 @@ export interface EllipticalControlUIProps {
   hasPlan: boolean;
 }
 
-export function EllipticalControlUI({ service, controlMode, hasPlan }: EllipticalControlUIProps) {
+export function EllipticalControlUI({ service, controlMode }: EllipticalControlUIProps) {
   const plan = usePlan(service);
   const currentReadings = useCurrentReadings(service);
 
@@ -99,6 +99,10 @@ export function EllipticalControlUI({ service, controlMode, hasPlan }: Elliptica
             <Pressable
               onPress={() => setResistanceLevel(Math.max(1, resistanceLevel - 1))}
               disabled={isDisabled}
+              accessibilityRole="button"
+              accessibilityLabel="Decrease resistance by one level"
+              accessibilityState={{ disabled: isDisabled }}
+              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
               className={`w-12 h-12 items-center justify-center rounded ${
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
@@ -116,6 +120,10 @@ export function EllipticalControlUI({ service, controlMode, hasPlan }: Elliptica
             <Pressable
               onPress={() => setResistanceLevel(Math.min(20, resistanceLevel + 1))}
               disabled={isDisabled}
+              accessibilityRole="button"
+              accessibilityLabel="Increase resistance by one level"
+              accessibilityState={{ disabled: isDisabled }}
+              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
               className={`w-12 h-12 items-center justify-center rounded ${
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
@@ -129,7 +137,11 @@ export function EllipticalControlUI({ service, controlMode, hasPlan }: Elliptica
           <Pressable
             onPress={applyResistance}
             disabled={isDisabled}
-            className={`py-3 rounded ${isDisabled ? "bg-muted" : "bg-primary"}`}
+            accessibilityRole="button"
+            accessibilityLabel="Apply resistance level"
+            accessibilityState={{ disabled: isDisabled }}
+            style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+            className={`h-12 items-center justify-center rounded ${isDisabled ? "bg-muted" : "bg-primary"}`}
           >
             <Text
               className={`text-center font-medium ${
@@ -150,6 +162,10 @@ export function EllipticalControlUI({ service, controlMode, hasPlan }: Elliptica
             <Pressable
               onPress={() => setTargetCadence(Math.max(30, targetCadence - 5))}
               disabled={isDisabled}
+              accessibilityRole="button"
+              accessibilityLabel="Decrease target cadence by 5 steps per minute"
+              accessibilityState={{ disabled: isDisabled }}
+              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
               className={`w-12 h-12 items-center justify-center rounded ${
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
@@ -167,6 +183,10 @@ export function EllipticalControlUI({ service, controlMode, hasPlan }: Elliptica
             <Pressable
               onPress={() => setTargetCadence(Math.min(120, targetCadence + 5))}
               disabled={isDisabled}
+              accessibilityRole="button"
+              accessibilityLabel="Increase target cadence by 5 steps per minute"
+              accessibilityState={{ disabled: isDisabled }}
+              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
               className={`w-12 h-12 items-center justify-center rounded ${
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
@@ -180,7 +200,11 @@ export function EllipticalControlUI({ service, controlMode, hasPlan }: Elliptica
           <Pressable
             onPress={applyCadence}
             disabled={isDisabled}
-            className={`py-3 rounded ${isDisabled ? "bg-muted" : "bg-primary"}`}
+            accessibilityRole="button"
+            accessibilityLabel="Apply target cadence in steps per minute"
+            accessibilityState={{ disabled: isDisabled }}
+            style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+            className={`h-12 items-center justify-center rounded ${isDisabled ? "bg-muted" : "bg-primary"}`}
           >
             <Text
               className={`text-center font-medium ${

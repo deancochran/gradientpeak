@@ -25,7 +25,7 @@ export interface RowerControlUIProps {
   hasPlan: boolean;
 }
 
-export function RowerControlUI({ service, controlMode, hasPlan }: RowerControlUIProps) {
+export function RowerControlUI({ service, controlMode }: RowerControlUIProps) {
   const plan = usePlan(service);
 
   // Rower control state
@@ -73,6 +73,10 @@ export function RowerControlUI({ service, controlMode, hasPlan }: RowerControlUI
           <Pressable
             onPress={() => setDamper(Math.max(1, damper - 1))}
             disabled={isDisabled}
+            accessibilityRole="button"
+            accessibilityLabel="Decrease damper by one level"
+            accessibilityState={{ disabled: isDisabled }}
+            style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
             className={`w-12 h-12 items-center justify-center rounded ${
               isDisabled ? "bg-muted" : "bg-primary"
             }`}
@@ -90,6 +94,10 @@ export function RowerControlUI({ service, controlMode, hasPlan }: RowerControlUI
           <Pressable
             onPress={() => setDamper(Math.min(10, damper + 1))}
             disabled={isDisabled}
+            accessibilityRole="button"
+            accessibilityLabel="Increase damper by one level"
+            accessibilityState={{ disabled: isDisabled }}
+            style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
             className={`w-12 h-12 items-center justify-center rounded ${
               isDisabled ? "bg-muted" : "bg-primary"
             }`}
@@ -109,6 +117,10 @@ export function RowerControlUI({ service, controlMode, hasPlan }: RowerControlUI
             <Pressable
               onPress={() => setResistanceLevel(Math.max(1, resistanceLevel - 1))}
               disabled={isDisabled}
+              accessibilityRole="button"
+              accessibilityLabel="Decrease resistance by one level"
+              accessibilityState={{ disabled: isDisabled }}
+              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
               className={`w-12 h-12 items-center justify-center rounded ${
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
@@ -125,6 +137,10 @@ export function RowerControlUI({ service, controlMode, hasPlan }: RowerControlUI
             <Pressable
               onPress={() => setResistanceLevel(resistanceLevel + 1)}
               disabled={isDisabled}
+              accessibilityRole="button"
+              accessibilityLabel="Increase resistance by one level"
+              accessibilityState={{ disabled: isDisabled }}
+              style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
               className={`w-12 h-12 items-center justify-center rounded ${
                 isDisabled ? "bg-muted" : "bg-primary"
               }`}
@@ -138,7 +154,11 @@ export function RowerControlUI({ service, controlMode, hasPlan }: RowerControlUI
           <Pressable
             onPress={applyResistance}
             disabled={isDisabled}
-            className={`py-3 rounded ${isDisabled ? "bg-muted" : "bg-primary"}`}
+            accessibilityRole="button"
+            accessibilityLabel="Apply resistance level"
+            accessibilityState={{ disabled: isDisabled }}
+            style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+            className={`h-12 items-center justify-center rounded ${isDisabled ? "bg-muted" : "bg-primary"}`}
           >
             <Text
               className={`text-center font-medium ${
@@ -158,6 +178,10 @@ export function RowerControlUI({ service, controlMode, hasPlan }: RowerControlUI
           <Pressable
             onPress={() => setTargetStrokeRate(Math.max(10, targetStrokeRate - 1))}
             disabled={isDisabled}
+            accessibilityRole="button"
+            accessibilityLabel="Decrease target stroke rate by one stroke per minute"
+            accessibilityState={{ disabled: isDisabled }}
+            style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
             className={`w-12 h-12 items-center justify-center rounded ${
               isDisabled ? "bg-muted" : "bg-primary"
             }`}
@@ -175,6 +199,10 @@ export function RowerControlUI({ service, controlMode, hasPlan }: RowerControlUI
           <Pressable
             onPress={() => setTargetStrokeRate(Math.min(40, targetStrokeRate + 1))}
             disabled={isDisabled}
+            accessibilityRole="button"
+            accessibilityLabel="Increase target stroke rate by one stroke per minute"
+            accessibilityState={{ disabled: isDisabled }}
+            style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
             className={`w-12 h-12 items-center justify-center rounded ${
               isDisabled ? "bg-muted" : "bg-primary"
             }`}
