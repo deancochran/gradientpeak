@@ -1,13 +1,12 @@
-import { Icon } from "@repo/ui/components/icon";
-import { Input } from "@repo/ui/components/input";
 import { InlineLoadingStatus } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { keepPreviousData } from "@tanstack/react-query";
-import { Search } from "lucide-react-native";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, View } from "react-native";
+import { Pressable, View } from "react-native";
 import { AppFormModal } from "@/components/shared/AppFormModal";
+import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
+import { SearchField } from "@/components/shared/SearchField";
 import { api } from "@/lib/api";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
 import {
@@ -89,7 +88,7 @@ export function ResourcePickerModal({
     },
     {
       enabled: visible && scope === "activityPlans",
-      getNextPageParam: (lastPage: any) => lastPage.nextCursor,
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
       placeholderData: keepPreviousData,
     },
   );
@@ -104,7 +103,7 @@ export function ResourcePickerModal({
     }
 
     return (
-      activityPlanQuery.data?.pages.flatMap((page: any) =>
+      activityPlanQuery.data?.pages.flatMap((page) =>
         (page.items ?? []).map(mapActivityPlanToResourcePickerItem),
       ) ?? []
     );
@@ -121,18 +120,13 @@ export function ResourcePickerModal({
       title={title}
     >
       <View className="gap-2">
-        <View className="relative">
-          <View className="absolute left-3 top-3 z-10">
-            <Icon as={Search} size={18} className="text-muted-foreground" />
-          </View>
-          <Input
-            accessibilityLabel={getPlaceholder(scope)}
-            onChangeText={setSearchQuery}
-            placeholder={getPlaceholder(scope)}
-            style={{ paddingLeft: 40 }}
-            value={searchQuery}
-          />
-        </View>
+        <SearchField
+          accessibilityLabel={getPlaceholder(scope)}
+          onChangeText={setSearchQuery}
+          onClear={() => setSearchQuery("")}
+          placeholder={getPlaceholder(scope)}
+          value={searchQuery}
+        />
         <View className="flex-row items-center justify-between gap-3">
           <Text className="text-xs text-muted-foreground">
             {items.length} {scope === "routes" ? "routes" : "activity plans"} available
@@ -142,16 +136,9 @@ export function ResourcePickerModal({
       </View>
 
       {query.isLoading ? (
-        <View className="items-center justify-center py-8">
-          <ActivityIndicator />
-          <Text className="mt-2 text-sm text-muted-foreground">Loading...</Text>
-        </View>
+        <LoadingState />
       ) : items.length === 0 ? (
-        <View className="rounded-2xl border border-dashed border-border p-4">
-          <Text className="text-center text-sm text-muted-foreground">
-            {getEmptyLabel(scope, hasSearch)}
-          </Text>
-        </View>
+        <EmptyState title={getEmptyLabel(scope, hasSearch)} />
       ) : (
         <View className="gap-2">
           {items.map((item) => (
