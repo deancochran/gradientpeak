@@ -1,11 +1,16 @@
 import { formatDurationV2, type IntervalStepV2, type IntervalV2 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
+import { Form, FormTextField } from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
-import { Input } from "@repo/ui/components/input";
+import { IntegerStepper } from "@repo/ui/components/integer-stepper";
 import { Text } from "@repo/ui/components/text";
-import { ChevronDown, ChevronRight, Copy, GripVertical, Minus, Plus, X } from "lucide-react-native";
+import { useZodForm } from "@repo/ui/hooks";
+import { ChevronDown, ChevronRight, Copy, GripVertical, X } from "lucide-react-native";
+import { useEffect } from "react";
+import { useWatch } from "react-hook-form";
 import { Pressable, View } from "react-native";
 import { NestableDraggableFlatList, type RenderItemParams } from "react-native-draggable-flatlist";
+import { z } from "zod";
 import { TimelineChart } from "@/components/activity-plan/workout/TimelineChart";
 import { getDurationMs } from "@/lib/utils/durationConversion";
 
@@ -25,6 +30,43 @@ interface StructureDetailsPanelProps {
   onOpenAddStepDialog: (intervalId: string) => void;
   onQuickAddStep: (intervalId: string) => void;
   onSelectInterval: (intervalId: string) => void;
+}
+
+type IntervalNameFormValues = {
+  name: string;
+};
+
+const intervalNameSchema = z.object({ name: z.string() });
+
+type IntervalNameFieldProps = {
+  value: string;
+  onChange: (value: string) => void;
+};
+
+/** Keeps the interval structure authoritative while standardizing its editable name field. */
+function IntervalNameField({ value, onChange }: IntervalNameFieldProps) {
+  const form = useZodForm<IntervalNameFormValues>({
+    schema: intervalNameSchema,
+    values: { name: value },
+  });
+  const name = useWatch({ control: form.control, name: "name" });
+
+  useEffect(() => {
+    if (name !== value) {
+      onChange(name);
+    }
+  }, [name, onChange, value]);
+
+  return (
+    <Form {...form}>
+      <FormTextField
+        control={form.control}
+        label="Interval name"
+        name="name"
+        placeholder="Interval name"
+      />
+    </Form>
+  );
 }
 
 export function StructureDetailsPanel({
@@ -77,52 +119,33 @@ export function StructureDetailsPanel({
                   </Text>
                 </Pressable>
 
-                <View className="flex-row items-center rounded-md border border-border px-1">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onPress={() => onChangeIntervalRepetitions(interval, interval.repetitions - 1)}
-                  >
-                    <Icon as={Minus} size={14} className="text-foreground" />
-                  </Button>
-                  <Input
-                    value={String(interval.repetitions)}
-                    onChangeText={(text) => {
-                      const value = Number.parseInt(text, 10);
-                      onChangeIntervalRepetitions(interval, value);
-                    }}
-                    keyboardType="numeric"
-                    className="w-14 h-8 text-center"
+                <View className="w-40">
+                  <IntegerStepper
+                    error={intervalRepeatError}
+                    label="Repetitions"
+                    max={50}
+                    min={1}
+                    onChange={(value) => onChangeIntervalRepetitions(interval, value)}
+                    value={interval.repetitions}
                   />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onPress={() => onChangeIntervalRepetitions(interval, interval.repetitions + 1)}
-                  >
-                    <Icon as={Plus} size={14} className="text-foreground" />
-                  </Button>
                 </View>
                 <Text className="text-xs text-muted-foreground">x</Text>
               </View>
 
-              {intervalRepeatError ? (
-                <Text className="text-xs text-destructive">{intervalRepeatError}</Text>
-              ) : null}
               {intervalStepsError ? (
                 <Text className="text-xs text-destructive">{intervalStepsError}</Text>
               ) : null}
 
               {isExpanded ? (
                 <View className="gap-3">
-                  <Input
+                  <IntervalNameField
                     value={interval.name}
-                    onChangeText={(text) =>
+                    onChange={(name) =>
                       onUpdateInterval(interval.id, {
                         ...interval,
-                        name: text,
+                        name,
                       })
                     }
-                    placeholder="Interval name"
                   />
 
                   <View className="flex-row items-center justify-end">
