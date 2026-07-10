@@ -1,12 +1,12 @@
 import { Icon } from "@repo/ui/components/icon";
-import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
 import { format } from "date-fns";
-import { Heart, Search, Sparkles } from "lucide-react-native";
+import { Heart, Sparkles } from "lucide-react-native";
 import { useMemo, useState } from "react";
 import { ActivityIndicator, ScrollView, TouchableOpacity, View } from "react-native";
 import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { AppSelectionModal } from "@/components/shared/AppSelectionModal";
+import { SearchField } from "@/components/shared/SearchField";
 import { api } from "@/lib/api";
 
 type ActivityPlanListItem = {
@@ -269,16 +269,15 @@ export function CalendarPlannedActivityPickerModal({
       title="Schedule Activity"
     >
       <View className="gap-4">
-        <View className="flex-row items-center rounded-lg border border-border bg-card px-3">
-          <Icon as={Search} size={14} className="text-muted-foreground" />
-          <Input
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholder="Search your activity plans"
-            className="flex-1 border-0 bg-transparent"
-            testID="calendar-planned-activity-search"
-          />
-        </View>
+        <SearchField
+          accessibilityLabel="Search your activity plans"
+          className="rounded-lg border-border bg-card"
+          onChangeText={setSearchQuery}
+          onClear={() => setSearchQuery("")}
+          placeholder="Search your activity plans"
+          testID="calendar-planned-activity-search"
+          value={searchQuery}
+        />
 
         <ScrollView
           horizontal
