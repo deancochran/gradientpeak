@@ -1,6 +1,9 @@
-import { FormNumberField, FormSelectField } from "@repo/ui/components/form";
-import type { UseFormReturn } from "react-hook-form";
+import { Button } from "@repo/ui/components/button";
+import { Input } from "@repo/ui/components/input";
+import { Text } from "@repo/ui/components/text";
+import { useEffect, useState } from "react";
 import { View } from "react-native";
+import { durationForType, fromUIValue, type StepDurationValue } from "./stepDurationValues";
 
 type Option = { value: string; label: string };
 
@@ -23,13 +26,19 @@ const DISTANCE_UNITS: Option[] = [
 
 const REP_UNITS: Option[] = [{ value: "reps", label: "reps" }];
 
-export type StepDurationValue =
-  | { type: "time"; seconds: number }
-  | { type: "distance"; meters: number }
-  | { type: "repetitions"; count: number };
+export type { StepDurationValue } from "./stepDurationValues";
 
-type DurationFormShape = {
+export type DurationFormShape = {
   duration: StepDurationValue;
+};
+
+type DurationFormAdapter = {
+  getValues: () => DurationFormShape;
+  setValue: (
+    name: "duration",
+    value: StepDurationValue,
+    options?: { shouldDirty?: boolean; shouldValidate?: boolean },
+  ) => void;
 };
 
 function toUIValue(duration: StepDurationValue): { value: number; unit: string } {
@@ -53,31 +62,6 @@ function toUIValue(duration: StepDurationValue): { value: number; unit: string }
   return { value: duration.count, unit: "reps" };
 }
 
-function fromUIValue(
-  type: StepDurationValue["type"],
-  value: number,
-  unit: string,
-): StepDurationValue {
-  if (type === "time") {
-    if (unit === "hours") {
-      return { type, seconds: Math.round(value * 3600) };
-    }
-    if (unit === "minutes") {
-      return { type, seconds: Math.round(value * 60) };
-    }
-    return { type, seconds: Math.round(value) };
-  }
-
-  if (type === "distance") {
-    if (unit === "km") {
-      return { type, meters: Math.round(value * 1000) };
-    }
-    return { type, meters: Math.round(value) };
-  }
-
-  return { type, count: Math.round(value) };
-}
-
 function getDurationUnits(type: StepDurationValue["type"]): Option[] {
   if (type === "time") {
     return TIME_UNITS;
@@ -88,69 +72,103 @@ function getDurationUnits(type: StepDurationValue["type"]): Option[] {
   return REP_UNITS;
 }
 
-export function StepDurationField({ form }: { form: UseFormReturn<DurationFormShape> }) {
-  const SelectField = FormSelectField as any;
-  const NumberField = FormNumberField as any;
-  const duration = form.watch("duration");
+export function StepDurationField({ form }: { form: DurationFormAdapter }) {
+  const duration = form.getValues().duration;
   const current = toUIValue(duration);
   const units = getDurationUnits(duration.type);
+  const canonicalValue = String(current.value);
+  const [draftValue, setDraftValue] = useState(canonicalValue);
+
+  useEffect(() => {
+    setDraftValue(canonicalValue);
+  }, [canonicalValue]);
+
+  const setDuration = (next: StepDurationValue) =>
+    form.setValue("duration", next, { shouldDirty: true, shouldValidate: true });
 
   return (
     <View className="gap-3">
-      <SelectField
-        control={form.control}
-        formatValue={() => duration.type}
-        label="Duration Type"
-        name={"duration.type" as never}
-        options={DURATION_TYPES}
-        parseValue={(value: string) => {
-          if (value === "distance") {
-            return "distance" as never;
-          }
-          if (value === "repetitions") {
-            return "repetitions" as never;
-          }
-          return "time" as never;
-        }}
-        placeholder="Select duration type"
-      />
+      <View className="gap-2">
+        <Text className="text-sm font-medium text-foreground">Duration type</Text>
+        <View className="flex-row flex-wrap gap-2" testID="step-duration-type">
+          {DURATION_TYPES.map((option) => (
+            <Button
+              key={option.value}
+              onPress={() => {
+                if (option.value === "distance") {
+                  setDuration(durationForType("distance"));
+                } else if (option.value === "repetitions") {
+                  setDuration(durationForType("repetitions"));
+                } else {
+                  setDuration(durationForType("time"));
+                }
+              }}
+              testID={`step-duration-type-${option.value}`}
+              variant={duration.type === option.value ? "default" : "outline"}
+            >
+              <Text
+                className={
+                  duration.type === option.value ? "text-primary-foreground" : "text-foreground"
+                }
+              >
+                {option.label}
+              </Text>
+            </Button>
+          ))}
+        </View>
+      </View>
 
       <View className="flex-row gap-3">
         <View className="flex-1">
-          <NumberField
-            allowDecimal={duration.type === "distance" && current.unit === "km"}
-            control={form.control}
-            formatValue={() => String(current.value)}
-            label="Value"
-            min={1}
-            name={
-              duration.type === "time"
-                ? ("duration.seconds" as never)
-                : duration.type === "distance"
-                  ? ("duration.meters" as never)
-                  : ("duration.count" as never)
-            }
-            parseValue={(raw: string) => {
-              const next = Number(raw);
-              if (!Number.isFinite(next)) {
-                return undefined as never;
-              }
-              return fromUIValue(duration.type, next, current.unit) as never;
-            }}
-            placeholder="0"
-          />
+          <View className="gap-2">
+            <Text className="text-sm font-medium text-foreground">Duration ({current.unit})</Text>
+            <Input
+              accessibilityLabel={`Duration (${current.unit})`}
+              keyboardType="decimal-pad"
+              onBlur={() => {
+                const next = Number(draftValue);
+                if (draftValue !== "" && Number.isFinite(next)) {
+                  setDuration(fromUIValue(duration.type, next, current.unit));
+                  return;
+                }
+                setDraftValue(canonicalValue);
+              }}
+              onChangeText={(raw) => {
+                setDraftValue(raw);
+                if (raw === "" || raw.endsWith(".")) return;
+                const next = Number(raw);
+                if (!Number.isFinite(next)) return;
+                setDuration(fromUIValue(duration.type, next, current.unit));
+              }}
+              placeholder="0"
+              testId="step-duration-value"
+              value={draftValue}
+            />
+          </View>
         </View>
 
         <View className="w-32">
-          <SelectField
-            control={form.control}
-            formatValue={() => current.unit}
-            label="Unit"
-            name={"duration.type" as never}
-            options={units}
-            parseValue={(unit: string) => fromUIValue(duration.type, current.value, unit) as never}
-            placeholder="Unit"
-          />
+          <View className="gap-2">
+            <Text className="text-sm font-medium text-foreground">Unit</Text>
+            <View className="gap-1" testID="step-duration-unit">
+              {units.map((unit) => (
+                <Button
+                  key={unit.value}
+                  onPress={() => setDuration(fromUIValue(duration.type, current.value, unit.value))}
+                  testID={`step-duration-unit-${unit.value}`}
+                  variant={current.unit === unit.value ? "default" : "outline"}
+                >
+                  <Text
+                    className={
+                      current.unit === unit.value ? "text-primary-foreground" : "text-foreground"
+                    }
+                  >
+                    {unit.label}
+                  </Text>
+                </Button>
+              ))}
+            </View>
+          </View>
         </View>
       </View>
     </View>

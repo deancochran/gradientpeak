@@ -7,6 +7,71 @@ export type ActivityEffortType = z.infer<typeof activityEffortTypeSchema>;
 export type ActivityEffortCategory = z.infer<typeof canonicalSportSchema>;
 export type ActivityEffortInputKind = "integer" | "decimal";
 
+/**
+ * Converts a completed distance and elapsed time to the canonical speed unit
+ * used by activity efforts (meters per second).
+ *
+ * Form-safe invalid-input semantics: zero, negative, `NaN`, and infinite
+ * distance or elapsed time return `null` rather than throwing or producing an
+ * invalid numeric value.
+ */
+export function speedMetersPerSecondFromDistanceAndElapsedSeconds(input: {
+  distanceMeters: number;
+  elapsedSeconds: number;
+}): number | null {
+  const { distanceMeters, elapsedSeconds } = input;
+  if (
+    !Number.isFinite(distanceMeters) ||
+    !Number.isFinite(elapsedSeconds) ||
+    distanceMeters <= 0 ||
+    elapsedSeconds <= 0
+  ) {
+    return null;
+  }
+
+  return distanceMeters / elapsedSeconds;
+}
+
+/**
+ * Converts a pace expressed as seconds per distance unit to canonical meters
+ * per second. For example, use `paceSeconds: 300` and
+ * `distanceUnitMeters: 1_000` for a 5:00/km pace.
+ *
+ * Zero, negative, `NaN`, and infinite inputs return `null` for safe use while
+ * a form is incomplete or invalid.
+ */
+export function speedMetersPerSecondFromPace(input: {
+  paceSeconds: number;
+  distanceUnitMeters: number;
+}): number | null {
+  return speedMetersPerSecondFromDistanceAndElapsedSeconds({
+    distanceMeters: input.distanceUnitMeters,
+    elapsedSeconds: input.paceSeconds,
+  });
+}
+
+/**
+ * Converts canonical meters per second to pace seconds per distance unit for
+ * displaying an existing speed effort in a pace-based entry field. Invalid
+ * speed or unit inputs return `null`.
+ */
+export function paceSecondsFromSpeedMetersPerSecond(input: {
+  speedMetersPerSecond: number;
+  distanceUnitMeters: number;
+}): number | null {
+  const { speedMetersPerSecond, distanceUnitMeters } = input;
+  if (
+    !Number.isFinite(speedMetersPerSecond) ||
+    !Number.isFinite(distanceUnitMeters) ||
+    speedMetersPerSecond <= 0 ||
+    distanceUnitMeters <= 0
+  ) {
+    return null;
+  }
+
+  return distanceUnitMeters / speedMetersPerSecond;
+}
+
 export interface ActivityEffortDefinition {
   id: string;
   activityCategory: ActivityEffortCategory;

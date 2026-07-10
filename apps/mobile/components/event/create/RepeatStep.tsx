@@ -3,6 +3,7 @@ import { Card, CardContent } from "@repo/ui/components/card";
 import { DateInput } from "@repo/ui/components/date-input";
 import { Text } from "@repo/ui/components/text";
 import { Pressable, View } from "react-native";
+import { ClearFieldAction } from "@/components/shared/ClearFieldAction";
 import type { EventRecurrenceFrequency } from "../EventEditorCard";
 
 const recurrenceOptions: Array<[EventRecurrenceFrequency, string]> = [
@@ -74,6 +75,13 @@ export function RepeatStep({
               testId={`${testIDPrefix}-recurrence-end-date-button`}
               value={recurrenceEndDate ?? ""}
             />
+            {recurrenceEndDate ? (
+              <ClearFieldAction
+                accessibilityLabel="Clear repeat end date"
+                onPress={() => onChangeEndDate(null)}
+                testID={`${testIDPrefix}-recurrence-end-date-clear`}
+              />
+            ) : null}
             {errorMessage ? <Text className="text-xs text-destructive">{errorMessage}</Text> : null}
           </View>
         ) : null}

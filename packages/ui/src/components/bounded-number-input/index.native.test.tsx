@@ -55,4 +55,31 @@ describe("BoundedNumberInput native", () => {
 
     expect(onChange).toHaveBeenLastCalledWith("250");
   });
+
+  it("blocks changes, commits, and presets while disabled", () => {
+    const onChange = jest.fn();
+    const onNumberChange = jest.fn();
+
+    const { getByLabelText, getByText } = renderNative(
+      <BoundedNumberInput
+        disabled
+        id="ftp"
+        label="FTP"
+        onChange={onChange}
+        onNumberChange={onNumberChange}
+        presets={[{ label: "Use 250", value: "250" }]}
+        value="200"
+      />,
+    );
+
+    const input = getByLabelText("FTP");
+
+    expect(input.props.editable).toBe(false);
+    fireEvent(input, "changeText", "300");
+    fireEvent(input, "blur");
+    fireEvent.press(getByText("Use 250"));
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onNumberChange).not.toHaveBeenCalled();
+  });
 });

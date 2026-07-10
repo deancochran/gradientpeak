@@ -218,6 +218,7 @@ function FormBoundedNumberField<
   control,
   decimals,
   description,
+  disabled,
   label,
   max,
   min,
@@ -237,6 +238,7 @@ function FormBoundedNumberField<
       render={({ field, fieldState }) => (
         <BoundedNumberInput
           decimals={decimals}
+          disabled={disabled}
           error={fieldState.error?.message}
           helperText={description}
           id={String(name)}
@@ -244,6 +246,7 @@ function FormBoundedNumberField<
           max={max}
           min={min}
           onChange={() => undefined}
+          onBlur={field.onBlur}
           onNumberChange={(value) => {
             field.onChange(value as FieldPathValue<TFieldValues, TName>);
           }}
@@ -492,6 +495,7 @@ function FormDateInputField<
 >({
   control,
   description,
+  disabled,
   label,
   name,
   required,
@@ -507,6 +511,7 @@ function FormDateInputField<
       render={({ field, fieldState }) => (
         <DateInput
           {...dateProps}
+          disabled={disabled}
           error={fieldState.error?.message}
           helperText={description}
           id={String(name)}

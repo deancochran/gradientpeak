@@ -57,15 +57,6 @@ const formSchema = z.object({
   notes: z.string().optional(),
 });
 
-type FormData = z.infer<typeof formSchema>;
-
-// Helper type for UI display - internal to component only
-type DurationUI =
-  | { type: "time"; value: number; unit: "seconds" | "minutes" | "hours" }
-  | { type: "distance"; value: number; unit: "meters" | "km" }
-  | { type: "repetitions"; value: number; unit: "reps" }
-  | { type: "untilFinished" };
-
 const INTENSITY_TYPES = [
   { value: "%FTP", label: "% FTP" },
   { value: "%MaxHR", label: "% Max HR" },
@@ -83,7 +74,6 @@ export function StepEditorDialog({
   step,
   onSave,
   activityType,
-  defaultSegmentName,
 }: StepEditorDialogProps) {
   const isMountedRef = useRef(true);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -236,7 +226,7 @@ export function StepEditorDialog({
         </Form>
 
         <Form {...form}>
-          <StepDurationField form={form as never} />
+          <StepDurationField form={form} />
         </Form>
 
         <View>

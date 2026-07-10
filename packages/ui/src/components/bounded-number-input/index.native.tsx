@@ -14,6 +14,7 @@ import type { BoundedNumberInputProps } from "./shared";
 function BoundedNumberInput({
   accessibilityHint,
   decimals = 2,
+  disabled = false,
   error,
   helperText,
   id,
@@ -21,6 +22,7 @@ function BoundedNumberInput({
   max = Number.POSITIVE_INFINITY,
   min = 0,
   onChange,
+  onBlur,
   onNumberChange,
   placeholder,
   presets,
@@ -35,6 +37,10 @@ function BoundedNumberInput({
   }, [value]);
 
   const commitValue = (nextValue: string) => {
+    if (disabled) {
+      return;
+    }
+
     const trimmed = nextValue.trim();
     if (!trimmed) {
       setDraftValue("");
@@ -69,9 +75,18 @@ function BoundedNumberInput({
           accessibilityLabel={label}
           accessibilityHint={accessibilityHint ?? `Enter a number between ${min} and ${max}`}
           className={error ? "flex-1 border-destructive bg-destructive/5" : "flex-1"}
+          editable={!disabled}
+          accessibilityState={{ disabled }}
           value={draftValue}
-          onBlur={() => commitValue(draftValue)}
+          onBlur={() => {
+            commitValue(draftValue);
+            onBlur?.();
+          }}
           onChangeText={(nextValue) => {
+            if (disabled) {
+              return;
+            }
+
             setDraftValue(nextValue);
             onChange(nextValue);
             onNumberChange?.(parseNumberOrUndefined(nextValue));
@@ -88,6 +103,7 @@ function BoundedNumberInput({
               key={`${id}-${preset.label}`}
               size="sm"
               variant={value === preset.value ? "default" : "outline"}
+              disabled={disabled}
               onPress={() => commitValue(preset.value)}
             >
               <Text>{preset.label}</Text>

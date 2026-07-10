@@ -5,6 +5,7 @@ import type { DateInputProps } from "./shared";
 
 function DateInput({
   clearable = false,
+  disabled = false,
   error,
   helperText,
   id,
@@ -29,11 +30,16 @@ function DateInput({
       <div className="flex items-center gap-2">
         <Input
           className="flex-1"
+          disabled={disabled}
           id={inputId}
           max={maximumDate ? maximumDate.toISOString().split("T")[0] : undefined}
           min={minimumDate ? minimumDate.toISOString().split("T")[0] : undefined}
           name={name}
-          onChange={(event) => onChange(event.currentTarget.value || undefined)}
+          onChange={(event) => {
+            if (!disabled) {
+              onChange(event.currentTarget.value || undefined);
+            }
+          }}
           placeholder={placeholder}
           testId={testId}
           type="date"
@@ -43,10 +49,15 @@ function DateInput({
           <Button
             aria-label="Clear date"
             className="px-2 text-muted-foreground"
+            disabled={disabled}
             size="sm"
             type="button"
             variant="ghost"
-            onClick={() => onChange(undefined)}
+            onClick={() => {
+              if (!disabled) {
+                onChange(undefined);
+              }
+            }}
           >
             Clear
           </Button>

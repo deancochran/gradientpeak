@@ -84,7 +84,7 @@ type Action =
     }
   | {
       type: "UPDATE";
-      updates: { name?: string; notes?: string; is_private?: boolean };
+      updates: { name?: string; notes?: string | null; is_private?: boolean };
     }
   | { type: "QUEUE_STATUS"; status: ActivitySubmissionQueueJobStatus; activityId?: string | null }
   | { type: "SUCCESS"; activityId?: string | null }
@@ -295,9 +295,12 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
   // Actions
   // ================================
 
-  const update = useCallback((updates: { name?: string; notes?: string; is_private?: boolean }) => {
-    dispatch({ type: "UPDATE", updates });
-  }, []);
+  const update = useCallback(
+    (updates: { name?: string; notes?: string | null; is_private?: boolean }) => {
+      dispatch({ type: "UPDATE", updates });
+    },
+    [],
+  );
 
   const createActivityMutation = api.activities.createFromRecordingSummary.useMutation();
   const getSignedUrlMutation = api.activityFiles.getSignedUploadUrl.useMutation();
@@ -449,7 +452,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
   );
 
   const submit = useCallback(
-    async (updates?: { name?: string; notes?: string; is_private?: boolean }) => {
+    async (updates?: { name?: string; notes?: string | null; is_private?: boolean }) => {
       if (!state.activity || !state.artifact) {
         throw new Error("No data to submit");
       }
@@ -462,7 +465,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         if (state.artifact.activityFilePath) {
           await submitOnce(state.artifact, {
             ...activityForSubmit,
-            notes: activityForSubmit.notes ?? undefined,
+            notes: activityForSubmit.notes ?? null,
           });
           return true;
         } else {

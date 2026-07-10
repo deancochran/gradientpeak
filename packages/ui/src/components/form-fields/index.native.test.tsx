@@ -7,6 +7,7 @@ import { Form, FormItem, FormLabel } from "../form/index.native";
 import { Text } from "../text/index.native";
 import {
   FormBoundedNumberField,
+  FormDateInputField,
   FormDateTimeField,
   FormDurationField,
   FormIntegerStepperField,
@@ -22,6 +23,7 @@ import {
 const profileSchema = z.object({
   activity_type: z.string(),
   bio: z.string().nullable(),
+  dob: z.string().nullable(),
   duration: z.string(),
   ftp: z.number().optional(),
   max_sessions: z.number(),
@@ -59,6 +61,7 @@ function FormFieldsHarness() {
     defaultValues: {
       activity_type: "run",
       bio: null,
+      dob: null,
       duration: "0:20:00",
       ftp: 250,
       max_sessions: 3,
@@ -80,6 +83,13 @@ function FormFieldsHarness() {
         label="Bio"
         name="bio"
         parseValue={(value) => value || null}
+      />
+      <FormDateInputField
+        control={methods.control}
+        disabled
+        label="Date of Birth"
+        name="dob"
+        testId="date-of-birth"
       />
       <FormDurationField control={methods.control} label="Duration" name="duration" />
       <FormIntegerStepperField
@@ -128,6 +138,7 @@ function FormFieldsHarness() {
       />
       <FormWeightInputField control={methods.control} label="Weight" name="weight_kg" unit="kg" />
       <Text>{JSON.stringify(methods.watch())}</Text>
+      <Text>{JSON.stringify(methods.formState.touchedFields)}</Text>
     </Form>
   );
 }
@@ -138,6 +149,7 @@ function DetachedFormLabelHarness() {
     defaultValues: {
       activity_type: "run",
       bio: null,
+      dob: null,
       duration: "0:20:00",
       ftp: 250,
       max_sessions: 3,
@@ -214,5 +226,15 @@ describe("Form fields native", () => {
     expect(() => renderNative(<DetachedFormLabelHarness />)).toThrow(
       "useFormField should be used within <FormField>",
     );
+  });
+
+  it("forwards disabled and blur behavior for bounded number fields", () => {
+    const { getByLabelText, getByTestId, getByText } = renderNative(<FormFieldsHarness />);
+    const ftp = getByLabelText("FTP");
+
+    fireEvent(ftp, "blur");
+
+    expect(getByText(/"ftp":true/)).toBeTruthy();
+    expect(getByTestId("date-of-birth").props.disabled).toBe(true);
   });
 });

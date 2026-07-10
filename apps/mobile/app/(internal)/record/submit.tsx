@@ -55,12 +55,12 @@ function SubmitScreen() {
       // Pass all form data to submission.update
       submission.update({
         name: data.name,
-        notes: data.notes ?? undefined,
+        notes: data.notes ?? null,
         is_private: data.is_private,
       });
       const success = await submission.submit({
         name: data.name,
-        notes: data.notes ?? undefined,
+        notes: data.notes ?? null,
         is_private: data.is_private,
       });
       if (!success) {

@@ -3,7 +3,7 @@ import DateTimePicker, {
   type DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
 import { format } from "date-fns";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { formatDateOnly, parseDateOnlyToDate } from "../../lib/fitness-inputs";
 import { Modal, Platform, Pressable, View } from "../../lib/react-native";
 import { getNativeTestProps } from "../../lib/test-props";
@@ -15,6 +15,7 @@ import type { DateInputProps } from "./shared";
 function DateInput({
   accessibilityHint,
   clearable = false,
+  disabled = false,
   error,
   helperText,
   id,
@@ -31,6 +32,11 @@ function DateInput({
 }: DateInputProps) {
   const [isPickerVisible, setIsPickerVisible] = useState(false);
   const [draftDate, setDraftDate] = useState(() => parseDateOnlyToDate(value));
+  const disabledRef = useRef(disabled);
+
+  useEffect(() => {
+    disabledRef.current = disabled;
+  }, [disabled]);
 
   const selectedDate = useMemo(() => parseDateOnlyToDate(value), [value]);
   const usesModalPresentation = pickerPresentation === "modal";
@@ -42,6 +48,10 @@ function DateInput({
   });
 
   const commitSelectedDate = (nextDate: Date) => {
+    if (disabledRef.current) {
+      return;
+    }
+
     onChange(formatDateOnly(nextDate));
   };
 
@@ -59,6 +69,10 @@ function DateInput({
   };
 
   const handleOpenPicker = () => {
+    if (disabled) {
+      return;
+    }
+
     if (usesModalPresentation && Platform.OS === "android") {
       DateTimePickerAndroid.open({
         value: selectedDate,
@@ -93,7 +107,9 @@ function DateInput({
         <Pressable
           accessibilityHint={accessibilityHint ?? "Opens date picker. Format yyyy-mm-dd"}
           accessibilityRole="button"
-          className={`flex-1 rounded-md border px-3 py-3 ${error ? "border-destructive bg-destructive/5" : "border-input bg-background"}`}
+          accessibilityState={{ disabled }}
+          className={`flex-1 rounded-md border px-3 py-3 ${disabled ? "opacity-50" : ""} ${error ? "border-destructive bg-destructive/5" : "border-input bg-background"}`}
+          disabled={disabled}
           onPress={handleOpenPicker}
           {...nativeTestProps}
         >
@@ -102,9 +118,14 @@ function DateInput({
         {clearable && value ? (
           <Button
             accessibilityLabel="Clear date"
+            disabled={disabled}
             variant="ghost"
             size="sm"
-            onPress={() => onChange(undefined)}
+            onPress={() => {
+              if (!disabled) {
+                onChange(undefined);
+              }
+            }}
           >
             <Text className="text-muted-foreground">Clear</Text>
           </Button>
@@ -135,7 +156,7 @@ function DateInput({
                 minimumDate={minimumDate}
                 mode="date"
                 onChange={(_event, nextDate) => {
-                  if (nextDate) {
+                  if (!disabled && nextDate) {
                     setDraftDate(nextDate);
                   }
                 }}
@@ -147,6 +168,10 @@ function DateInput({
                 </Button>
                 <Button
                   onPress={() => {
+                    if (disabled) {
+                      return;
+                    }
+
                     onChange(formatDateOnly(draftDate));
                     setIsPickerVisible(false);
                   }}

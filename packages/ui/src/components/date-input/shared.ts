@@ -14,4 +14,5 @@ export interface DateInputProps extends TestProps {
   clearable?: boolean;
   accessibilityHint?: string;
   pickerPresentation?: "inline" | "modal";
+  disabled?: boolean;
 }

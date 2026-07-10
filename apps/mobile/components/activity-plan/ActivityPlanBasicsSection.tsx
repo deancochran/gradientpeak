@@ -1,6 +1,7 @@
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Input } from "@repo/ui/components/input";
 import { Text } from "@repo/ui/components/text";
+import { Textarea } from "@repo/ui/components/textarea";
 import { View } from "react-native";
 import { ActivityCategorySelector } from "@/components/activity-plan/workout/ActivityCategorySelector";
 
@@ -53,9 +54,11 @@ export function ActivityPlanBasicsSection({
 
         <View className="gap-2">
           <Text className="text-sm font-medium text-foreground">Description</Text>
-          <Input
+          <Textarea
             accessibilityLabel="Description"
-            onChangeText={onChangeDescription}
+            className="min-h-24"
+            onChangeText={(value) => onChangeDescription(value)}
+            numberOfLines={4}
             placeholder="What is this session for?"
             value={description}
           />

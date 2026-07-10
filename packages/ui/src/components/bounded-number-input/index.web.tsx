@@ -8,6 +8,7 @@ import type { BoundedNumberInputProps } from "./shared";
 function BoundedNumberInput({
   accessibilityHint,
   decimals = 2,
+  disabled = false,
   error,
   helperText,
   id,
@@ -16,6 +17,7 @@ function BoundedNumberInput({
   min = 0,
   name,
   onChange,
+  onBlur,
   onNumberChange,
   placeholder,
   presets,
@@ -30,6 +32,10 @@ function BoundedNumberInput({
   }, [value]);
 
   const commitValue = (nextValue: string) => {
+    if (disabled) {
+      return;
+    }
+
     const trimmed = nextValue.trim();
     if (!trimmed) {
       setDraftValue("");
@@ -60,11 +66,20 @@ function BoundedNumberInput({
       <div className="flex items-center gap-2">
         <Input
           accessibilityLabel={label}
+          aria-description={accessibilityHint}
           className={error ? "border-destructive bg-destructive/5" : undefined}
+          disabled={disabled}
           id={`${id}-field`}
           name={name}
-          onBlur={() => commitValue(draftValue)}
+          onBlur={() => {
+            commitValue(draftValue);
+            onBlur?.();
+          }}
           onChange={(event) => {
+            if (disabled) {
+              return;
+            }
+
             setDraftValue(event.currentTarget.value);
             onChange(event.currentTarget.value);
             onNumberChange?.(
@@ -89,6 +104,7 @@ function BoundedNumberInput({
               size="sm"
               type="button"
               variant={value === preset.value ? "default" : "outline"}
+              disabled={disabled}
               onClick={() => commitValue(preset.value)}
             >
               {preset.label}

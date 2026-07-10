@@ -21,4 +21,6 @@ export interface BoundedNumberInputProps extends TestProps {
   required?: boolean;
   presets?: PresetOption[];
   accessibilityHint?: string;
+  disabled?: boolean;
+  onBlur?: () => void;
 }
