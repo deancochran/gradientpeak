@@ -1,9 +1,13 @@
 import { athleteIntelligenceModelInputSchema } from "@repo/core";
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
+import type { getRequiredDb } from "../../../db";
 import { sourceId, temporalOverlayValue } from "../evidence-adapters";
 import {
   type AthleteIntelligenceDataSource,
   type AthleteIntelligenceRows,
+  createDrizzleAthleteIntelligenceDataSource,
   materializeAthleteIntelligenceModelInput,
   mergeBoundedScheduleRows,
   modelReaderBounds,
@@ -13,6 +17,79 @@ import {
 
 const asOf = new Date("2026-06-01T12:00:00.000Z");
 const profileId = "athlete-a";
+const pgDialect = new PgDialect();
+
+interface CapturedSelect {
+  from: unknown;
+  leftJoins: unknown[][];
+  limit: number | undefined;
+  offset: number | undefined;
+  orderBy: unknown[];
+  where: unknown;
+}
+
+interface FluentSelect extends PromiseLike<unknown[]> {
+  from(table: unknown): FluentSelect;
+  leftJoin(...args: unknown[]): FluentSelect;
+  where(condition: unknown): FluentSelect;
+  orderBy(...columns: unknown[]): FluentSelect;
+  limit(value: number): FluentSelect;
+  offset(value: number): FluentSelect;
+}
+
+function createFluentReadDb(results: readonly unknown[][]) {
+  const selects: CapturedSelect[] = [];
+  let selectIndex = 0;
+  const db = {
+    select: () => {
+      const result = results[selectIndex++] ?? [];
+      const capture: CapturedSelect = {
+        from: undefined,
+        leftJoins: [],
+        limit: undefined,
+        offset: undefined,
+        orderBy: [],
+        where: undefined,
+      };
+      selects.push(capture);
+      const query: FluentSelect = {
+        from: (table) => {
+          capture.from = table;
+          return query;
+        },
+        leftJoin: (...args) => {
+          capture.leftJoins.push(args);
+          return query;
+        },
+        where: (condition) => {
+          capture.where = condition;
+          return query;
+        },
+        orderBy: (...columns) => {
+          capture.orderBy = columns;
+          return query;
+        },
+        limit: (value) => {
+          capture.limit = value;
+          return query;
+        },
+        offset: (value) => {
+          capture.offset = value;
+          return query;
+        },
+        // biome-ignore lint/suspicious/noThenProperty: Drizzle select builders are awaitable.
+        then: (onfulfilled, onrejected) =>
+          Promise.resolve(result).then(onfulfilled ?? undefined, onrejected ?? undefined),
+      };
+      return query;
+    },
+  };
+  return { db, selects };
+}
+
+function querySql(fragment: unknown) {
+  return pgDialect.sqlToQuery(fragment as SQL);
+}
 
 function rows(): AthleteIntelligenceRows {
   const metricNames = [
@@ -212,6 +289,201 @@ function first<T>(items: readonly T[]): T {
 }
 
 describe("materializeAthleteIntelligenceModelInput", () => {
+  it("enforces source-side profile, as-of, ordering, and bounded-read limits without writes", async () => {
+    const { db, selects } = createFluentReadDb([
+      [], // selected goal
+      [], // profile
+      [], // metrics
+      [], // activities
+      [], // efforts
+      [], // training settings
+      [], // nonrecurring schedule
+      [], // recurring schedule page
+    ]);
+    const source = createDrizzleAthleteIntelligenceDataSource(
+      db as unknown as ReturnType<typeof getRequiredDb>,
+    );
+
+    await source.read({
+      profileId,
+      goalId: "goal-1",
+      asOf,
+      activityFrom: new Date("2025-12-03T12:00:00.000Z"),
+      bounds: modelReaderBounds,
+    });
+
+    expect(Object.keys(db)).toEqual(["select"]);
+    expect(selects).toHaveLength(8);
+    for (const read of selects) {
+      const query = querySql(read?.where);
+      expect(query.params).toContain(profileId);
+      expect(query.params.some((value) => Date.parse(String(value)) === asOf.getTime())).toBe(true);
+    }
+    expect(selects[0]?.limit).toBe(1);
+    expect(selects[2]).toMatchObject({
+      limit: modelReaderBounds.metrics + 1,
+      orderBy: [expect.anything(), expect.anything()],
+    });
+    expect(selects[3]).toMatchObject({
+      limit: modelReaderBounds.activities + 1,
+      leftJoins: [expect.anything(), expect.anything()],
+      orderBy: [expect.anything(), expect.anything()],
+    });
+    expect(selects[4]).toMatchObject({
+      limit: modelReaderBounds.efforts + 1,
+      orderBy: [expect.anything(), expect.anything()],
+    });
+    expect(selects[6]).toMatchObject({
+      limit: modelReaderBounds.schedule + 1,
+      orderBy: [expect.anything(), expect.anything(), expect.anything()],
+    });
+    expect(selects[7]).toMatchObject({
+      limit: 101,
+      offset: 0,
+      orderBy: [expect.anything(), expect.anything()],
+    });
+  });
+
+  it("propagates bounded source coverage into the canonical model contract", async () => {
+    const boundedMetricRows = Array.from({ length: modelReaderBounds.metrics + 1 }, () => ({}));
+    const boundedActivityRows = Array.from(
+      { length: modelReaderBounds.activities + 1 },
+      () => ({}),
+    );
+    const boundedEffortRows = Array.from({ length: modelReaderBounds.efforts + 1 }, () => ({}));
+    const { db } = createFluentReadDb([
+      [],
+      [],
+      boundedMetricRows,
+      boundedActivityRows,
+      boundedEffortRows,
+      [],
+      [],
+      [],
+    ]);
+    const source = createDrizzleAthleteIntelligenceDataSource(
+      db as unknown as ReturnType<typeof getRequiredDb>,
+    );
+
+    const result = await source.read({
+      profileId,
+      goalId: "goal-1",
+      asOf,
+      activityFrom: new Date("2025-12-03T12:00:00.000Z"),
+      bounds: modelReaderBounds,
+    });
+
+    expect(result.metrics).toHaveLength(modelReaderBounds.metrics);
+    expect(result.activities).toHaveLength(modelReaderBounds.activities);
+    expect(result.efforts).toHaveLength(modelReaderBounds.efforts);
+    expect(result.readCoverage).toEqual({
+      metrics: { state: "truncated", reason: "query_limit_reached" },
+      activities: { state: "truncated", reason: "query_limit_reached" },
+      efforts: { state: "truncated", reason: "query_limit_reached" },
+      schedules: { state: "complete", reason: null },
+    });
+  });
+
+  it("materializes persisted goal sport into the canonical header when objective sport is omitted", async () => {
+    const persistedGoal = {
+      ...first(rows().goals),
+      activityCategory: "Cycling",
+      targetPayload: { type: "completion", distance_m: 10_000 },
+    };
+    const { db } = createFluentReadDb([[persistedGoal], [rows().profile], [], [], [], [], [], []]);
+    const dataSource = createDrizzleAthleteIntelligenceDataSource(
+      db as unknown as ReturnType<typeof getRequiredDb>,
+    );
+
+    const result = await materializeAthleteIntelligenceModelInput({ dataSource, profileId, asOf });
+    const goal = first(result.goals);
+
+    expect(goal.objective).toEqual({
+      type: "completion",
+      distance_m: 10_000,
+    });
+    expect(goal.goalSport).toBe("bike");
+    expect(result.evidenceRegistry[goal.sourceId]?.sport).toBe("bike");
+  });
+
+  it("marks schedule coverage truncated when a date-only goal has no typed planning timezone", async () => {
+    const selectedGoal = first(rows().goals);
+    const { db } = createFluentReadDb([[selectedGoal], [], [], [], [], [], [], []]);
+    const dataSource = createDrizzleAthleteIntelligenceDataSource(
+      db as unknown as ReturnType<typeof getRequiredDb>,
+    );
+
+    const sourceRows = await dataSource.read({
+      profileId,
+      goalId: selectedGoal.id,
+      asOf,
+      activityFrom: new Date("2025-12-03T12:00:00.000Z"),
+      bounds: modelReaderBounds,
+    });
+
+    expect(sourceRows.readCoverage?.schedules).toEqual({
+      state: "truncated",
+      reason: "source_window_truncated",
+    });
+  });
+
+  it("keeps active and future schedule candidates when source pages contain more than the bound of historical recurring rows", async () => {
+    const event = first(rows().schedule);
+    const historicalRecurring = Array.from(
+      { length: modelReaderBounds.schedule + 1 },
+      (_, index) => ({
+        ...event,
+        id: `historical-recurring-${String(index).padStart(3, "0")}`,
+        startsAt: new Date("2026-01-01T10:00:00.000Z"),
+        endsAt: new Date("2026-01-01T11:00:00.000Z"),
+        recurrenceRule: "FREQ=WEEKLY;UNTIL=20260701T100000Z",
+      }),
+    );
+    const future = {
+      ...event,
+      id: "future-nonrecurring",
+      startsAt: new Date("2026-06-10T10:00:00.000Z"),
+      endsAt: new Date("2026-06-10T11:00:00.000Z"),
+    };
+    const active = {
+      ...event,
+      id: "active-nonrecurring",
+      startsAt: new Date("2026-06-01T11:00:00.000Z"),
+      endsAt: new Date("2026-06-01T13:00:00.000Z"),
+    };
+    const { db } = createFluentReadDb([
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [future, active],
+      historicalRecurring,
+      [],
+    ]);
+    const source = createDrizzleAthleteIntelligenceDataSource(
+      db as unknown as ReturnType<typeof getRequiredDb>,
+    );
+
+    const result = await source.read({
+      profileId,
+      goalId: "goal-1",
+      asOf,
+      activityFrom: new Date("2025-12-03T12:00:00.000Z"),
+      bounds: modelReaderBounds,
+    });
+
+    expect(result.schedule).toHaveLength(modelReaderBounds.schedule);
+    expect(result.schedule.map((item) => item.id)).toContain("future-nonrecurring");
+    expect(result.schedule.map((item) => item.id)).toContain("active-nonrecurring");
+    expect(result.scheduleTruncated).toBe(true);
+    expect(result.readCoverage?.schedules).toEqual({
+      state: "truncated",
+      reason: "query_limit_reached",
+    });
+  });
+
   it("scopes and bounds the port request before materializing canonical, fully evidenced data", async () => {
     let request: Parameters<AthleteIntelligenceDataSource["read"]>[0] | undefined;
     const dataSource: AthleteIntelligenceDataSource = {
@@ -260,6 +532,12 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     expect(result.trainingContext.sportDoseLimits[0]?.maximumSessionsPerWeek.value).toBe(4);
     expect(result.trainingContext.ctlOverride.value).toBe(55);
     expect(result.plannedSchedule[0]?.startAt).toBe("2026-06-10T10:00:00.000Z");
+    expect(result.readCoverage).toEqual({
+      metrics: { state: "complete", reason: null },
+      activities: { state: "complete", reason: null },
+      efforts: { state: "complete", reason: null },
+      schedules: { state: "truncated", reason: "source_window_truncated" },
+    });
     for (const activity of result.activities)
       expect(result.evidenceRegistry[activity.sourceId]).toBeDefined();
     expect(
@@ -664,6 +942,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     }));
 
     const result = mergeBoundedScheduleRows({
+      asOf,
       nonrecurringRows,
       recurring: { rows: [], truncated: false },
       limit: modelReaderBounds.schedule,
@@ -671,6 +950,94 @@ describe("materializeAthleteIntelligenceModelInput", () => {
 
     expect(result.rows).toHaveLength(modelReaderBounds.schedule);
     expect(result.truncated).toBe(true);
+  });
+
+  it("keeps canonical schedule coverage coherent with the legacy schedule state", async () => {
+    const value = rows();
+    value.readCoverage = {
+      metrics: { state: "complete", reason: null },
+      activities: { state: "complete", reason: null },
+      efforts: { state: "complete", reason: null },
+      schedules: { state: "truncated", reason: "query_limit_reached" },
+    };
+
+    const result = await materializeAthleteIntelligenceModelInput({
+      dataSource: readRows(value),
+      profileId,
+      asOf,
+    });
+
+    expect(result.readCoverage?.schedules).toEqual({
+      state: "truncated",
+      reason: "query_limit_reached",
+    });
+    expect(result.scheduleReadState).toBe("truncated");
+  });
+
+  it("retains normalized persisted header sport and its goal evidence when objective sport is omitted", async () => {
+    const value = rows();
+    value.goals[0] = {
+      ...first(value.goals),
+      activityCategory: "Cycling",
+      targetPayload: { type: "completion", distance_m: 10_000 },
+    };
+
+    const result = await materializeAthleteIntelligenceModelInput({
+      dataSource: readRows(value),
+      profileId,
+      asOf,
+    });
+    const goal = first(result.goals);
+
+    expect(goal.objective).toEqual({
+      type: "completion",
+      distance_m: 10_000,
+    });
+    expect(goal.goalSport).toBe("bike");
+    expect(result.evidenceRegistry[goal.sourceId]?.sport).toBe("bike");
+  });
+
+  it("materializes a header-only consistency goal without borrowing a payload sport", async () => {
+    const value = rows();
+    value.goals[0] = {
+      ...first(value.goals),
+      activityCategory: "Cycling",
+      targetPayload: { type: "consistency", target_sessions_per_week: 2, target_weeks: 8 },
+    };
+
+    const result = await materializeAthleteIntelligenceModelInput({
+      dataSource: readRows(value),
+      profileId,
+      asOf,
+    });
+    const goal = first(result.goals);
+
+    expect(goal).toMatchObject({
+      goalSport: "bike",
+      objective: { type: "consistency", target_sessions_per_week: 2, target_weeks: 8 },
+    });
+    expect(result.evidenceRegistry[goal.sourceId]?.sport).toBe("bike");
+  });
+
+  it("marks schedule coverage truncated rather than treating a UTC cutoff as a planning-date bound", async () => {
+    const value = rows();
+    value.readCoverage = {
+      metrics: { state: "complete", reason: null },
+      activities: { state: "complete", reason: null },
+      efforts: { state: "complete", reason: null },
+      schedules: { state: "complete", reason: null },
+    };
+    const result = await materializeAthleteIntelligenceModelInput({
+      dataSource: readRows(value),
+      profileId,
+      asOf,
+    });
+
+    expect(result.readCoverage?.schedules).toEqual({
+      state: "truncated",
+      reason: "source_window_truncated",
+    });
+    expect(result.scheduleReadState).toBe("truncated");
   });
 
   it("uses recurring limit-plus-one overflow without marking an exact exhausted bound truncated", async () => {
@@ -706,6 +1073,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     };
 
     const result = mergeBoundedScheduleRows({
+      asOf,
       nonrecurringRows: [nonrecurring],
       recurring: { rows: [recurring], truncated: false },
       limit: 1,

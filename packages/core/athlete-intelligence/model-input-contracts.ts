@@ -18,6 +18,32 @@ const evidenceSourceIdsSchema = z.array(sourceIdSchema).min(1).max(32);
 const nullableNonnegativeNumberSchema = z.number().finite().nonnegative().nullable();
 const nullablePositiveNumberSchema = z.number().finite().positive().nullable();
 
+/**
+ * A bounded read never turns omitted rows into an absence claim. `state` is
+ * machine-readable; `reason` is a closed explanation required for truncation.
+ */
+export const boundedReadCoverageSchema = z
+  .discriminatedUnion("state", [
+    z.object({ state: z.literal("complete"), reason: z.null() }).strict(),
+    z
+      .object({
+        state: z.literal("truncated"),
+        reason: z.enum(["query_limit_reached", "source_window_truncated", "unknown"]),
+      })
+      .strict(),
+  ])
+  .readonly();
+
+export const modelReadCoverageSchema = z
+  .object({
+    metrics: boundedReadCoverageSchema,
+    activities: boundedReadCoverageSchema,
+    efforts: boundedReadCoverageSchema,
+    schedules: boundedReadCoverageSchema,
+  })
+  .strict()
+  .readonly();
+
 const evidenced = <T extends z.ZodTypeAny>(value: T) =>
   z.object({ value, evidenceSourceIds: evidenceSourceIdsSchema }).strict();
 
@@ -185,6 +211,8 @@ export const goalInputSchema = z
     lineageGroupId: lineageGroupIdSchema,
     targetDate: z.string().date().nullable(),
     priority: z.number().int().min(0).max(10),
+    /** Canonical persisted goal header sport, independent of objective payload shape. */
+    goalSport: canonicalSportSchema.nullable().default(null),
     objective: canonicalGoalObjectiveSchema,
     evidenceSourceIds: evidenceSourceIdsSchema,
   })
@@ -266,6 +294,8 @@ export const plannedScheduleObservationSchema = z
         frequency: z.enum(["daily", "weekly", "monthly"]),
         interval: z.number().int().min(1).max(52),
         until: dateTimeSchema.nullable(),
+        /** IANA zone used to retain this recurrence's wall-clock schedule. */
+        timezone: z.string().trim().min(1).max(64).nullable().optional(),
       })
       .strict()
       .nullable(),
@@ -292,6 +322,8 @@ export const athleteIntelligenceModelInputSchema = z
     contractVersion: z.string().min(1).max(32),
     assessmentAsOf: dateTimeSchema,
     athleteId: z.string().min(1),
+    /** IANA zone in which planning dates, availability, and constraints are evaluated. */
+    planningTimezone: z.string().trim().min(1).max(64).nullable().optional(),
     evidenceRegistry: z
       .record(sourceIdSchema, evidenceItemSchema)
       .refine(
@@ -305,6 +337,14 @@ export const athleteIntelligenceModelInputSchema = z
     efforts: z.array(effortObservationInputSchema).max(MAX_OBSERVATIONS),
     goals: z.array(goalInputSchema).max(32),
     trainingContext: trainingContextInputSchema,
+    /** Coverage for every bounded reader domain; policies must preserve truncation as uncertainty. */
+    readCoverage: modelReadCoverageSchema.default({
+      metrics: { state: "complete", reason: null },
+      activities: { state: "complete", reason: null },
+      efforts: { state: "complete", reason: null },
+      schedules: { state: "complete", reason: null },
+    }),
+    /** @deprecated Use readCoverage.schedules. Kept while canonical readers migrate. */
     scheduleReadState: z.enum(["complete", "truncated"]),
     plannedSchedule: z.array(plannedScheduleObservationSchema).max(MAX_OBSERVATIONS),
   })
@@ -359,6 +399,8 @@ export const athleteIntelligenceModelInputSchema = z
         code: "custom",
         message: "Activity window must end at or before assessment",
       });
+    if (input.scheduleReadState !== input.readCoverage.schedules.state)
+      issue("Legacy schedule read state must match bounded schedule coverage");
     if (
       input.activities.some(
         (activity) =>
@@ -516,13 +558,7 @@ export const athleteIntelligenceModelInputSchema = z
         issue("Activity-derived effort offsets must be within activity duration");
     }
 
-    for (const goal of input.goals) {
-      validateRecordSource(
-        goal,
-        "goal",
-        "activity_category" in goal.objective ? (goal.objective.activity_category ?? null) : null,
-      );
-    }
+    for (const goal of input.goals) validateRecordSource(goal, "goal", goal.goalSport);
     validateRecordSource(input.trainingContext, "manual_observation", null);
 
     for (const event of input.plannedSchedule) {
@@ -595,4 +631,18 @@ export type EffortObservationInput = z.infer<typeof effortObservationInputSchema
 export type GoalInput = z.infer<typeof goalInputSchema>;
 export type TrainingContextInput = z.infer<typeof trainingContextInputSchema>;
 export type PlannedScheduleObservation = z.infer<typeof plannedScheduleObservationSchema>;
-export type AthleteIntelligenceModelInput = z.infer<typeof athleteIntelligenceModelInputSchema>;
+export type BoundedReadCoverage = z.infer<typeof boundedReadCoverageSchema>;
+export type ModelReadCoverage = z.infer<typeof modelReadCoverageSchema>;
+/**
+ * Compatibility input accepted by current policy callers. Parsing through the
+ * canonical schema always materializes `readCoverage` with every domain.
+ */
+export type AthleteIntelligenceModelInput = Omit<
+  z.infer<typeof athleteIntelligenceModelInputSchema>,
+  "readCoverage"
+> & {
+  readCoverage?: ModelReadCoverage;
+};
+export type ParsedAthleteIntelligenceModelInput = z.infer<
+  typeof athleteIntelligenceModelInputSchema
+>;

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   ACTIVITY_READINESS_POLICY_VERSION,
+  type ActivityEvidenceInput,
   type ActivityHistoryObservation,
   calculateActivityReadinessV1,
 } from "../policies/activity-readiness";
@@ -24,6 +25,28 @@ function activity(
     efficiencyFactor: 1.6,
     decouplingPercent: 4,
     ...overrides,
+  };
+}
+
+function eligibilityFor(
+  observation: ActivityHistoryObservation,
+  overrides: Partial<ActivityEvidenceInput["evidence"]> = {},
+): ActivityEvidenceInput {
+  return {
+    evidence: {
+      athleteId: "athlete-1",
+      sourceId: observation.sourceId,
+      lineageGroupId: observation.lineageGroupId,
+      observedAt: observation.startedAt,
+      rawObservation: { value: observation.durationSeconds, unit: "seconds" },
+      sport: observation.sport,
+      modality: "activity_duration",
+      sourceType: "activity",
+      qualityState: "known",
+      validityState: "valid",
+      compatibilityState: "compatible",
+      ...overrides,
+    },
   };
 }
 
@@ -66,6 +89,53 @@ describe("activity readiness v1", () => {
     });
 
     expect(withFuture).toEqual(baseline);
+  });
+
+  it("allows only eligible evidence-backed activity fields to affect readiness calculations", () => {
+    const accepted = [2, 7, 16, 22].map((day) => {
+      const observation = activity(day);
+      return { ...observation, eligibility: eligibilityFor(observation) };
+    });
+    const baseline = calculateActivityReadinessV1({
+      assessmentAt,
+      targetSport: "run",
+      activities: accepted,
+    });
+    const rejected = [
+      activity(3, { durationSeconds: 100_000, trainingLoad: 10_000 }),
+      activity(4, { durationSeconds: 100_000, trainingLoad: 10_000 }),
+      activity(5, { durationSeconds: 100_000, trainingLoad: 10_000 }),
+      activity(-1, { durationSeconds: 100_000, trainingLoad: 10_000 }),
+    ].map((observation, index) => ({
+      ...observation,
+      eligibility: eligibilityFor(
+        observation,
+        index === 0
+          ? { validityState: "invalid" }
+          : index === 1
+            ? { compatibilityState: "incompatible_modality" }
+            : index === 2
+              ? { qualityState: "unknown" }
+              : {},
+      ),
+    }));
+    const mixed = calculateActivityReadinessV1({
+      assessmentAt,
+      targetSport: "run",
+      activities: [...accepted, ...rejected],
+    });
+
+    expect(mixed.endurance).toEqual(baseline.endurance);
+    expect(mixed.volumeTrend).toEqual(baseline.volumeTrend);
+    expect(mixed.rejectedEvidence?.map(({ reasonCode }) => reasonCode)).toEqual([
+      "evidence_invalid",
+      "evidence_incompatible_modality",
+      "evidence_value_unknown",
+      "evidence_future_observation",
+    ]);
+    expect(mixed.rejectedEvidence?.map(({ sourceId }) => sourceId)).toEqual(
+      rejected.map(({ sourceId }) => sourceId),
+    );
   });
 
   it("returns unknown or insufficient results when history cannot support a calculation", () => {

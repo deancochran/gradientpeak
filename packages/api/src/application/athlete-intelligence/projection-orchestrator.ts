@@ -30,10 +30,13 @@ function goalIdFromSourceId(sourceId: string): string | null {
   return match?.[1] && UUID.test(match[1]) ? match[1] : null;
 }
 
-function goalSport(goal: AthleteIntelligenceModelInput["goals"][number]): CanonicalSport {
-  return "activity_category" in goal.objective && goal.objective.activity_category
-    ? goal.objective.activity_category
-    : "other";
+function goalSport(goal: AthleteIntelligenceModelInput["goals"][number]): CanonicalSport | null {
+  return goal.goalSport;
+}
+
+function fieldEligibility(model: AthleteIntelligenceModelInput, sourceIds: readonly string[]) {
+  const evidence = sourceIds.map((sourceId) => model.evidenceRegistry[sourceId]).find(Boolean);
+  return evidence ? { evidence } : undefined;
 }
 
 function goalDurationSeconds(demand: GoalDemandPolicyV1Result): number | null {
@@ -182,7 +185,7 @@ export async function projectAthleteIntelligence(input: {
   const modality = sport === "bike" ? "power" : "pace";
   const unit = modality === "power" ? "watts" : "seconds_per_kilometer";
   const effortCurve =
-    durationSeconds && durationSeconds > 0
+    sport !== null && durationSeconds && durationSeconds > 0
       ? goalRelevantEffortCurve({
           model,
           durationSeconds,
@@ -193,7 +196,8 @@ export async function projectAthleteIntelligence(input: {
       : undefined;
   const activityReadiness = calculateActivityReadinessV1({
     assessmentAt: model.assessmentAsOf,
-    targetSport: sport,
+    // Missing goal sport must not borrow activity evidence from another sport.
+    targetSport: sport ?? "other",
     activities: model.activities.map((activity) => ({
       sourceId: activity.sourceId,
       lineageGroupId: activity.lineageGroupId,
@@ -203,18 +207,37 @@ export async function projectAthleteIntelligence(input: {
       trainingLoad: activity.metrics.trainingLoad.value,
       averagePowerWatts: activity.metrics.averagePowerWatts.value,
       averageHeartRateBpm: activity.metrics.averageHeartRateBpm.value,
+      evidence: {
+        durationSeconds: fieldEligibility(
+          model,
+          activity.metrics.elapsedDurationSeconds.evidenceSourceIds,
+        ),
+        trainingLoad: fieldEligibility(model, activity.metrics.trainingLoad.evidenceSourceIds),
+        averagePowerWatts: fieldEligibility(
+          model,
+          activity.metrics.averagePowerWatts.evidenceSourceIds,
+        ),
+        averageHeartRateBpm: fieldEligibility(
+          model,
+          activity.metrics.averageHeartRateBpm.evidenceSourceIds,
+        ),
+      },
     })),
-    readinessContext: readinessContext(model),
+    readinessContext: readinessContext(model).map((observation) => ({
+      ...observation,
+      eligibility: fieldEligibility(model, [observation.sourceId]),
+    })),
   });
   const requiredWeeklySessions =
     demand.state === "complete" && demand.requirement.type === "consistency"
       ? demand.requirement.sessionsPerWeek.estimate
       : null;
-  const timezone = model.plannedSchedule[0]?.timezone ?? null;
   const calendarFeasibility = calculateTrainingFeasibility({
     sourceId: model.trainingContext.sourceId,
     assessmentAsOf: model.assessmentAsOf,
-    timezone,
+    // The planning authority is explicit; event zones never become a profile fallback.
+    planningTimezone: model.planningTimezone ?? null,
+    timezone: null,
     planningStart: model.assessmentAsOf,
     goalDate: selectedGoal.targetDate,
     availabilityWindows: model.trainingContext.weeklyTimeWindows,
@@ -236,7 +259,9 @@ export async function projectAthleteIntelligence(input: {
     recoveryPreference: model.trainingContext.recoveryPreference,
     requiredWeeklyMinutes: null,
     requiredWeeklySessions,
-    scheduleComplete: model.scheduleReadState === "complete",
+    // Session coverage must be scoped to the selected goal rather than every planned workout.
+    targetGoalSport: sport,
+    scheduleComplete: model.readCoverage?.schedules.state === "complete",
     plannedSchedule: model.plannedSchedule.map((event) => ({
       sourceId: event.sourceId,
       startAt: event.startAt,
@@ -244,7 +269,10 @@ export async function projectAthleteIntelligence(input: {
       lifecycle: event.lifecycle,
       eventType: event.eventType,
       sport: event.sport,
-      recurrence: event.recurrence,
+      timezone: event.timezone,
+      recurrence: event.recurrence
+        ? { ...event.recurrence, timezone: event.recurrence.timezone ?? undefined }
+        : null,
     })),
   });
 

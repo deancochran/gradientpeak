@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { fingerprintCanonicalJson, normalizeCanonicalJson } from "../canonical-json";
 import {
   ATHLETE_INTELLIGENCE_VERSION,
   athleteStateSnapshotSchema,
@@ -6,13 +7,11 @@ import {
   capabilityAssessmentSchema,
   deriveGoalRequirementSet,
   evaluateGoalGaps,
-  fingerprintCanonicalJson,
   goalGapDimensionSchema,
   goalRequirementSetSchema,
   type IntelligenceDimension,
-  normalizeCanonicalJson,
   predictionEnvelopeSchema,
-} from "..";
+} from "../legacy";
 
 const asOf = "2026-07-09T12:00:00.000Z";
 const fingerprint = "fnv1a-32:00000000";

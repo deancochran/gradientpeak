@@ -15,6 +15,30 @@ import type {
 import { parseUncertainty, type Uncertainty } from "../uncertainty";
 
 export const EFFORT_CURVE_POLICY_VERSION = "effort-curves-v1";
+export const EFFORT_CURVE_DECISION_UNCERTAINTY_POLICY_VERSION =
+  "effort-curves-decision-uncertainty-v1";
+
+/**
+ * Immutable decision-safety boundaries. These describe evidence adequacy, not
+ * a probability, confidence interval, or generic score. Unsafe evidence is
+ * returned as insufficient rather than being made recommendation-compatible.
+ */
+export const EFFORT_CURVE_DECISION_UNCERTAINTY_POLICY = Object.freeze({
+  version: EFFORT_CURVE_DECISION_UNCERTAINTY_POLICY_VERSION,
+  freshWithinDays: 14,
+  staleAfterDays: 42,
+  minimumIndependentLineages: 2,
+  maximumRobustRelativeDisagreement: 0.25,
+  uncertainty: Object.freeze({
+    base: 0.1,
+    independentLineages: Object.freeze({ two: 0.2, three: 0.1, fourOrMore: 0 }),
+    eligibleObservationDensity: Object.freeze({ two: 0.2, three: 0.1, fourOrMore: 0 }),
+    observationAge: Object.freeze({ fresh: 0, aging: 0.15 }),
+    sourceQuality: 0,
+    robustInterLineageDisagreement: Object.freeze({ low: 0, elevated: 0.15 }),
+    interpolationDistance: Object.freeze({ endpoint: 0, midpoint: 0.2 }),
+  }),
+});
 
 export const effortCurveModalitySchema = z.enum(["power", "pace"]);
 export const effortCurveUnitSchema = z.enum(["watts", "seconds_per_kilometer"]);
@@ -42,6 +66,14 @@ type CurvePoint = {
   contributingSourceIds: SourceId[];
   lineageGroupId: LineageGroupId;
   observedAt: string;
+  sourceObservedAt: string;
+};
+
+type DecisionEvidence = {
+  independentLineageCount: number;
+  eligibleObservationCount: number;
+  oldestObservationAgeDays: number;
+  robustRelativeDisagreement: number;
 };
 
 function bestPerKey(
@@ -82,13 +114,18 @@ function matchingEvidenceSources(input: {
   effort: EffortObservationInput;
   evidenceRegistry: AthleteIntelligenceModelInput["evidenceRegistry"];
   assessmentAsOf: string;
-}): { valueSourceId: SourceId; contributingSourceIds: SourceId[] } | null {
+}): {
+  valueSourceId: SourceId;
+  contributingSourceIds: SourceId[];
+  sourceObservedAt: string;
+} | null {
   const expectedValue =
     input.effort.kind === "power" ? input.effort.powerWatts : input.effort.speedMetersPerSecond;
   const expectedUnit = input.effort.kind === "power" ? "watts" : "meters_per_second";
 
   const durationSourceIds: SourceId[] = [];
   const valueSourceIds: SourceId[] = [];
+  const sourceObservedAt: string[] = [];
   for (const sourceId of input.effort.evidenceSourceIds) {
     const source = input.evidenceRegistry[sourceId];
     if (!source) continue;
@@ -104,6 +141,7 @@ function matchingEvidenceSources(input: {
       observation.unit === "seconds"
     ) {
       durationSourceIds.push(sourceId);
+      sourceObservedAt.push(eligibility.evidence.observedAt);
     }
     if (
       eligibility.evidence.modality === "value" &&
@@ -111,6 +149,7 @@ function matchingEvidenceSources(input: {
       observation.unit === expectedUnit
     ) {
       valueSourceIds.push(sourceId);
+      sourceObservedAt.push(eligibility.evidence.observedAt);
     }
   }
   const valueSourceId = valueSourceIds[0];
@@ -118,22 +157,107 @@ function matchingEvidenceSources(input: {
   return {
     valueSourceId,
     contributingSourceIds: [...new Set([...durationSourceIds, ...valueSourceIds])],
+    sourceObservedAt: sourceObservedAt.sort()[0] ?? input.effort.observedAt,
   };
 }
 
-function interpolationUncertainty(input: {
-  lowerDuration: number;
-  upperDuration: number;
-  requestedDuration: number;
-  lineageCount: number;
+function median(values: readonly number[]): number {
+  const ordered = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(ordered.length / 2);
+  const upper = ordered[middle];
+  const lower = ordered[Math.max(0, middle - (ordered.length % 2 === 0 ? 1 : 0))];
+  return ((lower ?? 0) + (upper ?? 0)) / 2;
+}
+
+function robustRelativeDisagreement(values: readonly number[]): number {
+  if (values.length < 2) return 0;
+  const center = median(values);
+  if (center === 0) return values.some((value) => value !== 0) ? 1 : 0;
+  return median(values.map((value) => Math.abs(value - center) / Math.abs(center)));
+}
+
+function decisionEvidence(input: {
+  points: readonly CurvePoint[];
+  assessmentAsOf: string;
+  disagreementValues: readonly number[];
+}): DecisionEvidence {
+  const assessmentAsOf = Date.parse(input.assessmentAsOf);
+  return {
+    independentLineageCount: new Set(input.points.map((point) => point.lineageGroupId)).size,
+    eligibleObservationCount: input.points.length,
+    oldestObservationAgeDays: Math.max(
+      ...input.points.map((point) =>
+        Math.max(0, (assessmentAsOf - Date.parse(point.sourceObservedAt)) / 86_400_000),
+      ),
+    ),
+    robustRelativeDisagreement: robustRelativeDisagreement(input.disagreementValues),
+  };
+}
+
+function decisionUncertainty(input: {
+  evidence: DecisionEvidence;
+  interpolationDistance: number;
 }): Uncertainty {
-  const span = Math.log(input.upperDuration) - Math.log(input.lowerDuration);
-  const position = (Math.log(input.requestedDuration) - Math.log(input.lowerDuration)) / span;
-  const distanceFromObserved = 2 * Math.min(position, 1 - position);
-  const evidenceUncertainty = 1 / Math.sqrt(input.lineageCount);
+  const policy = EFFORT_CURVE_DECISION_UNCERTAINTY_POLICY;
+  const lineageUncertainty =
+    input.evidence.independentLineageCount >= 4
+      ? policy.uncertainty.independentLineages.fourOrMore
+      : input.evidence.independentLineageCount === 3
+        ? policy.uncertainty.independentLineages.three
+        : policy.uncertainty.independentLineages.two;
+  const densityUncertainty =
+    input.evidence.eligibleObservationCount >= 4
+      ? policy.uncertainty.eligibleObservationDensity.fourOrMore
+      : input.evidence.eligibleObservationCount === 3
+        ? policy.uncertainty.eligibleObservationDensity.three
+        : policy.uncertainty.eligibleObservationDensity.two;
+  const ageUncertainty =
+    input.evidence.oldestObservationAgeDays <= policy.freshWithinDays
+      ? policy.uncertainty.observationAge.fresh
+      : policy.uncertainty.observationAge.aging;
+  const disagreementUncertainty =
+    input.evidence.robustRelativeDisagreement <= policy.maximumRobustRelativeDisagreement / 2
+      ? policy.uncertainty.robustInterLineageDisagreement.low
+      : policy.uncertainty.robustInterLineageDisagreement.elevated;
+  const interpolationUncertainty =
+    policy.uncertainty.interpolationDistance.endpoint +
+    policy.uncertainty.interpolationDistance.midpoint * input.interpolationDistance;
   return parseUncertainty(
-    Math.min(1, evidenceUncertainty + (1 - evidenceUncertainty) * distanceFromObserved),
+    Math.min(
+      1,
+      policy.uncertainty.base +
+        lineageUncertainty +
+        densityUncertainty +
+        ageUncertainty +
+        policy.uncertainty.sourceQuality +
+        disagreementUncertainty +
+        interpolationUncertainty,
+    ),
   );
+}
+
+function decisionSafetyReason(evidence: DecisionEvidence): string | null {
+  const policy = EFFORT_CURVE_DECISION_UNCERTAINTY_POLICY;
+  if (evidence.independentLineageCount < policy.minimumIndependentLineages)
+    return "single_lineage_not_recommendation_compatible";
+  if (evidence.oldestObservationAgeDays > policy.staleAfterDays)
+    return "stale_effort_evidence_not_recommendation_compatible";
+  if (evidence.robustRelativeDisagreement > policy.maximumRobustRelativeDisagreement)
+    return "divergent_independent_lineages_not_recommendation_compatible";
+  return null;
+}
+
+function insufficientDecisionEvidence(input: {
+  reasonCode: string;
+  contributingSourceIds: SourceId[];
+}): CalculationResult {
+  return unavailableResult({
+    state: "insufficient_evidence",
+    missingDataState: "partial",
+    uncertainty: UNKNOWN_UNCERTAINTY,
+    reasonCodes: [input.reasonCode],
+    contributingSourceIds: input.contributingSourceIds,
+  });
 }
 
 function calculateTarget(
@@ -177,6 +301,7 @@ function calculateTarget(
         contributingSourceIds: evidenceSources.contributingSourceIds,
         lineageGroupId: effort.lineageGroupId,
         observedAt: effort.observedAt,
+        sourceObservedAt: evidenceSources.sourceObservedAt,
       });
     }
   }
@@ -185,9 +310,20 @@ function calculateTarget(
   if (exact.length > 0) {
     const unique = bestPerKey(exact, (point) => point.lineageGroupId);
     const estimate = unique.reduce((sum, point) => sum + point.value, 0) / unique.length;
-    const uncertainty = parseUncertainty(1 / Math.sqrt(unique.length));
     const solePoint = unique[0];
     const sourceIds = [...new Set(unique.flatMap((point) => point.contributingSourceIds))];
+    const evidence = decisionEvidence({
+      points: unique,
+      assessmentAsOf,
+      disagreementValues: unique.map((point) => point.value),
+    });
+    const unsafeReason = decisionSafetyReason(evidence);
+    if (unsafeReason !== null)
+      return insufficientDecisionEvidence({
+        reasonCode: unsafeReason,
+        contributingSourceIds: sourceIds,
+      });
+    const uncertainty = decisionUncertainty({ evidence, interpolationDistance: 0 });
     return unique.length === 1 && solePoint !== undefined
       ? observedResult({
           rawValue: estimate,
@@ -247,8 +383,6 @@ function calculateTarget(
     (Math.log(upperDuration) - Math.log(lowerDuration));
   const estimate =
     meanAt(lowerDuration) + position * (meanAt(upperDuration) - meanAt(lowerDuration));
-  const lineageCount = new Set(uniqueBracket.map((point) => point.lineageGroupId)).size;
-
   const contributingSourceIds = [
     ...new Set(uniqueBracket.flatMap((point) => point.contributingSourceIds)),
   ];
@@ -261,14 +395,21 @@ function calculateTarget(
     });
   }
 
+  const bracketEvidence = decisionEvidence({
+    points: uniqueBracket,
+    assessmentAsOf,
+    disagreementValues: uniqueBracket.map((point) => point.value / meanAt(point.durationSeconds)),
+  });
+  const unsafeReason = decisionSafetyReason(bracketEvidence);
+  if (unsafeReason !== null)
+    return insufficientDecisionEvidence({ reasonCode: unsafeReason, contributingSourceIds });
+
   return estimatedResult({
     estimate,
     unit: target.unit,
-    uncertainty: interpolationUncertainty({
-      lowerDuration,
-      upperDuration,
-      requestedDuration: target.durationSeconds,
-      lineageCount,
+    uncertainty: decisionUncertainty({
+      evidence: bracketEvidence,
+      interpolationDistance: 2 * Math.min(position, 1 - position),
     }),
     reasonCodes: ["log_duration_interpolation"],
     contributingSourceIds,

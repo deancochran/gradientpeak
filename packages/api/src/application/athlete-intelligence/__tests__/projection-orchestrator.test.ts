@@ -1,12 +1,27 @@
-import type { AthleteIntelligenceModelInput } from "@repo/core";
+import type { AthleteIntelligenceModelInput, TrainingFeasibilityInput } from "@repo/core";
 import {
   athleteIntelligenceModelInputSchema,
   athleteIntelligenceProjectionSchema,
+  type calculateTrainingFeasibility,
 } from "@repo/core";
 import type { TRPCError } from "@trpc/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AthleteIntelligenceModelReader } from "../projection-orchestrator";
 import { projectAthleteIntelligence } from "../projection-orchestrator";
+
+const coreFeasibility = vi.hoisted(() => ({
+  calculate: undefined as unknown as (
+    input: TrainingFeasibilityInput,
+  ) => ReturnType<typeof calculateTrainingFeasibility>,
+}));
+const calculateTrainingFeasibilityMock = vi.hoisted(() => vi.fn());
+
+vi.mock("@repo/core", async (importOriginal) => {
+  const core = await importOriginal<typeof import("@repo/core")>();
+  coreFeasibility.calculate = core.calculateTrainingFeasibility;
+  calculateTrainingFeasibilityMock.mockImplementation(core.calculateTrainingFeasibility);
+  return { ...core, calculateTrainingFeasibility: calculateTrainingFeasibilityMock };
+});
 
 const profileId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const goalId = "11111111-1111-4111-8111-111111111111";
@@ -97,11 +112,18 @@ function canonicalModel(): AthleteIntelligenceModelInput {
     aerobicTrainingEffect: nullMetric("score"),
     anaerobicTrainingEffect: nullMetric("score"),
   };
+  for (const metric of Object.values(activityMetrics)) {
+    for (const sourceId of metric.evidenceSourceIds) {
+      const item = evidenceRegistry[sourceId];
+      if (item) evidenceRegistry[sourceId] = { ...item, sport: "bike" };
+    }
+  }
 
   return athleteIntelligenceModelInputSchema.parse({
     contractVersion: "phase-1",
     assessmentAsOf: asOf.toISOString(),
     athleteId: profileId,
+    planningTimezone: "UTC",
     evidenceRegistry,
     physiology: {
       athleteId: profileId,
@@ -173,6 +195,38 @@ function canonicalModel(): AthleteIntelligenceModelInput {
         kind: "power",
         powerWatts: 280,
       },
+      {
+        sourceId: evidence(null, null, {
+          sourceId: "effort:hour-2:record",
+          lineageGroupId: "activity:effort-hour-2",
+          sourceType: "activity_effort",
+          sport: "bike",
+        }),
+        athleteId: profileId,
+        lineageGroupId: "activity:effort-hour-2",
+        activitySourceId: null,
+        observedAt: "2026-07-07T09:00:00.000Z",
+        sport: "bike",
+        startOffsetSeconds: null,
+        endOffsetSeconds: null,
+        durationSeconds: 3600,
+        evidenceSourceIds: [
+          evidence(3600, "seconds", {
+            lineageGroupId: "activity:effort-hour-2",
+            sourceType: "activity_effort",
+            sport: "bike",
+            modality: "duration",
+          }),
+          evidence(260, "watts", {
+            lineageGroupId: "activity:effort-hour-2",
+            sourceType: "activity_effort",
+            sport: "bike",
+            modality: "value",
+          }),
+        ],
+        kind: "power",
+        powerWatts: 260,
+      },
     ],
     goals: [
       {
@@ -181,6 +235,7 @@ function canonicalModel(): AthleteIntelligenceModelInput {
         lineageGroupId: `manual-test:goal-${goalId}`,
         targetDate: "2026-09-01",
         priority: 8,
+        goalSport: "bike",
         objective: {
           type: "threshold",
           metric: "power",
@@ -268,6 +323,10 @@ function replaceEvidenceValue(
     rawObservation: { ...source.rawObservation, value },
   };
 }
+
+afterEach(() => {
+  calculateTrainingFeasibilityMock.mockImplementation(coreFeasibility.calculate);
+});
 
 describe("projectAthleteIntelligence", () => {
   it("delegates the requested profile and asOf to the injected model reader", async () => {
@@ -405,7 +464,7 @@ describe("projectAthleteIntelligence", () => {
         expect.objectContaining({
           goalSourceId: `goal:${goalId}:record`,
           dimension: "threshold",
-          reasonCodes: ["missing_incompatible_or_uncertain_physical_evidence"],
+          reasonCodes: ["decision_quality_not_recommendation_compatible"],
         }),
       ]),
     );
@@ -458,7 +517,7 @@ describe("projectAthleteIntelligence", () => {
         expect.objectContaining({
           goalSourceId: `goal:${goalId}:record`,
           dimension: "threshold",
-          reasonCodes: ["missing_incompatible_or_uncertain_physical_evidence"],
+          reasonCodes: ["decision_quality_not_recommendation_compatible"],
         }),
       ]),
     );
@@ -474,12 +533,170 @@ describe("projectAthleteIntelligence", () => {
     const expanded = await project(athleteIntelligenceModelInputSchema.parse(recurring));
     expect(expanded.feasibility.compatibleScheduledMinutes.estimate).toBeGreaterThan(60);
 
+    recurring.readCoverage = {
+      metrics: recurring.readCoverage?.metrics ?? { state: "complete", reason: null },
+      activities: recurring.readCoverage?.activities ?? { state: "complete", reason: null },
+      efforts: recurring.readCoverage?.efforts ?? { state: "complete", reason: null },
+      schedules: { state: "truncated", reason: "query_limit_reached" },
+    };
     recurring.scheduleReadState = "truncated";
     const truncated = await project(athleteIntelligenceModelInputSchema.parse(recurring));
     expect(truncated.feasibility.scheduleCoverage).toMatchObject({
       state: "insufficient_evidence",
       missingDataState: "partial",
       reasonCodes: ["schedule_read_truncated"],
+    });
+    expect(truncated.feasibility.compatibleScheduledMinutes).toMatchObject({
+      state: "insufficient_evidence",
+      missingDataState: "partial",
+      estimate: null,
+      reasonCodes: ["schedule_read_truncated"],
+    });
+    expect(truncated.feasibility.constraints.hardRestConflicts).toMatchObject({
+      state: "insufficient_evidence",
+      missingDataState: "partial",
+      estimate: null,
+    });
+    expect(truncated.decisionGuidance.state).toBe("unknown");
+  });
+
+  it("credits only run sessions while preserving bike and strength constraints", async () => {
+    const runGoal = canonicalModel();
+    const goal = first(runGoal.goals, "Goal");
+    runGoal.goals[0] = {
+      ...goal,
+      goalSport: "run",
+      objective: {
+        type: "threshold",
+        metric: "pace",
+        activity_category: "run",
+        value: 300,
+        test_duration_s: 3600,
+      },
+    };
+    const goalEvidence = runGoal.evidenceRegistry[goal.sourceId];
+    if (!goalEvidence) throw new Error("Goal evidence fixture missing");
+    runGoal.evidenceRegistry[goal.sourceId] = {
+      ...goalEvidence,
+      sport: "run",
+    };
+    const event = first(runGoal.plannedSchedule, "Planned event");
+    const eventEvidence = runGoal.evidenceRegistry[event.sourceId];
+    if (!eventEvidence) throw new Error("Schedule evidence fixture missing");
+    runGoal.evidenceRegistry["manual:event-strength"] = {
+      ...eventEvidence,
+      sourceId: "manual:event-strength",
+      lineageGroupId: "manual-test:event-strength",
+      sport: "strength",
+    };
+    runGoal.plannedSchedule = [
+      { ...event, sport: "bike" },
+      {
+        ...event,
+        sourceId: "manual:event-strength",
+        lineageGroupId: "manual-test:event-strength",
+        startAt: "2026-07-13T07:00:00.000Z",
+        endAt: "2026-07-13T08:00:00.000Z",
+        sport: "strength",
+      },
+    ];
+    runGoal.trainingContext.hardRestDays = ["monday"];
+    runGoal.trainingContext.maximumDailyMinutes.value = 90;
+    runGoal.trainingContext.maximumSessionsPerDay.value = 1;
+    runGoal.trainingContext.maximumWeeklyMinutes.value = 90;
+    replaceEvidenceValue(
+      runGoal,
+      runGoal.trainingContext.maximumDailyMinutes.evidenceSourceIds[0],
+      90,
+    );
+    replaceEvidenceValue(
+      runGoal,
+      runGoal.trainingContext.maximumSessionsPerDay.evidenceSourceIds[0],
+      1,
+    );
+    replaceEvidenceValue(
+      runGoal,
+      runGoal.trainingContext.maximumWeeklyMinutes.evidenceSourceIds[0],
+      90,
+    );
+    calculateTrainingFeasibilityMock.mockImplementationOnce((input: TrainingFeasibilityInput) => {
+      expect(input.targetGoalSport).toBe("run");
+      return coreFeasibility.calculate({ ...input, requiredWeeklySessions: 2 });
+    });
+
+    const projection = await project(athleteIntelligenceModelInputSchema.parse(runGoal));
+
+    expect(projection.feasibility.requiredSessionCoverage.estimate).toBe(0);
+    expect(projection.feasibility.constraints.hardRestConflicts.estimate).toBe(2);
+    expect(projection.feasibility.constraints.dailyDurationExcesses.estimate).toBe(1);
+    expect(projection.feasibility.constraints.dailySessionCapExcesses.estimate).toBe(1);
+    expect(projection.feasibility.constraints.weeklyDurationExcesses.estimate).toBe(1);
+  });
+
+  it("reports missing selected-goal sport instead of borrowing scheduled-session credit", async () => {
+    const noSport = canonicalModel();
+    const goal = first(noSport.goals, "Goal");
+    noSport.goals[0] = {
+      ...goal,
+      goalSport: null,
+      objective: { type: "threshold", metric: "power", value: 320, test_duration_s: 3600 },
+    };
+    const goalEvidence = noSport.evidenceRegistry[goal.sourceId];
+    if (!goalEvidence) throw new Error("Goal evidence fixture missing");
+    noSport.evidenceRegistry[goal.sourceId] = {
+      ...goalEvidence,
+      sport: null,
+    };
+    calculateTrainingFeasibilityMock.mockImplementationOnce((input: TrainingFeasibilityInput) => {
+      expect(input.targetGoalSport).toBeNull();
+      return coreFeasibility.calculate({ ...input, requiredWeeklySessions: 2 });
+    });
+
+    const projection = await project(athleteIntelligenceModelInputSchema.parse(noSport));
+
+    expect(projection.feasibility.requiredSessionCoverage).toMatchObject({
+      state: "unsupported",
+      missingDataState: "unsupported_input",
+      reasonCodes: ["target_goal_sport_required_for_session_coverage"],
+    });
+  });
+
+  it("credits matching sessions for a header-only consistency goal", async () => {
+    const consistency = canonicalModel();
+    const goal = first(consistency.goals, "Goal");
+    consistency.goals[0] = {
+      ...goal,
+      goalSport: "bike",
+      objective: { type: "consistency", target_sessions_per_week: 2, target_weeks: 8 },
+    };
+
+    const projection = await project(athleteIntelligenceModelInputSchema.parse(consistency));
+
+    expect(projection.feasibility.requiredSessionCoverage).toMatchObject({
+      unit: "ratio",
+    });
+    expect(projection.feasibility.requiredSessionCoverage.estimate).toBeGreaterThan(0);
+  });
+
+  it("hands planning and recurrence timezones to feasibility without an event-zone fallback", async () => {
+    const noPlanningZone = canonicalModel();
+    noPlanningZone.planningTimezone = null;
+    const event = first(noPlanningZone.plannedSchedule, "Planned event");
+    noPlanningZone.plannedSchedule[0] = {
+      ...event,
+      recurrence: {
+        frequency: "weekly",
+        interval: 1,
+        until: "2026-08-31T06:00:00.000Z",
+        timezone: "Asia/Tokyo",
+      },
+    };
+
+    const projection = await project(athleteIntelligenceModelInputSchema.parse(noPlanningZone));
+    expect(projection.feasibility.compatibleScheduledMinutes).toMatchObject({
+      state: "unsupported",
+      missingDataState: "unsupported_input",
+      reasonCodes: ["timezone_missing_or_unsupported"],
     });
   });
 

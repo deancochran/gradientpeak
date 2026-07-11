@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { athleteIntelligenceModelInputSchema } from "../model-input-contracts";
+import { athleteIntelligenceModelInputSchema, goalInputSchema } from "../model-input-contracts";
 
 const asOf = "2026-07-10T12:00:00.000Z";
 const metricUnits = {
@@ -179,6 +179,7 @@ function input() {
         lineageGroupId: "manual-test:event-history",
         targetDate: "2026-10-01",
         priority: 10,
+        goalSport: "run" as const,
         objective: {
           type: "event_performance" as const,
           activity_category: "run" as const,
@@ -280,6 +281,7 @@ function event(candidate: ReturnType<typeof input>) {
       frequency: "daily" | "weekly" | "monthly";
       interval: number;
       until: string | null;
+      timezone?: string | null;
     } | null;
   };
 }
@@ -287,6 +289,38 @@ function event(candidate: ReturnType<typeof input>) {
 describe("athlete intelligence model input contracts", () => {
   it("accepts fully evidenced model input", () => {
     expect(athleteIntelligenceModelInputSchema.safeParse(input()).success).toBe(true);
+  });
+
+  it("keeps goal sport in the header for every objective discriminant", () => {
+    const candidate = input();
+    const goal = candidate.goals[0];
+    if (goal === undefined) throw new Error("fixture goal missing");
+    const parsed = goalInputSchema.parse({
+      ...goal,
+      goalSport: "bike",
+      objective: { type: "consistency", target_sessions_per_week: 2, target_weeks: 8 },
+    });
+    expect(parsed.goalSport).toBe("bike");
+  });
+
+  it("preserves explicit planning and recurrence timezones while accepting prior inputs", () => {
+    const candidate = input() as ReturnType<typeof input> & {
+      planningTimezone?: string | null;
+    };
+    candidate.planningTimezone = "America/New_York";
+    const scheduled = event(candidate);
+    scheduled.recurrence = {
+      frequency: "weekly",
+      interval: 1,
+      until: "2026-10-08T08:00:00.000Z",
+      timezone: "Europe/London",
+    };
+
+    const parsed = athleteIntelligenceModelInputSchema.safeParse(candidate);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.planningTimezone).toBe("America/New_York");
+    expect(parsed.data.plannedSchedule[0]?.recurrence?.timezone).toBe("Europe/London");
   });
 
   it("requires a valid schedule read state and accepts truncated reads", () => {
@@ -298,6 +332,42 @@ describe("athlete intelligence model input contracts", () => {
 
     const truncated = input();
     truncated.scheduleReadState = "truncated";
+    (truncated as ReturnType<typeof input> & { readCoverage?: unknown }).readCoverage = {
+      metrics: { state: "complete", reason: null },
+      activities: { state: "complete", reason: null },
+      efforts: { state: "complete", reason: null },
+      schedules: { state: "truncated", reason: "query_limit_reached" },
+    };
+    expect(athleteIntelligenceModelInputSchema.safeParse(truncated).success).toBe(true);
+  });
+
+  it("rejects malformed, contradictory, and unreasoned bounded read coverage", () => {
+    const malformed = input() as ReturnType<typeof input> & { readCoverage?: unknown };
+    malformed.readCoverage = {
+      metrics: { state: "complete", reason: "query_limit_reached" },
+      activities: { state: "complete", reason: null },
+      efforts: { state: "complete", reason: null },
+      schedules: { state: "complete", reason: null },
+    };
+    rejects(malformed as ReturnType<typeof input>);
+
+    const contradictory = input() as ReturnType<typeof input> & { readCoverage?: unknown };
+    contradictory.readCoverage = {
+      metrics: { state: "complete", reason: null },
+      activities: { state: "complete", reason: null },
+      efforts: { state: "complete", reason: null },
+      schedules: { state: "truncated", reason: "query_limit_reached" },
+    };
+    rejects(contradictory as ReturnType<typeof input>);
+
+    const truncated = input() as ReturnType<typeof input> & { readCoverage?: unknown };
+    truncated.scheduleReadState = "truncated";
+    truncated.readCoverage = {
+      metrics: { state: "truncated", reason: "source_window_truncated" },
+      activities: { state: "complete", reason: null },
+      efforts: { state: "truncated", reason: "unknown" },
+      schedules: { state: "truncated", reason: "query_limit_reached" },
+    };
     expect(athleteIntelligenceModelInputSchema.safeParse(truncated).success).toBe(true);
   });
 

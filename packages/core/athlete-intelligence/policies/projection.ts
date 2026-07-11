@@ -1,9 +1,11 @@
+import type { CanonicalSport } from "../../schemas/sport";
 import {
   type CalculationResult,
   estimatedResult,
   observedResult,
   unavailableResult,
 } from "../calculation-result-contracts";
+import { type FieldEvidenceEligibility, resolveFieldEvidenceEligibility } from "../eligibility";
 import type { AthleteIntelligenceModelInput } from "../model-input-contracts";
 import {
   ATHLETE_INTELLIGENCE_PROJECTION_VERSION,
@@ -12,9 +14,21 @@ import {
 } from "../projection-contracts";
 import type { ActivityReadinessResults } from "./activity-readiness";
 import type { DurationAwareEffortCurve } from "./effort-curves";
-import type { GoalDemandPolicyV1Result } from "./goal-demand";
+import { GOAL_DEMAND_POLICY_VERSION, type GoalDemandPolicyV1Result } from "./goal-demand";
 import type { PhysiologyMetricsPolicyResult } from "./physiology-metrics";
 import type { TrainingFeasibilityResults } from "./training-feasibility";
+
+export const PROJECTION_DECISION_QUALITY_POLICY_VERSION = "projection-decision-quality-v1" as const;
+
+/**
+ * Conservative, versioned guidance boundary. Uncertainty is a decision-quality
+ * measure, not a probability: values above one half are retained as coverage
+ * evidence but cannot produce a training recommendation.
+ */
+export const PROJECTION_DECISION_QUALITY_POLICY = Object.freeze({
+  version: PROJECTION_DECISION_QUALITY_POLICY_VERSION,
+  maximumRecommendationUncertainty: 0.5,
+});
 
 export interface GoalProjectionInputs {
   goalSourceId: string;
@@ -30,61 +44,179 @@ export interface WholeAthleteProjectionInput {
   calendarFeasibility: TrainingFeasibilityResults;
 }
 
-const insufficient = (reason: string, sources: readonly string[] = []): CalculationResult =>
+const insufficient = (
+  reason: string,
+  sources: readonly string[] = [],
+  rejections: readonly Extract<FieldEvidenceEligibility, { eligible: false }>[] = [],
+): CalculationResult =>
   unavailableResult({
     state: "insufficient_evidence",
-    missingDataState: sources.length > 0 ? "partial" : "required_data_missing",
+    missingDataState: sources.length + rejections.length > 0 ? "partial" : "required_data_missing",
     uncertainty: 1,
-    reasonCodes: [reason],
-    contributingSourceIds: sources,
+    reasonCodes: [reason, ...new Set(rejections.map(({ reasonCode }) => reasonCode))],
+    contributingSourceIds: [
+      ...new Set([...sources, ...rejections.map(({ sourceId }) => sourceId)]),
+    ],
   });
 
-function activityCapabilities(model: AthleteIntelligenceModelInput) {
-  const longestDistance = [...model.activities]
-    .filter((activity) => activity.metrics.distanceMeters.value !== null)
-    .sort(
-      (a, b) => (b.metrics.distanceMeters.value ?? 0) - (a.metrics.distanceMeters.value ?? 0),
-    )[0];
-  const longestDuration = [...model.activities]
-    .filter((activity) => activity.metrics.elapsedDurationSeconds.value !== null)
+function truncatedDomain(domain: "metrics" | "activities" | "efforts"): CalculationResult {
+  const reason =
+    domain === "metrics"
+      ? "metrics_read_truncated"
+      : domain === "activities"
+        ? "activities_read_truncated"
+        : "efforts_read_truncated";
+  return unavailableResult({
+    state: "insufficient_evidence",
+    missingDataState: "partial",
+    uncertainty: 1,
+    reasonCodes: [reason],
+  });
+}
+
+function hasTruncatedCoverage(
+  model: AthleteIntelligenceModelInput,
+  domain: "metrics" | "activities" | "efforts",
+): boolean {
+  return model.readCoverage?.[domain].state === "truncated";
+}
+
+function fieldEligibility(
+  model: AthleteIntelligenceModelInput,
+  evidenceSourceIds: readonly string[],
+  targetSport: CanonicalSport,
+) {
+  const eligibility = evidenceSourceIds.flatMap((sourceId) => {
+    const evidence = model.evidenceRegistry[sourceId];
+    return evidence === undefined
+      ? []
+      : [
+          resolveFieldEvidenceEligibility({
+            evidence,
+            asOf: model.assessmentAsOf,
+            requiredSport: targetSport,
+          }),
+        ];
+  });
+  return {
+    eligible: eligibility.length > 0 && eligibility.every((result) => result.eligible),
+    sourceId: eligibility.find((result) => result.eligible)?.sourceId,
+    rejections: eligibility.filter(
+      (result): result is Extract<FieldEvidenceEligibility, { eligible: false }> =>
+        !result.eligible,
+    ),
+  };
+}
+
+function activityCapabilities(
+  model: AthleteIntelligenceModelInput,
+  targetSport: CanonicalSport | null,
+) {
+  if (targetSport === null)
+    return {
+      distance: unavailableResult({
+        state: "unsupported",
+        missingDataState: "unsupported_input",
+        uncertainty: 1,
+        reasonCodes: ["goal_sport_missing"],
+      }),
+      duration: unavailableResult({
+        state: "unsupported",
+        missingDataState: "unsupported_input",
+        uncertainty: 1,
+        reasonCodes: ["goal_sport_missing"],
+      }),
+      frequency: unavailableResult({
+        state: "unsupported",
+        missingDataState: "unsupported_input",
+        uncertainty: 1,
+        reasonCodes: ["goal_sport_missing"],
+      }),
+    };
+  if (hasTruncatedCoverage(model, "activities")) {
+    const partial = truncatedDomain("activities");
+    return { distance: partial, duration: partial, frequency: partial };
+  }
+  const evaluatedActivities = model.activities.map((activity) => ({
+    activity,
+    distance: fieldEligibility(
+      model,
+      activity.metrics.distanceMeters.evidenceSourceIds,
+      targetSport,
+    ),
+    duration: fieldEligibility(
+      model,
+      activity.metrics.elapsedDurationSeconds.evidenceSourceIds,
+      targetSport,
+    ),
+    frequency: fieldEligibility(
+      model,
+      activity.metrics.elapsedDurationSeconds.evidenceSourceIds,
+      targetSport,
+    ),
+  }));
+  const compatibleActivities = evaluatedActivities.filter(
+    ({ activity }) => activity.sport === targetSport,
+  );
+  const distanceRejections = evaluatedActivities.flatMap(({ distance }) => distance.rejections);
+  const durationRejections = evaluatedActivities.flatMap(({ duration }) => duration.rejections);
+  const frequencyRejections = evaluatedActivities.flatMap(({ frequency }) => frequency.rejections);
+  const longestDistance = [...compatibleActivities]
+    .filter(
+      ({ activity, distance }) =>
+        activity.metrics.distanceMeters.value !== null && distance.eligible,
+    )
     .sort(
       (a, b) =>
-        (b.metrics.elapsedDurationSeconds.value ?? 0) -
-        (a.metrics.elapsedDurationSeconds.value ?? 0),
+        (b.activity.metrics.distanceMeters.value ?? 0) -
+        (a.activity.metrics.distanceMeters.value ?? 0),
+    )[0];
+  const longestDuration = [...compatibleActivities]
+    .filter(
+      ({ activity, duration }) =>
+        activity.metrics.elapsedDurationSeconds.value !== null && duration.eligible,
+    )
+    .sort(
+      (a, b) =>
+        (b.activity.metrics.elapsedDurationSeconds.value ?? 0) -
+        (a.activity.metrics.elapsedDurationSeconds.value ?? 0),
     )[0];
   const windowWeeks = Math.max(
     1 / 7,
     (Date.parse(model.activityWindow.through) - Date.parse(model.activityWindow.from)) /
       (7 * 86_400_000),
   );
-  const sources = model.activities.map((activity) => activity.sourceId);
+  const frequencyActivities = compatibleActivities.filter(({ frequency }) => frequency.eligible);
+  const frequencySources = frequencyActivities.flatMap(({ frequency }) =>
+    frequency.sourceId === undefined ? [] : [frequency.sourceId],
+  );
   return {
     distance: longestDistance
       ? observedResult({
-          rawValue: longestDistance.metrics.distanceMeters.value ?? 0,
+          rawValue: longestDistance.activity.metrics.distanceMeters.value ?? 0,
           unit: "m",
-          sourceId: longestDistance.sourceId,
+          sourceId: longestDistance.distance.sourceId ?? longestDistance.activity.sourceId,
           uncertainty: 0,
         })
-      : insufficient("observed_distance_missing"),
+      : insufficient("observed_distance_missing", [], distanceRejections),
     duration: longestDuration
       ? observedResult({
-          rawValue: longestDuration.metrics.elapsedDurationSeconds.value ?? 0,
+          rawValue: longestDuration.activity.metrics.elapsedDurationSeconds.value ?? 0,
           unit: "s",
-          sourceId: longestDuration.sourceId,
+          sourceId: longestDuration.duration.sourceId ?? longestDuration.activity.sourceId,
           uncertainty: 0,
         })
-      : insufficient("observed_duration_missing"),
+      : insufficient("observed_duration_missing", [], durationRejections),
     frequency:
-      sources.length > 0
+      frequencySources.length > 0
         ? estimatedResult({
-            estimate: model.activities.length / windowWeeks,
+            estimate: frequencySources.length / windowWeeks,
             unit: "sessions/week",
-            uncertainty: Math.min(1, 1 / Math.sqrt(sources.length)),
+            uncertainty: Math.min(1, 1 / Math.sqrt(frequencySources.length)),
             reasonCodes: ["activity_frequency_over_observation_window"],
-            contributingSourceIds: sources as [string, ...string[]],
+            contributingSourceIds: frequencySources as [string, ...string[]],
           })
-        : insufficient("observed_frequency_missing"),
+        : insufficient("observed_frequency_missing", [], frequencyRejections),
   };
 }
 
@@ -203,16 +335,39 @@ function dimensionsForGoal(input: {
   curve?: DurationAwareEffortCurve;
   physiology: PhysiologyMetricsPolicyResult;
   activity: ReturnType<typeof activityCapabilities>;
+  goalSport: string | null;
+  model: AthleteIntelligenceModelInput;
 }) {
   if (input.demand.state !== "complete") return [];
   const requirement = input.demand.requirement;
   if (requirement.type === "threshold") {
     const capability =
-      requirement.metric === "power"
-        ? input.physiology.metrics.ftp.result
-        : requirement.metric === "hr"
-          ? input.physiology.metrics.lthr.result
-          : speedCapability(input.curve);
+      input.goalSport === null
+        ? unavailableResult({
+            state: "unsupported",
+            missingDataState: "unsupported_input",
+            uncertainty: 1,
+            reasonCodes: ["goal_sport_missing"],
+          })
+        : (requirement.metric === "power" && input.goalSport !== "bike") ||
+            (requirement.metric === "pace" && input.goalSport !== "run")
+          ? unavailableResult({
+              state: "unsupported",
+              missingDataState: "incompatible_data",
+              uncertainty: 1,
+              reasonCodes: ["goal_sport_incompatible_with_direct_capability"],
+            })
+          : requirement.metric === "power" && hasTruncatedCoverage(input.model, "metrics")
+            ? truncatedDomain("metrics")
+            : requirement.metric === "hr" && hasTruncatedCoverage(input.model, "metrics")
+              ? truncatedDomain("metrics")
+              : requirement.metric === "pace" && hasTruncatedCoverage(input.model, "efforts")
+                ? truncatedDomain("efforts")
+                : requirement.metric === "power"
+                  ? input.physiology.metrics.ftp.result
+                  : requirement.metric === "hr"
+                    ? input.physiology.metrics.lthr.result
+                    : speedCapability(input.curve);
     if (requirement.metric === "pace")
       return [
         compare("threshold", normalizedSpeed(capability), normalizedSpeed(requirement.target)),
@@ -226,7 +381,22 @@ function dimensionsForGoal(input: {
     ];
   }
   if (requirement.type === "event_performance")
-    return [compare("speed", speedCapability(input.curve), requirement.requiredSpeed)];
+    return [
+      compare(
+        "speed",
+        input.goalSport === null
+          ? unavailableResult({
+              state: "unsupported",
+              missingDataState: "unsupported_input",
+              uncertainty: 1,
+              reasonCodes: ["goal_sport_missing"],
+            })
+          : hasTruncatedCoverage(input.model, "efforts")
+            ? truncatedDomain("efforts")
+            : speedCapability(input.curve),
+        requirement.requiredSpeed,
+      ),
+    ];
   if (requirement.type === "completion")
     return [
       ...(requirement.requiredDistance
@@ -241,16 +411,60 @@ function dimensionsForGoal(input: {
 
 const dimensionOrder = ["threshold", "speed", "distance", "duration", "frequency"] as const;
 
+function goalSport(
+  model: AthleteIntelligenceModelInput,
+  goalSourceId: string,
+): CanonicalSport | null {
+  const goal = model.goals.find((entry) => entry.sourceId === goalSourceId);
+  return goal?.goalSport ?? null;
+}
+
+function isRecommendationCompatible(result: CalculationResult): boolean {
+  return (
+    result.estimate !== null &&
+    result.state !== "unknown" &&
+    result.state !== "insufficient_evidence" &&
+    result.state !== "unsupported" &&
+    result.missingDataState === "none" &&
+    result.uncertainty <= PROJECTION_DECISION_QUALITY_POLICY.maximumRecommendationUncertainty
+  );
+}
+
+function supportsTrainingRecommendation(dimension: {
+  capability: CalculationResult;
+  requirement: CalculationResult;
+  coverage: CalculationResult;
+  physicalGap: CalculationResult;
+}): boolean {
+  return [
+    dimension.capability,
+    dimension.requirement,
+    dimension.coverage,
+    dimension.physicalGap,
+  ].every(isRecommendationCompatible);
+}
+
 /** Assembles policy outputs into the one public physical/per-goal projection contract. */
 export function assembleWholeAthleteProjectionV1(
   input: WholeAthleteProjectionInput,
 ): AthleteIntelligenceProjection {
-  const activity = activityCapabilities(input.model);
+  const activitiesTruncated = hasTruncatedCoverage(input.model, "activities");
+  const activityReadiness = activitiesTruncated
+    ? {
+        ...input.activityReadiness,
+        endurance: truncatedDomain("activities"),
+        durability: truncatedDomain("activities"),
+        sportSpecificity: truncatedDomain("activities"),
+        volumeTrend: truncatedDomain("activities"),
+        frequencyTrend: truncatedDomain("activities"),
+        readinessContext: truncatedDomain("activities"),
+      }
+    : input.activityReadiness;
   const suppliedByGoal = new Map(input.effortCurves.map((entry) => [entry.goalSourceId, entry]));
   const coverageWithPriority = input.model.goals.map((goal) => {
     const supplied = suppliedByGoal.get(goal.sourceId);
     const demand: GoalDemandPolicyV1Result = supplied?.demand ?? {
-      policyVersion: "goal-demand-v1",
+      policyVersion: GOAL_DEMAND_POLICY_VERSION,
       state: "incomplete",
       goalSourceId: goal.sourceId,
       missingFields: ["goal_demand"],
@@ -259,11 +473,14 @@ export function assembleWholeAthleteProjectionV1(
       goalSourceId: goal.sourceId,
       priority: goal.priority,
       demand,
+      effortCurve: supplied?.effortCurve,
       dimensions: dimensionsForGoal({
         demand,
         curve: supplied?.effortCurve,
         physiology: input.physiology,
-        activity,
+        activity: activityCapabilities(input.model, goalSport(input.model, goal.sourceId)),
+        goalSport: goalSport(input.model, goal.sourceId),
+        model: input.model,
       }),
     };
   });
@@ -271,7 +488,12 @@ export function assembleWholeAthleteProjectionV1(
   const prioritizedTraining = coverageWithPriority
     .flatMap((goal) =>
       goal.dimensions
-        .filter((dimension) => (dimension.physicalGap.estimate ?? 0) > 0)
+        .filter(
+          (dimension) =>
+            (dimension.physicalGap.estimate ?? 0) > 0 &&
+            supportsTrainingRecommendation(dimension) &&
+            (!goal.effortCurve || isRecommendationCompatible(goal.effortCurve.threshold)),
+        )
         .sort((a, b) => dimensionOrder.indexOf(a.dimension) - dimensionOrder.indexOf(b.dimension))
         .map((dimension) => ({
           goalSourceId: goal.goalSourceId,
@@ -300,12 +522,27 @@ export function assembleWholeAthleteProjectionV1(
           },
         ];
       return goal.dimensions.flatMap((dimension) =>
-        dimension.coverage.estimate === null || dimension.capability.uncertainty >= 0.75
+        !supportsTrainingRecommendation(dimension) ||
+        (goal.effortCurve !== undefined && !isRecommendationCompatible(goal.effortCurve.threshold))
           ? [
               {
                 goalSourceId: goal.goalSourceId,
                 dimension: dimension.dimension,
-                reasonCodes: ["missing_incompatible_or_uncertain_physical_evidence"],
+                reasonCodes: dimension.capability.reasonCodes.some((reason) =>
+                  [
+                    "metrics_read_truncated",
+                    "activities_read_truncated",
+                    "efforts_read_truncated",
+                  ].includes(reason),
+                )
+                  ? dimension.capability.reasonCodes.filter((reason) =>
+                      [
+                        "metrics_read_truncated",
+                        "activities_read_truncated",
+                        "efforts_read_truncated",
+                      ].includes(reason),
+                    )
+                  : ["decision_quality_not_recommendation_compatible"],
               },
             ]
           : [],
@@ -318,11 +555,13 @@ export function assembleWholeAthleteProjectionV1(
     input.calendarFeasibility.scheduleCoverage,
   ].some((result) => result.estimate !== null && result.estimate < 1);
   const recoveryLow =
-    input.activityReadiness.readinessContext.estimate !== null &&
-    input.activityReadiness.readinessContext.estimate < 0;
-  const hasUnknown = evidence.length > 0;
+    activityReadiness.readinessContext.estimate !== null &&
+    activityReadiness.readinessContext.estimate < 0;
+  const hasUnknown = evidence.length > 0 || activitiesTruncated;
   const hasGap = training.length > 0;
-  const goalCoverage = coverageWithPriority.map(({ priority: _priority, ...goal }) => goal);
+  const goalCoverage = coverageWithPriority.map(
+    ({ priority: _priority, effortCurve: _effortCurve, ...goal }) => goal,
+  );
   const state = hasUnknown
     ? "unknown"
     : feasibilityLow || recoveryLow || hasGap
@@ -348,14 +587,14 @@ export function assembleWholeAthleteProjectionV1(
             ]
           : [],
       ),
-      enduranceRecencyWeightedMinutes: input.activityReadiness.endurance,
-      durabilityBaselineRatio: input.activityReadiness.durability,
-      sportSpecificity: input.activityReadiness.sportSpecificity,
+      enduranceRecencyWeightedMinutes: activityReadiness.endurance,
+      durabilityBaselineRatio: activityReadiness.durability,
+      sportSpecificity: activityReadiness.sportSpecificity,
     },
     readiness: {
-      volumeTrend: input.activityReadiness.volumeTrend,
-      frequencyTrend: input.activityReadiness.frequencyTrend,
-      recoveryContext: input.activityReadiness.readinessContext,
+      volumeTrend: activityReadiness.volumeTrend,
+      frequencyTrend: activityReadiness.frequencyTrend,
+      recoveryContext: activityReadiness.readinessContext,
     },
     feasibility: input.calendarFeasibility,
     goalCoverage,

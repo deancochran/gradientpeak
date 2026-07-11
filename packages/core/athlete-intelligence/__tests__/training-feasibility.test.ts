@@ -17,7 +17,9 @@ function event(
     frequency: "daily" | "weekly" | "monthly";
     interval: number;
     until: string | null;
+    timezone?: string | null;
   } | null = null,
+  timezone?: string | null,
 ) {
   return {
     sourceId: eventSource(id),
@@ -27,6 +29,7 @@ function event(
     eventType: "training" as const,
     sport: "cycling",
     recurrence,
+    timezone,
   };
 }
 
@@ -53,6 +56,7 @@ function input(overrides: Partial<TrainingFeasibilityInput> = {}): TrainingFeasi
     recoveryPreference: "balanced",
     requiredWeeklyMinutes: 300,
     requiredWeeklySessions: 3,
+    targetGoalSport: "cycling",
     scheduleComplete: true,
     plannedSchedule: [],
     ...overrides,
@@ -101,6 +105,42 @@ describe("calculateTrainingFeasibility", () => {
     expect(london.constraints.hardRestConflicts.estimate).toBe(0);
     expect(utc.constraints.hardRestConflicts.estimate).toBe(1);
     expect(missing.timeCoverage.state).toBe("unsupported");
+  });
+
+  it("uses the explicit planning timezone across east and west zones without borrowing an event zone", () => {
+    const lateSundayUtc = event(
+      "west-local",
+      "2026-07-06T01:00:00Z",
+      "2026-07-06T02:00:00Z",
+      "planned",
+      null,
+      "America/Los_Angeles",
+    );
+    const west = calculateTrainingFeasibility(
+      input({
+        planningTimezone: "America/Los_Angeles",
+        hardRestDays: ["sunday"],
+        plannedSchedule: [lateSundayUtc],
+      }),
+    );
+    const east = calculateTrainingFeasibility(
+      input({
+        planningTimezone: "Asia/Tokyo",
+        hardRestDays: ["sunday"],
+        plannedSchedule: [lateSundayUtc],
+      }),
+    );
+    const missing = calculateTrainingFeasibility(
+      input({ timezone: null, planningTimezone: null, plannedSchedule: [lateSundayUtc] }),
+    );
+    const invalid = calculateTrainingFeasibility(
+      input({ planningTimezone: "Not/AZone", plannedSchedule: [lateSundayUtc] }),
+    );
+
+    expect(west.constraints.hardRestConflicts.estimate).toBe(1);
+    expect(east.constraints.hardRestConflicts.estimate).toBe(0);
+    expect(missing.constraints.hardRestConflicts.state).toBe("unsupported");
+    expect(invalid.constraints.hardRestConflicts.state).toBe("unsupported");
   });
 
   it("clips schedule minutes to a partial horizon", () => {
@@ -188,6 +228,47 @@ describe("calculateTrainingFeasibility", () => {
     );
     expect(result.requiredSessionCoverage.estimate).toBe(0.5);
     expect(result.scheduleCoverage.estimate).toBe(0.4);
+  });
+
+  it("requires a target sport when required session coverage is configured", () => {
+    const { targetGoalSport: _targetGoalSport, ...unscopedInput } = input({
+      plannedSchedule: [event("unscoped", "2026-07-06T08:00:00Z", "2026-07-06T09:00:00Z")],
+    });
+    const result = calculateTrainingFeasibility(unscopedInput);
+
+    expect(result.requiredSessionCoverage.state).toBe("unsupported");
+    expect(result.requiredSessionCoverage.reasonCodes).toContain(
+      "target_goal_sport_required_for_session_coverage",
+    );
+  });
+
+  it("credits only the target sport toward sessions while all training affects constraints", () => {
+    const result = calculateTrainingFeasibility(
+      input({
+        targetGoalSport: "running",
+        hardRestDays: ["monday"],
+        maximumDailyMinutes: 90,
+        maximumSessionsPerDay: 1,
+        maximumWeeklyMinutes: 90,
+        maximumWeeklySessions: 1,
+        allowDoubleDays: false,
+        plannedSchedule: [
+          { ...event("bike", "2026-07-06T08:00:00Z", "2026-07-06T09:00:00Z"), sport: "cycling" },
+          {
+            ...event("strength", "2026-07-06T10:00:00Z", "2026-07-06T11:00:00Z"),
+            sport: "strength_training",
+          },
+        ],
+      }),
+    );
+
+    expect(result.requiredSessionCoverage.estimate).toBe(0);
+    expect(result.constraints.hardRestConflicts.estimate).toBe(2);
+    expect(result.constraints.dailyDurationExcesses.estimate).toBe(1);
+    expect(result.constraints.dailySessionCapExcesses.estimate).toBe(1);
+    expect(result.constraints.weeklyDurationExcesses.estimate).toBe(1);
+    expect(result.constraints.weeklySessionCapExcesses.estimate).toBe(1);
+    expect(result.constraints.doubleDayConflicts.estimate).toBe(1);
   });
 
   it("counts planned and confirmed lifecycle entries but excludes completed and cancelled", () => {
@@ -287,6 +368,111 @@ describe("calculateTrainingFeasibility", () => {
       }),
     );
     expect(result.compatibleScheduledMinutes.estimate).toBe(120);
+  });
+
+  it("expands recurrence in its own timezone before applying planning-zone availability", () => {
+    const result = calculateTrainingFeasibility(
+      input({
+        timezone: "UTC",
+        planningTimezone: "UTC",
+        planningStart: "2026-03-01T00:00:00Z",
+        goalDate: "2026-03-15",
+        hardRestDays: [],
+        requiredWeeklyMinutes: 120,
+        availabilityWindows: [{ day: "sunday", startMinuteLocal: 960, endMinuteLocal: 1020 }],
+        plannedSchedule: [
+          event(
+            "mixed-zone-dst",
+            "2026-03-01T17:00:00Z",
+            "2026-03-01T18:00:00Z",
+            "planned",
+            {
+              frequency: "weekly",
+              interval: 1,
+              until: "2026-03-15T16:00:00Z",
+              timezone: "America/Los_Angeles",
+            },
+            "Europe/London",
+          ),
+        ],
+      }),
+    );
+
+    expect(result.compatibleScheduledMinutes.estimate).toBe(120);
+  });
+
+  it("segments overnight sessions at planning-local midnights for rest, day, and week constraints", () => {
+    const result = calculateTrainingFeasibility(
+      input({
+        timezone: "UTC",
+        planningTimezone: "UTC",
+        planningStart: "2026-07-05T00:00:00Z",
+        goalDate: "2026-07-06",
+        hardRestDays: ["monday"],
+        maximumDailyMinutes: 90,
+        maximumWeeklyMinutes: 90,
+        plannedSchedule: [event("split", "2026-07-05T23:00:00Z", "2026-07-06T01:00:00Z")],
+      }),
+    );
+
+    expect(result.constraints.hardRestConflicts.estimate).toBe(1);
+    expect(result.constraints.dailyDurationExcesses.estimate).toBe(0);
+    expect(result.constraints.weeklyDurationExcesses.estimate).toBe(0);
+  });
+
+  it("counts an overnight event once per week for global and sport session caps", () => {
+    const overnight = event("overnight", "2026-07-07T23:00:00Z", "2026-07-08T01:00:00Z");
+    const overrides = {
+      timezone: "UTC",
+      planningTimezone: "UTC",
+      planningStart: "2026-07-06T00:00:00Z",
+      goalDate: "2026-07-12",
+      maximumWeeklySessions: 1,
+      sportOverrides: [
+        {
+          sport: "cycling",
+          caps: {
+            maximumSessionDurationMinutes: null,
+            maximumWeeklyMinutes: null,
+            maximumSessionsPerWeek: 1,
+          },
+        },
+      ],
+    };
+    const oneEvent = calculateTrainingFeasibility(
+      input({ ...overrides, plannedSchedule: [overnight] }),
+    );
+    const twoEvents = calculateTrainingFeasibility(
+      input({
+        ...overrides,
+        plannedSchedule: [
+          overnight,
+          event("separate", "2026-07-09T08:00:00Z", "2026-07-09T09:00:00Z"),
+        ],
+      }),
+    );
+
+    expect(oneEvent.constraints.weeklySessionCapExcesses.estimate).toBe(0);
+    expect(oneEvent.constraints.sportOverrideExcesses.estimate).toBe(0);
+    expect(twoEvents.constraints.weeklySessionCapExcesses.estimate).toBe(1);
+    expect(twoEvents.constraints.sportOverrideExcesses.estimate).toBe(1);
+  });
+
+  it("splits sessions at DST planning-local midnights", () => {
+    const result = calculateTrainingFeasibility(
+      input({
+        timezone: "America/Los_Angeles",
+        planningTimezone: "America/Los_Angeles",
+        planningStart: "2026-03-07T00:00:00Z",
+        goalDate: "2026-03-08",
+        hardRestDays: ["sunday"],
+        maximumDailyMinutes: 100,
+        plannedSchedule: [event("dst-overnight", "2026-03-08T07:30:00Z", "2026-03-08T09:30:00Z")],
+      }),
+    );
+
+    expect(result.constraints.hardRestConflicts.estimate).toBe(1);
+    expect(result.constraints.dailyDurationExcesses.estimate).toBe(0);
   });
 
   it("applies recurring occurrences to rest-day and weekly cap conflicts", () => {

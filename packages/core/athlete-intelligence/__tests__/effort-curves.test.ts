@@ -7,6 +7,8 @@ import {
 } from "../model-input-contracts";
 import {
   calculateDurationAwareEffortCurve as calculateEffortCurve,
+  EFFORT_CURVE_DECISION_UNCERTAINTY_POLICY,
+  EFFORT_CURVE_DECISION_UNCERTAINTY_POLICY_VERSION,
   type EffortCurveTarget,
 } from "../policies/effort-curves";
 
@@ -147,6 +149,10 @@ describe("calculateDurationAwareEffortCurve", () => {
     }).threshold;
 
     expect(duplicated).toEqual(once);
+    expect(duplicated).toMatchObject({
+      state: "insufficient_evidence",
+      reasonCodes: ["single_lineage_not_recommendation_compatible"],
+    });
   });
 
   it("selects duplicate-lineage conflicts deterministically regardless of input order", () => {
@@ -173,8 +179,9 @@ describe("calculateDurationAwareEffortCurve", () => {
 
     expect(calculate([older, newer])).toEqual(calculate([newer, older]));
     expect(calculate([older, newer])).toMatchObject({
-      estimate: 300,
-      contributingSourceIds: ["effort:newer"],
+      estimate: null,
+      contributingSourceIds: ["effort:newer:duration", "effort:newer"],
+      reasonCodes: ["single_lineage_not_recommendation_compatible"],
     });
   });
 
@@ -194,7 +201,11 @@ describe("calculateDurationAwareEffortCurve", () => {
       "effort:short:duration",
       "effort:short",
     ]);
-    expect(result.uncertainty).toBe(1);
+    expect(result).toMatchObject({
+      state: "insufficient_evidence",
+      reasonCodes: ["single_lineage_not_recommendation_compatible"],
+      uncertainty: 1,
+    });
   });
 
   it("returns explicit unsupported states for incompatible sports and units", () => {
@@ -273,7 +284,89 @@ describe("calculateDurationAwareEffortCurve", () => {
       estimate: 225,
       unit: "seconds_per_kilometer",
     });
-    expect(result.highIntensity).toMatchObject({ state: "observed", estimate: 200 });
+    expect(result.highIntensity).toMatchObject({
+      state: "insufficient_evidence",
+      reasonCodes: ["single_lineage_not_recommendation_compatible"],
+    });
+  });
+
+  it("owns an immutable, versioned decision-uncertainty policy", () => {
+    expect(EFFORT_CURVE_DECISION_UNCERTAINTY_POLICY.version).toBe(
+      EFFORT_CURVE_DECISION_UNCERTAINTY_POLICY_VERSION,
+    );
+    expect(Object.isFrozen(EFFORT_CURVE_DECISION_UNCERTAINTY_POLICY)).toBe(true);
+    expect(Object.isFrozen(EFFORT_CURVE_DECISION_UNCERTAINTY_POLICY.uncertainty)).toBe(true);
+  });
+
+  it.each([
+    [
+      "single independent lineage",
+      [effort({ id: "only", duration: 300, value: 250 })],
+      "single_lineage_not_recommendation_compatible",
+    ],
+    [
+      "stale independent evidence",
+      [
+        effort({ id: "old-a", duration: 300, value: 250, observedAt: "2026-05-01T00:00:00.000Z" }),
+        effort({ id: "old-b", duration: 300, value: 250, observedAt: "2026-05-02T00:00:00.000Z" }),
+      ],
+      "stale_effort_evidence_not_recommendation_compatible",
+    ],
+    [
+      "divergent independent lineages",
+      [
+        effort({ id: "low", duration: 300, value: 200 }),
+        effort({ id: "high", duration: 300, value: 400 }),
+      ],
+      "divergent_independent_lineages_not_recommendation_compatible",
+    ],
+  ] as const)("marks %s insufficient for recommendation-compatible output", (_label, efforts, reasonCode) => {
+    const result = calculateDurationAwareEffortCurve({
+      model: model([...efforts]),
+      threshold: target(300),
+      highIntensity: target(300),
+    }).threshold;
+
+    expect(result).toMatchObject({
+      state: "insufficient_evidence",
+      estimate: null,
+      reasonCodes: [reasonCode],
+      uncertainty: 1,
+    });
+  });
+
+  it("uses independent lineage density and observation age as bounded uncertainty terms", () => {
+    const resultFor = (efforts: EffortObservationInput[]) =>
+      calculateDurationAwareEffortCurve({
+        model: model(efforts),
+        threshold: target(300),
+        highIntensity: target(300),
+      }).threshold;
+    const twoFresh = resultFor([
+      effort({ id: "a", duration: 300, value: 250 }),
+      effort({ id: "b", duration: 300, value: 250 }),
+    ]);
+    const threeFresh = resultFor([
+      effort({ id: "a", duration: 300, value: 250 }),
+      effort({ id: "b", duration: 300, value: 250 }),
+      effort({ id: "c", duration: 300, value: 250 }),
+    ]);
+    const fourFresh = resultFor([
+      effort({ id: "a", duration: 300, value: 250 }),
+      effort({ id: "b", duration: 300, value: 250 }),
+      effort({ id: "c", duration: 300, value: 250 }),
+      effort({ id: "d", duration: 300, value: 250 }),
+    ]);
+    const twoAging = resultFor([
+      effort({ id: "a", duration: 300, value: 250, observedAt: "2026-06-15T00:00:00.000Z" }),
+      effort({ id: "b", duration: 300, value: 250, observedAt: "2026-06-15T00:00:00.000Z" }),
+    ]);
+
+    expect(twoFresh).toMatchObject({ state: "estimated", estimate: 250 });
+    expect(threeFresh.uncertainty).toBeLessThan(twoFresh.uncertainty);
+    expect(fourFresh.uncertainty).toBeLessThan(threeFresh.uncertainty);
+    expect(twoAging.uncertainty).toBeGreaterThan(twoFresh.uncertainty);
+    expect(twoAging.uncertainty).toBeLessThan(1);
   });
 
   it.each([
@@ -339,6 +432,10 @@ describe("calculateDurationAwareEffortCurve", () => {
         threshold: target(100),
         highIntensity: target(100),
       }).threshold,
-    ).toMatchObject({ state: "observed", contributingSourceIds: [item.sourceId] });
+    ).toMatchObject({
+      state: "insufficient_evidence",
+      contributingSourceIds: [`${item.sourceId}:duration`, item.sourceId],
+      reasonCodes: ["single_lineage_not_recommendation_compatible"],
+    });
   });
 });

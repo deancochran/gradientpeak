@@ -4,6 +4,11 @@ import {
   estimatedResult,
   unavailableResult,
 } from "../calculation-result-contracts";
+import {
+  type FieldEvidenceEligibility,
+  type FieldEvidenceEligibilityInput,
+  resolveFieldEvidenceEligibility,
+} from "../eligibility";
 import { type LineageGroupId, type SourceId, selectOnePerLineage } from "../lineage";
 
 export const ACTIVITY_READINESS_POLICY_VERSION = "activity_readiness_v1" as const;
@@ -30,7 +35,21 @@ export interface ActivityHistoryObservation {
   averageHeartRateBpm?: number | null;
   efficiencyFactor?: number | null;
   decouplingPercent?: number | null;
+  /** One eligibility record may gate every numeric field on this activity. */
+  eligibility?: ActivityEvidenceInput;
+  /** Field records override the activity record, preserving the supplied raw values. */
+  evidence?: Partial<Record<ActivityEvidenceField, ActivityEvidenceInput>>;
 }
+
+export type ActivityEvidenceField =
+  | "durationSeconds"
+  | "trainingLoad"
+  | "averagePowerWatts"
+  | "averageHeartRateBpm"
+  | "efficiencyFactor"
+  | "decouplingPercent";
+
+export type ActivityEvidenceInput = Omit<FieldEvidenceEligibilityInput, "asOf" | "requiredSport">;
 
 export type ReadinessContextMetric =
   | "hrv_rmssd"
@@ -45,6 +64,7 @@ export interface ReadinessContextObservation {
   observedAt: string;
   metric: ReadinessContextMetric;
   value: number;
+  eligibility?: ActivityEvidenceInput;
 }
 
 export interface ActivityReadinessInput {
@@ -62,6 +82,8 @@ export interface ActivityReadinessResults {
   volumeTrend: CalculationResult;
   frequencyTrend: CalculationResult;
   readinessContext: CalculationResult;
+  /** Rejections are retained so callers do not mistake omitted values for zero. */
+  rejectedEvidence?: readonly Extract<FieldEvidenceEligibility, { eligible: false }>[];
 }
 
 const DAY_MS = 86_400_000;
@@ -99,14 +121,43 @@ function uniqueSources(values: readonly { sourceId: SourceId }[]): [SourceId, ..
 function unavailable(
   reason: string,
   sources: readonly { sourceId: SourceId }[] = [],
+  rejections: readonly Extract<FieldEvidenceEligibility, { eligible: false }>[] = [],
 ): CalculationResult {
+  const sourceIds = [
+    ...sources.map(({ sourceId }) => sourceId),
+    ...rejections.map(({ sourceId }) => sourceId),
+  ];
+  const reasonCodes = [reason, ...rejections.map(({ reasonCode }) => reasonCode)];
   return unavailableResult({
-    state: sources.length === 0 ? "unknown" : "insufficient_evidence",
-    missingDataState: sources.length === 0 ? "required_data_missing" : "partial",
+    state: sourceIds.length === 0 ? "unknown" : "insufficient_evidence",
+    missingDataState: sourceIds.length === 0 ? "required_data_missing" : "partial",
     uncertainty: 1,
-    reasonCodes: [reason],
-    contributingSourceIds: sources.map(({ sourceId }) => sourceId),
+    reasonCodes: [...new Set(reasonCodes)] as [string, ...string[]],
+    contributingSourceIds: [...new Set(sourceIds)],
   });
+}
+
+function fieldEligibility(
+  evidence: ActivityEvidenceInput | undefined,
+  asOf: string,
+  sport?: CanonicalSport,
+): FieldEvidenceEligibility | undefined {
+  return evidence === undefined
+    ? undefined
+    : resolveFieldEvidenceEligibility({ ...evidence, asOf, requiredSport: sport });
+}
+
+function uniqueRejections(
+  rejections: readonly Extract<FieldEvidenceEligibility, { eligible: false }>[],
+): Extract<FieldEvidenceEligibility, { eligible: false }>[] {
+  return [
+    ...new Map(
+      rejections.map((rejection) => [
+        `${rejection.sourceId}:${rejection.lineageGroupId}:${rejection.reasonCode}`,
+        rejection,
+      ]),
+    ).values(),
+  ];
 }
 
 function estimate(
@@ -130,8 +181,31 @@ export function calculateActivityReadinessV1(
   input: ActivityReadinessInput,
 ): ActivityReadinessResults {
   const assessmentMs = Date.parse(input.assessmentAt);
+  const activityRejections: Extract<FieldEvidenceEligibility, { eligible: false }>[] = [];
+  const eligibilityGatedActivities = input.activities.map((activity) => {
+    const gated = { ...activity };
+    for (const field of [
+      "durationSeconds",
+      "trainingLoad",
+      "averagePowerWatts",
+      "averageHeartRateBpm",
+      "efficiencyFactor",
+      "decouplingPercent",
+    ] as const) {
+      const eligibility = fieldEligibility(
+        activity.evidence?.[field] ?? activity.eligibility,
+        input.assessmentAt,
+        activity.sport,
+      );
+      if (eligibility !== undefined && !eligibility.eligible) {
+        activityRejections.push(eligibility);
+        gated[field] = null;
+      }
+    }
+    return gated;
+  });
   const deduplicatedActivities = selectOnePerLineage({
-    values: input.activities,
+    values: eligibilityGatedActivities,
     lineageOf: (activity) => activity.lineageGroupId,
     influenceOf: (activity) =>
       [
@@ -163,7 +237,7 @@ export function calculateActivityReadinessV1(
 
   const endurance =
     durationEligible.length === 0
-      ? unavailable("activity_duration_history_missing")
+      ? unavailable("activity_duration_history_missing", [], activityRejections)
       : estimate(
           durationEligible.reduce(
             (sum, { ageDays }, index) =>
@@ -196,7 +270,7 @@ export function calculateActivityReadinessV1(
   );
   const sportSpecificity =
     totalWeightedDuration === 0
-      ? unavailable("activity_duration_history_missing")
+      ? unavailable("activity_duration_history_missing", [], activityRejections)
       : estimate(
           matchingWeightedDuration / totalWeightedDuration,
           "ratio",
@@ -237,6 +311,7 @@ export function calculateActivityReadinessV1(
             ? "compatible_durability_history_missing"
             : "durability_baseline_insufficient",
           durabilityEligible.map(({ activity }) => activity),
+          activityRejections,
         )
       : (() => {
           const robust = robustValues(durabilityEligible.map(({ value }) => value));
@@ -286,7 +361,7 @@ export function calculateActivityReadinessV1(
           trendSources,
           1 / Math.sqrt(trendSources.length),
         )
-      : unavailable("volume_trend_history_insufficient", trendSources);
+      : unavailable("volume_trend_history_insufficient", trendSources, activityRejections);
   const frequencyTrend = enoughTrend
     ? estimate(
         recent.length / prior.length - 1,
@@ -295,10 +370,17 @@ export function calculateActivityReadinessV1(
         trendSources,
         1 / Math.sqrt(trendSources.length),
       )
-    : unavailable("frequency_trend_history_insufficient", trendSources);
+    : unavailable("frequency_trend_history_insufficient", trendSources, activityRejections);
 
+  const contextRejections: Extract<FieldEvidenceEligibility, { eligible: false }>[] = [];
+  const eligibilityGatedContext = (input.readinessContext ?? []).map((observation) => {
+    const eligibility = fieldEligibility(observation.eligibility, input.assessmentAt);
+    if (eligibility === undefined || eligibility.eligible) return observation;
+    contextRejections.push(eligibility);
+    return { ...observation, value: Number.NaN };
+  });
   const deduplicatedContext = selectOnePerLineage({
-    values: input.readinessContext ?? [],
+    values: eligibilityGatedContext,
     lineageOf: (observation) => observation.lineageGroupId,
     influenceOf: (observation) => Date.parse(observation.observedAt),
   });
@@ -359,6 +441,7 @@ export function calculateActivityReadinessV1(
       ? unavailable(
           "readiness_context_baseline_insufficient",
           contextEligible.map(({ observation }) => observation),
+          contextRejections,
         )
       : estimate(
           mean(metricSignals.map(({ signal }) => signal)),
@@ -376,5 +459,6 @@ export function calculateActivityReadinessV1(
     volumeTrend,
     frequencyTrend,
     readinessContext,
+    rejectedEvidence: uniqueRejections([...activityRejections, ...contextRejections]),
   };
 }
