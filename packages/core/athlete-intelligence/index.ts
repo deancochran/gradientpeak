@@ -12,6 +12,7 @@ export * from "./policies/activity-readiness";
 export * from "./policies/effort-curves";
 export * from "./policies/goal-demand";
 export * from "./policies/physiology-metrics";
+export * from "./policies/projection";
 export * from "./policies/training-feasibility";
 export * from "./projection-contracts";
 export * from "./uncertainty";
