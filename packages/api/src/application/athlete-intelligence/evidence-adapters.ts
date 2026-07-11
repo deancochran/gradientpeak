@@ -26,6 +26,8 @@ export function addEvidence(input: {
   sport: "run" | "bike" | "swim" | "strength" | "other" | null;
   modality: string;
   sourceType: EvidenceSourceType;
+  validityState?: EvidenceItem["validityState"];
+  compatibilityState?: EvidenceItem["compatibilityState"];
 }): string {
   input.registry[input.sourceId] = {
     athleteId: input.athleteId,
@@ -37,8 +39,8 @@ export function addEvidence(input: {
     modality: input.modality,
     sourceType: input.sourceType,
     qualityState: input.value === null ? "unknown" : "known",
-    validityState: "valid",
-    compatibilityState: "compatible",
+    validityState: input.validityState ?? "valid",
+    compatibilityState: input.compatibilityState ?? "compatible",
   };
   return input.sourceId;
 }

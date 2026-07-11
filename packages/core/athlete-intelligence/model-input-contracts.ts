@@ -305,6 +305,7 @@ export const athleteIntelligenceModelInputSchema = z
     efforts: z.array(effortObservationInputSchema).max(MAX_OBSERVATIONS),
     goals: z.array(goalInputSchema).max(32),
     trainingContext: trainingContextInputSchema,
+    scheduleReadState: z.enum(["complete", "truncated"]),
     plannedSchedule: z.array(plannedScheduleObservationSchema).max(MAX_OBSERVATIONS),
   })
   .strict()

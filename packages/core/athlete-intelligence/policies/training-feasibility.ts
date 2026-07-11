@@ -9,6 +9,7 @@ import {
 import { sourceIdSchema } from "../lineage";
 
 export const TRAINING_FEASIBILITY_POLICY_VERSION = "training-feasibility-v1" as const;
+export const MAX_RECURRENCE_OCCURRENCES = 1_000;
 
 const daySchema = z.enum([
   "monday",
@@ -56,6 +57,7 @@ export const trainingFeasibilityInputSchema = z
     recoveryPreference: z.enum(["more", "balanced", "less"]).nullable(),
     requiredWeeklyMinutes: nullableNonnegative,
     requiredWeeklySessions: z.number().int().nonnegative().nullable(),
+    scheduleComplete: z.boolean(),
     plannedSchedule: z.array(
       z
         .object({
@@ -65,9 +67,23 @@ export const trainingFeasibilityInputSchema = z
           lifecycle: z.enum(["planned", "confirmed", "completed", "cancelled"]),
           eventType: z.enum(["training", "race", "rest", "other"]),
           sport: z.string().min(1).nullable(),
+          recurrence: z
+            .object({
+              frequency: z.enum(["daily", "weekly", "monthly"]),
+              interval: z.number().int().min(1).max(52),
+              until: z.string().datetime({ offset: true }).nullable(),
+            })
+            .strict()
+            .nullable(),
         })
         .strict()
-        .refine((event) => Date.parse(event.endAt) >= Date.parse(event.startAt)),
+        .refine((event) => Date.parse(event.endAt) >= Date.parse(event.startAt))
+        .refine(
+          (event) =>
+            event.recurrence === null ||
+            event.recurrence.until === null ||
+            Date.parse(event.recurrence.until) >= Date.parse(event.startAt),
+        ),
     ),
   })
   .strict();
@@ -121,6 +137,16 @@ function unavailable(reason: string, sourceId: SourceId, unsupported = false): C
   });
 }
 
+function partial(reason: string, sourceId: SourceId): CalculationResult {
+  return unavailableResult({
+    state: "insufficient_evidence",
+    missingDataState: "partial",
+    uncertainty: 1,
+    reasonCodes: [reason],
+    contributingSourceIds: [sourceId],
+  });
+}
+
 function result(
   estimate: number,
   unit: string,
@@ -146,6 +172,7 @@ function formatter(timeZone: string): Intl.DateTimeFormat | null {
       day: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
+      second: "2-digit",
       hourCycle: "h23",
     });
   } catch {
@@ -164,8 +191,140 @@ function localParts(date: Date, format: Intl.DateTimeFormat) {
     year: parts.year ?? 0,
     month: parts.month ?? 0,
     day: parts.day ?? 0,
+    hour: parts.hour ?? 0,
+    second: parts.second ?? 0,
     minute: (parts.hour ?? 0) * 60 + (parts.minute ?? 0),
   };
+}
+
+type LocalDateTime = {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+  millisecond: number;
+};
+
+function wallClockParts(date: Date, format: Intl.DateTimeFormat): LocalDateTime {
+  const parts = localParts(date, format);
+  return {
+    ...parts,
+    minute: parts.minute % 60,
+    millisecond: date.getUTCMilliseconds(),
+  };
+}
+
+/** Converts a valid local wall-clock value to its instant without relying on the host timezone. */
+function wallClockToDate(value: LocalDateTime, format: Intl.DateTimeFormat): Date {
+  const wanted = Date.UTC(
+    value.year,
+    value.month - 1,
+    value.day,
+    value.hour,
+    value.minute,
+    value.second,
+    value.millisecond,
+  );
+  let instant = wanted;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const actual = wallClockParts(new Date(instant), format);
+    const represented = Date.UTC(
+      actual.year,
+      actual.month - 1,
+      actual.day,
+      actual.hour,
+      actual.minute,
+      actual.second,
+      actual.millisecond,
+    );
+    const correction = wanted - represented;
+    if (correction === 0) break;
+    instant += correction;
+  }
+  return new Date(instant);
+}
+
+function recurrenceDate(
+  original: LocalDateTime,
+  frequency: "daily" | "weekly" | "monthly",
+  interval: number,
+  index: number,
+): LocalDateTime | null {
+  const date = new Date(
+    Date.UTC(original.year, original.month - 1, original.day, original.hour, original.minute),
+  );
+  if (frequency === "daily") date.setUTCDate(date.getUTCDate() + interval * index);
+  if (frequency === "weekly") date.setUTCDate(date.getUTCDate() + 7 * interval * index);
+  if (frequency === "monthly") {
+    date.setUTCDate(1);
+    date.setUTCMonth(date.getUTCMonth() + interval * index);
+    const targetMonth = date.getUTCMonth();
+    date.setUTCDate(original.day);
+    if (date.getUTCMonth() !== targetMonth) return null;
+  }
+  return {
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate(),
+    hour: original.hour,
+    minute: original.minute,
+    second: original.second,
+    millisecond: original.millisecond,
+  };
+}
+
+type PlannedEvent = TrainingFeasibilityInput["plannedSchedule"][number];
+type ExpandedEvent = Omit<PlannedEvent, "startAt" | "endAt"> & {
+  startAt: string;
+  endAt: string;
+};
+
+function expandSchedule(
+  input: TrainingFeasibilityInput,
+  format: Intl.DateTimeFormat,
+  goal: string,
+) {
+  const occurrences: ExpandedEvent[] = [];
+  let truncated = false;
+  for (const event of input.plannedSchedule) {
+    const recurrence = event.recurrence;
+    const originalStart = wallClockParts(new Date(event.startAt), format);
+    const originalEnd = wallClockParts(new Date(event.endAt), format);
+    let occurrenceCount = 0;
+    for (let index = 0; ; index += 1) {
+      const startWall = recurrence
+        ? recurrenceDate(originalStart, recurrence.frequency, recurrence.interval, index)
+        : originalStart;
+      const endWall = recurrence
+        ? recurrenceDate(originalEnd, recurrence.frequency, recurrence.interval, index)
+        : originalEnd;
+      // Monthly recurrences skip calendar months that do not contain the original day.
+      if (!startWall || !endWall) continue;
+      const occurrenceStart = wallClockToDate(startWall, format);
+      if (recurrence?.until && occurrenceStart.getTime() > Date.parse(recurrence.until)) {
+        break;
+      }
+      if (localDateKey(occurrenceStart, format) > goal) {
+        break;
+      }
+      // Reaching the cap is complete unless this eligible occurrence proves an overflow exists.
+      if (occurrenceCount === MAX_RECURRENCE_OCCURRENCES) {
+        truncated = true;
+        break;
+      }
+      const occurrenceEnd = wallClockToDate(endWall, format);
+      occurrences.push({
+        ...event,
+        startAt: occurrenceStart.toISOString(),
+        endAt: occurrenceEnd.toISOString(),
+      });
+      occurrenceCount += 1;
+      if (!recurrence) break;
+    }
+  }
+  return { occurrences, truncated };
 }
 
 function localDateKey(date: Date, format: Intl.DateTimeFormat): string {
@@ -237,8 +396,13 @@ export function calculateTrainingFeasibility(
     start !== null && startKey !== null && input.goalDate !== null && input.goalDate >= startKey;
   const timezoneUnavailable = !timezoneFormat;
 
+  const expansion =
+    validHorizon && timezoneFormat && input.goalDate
+      ? expandSchedule(input, timezoneFormat, input.goalDate)
+      : { occurrences: [], truncated: false };
+  const scheduleComplete = input.scheduleComplete && !expansion.truncated;
   const activeEvents = validHorizon
-    ? input.plannedSchedule.filter(
+    ? expansion.occurrences.filter(
         (event) =>
           (event.lifecycle === "planned" || event.lifecycle === "confirmed") &&
           event.eventType === "training" &&
@@ -314,6 +478,18 @@ export function calculateTrainingFeasibility(
     if (demand === null) return unavailable(missingReason, source);
     return result(demand === 0 ? 1 : Math.min(1, numerator / demand), "ratio", reason, sources);
   };
+  const scheduleCoverage = (
+    numerator: number,
+    demand: number | null,
+    missingReason: string,
+    reason: string,
+  ) =>
+    scheduleComplete
+      ? coverage(numerator, demand, missingReason, reason)
+      : partial(
+          expansion.truncated ? "recurrence_expansion_truncated" : "schedule_read_truncated",
+          source,
+        );
 
   const byDay = new Map<string, typeof activeEvents>();
   const byWeek = new Map<string, typeof activeEvents>();
@@ -329,15 +505,25 @@ export function calculateTrainingFeasibility(
   const countDays = (predicate: (events: typeof activeEvents) => boolean) =>
     [...byDay.values()].filter(predicate).length;
   const capResult = (cap: number | boolean | null, value: number, reason: string) =>
-    timezoneUnavailable
-      ? unavailable("timezone_missing_or_unsupported", source, true)
-      : cap === null
-        ? unavailable(`${reason}_cap_missing`, source)
-        : result(value, "count", reason, sources);
+    !scheduleComplete
+      ? partial(
+          expansion.truncated ? "recurrence_expansion_truncated" : "schedule_read_truncated",
+          source,
+        )
+      : timezoneUnavailable
+        ? unavailable("timezone_missing_or_unsupported", source, true)
+        : cap === null
+          ? unavailable(`${reason}_cap_missing`, source)
+          : result(value, "count", reason, sources);
   const constraintResult = (value: number, reason: string) =>
-    timezoneUnavailable
-      ? unavailable("timezone_missing_or_unsupported", source, true)
-      : result(value, "count", reason, sources);
+    !scheduleComplete
+      ? partial(
+          expansion.truncated ? "recurrence_expansion_truncated" : "schedule_read_truncated",
+          source,
+        )
+      : timezoneUnavailable
+        ? unavailable("timezone_missing_or_unsupported", source, true)
+        : result(value, "count", reason, sources);
   const hardRestConflicts = activeEvents.filter((event) => {
     const effectiveStart = new Date(Math.max(Date.parse(event.startAt), (start as Date).getTime()));
     const key = localDateKey(effectiveStart, timezoneFormat as Intl.DateTimeFormat);
@@ -405,7 +591,7 @@ export function calculateTrainingFeasibility(
       "required_training_minutes_missing",
       "availability_time_coverage",
     ),
-    requiredSessionCoverage: coverage(
+    requiredSessionCoverage: scheduleCoverage(
       activeEvents.length,
       demandedSessions,
       "required_weekly_sessions_missing",
@@ -415,13 +601,18 @@ export function calculateTrainingFeasibility(
       ? unavailable("timezone_missing_or_unsupported", source, true)
       : !validHorizon
         ? unavailable("goal_or_planning_horizon_missing", source)
-        : result(
-            compatibleScheduledMinutes,
-            "minutes",
-            "availability_compatible_scheduled_minutes",
-            sources,
-          ),
-    scheduleCoverage: coverage(
+        : !scheduleComplete
+          ? partial(
+              expansion.truncated ? "recurrence_expansion_truncated" : "schedule_read_truncated",
+              source,
+            )
+          : result(
+              compatibleScheduledMinutes,
+              "minutes",
+              "availability_compatible_scheduled_minutes",
+              sources,
+            ),
+    scheduleCoverage: scheduleCoverage(
       compatibleScheduledMinutes,
       demandedMinutes,
       "required_training_minutes_missing",

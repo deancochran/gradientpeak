@@ -32,7 +32,6 @@ import {
 } from "./evidence-adapters";
 
 const DAY = 86_400_000;
-const SCHEDULE_HORIZON_DAYS = 365;
 const RECURRING_EVENT_PAGE_SIZE = 100;
 const MAX_RECURRING_EVENTS_SCANNED = 1_000;
 export const modelReaderBounds = {
@@ -138,6 +137,43 @@ export interface AthleteIntelligenceRows {
 
 type ScheduleRow = AthleteIntelligenceRows["schedule"][number];
 
+export type ScheduleRecurrenceParseResult =
+  | { state: "nonrecurring" }
+  | { state: "supported"; recurrence: NonNullable<ReturnType<typeof parseScheduleRecurrence>> }
+  | { state: "unsupported" }
+  | { state: "malformed" };
+
+/** Classifies persisted recurrence without silently conflating unsupported data with no recurrence. */
+export function parsePersistedScheduleRecurrence(
+  rule: string | null,
+  startsAt: Date,
+): ScheduleRecurrenceParseResult {
+  if (rule === null || rule.trim() === "") return { state: "nonrecurring" };
+  const recurrence = parseScheduleRecurrence(rule, startsAt);
+  if (recurrence) return { state: "supported", recurrence };
+  const body = rule.replace(/^RRULE:/i, "");
+  const components = body.split(";");
+  const structurallyValid = components.every((component) => {
+    const separator = component.indexOf("=");
+    return (
+      separator > 0 && separator === component.lastIndexOf("=") && separator < component.length - 1
+    );
+  });
+  if (!structurallyValid) return { state: "malformed" };
+  const keys = components.map((component) =>
+    component.slice(0, component.indexOf("=")).toUpperCase(),
+  );
+  if (new Set(keys).size !== keys.length) return { state: "malformed" };
+  if (keys.some((key) => !["FREQ", "INTERVAL", "UNTIL"].includes(key))) {
+    return { state: "unsupported" };
+  }
+  const frequency = components.find((component) => /^FREQ=/i.test(component))?.split("=")[1];
+  if (frequency && !["DAILY", "WEEKLY", "MONTHLY"].includes(frequency.toUpperCase())) {
+    return { state: "unsupported" };
+  }
+  return { state: "malformed" };
+}
+
 export async function readEligibleRecurringEventPages(input: {
   asOf: Date;
   limit: number;
@@ -149,31 +185,57 @@ export async function readEligibleRecurringEventPages(input: {
   const maxScanned = input.maxScanned ?? MAX_RECURRING_EVENTS_SCANNED;
   const eligible: ScheduleRow[] = [];
   let scanned = 0;
+  let recurrenceReadIncomplete = false;
 
-  while (eligible.length < input.limit && scanned < maxScanned) {
+  while (eligible.length <= input.limit && scanned < maxScanned) {
     const requestSize = Math.min(pageSize, maxScanned - scanned);
-    const page = await input.readPage(scanned, requestSize);
+    const pageWithOverflow = await input.readPage(scanned, requestSize + 1);
+    const hasMore = pageWithOverflow.length > requestSize;
+    const page = pageWithOverflow.slice(0, requestSize);
     scanned += page.length;
     for (const row of page) {
-      const recurrence = parseScheduleRecurrence(row.recurrenceRule, row.startsAt);
-      if (recurrence && (recurrence.until === null || new Date(recurrence.until) >= input.asOf)) {
+      const parsed = parsePersistedScheduleRecurrence(row.recurrenceRule, row.startsAt);
+      if (parsed.state === "unsupported" || parsed.state === "malformed") {
+        recurrenceReadIncomplete = true;
+      }
+      if (
+        parsed.state === "supported" &&
+        (parsed.recurrence.until === null || new Date(parsed.recurrence.until) >= input.asOf)
+      ) {
         eligible.push(row);
-        if (eligible.length === input.limit) break;
+        if (eligible.length > input.limit) {
+          return { rows: eligible.slice(0, input.limit), truncated: true };
+        }
       }
     }
-    if (page.length < requestSize) return { rows: eligible, truncated: false };
+    if (!hasMore) return { rows: eligible, truncated: recurrenceReadIncomplete };
   }
 
-  return { rows: eligible, truncated: eligible.length < input.limit };
+  return { rows: eligible.slice(0, input.limit), truncated: true };
+}
+
+export function mergeBoundedScheduleRows(input: {
+  nonrecurringRows: ScheduleRow[];
+  recurring: { rows: ScheduleRow[]; truncated: boolean };
+  limit: number;
+}): { rows: ScheduleRow[]; truncated: boolean } {
+  const nonrecurringOverflow = input.nonrecurringRows.length > input.limit;
+  const eligible = [...input.nonrecurringRows.slice(0, input.limit), ...input.recurring.rows].sort(
+    (a, b) => a.startsAt.getTime() - b.startsAt.getTime() || a.id.localeCompare(b.id),
+  );
+  return {
+    rows: eligible.slice(0, input.limit),
+    truncated: input.recurring.truncated || nonrecurringOverflow || eligible.length > input.limit,
+  };
 }
 
 export interface AthleteIntelligenceDataSource {
   /** `asOf` is transaction/observation time. Exclude mutable rows created or updated after it. */
   read(input: {
     profileId: string;
+    goalId: string;
     asOf: Date;
     activityFrom: Date;
-    scheduleThrough: Date;
     bounds: typeof modelReaderBounds;
   }): Promise<AthleteIntelligenceRows>;
 }
@@ -184,6 +246,32 @@ export function createDrizzleAthleteIntelligenceDataSource(
   return {
     async read(input) {
       const p = input.profileId;
+      const goalRows = await db
+        .select({
+          profileId: profileGoals.profile_id,
+          id: profileGoals.id,
+          targetDate: profileGoals.target_date,
+          priority: profileGoals.priority,
+          activityCategory: profileGoals.activity_category,
+          targetPayload: profileGoals.target_payload,
+          createdAt: profileGoals.created_at,
+          updatedAt: profileGoals.updated_at,
+        })
+        .from(profileGoals)
+        .where(
+          and(
+            eq(profileGoals.id, input.goalId),
+            eq(profileGoals.profile_id, p),
+            lte(profileGoals.created_at, input.asOf),
+            lte(profileGoals.updated_at, input.asOf),
+          ),
+        )
+        .limit(1);
+      const selectedGoal = goalRows[0];
+      const targetEnd = selectedGoal?.targetDate
+        ? new Date(`${selectedGoal.targetDate}T23:59:59.999Z`)
+        : input.asOf;
+      const scheduleThrough = targetEnd > input.asOf ? targetEnd : input.asOf;
       const temporalSummary = <T>(summaryValue: SQLWrapper, legacyValue: SQLWrapper) =>
         sql<T>`case when ${activitySummaries.updated_at} <= ${input.asOf} then coalesce(${summaryValue}, ${legacyValue}) else ${legacyValue} end`;
       const eventSelection = {
@@ -209,7 +297,6 @@ export function createDrizzleAthleteIntelligenceDataSource(
         metricRows,
         activityRows,
         effortRows,
-        goalRows,
         settingsRows,
         currentEventRows,
         recurringEvents,
@@ -374,27 +461,6 @@ export function createDrizzleAthleteIntelligenceDataSource(
           .limit(input.bounds.efforts),
         db
           .select({
-            profileId: profileGoals.profile_id,
-            id: profileGoals.id,
-            targetDate: profileGoals.target_date,
-            priority: profileGoals.priority,
-            activityCategory: profileGoals.activity_category,
-            targetPayload: profileGoals.target_payload,
-            createdAt: profileGoals.created_at,
-            updatedAt: profileGoals.updated_at,
-          })
-          .from(profileGoals)
-          .where(
-            and(
-              eq(profileGoals.profile_id, p),
-              lte(profileGoals.created_at, input.asOf),
-              lte(profileGoals.updated_at, input.asOf),
-            ),
-          )
-          .orderBy(desc(profileGoals.updated_at), desc(profileGoals.id))
-          .limit(input.bounds.goals),
-        db
-          .select({
             profileId: profileTrainingSettings.profile_id,
             settings: profileTrainingSettings.settings,
             updatedAt: profileTrainingSettings.updated_at,
@@ -415,13 +481,13 @@ export function createDrizzleAthleteIntelligenceDataSource(
               eq(events.profile_id, p),
               lte(events.created_at, input.asOf),
               lte(events.updated_at, input.asOf),
-              lte(events.starts_at, input.scheduleThrough),
+              lte(events.starts_at, scheduleThrough),
               sql`${events.recurrence_rule} is null`,
               sql`(${events.starts_at} >= ${input.asOf} or ${events.ends_at} is null or ${events.ends_at} >= ${input.asOf})`,
             ),
           )
           .orderBy(asc(events.starts_at), asc(events.id))
-          .limit(input.bounds.schedule),
+          .limit(input.bounds.schedule + 1),
         readEligibleRecurringEventPages({
           asOf: input.asOf,
           limit: input.bounds.schedule,
@@ -434,7 +500,7 @@ export function createDrizzleAthleteIntelligenceDataSource(
                   eq(events.profile_id, p),
                   lte(events.created_at, input.asOf),
                   lte(events.updated_at, input.asOf),
-                  lte(events.starts_at, input.scheduleThrough),
+                  lte(events.starts_at, scheduleThrough),
                   sql`${events.recurrence_rule} is not null`,
                 ),
               )
@@ -443,6 +509,11 @@ export function createDrizzleAthleteIntelligenceDataSource(
               .offset(offset),
         }),
       ]);
+      const boundedSchedule = mergeBoundedScheduleRows({
+        nonrecurringRows: currentEventRows,
+        recurring: recurringEvents,
+        limit: input.bounds.schedule,
+      });
       return {
         profile: profile[0] ?? null,
         metrics: metricRows,
@@ -450,10 +521,8 @@ export function createDrizzleAthleteIntelligenceDataSource(
         efforts: effortRows,
         goals: goalRows,
         trainingSettings: settingsRows[0] ?? null,
-        schedule: [...currentEventRows, ...recurringEvents.rows]
-          .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime() || a.id.localeCompare(b.id))
-          .slice(0, input.bounds.schedule),
-        scheduleTruncated: recurringEvents.truncated,
+        schedule: boundedSchedule.rows,
+        scheduleTruncated: boundedSchedule.truncated,
       };
     },
   };
@@ -462,10 +531,12 @@ export function createDrizzleAthleteIntelligenceDataSource(
 export async function materializeAthleteIntelligenceModelInput(input: {
   dataSource: AthleteIntelligenceDataSource;
   profileId: string;
+  goalId?: string;
   asOf: Date;
   activityLookbackDays?: number;
 }): Promise<AthleteIntelligenceModelInput> {
   const asOf = new Date(input.asOf);
+  const goalId = input.goalId ?? "goal-1";
   const from = new Date(
     asOf.getTime() -
       Math.min(
@@ -474,12 +545,11 @@ export async function materializeAthleteIntelligenceModelInput(input: {
       ) *
         DAY,
   );
-  const scheduleThrough = new Date(asOf.getTime() + SCHEDULE_HORIZON_DAYS * DAY);
   const rows = await input.dataSource.read({
     profileId: input.profileId,
+    goalId,
     asOf,
     activityFrom: from,
-    scheduleThrough,
     bounds: modelReaderBounds,
   });
   if (!rows.profile || rows.profile.id !== input.profileId || rows.profile.updatedAt > asOf)
@@ -509,6 +579,8 @@ export async function materializeAthleteIntelligenceModelInput(input: {
     lineageGroupOverride?: string,
     rawValue = value,
     rawUnit = unit,
+    validityState: Parameters<typeof addEvidence>[0]["validityState"] = "valid",
+    compatibilityState: Parameters<typeof addEvidence>[0]["compatibilityState"] = "compatible",
   ) =>
     addEvidence({
       registry,
@@ -530,6 +602,8 @@ export async function materializeAthleteIntelligenceModelInput(input: {
       sport,
       modality: field,
       sourceType,
+      validityState,
+      compatibilityState,
     });
   const measured = (
     namespace: Parameters<typeof evidence>[0],
@@ -544,6 +618,8 @@ export async function materializeAthleteIntelligenceModelInput(input: {
     lineageGroupOverride?: string,
     rawValue = value,
     rawUnit = unit,
+    validityState: Parameters<typeof evidence>[12] = "valid",
+    compatibilityState: Parameters<typeof evidence>[13] = "compatible",
   ) => ({
     value,
     unit,
@@ -561,6 +637,8 @@ export async function materializeAthleteIntelligenceModelInput(input: {
         lineageGroupOverride,
         rawValue,
         rawUnit,
+        validityState,
+        compatibilityState,
       ),
     ],
   });
@@ -574,10 +652,34 @@ export async function materializeAthleteIntelligenceModelInput(input: {
     null,
     "manual_observation",
   );
+  const boundedMetrics = [...rows.metrics]
+    .filter((r) => r.recordedAt <= asOf && r.createdAt <= asOf && r.updatedAt <= asOf)
+    .sort((a, b) => b.recordedAt.getTime() - a.recordedAt.getTime() || b.id.localeCompare(a.id))
+    .slice(0, modelReaderBounds.metrics);
+  for (const row of boundedMetrics) {
+    const supportedType = metricTypes.includes(row.type as AthleteMetricType);
+    const canonical = supportedType
+      ? canonicalMetricValue(row.type as AthleteMetricType, row.value, row.unit)
+      : null;
+    evidence(
+      "metric",
+      row.id,
+      `${row.type}-raw`,
+      row.recordedAt,
+      row.value,
+      row.unit,
+      "profile_metric",
+      null,
+      row.id,
+      row.referenceActivityId ? lineageId("activity", row.referenceActivityId) : undefined,
+      row.value,
+      row.unit,
+      "valid",
+      !supportedType ? "unsupported" : canonical === null ? "incompatible_unit" : "compatible",
+    );
+  }
   const latest = new Map<AthleteMetricType, AthleteIntelligenceRows["metrics"][number]>();
-  for (const row of [...rows.metrics]
-    .filter((r) => r.recordedAt <= asOf)
-    .sort((a, b) => b.recordedAt.getTime() - a.recordedAt.getTime() || b.id.localeCompare(a.id)))
+  for (const row of boundedMetrics)
     if (
       metricTypes.includes(row.type as AthleteMetricType) &&
       !latest.has(row.type as AthleteMetricType)
@@ -585,38 +687,29 @@ export async function materializeAthleteIntelligenceModelInput(input: {
       latest.set(row.type as AthleteMetricType, row);
   const metricEvidence = [...latest.entries()].flatMap(([type, row]) => {
     const value = canonicalMetricValue(type, row.value, row.unit);
-    if (value === null) return [];
     const metricLineage = row.referenceActivityId
       ? lineageId("activity", row.referenceActivityId)
       : undefined;
-    evidence(
-      "metric",
-      row.id,
-      `${type}-raw`,
-      row.recordedAt,
-      row.value,
-      row.unit,
-      "profile_metric",
-      null,
-      row.id,
-      metricLineage,
-    );
+    const rawSource = sourceId("metric", row.id, `${type}-raw`);
     return [
       {
         metricType: type,
         role: athleteMetricRoleByType[type],
-        value: measured(
-          "metric",
-          row.id,
-          type,
-          row.recordedAt,
-          value,
-          metricUnits[type],
-          "profile_metric",
-          null,
-          row.id,
-          metricLineage,
-        ),
+        value:
+          value === null
+            ? { value: row.value, unit: row.unit, evidenceSourceIds: [rawSource] }
+            : measured(
+                "metric",
+                row.id,
+                type,
+                row.recordedAt,
+                value,
+                metricUnits[type],
+                "profile_metric",
+                null,
+                row.id,
+                metricLineage,
+              ),
       },
     ];
   });
@@ -671,15 +764,32 @@ export async function materializeAthleteIntelligenceModelInput(input: {
             weight.id,
             weightLineage,
           )
-        : measured(
-            "manual",
-            `profile-${input.profileId}`,
-            "weight",
-            profileAt,
-            null,
-            "kilograms",
-            "manual_observation",
-          ),
+        : weight
+          ? measured(
+              "metric",
+              weight.id,
+              "weight_kg-unavailable",
+              weight.recordedAt,
+              null,
+              "kilograms",
+              "profile_metric",
+              null,
+              weight.id,
+              weightLineage,
+              undefined,
+              undefined,
+              "valid",
+              "incompatible_unit",
+            )
+          : measured(
+              "manual",
+              `profile-${input.profileId}`,
+              "weight",
+              profileAt,
+              null,
+              "kilograms",
+              "manual_observation",
+            ),
     heightCm: measured(
       "manual",
       `profile-${input.profileId}`,
@@ -790,7 +900,6 @@ export async function materializeAthleteIntelligenceModelInput(input: {
     .slice(0, modelReaderBounds.efforts)
     .flatMap((row) => {
       const canonical = canonicalEffortValue(row.kind, row.value, row.unit);
-      if (!canonical) return [];
       const sport = normalizeSport(row.sport);
       const effortLineage = row.activityId ?? `effort-${row.id}`;
       evidence(
@@ -803,7 +912,15 @@ export async function materializeAthleteIntelligenceModelInput(input: {
         "activity_effort",
         sport,
         effortLineage,
+        undefined,
+        row.value,
+        row.unit,
+        "valid",
+        canonical === null ? "incompatible_unit" : "compatible",
       );
+      // The frozen effort union requires a positive canonical power/speed field, so an
+      // incompatible raw effort remains registry-only rather than fabricating a value.
+      if (!canonical) return [];
       const record = evidence(
         "effort",
         row.id,
@@ -1021,13 +1138,23 @@ export async function materializeAthleteIntelligenceModelInput(input: {
       "training_load",
     ),
   };
+  let recurrenceReadIncomplete = false;
+  const selectedGoalTarget = rows.goals.find((goal) => goal.id === goalId)?.targetDate;
+  const scheduleThrough = selectedGoalTarget
+    ? new Date(`${selectedGoalTarget}T23:59:59.999Z`)
+    : asOf;
   const plannedSchedule = [...rows.schedule]
     .filter((r) => {
       if (r.createdAt > asOf || r.updatedAt > asOf || r.startsAt > scheduleThrough) return false;
       if (r.startsAt >= asOf || r.endsAt === null || r.endsAt >= asOf) return true;
-      const recurrence = parseScheduleRecurrence(r.recurrenceRule, r.startsAt);
+      const parsed = parsePersistedScheduleRecurrence(r.recurrenceRule, r.startsAt);
+      if (parsed.state === "unsupported" || parsed.state === "malformed") {
+        recurrenceReadIncomplete = true;
+        return false;
+      }
       return (
-        recurrence !== null && (recurrence.until === null || new Date(recurrence.until) >= asOf)
+        parsed.state === "supported" &&
+        (parsed.recurrence.until === null || new Date(parsed.recurrence.until) >= asOf)
       );
     })
     .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime() || a.id.localeCompare(b.id))
@@ -1098,7 +1225,14 @@ export async function materializeAthleteIntelligenceModelInput(input: {
           lifecycle,
           eventType,
           sport,
-          recurrence: parseScheduleRecurrence(row.recurrenceRule, row.startsAt),
+          recurrence: (() => {
+            const parsed = parsePersistedScheduleRecurrence(row.recurrenceRule, row.startsAt);
+            if (parsed.state === "unsupported" || parsed.state === "malformed") {
+              recurrenceReadIncomplete = true;
+              return null;
+            }
+            return parsed.state === "supported" ? parsed.recurrence : null;
+          })(),
           completionActivitySourceId: null,
           planSourceId,
           evidenceSourceIds: [record],
@@ -1118,5 +1252,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
     goals,
     trainingContext,
     plannedSchedule,
+    scheduleReadState:
+      rows.scheduleTruncated === true || recurrenceReadIncomplete ? "truncated" : "complete",
   });
 }

@@ -13,6 +13,11 @@ function event(
   startAt: string,
   endAt: string,
   lifecycle: "planned" | "confirmed" | "completed" | "cancelled" = "planned",
+  recurrence: {
+    frequency: "daily" | "weekly" | "monthly";
+    interval: number;
+    until: string | null;
+  } | null = null,
 ) {
   return {
     sourceId: eventSource(id),
@@ -21,6 +26,7 @@ function event(
     lifecycle,
     eventType: "training" as const,
     sport: "cycling",
+    recurrence,
   };
 }
 
@@ -47,6 +53,7 @@ function input(overrides: Partial<TrainingFeasibilityInput> = {}): TrainingFeasi
     recoveryPreference: "balanced",
     requiredWeeklyMinutes: 300,
     requiredWeeklySessions: 3,
+    scheduleComplete: true,
     plannedSchedule: [],
     ...overrides,
   };
@@ -241,5 +248,174 @@ describe("calculateTrainingFeasibility", () => {
     expect(result.constraints.weeklySessionCapExcesses.reasonCodes).toContain(
       "weekly_session_cap_missing",
     );
+  });
+
+  it("expands weekly recurrence and clips occurrences at the goal horizon", () => {
+    const result = calculateTrainingFeasibility(
+      input({
+        goalDate: "2026-07-20",
+        requiredWeeklySessions: 1,
+        plannedSchedule: [
+          event("weekly", "2026-07-06T08:00:00Z", "2026-07-06T09:00:00Z", "planned", {
+            frequency: "weekly",
+            interval: 1,
+            until: "2026-08-31T08:00:00Z",
+          }),
+        ],
+      }),
+    );
+    expect(result.requiredSessionCoverage.estimate).toBe(1);
+    expect(result.constraints.weeklySessionCapExcesses.estimate).toBe(0);
+    expect(result.compatibleScheduledMinutes.estimate).toBe(180);
+  });
+
+  it("preserves recurring local wall-clock time across DST", () => {
+    const result = calculateTrainingFeasibility(
+      input({
+        planningStart: "2026-03-22T00:00:00Z",
+        goalDate: "2026-03-29",
+        hardRestDays: [],
+        requiredWeeklyMinutes: 120,
+        availabilityWindows: [{ day: "sunday", startMinuteLocal: 540, endMinuteLocal: 600 }],
+        plannedSchedule: [
+          event("dst", "2026-03-22T09:00:00Z", "2026-03-22T10:00:00Z", "planned", {
+            frequency: "weekly",
+            interval: 1,
+            until: "2026-03-29T09:00:00Z",
+          }),
+        ],
+      }),
+    );
+    expect(result.compatibleScheduledMinutes.estimate).toBe(120);
+  });
+
+  it("applies recurring occurrences to rest-day and weekly cap conflicts", () => {
+    const result = calculateTrainingFeasibility(
+      input({
+        goalDate: "2026-07-13",
+        hardRestDays: ["monday"],
+        maximumWeeklyMinutes: 30,
+        plannedSchedule: [
+          event("caps", "2026-07-06T08:00:00Z", "2026-07-06T09:00:00Z", "planned", {
+            frequency: "weekly",
+            interval: 1,
+            until: null,
+          }),
+        ],
+      }),
+    );
+    expect(result.constraints.hardRestConflicts.estimate).toBe(2);
+    expect(result.constraints.weeklyDurationExcesses.estimate).toBe(2);
+  });
+
+  it("makes every schedule-derived result partial for an incomplete schedule read", () => {
+    const truncatedRead = calculateTrainingFeasibility(
+      input({
+        scheduleComplete: false,
+        hardRestDays: ["monday"],
+        maximumWeeklyMinutes: 30,
+        plannedSchedule: [event("incomplete", "2026-07-06T08:00:00Z", "2026-07-06T09:00:00Z")],
+      }),
+    );
+    expect(truncatedRead.timeCoverage.estimate).not.toBeNull();
+    for (const scheduleResult of [
+      truncatedRead.requiredSessionCoverage,
+      truncatedRead.compatibleScheduledMinutes,
+      truncatedRead.scheduleCoverage,
+      ...Object.values(truncatedRead.constraints),
+    ]) {
+      expect(scheduleResult.state).toBe("insufficient_evidence");
+      expect(scheduleResult.missingDataState).toBe("partial");
+      expect(scheduleResult.estimate).toBeNull();
+      expect(scheduleResult.reasonCodes).toContain("schedule_read_truncated");
+    }
+  });
+
+  it("makes positive compatible minutes and conflicts partial when recurrence expansion truncates", () => {
+    const boundedExpansion = calculateTrainingFeasibility(
+      input({
+        goalDate: "2030-01-01",
+        hardRestDays: ["monday"],
+        maximumDailyMinutes: 30,
+        plannedSchedule: [
+          event("bounded", "2026-07-06T08:00:00Z", "2026-07-06T09:00:00Z", "planned", {
+            frequency: "daily",
+            interval: 1,
+            until: null,
+          }),
+        ],
+      }),
+    );
+    for (const scheduleResult of [
+      boundedExpansion.requiredSessionCoverage,
+      boundedExpansion.compatibleScheduledMinutes,
+      boundedExpansion.scheduleCoverage,
+      ...Object.values(boundedExpansion.constraints),
+    ]) {
+      expect(scheduleResult.state).toBe("insufficient_evidence");
+      expect(scheduleResult.missingDataState).toBe("partial");
+      expect(scheduleResult.estimate).toBeNull();
+      expect(scheduleResult.reasonCodes).toContain("recurrence_expansion_truncated");
+    }
+  });
+
+  it("completes exactly 1000 eligible occurrences ending at the goal", () => {
+    const result = calculateTrainingFeasibility(
+      input({
+        planningStart: "2026-01-01T00:00:00Z",
+        goalDate: "2028-09-26",
+        plannedSchedule: [
+          event("exact-cap", "2026-01-01T08:00:00Z", "2026-01-01T09:00:00Z", "planned", {
+            frequency: "daily",
+            interval: 1,
+            until: "2028-09-26T08:00:00Z",
+          }),
+        ],
+      }),
+    );
+
+    expect(result.requiredSessionCoverage.state).toBe("estimated");
+    expect(result.requiredSessionCoverage.estimate).not.toBeNull();
+    expect(result.requiredSessionCoverage.reasonCodes).not.toContain(
+      "recurrence_expansion_truncated",
+    );
+  });
+
+  it("reports truncation only when a 1001st eligible occurrence exists", () => {
+    const result = calculateTrainingFeasibility(
+      input({
+        planningStart: "2026-01-01T00:00:00Z",
+        goalDate: "2028-09-27",
+        plannedSchedule: [
+          event("over-cap", "2026-01-01T08:00:00Z", "2026-01-01T09:00:00Z", "planned", {
+            frequency: "daily",
+            interval: 1,
+            until: "2028-09-27T08:00:00Z",
+          }),
+        ],
+      }),
+    );
+
+    expect(result.scheduleCoverage.state).toBe("insufficient_evidence");
+    expect(result.scheduleCoverage.reasonCodes).toContain("recurrence_expansion_truncated");
+  });
+
+  it("reports truncation when invalid monthly occurrences exhaust the expansion cap", () => {
+    const result = calculateTrainingFeasibility(
+      input({
+        goalDate: "2200-01-01",
+        plannedSchedule: [
+          event("month-end", "2026-01-31T08:00:00Z", "2026-01-31T09:00:00Z", "planned", {
+            frequency: "monthly",
+            interval: 1,
+            until: null,
+          }),
+        ],
+      }),
+    );
+
+    expect(result.scheduleCoverage.state).toBe("insufficient_evidence");
+    expect(result.scheduleCoverage.estimate).toBeNull();
+    expect(result.scheduleCoverage.reasonCodes).toContain("recurrence_expansion_truncated");
   });
 });

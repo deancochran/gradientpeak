@@ -1,11 +1,13 @@
 import { athleteIntelligenceModelInputSchema } from "@repo/core";
 import { describe, expect, it } from "vitest";
-import { parseScheduleRecurrence, sourceId, temporalOverlayValue } from "../evidence-adapters";
+import { sourceId, temporalOverlayValue } from "../evidence-adapters";
 import {
   type AthleteIntelligenceDataSource,
   type AthleteIntelligenceRows,
   materializeAthleteIntelligenceModelInput,
+  mergeBoundedScheduleRows,
   modelReaderBounds,
+  parsePersistedScheduleRecurrence,
   readEligibleRecurringEventPages,
 } from "../model-reader";
 
@@ -222,7 +224,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
 
     expect(request).toMatchObject({ profileId, asOf, bounds: modelReaderBounds });
     expect(request?.activityFrom.toISOString()).toBe("2025-12-03T12:00:00.000Z");
-    expect(request?.scheduleThrough.toISOString()).toBe("2027-06-01T12:00:00.000Z");
+    expect(request?.goalId).toBe("goal-1");
     expect(result.athleteId).toBe(profileId);
     expect(result.metricEvidence).toHaveLength(12); // eleven stored types plus derived age
     expect(result.metricEvidence.find((metric) => metric.metricType === "ftp")?.value.value).toBe(
@@ -378,7 +380,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     );
   });
 
-  it("normalizes supported effort units and defers unsupported units", async () => {
+  it("normalizes supported effort units and retains incompatible raw effort evidence", async () => {
     const value = rows();
     const effort = first(value.efforts);
     value.efforts = [
@@ -400,6 +402,12 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     expect(result.efforts.some((effortItem) => effortItem.sourceId.includes("unsupported"))).toBe(
       false,
     );
+    expect(result.evidenceRegistry["effort:unsupported:value-raw"]).toMatchObject({
+      lineageGroupId: "activity:effort-unsupported",
+      rawObservation: { value: 10, unit: "horsepower" },
+      validityState: "valid",
+      compatibilityState: "incompatible_unit",
+    });
   });
 
   it("maps persisted preferences, sport dose limits, and enabled baseline load only", async () => {
@@ -553,7 +561,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     ).toBe(true);
   });
 
-  it("defers unsupported metric units without relabeling physiology", async () => {
+  it("represents unsupported metric units as unavailable while retaining incompatible raw lineage", async () => {
     const value = rows();
     value.metrics = value.metrics.map((metric) =>
       metric.type === "weight_kg" ? { ...metric, unit: "stone" } : metric,
@@ -563,8 +571,27 @@ describe("materializeAthleteIntelligenceModelInput", () => {
       profileId,
       asOf,
     });
-    expect(result.metricEvidence.some((metric) => metric.metricType === "weight_kg")).toBe(false);
+    const metric = result.metricEvidence.find((item) => item.metricType === "weight_kg");
+    expect(metric?.value).toEqual({
+      value: 220,
+      unit: "stone",
+      evidenceSourceIds: ["metric:metric-weight_kg:weight_kg-raw"],
+    });
     expect(result.physiology.weightKg.value).toBeNull();
+    expect(result.physiology.weightKg.evidenceSourceIds).toEqual([
+      "metric:metric-weight_kg:weight_kg-unavailable",
+    ]);
+    expect(result.evidenceRegistry["metric:metric-weight_kg:weight_kg-raw"]).toMatchObject({
+      lineageGroupId: "metric:metric-weight_kg",
+      rawObservation: { value: 220, unit: "stone" },
+      validityState: "valid",
+      compatibilityState: "incompatible_unit",
+    });
+    expect(result.evidenceRegistry["metric:metric-weight_kg:weight_kg-unavailable"]).toMatchObject({
+      lineageGroupId: "metric:metric-weight_kg",
+      rawObservation: { value: null, unit: "kilograms" },
+      compatibilityState: "incompatible_unit",
+    });
   });
 
   it("encodes source ID components without delimiter collisions", () => {
@@ -622,10 +649,70 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     });
 
     expect(requests).toEqual([
-      { offset: 0, limit: 100 },
-      { offset: 100, limit: 100 },
+      { offset: 0, limit: 101 },
+      { offset: 100, limit: 101 },
     ]);
     expect(result).toMatchObject({ truncated: false, rows: [{ id: "active-after-expired" }] });
+  });
+
+  it("marks a nonrecurring limit-plus-one read as truncated", () => {
+    const event = first(rows().schedule);
+    const nonrecurringRows = Array.from({ length: modelReaderBounds.schedule + 1 }, (_, index) => ({
+      ...event,
+      id: `nonrecurring-${String(index).padStart(3, "0")}`,
+      startsAt: new Date(event.startsAt.getTime() + index * 60_000),
+    }));
+
+    const result = mergeBoundedScheduleRows({
+      nonrecurringRows,
+      recurring: { rows: [], truncated: false },
+      limit: modelReaderBounds.schedule,
+    });
+
+    expect(result.rows).toHaveLength(modelReaderBounds.schedule);
+    expect(result.truncated).toBe(true);
+  });
+
+  it("uses recurring limit-plus-one overflow without marking an exact exhausted bound truncated", async () => {
+    const event = first(rows().schedule);
+    const candidates = Array.from({ length: 3 }, (_, index) => ({
+      ...event,
+      id: `recurring-${index}`,
+      recurrenceRule: "FREQ=WEEKLY;UNTIL=20260701T010000Z",
+    }));
+    const read = (values: typeof candidates) =>
+      readEligibleRecurringEventPages({
+        asOf,
+        limit: 2,
+        pageSize: 2,
+        readPage: async (offset, limit) => values.slice(offset, offset + limit),
+      });
+
+    await expect(read(candidates.slice(0, 2))).resolves.toMatchObject({ truncated: false });
+    await expect(read(candidates)).resolves.toMatchObject({
+      rows: [{ id: "recurring-0" }, { id: "recurring-1" }],
+      truncated: true,
+    });
+  });
+
+  it("marks merged eligible recurring and nonrecurring overflow before the final slice", () => {
+    const event = first(rows().schedule);
+    const nonrecurring = { ...event, id: "later", startsAt: new Date("2026-06-03T00:00:00Z") };
+    const recurring = {
+      ...event,
+      id: "earlier",
+      startsAt: new Date("2026-06-02T00:00:00Z"),
+      recurrenceRule: "FREQ=WEEKLY;UNTIL=20260701T010000Z",
+    };
+
+    const result = mergeBoundedScheduleRows({
+      nonrecurringRows: [nonrecurring],
+      recurring: { rows: [recurring], truncated: false },
+      limit: 1,
+    });
+
+    expect(result.rows.map((row) => row.id)).toEqual(["earlier"]);
+    expect(result.truncated).toBe(true);
   });
 
   it("omits completed schedule entries whose activities are outside the bounded window", async () => {
@@ -746,6 +833,25 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     expect(first(result.activities).laps).toEqual([]);
   });
 
+  it("retains a selected-goal schedule event more than one year after assessment", async () => {
+    const value = rows();
+    value.goals[0] = { ...first(value.goals), targetDate: "2028-01-15" };
+    value.schedule[0] = {
+      ...first(value.schedule),
+      startsAt: new Date("2028-01-15T20:00:00.000Z"),
+      endsAt: new Date("2028-01-15T21:00:00.000Z"),
+    };
+
+    const result = await materializeAthleteIntelligenceModelInput({
+      dataSource: readRows(value),
+      profileId,
+      goalId: "goal-1",
+      asOf,
+    });
+
+    expect(first(result.plannedSchedule).startAt).toBe("2028-01-15T20:00:00.000Z");
+  });
+
   it("retains schedule entries that overlap the assessment window", async () => {
     const value = rows();
     const event = first(value.schedule);
@@ -813,14 +919,33 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     ]);
   });
 
-  it.each([
-    "FREQ=WEEKLY;BYDAY=MO",
-    "FREQ=DAILY;COUNT=4",
-    "FREQ=WEEKLY;FREQ=DAILY",
-    "FREQ=WEEKLY;INTERVAL",
-    "FREQ=WEEKLY;INTERVAL=2=3",
-    "FREQ=WEEKLY;UNTIL=20260230T100000Z",
-  ])("defers recurrence rules with unsupported or malformed semantics: %s", (rule) => {
-    expect(parseScheduleRecurrence(rule, new Date("2026-01-01T10:00:00.000Z"))).toBeNull();
+  it("classifies nonrecurring, supported, unsupported, and malformed recurrence", () => {
+    const startsAt = new Date("2026-01-01T10:00:00.000Z");
+    expect(parsePersistedScheduleRecurrence(null, startsAt)).toEqual({ state: "nonrecurring" });
+    expect(parsePersistedScheduleRecurrence("FREQ=WEEKLY;INTERVAL=2", startsAt)).toMatchObject({
+      state: "supported",
+      recurrence: { frequency: "weekly", interval: 2 },
+    });
+    expect(parsePersistedScheduleRecurrence("FREQ=WEEKLY;BYDAY=MO", startsAt)).toEqual({
+      state: "unsupported",
+    });
+    expect(parsePersistedScheduleRecurrence("FREQ=WEEKLY;INTERVAL", startsAt)).toEqual({
+      state: "malformed",
+    });
+  });
+
+  it("marks a persisted unsupported recurrence as a partial schedule read", async () => {
+    const value = rows();
+    value.schedule[0] = {
+      ...first(value.schedule),
+      recurrenceRule: "FREQ=WEEKLY;BYDAY=MO",
+    };
+    const result = await materializeAthleteIntelligenceModelInput({
+      dataSource: readRows(value),
+      profileId,
+      goalId: "goal-1",
+      asOf,
+    });
+    expect(result.scheduleReadState).toBe("truncated");
   });
 });

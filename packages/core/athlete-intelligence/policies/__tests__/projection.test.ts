@@ -251,6 +251,7 @@ function model(
       atlOverride: nullEv("training_load"),
     },
     plannedSchedule: [],
+    scheduleReadState: "complete",
   });
 }
 

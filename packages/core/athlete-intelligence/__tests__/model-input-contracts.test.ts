@@ -219,6 +219,7 @@ function input() {
       ctlOverride: ev(null, "training_load"),
       atlOverride: ev(null, "training_load"),
     },
+    scheduleReadState: "complete",
     plannedSchedule: [
       {
         sourceId: scheduleSourceId,
@@ -286,6 +287,18 @@ function event(candidate: ReturnType<typeof input>) {
 describe("athlete intelligence model input contracts", () => {
   it("accepts fully evidenced model input", () => {
     expect(athleteIntelligenceModelInputSchema.safeParse(input()).success).toBe(true);
+  });
+
+  it("requires a valid schedule read state and accepts truncated reads", () => {
+    const missing: Omit<ReturnType<typeof input>, "scheduleReadState"> & {
+      scheduleReadState?: string;
+    } = input();
+    delete missing.scheduleReadState;
+    rejects(missing as ReturnType<typeof input>);
+
+    const truncated = input();
+    truncated.scheduleReadState = "truncated";
+    expect(athleteIntelligenceModelInputSchema.safeParse(truncated).success).toBe(true);
   });
 
   it("rejects an evidenced numeric value not matching referenced raw evidence", () => {

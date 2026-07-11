@@ -46,6 +46,16 @@ function createProfileMetricRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function toPublicProfileMetricRow(row: Record<string, unknown>) {
+  const publicRow = { ...row };
+  delete publicRow.source;
+  delete publicRow.method;
+  delete publicRow.calculation_version;
+  delete publicRow.quality_score;
+  delete publicRow.provenance;
+  return publicRow;
+}
+
 function createDbMock(plan: QueryPlan = {}) {
   const callLog: DbCall[] = [];
 
@@ -165,7 +175,7 @@ describe("profileMetricsRouter", () => {
       cursor: "index:5",
     });
 
-    expect(result.items).toEqual(rows);
+    expect(result.items).toEqual(rows.map(toPublicProfileMetricRow));
     expect(result.total).toBe(2);
     expect(result.nextCursor).toBeUndefined();
     expect(callLog).toEqual(
@@ -203,7 +213,7 @@ describe("profileMetricsRouter", () => {
       date: new Date("2026-03-15T00:00:00.000Z"),
     });
 
-    expect(result).toEqual(row);
+    expect(result).toEqual(toPublicProfileMetricRow(row));
     expect(callLog).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ operation: "select.orderBy" }),
@@ -258,7 +268,7 @@ describe("profileMetricsRouter", () => {
         updated_at: expect.any(Date),
       }),
     );
-    expect(result).toEqual(created);
+    expect(result).toEqual(toPublicProfileMetricRow(created));
     expect(markProfileAnalysisDirtyMock).toHaveBeenCalledWith(expect.anything(), {
       profileId: "11111111-1111-4111-8111-111111111111",
       kinds: ["metrics"],
@@ -310,7 +320,7 @@ describe("profileMetricsRouter", () => {
       recorded_at: new Date("2026-03-20T07:15:00.000Z"),
       updated_at: expect.any(Date),
     });
-    expect(result).toEqual(updated);
+    expect(result).toEqual(toPublicProfileMetricRow(updated));
   });
 
   it("deletes an owned metric", async () => {
