@@ -27,9 +27,14 @@ export interface CTLProjectionConfig {
   recoveryWeekReduction?: number;
 }
 
+/** Convert an exponential time constant in days to its one-day smoothing factor. */
+function alphaForTimeConstant(timeConstant: number): number {
+  return 1 - Math.exp(-1 / timeConstant);
+}
+
 export function calculateCTL(previousCTL: number, todayTSS: number, userAge?: number): number {
   const timeConstant = getAgeAdjustedCTLTimeConstant(userAge);
-  const alpha = 2 / (timeConstant + 1);
+  const alpha = alphaForTimeConstant(timeConstant);
   return previousCTL + alpha * (todayTSS - previousCTL);
 }
 
@@ -42,7 +47,7 @@ export function calculateATL(
 ): number {
   const baseTimeConstant = getPersonalizedATLTimeConstant(userAge, userGender);
   const timeConstant = getIntensityAdjustedATLTimeConstant(baseTimeConstant, trainingQuality);
-  const alpha = 2 / (timeConstant + 1);
+  const alpha = alphaForTimeConstant(timeConstant);
   return previousATL + alpha * (todayTSS - previousATL);
 }
 
@@ -95,7 +100,7 @@ export function calculateTargetDailyTSS(
 ): number {
   const ctlGap = targetCTL - currentCTL;
   const dailyIncrease = ctlGap / daysToTarget;
-  const alpha = 2 / (getAgeAdjustedCTLTimeConstant(undefined) + 1);
+  const alpha = alphaForTimeConstant(getAgeAdjustedCTLTimeConstant(undefined));
   return currentCTL + dailyIncrease / alpha;
 }
 

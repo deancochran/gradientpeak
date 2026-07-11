@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { getPlanTabProjectionService } from "../planning/training-plans/base";
+import {
+  buildBaselineDailyRecommendedTssByDate,
+  getPlanTabProjectionService,
+} from "../planning/training-plans/base";
 
 vi.mock("../../utils/estimation-helpers", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../utils/estimation-helpers")>();
@@ -47,6 +50,26 @@ function createSupabaseMock(results: Record<string, QueryResult>) {
     },
   };
 }
+
+describe("baseline daily recommendation safety", () => {
+  it("does not populate target maps when plan sessions omit sport", () => {
+    const targets = buildBaselineDailyRecommendedTssByDate({
+      startDate: "2026-01-05",
+      endDate: "2026-01-11",
+      structure: { sessions: [{ offset_days: 1, estimated_tss: 60 }] },
+      blocks: [
+        {
+          start_date: "2026-01-05",
+          end_date: "2026-01-11",
+          target_weekly_tss_range: { min: 280, max: 320 },
+        },
+      ],
+      hasActivityHistory: true,
+    });
+
+    expect(targets.size).toBe(0);
+  });
+});
 
 describe("getPlanTabProjectionService", () => {
   it("returns a deterministic baseline projection payload", async () => {

@@ -2275,7 +2275,7 @@ describe("training plan creation domain", () => {
       ...fixtures.readyState,
       goalContext: {
         ...fixtures.readyState.goalContext,
-        selectedGoals: [fixtures.localGoal()],
+        selectedGoals: [fixtures.localGoal({ activityCategory: "run" })],
       },
       planPreferences: {
         ...fixtures.readyState.planPreferences,
@@ -2397,7 +2397,7 @@ describe("training plan creation domain", () => {
     expect(viewModel.dailyTrainingPathChart.weeks[0]).toMatchObject({
       label: "Week 1",
       plannedLoad: 120,
-      targetLoad: 290,
+      targetLoad: 115,
       scheduledFitness: expect.any(Number),
       targetFitness: expect.any(Number),
     });
@@ -2407,15 +2407,43 @@ describe("training plan creation domain", () => {
         targetLoadTss: point.targetLoadTss,
       })),
     ).toEqual([
-      { date: "2026-01-05", targetLoadTss: 126 },
-      { date: "2026-01-06", targetLoadTss: 86 },
+      { date: "2026-01-05", targetLoadTss: 80 },
+      { date: "2026-01-06", targetLoadTss: 0 },
       { date: "2026-01-07", targetLoadTss: 35 },
-      { date: "2026-01-08", targetLoadTss: 22 },
+      { date: "2026-01-08", targetLoadTss: 0 },
       { date: "2026-01-09", targetLoadTss: 0 },
-      { date: "2026-01-10", targetLoadTss: 21 },
+      { date: "2026-01-10", targetLoadTss: 0 },
       { date: "2026-01-11", targetLoadTss: 0 },
     ]);
     expect(viewModel.dailyTrainingPathChart.weeks[0]?.scheduledFitness ?? 0).toBeGreaterThan(30);
     expect(viewModel.dailyTrainingPathChart.weeks[0]?.targetFitness ?? 0).toBeGreaterThan(30);
+  });
+
+  it("does not populate mobile schedule targets when every goal is missing a sport", () => {
+    const fixtures = createTrainingPlanBuilderFixtures();
+    const state = {
+      ...fixtures.readyState,
+      goalContext: {
+        ...fixtures.readyState.goalContext,
+        selectedGoals: [fixtures.localGoal({ activityCategory: null })],
+      },
+    };
+    const creationPreview = deriveTrainingPlanCreationPreview({
+      sessions: state.structure.sessions.map((session) => ({
+        offsetDays: session.offsetDays,
+        assigned: session.activityPlan !== null,
+        estimatedTss: session.activityPlan?.estimatedTss ?? null,
+        estimatedDurationSeconds: session.activityPlan?.estimatedDurationSeconds ?? null,
+      })),
+    });
+
+    const viewModel = deriveBuilderPlanCreationViewModel({ creationPreview, state });
+
+    expect(
+      viewModel.dailyTrainingPathChart.dailyPoints.every((point) => point.targetLoadTss === 0),
+    ).toBe(true);
+    expect(viewModel.dailyTrainingPathChart.weeks.every((week) => week.targetLoad === 0)).toBe(
+      true,
+    );
   });
 });

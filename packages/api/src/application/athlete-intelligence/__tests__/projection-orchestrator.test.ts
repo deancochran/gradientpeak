@@ -91,6 +91,13 @@ function canonicalModel(): AthleteIntelligenceModelInput {
     sport: "bike",
   });
   const nullMetric = (unit: string) => measured(null, unit);
+  const bikeLoadIdentity = {
+    sport: "bike",
+    family: "tss" as const,
+    method: "normalized_power",
+    version: "1",
+    sourceDefinition: "first_party:ftp-300",
+  };
   const activityMetrics = {
     elapsedDurationSeconds: measured(7200, "seconds"),
     movingDurationSeconds: measured(7000, "seconds"),
@@ -108,7 +115,7 @@ function canonicalModel(): AthleteIntelligenceModelInput {
     maximumHeartRateBpm: nullMetric("beats_per_minute"),
     averageCadenceRpm: nullMetric("revolutions_per_minute"),
     maximumCadenceRpm: nullMetric("revolutions_per_minute"),
-    trainingLoad: measured(90, "score"),
+    trainingLoad: { ...measured(90, "score"), identity: bikeLoadIdentity },
     aerobicTrainingEffect: nullMetric("score"),
     anaerobicTrainingEffect: nullMetric("score"),
   };
@@ -267,8 +274,8 @@ function canonicalModel(): AthleteIntelligenceModelInput {
       strategy: "balanced",
       taperPreference: "standard",
       progressionPreference: "steady",
-      ctlOverride: nullMetric("training_load"),
-      atlOverride: nullMetric("training_load"),
+      ctlOverride: { ...nullMetric("training_load"), identity: null },
+      atlOverride: { ...nullMetric("training_load"), identity: null },
     },
     plannedSchedule: [
       {

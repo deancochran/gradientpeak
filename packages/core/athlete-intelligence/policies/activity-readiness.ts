@@ -1,3 +1,4 @@
+import { type LoadSeriesIdentity, sameLoadSeriesIdentity } from "../../load/load-series";
 import type { CanonicalSport } from "../../schemas/sport";
 import {
   type CalculationResult,
@@ -31,6 +32,7 @@ export interface ActivityHistoryObservation {
   sport: CanonicalSport;
   durationSeconds: number | null;
   trainingLoad?: number | null;
+  trainingLoadIdentity?: LoadSeriesIdentity | null;
   averagePowerWatts?: number | null;
   averageHeartRateBpm?: number | null;
   efficiencyFactor?: number | null;
@@ -342,15 +344,34 @@ export function calculateActivityReadinessV1(
     recent.length >= ACTIVITY_READINESS_CONSTANTS.minimumTrendActivitiesPerWindow &&
     prior.length >= ACTIVITY_READINESS_CONSTANTS.minimumTrendActivitiesPerWindow;
   const trendSources = [...recent, ...prior].map(({ activity }) => activity);
-  const recentVolume = enoughTrend
-    ? robustValues(
-        recent.map(({ activity }) => activity.trainingLoad ?? (activity.durationSeconds ?? 0) / 60),
-      ).reduce((sum, value) => sum + value, 0)
+  const trendActivities = [...recent, ...prior].map(({ activity }) => activity);
+  const firstLoadIdentity = trendActivities.find(
+    (activity) => activity.trainingLoad !== null && activity.trainingLoad !== undefined,
+  )?.trainingLoadIdentity;
+  const compatibleLoadTrend =
+    enoughTrend &&
+    firstLoadIdentity !== null &&
+    firstLoadIdentity !== undefined &&
+    trendActivities.every(
+      (activity) =>
+        activity.trainingLoad !== null &&
+        activity.trainingLoad !== undefined &&
+        activity.trainingLoadIdentity !== null &&
+        activity.trainingLoadIdentity !== undefined &&
+        activity.trainingLoadIdentity.sport === activity.sport &&
+        sameLoadSeriesIdentity(firstLoadIdentity, activity.trainingLoadIdentity),
+    );
+  const recentVolume = compatibleLoadTrend
+    ? robustValues(recent.map(({ activity }) => activity.trainingLoad as number)).reduce(
+        (sum, value) => sum + value,
+        0,
+      )
     : null;
-  const priorVolume = enoughTrend
-    ? robustValues(
-        prior.map(({ activity }) => activity.trainingLoad ?? (activity.durationSeconds ?? 0) / 60),
-      ).reduce((sum, value) => sum + value, 0)
+  const priorVolume = compatibleLoadTrend
+    ? robustValues(prior.map(({ activity }) => activity.trainingLoad as number)).reduce(
+        (sum, value) => sum + value,
+        0,
+      )
     : null;
   const volumeTrend =
     enoughTrend && priorVolume !== null && priorVolume > 0 && recentVolume !== null
@@ -361,7 +382,13 @@ export function calculateActivityReadinessV1(
           trendSources,
           1 / Math.sqrt(trendSources.length),
         )
-      : unavailable("volume_trend_history_insufficient", trendSources, activityRejections);
+      : unavailable(
+          enoughTrend && !compatibleLoadTrend
+            ? "load_trend_identity_unavailable"
+            : "volume_trend_history_insufficient",
+          trendSources,
+          activityRejections,
+        );
   const frequencyTrend = enoughTrend
     ? estimate(
         recent.length / prior.length - 1,

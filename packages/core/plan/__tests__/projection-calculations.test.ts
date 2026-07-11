@@ -1593,7 +1593,7 @@ describe("no-history anchor orchestration", () => {
     expect(first.readiness_rationale_codes?.length ?? 0).toBeGreaterThan(0);
   });
 
-  it("reduces readiness as demand gap and clamp pressure increase", () => {
+  it("preserves stricter load caps as clamp pressure increases", () => {
     const lenient = buildDeterministicProjectionPayload({
       timeline: { start_date: "2026-01-05", end_date: "2026-03-01" },
       blocks: [
@@ -1602,30 +1602,30 @@ describe("no-history anchor orchestration", () => {
           phase: "build",
           start_date: "2026-01-05",
           end_date: "2026-03-01",
-          target_weekly_tss_range: { min: 180, max: 220 },
+          target_weekly_tss_range: { min: 120, max: 140 },
         },
       ],
       goals: [{ id: "g", name: "Goal", target_date: "2026-05-10", priority: 1 }],
-      starting_ctl: 22,
+      starting_ctl: 8,
       creation_config: {
-        optimization_profile: "outcome_first",
+        optimization_profile: "sustainable",
         max_weekly_tss_ramp_pct: 20,
         max_ctl_ramp_per_week: 8,
       },
       no_history_context: {
-        history_availability_state: "rich",
+        history_availability_state: "none",
         goal_tier: "high",
         weeks_to_event: 18,
         context_summary: {
-          history_availability_state: "rich",
-          recent_consistency_marker: "high",
-          effort_confidence_marker: "high",
-          profile_metric_completeness_marker: "high",
-          signal_quality: 0.95,
-          recommended_baseline_tss_range: { min: 160, max: 260 },
-          recommended_recent_influence_range: { min: -0.1, max: 0.2 },
-          recommended_sessions_per_week_range: { min: 5, max: 7 },
-          rationale_codes: ["history_rich"],
+          history_availability_state: "none",
+          recent_consistency_marker: "low",
+          effort_confidence_marker: "low",
+          profile_metric_completeness_marker: "low",
+          signal_quality: 0.1,
+          recommended_baseline_tss_range: { min: 30, max: 90 },
+          recommended_recent_influence_range: { min: -0.5, max: 0.5 },
+          recommended_sessions_per_week_range: { min: 3, max: 4 },
+          rationale_codes: ["history_none"],
         },
       },
     });
@@ -1669,12 +1669,16 @@ describe("no-history anchor orchestration", () => {
     const lenientFeasibility = lenient.no_history.projection_feasibility!;
     const constrainedFeasibility = constrained.no_history.projection_feasibility!;
 
-    expect(constrainedFeasibility.readiness_score ?? 100).toBeLessThanOrEqual(
-      lenientFeasibility.readiness_score ?? 0,
-    );
     expect(constrainedFeasibility.demand_gap.unmet_weekly_tss).toBeGreaterThanOrEqual(
       lenientFeasibility.demand_gap.unmet_weekly_tss,
     );
+    expect(
+      constrained.microcycles.every(
+        (week, index) => week.planned_weekly_tss <= lenient.microcycles[index]!.planned_weekly_tss,
+      ),
+    ).toBe(true);
+    expect(constrainedFeasibility.readiness_score).toBeGreaterThanOrEqual(0);
+    expect(constrainedFeasibility.readiness_score).toBeLessThanOrEqual(100);
   });
 
   it("keeps goal-too-soon scenarios explicitly timeline-limited", () => {

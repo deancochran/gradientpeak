@@ -530,7 +530,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
       progressionPreference: null,
     });
     expect(result.trainingContext.sportDoseLimits[0]?.maximumSessionsPerWeek.value).toBe(4);
-    expect(result.trainingContext.ctlOverride.value).toBe(55);
+    expect(result.trainingContext.ctlOverride).toMatchObject({ value: null, identity: null });
     expect(result.plannedSchedule[0]?.startAt).toBe("2026-06-10T10:00:00.000Z");
     expect(result.readCoverage).toEqual({
       metrics: { state: "complete", reason: null },
@@ -688,7 +688,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     });
   });
 
-  it("maps persisted preferences, sport dose limits, and enabled baseline load only", async () => {
+  it("maps persisted preferences and abstains from identity-less baseline load", async () => {
     const result = await materializeAthleteIntelligenceModelInput({
       dataSource: readRows(rows()),
       profileId,
@@ -704,7 +704,8 @@ describe("materializeAthleteIntelligenceModelInput", () => {
       maximumSessionsPerWeek: { value: 4 },
     });
     expect(result.trainingContext.fatigueTolerance.value).toBe(0.3);
-    expect(result.trainingContext.ctlOverride.value).toBe(55);
+    expect(result.trainingContext.ctlOverride).toMatchObject({ value: null, identity: null });
+    expect(result.trainingContext.atlOverride).toMatchObject({ value: null, identity: null });
     expect(result.trainingContext.strategy).toBeNull();
   });
 

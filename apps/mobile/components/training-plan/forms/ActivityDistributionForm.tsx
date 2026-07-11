@@ -241,7 +241,7 @@ export function ActivityDistributionForm({
                 • For triathlons, common splits are 40% run, 40% bike, 20% swim
               </Text>
               <Text className="text-sm text-muted-foreground">
-                • Include strength training (5-15%) for injury prevention
+                • Strength activities can be included as part of the weekly time split
               </Text>
             </>
           ) : (

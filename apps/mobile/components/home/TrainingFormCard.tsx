@@ -4,12 +4,12 @@ import { View } from "react-native";
 
 interface FormStatus {
   label: string;
-  percentage: number;
+  percentage: number | null;
   color: string;
   explanation: string;
-  ctl: number;
-  atl: number;
-  tsb: number;
+  ctl: number | null;
+  atl: number | null;
+  tsb: number | null;
 }
 
 interface TrainingFormCardProps {
@@ -35,29 +35,31 @@ export function TrainingFormCard({ formStatus }: TrainingFormCardProps) {
   return (
     <View className="gap-3 rounded-xl border border-border bg-card p-4">
       <View className="flex-row items-center justify-between">
-        <Text className="text-base font-semibold text-foreground">Training Form</Text>
+        <Text className="text-base font-semibold text-foreground">Training Load Balance</Text>
         <Text className={`${getFormStatusColor().replace("bg-", "text-")} text-sm font-semibold`}>
           {formStatus.label}
         </Text>
       </View>
-      <Progress
-        value={formStatus.percentage}
-        className="h-3 w-full"
-        indicatorClassName={getFormStatusColor()}
-      />
+      {formStatus.percentage !== null ? (
+        <Progress
+          value={formStatus.percentage}
+          className="h-3 w-full"
+          indicatorClassName={getFormStatusColor()}
+        />
+      ) : null}
       <Text className="text-sm text-card-foreground">{formStatus.explanation}</Text>
       <View className="flex-row justify-between">
         <View>
-          <Text className="text-muted-foreground text-xs">Fitness (CTL)</Text>
-          <Text className="text-foreground font-semibold">{formStatus.ctl}</Text>
+          <Text className="text-muted-foreground text-xs">Long-term load (CTL)</Text>
+          <Text className="text-foreground font-semibold">{formStatus.ctl ?? "—"}</Text>
         </View>
         <View>
-          <Text className="text-muted-foreground text-xs">Fatigue (ATL)</Text>
-          <Text className="text-foreground font-semibold">{formStatus.atl}</Text>
+          <Text className="text-muted-foreground text-xs">Recent load (ATL)</Text>
+          <Text className="text-foreground font-semibold">{formStatus.atl ?? "—"}</Text>
         </View>
         <View>
-          <Text className="text-muted-foreground text-xs">Form (TSB)</Text>
-          <Text className="text-foreground font-semibold">{formStatus.tsb}</Text>
+          <Text className="text-muted-foreground text-xs">Load balance (TSB)</Text>
+          <Text className="text-foreground font-semibold">{formStatus.tsb ?? "—"}</Text>
         </View>
       </View>
     </View>

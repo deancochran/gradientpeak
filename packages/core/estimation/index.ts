@@ -209,7 +209,7 @@ export function estimateActivityBatch(
  * @param weekStart - Start date of week (typically Monday)
  * @param plannedActivities - All activities scheduled for the week
  * @param currentState - Current fitness state (CTL/ATL/TSB)
- * @returns Weekly load summary with projections and safety checks
+ * @returns Weekly load summary with descriptive projections
  */
 export function estimateWeeklyLoadComplete(
   weekStart: Date,
@@ -238,8 +238,14 @@ export function estimateWeeklyLoadComplete(
   // Generate recommendations
   const recommendations: string[] = [];
 
-  if (!baseEstimation.isSafe) {
-    recommendations.push("⚠️ Reduce training load - ramp rate exceeds safe limits");
+  if (baseEstimation.loadChangeState === "insufficient_data") {
+    recommendations.push(
+      "Planning comparison unavailable until a complete fitness state is provided",
+    );
+  } else if (baseEstimation.loadChangeState === "increasing") {
+    recommendations.push(
+      "Projected CTL is increasing; review the planned change with athlete context",
+    );
   }
 
   if (baseEstimation.totalTSS < currentState.ctl * 0.7) {
@@ -247,13 +253,10 @@ export function estimateWeeklyLoadComplete(
   }
 
   if (baseEstimation.totalTSS > currentState.ctl * 1.4) {
-    recommendations.push("High training load - ensure adequate recovery");
+    recommendations.push("Weekly load is above the current CTL reference");
   }
 
   const projectedTSB = currentState.ctl - baseEstimation.projectedCTL;
-  if (projectedTSB < -30) {
-    recommendations.push("Plan a recovery week - accumulated fatigue is high");
-  }
 
   return {
     weekStart,
@@ -265,6 +268,8 @@ export function estimateWeeklyLoadComplete(
     projectedTSB,
     rampRate: baseEstimation.rampRate,
     isSafe: baseEstimation.isSafe,
+    loadChangeState: baseEstimation.loadChangeState,
+    reasons: baseEstimation.reasons,
     recommendations,
   };
 }

@@ -1,5 +1,5 @@
 import { z } from "zod";
-
+import { loadSeriesIdentitySchema, sameLoadSeriesIdentity } from "../load/load-series";
 import { canonicalGoalObjectiveSchema } from "../schemas/goals/profile_goals";
 import { canonicalSportSchema } from "../schemas/sport";
 import {
@@ -17,6 +17,27 @@ const dateTimeSchema = z.string().datetime();
 const evidenceSourceIdsSchema = z.array(sourceIdSchema).min(1).max(32);
 const nullableNonnegativeNumberSchema = z.number().finite().nonnegative().nullable();
 const nullablePositiveNumberSchema = z.number().finite().positive().nullable();
+
+const identifiedLoadValueSchema = (unit: "score" | "training_load") =>
+  z
+    .object({
+      value: nullableNonnegativeNumberSchema,
+      unit: z.string(),
+      evidenceSourceIds: evidenceSourceIdsSchema,
+      identity: loadSeriesIdentitySchema.nullable().optional(),
+    })
+    .strict()
+    .superRefine((load, context) => {
+      if (load.unit !== unit) {
+        context.addIssue({ code: "custom", path: ["unit"], message: `Load unit must be ${unit}` });
+      }
+      if (load.value !== null && load.identity == null) {
+        context.addIssue({
+          code: "custom",
+          message: "Numeric load requires an exact load-series identity",
+        });
+      }
+    });
 
 /**
  * A bounded read never turns omitted rows into an absence claim. `state` is
@@ -120,7 +141,7 @@ export const activityMetricsSchema = z
     maximumHeartRateBpm: evidencedValue(nullableNonnegativeNumberSchema, "beats_per_minute"),
     averageCadenceRpm: evidencedValue(nullableNonnegativeNumberSchema, "revolutions_per_minute"),
     maximumCadenceRpm: evidencedValue(nullableNonnegativeNumberSchema, "revolutions_per_minute"),
-    trainingLoad: evidencedValue(nullableNonnegativeNumberSchema, "score"),
+    trainingLoad: identifiedLoadValueSchema("score"),
     aerobicTrainingEffect: evidencedValue(nullableNonnegativeNumberSchema, "score"),
     anaerobicTrainingEffect: evidencedValue(nullableNonnegativeNumberSchema, "score"),
   })
@@ -166,6 +187,16 @@ export const activityObservationInputSchema = z
     laps: z.array(lapSchema).max(MAX_NESTED_OBSERVATIONS),
   })
   .strict()
+  .superRefine((activity, context) => {
+    const identity = activity.metrics.trainingLoad.identity;
+    if (identity != null && identity.sport !== activity.sport) {
+      context.addIssue({
+        code: "custom",
+        path: ["metrics", "trainingLoad", "identity", "sport"],
+        message: "Training-load identity sport must match the activity sport",
+      });
+    }
+  })
   .refine(
     (activity) =>
       activity.endedAt === null || Date.parse(activity.endedAt) >= Date.parse(activity.startedAt),
@@ -272,10 +303,27 @@ export const trainingContextInputSchema = z
     strategy: z.enum(["conservative", "balanced", "aggressive"]).nullable(),
     taperPreference: z.enum(["none", "short", "standard", "extended"]).nullable(),
     progressionPreference: z.enum(["steady", "step", "adaptive"]).nullable(),
-    ctlOverride: evidencedValue(nullableNonnegativeNumberSchema, "training_load"),
-    atlOverride: evidencedValue(nullableNonnegativeNumberSchema, "training_load"),
+    ctlOverride: identifiedLoadValueSchema("training_load"),
+    atlOverride: identifiedLoadValueSchema("training_load"),
   })
-  .strict();
+  .strict()
+  .superRefine((trainingContext, context) => {
+    const ctl = trainingContext.ctlOverride;
+    const atl = trainingContext.atlOverride;
+    if (
+      ctl.value !== null &&
+      atl.value !== null &&
+      ctl.identity != null &&
+      atl.identity != null &&
+      !sameLoadSeriesIdentity(ctl.identity, atl.identity)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["atlOverride", "identity"],
+        message: "CTL and ATL overrides must use the same exact load-series identity",
+      });
+    }
+  });
 
 export const plannedScheduleObservationSchema = z
   .object({

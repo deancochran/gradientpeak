@@ -27,8 +27,8 @@ export function TrainingPlanNoPlanEmptyState({
           </View>
           <Text className="mb-3 text-center text-2xl font-bold">No Training Plan</Text>
           <Text className="mb-6 text-center text-base text-muted-foreground">
-            A training plan helps you build fitness systematically, track your progress, and prevent
-            overtraining through structured activities and recovery.
+            A training plan organizes activities, weekly targets, and rest-day constraints in one
+            schedule.
           </Text>
           <Button size="lg" onPress={onCreatePlan} className="w-full">
             <Text className="font-semibold text-primary-foreground">Create Training Plan</Text>
@@ -40,9 +40,9 @@ export function TrainingPlanNoPlanEmptyState({
           <View className="flex-row items-start gap-3">
             <Icon as={TrendingUp} size={20} className="mt-1 text-primary" />
             <View className="flex-1">
-              <Text className="font-semibold mb-1">Track Your Fitness</Text>
+              <Text className="font-semibold mb-1">Review Load History</Text>
               <Text className="text-sm text-muted-foreground">
-                Monitor CTL, ATL, and TSB to understand your fitness trends and form.
+                View CTL and ATL as load-history averages and TSB as the difference between them.
               </Text>
             </View>
           </View>
@@ -58,9 +58,9 @@ export function TrainingPlanNoPlanEmptyState({
           <View className="flex-row items-start gap-3">
             <Icon as={Activity} size={20} className="mt-1 text-primary" />
             <View className="flex-1">
-              <Text className="font-semibold mb-1">Prevent Overtraining</Text>
+              <Text className="font-semibold mb-1">Set Schedule Constraints</Text>
               <Text className="text-sm text-muted-foreground">
-                Recovery rules and intensity distribution keep you healthy and improving.
+                Configure rest days, consecutive activity days, and activity distribution.
               </Text>
             </View>
           </View>

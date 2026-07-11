@@ -22,6 +22,7 @@ import {
   creationConfigValueSchema,
   creationConstraintsSchema,
   type creationNormalizationInputSchema,
+  type DailyRecommendedLoadActivityCategory,
   deriveCreationContext,
   deriveCreationSuggestions,
   deriveNoHistoryGoalTierFromTargets,
@@ -1418,6 +1419,18 @@ function readPlanningSnapshotPreferredWeekdays(
     : [];
 }
 
+function readDailyRecommendedLoadActivityCategory(
+  value: unknown,
+): DailyRecommendedLoadActivityCategory | null {
+  return value === "run" ||
+    value === "bike" ||
+    value === "swim" ||
+    value === "strength" ||
+    value === "other"
+    ? value
+    : null;
+}
+
 function readStructureSessionsForDailyRecommendedLoad(
   structure: Record<string, unknown> | null | undefined,
 ) {
@@ -1457,12 +1470,15 @@ function readStructureSessionsForDailyRecommendedLoad(
                 ? intent.target_duration_seconds / 60
                 : null,
         intentType: typeof intent?.type === "string" ? intent.type : null,
+        activityCategory: readDailyRecommendedLoadActivityCategory(
+          session.activity_category ?? intent?.activityCategory ?? intent?.activity_category,
+        ),
       },
     ];
   });
 }
 
-function buildBaselineDailyRecommendedTssByDate(input: {
+export function buildBaselineDailyRecommendedTssByDate(input: {
   startDate: string;
   endDate: string;
   structure: Record<string, unknown> | null | undefined;
@@ -1493,7 +1509,13 @@ function buildBaselineDailyRecommendedTssByDate(input: {
     sessions: readStructureSessionsForDailyRecommendedLoad(input.structure),
   });
 
-  return new Map(points.map((point) => [point.date, point.recommendedLoadTss]));
+  return new Map(
+    points.flatMap((point) =>
+      point.actionableRecommendation
+        ? [[point.date, point.actionableRecommendation.recommendedLoadTss] as const]
+        : [],
+    ),
+  );
 }
 
 function collectBlockRampWarnings(
@@ -5143,7 +5165,7 @@ const trainingPlansProcedures = {
 
         if (hardPct > 30) {
           recommendations.push(
-            "High volume of hard training detected. Ensure adequate recovery to prevent overtraining.",
+            "Hard-intensity activities account for more than 30% of the activities in this date range.",
           );
         }
 

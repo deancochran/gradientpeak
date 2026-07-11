@@ -291,6 +291,57 @@ describe("athlete intelligence model input contracts", () => {
     expect(athleteIntelligenceModelInputSchema.safeParse(input()).success).toBe(true);
   });
 
+  it("requires exact identity for numeric activity load and matching activity sport", () => {
+    const missing = input();
+    const load = activity(missing).metrics.trainingLoad as {
+      value: number | null;
+      identity?: Record<string, unknown> | null;
+    };
+    load.value = 50;
+    rejects(missing);
+
+    const mismatched = input();
+    const mismatchedLoad = activity(mismatched).metrics.trainingLoad as typeof load;
+    mismatchedLoad.value = 50;
+    mismatchedLoad.identity = {
+      sport: "run",
+      family: "trimp",
+      method: "heart_rate_reserve",
+      version: "1",
+      sourceDefinition: "provider:a",
+    };
+    rejects(mismatched);
+  });
+
+  it("requires identified, mutually compatible CTL and ATL overrides", () => {
+    const candidate = input();
+    (candidate.trainingContext.ctlOverride as { value: number | null }).value = 50;
+    (candidate.trainingContext.atlOverride as { value: number | null }).value = 60;
+    (
+      candidate.trainingContext.ctlOverride as typeof candidate.trainingContext.ctlOverride & {
+        identity: unknown;
+      }
+    ).identity = {
+      sport: "bike",
+      family: "tss",
+      method: "normalized_power",
+      version: "1",
+      sourceDefinition: "provider:a",
+    };
+    (
+      candidate.trainingContext.atlOverride as typeof candidate.trainingContext.atlOverride & {
+        identity: unknown;
+      }
+    ).identity = {
+      sport: "bike",
+      family: "tss",
+      method: "normalized_power",
+      version: "1",
+      sourceDefinition: "provider:b",
+    };
+    rejects(candidate);
+  });
+
   it("keeps goal sport in the header for every objective discriminant", () => {
     const candidate = input();
     const goal = candidate.goals[0];

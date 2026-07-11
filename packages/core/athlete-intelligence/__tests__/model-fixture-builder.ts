@@ -148,6 +148,10 @@ export function buildAthleteIntelligenceModel(
     unit,
     evidenceSourceIds: [value === 3600 ? "activity:elapsed" : `manual:null-${unit}`],
   });
+  const unidentifiedLoad = (value: null, unit: "score" | "training_load") => ({
+    ...activityMetric(value, unit),
+    identity: null,
+  });
 
   return athleteIntelligenceModelInputSchema.parse({
     contractVersion: "2.0.0",
@@ -204,7 +208,7 @@ export function buildAthleteIntelligenceModel(
           maximumHeartRateBpm: activityMetric(null, "beats_per_minute"),
           averageCadenceRpm: activityMetric(null, "revolutions_per_minute"),
           maximumCadenceRpm: activityMetric(null, "revolutions_per_minute"),
-          trainingLoad: activityMetric(null, "score"),
+          trainingLoad: unidentifiedLoad(null, "score"),
           aerobicTrainingEffect: activityMetric(null, "score"),
           anaerobicTrainingEffect: activityMetric(null, "score"),
         },
@@ -251,8 +255,8 @@ export function buildAthleteIntelligenceModel(
       strategy: null,
       taperPreference: null,
       progressionPreference: null,
-      ctlOverride: evidenced(null, "training_load"),
-      atlOverride: evidenced(null, "training_load"),
+      ctlOverride: unidentifiedLoad(null, "training_load"),
+      atlOverride: unidentifiedLoad(null, "training_load"),
     },
     readCoverage: {
       metrics: { state: "complete", reason: null },

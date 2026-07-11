@@ -258,18 +258,22 @@ describe("goal detail persistence", () => {
     expect(navigateMock).toHaveBeenCalledWith("/goal-edit?id=goal-1");
   });
 
-  it("shows goal progress in the detail header", async () => {
+  it("shows evidence context and explicitly withholds outcome projection", async () => {
     renderNative(<GoalDetailScreen />);
 
-    expect(screen.getByTestId("goal-readiness-ring")).toBeTruthy();
-    expect(screen.getByText("72%")).toBeTruthy();
+    expect(screen.getByTestId("goal-evidence-card")).toBeTruthy();
+    expect(screen.getByText("Outcome projection unavailable")).toBeTruthy();
+    expect(screen.getByText("5K target")).toBeTruthy();
   });
 
-  it("labels fallback readiness as estimated", async () => {
+  it("does not render numeric readiness or forecast claims", async () => {
     renderNative(<GoalDetailScreen />);
 
-    expect(screen.getByText("Estimated readiness path")).toBeTruthy();
-    expect(screen.getByTestId("goal-readiness-estimated-note")).toBeTruthy();
-    expect(screen.getByTestId("goal-readiness-baseline-warning")).toBeTruthy();
+    expect(screen.queryByText(/readiness/i)).toBeNull();
+    expect(screen.queryByText(/forecast/i)).toBeNull();
+    expect(screen.queryByText(/target readiness/i)).toBeNull();
+    expect(screen.queryByText(/on.track|ahead|probability/i)).toBeNull();
+    expect(screen.queryByText("72%")).toBeNull();
+    expect(screen.queryByText(/\b(?:[0-9]|[1-9][0-9]|100)\s*\/\s*100\b/)).toBeNull();
   });
 });

@@ -97,8 +97,24 @@ export interface DailyLoadRecommendationActualOrScheduledPoint {
   tss?: number | null;
 }
 
+export type DailyLoadRecommendationDisposition =
+  | "recommended"
+  | "maintenance"
+  | "clarification_required"
+  | "abstain";
+
+export interface DailyLoadRecommendationActionableValues {
+  recommendedLoadTss: number;
+  recommendedDurationMinutes: number;
+  recommendedFatigueCost: number;
+  recommendedStrengthSets: number;
+}
+
 export interface DailyLoadRecommendationPoint {
   date: string;
+  recommendationState: "recommendation" | "maintenance_only" | "clarification_required" | "abstain";
+  recommendationDisposition: DailyLoadRecommendationDisposition;
+  actionableRecommendation: DailyLoadRecommendationActionableValues | null;
   recommendedLoadTss: number;
   recommendedDurationMinutes: number;
   recommendedFatigueCost: number;
@@ -191,6 +207,8 @@ type WeeklyAllocationCategory = NonNullable<
 interface PlannedSessionAssignment {
   activityCategory?: DailyLoadRecommendationActivityCategory;
   primaryFocus?: DailyLoadRecommendationPrimaryFocus;
+  estimatedTss?: number;
+  estimatedDurationMinutes?: number;
 }
 
 interface CategoryBudget {
@@ -203,7 +221,7 @@ interface CategoryBudget {
 }
 
 const FALLBACK_CATEGORY_BUDGET: CategoryBudget = {
-  activityCategory: "run",
+  activityCategory: "other",
   targetSessions: DEFAULT_WEEKLY_SESSION_COUNT,
   targetDurationMinutes: 180,
   role: "fallback",
@@ -707,6 +725,10 @@ function buildPlannedSessionByDate(input: BuildDailyLoadDistributionRecommendati
     byDate.set(date, {
       activityCategory: existing.activityCategory ?? activityCategory ?? undefined,
       primaryFocus: existing.primaryFocus ?? session.primaryFocus ?? undefined,
+      estimatedTss: (existing.estimatedTss ?? 0) + toFinitePositive(session.estimatedTss),
+      estimatedDurationMinutes:
+        (existing.estimatedDurationMinutes ?? 0) +
+        toFinitePositive(session.estimatedDurationMinutes),
     });
   }
   return byDate;
@@ -796,7 +818,7 @@ function primaryActivityCategory(
   const category = categories[0]?.[0];
   if (category === "bike" || category === "swim" || category === "strength") return category;
   if (category === "run") return "run";
-  return "run";
+  return "other";
 }
 
 function durationMinutesForCategory(category: WeeklyAllocationCategory): number {
@@ -966,7 +988,7 @@ function buildRecommendedLoadPoints(
     for (let dayOffset = 0; dayOffset < daysInWeek; dayOffset += 1) {
       const date = addDaysDateOnlyUtc(weekStartDate, dayOffset);
       const weekday = dayOffset;
-      if (sessionsByDate.has(date)) candidateWeekdays.add(weekday);
+      if (sessionsByDate.has(date) && !hardRestDays.has(weekday)) candidateWeekdays.add(weekday);
       if (preferredWeekdays.has(weekday) && !hardRestDays.has(weekday))
         candidateWeekdays.add(weekday);
     }
@@ -981,7 +1003,7 @@ function buildRecommendedLoadPoints(
     const rows = Array.from({ length: daysInWeek }, (_, dayOffset) => {
       const date = addDaysDateOnlyUtc(weekStartDate, dayOffset);
       const sessions = sessionsByDate.get(date) ?? [];
-      const hasSession = sessions.length > 0;
+      const hasSession = sessions.length > 0 && !hardRestDays.has(dayOffset);
       const sessionFocuses = sessions
         .map(focusFromSession)
         .sort((left, right) => recommendedWeightForFocus(right) - recommendedWeightForFocus(left));
@@ -1001,7 +1023,7 @@ function buildRecommendedLoadPoints(
         sessions.find((session) => session.activityCategory)?.activityCategory ??
         (focus.includes("strength") || ["hypertrophy", "max_strength", "power"].includes(focus)
           ? "strength"
-          : "run");
+          : "other");
       return { date, dayOffset, focus, activityCategory, weight };
     });
 
@@ -1022,10 +1044,32 @@ function buildRecommendedLoadPoints(
       rows.map((row) => row.weight),
     );
     rows.forEach((row, index) => {
-      const recommendedLoadTss = round1(tss[index] ?? 0);
+      const sessions = sessionsByDate.get(row.date) ?? [];
+      const hasExplicitSport = sessions.some((session) => Boolean(session.activityCategory));
+      const boundedSessionTss = sessions.reduce(
+        (sum, session) => sum + toFinitePositive(session.estimatedTss),
+        0,
+      );
+      const boundedSessionDuration = sessions.reduce(
+        (sum, session) => sum + toFinitePositive(session.estimatedDurationMinutes),
+        0,
+      );
+      const recommendationState: DailyLoadRecommendationPoint["recommendationState"] =
+        row.focus === "rest"
+          ? "abstain"
+          : !hasExplicitSport
+            ? "clarification_required"
+            : boundedSessionTss > 0 || boundedSessionDuration > 0
+              ? "maintenance_only"
+              : "abstain";
+      const maintenanceCap =
+        boundedSessionTss > 0 ? boundedSessionTss : boundedSessionDuration * 0.75;
+      const recommendedLoadTss =
+        recommendationState === "maintenance_only"
+          ? round1(Math.min(tss[index] ?? 0, maintenanceCap))
+          : round1(tss[index] ?? 0);
       const completedLoadTss = round1(completedByDate.get(row.date) ?? 0);
       const scheduledLoadTss = round1(scheduledByDate.get(row.date) ?? 0);
-      const sessions = sessionsByDate.get(row.date) ?? [];
       const hasSession = sessions.length > 0;
       const hasEstimatedSessionTss = sessions.some(
         (session) => toFinitePositive(session.estimatedTss) > 0,
@@ -1051,9 +1095,34 @@ function buildRecommendedLoadPoints(
       });
       results.push({
         date: row.date,
+        recommendationState,
+        recommendationDisposition:
+          recommendationState === "maintenance_only" ? "maintenance" : recommendationState,
+        actionableRecommendation: (
+          ["recommendation", "maintenance_only"] as readonly string[]
+        ).includes(recommendationState)
+          ? {
+              recommendedLoadTss,
+              recommendedDurationMinutes:
+                recommendationState === "maintenance_only" && boundedSessionDuration > 0
+                  ? round1(Math.min(duration[index] ?? 0, boundedSessionDuration))
+                  : round1(duration[index] ?? 0),
+              recommendedFatigueCost:
+                recommendationState === "maintenance_only"
+                  ? round1(Math.min(fatigue[index] ?? 0, maintenanceCap))
+                  : round1(fatigue[index] ?? 0),
+              recommendedStrengthSets: round1(strengthSets[index] ?? 0),
+            }
+          : null,
         recommendedLoadTss,
-        recommendedDurationMinutes: round1(duration[index] ?? 0),
-        recommendedFatigueCost: round1(fatigue[index] ?? 0),
+        recommendedDurationMinutes:
+          recommendationState === "maintenance_only" && boundedSessionDuration > 0
+            ? round1(Math.min(duration[index] ?? 0, boundedSessionDuration))
+            : round1(duration[index] ?? 0),
+        recommendedFatigueCost:
+          recommendationState === "maintenance_only"
+            ? round1(Math.min(fatigue[index] ?? 0, maintenanceCap))
+            : round1(fatigue[index] ?? 0),
         recommendedStrengthSets: round1(strengthSets[index] ?? 0),
         primaryFocus: row.focus,
         activityCategory: row.activityCategory,
@@ -1120,8 +1189,7 @@ function buildDistributionPoints(
         availableMinutesByDay.get(day) ?? (hasAvailabilityWindows ? 0 : 60);
       const hasSession = sessionDates.has(date) || date === eventDateInWeek;
       const preferred = preferredWeekdays.size === 0 || preferredWeekdays.has(day) || hasSession;
-      const available =
-        preferred && (!hardRestDays.has(day) || hasSession) && availabilityMinutes > 0;
+      const available = preferred && !hardRestDays.has(day) && availabilityMinutes > 0;
       return available ? [{ date, dayOffset, availabilityMinutes, hasSession }] : [];
     }).flat();
     const shouldUseFallbackTrainingDays = candidates.length === 0 && !input.preferenceProfile;
@@ -1164,10 +1232,29 @@ function buildDistributionPoints(
         templateFocuses[index] ?? focusForSelectedIndex(index, trainingDates.length, target?.phase),
       );
     });
-    const shareCap = trainingDates.length >= 3 ? 0.45 : 0.6;
+    const hasExplicitAllocation = categoryBudgets.some((budget) => budget.role !== "fallback");
     const athleteCapacityCap = resolveAthleteCapacityCap(input.capacityContext);
+    const recommendationStates = trainingDates.map(
+      (trainingDate, index): DailyLoadRecommendationPoint["recommendationState"] => {
+        const assignment = categoryAssignments[index];
+        const planned = plannedSessionByDate.get(trainingDate.date);
+        const hasExplicitSport = Boolean(
+          planned?.activityCategory ??
+            (assignment?.budget.role !== "fallback" ? assignment?.budget.activityCategory : null),
+        );
+        if (!hasExplicitSport) return "clarification_required";
+        if (hasExplicitAllocation && athleteCapacityCap !== null) return "recommendation";
+        const hasBoundedContext =
+          (planned?.estimatedTss ?? 0) > 0 ||
+          (planned?.estimatedDurationMinutes ?? 0) > 0 ||
+          hasExplicitAllocation;
+        return hasBoundedContext ? "maintenance_only" : "abstain";
+      },
+    );
+    const shareCap = trainingDates.length >= 3 ? 0.45 : 0.6;
     const caps = trainingDates.map((trainingDate, index) => {
       const focus = focuses[index] ?? "recovery";
+      const recommendationState = recommendationStates[index] ?? "abstain";
       const shareTssCap = weeklyTss * shareCap;
       const availabilityTssCap = hasAvailabilityWindows
         ? trainingDate.availabilityMinutes * tssPerMinuteForFocus(focus)
@@ -1179,10 +1266,25 @@ function buildDistributionPoints(
         maxSingleSessionMinutes === null
           ? Number.POSITIVE_INFINITY
           : maxSingleSessionMinutes * tssPerMinuteForFocus(focus);
+      const planned = plannedSessionByDate.get(trainingDate.date);
+      const maintenanceTssCap =
+        recommendationState === "maintenance_only"
+          ? (finitePositive(planned?.estimatedTss) ??
+            (finitePositive(planned?.estimatedDurationMinutes) !== null
+              ? (finitePositive(planned?.estimatedDurationMinutes) ?? 0) *
+                tssPerMinuteForFocus(focus)
+              : Number.POSITIVE_INFINITY))
+          : Number.POSITIVE_INFINITY;
       const capacityTssCap = athleteCapacityCap ?? Number.POSITIVE_INFINITY;
       return Math.max(
         0,
-        Math.min(shareTssCap, availabilityTssCap, maxSingleSessionTssCap, capacityTssCap),
+        Math.min(
+          shareTssCap,
+          availabilityTssCap,
+          maxSingleSessionTssCap,
+          capacityTssCap,
+          maintenanceTssCap,
+        ),
       );
     });
     const allocations = allocateWithCaps(
@@ -1227,6 +1329,10 @@ function buildDistributionPoints(
       if (input.preferenceProfile && candidates.length === 0)
         capReasonCodes.push("all_training_days_unavailable");
       const isRestDay = selectedIndex === undefined;
+      const recommendationState =
+        selectedIndex === undefined
+          ? "abstain"
+          : (recommendationStates[selectedIndex] ?? "abstain");
       const selectedHasPlannedSession = sessionDates.has(date);
       const confidenceScore = confidenceScoreForDistributionPoint({
         hasWeeklyTarget: Boolean(target),
@@ -1243,6 +1349,23 @@ function buildDistributionPoints(
       });
       points.push({
         date,
+        recommendationState,
+        recommendationDisposition:
+          recommendationState === "recommendation"
+            ? "recommended"
+            : recommendationState === "maintenance_only"
+              ? "maintenance"
+              : recommendationState,
+        actionableRecommendation: (
+          ["recommendation", "maintenance_only"] as readonly string[]
+        ).includes(recommendationState)
+          ? {
+              recommendedLoadTss,
+              recommendedDurationMinutes: 0,
+              recommendedFatigueCost: 0,
+              recommendedStrengthSets: 0,
+            }
+          : null,
         recommendedLoadTss,
         recommendedDurationMinutes: 0,
         recommendedFatigueCost: 0,
@@ -1251,7 +1374,8 @@ function buildDistributionPoints(
         activityCategory:
           focus === "rest"
             ? "other"
-            : (assignment?.budget.activityCategory ??
+            : (plannedSessionByDate.get(date)?.activityCategory ??
+              assignment?.budget.activityCategory ??
               primaryActivityCategory(input.weeklyAllocation)),
         scheduledLoadTss: 0,
         completedLoadTss: 0,

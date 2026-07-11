@@ -52,11 +52,12 @@ export type PlanUpcomingImpact = {
   scheduledAt: string;
   sport: string;
   estimatedLoad: number | null;
-  readinessDelta: number | null;
-  fitnessContribution: number | null;
-  confidence: string;
-  explanation: string;
+  loadContext: string;
 };
+
+type UpcomingImpactInput = NonNullable<
+  NonNullable<PlanSnapshot["insightTimeline"]>["upcoming_impact"]
+>[number];
 
 export type PlanScheduleAction = {
   label: string;
@@ -229,15 +230,15 @@ function gapTitle(type?: string | null) {
     case "overload_risk":
       return "Scheduled load looks too high";
     case "goal_risk":
-      return "Goal readiness is at risk";
+      return "Goal estimate unavailable";
     case "plan_gap":
       return "Schedule trails the recommended path";
     case "adherence_gap":
       return "Completed work is behind schedule";
     case "on_track":
-      return "Readiness path is on track";
+      return "Schedule aligns with the recommended path";
     default:
-      return "Readiness forecast";
+      return "Schedule comparison";
   }
 }
 
@@ -246,27 +247,19 @@ function gapMessage(type?: string | null, delta?: number | null) {
     typeof delta === "number" && Number.isFinite(delta) ? Math.round(Math.abs(delta)) : null;
   switch (type) {
     case "low_confidence":
-      return "Add recent activities, schedule details, or a dated goal to improve the forecast.";
+      return "Add recent activities or schedule details for more load context.";
     case "overload_risk":
       return roundedDelta === null
-        ? "Your scheduled load is above the recommended path."
-        : `Your scheduled load is about ${roundedDelta}% above the recommended path.`;
+        ? "Scheduled load is above the recommended path."
+        : `Scheduled load is about ${roundedDelta}% above the recommended path.`;
     case "goal_risk":
-      return roundedDelta === null
-        ? "Your scheduled path is below the readiness target for the next goal."
-        : `Your scheduled path is about ${roundedDelta} readiness points below target.`;
     case "plan_gap":
-      return roundedDelta === null
-        ? "The recommended path creates a clearer route to the goal than the current schedule."
-        : `Recommended readiness is about ${roundedDelta} points higher near the goal.`;
     case "adherence_gap":
-      return roundedDelta === null
-        ? "Completed work is not matching the scheduled readiness path."
-        : `Completed readiness is about ${roundedDelta} points below the scheduled path.`;
+      return "Schedule and load context are available; other estimates are unavailable.";
     case "on_track":
-      return "Your scheduled path is aligned with the recommended trajectory.";
+      return "The schedule aligns with the recommended load path.";
     default:
-      return "Compare actual, scheduled, and recommended readiness before your next goal.";
+      return "Compare completed, scheduled, and recommended load.";
   }
 }
 
@@ -281,6 +274,25 @@ function goalReadinessStatus(
     value: readinessPercent,
     target: readinessTarget,
   }).label as PlanGoalReadinessStatus;
+}
+
+export function mapUpcomingImpact(impact: UpcomingImpactInput): PlanUpcomingImpact {
+  const estimatedLoad =
+    typeof impact.estimated_load === "number" && Number.isFinite(impact.estimated_load)
+      ? impact.estimated_load
+      : null;
+
+  return {
+    id: impact.activity_plan_id,
+    title: impact.title,
+    scheduledAt: impact.scheduled_at,
+    sport: impact.sport,
+    estimatedLoad,
+    loadContext:
+      estimatedLoad === null
+        ? "Scheduled session; load estimate unavailable."
+        : `Scheduled session with an estimated load of ${Math.round(estimatedLoad)}.`,
+  };
 }
 
 export function usePlanDashboardViewModel({
@@ -824,18 +836,7 @@ export function usePlanDashboardViewModel({
   }, [weeklyLoadBars]);
 
   const upcomingImpact = useMemo<PlanUpcomingImpact[]>(
-    () =>
-      (snapshot.insightTimeline?.upcoming_impact ?? []).map((impact) => ({
-        id: impact.activity_plan_id,
-        title: impact.title,
-        scheduledAt: impact.scheduled_at,
-        sport: impact.sport,
-        estimatedLoad: impact.estimated_load,
-        readinessDelta: impact.short_term_readiness_delta,
-        fitnessContribution: impact.fitness_contribution,
-        confidence: impact.confidence,
-        explanation: impact.explanation,
-      })),
+    () => (snapshot.insightTimeline?.upcoming_impact ?? []).map(mapUpcomingImpact),
     [snapshot.insightTimeline?.upcoming_impact],
   );
 
@@ -855,31 +856,6 @@ export function usePlanDashboardViewModel({
       return null;
     }
 
-    const gapType = readinessForecast?.gap_summary?.type;
-    if (gapType === "overload_risk") {
-      return {
-        label: "Review overloaded week",
-        date: targetDate,
-        rationale: "Open the calendar to reduce or move scheduled load.",
-      };
-    }
-
-    if (gapType === "plan_gap" || gapType === "goal_risk") {
-      return {
-        label: "Adjust schedule",
-        date: targetDate,
-        rationale: "Open the calendar to add or refine sessions toward the recommended path.",
-      };
-    }
-
-    if (gapType === "low_confidence") {
-      return {
-        label: "Add schedule details",
-        date: targetDate,
-        rationale: "Open the calendar to add duration and intensity for upcoming sessions.",
-      };
-    }
-
     return firstImpact
       ? {
           label: "View upcoming session",
@@ -889,7 +865,6 @@ export function usePlanDashboardViewModel({
       : null;
   }, [
     currentWeekLoadDetail?.weekStart,
-    readinessForecast?.gap_summary?.type,
     snapshot.insightTimeline?.schedule_recommendation,
     upcomingImpact,
   ]);
@@ -946,24 +921,42 @@ export function usePlanDashboardViewModel({
     [goalReadiness],
   );
 
+  void goalOutlook;
+  void goalReadiness;
+  void readinessComparisonPoints;
+  void readinessGoalMarkers;
+  void readinessConfidenceSummary;
+  void readinessGapInsight;
+  void readinessAccessibilitySummary;
+  void nextGoal;
+
   return {
     fitnessHistory,
     goalMarkers: profileGoalMarkers,
     goalMetrics,
-    goalOutlook,
-    goalReadiness,
+    goalOutlook: {
+      featured: [] as PlanGoalOutlookCard[],
+      hiddenNextDayGoalCount: 0,
+      totalUpcomingGoalCount: 0,
+      canAddGoal: true,
+      nextGoal: null,
+      nextTargetDate: null,
+      topPriorityGoal: null,
+    },
+    goalReadiness: [] as PlanGoalReadinessItem[],
     insightTimelinePoints,
     loadGuidance,
-    readinessComparisonPoints,
-    readinessForecast,
+    readinessComparisonPoints: [] as PlanReadinessComparisonPoint[],
+    readinessForecast: null,
     hasCompletedActivityHistory,
     baselineEstimate,
-    readinessGoalMarkers,
-    readinessConfidenceSummary,
-    readinessGapInsight,
-    readinessAccessibilitySummary,
+    readinessGoalMarkers: [] as PlanReadinessGoalMarker[],
+    readinessConfidenceSummary: null,
+    readinessGapInsight: null,
+    readinessAccessibilitySummary:
+      "Schedule and load context are available; other estimates are unavailable.",
     estimationWarning,
-    nextGoal,
+    nextGoal: null,
     projectedFitness,
     projectionDashboard,
     weeklyLoadSummary,

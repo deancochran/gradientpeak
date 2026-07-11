@@ -2,7 +2,13 @@ import { addDays } from "../calculations";
 import { getFormStatus } from "../load/form";
 import { calculateATL, calculateCTL, calculateTSB } from "../load/progression";
 import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "../load/replay";
-import type { FatiguePrediction, FitnessState, FormStatus, PlannedActivity } from "./types";
+import type {
+  FatiguePrediction,
+  FitnessState,
+  LoadChangeState,
+  PlannedActivity,
+  PlanningReasonCode,
+} from "./types";
 
 /**
  * Predict fatigue impact after completing a planned activity
@@ -42,27 +48,33 @@ export function predictFatigue(
   );
   const rampRate = projectedEndOfWeekCTL - previousWeekCTL;
 
-  // Safety check (conservative threshold: 8 TSS/week)
-  const isSafe = rampRate <= 8;
-
-  // Recovery recommendations
-  const daysToRecover = calculateRecoveryDays(plannedTSS, newTSB);
-  const nextHardWorkoutDate = addDays(scheduledDate, daysToRecover);
-  const suggestedRestDays = Math.max(1, Math.ceil(daysToRecover / 2));
+  const hasFitnessState = [currentState.atl, currentState.ctl, currentState.tsb].every(
+    Number.isFinite,
+  );
+  const loadChangeState = classifyLoadChange(rampRate, hasFitnessState);
+  const reasons = buildPlanningReasons({
+    hasFitnessState,
+    loadChangeState,
+    plannedTSS,
+    totalWeeklyTSS,
+    currentCTL: currentState.ctl,
+  });
 
   // Form assessment
-  const formStatus = getFormStatus(newTSB);
+  const calculatedFormStatus = getFormStatus(newTSB);
+  const formStatus: FatiguePrediction["afterActivity"]["form"] =
+    calculatedFormStatus === "overreaching" ? "tired" : calculatedFormStatus;
   const _formChange = getFormChange(currentState.tsb, newTSB);
 
   // Generate warnings
   const warnings: string[] = [];
 
-  if (!isSafe) {
-    warnings.push(`Ramp rate of ${rampRate.toFixed(1)} TSS/week exceeds safe limit (8 TSS/week)`);
-  }
-
-  if (newTSB < -30) {
-    warnings.push("This activity will push you into overreaching territory (TSB < -30)");
+  if (!hasFitnessState) {
+    warnings.push(
+      "Training-load comparison unavailable because the current fitness state is incomplete",
+    );
+  } else if (loadChangeState === "increasing") {
+    warnings.push(`Projected CTL change is ${rampRate.toFixed(1)} points this week`);
   }
 
   if (totalWeeklyTSS > currentState.ctl * 1.5) {
@@ -78,13 +90,7 @@ export function predictFatigue(
   }
 
   // Generate recommendation
-  const recommendation = generateRecommendation(
-    rampRate,
-    totalWeeklyTSS,
-    currentState,
-    newTSB,
-    formStatus,
-  );
+  const recommendation = generateRecommendation(loadChangeState, reasons);
 
   return {
     afterActivity: {
@@ -97,33 +103,46 @@ export function predictFatigue(
       totalTSS: Math.round(totalWeeklyTSS),
       averageDailyTSS: Math.round((totalWeeklyTSS / 7) * 10) / 10,
       rampRate: Math.round(rampRate * 10) / 10,
-      isSafe,
+      isSafe: null,
+      loadChangeState,
+      reasons,
       recommendation,
     },
     recoveryPlan: {
-      daysToRecover,
-      nextHardWorkoutDate,
-      suggestedRestDays,
+      daysToRecover: null,
+      nextHardWorkoutDate: null,
+      suggestedRestDays: null,
     },
     warnings,
   };
 }
 
-/**
- * Calculate recovery days needed based on TSS and form
- */
-function calculateRecoveryDays(tss: number, newTSB: number): number {
-  // Base: 1 day per 100 TSS
-  let recoveryDays = tss / 100;
+function classifyLoadChange(rampRate: number, hasFitnessState: boolean): LoadChangeState {
+  if (!hasFitnessState || !Number.isFinite(rampRate)) return "insufficient_data";
+  if (rampRate > 2) return "increasing";
+  if (rampRate < -2) return "decreasing";
+  return "stable";
+}
 
-  // Adjust for form status
-  if (newTSB < -30) {
-    recoveryDays *= 1.5; // Need more recovery when overreaching
-  } else if (newTSB < -10) {
-    recoveryDays *= 1.2; // Slightly more when tired
-  }
+function buildPlanningReasons(input: {
+  hasFitnessState: boolean;
+  loadChangeState: LoadChangeState;
+  plannedTSS: number;
+  totalWeeklyTSS: number;
+  currentCTL: number;
+}): PlanningReasonCode[] {
+  if (!input.hasFitnessState) return ["MISSING_FITNESS_STATE"];
 
-  return Math.ceil(recoveryDays);
+  const reasons: PlanningReasonCode[] = [
+    input.loadChangeState === "increasing"
+      ? "LOAD_CHANGE_INCREASING"
+      : input.loadChangeState === "decreasing"
+        ? "LOAD_CHANGE_DECREASING"
+        : "LOAD_CHANGE_STABLE",
+  ];
+  if (input.totalWeeklyTSS > input.currentCTL * 1.5) reasons.push("WEEKLY_LOAD_ABOVE_CURRENT_CTL");
+  if (input.plannedTSS > input.currentCTL * 0.8) reasons.push("SINGLE_ACTIVITY_ABOVE_CURRENT_CTL");
+  return reasons;
 }
 
 /**
@@ -144,47 +163,16 @@ function getFormChange(
  * Generate recommendation text
  */
 function generateRecommendation(
-  rampRate: number,
-  weeklyTSS: number,
-  currentState: FitnessState,
-  newTSB: number,
-  formStatus: FormStatus,
+  loadChangeState: LoadChangeState,
+  reasons: PlanningReasonCode[],
 ): string {
-  // Critical overtraining warning
-  if (rampRate > 15) {
-    return "⚠️ STOP: Ramp rate is dangerously high. Consider rest or very easy activities.";
+  if (loadChangeState === "insufficient_data") {
+    return "Planning comparison unavailable until a complete fitness state is provided.";
   }
-
-  // High ramp rate warning
-  if (rampRate > 8) {
-    return "Ramp rate exceeds safe limits. Reduce training load or add recovery days.";
+  if (reasons.includes("WEEKLY_LOAD_ABOVE_CURRENT_CTL")) {
+    return "Planned weekly load is above the current CTL reference; review the schedule and available context.";
   }
-
-  // Overreaching warning
-  if (newTSB < -30) {
-    return "You're entering overreaching territory. Plan recovery week with 50% reduction in load.";
-  }
-
-  // Form-based recommendations
-  if (formStatus === "fresh" && rampRate < 5) {
-    return "You're well-rested and building fitness safely. Consider maintaining or slightly increasing load.";
-  }
-
-  if (formStatus === "optimal") {
-    return "Perfect balance of fitness and freshness. Great time for key activities.";
-  }
-
-  if (formStatus === "tired") {
-    return "Fatigue is accumulating. Add easy days and ensure adequate recovery.";
-  }
-
-  // Weekly load check
-  if (weeklyTSS > currentState.ctl * 1.3) {
-    return "Weekly load is high relative to fitness. Monitor recovery closely.";
-  }
-
-  // Default positive feedback
-  return "Training load is appropriate. Continue building fitness gradually.";
+  return `Projected weekly CTL is ${loadChangeState}; use this descriptive estimate with athlete context.`;
 }
 
 /**
@@ -259,7 +247,9 @@ export function estimateWeeklyLoad(
   dailyBreakdown: Array<{ date: Date; tss: number; count: number }>;
   projectedCTL: number;
   rampRate: number;
-  isSafe: boolean;
+  isSafe: boolean | null;
+  loadChangeState: LoadChangeState;
+  reasons: PlanningReasonCode[];
 } {
   const weekEnd = getEndOfWeek(weekStart);
 
@@ -309,13 +299,25 @@ export function estimateWeeklyLoad(
 
   // Calculate ramp rate
   const rampRate = projectedCTL - currentState.ctl;
-  const isSafe = rampRate <= 8;
+  const hasFitnessState = [currentState.atl, currentState.ctl, currentState.tsb].every(
+    Number.isFinite,
+  );
+  const loadChangeState = classifyLoadChange(rampRate, hasFitnessState);
+  const reasons = buildPlanningReasons({
+    hasFitnessState,
+    loadChangeState,
+    plannedTSS: 0,
+    totalWeeklyTSS: totalTSS,
+    currentCTL: currentState.ctl,
+  });
 
   return {
     totalTSS: Math.round(totalTSS),
     dailyBreakdown,
     projectedCTL: Math.round(projectedCTL * 10) / 10,
     rampRate: Math.round(rampRate * 10) / 10,
-    isSafe,
+    isSafe: null,
+    loadChangeState,
+    reasons,
   };
 }

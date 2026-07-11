@@ -136,7 +136,8 @@ export interface FatigueImpact {
   projectedCTL: number; // After this activity
   projectedTSB: number; // After this activity
   formChange: "improving" | "maintaining" | "declining";
-  recoveryDaysNeeded: number;
+  /** @deprecated A training-load estimate cannot determine physiological recovery time. */
+  recoveryDaysNeeded: number | null;
 }
 
 // ==============================
@@ -144,6 +145,16 @@ export interface FatigueImpact {
 // ==============================
 
 export type FormStatus = "fresh" | "optimal" | "neutral" | "tired" | "overreaching";
+
+export type LoadChangeState = "insufficient_data" | "decreasing" | "stable" | "increasing";
+
+export type PlanningReasonCode =
+  | "MISSING_FITNESS_STATE"
+  | "LOAD_CHANGE_DECREASING"
+  | "LOAD_CHANGE_STABLE"
+  | "LOAD_CHANGE_INCREASING"
+  | "WEEKLY_LOAD_ABOVE_CURRENT_CTL"
+  | "SINGLE_ACTIVITY_ABOVE_CURRENT_CTL";
 
 export interface FatiguePrediction {
   afterActivity: {
@@ -157,14 +168,20 @@ export interface FatiguePrediction {
     totalTSS: number;
     averageDailyTSS: number;
     rampRate: number; // Weekly CTL change
-    isSafe: boolean; // Ramp rate < 5-8 TSS/week
+    /** @deprecated No binary clearance is inferred from training-load projections. */
+    isSafe: boolean | null;
+    loadChangeState: LoadChangeState;
+    reasons: PlanningReasonCode[];
     recommendation: string;
   };
 
   recoveryPlan: {
-    daysToRecover: number;
-    nextHardWorkoutDate: Date;
-    suggestedRestDays: number;
+    /** @deprecated Exact physiological recovery cannot be inferred from TSS/TSB. */
+    daysToRecover: number | null;
+    /** @deprecated This estimator does not clear an athlete for a hard workout. */
+    nextHardWorkoutDate: Date | null;
+    /** @deprecated This estimator does not prescribe exact rest duration. */
+    suggestedRestDays: number | null;
   };
 
   warnings: string[];
@@ -208,7 +225,10 @@ export interface WeeklyLoadEstimation {
   projectedATL: number;
   projectedTSB: number;
   rampRate: number;
-  isSafe: boolean;
+  /** @deprecated No binary clearance is inferred from training-load projections. */
+  isSafe: boolean | null;
+  loadChangeState: LoadChangeState;
+  reasons: PlanningReasonCode[];
   recommendations: string[];
 }
 

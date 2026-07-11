@@ -58,9 +58,9 @@ describe("projection parity fixtures", () => {
           },
         },
         expected: {
-          readiness_score: 39,
+          readiness_score: 33,
           weekly_tss: [
-            200.1, 214.1, 229.1, 241.5, 258.4, 276.5, 276.6, 275.6, 294.9, 289.9, 272.3, 234.6,
+            262.8, 281.2, 300.9, 281.2, 300.9, 322, 302.6, 286.2, 306.2, 298.1, 276.9, 236.7,
           ],
           load_resolution_summary: {
             week_count: 12,
@@ -71,10 +71,10 @@ describe("projection parity fixtures", () => {
             demand_floor_override_weeks: 0,
             recovery_adjusted_weeks: 0,
             recovery_weeks: 0,
-            average_baseline_to_final_delta_tss: -25.7,
-            average_requested_to_final_delta_tss: -20.1,
+            average_baseline_to_final_delta_tss: -12.5,
+            average_requested_to_final_delta_tss: -7.1,
             average_mpc_to_final_delta_tss: 0,
-            max_requested_to_final_delta_tss: 89.4,
+            max_requested_to_final_delta_tss: 27.2,
             limiting_constraints: ["weekly_tss_ramp_cap", "weekly_ctl_ramp_cap"],
             confidence: "low",
             confidence_reasons: ["low_evidence_confidence", "frequent_safety_caps"],
@@ -129,7 +129,7 @@ describe("projection parity fixtures", () => {
           },
         },
         expected: {
-          readiness_score: 48,
+          readiness_score: 50,
           weekly_tss: [513.9, 529.9, 567, 489.6, 394, 421.6],
           load_resolution_summary: {
             week_count: 6,
@@ -205,8 +205,8 @@ describe("projection parity fixtures", () => {
           },
         },
         expected: {
-          readiness_score: 48,
-          weekly_tss: [302.9, 278.3, 236.5, 234.4, 217.8, 173.9],
+          readiness_score: 51,
+          weekly_tss: [313, 283.5, 238.9, 236.6, 218.8, 174.3],
           load_resolution_summary: {
             week_count: 6,
             capped_weeks: 0,
@@ -216,10 +216,10 @@ describe("projection parity fixtures", () => {
             demand_floor_override_weeks: 0,
             recovery_adjusted_weeks: 2,
             recovery_weeks: 2,
-            average_baseline_to_final_delta_tss: -56.3,
-            average_requested_to_final_delta_tss: 15.6,
+            average_baseline_to_final_delta_tss: -54.9,
+            average_requested_to_final_delta_tss: 17.5,
             average_mpc_to_final_delta_tss: 0,
-            max_requested_to_final_delta_tss: 93.7,
+            max_requested_to_final_delta_tss: 95.1,
             limiting_constraints: ["recovery_segment"],
             confidence: "low",
             confidence_reasons: ["low_evidence_confidence"],
@@ -230,7 +230,6 @@ describe("projection parity fixtures", () => {
 
     for (const fixture of fixtures) {
       const result = buildDeterministicProjectionPayload(fixture.input);
-
       expect(result.readiness_score, fixture.key).toBe(fixture.expected.readiness_score);
       expect(
         result.microcycles.map((microcycle) => microcycle.planned_weekly_tss),

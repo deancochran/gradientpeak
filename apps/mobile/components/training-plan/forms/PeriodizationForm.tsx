@@ -132,7 +132,7 @@ export function PeriodizationForm({
             <View className="flex-1 pr-4">
               <Text className="font-semibold mb-1">Enable Periodization Planning</Text>
               <Text className="text-sm text-muted-foreground">
-                Plan your training progression toward a target date and fitness level
+                Plan a CTL load-history target for a selected date
               </Text>
             </View>
             <Switch checked={isEnabled} onCheckedChange={handleToggle} />
@@ -145,7 +145,7 @@ export function PeriodizationForm({
         <>
           {/* Current CTL (Read-Only) */}
           <View className="gap-3">
-            <Label className="text-base font-semibold">Your Current Fitness</Label>
+            <Label className="text-base font-semibold">Current Load History</Label>
             <Card className="bg-muted/50 border-muted">
               <CardContent className="p-4">
                 <View className="flex-row items-center justify-between">
@@ -159,7 +159,7 @@ export function PeriodizationForm({
                     <Text className="text-3xl font-bold text-foreground">{startingCtl} CTL</Text>
                     {startingCtl === 0 ? (
                       <Text className="text-xs text-muted-foreground mt-2">
-                        Your fitness will update as you sync activities from connected services
+                        CTL will update as you sync activities from connected services
                       </Text>
                     ) : (
                       <Text className="text-xs text-muted-foreground mt-2">
@@ -176,7 +176,7 @@ export function PeriodizationForm({
           <View className="gap-3">
             <Label className="text-base font-semibold">Target CTL</Label>
             <Text className="text-sm text-muted-foreground">
-              The fitness level you want to reach by your target date
+              The CTL load-history value selected for your target date
             </Text>
             <IntegerStepper
               id="periodization-target-ctl"
@@ -210,7 +210,7 @@ export function PeriodizationForm({
           <View className="gap-3">
             <Label className="text-base font-semibold">Target Date</Label>
             <Text className="text-sm text-muted-foreground">
-              Your goal date for this fitness target
+              Your goal date for this CTL target
             </Text>
             <DateInput
               accessibilityHint="Choose the goal date for this target"
@@ -302,16 +302,16 @@ export function PeriodizationForm({
             <CardContent className="p-4 gap-2">
               <Text className="font-semibold mb-1">💡 Periodization Tips</Text>
               <Text className="text-sm text-muted-foreground">
-                • CTL of 40-60 is typical for recreational athletes
+                • CTL summarizes recorded load with a 42-day weighting
               </Text>
               <Text className="text-sm text-muted-foreground">
-                • CTL of 80-100 is common for competitive athletes
+                • The target is a planning input, not a predicted outcome
               </Text>
               <Text className="text-sm text-muted-foreground">
-                • A 5-7% weekly ramp rate allows for sustainable progress
+                • The ramp rate changes the projected week-to-week CTL values
               </Text>
               <Text className="text-sm text-muted-foreground">
-                • Include recovery weeks every 3-4 weeks to consolidate fitness
+                • Review the projection when dates or weekly values change
               </Text>
             </CardContent>
           </Card>
@@ -319,10 +319,10 @@ export function PeriodizationForm({
           {/* Warning for aggressive ramp rate */}
           {parseInt(rampRateText, 10) > 10 && (
             <Alert icon={AlertCircle} iconClassName="text-amber-500">
-              <AlertTitle className="text-amber-500">Warning: Very Aggressive Ramp Rate</AlertTitle>
+              <AlertTitle className="text-amber-500">Large Weekly CTL Change</AlertTitle>
               <AlertDescription className="text-amber-500">
-                A ramp rate above 10% per week is very aggressive and significantly increases injury
-                risk. Most athletes should aim for 5-7% per week.
+                This setting projects a CTL increase above 10% per week. Review the resulting values
+                and date before saving.
               </AlertDescription>
             </Alert>
           )}
@@ -335,24 +335,23 @@ export function PeriodizationForm({
           <CardContent className="p-4 gap-3">
             <Text className="font-semibold">What is Periodization?</Text>
             <Text className="text-sm text-muted-foreground">
-              Periodization is a systematic approach to training that progressively builds your
-              fitness (CTL) over time toward a specific goal or event. It helps you:
+              Periodization organizes planned training into phases toward a target date. This
+              planner can:
             </Text>
             <View className="gap-1 ml-2">
-              <Text className="text-sm text-muted-foreground">• Peak at the right time</Text>
+              <Text className="text-sm text-muted-foreground">• Set a target CTL and date</Text>
               <Text className="text-sm text-muted-foreground">
-                • Avoid overtraining and burnout
+                • Show projected week-to-week CTL changes
               </Text>
               <Text className="text-sm text-muted-foreground">
-                • Build fitness progressively and safely
+                • Compare the projection with your selected target
               </Text>
               <Text className="text-sm text-muted-foreground">
                 • Track progress toward your goals
               </Text>
             </View>
             <Text className="text-sm text-muted-foreground mt-2">
-              Enable periodization if you&apos;re training for a specific event or want structured
-              fitness progression.
+              Enable periodization to add a dated CTL projection to the plan.
             </Text>
           </CardContent>
         </Card>

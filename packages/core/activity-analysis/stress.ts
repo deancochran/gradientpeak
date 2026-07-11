@@ -1,7 +1,8 @@
 import type { AggregatedStream } from "../calculations";
 import { calculateHRZones, calculatePowerZones } from "../calculations";
 import { calculateTrainingTSS, getTrainingIntensityZone } from "../load/tss";
-import type { ActivityDerivedMetrics, ActivityZoneEntry } from "./contracts";
+import type { CanonicalSport } from "../schemas/sport";
+import type { ActivityDerivedMetrics, ActivityTssIdentity, ActivityZoneEntry } from "./contracts";
 
 export type ActivityAnalysisContext = {
   profileMetrics: {
@@ -213,7 +214,35 @@ export function analyzeActivityDerivedMetrics(
     avgSpeed: activity.avg_speed_mps,
     thresholdSpeedMps,
   });
-  const intensityFactor = powerIntensityFactor ?? paceIntensityFactor ?? heartRateIntensityFactor;
+  const sport = (["run", "bike", "swim", "strength", "other"] as const).find(
+    (candidate) => candidate === activity.type,
+  ) as CanonicalSport | undefined;
+  const method =
+    powerIntensityFactor !== null
+      ? "power_threshold"
+      : paceIntensityFactor !== null
+        ? "run_pace_threshold"
+        : heartRateIntensityFactor !== null
+          ? "heart_rate_reserve"
+          : null;
+  const intensityFactor =
+    sport && method
+      ? (powerIntensityFactor ?? paceIntensityFactor ?? heartRateIntensityFactor)
+      : null;
+  const calibration: ActivityTssIdentity["calibration"] | null =
+    method === "power_threshold" && typeof ftp === "number"
+      ? { type: "ftp_watts", value: ftp }
+      : method === "run_pace_threshold" && typeof thresholdSpeedMps === "number"
+        ? { type: "threshold_speed_mps", value: thresholdSpeedMps }
+        : method === "heart_rate_reserve" &&
+            typeof restingHr === "number" &&
+            typeof maxHr === "number"
+          ? { type: "heart_rate_reserve_bpm", resting: restingHr, maximum: maxHr }
+          : null;
+  const tssIdentity: ActivityTssIdentity | null =
+    sport && method && calibration
+      ? { sport, method, source: "activity_analysis", version: "1", calibration }
+      : null;
 
   const tss =
     intensityFactor !== null
@@ -239,9 +268,10 @@ export function analyzeActivityDerivedMetrics(
   return {
     stress: {
       tss,
+      tss_identity: tssIdentity,
       intensity_factor: intensityFactor,
       trimp,
-      trimp_source: trimp !== null ? "hr" : intensityFactor !== null ? "power_proxy" : null,
+      trimp_source: trimp !== null ? "hr" : null,
       training_effect: resolveTrainingEffect(intensityFactor),
     },
     zones: {

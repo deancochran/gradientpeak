@@ -4,6 +4,65 @@ import { api } from "@/lib/api";
 import { useProfileGoals } from "./useProfileGoals";
 import { useProfileSettings } from "./useProfileSettings";
 
+export interface LoadBalanceContext {
+  status: "unknown" | "more_recent_load" | "balanced" | "less_recent_load";
+  label: string;
+  description: string;
+  ctl: number | null;
+  atl: number | null;
+  tsb: number | null;
+}
+
+export function deriveLoadBalanceContext(
+  currentStatus?: { ctl?: number | null; atl?: number | null; tsb?: number | null } | null,
+): LoadBalanceContext {
+  const ctl = currentStatus?.ctl ?? null;
+  const atl = currentStatus?.atl ?? null;
+  const tsb = currentStatus?.tsb ?? null;
+
+  if (ctl === null || atl === null || tsb === null) {
+    return {
+      status: "unknown",
+      label: "Unknown",
+      description: "Training load balance is unavailable until load history is available.",
+      ctl,
+      atl,
+      tsb,
+    };
+  }
+
+  if (tsb < -15) {
+    return {
+      status: "more_recent_load",
+      label: "Recent load is higher",
+      description: "Recent training load is above your longer-term load trend.",
+      ctl,
+      atl,
+      tsb,
+    };
+  }
+
+  if (tsb > 15) {
+    return {
+      status: "less_recent_load",
+      label: "Recent load is lower",
+      description: "Recent training load is below your longer-term load trend.",
+      ctl,
+      atl,
+      tsb,
+    };
+  }
+
+  return {
+    status: "balanced",
+    label: "Loads are similar",
+    description: "Recent and longer-term training load are in a similar range.",
+    ctl,
+    atl,
+    tsb,
+  };
+}
+
 /**
  * useHomeData Hook
  *
@@ -79,41 +138,15 @@ export function useHomeData() {
     };
   }, [data?.weeklySummary]);
 
-  // Form Status (Real Data)
+  // Load balance context. These workload trends are not physiological readiness signals.
   const formStatus = useMemo(() => {
-    if (!data?.currentStatus) {
-      return {
-        label: "No Data",
-        percentage: 0,
-        color: "slate",
-        explanation: "Complete activities to see your training progress",
-        ctl: 0,
-        atl: 0,
-        tsb: 0,
-      };
-    }
-
-    const { ctl, atl, tsb, form } = data.currentStatus;
-
-    // Map form status to UI props
-    const statusMap: Record<string, { label: string; color: string; percentage: number }> = {
-      fresh: { label: "Fresh", color: "green", percentage: 90 },
-      optimal: { label: "Optimal", color: "blue", percentage: 80 },
-      neutral: { label: "Neutral", color: "gray", percentage: 60 },
-      tired: { label: "Tired", color: "orange", percentage: 40 },
-      overreaching: { label: "Overreaching", color: "red", percentage: 20 },
-    };
-
-    const status = statusMap[form] || statusMap.neutral;
+    const context = deriveLoadBalanceContext(data?.currentStatus);
 
     return {
-      label: status.label,
-      percentage: status.percentage,
-      color: status.color,
-      explanation: `TSB: ${tsb > 0 ? "+" : ""}${tsb}`,
-      ctl,
-      atl,
-      tsb,
+      ...context,
+      percentage: null,
+      color: "slate",
+      explanation: context.description,
     };
   }, [data?.currentStatus]);
 
@@ -142,33 +175,14 @@ export function useHomeData() {
     };
   }, [data?.weeklySummary]);
 
-  // Training Readiness (Derived from Real TSB)
+  // Backward-compatible property name; value is descriptive load context, not readiness.
   const trainingReadiness = useMemo(() => {
-    const ctl = formStatus.ctl || 0;
-    const atl = formStatus.atl || 0;
-    const tsb = formStatus.tsb || 0;
-
-    // Calculate readiness
-    const percentage = Math.min(100, Math.max(0, 50 + tsb * 2));
-
-    let status = "Moderate";
-    if (percentage >= 85) status = "Prime";
-    else if (percentage >= 70) status = "Good";
-    else if (percentage < 40) status = "Fatigued";
-
-    const getCtlStatus = (val: number) => (val < 30 ? "Building" : val < 60 ? "Steady" : "Strong");
-    const getAtlStatus = (val: number) => (val > 80 ? "High" : val > 40 ? "Moderate" : "Low");
-    const getTsbStatus = (val: number) => (val > 15 ? "Fresh" : val < -15 ? "Tired" : "Neutral");
-
     return {
-      percentage: Math.round(percentage),
-      status,
-      ctl,
-      ctlStatus: getCtlStatus(ctl),
-      atl,
-      atlStatus: getAtlStatus(atl),
-      tsb,
-      tsbStatus: getTsbStatus(tsb),
+      ...formStatus,
+      percentage: null,
+      ctlStatus: formStatus.ctl === null ? "Unknown" : "Long-term load",
+      atlStatus: formStatus.atl === null ? "Unknown" : "Recent load",
+      tsbStatus: formStatus.label,
     };
   }, [formStatus]);
 

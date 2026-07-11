@@ -205,6 +205,7 @@ export async function projectAthleteIntelligence(input: {
       sport: activity.sport,
       durationSeconds: activity.metrics.elapsedDurationSeconds.value,
       trainingLoad: activity.metrics.trainingLoad.value,
+      trainingLoadIdentity: activity.metrics.trainingLoad.identity,
       averagePowerWatts: activity.metrics.averagePowerWatts.value,
       averageHeartRateBpm: activity.metrics.averageHeartRateBpm.value,
       evidence: {

@@ -36,7 +36,7 @@ describe("trainingPathUtils", () => {
       completedLoad: 75,
       plannedLoad: 120,
       targetLoad: 150,
-      fitness: 38,
+      fitness: 40,
       targetFitness: 45,
     });
   });
@@ -92,7 +92,7 @@ describe("trainingPathUtils", () => {
       todayKey: "2026-05-20",
     });
 
-    expect(model.weeks.find((week) => week.weekStart === "2026-05-18")?.fitness).toBe(38);
+    expect(model.weeks.find((week) => week.weekStart === "2026-05-18")?.fitness).toBe(40);
     expect(model.weeks.find((week) => week.weekStart === "2026-05-25")?.fitness).toBeNull();
   });
 
@@ -192,8 +192,8 @@ describe("trainingPathUtils", () => {
     });
 
     const currentWeek = model.weeks.find((week) => week.weekStart === "2026-05-18");
-    expect(currentWeek?.fitness).toBe(38);
-    expect(currentWeek?.scheduledFitness).toBe(38);
+    expect(currentWeek?.fitness).toBe(40);
+    expect(currentWeek?.scheduledFitness).toBe(40);
   });
 
   it("places goal markers on their target week", () => {

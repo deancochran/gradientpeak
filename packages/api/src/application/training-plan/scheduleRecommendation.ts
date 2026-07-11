@@ -38,7 +38,6 @@ export function buildScheduleRecommendation(input: {
   loadComparison: WeeklyLoadComparisonForScheduleRecommendation | null;
   upcomingImpact: UpcomingActivityImpact[];
 }): ScheduleRecommendation | null {
-  const gapType = input.readinessForecast.gap_summary?.type;
   const currentWeekStart = getWeekStartDateOnly(input.today);
   const currentWeek =
     input.loadComparison?.weeks.find((week) => week.week_start === currentWeekStart) ??
@@ -46,11 +45,13 @@ export function buildScheduleRecommendation(input: {
     null;
   const targetDate =
     input.upcomingImpact[0]?.scheduled_at.slice(0, 10) ?? currentWeek?.week_start ?? input.today;
-  const scheduledLoad = currentWeek?.scheduled_load ?? 0;
-  const recommendedLoad = currentWeek?.recommended_load ?? 0;
-  const loadDelta = Math.round((recommendedLoad - scheduledLoad) * 10) / 10;
+  const hasLoadComparison =
+    currentWeek?.scheduled_load != null && currentWeek.recommended_load != null;
+  const loadDelta = hasLoadComparison
+    ? Math.round((currentWeek.recommended_load! - currentWeek.scheduled_load!) * 10) / 10
+    : null;
 
-  if (gapType === "overload_risk") {
+  if (loadDelta !== null && loadDelta < -15) {
     return {
       type: "reduce_load",
       label: "Review overloaded week",
@@ -58,29 +59,27 @@ export function buildScheduleRecommendation(input: {
         "Move, shorten, or reduce intensity on scheduled sessions above the recommended path.",
       target_date: targetDate,
       target_week_start: currentWeek?.week_start ?? null,
-      target_load_delta: loadDelta < 0 ? loadDelta : null,
+      target_load_delta: loadDelta,
     };
   }
 
-  if (gapType === "plan_gap" || gapType === "goal_risk") {
+  if (loadDelta !== null && loadDelta > 15) {
     return {
       type: "add_load",
       label: "Adjust schedule",
-      description:
-        loadDelta > 15
-          ? `Add about ${Math.round(loadDelta)} TSS this week or schedule one moderate session.`
-          : "Add or refine scheduled sessions to close the readiness gap before your goal.",
+      description: `Add about ${Math.round(loadDelta)} TSS this week or schedule one moderate session to approach the recommended load.`,
       target_date: targetDate,
       target_week_start: currentWeek?.week_start ?? null,
-      target_load_delta: loadDelta > 0 ? loadDelta : null,
+      target_load_delta: loadDelta,
     };
   }
 
-  if (gapType === "low_confidence") {
+  if (input.loadComparison !== null && loadDelta === null) {
     return {
       type: "add_schedule_detail",
       label: "Add schedule details",
-      description: "Add duration and intensity to upcoming sessions for a more reliable forecast.",
+      description:
+        "Add duration and intensity so scheduled load can be compared with the recommended load.",
       target_date: targetDate,
       target_week_start: currentWeek?.week_start ?? null,
       target_load_delta: null,
@@ -91,19 +90,19 @@ export function buildScheduleRecommendation(input: {
     return {
       type: "review_session",
       label: "View upcoming session",
-      description: "Review the next scheduled session and its expected readiness impact.",
+      description: "Review the next scheduled session and its planned load comparison.",
       target_date: targetDate,
       target_week_start: currentWeek?.week_start ?? null,
       target_load_delta: null,
     };
   }
 
-  if (gapType === "on_track") {
+  if (loadDelta !== null) {
     return {
       type: "maintain_schedule",
       label: "View schedule",
       description:
-        "Your schedule is aligned with the recommended path. Keep upcoming sessions on track.",
+        "Scheduled load is close to the recommended load. Keep upcoming sessions on track.",
       target_date: targetDate,
       target_week_start: currentWeek?.week_start ?? null,
       target_load_delta: null,

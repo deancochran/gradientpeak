@@ -1,4 +1,4 @@
-import { calculateAge, calculateRollingTrainingQuality, getFormStatus } from "@repo/core";
+import { calculateAge, calculateRollingTrainingQuality, getLoadBalanceStatus } from "@repo/core";
 import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core/load";
 import { type ProfileTrainingSettingsRow, schema, type TrainingPlanRow } from "@repo/db";
 import { and, asc, eq, gte, isNotNull, sql } from "drizzle-orm";
@@ -105,6 +105,17 @@ const workloadEnvelopeSchema = z
     reasonCode: z.string().optional(),
     current: z.number().optional(),
     previous: z.number().optional(),
+    identity: z
+      .object({
+        sport: z.enum(["run", "bike", "swim", "strength", "other"]),
+        method: z.enum(["power_threshold", "run_pace_threshold", "heart_rate_reserve"]),
+        source: z.literal("activity_analysis"),
+        version: z.literal("1"),
+      })
+      .strict()
+      .nullable()
+      .optional(),
+    coverageComplete: z.boolean().optional(),
   })
   .strict();
 
@@ -138,7 +149,15 @@ const dashboardResponseSchema = z
         ctl: z.number(),
         atl: z.number(),
         tsb: z.number(),
+        loadBalanceStatus: z.string(),
+        /** @deprecated Use loadBalanceStatus. */
         form: z.string(),
+      })
+      .strict(),
+    trainingLoadState: z
+      .object({
+        status: z.enum(["available", "unavailable"]),
+        reason: z.enum(["complete_identified_series", "mixed_or_incomplete_tss_series"]),
       })
       .strict(),
     workload: z
@@ -186,6 +205,17 @@ const dashboardResponseSchema = z
         .strict(),
     ),
     projectedFitness: z.array(
+      z
+        .object({
+          date: isoDateSchema,
+          ctl: z.number(),
+          atl: z.number(),
+          tsb: z.number(),
+          plannedTss: z.number(),
+        })
+        .strict(),
+    ),
+    projectedLoad: z.array(
       z
         .object({
           date: isoDateSchema,
@@ -381,12 +411,20 @@ export const homeRouter = createTRPCRouter({
         startedAtLte: today,
       });
 
-      const { byActivityId: derivedActivityMap, byDate: tssByDate } =
-        await buildDynamicStressSeries({
-          store: createActivityAnalysisStore(db),
-          profileId: userId,
-          activities,
-        });
+      const dynamicStressSeries = await buildDynamicStressSeries({
+        store: createActivityAnalysisStore(db),
+        profileId: userId,
+        activities,
+      });
+      const {
+        byActivityId: derivedActivityMap,
+        byDate: tssByDate,
+        complete: hasCompleteTssSeries = false,
+        seriesIdentity = null,
+      } = dynamicStressSeries as typeof dynamicStressSeries & {
+        complete?: boolean;
+        seriesIdentity?: unknown;
+      };
 
       const rollingTrainingQuality =
         featureFlags.personalizationTrainingQuality && activities.length > 0
@@ -412,7 +450,13 @@ export const homeRouter = createTRPCRouter({
 
       // --- 6. Calculate Fitness Trends (CTL/ATL/TSB) ---
       const fitnessTrends = [];
-      let todayStatus = { ctl: 0, atl: 0, tsb: 0, form: "fresh" };
+      let todayStatus = {
+        ctl: 0,
+        atl: 0,
+        tsb: 0,
+        loadBalanceStatus: "unknown",
+        form: "unknown",
+      };
 
       // Apply Global CTL Override if enabled
       const settings = profileSettingsData?.settings as any;
@@ -463,18 +507,21 @@ export const homeRouter = createTRPCRouter({
         }
       }
 
-      const historicalReplay = replayTrainingLoadByDate({
-        dailyTss: buildDailyTssByDateSeries({
-          startDate: effectiveHistoryStart.toISOString().split("T")[0]!,
-          endDate: today.toISOString().split("T")[0]!,
-          tssByDate,
-        }),
-        initialCTL,
-        initialATL,
-        userAge: effectiveAge,
-        userGender: effectiveGender,
-        trainingQuality: rollingTrainingQuality,
-      });
+      const historicalReplay =
+        hasCompleteTssSeries && seriesIdentity
+          ? replayTrainingLoadByDate({
+              dailyTss: buildDailyTssByDateSeries({
+                startDate: effectiveHistoryStart.toISOString().split("T")[0]!,
+                endDate: today.toISOString().split("T")[0]!,
+                tssByDate,
+              }),
+              initialCTL,
+              initialATL,
+              userAge: effectiveAge,
+              userGender: effectiveGender,
+              trainingQuality: rollingTrainingQuality,
+            })
+          : [];
 
       for (const point of historicalReplay) {
         const date = new Date(`${point.date}T00:00:00.000Z`);
@@ -488,11 +535,13 @@ export const homeRouter = createTRPCRouter({
         }
 
         if (point.date === today.toISOString().split("T")[0]) {
+          const loadBalanceStatus = getLoadBalanceStatus(point.tsb);
           todayStatus = {
             ctl: Math.round(point.ctl * 10) / 10,
             atl: Math.round(point.atl * 10) / 10,
             tsb: Math.round(point.tsb * 10) / 10,
-            form: getFormStatus(point.tsb),
+            loadBalanceStatus,
+            form: loadBalanceStatus,
           };
         }
       }
@@ -585,6 +634,7 @@ export const homeRouter = createTRPCRouter({
         activities.map((activity) => ({
           started_at: activity.started_at.toISOString(),
           tss: derivedActivityMap.get(activity.id)?.tss ?? null,
+          tss_identity: (derivedActivityMap.get(activity.id) as any)?.tss_identity ?? null,
         })),
         workloadWindowStart,
         today,
@@ -655,18 +705,23 @@ export const homeRouter = createTRPCRouter({
         futureTssByDate.set(dateStr, (futureTssByDate.get(dateStr) || 0) + tss);
       });
 
-      const projectionReplay = replayTrainingLoadByDate({
-        dailyTss: buildDailyTssByDateSeries({
-          startDate: new Date(today.getTime() + 24 * 60 * 60 * 1000).toISOString().split("T")[0]!,
-          endDate: projectionEnd.toISOString().split("T")[0]!,
-          tssByDate: futureTssByDate,
-        }),
-        initialCTL: currentCTL,
-        initialATL: currentATL,
-        userAge: effectiveAge,
-        userGender: effectiveGender,
-        trainingQuality: rollingTrainingQuality,
-      });
+      const projectionReplay =
+        hasCompleteTssSeries && seriesIdentity
+          ? replayTrainingLoadByDate({
+              dailyTss: buildDailyTssByDateSeries({
+                startDate: new Date(today.getTime() + 24 * 60 * 60 * 1000)
+                  .toISOString()
+                  .split("T")[0]!,
+                endDate: projectionEnd.toISOString().split("T")[0]!,
+                tssByDate: futureTssByDate,
+              }),
+              initialCTL: currentCTL,
+              initialATL: currentATL,
+              userAge: effectiveAge,
+              userGender: effectiveGender,
+              trainingQuality: rollingTrainingQuality,
+            })
+          : [];
 
       for (const point of projectionReplay) {
         projectedFitness.push({
@@ -773,6 +828,13 @@ export const homeRouter = createTRPCRouter({
             }
           : null,
         currentStatus: todayStatus,
+        trainingLoadState: {
+          status: hasCompleteTssSeries && seriesIdentity ? "available" : "unavailable",
+          reason:
+            hasCompleteTssSeries && seriesIdentity
+              ? "complete_identified_series"
+              : "mixed_or_incomplete_tss_series",
+        },
         workload,
         consistency: {
           streak,
@@ -785,7 +847,8 @@ export const homeRouter = createTRPCRouter({
         },
         schedule, // List of upcoming (including today)
         trends: fitnessTrends, // Historical actual CTL/ATL/TSB
-        projectedFitness, // Future projected CTL/ATL/TSB based on plan
+        projectedFitness, // Deprecated compatibility alias for projectedLoad
+        projectedLoad: projectedFitness,
         idealFitnessCurve, // Ideal CTL progression from training plan periodization
         goalMetrics, // User's fitness goal
         todaysActivity, // Convenience field

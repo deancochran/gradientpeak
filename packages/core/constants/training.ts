@@ -1,4 +1,6 @@
 export const TSS_CONSTANTS = {
+  LOAD_MODEL_VERSION: 2,
+  EXPONENTIAL_CONVENTION: "one_minus_exp_negative_inverse_time_constant",
   CTL_TIME_CONSTANT: 42,
   ATL_TIME_CONSTANT: 7,
   CTL_ALPHA: 1 - Math.exp(-1 / 42),

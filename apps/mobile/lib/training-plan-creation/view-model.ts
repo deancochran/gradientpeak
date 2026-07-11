@@ -502,6 +502,9 @@ function buildRecommendedTssByDate({
           { length: Math.min(7, state.planPreferences.weeklySessionCount ?? 0) },
           (_, index) => index,
         );
+  const activityCategory = selectBuilderGoalBlueprints(state).find(
+    (goal) => goal.activityCategory !== null,
+  )?.activityCategory;
   const points = buildDailyRecommendedLoad({
     startDate: state.scheduling.startDate,
     endDate: addDaysDateOnlyUtc(state.scheduling.startDate, durationDays - 1),
@@ -520,11 +523,13 @@ function buildRecommendedTssByDate({
             ? session.intent.targetDurationSeconds / 60
             : null,
       intentType: session.intent?.type,
+      activityCategory,
     })),
   });
 
   for (const point of points) {
-    targetTssByDate.set(point.date, point.recommendedLoadTss);
+    if (!point.actionableRecommendation) continue;
+    targetTssByDate.set(point.date, point.actionableRecommendation.recommendedLoadTss);
   }
 
   return targetTssByDate;

@@ -10,14 +10,14 @@ const homeMocks = vi.hoisted(() => ({
   createActivityAnalysisStore: vi.fn(),
   createEventReadRepository: vi.fn(),
   getActivityPlansDerivedMetrics: vi.fn(),
-  getFormStatus: vi.fn(),
+  getLoadBalanceStatus: vi.fn(),
   replayTrainingLoadByDate: vi.fn(),
 }));
 
 vi.mock("@repo/core", () => ({
   calculateAge: homeMocks.calculateAge,
   calculateRollingTrainingQuality: homeMocks.calculateRollingTrainingQuality,
-  getFormStatus: homeMocks.getFormStatus,
+  getLoadBalanceStatus: homeMocks.getLoadBalanceStatus,
 }));
 
 vi.mock("@repo/core/load", () => ({
@@ -138,7 +138,7 @@ describe("homeRouter", () => {
 
     homeMocks.calculateAge.mockReturnValue(36);
     homeMocks.calculateRollingTrainingQuality.mockReturnValue(0.84);
-    homeMocks.getFormStatus.mockReturnValue("productive");
+    homeMocks.getLoadBalanceStatus.mockReturnValue("negative_balance");
     homeMocks.createEventReadRepository.mockReturnValue({ kind: "event-read-repo" });
     homeMocks.createActivityAnalysisStore.mockReturnValue({ kind: "analysis-store" });
     homeMocks.buildDynamicStressSeries.mockResolvedValue({
@@ -150,6 +150,13 @@ describe("homeRouter", () => {
         ["2026-04-02", 30],
         ["2026-04-03", 50],
       ]),
+      complete: true,
+      seriesIdentity: {
+        sport: "bike",
+        method: "power_threshold",
+        source: "activity_analysis",
+        version: "1",
+      },
     });
     homeMocks.getActivityPlansDerivedMetrics.mockImplementation(async (plans: Array<any>) =>
       plans.map((plan) => ({
@@ -296,7 +303,8 @@ describe("homeRouter", () => {
       ctl: 42.2,
       atl: 51.1,
       tsb: -8.9,
-      form: "productive",
+      loadBalanceStatus: "negative_balance",
+      form: "negative_balance",
     });
     expect(result.consistency).toEqual({ streak: 2, weeklyCount: 2 });
     expect(result.weeklySummary).toEqual({
@@ -343,6 +351,8 @@ describe("homeRouter", () => {
       { date: "2026-04-04", ctl: 43.1, atl: 49.3, tsb: -6.2, plannedTss: 90 },
       { date: "2026-04-05", ctl: 44.6, atl: 48.2, tsb: -3.6, plannedTss: 60 },
     ]);
+    expect(result.projectedLoad).toEqual(result.projectedFitness);
+    expect(JSON.stringify(result)).not.toMatch(/productive|fatigued|overreach/i);
     expect(result.goalMetrics).toEqual({
       targetCTL: 60,
       targetDate: "2026-04-20",
@@ -413,7 +423,7 @@ describe("homeRouter", () => {
 
     homeMocks.calculateAge.mockReturnValue(36);
     homeMocks.calculateRollingTrainingQuality.mockReturnValue(0.84);
-    homeMocks.getFormStatus.mockReturnValue("productive");
+    homeMocks.getLoadBalanceStatus.mockReturnValue("near_balance");
     homeMocks.createEventReadRepository.mockReturnValue({ kind: "event-read-repo" });
     homeMocks.createActivityAnalysisStore.mockReturnValue({ kind: "analysis-store" });
     homeMocks.buildDynamicStressSeries.mockResolvedValue({

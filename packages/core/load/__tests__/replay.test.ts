@@ -31,7 +31,9 @@ describe("load replay baseline overrides", () => {
 
     expect(seed?.ctl).toBeLessThan(80);
     expect(seed?.atl).toBeLessThan(95);
-    expect(replayed[1]?.ctl).toBeGreaterThan(replayed[0]?.ctl ?? 0);
+    // A 60 TSS day remains below the decayed CTL seed under the version 2
+    // 1-exp(-1/N) response, so the longer-term load history still decreases.
+    expect(replayed[1]?.ctl).toBeLessThan(replayed[0]?.ctl ?? 0);
     expect(replayed[3]?.tss).toBe(40);
   });
 

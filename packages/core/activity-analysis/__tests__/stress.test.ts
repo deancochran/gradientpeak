@@ -28,6 +28,13 @@ describe("activity analysis", () => {
 
     expect(activityDerivedMetricsSchema.parse(derived)).toEqual(derived);
     expect(derived.stress.tss).toBe(100);
+    expect(derived.stress.tss_identity).toEqual({
+      sport: "bike",
+      method: "power_threshold",
+      source: "activity_analysis",
+      version: "1",
+      calibration: { type: "ftp_watts", value: 250 },
+    });
     expect(derived.stress.intensity_factor).toBe(1);
     expect(derived.stress.trimp).toBeGreaterThan(0);
     expect(derived.stress.trimp_source).toBe("hr");
@@ -79,6 +86,12 @@ describe("activity analysis", () => {
 
     expect(derived.stress.intensity_factor).toBe(0.71);
     expect(derived.stress.tss).toBe(50);
+    expect(derived.stress.tss_identity?.method).toBe("heart_rate_reserve");
+    expect(derived.stress.tss_identity?.calibration).toEqual({
+      type: "heart_rate_reserve_bpm",
+      resting: 50,
+      maximum: 190,
+    });
     expect(derived.stress.trimp).toBeGreaterThan(0);
     expect(derived.stress.training_effect).toBe("base");
   });
@@ -107,6 +120,11 @@ describe("activity analysis", () => {
 
     expect(derived.stress.intensity_factor).toBe(0.8);
     expect(derived.stress.tss).toBe(64);
+    expect(derived.stress.tss_identity?.method).toBe("run_pace_threshold");
+    expect(derived.stress.tss_identity?.calibration).toEqual({
+      type: "threshold_speed_mps",
+      value: 5,
+    });
     expect(derived.stress.training_effect).toBe("tempo");
   });
 
@@ -142,5 +160,39 @@ describe("activity analysis", () => {
     expect(lowerFtpDerived.stress.tss).toBe(156);
     expect(higherFtpDerived.stress.intensity_factor).toBe(1);
     expect(higherFtpDerived.stress.tss).toBe(100);
+    expect(lowerFtpDerived.stress.tss_identity?.calibration).toEqual({
+      type: "ftp_watts",
+      value: 200,
+    });
+    expect(higherFtpDerived.stress.tss_identity?.calibration).toEqual({
+      type: "ftp_watts",
+      value: 250,
+    });
+  });
+
+  it("does not derive TSS or a proxy TRIMP source for a non-canonical sport", () => {
+    const derived = analyzeActivityDerivedMetrics({
+      activity: {
+        id: "unknown-sport",
+        type: "ride",
+        started_at: "2026-03-01T10:00:00.000Z",
+        finished_at: "2026-03-01T11:00:00.000Z",
+        duration_seconds: 3600,
+        normalized_power: 250,
+      },
+      context: {
+        profileMetrics: { ftp: 250 },
+        recentEfforts: [],
+        profile: {},
+      },
+    });
+
+    expect(derived.stress).toMatchObject({
+      tss: null,
+      tss_identity: null,
+      intensity_factor: null,
+      trimp: null,
+      trimp_source: null,
+    });
   });
 });

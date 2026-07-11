@@ -8,6 +8,13 @@ import {
 } from "../policies/activity-readiness";
 
 const assessmentAt = "2026-07-10T12:00:00.000Z";
+const runLoadIdentity = {
+  sport: "run",
+  family: "trimp" as const,
+  method: "heart_rate_reserve",
+  version: "1",
+  sourceDefinition: "first_party:activity-summary",
+};
 
 function activity(
   day: number,
@@ -20,6 +27,7 @@ function activity(
     sport: "run",
     durationSeconds: 3_600,
     trainingLoad: 60,
+    trainingLoadIdentity: runLoadIdentity,
     averagePowerWatts: 240,
     averageHeartRateBpm: 150,
     efficiencyFactor: 1.6,
@@ -320,6 +328,35 @@ describe("activity readiness v1", () => {
     expect(withOutliers.volumeTrend.estimate).toBeCloseTo(baseline.volumeTrend.estimate ?? 0, 1);
     expect(withOutliers.frequencyTrend.estimate).toBe(baseline.frequencyTrend.estimate);
     expect(withOutliers.sportSpecificity.estimate).toBeCloseTo(1, 10);
+  });
+
+  it.each([
+    ["missing identity", { trainingLoadIdentity: null }],
+    ["mixed method", { trainingLoadIdentity: { ...runLoadIdentity, method: "provider_score" } }],
+    [
+      "mixed provider",
+      { trainingLoadIdentity: { ...runLoadIdentity, sourceDefinition: "provider:opaque" } },
+    ],
+    ["identity sport mismatch", { trainingLoadIdentity: { ...runLoadIdentity, sport: "bike" } }],
+  ])("abstains from load trend for %s rather than substituting duration", (_name, override) => {
+    const activities = [2, 5, 9, 11, 16, 20, 24, 26].map((day) => activity(day));
+    activities[0] = activity(2, override);
+    const result = calculateActivityReadinessV1({ assessmentAt, targetSport: "run", activities });
+
+    expect(result.volumeTrend.estimate).toBeNull();
+    expect(result.volumeTrend.reasonCodes).toContain("load_trend_identity_unavailable");
+  });
+
+  it("does not combine identified loads across sports", () => {
+    const activities = [2, 5, 9, 11, 16, 20, 24, 26].map((day) => activity(day));
+    activities[0] = activity(2, {
+      sport: "bike",
+      trainingLoadIdentity: { ...runLoadIdentity, sport: "bike" },
+    });
+    const result = calculateActivityReadinessV1({ assessmentAt, targetSport: "run", activities });
+
+    expect(result.volumeTrend.estimate).not.toBeNull();
+    expect(result.volumeTrend.contributingSourceIds).not.toContain(activities[0]?.sourceId);
   });
 
   it("robustly bounds a readiness outlier without making a medical claim", () => {

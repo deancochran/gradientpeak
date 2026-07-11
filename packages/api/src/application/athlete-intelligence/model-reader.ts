@@ -919,7 +919,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
           maximumHeartRateBpm: m("maximum-heart-rate", row.maximumHeartRate, "beats_per_minute"),
           averageCadenceRpm: m("average-cadence", row.averageCadence, "revolutions_per_minute"),
           maximumCadenceRpm: m("maximum-cadence", row.maximumCadence, "revolutions_per_minute"),
-          trainingLoad: m("training-load", null, "score"),
+          trainingLoad: { ...m("training-load", null, "score"), identity: null },
           aerobicTrainingEffect: m("aerobic-effect", null, "score"),
           anaerobicTrainingEffect: m("anaerobic-effect", null, "score"),
         },
@@ -1167,16 +1167,11 @@ export async function materializeAthleteIntelligenceModelInput(input: {
     strategy: null,
     taperPreference: null,
     progressionPreference: null,
-    ctlOverride: setting(
-      "ctl",
-      baselineEnabled ? (settings?.baseline_fitness?.override_ctl ?? null) : null,
-      "training_load",
-    ),
-    atlOverride: setting(
-      "atl",
-      baselineEnabled ? (settings?.baseline_fitness?.override_atl ?? null) : null,
-      "training_load",
-    ),
+    // Persisted baseline overrides do not retain the exact sport/family/method/version/provider
+    // identity needed to compare them with any activity load series. Abstain rather than leak a
+    // dimensionless number into model calculations.
+    ctlOverride: { ...setting("ctl-unavailable", null, "training_load"), identity: null },
+    atlOverride: { ...setting("atl-unavailable", null, "training_load"), identity: null },
   };
   let recurrenceReadIncomplete = false;
   const selectedGoalTarget = rows.goals.find((goal) => goal.id === goalId)?.targetDate;

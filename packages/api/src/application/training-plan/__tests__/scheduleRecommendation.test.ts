@@ -8,8 +8,8 @@ const upcomingImpact = [
     scheduled_at: "2026-07-16T12:00:00.000Z",
     sport: "cycling",
     estimated_load: 65,
-    short_term_readiness_delta: -2,
-    fitness_contribution: 5,
+    short_term_readiness_delta: null,
+    fitness_contribution: null,
     confidence: "medium" as const,
     explanation: "Upcoming session impact.",
   },
@@ -35,10 +35,38 @@ describe("buildScheduleRecommendation", () => {
     expect(recommendation).toEqual({
       type: "add_load",
       label: "Adjust schedule",
-      description: "Add about 30 TSS this week or schedule one moderate session.",
+      description:
+        "Add about 30 TSS this week or schedule one moderate session to approach the recommended load.",
       target_date: "2026-07-13",
       target_week_start: "2026-07-13",
       target_load_delta: 30.3,
+    });
+  });
+
+  it("does not use a readiness gap when planned-load comparison values are unsupported", () => {
+    const recommendation = buildScheduleRecommendation({
+      today: "2026-07-15",
+      readinessForecast: { gap_summary: { type: "plan_gap" } },
+      loadComparison: {
+        weeks: [
+          {
+            week_start: "2026-07-13",
+            scheduled_load: null,
+            recommended_load: 150,
+          },
+        ],
+      },
+      upcomingImpact: [],
+    });
+
+    expect(recommendation).toEqual({
+      type: "add_schedule_detail",
+      label: "Add schedule details",
+      description:
+        "Add duration and intensity so scheduled load can be compared with the recommended load.",
+      target_date: "2026-07-13",
+      target_week_start: "2026-07-13",
+      target_load_delta: null,
     });
   });
 

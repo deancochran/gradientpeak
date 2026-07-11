@@ -86,6 +86,7 @@ describe("buildActivityDerivedSummaryMap", () => {
       intensity_factor: 1.32,
       tss: 174,
       computed_as_of: "2025-02-01T10:00:00.000Z",
+      tss_identity: { sport: "bike", method: "power_threshold" },
     });
     expect(derivedMap.get("later-activity")).toMatchObject({
       intensity_factor: 0.88,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultAthletePreferenceProfile } from "../../schemas/settings/profile_settings";
 import { buildDailyLoadDistribution } from "../dailyLoadDistribution";
+import { buildDailyLoadRecommendation } from "../dailyLoadRecommendation";
 import type { WeeklyAllocation } from "../weeklyAllocation";
 
 type CategoryConfig = {
@@ -108,6 +109,71 @@ function profileWithSessionCount(sessionCount: number) {
 }
 
 describe("buildDailyLoadDistribution", () => {
+  it("requires sport clarification instead of falling back to run", () => {
+    const points = buildDailyLoadRecommendation({
+      mode: "distribution",
+      startDate: "2026-01-05",
+      endDate: "2026-01-11",
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 210 }],
+      capacityContext: { startingCtl: 40 },
+    });
+
+    expect(points.every((point) => point.activityCategory !== "run")).toBe(true);
+    expect(points.some((point) => point.recommendationState === "clarification_required")).toBe(
+      true,
+    );
+  });
+
+  it("limits an explicit, bounded sport allocation to maintenance when capacity is sparse", () => {
+    const points = buildDailyLoadRecommendation({
+      mode: "distribution",
+      startDate: "2026-01-05",
+      endDate: "2026-01-11",
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 210 }],
+      weeklyAllocation: weeklyAllocationFor({ run: { sessions: 3, duration: 180 } }),
+    });
+
+    const trainingPoints = points.filter((point) => point.recommendedLoadTss > 0);
+    expect(trainingPoints.length).toBeGreaterThan(0);
+    expect(trainingPoints.every((point) => point.recommendationState === "maintenance_only")).toBe(
+      true,
+    );
+  });
+
+  it("issues performance recommendations only with explicit sport allocation and capacity", () => {
+    const points = buildDailyLoadRecommendation({
+      mode: "distribution",
+      startDate: "2026-01-05",
+      endDate: "2026-01-11",
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 210 }],
+      weeklyAllocation: weeklyAllocationFor({ bike: { sessions: 3, duration: 180 } }),
+      capacityContext: { startingCtl: 40 },
+    });
+
+    const trainingPoints = points.filter((point) => point.recommendedLoadTss > 0);
+    expect(trainingPoints.length).toBeGreaterThan(0);
+    expect(trainingPoints.every((point) => point.activityCategory === "bike")).toBe(true);
+    expect(trainingPoints.every((point) => point.recommendationState === "recommendation")).toBe(
+      true,
+    );
+  });
+
+  it("limits an explicit existing session to maintenance when broader context is missing", () => {
+    const points = buildDailyLoadRecommendation({
+      mode: "distribution",
+      startDate: "2026-01-05",
+      endDate: "2026-01-11",
+      weeklyTargets: [{ weekStartDate: "2026-01-05", targetTss: 210 }],
+      plannedSessions: [{ date: "2026-01-07", activityCategory: "swim", estimatedTss: 35 }],
+    });
+
+    expect(points.find((point) => point.date === "2026-01-07")).toMatchObject({
+      recommendationState: "maintenance_only",
+      activityCategory: "swim",
+      recommendedLoadTss: 35,
+    });
+  });
+
   it("returns no points for inverted date ranges", () => {
     expect(
       buildDailyLoadDistribution({

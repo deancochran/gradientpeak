@@ -35,12 +35,6 @@ export function buildUpcomingActivityImpact(input: {
         Number.isFinite(estimatedLoadRaw) && estimatedLoadRaw > 0 ? estimatedLoadRaw : null;
       const recommendedLoad = input.recommendedByDate.get(scheduledDate) ?? 0;
       const loadDelta = estimatedLoad === null ? null : estimatedLoad - recommendedLoad;
-      const readinessDelta =
-        loadDelta === null
-          ? null
-          : Math.round(Math.max(-12, Math.min(8, -loadDelta / 12)) * 10) / 10;
-      const fitnessContribution =
-        estimatedLoad === null ? null : Math.round(Math.min(12, estimatedLoad / 12) * 10) / 10;
       const title = plan.name ?? plan.title ?? planned.title ?? "Scheduled session";
       const sport = plan.activity_category ?? plan.sport ?? plan.type ?? "training";
 
@@ -50,15 +44,19 @@ export function buildUpcomingActivityImpact(input: {
         scheduled_at: String(planned.starts_at ?? `${scheduledDate}T00:00:00.000Z`),
         sport: String(sport),
         estimated_load: estimatedLoad === null ? null : Math.round(estimatedLoad * 10) / 10,
-        short_term_readiness_delta: readinessDelta,
-        fitness_contribution: fitnessContribution,
+        // These fields remain in the DTO for compatibility, but planned load does not
+        // provide enough evidence to infer physiological readiness or fitness effects.
+        short_term_readiness_delta: null,
+        fitness_contribution: null,
         confidence: estimatedLoad === null ? "low" : "medium",
         explanation:
           estimatedLoad === null
-            ? "Add duration and intensity to estimate this session's readiness impact."
+            ? "Add duration and intensity to compare this session's planned load with the recommended daily load."
             : loadDelta !== null && loadDelta > 15
-              ? "This session is above the recommended daily load and may reduce short-term readiness."
-              : "This session contributes fitness while staying close to the recommended load path.",
+              ? "This session's planned load is above the recommended daily load."
+              : loadDelta !== null && loadDelta < -15
+                ? "This session's planned load is below the recommended daily load."
+                : "This session's planned load is close to the recommended daily load.",
       };
     });
 }

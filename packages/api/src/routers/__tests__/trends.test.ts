@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const coreMocks = vi.hoisted(() => ({
   calculateAge: vi.fn(),
   calculateRollingTrainingQuality: vi.fn(),
-  getFormStatus: vi.fn(),
+  getLoadBalanceStatus: vi.fn(),
   getTrainingIntensityZone: vi.fn(),
 }));
 
@@ -38,7 +38,7 @@ vi.mock("@repo/core", async () => {
     ...actual,
     calculateAge: coreMocks.calculateAge,
     calculateRollingTrainingQuality: coreMocks.calculateRollingTrainingQuality,
-    getFormStatus: coreMocks.getFormStatus,
+    getLoadBalanceStatus: coreMocks.getLoadBalanceStatus,
     getTrainingIntensityZone: coreMocks.getTrainingIntensityZone,
   };
 });
@@ -187,7 +187,7 @@ beforeEach(() => {
 
   coreMocks.calculateAge.mockReturnValue(36);
   coreMocks.calculateRollingTrainingQuality.mockReturnValue(0.82);
-  coreMocks.getFormStatus.mockReturnValue("productive");
+  coreMocks.getLoadBalanceStatus.mockReturnValue("negative_balance");
   coreMocks.getTrainingIntensityZone.mockImplementation((intensityFactor: number) =>
     intensityFactor < 0.7 ? "endurance" : "threshold",
   );
@@ -399,6 +399,13 @@ describe("trendsRouter", () => {
         ["2026-03-29", 50],
         ["2026-04-01", 100],
       ]),
+      complete: true,
+      seriesIdentity: {
+        sport: "bike",
+        method: "power_threshold",
+        source: "activity_analysis",
+        version: "1",
+      },
     });
     loadMocks.replayTrainingLoadByDate.mockReturnValue([
       { date: "2026-03-31", ctl: 20.16, atl: 30.14, tsb: -9.98, tss: 0 },
@@ -433,11 +440,16 @@ describe("trendsRouter", () => {
         ctl: 21.2,
         atl: 35.2,
         tsb: -13.9,
-        form: "productive",
+        loadBalanceStatus: "negative_balance",
+        form: "negative_balance",
       },
       workload: {
         acwr: { current: 1.1, source: "tss" },
         monotony: { current: 1.4, source: "tss" },
+      },
+      trainingLoadState: {
+        status: "available",
+        reason: "complete_identified_series",
       },
       personalizationTelemetry: {
         flags: {
@@ -451,6 +463,7 @@ describe("trendsRouter", () => {
         training_quality: 0.82,
       },
     });
+    expect(JSON.stringify(result)).not.toMatch(/productive|fatigued|overreach/i);
   });
 
   it("aggregates weekly zone distribution percentages from derived stress data", async () => {

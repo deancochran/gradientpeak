@@ -70,6 +70,7 @@ export async function buildActivityDerivedSummaryMap(input: {
         activity.id,
         {
           tss: derived.stress.tss,
+          tss_identity: derived.stress.tss_identity,
           intensity_factor: derived.stress.intensity_factor,
           computed_as_of: derived.computed_as_of,
         } satisfies ActivityListDerivedSummary,
@@ -87,16 +88,28 @@ export async function buildDynamicStressSeries(input: {
 }): Promise<{
   byActivityId: Map<string, ActivityListDerivedSummary>;
   byDate: Map<string, number>;
+  seriesIdentity: ActivityListDerivedSummary["tss_identity"];
+  complete: boolean;
 }> {
   const byActivityId = await buildActivityDerivedSummaryMap(input);
   const byDate = new Map<string, number>();
+  const identities = new Map<string, NonNullable<ActivityListDerivedSummary["tss_identity"]>>();
+  let complete = true;
 
   for (const activity of input.activities) {
     const dateKey = toIsoString(activity.started_at).split("T")[0];
     if (!dateKey) continue;
-    const tss = byActivityId.get(activity.id)?.tss ?? 0;
+    const summary = byActivityId.get(activity.id);
+    if (summary?.tss === null || !summary?.tss_identity) {
+      complete = false;
+      continue;
+    }
+    const identityKey = JSON.stringify(summary.tss_identity);
+    identities.set(identityKey, summary.tss_identity);
+    const tss = summary.tss;
     byDate.set(dateKey, (byDate.get(dateKey) ?? 0) + tss);
   }
 
-  return { byActivityId, byDate };
+  const seriesIdentity = identities.size === 1 ? [...identities.values()][0]! : null;
+  return { byActivityId, byDate, seriesIdentity, complete: complete && seriesIdentity !== null };
 }

@@ -1,4 +1,4 @@
-import { calculateAge, calculateRollingTrainingQuality, getFormStatus } from "@repo/core";
+import { calculateAge, calculateRollingTrainingQuality, getLoadBalanceStatus } from "@repo/core";
 import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core/load";
 import { activities, profiles, publicActivityCategorySchema } from "@repo/db";
 import { and, asc, desc, eq, gte, isNotNull, lte } from "drizzle-orm";
@@ -210,6 +210,17 @@ const trainingLoadTrendDataPointSchema = z
 const workloadMetricSchema = z
   .object({
     source: workloadSourceSchema.optional(),
+    identity: z
+      .object({
+        sport: z.enum(["run", "bike", "swim", "strength", "other"]),
+        method: z.enum(["power_threshold", "run_pace_threshold", "heart_rate_reserve"]),
+        source: z.literal("activity_analysis"),
+        version: z.literal("1"),
+      })
+      .strict()
+      .nullable()
+      .optional(),
+    coverageComplete: z.boolean().optional(),
   })
   .passthrough();
 
@@ -228,11 +239,19 @@ const trainingLoadTrendsOutputSchema = z
         ctl: z.number().finite(),
         atl: z.number().finite(),
         tsb: z.number().finite(),
+        loadBalanceStatus: z.string(),
+        /** @deprecated Use loadBalanceStatus. */
         form: z.string(),
       })
       .strict()
       .nullable(),
     workload: workloadEnvelopeSchema,
+    trainingLoadState: z
+      .object({
+        status: z.enum(["available", "unavailable"]),
+        reason: z.enum(["complete_identified_series", "mixed_or_incomplete_tss_series"]),
+      })
+      .strict(),
     personalizationTelemetry: z
       .object({
         flags: z
@@ -427,15 +446,27 @@ export const trendsRouter = createTRPCRouter({
         dataPoints: [],
         currentStatus: null,
         workload,
+        trainingLoadState: {
+          status: "unavailable",
+          reason: "mixed_or_incomplete_tss_series",
+        },
       });
     }
 
-    const { byActivityId: derivedActivityMap, byDate: activitiesByDate } =
-      await buildDynamicStressSeries({
-        store: createActivityAnalysisStore(db),
-        profileId: ctx.session.user.id,
-        activities: rawActivityRows,
-      });
+    const dynamicStressSeries = await buildDynamicStressSeries({
+      store: createActivityAnalysisStore(db),
+      profileId: ctx.session.user.id,
+      activities: rawActivityRows,
+    });
+    const {
+      byActivityId: derivedActivityMap,
+      byDate: activitiesByDate,
+      complete = false,
+      seriesIdentity = null,
+    } = dynamicStressSeries as typeof dynamicStressSeries & {
+      complete?: boolean;
+      seriesIdentity?: unknown;
+    };
 
     const rollingTrainingQuality = featureFlags.personalizationTrainingQuality
       ? calculateRollingTrainingQuality(
@@ -448,18 +479,20 @@ export const trendsRouter = createTRPCRouter({
       : undefined;
 
     const replayed = replayedTrainingLoadPointSchema.array().parse(
-      replayTrainingLoadByDate({
-        dailyTss: buildDailyTssByDateSeries({
-          startDate: toDateKey(extendedStart),
-          endDate: toDateKey(endDate),
-          tssByDate: activitiesByDate,
-        }),
-        initialCTL: 0,
-        initialATL: 0,
-        userAge: effectiveAge,
-        userGender: effectiveGender,
-        trainingQuality: rollingTrainingQuality,
-      }),
+      complete && seriesIdentity
+        ? replayTrainingLoadByDate({
+            dailyTss: buildDailyTssByDateSeries({
+              startDate: toDateKey(extendedStart),
+              endDate: toDateKey(endDate),
+              tssByDate: activitiesByDate,
+            }),
+            initialCTL: 0,
+            initialATL: 0,
+            userAge: effectiveAge,
+            userGender: effectiveGender,
+            trainingQuality: rollingTrainingQuality,
+          })
+        : [],
     );
 
     // Filter to requested date range and create data points
@@ -489,12 +522,16 @@ export const trendsRouter = createTRPCRouter({
     // Current status
     const currentStatus =
       dataPoints.length > 0
-        ? {
-            ctl: Math.round(finalCTL * 10) / 10,
-            atl: Math.round(finalATL * 10) / 10,
-            tsb: Math.round(finalTSB * 10) / 10,
-            form: getFormStatus(finalTSB),
-          }
+        ? (() => {
+            const loadBalanceStatus = getLoadBalanceStatus(finalTSB);
+            return {
+              ctl: Math.round(finalCTL * 10) / 10,
+              atl: Math.round(finalATL * 10) / 10,
+              tsb: Math.round(finalTSB * 10) / 10,
+              loadBalanceStatus,
+              form: loadBalanceStatus,
+            };
+          })()
         : null;
 
     const workloadWindowStart = new Date(endDate);
@@ -504,6 +541,7 @@ export const trendsRouter = createTRPCRouter({
         activityRows.map((activity) => ({
           started_at: activity.started_at.toISOString(),
           tss: derivedActivityMap.get(activity.id)?.tss ?? null,
+          tss_identity: (derivedActivityMap.get(activity.id) as any)?.tss_identity ?? null,
         })),
         workloadWindowStart,
         endDate,
@@ -514,6 +552,13 @@ export const trendsRouter = createTRPCRouter({
       dataPoints,
       currentStatus,
       workload,
+      trainingLoadState: {
+        status: complete && seriesIdentity ? "available" : "unavailable",
+        reason:
+          complete && seriesIdentity
+            ? "complete_identified_series"
+            : "mixed_or_incomplete_tss_series",
+      },
       personalizationTelemetry: {
         flags: {
           age_constants: featureFlags.personalizationAgeConstants,
