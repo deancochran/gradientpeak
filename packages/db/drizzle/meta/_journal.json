@@ -155,6 +155,13 @@
       "when": 1783684800000,
       "tag": "0021_add_metric_effort_provenance",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1783857600000,
+      "tag": "0022_add_direct_threshold_profile_metric_types",
+      "breakpoints": true
     }
   ]
 }

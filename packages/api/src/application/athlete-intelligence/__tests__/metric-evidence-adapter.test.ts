@@ -135,6 +135,52 @@ describe("MetricEvidenceAdapter", () => {
     });
   });
 
+  it("resolves direct canonical threshold evidence rather than treating FTP as the only threshold", async () => {
+    const { db } = createDb([
+      {
+        id: "pace",
+        profile_id: PROFILE_ID,
+        metric_type: "threshold_pace_seconds_per_km",
+        recorded_at: new Date("2026-07-09T00:00:00.000Z"),
+        unit: "seconds_per_km",
+        value: 270,
+        reference_activity_id: null,
+        source: "provider",
+        provenance: null,
+      },
+      {
+        id: "css",
+        profile_id: PROFILE_ID,
+        metric_type: "css_seconds_per_100m",
+        recorded_at: new Date("2026-07-09T00:00:00.000Z"),
+        unit: "seconds_per_100m",
+        value: 100,
+        reference_activity_id: null,
+        source: "provider",
+        provenance: null,
+      },
+    ]);
+
+    const evidence = await new MetricEvidenceAdapter(db as never).read({
+      profileId: PROFILE_ID,
+      metricTypes: ["threshold_pace_seconds_per_km", "css_seconds_per_100m"],
+      policy: policy(),
+    });
+
+    expect(evidence).toMatchObject([
+      {
+        metricType: "css_seconds_per_100m",
+        canonicalValue: 100,
+        candidate: { reasons: expect.arrayContaining(["canonical_threshold_source:provider"]) },
+      },
+      {
+        metricType: "threshold_pace_seconds_per_km",
+        canonicalValue: 270,
+        candidate: { reasons: expect.arrayContaining(["canonical_threshold_source:provider"]) },
+      },
+    ]);
+  });
+
   it("emits unknown evidence for absent, unsupported, and non-canonical metric inputs", async () => {
     const { db } = createDb([
       {

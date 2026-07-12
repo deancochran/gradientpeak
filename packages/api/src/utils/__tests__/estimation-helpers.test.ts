@@ -36,6 +36,7 @@ import {
   addEstimationToPlan,
   addEstimationToPlans,
   computePlanMetrics,
+  getEstimationProfileInputsFromStore,
 } from "../estimation-helpers";
 
 function createStoreReader(routeFixtures: Record<string, Record<string, unknown>>) {
@@ -120,6 +121,24 @@ afterEach(() => {
 });
 
 describe("estimation-helpers", () => {
+  it("uses a direct FTP profile metric when no eligible effort is available", async () => {
+    const inputs = await getEstimationProfileInputsFromStore(
+      {
+        getEstimationInputs: vi.fn(async () => ({
+          profile: { dob: null },
+          efforts: [],
+          metrics: [
+            { metric_type: "ftp", unit: "W", value: 271, recorded_at: new Date().toISOString() },
+          ],
+          routes: [],
+        })),
+      } as any,
+      "profile-1",
+    );
+
+    expect(inputs.ftp).toBe(271);
+  });
+
   it("adds estimation for a single plan from the store-backed reader", async () => {
     const estimationReader = createStoreReader({
       "route-1": {

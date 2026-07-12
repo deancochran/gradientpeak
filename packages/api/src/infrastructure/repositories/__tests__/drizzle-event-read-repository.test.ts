@@ -205,12 +205,14 @@ describe("drizzle-event-read-repository", () => {
     const activityPlanWhereSql = toSql(
       selects.find((select) => select.table === "activity_plans")?.whereArg,
     );
+    const selectedTables = selects.map((select) => select.table);
 
     expect(trainingPlanWhereSql).toContain('"training_plans"."id" = $1');
     expect(trainingPlanWhereSql).not.toContain('"training_plans"."profile_id"');
     expect(activityPlanWhereSql).toContain('"activity_plans"."id" = $1');
     expect(activityPlanWhereSql).not.toContain('"activity_plans"."profile_id"');
     expect(activityPlanWhereSql).not.toContain('"activity_plans"."is_system_template"');
+    expect(selectedTables).not.toContain("activity_efforts");
   });
 
   it("serializes estimation inputs and skips route lookup when no route ids are provided", async () => {

@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { profileQuickUpdateSchema } from "@repo/core";
+import {
+  resolveCanonicalThresholds,
+  type ThresholdActivityEffortObservation,
+} from "@repo/core/athlete-inputs";
 import { activityEfforts, profileMetrics, profiles } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
@@ -328,30 +332,91 @@ export const profilesRouter = createTRPCRouter({
     try {
       const cutoffDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
 
-      const [performance, bestPace] = await Promise.all([
+      const [performance, thresholdEfforts] = await Promise.all([
         getProfilePerformanceSnapshot(db, ctx.session.user.id),
         db
-          .select({ value: activityEfforts.value })
+          .select({
+            activity_category: activityEfforts.activity_category,
+            duration_seconds: activityEfforts.duration_seconds,
+            effort_type: activityEfforts.effort_type,
+            recorded_at: activityEfforts.recorded_at,
+            unit: activityEfforts.unit,
+            value: activityEfforts.value,
+          })
           .from(activityEfforts)
           .where(
             and(
               eq(activityEfforts.profile_id, ctx.session.user.id),
-              eq(activityEfforts.activity_category, "run"),
-              eq(activityEfforts.effort_type, "speed"),
               gte(activityEfforts.recorded_at, cutoffDate),
             ),
           )
-          .orderBy(desc(activityEfforts.value))
-          .limit(1)
-          .then((rows) => rows[0] ?? null),
+          .orderBy(desc(activityEfforts.recorded_at))
+          .limit(100),
       ]);
 
       const threshold_hr = performance.threshold_hr ?? undefined;
       const weight_kg = performance.weight_kg ?? undefined;
-      const ftp = performance.ftp ?? undefined;
-      const threshold_pace = bestPace?.value
-        ? Math.round(1000 / (Number(bestPace.value) * 0.9))
-        : undefined;
+      const thresholds = resolveCanonicalThresholds({
+        now: new Date().toISOString(),
+        freshnessWindowMs: 90 * 24 * 60 * 60 * 1000,
+        directMetrics:
+          performance.ftp === null
+            ? []
+            : [
+                {
+                  threshold: "cycling_ftp" as const,
+                  value: performance.ftp,
+                  observedAt: new Date().toISOString(),
+                  source: "provider" as const,
+                },
+              ],
+        activityEfforts: thresholdEfforts.flatMap(
+          (effort): ThresholdActivityEffortObservation[] => {
+            if (effort.duration_seconds !== 1200) return [];
+            const observedAt = effort.recorded_at.toISOString();
+            if (effort.activity_category === "bike" && effort.effort_type === "power") {
+              return [
+                {
+                  sport: "bike" as const,
+                  metric: "power" as const,
+                  value: Number(effort.value),
+                  durationSeconds: 1200,
+                  observedAt,
+                  observationKind: "actual" as const,
+                },
+              ];
+            }
+            if (effort.activity_category === "run" && effort.effort_type === "speed") {
+              const speed =
+                effort.unit === "km_per_hour"
+                  ? Number(effort.value) / 3.6
+                  : effort.unit === "meters_per_second" || effort.unit === "m/s"
+                    ? Number(effort.value)
+                    : null;
+              if (speed === null) return [];
+              return [
+                {
+                  sport: "run" as const,
+                  metric: "speed" as const,
+                  value: speed,
+                  durationSeconds: 1200,
+                  observedAt,
+                  observationKind: "actual" as const,
+                },
+              ];
+            }
+            return [];
+          },
+        ),
+      });
+      const ftp =
+        thresholds.cycling_ftp.value === null
+          ? undefined
+          : Math.round(thresholds.cycling_ftp.value);
+      const threshold_pace =
+        thresholds.running_threshold_pace.value === null
+          ? undefined
+          : Math.round(thresholds.running_threshold_pace.value);
 
       const heartRateZones = threshold_hr
         ? {

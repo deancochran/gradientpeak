@@ -31,7 +31,6 @@ type ConstraintActivityPlan = Pick<
   ActivityPlanRow,
   "id" | "activity_category" | "route_id" | "structure"
 >;
-type NumericValue = { value: number };
 type ProfileMetricValue = Pick<ProfileMetricRow, "value">;
 type ConstraintTrainingPlan = Pick<TrainingPlanRow, "id" | "structure">;
 type EstimationEffort = Pick<
@@ -99,7 +98,6 @@ export interface EventReadRepository {
     trainingPlanId: string;
   }): Promise<{
     activityPlan: ConstraintActivityPlan | null;
-    best20mPower: NumericValue | null;
     lthrMetric: ProfileMetricValue | null;
     profile: SerializedProfileDob | null;
     trainingPlan: ConstraintTrainingPlan | null;

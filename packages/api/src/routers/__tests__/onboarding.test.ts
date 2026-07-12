@@ -203,6 +203,15 @@ describe("onboardingRouter", () => {
     expect(insertCalls).toHaveLength(1);
     expect(insertCalls[0]?.table).toBe(profileMetrics);
     expect(insertCalls[0]?.values).toHaveLength(5);
+    expect(insertCalls[0]?.values).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: "manual",
+          method: "onboarding_manual_seed",
+          provenance: expect.objectContaining({ seed_type: "manual" }),
+        }),
+      ]),
+    );
     expect(insertCalls.some((call) => call.table === activityEfforts)).toBe(false);
   });
 
@@ -241,6 +250,38 @@ describe("onboardingRouter", () => {
     });
   });
 
+  it("persists direct onboarding performance thresholds as manual metric seeds", async () => {
+    const { caller, insertCalls } = createCaller();
+
+    await caller.completeOnboarding({
+      full_name: "Test Athlete",
+      username: "test-athlete",
+      experience_level: "advanced",
+      threshold_pace_seconds_per_km: 270,
+      css_seconds_per_hundred_meters: 95,
+    } as any);
+
+    expect(insertCalls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          table: profileMetrics,
+          values: expect.arrayContaining([
+            expect.objectContaining({
+              metric_type: "threshold_pace_seconds_per_km",
+              unit: "seconds_per_km",
+              source: "manual",
+            }),
+            expect.objectContaining({
+              metric_type: "css_seconds_per_100m",
+              unit: "seconds_per_100m",
+              source: "manual",
+            }),
+          ]),
+        }),
+      ]),
+    );
+  });
+
   it("writes Wahoo enrichment values to canonical storage and sync state", async () => {
     const userId = "11111111-1111-4111-8111-111111111111";
     const integrationId = "22222222-2222-4222-8222-222222222222";
@@ -254,6 +295,17 @@ describe("onboardingRouter", () => {
     expect(updateCalls.some((call) => call.table === profiles)).toBe(true);
     expect(insertCalls.some((call) => call.table === profileMetrics)).toBe(true);
     expect(insertCalls.some((call) => call.table === providerSyncState)).toBe(true);
+    expect(insertCalls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          table: profileMetrics,
+          values: expect.objectContaining({
+            source: "provider",
+            provenance: expect.objectContaining({ provider: "wahoo" }),
+          }),
+        }),
+      ]),
+    );
   });
 
   it("does not duplicate the latest provider-imported weight metric on retry", async () => {
@@ -309,6 +361,15 @@ describe("onboardingRouter", () => {
     expect(insertCalls.filter((call) => call.table === profileMetrics)).toHaveLength(2);
     const effortInsert = insertCalls.find((call) => call.table === activityEfforts);
     expect(effortInsert?.values).toHaveLength(10);
+    expect(effortInsert?.values).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          source: "derived",
+          method: "onboarding_modeled_curve",
+          unit: "W",
+        }),
+      ]),
+    );
     expect(insertCalls.some((call) => call.table === providerSyncState)).toBe(true);
   });
 

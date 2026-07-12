@@ -81,6 +81,8 @@ export const profileMetricTypeEnum = pgEnum("profile_metric_type", [
   "wellness_score",
   "max_hr",
   "lthr",
+  "threshold_pace_seconds_per_km",
+  "css_seconds_per_100m",
 ]);
 
 export const notificationTypeEnum = pgEnum("notification_type", [

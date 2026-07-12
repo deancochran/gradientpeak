@@ -1,4 +1,8 @@
 import type { ActivityAnalysisContext } from "@repo/core";
+import {
+  resolveCanonicalThresholds,
+  type ThresholdActivityEffortObservation,
+} from "@repo/core/athlete-inputs";
 import type { ActivityAnalysisStore } from "../../repositories";
 
 type ResolveActivityContextAsOfInput = {
@@ -42,25 +46,62 @@ export async function resolveActivityContextAsOf(
     }
   }
 
-  const bikePower20mEffort = typedEfforts.find(
-    (effort) =>
-      effort.effort_type === "power" &&
-      effort.activity_category === "bike" &&
-      effort.duration_seconds === 1200,
-  );
+  const thresholds = resolveCanonicalThresholds({
+    now: asOf.toISOString(),
+    freshnessWindowMs: 90 * 24 * 60 * 60 * 1000,
+    directMetrics: typedMetrics.flatMap((metric) =>
+      metric.metric_type === "ftp" && metric.unit === "W"
+        ? [
+            {
+              threshold: "cycling_ftp" as const,
+              value: toNumber(metric.value) ?? 0,
+              observedAt: toIsoString(metric.recorded_at) ?? asOf.toISOString(),
+              source: "provider" as const,
+            },
+          ]
+        : [],
+    ),
+    activityEfforts: typedEfforts.flatMap((effort): ThresholdActivityEffortObservation[] => {
+      const value = normalizeSpeedMetersPerSecond(effort.value, effort.unit);
+      if (effort.duration_seconds !== 1200) return [];
+      if (effort.activity_category === "bike" && effort.effort_type === "power") {
+        return [
+          {
+            sport: "bike" as const,
+            metric: "power" as const,
+            value: effort.value,
+            durationSeconds: 1200,
+            observedAt: toIsoString(effort.recorded_at) ?? asOf.toISOString(),
+            observationKind: "actual" as const,
+          },
+        ];
+      }
+      if (
+        effort.effort_type === "speed" &&
+        (effort.activity_category === "run" || effort.activity_category === "swim") &&
+        value !== null
+      ) {
+        return [
+          {
+            sport: effort.activity_category,
+            metric: "speed" as const,
+            value,
+            durationSeconds: 1200,
+            observedAt: toIsoString(effort.recorded_at) ?? asOf.toISOString(),
+            observationKind: "actual" as const,
+          },
+        ];
+      }
+      return [];
+    }),
+  });
 
-  profileMetrics.ftp = bikePower20mEffort ? Math.round(bikePower20mEffort.value * 0.95) : null;
-
-  const runSpeed20mEffort = typedEfforts.find(
-    (effort) =>
-      effort.effort_type === "speed" &&
-      effort.activity_category === "run" &&
-      effort.duration_seconds === 1200,
-  );
-
-  profileMetrics.threshold_speed_mps = runSpeed20mEffort
-    ? normalizeSpeedMetersPerSecond(runSpeed20mEffort.value, runSpeed20mEffort.unit)
-    : null;
+  profileMetrics.ftp =
+    thresholds.cycling_ftp.value === null ? null : Math.round(thresholds.cycling_ftp.value);
+  profileMetrics.threshold_speed_mps =
+    thresholds.running_threshold_pace.value === null
+      ? null
+      : 1000 / thresholds.running_threshold_pace.value;
 
   const activityTimestampIso = asOf.toISOString();
 
@@ -104,7 +145,7 @@ function toNumber(value: string | number | null | undefined): number | null {
 
 function normalizeSpeedMetersPerSecond(value: number, unit: string): number | null {
   if (!Number.isFinite(value) || value <= 0) return null;
-  if (unit === "meters_per_second") return value;
+  if (unit === "meters_per_second" || unit === "m/s") return value;
   if (unit === "km_per_hour") return value / 3.6;
-  return value;
+  return null;
 }

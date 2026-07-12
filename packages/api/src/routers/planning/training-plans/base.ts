@@ -73,6 +73,7 @@ import {
   trainingPlanUpdateInputSchema,
   validatePlanFeasibility,
 } from "@repo/core";
+import { resolveCanonicalThresholds } from "@repo/core/athlete-inputs";
 import {
   type ProfileGoalRow,
   type ProfileTrainingSettingsRow,
@@ -2830,7 +2831,7 @@ export async function deriveProfileAwareCreationContext(input: {
             .where(
               and(
                 eq(schema.profileMetrics.profile_id, input.profileId),
-                inArray(schema.profileMetrics.metric_type, ["lthr", "weight_kg"]),
+                inArray(schema.profileMetrics.metric_type, ["ftp", "lthr", "weight_kg"]),
               ),
             )
             .orderBy(sql`${schema.profileMetrics.recorded_at} desc`)
@@ -2869,7 +2870,7 @@ export async function deriveProfileAwareCreationContext(input: {
             ?.from("profile_metrics")
             .select("metric_type, value, recorded_at")
             .eq("profile_id", input.profileId)
-            .in("metric_type", ["lthr", "weight_kg"])
+            .in("metric_type", ["ftp", "lthr", "weight_kg"])
             .order("recorded_at", { ascending: false }),
           input.supabase?.from("profiles").select("dob, gender").eq("id", input.profileId).limit(1),
           input.supabase
@@ -2957,17 +2958,46 @@ export async function deriveProfileAwareCreationContext(input: {
     activity_category: effort.activity_category,
   }));
 
-  const ftpEffort = efforts
-    .filter((effort: any) => effort.effort_type === "power" && effort.duration_seconds === 1200)
-    .sort((a: any, b: any) => b.value - a.value)[0];
-
   const profileMetricsRows = profileMetricsResult.error ? [] : (profileMetricsResult.data ?? []);
+
+  const thresholds = resolveCanonicalThresholds({
+    now: asOf.toISOString(),
+    freshnessWindowMs: 90 * 24 * 60 * 60 * 1000,
+    directMetrics: profileMetricsRows.flatMap((metric: any) =>
+      metric.metric_type === "ftp" && Number.isFinite(Number(metric.value))
+        ? [
+            {
+              threshold: "cycling_ftp" as const,
+              value: Number(metric.value),
+              observedAt: new Date(metric.recorded_at).toISOString(),
+              source: "provider" as const,
+            },
+          ]
+        : [],
+    ),
+    activityEfforts: efforts.flatMap((effort: any) =>
+      effort.activity_category === "bike" &&
+      effort.effort_type === "power" &&
+      effort.duration_seconds === 1200
+        ? [
+            {
+              sport: "bike" as const,
+              metric: "power" as const,
+              value: Number(effort.value),
+              durationSeconds: 1200,
+              observedAt: new Date(effort.recorded_at).toISOString(),
+              observationKind: "actual" as const,
+            },
+          ]
+        : [],
+    ),
+  });
 
   const lthrMetric = profileMetricsRows.find((metric: any) => metric.metric_type === "lthr");
   const weightMetric = profileMetricsRows.find((metric: any) => metric.metric_type === "weight_kg");
 
   const profileMetrics = {
-    ftp: ftpEffort?.value ? Math.round(ftpEffort.value * 0.95) : null,
+    ftp: thresholds.cycling_ftp.value === null ? null : Math.round(thresholds.cycling_ftp.value),
     threshold_hr: lthrMetric?.value ? Number(lthrMetric.value) : null,
     weight_kg: weightMetric?.value ? Number(weightMetric.value) : null,
     lthr: lthrMetric?.value ? Number(lthrMetric.value) : null,

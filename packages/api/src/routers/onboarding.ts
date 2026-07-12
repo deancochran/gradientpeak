@@ -290,6 +290,9 @@ export const onboardingRouter = createTRPCRouter({
           resting_hr: input.resting_hr,
           lthr: input.lthr,
           vo2max: input.vo2max,
+          ftp: input.ftp,
+          threshold_pace_seconds_per_km: input.threshold_pace_seconds_per_km,
+          css_seconds_per_hundred_meters: input.css_seconds_per_hundred_meters,
         },
         baseline,
       );

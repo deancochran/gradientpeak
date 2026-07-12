@@ -1,11 +1,18 @@
-import { EVIDENCE_VERSION, type EvidenceCandidate } from "@repo/core";
+import { EVIDENCE_VERSION, type EvidenceCandidate, resolveCanonicalThresholds } from "@repo/core";
 import { profileMetrics } from "@repo/db";
 import { and, desc, eq, inArray, lte } from "drizzle-orm";
 import type { getRequiredDb } from "../../../../db";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export const supportedMetricInputTypes = ["ftp", "lthr", "vo2_max", "weight_kg"] as const;
+export const supportedMetricInputTypes = [
+  "ftp",
+  "threshold_pace_seconds_per_km",
+  "css_seconds_per_100m",
+  "lthr",
+  "vo2_max",
+  "weight_kg",
+] as const;
 export type SupportedMetricInputType = (typeof supportedMetricInputTypes)[number];
 
 type MetricSpecification = {
@@ -14,6 +21,8 @@ type MetricSpecification = {
 
 const metricSpecifications: Record<SupportedMetricInputType, MetricSpecification> = {
   ftp: { canonicalUnit: "W" },
+  threshold_pace_seconds_per_km: { canonicalUnit: "seconds_per_km" },
+  css_seconds_per_100m: { canonicalUnit: "seconds_per_100m" },
   lthr: { canonicalUnit: "bpm" },
   vo2_max: { canonicalUnit: "ml/kg/min" },
   weight_kg: { canonicalUnit: "kg" },
@@ -27,6 +36,8 @@ type ProfileMetricRow = {
   unit: string;
   value: number;
   reference_activity_id: string | null;
+  source: "manual" | "test" | "imported" | "provider" | "estimated" | "derived" | null;
+  provenance: Record<string, unknown> | null;
 };
 
 export type MetricEvidencePolicy = {
@@ -100,6 +111,50 @@ export class MetricEvidenceAdapter {
       if (!latestRows.has(row.metric_type)) latestRows.set(row.metric_type, row);
     }
 
+    const thresholdRows = rows.filter(
+      (row) =>
+        row.profile_id === input.profileId &&
+        row.recorded_at.getTime() <= policy.asOf.getTime() &&
+        ["ftp", "threshold_pace_seconds_per_km", "css_seconds_per_100m"].includes(row.metric_type),
+    );
+    const thresholds = resolveCanonicalThresholds({
+      now: policy.asOf.toISOString(),
+      freshnessWindowMs: policy.freshnessHalfLifeDays * DAY_MS,
+      directMetrics: thresholdRows.flatMap((row) => {
+        const threshold =
+          row.metric_type === "ftp"
+            ? "cycling_ftp"
+            : row.metric_type === "threshold_pace_seconds_per_km"
+              ? "running_threshold_pace"
+              : "swimming_css";
+        const unit =
+          metricSpecifications[row.metric_type as SupportedMetricInputType]?.canonicalUnit;
+        if (
+          row.unit !== unit &&
+          !(row.metric_type === "threshold_pace_seconds_per_km" && row.unit === "s/km") &&
+          !(row.metric_type === "css_seconds_per_100m" && row.unit === "s/100m")
+        ) {
+          return [];
+        }
+        return [
+          {
+            threshold,
+            value: row.value,
+            observedAt: toIso(row.recorded_at),
+            source:
+              row.source === "manual" || row.source === "provider" || row.source === "estimated"
+                ? row.source
+                : ("modeled" as const),
+            locked:
+              row.provenance?.manual_override === true ||
+              (row.provenance?.manual_override as { locked?: boolean } | undefined)?.locked ===
+                true ||
+              row.provenance?.locked === true,
+          },
+        ];
+      }),
+    });
+
     return requestedTypes.map((metricType) => {
       if (!isSupportedMetricInputType(metricType)) {
         return this.unknownEvidence({
@@ -110,7 +165,22 @@ export class MetricEvidenceAdapter {
         });
       }
 
-      const row = latestRows.get(metricType);
+      const threshold =
+        metricType === "ftp"
+          ? "cycling_ftp"
+          : metricType === "threshold_pace_seconds_per_km"
+            ? "running_threshold_pace"
+            : metricType === "css_seconds_per_100m"
+              ? "swimming_css"
+              : null;
+      const resolved = threshold ? thresholds[threshold] : null;
+      const row = resolved?.observedAt
+        ? (thresholdRows.find(
+            (candidate) =>
+              candidate.metric_type === metricType &&
+              toIso(candidate.recorded_at) === resolved.observedAt,
+          ) ?? latestRows.get(metricType))
+        : latestRows.get(metricType);
       if (!row) {
         return this.unknownEvidence({
           metricType,
@@ -121,7 +191,10 @@ export class MetricEvidenceAdapter {
       }
 
       const specification = metricSpecifications[metricType];
-      if (row.unit !== specification.canonicalUnit) {
+      if (
+        row.unit !== specification.canonicalUnit ||
+        (resolved !== null && resolved.value === null)
+      ) {
         return this.unknownEvidence({
           metricType,
           policy,
@@ -151,7 +224,7 @@ export class MetricEvidenceAdapter {
       return {
         metricType,
         canonicalUnit: specification.canonicalUnit,
-        canonicalValue: row.value,
+        canonicalValue: resolved?.value ?? row.value,
         referenceActivityId: row.reference_activity_id,
         candidate: {
           version: EVIDENCE_VERSION,
@@ -169,6 +242,9 @@ export class MetricEvidenceAdapter {
           correlationGroupId: `profile_metric:${metricType}:${row.reference_activity_id ?? row.id}`,
           reasons: [
             "metric_available",
+            ...(resolved && metricType !== "ftp"
+              ? [`canonical_threshold_source:${resolved.source}`]
+              : []),
             `metric_unit:${specification.canonicalUnit}`,
             ...referenceReason,
           ],
@@ -192,12 +268,14 @@ export class MetricEvidenceAdapter {
         unit: profileMetrics.unit,
         value: profileMetrics.value,
         reference_activity_id: profileMetrics.reference_activity_id,
+        source: profileMetrics.source,
+        provenance: profileMetrics.provenance,
       })
       .from(profileMetrics)
       .where(
         and(
           eq(profileMetrics.profile_id, input.profileId),
-          inArray(profileMetrics.metric_type, input.metricTypes),
+          inArray(profileMetrics.metric_type, input.metricTypes as never),
           lte(profileMetrics.recorded_at, input.asOf),
         ),
       )

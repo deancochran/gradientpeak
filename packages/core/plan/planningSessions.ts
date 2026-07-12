@@ -177,6 +177,8 @@ export function applyEstimatedSessionActivityFacts(
 }
 
 function deriveThresholdPaceSecondsPerKm(athleteContext: AthletePlanningContext) {
+  const canonicalThresholdPace = athleteContext.physiology.thresholdPaceSecondsPerKm.value;
+  if (canonicalThresholdPace !== null) return canonicalThresholdPace;
   const speedEfforts = athleteContext.efforts.filter(
     (effort) =>
       effort.activityCategory === "run" && effort.effortType === "speed" && effort.value > 0,

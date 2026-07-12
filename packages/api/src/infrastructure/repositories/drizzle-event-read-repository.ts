@@ -217,80 +217,59 @@ export function createEventReadRepository(
       return rows.map((row) => ({ starts_at: row.starts_at.toISOString() }));
     },
 
-    async getValidateConstraintsInputs({
-      activityPlanId,
-      effortCutoffIso,
-      profileId,
-      trainingPlanId,
-    }) {
-      const [trainingPlan, activityPlan, profile, best20mPower, lthrMetric, weightMetric] =
-        await Promise.all([
-          db
-            .select({
-              id: schema.trainingPlans.id,
-              structure: schema.trainingPlans.structure,
-            })
-            .from(schema.trainingPlans)
-            .where(eq(schema.trainingPlans.id, trainingPlanId))
-            .limit(1)
-            .then((rows) => rows[0] ?? null),
-          db
-            .select({
-              id: schema.activityPlans.id,
-              activity_category: schema.activityPlans.activity_category,
-              structure: schema.activityPlans.structure,
-              route_id: schema.activityPlans.route_id,
-            })
-            .from(schema.activityPlans)
-            .where(eq(schema.activityPlans.id, activityPlanId))
-            .limit(1)
-            .then((rows) => rows[0] ?? null),
-          db
-            .select({ dob: schema.profiles.dob })
-            .from(schema.profiles)
-            .where(eq(schema.profiles.id, profileId))
-            .limit(1)
-            .then((rows) => rows[0] ?? null),
-          db
-            .select({ value: schema.activityEfforts.value })
-            .from(schema.activityEfforts)
-            .where(
-              and(
-                eq(schema.activityEfforts.profile_id, profileId),
-                eq(schema.activityEfforts.activity_category, "bike"),
-                eq(schema.activityEfforts.effort_type, "power"),
-                eq(schema.activityEfforts.duration_seconds, 1200),
-                gte(schema.activityEfforts.recorded_at, new Date(effortCutoffIso)),
-              ),
-            )
-            .orderBy(desc(schema.activityEfforts.value))
-            .limit(1)
-            .then((rows) => rows[0] ?? null),
-          db
-            .select({ value: schema.profileMetrics.value })
-            .from(schema.profileMetrics)
-            .where(
-              and(
-                eq(schema.profileMetrics.profile_id, profileId),
-                eq(schema.profileMetrics.metric_type, "lthr"),
-              ),
-            )
-            .orderBy(desc(schema.profileMetrics.recorded_at))
-            .limit(1)
-            .then((rows) => rows[0] ?? null),
-          db
-            .select({ value: schema.profileMetrics.value })
-            .from(schema.profileMetrics)
-            .where(
-              and(
-                eq(schema.profileMetrics.profile_id, profileId),
-                eq(schema.profileMetrics.metric_type, "weight_kg"),
-              ),
-            )
-            .orderBy(desc(schema.profileMetrics.recorded_at))
-            .limit(1)
-            .then((rows) => rows[0] ?? null),
-        ]);
+    async getValidateConstraintsInputs({ activityPlanId, profileId, trainingPlanId }) {
+      const [trainingPlan, activityPlan, profile, lthrMetric, weightMetric] = await Promise.all([
+        db
+          .select({
+            id: schema.trainingPlans.id,
+            structure: schema.trainingPlans.structure,
+          })
+          .from(schema.trainingPlans)
+          .where(eq(schema.trainingPlans.id, trainingPlanId))
+          .limit(1)
+          .then((rows) => rows[0] ?? null),
+        db
+          .select({
+            id: schema.activityPlans.id,
+            activity_category: schema.activityPlans.activity_category,
+            structure: schema.activityPlans.structure,
+            route_id: schema.activityPlans.route_id,
+          })
+          .from(schema.activityPlans)
+          .where(eq(schema.activityPlans.id, activityPlanId))
+          .limit(1)
+          .then((rows) => rows[0] ?? null),
+        db
+          .select({ dob: schema.profiles.dob })
+          .from(schema.profiles)
+          .where(eq(schema.profiles.id, profileId))
+          .limit(1)
+          .then((rows) => rows[0] ?? null),
+        db
+          .select({ value: schema.profileMetrics.value })
+          .from(schema.profileMetrics)
+          .where(
+            and(
+              eq(schema.profileMetrics.profile_id, profileId),
+              eq(schema.profileMetrics.metric_type, "lthr"),
+            ),
+          )
+          .orderBy(desc(schema.profileMetrics.recorded_at))
+          .limit(1)
+          .then((rows) => rows[0] ?? null),
+        db
+          .select({ value: schema.profileMetrics.value })
+          .from(schema.profileMetrics)
+          .where(
+            and(
+              eq(schema.profileMetrics.profile_id, profileId),
+              eq(schema.profileMetrics.metric_type, "weight_kg"),
+            ),
+          )
+          .orderBy(desc(schema.profileMetrics.recorded_at))
+          .limit(1)
+          .then((rows) => rows[0] ?? null),
+      ]);
 
       return {
         trainingPlan,
@@ -300,7 +279,6 @@ export function createEventReadRepository(
               dob: profile.dob ? profile.dob.toISOString() : null,
             }
           : null,
-        best20mPower,
         lthrMetric: lthrMetric
           ? {
               value: lthrMetric.value,
@@ -343,6 +321,7 @@ export function createEventReadRepository(
         db
           .select({
             metric_type: schema.profileMetrics.metric_type,
+            unit: schema.profileMetrics.unit,
             value: schema.profileMetrics.value,
             recorded_at: schema.profileMetrics.recorded_at,
           })
@@ -352,6 +331,7 @@ export function createEventReadRepository(
               eq(schema.profileMetrics.profile_id, profileId),
               inArray(schema.profileMetrics.metric_type, [
                 "weight_kg",
+                "ftp",
                 "resting_hr",
                 "max_hr",
                 "lthr",
@@ -400,7 +380,8 @@ export function createEventReadRepository(
           : null,
         efforts,
         metrics: metrics.map((metric) => ({
-          metric_type: metric.metric_type as "weight_kg" | "resting_hr" | "max_hr" | "lthr",
+          metric_type: metric.metric_type as "weight_kg" | "ftp" | "resting_hr" | "max_hr" | "lthr",
+          unit: metric.unit,
           value: metric.value,
           recorded_at: metric.recorded_at.toISOString(),
         })),

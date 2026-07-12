@@ -128,7 +128,7 @@ export function buildActivityFileBestEffortRows(input: {
 
   if (powerStream.length > 0) {
     for (const effort of calculateBestEfforts(powerStream, timestamps)) {
-      effortsToInsert.push(buildActivityFileBestEffortRow(input, effort, "power", "watts"));
+      effortsToInsert.push(buildActivityFileBestEffortRow(input, effort, "power", "W"));
     }
   }
 
@@ -156,7 +156,7 @@ function buildActivityFileBestEffortRow(
   },
   effort: ReturnType<typeof calculateBestEfforts>[number],
   effortType: "power" | "speed",
-  unit: "watts" | "meters_per_second",
+  unit: "W" | "meters_per_second",
 ): typeof activityEfforts.$inferInsert {
   const { timestamps } = input.streamMetadata;
 
@@ -176,5 +176,12 @@ function buildActivityFileBestEffortRow(
         : null,
     unit,
     value: effort.value,
+    source: "imported",
+    method: "activity_file_best_effort",
+    calculation_version: "activity-file-best-effort-v1",
+    provenance: {
+      activity_id: input.activityId,
+      derived_from: "activity_file_stream",
+    },
   };
 }

@@ -377,7 +377,7 @@ export class OnboardingProviderEnrichmentService {
       );
       ftp = normalizeFtp(powerZones.ftp ?? powerZones.critical_power);
       if (ftp !== null) {
-        const didWriteFtp = await this.writeProviderMetric(integration, "ftp", ftp, "w", now);
+        const didWriteFtp = await this.writeProviderMetric(integration, "ftp", ftp, "W", now);
         if (didWriteFtp.wrote) {
           fieldsUpdated.push("ftp");
           await this.writeModeledCyclingEffortsFromFtp(integration.profile_id, ftp);
@@ -562,6 +562,13 @@ export class OnboardingProviderEnrichmentService {
         unit: "kg",
         value: weightImport.value,
         notes,
+        source: "provider",
+        method: "provider_profile_import",
+        calculation_version: "provider-import-v1",
+        provenance: {
+          integration_id: integration.id,
+          provider: integration.provider,
+        },
       });
     }
   }
@@ -674,6 +681,13 @@ export class OnboardingProviderEnrichmentService {
       unit,
       value,
       notes,
+      source: "provider",
+      method: "provider_metric_import",
+      calculation_version: "provider-import-v1",
+      provenance: {
+        integration_id: integration.id,
+        provider: integration.provider,
+      },
     });
 
     return { hadExisting: Boolean(latestMetric), wrote: true };

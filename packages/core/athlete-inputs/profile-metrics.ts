@@ -14,6 +14,8 @@ export const profileMetricTypeSchema = z.enum([
   "wellness_score",
   "max_hr",
   "lthr",
+  "threshold_pace_seconds_per_km",
+  "css_seconds_per_100m",
 ]);
 
 export type ProfileMetricType = z.infer<typeof profileMetricTypeSchema>;
@@ -163,6 +165,26 @@ export const profileMetricDefinitions = {
     decimals: 0,
     defaultValue: 165,
   },
+  threshold_pace_seconds_per_km: {
+    type: "threshold_pace_seconds_per_km",
+    label: "Running threshold pace",
+    unit: "seconds_per_km",
+    inputKind: "integer",
+    min: 120,
+    max: 900,
+    decimals: 0,
+    defaultValue: 270,
+  },
+  css_seconds_per_100m: {
+    type: "css_seconds_per_100m",
+    label: "Swim CSS",
+    unit: "seconds_per_100m",
+    inputKind: "integer",
+    min: 60,
+    max: 300,
+    decimals: 0,
+    defaultValue: 100,
+  },
 } as const satisfies Record<ProfileMetricType, ProfileMetricDefinition>;
 
 export const profileMetricTypes = Object.keys(profileMetricDefinitions) as ProfileMetricType[];
@@ -211,6 +233,58 @@ export const profileMetricNotesSchema = z
   .optional();
 
 export const profileMetricRecordedAtSchema = z.string().datetime("Invalid datetime").optional();
+
+/**
+ * A durable manual override is stored in a metric row with `source: "manual"`
+ * and this value under `provenance.manual_override`.
+ */
+export const profileMetricManualOverrideSchema = z
+  .object({
+    locked: z.literal(true),
+  })
+  .strict();
+
+export type ProfileMetricManualOverride = z.infer<typeof profileMetricManualOverrideSchema>;
+
+/**
+ * Keeps metric-specific provenance extensible while reserving an explicit
+ * manual override representation for canonical threshold selection.
+ */
+export const profileMetricProvenanceSchema = z
+  .object({
+    manual_override: profileMetricManualOverrideSchema.optional(),
+  })
+  .passthrough();
+
+export type ProfileMetricProvenance = z.infer<typeof profileMetricProvenanceSchema>;
+
+export const profileMetricObservationSourceSchema = z.enum([
+  "manual",
+  "test",
+  "imported",
+  "provider",
+  "estimated",
+  "derived",
+]);
+
+export const profileMetricObservationSchema = z
+  .object({
+    metric_type: profileMetricTypeSchema,
+    provenance: profileMetricProvenanceSchema.nullable().optional(),
+    source: profileMetricObservationSourceSchema.nullable().optional(),
+  })
+  .strict()
+  .superRefine((metric, ctx) => {
+    if (metric.provenance?.manual_override && metric.source !== "manual") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "A locked manual override must have source manual",
+        path: ["source"],
+      });
+    }
+  });
+
+export type ProfileMetricObservation = z.infer<typeof profileMetricObservationSchema>;
 
 export const profileMetricCreatePayloadSchema = z
   .object({

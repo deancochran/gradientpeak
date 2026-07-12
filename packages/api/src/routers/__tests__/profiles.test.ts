@@ -379,7 +379,24 @@ describe("profilesRouter", () => {
         activityEfforts: [
           [{ value: 310, recorded_at: new Date() }],
           [{ value: 4.5, recorded_at: new Date() }],
-          [],
+          [
+            {
+              activity_category: "bike",
+              duration_seconds: 1200,
+              effort_type: "power",
+              recorded_at: new Date(),
+              unit: "watts",
+              value: 310,
+            },
+            {
+              activity_category: "run",
+              duration_seconds: 1200,
+              effort_type: "speed",
+              recorded_at: new Date(),
+              unit: "meters_per_second",
+              value: 4.5,
+            },
+          ],
         ],
       },
     });
@@ -390,7 +407,7 @@ describe("profilesRouter", () => {
       threshold_hr: 170,
       ftp: 295,
       weight_kg: 71,
-      threshold_pace: 247,
+      threshold_pace: 222,
     });
     expect(result.heartRateZones?.zone2).toEqual({ min: 128, max: 148 });
     expect(result.powerZones?.zone4).toEqual({ min: 266, max: 310 });

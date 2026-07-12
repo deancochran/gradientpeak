@@ -152,7 +152,7 @@ describe("training plan creation domain", () => {
       unit: "kg",
     });
     expect(context.body.bmi.value).toBe(22.7);
-    expect(context.physiology.ftpWatts.value).toBe(265);
+    expect(context.physiology.ftpWatts.value).toBe(270.75);
     expect(context.physiology.thresholdHeartRateBpm.value).toBe(169);
     expect(context.physiology.currentFitnessCtl).toMatchObject({
       value: 41.2,
@@ -162,7 +162,11 @@ describe("training plan creation domain", () => {
     expect(context.physiology.currentFatigueAtl.value).toBe(49.8);
     expect(context.physiology.currentFormTsb.value).toBe(-8.6);
     expect(context.efforts).toHaveLength(1);
-    expect(context.evidence).toMatchObject({ metricCount: 4, effortCount: 1, missingFields: [] });
+    expect(context.evidence).toMatchObject({
+      metricCount: 4,
+      effortCount: 1,
+      missingFields: ["threshold_pace_seconds_per_km", "css_seconds_per_100m"],
+    });
     expect(JSON.stringify(context)).not.toContain("username");
     expect(JSON.stringify(context)).not.toContain("followers");
     expect(JSON.stringify(context)).not.toContain("bio");

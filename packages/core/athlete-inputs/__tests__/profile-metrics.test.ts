@@ -4,6 +4,7 @@ import {
   formatProfileMetricValue,
   getProfileMetricDefinition,
   isProfileMetricValueWithinRange,
+  profileMetricObservationSchema,
   profileMetricTypes,
 } from "../profile-metrics";
 
@@ -11,7 +12,13 @@ describe("profile metric definitions", () => {
   it("defines every persisted profile metric with display and input bounds", () => {
     expect(profileMetricTypes).toContain("weight_kg");
     expect(profileMetricTypes).toContain("ftp");
+    expect(profileMetricTypes).toContain("threshold_pace_seconds_per_km");
+    expect(profileMetricTypes).toContain("css_seconds_per_100m");
     expect(getProfileMetricDefinition("lthr")).toMatchObject({ unit: "bpm", min: 80 });
+    expect(getProfileMetricDefinition("threshold_pace_seconds_per_km")).toMatchObject({
+      unit: "seconds_per_km",
+      min: 120,
+    });
   });
 
   it("validates values through the shared registry", () => {
@@ -32,6 +39,27 @@ describe("profile metric definitions", () => {
 
   it("formats values with canonical units", () => {
     expect(formatProfileMetricValue({ metric_type: "ftp", value: 245 })).toBe("245 W");
+    expect(formatProfileMetricValue({ metric_type: "css_seconds_per_100m", value: 100 })).toBe(
+      "100 seconds_per_100m",
+    );
     expect(formatProfileMetricValue({ metric_type: "stress_score", value: 7 })).toBe("7");
+  });
+
+  it("represents a locked override as manual provenance", () => {
+    expect(
+      profileMetricObservationSchema.parse({
+        metric_type: "threshold_pace_seconds_per_km",
+        source: "manual",
+        provenance: { manual_override: { locked: true } },
+      }),
+    ).toMatchObject({ source: "manual", provenance: { manual_override: { locked: true } } });
+
+    expect(
+      profileMetricObservationSchema.safeParse({
+        metric_type: "css_seconds_per_100m",
+        source: "provider",
+        provenance: { manual_override: { locked: true } },
+      }).success,
+    ).toBe(false);
   });
 });

@@ -5,6 +5,7 @@ import {
   athleteMetricRoleByType,
   athletePreferenceProfileSchema,
   canonicalGoalObjectiveSchema,
+  resolveCanonicalThresholds,
 } from "@repo/core";
 import {
   activities,
@@ -61,6 +62,8 @@ export interface AthleteIntelligenceRows {
     recordedAt: Date;
     createdAt: Date;
     updatedAt: Date;
+    source?: "manual" | "test" | "imported" | "provider" | "estimated" | "derived" | null;
+    provenance?: unknown;
   }>;
   activities: Array<{
     profileId: string;
@@ -340,6 +343,8 @@ export function createDrizzleAthleteIntelligenceDataSource(
             recordedAt: profileMetrics.recorded_at,
             createdAt: profileMetrics.created_at,
             updatedAt: profileMetrics.updated_at,
+            source: profileMetrics.source,
+            provenance: profileMetrics.provenance,
           })
           .from(profileMetrics)
           .where(
@@ -727,6 +732,41 @@ export async function materializeAthleteIntelligenceModelInput(input: {
       !latest.has(row.type as AthleteMetricType)
     )
       latest.set(row.type as AthleteMetricType, row);
+  const canonicalFtp = resolveCanonicalThresholds({
+    now: asOf.toISOString(),
+    freshnessWindowMs: 90 * DAY,
+    directMetrics: boundedMetrics.flatMap((row) => {
+      if (row.type !== "ftp" || canonicalMetricValue("ftp", row.value, row.unit) === null)
+        return [];
+      return [
+        {
+          threshold: "cycling_ftp" as const,
+          value: row.value,
+          observedAt: row.recordedAt.toISOString(),
+          source:
+            row.source === "manual" || row.source === "provider" || row.source === "estimated"
+              ? row.source
+              : ("modeled" as const),
+          locked:
+            typeof row.provenance === "object" &&
+            row.provenance !== null &&
+            ((row.provenance as Record<string, unknown>).manual_override === true ||
+              (
+                (row.provenance as Record<string, unknown>).manual_override as
+                  | { locked?: boolean }
+                  | undefined
+              )?.locked === true ||
+              (row.provenance as Record<string, unknown>).locked === true),
+        },
+      ];
+    }),
+  }).cycling_ftp;
+  if (canonicalFtp.observedAt !== null && canonicalFtp.source !== "observed_effort") {
+    const selectedFtp = boundedMetrics.find(
+      (row) => row.type === "ftp" && row.recordedAt.toISOString() === canonicalFtp.observedAt,
+    );
+    if (selectedFtp) latest.set("ftp", selectedFtp);
+  }
   const metricEvidence = [...latest.entries()].flatMap(([type, row]) => {
     const value = canonicalMetricValue(type, row.value, row.unit);
     const metricLineage = row.referenceActivityId

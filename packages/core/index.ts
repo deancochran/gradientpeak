@@ -175,6 +175,19 @@ export * from "./activity-files"; // Runtime-neutral activity file ingestion con
 // server-only exports here; use `@repo/core/server` or its server subpaths so
 // runtime-neutral consumers can avoid Node/FIT-SDK dependencies.
 export * from "./activity-files/activity-file-parser";
+export {
+  type ActivityEffortObservationKind,
+  type CanonicalThresholdType,
+  canonicalThresholdTypes,
+  type DirectThresholdMetricObservation,
+  type ResolveCanonicalThresholdsInput,
+  type ResolvedCanonicalThreshold,
+  resolveCanonicalThresholds,
+  type ThresholdActivityEffortObservation,
+  type ThresholdConfidence,
+  type ThresholdEligibilityReason,
+  type ThresholdMetricSource,
+} from "./athlete-inputs/canonical-thresholds";
 export * from "./athlete-intelligence"; // Deterministic athlete intelligence contracts and evaluation
 export * from "./bluetooth"; // Canonical BLE parsers
 export * from "./calculations/critical-power";
@@ -238,6 +251,7 @@ export * from "./zones"; // Canonical zones and threshold metadata
 // Allows consumers to import as: import { Calculations } from '@repo/core'
 // and use as: Calculations.calculateTSS(...)
 
+export * as AthleteInputs from "./athlete-inputs";
 export * as Bluetooth from "./bluetooth";
 export * as Calculations from "./calculations";
 export * as CalculationsV2 from "./calculations_v2";

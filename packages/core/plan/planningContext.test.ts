@@ -39,6 +39,59 @@ describe("planningContext", () => {
     expect(context.scheduling.preferredWeekdays).toEqual([1, 3, 5]);
   });
 
+  it("resolves canonical thresholds from locked metrics and eligible twenty-minute efforts", () => {
+    const context = createAthletePlanningContextFromSnapshot({
+      asOf: "2026-06-01T00:00:00.000Z",
+      profileMetrics: [
+        {
+          metric_type: "ftp",
+          value: 240,
+          unit: "W",
+          recorded_at: "2026-05-01T00:00:00.000Z",
+          source: "manual",
+          provenance: { manual_override: true },
+        },
+        {
+          metric_type: "threshold_pace_seconds_per_km",
+          value: 270,
+          unit: "seconds_per_km",
+          recorded_at: "2026-05-01T00:00:00.000Z",
+          source: "provider",
+        },
+        {
+          metric_type: "css_seconds_per_100m",
+          value: 100,
+          unit: "seconds_per_100m",
+          recorded_at: "2026-05-01T00:00:00.000Z",
+          source: "provider",
+        },
+      ],
+      activityEfforts: [
+        {
+          activity_category: "run",
+          effort_type: "speed",
+          duration_seconds: 1200,
+          value: 4,
+          unit: "m/s",
+          recorded_at: "2026-05-30T00:00:00.000Z",
+          source: "imported",
+        },
+      ],
+    });
+
+    expect(context.physiology.ftpWatts).toMatchObject({ value: 240, source: "profile_metric" });
+    expect(context.physiology.thresholdPaceSecondsPerKm).toMatchObject({
+      value: 250,
+      source: "activity_effort",
+      unit: "s/1000m",
+    });
+    expect(context.physiology.cssSecondsPer100m).toMatchObject({
+      value: 100,
+      source: "profile_metric",
+      unit: "s/100m",
+    });
+  });
+
   it("maps simple planning preferences through canonical creation constraints", () => {
     expect(
       mapPlanningPreferencesToCreationConstraints({

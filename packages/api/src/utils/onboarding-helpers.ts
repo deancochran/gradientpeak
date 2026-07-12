@@ -32,7 +32,7 @@ const derivePowerCurveFromFTP = (ftp: number): DerivedEffort[] => {
     duration_seconds: duration,
     effort_type: "power" as const,
     value: Math.round(ftp + wPrime / duration),
-    unit: "watts",
+    unit: "W",
     activity_category: "bike" as const,
   }));
 };
@@ -129,6 +129,10 @@ export async function batchInsertProfileMetrics(
     value: number;
     unit: string;
     source?: string;
+    observationSource: NonNullable<ProfileMetricInsert["source"]>;
+    method: string;
+    calculationVersion: string;
+    provenance: Record<string, unknown>;
   }>,
 ) {
   if (metrics.length === 0) {
@@ -144,6 +148,10 @@ export async function batchInsertProfileMetrics(
     unit: m.unit,
     recorded_at: new Date(),
     notes: m.source ? `Generated from ${m.source}` : null,
+    source: m.observationSource,
+    method: m.method,
+    calculation_version: m.calculationVersion,
+    provenance: m.provenance,
   })) satisfies ProfileMetricInsert[];
 
   await db.insert(profileMetrics).values(metricsToInsert);
@@ -166,7 +174,7 @@ export async function batchInsertActivityEfforts(
   db: DrizzleDbClient,
   profileId: string,
   efforts: DerivedEffort[],
-  _source: string = "onboarding",
+  seedSource: string = "onboarding",
   activityId: string | null = null,
 ) {
   if (efforts.length === 0) {
@@ -184,10 +192,13 @@ export async function batchInsertActivityEfforts(
     duration_seconds: e.duration_seconds,
     effort_type: e.effort_type as EffortType,
     value: e.value,
-    unit: e.unit,
+    unit: e.effort_type === "power" ? "W" : e.unit,
     recorded_at: new Date(),
     start_offset: null,
-    // source: source, // Uncomment if source column exists
+    source: "derived",
+    method: "onboarding_modeled_curve",
+    calculation_version: "onboarding-effort-curve-v1",
+    provenance: { seed_source: seedSource },
   })) satisfies ActivityEffortInsert[];
 
   await db.insert(activityEfforts).values(effortsToInsert);
@@ -240,6 +251,9 @@ export function prepareProfileMetrics(
     resting_hr?: number;
     lthr?: number;
     vo2max?: number;
+    ftp?: number;
+    threshold_pace_seconds_per_km?: number;
+    css_seconds_per_hundred_meters?: number;
   },
   baseline: BaselineProfile | null,
 ): Array<{
@@ -247,12 +261,20 @@ export function prepareProfileMetrics(
   value: number;
   unit: string;
   source?: string;
+  observationSource: NonNullable<ProfileMetricInsert["source"]>;
+  method: string;
+  calculationVersion: string;
+  provenance: Record<string, unknown>;
 }> {
   const metrics: Array<{
     metric_type: ProfileMetricType;
     value: number;
     unit: string;
     source?: string;
+    observationSource: NonNullable<ProfileMetricInsert["source"]>;
+    method: string;
+    calculationVersion: string;
+    provenance: Record<string, unknown>;
   }> = [];
 
   // Weight (if provided)
@@ -261,10 +283,15 @@ export function prepareProfileMetrics(
       metric_type: "weight_kg",
       value: input.weight_kg,
       unit: "kg",
+      observationSource: "manual",
+      method: "onboarding_manual_seed",
+      calculationVersion: "onboarding-v1",
+      provenance: { input: "onboarding", seed_type: "manual" },
     });
   }
 
-  // Merge HR metrics with baseline
+  // Merge HR and FTP metrics with baseline
+  const ftp = input.ftp ?? baseline?.ftp;
   const maxHR = input.max_hr ?? baseline?.max_hr;
   const restingHR = input.resting_hr ?? baseline?.resting_hr;
 
@@ -274,6 +301,14 @@ export function prepareProfileMetrics(
       value: maxHR,
       unit: "bpm",
       source: input.max_hr ? undefined : baseline?.source,
+      observationSource: input.max_hr ? "manual" : "estimated",
+      method: input.max_hr ? "onboarding_manual_seed" : "onboarding_baseline_seed",
+      calculationVersion: "onboarding-v1",
+      provenance: {
+        input: "onboarding",
+        seed_type: input.max_hr ? "manual" : "baseline",
+        baseline_source: input.max_hr ? undefined : baseline?.source,
+      },
     });
   }
 
@@ -283,6 +318,55 @@ export function prepareProfileMetrics(
       value: restingHR,
       unit: "bpm",
       source: input.resting_hr ? undefined : baseline?.source,
+      observationSource: input.resting_hr ? "manual" : "estimated",
+      method: input.resting_hr ? "onboarding_manual_seed" : "onboarding_baseline_seed",
+      calculationVersion: "onboarding-v1",
+      provenance: {
+        input: "onboarding",
+        seed_type: input.resting_hr ? "manual" : "baseline",
+        baseline_source: input.resting_hr ? undefined : baseline?.source,
+      },
+    });
+  }
+
+  if (ftp) {
+    metrics.push({
+      metric_type: "ftp",
+      value: ftp,
+      unit: "W",
+      source: input.ftp ? undefined : baseline?.source,
+      observationSource: input.ftp ? "manual" : "estimated",
+      method: input.ftp ? "onboarding_manual_seed" : "onboarding_baseline_seed",
+      calculationVersion: "onboarding-v1",
+      provenance: {
+        input: "onboarding",
+        seed_type: input.ftp ? "manual" : "baseline",
+        baseline_source: input.ftp ? undefined : baseline?.source,
+      },
+    });
+  }
+
+  if (input.threshold_pace_seconds_per_km) {
+    metrics.push({
+      metric_type: "threshold_pace_seconds_per_km",
+      value: input.threshold_pace_seconds_per_km,
+      unit: "seconds_per_km",
+      observationSource: "manual",
+      method: "onboarding_manual_seed",
+      calculationVersion: "onboarding-v1",
+      provenance: { input: "onboarding", seed_type: "manual" },
+    });
+  }
+
+  if (input.css_seconds_per_hundred_meters) {
+    metrics.push({
+      metric_type: "css_seconds_per_100m",
+      value: input.css_seconds_per_hundred_meters,
+      unit: "seconds_per_100m",
+      observationSource: "manual",
+      method: "onboarding_manual_seed",
+      calculationVersion: "onboarding-v1",
+      provenance: { input: "onboarding", seed_type: "manual" },
     });
   }
 
@@ -294,6 +378,13 @@ export function prepareProfileMetrics(
       value: vo2max,
       unit: "ml/kg/min",
       source: input.vo2max ? undefined : "calculated_from_hr",
+      observationSource: input.vo2max ? "manual" : "estimated",
+      method: input.vo2max ? "onboarding_manual_seed" : "onboarding_derived_estimate",
+      calculationVersion: "onboarding-v1",
+      provenance: {
+        input: "onboarding",
+        seed_type: input.vo2max ? "manual" : "estimated",
+      },
     });
   }
 
@@ -305,6 +396,14 @@ export function prepareProfileMetrics(
       value: lthr,
       unit: "bpm",
       source: input.lthr ? undefined : "estimated",
+      observationSource: input.lthr ? "manual" : "estimated",
+      method: input.lthr ? "onboarding_manual_seed" : "onboarding_baseline_seed",
+      calculationVersion: "onboarding-v1",
+      provenance: {
+        input: "onboarding",
+        seed_type: input.lthr ? "manual" : "baseline",
+        baseline_source: input.lthr ? undefined : baseline?.source,
+      },
     });
   }
 

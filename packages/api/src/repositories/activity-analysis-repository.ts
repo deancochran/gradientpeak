@@ -2,7 +2,7 @@ import type { ActivityEffortRow, ProfileMetricRow, ProfileRow } from "@repo/db";
 
 type ActivityAnalysisProfileSnapshot = Pick<ProfileRow, "dob" | "gender">;
 type ActivityAnalysisMetricSnapshot = Omit<
-  Pick<ProfileMetricRow, "metric_type" | "recorded_at" | "value">,
+  Pick<ProfileMetricRow, "metric_type" | "recorded_at" | "unit" | "value">,
   "value"
 > & { value: number };
 type ActivityAnalysisEffortSnapshot = Omit<

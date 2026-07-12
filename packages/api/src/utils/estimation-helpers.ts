@@ -3,6 +3,10 @@
  */
 
 import type { CanonicalSport } from "@repo/core";
+import {
+  resolveCanonicalThresholds,
+  type ThresholdActivityEffortObservation,
+} from "@repo/core/athlete-inputs";
 import type { EstimationActivityPlanInput as CoreEstimationActivityPlanInput } from "@repo/core/estimation";
 import { buildEstimationContext, estimateActivity, estimateMetrics } from "@repo/core/estimation";
 import type { ActivityPlanRow } from "@repo/db";
@@ -111,34 +115,11 @@ export async function getEstimationProfileInputsFromStore(
   let maxHr: number | null = null;
   let lthr: number | null = null;
 
-  const bikePower20mEffort = data.efforts
-    .filter(
-      (effort) =>
-        effort.effort_type === "power" &&
-        effort.activity_category === "bike" &&
-        effort.duration_seconds === 1200,
-    )
-    .sort((a, b) => b.value - a.value)[0];
-
-  const runSpeed20mEffort = data.efforts
-    .filter(
-      (effort) =>
-        effort.effort_type === "speed" &&
-        effort.activity_category === "run" &&
-        effort.duration_seconds === 1200,
-    )
-    .sort((a, b) => b.value - a.value)[0];
-
-  const ftp = bikePower20mEffort ? Math.round(bikePower20mEffort.value * 0.95) : null;
-
-  let thresholdPaceSecondsPerKm: number | null = null;
-  if (runSpeed20mEffort && runSpeed20mEffort.value > 0) {
-    if (runSpeed20mEffort.unit === "meters_per_second") {
-      thresholdPaceSecondsPerKm = Math.round(1000 / runSpeed20mEffort.value);
-    } else if (runSpeed20mEffort.unit === "km_per_hour") {
-      thresholdPaceSecondsPerKm = Math.round(3600 / runSpeed20mEffort.value);
-    }
-  }
+  const thresholds = resolveEstimationThresholds(
+    data.efforts,
+    data.metrics,
+    new Date().toISOString(),
+  );
 
   for (const metric of data.metrics) {
     if (metric.metric_type === "weight_kg" && weightKg === null) {
@@ -159,13 +140,16 @@ export async function getEstimationProfileInputsFromStore(
   }
 
   return {
-    ftp,
+    ftp: thresholds.cycling_ftp.value === null ? null : Math.round(thresholds.cycling_ftp.value),
     dob: data.profile?.dob ?? null,
     max_hr: maxHr,
     threshold_hr: lthr,
     resting_hr: restingHr,
     weight_kg: weightKg,
-    threshold_pace_seconds_per_km: thresholdPaceSecondsPerKm,
+    threshold_pace_seconds_per_km:
+      thresholds.running_threshold_pace.value === null
+        ? null
+        : Math.round(thresholds.running_threshold_pace.value),
   };
 }
 
@@ -219,9 +203,9 @@ async function getEstimationProfileInputs(
 
   const { data: metrics } = await legacyReader
     .from("profile_metrics")
-    .select("metric_type, value, recorded_at")
+    .select("metric_type, unit, value, recorded_at")
     .eq("profile_id", userId)
-    .in("metric_type", ["weight_kg", "resting_hr", "max_hr", "lthr"])
+    .in("metric_type", ["weight_kg", "ftp", "resting_hr", "max_hr", "lthr"])
     .order("recorded_at", { ascending: false });
 
   let weightKg: number | null = null;
@@ -238,38 +222,16 @@ async function getEstimationProfileInputs(
   }>;
   const legacyMetrics = (metrics || []) as Array<{
     metric_type: string;
+    unit?: string;
     value: number;
     recorded_at: string;
   }>;
 
-  const bikePower20mEffort = legacyEfforts
-    .filter(
-      (effort) =>
-        effort.effort_type === "power" &&
-        effort.activity_category === "bike" &&
-        effort.duration_seconds === 1200,
-    )
-    .sort((a, b) => b.value - a.value)[0];
-
-  const runSpeed20mEffort = legacyEfforts
-    .filter(
-      (effort) =>
-        effort.effort_type === "speed" &&
-        effort.activity_category === "run" &&
-        effort.duration_seconds === 1200,
-    )
-    .sort((a, b) => b.value - a.value)[0];
-
-  const ftp = bikePower20mEffort ? Math.round(bikePower20mEffort.value * 0.95) : null;
-
-  let thresholdPaceSecondsPerKm: number | null = null;
-  if (runSpeed20mEffort && runSpeed20mEffort.value > 0) {
-    if (runSpeed20mEffort.unit === "meters_per_second") {
-      thresholdPaceSecondsPerKm = Math.round(1000 / runSpeed20mEffort.value);
-    } else if (runSpeed20mEffort.unit === "km_per_hour") {
-      thresholdPaceSecondsPerKm = Math.round(3600 / runSpeed20mEffort.value);
-    }
-  }
+  const thresholds = resolveEstimationThresholds(
+    legacyEfforts,
+    legacyMetrics,
+    new Date().toISOString(),
+  );
 
   for (const metric of legacyMetrics) {
     if (metric.metric_type === "weight_kg" && weightKg === null) {
@@ -290,14 +252,86 @@ async function getEstimationProfileInputs(
   }
 
   return {
-    ftp,
+    ftp: thresholds.cycling_ftp.value === null ? null : Math.round(thresholds.cycling_ftp.value),
     dob: profile?.dob ?? null,
     max_hr: maxHr,
     threshold_hr: lthr,
     resting_hr: restingHr,
     weight_kg: weightKg,
-    threshold_pace_seconds_per_km: thresholdPaceSecondsPerKm,
+    threshold_pace_seconds_per_km:
+      thresholds.running_threshold_pace.value === null
+        ? null
+        : Math.round(thresholds.running_threshold_pace.value),
   };
+}
+
+function resolveEstimationThresholds(
+  efforts: Array<{
+    effort_type: string;
+    duration_seconds: number;
+    value: number;
+    unit: string;
+    activity_category: string;
+  }>,
+  metrics: Array<{ metric_type: string; unit?: string; value: number; recorded_at?: string }>,
+  now: string,
+) {
+  return resolveCanonicalThresholds({
+    now,
+    freshnessWindowMs: 90 * 24 * 60 * 60 * 1000,
+    directMetrics: metrics.flatMap((metric) =>
+      metric.metric_type === "ftp" && metric.unit === "W" && Number.isFinite(Number(metric.value))
+        ? [
+            {
+              threshold: "cycling_ftp" as const,
+              value: Number(metric.value),
+              observedAt: metric.recorded_at ?? now,
+              source: "provider" as const,
+            },
+          ]
+        : [],
+    ),
+    activityEfforts: efforts.flatMap((effort): ThresholdActivityEffortObservation[] => {
+      const value = normalizeThresholdEffortValue(effort.value, effort.unit);
+      if (value === null || effort.duration_seconds !== 1200) return [];
+      if (effort.activity_category === "bike" && effort.effort_type === "power") {
+        return [
+          {
+            sport: "bike" as const,
+            metric: "power" as const,
+            value,
+            durationSeconds: 1200,
+            observedAt: now,
+            observationKind: "actual" as const,
+          },
+        ];
+      }
+      if (
+        effort.effort_type === "speed" &&
+        (effort.activity_category === "run" || effort.activity_category === "swim")
+      ) {
+        return [
+          {
+            sport: effort.activity_category,
+            metric: "speed" as const,
+            value,
+            durationSeconds: 1200,
+            observedAt: now,
+            observationKind: "actual" as const,
+          },
+        ];
+      }
+      return [];
+    }),
+  });
+}
+
+function normalizeThresholdEffortValue(value: number, unit: string): number | null {
+  if (!Number.isFinite(value) || value <= 0) return null;
+  if (unit === "W" || unit === "watts") return value;
+  if (unit === "km_per_hour") return value / 3.6;
+  if (unit === "meters_per_second" || unit === "m/s") return value;
+  return null;
 }
 
 /**

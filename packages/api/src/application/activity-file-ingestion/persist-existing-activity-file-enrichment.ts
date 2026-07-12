@@ -141,6 +141,14 @@ export async function persistExistingActivityFileEnrichment(
         value: enrichment.detectedLTHR,
         unit: "bpm",
         recorded_at: enrichment.activityCompletedAt,
+        reference_activity_id: input.activityId,
+        source: "derived",
+        method: "activity_file_lthr_detection",
+        calculation_version: "activity-file-lthr-v1",
+        provenance: {
+          activity_id: input.activityId,
+          derived_from: "activity_file_stream",
+        },
       });
     }
   });

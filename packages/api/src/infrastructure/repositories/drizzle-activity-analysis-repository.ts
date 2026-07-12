@@ -2,7 +2,7 @@ import { type DrizzleDbClient, schema } from "@repo/db";
 import { and, desc, eq, inArray, lte } from "drizzle-orm";
 import type { ActivityAnalysisStore } from "../../repositories";
 
-const metricTypes = ["weight_kg", "resting_hr", "max_hr", "lthr"] as const;
+const metricTypes = ["weight_kg", "ftp", "resting_hr", "max_hr", "lthr"] as const;
 const effortTypes = ["power", "speed"] as const;
 
 function toNumber(value: string | number | null): number {
@@ -22,6 +22,7 @@ export function createActivityAnalysisStore(db: DrizzleDbClient): ActivityAnalys
           .select({
             metric_type: schema.profileMetrics.metric_type,
             recorded_at: schema.profileMetrics.recorded_at,
+            unit: schema.profileMetrics.unit,
             value: schema.profileMetrics.value,
           })
           .from(schema.profileMetrics)
@@ -65,8 +66,9 @@ export function createActivityAnalysisStore(db: DrizzleDbClient): ActivityAnalys
               : null,
         },
         profileMetrics: profileMetrics.map((metric) => ({
-          metric_type: metric.metric_type as "weight_kg" | "resting_hr" | "max_hr" | "lthr",
+          metric_type: metric.metric_type as "weight_kg" | "ftp" | "resting_hr" | "max_hr" | "lthr",
           recorded_at: metric.recorded_at,
+          unit: metric.unit,
           value: toNumber(metric.value),
         })),
         recentEfforts: recentEfforts.map((effort) => ({
