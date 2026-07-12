@@ -3,6 +3,7 @@ import React from "react";
 import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
+const fixedNow = new Date("2026-04-05T12:00:00.000Z");
 const pushMock = jest.fn();
 const navigateMock = jest.fn();
 const refetchActivePlanMock = jest.fn(async () => undefined);
@@ -874,6 +875,34 @@ describe("plan dashboard navigation", () => {
     );
   });
 
+  it("derives selected-week goals from loaded goals without readiness data", () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(fixedNow);
+    try {
+      mockGoals = [{ ...defaultMockGoals[0], target_date: "2026-04-05" }];
+
+      renderNative(<PlanScreenWithErrorBoundary />);
+
+      expect(mockTrainingPathSectionProps.mock.calls.at(-1)?.[0].selectedWeekGoals).toEqual([
+        expect.objectContaining({
+          id: "goal-1",
+          label: "Race A",
+          targetDate: "2026-04-05",
+          activityCategory: "run",
+          status: "Goal due",
+        }),
+      ]);
+      expect(
+        mockTrainingPathSectionProps.mock.calls.at(-1)?.[0].selectedWeekGoals[0],
+      ).not.toHaveProperty("readinessPercent");
+      expect(
+        mockTrainingPathSectionProps.mock.calls.at(-1)?.[0].selectedWeekGoals[0],
+      ).not.toHaveProperty("readinessTarget");
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it("opens detail screens from training path week review callbacks", () => {
     renderNative(<PlanScreenWithErrorBoundary />);
 
@@ -906,7 +935,7 @@ describe("plan dashboard navigation", () => {
     expect(mockTrainingPathSectionProps.mock.calls.at(-1)?.[0].selectedWeekLoading).toBe(false);
     fireEvent.press(screen.getByTestId("training-path-week-2026-04-13"));
 
-    expect(mockTrainingPathSectionProps.mock.calls.at(-1)?.[0].selectedWeekLoading).toBe(true);
+    expect(mockTrainingPathSectionProps.mock.calls.at(-1)?.[0].selectedWeekLoading).toBe(false);
   });
 
   it("keeps removed legacy plan-tab panels out of the current training path flow", () => {

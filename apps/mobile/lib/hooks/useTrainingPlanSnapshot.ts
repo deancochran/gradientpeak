@@ -11,6 +11,7 @@ interface DateRangeInput {
 
 interface UseTrainingPlanSnapshotOptions {
   includeStatus?: boolean;
+  includeInsightTimeline?: boolean;
   planId?: string;
   includeWeeklySummaries?: boolean;
   weeklySummariesWeeksBack?: number;
@@ -47,6 +48,7 @@ const toDateKey = (value: Date) => value.toISOString().split("T")[0]!;
 export function useTrainingPlanSnapshot(options: UseTrainingPlanSnapshotOptions = {}) {
   const {
     includeStatus = true,
+    includeInsightTimeline = true,
     planId,
     includeWeeklySummaries = true,
     weeklySummariesWeeksBack = 4,
@@ -219,7 +221,7 @@ export function useTrainingPlanSnapshot(options: UseTrainingPlanSnapshotOptions 
       timezone,
     },
     {
-      enabled: true,
+      enabled: includeInsightTimeline,
       ...scheduleAwareReadQueryOptions,
     },
   );
@@ -274,7 +276,7 @@ export function useTrainingPlanSnapshot(options: UseTrainingPlanSnapshotOptions 
   }, [includeStatus, refetchPlan, refetchStatus]);
 
   const refetchAll = useCallback(async () => {
-    const insightRefresh = refetchInsightTimeline();
+    const insightRefresh = includeInsightTimeline ? refetchInsightTimeline() : Promise.resolve();
     const idealRefresh = planSnapshot?.id ? refetchIdealCurve() : Promise.resolve();
     const weeklyRefresh =
       includeWeeklySummaries && planSnapshot?.id ? refetchWeeklySummaries() : Promise.resolve();
@@ -289,6 +291,7 @@ export function useTrainingPlanSnapshot(options: UseTrainingPlanSnapshotOptions 
     ]);
   }, [
     includeStatus,
+    includeInsightTimeline,
     includeWeeklySummaries,
     planSnapshot?.id,
     refetchActualCurve,
@@ -302,7 +305,7 @@ export function useTrainingPlanSnapshot(options: UseTrainingPlanSnapshotOptions 
   const loading = {
     plan: isLoadingPlan,
     status: includeStatus ? isLoadingStatus : false,
-    insightTimeline: isLoadingInsightTimeline,
+    insightTimeline: includeInsightTimeline ? isLoadingInsightTimeline : false,
     actualCurve: isLoadingActualCurve,
     idealCurve: isLoadingIdealCurve,
     weeklySummaries: isLoadingWeeklySummaries,
@@ -311,7 +314,7 @@ export function useTrainingPlanSnapshot(options: UseTrainingPlanSnapshotOptions 
   const errors = {
     plan: isPlanError ? planError : null,
     status: includeStatus && isStatusError ? statusError : null,
-    insightTimeline: isInsightTimelineError ? insightTimelineError : null,
+    insightTimeline: includeInsightTimeline && isInsightTimelineError ? insightTimelineError : null,
     actualCurve: isActualCurveError ? actualCurveError : null,
     idealCurve: isIdealCurveError ? idealCurveError : null,
     weeklySummaries: isWeeklySummariesError ? weeklySummariesError : null,
@@ -322,7 +325,7 @@ export function useTrainingPlanSnapshot(options: UseTrainingPlanSnapshotOptions 
   return {
     plan: planSnapshot,
     status: includeStatus ? status : undefined,
-    insightTimeline,
+    insightTimeline: includeInsightTimeline ? insightTimeline : undefined,
     actualCurveData,
     idealCurveData,
     weeklySummaries,
@@ -351,7 +354,7 @@ export function useTrainingPlanSnapshot(options: UseTrainingPlanSnapshotOptions 
     refetchers: {
       plan: refetchPlan,
       status: includeStatus ? refetchStatus : async () => undefined,
-      insightTimeline: refetchInsightTimeline,
+      insightTimeline: includeInsightTimeline ? refetchInsightTimeline : async () => undefined,
       actualCurve: refetchActualCurve,
       idealCurve: refetchIdealCurve,
       weeklySummaries: refetchWeeklySummaries,

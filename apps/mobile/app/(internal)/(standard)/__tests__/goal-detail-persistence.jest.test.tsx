@@ -4,6 +4,8 @@ import { createHost as mockCreateHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
 const navigateMock = jest.fn();
+const evaluateUseQueryMock = jest.fn(() => ({ data: undefined, isLoading: false }));
+const originalDateTimeFormat = Intl.DateTimeFormat;
 
 type StackScreenProps = {
   options?: { headerRight?: () => React.ReactNode };
@@ -240,6 +242,9 @@ jest.mock("@/lib/api", () => ({
     trainingPlans: {
       getActivePlan: { useQuery: () => ({ data: { id: "plan-1" } }) },
     },
+    athleteIntelligence: {
+      evaluate: { useQuery: evaluateUseQueryMock },
+    },
   },
 }));
 
@@ -248,6 +253,24 @@ const GoalDetailScreen = require("../goal-detail").default;
 describe("goal detail persistence", () => {
   beforeEach(() => {
     navigateMock.mockClear();
+    evaluateUseQueryMock.mockClear();
+    Object.defineProperty(Intl, "DateTimeFormat", {
+      configurable: true,
+      value: function DateTimeFormat() {
+        return {
+          format: () => "",
+          resolvedOptions: () => ({ timeZone: "America/Los_Angeles" }),
+        };
+      },
+    });
+  });
+
+  afterEach(() => {
+    Object.defineProperty(Intl, "DateTimeFormat", {
+      configurable: true,
+      value: originalDateTimeFormat,
+    });
+    jest.restoreAllMocks();
   });
 
   it("routes editing through the dedicated goal edit screen", async () => {
@@ -258,21 +281,29 @@ describe("goal detail persistence", () => {
     expect(navigateMock).toHaveBeenCalledWith("/goal-edit?id=goal-1");
   });
 
-  it("shows evidence context and explicitly withholds outcome projection", async () => {
+  it("does not query intelligence until the device timezone is confirmed", async () => {
+    expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe("America/Los_Angeles");
     renderNative(<GoalDetailScreen />);
 
-    expect(screen.getByTestId("goal-evidence-card")).toBeTruthy();
-    expect(screen.getByText("Outcome projection unavailable")).toBeTruthy();
-    expect(screen.getByText("5K target")).toBeTruthy();
+    expect(evaluateUseQueryMock).toHaveBeenLastCalledWith(
+      { goalId: "goal-1", planningTimezone: undefined },
+      { enabled: false },
+    );
+    expect(screen.getByText("Use device timezone")).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId("goal-intelligence-use-device-timezone"));
+
+    expect(evaluateUseQueryMock).toHaveBeenLastCalledWith(
+      { goalId: "goal-1", planningTimezone: "America/Los_Angeles" },
+      { enabled: true },
+    );
   });
 
-  it("does not render numeric readiness or forecast claims", async () => {
+  it("does not render legacy readiness or outcome forecast claims", async () => {
     renderNative(<GoalDetailScreen />);
 
-    expect(screen.queryByText(/readiness/i)).toBeNull();
     expect(screen.queryByText(/forecast/i)).toBeNull();
-    expect(screen.queryByText(/target readiness/i)).toBeNull();
-    expect(screen.queryByText(/on.track|ahead|probability/i)).toBeNull();
+    expect(screen.queryByText(/completion likelihood|finish prediction|medical|risk/i)).toBeNull();
     expect(screen.queryByText("72%")).toBeNull();
     expect(screen.queryByText(/\b(?:[0-9]|[1-9][0-9]|100)\s*\/\s*100\b/)).toBeNull();
   });

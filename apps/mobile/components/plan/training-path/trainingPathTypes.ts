@@ -63,8 +63,6 @@ export type TrainingPathSelectedGoal = {
   targetDate: string;
   activityCategory?: string | null;
   status?: string | null;
-  readinessPercent?: number | null;
-  readinessTarget?: number | null;
 };
 
 export type TrainingPathScheduledItem = {

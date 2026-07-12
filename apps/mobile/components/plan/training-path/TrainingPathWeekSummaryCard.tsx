@@ -319,8 +319,6 @@ export function TrainingPathWeekSummaryCard({
                 target_date: goal.targetDate,
                 activity_category: goal.activityCategory,
               }}
-              readinessPercent={goal.readinessPercent}
-              readinessTarget={goal.readinessTarget}
               status={goal.status ?? undefined}
               onPress={() => onOpenGoal(goal.id)}
               testID={`training-path-week-goal-${goal.id}`}
@@ -509,8 +507,6 @@ export function TrainingPathSelectedDaySummaryCard({
                 target_date: goal.targetDate,
                 activity_category: goal.activityCategory,
               }}
-              readinessPercent={goal.readinessPercent}
-              readinessTarget={goal.readinessTarget}
               status={goal.status ?? undefined}
               onPress={() => onOpenGoal(goal.id)}
               testID={`training-path-day-goal-${goal.id}`}
