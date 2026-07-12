@@ -170,12 +170,12 @@ function createCaller(plan: DbPlan = {}) {
 }
 
 describe("profilesRouter", () => {
-  it("get returns the signed-in profile including email/full_name and derived performance", async () => {
+  it("get returns the signed-in profile including email/full_name and legacy manual FTP", async () => {
     const { caller } = createCaller({
       select: {
         profiles: [[createProfileRow()], [createProfileRow()]],
-        profileMetrics: [[{ value: "70.4" }], [{ value: "176" }]],
-        activityEfforts: [[{ value: 300 }], []],
+        profileMetrics: [[{ value: "70.4" }], [{ value: "176" }], []],
+        activityEfforts: [[{ value: 300, recorded_at: new Date() }], []],
       },
     });
 
@@ -187,6 +187,28 @@ describe("profilesRouter", () => {
     expect(result.threshold_hr).toBe(176);
     expect(result.ftp).toBe(285);
     expect(result.created_at).toBe("2026-04-01T10:00:00.000Z");
+  });
+
+  it("uses the canonical FTP source precedence for direct profile metrics", async () => {
+    const now = new Date();
+    const { caller } = createCaller({
+      select: {
+        profiles: [[createProfileRow()], [createProfileRow()]],
+        profileMetrics: [
+          [{ value: "70.4" }],
+          [{ value: "176" }],
+          [
+            { value: 250, recorded_at: new Date(now.getTime() - 60_000), source: "provider" },
+            { value: 320, recorded_at: now, source: "derived" },
+          ],
+        ],
+        activityEfforts: [[], []],
+      },
+    });
+
+    const result = await caller.get();
+
+    expect(result.ftp).toBe(250);
   });
 
   it("get provisions a default profile when the auth user exists without a profile row", async () => {
@@ -251,8 +273,8 @@ describe("profilesRouter", () => {
     const { caller, calls } = createCaller({
       select: {
         profiles: [[createProfileRow({ bio: "Updated bio", username: "updated_athlete" })]],
-        profileMetrics: [[{ value: "68.2" }], [{ value: "182" }]],
-        activityEfforts: [[{ value: 320 }], []],
+        profileMetrics: [[{ value: "68.2" }], [{ value: "182" }], []],
+        activityEfforts: [[{ value: 320, recorded_at: new Date() }], []],
       },
     });
 
@@ -353,8 +375,12 @@ describe("profilesRouter", () => {
   it("getZones calculates heart-rate, power, and pace thresholds from current metrics", async () => {
     const { caller } = createCaller({
       select: {
-        profileMetrics: [[{ value: "71" }], [{ value: "170" }]],
-        activityEfforts: [[{ value: 310 }], [], [{ value: 4.5 }]],
+        profileMetrics: [[{ value: "71" }], [{ value: "170" }], []],
+        activityEfforts: [
+          [{ value: 310, recorded_at: new Date() }],
+          [{ value: 4.5, recorded_at: new Date() }],
+          [],
+        ],
       },
     });
 
@@ -374,8 +400,8 @@ describe("profilesRouter", () => {
     const { caller, calls } = createCaller({
       select: {
         profiles: [[createProfileRow()]],
-        profileMetrics: [[{ value: "69.5" }], [{ value: "178" }]],
-        activityEfforts: [[{ value: 315.79 }], []],
+        profileMetrics: [[{ value: "69.5" }], [{ value: "178" }], []],
+        activityEfforts: [[{ value: 315.79, recorded_at: new Date() }], []],
       },
     });
 

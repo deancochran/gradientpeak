@@ -1,3 +1,4 @@
+import { resolveCanonicalThresholds, type ThresholdMetricSource } from "@repo/core/athlete-inputs";
 import { activityEfforts, type PublicProfilesRow, profileMetrics, profiles } from "@repo/db";
 import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -9,6 +10,7 @@ import {
 } from "../../utils/profile-privacy";
 
 const MANUAL_FTP_UNIT = "ftp_manual";
+const FTP_FRESHNESS_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
 
 const uuidSchema = z.string().uuid();
 const nullableAvatarUrlSchema = z.string().nullable();
@@ -111,6 +113,19 @@ function toNullableNumber(value: number | string | null | undefined) {
   return Number(value);
 }
 
+function thresholdMetricSource(source: string | null, provenance: unknown): ThresholdMetricSource {
+  const provenanceSource =
+    provenance && typeof provenance === "object" && "source" in provenance
+      ? (provenance as { source?: unknown }).source
+      : null;
+  const candidate = source ?? provenanceSource;
+
+  if (candidate === "manual") return "manual";
+  if (candidate === "estimated") return "estimated";
+  if (candidate === "derived" || candidate === "modeled") return "modeled";
+  return "provider";
+}
+
 function serializeProfile(
   profile: ProfileBaseRow,
   performance?: {
@@ -147,62 +162,116 @@ async function getProfileBaseById(db: DbClient, profileId: string) {
 }
 
 export async function getProfilePerformanceSnapshot(db: DbClient, profileId: string) {
-  const ftpCutoffDate = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  const now = new Date();
+  const ftpCutoffDate = new Date(now.getTime() - FTP_FRESHNESS_WINDOW_MS);
 
-  const [weightMetric, lthrMetric, manualFtpEffort, best20mEffort] = await Promise.all([
-    db
-      .select({ value: profileMetrics.value })
-      .from(profileMetrics)
-      .where(
-        and(eq(profileMetrics.profile_id, profileId), eq(profileMetrics.metric_type, "weight_kg")),
-      )
-      .orderBy(desc(profileMetrics.recorded_at))
-      .limit(1)
-      .then((rows) => rows[0] ?? null),
-    db
-      .select({ value: profileMetrics.value })
-      .from(profileMetrics)
-      .where(and(eq(profileMetrics.profile_id, profileId), eq(profileMetrics.metric_type, "lthr")))
-      .orderBy(desc(profileMetrics.recorded_at))
-      .limit(1)
-      .then((rows) => rows[0] ?? null),
-    db
-      .select({ value: activityEfforts.value })
-      .from(activityEfforts)
-      .where(
-        and(
-          eq(activityEfforts.profile_id, profileId),
-          eq(activityEfforts.activity_category, "bike"),
-          eq(activityEfforts.effort_type, "power"),
-          eq(activityEfforts.duration_seconds, 1200),
-          eq(activityEfforts.unit, MANUAL_FTP_UNIT),
-          isNull(activityEfforts.activity_id),
-        ),
-      )
-      .orderBy(desc(activityEfforts.recorded_at))
-      .limit(1)
-      .then((rows) => rows[0] ?? null),
-    db
-      .select({ value: activityEfforts.value })
-      .from(activityEfforts)
-      .where(
-        and(
-          eq(activityEfforts.profile_id, profileId),
-          eq(activityEfforts.activity_category, "bike"),
-          eq(activityEfforts.effort_type, "power"),
-          eq(activityEfforts.duration_seconds, 1200),
-          gte(activityEfforts.recorded_at, ftpCutoffDate),
-        ),
-      )
-      .orderBy(desc(activityEfforts.value))
-      .limit(1)
-      .then((rows) => rows[0] ?? null),
-  ]);
+  const [weightMetric, lthrMetric, ftpMetrics, manualFtpEffort, best20mEfforts] = await Promise.all(
+    [
+      db
+        .select({ value: profileMetrics.value })
+        .from(profileMetrics)
+        .where(
+          and(
+            eq(profileMetrics.profile_id, profileId),
+            eq(profileMetrics.metric_type, "weight_kg"),
+          ),
+        )
+        .orderBy(desc(profileMetrics.recorded_at))
+        .limit(1)
+        .then((rows) => rows[0] ?? null),
+      db
+        .select({ value: profileMetrics.value })
+        .from(profileMetrics)
+        .where(
+          and(eq(profileMetrics.profile_id, profileId), eq(profileMetrics.metric_type, "lthr")),
+        )
+        .orderBy(desc(profileMetrics.recorded_at))
+        .limit(1)
+        .then((rows) => rows[0] ?? null),
+      db
+        .select({
+          value: profileMetrics.value,
+          recorded_at: profileMetrics.recorded_at,
+          source: profileMetrics.source,
+          provenance: profileMetrics.provenance,
+        })
+        .from(profileMetrics)
+        .where(and(eq(profileMetrics.profile_id, profileId), eq(profileMetrics.metric_type, "ftp")))
+        .orderBy(desc(profileMetrics.recorded_at)),
+      db
+        .select({ value: activityEfforts.value, recorded_at: activityEfforts.recorded_at })
+        .from(activityEfforts)
+        .where(
+          and(
+            eq(activityEfforts.profile_id, profileId),
+            eq(activityEfforts.activity_category, "bike"),
+            eq(activityEfforts.effort_type, "power"),
+            eq(activityEfforts.duration_seconds, 1200),
+            eq(activityEfforts.unit, MANUAL_FTP_UNIT),
+            isNull(activityEfforts.activity_id),
+          ),
+        )
+        .orderBy(desc(activityEfforts.recorded_at))
+        .limit(1)
+        .then((rows) => rows[0] ?? null),
+      db
+        .select({
+          value: activityEfforts.value,
+          recorded_at: activityEfforts.recorded_at,
+          activity_id: activityEfforts.activity_id,
+          source: activityEfforts.source,
+        })
+        .from(activityEfforts)
+        .where(
+          and(
+            eq(activityEfforts.profile_id, profileId),
+            eq(activityEfforts.activity_category, "bike"),
+            eq(activityEfforts.effort_type, "power"),
+            eq(activityEfforts.duration_seconds, 1200),
+            gte(activityEfforts.recorded_at, ftpCutoffDate),
+          ),
+        )
+        .orderBy(desc(activityEfforts.recorded_at)),
+    ],
+  );
 
-  const ftpSource = manualFtpEffort ?? best20mEffort;
+  const cyclingFtp = resolveCanonicalThresholds({
+    now: now.toISOString(),
+    freshnessWindowMs: FTP_FRESHNESS_WINDOW_MS,
+    directMetrics: [
+      ...ftpMetrics.map((metric) => ({
+        threshold: "cycling_ftp" as const,
+        value: Number(metric.value),
+        observedAt: metric.recorded_at.toISOString(),
+        source: thresholdMetricSource(metric.source, metric.provenance),
+      })),
+      ...(manualFtpEffort
+        ? [
+            {
+              threshold: "cycling_ftp" as const,
+              value: Number(manualFtpEffort.value) * 0.95,
+              observedAt: manualFtpEffort.recorded_at.toISOString(),
+              source: "manual" as const,
+              locked: true,
+            },
+          ]
+        : []),
+    ],
+    activityEfforts: best20mEfforts.map((effort) => ({
+      sport: "bike" as const,
+      metric: "power" as const,
+      value: Number(effort.value),
+      durationSeconds: 1200,
+      observedAt: effort.recorded_at.toISOString(),
+      observationKind:
+        effort.activity_id !== null && effort.source !== "derived" && effort.source !== "estimated"
+          ? ("actual" as const)
+          : ("derived" as const),
+    })),
+  }).cycling_ftp;
 
   return {
-    ftp: ftpSource?.value ? Math.round(Number(ftpSource.value) * 0.95) : null,
+    ftp: cyclingFtp.value === null ? null : Math.round(cyclingFtp.value),
     threshold_hr: toNullableNumber(lthrMetric?.value),
     weight_kg: toNullableNumber(weightMetric?.value),
   };
