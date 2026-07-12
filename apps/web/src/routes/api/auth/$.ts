@@ -23,6 +23,13 @@ function createJsonErrorResponse(status: number, message: string) {
   return Response.json({ message }, { status });
 }
 
+async function forwardAuthRequest(request: Request) {
+  const auth = getGradientPeakAuth();
+  const response = await auth.handler(request);
+
+  return response ?? createJsonErrorResponse(404, "Authentication route not found.");
+}
+
 async function parseAuthRequestBody(request: Request) {
   const bodyText = await request.clone().text();
 
@@ -95,11 +102,10 @@ export const Route = createFileRoute("/api/auth/$")({
           },
           { request },
         );
-        const auth = getGradientPeakAuth();
 
-        return auth.handler(request);
+        return forwardAuthRequest(request);
       },
-      POST: ({ request }) => {
+      POST: async ({ request }) => {
         logServerEvent(
           "auth.route.request",
           {
@@ -107,15 +113,9 @@ export const Route = createFileRoute("/api/auth/$")({
           },
           { request },
         );
-        const auth = getGradientPeakAuth();
+        const { response } = await guardAuthPostRequest(request);
 
-        return guardAuthPostRequest(request).then(({ response }) => {
-          if (response) {
-            return response;
-          }
-
-          return auth.handler(request);
-        });
+        return response ?? forwardAuthRequest(request);
       },
     },
   },

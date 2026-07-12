@@ -121,6 +121,78 @@ describe("plan-converter", () => {
     });
   });
 
+  it.each([
+    ["%FTP", undefined],
+    ["%FTP", null],
+    ["%FTP", 0],
+    ["%FTP", -1],
+    ["%FTP", Number.NaN],
+    ["%FTP", Number.POSITIVE_INFINITY],
+    ["RPE", undefined],
+    ["RPE", null],
+    ["RPE", 0],
+    ["RPE", -1],
+    ["RPE", Number.NaN],
+    ["RPE", Number.POSITIVE_INFINITY],
+  ] as const)("requires a finite positive FTP for cycling %s targets when FTP is %s", (targetType, ftp) => {
+    const structure = createStructure([
+      createInterval({
+        steps: [createStep({ targets: [{ type: targetType, intensity: 70 }] })],
+      }),
+    ]);
+
+    expect(() =>
+      convertToWahooPlan(structure, {
+        activityType: "bike",
+        name: "FTP Workout",
+        ftp: ftp as number,
+      }),
+    ).toThrow("A positive FTP is required to sync a workout with FTP-relative targets to Wahoo.");
+  });
+
+  it("converts cycling RPE targets with a valid FTP header", () => {
+    const plan = convertToWahooPlan(
+      createStructure([
+        createInterval({
+          steps: [
+            createStep({
+              name: "Hard effort",
+              targets: [{ type: "RPE", intensity: 8 }],
+            }),
+          ],
+        }),
+      ]),
+      { activityType: "bike", ftp: 250, name: "RPE Ride" },
+    );
+
+    expect(plan.header.ftp).toBe(250);
+    expect(plan.intervals[0]?.targets?.[0]).toMatchObject({ type: "ftp" });
+    expect(plan.intervals[0]?.targets?.[0]?.low).toBeCloseTo(0.855);
+    expect(plan.intervals[0]?.targets?.[0]?.high).toBeCloseTo(0.945);
+  });
+
+  it("does not require FTP when a cycling watts target takes priority over RPE", () => {
+    const plan = convertToWahooPlan(
+      createStructure([
+        createInterval({
+          steps: [
+            createStep({
+              name: "Power with perceived effort guidance",
+              targets: [
+                { type: "watts", intensity: 220 },
+                { type: "RPE", intensity: 8 },
+              ],
+            }),
+          ],
+        }),
+      ]),
+      { activityType: "bike", name: "Power Ride" },
+    );
+
+    expect(plan.header.ftp).toBeUndefined();
+    expect(plan.intervals[0]?.targets).toEqual([{ type: "watts", low: 209, high: 231 }]);
+  });
+
   it("converts single-step duration and uses run-native fallbacks", () => {
     const structure = createStructure([
       createInterval({

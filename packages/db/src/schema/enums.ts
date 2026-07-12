@@ -14,6 +14,15 @@ export const activityFileIngestionSourceEnum = pgEnum("activity_file_ingestion_s
   "provider_sync",
 ]);
 
+export const evidenceObservationSourceEnum = pgEnum("evidence_observation_source", [
+  "manual",
+  "test",
+  "imported",
+  "provider",
+  "estimated",
+  "derived",
+]);
+
 export const activityFileIngestionStatusEnum = pgEnum("activity_file_ingestion_status", [
   "pending_upload",
   "uploaded",

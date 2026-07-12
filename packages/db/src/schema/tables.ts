@@ -29,6 +29,7 @@ import {
   effortTypeEnum,
   eventStatusEnum,
   eventTypeEnum,
+  evidenceObservationSourceEnum,
   genderEnum,
   integrationProviderEnum,
   integrationResourceKindEnum,
@@ -1296,10 +1297,31 @@ export const activityEfforts = pgTable(
     start_offset: integer("start_offset"),
     unit: text("unit").notNull(),
     value: real("value").notNull(),
+    source: evidenceObservationSourceEnum("source"),
+    method: text("method"),
+    calculation_version: text("calculation_version"),
+    quality_score: numeric("quality_score", { mode: "number" }),
+    provenance: jsonb("provenance"),
   },
   (table) => [
     index("idx_activity_efforts_activity_id").on(table.activity_id),
     index("idx_activity_efforts_profile_id").on(table.profile_id),
+    check(
+      "activity_efforts_method_not_blank_check",
+      sql`${table.method} is null or btrim(${table.method}) <> ''`,
+    ),
+    check(
+      "activity_efforts_calculation_version_not_blank_check",
+      sql`${table.calculation_version} is null or btrim(${table.calculation_version}) <> ''`,
+    ),
+    check(
+      "activity_efforts_quality_score_range_check",
+      sql`${table.quality_score} is null or (${table.quality_score} >= 0 and ${table.quality_score} <= 1)`,
+    ),
+    check(
+      "activity_efforts_provenance_object_check",
+      sql`${table.provenance} is null or jsonb_typeof(${table.provenance}) = 'object'`,
+    ),
   ],
 );
 
@@ -1370,10 +1392,31 @@ export const profileMetrics = pgTable(
       onDelete: "set null",
     }),
     value: numeric("value", { mode: "number" }).notNull(),
+    source: evidenceObservationSourceEnum("source"),
+    method: text("method"),
+    calculation_version: text("calculation_version"),
+    quality_score: numeric("quality_score", { mode: "number" }),
+    provenance: jsonb("provenance"),
   },
   (table) => [
     uniqueIndex("profile_metrics_idx_key").on(table.idx),
     check("profile_metrics_value_check", sql`${table.value} >= 0`),
+    check(
+      "profile_metrics_method_not_blank_check",
+      sql`${table.method} is null or btrim(${table.method}) <> ''`,
+    ),
+    check(
+      "profile_metrics_calculation_version_not_blank_check",
+      sql`${table.calculation_version} is null or btrim(${table.calculation_version}) <> ''`,
+    ),
+    check(
+      "profile_metrics_quality_score_range_check",
+      sql`${table.quality_score} is null or (${table.quality_score} >= 0 and ${table.quality_score} <= 1)`,
+    ),
+    check(
+      "profile_metrics_provenance_object_check",
+      sql`${table.provenance} is null or jsonb_typeof(${table.provenance}) = 'object'`,
+    ),
     index("idx_profile_metrics_profile").on(table.profile_id, table.recorded_at),
     index("idx_profile_metrics_recorded_at").on(table.recorded_at),
     index("idx_profile_metrics_reference_activity")

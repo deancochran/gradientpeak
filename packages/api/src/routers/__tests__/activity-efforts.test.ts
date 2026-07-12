@@ -45,16 +45,6 @@ function buildEffortRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function toPublicEffortRow(row: Record<string, unknown>) {
-  const publicRow = { ...row };
-  delete publicRow.source;
-  delete publicRow.method;
-  delete publicRow.calculation_version;
-  delete publicRow.quality_score;
-  delete publicRow.provenance;
-  return publicRow;
-}
-
 function createCaller(options?: {
   selectResult?: unknown;
   selectOneResult?: unknown[];
@@ -128,7 +118,7 @@ describe("activityEffortsRouter", () => {
 
     const result = await caller.getForProfile();
 
-    expect(result).toEqual(efforts.map(toPublicEffortRow));
+    expect(result).toEqual(efforts);
     expect(spies.select).toHaveBeenCalledOnce();
     expect(spies.from).toHaveBeenCalledOnce();
     expect(spies.whereForSelect).toHaveBeenCalledOnce();
@@ -155,7 +145,7 @@ describe("activityEffortsRouter", () => {
 
     const result = await caller.create(input);
 
-    expect(result).toEqual(toPublicEffortRow(insertedRow));
+    expect(result).toEqual(insertedRow);
     expect(spies.insert).toHaveBeenCalledOnce();
     expect(spies.values).toHaveBeenCalledOnce();
     expect(spies.returning).toHaveBeenCalledOnce();
@@ -201,7 +191,7 @@ describe("activityEffortsRouter", () => {
       recorded_at: newRecordedAt,
     });
 
-    expect(result).toEqual(toPublicEffortRow(updatedRow));
+    expect(result).toEqual(updatedRow);
     expect(spies.select).toHaveBeenCalledOnce();
     expect(spies.limit).toHaveBeenCalledOnce();
     expect(spies.update).toHaveBeenCalledOnce();

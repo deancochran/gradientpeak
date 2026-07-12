@@ -17,6 +17,7 @@ let mockNewUserNoActivities = false;
 const readinessChartPropsMock = jest.fn();
 const projectionChartPropsMock = jest.fn();
 const mockTrainingPathSectionProps = jest.fn();
+const mockDashboardViewModelParams = jest.fn();
 const defaultMockGoals = [
   {
     id: "goal-1",
@@ -180,6 +181,20 @@ jest.mock("@/components/plan/training-path/TrainingPathSection", () => ({
     ]);
   },
 }));
+
+jest.mock("@/components/plan/usePlanDashboardViewModel", () => {
+  const actual = jest.requireActual<typeof import("@/components/plan/usePlanDashboardViewModel")>(
+    "@/components/plan/usePlanDashboardViewModel",
+  );
+  return {
+    __esModule: true,
+    ...actual,
+    usePlanDashboardViewModel: (params: Parameters<typeof actual.usePlanDashboardViewModel>[0]) => {
+      mockDashboardViewModelParams(params);
+      return actual.usePlanDashboardViewModel(params);
+    },
+  };
+});
 
 jest.mock("@/components/shared", () => ({
   __esModule: true,
@@ -808,6 +823,7 @@ describe("plan dashboard navigation", () => {
     readinessChartPropsMock.mockClear();
     projectionChartPropsMock.mockClear();
     mockTrainingPathSectionProps.mockClear();
+    mockDashboardViewModelParams.mockClear();
     mockDetailDateRange = "90d";
     mockNewUserNoActivities = false;
     mockGoals = defaultMockGoals;
@@ -872,6 +888,9 @@ describe("plan dashboard navigation", () => {
         onSelectedWeekChange: expect.any(Function),
       }),
     );
+    expect(mockDashboardViewModelParams).toHaveBeenCalledWith(
+      expect.objectContaining({ includeGoalReadiness: false }),
+    );
   });
 
   it("opens detail screens from training path week review callbacks", () => {
@@ -900,13 +919,15 @@ describe("plan dashboard navigation", () => {
     });
   });
 
-  it("marks the training path week review loading after selecting a new chart week", () => {
+  it("reports the pending week review state while a new chart week is selected", () => {
     renderNative(<PlanScreenWithErrorBoundary />);
 
     expect(mockTrainingPathSectionProps.mock.calls.at(-1)?.[0].selectedWeekLoading).toBe(false);
     fireEvent.press(screen.getByTestId("training-path-week-2026-04-13"));
 
-    expect(mockTrainingPathSectionProps.mock.calls.at(-1)?.[0].selectedWeekLoading).toBe(true);
+    expect(
+      mockTrainingPathSectionProps.mock.calls.some(([props]) => props.selectedWeekLoading),
+    ).toBe(true);
   });
 
   it("keeps removed legacy plan-tab panels out of the current training path flow", () => {

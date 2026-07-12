@@ -43,6 +43,18 @@ export interface WahooRepository {
     externalId: string;
     integrationId: string;
   }): Promise<{ activityId: string; linkId: string } | null>;
+  findImportedActivityByProviderExternalId(input: {
+    externalId: string;
+    provider: "wahoo";
+  }): Promise<{ activityId: string; profileId: string } | null>;
+  createImportedActivityResourceLink(input: {
+    activityId: string;
+    externalId: string;
+    integrationId: string;
+    profileId: string;
+    provider: "wahoo";
+    providerUpdatedAt: string | null;
+  }): Promise<void>;
   findLinkedPlannedEventId(input: {
     profileId: string;
     externalWorkoutId: string;

@@ -114,6 +114,49 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
       return row ?? null;
     },
 
+    async findImportedActivityByProviderExternalId({ externalId, provider }) {
+      const [row] = await db
+        .select({
+          activityId: schema.activityImports.activity_id,
+          profileId: schema.activityImports.profile_id,
+        })
+        .from(schema.activityImports)
+        .where(
+          and(
+            eq(schema.activityImports.provider, provider),
+            eq(schema.activityImports.external_id, externalId),
+          ),
+        )
+        .limit(1);
+
+      return row ?? null;
+    },
+
+    async createImportedActivityResourceLink(input) {
+      await db
+        .insert(schema.integrationResourceLinks)
+        .values({
+          id: randomUUID(),
+          created_at: new Date(),
+          external_id: input.externalId,
+          integration_id: input.integrationId,
+          internal_resource_id: input.activityId,
+          profile_id: input.profileId,
+          provider: input.provider,
+          provider_updated_at: input.providerUpdatedAt ? new Date(input.providerUpdatedAt) : null,
+          resource_kind: "activity",
+          synced_at: new Date(),
+          updated_at: new Date(),
+        })
+        .onConflictDoNothing({
+          target: [
+            schema.integrationResourceLinks.integration_id,
+            schema.integrationResourceLinks.resource_kind,
+            schema.integrationResourceLinks.external_id,
+          ],
+        });
+    },
+
     async findLinkedPlannedEventId({ profileId, externalWorkoutId }) {
       const [row] = await db
         .select({ eventId: schema.integrationResourceLinks.internal_resource_id })

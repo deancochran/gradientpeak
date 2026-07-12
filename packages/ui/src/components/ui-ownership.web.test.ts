@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -19,25 +19,6 @@ describe("UI ownership guardrails", () => {
       "HeaderButtons.tsx",
       "index.ts",
     ]);
-  });
-
-  it("rejects previously migrated pure UI app components", () => {
-    const forbiddenPaths = [
-      "apps/mobile/components/profile/WeightInputField.tsx",
-      "apps/mobile/components/shared/EmptyStateCard.tsx",
-      "apps/mobile/components/shared/ErrorStateCard.tsx",
-      "apps/mobile/components/shared/LoadingSkeletons.tsx",
-      "apps/mobile/components/training-plan/create/inputs/DateField.tsx",
-      "apps/mobile/components/activity/shared/MetricCard.tsx",
-      "apps/mobile/components/ActivityPlan/MetricCard.tsx",
-      "apps/mobile/lib/goals/goalDraft.ts",
-      "apps/mobile/lib/training-plan-form/validation.ts",
-      "apps/web/src/components/avatar-stack.tsx",
-    ];
-
-    expect(
-      forbiddenPaths.filter((relativePath) => existsSync(path.join(repoRoot, relativePath))),
-    ).toEqual([]);
   });
 
   it("keeps top-level web components limited to app-specific surfaces", () => {

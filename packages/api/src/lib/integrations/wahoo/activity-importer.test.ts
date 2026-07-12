@@ -39,6 +39,8 @@ function createSummary(overrides: Partial<WahooWorkoutSummary> = {}): WahooWorko
 function createRepositoryMock() {
   return {
     createImportedActivity: vi.fn().mockResolvedValue({ id: "activity-1" }),
+    createImportedActivityResourceLink: vi.fn().mockResolvedValue(undefined),
+    findImportedActivityByProviderExternalId: vi.fn().mockResolvedValue(null),
     findImportedActivityLinkByExternalId: vi.fn().mockResolvedValue(null),
     findLinkedPlannedEventId: vi.fn().mockResolvedValue(null),
     findWahooIntegrationByExternalId: vi
@@ -104,7 +106,58 @@ describe("activity-importer", () => {
       externalId: "123",
       integrationId: "integration-1",
     });
+    expect(repository.findImportedActivityByProviderExternalId).not.toHaveBeenCalled();
     expect(repository.findLinkedPlannedEventId).not.toHaveBeenCalled();
+    expect(repository.createImportedActivity).not.toHaveBeenCalled();
+    expect(activityFileStorage.uploadActivityFile).not.toHaveBeenCalled();
+  });
+
+  it("skips an existing import and repairs its link for the current profile", async () => {
+    const repository = createRepositoryMock();
+    repository.findImportedActivityByProviderExternalId.mockResolvedValueOnce({
+      activityId: "existing-activity",
+      profileId: "profile-1",
+    });
+    const activityFileStorage = { uploadActivityFile: vi.fn() };
+    const importer = createActivityImporter({ activityFileStorage, repository });
+
+    await expect(importer.importWorkoutSummary(77, createSummary())).resolves.toEqual({
+      success: true,
+      skipped: true,
+      reason: "Activity already imported",
+      activityId: "existing-activity",
+    });
+
+    expect(repository.createImportedActivityResourceLink).toHaveBeenCalledWith({
+      activityId: "existing-activity",
+      externalId: "123",
+      integrationId: "integration-1",
+      profileId: "profile-1",
+      provider: "wahoo",
+      providerUpdatedAt: "2026-04-03T11:05:00.000Z",
+    });
+    expect(repository.findLinkedPlannedEventId).not.toHaveBeenCalled();
+    expect(repository.createImportedActivity).not.toHaveBeenCalled();
+    expect(activityFileStorage.uploadActivityFile).not.toHaveBeenCalled();
+  });
+
+  it("skips a cross-profile existing import without creating a resource link", async () => {
+    const repository = createRepositoryMock();
+    repository.findImportedActivityByProviderExternalId.mockResolvedValueOnce({
+      activityId: "existing-activity",
+      profileId: "other-profile",
+    });
+    const activityFileStorage = { uploadActivityFile: vi.fn() };
+    const importer = createActivityImporter({ activityFileStorage, repository });
+
+    await expect(importer.importWorkoutSummary(77, createSummary())).resolves.toEqual({
+      success: true,
+      skipped: true,
+      reason: "Activity already imported",
+      activityId: "existing-activity",
+    });
+
+    expect(repository.createImportedActivityResourceLink).not.toHaveBeenCalled();
     expect(repository.createImportedActivity).not.toHaveBeenCalled();
     expect(activityFileStorage.uploadActivityFile).not.toHaveBeenCalled();
   });

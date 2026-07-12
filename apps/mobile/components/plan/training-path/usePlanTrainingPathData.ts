@@ -183,6 +183,7 @@ export function usePlanTrainingPathData() {
   const snapshot = useTrainingPlanSnapshot({
     planId: activePlan?.id,
     includeStatus: false,
+    includeInsightTimeline: false,
     includeWeeklySummaries: false,
     curveWindow: "overview",
   });
@@ -191,6 +192,7 @@ export function usePlanTrainingPathData() {
   const dashboard = usePlanDashboardViewModel({
     activePlan,
     goals,
+    includeGoalReadiness: false,
     profileSettings: profileSettings.settings,
     snapshot,
     upcomingPlannedEvents: upcomingPlannedEventsQuery.data?.items,
@@ -344,24 +346,23 @@ export function usePlanTrainingPathData() {
   );
   const selectedWeekGoals = useMemo<TrainingPathSelectedGoal[]>(() => {
     if (!selectedWeekRangeStart || !selectedWeekRangeEnd) return [];
-    return dashboard.goalReadiness.flatMap((item) => {
-      const targetDate = item.goal.target_date;
+    return goals.goals.flatMap((goal) => {
+      const targetDate = goal.target_date;
       if (!targetDate || targetDate < selectedWeekRangeStart || targetDate > selectedWeekRangeEnd) {
         return [];
       }
 
       return [
         {
-          id: item.goal.id,
-          label: item.goal.title,
+          id: goal.id,
+          label: goal.title,
           targetDate,
-          status: item.status,
-          readinessPercent: item.readinessPercent,
-          readinessTarget: item.readinessTarget,
+          activityCategory: goal.activity_category,
+          status: "Goal due",
         },
       ];
     });
-  }, [dashboard.goalReadiness, selectedWeekRangeEnd, selectedWeekRangeStart]);
+  }, [goals.goals, selectedWeekRangeEnd, selectedWeekRangeStart]);
   const selectedWeekEvents = useMemo<TrainingPathScheduledItem[]>(() => {
     if (!selectedWeekRangeStart || !selectedWeekRangeEnd) return [];
     return eventReviewItems.filter(

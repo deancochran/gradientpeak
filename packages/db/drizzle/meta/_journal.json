@@ -148,6 +148,13 @@
       "when": 1782937435606,
       "tag": "0020_gp_81_profile_signup_defaults",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1783684800000,
+      "tag": "0021_add_metric_effort_provenance",
+      "breakpoints": true
     }
   ]
 }

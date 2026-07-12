@@ -130,14 +130,13 @@ export function convertToWahooPlan(
 
   const { workout_type_family, workout_type_location } = activityTypeMapping;
   const requiresFtpHeader = Boolean(
-    structure.intervals?.some((interval) =>
-      interval.steps.some((step) =>
-        step.targets?.some(
-          (target) =>
-            options.activityType !== "run" && (target.type === "%FTP" || target.type === "RPE"),
-        ),
+    options.activityType !== "run" &&
+      structure.intervals?.some((interval) =>
+        interval.steps.some((step) => {
+          const selectedTarget = selectWahooTarget(step.targets ?? [], options);
+          return selectedTarget?.type === "%FTP" || selectedTarget?.type === "RPE";
+        }),
       ),
-    ),
   );
   const requiresMaxHrHeader = Boolean(
     options.max_hr &&
@@ -154,6 +153,14 @@ export function convertToWahooPlan(
         ),
       ),
   );
+  const hasValidFtp =
+    typeof options.ftp === "number" && Number.isFinite(options.ftp) && options.ftp > 0;
+
+  if (requiresFtpHeader && !hasValidFtp) {
+    throw new Error(
+      "A positive FTP is required to sync a workout with FTP-relative targets to Wahoo.",
+    );
+  }
 
   const plan: WahooPlanJson = {
     header: {
@@ -166,9 +173,9 @@ export function convertToWahooPlan(
     intervals: [],
   };
 
-  // Add FTP and threshold HR if available (needed for percentage-based targets)
-  if (options.ftp || requiresFtpHeader) {
-    plan.header.ftp = options.ftp ?? 1;
+  // Add valid FTP and threshold HR when available (needed for percentage-based targets)
+  if (hasValidFtp) {
+    plan.header.ftp = options.ftp;
   }
   if (options.max_hr && requiresMaxHrHeader) {
     plan.header.max_hr = options.max_hr;

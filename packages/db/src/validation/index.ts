@@ -8,6 +8,7 @@ import {
   effortTypeEnum,
   eventStatusEnum,
   eventTypeEnum,
+  evidenceObservationSourceEnum,
   genderEnum,
   integrationProviderEnum,
   integrationResourceKindEnum,
@@ -48,6 +49,9 @@ export const publicActivityFileIngestionSourceSchema = z.enum(
 );
 export const publicActivityFileIngestionStatusSchema = z.enum(
   activityFileIngestionStatusEnum.enumValues,
+);
+export const publicEvidenceObservationSourceSchema = z.enum(
+  evidenceObservationSourceEnum.enumValues,
 );
 export const publicEffortTypeSchema = z.enum(effortTypeEnum.enumValues);
 export const publicEventStatusSchema = z.enum(eventStatusEnum.enumValues);
@@ -177,6 +181,7 @@ export type PublicActivityFileIngestionSource = z.infer<
 export type PublicActivityFileIngestionStatus = z.infer<
   typeof publicActivityFileIngestionStatusSchema
 >;
+export type PublicEvidenceObservationSource = z.infer<typeof publicEvidenceObservationSourceSchema>;
 export type PublicEffortType = z.infer<typeof publicEffortTypeSchema>;
 export type PublicEventStatus = z.infer<typeof publicEventStatusSchema>;
 export type PublicEventType = z.infer<typeof publicEventTypeSchema>;

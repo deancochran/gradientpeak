@@ -17,6 +17,18 @@ interface WahooRepository {
     externalId: string;
     integrationId: string;
   }): Promise<{ activityId: string; linkId: string } | null>;
+  findImportedActivityByProviderExternalId(input: {
+    externalId: string;
+    provider: "wahoo";
+  }): Promise<{ activityId: string; profileId: string } | null>;
+  createImportedActivityResourceLink(input: {
+    activityId: string;
+    externalId: string;
+    integrationId: string;
+    profileId: string;
+    provider: "wahoo";
+    providerUpdatedAt: string | null;
+  }): Promise<void>;
   findLinkedPlannedEventId(input: {
     externalWorkoutId: string;
     profileId: string;
@@ -103,6 +115,32 @@ export class WahooActivityImporter {
           skipped: true,
           reason: "Activity already imported",
           activityId: existing.activityId,
+        };
+      }
+
+      const existingImport = await this.deps.repository.findImportedActivityByProviderExternalId({
+        externalId: summary.id.toString(),
+        provider: "wahoo",
+      });
+
+      if (existingImport) {
+        if (existingImport.profileId === integration.profileId) {
+          await this.deps.repository.createImportedActivityResourceLink({
+            activityId: existingImport.activityId,
+            externalId: summary.id.toString(),
+            integrationId: integration.integrationId,
+            profileId: integration.profileId,
+            provider: "wahoo",
+            providerUpdatedAt: summary.updated_at ?? summary.created_at ?? null,
+          });
+        }
+
+        console.log(`Activity ${summary.id} already imported, skipping`);
+        return {
+          success: true,
+          skipped: true,
+          reason: "Activity already imported",
+          activityId: existingImport.activityId,
         };
       }
 

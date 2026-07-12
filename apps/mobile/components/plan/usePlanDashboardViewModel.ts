@@ -131,6 +131,8 @@ type PlannedEventInput = {
 type UsePlanDashboardViewModelParams = {
   activePlan: ActivePlanInput | undefined;
   goals: PlanGoals;
+  /** Training Path only needs structural goal markers, not readiness projections. */
+  includeGoalReadiness?: boolean;
   profileSettings: AthleteTrainingSettings;
   snapshot: PlanSnapshot;
   upcomingPlannedEvents: PlannedEventInput[] | null | undefined;
@@ -298,6 +300,7 @@ export function mapUpcomingImpact(impact: UpcomingImpactInput): PlanUpcomingImpa
 export function usePlanDashboardViewModel({
   activePlan,
   goals,
+  includeGoalReadiness = true,
   profileSettings,
   snapshot,
   upcomingPlannedEvents,
@@ -366,17 +369,23 @@ export function usePlanDashboardViewModel({
   );
 
   const projectionDashboard = snapshot.insightTimeline?.projection_dashboard ?? null;
-  const readinessForecast = snapshot.insightTimeline?.readiness_forecast ?? null;
+  const readinessForecast = includeGoalReadiness
+    ? (snapshot.insightTimeline?.readiness_forecast ?? null)
+    : null;
 
   const hasCompletedActivityHistory = useMemo(() => {
     if (fitnessHistory.length > 0) {
       return true;
     }
 
+    if (!includeGoalReadiness) {
+      return false;
+    }
+
     return (readinessForecast?.series.actual.points ?? []).some(
       (point) => typeof point.load === "number" && Number.isFinite(point.load) && point.load > 0,
     );
-  }, [fitnessHistory.length, readinessForecast?.series.actual.points]);
+  }, [fitnessHistory.length, includeGoalReadiness, readinessForecast?.series.actual.points]);
 
   const baselineEstimate = useMemo<PlanBaselineEstimate | null>(() => {
     const dose = projectionDashboard?.dose_recommendation;
@@ -517,6 +526,10 @@ export function usePlanDashboardViewModel({
   }, [forecastReadinessStartsAtToday, readinessForecast, visibleReadinessWindow]);
 
   const readinessGoalMarkers = useMemo<PlanReadinessGoalMarker[]>(() => {
+    if (!includeGoalReadiness) {
+      return [];
+    }
+
     const forecastMarkers = readinessForecast?.goals ?? [];
     const sourceMarkers =
       forecastMarkers.length > 0
@@ -537,7 +550,7 @@ export function usePlanDashboardViewModel({
         (marker.targetDate >= visibleReadinessWindow.startDate &&
           marker.targetDate <= visibleReadinessWindow.endDate),
     );
-  }, [profileGoalMarkers, readinessForecast?.goals, visibleReadinessWindow]);
+  }, [includeGoalReadiness, profileGoalMarkers, readinessForecast?.goals, visibleReadinessWindow]);
 
   const readinessConfidenceSummary = useMemo(() => {
     if (!readinessForecast) {
@@ -569,6 +582,10 @@ export function usePlanDashboardViewModel({
   }, [readinessForecast?.gap_summary]);
 
   const readinessAccessibilitySummary = useMemo(() => {
+    if (!includeGoalReadiness) {
+      return "";
+    }
+
     if (!readinessForecast) {
       return "Readiness forecast is not available yet.";
     }
@@ -583,9 +600,13 @@ export function usePlanDashboardViewModel({
       : "No gap insight available";
 
     return `${readiness} Forecast confidence is ${confidence}. ${gap}.`;
-  }, [readinessForecast]);
+  }, [includeGoalReadiness, readinessForecast]);
 
   const goalReadiness = useMemo<PlanGoalReadinessItem[]>(() => {
+    if (!includeGoalReadiness) {
+      return [];
+    }
+
     const fallbackReadinessTarget = resolveGoalReadinessTarget(
       profileSettings.goal_strategy_preferences,
     );
@@ -642,6 +663,7 @@ export function usePlanDashboardViewModel({
     });
   }, [
     goals.goals,
+    includeGoalReadiness,
     profileSettings.goal_strategy_preferences,
     projectionDashboard?.goal_forecasts,
     snapshot.idealCurveData,
@@ -650,6 +672,18 @@ export function usePlanDashboardViewModel({
   ]);
 
   const goalOutlook = useMemo(() => {
+    if (!includeGoalReadiness) {
+      return {
+        featured: [] as PlanGoalOutlookCard[],
+        hiddenNextDayGoalCount: 0,
+        totalUpcomingGoalCount: 0,
+        canAddGoal: true,
+        nextGoal: null,
+        nextTargetDate: null,
+        topPriorityGoal: null,
+      };
+    }
+
     const todayKey = today.toISOString().split("T")[0] ?? "";
     const upcoming = goalReadiness
       .filter((item) => item.goal.target_date && item.goal.target_date >= todayKey)
@@ -699,7 +733,7 @@ export function usePlanDashboardViewModel({
       nextTargetDate,
       topPriorityGoal: topPriority,
     };
-  }, [goalReadiness, today]);
+  }, [goalReadiness, includeGoalReadiness, today]);
 
   const insightTimelinePoints = useMemo(
     () => snapshot.insightTimeline?.timeline ?? [],
@@ -921,42 +955,24 @@ export function usePlanDashboardViewModel({
     [goalReadiness],
   );
 
-  void goalOutlook;
-  void goalReadiness;
-  void readinessComparisonPoints;
-  void readinessGoalMarkers;
-  void readinessConfidenceSummary;
-  void readinessGapInsight;
-  void readinessAccessibilitySummary;
-  void nextGoal;
-
   return {
     fitnessHistory,
     goalMarkers: profileGoalMarkers,
     goalMetrics,
-    goalOutlook: {
-      featured: [] as PlanGoalOutlookCard[],
-      hiddenNextDayGoalCount: 0,
-      totalUpcomingGoalCount: 0,
-      canAddGoal: true,
-      nextGoal: null,
-      nextTargetDate: null,
-      topPriorityGoal: null,
-    },
-    goalReadiness: [] as PlanGoalReadinessItem[],
+    goalOutlook,
+    goalReadiness,
     insightTimelinePoints,
     loadGuidance,
-    readinessComparisonPoints: [] as PlanReadinessComparisonPoint[],
-    readinessForecast: null,
+    readinessComparisonPoints,
+    readinessForecast,
     hasCompletedActivityHistory,
     baselineEstimate,
-    readinessGoalMarkers: [] as PlanReadinessGoalMarker[],
-    readinessConfidenceSummary: null,
-    readinessGapInsight: null,
-    readinessAccessibilitySummary:
-      "Schedule and load context are available; other estimates are unavailable.",
+    readinessGoalMarkers,
+    readinessConfidenceSummary,
+    readinessGapInsight,
+    readinessAccessibilitySummary,
     estimationWarning,
-    nextGoal: null,
+    nextGoal,
     projectedFitness,
     projectionDashboard,
     weeklyLoadSummary,

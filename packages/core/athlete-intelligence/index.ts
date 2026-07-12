@@ -1,7 +1,9 @@
 export * from "./athlete-state";
 export * from "./calculation-result-contracts";
 export * from "./canonical-json";
+export * from "./evidence";
 export * from "./evidence-contracts";
+export * from "./evidence-resolver";
 export * from "./goal-demand-policy-contracts";
 /**
  * @deprecated Legacy capability and generic gap contracts are isolated from the

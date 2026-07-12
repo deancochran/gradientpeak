@@ -166,6 +166,42 @@ describe("useTrainingPlanSnapshot", () => {
     expect(snapshotMocks.refetchWeeklySummary).toHaveBeenCalledTimes(0);
   });
 
+  it("can disable insight timeline work without affecting structural curve inputs", async () => {
+    snapshotMocks.getInsightTimelineQuery.mockImplementationOnce(() => ({
+      data: { timeline: [] },
+      isLoading: true,
+      isError: true,
+      error: new Error("insight unavailable"),
+      refetch: refetchInsightTimeline,
+    }));
+
+    const { result } = renderHook(() =>
+      useTrainingPlanSnapshot({
+        planId: "plan-123",
+        includeInsightTimeline: false,
+        includeWeeklySummaries: false,
+      }),
+    );
+
+    expect(snapshotMocks.getInsightTimelineQuery).toHaveBeenCalledWith(
+      expect.objectContaining({ training_plan_id: "plan-123" }),
+      expect.objectContaining({ enabled: false }),
+    );
+    expect(result.current.insightTimeline).toBeUndefined();
+    expect(result.current.loading.insightTimeline).toBe(false);
+    expect(result.current.errors.insightTimeline).toBeNull();
+    expect(result.current.actualCurveData).toEqual({ dataPoints: [] });
+    expect(result.current.idealCurveData).toEqual({ dataPoints: [] });
+
+    await act(async () => {
+      await result.current.refetchAll();
+    });
+
+    expect(snapshotMocks.refetchInsightTimeline).not.toHaveBeenCalled();
+    expect(snapshotMocks.refetchActualCurve).toHaveBeenCalledTimes(1);
+    expect(snapshotMocks.refetchIdealCurve).toHaveBeenCalledTimes(1);
+  });
+
   it("requests insight timeline with the active plan id and explicit window inputs", () => {
     renderHook(() =>
       useTrainingPlanSnapshot({

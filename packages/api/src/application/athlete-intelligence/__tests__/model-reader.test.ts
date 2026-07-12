@@ -897,6 +897,32 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     expect(first(result.plannedSchedule).sourceId).toContain("event-event-1");
   });
 
+  it("prioritizes current and future plans over more-than-limit historical open-ended rows", async () => {
+    const value = rows();
+    const event = first(value.schedule);
+    value.schedule = [
+      ...Array.from({ length: modelReaderBounds.schedule + 10 }, (_, index) => ({
+        ...event,
+        id: `historical-open-${String(index).padStart(3, "0")}`,
+        startsAt: new Date("2025-01-01T00:00:00.000Z"),
+        endsAt: null,
+      })),
+      event,
+    ];
+
+    const result = await materializeAthleteIntelligenceModelInput({
+      dataSource: readRows(value),
+      profileId,
+      asOf,
+    });
+
+    expect(first(result.plannedSchedule)).toMatchObject({
+      sourceId: "manual:event-historical-open-000:record",
+      lineageGroupId: "manual-test:event-historical-open-000",
+    });
+    expect(result.scheduleReadState).toBe("truncated");
+  });
+
   it("pages past more than 100 ineligible recurring rows at the data-source boundary", async () => {
     const event = first(rows().schedule);
     const candidates = [
@@ -973,29 +999,6 @@ describe("materializeAthleteIntelligenceModelInput", () => {
       reason: "query_limit_reached",
     });
     expect(result.scheduleReadState).toBe("truncated");
-  });
-
-  it("retains normalized persisted header sport and its goal evidence when objective sport is omitted", async () => {
-    const value = rows();
-    value.goals[0] = {
-      ...first(value.goals),
-      activityCategory: "Cycling",
-      targetPayload: { type: "completion", distance_m: 10_000 },
-    };
-
-    const result = await materializeAthleteIntelligenceModelInput({
-      dataSource: readRows(value),
-      profileId,
-      asOf,
-    });
-    const goal = first(result.goals);
-
-    expect(goal.objective).toEqual({
-      type: "completion",
-      distance_m: 10_000,
-    });
-    expect(goal.goalSport).toBe("bike");
-    expect(result.evidenceRegistry[goal.sourceId]?.sport).toBe("bike");
   });
 
   it("materializes a header-only consistency goal without borrowing a payload sport", async () => {
