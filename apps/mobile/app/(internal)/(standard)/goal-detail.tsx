@@ -13,11 +13,13 @@ import { Activity, Bike, CalendarDays, Dumbbell, Footprints, Waves } from "lucid
 import type React from "react";
 import { useMemo, useState } from "react";
 import { View } from "react-native";
+import { GoalIntelligenceCard } from "@/components/goals/GoalIntelligenceCard";
 import {
   DetailDeleteConfirmModal,
   DetailOverflowMenu,
   DetailScaffold,
 } from "@/components/shared/detail";
+import { ErrorState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 
@@ -27,10 +29,6 @@ function SectionCard({ children, testID }: { children: React.ReactNode; testID?:
       <CardContent className="gap-4 p-4">{children}</CardContent>
     </Card>
   );
-}
-
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <Text className="text-sm font-semibold text-foreground">{children}</Text>;
 }
 
 function formatActivityCategory(value: string | null | undefined) {
@@ -89,16 +87,31 @@ function formatDaysUntilGoal(targetDate: string | null, today: string) {
   return `${dayCount} day${dayCount === 1 ? "" : "s"} out`;
 }
 
+function resolveDeviceTimezone() {
+  try {
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone?.trim();
+    if (!timezone) return null;
+    new Intl.DateTimeFormat(undefined, { timeZone: timezone }).format();
+    return timezone;
+  } catch {
+    return null;
+  }
+}
+
 export default function GoalDetailScreen() {
   const router = useRouter();
   const utils = api.useUtils();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const goalId = typeof id === "string" ? id : "";
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const deviceTimezone = useMemo(() => resolveDeviceTimezone(), []);
+  const [planningTimezone, setPlanningTimezone] = useState<string | null>(null);
 
-  const { data: goal, isLoading } = api.goals.getById.useQuery(
-    { id: goalId },
-    { enabled: !!goalId },
+  const goalQuery = api.goals.getById.useQuery({ id: goalId }, { enabled: !!goalId });
+  const { data: goal, isLoading } = goalQuery;
+  const intelligenceQuery = api.athleteIntelligence.evaluate.useQuery(
+    { goalId, planningTimezone: planningTimezone ?? undefined },
+    { enabled: !!goalId && !!planningTimezone },
   );
   const todayKey = useMemo(() => todayDateKey(), []);
   const goalRecord = useMemo(() => {
@@ -157,6 +170,18 @@ export default function GoalDetailScreen() {
       testID="goal-detail-options-trigger"
     />
   );
+
+  if (goalQuery.isError) {
+    return (
+      <DetailScaffold headerRight={renderHeaderActions}>
+        <ErrorState
+          description="Check your connection and try again."
+          onAction={() => void goalQuery.refetch()}
+          title="Goal could not be loaded"
+        />
+      </DetailScaffold>
+    );
+  }
 
   if (isLoading || !goalRecord) {
     return (
@@ -224,25 +249,15 @@ export default function GoalDetailScreen() {
         </View>
       </SectionCard>
 
-      <SectionCard testID="goal-evidence-card">
-        <View className="gap-1">
-          <SectionTitle>Goal evidence</SectionTitle>
-          <Text className="text-sm leading-5 text-muted-foreground">
-            This goal is defined by its objective, target date, activity type, and priority.
-            Completed activities provide context for future review.
-          </Text>
-        </View>
-
-        <View className="rounded-2xl border border-border bg-muted/20 px-3 py-3">
-          <Text className="text-sm font-semibold text-foreground">
-            Outcome projection unavailable
-          </Text>
-          <Text className="mt-1 text-xs leading-5 text-muted-foreground">
-            A trustworthy outcome projection requires a redesigned and validated model. No score or
-            likelihood is shown for this goal.
-          </Text>
-        </View>
-      </SectionCard>
+      <GoalIntelligenceCard
+        deviceTimezone={deviceTimezone}
+        intelligence={intelligenceQuery.data}
+        isError={intelligenceQuery.isError}
+        isLoading={intelligenceQuery.isLoading}
+        onRetry={() => void intelligenceQuery.refetch()}
+        onUseDeviceTimezone={() => setPlanningTimezone(deviceTimezone)}
+        planningTimezone={planningTimezone}
+      />
     </DetailScaffold>
   );
 }

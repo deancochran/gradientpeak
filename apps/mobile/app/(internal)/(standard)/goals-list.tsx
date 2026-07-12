@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { FlatList, RefreshControl, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { GoalListItem } from "@/components/plan/GoalListItem";
-import { usePlanDashboardViewModel } from "@/components/plan/usePlanDashboardViewModel";
 import {
   FilterChip,
   FilterSection,
@@ -14,12 +13,8 @@ import {
 } from "@/components/shared";
 import { HeaderTextAction } from "@/components/shared/HeaderAction";
 import { EmptyState, ErrorState, LoadingState } from "@/components/shared/ScreenState";
-import { api } from "@/lib/api";
-import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { ROUTES } from "@/lib/constants/routes";
 import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
-import { useProfileSettings } from "@/lib/hooks/useProfileSettings";
-import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 function getDateKey(value: Date) {
@@ -59,35 +54,11 @@ function GoalsListScreen() {
     sortBy,
     sortOrder: sortBy === "priority" ? "desc" : "asc",
   });
-  const profileSettings = useProfileSettings();
   const today = useMemo(() => new Date(), []);
   const todayKey = useMemo(() => getDateKey(today), [today]);
-  const { data: activePlan } = api.trainingPlans.getActivePlan.useQuery(
-    undefined,
-    scheduleAwareReadQueryOptions,
-  );
-  const snapshot = useTrainingPlanSnapshot({
-    planId: activePlan?.id,
-    includeStatus: false,
-    includeWeeklySummaries: false,
-    curveWindow: "overview",
-  });
-  const dashboard = usePlanDashboardViewModel({
-    activePlan,
-    goals,
-    profileSettings: profileSettings.settings,
-    snapshot,
-    upcomingPlannedEvents: [],
-    recentPlannedEvents: [],
-    today,
-  });
   const orderedGoals = useMemo(
     () => (sortBy === "target_date" ? sortGoalsByNextDate(goals.goals, todayKey) : goals.goals),
     [goals.goals, sortBy, todayKey],
-  );
-  const readinessByGoalId = useMemo(
-    () => new Map(dashboard.goalReadiness.map((item) => [item.goal.id, item])),
-    [dashboard.goalReadiness],
   );
 
   if (goals.isLoading) {
@@ -164,9 +135,6 @@ function GoalsListScreen() {
           <GoalListItem
             goal={item}
             label={item.target_date && item.target_date >= todayKey ? "Upcoming" : "Goal"}
-            readinessPercent={readinessByGoalId.get(item.id)?.readinessPercent ?? null}
-            readinessTarget={readinessByGoalId.get(item.id)?.readinessTarget ?? null}
-            status={readinessByGoalId.get(item.id)?.status}
             onPress={() => navigateTo(ROUTES.GOALS.DETAIL(item.id) as Href)}
             testID={`goals-list-row-${item.id}`}
           />
