@@ -1,3 +1,4 @@
+import type { ThresholdMetricSource } from "@repo/core/athlete-inputs";
 import type { DrizzleDbClient } from "@repo/db";
 
 export type WahooIntegrationRecord = {
@@ -104,7 +105,16 @@ export interface WahooRepository {
     startsAt: string;
   } | null>;
   getProfileSyncMetrics(profileId: string): Promise<{
-    ftp: number | null;
+    bikePowerEfforts: Array<{
+      observationKind: "actual" | "derived";
+      observedAt: string;
+      value: number;
+    }>;
+    ftpMetrics: Array<{
+      observedAt: string;
+      source: ThresholdMetricSource;
+      value: number;
+    }>;
     maxHr: number | null;
     thresholdHr: number | null;
   } | null>;

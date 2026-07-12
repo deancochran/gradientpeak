@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { ThresholdMetricSource } from "@repo/core/athlete-inputs";
 import { schema } from "@repo/db";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type {
@@ -25,6 +26,13 @@ function toWahooEventResourceProviderMetadata(
   if (typeof wahooValue["routeId"] === "number") metadata.routeId = wahooValue["routeId"];
 
   return Object.keys(metadata).length > 0 ? { wahoo: metadata } : null;
+}
+
+function thresholdMetricSource(source: string | null): ThresholdMetricSource {
+  if (source === "manual") return "manual";
+  if (source === "estimated") return "estimated";
+  if (source === "derived" || source === "modeled") return "modeled";
+  return "provider";
 }
 
 export function createWahooRepository({ db }: CreateWahooRepositoryOptions): WahooRepository {
@@ -359,27 +367,64 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
     },
 
     async getProfileSyncMetrics(profileId) {
-      const rows = await db
-        .select({
-          type: schema.profileMetrics.metric_type,
-          value: schema.profileMetrics.value,
-        })
-        .from(schema.profileMetrics)
-        .where(
-          and(
-            eq(schema.profileMetrics.profile_id, profileId),
-            inArray(schema.profileMetrics.metric_type, ["ftp", "lthr", "max_hr"]),
-          ),
-        )
-        .orderBy(desc(schema.profileMetrics.recorded_at));
+      const [metricRows, bikePowerEfforts] = await Promise.all([
+        db
+          .select({
+            recordedAt: schema.profileMetrics.recorded_at,
+            source: schema.profileMetrics.source,
+            type: schema.profileMetrics.metric_type,
+            value: schema.profileMetrics.value,
+          })
+          .from(schema.profileMetrics)
+          .where(
+            and(
+              eq(schema.profileMetrics.profile_id, profileId),
+              inArray(schema.profileMetrics.metric_type, ["ftp", "lthr", "max_hr"]),
+            ),
+          )
+          .orderBy(desc(schema.profileMetrics.recorded_at)),
+        db
+          .select({
+            activityId: schema.activityEfforts.activity_id,
+            observedAt: schema.activityEfforts.recorded_at,
+            source: schema.activityEfforts.source,
+            value: schema.activityEfforts.value,
+          })
+          .from(schema.activityEfforts)
+          .where(
+            and(
+              eq(schema.activityEfforts.profile_id, profileId),
+              eq(schema.activityEfforts.activity_category, "bike"),
+              eq(schema.activityEfforts.effort_type, "power"),
+              eq(schema.activityEfforts.duration_seconds, 1200),
+            ),
+          )
+          .orderBy(desc(schema.activityEfforts.recorded_at)),
+      ]);
 
       const latest = new Map<string, number>();
-      for (const row of rows) {
+      for (const row of metricRows) {
         if (!latest.has(row.type)) latest.set(row.type, row.value);
       }
 
       return {
-        ftp: latest.get("ftp") ?? null,
+        bikePowerEfforts: bikePowerEfforts.map((effort) => ({
+          observationKind:
+            effort.activityId !== null &&
+            effort.source !== "derived" &&
+            effort.source !== "estimated"
+              ? "actual"
+              : "derived",
+          observedAt: effort.observedAt.toISOString(),
+          value: effort.value,
+        })),
+        ftpMetrics: metricRows
+          .filter((metric) => metric.type === "ftp")
+          .map((metric) => ({
+            observedAt: metric.recordedAt.toISOString(),
+            source: thresholdMetricSource(metric.source),
+            value: metric.value,
+          })),
         maxHr: latest.get("max_hr") ?? null,
         thresholdHr: latest.get("lthr") ?? null,
       };

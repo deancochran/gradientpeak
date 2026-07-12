@@ -4,6 +4,7 @@
  */
 
 import type { ActivityPlanStructureV2 } from "@repo/core";
+import { resolveCanonicalThresholds, type ThresholdMetricSource } from "@repo/core/athlete-inputs";
 import type { PublicActivityCategory } from "@repo/db";
 import {
   isWahooSupported,
@@ -26,6 +27,8 @@ import {
 } from "./route-converter";
 
 type SyncAction = "created" | "updated" | "recreated" | "no_change";
+
+const FTP_FRESHNESS_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
 
 type WahooEventResourceProviderMetadata = {
   wahoo?: {
@@ -78,9 +81,7 @@ interface WahooRepository {
     id: string;
     startsAt: string;
   } | null>;
-  getProfileSyncMetrics(
-    profileId: string,
-  ): Promise<{ ftp: number | null; maxHr: number | null; thresholdHr: number | null } | null>;
+  getProfileSyncMetrics(profileId: string): Promise<WahooSyncProfileMetrics | null>;
   getRouteForSync(input: { profileId: string; routeId: string }): Promise<{
     description: string | null;
     filePath: string;
@@ -145,6 +146,17 @@ type WahooPlannedEvent = {
   activity_plan: WahooActivityPlan;
 };
 
+type WahooSyncProfileMetrics = {
+  bikePowerEfforts: Array<{
+    observationKind: "actual" | "derived";
+    observedAt: string;
+    value: number;
+  }>;
+  ftpMetrics: Array<{ observedAt: string; source: ThresholdMetricSource; value: number }>;
+  maxHr: number | null;
+  thresholdHr: number | null;
+};
+
 function normalizeActivityPlanRelation(
   relation: WahooActivityPlanRelation,
 ): WahooActivityPlan | null {
@@ -178,6 +190,27 @@ function hasWorkoutIntervals(structure: unknown): structure is ActivityPlanStruc
 
 function isRouteOnlyActivityPlan(activityPlan: WahooActivityPlan): boolean {
   return Boolean(activityPlan.route_id && !hasWorkoutIntervals(activityPlan.structure));
+}
+
+function resolveSyncMetrics(profile: WahooSyncProfileMetrics | null) {
+  if (!profile) return null;
+
+  const ftp = resolveCanonicalThresholds({
+    now: new Date().toISOString(),
+    freshnessWindowMs: FTP_FRESHNESS_WINDOW_MS,
+    directMetrics: profile.ftpMetrics.map((metric) => ({
+      threshold: "cycling_ftp" as const,
+      ...metric,
+    })),
+    activityEfforts: profile.bikePowerEfforts.map((effort) => ({
+      sport: "bike" as const,
+      metric: "power" as const,
+      durationSeconds: 1200,
+      ...effort,
+    })),
+  }).cycling_ftp;
+
+  return { ftp: ftp.value, maxHr: profile.maxHr, thresholdHr: profile.thresholdHr };
 }
 
 export interface SyncResult {
@@ -277,7 +310,7 @@ export class WahooSyncService {
       };
 
       // 2. Fetch user's profile for FTP and threshold HR
-      const profile = await this.repository.getProfileSyncMetrics(profileId);
+      const profile = resolveSyncMetrics(await this.repository.getProfileSyncMetrics(profileId));
 
       // 3. Fetch Wahoo integration
       const integration = await this.repository.findWahooIntegrationByProfileId(profileId);

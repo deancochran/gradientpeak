@@ -80,7 +80,12 @@ function createRepositoryMock() {
         updatedAt: "2026-04-01T09:00:00.000Z",
       },
     }),
-    getProfileSyncMetrics: vi.fn().mockResolvedValue({ ftp: 250, maxHr: 190, thresholdHr: 170 }),
+    getProfileSyncMetrics: vi.fn().mockResolvedValue({
+      bikePowerEfforts: [],
+      ftpMetrics: [{ observedAt: "2026-03-01T12:00:00.000Z", source: "provider", value: 250 }],
+      maxHr: 190,
+      thresholdHr: 170,
+    }),
     getRouteForSync: vi.fn().mockResolvedValue(null),
     getEventResourceLink: vi.fn().mockResolvedValue(null),
     listEventResourceLinks: vi.fn().mockResolvedValue([]),
@@ -138,6 +143,62 @@ describe("WahooSyncService", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it("uses a fresh observed 20-minute bike power effort for FTP conversion", async () => {
+    const repository = createRepositoryMock();
+    repository.getProfileSyncMetrics.mockResolvedValueOnce({
+      bikePowerEfforts: [
+        { observationKind: "actual", observedAt: "2026-04-02T12:00:00.000Z", value: 300 },
+      ],
+      ftpMetrics: [{ observedAt: "2026-04-03T10:00:00.000Z", source: "manual", value: 250 }],
+      maxHr: 190,
+      thresholdHr: 170,
+    });
+    const wahooClient = createClientMock();
+    createWahooClientMock.mockReturnValueOnce(wahooClient);
+    const service = new WahooSyncService({
+      repository,
+      storage: { downloadRouteGpx: vi.fn() },
+    });
+
+    await expect(service.syncEvent("event-1", "profile-1")).resolves.toMatchObject({
+      success: true,
+      action: "created",
+    });
+
+    expect(convertToWahooPlanMock).toHaveBeenCalledWith(
+      { intervals: [] },
+      expect.objectContaining({ ftp: 285, max_hr: 190, threshold_hr: 170 }),
+    );
+  });
+
+  it("falls back to the profile FTP metric when no eligible observed effort exists", async () => {
+    const repository = createRepositoryMock();
+    repository.getProfileSyncMetrics.mockResolvedValueOnce({
+      bikePowerEfforts: [
+        { observationKind: "derived", observedAt: "2026-04-02T12:00:00.000Z", value: 300 },
+      ],
+      ftpMetrics: [{ observedAt: "2026-04-03T10:00:00.000Z", source: "provider", value: 250 }],
+      maxHr: 190,
+      thresholdHr: 170,
+    });
+    const wahooClient = createClientMock();
+    createWahooClientMock.mockReturnValueOnce(wahooClient);
+    const service = new WahooSyncService({
+      repository,
+      storage: { downloadRouteGpx: vi.fn() },
+    });
+
+    await expect(service.syncEvent("event-1", "profile-1")).resolves.toMatchObject({
+      success: true,
+      action: "created",
+    });
+
+    expect(convertToWahooPlanMock).toHaveBeenCalledWith(
+      { intervals: [] },
+      expect.objectContaining({ ftp: 250 }),
+    );
   });
 
   it("creates a new sync with route data when no prior sync exists", async () => {
