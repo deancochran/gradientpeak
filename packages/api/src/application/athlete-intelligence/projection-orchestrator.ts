@@ -1,8 +1,11 @@
 import {
+  ACTIVITY_READINESS_CONSTANTS,
   type AthleteIntelligenceModelInput,
   type AthleteIntelligenceProjection,
+  assembleAthleteState,
   assembleWholeAthleteProjectionV1,
   athleteIntelligenceProjectionSchema,
+  athleteStateVectorSchema,
   type CanonicalSport,
   calculateActivityReadinessV1,
   calculateDurationAwareEffortCurve,
@@ -14,8 +17,23 @@ import {
   unavailableResult,
 } from "@repo/core";
 import { TRPCError } from "@trpc/server";
+import { z } from "zod";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const athleteRuntimeContextSchema = z
+  .object({
+    stateVector: athleteStateVectorSchema,
+  })
+  .strict();
+
+export const athleteIntelligenceRuntimeProjectionSchema = athleteIntelligenceProjectionSchema
+  .extend({ runtimeContext: athleteRuntimeContextSchema })
+  .strict();
+
+export type AthleteIntelligenceRuntimeProjection = z.infer<
+  typeof athleteIntelligenceRuntimeProjectionSchema
+>;
 
 export interface AthleteIntelligenceModelReader {
   read(input: {
@@ -162,22 +180,25 @@ export async function projectAthleteIntelligence(input: {
   profileId: string;
   goalId: string;
   asOf: Date;
-}): Promise<AthleteIntelligenceProjection> {
-  const model = await input.modelReader.read({
+  planningTimezone?: string;
+}): Promise<AthleteIntelligenceRuntimeProjection> {
+  const materializedModel = await input.modelReader.read({
     profileId: input.profileId,
     goalId: input.goalId,
     asOf: input.asOf,
   });
-  if (model.athleteId !== input.profileId) {
+  if (materializedModel.athleteId !== input.profileId) {
     throw new TRPCError({ code: "NOT_FOUND", message: "Goal not found" });
   }
-  const selectedGoal = model.goals.find(
+  const selectedGoal = materializedModel.goals.find(
     (goal) => goalIdFromSourceId(goal.sourceId) === input.goalId,
   );
   if (!selectedGoal || selectedGoal.athleteId !== input.profileId) {
     throw new TRPCError({ code: "NOT_FOUND", message: "Goal not found" });
   }
 
+  // Planning authority is request-scoped. Never mutate or fall back to the materialized model.
+  const model = { ...materializedModel, planningTimezone: input.planningTimezone ?? null };
   const selectedModel = { ...model, goals: [selectedGoal] };
   const demand = demandForGoal(selectedGoal);
   const durationSeconds = goalDurationSeconds(demand);
@@ -194,46 +215,48 @@ export async function projectAthleteIntelligence(input: {
           sport,
         })
       : undefined;
+  const policyActivities = model.activities.map((activity) => ({
+    sourceId: activity.sourceId,
+    lineageGroupId: activity.lineageGroupId,
+    startedAt: activity.startedAt,
+    sport: activity.sport,
+    durationSeconds: activity.metrics.elapsedDurationSeconds.value,
+    trainingLoad: activity.metrics.trainingLoad.value,
+    trainingLoadIdentity: activity.metrics.trainingLoad.identity,
+    averagePowerWatts: activity.metrics.averagePowerWatts.value,
+    averageHeartRateBpm: activity.metrics.averageHeartRateBpm.value,
+    evidence: {
+      durationSeconds: fieldEligibility(
+        model,
+        activity.metrics.elapsedDurationSeconds.evidenceSourceIds,
+      ),
+      trainingLoad: fieldEligibility(model, activity.metrics.trainingLoad.evidenceSourceIds),
+      averagePowerWatts: fieldEligibility(
+        model,
+        activity.metrics.averagePowerWatts.evidenceSourceIds,
+      ),
+      averageHeartRateBpm: fieldEligibility(
+        model,
+        activity.metrics.averageHeartRateBpm.evidenceSourceIds,
+      ),
+    },
+  }));
+  const policyReadinessContext = readinessContext(model).map((observation) => ({
+    ...observation,
+    eligibility: fieldEligibility(model, [observation.sourceId]),
+  }));
   const activityReadiness = calculateActivityReadinessV1({
     assessmentAt: model.assessmentAsOf,
     // Missing goal sport must not borrow activity evidence from another sport.
     targetSport: sport ?? "other",
-    activities: model.activities.map((activity) => ({
-      sourceId: activity.sourceId,
-      lineageGroupId: activity.lineageGroupId,
-      startedAt: activity.startedAt,
-      sport: activity.sport,
-      durationSeconds: activity.metrics.elapsedDurationSeconds.value,
-      trainingLoad: activity.metrics.trainingLoad.value,
-      trainingLoadIdentity: activity.metrics.trainingLoad.identity,
-      averagePowerWatts: activity.metrics.averagePowerWatts.value,
-      averageHeartRateBpm: activity.metrics.averageHeartRateBpm.value,
-      evidence: {
-        durationSeconds: fieldEligibility(
-          model,
-          activity.metrics.elapsedDurationSeconds.evidenceSourceIds,
-        ),
-        trainingLoad: fieldEligibility(model, activity.metrics.trainingLoad.evidenceSourceIds),
-        averagePowerWatts: fieldEligibility(
-          model,
-          activity.metrics.averagePowerWatts.evidenceSourceIds,
-        ),
-        averageHeartRateBpm: fieldEligibility(
-          model,
-          activity.metrics.averageHeartRateBpm.evidenceSourceIds,
-        ),
-      },
-    })),
-    readinessContext: readinessContext(model).map((observation) => ({
-      ...observation,
-      eligibility: fieldEligibility(model, [observation.sourceId]),
-    })),
+    activities: policyActivities,
+    readinessContext: policyReadinessContext,
   });
   const requiredWeeklySessions =
     demand.state === "complete" && demand.requirement.type === "consistency"
       ? demand.requirement.sessionsPerWeek.estimate
       : null;
-  const calendarFeasibility = calculateTrainingFeasibility({
+  const calculatedCalendarFeasibility = calculateTrainingFeasibility({
     sourceId: model.trainingContext.sourceId,
     assessmentAsOf: model.assessmentAsOf,
     // The planning authority is explicit; event zones never become a profile fallback.
@@ -276,11 +299,34 @@ export async function projectAthleteIntelligence(input: {
         : null,
     })),
   });
+  const planningTimezoneRequired = () =>
+    unavailableResult({
+      state: "unsupported",
+      missingDataState: "unsupported_input",
+      uncertainty: 1,
+      reasonCodes: ["planning_timezone_required"],
+    });
+  const calendarFeasibility = input.planningTimezone
+    ? calculatedCalendarFeasibility
+    : {
+        ...calculatedCalendarFeasibility,
+        timeCoverage: planningTimezoneRequired(),
+        requiredSessionCoverage: planningTimezoneRequired(),
+        compatibleScheduledMinutes: planningTimezoneRequired(),
+        scheduleCoverage: planningTimezoneRequired(),
+        constraints: Object.fromEntries(
+          Object.keys(calculatedCalendarFeasibility.constraints).map((key) => [
+            key,
+            planningTimezoneRequired(),
+          ]),
+        ) as typeof calculatedCalendarFeasibility.constraints,
+      };
 
+  const physiology = evaluatePhysiologyMetrics(model);
   const assembledProjection = athleteIntelligenceProjectionSchema.parse(
     assembleWholeAthleteProjectionV1({
       model: selectedModel,
-      physiology: evaluatePhysiologyMetrics(model),
+      physiology,
       effortCurves: [
         { goalSourceId: selectedGoal.sourceId, demand, ...(effortCurve ? { effortCurve } : {}) },
       ],
@@ -309,24 +355,155 @@ export async function projectAthleteIntelligence(input: {
       evidence: [...assembledProjection.opportunities.evidence, ...incompatibleEffortOpportunity],
     },
   });
-  const weeklyDemandApproved = requiredWeeklySessions !== null;
-  if (!weeklyDemandApproved) {
-    return athleteIntelligenceProjectionSchema.parse({
-      ...projection,
-      decisionGuidance: {
-        ...projection.decisionGuidance,
-        state: "unknown",
-        reasonCodes: [
-          ...new Set([
-            ...projection.decisionGuidance.reasonCodes,
-            "weekly_training_demand_not_approved",
-          ]),
-        ],
-        recommendedActions: projection.decisionGuidance.recommendedActions.filter(
-          (action) => !action.toLowerCase().includes("calendar"),
-        ),
+  const channel = (
+    result: typeof activityReadiness.volumeTrend,
+    coverageDomain: "metrics" | "activities" | "efforts" | "schedules",
+    policy: { policy: string; version: string },
+    identityInputs: unknown,
+  ) => ({
+    result,
+    coverageDomain,
+    policy,
+    identityInputs,
+  });
+  const absentStrength = unavailableResult({
+    state: "unsupported",
+    missingDataState: "unsupported_input",
+    uncertainty: 1,
+    reasonCodes: ["strength_exposure_policy_not_available"],
+  });
+  const absentMechanical = unavailableResult({
+    state: "unsupported",
+    missingDataState: "unsupported_input",
+    uncertainty: 1,
+    reasonCodes: ["mechanical_exposure_policy_not_available"],
+  });
+  const absentInternal = unavailableResult({
+    state: "unsupported",
+    missingDataState: "unsupported_input",
+    uncertainty: 1,
+    reasonCodes: ["internal_response_policy_not_available"],
+  });
+  const policyVersions = [
+    { policy: "physiology", version: physiology.policyVersion },
+    { policy: "goalDemand", version: demand.policyVersion },
+    { policy: "activityReadiness", version: activityReadiness.policyVersion },
+    ...(effortCurve ? [{ policy: "effortCurves", version: effortCurve.policyVersion }] : []),
+    { policy: "trainingFeasibility", version: calendarFeasibility.policyVersion },
+  ];
+  const limitations = [
+    ...(input.planningTimezone ? [] : ["planning_timezone_required"]),
+    "internal_response_policy_not_available",
+    "mechanical_exposure_policy_not_available",
+    "strength_exposure_policy_not_available",
+  ];
+  const readinessPolicy = { policy: "activityReadiness", version: activityReadiness.policyVersion };
+  const representedLoadGroups = new Map<string, typeof policyActivities>();
+  for (const activity of policyActivities) {
+    const identity = activity.trainingLoadIdentity;
+    if (activity.trainingLoad === null || identity == null || identity.sport !== activity.sport)
+      continue;
+    const key = JSON.stringify(identity);
+    representedLoadGroups.set(key, [...(representedLoadGroups.get(key) ?? []), activity]);
+  }
+  const calculationInputs = (activities: typeof policyActivities) =>
+    activities
+      .map((activity) => ({
+        sourceId: activity.sourceId,
+        startedAt: activity.startedAt,
+        sport: activity.sport,
+        durationSeconds: activity.durationSeconds,
+        trainingLoad: activity.trainingLoad,
+        trainingLoadIdentity: activity.trainingLoadIdentity,
+      }))
+      .sort((left, right) => left.sourceId.localeCompare(right.sourceId));
+  const stateVector = assembleAthleteState({
+    model: selectedModel,
+    internalResponse: channel(
+      absentInternal,
+      "metrics",
+      { policy: "internalResponse", version: "unsupported" },
+      null,
+    ),
+    externalWork: [...representedLoadGroups.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([loadIdentity, activities]) => {
+        const targetSport = activities[0]?.sport ?? "other";
+        const groupReadiness = calculateActivityReadinessV1({
+          assessmentAt: model.assessmentAsOf,
+          targetSport,
+          activities,
+        });
+        return {
+          sport: targetSport,
+          loadIdentity,
+          ...channel(groupReadiness.volumeTrend, "activities", readinessPolicy, {
+            activities: calculationInputs(activities),
+            assessmentAsOf: model.assessmentAsOf,
+            activityWindow: model.activityWindow,
+            constants: ACTIVITY_READINESS_CONSTANTS,
+          }),
+        };
+      }),
+    mechanicalExposure: channel(
+      absentMechanical,
+      "efforts",
+      { policy: "mechanicalExposure", version: "unsupported" },
+      null,
+    ),
+    strengthExposure: channel(
+      absentStrength,
+      "activities",
+      { policy: "strengthExposure", version: "unsupported" },
+      null,
+    ),
+    wellnessContext: channel(activityReadiness.readinessContext, "metrics", readinessPolicy, {
+      observations: policyReadinessContext,
+      assessmentAsOf: model.assessmentAsOf,
+      activityWindow: model.activityWindow,
+      constants: ACTIVITY_READINESS_CONSTANTS,
+    }),
+    calendarContext: channel(
+      calendarFeasibility.compatibleScheduledMinutes,
+      "schedules",
+      { policy: "trainingFeasibility", version: calendarFeasibility.policyVersion },
+      {
+        planningTimezone: input.planningTimezone ?? null,
+        trainingContext: model.trainingContext,
+        plannedSchedule: model.plannedSchedule,
+      },
+    ),
+    policyVersions,
+    limitations,
+    generatedAt: input.asOf.toISOString(),
+  });
+  const withRuntimeContext = (value: AthleteIntelligenceProjection) =>
+    athleteIntelligenceRuntimeProjectionSchema.parse({
+      ...value,
+      runtimeContext: {
+        stateVector,
       },
     });
+  const weeklyDemandApproved = requiredWeeklySessions !== null;
+  if (!weeklyDemandApproved) {
+    return withRuntimeContext(
+      athleteIntelligenceProjectionSchema.parse({
+        ...projection,
+        decisionGuidance: {
+          ...projection.decisionGuidance,
+          state: "unknown",
+          reasonCodes: [
+            ...new Set([
+              ...projection.decisionGuidance.reasonCodes,
+              "weekly_training_demand_not_approved",
+            ]),
+          ],
+          recommendedActions: projection.decisionGuidance.recommendedActions.filter(
+            (action) => !action.toLowerCase().includes("calendar"),
+          ),
+        },
+      }),
+    );
   }
-  return projection;
+  return withRuntimeContext(projection);
 }

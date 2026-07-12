@@ -1,5 +1,6 @@
-import { athleteIntelligenceProjectionSchema } from "@repo/core";
+import { requestScopedAthletePlanningContextSchema } from "@repo/core";
 import { z } from "zod";
+import { athleteIntelligenceRuntimeProjectionSchema } from "../application/athlete-intelligence/projection-orchestrator";
 import { evaluateAthleteIntelligence } from "../application/athlete-intelligence/read-model";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
@@ -7,6 +8,7 @@ import { createTRPCRouter, protectedProcedure } from "../trpc";
 const evaluateInputSchema = z
   .object({
     goalId: z.string().uuid(),
+    planningTimezone: requestScopedAthletePlanningContextSchema.shape.timezone.optional(),
   })
   .strict();
 
@@ -16,12 +18,13 @@ export function createAthleteIntelligenceRouter(
   return createTRPCRouter({
     evaluate: protectedProcedure
       .input(evaluateInputSchema)
-      .output(athleteIntelligenceProjectionSchema)
+      .output(athleteIntelligenceRuntimeProjectionSchema)
       .query(({ ctx, input }) =>
         evaluateProjection({
           db: getRequiredDb(ctx),
           profileId: ctx.session.user.id,
           goalId: input.goalId,
+          planningTimezone: input.planningTimezone,
         }),
       ),
   });

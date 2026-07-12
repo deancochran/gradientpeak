@@ -1,6 +1,11 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import {
+  assembleAthleteState,
+  athleteStateVectorSchema,
+  requestScopedAthletePlanningContextSchema,
+} from "../index";
 
 const PACKAGE_MANIFEST_PATH = resolve(__dirname, "../../package.json");
 
@@ -18,5 +23,11 @@ describe("athlete intelligence package exports", () => {
     expect(
       Object.keys(manifest.exports).filter((entry) => entry.startsWith("./athlete-intelligence/")),
     ).toEqual(["./athlete-intelligence/legacy"]);
+  });
+
+  it("intentionally exports planning context and ephemeral athlete state", () => {
+    expect(requestScopedAthletePlanningContextSchema).toBeDefined();
+    expect(athleteStateVectorSchema).toBeDefined();
+    expect(assembleAthleteState).toBeTypeOf("function");
   });
 });

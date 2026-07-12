@@ -1,13 +1,12 @@
 import type { AthleteIntelligenceModelInput, TrainingFeasibilityInput } from "@repo/core";
-import {
-  athleteIntelligenceModelInputSchema,
-  athleteIntelligenceProjectionSchema,
-  type calculateTrainingFeasibility,
-} from "@repo/core";
+import { athleteIntelligenceModelInputSchema, type calculateTrainingFeasibility } from "@repo/core";
 import type { TRPCError } from "@trpc/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AthleteIntelligenceModelReader } from "../projection-orchestrator";
-import { projectAthleteIntelligence } from "../projection-orchestrator";
+import {
+  athleteIntelligenceRuntimeProjectionSchema,
+  projectAthleteIntelligence,
+} from "../projection-orchestrator";
 
 const coreFeasibility = vi.hoisted(() => ({
   calculate: undefined as unknown as (
@@ -308,7 +307,13 @@ const readerFor = (model: AthleteIntelligenceModelInput): AthleteIntelligenceMod
 });
 
 async function project(model: AthleteIntelligenceModelInput) {
-  return projectAthleteIntelligence({ modelReader: readerFor(model), profileId, goalId, asOf });
+  return projectAthleteIntelligence({
+    modelReader: readerFor(model),
+    profileId,
+    goalId,
+    asOf,
+    planningTimezone: "UTC",
+  });
 }
 
 function first<T>(items: readonly T[], fixtureName: string): T {
@@ -685,9 +690,8 @@ describe("projectAthleteIntelligence", () => {
     expect(projection.feasibility.requiredSessionCoverage.estimate).toBeGreaterThan(0);
   });
 
-  it("hands planning and recurrence timezones to feasibility without an event-zone fallback", async () => {
+  it("requires request planning timezone without an event-zone or materialized-model fallback", async () => {
     const noPlanningZone = canonicalModel();
-    noPlanningZone.planningTimezone = null;
     const event = first(noPlanningZone.plannedSchedule, "Planned event");
     noPlanningZone.plannedSchedule[0] = {
       ...event,
@@ -699,16 +703,158 @@ describe("projectAthleteIntelligence", () => {
       },
     };
 
-    const projection = await project(athleteIntelligenceModelInputSchema.parse(noPlanningZone));
+    const parsed = athleteIntelligenceModelInputSchema.parse(noPlanningZone);
+    const projection = await projectAthleteIntelligence({
+      modelReader: readerFor(parsed),
+      profileId,
+      goalId,
+      asOf,
+    });
     expect(projection.feasibility.compatibleScheduledMinutes).toMatchObject({
       state: "unsupported",
       missingDataState: "unsupported_input",
-      reasonCodes: ["timezone_missing_or_unsupported"],
+      reasonCodes: expect.arrayContaining(["planning_timezone_required"]),
     });
+    expect(projection.runtimeContext.stateVector.limitations).toContain(
+      "planning_timezone_required",
+    );
+    expect(parsed.planningTimezone).toBe("UTC");
+  });
+
+  it.each([
+    ["no events", []],
+    [
+      "DST-boundary event",
+      [
+        {
+          ...first(canonicalModel().plannedSchedule, "Planned event"),
+          startAt: "2026-11-01T05:30:00.000Z",
+          endAt: "2026-11-01T07:30:00.000Z",
+          timezone: "America/New_York",
+        },
+      ],
+    ],
+  ])("keeps date-sensitive calendar results unsupported without request timezone: %s", async (_name, plannedSchedule) => {
+    const model = athleteIntelligenceModelInputSchema.parse({
+      ...canonicalModel(),
+      planningTimezone: "Asia/Tokyo",
+      plannedSchedule,
+    });
+    const projection = await projectAthleteIntelligence({
+      modelReader: readerFor(model),
+      profileId,
+      goalId,
+      asOf,
+    });
+    for (const value of [
+      projection.feasibility.timeCoverage,
+      projection.feasibility.requiredSessionCoverage,
+      projection.feasibility.compatibleScheduledMinutes,
+      projection.feasibility.scheduleCoverage,
+    ]) {
+      expect(value).toMatchObject({
+        state: "unsupported",
+        reasonCodes: ["planning_timezone_required"],
+      });
+    }
+    expect(projection.runtimeContext.stateVector.calendarContext.coverage.state).not.toBe(
+      "complete",
+    );
+  });
+
+  it("uses a valid request timezone as the sole planning override", async () => {
+    const model = canonicalModel();
+    const projection = await projectAthleteIntelligence({
+      modelReader: readerFor(model),
+      profileId,
+      goalId,
+      asOf,
+      planningTimezone: "America/New_York",
+    });
+    expect(projection.feasibility.compatibleScheduledMinutes.reasonCodes).not.toContain(
+      "planning_timezone_required",
+    );
+  });
+
+  it("assembles separated ephemeral state with deterministic request time", async () => {
+    const projection = await project(canonicalModel());
+    expect(projection.runtimeContext.stateVector.generatedAt).toBe(asOf.toISOString());
+    expect(projection.runtimeContext.stateVector.internalResponse.result).toMatchObject({
+      state: "unsupported",
+      reasonCodes: ["internal_response_policy_not_available"],
+    });
+    expect(projection.runtimeContext.stateVector.wellnessContext.coverage.sourceIds).toContain(
+      "metric:hrv",
+    );
+    expect(projection.runtimeContext.stateVector.externalWork[0]).toMatchObject({ sport: "bike" });
+    expect(projection.runtimeContext.stateVector.externalWork[0]?.loadIdentity).toBeTruthy();
+    expect(projection.runtimeContext.stateVector.mechanicalExposure.result.state).toBe(
+      "unsupported",
+    );
+    expect(projection.runtimeContext.stateVector.strengthExposure.result.state).toBe("unsupported");
+    expect(projection.runtimeContext).toEqual({
+      stateVector: projection.runtimeContext.stateVector,
+    });
+  });
+
+  it("emits one external-work channel per represented sport and exact load identity", async () => {
+    const model = canonicalModel();
+    const bike = first(model.activities, "Bike activity");
+    const runSourceId = "activity:run-load";
+    const run = {
+      ...bike,
+      sourceId: runSourceId,
+      lineageGroupId: "activity:run-load",
+      sport: "run" as const,
+      metrics: {
+        ...bike.metrics,
+        trainingLoad: {
+          ...bike.metrics.trainingLoad,
+          identity: {
+            sport: "run",
+            family: "trimp" as const,
+            method: "heart_rate",
+            version: "1",
+            sourceDefinition: "first_party:hr-zones",
+          },
+        },
+      },
+    };
+    const parsed = athleteIntelligenceModelInputSchema.parse({
+      ...model,
+      evidenceRegistry: {
+        ...model.evidenceRegistry,
+        [runSourceId]: {
+          ...model.evidenceRegistry[bike.sourceId],
+          sourceId: runSourceId,
+          lineageGroupId: "activity:run-load",
+          sport: "run",
+        },
+      },
+      activities: [run, bike],
+    });
+    const projection = await project(parsed);
+    expect(
+      projection.runtimeContext.stateVector.externalWork.map(({ sport }) => sport).sort(),
+    ).toEqual(["bike", "run"]);
+
+    const reordered = await project(
+      athleteIntelligenceModelInputSchema.parse({
+        ...parsed,
+        activities: [...parsed.activities].reverse(),
+      }),
+    );
+    expect(reordered.runtimeContext.stateVector.externalWork).toEqual(
+      projection.runtimeContext.stateVector.externalWork,
+    );
   });
 
   it("returns a projection accepted by the public schema", async () => {
     const projection = await project(canonicalModel());
-    expect(athleteIntelligenceProjectionSchema.parse(projection)).toEqual(projection);
+    expect(athleteIntelligenceRuntimeProjectionSchema.parse(projection)).toEqual(projection);
+    expect(
+      athleteIntelligenceRuntimeProjectionSchema.safeParse({ ...projection, unexpected: true })
+        .success,
+    ).toBe(false);
   });
 });

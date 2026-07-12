@@ -5,6 +5,7 @@ import type {
   AthleteIntelligenceDataSource,
   AthleteIntelligenceRows,
 } from "../../application/athlete-intelligence/model-reader";
+import { athleteIntelligenceRuntimeProjectionSchema } from "../../application/athlete-intelligence/projection-orchestrator";
 import { evaluateAthleteIntelligence } from "../../application/athlete-intelligence/read-model";
 import { createRouterCaller } from "../../test/router";
 import { createAthleteIntelligenceRouter } from "../athlete-intelligence";
@@ -23,7 +24,7 @@ const unavailable = {
 } as const;
 
 function projection() {
-  return athleteIntelligenceProjectionSchema.parse({
+  const base = athleteIntelligenceProjectionSchema.parse({
     contractVersion: "athlete-intelligence-projection-v1",
     assessmentAsOf: "2026-07-10T12:00:00.000Z",
     athleteId: OWNER_ID,
@@ -68,6 +69,39 @@ function projection() {
       cautions: [],
     },
   });
+  const channel = {
+    result: unavailable,
+    coverage: { state: "unknown" as const, reasonCodes: unavailable.reasonCodes, sourceIds: [] },
+    calculationIdentity: "test",
+  };
+  const domainCoverage = {
+    metrics: { state: "complete" as const, reason: null },
+    activities: { state: "complete" as const, reason: null },
+    efforts: { state: "complete" as const, reason: null },
+    schedules: { state: "complete" as const, reason: null },
+  };
+  const generatedAt = "2026-07-10T12:00:00.000Z";
+  const stateVector = {
+    contractVersion: "athlete-state-vector-v1" as const,
+    athleteId: OWNER_ID,
+    assessmentAsOf: generatedAt,
+    internalResponse: channel,
+    externalWork: [],
+    mechanicalExposure: channel,
+    strengthExposure: channel,
+    wellnessContext: channel,
+    calendarContext: channel,
+    policyVersions: [],
+    domainCoverage,
+    limitations: [],
+    generatedAt,
+  };
+  return athleteIntelligenceRuntimeProjectionSchema.parse({
+    ...base,
+    runtimeContext: {
+      stateVector,
+    },
+  });
 }
 
 function caller(evaluate = vi.fn(async () => projection()), authenticated = true) {
@@ -99,6 +133,9 @@ describe("athleteIntelligenceRouter.evaluate", () => {
     await expect(api.evaluate(inputWithUnknownKey)).rejects.toMatchObject({
       code: "BAD_REQUEST",
     } satisfies Partial<TRPCError>);
+    await expect(
+      api.evaluate({ goalId: GOAL_ID, planningTimezone: "Not/AZone" }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } satisfies Partial<TRPCError>);
     expect(evaluate).not.toHaveBeenCalled();
   });
 
@@ -109,7 +146,20 @@ describe("athleteIntelligenceRouter.evaluate", () => {
     expect(evaluate).toHaveBeenCalledWith(
       expect.objectContaining({ profileId: OWNER_ID, goalId: GOAL_ID }),
     );
-    expect(athleteIntelligenceProjectionSchema.parse(result)).toEqual(result);
+    expect(athleteIntelligenceRuntimeProjectionSchema.parse(result)).toEqual(result);
+  });
+
+  it("accepts a valid IANA planning timezone and preserves absent transport input", async () => {
+    const { caller: api, evaluate } = caller();
+    await api.evaluate({ goalId: GOAL_ID, planningTimezone: "America/New_York" });
+    expect(evaluate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ planningTimezone: "America/New_York" }),
+    );
+
+    await api.evaluate({ goalId: GOAL_ID });
+    expect(evaluate).toHaveBeenLastCalledWith(
+      expect.objectContaining({ planningTimezone: undefined }),
+    );
   });
 
   it("preserves goal-not-found errors", async () => {
@@ -184,6 +234,6 @@ describe("athleteIntelligenceRouter.evaluate", () => {
     expect(dataSource.read).toHaveBeenCalledOnce();
     expect(failWrite).not.toHaveBeenCalled();
     expect(result.athleteId).toBe(OWNER_ID);
-    expect(athleteIntelligenceProjectionSchema.parse(result)).toEqual(result);
+    expect(athleteIntelligenceRuntimeProjectionSchema.parse(result)).toEqual(result);
   });
 });
