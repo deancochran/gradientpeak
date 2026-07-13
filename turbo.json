@@ -47,8 +47,13 @@
       "outputs": []
     },
     "dev": {
+      "dependsOn": ["@repo/db#dev:setup"],
       "cache": false,
       "persistent": true
+    },
+    "dev:setup": {
+      "cache": false,
+      "outputs": []
     },
     "dev:e2e": {
       "cache": false,
