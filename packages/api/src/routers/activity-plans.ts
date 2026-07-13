@@ -11,7 +11,6 @@ import {
   type ActivityPlanInsert,
   type ActivityPlanRow,
   activityPlans,
-  likes,
   publicActivityCategorySchema,
   publicActivityPlansRowSchema,
 } from "@repo/db";
@@ -23,6 +22,7 @@ import type { Context } from "../context";
 import { getRequiredDb } from "../db";
 import { createEventReadRepository } from "../infrastructure/repositories";
 import { createContentAccessPermissions } from "../permissions/content-access";
+import { getLikeStats, loadLikeStats } from "../repositories/like-stats";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import {
   type ActivityPlanWithDerivedMetrics,
@@ -90,15 +90,11 @@ const duplicateActivityPlanInputSchema = z
   })
   .strict();
 
-const activityPlanLikeRowSchema = z.object({ entity_id: uuidSchema }).strict();
-
 const activityPlanCountRowSchema = z
   .object({
     value: z.coerce.number().int().nonnegative(),
   })
   .strict();
-
-const activityPlanLikeLookupRowSchema = z.object({ id: uuidSchema }).strict();
 
 const activityPlanRowSchema = publicActivityPlansRowSchema
   .safeExtend({
@@ -440,34 +436,21 @@ export const activityPlansRouter = createTRPCRouter({
               route: undefined,
             })),
           );
-    const userLikeRowsPromise =
-      planIds.length > 0
-        ? db
-            .select({ entity_id: likes.entity_id })
-            .from(likes)
-            .where(
-              and(
-                eq(likes.profile_id, ctx.session.user.id),
-                eq(likes.entity_type, "activity_plan"),
-                inArray(likes.entity_id, planIds),
-              ),
-            )
-        : Promise.resolve([]);
+    const likeStatsPromise = loadLikeStats(db, {
+      entityType: "activity_plan",
+      entityIds: planIds,
+      viewerProfileId: ctx.session.user.id,
+    });
     const profileIdentityMapPromise = loadProfileIdentityMap(
       db,
       items.map((plan) => plan.profile_id),
     );
 
-    const [itemsWithOptionalEstimation, likeRows, profileIdentityMap] = await Promise.all([
+    const [itemsWithOptionalEstimation, likeStats, profileIdentityMap] = await Promise.all([
       itemsWithOptionalEstimationPromise,
-      userLikeRowsPromise,
+      likeStatsPromise,
       profileIdentityMapPromise,
     ]);
-    const userLikes = z
-      .array(activityPlanLikeRowSchema)
-      .parse(likeRows)
-      .map((row) => row.entity_id);
-
     let nextCursor: string | undefined;
     if (hasMore && pageRows.length > 0) {
       if (offsetCursor !== null) {
@@ -484,7 +467,7 @@ export const activityPlansRouter = createTRPCRouter({
     return {
       items: itemsWithOptionalEstimation.map((plan) => ({
         ...withOwnerIdentity(withIdentityFields(plan), profileIdentityMap),
-        has_liked: userLikes.includes(plan.id),
+        ...getLikeStats(likeStats, plan.id),
       })),
       nextCursor,
     };
@@ -529,24 +512,18 @@ export const activityPlansRouter = createTRPCRouter({
       userId,
     );
 
-    const [rawLikeRow] = await db
-      .select({ id: likes.id })
-      .from(likes)
-      .where(
-        and(
-          eq(likes.profile_id, userId),
-          eq(likes.entity_type, "activity_plan"),
-          eq(likes.entity_id, input.id),
-        ),
-      )
-      .limit(1);
-
-    const likeRow = rawLikeRow ? activityPlanLikeLookupRowSchema.parse(rawLikeRow) : null;
-    const profileIdentityMap = await loadProfileIdentityMap(db, [planWithEstimation.profile_id]);
+    const [likeStats, profileIdentityMap] = await Promise.all([
+      loadLikeStats(db, {
+        entityType: "activity_plan",
+        entityIds: [input.id],
+        viewerProfileId: userId,
+      }),
+      loadProfileIdentityMap(db, [planWithEstimation.profile_id]),
+    ]);
 
     return {
       ...withOwnerIdentity(withIdentityFields(planWithEstimation), profileIdentityMap),
-      has_liked: !!likeRow,
+      ...getLikeStats(likeStats, input.id),
     };
   }),
 
@@ -583,35 +560,22 @@ export const activityPlansRouter = createTRPCRouter({
       );
       const planIds = itemsWithEstimation.map((plan) => plan.id);
 
-      let userLikes: string[] = [];
-
-      if (planIds.length > 0) {
-        const likeRows = await db
-          .select({ entity_id: likes.entity_id })
-          .from(likes)
-          .where(
-            and(
-              eq(likes.profile_id, userId),
-              eq(likes.entity_type, "activity_plan"),
-              inArray(likes.entity_id, planIds),
-            ),
-          );
-
-        userLikes = z
-          .array(activityPlanLikeRowSchema)
-          .parse(likeRows)
-          .map((row) => row.entity_id);
-      }
-
-      const profileIdentityMap = await loadProfileIdentityMap(
-        db,
-        itemsWithEstimation.map((plan) => plan.profile_id),
-      );
+      const [likeStats, profileIdentityMap] = await Promise.all([
+        loadLikeStats(db, {
+          entityType: "activity_plan",
+          entityIds: planIds,
+          viewerProfileId: userId,
+        }),
+        loadProfileIdentityMap(
+          db,
+          itemsWithEstimation.map((plan) => plan.profile_id),
+        ),
+      ]);
 
       return {
         items: itemsWithEstimation.map((plan) => ({
           ...withOwnerIdentity(withIdentityFields(plan), profileIdentityMap),
-          has_liked: userLikes.includes(plan.id),
+          ...getLikeStats(likeStats, plan.id),
         })),
       };
     }),

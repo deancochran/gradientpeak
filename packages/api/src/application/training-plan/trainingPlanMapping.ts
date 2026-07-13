@@ -4,6 +4,7 @@ import type { DrizzleDbClient } from "@repo/db/client";
 import type { z } from "zod";
 import { logger } from "../../lib/logger";
 import type { TrainingPlanRepository } from "../../repositories";
+import { getLikeStats, loadLikeStats } from "../../repositories/like-stats";
 import { loadProfileIdentityMap, type profileIdentitySchema } from "../../utils/profile-identity";
 
 type TrainingPlanWithIdentityFields = {
@@ -61,16 +62,17 @@ export async function serializeTrainingPlanForViewer(input: {
 }) {
   validatePersistedTrainingPlanStructure(input.plan);
 
-  const [hasLiked, profileIdentityMap] = await Promise.all([
-    input.repository.hasTrainingPlanLike({
-      profileId: input.profileId,
-      planId: input.plan.id,
+  const [likeStats, profileIdentityMap] = await Promise.all([
+    loadLikeStats(input.db, {
+      entityType: "training_plan",
+      entityIds: [input.plan.id],
+      viewerProfileId: input.profileId,
     }),
     loadProfileIdentityMap(input.db, [input.plan.profile_id]),
   ]);
 
   return {
     ...mapTrainingPlanOwnerIdentity(input.plan, profileIdentityMap),
-    has_liked: hasLiked,
+    ...getLikeStats(likeStats, input.plan.id),
   };
 }

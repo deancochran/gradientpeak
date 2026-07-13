@@ -187,7 +187,6 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
         duration_hours,
         is_system_template,
         template_visibility,
-        likes_count,
         created_at,
         updated_at,
         profile_id

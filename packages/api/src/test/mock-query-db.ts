@@ -37,6 +37,7 @@ type SqlQueryLike = {
 
 type QueryBuilder = {
   from?: ReturnType<typeof vi.fn>;
+  groupBy?: ReturnType<typeof vi.fn>;
   innerJoin?: ReturnType<typeof vi.fn>;
   leftJoin?: ReturnType<typeof vi.fn>;
   limit?: ReturnType<typeof vi.fn>;
@@ -238,6 +239,7 @@ export function createQueryMapDbMock(queryMap: QueryMap = {}) {
         leftJoin: vi.fn(() => builder),
         where: vi.fn(() => builder),
         orderBy: vi.fn(() => builder),
+        groupBy: vi.fn(() => builder),
         limit: vi.fn(() => builder),
       },
       () => {

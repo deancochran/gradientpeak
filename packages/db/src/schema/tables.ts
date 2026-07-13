@@ -237,7 +237,6 @@ export const activityRoutes = pgTable(
     polyline: text("polyline").notNull(),
     is_system_template: boolean("is_system_template").notNull().default(false),
     is_public: boolean("is_public").notNull().default(false),
-    likes_count: integer("likes_count").default(0),
   },
   (table) => [
     uniqueIndex("activity_routes_idx_key").on(table.idx),
@@ -284,7 +283,6 @@ export const activityPlans = pgTable(
     import_provider: text("import_provider"),
     import_external_id: text("import_external_id"),
     is_system_template: boolean("is_system_template").notNull().default(false),
-    likes_count: integer("likes_count").default(0),
   },
   (table) => [
     uniqueIndex("activity_plans_idx_key").on(table.idx),
@@ -630,7 +628,6 @@ export const trainingPlans = pgTable(
     is_system_template: boolean("is_system_template").notNull().default(false),
     sessions_per_week_target: integer("sessions_per_week_target"),
     duration_hours: numeric("duration_hours", { precision: 12, scale: 2, mode: "number" }),
-    likes_count: integer("likes_count").default(0),
   },
   (table) => [
     uniqueIndex("training_plans_idx_key").on(table.idx),
@@ -958,7 +955,6 @@ export const activities = pgTable(
     started_at: timestamp("started_at", { withTimezone: true, mode: "date" }).notNull(),
     finished_at: timestamp("finished_at", { withTimezone: true, mode: "date" }).notNull(),
     notes: text("notes"),
-    likes_count: integer("likes_count").default(0),
     is_private: boolean("is_private").notNull().default(true),
     provider: integrationProviderEnum("provider"),
     external_id: text("external_id"),

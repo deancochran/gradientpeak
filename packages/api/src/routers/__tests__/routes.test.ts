@@ -85,7 +85,6 @@ function createRouteRow(overrides: Record<string, unknown> = {}) {
     polyline: "encoded-preview",
     elevation_polyline: "encoded-elevation",
     is_system_template: false,
-    likes_count: null,
     is_public: false,
     created_at: new Date("2026-02-01T10:00:00.000Z"),
     updated_at: new Date("2026-02-02T10:00:00.000Z"),
@@ -99,6 +98,14 @@ function createSelectWithLimit(result: unknown) {
       where: vi.fn(() => ({
         limit: vi.fn().mockResolvedValue(result),
       })),
+    })),
+  };
+}
+
+function createGroupedSelect(result: unknown) {
+  return {
+    from: vi.fn(() => ({
+      where: vi.fn(() => ({ groupBy: vi.fn().mockResolvedValue(result) })),
     })),
   };
 }
@@ -157,11 +164,9 @@ describe("routesRouter", () => {
             })),
           })),
         }))
-        .mockImplementationOnce(() => ({
-          from: vi.fn(() => ({
-            where: vi.fn().mockResolvedValue([{ entity_id: ROUTE_ID }]),
-          })),
-        }))
+        .mockImplementationOnce(() =>
+          createGroupedSelect([{ entity_id: ROUTE_ID, likes_count: 1, has_liked: true }]),
+        )
         .mockImplementationOnce(() => ({
           from: vi.fn(() => ({
             where: vi
@@ -183,6 +188,7 @@ describe("routesRouter", () => {
           created_at: "2026-02-01T10:00:00.000Z",
           updated_at: "2026-02-02T10:00:00.000Z",
           has_liked: true,
+          likes_count: 1,
           owner: { id: OWNER_ID, username: "Owner", avatar_url: "https://example.com/avatar.png" },
         },
         {
@@ -190,6 +196,7 @@ describe("routesRouter", () => {
           created_at: "2026-01-31T10:00:00.000Z",
           updated_at: "2026-02-01T10:00:00.000Z",
           has_liked: false,
+          likes_count: 0,
           owner: { id: OWNER_ID, username: "Owner", avatar_url: "https://example.com/avatar.png" },
         },
       ],
@@ -257,7 +264,9 @@ describe("routesRouter", () => {
       select: vi
         .fn()
         .mockImplementationOnce(() => createSelectWithLimit([route]))
-        .mockImplementationOnce(() => createSelectWithLimit([{ id: "like-id" }]))
+        .mockImplementationOnce(() =>
+          createGroupedSelect([{ entity_id: ROUTE_ID, likes_count: 1, has_liked: true }]),
+        )
         .mockImplementationOnce(() => ({
           from: vi.fn(() => ({
             where: vi
@@ -277,6 +286,7 @@ describe("routesRouter", () => {
       created_at: "2026-02-01T10:00:00.000Z",
       updated_at: "2026-02-02T10:00:00.000Z",
       has_liked: true,
+      likes_count: 1,
       owner: { id: OWNER_ID, username: "Owner", avatar_url: "https://example.com/avatar.png" },
     });
   });
@@ -291,7 +301,7 @@ describe("routesRouter", () => {
       select: vi
         .fn()
         .mockImplementationOnce(() => createSelectWithLimit([route]))
-        .mockImplementationOnce(() => createSelectWithLimit([]))
+        .mockImplementationOnce(() => createGroupedSelect([]))
         .mockImplementationOnce(() => ({
           from: vi.fn(() => ({
             where: vi.fn().mockResolvedValue([]),

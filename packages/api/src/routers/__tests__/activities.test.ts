@@ -108,7 +108,6 @@ function buildActivityRow(overrides: Record<string, unknown> = {}) {
     polyline: null,
     laps: null,
     map_bounds: null,
-    likes_count: null,
     is_private: false,
     ...overrides,
   };
@@ -132,7 +131,6 @@ function buildActivityPlanRow(overrides: Record<string, unknown> = {}) {
     import_provider: null,
     import_external_id: null,
     is_system_template: false,
-    likes_count: null,
     ...overrides,
   };
 }
@@ -281,7 +279,7 @@ function createSequencedFn(values: unknown[]) {
 
 function createDbMock(options: {
   activityRows?: any[];
-  likeRows?: Array<{ entity_id: string }>;
+  likeRows?: Array<{ entity_id: string; likes_count: number; has_liked: boolean }>;
   totalRows?: Array<{ total: number }>;
   joinedRows?: any[];
   activitySummaryRows?: any[];
@@ -334,7 +332,9 @@ function createDbMock(options: {
       if (fields && "entity_id" in fields) {
         return {
           from: vi.fn(() => ({
-            where: vi.fn(() => Promise.resolve(options.likeRows ?? [])),
+            where: vi.fn(() => ({
+              groupBy: vi.fn(() => Promise.resolve(options.likeRows ?? [])),
+            })),
           })),
         };
       }
@@ -469,7 +469,7 @@ describe("activitiesRouter", () => {
     };
     const db = createDbMock({
       activityRows: rows,
-      likeRows: [{ entity_id: ACTIVITY_ID }],
+      likeRows: [{ entity_id: ACTIVITY_ID, likes_count: 3, has_liked: true }],
     });
 
     mockActivityAnalysis.buildActivityDerivedSummaryMap.mockResolvedValue(
@@ -485,6 +485,7 @@ describe("activitiesRouter", () => {
     expect(result.items).toEqual([
       {
         ...rows[0],
+        likes_count: 3,
         has_liked: true,
         derived,
       },
@@ -859,7 +860,7 @@ describe("activitiesRouter", () => {
         },
       ],
       joinedRows: [{ activity, activityPlan }],
-      queryLikesFindFirst: [{ id: "like-1" }],
+      likeRows: [{ entity_id: ACTIVITY_ID, likes_count: 5, has_liked: true }],
     });
 
     mockActivityAnalysis.resolveActivityContextAsOf.mockResolvedValue({
@@ -873,6 +874,7 @@ describe("activitiesRouter", () => {
     expect(result).toEqual({
       activity: {
         ...activity,
+        likes_count: 5,
         activity_plans: {
           ...activityPlan,
           idx: 0,

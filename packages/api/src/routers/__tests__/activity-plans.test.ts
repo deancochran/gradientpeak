@@ -121,7 +121,6 @@ function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
     import_provider: null,
     import_external_id: null,
     is_system_template: false,
-    likes_count: null,
     ...overrides,
   };
 }
@@ -161,6 +160,7 @@ function createDbMock(state: MockDbState = {}) {
   const createSelectBuilder = (table: MockTableName) => {
     const builder: any = {
       where: () => builder,
+      groupBy: async () => nextRows("select", table),
       orderBy: () => builder,
       limit: async () => nextRows("select", table),
       then: (onFulfilled: (value: unknown[]) => unknown) =>
@@ -262,7 +262,7 @@ describe("activityPlansRouter", () => {
     const { caller } = createCaller({
       state: {
         "select:activity_plans": [[firstPlan, secondPlan]],
-        "select:likes": [[{ entity_id: firstPlan.id }]],
+        "select:likes": [[{ entity_id: firstPlan.id, likes_count: 4, has_liked: true }]],
         "select:profiles": [[createProfileRow()]],
       },
     });
@@ -273,6 +273,7 @@ describe("activityPlansRouter", () => {
     expect(result.items[0]).toMatchObject({
       id: firstPlan.id,
       has_liked: true,
+      likes_count: 4,
       content_type: "activity_plan",
       owner_profile_id: USER_ID,
       owner: {
@@ -362,7 +363,7 @@ describe("activityPlansRouter", () => {
     const { caller } = createCaller({
       state: {
         "select:activity_plans": [[publicPlan, ownPlan]],
-        "select:likes": [[{ entity_id: ownPlan.id }]],
+        "select:likes": [[{ entity_id: ownPlan.id, likes_count: 2, has_liked: true }]],
         "select:profiles": [
           [
             createProfileRow(),
@@ -378,7 +379,9 @@ describe("activityPlansRouter", () => {
 
     expect(result.items.map((item) => item.id)).toEqual([ownPlan.id, publicPlan.id]);
     expect(result.items[0]?.has_liked).toBe(true);
+    expect(result.items[0]?.likes_count).toBe(2);
     expect(result.items[1]?.has_liked).toBe(false);
+    expect(result.items[1]?.likes_count).toBe(0);
     expect(result.items[0]?.owner?.id).toBe(USER_ID);
     expect(result.items[1]?.owner?.id).toBe(OTHER_USER_ID);
   });

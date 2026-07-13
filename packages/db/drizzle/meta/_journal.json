@@ -183,6 +183,13 @@
       "when": 1784116800000,
       "tag": "0025_drop_legacy_plan_is_public",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1784203200000,
+      "tag": "0026_drop_denormalized_like_counts",
+      "breakpoints": true
     }
   ]
 }

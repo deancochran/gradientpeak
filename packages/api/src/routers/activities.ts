@@ -66,6 +66,7 @@ const activityIngestionStatusSchema = z
 
 const activityListItemSchema = activityRowSchema
   .extend({
+    likes_count: z.number().int().nonnegative(),
     has_liked: z.boolean(),
     derived: activityListDerivedSummarySchema.nullable(),
     ingestion: activityIngestionStatusSchema.nullable().optional(),
@@ -74,6 +75,7 @@ const activityListItemSchema = activityRowSchema
 
 const activityWithPlanSchema = activityRowSchema
   .extend({
+    likes_count: z.number().int().nonnegative(),
     activity_plans: activityPlanReferenceSchema.nullable(),
     ingestion: activityIngestionStatusSchema.nullable().optional(),
   })

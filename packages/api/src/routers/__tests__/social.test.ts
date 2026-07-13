@@ -8,6 +8,8 @@ type SelectTableName = "likes" | "profiles" | "trainingPlans";
 type DbPlan = {
   select?: Partial<Record<SelectTableName, Array<unknown[]>>>;
   execute?: Array<Array<Record<string, unknown>>>;
+  deletedLikes?: Array<Array<{ id: string }>>;
+  initialLike?: boolean;
   query?: {
     activities?: unknown[];
     events?: unknown[];
@@ -39,6 +41,9 @@ function createDbMock(plan: DbPlan = {}) {
   const executeQueue = [...(plan.execute ?? [])];
   const activityQueryQueue = [...(plan.query?.activities ?? [])];
   const eventQueryQueue = [...(plan.query?.events ?? [])];
+  const deletedLikesQueue = [...(plan.deletedLikes ?? [])];
+  let hasLike = plan.initialLike ?? false;
+  let transactionTail = Promise.resolve();
 
   const calls = {
     selects: [] as Array<{ table: SelectTableName }>,
@@ -47,56 +52,81 @@ function createDbMock(plan: DbPlan = {}) {
     executes: [] as unknown[],
   };
 
-  return {
-    calls,
-    db: {
-      select: () => {
-        let tableName: SelectTableName | null = null;
+  const db: any = {
+    select: () => {
+      let tableName: SelectTableName | null = null;
 
-        const builder: any = {
-          from: (table: unknown) => {
-            tableName = getSelectTableName(table);
-            return builder;
-          },
-          where: () => builder,
-          limit: () => builder,
-          then: (onFulfilled: (value: unknown[]) => unknown) => {
-            if (!tableName) {
-              throw new Error("Select called without table");
-            }
+      const builder: any = {
+        from: (table: unknown) => {
+          tableName = getSelectTableName(table);
+          return builder;
+        },
+        where: () => builder,
+        limit: () => builder,
+        then: (onFulfilled: (value: unknown[]) => unknown) => {
+          if (!tableName) {
+            throw new Error("Select called without table");
+          }
 
-            calls.selects.push({ table: tableName });
-            return Promise.resolve(selectQueues[tableName].shift() ?? []).then(onFulfilled);
+          calls.selects.push({ table: tableName });
+          return Promise.resolve(selectQueues[tableName].shift() ?? []).then(onFulfilled);
+        },
+      };
+
+      return builder;
+    },
+    insert: (table: unknown) => ({
+      values: (values: Record<string, unknown>) => {
+        calls.inserts.push({ table: table === likes ? "likes" : String(table), values });
+        return {
+          onConflictDoNothing: () => {
+            if (table === likes) hasLike = true;
+            return Promise.resolve();
           },
         };
-
-        return builder;
       },
-      insert: (table: unknown) => ({
-        values: (values: Record<string, unknown>) => {
-          calls.inserts.push({ table: table === likes ? "likes" : String(table), values });
-          return Promise.resolve();
-        },
-      }),
-      delete: (table: unknown) => ({
-        where: (whereArg: unknown) => {
-          calls.deletes.push({ table: table === likes ? "likes" : String(table), whereArg });
-          return Promise.resolve();
-        },
-      }),
-      execute: async (query: unknown) => {
-        calls.executes.push(query);
-        return { rows: executeQueue.shift() ?? [] };
+    }),
+    delete: (table: unknown) => ({
+      where: (whereArg: unknown) => {
+        calls.deletes.push({ table: table === likes ? "likes" : String(table), whereArg });
+        return {
+          returning: () => {
+            const explicit = deletedLikesQueue.shift();
+            if (explicit) return Promise.resolve(explicit);
+            const rows = table === likes && hasLike ? [{ id: "existing-like" }] : [];
+            if (table === likes) hasLike = false;
+            return Promise.resolve(rows);
+          },
+          then: (onFulfilled: (value: unknown) => unknown) =>
+            Promise.resolve(undefined).then(onFulfilled),
+        };
       },
-      query: {
-        activities: {
-          findFirst: vi.fn(async () => activityQueryQueue.shift() ?? null),
-        },
-        events: {
-          findFirst: vi.fn(async () => eventQueryQueue.shift() ?? null),
-        },
+    }),
+    execute: async (query: unknown) => {
+      calls.executes.push(query);
+      return { rows: executeQueue.shift() ?? [] };
+    },
+    query: {
+      activities: {
+        findFirst: vi.fn(async () => activityQueryQueue.shift() ?? null),
+      },
+      events: {
+        findFirst: vi.fn(async () => eventQueryQueue.shift() ?? null),
       },
     },
+    transaction: (callback: (tx: unknown) => unknown) => {
+      const result = transactionTail.then(() => callback(db));
+      transactionTail = result.then(
+        () => undefined,
+        () => undefined,
+      );
+      return result;
+    },
+  };
+
+  return {
+    calls,
+    db,
   };
 }
 
@@ -205,6 +235,28 @@ describe("socialRouter", () => {
         entity_type: "activity",
       },
     });
+  });
+
+  it("serializes concurrent toggles and preserves read-after-write toggle state", async () => {
+    const { caller, calls } = createCaller({
+      query: {
+        activities: [
+          { profile_id: TARGET_USER_ID, is_private: false },
+          { profile_id: TARGET_USER_ID, is_private: false },
+          { profile_id: TARGET_USER_ID, is_private: false },
+        ],
+      },
+    });
+    const input = { entity_id: ACTIVITY_ID, entity_type: "activity" as const };
+
+    const concurrent = await Promise.all([caller.toggleLike(input), caller.toggleLike(input)]);
+    const after = await caller.toggleLike(input);
+
+    expect(concurrent).toEqual([{ liked: true }, { liked: false }]);
+    expect(after).toEqual({ liked: true });
+    expect(calls.executes).toHaveLength(3);
+    expect(calls.inserts).toHaveLength(2);
+    expect(calls.deletes).toHaveLength(3);
   });
 
   it("getFollowers returns follower rows with relationship status for the viewer", async () => {

@@ -7,7 +7,6 @@ import {
   activityLaps,
   activityPlans,
   activitySummaries,
-  likes,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, count, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
@@ -19,6 +18,7 @@ import {
   mapActivityToListDerivedResponse,
   resolveActivityContextAsOf,
 } from "../../lib/activity-analysis";
+import { getLikeStats, loadLikeStats } from "../../repositories/like-stats";
 import { buildIndexPageInfo, parseIndexCursor } from "../../utils/index-cursor";
 
 type Db = ReturnType<typeof getRequiredDb>;
@@ -232,23 +232,15 @@ export async function listActivitiesForProfile({
     activities: data as any,
   });
   const ids = data.map((activity) => activity.id);
-  const likeRows = ids.length
-    ? await db
-        .select({ entity_id: likes.entity_id })
-        .from(likes)
-        .where(
-          and(
-            eq(likes.profile_id, profileId),
-            eq(likes.entity_type, "activity"),
-            inArray(likes.entity_id, ids),
-          ),
-        )
-    : [];
-  const liked = new Set(likeRows.map((row) => row.entity_id));
+  const likeStats = await loadLikeStats(db, {
+    entityType: "activity",
+    entityIds: ids,
+    viewerProfileId: profileId,
+  });
   let items = data.map((activity) =>
     mapActivityToListDerivedResponse({
-      activity,
-      has_liked: liked.has(activity.id),
+      activity: { ...activity, likes_count: getLikeStats(likeStats, activity.id).likes_count },
+      has_liked: getLikeStats(likeStats, activity.id).has_liked,
       derived: derived.get(activity.id) ?? null,
     }),
   );
@@ -285,20 +277,17 @@ export async function getActivityByIdForViewer({
       code: "FORBIDDEN",
       message: "You don't have permission to view this activity",
     });
-  const [record, likeData, ingestion] = await Promise.all([
+  const [record, likeStats, ingestion] = await Promise.all([
     db
       .select({ activity: activities, activityPlan: activityPlans })
       .from(activities)
       .leftJoin(activityPlans, eq(activities.activity_plan_id, activityPlans.id))
       .where(eq(activities.id, activityId))
       .limit(1),
-    db.query.likes.findFirst({
-      columns: { id: true },
-      where: and(
-        eq(likes.profile_id, viewerId),
-        eq(likes.entity_type, "activity"),
-        eq(likes.entity_id, activityId),
-      ),
+    loadLikeStats(db, {
+      entityType: "activity",
+      entityIds: [activityId],
+      viewerProfileId: viewerId,
     }),
     db.query.activityFileIngestions?.findFirst({
       columns: { id: true, status: true, source: true, last_error_message: true },
@@ -380,6 +369,7 @@ export async function getActivityByIdForViewer({
   const response = mapActivityToDerivedResponse({
     activity: {
       ...activity,
+      likes_count: getLikeStats(likeStats, activityId).likes_count,
       activity_plans: row.activityPlan
         ? {
             ...row.activityPlan,
@@ -395,7 +385,7 @@ export async function getActivityByIdForViewer({
           }
         : null,
     },
-    has_liked: !!likeData,
+    has_liked: getLikeStats(likeStats, activityId).has_liked,
     derived,
   });
   return { ...response, activity: { ...response.activity, ingestion: ingestion ?? null } };

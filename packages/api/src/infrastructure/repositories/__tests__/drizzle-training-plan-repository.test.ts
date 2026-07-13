@@ -48,7 +48,6 @@ function createTrainingPlanRow(overrides: Partial<TrainingPlanRow> = {}): Traini
     is_system_template: false,
     sessions_per_week_target: null,
     duration_hours: null,
-    likes_count: 0,
     ...overrides,
   };
 }

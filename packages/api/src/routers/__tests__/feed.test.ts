@@ -22,8 +22,7 @@ const ACTIVITY_ID_2 = "44444444-4444-4444-8444-444444444444";
 
 type DbPlan = {
   execute?: Array<Array<Record<string, unknown>>>;
-  feedLikeRows?: Array<{ entity_id: string }>;
-  activityLikeRows?: Array<{ id: string }>;
+  likeStatsRows?: Array<{ entity_id: string; likes_count: number; has_liked: boolean }>;
 };
 
 function createDbMock(plan: DbPlan = {}) {
@@ -35,16 +34,8 @@ function createDbMock(plan: DbPlan = {}) {
       if (fields && "entity_id" in fields) {
         return {
           from: vi.fn(() => ({
-            where: vi.fn(() => Promise.resolve(plan.feedLikeRows ?? [])),
-          })),
-        };
-      }
-
-      if (fields && "id" in fields) {
-        return {
-          from: vi.fn(() => ({
             where: vi.fn(() => ({
-              limit: vi.fn(() => Promise.resolve(plan.activityLikeRows ?? [])),
+              groupBy: vi.fn(() => Promise.resolve(plan.likeStatsRows ?? [])),
             })),
           })),
         };
@@ -165,7 +156,7 @@ describe("feedRouter", () => {
 
     const { caller } = createCaller({
       execute: [activityRows, [{ entity_id: ACTIVITY_ID, comments_count: 2 }]],
-      feedLikeRows: [{ entity_id: ACTIVITY_ID }],
+      likeStatsRows: [{ entity_id: ACTIVITY_ID, likes_count: 4, has_liked: true }],
     });
 
     const result = await caller.getFeed({ limit: 2 });
@@ -357,7 +348,7 @@ describe("feedRouter", () => {
         ],
         [],
       ],
-      feedLikeRows: [{ entity_id: ACTIVITY_ID }],
+      likeStatsRows: [{ entity_id: ACTIVITY_ID, likes_count: 4, has_liked: true }],
     });
 
     await expect(caller.getFeed({ limit: 1 })).rejects.toMatchObject({
@@ -415,7 +406,7 @@ describe("feedRouter", () => {
           },
         ],
       ],
-      activityLikeRows: [{ id: "77777777-7777-4777-8777-777777777777" }],
+      likeStatsRows: [{ entity_id: ACTIVITY_ID, likes_count: 4, has_liked: true }],
     });
 
     const result = await caller.getActivity({ activityId: ACTIVITY_ID });
@@ -606,7 +597,7 @@ describe("feedRouter", () => {
           },
         ],
       ],
-      activityLikeRows: [{ id: "77777777-7777-4777-8777-777777777777" }],
+      likeStatsRows: [{ entity_id: ACTIVITY_ID, likes_count: 4, has_liked: true }],
     });
 
     await expect(caller.getActivity({ activityId: ACTIVITY_ID })).rejects.toMatchObject({

@@ -7,7 +7,7 @@ type ActivityPlanReference = Omit<ActivityPlanRow, "created_at" | "updated_at"> 
 };
 
 export function mapActivityToDerivedResponse(input: {
-  activity: ActivityRow & {
+  activity: ActivityRow & { likes_count: number } & {
     activity_plans?: ActivityPlanReference | null;
   };
   has_liked: boolean;
@@ -21,7 +21,7 @@ export function mapActivityToDerivedResponse(input: {
 }
 
 export function mapActivityToListDerivedResponse(input: {
-  activity: ActivityRow;
+  activity: ActivityRow & { likes_count: number };
   has_liked: boolean;
   derived: ActivityListDerivedSummary | null;
 }) {

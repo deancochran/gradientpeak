@@ -452,32 +452,40 @@ export const socialRouter = createTRPCRouter({
         }
       }
 
-      const existingLike = await db
-        .select({ id: likes.id })
-        .from(likes)
-        .where(
-          and(
-            eq(likes.profile_id, ctx.session.user.id),
-            eq(likes.entity_id, input.entity_id),
-            eq(likes.entity_type, input.entity_type),
-          ),
-        )
-        .limit(1);
+      return db.transaction(async (tx) => {
+        // Serialize toggles for this unique tuple; the unique constraint remains the final invariant.
+        await tx.execute(
+          sql`select pg_advisory_xact_lock(hashtextextended(${`${userId}:${input.entity_type}:${input.entity_id}`}, 0))`,
+        );
 
-      if (existingLike[0]) {
-        await db.delete(likes).where(eq(likes.id, existingLike[0].id));
-        return { liked: false };
-      }
+        const deleted = await tx
+          .delete(likes)
+          .where(
+            and(
+              eq(likes.profile_id, userId),
+              eq(likes.entity_id, input.entity_id),
+              eq(likes.entity_type, input.entity_type),
+            ),
+          )
+          .returning({ id: likes.id });
 
-      await db.insert(likes).values({
-        id: randomUUID(),
-        created_at: new Date(),
-        profile_id: ctx.session.user.id,
-        entity_id: input.entity_id,
-        entity_type: input.entity_type,
+        if (deleted.length > 0) return { liked: false };
+
+        await tx
+          .insert(likes)
+          .values({
+            id: randomUUID(),
+            created_at: new Date(),
+            profile_id: userId,
+            entity_id: input.entity_id,
+            entity_type: input.entity_type,
+          })
+          .onConflictDoNothing({
+            target: [likes.profile_id, likes.entity_type, likes.entity_id],
+          });
+
+        return { liked: true };
       });
-
-      return { liked: true };
     }),
 
   getFollowers: protectedProcedure

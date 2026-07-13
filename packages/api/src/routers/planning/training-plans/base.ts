@@ -5529,6 +5529,7 @@ const trainingPlansProcedures = {
     .query(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       return listTrainingPlanTemplatesUseCase({
+        db,
         profileId: ctx.session.user.id,
         query: input,
         repository: createTrainingPlanRepository(db),

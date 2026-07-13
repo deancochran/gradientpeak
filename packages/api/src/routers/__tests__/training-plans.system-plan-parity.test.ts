@@ -12,7 +12,6 @@ type SystemTrainingPlanRow = {
   duration_hours: number;
   is_system_template: boolean;
   template_visibility: string;
-  likes_count: number;
   created_at: string;
   updated_at: string;
 };
@@ -29,7 +28,6 @@ function toTrainingPlanRow(plan: SamplePlan): SystemTrainingPlanRow {
     duration_hours: plan.duration_hours,
     is_system_template: true,
     template_visibility: "public",
-    likes_count: 0,
     created_at: "2026-03-13T00:00:00.000Z",
     updated_at: "2026-03-13T00:00:00.000Z",
   };

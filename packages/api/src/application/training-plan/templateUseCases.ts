@@ -1,7 +1,9 @@
 import { persistedTrainingPlanStructureSchema, trainingPlanCreateSchema } from "@repo/core";
 import type { TrainingPlanRow } from "@repo/db";
+import type { DrizzleDbClient } from "@repo/db/client";
 import { TRPCError } from "@trpc/server";
 import type { TrainingPlanRepository, TrainingPlanTemplateListFilters } from "../../repositories";
+import { getLikeStats, loadLikeStats } from "../../repositories/like-stats";
 import { buildIndexPageInfo, parseIndexCursor } from "../../utils/index-cursor";
 
 type TrainingPlanTemplateListInput = TrainingPlanTemplateListFilters & {
@@ -82,15 +84,17 @@ function auditTrainingPlanTemplateStructureHealth(input: { structure: unknown })
   };
 }
 
-function serializeTrainingPlanTemplate(template: TrainingPlanRow & { has_liked?: boolean }) {
+function serializeTrainingPlanTemplate(
+  template: TrainingPlanRow & { likes_count: number; has_liked: boolean },
+) {
   return {
     id: template.id,
     name: template.name,
     description: template.description,
     sessions_per_week_target: template.sessions_per_week_target,
     duration_hours: template.duration_hours,
-    likes_count: typeof template.likes_count === "number" ? template.likes_count : 0,
-    has_liked: Boolean(template.has_liked),
+    likes_count: template.likes_count,
+    has_liked: template.has_liked,
     created_at:
       template.created_at instanceof Date
         ? template.created_at.toISOString()
@@ -104,6 +108,7 @@ function serializeTrainingPlanTemplate(template: TrainingPlanRow & { has_liked?:
 }
 
 export async function listTrainingPlanTemplatesUseCase(input: {
+  db: DrizzleDbClient;
   profileId: string;
   query: TrainingPlanTemplateListInput;
   repository: TrainingPlanRepository;
@@ -116,16 +121,17 @@ export async function listTrainingPlanTemplatesUseCase(input: {
     limit: input.query.limit,
     total: templates.length,
   });
-  const likedTemplateIds = await input.repository.listTrainingPlanLikedIds({
-    profileId: input.profileId,
-    planIds: pageItems.map((template) => template.id),
+  const likeStats = await loadLikeStats(input.db, {
+    entityType: "training_plan",
+    entityIds: pageItems.map((template) => template.id),
+    viewerProfileId: input.profileId,
   });
 
   return {
     items: pageItems.map((template) =>
       serializeTrainingPlanTemplate({
         ...template,
-        has_liked: likedTemplateIds.includes(template.id),
+        ...getLikeStats(likeStats, template.id),
       }),
     ),
     total: templates.length,

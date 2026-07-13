@@ -1,6 +1,7 @@
 import type { DrizzleDbClient } from "@repo/db/client";
 import { TRPCError } from "@trpc/server";
 import type { TrainingPlanOwnerScope, TrainingPlanRepository } from "../../repositories";
+import { getLikeStats, loadLikeStats } from "../../repositories/like-stats";
 import { buildIndexPageInfo, parseIndexCursor } from "../../utils/index-cursor";
 import { loadProfileIdentityMap } from "../../utils/profile-identity";
 import {
@@ -106,8 +107,12 @@ export async function listTrainingPlansUseCase(input: {
   const pageInfo = buildIndexPageInfo({ offset, limit: input.query.limit, total });
   const planIds = pageItems.map((plan) => plan.id);
 
-  const [userLikes, profileIdentityMap] = await Promise.all([
-    input.repository.listTrainingPlanLikedIds({ profileId: input.profileId, planIds }),
+  const [likeStats, profileIdentityMap] = await Promise.all([
+    loadLikeStats(input.db, {
+      entityType: "training_plan",
+      entityIds: planIds,
+      viewerProfileId: input.profileId,
+    }),
     loadProfileIdentityMap(
       input.db,
       pageItems.map((plan) => plan.profile_id),
@@ -117,7 +122,7 @@ export async function listTrainingPlansUseCase(input: {
   return {
     items: pageItems.map((plan) => ({
       ...mapTrainingPlanOwnerIdentity(mapTrainingPlanContentIdentity(plan), profileIdentityMap),
-      has_liked: userLikes.includes(plan.id),
+      ...getLikeStats(likeStats, plan.id),
     })),
     total,
     ...pageInfo,

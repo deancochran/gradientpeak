@@ -112,7 +112,6 @@ describe("router live-db smoke", () => {
       elevation_polyline: null,
       polyline: "_p~iF~ps|U_ulLnnqC_mqNvxq`@",
       is_public: false,
-      likes_count: 0,
       created_at: new Date("2026-04-01T09:00:00.000Z"),
       updated_at: new Date("2026-04-01T09:00:00.000Z"),
     });

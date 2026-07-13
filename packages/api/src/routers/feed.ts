@@ -1,11 +1,12 @@
-import { publicActivitiesRowSchema, publicCommentsRowSchema, schema } from "@repo/db";
+import { publicActivitiesRowSchema, publicCommentsRowSchema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { buildFeedPage, decodeFeedCursor } from "../application/feed/feedPage";
 import { getRequiredDb } from "../db";
 import { createActivityAnalysisStore } from "../infrastructure/repositories";
 import { buildActivityDerivedSummaryMap } from "../lib/activity-analysis";
+import { getLikeStats, loadLikeStats } from "../repositories/like-stats";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { buildUuidInList, parseCountValue } from "../utils/sql";
 
@@ -58,7 +59,6 @@ const feedActivityRowSchema = publicActivitiesRowSchema
     calories: true,
     polyline: true,
     activity_file_path: true,
-    likes_count: true,
     is_private: true,
   })
   .extend({
@@ -171,7 +171,7 @@ function mapFeedActivity(
   options: {
     commentCounts: Map<string, number>;
     derivedMap: Map<string, FeedActivity["derived"]>;
-    likedActivityIds: Set<string>;
+    likeStats: Awaited<ReturnType<typeof loadLikeStats>>;
   },
 ): FeedActivity {
   return feedActivityDtoSchema.parse({
@@ -192,7 +192,7 @@ function mapFeedActivity(
     calories: activity.calories,
     polyline: activity.polyline,
     activity_file_path: activity.activity_file_path,
-    likes_count: activity.likes_count ?? 0,
+    likes_count: getLikeStats(options.likeStats, activity.id).likes_count,
     comments_count: options.commentCounts.get(activity.id) ?? 0,
     is_private: activity.is_private,
     created_at: toIsoString(activity.created_at),
@@ -201,7 +201,7 @@ function mapFeedActivity(
       username: activity.profile_username,
       avatar_url: activity.profile_avatar_url,
     },
-    has_liked: options.likedActivityIds.has(activity.id),
+    has_liked: getLikeStats(options.likeStats, activity.id).has_liked,
     derived: options.derivedMap.get(activity.id) ?? null,
     ingestion: activity.ingestion_status
       ? {
@@ -261,7 +261,6 @@ export const feedRouter = createTRPCRouter({
           a.calories,
           a.polyline,
           a.activity_file_path,
-          a.likes_count,
           a.is_private,
           a.created_at,
           p.username as profile_username,
@@ -295,24 +294,12 @@ export const feedRouter = createTRPCRouter({
 
       const activities = z.array(feedActivityRowSchema).parse(activitiesResult.rows);
 
-      // Get user's likes for these activities
       const activityIds = activities.map((activity) => activity.id);
-      let likedActivityIds = new Set<string>();
-
-      if (activityIds.length > 0) {
-        const likesRows = await db
-          .select({ entity_id: schema.likes.entity_id })
-          .from(schema.likes)
-          .where(
-            and(
-              eq(schema.likes.profile_id, userId),
-              eq(schema.likes.entity_type, "activity"),
-              inArray(schema.likes.entity_id, activityIds),
-            ),
-          );
-
-        likedActivityIds = new Set(likesRows.map((row) => row.entity_id));
-      }
+      const likeStats = await loadLikeStats(db, {
+        entityType: "activity",
+        entityIds: activityIds,
+        viewerProfileId: userId,
+      });
 
       const commentCounts = new Map<string, number>();
 
@@ -344,7 +331,7 @@ export const feedRouter = createTRPCRouter({
             mapFeedActivity(activity, {
               commentCounts,
               derivedMap,
-              likedActivityIds,
+              likeStats,
             }),
         }),
       );
@@ -399,7 +386,6 @@ export const feedRouter = createTRPCRouter({
             a.polyline,
             a.activity_file_path,
             a.map_bounds,
-            a.likes_count,
             a.is_private,
             a.created_at,
             p.username as profile_username,
@@ -437,18 +423,12 @@ export const feedRouter = createTRPCRouter({
           });
         }
 
-        const [likeRows, commentsResult] = await Promise.all([
-          db
-            .select({ id: schema.likes.id })
-            .from(schema.likes)
-            .where(
-              and(
-                eq(schema.likes.profile_id, userId),
-                eq(schema.likes.entity_id, input.activityId),
-                eq(schema.likes.entity_type, "activity"),
-              ),
-            )
-            .limit(1),
+        const [likeStats, commentsResult] = await Promise.all([
+          loadLikeStats(db, {
+            entityType: "activity",
+            entityIds: [input.activityId],
+            viewerProfileId: userId,
+          }),
           db.execute(sql`
             select
               c.id,
@@ -507,7 +487,7 @@ export const feedRouter = createTRPCRouter({
           polyline: activity.polyline,
           activity_file_path: activity.activity_file_path,
           map_bounds: activity.map_bounds,
-          likes_count: activity.likes_count ?? 0,
+          likes_count: getLikeStats(likeStats, activity.id).likes_count,
           is_private: activity.is_private,
           created_at: toIsoString(activity.created_at),
           profile: {
@@ -515,7 +495,7 @@ export const feedRouter = createTRPCRouter({
             username: activity.profile_username,
             avatar_url: activity.profile_avatar_url,
           },
-          has_liked: likeRows.length > 0,
+          has_liked: getLikeStats(likeStats, activity.id).has_liked,
           comments_count: comments.length,
           comments,
         });

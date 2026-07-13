@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { type ActivityRouteRow, activityPlans, activityRoutes, likes } from "@repo/db";
+import { type ActivityRouteRow, activityPlans, activityRoutes } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, asc, count, desc, eq, gt, gte, ilike, inArray, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, ilike, lt, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
   serializeActivityRouteRow,
@@ -17,6 +17,7 @@ import {
   routeCoordinateSchema,
 } from "../lib/routes/route-file-helpers";
 import { createContentAccessPermissions } from "../permissions/content-access";
+import { getLikeStats, loadLikeStats } from "../repositories/like-stats";
 import { getApiStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { loadProfileIdentityMap, profileIdentitySchema } from "../utils/profile-identity";
@@ -64,6 +65,7 @@ const routeCursorSchema = z.string().superRefine((value, ctx) => {
 
 const activityRouteWithLikeSchema = serializedActivityRouteSchema
   .extend({
+    likes_count: z.number().int().nonnegative(),
     has_liked: z.boolean(),
     owner: profileIdentitySchema.nullable().optional(),
   })
@@ -304,33 +306,23 @@ export const routesRouter = createTRPCRouter({
       }
 
       const routeIds = items.map((route) => route.id);
-      let userLikes: string[] = [];
-
-      if (routeIds.length > 0) {
-        const likeRows = await db
-          .select({ entity_id: likes.entity_id })
-          .from(likes)
-          .where(
-            and(
-              eq(likes.profile_id, ctx.session.user.id),
-              eq(likes.entity_type, "route"),
-              inArray(likes.entity_id, routeIds),
-            ),
-          );
-
-        userLikes = likeRows.map((row) => row.entity_id);
-      }
-
-      const profileIdentityMap = await loadProfileIdentityMap(
-        db,
-        items.map((route) => route.profile_id),
-      );
+      const [likeStats, profileIdentityMap] = await Promise.all([
+        loadLikeStats(db, {
+          entityType: "route",
+          entityIds: routeIds,
+          viewerProfileId: ctx.session.user.id,
+        }),
+        loadProfileIdentityMap(
+          db,
+          items.map((route) => route.profile_id),
+        ),
+      ]);
 
       return {
         items: items.map((route) =>
           activityRouteWithLikeSchema.parse({
             ...route,
-            has_liked: userLikes.includes(route.id),
+            ...getLikeStats(likeStats, route.id),
             owner: route.profile_id ? (profileIdentityMap.get(route.profile_id) ?? null) : null,
           }),
         ),
@@ -362,23 +354,18 @@ export const routesRouter = createTRPCRouter({
 
       await requireRouteReadForRow({ db, route, userId: ctx.session.user.id });
 
-      const [likeData] = await db
-        .select({ id: likes.id })
-        .from(likes)
-        .where(
-          and(
-            eq(likes.profile_id, ctx.session.user.id),
-            eq(likes.entity_type, "route"),
-            eq(likes.entity_id, input.id),
-          ),
-        )
-        .limit(1);
-
-      const profileIdentityMap = await loadProfileIdentityMap(db, [route.profile_id]);
+      const [likeStats, profileIdentityMap] = await Promise.all([
+        loadLikeStats(db, {
+          entityType: "route",
+          entityIds: [input.id],
+          viewerProfileId: ctx.session.user.id,
+        }),
+        loadProfileIdentityMap(db, [route.profile_id]),
+      ]);
 
       return activityRouteWithLikeSchema.parse({
         ...serializeActivityRouteRow(route),
-        has_liked: !!likeData,
+        ...getLikeStats(likeStats, input.id),
         owner: route.profile_id ? (profileIdentityMap.get(route.profile_id) ?? null) : null,
       });
     }),
