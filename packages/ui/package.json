@@ -146,7 +146,9 @@
     "format": "biome format --write .",
     "test": "pnpm run test:web && pnpm run test:native",
     "test:web": "vitest run",
-    "test:native": "jest --config ./jest.config.mjs --runInBand"
+    "test:native": "jest --config ./jest.config.mjs --runInBand",
+    "generate:testing-artifacts": "tsx scripts/generate-testing-artifacts.ts",
+    "check:testing-artifacts": "tsx scripts/generate-testing-artifacts.ts --check"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -233,6 +235,7 @@
     "react-test-renderer": "19.1.0",
     "storybook": "^8.6.18",
     "tailwindcss": "^4",
+    "tsx": "^4.20.6",
     "typescript": "^5",
     "vitest": "^4.1.9"
   }

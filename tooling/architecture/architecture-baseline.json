@@ -1,0 +1,3265 @@
+{
+  "version": 2,
+  "categories": {
+    "combined-dependency-cycle": {
+      "count": 2,
+      "fingerprints": [
+        "312513da82484ff41b23",
+        "9395b5d3f0151350fc43"
+      ]
+    },
+    "contract-name-collision": {
+      "count": 26,
+      "fingerprints": [
+        "0f523e368251711d8d5a",
+        "15034a834b5c70b37720",
+        "16e1a0f8817b976a480d",
+        "1f3c1839f0ba6312ac80",
+        "2fc476e81813e41e7e61",
+        "33c4043a61d7a9534d65",
+        "342c64bdb4ab71c05cc5",
+        "36dd2826f319aea852da",
+        "3f1821c5877f76504b05",
+        "4fb3add61ff6bd7dbf82",
+        "5013ec3eb9981b83bed4",
+        "53be09ab3d2479be84e8",
+        "560e7fb38f323aec4cc3",
+        "6d16ba97f2cba3291f8f",
+        "71ba85ca702f94c4a3d3",
+        "84a917293c61280d4a08",
+        "a60516f5870e8576be4a",
+        "a65ea681571d83205e49",
+        "aa3f08c6cd8ea98d40e6",
+        "b3e2eaa9e76236a83b2c",
+        "b5b05a698e341a0b9e13",
+        "b7600fe04269ebc92534",
+        "b8a77da02bf05924e7f4",
+        "d5ed86595ccbfc5fcaac",
+        "e1845c58e3f0068d82bb",
+        "ef021c2dcb87d572dfa8"
+      ]
+    },
+    "contract-structural-collision": {
+      "count": 16,
+      "fingerprints": [
+        "00ca6d50a51164a9d627",
+        "1410a9f3c186f3d9ebeb",
+        "1b3c62254e0ee13e961d",
+        "21350c8031f449471401",
+        "235bbae0250327b0719b",
+        "27c8059d4a273521318f",
+        "38a479917ac938bf0613",
+        "3cfbfa6ae4c2338a1eab",
+        "4f51c46e30042d7fdc80",
+        "8fd7ff10816da49568a7",
+        "ab9fc372d77b198beff8",
+        "b8c56f6740b427c83471",
+        "c80ed351ddb55944f54f",
+        "cd8abc78ec0e027c5154",
+        "d3120f6c135442bff384",
+        "d6f1662f7995c8087a4d"
+      ]
+    },
+    "cross-workspace-relative-import": {
+      "count": 9,
+      "fingerprints": [
+        "05ada5b0a77accf3e0c9",
+        "22e32895a1aff863bbe4",
+        "42d09afe86f8cba88b5e",
+        "50560014e26b0bedb474",
+        "6770c8ab1b65af1e78fa",
+        "68f3bb55c45e3e9e66c4",
+        "c90dc31debf1c34d10e4",
+        "d36c0ecd71b6d68cf459",
+        "da0f805f08b8df43b06f"
+      ]
+    },
+    "dependency-direction": {
+      "count": 5,
+      "fingerprints": [
+        "335525de7373ab04b6a3",
+        "35d3db7d8f9a688ce621",
+        "3f6c2a3899033094ec2a",
+        "c6017407351a56018d00",
+        "d33e0d64a534ad86ca57"
+      ]
+    },
+    "runtime-dependency-cycle": {
+      "count": 2,
+      "fingerprints": [
+        "362a9337eaaab4ac830e",
+        "e5073b9521d53ce6e47a"
+      ]
+    },
+    "unsafe-as-any": {
+      "count": 160,
+      "fingerprints": [
+        "00a33f02aaf600e41801",
+        "00da1614a161ebd0d5fe",
+        "018d8183d634a6d3d922",
+        "01ecc77a3283cbafb134",
+        "043f49c865980f16312d",
+        "04c4fa3711184a3ef5a1",
+        "067148a9b6f2066c6c6f",
+        "07ebc0f1e012656f3688",
+        "0b4205233fe6a985fc3a",
+        "0cda9c1144e7c1697026",
+        "0ceab97f9d12282c3d45",
+        "0cedbe37dc04a4d53904",
+        "0e6013fcd31a15b4cc6b",
+        "0fc27f1431ce43680546",
+        "1154df52f73a1f12da08",
+        "147f181d93e3db5fb439",
+        "19bbdca499f03b5e898a",
+        "1a9d8c6ac1c44be0953d",
+        "1afdac26cbe67c0ee63a",
+        "1c8992378fc4a013fa2e",
+        "1cd8fc9a74e962a706f6",
+        "1cd9d7662d86fc87a119",
+        "20cec3dae4c9e90b403b",
+        "223d246d982bedee9ce9",
+        "226b468f8c1da5b9142d",
+        "26b755d8bc1e80c3ade9",
+        "290ff8dcf365ce89e536",
+        "2992f0d7d8b53f59d26c",
+        "2a9c53492701ce79bd9e",
+        "2b33a41e60c5384f16d2",
+        "2c9514db13adfe980337",
+        "2d0c9b52a497d64db377",
+        "2f1c907bc185f5f8a363",
+        "30a2fe43935c0cd09791",
+        "32c9eaf98a6e841f9f95",
+        "35215e3d03427c728a35",
+        "3c30c97c058f98ce156e",
+        "3cc8da2afdc3843c5d53",
+        "3db498d2cd4f43a301f6",
+        "45efc01a6a53cd2d3057",
+        "4987d5415b60973644dc",
+        "4abbb7d4d2112d2253ad",
+        "4cb3cc3b34d03dba2f92",
+        "4f96fb920525a64c39f8",
+        "51e7d55aafeaa15613a5",
+        "54ad2904c349f7842d31",
+        "58f967f866ae63d6e4a7",
+        "5963f20e50cd2bf54b28",
+        "59915ab269b62d8dcfd4",
+        "5bc63506b8723971c4f4",
+        "5cac80bc13c23b9292a4",
+        "619654de11f63f6d5883",
+        "6243442decfb42ced2ea",
+        "62ad908588a25ae8a4f3",
+        "6622e15c613ac6771a82",
+        "667b0add3bdc7464630b",
+        "66c9abcc5bdca294fd53",
+        "6755dc5f1bc768073be7",
+        "67aa058375d27296d191",
+        "69dec203103f930325ee",
+        "6e7ecfcb7bd36b2f3983",
+        "6ef4083d53ee65def40e",
+        "6f433e993f5fc6a19720",
+        "6ff020997e098de1d109",
+        "736f59166f69c5681223",
+        "7522f4594ca0c7e5d117",
+        "756378cb45889c3286c1",
+        "78c45c5a0aceaed64c44",
+        "799d62f6ade9fb5c0f8a",
+        "7a77312a8e4c4468531f",
+        "7bb02a0d81fbdd30ae36",
+        "809eaf6795f8517b8c57",
+        "80c69a572378ad4ccc15",
+        "81246378f980dfe86fa4",
+        "83ff48b5457258a0fc54",
+        "841222941badc32e864a",
+        "86a6bb01cb532d484557",
+        "87c355da4152538afed0",
+        "89d6018310ecb66ba2b0",
+        "8ce2b330623b59b12fd6",
+        "8e533afe913f9be1a6f2",
+        "92b6a4556b1c57ddca59",
+        "935353b57cb79c1b129e",
+        "9382da65d5743d60db63",
+        "93b8c480e5455ce3566b",
+        "9453d88299f6305d28ad",
+        "951c70a9627a1abc854a",
+        "955556ff7fbb77bb20e1",
+        "95ebb19fb1760db7c279",
+        "991553ead316ab23e988",
+        "9a48da2eead21ed97d29",
+        "9c9eaf81b6e8f5e5a005",
+        "9f51456854a172a4f72f",
+        "a3d65acdd59d3e52fdfa",
+        "a68d034d9f4c6fa7d708",
+        "a7db6cc5b50b5db6c0f4",
+        "a8659a3221716c70f582",
+        "aafd9041119270c355ce",
+        "af3a25db4d9e0ef2d7ef",
+        "b08e73a9f6b3be7d1216",
+        "b1b9d3605785abf79fd0",
+        "b6b26e3069fd05665b8a",
+        "b724951adad1da128920",
+        "b734d34f5a30e1a452d8",
+        "ba0f1f6d8c5d04495563",
+        "ba3681d0ccd99f9b05b6",
+        "bab401ad4557833c0e73",
+        "bb02beb0fb0a6dd181ba",
+        "bb9e391814bc69241fea",
+        "bc0e0219a7e6f7242111",
+        "bf00efe30eeabe681f91",
+        "c48ed61baa6b0ae8457a",
+        "c5afef4991b8385b983c",
+        "c5d0ba7f99b650eee75b",
+        "c83be995eed4d6cf2242",
+        "c99378954525630f572f",
+        "c9df46180a7b4cae049f",
+        "cb8f66c67e1445b24c1b",
+        "cbf9b55f981db9934288",
+        "cc36d5ca76be19ffe0fa",
+        "cd72b91d73e62f7e2c43",
+        "ce32bee5d68d8fe3ffcf",
+        "d6a5ed112b86bf31993f",
+        "d703233f40e07eda6862",
+        "d82c25f35e824c4a1dcf",
+        "d8434f5b7b408c3d7fda",
+        "d8729ccb194402727987",
+        "d93baa625c264fc94546",
+        "da878d10660fedcc1db3",
+        "dae27c77d2fc221e993b",
+        "db2fa15a5687641dfe99",
+        "db6d5930807c55d6259d",
+        "de124c2ca89e0808f302",
+        "dfefe03e5def90e77fd0",
+        "e07926e1663445538d32",
+        "e08acf4daccaf50573f9",
+        "e09fb01d771e3bf240d2",
+        "e1ee51b30e20d65f14f4",
+        "e2c4398d5d25b28fd00f",
+        "e39ddcac13a4f3aa022b",
+        "e53497956423d31ab6e3",
+        "e56a2635227f459c96d9",
+        "e5f71b187b13d02bf0f2",
+        "e911df5c1c97c89c8b72",
+        "e96f560da633aa9b4cff",
+        "e9bfba74ed41f43d0067",
+        "ea743936f43792e65159",
+        "ec0b3bd6474e4e421cd2",
+        "edb0a7f4e2195b705aaf",
+        "f0337afc9c5bf620d5c7",
+        "f0533c9b10a7f5d34864",
+        "f1699c7bc7c4e56ece8c",
+        "f28477f666ca96f27e67",
+        "f4d9a3d9de3f58f83ee0",
+        "f585cfda2bacefae7565",
+        "f65b4e84c8667c3df6c3",
+        "f7b81b5d2a008de40b53",
+        "f92aed1e67674cd7885b",
+        "fdbefc858ad7d0804014",
+        "fdd1c39b12002d9c6b57"
+      ]
+    },
+    "unsafe-double-cast": {
+      "count": 20,
+      "fingerprints": [
+        "0e2797d7c494d90c65b6",
+        "17c5d3626714f9fe1719",
+        "1f79b6eb6d560c8e4b0b",
+        "2f4d98e993cfce0e20a1",
+        "391659876b374f390d25",
+        "47506c5ba854b8991326",
+        "4984dd76731dbec68ca6",
+        "61c027fb7f15b026a89e",
+        "67b56e9bb659074de17a",
+        "6a339ed445f7157f8f93",
+        "74a8a34e7f34d5393873",
+        "84f4f75cd3577ef518df",
+        "a97facff74515277b92d",
+        "aab9b8438d5656bba8c6",
+        "b1a6d2f978fa9baab316",
+        "b2010b19ab0846b85db0",
+        "bb310136c71beefec4f4",
+        "c706e5fa897e4085e697",
+        "d2251f93ef1fdd8f9e0e",
+        "e03d3fb39c9fac87f229"
+      ]
+    },
+    "unsafe-explicit-any": {
+      "count": 249,
+      "fingerprints": [
+        "002d4ca354d323142ec6",
+        "00f1c0576f3a256b1732",
+        "017491cc3d9348851429",
+        "02c76dedebe202518c65",
+        "03f0f9183ae7ce50699f",
+        "0416c62fbd507a27056d",
+        "05854692951def5d8e21",
+        "07cc1352736db9ee30fe",
+        "091da3ce540d92faf764",
+        "0a05e467c143fcd43bfe",
+        "0ab1741e63a3c1dbf8ed",
+        "0cedba03e150ab9c110a",
+        "0cf5cacaf0630f2bb15a",
+        "103150ac5e226ec1bc67",
+        "10aa29603c0ae22ca9d4",
+        "11053ae7444d9cf243bf",
+        "115047a2961b4ce50141",
+        "138c8635a4be5c5b8c96",
+        "15f82f2973e21868e5cc",
+        "1650c93f76ea917c59f3",
+        "168105095d902754c16d",
+        "19353664fef292cfa138",
+        "19e850bc07036d9ad4d1",
+        "1a13340204aac90eea25",
+        "1a77e89edf5ace9da3b6",
+        "1acbc3790079db348410",
+        "1bcb7646cee3cf749d2f",
+        "1bddc7b75074dd6d9522",
+        "1d0d234c4e636277e1f6",
+        "1d2d7a2d235d929707af",
+        "1d807b45bbe7dbaffabd",
+        "1da916bdbd1fdcfd9ff5",
+        "1e394044269b626cd337",
+        "1fd4d9b8c1e3de842529",
+        "21b7786c9267dd5eaa7a",
+        "21cbe9b76d44a77f3752",
+        "22334f61c71ee7c50f84",
+        "22ab6f1bad0d4936f1bf",
+        "22ebf86f760586be0bed",
+        "2306a83b659ebd8f51d7",
+        "243d782b79506e43a9de",
+        "245fdb2a8ff1383d036b",
+        "24ae57043962219d03c5",
+        "265105aae5fd41872c4d",
+        "270ba354bc7280b7a589",
+        "272ad2378a8caa777987",
+        "273c9185604356096134",
+        "294668e6e6656e7354b7",
+        "2a13e214a00b45eb410e",
+        "2c1e9cab96839d82385b",
+        "2dc2f799f2cf95772776",
+        "2fc30c001e4be9f8d0e5",
+        "3027e3ea5589b46976f6",
+        "30ac9735e7ad4b1c9e00",
+        "319128c30dd269237bd0",
+        "333113a75837fcd0555c",
+        "3583f224e4e2a61cd4c8",
+        "359fd6f1f723947a05fe",
+        "3628f5c54f6b724064d8",
+        "367b7c10c98245e63ba6",
+        "37a97a09d7a9021c50cd",
+        "3898b9328d0a0905fac7",
+        "38f65bdc8dfeea59344d",
+        "39dec13c6a994b249837",
+        "3ccb23d0ea9864b11952",
+        "3d846b9f36eff8436989",
+        "3da3a87e78bc871b67ce",
+        "3df24eeaaa9a9f9e5f13",
+        "3f7a99afc840e628a57b",
+        "3ff6c5eb9f78b3444d8a",
+        "41740ff9d7d1a1960807",
+        "419356654c02b84e966a",
+        "41b67fcb1824ee245d78",
+        "4376eaba55c2d540bf3e",
+        "43a1c474fbba94642ca8",
+        "452ad61f3eb4bbefcf56",
+        "46d66da706537cbbb32c",
+        "4acc22ebd1c3e8360618",
+        "4b9d48a16a37359ff04b",
+        "4bc45e77c48aec99cfe7",
+        "4d4a0f295cb919991775",
+        "4e560308e90560432267",
+        "4f1837e582f0eb285b3e",
+        "50d82fcee2f3cc0f32ea",
+        "518062a495c4decf51ab",
+        "51fd04c0b8fc195517d3",
+        "5235b75606f9f30fc57c",
+        "530c47ba83796b49c232",
+        "5750e611134438da8ddd",
+        "588014f254119602ee52",
+        "5ded254fd87af7bc37b2",
+        "5e0c47767d174495606c",
+        "6190dc189adcdc7f326e",
+        "61b9bbf82c345e016d03",
+        "61d75902c3ec07c594ba",
+        "67d9fde03b9a9826a709",
+        "68745b2f71d921fcd215",
+        "690106bc77d44aa33a37",
+        "696646e035e054e5f4a6",
+        "6a00dc9cd5ba5e097965",
+        "6a967bc1bcb6e713bffd",
+        "6b0d8edca55b9f21b370",
+        "6bd1b52d2c052c215c22",
+        "6bd208b69710228a57bd",
+        "6bdb87cc8da62938f89c",
+        "6c2c329649f8efc794c8",
+        "6c5b071dd8e144b692ab",
+        "6c5f5e370aef48b92326",
+        "6c83a1399023483961d8",
+        "6c88245d3db0be1eb01f",
+        "6dc438d7f55606781c78",
+        "6e16b6a4ed1ec686e0de",
+        "6f0ed9d1fb7216b986b6",
+        "6fe7ab9473b2a6ddcd92",
+        "70f1c3f731b6ed37f991",
+        "7161fe2d610da9096082",
+        "71ff82598a56b7bd7550",
+        "72bc72cdceae07dab6a6",
+        "7635a26427ae1d0f1d24",
+        "77bca0ea5d75ab9dcde4",
+        "7b1d3f53cc2b275cc4c1",
+        "7b6d61edb64b22fd888f",
+        "7b9fa14126a11d7e2af7",
+        "7bba66b4356b325f1e78",
+        "7bc2a5b0a73d5abb2b9e",
+        "81b4596bf5662db0eb7b",
+        "828e8d8bc9bf9f6b395c",
+        "829009d55aff5c843128",
+        "84212bd559d263a38712",
+        "845bff573cb8079e3f6f",
+        "848ee40958159b2fc105",
+        "84ef9ef5accde461c26e",
+        "85fe4a36a980bf4002f2",
+        "868b062a85bf80303dea",
+        "89fe4e5840c642e820a0",
+        "8a5f690bf8b37f66069f",
+        "8ab6ee70aae6a4d9e8b6",
+        "8bbd82d9fdb3e4651e12",
+        "8c069ba9f27dc89709c3",
+        "8c63e8cccf3cb7a1208e",
+        "8d5a7e1067bd47fed715",
+        "8f378333f1b93a5e5308",
+        "8f6de81fb5961cd374eb",
+        "9029d4b5a88a596ae551",
+        "908a1403ae39f0557862",
+        "93499a866e6efc7f2027",
+        "945805fe022264b262c7",
+        "969e0f258889e38fa12f",
+        "96d2ef4f62ec942e4a9e",
+        "99cf96afc7a67c769eb3",
+        "9abdb5013506795af474",
+        "9afd4333918a798be8dd",
+        "9b237103216fb97c2fa1",
+        "9bc6e8c20211d4019bb1",
+        "9bdd19f1847048ee7981",
+        "9d3beb621177767dc35d",
+        "9d79eb3c4c007b54b58e",
+        "9dd78bb7c7d5b45f6eaa",
+        "9fab870a23ff6fdaafc2",
+        "a009022f350fce14a10a",
+        "a0aed4b5a8406dd27c72",
+        "a34be717ab61caba31cd",
+        "a45d30a37ab6d6a05416",
+        "a4a0ea34e9605a04d62c",
+        "a5a37e194d11939ef86d",
+        "a78c15ca5db7d9c83ec8",
+        "a9877554b743392e6ab2",
+        "a996296c8a413419fad6",
+        "ab3a194368665cc34604",
+        "ab905c40a4d6fe256bb0",
+        "b000df851637476b2142",
+        "b0d7c6629f43d112263b",
+        "b216f70c5268fbb682ea",
+        "b26d0044ce885de17a2c",
+        "b31e8dccf4edba584a63",
+        "b333ff7b7e78819626d3",
+        "b3578c33adaf33a3e7d2",
+        "b62245fd894cf5325753",
+        "b7771acfcdb773147d71",
+        "b994406d9724c244eda5",
+        "ba2d8c8d2eb38c65d898",
+        "bb661d6ce5954f26ddc7",
+        "bd22fd62302a4e478176",
+        "c0df0134cdbe6462de2b",
+        "c18ded087637bedd0c6b",
+        "c2380667147a22372c61",
+        "c25515782e9529eb103e",
+        "c4b02f06dfc51393a914",
+        "c5733a8fd972ae9dd50d",
+        "c651c78099255f12718a",
+        "c6714780da0dea6da7cc",
+        "c6750a58083aefd760fb",
+        "c6ef644f222ec71eef13",
+        "c7ed6a2953846f811bcd",
+        "c8ad1b0f4c40dcf5d597",
+        "ca1d5e81d1a20aa51eff",
+        "ca9bed056e06bf831a30",
+        "cada57312dc4175b80e1",
+        "cba95da3bc15d8e915d4",
+        "ccc1ba0c8888f2bd3538",
+        "cd9bcca85c822aec51d3",
+        "cf8d6cc9458c23dbd7a2",
+        "d00b0f2a8a398fa1c68d",
+        "d08ba4ac28f9ffcf09f3",
+        "d0bd47a69d0f05d2636c",
+        "d15da5b679d91a57b3f0",
+        "d472f676e63e0d0a8f91",
+        "d4a99cffb292ef22789e",
+        "d580c97b68a46be293ce",
+        "d62afcdf50dfe42c72a8",
+        "d8dc107375f691ee603e",
+        "d8e32e53701961717525",
+        "dac503bb9c7d4bb43440",
+        "dae731f3cd227bb6ba32",
+        "daeaeb81f2d9df7e0ae9",
+        "db5b30fb604595b8a9c4",
+        "dbfd43b45fec1a4fca40",
+        "dc07afc97f80c4f88485",
+        "dc0e0e5296f38ecdecba",
+        "dc1af1ff9681604752cb",
+        "dfc4d2232a4b77a1d8c1",
+        "e0796c3cebd42320d096",
+        "e0f62cdafad412ed20bb",
+        "e243d0afb9c9dd1ea792",
+        "e615156e24f3171ff252",
+        "e706fcbf489f253b372b",
+        "e79254af5aca2766bc0c",
+        "e8600d0b3003260dcf1c",
+        "e87bb007307cb95dace0",
+        "e8b330ed9ceec6c41e99",
+        "eba42032fbbd90c734c2",
+        "ed2e3499809fbff1c0e4",
+        "eedba9e942218e0c4cdf",
+        "ef127b86347a22ff5e05",
+        "ef515defd2bd86f8cbee",
+        "f2392616357aeb9af551",
+        "f28bf81344146cf22dd5",
+        "f3a449f40580f819cc9c",
+        "f42423fb5f5873441956",
+        "f67664ab4e5ea203c1ef",
+        "f69bfe42e30472504b20",
+        "f6f3d428382d545d1b69",
+        "f718b2663763c99fbb36",
+        "f80456729f468a1518b0",
+        "f9541e437b42294477e6",
+        "f9722319d385f517a9aa",
+        "fa1efb387c110fba984c",
+        "fbcd8e7bf2a0c4ab0072",
+        "fc716406c1388b026950"
+      ]
+    },
+    "unsafe-non-null-assertion": {
+      "count": 176,
+      "fingerprints": [
+        "00d4bddabd1a44cfb486",
+        "025d58665385c5b844aa",
+        "053d922413712ae60892",
+        "05d8ffcc2fe8c3180d29",
+        "05e5b283462dc8abf0a9",
+        "064713380fccdb31956d",
+        "07e0938abb7242c89599",
+        "07e3b9f823c8d0c082d1",
+        "0c25f1375d1fee6d9c8b",
+        "0ed5be957377da55fdc6",
+        "10a8ca40cba892fea942",
+        "11bfa262541eaf0ef806",
+        "120a1ef658c9b533c506",
+        "13d4678e2eb4e3c9f6a0",
+        "164b2211e91615a6b443",
+        "1672c68dcf6f7f32bcf8",
+        "17b75bec1bbd20d768b7",
+        "187170ef4e6ece07afb9",
+        "18af586674b13fc55590",
+        "19a9a6cd5579137cd6c4",
+        "1bce88e03228a0c25cff",
+        "1e1a7f66a4e63da98eb0",
+        "2281b5d83ed42c3beb9e",
+        "266903cdf224f9b0833a",
+        "2680fecf0d2d306ddfa8",
+        "26eddd319c25d1ccecf7",
+        "2939a29d228bca8097a7",
+        "2abb87846156ab0db636",
+        "2b88a3aed86229acc4c3",
+        "2bd2747020abc49d188e",
+        "2bda76a90cb717cc6c6e",
+        "2c99aa995a45212f9011",
+        "2e73eb440ffd284a9ef4",
+        "2eb01732cc10b37d7154",
+        "2fb1c3bcd4365e87b0ca",
+        "35e20b18968e77fdd9e6",
+        "3611284fa7e95e796587",
+        "3a35ab97d69ac28b3836",
+        "3cd2da6d183f78e5b604",
+        "3d8fb87de53219a703aa",
+        "3fdbfd3054f45cea7f51",
+        "41cee63ae5868e062c9b",
+        "45ea0daa3dc024684e14",
+        "466f60a76efd43fb1daa",
+        "46f4f383aac1924d0aeb",
+        "48ca1f26cd6355fa8206",
+        "4980f8d896bdf5137d51",
+        "49ef3b9912d2e7445a5b",
+        "4c4743473a2ffbf5802d",
+        "4d676a6cb32c0ea359b8",
+        "4d735d67ce693946415b",
+        "4de28864abcfa73666eb",
+        "4fcf49bbefb164690bf0",
+        "5077b2dd0ed425fcaa31",
+        "51d4825958d53d00ed0e",
+        "5249cdcc82f97da83ed6",
+        "55700ea068db14e7cf74",
+        "56841aeb3df3fdd1c8e2",
+        "59e5bdcfce64b1412172",
+        "5b5280fc114895d08d23",
+        "5bf1b0071232ecf408b1",
+        "5d16c6a1b22442c483c9",
+        "5d446271155f0758704c",
+        "5d945e28b472ff2157ff",
+        "5e17eb1899d4ccf7ca04",
+        "5f4be0acb4fbcff5d3d1",
+        "5fca09d6d97a47c7f32f",
+        "609f2d21a1f63ab78bf3",
+        "618d326a2f4ba7b33648",
+        "65d43194d52fea004ca9",
+        "6891cab0ab215a980e77",
+        "68f9fa2b4f7fa3a0b020",
+        "691f33cd9dc9b6e9b01f",
+        "6a801adddf35b00192e9",
+        "6d3aa3832189538cf86d",
+        "6f29dca05c8dacc7ee3a",
+        "70510ac4cb731ba75bf6",
+        "71d39bb1a111a6e834e2",
+        "72444e3cd595c4dcb90c",
+        "7416db9d9fb221eece8d",
+        "743934ee223a88a0961c",
+        "7594bfb8f237b8e8fb81",
+        "7615ddc07c594595c77b",
+        "76545a5abca39d31da99",
+        "76c7aa178b451b51e3bf",
+        "77ba1c8fc244a02c5a4e",
+        "7ae64853466c216fd84c",
+        "7c37846d2a1758798476",
+        "7cede59618497686621d",
+        "802628fd3465c906c004",
+        "802b902074f3b4e27034",
+        "802dca2c81520ea5a56f",
+        "8146b2621989229eb0fa",
+        "8279f40ee5959af60cf9",
+        "83ae98cb463f7a8a98ca",
+        "83de466b9ec6a1e2401b",
+        "84048e3097899b26cfd7",
+        "893c79722a1aef6ec7a1",
+        "9124ed77e200205fe149",
+        "922455e53caf7eace999",
+        "924c170ada889f95247a",
+        "94649ee533667712293c",
+        "94dc75694f1bb33f962c",
+        "9517793f6b5dd836b533",
+        "964110367af687645409",
+        "97234b34e1b7801e35a1",
+        "97beb8b0f89ef5225bb0",
+        "9913621c1b60e7d02e6f",
+        "9a11a6785f4c97012745",
+        "9b2ed2e162ec1f5ed382",
+        "9b4edb1db599297743d4",
+        "9bd1dbfce0b8bc48def0",
+        "9d2d313cc1f3184061e4",
+        "9e4add8a90d0515e37e6",
+        "9e75a6fd850746dfbbc9",
+        "a19ba3f91147fcc4d19e",
+        "a2b30b332350c9f6fee4",
+        "a32b24d8f0fe18405cf9",
+        "a38c4a23bf58d613fbaa",
+        "a4687502550c94214d03",
+        "a529ad3d4dbe722db555",
+        "a58fd79dcff1707f1fbe",
+        "a7343b0cedfe2354551c",
+        "a80077e3833398634457",
+        "a9392653a211eea9f1ed",
+        "aaee6d9bc59210c27acf",
+        "ab87226fa1e06dd81e60",
+        "ab8df2810433aa3ab5b5",
+        "ad0014f5c1a903fff36e",
+        "ae9ec0f91bda3aa98ae3",
+        "b05bafa2dc94e3ee5638",
+        "b0a6a8e83932774e23f0",
+        "b13e513c8f02715e2f56",
+        "b5db44725b4948720a01",
+        "ba305df3de61eb513ecb",
+        "bce42c7eef046a142741",
+        "be028756e07c82090852",
+        "be379ba86a4ff5792c28",
+        "bf0a764c1c4b33bb05e6",
+        "c0fa643c3fea3dc98e80",
+        "c617b0c9905bd23d771d",
+        "c88de79422c9a75958f6",
+        "cb69fafc65dec972c708",
+        "cedf24df9569771a2b41",
+        "cff23aa6a1213c021e37",
+        "d1e28629d90d1911a0d2",
+        "d34b482111f678a2069f",
+        "d37445fa075f7fd9b25d",
+        "d3fea9f442d2099ee652",
+        "d68c242f035437ae2794",
+        "d953726b38fc07a0c4d7",
+        "d9a34425541faf59aa2a",
+        "dc598021fe06de1b8e64",
+        "de4a38d59bd3562e3d41",
+        "de721ebd7fa349adc0be",
+        "deca6670bd91b2d56b27",
+        "e0591079b4c1ef3cc362",
+        "e340485d324cb2c210f0",
+        "e42f89c53374f812318c",
+        "e6f2f261aace6e6992eb",
+        "e7ef55286ee00ef0910b",
+        "ea265b3d81b5cd0147e6",
+        "ee6cba736c179523cb9d",
+        "ee7951c7720e315614cf",
+        "f2ecef1c53a44c97294c",
+        "f3b1bab121bbc1321935",
+        "f44bcd84f5c50e7ffb79",
+        "f4590c8401a87f239f67",
+        "f66f040370190f70ea1e",
+        "f93767828f5fad209935",
+        "f99669bd26c8ded4e3fa",
+        "fa3dc9edc52f3a634ace",
+        "fbdee5157533ef504a9c",
+        "fc3f4f146f02d144308b",
+        "fefbede1be1b6c5e6a1e",
+        "ff1aedbf2f3ca07f3ae3"
+      ]
+    },
+    "unsafe-ts-expect-error": {
+      "count": 6,
+      "fingerprints": [
+        "075b02e81c231a888418",
+        "8a4115626b101b89a567",
+        "a0ef2492d6a5015066d1",
+        "a0fa4d1d2a505398383a",
+        "ce9c84450ac32dbe1531",
+        "dbebcec34d0a4e569ff7"
+      ]
+    },
+    "unsafe-ts-ignore": {
+      "count": 3,
+      "fingerprints": [
+        "affa3d57e60ad7a24710",
+        "cdb83514d16ec1095846",
+        "da64465feb2c0888c9e6"
+      ]
+    }
+  },
+  "unsafe": {
+    "unsafe-as-any": {
+      "owners": {
+        "api": {
+          "count": 54,
+          "fingerprints": [
+            "00da1614a161ebd0d5fe",
+            "018d8183d634a6d3d922",
+            "0ceab97f9d12282c3d45",
+            "0cedbe37dc04a4d53904",
+            "0fc27f1431ce43680546",
+            "1154df52f73a1f12da08",
+            "19bbdca499f03b5e898a",
+            "1a9d8c6ac1c44be0953d",
+            "1c8992378fc4a013fa2e",
+            "290ff8dcf365ce89e536",
+            "30a2fe43935c0cd09791",
+            "32c9eaf98a6e841f9f95",
+            "4abbb7d4d2112d2253ad",
+            "4f96fb920525a64c39f8",
+            "51e7d55aafeaa15613a5",
+            "59915ab269b62d8dcfd4",
+            "5bc63506b8723971c4f4",
+            "6e7ecfcb7bd36b2f3983",
+            "6ef4083d53ee65def40e",
+            "6ff020997e098de1d109",
+            "7522f4594ca0c7e5d117",
+            "78c45c5a0aceaed64c44",
+            "7a77312a8e4c4468531f",
+            "809eaf6795f8517b8c57",
+            "81246378f980dfe86fa4",
+            "8ce2b330623b59b12fd6",
+            "8e533afe913f9be1a6f2",
+            "9453d88299f6305d28ad",
+            "951c70a9627a1abc854a",
+            "955556ff7fbb77bb20e1",
+            "95ebb19fb1760db7c279",
+            "991553ead316ab23e988",
+            "9a48da2eead21ed97d29",
+            "b1b9d3605785abf79fd0",
+            "b6b26e3069fd05665b8a",
+            "b734d34f5a30e1a452d8",
+            "ba0f1f6d8c5d04495563",
+            "bc0e0219a7e6f7242111",
+            "bf00efe30eeabe681f91",
+            "cb8f66c67e1445b24c1b",
+            "d6a5ed112b86bf31993f",
+            "d82c25f35e824c4a1dcf",
+            "d93baa625c264fc94546",
+            "da878d10660fedcc1db3",
+            "e53497956423d31ab6e3",
+            "e56a2635227f459c96d9",
+            "e5f71b187b13d02bf0f2",
+            "e911df5c1c97c89c8b72",
+            "e96f560da633aa9b4cff",
+            "e9bfba74ed41f43d0067",
+            "ea743936f43792e65159",
+            "edb0a7f4e2195b705aaf",
+            "f0533c9b10a7f5d34864",
+            "f65b4e84c8667c3df6c3"
+          ]
+        },
+        "auth": {
+          "count": 1,
+          "fingerprints": [
+            "d8434f5b7b408c3d7fda"
+          ]
+        },
+        "core": {
+          "count": 2,
+          "fingerprints": [
+            "1afdac26cbe67c0ee63a",
+            "5cac80bc13c23b9292a4"
+          ]
+        },
+        "mobile": {
+          "count": 103,
+          "fingerprints": [
+            "00a33f02aaf600e41801",
+            "01ecc77a3283cbafb134",
+            "043f49c865980f16312d",
+            "04c4fa3711184a3ef5a1",
+            "067148a9b6f2066c6c6f",
+            "07ebc0f1e012656f3688",
+            "0b4205233fe6a985fc3a",
+            "0cda9c1144e7c1697026",
+            "0e6013fcd31a15b4cc6b",
+            "147f181d93e3db5fb439",
+            "1cd8fc9a74e962a706f6",
+            "1cd9d7662d86fc87a119",
+            "20cec3dae4c9e90b403b",
+            "223d246d982bedee9ce9",
+            "226b468f8c1da5b9142d",
+            "26b755d8bc1e80c3ade9",
+            "2992f0d7d8b53f59d26c",
+            "2a9c53492701ce79bd9e",
+            "2b33a41e60c5384f16d2",
+            "2c9514db13adfe980337",
+            "2d0c9b52a497d64db377",
+            "2f1c907bc185f5f8a363",
+            "35215e3d03427c728a35",
+            "3c30c97c058f98ce156e",
+            "3cc8da2afdc3843c5d53",
+            "3db498d2cd4f43a301f6",
+            "45efc01a6a53cd2d3057",
+            "4987d5415b60973644dc",
+            "4cb3cc3b34d03dba2f92",
+            "54ad2904c349f7842d31",
+            "58f967f866ae63d6e4a7",
+            "5963f20e50cd2bf54b28",
+            "619654de11f63f6d5883",
+            "6243442decfb42ced2ea",
+            "62ad908588a25ae8a4f3",
+            "6622e15c613ac6771a82",
+            "667b0add3bdc7464630b",
+            "66c9abcc5bdca294fd53",
+            "6755dc5f1bc768073be7",
+            "67aa058375d27296d191",
+            "69dec203103f930325ee",
+            "6f433e993f5fc6a19720",
+            "736f59166f69c5681223",
+            "756378cb45889c3286c1",
+            "799d62f6ade9fb5c0f8a",
+            "7bb02a0d81fbdd30ae36",
+            "80c69a572378ad4ccc15",
+            "83ff48b5457258a0fc54",
+            "841222941badc32e864a",
+            "86a6bb01cb532d484557",
+            "87c355da4152538afed0",
+            "89d6018310ecb66ba2b0",
+            "92b6a4556b1c57ddca59",
+            "935353b57cb79c1b129e",
+            "9382da65d5743d60db63",
+            "93b8c480e5455ce3566b",
+            "9c9eaf81b6e8f5e5a005",
+            "9f51456854a172a4f72f",
+            "a3d65acdd59d3e52fdfa",
+            "a68d034d9f4c6fa7d708",
+            "a7db6cc5b50b5db6c0f4",
+            "a8659a3221716c70f582",
+            "aafd9041119270c355ce",
+            "af3a25db4d9e0ef2d7ef",
+            "b08e73a9f6b3be7d1216",
+            "b724951adad1da128920",
+            "ba3681d0ccd99f9b05b6",
+            "bab401ad4557833c0e73",
+            "bb02beb0fb0a6dd181ba",
+            "bb9e391814bc69241fea",
+            "c48ed61baa6b0ae8457a",
+            "c5afef4991b8385b983c",
+            "c5d0ba7f99b650eee75b",
+            "c83be995eed4d6cf2242",
+            "c99378954525630f572f",
+            "c9df46180a7b4cae049f",
+            "cbf9b55f981db9934288",
+            "cc36d5ca76be19ffe0fa",
+            "cd72b91d73e62f7e2c43",
+            "ce32bee5d68d8fe3ffcf",
+            "d703233f40e07eda6862",
+            "d8729ccb194402727987",
+            "dae27c77d2fc221e993b",
+            "db2fa15a5687641dfe99",
+            "db6d5930807c55d6259d",
+            "de124c2ca89e0808f302",
+            "dfefe03e5def90e77fd0",
+            "e07926e1663445538d32",
+            "e08acf4daccaf50573f9",
+            "e09fb01d771e3bf240d2",
+            "e1ee51b30e20d65f14f4",
+            "e2c4398d5d25b28fd00f",
+            "e39ddcac13a4f3aa022b",
+            "ec0b3bd6474e4e421cd2",
+            "f0337afc9c5bf620d5c7",
+            "f1699c7bc7c4e56ece8c",
+            "f28477f666ca96f27e67",
+            "f4d9a3d9de3f58f83ee0",
+            "f585cfda2bacefae7565",
+            "f7b81b5d2a008de40b53",
+            "f92aed1e67674cd7885b",
+            "fdbefc858ad7d0804014",
+            "fdd1c39b12002d9c6b57"
+          ]
+        }
+      },
+      "files": {
+        "apps/mobile/app/(internal)/(standard)/activities-list.tsx": {
+          "count": 3,
+          "fingerprints": [
+            "00a33f02aaf600e41801",
+            "1cd8fc9a74e962a706f6",
+            "ec0b3bd6474e4e421cd2"
+          ]
+        },
+        "apps/mobile/app/(internal)/(standard)/activity-import.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "dae27c77d2fc221e993b"
+          ]
+        },
+        "apps/mobile/app/(internal)/(standard)/activity-plans-list.tsx": {
+          "count": 4,
+          "fingerprints": [
+            "04c4fa3711184a3ef5a1",
+            "0cda9c1144e7c1697026",
+            "b724951adad1da128920",
+            "bb9e391814bc69241fea"
+          ]
+        },
+        "apps/mobile/app/(internal)/(standard)/calendar-day.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "cd72b91d73e62f7e2c43"
+          ]
+        },
+        "apps/mobile/app/(internal)/(standard)/create-activity-plan-repeat.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "043f49c865980f16312d"
+          ]
+        },
+        "apps/mobile/app/(internal)/(standard)/create-activity-plan-structure.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "6622e15c613ac6771a82"
+          ]
+        },
+        "apps/mobile/app/(internal)/(standard)/event-detail.tsx": {
+          "count": 6,
+          "fingerprints": [
+            "6243442decfb42ced2ea",
+            "66c9abcc5bdca294fd53",
+            "9382da65d5743d60db63",
+            "c5d0ba7f99b650eee75b",
+            "ce32bee5d68d8fe3ffcf",
+            "fdd1c39b12002d9c6b57"
+          ]
+        },
+        "apps/mobile/app/(internal)/(standard)/followers.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "aafd9041119270c355ce"
+          ]
+        },
+        "apps/mobile/app/(internal)/(standard)/following.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "3cc8da2afdc3843c5d53"
+          ]
+        },
+        "apps/mobile/app/(internal)/(standard)/group-requests.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "226b468f8c1da5b9142d"
+          ]
+        },
+        "apps/mobile/app/(internal)/(standard)/messages/[id].tsx": {
+          "count": 1,
+          "fingerprints": [
+            "07ebc0f1e012656f3688"
+          ]
+        },
+        "apps/mobile/app/(internal)/(standard)/messages/index.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "80c69a572378ad4ccc15"
+          ]
+        },
+        "apps/mobile/app/(internal)/(standard)/messages/new.tsx": {
+          "count": 2,
+          "fingerprints": [
+            "4987d5415b60973644dc",
+            "c83be995eed4d6cf2242"
+          ]
+        },
+        "apps/mobile/app/(internal)/(standard)/routes-list.tsx": {
+          "count": 2,
+          "fingerprints": [
+            "5963f20e50cd2bf54b28",
+            "fdbefc858ad7d0804014"
+          ]
+        },
+        "apps/mobile/app/(internal)/(standard)/scheduled-activities-list.tsx": {
+          "count": 2,
+          "fingerprints": [
+            "2d0c9b52a497d64db377",
+            "e2c4398d5d25b28fd00f"
+          ]
+        },
+        "apps/mobile/app/(internal)/(standard)/training-plan-detail.tsx": {
+          "count": 7,
+          "fingerprints": [
+            "4cb3cc3b34d03dba2f92",
+            "6755dc5f1bc768073be7",
+            "69dec203103f930325ee",
+            "736f59166f69c5681223",
+            "a3d65acdd59d3e52fdfa",
+            "e09fb01d771e3bf240d2",
+            "e39ddcac13a4f3aa022b"
+          ]
+        },
+        "apps/mobile/app/(internal)/(standard)/training-plans-list.tsx": {
+          "count": 3,
+          "fingerprints": [
+            "2f1c907bc185f5f8a363",
+            "c9df46180a7b4cae049f",
+            "f92aed1e67674cd7885b"
+          ]
+        },
+        "apps/mobile/app/(internal)/(standard)/user/[userId].tsx": {
+          "count": 7,
+          "fingerprints": [
+            "223d246d982bedee9ce9",
+            "2992f0d7d8b53f59d26c",
+            "2b33a41e60c5384f16d2",
+            "2c9514db13adfe980337",
+            "3db498d2cd4f43a301f6",
+            "a8659a3221716c70f582",
+            "db6d5930807c55d6259d"
+          ]
+        },
+        "apps/mobile/app/(internal)/(tabs)/_layout.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "01ecc77a3283cbafb134"
+          ]
+        },
+        "apps/mobile/app/(internal)/(tabs)/profile.tsx": {
+          "count": 8,
+          "fingerprints": [
+            "0e6013fcd31a15b4cc6b",
+            "3c30c97c058f98ce156e",
+            "62ad908588a25ae8a4f3",
+            "667b0add3bdc7464630b",
+            "799d62f6ade9fb5c0f8a",
+            "841222941badc32e864a",
+            "ba3681d0ccd99f9b05b6",
+            "d8729ccb194402727987"
+          ]
+        },
+        "apps/mobile/app/(internal)/record/submit.tsx": {
+          "count": 2,
+          "fingerprints": [
+            "35215e3d03427c728a35",
+            "db2fa15a5687641dfe99"
+          ]
+        },
+        "apps/mobile/components/ActivityListModal.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "f7b81b5d2a008de40b53"
+          ]
+        },
+        "apps/mobile/components/ScheduleActivityModal.tsx": {
+          "count": 2,
+          "fingerprints": [
+            "bb02beb0fb0a6dd181ba",
+            "e08acf4daccaf50573f9"
+          ]
+        },
+        "apps/mobile/components/activity-plan/ActivityPlanComposerScreen.tsx": {
+          "count": 2,
+          "fingerprints": [
+            "af3a25db4d9e0ef2d7ef",
+            "f1699c7bc7c4e56ece8c"
+          ]
+        },
+        "apps/mobile/components/activity-plan/ActivityPlanDetailScreen.tsx": {
+          "count": 2,
+          "fingerprints": [
+            "7bb02a0d81fbdd30ae36",
+            "86a6bb01cb532d484557"
+          ]
+        },
+        "apps/mobile/components/activity-plan/useActivityPlanSchedulingActions.ts": {
+          "count": 1,
+          "fingerprints": [
+            "54ad2904c349f7842d31"
+          ]
+        },
+        "apps/mobile/components/activity-plan/workout/ActivityCategorySelector.tsx": {
+          "count": 2,
+          "fingerprints": [
+            "20cec3dae4c9e90b403b",
+            "93b8c480e5455ce3566b"
+          ]
+        },
+        "apps/mobile/components/activity/shared/ActivityHeader.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "67aa058375d27296d191"
+          ]
+        },
+        "apps/mobile/components/calendar/AgendaCards.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "9f51456854a172a4f72f"
+          ]
+        },
+        "apps/mobile/components/event/create/CreateEventFlow.tsx": {
+          "count": 2,
+          "fingerprints": [
+            "619654de11f63f6d5883",
+            "83ff48b5457258a0fc54"
+          ]
+        },
+        "apps/mobile/components/event/create/CreateEventMainStep.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "2a9c53492701ce79bd9e"
+          ]
+        },
+        "apps/mobile/components/feed/FeedList.tsx": {
+          "count": 4,
+          "fingerprints": [
+            "89d6018310ecb66ba2b0",
+            "d703233f40e07eda6862",
+            "dfefe03e5def90e77fd0",
+            "e1ee51b30e20d65f14f4"
+          ]
+        },
+        "apps/mobile/components/groups/GroupRows.tsx": {
+          "count": 3,
+          "fingerprints": [
+            "26b755d8bc1e80c3ade9",
+            "6f433e993f5fc6a19720",
+            "756378cb45889c3286c1"
+          ]
+        },
+        "apps/mobile/components/plan/calendar/ActivityList.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "935353b57cb79c1b129e"
+          ]
+        },
+        "apps/mobile/components/plan/calendar/StepEditSheet.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "f28477f666ca96f27e67"
+          ]
+        },
+        "apps/mobile/components/routes/RouteSelector.tsx": {
+          "count": 2,
+          "fingerprints": [
+            "c99378954525630f572f",
+            "e07926e1663445538d32"
+          ]
+        },
+        "apps/mobile/components/shared/EntityOwnerRow.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "bab401ad4557833c0e73"
+          ]
+        },
+        "apps/mobile/components/training-plan/TrainingPlanListItem.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "f585cfda2bacefae7565"
+          ]
+        },
+        "apps/mobile/components/training-plan/UpcomingActivitiesCard.tsx": {
+          "count": 2,
+          "fingerprints": [
+            "58f967f866ae63d6e4a7",
+            "b08e73a9f6b3be7d1216"
+          ]
+        },
+        "apps/mobile/components/training-plan/useTrainingPlanHeaderSocialActions.ts": {
+          "count": 1,
+          "fingerprints": [
+            "cbf9b55f981db9934288"
+          ]
+        },
+        "apps/mobile/components/training-plan/useTrainingPlanTemplateSchedulingController.ts": {
+          "count": 4,
+          "fingerprints": [
+            "1cd9d7662d86fc87a119",
+            "45efc01a6a53cd2d3057",
+            "92b6a4556b1c57ddca59",
+            "c48ed61baa6b0ae8457a"
+          ]
+        },
+        "apps/mobile/lib/auth/client.ts": {
+          "count": 2,
+          "fingerprints": [
+            "9c9eaf81b6e8f5e5a005",
+            "cc36d5ca76be19ffe0fa"
+          ]
+        },
+        "apps/mobile/lib/calendar/useCalendarScreenController.ts": {
+          "count": 2,
+          "fingerprints": [
+            "147f181d93e3db5fb439",
+            "de124c2ca89e0808f302"
+          ]
+        },
+        "apps/mobile/lib/hooks/forms/useActivityPlanForm.ts": {
+          "count": 2,
+          "fingerprints": [
+            "87c355da4152538afed0",
+            "f4d9a3d9de3f58f83ee0"
+          ]
+        },
+        "apps/mobile/lib/hooks/useHomeData.ts": {
+          "count": 1,
+          "fingerprints": [
+            "c5afef4991b8385b983c"
+          ]
+        },
+        "apps/mobile/lib/hooks/useSmartSuggestions.ts": {
+          "count": 1,
+          "fingerprints": [
+            "a68d034d9f4c6fa7d708"
+          ]
+        },
+        "apps/mobile/lib/providers/QueryProvider.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "f0337afc9c5bf620d5c7"
+          ]
+        },
+        "apps/mobile/lib/recording/useRecordScreenController.ts": {
+          "count": 1,
+          "fingerprints": [
+            "a7db6cc5b50b5db6c0f4"
+          ]
+        },
+        "apps/mobile/lib/utils/durationConversion.ts": {
+          "count": 1,
+          "fingerprints": [
+            "0b4205233fe6a985fc3a"
+          ]
+        },
+        "apps/mobile/lib/utils/formErrors.ts": {
+          "count": 1,
+          "fingerprints": [
+            "067148a9b6f2066c6c6f"
+          ]
+        },
+        "packages/api/src/infrastructure/repositories/drizzle-event-read-repository.ts": {
+          "count": 1,
+          "fingerprints": [
+            "951c70a9627a1abc854a"
+          ]
+        },
+        "packages/api/src/lib/integrations/wahoo/sync-service.ts": {
+          "count": 8,
+          "fingerprints": [
+            "0ceab97f9d12282c3d45",
+            "5bc63506b8723971c4f4",
+            "6e7ecfcb7bd36b2f3983",
+            "78c45c5a0aceaed64c44",
+            "955556ff7fbb77bb20e1",
+            "bf00efe30eeabe681f91",
+            "e56a2635227f459c96d9",
+            "f0533c9b10a7f5d34864"
+          ]
+        },
+        "packages/api/src/routers/events.ts": {
+          "count": 1,
+          "fingerprints": [
+            "9453d88299f6305d28ad"
+          ]
+        },
+        "packages/api/src/routers/goals.ts": {
+          "count": 2,
+          "fingerprints": [
+            "d6a5ed112b86bf31993f",
+            "e9bfba74ed41f43d0067"
+          ]
+        },
+        "packages/api/src/routers/home.ts": {
+          "count": 8,
+          "fingerprints": [
+            "1c8992378fc4a013fa2e",
+            "6ef4083d53ee65def40e",
+            "6ff020997e098de1d109",
+            "809eaf6795f8517b8c57",
+            "8e533afe913f9be1a6f2",
+            "b734d34f5a30e1a452d8",
+            "e96f560da633aa9b4cff",
+            "edb0a7f4e2195b705aaf"
+          ]
+        },
+        "packages/api/src/routers/planning/training-plans/base.ts": {
+          "count": 30,
+          "fingerprints": [
+            "00da1614a161ebd0d5fe",
+            "018d8183d634a6d3d922",
+            "0cedbe37dc04a4d53904",
+            "0fc27f1431ce43680546",
+            "1154df52f73a1f12da08",
+            "19bbdca499f03b5e898a",
+            "1a9d8c6ac1c44be0953d",
+            "290ff8dcf365ce89e536",
+            "30a2fe43935c0cd09791",
+            "32c9eaf98a6e841f9f95",
+            "4f96fb920525a64c39f8",
+            "51e7d55aafeaa15613a5",
+            "59915ab269b62d8dcfd4",
+            "7522f4594ca0c7e5d117",
+            "7a77312a8e4c4468531f",
+            "81246378f980dfe86fa4",
+            "8ce2b330623b59b12fd6",
+            "95ebb19fb1760db7c279",
+            "b1b9d3605785abf79fd0",
+            "b6b26e3069fd05665b8a",
+            "ba0f1f6d8c5d04495563",
+            "bc0e0219a7e6f7242111",
+            "cb8f66c67e1445b24c1b",
+            "d82c25f35e824c4a1dcf",
+            "d93baa625c264fc94546",
+            "da878d10660fedcc1db3",
+            "e5f71b187b13d02bf0f2",
+            "e911df5c1c97c89c8b72",
+            "ea743936f43792e65159",
+            "f65b4e84c8667c3df6c3"
+          ]
+        },
+        "packages/api/src/routers/trends.ts": {
+          "count": 1,
+          "fingerprints": [
+            "e53497956423d31ab6e3"
+          ]
+        },
+        "packages/api/src/storage-service.ts": {
+          "count": 1,
+          "fingerprints": [
+            "991553ead316ab23e988"
+          ]
+        },
+        "packages/api/src/utils/estimation-helpers.ts": {
+          "count": 2,
+          "fingerprints": [
+            "4abbb7d4d2112d2253ad",
+            "9a48da2eead21ed97d29"
+          ]
+        },
+        "packages/auth/src/runtime/server.ts": {
+          "count": 1,
+          "fingerprints": [
+            "d8434f5b7b408c3d7fda"
+          ]
+        },
+        "packages/core/lib/fit-sdk-parser.ts": {
+          "count": 1,
+          "fingerprints": [
+            "5cac80bc13c23b9292a4"
+          ]
+        },
+        "packages/core/utils/date-grouping.ts": {
+          "count": 1,
+          "fingerprints": [
+            "1afdac26cbe67c0ee63a"
+          ]
+        }
+      }
+    },
+    "unsafe-double-cast": {
+      "owners": {
+        "api": {
+          "count": 10,
+          "fingerprints": [
+            "0e2797d7c494d90c65b6",
+            "2f4d98e993cfce0e20a1",
+            "47506c5ba854b8991326",
+            "61c027fb7f15b026a89e",
+            "67b56e9bb659074de17a",
+            "84f4f75cd3577ef518df",
+            "aab9b8438d5656bba8c6",
+            "b1a6d2f978fa9baab316",
+            "bb310136c71beefec4f4",
+            "d2251f93ef1fdd8f9e0e"
+          ]
+        },
+        "auth": {
+          "count": 1,
+          "fingerprints": [
+            "a97facff74515277b92d"
+          ]
+        },
+        "mobile": {
+          "count": 7,
+          "fingerprints": [
+            "17c5d3626714f9fe1719",
+            "1f79b6eb6d560c8e4b0b",
+            "391659876b374f390d25",
+            "6a339ed445f7157f8f93",
+            "74a8a34e7f34d5393873",
+            "c706e5fa897e4085e697",
+            "e03d3fb39c9fac87f229"
+          ]
+        },
+        "ui": {
+          "count": 1,
+          "fingerprints": [
+            "4984dd76731dbec68ca6"
+          ]
+        },
+        "web": {
+          "count": 1,
+          "fingerprints": [
+            "b2010b19ab0846b85db0"
+          ]
+        }
+      },
+      "files": {
+        "apps/mobile/components/event/create/CreateEventFlow.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "c706e5fa897e4085e697"
+          ]
+        },
+        "apps/mobile/components/groups/GroupEventDetail.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "1f79b6eb6d560c8e4b0b"
+          ]
+        },
+        "apps/mobile/components/plan/training-path/TrainingPathChart.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "6a339ed445f7157f8f93"
+          ]
+        },
+        "apps/mobile/components/recording/cockpit/RouteElevationBackdrop.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "74a8a34e7f34d5393873"
+          ]
+        },
+        "apps/mobile/lib/services/ActivityRecorder/index.ts": {
+          "count": 2,
+          "fingerprints": [
+            "17c5d3626714f9fe1719",
+            "391659876b374f390d25"
+          ]
+        },
+        "apps/mobile/lib/services/ActivityRecorder/location.ts": {
+          "count": 1,
+          "fingerprints": [
+            "e03d3fb39c9fac87f229"
+          ]
+        },
+        "apps/web/src/routes/_protected/activity-efforts/index.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "b2010b19ab0846b85db0"
+          ]
+        },
+        "packages/api/src/application/activities/activity-reads.ts": {
+          "count": 1,
+          "fingerprints": [
+            "bb310136c71beefec4f4"
+          ]
+        },
+        "packages/api/src/application/events/deleteEventUseCase.ts": {
+          "count": 1,
+          "fingerprints": [
+            "2f4d98e993cfce0e20a1"
+          ]
+        },
+        "packages/api/src/application/events/updateEventUseCase.ts": {
+          "count": 3,
+          "fingerprints": [
+            "47506c5ba854b8991326",
+            "61c027fb7f15b026a89e",
+            "aab9b8438d5656bba8c6"
+          ]
+        },
+        "packages/api/src/application/home/plannedActivities.ts": {
+          "count": 1,
+          "fingerprints": [
+            "b1a6d2f978fa9baab316"
+          ]
+        },
+        "packages/api/src/application/training-plan/applyTemplateUseCase.ts": {
+          "count": 1,
+          "fingerprints": [
+            "67b56e9bb659074de17a"
+          ]
+        },
+        "packages/api/src/routers/events.ts": {
+          "count": 1,
+          "fingerprints": [
+            "0e2797d7c494d90c65b6"
+          ]
+        },
+        "packages/api/src/routers/home.ts": {
+          "count": 1,
+          "fingerprints": [
+            "84f4f75cd3577ef518df"
+          ]
+        },
+        "packages/api/src/routers/planning/training-plans/base.ts": {
+          "count": 1,
+          "fingerprints": [
+            "d2251f93ef1fdd8f9e0e"
+          ]
+        },
+        "packages/auth/src/client/expo.ts": {
+          "count": 1,
+          "fingerprints": [
+            "a97facff74515277b92d"
+          ]
+        },
+        "packages/ui/src/hooks/use-zod-form.ts": {
+          "count": 1,
+          "fingerprints": [
+            "4984dd76731dbec68ca6"
+          ]
+        }
+      }
+    },
+    "unsafe-explicit-any": {
+      "owners": {
+        "api": {
+          "count": 116,
+          "fingerprints": [
+            "002d4ca354d323142ec6",
+            "00f1c0576f3a256b1732",
+            "02c76dedebe202518c65",
+            "0416c62fbd507a27056d",
+            "0ab1741e63a3c1dbf8ed",
+            "0cedba03e150ab9c110a",
+            "0cf5cacaf0630f2bb15a",
+            "1a77e89edf5ace9da3b6",
+            "1d807b45bbe7dbaffabd",
+            "1fd4d9b8c1e3de842529",
+            "21b7786c9267dd5eaa7a",
+            "22334f61c71ee7c50f84",
+            "2306a83b659ebd8f51d7",
+            "243d782b79506e43a9de",
+            "24ae57043962219d03c5",
+            "272ad2378a8caa777987",
+            "2dc2f799f2cf95772776",
+            "37a97a09d7a9021c50cd",
+            "3898b9328d0a0905fac7",
+            "39dec13c6a994b249837",
+            "3da3a87e78bc871b67ce",
+            "3df24eeaaa9a9f9e5f13",
+            "3ff6c5eb9f78b3444d8a",
+            "41740ff9d7d1a1960807",
+            "419356654c02b84e966a",
+            "4376eaba55c2d540bf3e",
+            "452ad61f3eb4bbefcf56",
+            "4bc45e77c48aec99cfe7",
+            "4f1837e582f0eb285b3e",
+            "50d82fcee2f3cc0f32ea",
+            "518062a495c4decf51ab",
+            "5235b75606f9f30fc57c",
+            "588014f254119602ee52",
+            "5ded254fd87af7bc37b2",
+            "6190dc189adcdc7f326e",
+            "61b9bbf82c345e016d03",
+            "690106bc77d44aa33a37",
+            "696646e035e054e5f4a6",
+            "6a967bc1bcb6e713bffd",
+            "6c5b071dd8e144b692ab",
+            "6c5f5e370aef48b92326",
+            "6c83a1399023483961d8",
+            "6e16b6a4ed1ec686e0de",
+            "6fe7ab9473b2a6ddcd92",
+            "70f1c3f731b6ed37f991",
+            "7161fe2d610da9096082",
+            "71ff82598a56b7bd7550",
+            "72bc72cdceae07dab6a6",
+            "7635a26427ae1d0f1d24",
+            "7b1d3f53cc2b275cc4c1",
+            "7b9fa14126a11d7e2af7",
+            "7bba66b4356b325f1e78",
+            "7bc2a5b0a73d5abb2b9e",
+            "81b4596bf5662db0eb7b",
+            "828e8d8bc9bf9f6b395c",
+            "84212bd559d263a38712",
+            "845bff573cb8079e3f6f",
+            "85fe4a36a980bf4002f2",
+            "868b062a85bf80303dea",
+            "89fe4e5840c642e820a0",
+            "8ab6ee70aae6a4d9e8b6",
+            "8c069ba9f27dc89709c3",
+            "8c63e8cccf3cb7a1208e",
+            "8d5a7e1067bd47fed715",
+            "8f6de81fb5961cd374eb",
+            "908a1403ae39f0557862",
+            "93499a866e6efc7f2027",
+            "99cf96afc7a67c769eb3",
+            "9afd4333918a798be8dd",
+            "9bc6e8c20211d4019bb1",
+            "9bdd19f1847048ee7981",
+            "9d3beb621177767dc35d",
+            "9fab870a23ff6fdaafc2",
+            "a009022f350fce14a10a",
+            "a0aed4b5a8406dd27c72",
+            "a34be717ab61caba31cd",
+            "a5a37e194d11939ef86d",
+            "a78c15ca5db7d9c83ec8",
+            "a9877554b743392e6ab2",
+            "a996296c8a413419fad6",
+            "ab905c40a4d6fe256bb0",
+            "b26d0044ce885de17a2c",
+            "ba2d8c8d2eb38c65d898",
+            "bd22fd62302a4e478176",
+            "c0df0134cdbe6462de2b",
+            "c18ded087637bedd0c6b",
+            "c2380667147a22372c61",
+            "c4b02f06dfc51393a914",
+            "c5733a8fd972ae9dd50d",
+            "c651c78099255f12718a",
+            "c6750a58083aefd760fb",
+            "ca1d5e81d1a20aa51eff",
+            "cada57312dc4175b80e1",
+            "ccc1ba0c8888f2bd3538",
+            "cd9bcca85c822aec51d3",
+            "cf8d6cc9458c23dbd7a2",
+            "d08ba4ac28f9ffcf09f3",
+            "d0bd47a69d0f05d2636c",
+            "d62afcdf50dfe42c72a8",
+            "d8e32e53701961717525",
+            "dae731f3cd227bb6ba32",
+            "db5b30fb604595b8a9c4",
+            "dc0e0e5296f38ecdecba",
+            "e0796c3cebd42320d096",
+            "e243d0afb9c9dd1ea792",
+            "e615156e24f3171ff252",
+            "e706fcbf489f253b372b",
+            "e79254af5aca2766bc0c",
+            "f2392616357aeb9af551",
+            "f3a449f40580f819cc9c",
+            "f67664ab4e5ea203c1ef",
+            "f6f3d428382d545d1b69",
+            "f718b2663763c99fbb36",
+            "f80456729f468a1518b0",
+            "f9722319d385f517a9aa",
+            "fbcd8e7bf2a0c4ab0072"
+          ]
+        },
+        "core": {
+          "count": 15,
+          "fingerprints": [
+            "0a05e467c143fcd43bfe",
+            "19e850bc07036d9ad4d1",
+            "1acbc3790079db348410",
+            "21cbe9b76d44a77f3752",
+            "2c1e9cab96839d82385b",
+            "319128c30dd269237bd0",
+            "4d4a0f295cb919991775",
+            "61d75902c3ec07c594ba",
+            "68745b2f71d921fcd215",
+            "6dc438d7f55606781c78",
+            "84ef9ef5accde461c26e",
+            "b31e8dccf4edba584a63",
+            "e0f62cdafad412ed20bb",
+            "f28bf81344146cf22dd5",
+            "f9541e437b42294477e6"
+          ]
+        },
+        "mobile": {
+          "count": 105,
+          "fingerprints": [
+            "017491cc3d9348851429",
+            "03f0f9183ae7ce50699f",
+            "05854692951def5d8e21",
+            "07cc1352736db9ee30fe",
+            "091da3ce540d92faf764",
+            "103150ac5e226ec1bc67",
+            "10aa29603c0ae22ca9d4",
+            "11053ae7444d9cf243bf",
+            "115047a2961b4ce50141",
+            "138c8635a4be5c5b8c96",
+            "15f82f2973e21868e5cc",
+            "1650c93f76ea917c59f3",
+            "168105095d902754c16d",
+            "19353664fef292cfa138",
+            "1a13340204aac90eea25",
+            "1bcb7646cee3cf749d2f",
+            "1bddc7b75074dd6d9522",
+            "1d0d234c4e636277e1f6",
+            "1d2d7a2d235d929707af",
+            "1e394044269b626cd337",
+            "22ab6f1bad0d4936f1bf",
+            "22ebf86f760586be0bed",
+            "245fdb2a8ff1383d036b",
+            "265105aae5fd41872c4d",
+            "270ba354bc7280b7a589",
+            "273c9185604356096134",
+            "294668e6e6656e7354b7",
+            "2fc30c001e4be9f8d0e5",
+            "3027e3ea5589b46976f6",
+            "30ac9735e7ad4b1c9e00",
+            "333113a75837fcd0555c",
+            "3583f224e4e2a61cd4c8",
+            "359fd6f1f723947a05fe",
+            "3628f5c54f6b724064d8",
+            "38f65bdc8dfeea59344d",
+            "3ccb23d0ea9864b11952",
+            "3d846b9f36eff8436989",
+            "3f7a99afc840e628a57b",
+            "41b67fcb1824ee245d78",
+            "43a1c474fbba94642ca8",
+            "46d66da706537cbbb32c",
+            "4acc22ebd1c3e8360618",
+            "4b9d48a16a37359ff04b",
+            "51fd04c0b8fc195517d3",
+            "530c47ba83796b49c232",
+            "5750e611134438da8ddd",
+            "5e0c47767d174495606c",
+            "67d9fde03b9a9826a709",
+            "6a00dc9cd5ba5e097965",
+            "6b0d8edca55b9f21b370",
+            "6bd208b69710228a57bd",
+            "6bdb87cc8da62938f89c",
+            "6c2c329649f8efc794c8",
+            "6c88245d3db0be1eb01f",
+            "7b6d61edb64b22fd888f",
+            "829009d55aff5c843128",
+            "848ee40958159b2fc105",
+            "8a5f690bf8b37f66069f",
+            "8bbd82d9fdb3e4651e12",
+            "8f378333f1b93a5e5308",
+            "945805fe022264b262c7",
+            "96d2ef4f62ec942e4a9e",
+            "9b237103216fb97c2fa1",
+            "9d79eb3c4c007b54b58e",
+            "a45d30a37ab6d6a05416",
+            "a4a0ea34e9605a04d62c",
+            "ab3a194368665cc34604",
+            "b000df851637476b2142",
+            "b0d7c6629f43d112263b",
+            "b216f70c5268fbb682ea",
+            "b333ff7b7e78819626d3",
+            "b3578c33adaf33a3e7d2",
+            "b62245fd894cf5325753",
+            "b7771acfcdb773147d71",
+            "b994406d9724c244eda5",
+            "bb661d6ce5954f26ddc7",
+            "c25515782e9529eb103e",
+            "c6714780da0dea6da7cc",
+            "c6ef644f222ec71eef13",
+            "c7ed6a2953846f811bcd",
+            "c8ad1b0f4c40dcf5d597",
+            "ca9bed056e06bf831a30",
+            "cba95da3bc15d8e915d4",
+            "d00b0f2a8a398fa1c68d",
+            "d472f676e63e0d0a8f91",
+            "d4a99cffb292ef22789e",
+            "d580c97b68a46be293ce",
+            "d8dc107375f691ee603e",
+            "dac503bb9c7d4bb43440",
+            "daeaeb81f2d9df7e0ae9",
+            "dbfd43b45fec1a4fca40",
+            "dc07afc97f80c4f88485",
+            "dc1af1ff9681604752cb",
+            "dfc4d2232a4b77a1d8c1",
+            "e8600d0b3003260dcf1c",
+            "e8b330ed9ceec6c41e99",
+            "eba42032fbbd90c734c2",
+            "ed2e3499809fbff1c0e4",
+            "eedba9e942218e0c4cdf",
+            "ef127b86347a22ff5e05",
+            "ef515defd2bd86f8cbee",
+            "f42423fb5f5873441956",
+            "f69bfe42e30472504b20",
+            "fa1efb387c110fba984c",
+            "fc716406c1388b026950"
+          ]
+        },
+        "ui": {
+          "count": 8,
+          "fingerprints": [
+            "1da916bdbd1fdcfd9ff5",
+            "2a13e214a00b45eb410e",
+            "4e560308e90560432267",
+            "6f0ed9d1fb7216b986b6",
+            "77bca0ea5d75ab9dcde4",
+            "9029d4b5a88a596ae551",
+            "9abdb5013506795af474",
+            "e87bb007307cb95dace0"
+          ]
+        },
+        "web": {
+          "count": 5,
+          "fingerprints": [
+            "367b7c10c98245e63ba6",
+            "6bd1b52d2c052c215c22",
+            "969e0f258889e38fa12f",
+            "9dd78bb7c7d5b45f6eaa",
+            "d15da5b679d91a57b3f0"
+          ]
+        }
+      },
+      "files": {
+        "apps/mobile/app/(internal)/(standard)/activities-list.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "4acc22ebd1c3e8360618"
+          ]
+        },
+        "apps/mobile/app/(internal)/(standard)/activities-reorder.tsx": {
+          "count": 4,
+          "fingerprints": [
+            "168105095d902754c16d",
+            "3f7a99afc840e628a57b",
+            "ab3a194368665cc34604",
+            "dfc4d2232a4b77a1d8c1"
+          ]
+        },
+        "apps/mobile/app/(internal)/(standard)/event-detail.tsx": {
+          "count": 2,
+          "fingerprints": [
+            "b333ff7b7e78819626d3",
+            "c8ad1b0f4c40dcf5d597"
+          ]
+        },
+        "apps/mobile/app/(internal)/(standard)/followers.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "6c88245d3db0be1eb01f"
+          ]
+        },
+        "apps/mobile/app/(internal)/(standard)/following.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "9b237103216fb97c2fa1"
+          ]
+        },
+        "apps/mobile/app/(internal)/(standard)/messages/new.tsx": {
+          "count": 2,
+          "fingerprints": [
+            "945805fe022264b262c7",
+            "dac503bb9c7d4bb43440"
+          ]
+        },
+        "apps/mobile/app/(internal)/(standard)/notifications/index.tsx": {
+          "count": 2,
+          "fingerprints": [
+            "c25515782e9529eb103e",
+            "dc07afc97f80c4f88485"
+          ]
+        },
+        "apps/mobile/app/(internal)/(standard)/profile-metrics-list.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "daeaeb81f2d9df7e0ae9"
+          ]
+        },
+        "apps/mobile/app/(internal)/(standard)/routes-list.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "dc1af1ff9681604752cb"
+          ]
+        },
+        "apps/mobile/app/(internal)/(standard)/training-plan-detail.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "cba95da3bc15d8e915d4"
+          ]
+        },
+        "apps/mobile/app/(internal)/(standard)/training-plans-list.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "1650c93f76ea917c59f3"
+          ]
+        },
+        "apps/mobile/app/(internal)/(tabs)/_layout.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "d4a99cffb292ef22789e"
+          ]
+        },
+        "apps/mobile/app/(internal)/record/activity.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "b3578c33adaf33a3e7d2"
+          ]
+        },
+        "apps/mobile/app/(internal)/record/sensors.tsx": {
+          "count": 2,
+          "fingerprints": [
+            "e8600d0b3003260dcf1c",
+            "f69bfe42e30472504b20"
+          ]
+        },
+        "apps/mobile/components/InlineActivitySelector.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "05854692951def5d8e21"
+          ]
+        },
+        "apps/mobile/components/QuickStartList.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "c6ef644f222ec71eef13"
+          ]
+        },
+        "apps/mobile/components/ScheduleActivityModal.tsx": {
+          "count": 2,
+          "fingerprints": [
+            "1a13340204aac90eea25",
+            "3027e3ea5589b46976f6"
+          ]
+        },
+        "apps/mobile/components/activity-plan/ActivityPlanContentPreview.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "115047a2961b4ce50141"
+          ]
+        },
+        "apps/mobile/components/activity-plan/ActivityPlanRouteSection.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "1bcb7646cee3cf749d2f"
+          ]
+        },
+        "apps/mobile/components/activity-plan/useActivityPlanComposerProcess.tsx": {
+          "count": 2,
+          "fingerprints": [
+            "6c2c329649f8efc794c8",
+            "eba42032fbbd90c734c2"
+          ]
+        },
+        "apps/mobile/components/activity-plan/useActivityPlanSchedulingActions.ts": {
+          "count": 2,
+          "fingerprints": [
+            "10aa29603c0ae22ca9d4",
+            "4b9d48a16a37359ff04b"
+          ]
+        },
+        "apps/mobile/components/activity-plan/workout/ActiveActivityMode.tsx": {
+          "count": 2,
+          "fingerprints": [
+            "11053ae7444d9cf243bf",
+            "b0d7c6629f43d112263b"
+          ]
+        },
+        "apps/mobile/components/activity-plan/workout/CurrentStepDisplay.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "a4a0ea34e9605a04d62c"
+          ]
+        },
+        "apps/mobile/components/activity-plan/workout/ProgressTrackingDisplay.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "103150ac5e226ec1bc67"
+          ]
+        },
+        "apps/mobile/components/activity/plan/ActivityPlanComparison.tsx": {
+          "count": 5,
+          "fingerprints": [
+            "333113a75837fcd0555c",
+            "b216f70c5268fbb682ea",
+            "b62245fd894cf5325753",
+            "ef515defd2bd86f8cbee",
+            "fa1efb387c110fba984c"
+          ]
+        },
+        "apps/mobile/components/activity/shared/ActivityHeader.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "dbfd43b45fec1a4fca40"
+          ]
+        },
+        "apps/mobile/components/activity/useActivityDetailStreams.ts": {
+          "count": 1,
+          "fingerprints": [
+            "091da3ce540d92faf764"
+          ]
+        },
+        "apps/mobile/components/charts/FitnessProjectionChart.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "a45d30a37ab6d6a05416"
+          ]
+        },
+        "apps/mobile/components/event/create/CreateEventFlow.tsx": {
+          "count": 3,
+          "fingerprints": [
+            "22ebf86f760586be0bed",
+            "30ac9735e7ad4b1c9e00",
+            "c7ed6a2953846f811bcd"
+          ]
+        },
+        "apps/mobile/components/home/TodaysFocusCard.tsx": {
+          "count": 5,
+          "fingerprints": [
+            "017491cc3d9348851429",
+            "273c9185604356096134",
+            "3583f224e4e2a61cd4c8",
+            "5e0c47767d174495606c",
+            "b7771acfcdb773147d71"
+          ]
+        },
+        "apps/mobile/components/plan/calendar/ActivityList.tsx": {
+          "count": 3,
+          "fingerprints": [
+            "7b6d61edb64b22fd888f",
+            "9d79eb3c4c007b54b58e",
+            "fc716406c1388b026950"
+          ]
+        },
+        "apps/mobile/components/recording/GPSStatusOverlay.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "6b0d8edca55b9f21b370"
+          ]
+        },
+        "apps/mobile/components/recording/RecordingActivityQuickEdit.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "3d846b9f36eff8436989"
+          ]
+        },
+        "apps/mobile/components/recording/cockpit/model/recordingBackdropModel.ts": {
+          "count": 1,
+          "fingerprints": [
+            "f42423fb5f5873441956"
+          ]
+        },
+        "apps/mobile/components/recording/surfaces/MetricsSurface.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "8a5f690bf8b37f66069f"
+          ]
+        },
+        "apps/mobile/components/recording/surfaces/RouteSurface.tsx": {
+          "count": 2,
+          "fingerprints": [
+            "b994406d9724c244eda5",
+            "ca9bed056e06bf831a30"
+          ]
+        },
+        "apps/mobile/components/recording/surfaces/TrainerSurface.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "96d2ef4f62ec942e4a9e"
+          ]
+        },
+        "apps/mobile/components/recording/surfaces/WorkoutSurface.tsx": {
+          "count": 3,
+          "fingerprints": [
+            "07cc1352736db9ee30fe",
+            "265105aae5fd41872c4d",
+            "2fc30c001e4be9f8d0e5"
+          ]
+        },
+        "apps/mobile/components/shared/CompactInsightCard.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "8bbd82d9fdb3e4651e12"
+          ]
+        },
+        "apps/mobile/components/training-plan/CurrentStatusCard.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "530c47ba83796b49c232"
+          ]
+        },
+        "apps/mobile/components/training-plan/TrainingPlanDetailHeaderActionsSection.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "46d66da706537cbbb32c"
+          ]
+        },
+        "apps/mobile/components/training-plan/WeeklyProgressCard.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "e8b330ed9ceec6c41e99"
+          ]
+        },
+        "apps/mobile/components/training-plan/create/SinglePageForm.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "270ba354bc7280b7a589"
+          ]
+        },
+        "apps/mobile/components/training-plan/create/TrainingPlanMetadataSection.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "848ee40958159b2fc105"
+          ]
+        },
+        "apps/mobile/components/training-plan/create/steps/CurrentFitnessStep.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "03f0f9183ae7ce50699f"
+          ]
+        },
+        "apps/mobile/components/training-plan/forms/MesocycleBuilderForm.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "294668e6e6656e7354b7"
+          ]
+        },
+        "apps/mobile/components/training-plan/useTrainingPlanHeaderSocialActions.ts": {
+          "count": 2,
+          "fingerprints": [
+            "43a1c474fbba94642ca8",
+            "ed2e3499809fbff1c0e4"
+          ]
+        },
+        "apps/mobile/components/training-plan/useTrainingPlanTemplateSchedulingController.ts": {
+          "count": 2,
+          "fingerprints": [
+            "1d0d234c4e636277e1f6",
+            "1d2d7a2d235d929707af"
+          ]
+        },
+        "apps/mobile/lib/constants/routes.ts": {
+          "count": 1,
+          "fingerprints": [
+            "3628f5c54f6b724064d8"
+          ]
+        },
+        "apps/mobile/lib/hooks/forms/useActivityPlanForm.ts": {
+          "count": 2,
+          "fingerprints": [
+            "138c8635a4be5c5b8c96",
+            "67d9fde03b9a9826a709"
+          ]
+        },
+        "apps/mobile/lib/hooks/useActivityFileStreams.ts": {
+          "count": 1,
+          "fingerprints": [
+            "829009d55aff5c843128"
+          ]
+        },
+        "apps/mobile/lib/hooks/useActivityStreams.ts": {
+          "count": 1,
+          "fingerprints": [
+            "eedba9e942218e0c4cdf"
+          ]
+        },
+        "apps/mobile/lib/hooks/useEntityCommentsController.ts": {
+          "count": 2,
+          "fingerprints": [
+            "6a00dc9cd5ba5e097965",
+            "d472f676e63e0d0a8f91"
+          ]
+        },
+        "apps/mobile/lib/hooks/useSmartSuggestions.ts": {
+          "count": 4,
+          "fingerprints": [
+            "3ccb23d0ea9864b11952",
+            "41b67fcb1824ee245d78",
+            "c6714780da0dea6da7cc",
+            "d580c97b68a46be293ce"
+          ]
+        },
+        "apps/mobile/lib/services/ActivityRecorder/LiveMetricsManager.ts": {
+          "count": 3,
+          "fingerprints": [
+            "6bd208b69710228a57bd",
+            "b000df851637476b2142",
+            "bb661d6ce5954f26ddc7"
+          ]
+        },
+        "apps/mobile/lib/services/ActivityRecorder/SimplifiedMetrics.ts": {
+          "count": 1,
+          "fingerprints": [
+            "ef127b86347a22ff5e05"
+          ]
+        },
+        "apps/mobile/lib/services/ActivityRecorder/index.ts": {
+          "count": 2,
+          "fingerprints": [
+            "15f82f2973e21868e5cc",
+            "1e394044269b626cd337"
+          ]
+        },
+        "apps/mobile/lib/services/ActivityRecorder/location.ts": {
+          "count": 1,
+          "fingerprints": [
+            "5750e611134438da8ddd"
+          ]
+        },
+        "apps/mobile/lib/services/ActivityRecorder/sensors.ts": {
+          "count": 1,
+          "fingerprints": [
+            "359fd6f1f723947a05fe"
+          ]
+        },
+        "apps/mobile/lib/services/ActivityRecorder/types.ts": {
+          "count": 3,
+          "fingerprints": [
+            "19353664fef292cfa138",
+            "8f378333f1b93a5e5308",
+            "d00b0f2a8a398fa1c68d"
+          ]
+        },
+        "apps/mobile/lib/services/fit/GarminFitEncoder.ts": {
+          "count": 4,
+          "fingerprints": [
+            "1bddc7b75074dd6d9522",
+            "245fdb2a8ff1383d036b",
+            "6bdb87cc8da62938f89c",
+            "d8dc107375f691ee603e"
+          ]
+        },
+        "apps/mobile/lib/services/sentry.ts": {
+          "count": 2,
+          "fingerprints": [
+            "22ab6f1bad0d4936f1bf",
+            "38f65bdc8dfeea59344d"
+          ]
+        },
+        "apps/mobile/lib/training-plan-creation/backend-planning/preview-normalization.ts": {
+          "count": 1,
+          "fingerprints": [
+            "51fd04c0b8fc195517d3"
+          ]
+        },
+        "apps/web/src/components/protected/activity-route-primitives.tsx": {
+          "count": 3,
+          "fingerprints": [
+            "367b7c10c98245e63ba6",
+            "9dd78bb7c7d5b45f6eaa",
+            "d15da5b679d91a57b3f0"
+          ]
+        },
+        "apps/web/src/routes/_protected/activities/$activityId/index.tsx": {
+          "count": 2,
+          "fingerprints": [
+            "6bd1b52d2c052c215c22",
+            "969e0f258889e38fa12f"
+          ]
+        },
+        "packages/api/src/application/training-plan/scheduleGapActivityPlanMatches.ts": {
+          "count": 3,
+          "fingerprints": [
+            "02c76dedebe202518c65",
+            "22334f61c71ee7c50f84",
+            "c18ded087637bedd0c6b"
+          ]
+        },
+        "packages/api/src/application/training-plan/upcomingActivityImpact.ts": {
+          "count": 1,
+          "fingerprints": [
+            "7b9fa14126a11d7e2af7"
+          ]
+        },
+        "packages/api/src/infrastructure/repositories/drizzle-event-completion-repository.ts": {
+          "count": 1,
+          "fingerprints": [
+            "7635a26427ae1d0f1d24"
+          ]
+        },
+        "packages/api/src/infrastructure/repositories/drizzle-event-read-repository.ts": {
+          "count": 3,
+          "fingerprints": [
+            "0cf5cacaf0630f2bb15a",
+            "9d3beb621177767dc35d",
+            "d0bd47a69d0f05d2636c"
+          ]
+        },
+        "packages/api/src/infrastructure/repositories/drizzle-event-write-repository.ts": {
+          "count": 1,
+          "fingerprints": [
+            "bd22fd62302a4e478176"
+          ]
+        },
+        "packages/api/src/infrastructure/repositories/drizzle-training-plan-repository.ts": {
+          "count": 4,
+          "fingerprints": [
+            "3df24eeaaa9a9f9e5f13",
+            "419356654c02b84e966a",
+            "c6750a58083aefd760fb",
+            "cf8d6cc9458c23dbd7a2"
+          ]
+        },
+        "packages/api/src/lib/integrations/wahoo/client.ts": {
+          "count": 4,
+          "fingerprints": [
+            "1d807b45bbe7dbaffabd",
+            "518062a495c4decf51ab",
+            "845bff573cb8079e3f6f",
+            "f2392616357aeb9af551"
+          ]
+        },
+        "packages/api/src/lib/integrations/wahoo/sync-service.ts": {
+          "count": 10,
+          "fingerprints": [
+            "1fd4d9b8c1e3de842529",
+            "24ae57043962219d03c5",
+            "272ad2378a8caa777987",
+            "37a97a09d7a9021c50cd",
+            "8c63e8cccf3cb7a1208e",
+            "a0aed4b5a8406dd27c72",
+            "cd9bcca85c822aec51d3",
+            "d8e32e53701961717525",
+            "e243d0afb9c9dd1ea792",
+            "fbcd8e7bf2a0c4ab0072"
+          ]
+        },
+        "packages/api/src/routers/events.ts": {
+          "count": 8,
+          "fingerprints": [
+            "0cedba03e150ab9c110a",
+            "5235b75606f9f30fc57c",
+            "690106bc77d44aa33a37",
+            "8d5a7e1067bd47fed715",
+            "93499a866e6efc7f2027",
+            "9bc6e8c20211d4019bb1",
+            "a5a37e194d11939ef86d",
+            "cada57312dc4175b80e1"
+          ]
+        },
+        "packages/api/src/routers/home.ts": {
+          "count": 3,
+          "fingerprints": [
+            "0ab1741e63a3c1dbf8ed",
+            "7161fe2d610da9096082",
+            "f6f3d428382d545d1b69"
+          ]
+        },
+        "packages/api/src/routers/planning/training-plans/base.ts": {
+          "count": 68,
+          "fingerprints": [
+            "002d4ca354d323142ec6",
+            "00f1c0576f3a256b1732",
+            "1a77e89edf5ace9da3b6",
+            "21b7786c9267dd5eaa7a",
+            "2306a83b659ebd8f51d7",
+            "243d782b79506e43a9de",
+            "2dc2f799f2cf95772776",
+            "3898b9328d0a0905fac7",
+            "39dec13c6a994b249837",
+            "3da3a87e78bc871b67ce",
+            "3ff6c5eb9f78b3444d8a",
+            "41740ff9d7d1a1960807",
+            "4376eaba55c2d540bf3e",
+            "452ad61f3eb4bbefcf56",
+            "4bc45e77c48aec99cfe7",
+            "4f1837e582f0eb285b3e",
+            "50d82fcee2f3cc0f32ea",
+            "588014f254119602ee52",
+            "5ded254fd87af7bc37b2",
+            "696646e035e054e5f4a6",
+            "6a967bc1bcb6e713bffd",
+            "6c5b071dd8e144b692ab",
+            "6c5f5e370aef48b92326",
+            "6c83a1399023483961d8",
+            "6e16b6a4ed1ec686e0de",
+            "6fe7ab9473b2a6ddcd92",
+            "70f1c3f731b6ed37f991",
+            "72bc72cdceae07dab6a6",
+            "7b1d3f53cc2b275cc4c1",
+            "7bba66b4356b325f1e78",
+            "7bc2a5b0a73d5abb2b9e",
+            "81b4596bf5662db0eb7b",
+            "828e8d8bc9bf9f6b395c",
+            "85fe4a36a980bf4002f2",
+            "868b062a85bf80303dea",
+            "89fe4e5840c642e820a0",
+            "8ab6ee70aae6a4d9e8b6",
+            "908a1403ae39f0557862",
+            "99cf96afc7a67c769eb3",
+            "9afd4333918a798be8dd",
+            "9bdd19f1847048ee7981",
+            "a009022f350fce14a10a",
+            "a34be717ab61caba31cd",
+            "a78c15ca5db7d9c83ec8",
+            "a9877554b743392e6ab2",
+            "a996296c8a413419fad6",
+            "ab905c40a4d6fe256bb0",
+            "b26d0044ce885de17a2c",
+            "ba2d8c8d2eb38c65d898",
+            "c0df0134cdbe6462de2b",
+            "c2380667147a22372c61",
+            "c4b02f06dfc51393a914",
+            "c5733a8fd972ae9dd50d",
+            "c651c78099255f12718a",
+            "ca1d5e81d1a20aa51eff",
+            "ccc1ba0c8888f2bd3538",
+            "d08ba4ac28f9ffcf09f3",
+            "d62afcdf50dfe42c72a8",
+            "dae731f3cd227bb6ba32",
+            "db5b30fb604595b8a9c4",
+            "e0796c3cebd42320d096",
+            "e615156e24f3171ff252",
+            "e706fcbf489f253b372b",
+            "e79254af5aca2766bc0c",
+            "f67664ab4e5ea203c1ef",
+            "f718b2663763c99fbb36",
+            "f80456729f468a1518b0",
+            "f9722319d385f517a9aa"
+          ]
+        },
+        "packages/api/src/utils/estimation-helpers.ts": {
+          "count": 9,
+          "fingerprints": [
+            "0416c62fbd507a27056d",
+            "61b9bbf82c345e016d03",
+            "71ff82598a56b7bd7550",
+            "84212bd559d263a38712",
+            "8c069ba9f27dc89709c3",
+            "8f6de81fb5961cd374eb",
+            "9fab870a23ff6fdaafc2",
+            "dc0e0e5296f38ecdecba",
+            "f3a449f40580f819cc9c"
+          ]
+        },
+        "packages/api/src/utils/profile-identity.ts": {
+          "count": 1,
+          "fingerprints": [
+            "6190dc189adcdc7f326e"
+          ]
+        },
+        "packages/core/lib/fit-sdk-parser.ts": {
+          "count": 9,
+          "fingerprints": [
+            "0a05e467c143fcd43bfe",
+            "2c1e9cab96839d82385b",
+            "319128c30dd269237bd0",
+            "61d75902c3ec07c594ba",
+            "6dc438d7f55606781c78",
+            "84ef9ef5accde461c26e",
+            "b31e8dccf4edba584a63",
+            "e0f62cdafad412ed20bb",
+            "f28bf81344146cf22dd5"
+          ]
+        },
+        "packages/core/types/garmin-fitsdk.d.ts": {
+          "count": 4,
+          "fingerprints": [
+            "1acbc3790079db348410",
+            "21cbe9b76d44a77f3752",
+            "4d4a0f295cb919991775",
+            "f9541e437b42294477e6"
+          ]
+        },
+        "packages/core/utils/date-grouping.ts": {
+          "count": 2,
+          "fingerprints": [
+            "19e850bc07036d9ad4d1",
+            "68745b2f71d921fcd215"
+          ]
+        },
+        "packages/ui/src/components/icon/shared.ts": {
+          "count": 3,
+          "fingerprints": [
+            "1da916bdbd1fdcfd9ff5",
+            "4e560308e90560432267",
+            "9029d4b5a88a596ae551"
+          ]
+        },
+        "packages/ui/src/hooks/use-zod-form-submit.ts": {
+          "count": 1,
+          "fingerprints": [
+            "77bca0ea5d75ab9dcde4"
+          ]
+        },
+        "packages/ui/src/registry/native/icon.tsx": {
+          "count": 3,
+          "fingerprints": [
+            "2a13e214a00b45eb410e",
+            "6f0ed9d1fb7216b986b6",
+            "e87bb007307cb95dace0"
+          ]
+        },
+        "packages/ui/src/storybook/catalog.web.stories.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "9abdb5013506795af474"
+          ]
+        }
+      }
+    },
+    "unsafe-non-null-assertion": {
+      "owners": {
+        "api": {
+          "count": 39,
+          "fingerprints": [
+            "025d58665385c5b844aa",
+            "0c25f1375d1fee6d9c8b",
+            "10a8ca40cba892fea942",
+            "11bfa262541eaf0ef806",
+            "120a1ef658c9b533c506",
+            "187170ef4e6ece07afb9",
+            "19a9a6cd5579137cd6c4",
+            "266903cdf224f9b0833a",
+            "2fb1c3bcd4365e87b0ca",
+            "35e20b18968e77fdd9e6",
+            "3d8fb87de53219a703aa",
+            "48ca1f26cd6355fa8206",
+            "49ef3b9912d2e7445a5b",
+            "4d676a6cb32c0ea359b8",
+            "4d735d67ce693946415b",
+            "5077b2dd0ed425fcaa31",
+            "59e5bdcfce64b1412172",
+            "5fca09d6d97a47c7f32f",
+            "68f9fa2b4f7fa3a0b020",
+            "691f33cd9dc9b6e9b01f",
+            "6f29dca05c8dacc7ee3a",
+            "77ba1c8fc244a02c5a4e",
+            "8279f40ee5959af60cf9",
+            "83ae98cb463f7a8a98ca",
+            "83de466b9ec6a1e2401b",
+            "893c79722a1aef6ec7a1",
+            "922455e53caf7eace999",
+            "9b4edb1db599297743d4",
+            "ae9ec0f91bda3aa98ae3",
+            "be028756e07c82090852",
+            "be379ba86a4ff5792c28",
+            "d37445fa075f7fd9b25d",
+            "dc598021fe06de1b8e64",
+            "de4a38d59bd3562e3d41",
+            "e7ef55286ee00ef0910b",
+            "ea265b3d81b5cd0147e6",
+            "f3b1bab121bbc1321935",
+            "f4590c8401a87f239f67",
+            "f93767828f5fad209935"
+          ]
+        },
+        "core": {
+          "count": 61,
+          "fingerprints": [
+            "05d8ffcc2fe8c3180d29",
+            "064713380fccdb31956d",
+            "07e0938abb7242c89599",
+            "07e3b9f823c8d0c082d1",
+            "0ed5be957377da55fdc6",
+            "18af586674b13fc55590",
+            "1e1a7f66a4e63da98eb0",
+            "2b88a3aed86229acc4c3",
+            "2bd2747020abc49d188e",
+            "2e73eb440ffd284a9ef4",
+            "2eb01732cc10b37d7154",
+            "3a35ab97d69ac28b3836",
+            "3fdbfd3054f45cea7f51",
+            "41cee63ae5868e062c9b",
+            "46f4f383aac1924d0aeb",
+            "4980f8d896bdf5137d51",
+            "4c4743473a2ffbf5802d",
+            "4de28864abcfa73666eb",
+            "4fcf49bbefb164690bf0",
+            "51d4825958d53d00ed0e",
+            "55700ea068db14e7cf74",
+            "56841aeb3df3fdd1c8e2",
+            "5b5280fc114895d08d23",
+            "5d446271155f0758704c",
+            "609f2d21a1f63ab78bf3",
+            "618d326a2f4ba7b33648",
+            "65d43194d52fea004ca9",
+            "6d3aa3832189538cf86d",
+            "72444e3cd595c4dcb90c",
+            "743934ee223a88a0961c",
+            "76545a5abca39d31da99",
+            "7cede59618497686621d",
+            "802628fd3465c906c004",
+            "802dca2c81520ea5a56f",
+            "84048e3097899b26cfd7",
+            "924c170ada889f95247a",
+            "94649ee533667712293c",
+            "9517793f6b5dd836b533",
+            "964110367af687645409",
+            "9913621c1b60e7d02e6f",
+            "9a11a6785f4c97012745",
+            "9d2d313cc1f3184061e4",
+            "9e4add8a90d0515e37e6",
+            "a32b24d8f0fe18405cf9",
+            "a58fd79dcff1707f1fbe",
+            "a9392653a211eea9f1ed",
+            "ab8df2810433aa3ab5b5",
+            "ad0014f5c1a903fff36e",
+            "b05bafa2dc94e3ee5638",
+            "b0a6a8e83932774e23f0",
+            "c617b0c9905bd23d771d",
+            "d3fea9f442d2099ee652",
+            "d953726b38fc07a0c4d7",
+            "de721ebd7fa349adc0be",
+            "f66f040370190f70ea1e",
+            "f99669bd26c8ded4e3fa",
+            "fa3dc9edc52f3a634ace",
+            "fbdee5157533ef504a9c",
+            "fc3f4f146f02d144308b",
+            "fefbede1be1b6c5e6a1e",
+            "ff1aedbf2f3ca07f3ae3"
+          ]
+        },
+        "mobile": {
+          "count": 73,
+          "fingerprints": [
+            "00d4bddabd1a44cfb486",
+            "053d922413712ae60892",
+            "05e5b283462dc8abf0a9",
+            "13d4678e2eb4e3c9f6a0",
+            "164b2211e91615a6b443",
+            "1672c68dcf6f7f32bcf8",
+            "17b75bec1bbd20d768b7",
+            "1bce88e03228a0c25cff",
+            "2281b5d83ed42c3beb9e",
+            "2680fecf0d2d306ddfa8",
+            "26eddd319c25d1ccecf7",
+            "2939a29d228bca8097a7",
+            "2abb87846156ab0db636",
+            "2bda76a90cb717cc6c6e",
+            "2c99aa995a45212f9011",
+            "3611284fa7e95e796587",
+            "3cd2da6d183f78e5b604",
+            "45ea0daa3dc024684e14",
+            "466f60a76efd43fb1daa",
+            "5bf1b0071232ecf408b1",
+            "5d16c6a1b22442c483c9",
+            "5d945e28b472ff2157ff",
+            "5e17eb1899d4ccf7ca04",
+            "5f4be0acb4fbcff5d3d1",
+            "6891cab0ab215a980e77",
+            "6a801adddf35b00192e9",
+            "70510ac4cb731ba75bf6",
+            "71d39bb1a111a6e834e2",
+            "7416db9d9fb221eece8d",
+            "7594bfb8f237b8e8fb81",
+            "7615ddc07c594595c77b",
+            "76c7aa178b451b51e3bf",
+            "7ae64853466c216fd84c",
+            "7c37846d2a1758798476",
+            "802b902074f3b4e27034",
+            "9124ed77e200205fe149",
+            "94dc75694f1bb33f962c",
+            "97234b34e1b7801e35a1",
+            "97beb8b0f89ef5225bb0",
+            "9b2ed2e162ec1f5ed382",
+            "9bd1dbfce0b8bc48def0",
+            "9e75a6fd850746dfbbc9",
+            "a19ba3f91147fcc4d19e",
+            "a2b30b332350c9f6fee4",
+            "a38c4a23bf58d613fbaa",
+            "a4687502550c94214d03",
+            "a529ad3d4dbe722db555",
+            "a7343b0cedfe2354551c",
+            "a80077e3833398634457",
+            "aaee6d9bc59210c27acf",
+            "b13e513c8f02715e2f56",
+            "b5db44725b4948720a01",
+            "ba305df3de61eb513ecb",
+            "bce42c7eef046a142741",
+            "bf0a764c1c4b33bb05e6",
+            "c0fa643c3fea3dc98e80",
+            "c88de79422c9a75958f6",
+            "cb69fafc65dec972c708",
+            "cedf24df9569771a2b41",
+            "cff23aa6a1213c021e37",
+            "d1e28629d90d1911a0d2",
+            "d34b482111f678a2069f",
+            "d68c242f035437ae2794",
+            "d9a34425541faf59aa2a",
+            "deca6670bd91b2d56b27",
+            "e0591079b4c1ef3cc362",
+            "e340485d324cb2c210f0",
+            "e42f89c53374f812318c",
+            "e6f2f261aace6e6992eb",
+            "ee6cba736c179523cb9d",
+            "ee7951c7720e315614cf",
+            "f2ecef1c53a44c97294c",
+            "f44bcd84f5c50e7ffb79"
+          ]
+        },
+        "web": {
+          "count": 3,
+          "fingerprints": [
+            "5249cdcc82f97da83ed6",
+            "8146b2621989229eb0fa",
+            "ab87226fa1e06dd81e60"
+          ]
+        }
+      },
+      "files": {
+        "apps/mobile/app/(internal)/(standard)/group-members.tsx": {
+          "count": 3,
+          "fingerprints": [
+            "17b75bec1bbd20d768b7",
+            "5bf1b0071232ecf408b1",
+            "7594bfb8f237b8e8fb81"
+          ]
+        },
+        "apps/mobile/app/(internal)/(tabs)/trends.tsx": {
+          "count": 2,
+          "fingerprints": [
+            "164b2211e91615a6b443",
+            "6891cab0ab215a980e77"
+          ]
+        },
+        "apps/mobile/app/(internal)/record/route-preview.tsx": {
+          "count": 2,
+          "fingerprints": [
+            "466f60a76efd43fb1daa",
+            "ee6cba736c179523cb9d"
+          ]
+        },
+        "apps/mobile/components/ScheduleActivityModal.tsx": {
+          "count": 4,
+          "fingerprints": [
+            "45ea0daa3dc024684e14",
+            "a2b30b332350c9f6fee4",
+            "cedf24df9569771a2b41",
+            "ee7951c7720e315614cf"
+          ]
+        },
+        "apps/mobile/components/activity-plan/ActivityPlanComposerScreen.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "9e75a6fd850746dfbbc9"
+          ]
+        },
+        "apps/mobile/components/activity-plan/ActivityPlanContentPreview.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "05e5b283462dc8abf0a9"
+          ]
+        },
+        "apps/mobile/components/activity-plan/ActivityPlanDetailScreen.tsx": {
+          "count": 4,
+          "fingerprints": [
+            "2bda76a90cb717cc6c6e",
+            "a4687502550c94214d03",
+            "a80077e3833398634457",
+            "d68c242f035437ae2794"
+          ]
+        },
+        "apps/mobile/components/activity/charts/MultiMetricChart.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "a529ad3d4dbe722db555"
+          ]
+        },
+        "apps/mobile/components/event/create/CreateEventFlow.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "1672c68dcf6f7f32bcf8"
+          ]
+        },
+        "apps/mobile/components/plan/usePlanDashboardViewModel.ts": {
+          "count": 4,
+          "fingerprints": [
+            "2abb87846156ab0db636",
+            "3611284fa7e95e796587",
+            "7c37846d2a1758798476",
+            "bf0a764c1c4b33bb05e6"
+          ]
+        },
+        "apps/mobile/components/recording/VirtualRouteMap.tsx": {
+          "count": 6,
+          "fingerprints": [
+            "97beb8b0f89ef5225bb0",
+            "9b2ed2e162ec1f5ed382",
+            "9bd1dbfce0b8bc48def0",
+            "aaee6d9bc59210c27acf",
+            "cb69fafc65dec972c708",
+            "e6f2f261aace6e6992eb"
+          ]
+        },
+        "apps/mobile/components/recording/cockpit/RouteElevationBackdrop.tsx": {
+          "count": 6,
+          "fingerprints": [
+            "2680fecf0d2d306ddfa8",
+            "2c99aa995a45212f9011",
+            "5e17eb1899d4ccf7ca04",
+            "7615ddc07c594595c77b",
+            "a19ba3f91147fcc4d19e",
+            "d9a34425541faf59aa2a"
+          ]
+        },
+        "apps/mobile/components/recording/cockpit/model/recordingBackdropModel.ts": {
+          "count": 1,
+          "fingerprints": [
+            "76c7aa178b451b51e3bf"
+          ]
+        },
+        "apps/mobile/components/recording/surfaces/RouteSurface.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "deca6670bd91b2d56b27"
+          ]
+        },
+        "apps/mobile/components/routes/RouteSelector.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "c0fa643c3fea3dc98e80"
+          ]
+        },
+        "apps/mobile/components/settings/TrainingZonesSection.tsx": {
+          "count": 16,
+          "fingerprints": [
+            "053d922413712ae60892",
+            "13d4678e2eb4e3c9f6a0",
+            "2281b5d83ed42c3beb9e",
+            "26eddd319c25d1ccecf7",
+            "2939a29d228bca8097a7",
+            "71d39bb1a111a6e834e2",
+            "7416db9d9fb221eece8d",
+            "7ae64853466c216fd84c",
+            "802b902074f3b4e27034",
+            "9124ed77e200205fe149",
+            "94dc75694f1bb33f962c",
+            "b5db44725b4948720a01",
+            "c88de79422c9a75958f6",
+            "d34b482111f678a2069f",
+            "e340485d324cb2c210f0",
+            "e42f89c53374f812318c"
+          ]
+        },
+        "apps/mobile/components/shared/StaticRouteMapPreview.tsx": {
+          "count": 2,
+          "fingerprints": [
+            "3cd2da6d183f78e5b604",
+            "6a801adddf35b00192e9"
+          ]
+        },
+        "apps/mobile/components/training-plan/AdvancedConfigSheet.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "70510ac4cb731ba75bf6"
+          ]
+        },
+        "apps/mobile/components/training-plan/create/steps/SportMixStep.tsx": {
+          "count": 2,
+          "fingerprints": [
+            "97234b34e1b7801e35a1",
+            "cff23aa6a1213c021e37"
+          ]
+        },
+        "apps/mobile/components/training-plan/forms/ActivityDistributionForm.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "5d945e28b472ff2157ff"
+          ]
+        },
+        "apps/mobile/components/training-plan/useTrainingPlanTemplateSchedulingController.ts": {
+          "count": 1,
+          "fingerprints": [
+            "d1e28629d90d1911a0d2"
+          ]
+        },
+        "apps/mobile/lib/hooks/forms/useActivityPlanForm.ts": {
+          "count": 2,
+          "fingerprints": [
+            "5d16c6a1b22442c483c9",
+            "ba305df3de61eb513ecb"
+          ]
+        },
+        "apps/mobile/lib/hooks/useTrainingPlanSnapshot.ts": {
+          "count": 1,
+          "fingerprints": [
+            "bce42c7eef046a142741"
+          ]
+        },
+        "apps/mobile/lib/services/ActivityRecorder/DataBuffer.ts": {
+          "count": 1,
+          "fingerprints": [
+            "a38c4a23bf58d613fbaa"
+          ]
+        },
+        "apps/mobile/lib/services/ActivityRecorder/StreamBuffer.ts": {
+          "count": 2,
+          "fingerprints": [
+            "a7343b0cedfe2354551c",
+            "e0591079b4c1ef3cc362"
+          ]
+        },
+        "apps/mobile/lib/services/ActivityRecorder/routeController.ts": {
+          "count": 5,
+          "fingerprints": [
+            "00d4bddabd1a44cfb486",
+            "1bce88e03228a0c25cff",
+            "5f4be0acb4fbcff5d3d1",
+            "b13e513c8f02715e2f56",
+            "f2ecef1c53a44c97294c"
+          ]
+        },
+        "apps/mobile/lib/trainingPlanVisual.ts": {
+          "count": 1,
+          "fingerprints": [
+            "f44bcd84f5c50e7ffb79"
+          ]
+        },
+        "apps/web/src/routes/_protected/messages.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "ab87226fa1e06dd81e60"
+          ]
+        },
+        "apps/web/src/routes/_protected/profile-metrics/index.tsx": {
+          "count": 2,
+          "fingerprints": [
+            "5249cdcc82f97da83ed6",
+            "8146b2621989229eb0fa"
+          ]
+        },
+        "packages/api/src/application/activities/activity-reads.ts": {
+          "count": 1,
+          "fingerprints": [
+            "59e5bdcfce64b1412172"
+          ]
+        },
+        "packages/api/src/application/activity-file-ingestion/stream-derived-calculations.ts": {
+          "count": 2,
+          "fingerprints": [
+            "187170ef4e6ece07afb9",
+            "be379ba86a4ff5792c28"
+          ]
+        },
+        "packages/api/src/application/home/plannedActivities.ts": {
+          "count": 1,
+          "fingerprints": [
+            "691f33cd9dc9b6e9b01f"
+          ]
+        },
+        "packages/api/src/application/training-plan/scheduleRecommendation.ts": {
+          "count": 2,
+          "fingerprints": [
+            "6f29dca05c8dacc7ee3a",
+            "ae9ec0f91bda3aa98ae3"
+          ]
+        },
+        "packages/api/src/application/trends/consistencyMetrics.ts": {
+          "count": 4,
+          "fingerprints": [
+            "025d58665385c5b844aa",
+            "4d676a6cb32c0ea359b8",
+            "77ba1c8fc244a02c5a4e",
+            "ea265b3d81b5cd0147e6"
+          ]
+        },
+        "packages/api/src/infrastructure/repositories/drizzle-event-read-repository.ts": {
+          "count": 1,
+          "fingerprints": [
+            "f93767828f5fad209935"
+          ]
+        },
+        "packages/api/src/lib/activity-analysis/derived.ts": {
+          "count": 1,
+          "fingerprints": [
+            "9b4edb1db599297743d4"
+          ]
+        },
+        "packages/api/src/lib/integrations/wahoo/activity-importer.ts": {
+          "count": 1,
+          "fingerprints": [
+            "be028756e07c82090852"
+          ]
+        },
+        "packages/api/src/lib/integrations/wahoo/client.ts": {
+          "count": 2,
+          "fingerprints": [
+            "120a1ef658c9b533c506",
+            "dc598021fe06de1b8e64"
+          ]
+        },
+        "packages/api/src/lib/integrations/wahoo/plan-converter.ts": {
+          "count": 1,
+          "fingerprints": [
+            "83de466b9ec6a1e2401b"
+          ]
+        },
+        "packages/api/src/lib/provider-sync/imported-activity.ts": {
+          "count": 2,
+          "fingerprints": [
+            "35e20b18968e77fdd9e6",
+            "d37445fa075f7fd9b25d"
+          ]
+        },
+        "packages/api/src/routers/events.ts": {
+          "count": 1,
+          "fingerprints": [
+            "19a9a6cd5579137cd6c4"
+          ]
+        },
+        "packages/api/src/routers/home.ts": {
+          "count": 12,
+          "fingerprints": [
+            "0c25f1375d1fee6d9c8b",
+            "11bfa262541eaf0ef806",
+            "266903cdf224f9b0833a",
+            "2fb1c3bcd4365e87b0ca",
+            "48ca1f26cd6355fa8206",
+            "4d735d67ce693946415b",
+            "5fca09d6d97a47c7f32f",
+            "83ae98cb463f7a8a98ca",
+            "922455e53caf7eace999",
+            "de4a38d59bd3562e3d41",
+            "e7ef55286ee00ef0910b",
+            "f4590c8401a87f239f67"
+          ]
+        },
+        "packages/api/src/routers/onboarding.ts": {
+          "count": 2,
+          "fingerprints": [
+            "8279f40ee5959af60cf9",
+            "f3b1bab121bbc1321935"
+          ]
+        },
+        "packages/api/src/routers/planning/training-plans/base.ts": {
+          "count": 6,
+          "fingerprints": [
+            "10a8ca40cba892fea942",
+            "3d8fb87de53219a703aa",
+            "49ef3b9912d2e7445a5b",
+            "5077b2dd0ed425fcaa31",
+            "68f9fa2b4f7fa3a0b020",
+            "893c79722a1aef6ec7a1"
+          ]
+        },
+        "packages/core/activity-files/activity-file-parser.ts": {
+          "count": 4,
+          "fingerprints": [
+            "0ed5be957377da55fdc6",
+            "924c170ada889f95247a",
+            "964110367af687645409",
+            "fc3f4f146f02d144308b"
+          ]
+        },
+        "packages/core/athlete-inputs/canonical-thresholds.ts": {
+          "count": 2,
+          "fingerprints": [
+            "2bd2747020abc49d188e",
+            "65d43194d52fea004ca9"
+          ]
+        },
+        "packages/core/calculations.ts": {
+          "count": 2,
+          "fingerprints": [
+            "4c4743473a2ffbf5802d",
+            "d953726b38fc07a0c4d7"
+          ]
+        },
+        "packages/core/calculations/best-efforts.ts": {
+          "count": 7,
+          "fingerprints": [
+            "41cee63ae5868e062c9b",
+            "6d3aa3832189538cf86d",
+            "802628fd3465c906c004",
+            "802dca2c81520ea5a56f",
+            "94649ee533667712293c",
+            "a9392653a211eea9f1ed",
+            "b0a6a8e83932774e23f0"
+          ]
+        },
+        "packages/core/calculations/threshold-detection.ts": {
+          "count": 2,
+          "fingerprints": [
+            "609f2d21a1f63ab78bf3",
+            "9517793f6b5dd836b533"
+          ]
+        },
+        "packages/core/calculations/training-effect.ts": {
+          "count": 1,
+          "fingerprints": [
+            "3a35ab97d69ac28b3836"
+          ]
+        },
+        "packages/core/estimation/fatigue.ts": {
+          "count": 7,
+          "fingerprints": [
+            "07e0938abb7242c89599",
+            "18af586674b13fc55590",
+            "4de28864abcfa73666eb",
+            "4fcf49bbefb164690bf0",
+            "618d326a2f4ba7b33648",
+            "f99669bd26c8ded4e3fa",
+            "fa3dc9edc52f3a634ace"
+          ]
+        },
+        "packages/core/lib/fit-sdk-parser.ts": {
+          "count": 1,
+          "fingerprints": [
+            "a58fd79dcff1707f1fbe"
+          ]
+        },
+        "packages/core/load/progression.ts": {
+          "count": 2,
+          "fingerprints": [
+            "9a11a6785f4c97012745",
+            "a32b24d8f0fe18405cf9"
+          ]
+        },
+        "packages/core/load/replay.ts": {
+          "count": 1,
+          "fingerprints": [
+            "4980f8d896bdf5137d51"
+          ]
+        },
+        "packages/core/plan/calibration-constants.ts": {
+          "count": 8,
+          "fingerprints": [
+            "07e3b9f823c8d0c082d1",
+            "2e73eb440ffd284a9ef4",
+            "55700ea068db14e7cf74",
+            "5b5280fc114895d08d23",
+            "ad0014f5c1a903fff36e",
+            "c617b0c9905bd23d771d",
+            "d3fea9f442d2099ee652",
+            "ff1aedbf2f3ca07f3ae3"
+          ]
+        },
+        "packages/core/plan/goalAnchoredProjectionPlan.ts": {
+          "count": 3,
+          "fingerprints": [
+            "56841aeb3df3fdd1c8e2",
+            "ab8df2810433aa3ab5b5",
+            "de721ebd7fa349adc0be"
+          ]
+        },
+        "packages/core/plan/goalReadinessTrajectory.ts": {
+          "count": 1,
+          "fingerprints": [
+            "fefbede1be1b6c5e6a1e"
+          ]
+        },
+        "packages/core/plan/periodization/heuristics/mergeGoalTrajectories.ts": {
+          "count": 2,
+          "fingerprints": [
+            "9d2d313cc1f3184061e4",
+            "b05bafa2dc94e3ee5638"
+          ]
+        },
+        "packages/core/plan/projection/safety-caps.ts": {
+          "count": 1,
+          "fingerprints": [
+            "743934ee223a88a0961c"
+          ]
+        },
+        "packages/core/plan/trainingPrescription.ts": {
+          "count": 1,
+          "fingerprints": [
+            "2b88a3aed86229acc4c3"
+          ]
+        },
+        "packages/core/plan/verification/comparePlanLoadToHeuristic.ts": {
+          "count": 4,
+          "fingerprints": [
+            "2eb01732cc10b37d7154",
+            "76545a5abca39d31da99",
+            "9e4add8a90d0515e37e6",
+            "fbdee5157533ef504a9c"
+          ]
+        },
+        "packages/core/plan/verification/deriveFixtureBackedSystemPlanContracts.ts": {
+          "count": 1,
+          "fingerprints": [
+            "05d8ffcc2fe8c3180d29"
+          ]
+        },
+        "packages/core/plan/verification/systemPlanAudit.ts": {
+          "count": 1,
+          "fingerprints": [
+            "7cede59618497686621d"
+          ]
+        },
+        "packages/core/zones/hr.ts": {
+          "count": 5,
+          "fingerprints": [
+            "3fdbfd3054f45cea7f51",
+            "51d4825958d53d00ed0e",
+            "5d446271155f0758704c",
+            "9913621c1b60e7d02e6f",
+            "f66f040370190f70ea1e"
+          ]
+        },
+        "packages/core/zones/power.ts": {
+          "count": 5,
+          "fingerprints": [
+            "064713380fccdb31956d",
+            "1e1a7f66a4e63da98eb0",
+            "46f4f383aac1924d0aeb",
+            "72444e3cd595c4dcb90c",
+            "84048e3097899b26cfd7"
+          ]
+        }
+      }
+    },
+    "unsafe-ts-expect-error": {
+      "owners": {
+        "mobile": {
+          "count": 6,
+          "fingerprints": [
+            "075b02e81c231a888418",
+            "8a4115626b101b89a567",
+            "a0ef2492d6a5015066d1",
+            "a0fa4d1d2a505398383a",
+            "ce9c84450ac32dbe1531",
+            "dbebcec34d0a4e569ff7"
+          ]
+        }
+      },
+      "files": {
+        "apps/mobile/lib/hooks/useReliableMutation.typecheck.ts": {
+          "count": 5,
+          "fingerprints": [
+            "075b02e81c231a888418",
+            "8a4115626b101b89a567",
+            "a0ef2492d6a5015066d1",
+            "a0fa4d1d2a505398383a",
+            "ce9c84450ac32dbe1531"
+          ]
+        },
+        "apps/mobile/lib/providers/QueryProvider.tsx": {
+          "count": 1,
+          "fingerprints": [
+            "dbebcec34d0a4e569ff7"
+          ]
+        }
+      }
+    },
+    "unsafe-ts-ignore": {
+      "owners": {
+        "mobile": {
+          "count": 3,
+          "fingerprints": [
+            "affa3d57e60ad7a24710",
+            "cdb83514d16ec1095846",
+            "da64465feb2c0888c9e6"
+          ]
+        }
+      },
+      "files": {
+        "apps/mobile/.rnstorybook/storybook.requires.ts": {
+          "count": 3,
+          "fingerprints": [
+            "affa3d57e60ad7a24710",
+            "cdb83514d16ec1095846",
+            "da64465feb2c0888c9e6"
+          ]
+        }
+      }
+    }
+  }
+}

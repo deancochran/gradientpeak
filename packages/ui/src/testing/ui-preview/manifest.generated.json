@@ -4,32 +4,38 @@
   "scenarios": [
     {
       "description": "A shared card with input and save action fixtures.",
-      "key": "accountControls",
-      "selectors": ["profile-card", "auth-email", "settings-save"],
       "testId": "ui-preview-scenario-account-controls",
-      "title": "Account controls"
+      "title": "Account controls",
+      "key": "accountControls",
+      "selectors": [
+        "profile-card",
+        "auth-email",
+        "settings-save"
+      ]
     },
     {
       "description": "A shared tabs scenario with overview, sessions, and notes content.",
+      "testId": "ui-preview-scenario-plan-tabs",
+      "title": "Plan tabs",
       "key": "planTabs",
       "selectors": [
         "settings-tabs",
         "settings-tabs-trigger-overview",
         "settings-tabs-trigger-sessions",
         "settings-tabs-content-overview"
-      ],
-      "testId": "ui-preview-scenario-plan-tabs",
-      "title": "Plan tabs"
+      ]
     },
     {
       "description": "Shared loading, empty, and error states for runtime smoke coverage.",
-      "key": "feedbackStates",
-      "selectors": [],
       "testId": "ui-preview-scenario-feedback-states",
-      "title": "Feedback states"
+      "title": "Feedback states",
+      "key": "feedbackStates",
+      "selectors": []
     },
     {
       "description": "Shared form wrappers composed into a realistic multi-field editing flow.",
+      "testId": "ui-preview-scenario-form-fields",
+      "title": "Form fields",
       "key": "formFields",
       "selectors": [
         "ui-preview-form-username",
@@ -37,21 +43,19 @@
         "ui-preview-form-is-public",
         "ui-preview-form-sport",
         "ui-preview-form-submit"
-      ],
-      "testId": "ui-preview-scenario-form-fields",
-      "title": "Form fields"
+      ]
     },
     {
       "description": "Shared toggles and selectors for consent, channel, activity type, and sport choice.",
+      "testId": "ui-preview-scenario-selection-controls",
+      "title": "Selection controls",
       "key": "selectionControls",
       "selectors": [
         "accept-terms-checkbox",
         "email-notifications-switch",
         "activity-type-select",
         "preferred-sport-radio-group"
-      ],
-      "testId": "ui-preview-scenario-selection-controls",
-      "title": "Selection controls"
+      ]
     }
   ]
 }

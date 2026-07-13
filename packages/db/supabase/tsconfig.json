@@ -26,5 +26,6 @@
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
   },
+  "include": ["functions/**/*.ts", "functions/**/*.tsx", "functions/**/*.js", "functions/**/*.jsx"],
   "exclude": ["./supazod/**/*.ts"]
 }

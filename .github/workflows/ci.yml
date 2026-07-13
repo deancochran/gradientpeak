@@ -17,6 +17,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Enable pnpm from packageManager
         run: corepack enable && corepack prepare pnpm@10.33.0 --activate
@@ -40,7 +42,7 @@ jobs:
         if: always()
         run: pnpm --filter @repo/db self-host:down
 
-      - name: Format and lint
+      - name: Format, lint, and architecture baseline
         run: pnpm check:ci
 
       - name: Type check

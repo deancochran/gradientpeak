@@ -249,6 +249,12 @@
       "testId": "activity-notes-textarea"
     }
   },
+  "time-input": {
+    "startTime": {
+      "id": "start-time",
+      "testId": "start-time-input"
+    }
+  },
   "toggle": {
     "pin": {
       "accessibilityLabel": "Pin activity",

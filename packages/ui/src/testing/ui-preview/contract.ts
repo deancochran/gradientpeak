@@ -51,3 +51,28 @@ export const uiPreviewFormFields = {
   usernameErrorTestId: "ui-preview-form-username-error",
   usernameTestId: "ui-preview-form-username",
 } as const;
+
+/** Canonical runtime selectors included in the generated preview manifest. */
+export const uiPreviewScenarioSelectors = {
+  accountControls: ["profile-card", "auth-email", "settings-save"],
+  feedbackStates: [],
+  formFields: [
+    uiPreviewFormFields.usernameTestId,
+    uiPreviewFormFields.bioTestId,
+    uiPreviewFormFields.isPublicTestId,
+    uiPreviewFormFields.sportTestId,
+    uiPreviewFormFields.submitButtonTestId,
+  ],
+  planTabs: [
+    "settings-tabs",
+    "settings-tabs-trigger-overview",
+    "settings-tabs-trigger-sessions",
+    "settings-tabs-content-overview",
+  ],
+  selectionControls: [
+    "accept-terms-checkbox",
+    "email-notifications-switch",
+    "activity-type-select",
+    "preferred-sport-radio-group",
+  ],
+} as const satisfies Record<keyof typeof uiPreviewContract.scenarios, readonly string[]>;

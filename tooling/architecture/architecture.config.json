@@ -1,0 +1,364 @@
+{
+  "owners": {
+    "core": {
+      "roots": ["packages/core"],
+      "packageJson": "packages/core/package.json",
+      "verification": {
+        "lint": { "script": "lint", "patterns": ["packages/core/**/*"] },
+        "typecheck": {
+          "script": "check-types",
+          "tsconfig": "packages/core/tsconfig.json",
+          "patterns": ["packages/core/**/*.ts", "packages/core/**/*.tsx"]
+        },
+        "test": {
+          "script": "test",
+          "patterns": [
+            "packages/core/**/*.test.ts",
+            "packages/core/**/*.test.tsx",
+            "packages/core/**/__tests__/**/*"
+          ]
+        }
+      }
+    },
+    "db": {
+      "roots": ["packages/db"],
+      "packageJson": "packages/db/package.json",
+      "verification": {
+        "lint": { "script": "lint", "patterns": ["packages/db/**/*"] },
+        "static": {
+          "script": "db:verify:static",
+          "patterns": [
+            "packages/db/**/*.sql",
+            "packages/db/**/*.backup",
+            "packages/db/scripts/fixtures/**/*"
+          ]
+        },
+        "typecheck": [
+          {
+            "script": "check-types",
+            "tsconfig": "packages/db/tsconfig.json",
+            "patterns": ["packages/db/**/*.ts", "packages/db/**/*.tsx"]
+          },
+          {
+            "script": "check-types:supabase",
+            "tsconfig": "packages/db/supabase/tsconfig.json",
+            "patterns": [
+              "packages/db/supabase/functions/**/*.ts",
+              "packages/db/supabase/functions/**/*.tsx",
+              "packages/db/supabase/functions/**/*.js",
+              "packages/db/supabase/functions/**/*.jsx"
+            ]
+          }
+        ],
+        "test": {
+          "script": "test",
+          "patterns": ["packages/db/scripts/verify-edge-function-safety.test.ts"]
+        }
+      }
+    },
+    "auth": {
+      "roots": ["packages/auth"],
+      "packageJson": "packages/auth/package.json",
+      "verification": {
+        "lint": { "script": "lint", "patterns": ["packages/auth/**/*"] },
+        "typecheck": {
+          "script": "check-types",
+          "tsconfig": "packages/auth/tsconfig.json",
+          "patterns": ["packages/auth/**/*.ts", "packages/auth/**/*.tsx"]
+        }
+      }
+    },
+    "api": {
+      "roots": ["packages/api"],
+      "packageJson": "packages/api/package.json",
+      "verification": {
+        "lint": { "script": "lint", "patterns": ["packages/api/**/*"] },
+        "typecheck": {
+          "script": "check-types",
+          "tsconfig": "packages/api/tsconfig.json",
+          "patterns": ["packages/api/**/*.ts", "packages/api/**/*.tsx"]
+        },
+        "test": {
+          "script": "test",
+          "patterns": [
+            "packages/api/**/*.test.ts",
+            "packages/api/**/*.test.tsx",
+            "packages/api/**/__tests__/**/*",
+            "packages/api/src/test/**/*"
+          ]
+        }
+      }
+    },
+    "ui": {
+      "roots": ["packages/ui"],
+      "packageJson": "packages/ui/package.json",
+      "verification": {
+        "lint": { "script": "lint", "patterns": ["packages/ui/**/*"] },
+        "typecheck": {
+          "script": "check-types",
+          "tsconfig": "packages/ui/tsconfig.json",
+          "patterns": ["packages/ui/**/*.ts", "packages/ui/**/*.tsx"]
+        },
+        "test": {
+          "script": "test",
+          "patterns": [
+            "packages/ui/**/*.test.ts",
+            "packages/ui/**/*.test.tsx",
+            "packages/ui/**/__tests__/**/*",
+            "packages/ui/src/test/**/*"
+          ]
+        }
+      }
+    },
+    "web": {
+      "roots": ["apps/web"],
+      "packageJson": "apps/web/package.json",
+      "aliases": { "@": "apps/web/src" },
+      "verification": {
+        "lint": { "script": "lint", "patterns": ["apps/web/**/*"] },
+        "typecheck": {
+          "script": "check-types",
+          "tsconfig": "apps/web/tsconfig.json",
+          "patterns": ["apps/web/**/*.ts", "apps/web/**/*.tsx"]
+        },
+        "test": [
+          {
+            "script": "test",
+            "patterns": [
+              "apps/web/**/*.test.ts",
+              "apps/web/**/*.test.tsx",
+              "apps/web/**/__tests__/**/*"
+            ]
+          },
+          {
+            "script": "test:e2e",
+            "patterns": ["apps/web/e2e/**/*.spec.ts", "apps/web/e2e/**/*.spec.tsx"]
+          }
+        ]
+      }
+    },
+    "mobile": {
+      "roots": ["apps/mobile"],
+      "packageJson": "apps/mobile/package.json",
+      "aliases": { "@": "apps/mobile" },
+      "verification": {
+        "lint": { "script": "lint", "patterns": ["apps/mobile/**/*"] },
+        "typecheck": {
+          "script": "check-types",
+          "tsconfig": "apps/mobile/tsconfig.json",
+          "patterns": ["apps/mobile/**/*.ts", "apps/mobile/**/*.tsx"]
+        },
+        "test": {
+          "script": "test",
+          "patterns": [
+            "apps/mobile/**/*.test.ts",
+            "apps/mobile/**/*.test.tsx",
+            "apps/mobile/**/*.jest.test.ts",
+            "apps/mobile/**/*.jest.test.tsx",
+            "apps/mobile/**/__tests__/**/*",
+            "apps/mobile/test/**/*"
+          ]
+        }
+      }
+    },
+    "tailwindcss": {
+      "roots": ["tooling/tailwindcss"],
+      "packageJson": "tooling/tailwindcss/package.json",
+      "verification": {
+        "lint": {
+          "packageJson": "package.json",
+          "script": "lint",
+          "patterns": ["tooling/tailwindcss/**/*"]
+        },
+        "typecheck": {
+          "script": "check-types",
+          "tsconfig": "tooling/tailwindcss/tsconfig.json",
+          "patterns": ["tooling/tailwindcss/**/*.ts", "tooling/tailwindcss/**/*.tsx"]
+        }
+      }
+    },
+    "typescript-config": {
+      "roots": ["tooling/typescript"],
+      "packageJson": "tooling/typescript/package.json",
+      "verification": {
+        "lint": {
+          "packageJson": "package.json",
+          "script": "lint",
+          "patterns": ["tooling/typescript/**/*"]
+        }
+      }
+    },
+    "root": {
+      "roots": ["."],
+      "packageJson": "package.json",
+      "verification": {
+        "lint": { "script": "lint", "patterns": ["**/*"] },
+        "static": { "script": "check", "patterns": ["**/*"] },
+        "test": {
+          "script": "test",
+          "patterns": ["tests/parity/**/*.test.ts", "tooling/architecture/**/*.test.mjs"]
+        }
+      }
+    }
+  },
+  "allowedDependencies": {
+    "core": [],
+    "db": [],
+    "auth": ["db"],
+    "api": ["auth", "core", "db"],
+    "ui": ["core"],
+    "web": ["api", "auth", "core", "db", "tailwindcss", "ui"],
+    "mobile": ["api", "auth", "core", "tailwindcss", "ui"],
+    "tailwindcss": [],
+    "typescript-config": [],
+    "root": ["core", "mobile", "web"]
+  },
+  "coverage": {
+    "lint": [
+      "apps/**/*",
+      "packages/**/*",
+      "tooling/**/*",
+      "tests/**/*",
+      ".github/**/*",
+      "vitest.parity.config.ts"
+    ],
+    "lintExcludes": [
+      "apps/web/src/routeTree.gen.ts",
+      "tooling/architecture/architecture-baseline.json",
+      "packages/ui/src/testing/selectors.generated.json",
+      "packages/ui/src/testing/ui-preview/manifest.generated.json"
+    ],
+    "typecheck": [
+      "apps/**/*.ts",
+      "apps/**/*.tsx",
+      "packages/**/*.ts",
+      "packages/**/*.tsx",
+      "tooling/**/*.ts",
+      "vitest.parity.config.ts",
+      "packages/db/supabase/functions/**/*.js",
+      "packages/db/supabase/functions/**/*.jsx"
+    ],
+    "test": [
+      "apps/**/*",
+      "packages/**/*",
+      "tooling/architecture/**/*.test.mjs",
+      "tests/parity/**/*.test.ts"
+    ],
+    "categories": {
+      "source": ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.mjs", "**/*.cjs"],
+      "configuration": ["**/*.json", "**/*.jsonc", "**/*.yaml", "**/*.yml", "**/*.toml"],
+      "styles": ["**/*.css", "**/*.scss"],
+      "database": ["**/*.sql", "**/*.backup"],
+      "templates": ["**/*.html", "**/*.xml", "**/*.svg"],
+      "documentation": ["**/*.md"],
+      "scripts": ["**/*.sh"],
+      "repository-metadata": [
+        "Dockerfile",
+        "**/Dockerfile",
+        ".gitignore",
+        "**/.gitignore",
+        ".dockerignore",
+        ".npmrc",
+        "**/*.env",
+        "**/*.example",
+        "**/*.webmanifest",
+        "**/*.txt",
+        "**/*.fixture",
+        "**/CODEOWNERS",
+        "**/.gitkeep"
+      ],
+      "test-fixture": ["**/fixtures/**/*"]
+    },
+    "categoryCommands": {
+      "source": "pnpm check-types && pnpm lint",
+      "configuration": "pnpm check",
+      "styles": "pnpm check",
+      "database": "pnpm verify:db",
+      "templates": "pnpm check && pnpm verify:db",
+      "documentation": "pnpm check",
+      "scripts": "pnpm check",
+      "repository-metadata": "pnpm check",
+      "test-fixture": "pnpm test"
+    }
+  },
+  "generatedOwners": [
+    {
+      "path": "apps/web/src/routeTree.gen.ts",
+      "owner": "web-router-plugin",
+      "packageJson": "apps/web/package.json",
+      "script": "build",
+      "freshnessCommand": "pnpm --filter web build"
+    },
+    {
+      "path": "packages/ui/src/testing/selectors.generated.json",
+      "owner": "ui-testing-artifact-generator",
+      "packageJson": "packages/ui/package.json",
+      "script": "check:testing-artifacts",
+      "freshnessCommand": "pnpm --filter @repo/ui check:testing-artifacts"
+    },
+    {
+      "path": "packages/ui/src/testing/ui-preview/manifest.generated.json",
+      "owner": "ui-testing-artifact-generator",
+      "packageJson": "packages/ui/package.json",
+      "script": "check:testing-artifacts",
+      "freshnessCommand": "pnpm --filter @repo/ui check:testing-artifacts"
+    }
+  ],
+  "enumParity": [
+    {
+      "id": "activity-category",
+      "db": { "file": "packages/db/src/schema/enums.ts", "symbol": "activityCategoryEnum" },
+      "core": {
+        "file": "packages/core/schemas/activity_plan_structure.ts",
+        "symbol": "activityCategoryEnum"
+      }
+    },
+    {
+      "id": "effort-type",
+      "db": { "file": "packages/db/src/schema/enums.ts", "symbol": "effortTypeEnum" },
+      "core": {
+        "file": "packages/core/athlete-inputs/activity-efforts.ts",
+        "symbol": "activityEffortTypeSchema"
+      }
+    },
+    {
+      "id": "gender-persistence-form",
+      "db": { "file": "packages/db/src/schema/enums.ts", "symbol": "genderEnum" },
+      "core": { "file": "packages/core/schemas/forms/profile.ts", "symbol": "genderSchema" },
+      "allowedCoreOnly": ["prefer_not_to_say"],
+      "owner": "core",
+      "expiresOn": "2027-07-01",
+      "reason": "The form-only privacy choice maps to null before persistence."
+    }
+  ],
+  "exceptions": [
+    {
+      "id": "phase0-core-fit-sdk-direction",
+      "category": "dependency-direction",
+      "path": "packages/core/lib/fit-sdk-parser.ts",
+      "maxCount": 1,
+      "owner": "architecture-working-group",
+      "expiresOn": "2027-07-01",
+      "reason": "Server-only FIT SDK adapter is retained in core during Phase 0 and is not a workspace dependency reversal."
+    },
+    {
+      "id": "better-auth-expo-storage-cast",
+      "category": "unsafe-as-any",
+      "path": "packages/auth/src/client/expo.ts",
+      "maxCount": 1,
+      "owner": "auth",
+      "expiresOn": "2027-07-01",
+      "reason": "Better Auth's Expo storage adapter types do not expose the React Native storage shape; the runtime adapter is constrained at this platform boundary."
+    }
+  ],
+  "reviewedIgnores": [
+    {
+      "id": "architecture-fixtures",
+      "path": "tooling/architecture/fixtures/**/*",
+      "owner": "architecture-working-group",
+      "expiresOn": "2027-07-01",
+      "reason": "Deliberately invalid scanner fixtures are validated by the architecture test harness rather than repository verification commands."
+    }
+  ],
+  "scanExcludes": ["tooling/architecture/fixtures/**/*"]
+}

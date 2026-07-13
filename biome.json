@@ -16,7 +16,10 @@
       "!**/coverage",
       "!**/dist",
       "!**/storybook-static",
-      "!**/routeTree.gen.ts"
+      "!**/routeTree.gen.ts",
+      "!**/architecture-baseline.json",
+      "!**/selectors.generated.json",
+      "!**/manifest.generated.json"
     ]
   },
   "formatter": {
