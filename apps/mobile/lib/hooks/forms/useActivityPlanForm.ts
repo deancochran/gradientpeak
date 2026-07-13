@@ -99,6 +99,8 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
       }
     },
   });
+  const createActivityPlan = createMutation.mutateAsync;
+  const updateActivityPlan = updateMutation.mutateAsync;
 
   // Load existing plan data into form when in edit mode
   useEffect(() => {
@@ -335,13 +337,13 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
       };
 
       if (isEditMode) {
-        const result = await updateMutation.mutateAsync({
+        const result = await updateActivityPlan({
           id: options.planId!,
           ...payload,
         });
         return result;
       } else {
-        const result = await createMutation.mutateAsync(payload);
+        const result = await createActivityPlan(payload);
         return result;
       }
     } catch (error) {
@@ -360,8 +362,8 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     notes,
     isEditMode,
     options.planId,
-    createMutation,
-    updateMutation,
+    createActivityPlan,
+    updateActivityPlan,
   ]);
 
   // Cancel handler

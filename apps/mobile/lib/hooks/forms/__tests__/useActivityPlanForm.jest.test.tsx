@@ -300,6 +300,17 @@ describe("useActivityPlanForm", () => {
     unmount();
   });
 
+  it("keeps the submit callback stable across parent rerenders", () => {
+    const { result, rerender, unmount } = renderHook(() => useActivityPlanForm());
+    const initialSubmit = result.current.submit;
+
+    rerender({});
+
+    expect(result.current.submit).toBe(initialSubmit);
+
+    unmount();
+  });
+
   it("gates submit and exposes inline errors before submit", async () => {
     const { result, unmount } = renderHook(() => useActivityPlanForm());
 
