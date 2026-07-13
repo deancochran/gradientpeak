@@ -891,32 +891,6 @@ export const eventRecurrence = pgTable(
   ],
 );
 
-export const eventPayloads = pgTable(
-  "event_payloads",
-  {
-    event_id: uuid("event_id").primaryKey(),
-    profile_id: uuid("profile_id")
-      .notNull()
-      .references(() => profiles.id, { onDelete: "cascade" }),
-    lifecycle: jsonb("lifecycle"),
-    payload: jsonb("payload"),
-    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    foreignKey({
-      columns: [table.event_id, table.profile_id],
-      foreignColumns: [events.id, events.profile_id],
-      name: "event_payloads_event_profile_fkey",
-    }).onDelete("cascade"),
-    index("idx_event_payloads_profile_id").on(table.profile_id),
-  ],
-);
-
 export const contentAccessGrants = pgTable(
   "content_access_grants",
   {

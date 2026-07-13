@@ -19,7 +19,6 @@ import type {
   conversationParticipants,
   conversations,
   eventExternalLinks,
-  eventPayloads,
   eventRecurrence,
   eventScheduleLinks,
   events,
@@ -131,9 +130,6 @@ export type EventExternalLinkInsert = InferInsertModel<typeof eventExternalLinks
 
 export type EventRecurrenceRow = InferSelectModel<typeof eventRecurrence>;
 export type EventRecurrenceInsert = InferInsertModel<typeof eventRecurrence>;
-
-export type EventPayloadRow = InferSelectModel<typeof eventPayloads>;
-export type EventPayloadInsert = InferInsertModel<typeof eventPayloads>;
 
 export type ActivityRow = BaseActivityRow &
   Partial<

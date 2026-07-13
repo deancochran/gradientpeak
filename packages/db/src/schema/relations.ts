@@ -14,7 +14,6 @@ import {
   conversationParticipants,
   conversations,
   eventExternalLinks,
-  eventPayloads,
   eventRecurrence,
   eventScheduleLinks,
   events,
@@ -57,7 +56,6 @@ export const profilesRelations = relations(profiles, ({ many }) => ({
   conversationsStarted: many(messages, { relationName: "messageSender" }),
   events: many(events),
   eventExternalLinks: many(eventExternalLinks),
-  eventPayloads: many(eventPayloads),
   eventRecurrence: many(eventRecurrence),
   eventScheduleLinks: many(eventScheduleLinks),
   groupEventsCreated: many(groupEvents, { relationName: "groupEventCreator" }),
@@ -252,10 +250,6 @@ export const eventsRelations = relations(events, ({ one, many }) => ({
   recurrenceOccurrences: many(eventRecurrence, {
     relationName: "eventRecurrenceSeriesOccurrences",
   }),
-  payloads: one(eventPayloads, {
-    fields: [events.id],
-    references: [eventPayloads.event_id],
-  }),
 }));
 
 export const eventScheduleLinksRelations = relations(eventScheduleLinks, ({ one }) => ({
@@ -313,17 +307,6 @@ export const eventRecurrenceRelations = relations(eventRecurrence, ({ one }) => 
     relationName: "eventRecurrenceSeriesOccurrences",
     fields: [eventRecurrence.series_id],
     references: [events.id],
-  }),
-}));
-
-export const eventPayloadsRelations = relations(eventPayloads, ({ one }) => ({
-  event: one(events, {
-    fields: [eventPayloads.event_id],
-    references: [events.id],
-  }),
-  profile: one(profiles, {
-    fields: [eventPayloads.profile_id],
-    references: [profiles.id],
   }),
 }));
 
@@ -603,7 +586,6 @@ export const relationsSchema = {
   eventScheduleLinksRelations,
   eventExternalLinksRelations,
   eventRecurrenceRelations,
-  eventPayloadsRelations,
   activitiesRelations,
   activitySummariesRelations,
   activityImportsRelations,

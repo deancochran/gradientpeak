@@ -169,6 +169,13 @@
       "when": 1783944000000,
       "tag": "0023_remove_rejected_activity_ingestion_claim_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1784030400000,
+      "tag": "0024_drop_event_payloads",
+      "breakpoints": true
     }
   ]
 }
