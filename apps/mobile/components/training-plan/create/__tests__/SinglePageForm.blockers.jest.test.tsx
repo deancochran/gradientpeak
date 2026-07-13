@@ -887,121 +887,7 @@ describe("SinglePageForm blocker surfacing", () => {
     expect(buttonText.some((text: string) => text.includes("Apply quick fix"))).toBe(false);
   });
 
-  it("renders goal assessment metadata on review tab when present", () => {
-    const rendered = renderNative(
-      <SinglePageForm
-        formData={baseFormData}
-        onFormDataChange={jest.fn()}
-        configData={baseConfigData}
-        onConfigChange={jest.fn()}
-        projectionChart={
-          {
-            start_date: "2026-02-14",
-            end_date: "2026-06-01",
-            points: [],
-            goal_markers: [
-              {
-                id: "goal-1",
-                name: "Spring race",
-                target_date: "2026-06-01",
-                priority: 1,
-              },
-            ],
-            periodization_phases: [],
-            microcycles: [],
-            goal_assessments: [
-              {
-                goal_id: "goal-1",
-                priority: 1,
-                feasibility_band: "aggressive",
-                target_scores: [
-                  {
-                    kind: "finish_time",
-                    score_0_100: 67,
-                    unmet_gap: 210,
-                    rationale_codes: ["gap_high"],
-                  },
-                ],
-                conflict_notes: ["priority_precedence"],
-              },
-            ],
-          } as any
-        }
-      />,
-    );
-
-    fireEvent.press(rendered.getByLabelText("Review tab"));
-
-    const textNodes = findMockNodes(rendered, "Text").map((node: any) =>
-      getNodeText(node.props.children),
-    );
-
-    expect(textNodes).toContain("Goal-by-goal check");
-    expect(textNodes).toContain("Plan note: priority precedence");
-    expect(textNodes).toContain("Finish time confidence: 67 / 100 | shortfall 210");
-  });
-
-  it("keeps goal readiness primary and adds uncertainty hint when available", () => {
-    const rendered = renderNative(
-      <SinglePageForm
-        formData={baseFormData}
-        onFormDataChange={jest.fn()}
-        configData={baseConfigData}
-        onConfigChange={jest.fn()}
-        projectionChart={
-          {
-            start_date: "2026-02-14",
-            end_date: "2026-06-01",
-            points: [],
-            goal_markers: [
-              {
-                id: "goal-1",
-                name: "Spring race",
-                target_date: "2026-06-01",
-                priority: 1,
-              },
-            ],
-            periodization_phases: [],
-            microcycles: [],
-            goal_assessments: [
-              {
-                goal_id: "goal-1",
-                priority: 1,
-                goal_readiness_score: 88,
-                prediction_uncertainty: 0.24,
-                feasibility_band: "feasible",
-                target_scores: [
-                  {
-                    kind: "finish_time",
-                    score_0_100: 67,
-                    unmet_gap: 210,
-                    rationale_codes: ["gap_high"],
-                  },
-                ],
-                conflict_notes: [],
-              },
-            ],
-          } as any
-        }
-      />,
-    );
-
-    fireEvent.press(rendered.getByLabelText("Review tab"));
-
-    const readinessRing = rendered.getByLabelText(
-      "Projected readiness 88 out of 100 for Spring race",
-    );
-    expect(readinessRing).toBeDefined();
-
-    const textNodes = findMockNodes(rendered, "Text").map((node: any) =>
-      getNodeText(node.props.children),
-    );
-    expect(textNodes).toContain(
-      "Uncertainty hint: forecast spread 24%. Readiness remains the primary signal.",
-    );
-  });
-
-  it("shows non-blocking confidence hint when readiness confidence is available", () => {
+  it("shows neutral goal context without legacy readiness presentation", () => {
     const rendered = renderNative(
       <SinglePageForm
         formData={baseFormData}
@@ -1028,16 +914,20 @@ describe("SinglePageForm blocker surfacing", () => {
               {
                 goal_id: "goal-1",
                 priority: 1,
-                goal_readiness_score: 81,
-                feasibility_band: "stretch",
+                goal_readiness_score: 88,
+                state_readiness_score: 74,
+                goal_alignment_loss_0_100: 12,
+                prediction_uncertainty: 0.24,
+                feasibility_band: "aggressive",
                 target_scores: [
                   {
                     kind: "finish_time",
-                    score_0_100: 74,
-                    rationale_codes: [],
+                    score_0_100: 67,
+                    unmet_gap: 210,
+                    rationale_codes: ["gap_high"],
                   },
                 ],
-                conflict_notes: [],
+                conflict_notes: ["priority_precedence"],
               },
             ],
           } as any
@@ -1050,9 +940,24 @@ describe("SinglePageForm blocker surfacing", () => {
     const textNodes = findMockNodes(rendered, "Text").map((node: any) =>
       getNodeText(node.props.children),
     );
-    expect(textNodes).toContain(
-      "Confidence hint: model confidence 72%. Readiness remains the primary signal.",
-    );
+
+    expect(textNodes).toContain("Goals in this plan");
+    expect(textNodes).toContain("Spring race");
+    expect(textNodes).toContain("Target date: 2026-06-01");
+    expect(textNodes).toContain("Targets: Race performance");
+    expect(textNodes).toContain("Included in this plan.");
+    expect(textNodes).not.toContain("Goal-by-goal check");
+    expect(textNodes).not.toContain("Goal readiness (state + difficulty)");
+    expect(textNodes).not.toContain("State readiness: 74 / 100");
+    expect(textNodes).not.toContain("Alignment loss: 12 / 100");
+    expect(textNodes).not.toContain("Finish time confidence: 67 / 100 | shortfall 210");
+    expect(textNodes).not.toContain("Plan note: priority precedence");
+    expect(
+      textNodes.some((text: string) => text.includes("Confidence hint: model confidence")),
+    ).toBe(false);
+    expect(() =>
+      rendered.getByLabelText("Projected readiness 88 out of 100 for Spring race"),
+    ).toThrow();
   });
 
   it("shows safety-first default planning policy in review diagnostics", () => {

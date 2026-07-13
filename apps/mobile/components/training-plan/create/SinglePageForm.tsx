@@ -34,7 +34,6 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import Svg, { Circle } from "react-native-svg";
 import { z } from "zod";
 import { AvailabilityConfigSection } from "./AvailabilityConfigSection";
 import { BehaviorControlsConfigSection } from "./BehaviorControlsConfigSection";
@@ -199,16 +198,6 @@ const createEmptyGoal = (targetDate?: string): GoalFormData => ({
 const tabPanelClass = "gap-3 rounded-lg border border-border bg-card p-3";
 const helperTextClass = "text-xs text-muted-foreground";
 
-const formatFeasibilityBandLabel = (
-  band: "feasible" | "stretch" | "aggressive" | "nearly_impossible" | "infeasible",
-) => {
-  if (band === "feasible") return "On track";
-  if (band === "stretch") return "Challenging";
-  if (band === "aggressive") return "Very challenging";
-  if (band === "nearly_impossible") return "Unlikely";
-  return "Not realistic";
-};
-
 const formatReviewBandLabel = (band: string) => {
   if (band === "on-track") return "On track";
   return "Needs adjustment";
@@ -241,109 +230,6 @@ const toRecord = (value: unknown): Record<string, unknown> | undefined => {
   }
 
   return value as Record<string, unknown>;
-};
-
-const toBoundedPercent = (value: number): number => {
-  const normalized = value <= 1 ? value * 100 : value;
-  return Math.max(0, Math.min(100, normalized));
-};
-
-const readPercent = (value: unknown): number | undefined => {
-  const numeric = readNumber(value);
-  if (numeric !== undefined) {
-    return toBoundedPercent(numeric);
-  }
-
-  const record = toRecord(value);
-  if (!record) {
-    return undefined;
-  }
-
-  const candidateKeys = [
-    "score",
-    "value",
-    "percent",
-    "percentage",
-    "confidence",
-    "confidence_score",
-    "confidence_0_100",
-    "uncertainty",
-    "uncertainty_score",
-    "uncertainty_0_100",
-    "prediction_uncertainty",
-    "prediction_confidence",
-  ];
-
-  for (const key of candidateKeys) {
-    const candidate = readNumber(record[key]);
-    if (candidate !== undefined) {
-      return toBoundedPercent(candidate);
-    }
-  }
-
-  return undefined;
-};
-
-const average = (values: number[]): number | undefined => {
-  if (values.length === 0) {
-    return undefined;
-  }
-
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
-};
-
-const resolveGoalAssessmentConfidenceHint = (
-  assessment: NonNullable<ProjectionChartPayload["goal_assessments"]>[number],
-  projectionChart: ProjectionChartPayload | undefined,
-) => {
-  const assessmentRecord = toRecord(assessment as unknown);
-  const predictionUncertainty =
-    readPercent(assessmentRecord?.prediction_uncertainty) ??
-    readPercent(assessmentRecord?.predictionUncertainty);
-  if (predictionUncertainty !== undefined) {
-    return `Uncertainty hint: forecast spread ${Math.round(predictionUncertainty)}%.`;
-  }
-
-  const targetUncertainty = average(
-    assessment.target_scores
-      .map(
-        (
-          target: NonNullable<
-            ProjectionChartPayload["goal_assessments"]
-          >[number]["target_scores"][number],
-        ) => {
-          const record = toRecord(target as unknown);
-          return (
-            readPercent(record?.prediction_uncertainty) ??
-            readPercent(record?.predictionUncertainty)
-          );
-        },
-      )
-      .filter((value: number | undefined): value is number => value !== undefined),
-  );
-  if (targetUncertainty !== undefined) {
-    return `Uncertainty hint: forecast spread ${Math.round(targetUncertainty)}%.`;
-  }
-
-  const confidenceScore =
-    readPercent(assessmentRecord?.prediction_confidence) ??
-    readPercent(assessmentRecord?.predictionConfidence) ??
-    readPercent(assessmentRecord?.confidence) ??
-    readPercent(assessmentRecord?.confidence_score) ??
-    readPercent(projectionChart?.readiness_confidence) ??
-    readPercent(projectionChart?.no_history?.evidence_confidence?.score);
-  if (confidenceScore !== undefined) {
-    return `Confidence hint: model confidence ${Math.round(confidenceScore)}%.`;
-  }
-
-  const confidenceState =
-    projectionChart?.no_history?.evidence_confidence?.state ??
-    projectionChart?.no_history?.projection_floor_confidence;
-  if (confidenceState) {
-    return `Confidence hint: evidence confidence ${confidenceState}.`;
-  }
-
-  return undefined;
 };
 
 const readNumber = (value: unknown): number | undefined => {
@@ -514,91 +400,18 @@ const formatDriverText = (message: string, code?: string) => {
   return "Adjustment noted.";
 };
 
-const getAssessmentTargetKindLabel = (kind: string) => {
-  switch (kind) {
-    case "finish_time":
-      return "Finish time";
-    case "pace":
-      return "Pace";
-    case "power":
-      return "Power";
-    case "split":
-      return "Split";
-    case "completion_probability":
-      return "Completion probability";
-    default:
-      return kind.replaceAll("_", " ");
+const formatGoalTargetTypeLabel = (targetType: GoalTargetType) => {
+  switch (targetType) {
+    case "race_performance":
+      return "Race performance";
+    case "pace_threshold":
+      return "Pace threshold";
+    case "power_threshold":
+      return "Power threshold";
+    case "hr_threshold":
+      return "Heart-rate threshold";
   }
 };
-
-const GOAL_READINESS_RING_SIZE = 48;
-const GOAL_READINESS_RING_STROKE = 5;
-
-const clampReadinessScore = (value: number | undefined): number => {
-  if (typeof value !== "number" || Number.isNaN(value)) {
-    return 0;
-  }
-
-  return Math.max(0, Math.min(100, value));
-};
-
-const getGoalReadinessColor = (score: number): string => {
-  if (score >= 80) {
-    return "#16a34a";
-  }
-
-  if (score >= 60) {
-    return "#d97706";
-  }
-
-  return "#dc2626";
-};
-
-function GoalReadinessRing(props: { score: number; goalTitle: string }) {
-  const normalizedScore = clampReadinessScore(props.score);
-  const radius = GOAL_READINESS_RING_SIZE / 2 - GOAL_READINESS_RING_STROKE / 2;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference * (1 - normalizedScore / 100);
-  const readinessColor = getGoalReadinessColor(normalizedScore);
-
-  return (
-    <View
-      accessible
-      accessibilityLabel={`Projected readiness ${Math.round(normalizedScore)} out of 100 for ${props.goalTitle}`}
-      className="relative items-center justify-center"
-      style={{
-        width: GOAL_READINESS_RING_SIZE,
-        height: GOAL_READINESS_RING_SIZE,
-      }}
-    >
-      <Svg width={GOAL_READINESS_RING_SIZE} height={GOAL_READINESS_RING_SIZE}>
-        <Circle
-          cx={GOAL_READINESS_RING_SIZE / 2}
-          cy={GOAL_READINESS_RING_SIZE / 2}
-          r={radius}
-          stroke="#d4d4d8"
-          strokeWidth={GOAL_READINESS_RING_STROKE}
-          fill="none"
-        />
-        <Circle
-          cx={GOAL_READINESS_RING_SIZE / 2}
-          cy={GOAL_READINESS_RING_SIZE / 2}
-          r={radius}
-          stroke={readinessColor}
-          strokeWidth={GOAL_READINESS_RING_STROKE}
-          fill="none"
-          strokeLinecap="round"
-          strokeDasharray={`${circumference} ${circumference}`}
-          strokeDashoffset={offset}
-          transform={`rotate(-90 ${GOAL_READINESS_RING_SIZE / 2} ${GOAL_READINESS_RING_SIZE / 2})`}
-        />
-      </Svg>
-      <View className="absolute items-center justify-center">
-        <Text className="text-xs font-semibold text-foreground">{Math.round(normalizedScore)}</Text>
-      </View>
-    </View>
-  );
-}
 
 const toNoHistoryConfidenceLabel = (
   confidence: NoHistoryProjectionMetadata["projection_floor_confidence"],
@@ -1032,7 +845,6 @@ export function SinglePageForm({
         .filter((offset): offset is number => typeof offset === "number"),
     [tabSnapOffsets, visibleTabs],
   );
-  const goalAssessments = projectionChart?.goal_assessments ?? [];
   const hasBlockingIssues = blockingIssues.length > 0;
   const projectionReviewDiagnostics = useMemo(
     () => resolveProjectionReviewDiagnostics(projectionChart),
@@ -1045,10 +857,6 @@ export function SinglePageForm({
     projectionReviewDiagnostics.bindingConstraints.length > 0 ||
     projectionReviewDiagnostics.clampPressure !== undefined ||
     projectionReviewDiagnostics.curvatureContribution !== undefined;
-  const goalMarkersById = useMemo(
-    () => new Map((projectionChart?.goal_markers ?? []).map((marker) => [marker.id, marker])),
-    [projectionChart?.goal_markers],
-  );
 
   return (
     <View className="flex-1">
@@ -1422,86 +1230,35 @@ export function SinglePageForm({
               </View>
             ) : null}
 
-            {activeTab === "review" && goalAssessments.length > 0 && (
+            {activeTab === "review" && formData.goals.length > 0 && (
               <View className={tabPanelClass}>
-                <Text className="font-semibold">Goal-by-goal check</Text>
-                {goalAssessments.map((assessment, index) => {
-                  const marker = goalMarkersById.get(assessment.goal_id);
-                  const title = marker?.name?.trim() ? marker.name : `Goal ${index + 1}`;
-                  const fallbackReadinessScore =
-                    assessment.target_scores.length > 0
-                      ? assessment.target_scores.reduce(
-                          (sum, target) => sum + target.score_0_100,
-                          0,
-                        ) / assessment.target_scores.length
-                      : 0;
-                  const goalReadinessScore =
-                    assessment.goal_readiness_score ?? fallbackReadinessScore;
-                  const confidenceHint = resolveGoalAssessmentConfidenceHint(
-                    assessment,
-                    projectionChart,
+                <Text className="font-semibold">Goals in this plan</Text>
+                {formData.goals.map((goal, index) => {
+                  const title = goal.name.trim() || `Goal ${index + 1}`;
+                  const targetTypes = goal.targets.map((target) =>
+                    formatGoalTargetTypeLabel(target.targetType),
                   );
 
                   return (
                     <View
-                      key={`${assessment.goal_id}-${assessment.priority}-${index}`}
-                      className="gap-2 rounded-md border border-border bg-muted/20 p-2.5"
+                      key={goal.id}
+                      className="gap-1 rounded-md border border-border bg-muted/20 p-2.5"
                     >
-                      <View className="flex-row items-center gap-3">
-                        <GoalReadinessRing score={goalReadinessScore} goalTitle={title} />
-                        <View className="flex-1 gap-1">
-                          <View className="flex-row items-center justify-between gap-2">
-                            <Text className="flex-1 text-sm font-medium" numberOfLines={1}>
-                              {title}
-                            </Text>
-                            <Badge variant="outline">
-                              <Text>P{assessment.priority}</Text>
-                            </Badge>
-                          </View>
-                          <Text className="text-xs text-muted-foreground">
-                            Goal readiness (state + difficulty)
-                          </Text>
-                          {assessment.state_readiness_score !== undefined ? (
-                            <Text className="text-xs text-muted-foreground">
-                              State readiness: {Math.round(assessment.state_readiness_score)} / 100
-                            </Text>
-                          ) : null}
-                          {assessment.goal_alignment_loss_0_100 !== undefined ? (
-                            <Text className="text-xs text-muted-foreground">
-                              Alignment loss: {Math.round(assessment.goal_alignment_loss_0_100)} /
-                              100
-                            </Text>
-                          ) : null}
-                          <Badge variant="outline" className="self-start">
-                            <Text>{formatFeasibilityBandLabel(assessment.feasibility_band)}</Text>
-                          </Badge>
-                        </View>
+                      <View className="flex-row items-center justify-between gap-2">
+                        <Text className="flex-1 text-sm font-medium" numberOfLines={1}>
+                          {title}
+                        </Text>
+                        <Badge variant="outline">
+                          <Text>P{goal.priority}</Text>
+                        </Badge>
                       </View>
-                      {assessment.target_scores.map((target, targetIndex) => (
-                        <Text
-                          key={`${assessment.goal_id}-${target.kind}-${targetIndex}`}
-                          className="text-xs text-muted-foreground"
-                        >
-                          {getAssessmentTargetKindLabel(target.kind)} confidence:{" "}
-                          {Math.round(target.score_0_100)} / 100
-                          {target.unmet_gap !== undefined
-                            ? ` | shortfall ${Number(target.unmet_gap.toFixed(2))}`
-                            : ""}
-                        </Text>
-                      ))}
-                      {assessment.conflict_notes.slice(0, 2).map((note) => (
-                        <Text
-                          key={`${assessment.goal_id}-${note}`}
-                          className="text-xs text-muted-foreground"
-                        >
-                          Plan note: {formatNoteLabel(note)}
-                        </Text>
-                      ))}
-                      {confidenceHint ? (
-                        <Text className="text-xs text-muted-foreground">
-                          {confidenceHint} Readiness remains the primary signal.
-                        </Text>
-                      ) : null}
+                      <Text className="text-xs text-muted-foreground">
+                        Target date: {goal.targetDate || "Not set"}
+                      </Text>
+                      <Text className="text-xs text-muted-foreground">
+                        Targets: {targetTypes.length > 0 ? targetTypes.join(", ") : "None added"}
+                      </Text>
+                      <Text className="text-xs text-muted-foreground">Included in this plan.</Text>
                     </View>
                   );
                 })}
