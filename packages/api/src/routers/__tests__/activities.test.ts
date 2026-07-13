@@ -289,10 +289,16 @@ function createDbMock(options: {
   executeRows?: Array<{ id: string }>;
   insertedRowsByTable?: Record<string, unknown[]>;
   updatedRows?: any[];
+  onTssScanBatch?: (batchNumber: number) => void;
 }) {
   const insertValues = vi.fn();
   const deleteWhere = vi.fn(() => Promise.resolve());
   const offset = vi.fn();
+  const selectWhere = vi.fn();
+  const tssLimit = vi.fn();
+  let transactionActivityRows: any[] | undefined;
+  let tssScanIndex = 0;
+  let tssScanBatchNumber = 0;
   const limit = vi.fn((limitValue: number) => {
     const limitedRows = (options.activityRows ?? []).slice(0, limitValue);
     return {
@@ -306,11 +312,28 @@ function createDbMock(options: {
         Promise.resolve(limitedRows).then(onFulfilled),
     };
   });
-  const orderBy = vi.fn((..._args: unknown[]) => ({
-    limit,
-    then: (onFulfilled: (value: unknown[]) => unknown) =>
-      Promise.resolve(options.activityRows ?? []).then(onFulfilled),
-  }));
+  const orderBy = vi.fn((...args: unknown[]) => {
+    if (args.length === 2) {
+      return {
+        limit: tssLimit.mockImplementation((limitValue: number) => {
+          const rows = [...(transactionActivityRows ?? options.activityRows ?? [])].sort(
+            (a, b) => b.started_at.getTime() - a.started_at.getTime() || b.id.localeCompare(a.id),
+          );
+          const batch = rows.slice(tssScanIndex, tssScanIndex + limitValue);
+          tssScanIndex += batch.length;
+          tssScanBatchNumber += 1;
+          options.onTssScanBatch?.(tssScanBatchNumber);
+          return Promise.resolve(batch);
+        }),
+      };
+    }
+
+    return {
+      limit,
+      then: (onFulfilled: (value: unknown[]) => unknown) =>
+        Promise.resolve(options.activityRows ?? []).then(onFulfilled),
+    };
+  });
 
   function rowsForTable(tableName: string) {
     if (tableName === "activity_summaries") return options.activitySummaryRows ?? [];
@@ -373,7 +396,8 @@ function createDbMock(options: {
         from: vi.fn((table: unknown) => {
           const builder = {
             leftJoin: vi.fn(() => builder),
-            where: vi.fn(() => {
+            where: vi.fn((condition: unknown) => {
+              selectWhere(condition);
               const rows = rowsForTable(getTableName(table));
               const resolveRows = () => Promise.resolve(rows);
               return {
@@ -405,7 +429,18 @@ function createDbMock(options: {
         };
       }),
     })),
-    transaction: vi.fn(async (callback: (tx: unknown) => unknown) => callback(db)),
+    transaction: vi.fn(
+      async (callback: (tx: unknown) => unknown, _config?: Record<string, unknown>) => {
+        transactionActivityRows = [...(options.activityRows ?? [])];
+        tssScanIndex = 0;
+        tssScanBatchNumber = 0;
+        try {
+          return await callback(db);
+        } finally {
+          transactionActivityRows = undefined;
+        }
+      },
+    ),
     update: vi.fn(() => ({
       set: vi.fn(() => ({
         where: vi.fn(() => ({
@@ -441,6 +476,8 @@ function createDbMock(options: {
       limit,
       offset,
       orderBy,
+      selectWhere,
+      tssLimit,
       insertValues,
     },
   };
@@ -643,11 +680,15 @@ describe("activitiesRouter", () => {
     expect(result.hasMore).toBe(false);
     expect(result.nextCursor).toBeUndefined();
     expect(result.items.map((item: any) => item.id)).toEqual([ACTIVITY_ID_3, ACTIVITY_ID]);
-    expect(db.__spies.limit).toHaveBeenCalledWith(200);
+    expect(db.__spies.tssLimit).toHaveBeenCalledWith(3);
+    expect(db.transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: "repeatable read",
+      accessMode: "read only",
+    });
   });
 
-  it("globally paginates more than 500 derived tss rows with stable ties and nulls", async () => {
-    const rows = Array.from({ length: 525 }, (_, index) =>
+  it("deep-pages globally sorted TSS with keyset scan plans, bounded query counts, and stable ties", async () => {
+    const rows = Array.from({ length: 5_000 }, (_, index) =>
       buildActivityRow({
         id: `00000000-0000-4000-8000-${index.toString().padStart(12, "0")}`,
         name: `Activity ${index}`,
@@ -689,9 +730,9 @@ describe("activitiesRouter", () => {
     const benchmarkSamples: number[] = [];
 
     for (const testCase of [
-      { offset: 490, limit: 20, sortOrder: "asc" as const },
-      { offset: 500, limit: 10, sortOrder: "desc" as const },
-      { offset: 510, limit: 15, sortOrder: "desc" as const },
+      { offset: 4_900, limit: 20, sortOrder: "asc" as const },
+      { offset: 4_950, limit: 10, sortOrder: "desc" as const },
+      { offset: 4_975, limit: 15, sortOrder: "desc" as const },
     ]) {
       const db = createDbMock({ activityRows: rows, totalRows: [{ total: rows.length }] });
       const benchmarkStart = performance.now();
@@ -706,23 +747,97 @@ describe("activitiesRouter", () => {
       expect(result.items.map((item) => item.id)).toEqual(
         expected(testCase.sortOrder).slice(testCase.offset, testCase.offset + testCase.limit),
       );
-      expect(result.total).toBe(525);
-      expect(result.hasMore).toBe(testCase.offset + testCase.limit < 525);
+      expect(result.total).toBe(5_000);
+      expect(result.hasMore).toBe(testCase.offset + testCase.limit < 5_000);
       expect(result.nextCursor).toBe(
-        testCase.offset + testCase.limit < 525
+        testCase.offset + testCase.limit < 5_000
           ? `index:${testCase.offset + testCase.limit}`
           : undefined,
       );
-      expect(db.__spies.offset).toHaveBeenCalledWith(0);
-      expect(db.__spies.offset).toHaveBeenCalledWith(200);
-      expect(db.__spies.offset).toHaveBeenCalledWith(400);
-      expect(db.__spies.limit.mock.calls.filter(([value]) => value === 200)).toHaveLength(3);
+      expect(db.__spies.offset).not.toHaveBeenCalled();
+      expect(db.__spies.tssLimit).toHaveBeenCalledTimes(25);
+      expect(db.__spies.tssLimit.mock.calls.every(([value]) => value === 200)).toBe(true);
+      expect(db.__spies.orderBy).toHaveBeenCalledTimes(25);
+      const orderSql = db.__spies.orderBy.mock.calls[0]?.map(toSql).join(" ") ?? "";
+      expect(orderSql).toContain('"activities"."started_at" desc');
+      expect(orderSql).toContain('"activities"."id" desc');
+      const keysetWhereSql = toSql(db.__spies.selectWhere.mock.calls[1]?.[0]);
+      expect(keysetWhereSql).toContain('"activities"."started_at" <');
+      expect(keysetWhereSql).toContain('"activities"."id" <');
     }
 
     benchmarkSamples.sort((a, b) => a - b);
     const p95 = benchmarkSamples[Math.ceil(benchmarkSamples.length * 0.95) - 1] ?? 0;
     expect(mockActivityAnalysis.buildActivityDerivedSummaryMap).toHaveBeenCalledTimes(3);
-    expect(p95, `525-row TSS pagination p95=${p95.toFixed(2)}ms`).toBeLessThan(250);
+    expect(p95, `5,000-row deep TSS pagination p95=${p95.toFixed(2)}ms`).toBeLessThan(750);
+  });
+
+  it("keeps an internal TSS scan on one snapshot when an activity is inserted concurrently", async () => {
+    const rows = Array.from({ length: 401 }, (_, index) =>
+      buildActivityRow({
+        id: `00000000-0000-4000-8000-${index.toString().padStart(12, "0")}`,
+        started_at: new Date(Date.UTC(2026, 0, 1) + index * 1000),
+        finished_at: new Date(Date.UTC(2026, 0, 1) + index * 1000 + 500),
+      }),
+    );
+    const concurrentlyInserted = buildActivityRow({
+      id: "99999999-9999-4999-8999-999999999999",
+      started_at: new Date(Date.UTC(2026, 0, 1) + 150_500),
+      finished_at: new Date(Date.UTC(2026, 0, 1) + 151_000),
+    });
+    const db = createDbMock({
+      activityRows: rows,
+      totalRows: [{ total: rows.length }],
+      onTssScanBatch: (batchNumber) => {
+        if (batchNumber === 1) rows.push(concurrentlyInserted);
+      },
+    });
+    mockActivityAnalysis.buildActivityDerivedSummaryMap.mockImplementation(
+      async ({ activities: candidates }: { activities: Array<{ id: string }> }) =>
+        new Map(
+          candidates.map((activity, index) => [
+            activity.id,
+            {
+              tss: index,
+              intensity_factor: 0.8,
+              computed_as_of: "2026-01-01T00:00:00.000Z",
+            },
+          ]),
+        ),
+    );
+
+    const result = await createCaller(db).listPaginated({
+      limit: 50,
+      cursor: "index:350",
+      sort_by: "tss",
+      sort_order: "asc",
+    });
+
+    const derivedCandidates = mockActivityAnalysis.buildActivityDerivedSummaryMap.mock.calls[0]?.[0]
+      .activities as Array<{ id: string }>;
+    expect(derivedCandidates).toHaveLength(401);
+    expect(new Set(derivedCandidates.map(({ id }) => id)).size).toBe(401);
+    expect(derivedCandidates.map(({ id }) => id)).not.toContain(concurrentlyInserted.id);
+    expect(result.total).toBe(401);
+    expect(db.__spies.tssLimit).toHaveBeenCalledTimes(3);
+    expect(db.transaction).toHaveBeenCalledWith(expect.any(Function), {
+      isolationLevel: "repeatable read",
+      accessMode: "read only",
+    });
+  });
+
+  it("rejects unbounded exact TSS sorts above the documented history ceiling", async () => {
+    const db = createDbMock({ totalRows: [{ total: 10_001 }] });
+
+    await expect(
+      createCaller(db).listPaginated({ sort_by: "tss", sort_order: "desc" }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message:
+        "TSS sorting supports at most 10000 matching activities; narrow the activity filters.",
+    });
+    expect(db.__spies.orderBy).not.toHaveBeenCalled();
+    expect(mockActivityAnalysis.buildActivityDerivedSummaryMap).not.toHaveBeenCalled();
   });
 
   it("creates an activity linked to a planned-activity event", async () => {

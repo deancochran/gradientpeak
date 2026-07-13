@@ -5,7 +5,7 @@ import {
 } from "@repo/core";
 import { activities, activityFileIngestions, activityPlans } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, count, desc, eq, gte, ilike, lte, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, ilike, lt, lte, or, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 import { createActivityAnalysisStore } from "../../infrastructure/repositories";
 import {
@@ -31,6 +31,7 @@ export type ActivityListQueryInput = {
 };
 
 const tssSortBatchSize = 200;
+export const tssSortMaximumHistory = 10_000;
 
 type ActivityRow = typeof activities.$inferSelect;
 
@@ -79,6 +80,102 @@ export async function listActivitiesForProfile({
   const whereClause = and(...conditions);
   const distance = sql<number>`${activities.distance_meters}`;
   const duration = sql<number>`${activities.duration_seconds}`;
+  if (input.sort_by === "tss") {
+    return db.transaction(
+      async (tx) => {
+        // Drizzle transactions expose the read APIs used below but intentionally omit the
+        // root client's `$client` property from their type.
+        const snapshotDb = tx as unknown as Db;
+        const totalRows = await tx.select({ total: count() }).from(activities).where(whereClause);
+        const total = Number(totalRows[0]?.total ?? 0);
+        // Exact sorting by dynamically derived TSS is necessarily O(N). The explicit ceiling
+        // bounds request memory/CPU while keeping the existing index cursor and global ordering
+        // contract truthful. Callers above the ceiling must narrow the activity filters.
+        if (total > tssSortMaximumHistory) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `TSS sorting supports at most ${tssSortMaximumHistory} matching activities; narrow the activity filters.`,
+          });
+        }
+
+        // Scan the transaction snapshot by the stable (started_at, id) key instead of offset so
+        // every internal batch has an indexable plan and cannot skip/duplicate rows. Evidence and
+        // likes are loaded through the same transaction, preserving one repeatable-read snapshot.
+        const candidates: Array<{
+          activity: ActivityRow;
+          derived: ActivityListDerivedSummary | null;
+        }> = [];
+        let scanCursor: Pick<ActivityRow, "id" | "started_at"> | undefined;
+        while (candidates.length < total) {
+          const scanWhere = scanCursor
+            ? and(
+                whereClause,
+                or(
+                  lt(activities.started_at, scanCursor.started_at),
+                  and(
+                    eq(activities.started_at, scanCursor.started_at),
+                    lt(activities.id, scanCursor.id),
+                  ),
+                ),
+              )
+            : whereClause;
+          const batch = (await tx
+            .select()
+            .from(activities)
+            .where(scanWhere)
+            .orderBy(desc(activities.started_at), desc(activities.id))
+            .limit(Math.min(tssSortBatchSize, total - candidates.length))) as ActivityRow[];
+          if (batch.length === 0) break;
+
+          const normalizedBatch = batch.map(normalizeActivityLaps);
+          candidates.push(
+            ...normalizedBatch.map((activity) => ({
+              activity,
+              derived: null,
+            })),
+          );
+          const lastActivity = normalizedBatch.at(-1);
+          if (!lastActivity || batch.length < tssSortBatchSize) break;
+          scanCursor = { id: lastActivity.id, started_at: lastActivity.started_at };
+        }
+
+        const derivedByActivityId = await buildActivityDerivedSummaryMap({
+          store: createActivityAnalysisStore(snapshotDb),
+          profileId,
+          activities: candidates.map(({ activity }) => activity),
+        });
+        for (const candidate of candidates) {
+          candidate.derived = derivedByActivityId.get(candidate.activity.id) ?? null;
+        }
+
+        const page = candidates
+          .sort((a, b) => compareTssCandidates(a, b, input.sort_order))
+          .slice(offset, offset + input.limit);
+        const likeStats = await loadLikeStats(snapshotDb, {
+          entityType: "activity",
+          entityIds: page.map(({ activity }) => activity.id),
+          viewerProfileId: profileId,
+        });
+        const items = page.map(({ activity, derived }) =>
+          mapActivityToListDerivedResponse({
+            activity: {
+              ...activity,
+              likes_count: getLikeStats(likeStats, activity.id).likes_count,
+            },
+            has_liked: getLikeStats(likeStats, activity.id).has_liked,
+            derived,
+          }),
+        );
+        return {
+          items,
+          total,
+          ...buildIndexPageInfo({ offset, limit: input.limit, total }),
+        };
+      },
+      { isolationLevel: "repeatable read", accessMode: "read only" },
+    );
+  }
+
   const rowsPromise =
     input.sort_by === "distance" || input.sort_by === "duration"
       ? db
@@ -102,70 +199,6 @@ export async function listActivitiesForProfile({
           .limit(input.limit)
           .offset(offset);
   const totalRowsPromise = db.select({ total: count() }).from(activities).where(whereClause);
-  if (input.sort_by === "tss") {
-    const totalRows = await totalRowsPromise;
-    const total = Number(totalRows[0]?.total ?? 0);
-    // TSS depends on the athlete context at each activity timestamp and therefore cannot be
-    // expressed as a canonical activities-table sort. Read every matching row in bounded
-    // batches, load one fixed evidence snapshot for the candidates, then apply one deterministic
-    // global ordering before slicing the page. Cross-request cursor stability under new writes
-    // intentionally retains the existing index-offset semantics.
-    const candidates: Array<{
-      activity: ActivityRow;
-      derived: ActivityListDerivedSummary | null;
-    }> = [];
-    for (let batchOffset = 0; batchOffset < total; batchOffset += tssSortBatchSize) {
-      const batch = (await db
-        .select()
-        .from(activities)
-        .where(whereClause)
-        .orderBy(desc(activities.started_at), desc(activities.id))
-        .limit(tssSortBatchSize)
-        .offset(batchOffset)) as ActivityRow[];
-      if (batch.length === 0) break;
-      const normalizedBatch = batch.map(normalizeActivityLaps);
-      candidates.push(
-        ...normalizedBatch.map((activity) => ({
-          activity,
-          derived: null,
-        })),
-      );
-      if (batch.length < tssSortBatchSize) break;
-    }
-
-    const derivedByActivityId = await buildActivityDerivedSummaryMap({
-      store: createActivityAnalysisStore(db),
-      profileId,
-      activities: candidates.map(({ activity }) => activity),
-    });
-    for (const candidate of candidates) {
-      candidate.derived = derivedByActivityId.get(candidate.activity.id) ?? null;
-    }
-
-    const page = candidates
-      .sort((a, b) => compareTssCandidates(a, b, input.sort_order))
-      .slice(offset, offset + input.limit);
-    const likeStats = await loadLikeStats(db, {
-      entityType: "activity",
-      entityIds: page.map(({ activity }) => activity.id),
-      viewerProfileId: profileId,
-    });
-    const items = page.map(({ activity, derived }) =>
-      mapActivityToListDerivedResponse({
-        activity: {
-          ...activity,
-          likes_count: getLikeStats(likeStats, activity.id).likes_count,
-        },
-        has_liked: getLikeStats(likeStats, activity.id).has_liked,
-        derived,
-      }),
-    );
-    return {
-      items,
-      total,
-      ...buildIndexPageInfo({ offset, limit: input.limit, total }),
-    };
-  }
 
   const [totalRows, rawRows] = await Promise.all([totalRowsPromise, rowsPromise]);
   const total = Number(totalRows[0]?.total ?? 0);
