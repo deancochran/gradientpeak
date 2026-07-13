@@ -18,7 +18,8 @@
       "postBaselineVersions": "pending"
     }
   },
-  "ownedExtensions": ["pg_trgm"],
+  "ownedExtensions": [],
+  "ownedDefaultPrivilegeRoles": ["postgres"],
   "contentAliases": [
     [
       "supabase/migrations-archive/20260522120000_add_profile_cover_url.sql",

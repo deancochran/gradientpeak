@@ -47,7 +47,7 @@ pnpm --filter @repo/db self-host:down
 5. Run `db:verify`. Its create/drop operations require both `--disposable` and `--local`, enforce a localhost URL, and never inspect or mutate the shared local database.
 6. `db:diff` builds the same disposable authoritative target, runs Supabase lint against it, and requires an empty public-schema shadow diff.
 
-The checked-in fingerprint covers every public relation and sequence (including unmanaged extras), managed columns/defaults/indexes/constraints/enums, RLS and ACL/default ACL state, owned extensions, public/auth functions and triggers, and owned storage buckets/policies. Update it only from the guarded disposable fresh target.
+The checked-in fingerprint covers every public relation and sequence (including unmanaged extras), managed columns/defaults/indexes/constraints/enums, RLS and ACL state, default privileges for policy-declared owners, policy-declared extensions, public/auth functions and triggers, and owned storage buckets/policies. Supabase platform extensions and platform-role default privileges are intentionally outside repository ownership and are not serialized as environment noise. Update the fingerprint only from the guarded disposable fresh target.
 
 `db:verify:static` needs no database. `db:verify` builds both fresh and upgrade disposable databases, verifies schema/data convergence, fingerprints all owned surfaces, checks storage/security, lints the same disposable target, and runs an empty diff. Shared-local ledger diagnostics are deliberately separate: `db:migration:ledger:pre` expects exactly 71 entries and `db:migration:ledger:post` expects exactly the four active entries.
 

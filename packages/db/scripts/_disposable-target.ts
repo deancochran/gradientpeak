@@ -41,7 +41,6 @@ export async function withDisposableDatabase<T>(
 export async function bootstrapSupabaseSchemas(pool: Pool) {
   await pool.query(`
     create schema if not exists extensions;
-    create extension if not exists pg_trgm with schema extensions;
     create schema auth;
     create function auth.uid() returns uuid language sql stable as $$ select null::uuid $$;
     create table auth.users (

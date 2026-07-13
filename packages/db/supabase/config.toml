@@ -116,7 +116,7 @@ file_size_limit = "50MiB"
 [storage.buckets.gpx-routes]
 public = false
 file_size_limit = "10MiB"
-allowed_mime_types = ["application/gpx+xml", "text/xml", "application/xml"]
+allowed_mime_types = ["application/gpx+xml", "application/xml"]
 
 [auth]
 enabled = true

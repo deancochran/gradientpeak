@@ -5627,16 +5627,7 @@
       "securityDefiner": true
     }
   ],
-  "extensions": [
-    {
-      "name": "pg_trgm",
-      "schema": "extensions"
-    },
-    {
-      "name": "plpgsql",
-      "schema": "pg_catalog"
-    }
-  ],
+  "extensions": [],
   "constraints": [
     {
       "kind": "p",
@@ -6992,12 +6983,7 @@
       "allowedMimeTypes": ["image/jpeg", "image/jpg", "image/png"]
     }
   ],
-  "ownedExtensions": [
-    {
-      "name": "pg_trgm",
-      "schema": "extensions"
-    }
-  ],
+  "ownedExtensions": [],
   "publicRelations": [
     {
       "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",

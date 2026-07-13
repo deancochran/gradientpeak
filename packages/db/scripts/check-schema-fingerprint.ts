@@ -12,7 +12,7 @@ import { dbPackageRoot, prepareDbEnv } from "./_helpers";
 const fingerprintPath = resolve(dbPackageRoot, "schema-fingerprint.json");
 const policy = JSON.parse(
   readFileSync(resolve(dbPackageRoot, "migration-policy.json"), "utf8"),
-) as { ownedExtensions: string[] };
+) as { ownedExtensions: string[]; ownedDefaultPrivilegeRoles: string[] };
 const transitionalExtras = JSON.parse(
   readFileSync(resolve(dbPackageRoot, "transitional-schema-extras.json"), "utf8"),
 ) as {
@@ -118,6 +118,27 @@ function managedTableNames() {
       }
     })
     .sort();
+}
+
+function fingerprintDiff(expected: Record<string, unknown>, actual: Record<string, unknown>) {
+  return [...new Set([...Object.keys(expected), ...Object.keys(actual)])].flatMap((section) => {
+    if (JSON.stringify(expected[section]) === JSON.stringify(actual[section])) return [];
+    const expectedSection = expected[section];
+    const actualSection = actual[section];
+    if (!Array.isArray(expectedSection) || !Array.isArray(actualSection)) {
+      return [
+        `${section}: expected=${JSON.stringify(expectedSection)} actual=${JSON.stringify(actualSection)}`,
+      ];
+    }
+    const firstMismatch = expectedSection.findIndex(
+      (value, index) => JSON.stringify(value) !== JSON.stringify(actualSection[index]),
+    );
+    const differenceIndex =
+      firstMismatch === -1 ? Math.min(expectedSection.length, actualSection.length) : firstMismatch;
+    return [
+      `${section}[${differenceIndex}]: expected=${JSON.stringify(expectedSection[differenceIndex])} actual=${JSON.stringify(actualSection[differenceIndex])}`,
+    ];
+  });
 }
 
 export async function createSchemaFingerprint(
@@ -249,6 +270,7 @@ export async function createSchemaFingerprint(
           join pg_roles owner on owner.oid = d.defaclrole
           join pg_namespace n on n.oid = d.defaclnamespace
           where n.nspname = 'public'
+            and owner.rolname = any($3::text[])
         ), '[]'::jsonb),
         'ownedExtensions', coalesce((
           select jsonb_agg(jsonb_build_object(
@@ -266,6 +288,7 @@ export async function createSchemaFingerprint(
           ) order by e.extname)
           from pg_extension e
           join pg_namespace n on n.oid = e.extnamespace
+          where e.extname = any($2::text[])
         ), '[]'::jsonb),
         'storageBuckets', coalesce((
           select jsonb_agg(jsonb_build_object(
@@ -335,7 +358,7 @@ export async function createSchemaFingerprint(
         ), '[]'::jsonb)
       ) as fingerprint
     `,
-    [tables, policy.ownedExtensions],
+    [tables, policy.ownedExtensions, policy.ownedDefaultPrivilegeRoles],
   );
   const fingerprint = result.rows[0]?.fingerprint as Record<string, unknown>;
   return options.allowTransitionalExtras
@@ -358,10 +381,11 @@ async function main() {
       return;
     }
 
-    const expected = JSON.parse(readFileSync(fingerprintPath, "utf8")) as unknown;
+    const expected = JSON.parse(readFileSync(fingerprintPath, "utf8")) as Record<string, unknown>;
     if (JSON.stringify(expected) !== JSON.stringify(actual)) {
+      const diagnostics = fingerprintDiff(expected, actual);
       throw new Error(
-        "managed schema fingerprint drifted; inspect DB/schema changes before running db:schema:fingerprint:write",
+        `managed schema fingerprint drifted; inspect DB/schema changes before running db:schema:fingerprint:write\n${diagnostics.map((line) => `- ${line}`).join("\n")}`,
       );
     }
     console.log(`[db:schema:fingerprint] ${managedTableNames().length} managed tables match`);
