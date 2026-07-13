@@ -43,9 +43,7 @@ type GroupEventFormValues = z.infer<typeof groupEventFormSchema>;
 
 type SelectedActivityPlanOption = {
   activityPlanId: string;
-  label: string | null;
   name: string;
-  sortOrder: number;
 };
 
 type GroupEventFormProps = {
@@ -126,17 +124,17 @@ function toFormValues(event?: GroupEventDetail | null): GroupEventFormValues {
   };
 }
 
-function toSelectedActivityPlanOptions(
+function toSelectedActivityPlan(
   event?: GroupEventDetail | null,
-): SelectedActivityPlanOption[] {
-  return (
-    event?.activityPlanOptions.map((option, index) => ({
-      activityPlanId: option.activity_plan_id,
-      label: option.label,
-      name: option.label || `Activity plan ${index + 1}`,
-      sortOrder: option.sort_order ?? index,
-    })) ?? []
-  );
+): SelectedActivityPlanOption | null {
+  if (!event?.activity_plan_id) return null;
+  const activityPlan = (
+    event as GroupEventDetail & { activity_plan?: { name?: string | null } | null }
+  ).activity_plan;
+  return {
+    activityPlanId: event.activity_plan_id,
+    name: activityPlan?.name?.trim() || "Selected activity plan",
+  };
 }
 
 export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormProps>(
@@ -157,9 +155,8 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
       defaultValues: toFormValues(event),
     });
     const [recurrenceFrequency, routeId] = form.watch(["recurrenceFrequency", "routeId"]);
-    const [selectedActivityPlans, setSelectedActivityPlans] = useState<
-      SelectedActivityPlanOption[]
-    >(() => toSelectedActivityPlanOptions(event));
+    const [selectedActivityPlan, setSelectedActivityPlan] =
+      useState<SelectedActivityPlanOption | null>(() => toSelectedActivityPlan(event));
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [isRecurringCreate, setIsRecurringCreate] = useState(false);
     const [pickerScope, setPickerScope] = useState<"route" | "activityPlans" | null>(null);
@@ -170,7 +167,7 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
 
     useEffect(() => {
       form.reset(toFormValues(event));
-      setSelectedActivityPlans(toSelectedActivityPlanOptions(event));
+      setSelectedActivityPlan(toSelectedActivityPlan(event));
     }, [event, form]);
 
     const selectRoute = (item: ResourcePickerItem) => {
@@ -178,19 +175,10 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
       setPickerScope(null);
     };
 
-    const toggleActivityPlan = (item: ResourcePickerItem) => {
-      setSelectedActivityPlans((current) => {
-        if (current.some((option) => option.activityPlanId === item.id)) {
-          return current
-            .filter((option) => option.activityPlanId !== item.id)
-            .map((option, index) => ({ ...option, sortOrder: index }));
-        }
-
-        return [
-          ...current,
-          { activityPlanId: item.id, label: null, name: item.name, sortOrder: current.length },
-        ];
-      });
+    const selectActivityPlan = (item: ResourcePickerItem) => {
+      setSelectedActivityPlan((current) =>
+        current?.activityPlanId === item.id ? null : { activityPlanId: item.id, name: item.name },
+      );
     };
 
     const submitForm = useCallback(
@@ -221,11 +209,7 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC",
           locationName: values.locationName.trim() || null,
           routeId: values.routeId,
-          activityPlans: selectedActivityPlans.map((option, index) => ({
-            activityPlanId: option.activityPlanId,
-            label: option.label,
-            sortOrder: index,
-          })),
+          activityPlanId: selectedActivityPlan?.activityPlanId ?? null,
         };
 
         if (event) {
@@ -255,7 +239,7 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
 
         await onSubmit({ groupId, ...payload });
       },
-      [event, groupId, isRecurringCreate, onSubmit, selectedActivityPlans],
+      [event, groupId, isRecurringCreate, onSubmit, selectedActivityPlan],
     );
 
     const handleSubmit = form.handleSubmit(submitForm);
@@ -444,35 +428,28 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
               </View>
             </View>
             <View className="gap-2">
-              <Text className="text-xs font-medium text-muted-foreground">
-                Activity plan options
-              </Text>
+              <Text className="text-xs font-medium text-muted-foreground">Activity plan</Text>
               <Button onPress={() => setPickerScope("activityPlans")} variant="outline">
-                <Text className="text-sm font-semibold text-foreground">Add activity plan</Text>
+                <Text className="text-sm font-semibold text-foreground">
+                  {selectedActivityPlan ? "Change activity plan" : "Choose activity plan"}
+                </Text>
               </Button>
-              {selectedActivityPlans.length > 0 ? (
+              {selectedActivityPlan ? (
                 <View className="gap-2">
-                  {selectedActivityPlans.map((option) => (
-                    <View
-                      className="rounded-2xl border border-border bg-card p-3"
-                      key={option.activityPlanId}
-                    >
-                      <View className="flex-row items-start justify-between gap-3">
-                        <View className="min-w-0 flex-1">
-                          <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
-                            {option.name}
-                          </Text>
-                        </View>
-                        <ClearFieldAction
-                          accessibilityLabel={`Remove ${option.name}`}
-                          onPress={() =>
-                            toggleActivityPlan({ id: option.activityPlanId, name: option.name })
-                          }
-                          variant="icon"
-                        />
+                  <View className="rounded-2xl border border-border bg-card p-3">
+                    <View className="flex-row items-start justify-between gap-3">
+                      <View className="min-w-0 flex-1">
+                        <Text className="text-sm font-semibold text-foreground" numberOfLines={1}>
+                          {selectedActivityPlan.name}
+                        </Text>
                       </View>
+                      <ClearFieldAction
+                        accessibilityLabel={`Remove ${selectedActivityPlan.name}`}
+                        onPress={() => setSelectedActivityPlan(null)}
+                        variant="icon"
+                      />
                     </View>
-                  ))}
+                  </View>
                 </View>
               ) : null}
             </View>
@@ -514,12 +491,12 @@ export const GroupEventForm = forwardRef<GroupEventFormHandle, GroupEventFormPro
           visible={pickerScope === "route"}
         />
         <ResourcePickerModal
-          description="Choose activity plans athletes can select when they RSVP. Tap selected plans again to remove them."
+          description="Choose the activity plan for this group event. Tap the selected plan again to remove it."
           onClose={() => setPickerScope(null)}
-          onSelect={toggleActivityPlan}
+          onSelect={selectActivityPlan}
           scope="activityPlans"
-          selectedIds={selectedActivityPlans.map((option) => option.activityPlanId)}
-          title="Choose activity plans"
+          selectedId={selectedActivityPlan?.activityPlanId ?? null}
+          title="Choose activity plan"
           visible={pickerScope === "activityPlans"}
         />
       </View>

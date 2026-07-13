@@ -7,7 +7,7 @@ import { logger } from "../../lib/logger";
 import { enqueuePlannedWorkoutSyncAfterCalendarMutation } from "../../lib/provider-sync/planned-workouts";
 import type { TrainingPlanRepository } from "../../repositories";
 
-const plannedEventType = "planned_activity" as const;
+const plannedEventType = "planned" as const;
 
 type ContentPermissions = {
   revokeEventGrants(eventId: string): Promise<unknown>;

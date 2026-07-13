@@ -125,7 +125,6 @@ const activityPlanBaseSchema = z
     description: z.string().max(1000).nullable().optional(),
     structure: saveableActivityPlanStructureSchemaV2,
     version: z.string().default("1.0").optional(),
-    route_id: z.string().uuid().nullable().optional(),
     notes: z.string().max(2000).nullable().optional(),
   })
   .strict();
@@ -165,7 +164,6 @@ export interface RecordingServiceActivityPlan {
   is_system_template?: boolean;
   name: string;
   notes?: string | null;
-  route_id?: string | null;
   structure: ActivityPlanStructureV2;
   version?: string;
 }

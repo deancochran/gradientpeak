@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   GROUP_ACCESS_LEVELS,
   GROUP_DESCRIPTION_MAX_LENGTH,
-  GROUP_EVENT_ACTIVITY_PLAN_OPTION_LIMIT_MAX,
   GROUP_EVENT_DESCRIPTION_MAX_LENGTH,
   GROUP_EVENT_RSVP_STATUSES,
   GROUP_EVENT_TITLE_MAX_LENGTH,
@@ -14,7 +13,6 @@ import {
   GROUP_NAME_MAX_LENGTH,
 } from "../constants";
 import {
-  copySeriesActivityPlansToOccurrenceInputSchema,
   createGroupInputSchema,
   createOneOffGroupEventInputSchema,
   createRecurringEventSeriesInputSchema,
@@ -37,7 +35,6 @@ const validProfileId = "00000000-0000-4000-8000-000000000002";
 const otherValidProfileId = "00000000-0000-4000-8000-000000000003";
 const validGroupEventId = "00000000-0000-4000-8000-000000000004";
 const validActivityPlanId = "00000000-0000-4000-8000-000000000005";
-const validGroupEventActivityPlanId = "00000000-0000-4000-8000-000000000006";
 const validRouteId = "00000000-0000-4000-8000-000000000007";
 const [publicAccessLevel, membersOnlyAccessLevel] = GROUP_ACCESS_LEVELS;
 const [openJoinPolicy, requestToJoinPolicy, inviteOnlyJoinPolicy] = GROUP_JOIN_POLICIES;
@@ -146,7 +143,7 @@ describe("recurring group event input schemas", () => {
         recurrenceTimezone: "  America/New_York  ",
         startsAt: "2026-06-06T14:00:00.000Z",
         timezone: "  America/New_York  ",
-        activityPlans: [{ activityPlanId: validActivityPlanId }],
+        activityPlanId: validActivityPlanId,
       }),
     ).toMatchObject({
       groupId: validGroupId,
@@ -158,7 +155,7 @@ describe("recurring group event input schemas", () => {
     });
   });
 
-  it("validates recurrence rule, timezone, occurrence overrides, RSVP, and copy contracts", () => {
+  it("validates recurrence rule, timezone, occurrence overrides, and RSVP contracts", () => {
     expect(
       createRecurringEventSeriesInputSchema.safeParse({
         groupId: validGroupId,
@@ -187,9 +184,9 @@ describe("recurring group event input schemas", () => {
       }),
     ).toEqual({ groupEventSeriesId: validGroupEventId, status: acceptedRsvpStatus });
     expect(
-      copySeriesActivityPlansToOccurrenceInputSchema.safeParse({
-        groupEventSeriesId: validGroupEventId,
-        groupEventOccurrenceId: "00000000-0000-4000-8000-000000000008",
+      updateEventOccurrenceInputSchema.safeParse({
+        groupEventId: validGroupEventId,
+        activityPlanId: validActivityPlanId,
       }).success,
     ).toBe(true);
   });
@@ -197,12 +194,20 @@ describe("recurring group event input schemas", () => {
   it("resolves occurrence display fields from series fallback", () => {
     expect(
       resolveGroupEventFallbackFields(
-        { title: null, description: null, timezone: null, locationName: "Park", routeId: null },
+        {
+          title: null,
+          description: null,
+          timezone: null,
+          locationName: "Park",
+          routeId: null,
+          activityPlanId: null,
+        },
         {
           title: "Series",
           description: "Default",
           timezone: "America/New_York",
           routeId: validRouteId,
+          activityPlanId: validActivityPlanId,
         },
       ),
     ).toEqual({
@@ -211,12 +216,13 @@ describe("recurring group event input schemas", () => {
       timezone: "America/New_York",
       locationName: "Park",
       routeId: validRouteId,
+      activityPlanId: validActivityPlanId,
     });
   });
 });
 
 describe("one-off group event input schemas", () => {
-  it("normalizes create input with optional one-off event fields and activity plans", () => {
+  it("normalizes create input with optional one-off event fields and activity plan", () => {
     expect(
       createOneOffGroupEventInputSchema.parse({
         groupId: validGroupId,
@@ -227,13 +233,7 @@ describe("one-off group event input schemas", () => {
         timezone: "  America/New_York  ",
         locationName: "  Clubhouse  ",
         routeId: validRouteId,
-        activityPlans: [
-          {
-            activityPlanId: validActivityPlanId,
-            label: "  A group  ",
-            sortOrder: 1,
-          },
-        ],
+        activityPlanId: validActivityPlanId,
       }),
     ).toEqual({
       groupId: validGroupId,
@@ -244,17 +244,11 @@ describe("one-off group event input schemas", () => {
       timezone: "America/New_York",
       locationName: "Clubhouse",
       routeId: validRouteId,
-      activityPlans: [
-        {
-          activityPlanId: validActivityPlanId,
-          label: "A group",
-          sortOrder: 1,
-        },
-      ],
+      activityPlanId: validActivityPlanId,
     });
   });
 
-  it("enforces one-off event title, description, time window, and option limits", () => {
+  it("enforces one-off event title, description, and time window", () => {
     expect(
       createOneOffGroupEventInputSchema.safeParse({
         groupId: validGroupId,
@@ -286,19 +280,6 @@ describe("one-off group event input schemas", () => {
         endsAt: "2026-06-06T13:00:00.000Z",
       }).success,
     ).toBe(false);
-    expect(
-      createOneOffGroupEventInputSchema.safeParse({
-        groupId: validGroupId,
-        title: "Saturday Ride",
-        startsAt: "2026-06-06T14:00:00.000Z",
-        activityPlans: Array.from(
-          { length: GROUP_EVENT_ACTIVITY_PLAN_OPTION_LIMIT_MAX + 1 },
-          () => ({
-            activityPlanId: validActivityPlanId,
-          }),
-        ),
-      }).success,
-    ).toBe(false);
   });
 
   it("validates update, list, and RSVP contracts", () => {
@@ -321,18 +302,15 @@ describe("one-off group event input schemas", () => {
       rsvpOneOffGroupEventInputSchema.parse({
         groupEventId: validGroupEventId,
         status: acceptedRsvpStatus,
-        selectedGroupEventActivityPlanId: validGroupEventActivityPlanId,
       }),
     ).toEqual({
       groupEventId: validGroupEventId,
       status: acceptedRsvpStatus,
-      selectedGroupEventActivityPlanId: validGroupEventActivityPlanId,
     });
     expect(
       rsvpOneOffGroupEventInputSchema.safeParse({
         groupEventId: validGroupEventId,
         status: declinedRsvpStatus,
-        selectedGroupEventActivityPlanId: null,
       }).success,
     ).toBe(true);
   });

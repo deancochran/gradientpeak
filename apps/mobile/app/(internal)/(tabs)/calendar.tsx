@@ -11,6 +11,7 @@ function CalendarScreen() {
   const {
     dayListProps,
     hasActivitiesData,
+    hasPartialError,
     headerTitle,
     hydrated,
     loadingEvents,
@@ -35,10 +36,12 @@ function CalendarScreen() {
   return (
     <CalendarReadyScreen
       headerTitle={headerTitle}
+      hasPartialError={hasPartialError}
       hydrated={hydrated}
       dayListProps={dayListProps}
       onCreateEvent={onCreateEvent}
       onJumpToday={onJumpToday}
+      onRetry={retryActivities}
       onSelectWeekDate={onSelectWeekDate}
       selectedDateKey={selectedDateKey}
       todayKey={todayKey}

@@ -28,7 +28,6 @@ export default function GroupEventDetailRoute() {
   const event = detailVm.event;
   const isWorking =
     actions.cancelMutation.isPending ||
-    actions.copySeriesActivityPlansToOccurrenceMutation.isPending ||
     actions.rsvpMutation.isPending ||
     actions.rsvpEventSeriesMutation.isPending;
 
@@ -50,25 +49,6 @@ export default function GroupEventDetailRoute() {
             params: { groupEventId: event.series_id as string },
           }),
         testID: "group-event-detail-edit-series",
-      });
-
-      managementActions.push({
-        label: "Copy series plans",
-        onPress: async () => {
-          try {
-            await actions.copySeriesActivityPlansToOccurrence({
-              groupEventOccurrenceId: event.id,
-              groupEventSeriesId: event.series_id as string,
-            });
-            await detailVm.refetch();
-          } catch (error) {
-            Alert.alert(
-              "Unable to copy plans",
-              error instanceof Error ? error.message : "Please try again.",
-            );
-          }
-        },
-        testID: "group-event-detail-copy-series-plans",
       });
     }
 
@@ -158,9 +138,9 @@ export default function GroupEventDetailRoute() {
               params: { groupEventId: occurrence.id },
             })
           }
-          onRsvp={async (status, selectedGroupEventActivityPlanId) => {
+          onRsvp={async (status) => {
             try {
-              await actions.rsvp(event.id, status, selectedGroupEventActivityPlanId);
+              await actions.rsvp(event.id, status);
             } catch (error) {
               Alert.alert(
                 "Unable to RSVP",

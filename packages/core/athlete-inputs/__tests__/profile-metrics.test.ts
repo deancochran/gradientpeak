@@ -23,7 +23,15 @@ describe("profile metric definitions", () => {
 
   it("validates values through the shared registry", () => {
     expect(isProfileMetricValueWithinRange("ftp", 250)).toBe(true);
-    expect(isProfileMetricValueWithinRange("ftp", 20)).toBe(false);
+    expect(isProfileMetricValueWithinRange("ftp", 20)).toBe(true);
+    expect(isProfileMetricValueWithinRange("ftp", 700)).toBe(true);
+    expect(isProfileMetricValueWithinRange("ftp", 19)).toBe(false);
+    expect(isProfileMetricValueWithinRange("ftp", 701)).toBe(false);
+    expect(isProfileMetricValueWithinRange("threshold_pace_seconds_per_km", 1_200)).toBe(true);
+    expect(isProfileMetricValueWithinRange("threshold_pace_seconds_per_km", 1_201)).toBe(false);
+    expect(isProfileMetricValueWithinRange("css_seconds_per_100m", 45)).toBe(true);
+    expect(isProfileMetricValueWithinRange("css_seconds_per_100m", 600)).toBe(true);
+    expect(isProfileMetricValueWithinRange("css_seconds_per_100m", 44)).toBe(false);
     expect(isProfileMetricValueWithinRange("unknown", 20)).toBe(false);
   });
 

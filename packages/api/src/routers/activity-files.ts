@@ -5,8 +5,12 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { type ActivityFileType, inferActivityFileType, parseActivityFile } from "@repo/core";
 import { detectLTHR, estimateVO2Max } from "@repo/core/calculations";
+import {
+  type ActivityFileType,
+  inferActivityFileType,
+  parseActivityFile,
+} from "@repo/core/server/activity-files";
 import { activities, activityEfforts, profileMetrics } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, lte } from "drizzle-orm";

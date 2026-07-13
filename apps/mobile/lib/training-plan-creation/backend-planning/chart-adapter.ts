@@ -115,7 +115,7 @@ function aggregateBackendPointsToWeeks(
         label: localWeek?.label ?? `Week ${index + 1}`,
         completedLoad: localWeek?.completedLoad ?? null,
         plannedLoad,
-        tentativePlannedLoad: plannedLoad,
+        tentativePlannedLoad: null,
         targetLoad: localWeek?.targetLoad ?? null,
         fitness: finalPoint.predicted_fitness_ctl,
         scheduledFitness: finalPoint.predicted_fitness_ctl,
@@ -146,33 +146,28 @@ function mapBackendDailyLoadPoints(
   if (validDailyLoadPoints.length === 0) return localChart.dailyPoints;
 
   const projectionByDate = new Map(projectionPoints.map((point) => [point.date, point] as const));
-  const localByDate = new Map(localChart.dailyPoints.map((point) => [point.date, point] as const));
+  const recommendationByDate = new Map(
+    validDailyLoadPoints.map((point) => [point.date, point] as const),
+  );
 
-  return validDailyLoadPoints.map((dailyPoint) => {
-    const projectionPoint = projectionByDate.get(dailyPoint.date);
-    const localPoint = localByDate.get(dailyPoint.date);
-    const plannedLoadTss = localPoint?.plannedLoadTss ?? 0;
-    const tentativePlannedLoadTss = localPoint?.tentativePlannedLoadTss ?? 0;
-    const completedLoadTss = localPoint?.completedLoadTss ?? 0;
-    const targetLoadTss = Math.round(dailyPoint.recommended_load_tss);
+  return localChart.dailyPoints.map((localPoint) => {
+    const projectionPoint = projectionByDate.get(localPoint.date);
+    const recommendation = recommendationByDate.get(localPoint.date);
+    const targetLoadTss = recommendation
+      ? Math.round(recommendation.recommended_load_tss)
+      : localPoint.targetLoadTss;
     return {
-      date: dailyPoint.date,
-      plannedLoadTss,
-      tentativePlannedLoadTss,
-      completedLoadTss,
+      ...localPoint,
       targetLoadTss,
-      actualOrScheduledLoadTss: completedLoadTss + plannedLoadTss + tentativePlannedLoadTss,
-      loadDeltaTss: completedLoadTss + plannedLoadTss + tentativePlannedLoadTss - targetLoadTss,
-      plannedDeltaTss: plannedLoadTss + tentativePlannedLoadTss - targetLoadTss,
-      fitnessCtl: localPoint?.fitnessCtl ?? null,
+      loadDeltaTss: localPoint.actualOrScheduledLoadTss - targetLoadTss,
+      plannedDeltaTss:
+        localPoint.plannedLoadTss + localPoint.tentativePlannedLoadTss - targetLoadTss,
       scheduledFitnessCtl:
-        projectionPoint?.predicted_fitness_ctl ?? localPoint?.scheduledFitnessCtl ?? null,
+        projectionPoint?.predicted_fitness_ctl ?? localPoint.scheduledFitnessCtl ?? null,
       targetFitnessCtl:
-        localPoint?.targetFitnessCtl ?? projectionPoint?.predicted_fitness_ctl ?? null,
-      fatigueAtl: projectionPoint?.predicted_fatigue_atl ?? localPoint?.fatigueAtl ?? null,
-      formTsb: projectionPoint?.predicted_form_tsb ?? localPoint?.formTsb ?? null,
-      readinessScore: localPoint?.readinessScore ?? null,
-      annotations: localPoint?.annotations ?? [],
+        localPoint.targetFitnessCtl ?? projectionPoint?.predicted_fitness_ctl ?? null,
+      fatigueAtl: projectionPoint?.predicted_fatigue_atl ?? localPoint.fatigueAtl ?? null,
+      formTsb: projectionPoint?.predicted_form_tsb ?? localPoint.formTsb ?? null,
     };
   });
 }

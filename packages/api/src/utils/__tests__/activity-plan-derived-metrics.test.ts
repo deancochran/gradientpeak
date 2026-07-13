@@ -43,7 +43,6 @@ function plan(overrides: Record<string, unknown> = {}) {
     description: null,
     activity_category: "bike" as const,
     structure: { duration: 1800 },
-    route_id: null,
     version: "1",
     updated_at: asOf,
     ...overrides,
@@ -135,8 +134,7 @@ describe("on-demand activity plan estimation", () => {
     expect(estimateActivity).toHaveBeenCalledOnce();
   });
 
-  it("changes deterministically with plan, profile, and route snapshot facts", async () => {
-    const route = { id: "route-1", distance_meters: 10_000, total_ascent: 10, total_descent: 10 };
+  it("changes deterministically with plan and profile facts", async () => {
     const [base] = await getActivityPlansDerivedMetrics(
       [plan()],
       {} as any,
@@ -160,21 +158,12 @@ describe("on-demand activity plan estimation", () => {
       "profile-1",
       { asOf },
     );
-    const [changedRoute] = await getActivityPlansDerivedMetrics(
-      [plan({ route_id: "route-1", structure: {} })],
-      {} as any,
-      store({ routes: [route] }) as any,
-      "profile-1",
-      { asOf },
-    );
-
     expect(changedPlan?.authoritative_metrics.estimated_tss).not.toBe(
       base?.authoritative_metrics.estimated_tss,
     );
     expect(changedProfile?.authoritative_metrics.estimated_tss).not.toBe(
       base?.authoritative_metrics.estimated_tss,
     );
-    expect(changedRoute?.authoritative_metrics.estimated_distance).toBe(10_000);
   });
 
   it("preserves warnings and excludes failed estimates from aggregation", async () => {

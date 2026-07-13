@@ -113,7 +113,6 @@ export function createContentAccessPermissions(db: DrizzleDbClient) {
           ownerProfileId: schema.activityPlans.profile_id,
           templateVisibility: schema.activityPlans.template_visibility,
           isSystem: schema.activityPlans.is_system_template,
-          routeId: schema.activityPlans.route_id,
         })
         .from(schema.activityPlans)
         .where(eq(schema.activityPlans.id, resource.id))
@@ -125,7 +124,6 @@ export function createContentAccessPermissions(db: DrizzleDbClient) {
             ownerProfileId: row.ownerProfileId,
             isPublic: row.templateVisibility === "public",
             isSystem: row.isSystem,
-            routeId: row.routeId,
           }
         : null;
     }

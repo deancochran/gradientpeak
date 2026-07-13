@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+export const PROFILE_PERFORMANCE_THRESHOLD_BOUNDS = {
+  ftpWatts: { min: 20, max: 700 },
+  runningThresholdPaceSecondsPerKilometer: { min: 120, max: 1_200 },
+  swimCssSecondsPerHundredMeters: { min: 45, max: 600 },
+} as const;
+
 export const profileMetricTypeSchema = z.enum([
   "weight_kg",
   "ftp",
@@ -50,8 +56,8 @@ export const profileMetricDefinitions = {
     label: "Bike FTP",
     unit: "W",
     inputKind: "integer",
-    min: 50,
-    max: 1000,
+    min: PROFILE_PERFORMANCE_THRESHOLD_BOUNDS.ftpWatts.min,
+    max: PROFILE_PERFORMANCE_THRESHOLD_BOUNDS.ftpWatts.max,
     decimals: 0,
     defaultValue: 250,
   },
@@ -170,8 +176,8 @@ export const profileMetricDefinitions = {
     label: "Running threshold pace",
     unit: "seconds_per_km",
     inputKind: "integer",
-    min: 120,
-    max: 900,
+    min: PROFILE_PERFORMANCE_THRESHOLD_BOUNDS.runningThresholdPaceSecondsPerKilometer.min,
+    max: PROFILE_PERFORMANCE_THRESHOLD_BOUNDS.runningThresholdPaceSecondsPerKilometer.max,
     decimals: 0,
     defaultValue: 270,
   },
@@ -180,8 +186,8 @@ export const profileMetricDefinitions = {
     label: "Swim CSS",
     unit: "seconds_per_100m",
     inputKind: "integer",
-    min: 60,
-    max: 300,
+    min: PROFILE_PERFORMANCE_THRESHOLD_BOUNDS.swimCssSecondsPerHundredMeters.min,
+    max: PROFILE_PERFORMANCE_THRESHOLD_BOUNDS.swimCssSecondsPerHundredMeters.max,
     decimals: 0,
     defaultValue: 100,
   },

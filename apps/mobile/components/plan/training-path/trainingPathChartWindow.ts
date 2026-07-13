@@ -12,6 +12,19 @@ export type TrainingPathChartWindow<TPoint extends TrainingPathChartWindowPoint>
   visiblePoints: TPoint[];
 };
 
+export function getTrainingPathChartOffset(index: number, slotWidth: number) {
+  return Math.max(0, index) * slotWidth;
+}
+
+export function getNearestTrainingPathChartIndex(
+  offsetX: number,
+  slotWidth: number,
+  pointCount: number,
+) {
+  if (pointCount <= 0) return -1;
+  return Math.max(0, Math.min(pointCount - 1, Math.round(offsetX / slotWidth)));
+}
+
 export function deriveTrainingPathChartWindow<TPoint extends TrainingPathChartWindowPoint>({
   anchorDate,
   maxPoints,

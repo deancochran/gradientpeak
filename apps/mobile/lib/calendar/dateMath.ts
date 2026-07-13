@@ -1,5 +1,7 @@
 import { addDays, addMonths, endOfMonth, format, startOfMonth } from "date-fns";
 
+const MINUTE_MS = 60_000;
+
 export function toDateKey(date: Date): string {
   return format(date, "yyyy-MM-dd");
 }
@@ -7,6 +9,22 @@ export function toDateKey(date: Date): string {
 export function parseDateKey(dateKey: string): Date {
   const [year, month, day] = dateKey.split("-").map(Number);
   return new Date(year ?? 1970, (month ?? 1) - 1, day ?? 1, 12, 0, 0, 0);
+}
+
+export function toLocalDayStartIso(dateKey: string): string {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(year ?? 1970, (month ?? 1) - 1, day ?? 1, 0, 0, 0, 0).toISOString();
+}
+
+export function toLocalDayEndIso(dateKey: string): string {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(year ?? 1970, (month ?? 1) - 1, day ?? 1, 23, 59, 59, 999).toISOString();
+}
+
+export function millisecondsUntilNextLocalDay(now: Date): number {
+  const nextDay = new Date(now);
+  nextDay.setHours(24, 0, 0, 0);
+  return Math.max(MINUTE_MS, nextDay.getTime() - now.getTime());
 }
 
 export function addDaysToDateKey(dateKey: string, days: number): string {

@@ -22,7 +22,7 @@
     },
     {
       "name": "event_type",
-      "values": ["planned_activity", "rest_day", "race", "custom", "imported"]
+      "values": ["planned", "race_target", "custom", "imported"]
     },
     {
       "name": "evidence_observation_source",
@@ -164,12 +164,6 @@
       "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
       "rls": true,
       "name": "follows",
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
-      "rls": true,
-      "name": "group_event_activity_plans",
       "forceRls": false
     },
     {
@@ -1315,16 +1309,6 @@
       "generated": ""
     },
     {
-      "name": "route_id",
-      "type": "uuid",
-      "table": "activity_plans",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 6,
-      "generated": ""
-    },
-    {
       "name": "name",
       "type": "text",
       "table": "activity_plans",
@@ -1369,7 +1353,7 @@
       "type": "jsonb",
       "table": "activity_plans",
       "default": "",
-      "notNull": false,
+      "notNull": true,
       "identity": "",
       "position": 11,
       "generated": ""
@@ -2285,66 +2269,6 @@
       "generated": ""
     },
     {
-      "name": "id",
-      "type": "uuid",
-      "table": "group_event_activity_plans",
-      "default": "gen_random_uuid()",
-      "notNull": true,
-      "identity": "",
-      "position": 1,
-      "generated": ""
-    },
-    {
-      "name": "group_event_id",
-      "type": "uuid",
-      "table": "group_event_activity_plans",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 2,
-      "generated": ""
-    },
-    {
-      "name": "activity_plan_id",
-      "type": "uuid",
-      "table": "group_event_activity_plans",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 3,
-      "generated": ""
-    },
-    {
-      "name": "label",
-      "type": "text",
-      "table": "group_event_activity_plans",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 4,
-      "generated": ""
-    },
-    {
-      "name": "sort_order",
-      "type": "integer",
-      "table": "group_event_activity_plans",
-      "default": "0",
-      "notNull": true,
-      "identity": "",
-      "position": 5,
-      "generated": ""
-    },
-    {
-      "name": "created_at",
-      "type": "timestamp with time zone",
-      "table": "group_event_activity_plans",
-      "default": "now()",
-      "notNull": true,
-      "identity": "",
-      "position": 6,
-      "generated": ""
-    },
-    {
       "name": "group_event_id",
       "type": "uuid",
       "table": "group_event_rsvps",
@@ -2372,16 +2296,6 @@
       "notNull": true,
       "identity": "",
       "position": 3,
-      "generated": ""
-    },
-    {
-      "name": "selected_group_event_activity_plan_id",
-      "type": "uuid",
-      "table": "group_event_rsvps",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 4,
       "generated": ""
     },
     {
@@ -2622,6 +2536,16 @@
       "notNull": true,
       "identity": "",
       "position": 17,
+      "generated": ""
+    },
+    {
+      "name": "activity_plan_id",
+      "type": "uuid",
+      "table": "group_events",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 18,
       "generated": ""
     },
     {
@@ -4902,11 +4826,6 @@
       "definition": "CREATE INDEX idx_activity_plans_profile_id ON public.activity_plans USING btree (profile_id) WHERE (profile_id IS NOT NULL)"
     },
     {
-      "name": "idx_activity_plans_route_id",
-      "table": "activity_plans",
-      "definition": "CREATE INDEX idx_activity_plans_route_id ON public.activity_plans USING btree (route_id) WHERE (route_id IS NOT NULL)"
-    },
-    {
       "name": "idx_activity_plans_system_templates",
       "table": "activity_plans",
       "definition": "CREATE INDEX idx_activity_plans_system_templates ON public.activity_plans USING btree (is_system_template) WHERE (is_system_template = true)"
@@ -5117,26 +5036,6 @@
       "definition": "CREATE INDEX idx_follows_following_id ON public.follows USING btree (following_id)"
     },
     {
-      "name": "group_event_activity_plans_event_plan_unique",
-      "table": "group_event_activity_plans",
-      "definition": "CREATE UNIQUE INDEX group_event_activity_plans_event_plan_unique ON public.group_event_activity_plans USING btree (group_event_id, activity_plan_id)"
-    },
-    {
-      "name": "group_event_activity_plans_event_sort_idx",
-      "table": "group_event_activity_plans",
-      "definition": "CREATE INDEX group_event_activity_plans_event_sort_idx ON public.group_event_activity_plans USING btree (group_event_id, sort_order)"
-    },
-    {
-      "name": "group_event_activity_plans_pkey",
-      "table": "group_event_activity_plans",
-      "definition": "CREATE UNIQUE INDEX group_event_activity_plans_pkey ON public.group_event_activity_plans USING btree (id)"
-    },
-    {
-      "name": "idx_group_event_activity_plans_activity_plan_id",
-      "table": "group_event_activity_plans",
-      "definition": "CREATE INDEX idx_group_event_activity_plans_activity_plan_id ON public.group_event_activity_plans USING btree (activity_plan_id)"
-    },
-    {
       "name": "group_event_rsvps_group_event_id_profile_id_pk",
       "table": "group_event_rsvps",
       "definition": "CREATE UNIQUE INDEX group_event_rsvps_group_event_id_profile_id_pk ON public.group_event_rsvps USING btree (group_event_id, profile_id)"
@@ -5145,11 +5044,6 @@
       "name": "group_event_rsvps_profile_status_idx",
       "table": "group_event_rsvps",
       "definition": "CREATE INDEX group_event_rsvps_profile_status_idx ON public.group_event_rsvps USING btree (profile_id, status)"
-    },
-    {
-      "name": "idx_group_event_rsvps_selected_activity_plan_id",
-      "table": "group_event_rsvps",
-      "definition": "CREATE INDEX idx_group_event_rsvps_selected_activity_plan_id ON public.group_event_rsvps USING btree (selected_group_event_activity_plan_id) WHERE (selected_group_event_activity_plan_id IS NOT NULL)"
     },
     {
       "name": "group_event_series_rsvps_group_event_series_id_profile_id_pk",
@@ -5185,6 +5079,11 @@
       "name": "group_events_series_starts_at_idx",
       "table": "group_events",
       "definition": "CREATE INDEX group_events_series_starts_at_idx ON public.group_events USING btree (series_id, starts_at) WHERE (series_id IS NOT NULL)"
+    },
+    {
+      "name": "idx_group_events_activity_plan_id",
+      "table": "group_events",
+      "definition": "CREATE INDEX idx_group_events_activity_plan_id ON public.group_events USING btree (activity_plan_id) WHERE (activity_plan_id IS NOT NULL)"
     },
     {
       "name": "idx_group_events_created_by_profile_id",
@@ -5757,10 +5656,24 @@
     },
     {
       "kind": "c",
+      "name": "activity_efforts_bike_power_max_check",
+      "table": "activity_efforts",
+      "validated": false,
+      "definition": "CHECK (activity_category <> 'bike'::activity_category OR effort_type <> 'power'::effort_type OR value <= 3000::double precision) NOT VALID"
+    },
+    {
+      "kind": "c",
       "name": "activity_efforts_calculation_version_not_blank_check",
       "table": "activity_efforts",
       "validated": true,
       "definition": "CHECK (calculation_version IS NULL OR btrim(calculation_version) <> ''::text)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_efforts_duration_seconds_bounds_check",
+      "table": "activity_efforts",
+      "validated": false,
+      "definition": "CHECK (duration_seconds >= 1 AND duration_seconds <= 14400) NOT VALID"
     },
     {
       "kind": "c",
@@ -5796,6 +5709,41 @@
       "table": "activity_efforts",
       "validated": true,
       "definition": "CHECK (quality_score IS NULL OR quality_score >= 0::numeric AND quality_score <= 1::numeric)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_efforts_run_speed_bounds_check",
+      "table": "activity_efforts",
+      "validated": false,
+      "definition": "CHECK (activity_category <> 'run'::activity_category OR effort_type <> 'speed'::effort_type OR value >= 0.3::double precision AND value <= 13::double precision) NOT VALID"
+    },
+    {
+      "kind": "c",
+      "name": "activity_efforts_supported_combination_check",
+      "table": "activity_efforts",
+      "validated": false,
+      "definition": "CHECK (activity_category = 'bike'::activity_category AND effort_type = 'power'::effort_type OR (activity_category = ANY (ARRAY['run'::activity_category, 'swim'::activity_category])) AND effort_type = 'speed'::effort_type) NOT VALID"
+    },
+    {
+      "kind": "c",
+      "name": "activity_efforts_swim_speed_bounds_check",
+      "table": "activity_efforts",
+      "validated": false,
+      "definition": "CHECK (activity_category <> 'swim'::activity_category OR effort_type <> 'speed'::effort_type OR value >= 0.1::double precision AND value <= 3::double precision) NOT VALID"
+    },
+    {
+      "kind": "c",
+      "name": "activity_efforts_unit_compatibility_check",
+      "table": "activity_efforts",
+      "validated": false,
+      "definition": "CHECK (activity_category = 'bike'::activity_category AND effort_type = 'power'::effort_type AND (unit = ANY (ARRAY['watts'::text, 'W'::text])) OR (activity_category = ANY (ARRAY['run'::activity_category, 'swim'::activity_category])) AND effort_type = 'speed'::effort_type AND (unit = ANY (ARRAY['meters_per_second'::text, 'm/s'::text]))) NOT VALID"
+    },
+    {
+      "kind": "c",
+      "name": "activity_efforts_value_finite_positive_check",
+      "table": "activity_efforts",
+      "validated": false,
+      "definition": "CHECK (value > 0::double precision AND (value <> ALL (ARRAY['NaN'::real, 'Infinity'::real, '-Infinity'::real])) OR value = 0::double precision AND activity_id IS NULL AND activity_category = 'bike'::activity_category AND effort_type = 'power'::effort_type AND source = 'manual'::evidence_observation_source AND method = 'profile_update_override'::text AND (provenance ->> 'override_state'::text) = 'cleared'::text) NOT VALID"
     },
     {
       "kind": "f",
@@ -5834,13 +5782,6 @@
     },
     {
       "kind": "c",
-      "name": "activity_plans_has_content",
-      "table": "activity_plans",
-      "validated": true,
-      "definition": "CHECK (structure IS NOT NULL OR route_id IS NOT NULL)"
-    },
-    {
-      "kind": "c",
       "name": "activity_plans_import_external_id_non_empty_check",
       "table": "activity_plans",
       "validated": true,
@@ -5866,13 +5807,6 @@
       "table": "activity_plans",
       "validated": true,
       "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
-    },
-    {
-      "kind": "f",
-      "name": "activity_plans_route_id_activity_routes_id_fk",
-      "table": "activity_plans",
-      "validated": true,
-      "definition": "FOREIGN KEY (route_id) REFERENCES activity_routes(id) ON DELETE SET NULL"
     },
     {
       "kind": "c",
@@ -6212,48 +6146,6 @@
     },
     {
       "kind": "f",
-      "name": "group_event_activity_plans_activity_plan_id_activity_plans_id_f",
-      "table": "group_event_activity_plans",
-      "validated": true,
-      "definition": "FOREIGN KEY (activity_plan_id) REFERENCES activity_plans(id) ON DELETE CASCADE"
-    },
-    {
-      "kind": "u",
-      "name": "group_event_activity_plans_event_plan_unique",
-      "table": "group_event_activity_plans",
-      "validated": true,
-      "definition": "UNIQUE (group_event_id, activity_plan_id)"
-    },
-    {
-      "kind": "f",
-      "name": "group_event_activity_plans_group_event_id_group_events_id_fk",
-      "table": "group_event_activity_plans",
-      "validated": true,
-      "definition": "FOREIGN KEY (group_event_id) REFERENCES group_events(id) ON DELETE CASCADE"
-    },
-    {
-      "kind": "c",
-      "name": "group_event_activity_plans_label_non_empty",
-      "table": "group_event_activity_plans",
-      "validated": true,
-      "definition": "CHECK (label IS NULL OR btrim(label) <> ''::text)"
-    },
-    {
-      "kind": "p",
-      "name": "group_event_activity_plans_pkey",
-      "table": "group_event_activity_plans",
-      "validated": true,
-      "definition": "PRIMARY KEY (id)"
-    },
-    {
-      "kind": "c",
-      "name": "group_event_activity_plans_sort_order_check",
-      "table": "group_event_activity_plans",
-      "validated": true,
-      "definition": "CHECK (sort_order >= 0)"
-    },
-    {
-      "kind": "f",
       "name": "group_event_rsvps_group_event_id_group_events_id_fk",
       "table": "group_event_rsvps",
       "validated": true,
@@ -6272,13 +6164,6 @@
       "table": "group_event_rsvps",
       "validated": true,
       "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
-    },
-    {
-      "kind": "f",
-      "name": "group_event_rsvps_selected_group_event_activity_plan_id_group_e",
-      "table": "group_event_rsvps",
-      "validated": true,
-      "definition": "FOREIGN KEY (selected_group_event_activity_plan_id) REFERENCES group_event_activity_plans(id) ON DELETE SET NULL"
     },
     {
       "kind": "c",
@@ -6314,6 +6199,13 @@
       "table": "group_event_series_rsvps",
       "validated": true,
       "definition": "CHECK (status = ANY (ARRAY['accepted'::text, 'declined'::text, 'tentative'::text]))"
+    },
+    {
+      "kind": "f",
+      "name": "group_events_activity_plan_id_fkey",
+      "table": "group_events",
+      "validated": true,
+      "definition": "FOREIGN KEY (activity_plan_id) REFERENCES activity_plans(id) ON DELETE SET NULL"
     },
     {
       "kind": "f",
@@ -7117,14 +7009,6 @@
       "rls": true,
       "kind": "r",
       "name": "follows",
-      "managed": true,
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
-      "rls": true,
-      "kind": "r",
-      "name": "group_event_activity_plans",
       "managed": true,
       "forceRls": false
     },

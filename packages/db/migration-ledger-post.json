@@ -29,6 +29,14 @@
     {
       "version": "20260713135515",
       "name": "constrain_profile_preferred_units"
+    },
+    {
+      "version": "20260713153456",
+      "name": "guard_activity_effort_bounds"
+    },
+    {
+      "version": "20260713165000",
+      "name": "event_route_plan_hard_cut"
     }
   ]
 }

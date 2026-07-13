@@ -8,7 +8,6 @@
  */
 
 import {
-  calculateTotalDurationV2,
   formatDurationV2 as formatDurationCore,
   getDurationSecondsV2 as getDurationSecondsCore,
 } from "@repo/core";
@@ -85,7 +84,7 @@ export function convertV2ToUIFormat(duration: DurationV2): DurationUIOutput {
           type: "time",
           value: hours,
           unit: "hours",
-          displayValue: formatDuration({ type: "time", seconds }),
+          displayValue: formatDurationCore({ type: "time", seconds }),
         };
       }
 
@@ -96,7 +95,7 @@ export function convertV2ToUIFormat(duration: DurationV2): DurationUIOutput {
           type: "time",
           value: minutes,
           unit: "minutes",
-          displayValue: formatDuration({ type: "time", seconds }),
+          displayValue: formatDurationCore({ type: "time", seconds }),
         };
       }
 
@@ -105,7 +104,7 @@ export function convertV2ToUIFormat(duration: DurationV2): DurationUIOutput {
         type: "time",
         value: seconds,
         unit: "seconds",
-        displayValue: formatDuration({ type: "time", seconds }),
+        displayValue: formatDurationCore({ type: "time", seconds }),
       };
     }
 
@@ -165,25 +164,9 @@ export function getDurationMs(duration: DurationV2): number {
   return getDurationSecondsCore(duration) * 1000;
 }
 
-/**
- * Get duration in seconds (for time-based durations only)
- * @deprecated Use getDurationSecondsV2 from @repo/core instead
- */
-export function getDurationSeconds(duration: DurationV2): number {
-  return getDurationSecondsCore(duration);
-}
-
 // ==============================
 // Formatting
 // ==============================
-
-/**
- * Format duration for display
- * @deprecated Use formatDurationV2 from @repo/core instead
- */
-export function formatDuration(duration: DurationV2): string {
-  return formatDurationCore(duration);
-}
 
 /**
  * Format duration in a short form (e.g., "5m", "10km", "20 reps")
@@ -220,13 +203,4 @@ export function formatDurationShort(duration: DurationV2): string {
     default:
       return "?";
   }
-}
-
-/**
- * Calculate total duration from multiple steps
- * @deprecated Use calculateTotalDurationV2 from @repo/core instead
- */
-export function calculateTotalDurationMs(durations: DurationV2[]): number {
-  const steps = durations.map((duration) => ({ duration }));
-  return calculateTotalDurationV2(steps) * 1000;
 }

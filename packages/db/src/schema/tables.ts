@@ -277,12 +277,11 @@ export const activityPlans = pgTable(
       .defaultNow()
       .notNull(),
     profile_id: uuid("profile_id").references(() => profiles.id, { onDelete: "cascade" }),
-    route_id: uuid("route_id").references(() => activityRoutes.id, { onDelete: "set null" }),
     name: text("name").notNull(),
     description: text("description"),
     notes: text("notes"),
     activity_category: activityCategoryEnum("activity_category").notNull(),
-    structure: jsonb("structure"),
+    structure: jsonb("structure").notNull(),
     version: text("version").notNull().default("1.0"),
     template_visibility: text("template_visibility").notNull().default("private"),
     import_provider: text("import_provider"),
@@ -310,19 +309,12 @@ export const activityPlans = pgTable(
       "activity_plans_system_template_check",
       sql`(${table.is_system_template} = true and ${table.profile_id} is null) or (${table.is_system_template} = false and ${table.profile_id} is not null)`,
     ),
-    check(
-      "activity_plans_has_content",
-      sql`${table.structure} is not null or ${table.route_id} is not null`,
-    ),
     index("idx_activity_plans_profile_id")
       .on(table.profile_id)
       .where(sql`${table.profile_id} is not null`),
     index("idx_activity_plans_system_templates")
       .on(table.is_system_template)
       .where(sql`${table.is_system_template} = true`),
-    index("idx_activity_plans_route_id")
-      .on(table.route_id)
-      .where(sql`${table.route_id} is not null`),
     index("idx_activity_plans_visibility").on(table.template_visibility),
     uniqueIndex("idx_activity_plans_import_identity")
       .on(table.profile_id, table.import_provider, table.import_external_id)
@@ -353,6 +345,9 @@ export const groupEvents = pgTable(
     occurrence_key: text("occurrence_key"),
     location_name: text("location_name"),
     route_id: uuid("route_id").references(() => activityRoutes.id, { onDelete: "set null" }),
+    activity_plan_id: uuid("activity_plan_id").references(() => activityPlans.id, {
+      onDelete: "set null",
+    }),
     cancelled_at: timestamp("cancelled_at", { withTimezone: true, mode: "date" }),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
@@ -378,6 +373,9 @@ export const groupEvents = pgTable(
       .on(table.created_by_profile_id)
       .where(sql`${table.created_by_profile_id} is not null`),
     index("idx_group_events_route_id").on(table.route_id).where(sql`${table.route_id} is not null`),
+    index("idx_group_events_activity_plan_id")
+      .on(table.activity_plan_id)
+      .where(sql`${table.activity_plan_id} is not null`),
     check(
       "group_events_title_non_empty",
       sql`${table.title} is null or btrim(${table.title}) <> ''`,
@@ -425,37 +423,6 @@ export const groupEvents = pgTable(
   ],
 );
 
-export const groupEventActivityPlans = pgTable(
-  "group_event_activity_plans",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    group_event_id: uuid("group_event_id")
-      .notNull()
-      .references(() => groupEvents.id, { onDelete: "cascade" }),
-    activity_plan_id: uuid("activity_plan_id")
-      .notNull()
-      .references(() => activityPlans.id, { onDelete: "cascade" }),
-    label: text("label"),
-    sort_order: integer("sort_order").notNull().default(0),
-    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    unique("group_event_activity_plans_event_plan_unique").on(
-      table.group_event_id,
-      table.activity_plan_id,
-    ),
-    index("group_event_activity_plans_event_sort_idx").on(table.group_event_id, table.sort_order),
-    index("idx_group_event_activity_plans_activity_plan_id").on(table.activity_plan_id),
-    check("group_event_activity_plans_sort_order_check", sql`${table.sort_order} >= 0`),
-    check(
-      "group_event_activity_plans_label_non_empty",
-      sql`${table.label} is null or btrim(${table.label}) <> ''`,
-    ),
-  ],
-);
-
 export const groupEventRsvps = pgTable(
   "group_event_rsvps",
   {
@@ -468,10 +435,6 @@ export const groupEventRsvps = pgTable(
     status: text("status", { enum: ["accepted", "declined", "tentative"] })
       .notNull()
       .default("accepted"),
-    selected_group_event_activity_plan_id: uuid("selected_group_event_activity_plan_id").references(
-      () => groupEventActivityPlans.id,
-      { onDelete: "set null" },
-    ),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -482,9 +445,6 @@ export const groupEventRsvps = pgTable(
   (table) => [
     primaryKey({ columns: [table.group_event_id, table.profile_id] }),
     index("group_event_rsvps_profile_status_idx").on(table.profile_id, table.status),
-    index("idx_group_event_rsvps_selected_activity_plan_id")
-      .on(table.selected_group_event_activity_plan_id)
-      .where(sql`${table.selected_group_event_activity_plan_id} is not null`),
     check(
       "group_event_rsvps_status_check",
       sql`${table.status} in ('accepted', 'declined', 'tentative')`,
@@ -949,6 +909,34 @@ export const activityEfforts = pgTable(
   (table) => [
     index("idx_activity_efforts_activity_id").on(table.activity_id),
     index("idx_activity_efforts_profile_id").on(table.profile_id),
+    check(
+      "activity_efforts_duration_seconds_bounds_check",
+      sql`${table.duration_seconds} between 1 and 14400`,
+    ),
+    check(
+      "activity_efforts_value_finite_positive_check",
+      sql`${table.value} > 0 and ${table.value} not in ('NaN'::real, 'Infinity'::real, '-Infinity'::real)`,
+    ),
+    check(
+      "activity_efforts_supported_combination_check",
+      sql`(${table.activity_category} = 'bike' and ${table.effort_type} = 'power') or (${table.activity_category} in ('run', 'swim') and ${table.effort_type} = 'speed')`,
+    ),
+    check(
+      "activity_efforts_unit_compatibility_check",
+      sql`(${table.activity_category} = 'bike' and ${table.effort_type} = 'power' and ${table.unit} in ('watts', 'W')) or (${table.activity_category} in ('run', 'swim') and ${table.effort_type} = 'speed' and ${table.unit} in ('meters_per_second', 'm/s'))`,
+    ),
+    check(
+      "activity_efforts_bike_power_max_check",
+      sql`${table.activity_category} <> 'bike' or ${table.effort_type} <> 'power' or ${table.value} <= 3000`,
+    ),
+    check(
+      "activity_efforts_run_speed_bounds_check",
+      sql`${table.activity_category} <> 'run' or ${table.effort_type} <> 'speed' or (${table.value} >= 0.3 and ${table.value} <= 13)`,
+    ),
+    check(
+      "activity_efforts_swim_speed_bounds_check",
+      sql`${table.activity_category} <> 'swim' or ${table.effort_type} <> 'speed' or (${table.value} >= 0.1 and ${table.value} <= 3)`,
+    ),
     check(
       "activity_efforts_method_not_blank_check",
       sql`${table.method} is null or btrim(${table.method}) <> ''`,

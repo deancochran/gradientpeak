@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { onboardingIntentArraySchema } from "../onboarding";
 import { canonicalSportSchema } from "../sport";
 import {
   creationOptimizationProfileEnum,
@@ -247,6 +248,7 @@ export const athletePreferenceProfileSchema = z
     adaptation_preferences: athletePreferenceAdaptationSchema,
     goal_strategy_preferences: athletePreferenceGoalStrategySchema,
     baseline_fitness: athletePreferenceBaselineSchema.optional(),
+    onboarding_intents: onboardingIntentArraySchema.optional(),
   })
   .strict();
 

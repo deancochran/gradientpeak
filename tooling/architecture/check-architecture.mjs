@@ -1221,15 +1221,21 @@ export function compareMergeBaseProtection(current, previous, approved = false) 
   return { bootstrap, findings };
 }
 
+export function currentTrackedFiles(cached, untracked, deleted) {
+  const deletedSet = new Set(deleted.map(normalizePath));
+  return [...new Set([...cached, ...untracked].map(normalizePath))]
+    .filter((path) => !deletedSet.has(path))
+    .sort();
+}
+
 function trackedFiles(root) {
   const listed = (args) =>
     execFileSync("git", args, { cwd: root, encoding: "utf8" }).split("\0").filter(Boolean);
-  return [
-    ...new Set([
-      ...listed(["ls-files", "-z"]),
-      ...listed(["ls-files", "--others", "--exclude-standard", "-z"]),
-    ]),
-  ];
+  return currentTrackedFiles(
+    listed(["ls-files", "-z"]),
+    listed(["ls-files", "--others", "--exclude-standard", "-z"]),
+    listed(["ls-files", "--deleted", "-z"]),
+  );
 }
 
 function readMergeBasePolicy(root) {

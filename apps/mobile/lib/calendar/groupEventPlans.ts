@@ -1,3 +1,4 @@
+import { toDateKey } from "@/lib/calendar/dateMath";
 import type { CalendarEventActivityPlan } from "@/lib/calendar/normalizeEvents";
 import type { GroupEventListItem } from "@/lib/groups";
 
@@ -7,56 +8,50 @@ export type CalendarGroupEvent = GroupEventListItem & {
   selectedActivityPlanTentative?: boolean;
 };
 
-type ActivityPlanLookupItem = CalendarEventActivityPlan & { id?: string | null };
+type GroupEventListItemWithActivityPlan = GroupEventListItem & {
+  activity_plan?: CalendarEventActivityPlan | null;
+};
 
-export function getSelectedGroupEventActivityPlanOption(event: GroupEventListItem) {
+export function getSelectedGroupEventActivityPlan(event: GroupEventListItemWithActivityPlan) {
   if (event.viewerRsvp?.status === "declined" || event.viewerRsvp?.status === "tentative") {
     return null;
   }
 
-  const selectedOptionId = event.viewerRsvp?.selected_group_event_activity_plan_id ?? null;
-  if (event.viewerRsvp?.status === "accepted" && selectedOptionId) {
-    return event.activityPlanOptions.find((option) => option.id === selectedOptionId) ?? null;
-  }
-
-  if (
-    (event.viewerRsvp?.status === "accepted" || event.viewerSeriesRsvp?.status === "accepted") &&
-    event.activityPlanOptions.length === 1
-  ) {
-    return event.activityPlanOptions[0] ?? null;
+  if (event.viewerRsvp?.status === "accepted" || event.viewerSeriesRsvp?.status === "accepted") {
+    return event.activity_plan ?? null;
   }
 
   return null;
 }
 
-export function getDisplayGroupEventActivityPlanOption(event: GroupEventListItem) {
-  const selectedOption = getSelectedGroupEventActivityPlanOption(event);
-  if (selectedOption) return { option: selectedOption, tentative: false };
+export function getDisplayGroupEventActivityPlan(event: GroupEventListItemWithActivityPlan) {
+  const selectedActivityPlan = getSelectedGroupEventActivityPlan(event);
+  if (selectedActivityPlan) return { activityPlan: selectedActivityPlan, tentative: false };
 
-  const defaultOption = event.activityPlanOptions[0];
-  if (!defaultOption) return null;
+  const activityPlan = event.activity_plan ?? null;
+  if (!activityPlan) return null;
 
   if (event.viewerRsvp?.status === "declined" || event.viewerSeriesRsvp?.status === "declined") {
     return null;
   }
 
   if (event.viewerRsvp?.status === "tentative" || event.viewerSeriesRsvp?.status === "tentative") {
-    return { option: defaultOption, tentative: true };
+    return { activityPlan, tentative: true };
   }
 
   if (event.viewerRsvp?.status === "accepted" || event.viewerSeriesRsvp?.status === "accepted") {
-    return { option: defaultOption, tentative: false };
+    return { activityPlan, tentative: false };
   }
 
   if (!event.viewerRsvp && !event.viewerSeriesRsvp) {
-    return { option: defaultOption, tentative: true };
+    return { activityPlan, tentative: true };
   }
 
   return null;
 }
 
-export function getSelectedGroupEventActivityPlanId(event: GroupEventListItem) {
-  return getSelectedGroupEventActivityPlanOption(event)?.activity_plan_id ?? null;
+export function getSelectedGroupEventActivityPlanId(event: GroupEventListItemWithActivityPlan) {
+  return getSelectedGroupEventActivityPlan(event)?.id ?? event.activity_plan_id ?? null;
 }
 
 export function getSelectedGroupEventActivityPlanIds(events: GroupEventListItem[]) {
@@ -64,7 +59,8 @@ export function getSelectedGroupEventActivityPlanIds(events: GroupEventListItem[
     new Set(
       events
         .map(
-          (event) => getDisplayGroupEventActivityPlanOption(event)?.option.activity_plan_id ?? null,
+          (event) =>
+            getDisplayGroupEventActivityPlan(event)?.activityPlan.id ?? event.activity_plan_id,
         )
         .filter((id): id is string => Boolean(id)),
     ),
@@ -73,21 +69,25 @@ export function getSelectedGroupEventActivityPlanIds(events: GroupEventListItem[
 
 export function attachSelectedGroupEventActivityPlans(
   events: GroupEventListItem[],
-  activityPlans: ActivityPlanLookupItem[],
+  activityPlans: CalendarEventActivityPlan[],
 ): CalendarGroupEvent[] {
   const planById = new Map(activityPlans.map((plan) => [plan.id, plan]));
 
   return events.map((event) => {
-    const selectedOption = getDisplayGroupEventActivityPlanOption(event);
-    const selectedActivityPlan = selectedOption?.option
-      ? (planById.get(selectedOption.option.activity_plan_id) ?? null)
-      : null;
+    const displayPlan = getDisplayGroupEventActivityPlan(event);
+    const selectedActivityPlan = displayPlan?.activityPlan
+      ? displayPlan.activityPlan.id
+        ? (planById.get(displayPlan.activityPlan.id) ?? displayPlan.activityPlan)
+        : displayPlan.activityPlan
+      : event.activity_plan_id
+        ? (planById.get(event.activity_plan_id) ?? null)
+        : null;
 
     return {
       ...event,
       selectedActivityPlan,
-      selectedActivityPlanOptionLabel: selectedOption?.option.label ?? null,
-      selectedActivityPlanTentative: selectedOption?.tentative ?? false,
+      selectedActivityPlanOptionLabel: selectedActivityPlan?.name ?? null,
+      selectedActivityPlanTentative: displayPlan?.tentative ?? false,
     };
   });
 }
@@ -96,8 +96,9 @@ export function buildGroupEventsByDate(events: CalendarGroupEvent[]) {
   const map = new Map<string, CalendarGroupEvent[]>();
 
   for (const event of events) {
-    const dateKey = event.starts_at.split("T")[0];
-    if (!dateKey) continue;
+    const startsAt = new Date(event.starts_at);
+    if (Number.isNaN(startsAt.getTime())) continue;
+    const dateKey = toDateKey(startsAt);
     const items = map.get(dateKey) ?? [];
     items.push(event);
     map.set(dateKey, items);
@@ -107,7 +108,9 @@ export function buildGroupEventsByDate(events: CalendarGroupEvent[]) {
     map.set(
       dateKey,
       [...dayEvents].sort(
-        (left, right) => new Date(left.starts_at).getTime() - new Date(right.starts_at).getTime(),
+        (left, right) =>
+          new Date(left.starts_at).getTime() - new Date(right.starts_at).getTime() ||
+          (left.id < right.id ? -1 : left.id > right.id ? 1 : 0),
       ),
     );
   }
@@ -121,7 +124,7 @@ export function toGroupEventScheduledActivityPlanEvent(event: CalendarGroupEvent
   return {
     id: event.id,
     starts_at: event.starts_at,
-    scheduled_date: event.starts_at.split("T")[0] ?? null,
+    scheduled_date: toDateKey(new Date(event.starts_at)),
     recurrence_rule: event.recurrence_rule,
     activity_plan: event.selectedActivityPlan,
     tentative: event.selectedActivityPlanTentative ?? false,

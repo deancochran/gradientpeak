@@ -36,7 +36,7 @@ function DashboardPage() {
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <MetricCard
           title="Current Form"
-          value={dashboard ? dashboard.currentStatus.form : "..."}
+          value={dashboard ? dashboard.currentStatus.loadBalanceStatus : "..."}
           description={
             dashboard
               ? `CTL ${dashboard.currentStatus.ctl} / ATL ${dashboard.currentStatus.atl}`

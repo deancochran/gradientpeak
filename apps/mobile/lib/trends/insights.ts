@@ -99,7 +99,7 @@ type TrainingLoadInput =
       currentStatus?: {
         atl: number;
         ctl: number;
-        form: string;
+        loadBalanceStatus: string;
         tsb: number;
       } | null;
       dataPoints?: LoadPoint[];
@@ -342,7 +342,7 @@ export function buildActivityInsights({
       ...getActivityInsightVisualPolicy("trainingLoad"),
       value: load?.currentStatus ? formatNumber(load.currentStatus.ctl, 1) : "--",
       summary: load?.currentStatus
-        ? `${load.currentStatus.form} form`
+        ? `${load.currentStatus.loadBalanceStatus} form`
         : "Record activities to build load",
       detail: "CTL, ATL, and TSB summarize accumulated training stress and recovery balance.",
       direction: getDirection(latestLoad?.ctl ?? null, previousLoad?.ctl ?? null),

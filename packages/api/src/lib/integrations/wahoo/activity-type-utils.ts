@@ -7,19 +7,19 @@
 import type { PublicActivityCategory } from "@repo/db";
 
 export type ActivityCategory = PublicActivityCategory;
-export type ActivityType = ActivityCategory;
+export type WahooActivityType = ActivityCategory;
 
 /**
  * Convert from database schema to integration activity type format.
  */
-export function toActivityType(category: PublicActivityCategory): ActivityType {
+export function toActivityType(category: PublicActivityCategory): WahooActivityType {
   return category;
 }
 
 /**
  * Convert from integration activity type format to database schema fields.
  */
-export function fromActivityType(activityType: ActivityType): {
+export function fromActivityType(activityType: WahooActivityType): {
   category: PublicActivityCategory;
 } {
   return { category: activityType };
@@ -29,7 +29,7 @@ export function fromActivityType(activityType: ActivityType): {
  * Check if activity type supports routes
  * Bike and run support routes.
  */
-export function supportsRoutes(activityType: ActivityType): boolean {
+export function supportsRoutes(activityType: WahooActivityType): boolean {
   return activityType === "bike" || activityType === "run";
 }
 
@@ -37,8 +37,8 @@ export function supportsRoutes(activityType: ActivityType): boolean {
  * Check if activity type is supported by Wahoo
  * Wahoo only supports cycling and running with structured workouts.
  */
-export function isWahooSupported(activityType: ActivityType): boolean {
-  const supportedTypes: ActivityType[] = ["bike", "run"];
+export function isWahooSupported(activityType: WahooActivityType): boolean {
+  const supportedTypes: WahooActivityType[] = ["bike", "run"];
   return supportedTypes.includes(activityType);
 }
 
@@ -46,7 +46,7 @@ export function isWahooSupported(activityType: ActivityType): boolean {
  * Map activity type to Wahoo's workout_type_family and workout_type_location
  */
 export function toWahooTypes(
-  activityType: ActivityType,
+  activityType: WahooActivityType,
   options?: { hasRoute?: boolean },
 ): {
   workout_type_family: number;
@@ -73,7 +73,7 @@ export function toWahooTypes(
 /**
  * Get sport name for route metadata
  */
-export function toSportName(activityType: ActivityType): string {
+export function toSportName(activityType: WahooActivityType): string {
   const { category } = fromActivityType(activityType);
 
   switch (category) {
@@ -93,7 +93,7 @@ export function toSportName(activityType: ActivityType): string {
  * These IDs are used when creating workouts on the calendar
  */
 export function toWahooWorkoutTypeId(
-  activityType: ActivityType,
+  activityType: WahooActivityType,
   options?: { hasRoute?: boolean },
 ): number | null {
   const hasRoute = options?.hasRoute ?? false;

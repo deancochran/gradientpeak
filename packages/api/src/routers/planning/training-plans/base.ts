@@ -159,7 +159,7 @@ const applyQuickAdjustmentInputSchema = z
     adjustedStructure: trainingPlanSchema,
   })
   .strict();
-const plannedEventType = "planned_activity" as const;
+const plannedEventType = "planned" as const;
 const conservativeStarterWeeklyTss = 140;
 const conservativeStarterDailyTss = conservativeStarterWeeklyTss / 7;
 

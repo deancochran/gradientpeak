@@ -52,7 +52,6 @@ jest.mock("@/lib/groups", () => ({
   useGroupDetailViewModel: () => ({ viewer: null }),
   useGroupEventActions: () => ({
     cancelMutation: { isPending: false },
-    copySeriesActivityPlansToOccurrenceMutation: { isPending: false },
     rsvpEventSeriesMutation: { isPending: false },
     rsvpMutation: { isPending: false },
   }),

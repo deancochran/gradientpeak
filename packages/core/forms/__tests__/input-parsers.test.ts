@@ -1,6 +1,4 @@
-import { parseHmsToSeconds as parseCanonicalHms } from "@repo/core/utils/fitness-inputs";
-import { describe, expect, it } from "vitest";
-
+import * as formsShim from "@repo/core/forms";
 import {
   formatDateOnly,
   formatSecondsToHms,
@@ -12,11 +10,14 @@ import {
   parseDistanceKmToMeters,
   parseHmsToSeconds,
   parseMmSsToSeconds,
-} from "../input-parsers";
+} from "@repo/core/forms/input-parsers";
+import { parseHmsToSeconds as parseCanonicalHms } from "@repo/core/utils/fitness-inputs";
+import { describe, expect, it } from "vitest";
 
-describe("input parsers", () => {
-  it("keeps the forms compatibility subpath on the canonical implementation", () => {
+describe("input parser compatibility exports", () => {
+  it("keeps the forms compatibility subpaths on the canonical implementation", () => {
     expect(parseHmsToSeconds).toBe(parseCanonicalHms);
+    expect(formsShim.parseHmsToSeconds).toBe(parseCanonicalHms);
   });
 
   it("parses and bounds numeric values", () => {

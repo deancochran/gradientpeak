@@ -68,7 +68,7 @@ export interface EventCompletionRepository {
   }): Promise<
     Array<{
       activity_plan_id: string | null;
-      event_type: "planned_activity" | "race";
+      event_type: "planned" | "race_target";
       id: string;
       linked_activity_id: string | null;
       starts_at: string;

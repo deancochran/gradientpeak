@@ -30,6 +30,7 @@ export function buildCompleteOnboardingInput(
       ftp: data.ftp ?? undefined,
       full_name: fullName,
       gender: data.gender ?? undefined,
+      intents: data.intent,
       lthr: data.lthr ?? undefined,
       max_hr: data.max_hr ?? undefined,
       resting_hr: data.resting_hr ?? undefined,

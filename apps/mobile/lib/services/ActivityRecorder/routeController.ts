@@ -2,7 +2,7 @@ export type RecordingRouteAttachmentSource = "none" | "plan_route" | "explicit_r
 
 export interface RecordingRouteAttachmentView {
   routeId: string | null;
-  source: RecordingRouteAttachmentSource;
+  source: Exclude<RecordingRouteAttachmentSource, "plan_route">;
   suppressedPlanRouteId: string | null;
 }
 
@@ -118,11 +118,11 @@ export class RouteController {
     return Boolean(this.currentRouteValue?.coordinates?.length);
   }
 
-  getAttachedRouteId(planRouteId: string | null | undefined): string | null {
-    return this.getRouteAttachment(planRouteId).routeId;
+  getAttachedRouteId(): string | null {
+    return this.getRouteAttachment().routeId;
   }
 
-  getRouteAttachment(planRouteId: string | null | undefined): RecordingRouteAttachmentView {
+  getRouteAttachment(): RecordingRouteAttachmentView {
     if (this.routeOverrideId) {
       return {
         routeId: this.routeOverrideId,
@@ -131,31 +131,11 @@ export class RouteController {
       };
     }
 
-    if (planRouteId && this.routeOverrideId === undefined) {
-      return {
-        routeId: planRouteId,
-        source: "plan_route",
-        suppressedPlanRouteId: null,
-      };
-    }
-
     return {
       routeId: null,
       source: "none",
       suppressedPlanRouteId: this.suppressedPlanRouteId,
     };
-  }
-
-  beginPlanRouteAttachment(): number {
-    this.routeOverrideId = undefined;
-    this.suppressedPlanRouteId = null;
-    return this.beginOperation();
-  }
-
-  clearPlanAttachment(): void {
-    this.routeOverrideId = undefined;
-    this.suppressedPlanRouteId = null;
-    this.beginOperation();
   }
 
   beginExplicitRouteAttachment(routeId: string): {
@@ -176,10 +156,9 @@ export class RouteController {
     return operationId;
   }
 
-  detachRoute(planRouteId: string | null | undefined): void {
+  detachRoute(): void {
     this.beginOperation();
-    this.suppressedPlanRouteId =
-      this.getRouteAttachment(planRouteId).source === "plan_route" ? (planRouteId ?? null) : null;
+    this.suppressedPlanRouteId = null;
     this.routeOverrideId = null;
   }
 

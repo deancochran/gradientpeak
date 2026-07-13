@@ -214,7 +214,7 @@ export const activitiesRouter = createTRPCRouter({
           and(
             eq(events.id, input.eventId),
             eq(events.profile_id, ctx.session.user.id),
-            eq(events.event_type, "planned_activity"),
+            eq(events.event_type, "planned"),
           ),
         )
         .limit(1);

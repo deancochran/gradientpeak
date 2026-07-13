@@ -3,7 +3,7 @@ import type { OnboardingData } from "./types";
 export const INITIAL_ONBOARDING_DATA: OnboardingData = {
   full_name: "",
   username: "",
-  intent: null,
+  intent: [],
   experience_level: null,
   dob: null,
   weight_kg: null,

@@ -73,43 +73,92 @@ describe("calculateSeasonBestCurve", () => {
 });
 
 describe("calculateCriticalPower", () => {
-  it("should return null if insufficient data (less than 2 points in valid range)", () => {
-    // Only 1 point in range (3m - 30m)
-    const curve = [createEffort(300, 300)];
-    const result = calculateCriticalPower(curve);
-    expect(result).toBeNull();
+  it("requires at least three distinct observed points", () => {
+    expect(calculateCriticalPower([createEffort(180, 330), createEffort(1_200, 260)])).toBeNull();
+    expect(
+      calculateCriticalPower([
+        createEffort(180, 330),
+        createEffort(180, 325),
+        createEffort(1_200, 260),
+      ]),
+    ).toBeNull();
   });
 
-  it("should calculate CP and W' correctly for perfect data", () => {
-    // Model: CP = 250, W' = 15000
-    // P = 250 + 15000/t
+  it("rejects any non-bike-power input", () => {
+    const curve = [createEffort(180, 330), createEffort(600, 280), createEffort(1_200, 260)];
+    expect(
+      calculateCriticalPower([
+        ...curve,
+        createEffort(300, 5, { activity_category: "run", effort_type: "speed" }),
+      ]),
+    ).toBeNull();
+  });
+
+  it("fits positive finite CP/W' and reports the observed fit domain", () => {
     const curve = [
-      createEffort(180, 250 + 15000 / 180), // 3 min
-      createEffort(300, 250 + 15000 / 300), // 5 min
-      createEffort(600, 250 + 15000 / 600), // 10 min
-      createEffort(1200, 250 + 15000 / 1200), // 20 min
+      createEffort(180, 250 + 15_000 / 180),
+      createEffort(300, 250 + 15_000 / 300),
+      createEffort(600, 250 + 15_000 / 600),
+      createEffort(1_200, 250 + 15_000 / 1_200),
     ];
 
     const result = calculateCriticalPower(curve);
-    expect(result).not.toBeNull();
-    expect(result?.cp).toBe(250);
-    expect(result?.wPrime).toBe(15000);
-    expect(result?.error).toBeGreaterThan(0.99); // Should be perfect fit
+    expect(result).toMatchObject({
+      source: "observed-curve-fit",
+      cp: 250,
+      wPrime: 15_000,
+      fitMinDurationSeconds: 180,
+      fitMaxDurationSeconds: 1_200,
+      pointCount: 4,
+    });
+    expect(result?.error).toBeGreaterThan(0.99);
   });
 
-  it("should ignore efforts outside the 3m-30m range", () => {
-    // Model: CP = 250, W' = 15000
-    const curve = [
-      createEffort(60, 1000), // 1 min (Anaerobic skew, ignored)
-      createEffort(180, 250 + 15000 / 180), // 3 min (Included)
-      createEffort(300, 250 + 15000 / 300), // 5 min (Included)
-      createEffort(3600, 200), // 60 min (Aerobic drift, ignored)
-    ];
+  it("requires coverage in both the 3-5m and 15-30m windows", () => {
+    expect(
+      calculateCriticalPower([
+        createEffort(300, 320),
+        createEffort(600, 290),
+        createEffort(800, 270),
+      ]),
+    ).toBeNull();
+    expect(
+      calculateCriticalPower([
+        createEffort(600, 290),
+        createEffort(900, 275),
+        createEffort(1_800, 260),
+      ]),
+    ).toBeNull();
+  });
 
-    const result = calculateCriticalPower(curve);
-    expect(result).not.toBeNull();
-    // Should match the 3m and 5m points exactly
-    expect(result?.cp).toBe(250);
-    expect(result?.wPrime).toBe(15000);
+  it("rejects non-monotonic, non-finite, implausible, or non-positive fits", () => {
+    expect(
+      calculateCriticalPower([
+        createEffort(180, 320),
+        createEffort(600, 330),
+        createEffort(1_200, 270),
+      ]),
+    ).toBeNull();
+    expect(
+      calculateCriticalPower([
+        createEffort(180, Number.NaN),
+        createEffort(600, 290),
+        createEffort(1_200, 270),
+      ]),
+    ).toBeNull();
+    expect(
+      calculateCriticalPower([
+        createEffort(180, 1_300),
+        createEffort(600, 700),
+        createEffort(1_200, 600),
+      ]),
+    ).toBeNull();
+    expect(
+      calculateCriticalPower([
+        createEffort(180, 250),
+        createEffort(600, 250),
+        createEffort(1_200, 250),
+      ]),
+    ).toBeNull();
   });
 });

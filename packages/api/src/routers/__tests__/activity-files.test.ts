@@ -42,7 +42,6 @@ const mocks = vi.hoisted(() => ({
   encodePolyline: vi.fn(),
   inferActivityFileType: vi.fn(),
   parseActivityFile: vi.fn(),
-  parseFitFileWithSDK: vi.fn(),
   calculateBestEfforts: vi.fn(),
   calculateDecouplingFromStreams: vi.fn(),
   calculateEfficiencyFactor: vi.fn(),
@@ -71,11 +70,14 @@ vi.mock("@repo/core", () => ({
   calculateBounds: mocks.calculateBounds,
   encodePolyline: mocks.encodePolyline,
   inferActivityFileType: mocks.inferActivityFileType,
-  parseActivityFile: mocks.parseActivityFile,
-  parseFitFileWithSDK: mocks.parseFitFileWithSDK,
   simplifyCoordinates: vi.fn((coords) => coords),
   canTransitionActivityFileIngestionStatus: vi.fn(() => true),
   activityLapRecordListSchema: { parse: vi.fn((value) => value) },
+}));
+
+vi.mock("@repo/core/server/activity-files", () => ({
+  inferActivityFileType: mocks.inferActivityFileType,
+  parseActivityFile: mocks.parseActivityFile,
 }));
 
 vi.mock("@repo/core/calculations", () => ({
@@ -395,7 +397,7 @@ describe("activityFilesRouter", () => {
               recorded_at: finishedAt,
               source: "imported",
               method: "activity_file_best_effort",
-              unit: "W",
+              unit: "watts",
             }),
           ]),
         }),

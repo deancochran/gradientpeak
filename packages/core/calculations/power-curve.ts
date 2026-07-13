@@ -1,17 +1,7 @@
 /**
  * Power Curve Derivation
  *
- * Derives a complete power curve from FTP (Functional Threshold Power) using
- * the Critical Power model (Monod & Scherrer).
- *
- * Model: Power(t) = CP + (W' / t)
- * Where:
- * - CP = Critical Power (≈ FTP)
- * - W' = Anaerobic work capacity (joules)
- * - t = Duration (seconds)
- *
- * Used during onboarding to generate estimated best efforts across all durations
- * from a single FTP input, creating a complete performance profile.
+ * Represents an FTP input without inventing unobserved sprint or W' evidence.
  */
 
 export interface DerivedEffort {
@@ -40,48 +30,32 @@ export const STANDARD_POWER_DURATIONS = [
 ] as const;
 
 /**
- * Derives a complete power curve from FTP using the Critical Power model.
- *
- * This function generates estimated power efforts across standard durations
- * based on a single FTP input. It's used during onboarding to create a
- * comprehensive performance profile from minimal user input.
+ * Represents FTP as one modeled 60-minute threshold anchor. The conventional
+ * one-hour duration makes the meaning explicit while avoiding an inferred W'
+ * or any fabricated short-duration points.
  *
  * @param ftp - Functional Threshold Power in watts (power sustainable for ~1 hour)
- * @param wPrime - Anaerobic work capacity in joules (default: 20000J for recreational cyclist)
- * @returns Array of power efforts for standard durations (5s to 60m)
+ * @returns A single modeled FTP threshold anchor
  *
  * @example
  * const ftp = 250; // watts
  * const powerCurve = derivePowerCurveFromFTP(ftp);
- * // Returns: [
- * //   { duration_seconds: 5, value: 4250, ... },   // 5s sprint
- * //   { duration_seconds: 60, value: 583, ... },   // 1m
- * //   { duration_seconds: 3600, value: 250, ... }, // 60m (FTP)
- * // ]
+ * // Returns: [{ duration_seconds: 3600, value: 250, ... }]
  */
-export function derivePowerCurveFromFTP(ftp: number, wPrime: number = 20000): DerivedEffort[] {
-  // Validate inputs
-  if (ftp <= 0) {
-    throw new Error("FTP must be greater than 0");
+export function derivePowerCurveFromFTP(ftp: number): DerivedEffort[] {
+  if (!Number.isFinite(ftp) || ftp < 1 || ftp > 3_000) {
+    throw new Error("FTP must be between 1 and 3000 watts");
   }
 
-  if (wPrime < 0) {
-    throw new Error("W' (anaerobic capacity) must be non-negative");
-  }
-
-  // Generate power curve for all standard durations
-  return STANDARD_POWER_DURATIONS.map((duration) => {
-    // Apply Critical Power formula: Power = CP + (W' / t)
-    const power = ftp + wPrime / duration;
-
-    return {
-      duration_seconds: duration,
+  return [
+    {
+      duration_seconds: 3_600,
       effort_type: "power",
-      value: Math.round(power),
+      value: Math.round(ftp),
       unit: "watts",
       activity_category: "bike",
-    };
-  });
+    },
+  ];
 }
 
 /**
@@ -140,33 +114,40 @@ export function estimateWPrime(
 }
 
 /**
- * Calculates estimated power for a specific duration from FTP and W'.
- *
- * Useful for calculating power targets for specific intervals or tests.
- *
- * @param ftp - Functional Threshold Power in watts
- * @param wPrime - Anaerobic work capacity in joules
- * @param durationSeconds - Target duration in seconds
- * @returns Estimated sustainable power for the given duration
- *
- * @example
- * const power5min = estimatePowerForDuration(250, 20000, 300);
- * // Returns: 317W (5-minute power)
+ * Predicts only within the duration span of an observed CP/W' fit. Requiring
+ * fit metadata prevents an FTP estimate from being passed as if it were CP and
+ * prevents silent extrapolation beyond the evidence domain.
  */
 export function estimatePowerForDuration(
-  ftp: number,
-  wPrime: number,
+  model: {
+    source: "observed-curve-fit";
+    cp: number;
+    wPrime: number;
+    fitMinDurationSeconds: number;
+    fitMaxDurationSeconds: number;
+  },
   durationSeconds: number,
 ): number {
-  if (ftp <= 0 || durationSeconds <= 0) {
-    throw new Error("FTP and duration must be greater than 0");
+  if (
+    model.source !== "observed-curve-fit" ||
+    !Number.isFinite(model.cp) ||
+    !Number.isFinite(model.wPrime) ||
+    !Number.isFinite(model.fitMinDurationSeconds) ||
+    !Number.isFinite(model.fitMaxDurationSeconds) ||
+    model.cp <= 0 ||
+    model.wPrime <= 0 ||
+    model.fitMinDurationSeconds > model.fitMaxDurationSeconds
+  ) {
+    throw new Error("A valid observed CP/W' fit is required");
+  }
+  const minimum = Math.max(180, model.fitMinDurationSeconds);
+  const maximum = Math.min(1_800, model.fitMaxDurationSeconds);
+  if (!Number.isFinite(durationSeconds) || durationSeconds < minimum || durationSeconds > maximum) {
+    throw new Error(
+      `Duration must be within the observed fit span (${minimum}-${maximum} seconds)`,
+    );
   }
 
-  if (wPrime < 0) {
-    throw new Error("W' must be non-negative");
-  }
-
-  // Apply Critical Power formula
-  const power = ftp + wPrime / durationSeconds;
+  const power = model.cp + model.wPrime / durationSeconds;
   return Math.round(power);
 }

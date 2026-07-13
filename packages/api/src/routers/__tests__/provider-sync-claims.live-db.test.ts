@@ -13,6 +13,10 @@ import { createProviderSyncRepository } from "../../infrastructure/repositories"
 
 const userIds: string[] = [];
 
+function futureBase(offsetMs: number) {
+  return Date.now() + 86_400_000 + offsetMs;
+}
+
 async function seedOwner() {
   const userId = randomUUID();
   const integrationId = randomUUID();
@@ -101,7 +105,7 @@ describe("provider sync PostgreSQL claims", () => {
   it("uses immutable queue_sequence as lane precedence and run_at only for head eligibility", async () => {
     const owner = await seedOwner();
     const repository = createProviderSyncRepository({ db });
-    const base = Date.parse("2026-07-13T12:00:00.000Z");
+    const base = futureBase(0);
     const headId = randomUUID();
     const laterId = randomUUID();
     await db.insert(providerSyncJobs).values([
@@ -176,7 +180,7 @@ describe("provider sync PostgreSQL claims", () => {
   it("reclaims expired leases and fences the stale worker from finalizing", async () => {
     const owner = await seedOwner();
     const repository = createProviderSyncRepository({ db });
-    const base = Date.parse("2026-07-13T13:00:00.000Z");
+    const base = futureBase(3_600_000);
     const jobId = randomUUID();
     await db.insert(providerSyncJobs).values({
       attempt: 0,
@@ -227,7 +231,7 @@ describe("provider sync PostgreSQL claims", () => {
   it("atomically fences stale webhook receipt and job finalization after lease loss", async () => {
     const owner = await seedOwner();
     const repository = createProviderSyncRepository({ db });
-    const base = Date.parse("2026-07-13T14:00:00.000Z");
+    const base = futureBase(7_200_000);
     const jobId = randomUUID();
     const receiptId = randomUUID();
     await db.insert(providerSyncJobs).values({

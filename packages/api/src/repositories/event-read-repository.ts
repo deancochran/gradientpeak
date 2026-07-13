@@ -27,10 +27,7 @@ type SerializedActivityTime = Pick<ActivityRow, "activity_plan_id" | "id"> & {
   started_at: string;
 };
 type SerializedEventDate = { starts_at: string };
-type ConstraintActivityPlan = Pick<
-  ActivityPlanRow,
-  "id" | "activity_category" | "route_id" | "structure"
->;
+type ConstraintActivityPlan = Pick<ActivityPlanRow, "id" | "activity_category" | "structure">;
 type ProfileMetricValue = Pick<ProfileMetricRow, "value">;
 type ConstraintTrainingPlan = Pick<TrainingPlanRow, "id" | "structure">;
 type EstimationEffort = Pick<

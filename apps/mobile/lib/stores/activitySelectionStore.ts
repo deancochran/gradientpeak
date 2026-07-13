@@ -40,7 +40,7 @@ class ActivitySelectionStore {
       gpsRecordingEnabled: payload.gpsRecordingEnabled,
       hasPlan: !!payload.plan,
       eventId: payload.eventId,
-      routeId: payload.routeId ?? payload.plan?.route_id ?? null,
+      routeId: payload.routeId ?? null,
     });
     this.selection = payload;
   }

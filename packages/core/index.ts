@@ -168,12 +168,10 @@ export * from "./constants";
 
 export * from "./activity-analysis"; // Shared dynamic activity analysis contracts/helpers
 export * from "./activity-files"; // Runtime-neutral activity file ingestion contracts
-// ============================================================================
-// Legacy Server-Only Activity File Parsing
-// ============================================================================
-// Compatibility exports for existing root consumers only. Do not add new
-// server-only exports here; use `@repo/core/server` or its server subpaths so
-// runtime-neutral consumers can avoid Node/FIT-SDK dependencies.
+/**
+ * @deprecated Import server-only activity-file parsing from `@repo/core/server/activity-files`.
+ * This root export remains as a compatibility shim.
+ */
 export * from "./activity-files/activity-file-parser";
 export {
   type ActivityEffortObservationKind,
@@ -217,7 +215,10 @@ export * from "./estimation"; // TSS estimation system
 export * from "./goals"; // Goal draft/payload helpers
 export * from "./groups"; // Group contracts, permissions, and display state
 export * from "./integrations"; // Provider capability registry and sync action helpers
-// Compatibility export; prefer `@repo/core/server/fit-sdk-parser` in new code.
+/**
+ * @deprecated Import the FIT SDK parser from `@repo/core/server/fit-sdk-parser`.
+ * This root export remains as a compatibility shim.
+ */
 export * from "./lib/fit-sdk-parser";
 export * from "./load"; // Canonical load-domain helpers
 export * from "./messaging"; // Shared messaging adapters

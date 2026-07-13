@@ -70,33 +70,15 @@ function isValidIcalRRule(value: string): boolean {
  * Event types used by the core event domain.
  *
  * - "planned": user/programmed planned activity
- * - "rest_day": legacy persisted rest-day marker (read compatibility only)
  * - "race_target": race/goal target marker
  * - "custom": user-authored non-activity event
  * - "imported": read-only external calendar import
  */
-export const eventTypeSchema = z.enum(["planned", "rest_day", "race_target", "custom", "imported"]);
-
-/**
- * Backward-compatible parser for legacy persisted enum values.
- */
-export const eventTypeInputSchema = z
-  .union([eventTypeSchema, z.literal("planned_activity"), z.literal("race")])
-  .transform((eventType) => {
-    if (eventType === "planned_activity") return "planned" as const;
-    if (eventType === "race") return "race_target" as const;
-    return eventType;
-  });
+export const eventTypeSchema = z.enum(["planned", "race_target", "custom", "imported"]);
+export const eventTypeInputSchema = eventTypeSchema;
 
 export const editableEventTypeSchema = z.enum(["planned", "race_target", "custom"]);
-
-export const editableEventTypeInputSchema = z
-  .union([editableEventTypeSchema, z.literal("planned_activity"), z.literal("race")])
-  .transform((eventType) => {
-    if (eventType === "planned_activity") return "planned" as const;
-    if (eventType === "race") return "race_target" as const;
-    return eventType;
-  });
+export const editableEventTypeInputSchema = editableEventTypeSchema;
 
 export const eventMutationScopeSchema = z.enum(["single", "future", "series"]);
 
@@ -275,6 +257,7 @@ const eventDomainBaseSchema = z.object({
   notes: z.string().max(2000).nullable().optional(),
   description: z.string().max(5000).nullable().optional(),
   activity_plan_id: z.string().uuid().nullable().optional(),
+  route_id: z.string().uuid().nullable().optional(),
   training_plan_id: z.string().uuid().nullable().optional(),
   recurrence: eventRecurrenceSchema.optional(),
   lifecycle: eventLifecycleSchema.default({ status: "scheduled" }),
@@ -315,6 +298,7 @@ const editableEventDetailsPatchSchema = z
     notes: z.string().max(2000).nullable().optional(),
     description: z.string().max(5000).nullable().optional(),
     activity_plan_id: z.string().uuid().nullable().optional(),
+    route_id: z.string().uuid().nullable().optional(),
     training_plan_id: z.string().uuid().nullable().optional(),
     lifecycle: eventLifecycleSchema.optional(),
     event_type: editableEventTypeSchema.optional(),
@@ -416,6 +400,7 @@ export const plannedActivityEventCreateSchema = z
   .object({
     event_type: z.literal("planned"),
     activity_plan_id: z.string().uuid(),
+    route_id: z.string().uuid().nullable().optional(),
     training_plan_id: z.string().uuid().nullable().optional(),
     title: z.string().min(1).max(255),
     scheduled_date: dateOnlyStringSchema,
@@ -492,6 +477,7 @@ export const eventSoftDeleteSchema = z.object({
  */
 export const plannedActivityCreateSchema = z.object({
   activity_plan_id: z.string().uuid("Invalid activity plan ID"),
+  route_id: z.string().uuid("Invalid route ID").nullable().optional(),
   scheduled_date: z.string().refine((val) => !Number.isNaN(Date.parse(val)), "Invalid date format"),
   training_plan_id: z.string().uuid("Invalid training plan ID").optional(),
   notes: z.string().max(2000, "Notes are too long").nullable().optional(),
@@ -508,6 +494,7 @@ export const plannedActivityCreateSchema = z.object({
  */
 export const plannedActivityUpdateSchema = z.object({
   activity_plan_id: z.string().uuid("Invalid activity plan ID").optional(),
+  route_id: z.string().uuid("Invalid route ID").nullable().optional(),
   scheduled_date: z
     .string()
     .refine((val) => !Number.isNaN(Date.parse(val)), "Invalid date format")

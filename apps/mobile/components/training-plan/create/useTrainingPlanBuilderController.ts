@@ -1,6 +1,5 @@
-import { addDaysDateOnlyUtc } from "@repo/core";
 import { useRouter } from "expo-router";
-import { startTransition, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert } from "react-native";
 import type { ActivityPlan } from "@/components/shared/ActivityPlanCard";
 import type {
@@ -61,7 +60,6 @@ export function useTrainingPlanBuilderController({
   const [pendingSessionDraftId, setPendingSessionDraftId] = useState<string | null>(null);
   const [selectedWeekStart, setSelectedWeekStart] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [chartExtraWeeks, setChartExtraWeeks] = useState(0);
   const sheetStack = useBuilderSheetStack<BuilderSheet>();
 
   const builder = useTrainingPlanCreationService({
@@ -92,27 +90,20 @@ export function useTrainingPlanBuilderController({
     ? builder.actions.getSessionById(selectedSessionId)
     : null;
   const isSaving = builder.derived.savePlan.isPending;
-  const extendChartEnd = useCallback(
-    () => setChartExtraWeeks((count) => Math.min(count + 4, 52)),
-    [],
-  );
+  const extendChartEnd = useCallback(() => undefined, []);
   const extendChartStart = useCallback(() => undefined, []);
   const selectWeekStart = useCallback((weekStart: string) => {
-    startTransition(() => {
-      setSelectedWeekStart(weekStart);
-      setSelectedDate(weekStart);
-    });
+    setSelectedWeekStart(weekStart);
+    setSelectedDate(weekStart);
   }, []);
   const selectDate = useCallback(
     (date: string) => {
-      startTransition(() => {
-        setSelectedDate(date);
-        setSelectedWeekStart((currentWeekStart) => {
-          const matchingWeek = builder.derived.projection.chart.weeks.find(
-            (week) => date >= week.weekStart && date <= week.weekEnd,
-          );
-          return matchingWeek?.weekStart ?? currentWeekStart;
-        });
+      setSelectedDate(date);
+      setSelectedWeekStart((currentWeekStart) => {
+        const matchingWeek = builder.derived.projection.chart.weeks.find(
+          (week) => date >= week.weekStart && date <= week.weekEnd,
+        );
+        return matchingWeek?.weekStart ?? currentWeekStart;
       });
     },
     [builder.derived.projection.chart.weeks],
@@ -120,28 +111,6 @@ export function useTrainingPlanBuilderController({
   const chartReview = useMemo(() => {
     const baseChart = builder.derived.projection.chart;
     const weeks = [...baseChart.weeks];
-    const lastWeek = weeks.at(-1);
-    for (let index = 0; index < chartExtraWeeks && lastWeek; index += 1) {
-      const previous = weeks.at(-1) ?? lastWeek;
-      const weekStart = addDaysDateOnlyUtc(previous.weekStart, 7);
-      weeks.push({
-        ...previous,
-        weekStart,
-        weekEnd: addDaysDateOnlyUtc(weekStart, 6),
-        label: `Week ${weeks.length + 1}`,
-        completedLoad: null,
-        plannedLoad: 0,
-        tentativePlannedLoad: null,
-        targetLoad: previous.targetLoad,
-        fitness: null,
-        scheduledFitness: previous.scheduledFitness,
-        targetFitness: previous.targetFitness,
-        fatigue: previous.fatigue,
-        form: previous.form,
-        isCurrent: false,
-        isSelected: false,
-      });
-    }
     const selectedStart =
       selectedWeekStart ??
       weeks.find((week) => week.isSelected)?.weekStart ??
@@ -183,7 +152,6 @@ export function useTrainingPlanBuilderController({
   }, [
     builder.derived.projection.chart,
     builder.state.scheduling.startDate,
-    chartExtraWeeks,
     extendChartEnd,
     extendChartStart,
     selectDate,
@@ -197,11 +165,6 @@ export function useTrainingPlanBuilderController({
     if (chartReview.chart.weeks.some((week) => week.weekStart === selectedWeekStart)) return;
     setSelectedWeekStart(chartReview.chart.weeks[0]?.weekStart ?? null);
   }, [chartReview.chart.weeks, selectedWeekStart]);
-  useEffect(() => {
-    if (!selectedDate) return;
-    if (chartReview.chart.dailyPoints.some((point) => point.date === selectedDate)) return;
-    setSelectedDate(chartReview.selectedDate);
-  }, [chartReview.chart.dailyPoints, chartReview.selectedDate, selectedDate]);
   const activityPlansById = useMemo(
     () =>
       Object.fromEntries(

@@ -1,14 +1,23 @@
-import { fireEvent, render, screen } from "@testing-library/react-native";
+import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import type React from "react";
-import { DailyTrainingAdjustmentChart } from "./DailyTrainingAdjustmentChart";
+import { DailyTrainingAdjustmentChart, getLoadBarGeometry } from "./DailyTrainingAdjustmentChart";
 import { hasCompletedActivityWithoutLoad } from "./dailyTrainingAdjustmentChartPresentation";
 import { deriveTrainingPathChartWindow } from "./trainingPathChartWindow";
 
-jest.mock("react-native-gesture-handler", () => ({
-  __esModule: true,
-  ScrollView: ({ children, ...props }: { children?: React.ReactNode }) =>
-    jest.requireActual("react").createElement("ScrollView", props, children),
-}));
+const mockScrollTo = jest.fn();
+
+jest.mock("react-native-gesture-handler", () => {
+  const ReactRuntime = jest.requireActual("react") as typeof React;
+  return {
+    __esModule: true,
+    ScrollView: ReactRuntime.forwardRef(
+      ({ children, ...props }: { children?: React.ReactNode }, ref) => {
+        ReactRuntime.useImperativeHandle(ref, () => ({ scrollTo: mockScrollTo }));
+        return ReactRuntime.createElement("ScrollView", props, children);
+      },
+    ),
+  };
+});
 
 jest.mock("react-native-reanimated", () => ({
   __esModule: true,
@@ -17,6 +26,10 @@ jest.mock("react-native-reanimated", () => ({
 }));
 
 describe("DailyTrainingAdjustmentChart", () => {
+  beforeEach(() => {
+    mockScrollTo.mockClear();
+  });
+
   it("identifies an unavailable completed activity load", () => {
     expect(
       hasCompletedActivityWithoutLoad({
@@ -148,6 +161,36 @@ describe("DailyTrainingAdjustmentChart", () => {
     expect(screen.getByText("+15 TSS")).toBeTruthy();
   });
 
+  it("centers the initial controlled date only after viewport and content readiness", () => {
+    render(
+      <DailyTrainingAdjustmentChart
+        points={[
+          { date: "2026-06-01", targetLoadTss: 40 },
+          { date: "2026-06-02", targetLoadTss: 50 },
+          { date: "2026-06-03", targetLoadTss: 60 },
+        ]}
+        selectedDate="2026-06-03"
+      />,
+    );
+
+    expect(mockScrollTo).not.toHaveBeenCalled();
+
+    fireEvent(screen.getByTestId("daily-training-adjustment-chart-viewport"), "layout", {
+      nativeEvent: { layout: { height: 230, width: 240, x: 0, y: 0 } },
+    });
+    expect(mockScrollTo).not.toHaveBeenCalled();
+
+    fireEvent(
+      screen.getByTestId("daily-training-adjustment-chart-scroll"),
+      "contentSizeChange",
+      600,
+      230,
+    );
+
+    expect(mockScrollTo).toHaveBeenCalledTimes(1);
+    expect(mockScrollTo).toHaveBeenCalledWith({ animated: false, x: 60, y: 0 });
+  });
+
   it("renders an empty state", () => {
     render(<DailyTrainingAdjustmentChart points={[]} />);
 
@@ -189,9 +232,97 @@ describe("DailyTrainingAdjustmentChart", () => {
     const scrollView = screen.getByTestId("daily-training-adjustment-chart-scroll");
 
     expect(scrollView.props.disableIntervalMomentum).toBeUndefined();
-    expect(scrollView.props.onScrollEndDrag).toBeUndefined();
+    expect(scrollView.props.onScrollEndDrag).toEqual(expect.any(Function));
     expect(scrollView.props.decelerationRate).toBe("fast");
     expect(scrollView.props.snapToInterval).toBeGreaterThan(0);
+  });
+
+  it("commits a slow drag without momentum exactly once", () => {
+    jest.useFakeTimers();
+    const onSelectedDateChange = jest.fn();
+    render(
+      <DailyTrainingAdjustmentChart
+        onSelectedDateChange={onSelectedDateChange}
+        points={[
+          { date: "2026-06-01", targetLoadTss: 40 },
+          { date: "2026-06-02", targetLoadTss: 50 },
+          { date: "2026-06-03", targetLoadTss: 60 },
+        ]}
+      />,
+    );
+    const scrollView = screen.getByTestId("daily-training-adjustment-chart-scroll");
+
+    fireEvent(scrollView, "scrollBeginDrag");
+    fireEvent(scrollView, "scrollEndDrag", {
+      nativeEvent: { contentOffset: { x: 34, y: 0 } },
+    });
+    expect(onSelectedDateChange).not.toHaveBeenCalled();
+
+    act(() => jest.runOnlyPendingTimers());
+    expect(onSelectedDateChange).toHaveBeenCalledTimes(1);
+    expect(onSelectedDateChange).toHaveBeenCalledWith("2026-06-02");
+    jest.useRealTimers();
+  });
+
+  it("cancels drag settlement when momentum starts and commits momentum once", () => {
+    jest.useFakeTimers();
+    const onSelectedDateChange = jest.fn();
+    render(
+      <DailyTrainingAdjustmentChart
+        onSelectedDateChange={onSelectedDateChange}
+        points={[
+          { date: "2026-06-01", targetLoadTss: 40 },
+          { date: "2026-06-02", targetLoadTss: 50 },
+          { date: "2026-06-03", targetLoadTss: 60 },
+        ]}
+      />,
+    );
+    const scrollView = screen.getByTestId("daily-training-adjustment-chart-scroll");
+    const dragEvent = { nativeEvent: { contentOffset: { x: 31, y: 0 } } };
+    const momentumEvent = { nativeEvent: { contentOffset: { x: 60, y: 0 } } };
+
+    fireEvent(scrollView, "scrollBeginDrag");
+    fireEvent(scrollView, "scrollEndDrag", dragEvent);
+    fireEvent(scrollView, "momentumScrollBegin");
+    act(() => jest.runOnlyPendingTimers());
+    expect(onSelectedDateChange).not.toHaveBeenCalled();
+
+    fireEvent(scrollView, "momentumScrollEnd", momentumEvent);
+    fireEvent(scrollView, "momentumScrollEnd", momentumEvent);
+    expect(onSelectedDateChange).toHaveBeenCalledTimes(1);
+    expect(onSelectedDateChange).toHaveBeenCalledWith("2026-06-03");
+    jest.useRealTimers();
+  });
+
+  it("waits for momentum when drag-end velocity is present", () => {
+    jest.useFakeTimers();
+    const onSelectedDateChange = jest.fn();
+    render(
+      <DailyTrainingAdjustmentChart
+        onSelectedDateChange={onSelectedDateChange}
+        points={[
+          { date: "2026-06-01", targetLoadTss: 40 },
+          { date: "2026-06-02", targetLoadTss: 50 },
+          { date: "2026-06-03", targetLoadTss: 60 },
+        ]}
+      />,
+    );
+    const scrollView = screen.getByTestId("daily-training-adjustment-chart-scroll");
+
+    fireEvent(scrollView, "scrollBeginDrag");
+    fireEvent(scrollView, "scrollEndDrag", {
+      nativeEvent: { contentOffset: { x: 31, y: 0 }, velocity: { x: 1, y: 0 } },
+    });
+    act(() => jest.runOnlyPendingTimers());
+    expect(onSelectedDateChange).not.toHaveBeenCalled();
+
+    fireEvent(scrollView, "momentumScrollBegin");
+    fireEvent(scrollView, "momentumScrollEnd", {
+      nativeEvent: { contentOffset: { x: 60, y: 0 } },
+    });
+    expect(onSelectedDateChange).toHaveBeenCalledTimes(1);
+    expect(onSelectedDateChange).toHaveBeenCalledWith("2026-06-03");
+    jest.useRealTimers();
   });
 
   it("previews the selected day instantly while scrolling without committing until settle", () => {
@@ -219,6 +350,82 @@ describe("DailyTrainingAdjustmentChart", () => {
     });
 
     expect(onSelectedDateChange).toHaveBeenCalledWith("2026-06-03");
+  });
+
+  it("keeps a controlled local commit selected until the parent acknowledges it", () => {
+    const onSelectedDateChange = jest.fn();
+    const points = [
+      { date: "2026-06-01", targetLoadTss: 40 },
+      { date: "2026-06-02", targetLoadTss: 50 },
+      { date: "2026-06-03", targetLoadTss: 60 },
+    ];
+    const { rerender } = render(
+      <DailyTrainingAdjustmentChart
+        onSelectedDateChange={onSelectedDateChange}
+        points={points}
+        selectedDate="2026-06-01"
+      />,
+    );
+    const scrollView = screen.getByTestId("daily-training-adjustment-chart-scroll");
+
+    fireEvent(scrollView, "scrollBeginDrag");
+    fireEvent(scrollView, "momentumScrollBegin");
+    fireEvent(scrollView, "momentumScrollEnd", {
+      nativeEvent: { contentOffset: { x: 60, y: 0 } },
+    });
+    expect(screen.getByText("2026-06-03")).toBeTruthy();
+
+    rerender(
+      <DailyTrainingAdjustmentChart
+        onSelectedDateChange={onSelectedDateChange}
+        points={points}
+        selectedDate="2026-06-01"
+      />,
+    );
+    expect(screen.getByText("2026-06-03")).toBeTruthy();
+
+    rerender(
+      <DailyTrainingAdjustmentChart
+        onSelectedDateChange={onSelectedDateChange}
+        points={points}
+        selectedDate="2026-06-03"
+      />,
+    );
+    expect(onSelectedDateChange).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("2026-06-03")).toBeTruthy();
+  });
+
+  it("exposes one adjustable chart control for selecting adjacent dates", () => {
+    const onSelectedDateChange = jest.fn();
+    render(
+      <DailyTrainingAdjustmentChart
+        onSelectedDateChange={onSelectedDateChange}
+        points={[
+          { date: "2026-06-01", targetLoadTss: 40 },
+          { date: "2026-06-02", targetLoadTss: 50 },
+          { date: "2026-06-03", targetLoadTss: 60 },
+        ]}
+        selectedDate="2026-06-02"
+      />,
+    );
+
+    const adjustable = screen.getByLabelText("Daily training adjustment chart");
+    expect(adjustable.props.accessibilityRole).toBe("adjustable");
+    expect(adjustable.props.accessibilityValue).toEqual({ text: "Selected date 2026-06-02" });
+    expect(adjustable.props.accessibilityHint).toBe("Adjust to select the next or previous date");
+
+    fireEvent(adjustable, "accessibilityAction", {
+      nativeEvent: { actionName: "increment" },
+    });
+    expect(onSelectedDateChange).toHaveBeenCalledWith("2026-06-03");
+    expect(screen.getByText("2026-06-03")).toBeTruthy();
+  });
+
+  it("uses one collision-safe width and center for every daily load layer", () => {
+    const geometry = getLoadBarGeometry([{ x: 10 }, { x: 20 }, { x: 30 }], 1, 0, 40, 22);
+
+    expect(geometry?.center).toBe(20);
+    expect(geometry?.width).toBeCloseTo(7.2);
   });
 
   it("prefetches more days before the user reaches either scroll edge", () => {
@@ -272,6 +479,6 @@ describe("DailyTrainingAdjustmentChart", () => {
       />,
     );
 
-    expect(screen.getByText("06/23")).toBeTruthy();
+    expect(screen.getByText("06/23", { includeHiddenElements: true })).toBeTruthy();
   });
 });

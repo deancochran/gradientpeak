@@ -140,7 +140,7 @@ export const TrainingPathLoadChartSection = memo(function TrainingPathLoadChartS
   const contextSelectedDate = previewSelectedDate ?? selectedDate;
 
   useEffect(() => {
-    setPreviewSelectedDate((current) => (current === selectedDate ? null : current));
+    setPreviewSelectedDate((current) => (selectedDate === undefined ? current : null));
   }, [selectedDate]);
 
   const belowChartContext = useMemo<TrainingPathChartSectionContext>(() => {

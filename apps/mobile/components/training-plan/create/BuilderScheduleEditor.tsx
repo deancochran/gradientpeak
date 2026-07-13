@@ -6,6 +6,7 @@ import { useMemo } from "react";
 import { ScrollView, View } from "react-native";
 import type { DailyTrainingAdjustmentPoint } from "@/components/plan/training-path/DailyTrainingAdjustmentChart";
 import { TrainingPathSelectedDayPanel } from "@/components/plan/training-path/TrainingPathSelectedDayPanel";
+import { buildTrainingPathLoadMetrics } from "@/components/plan/training-path/trainingPathLoadMetrics";
 import { BuilderTrainingPathReviewSection } from "@/components/training-plan/create/BuilderTrainingPathReviewSection";
 import { TrainingPlanBuilderEventCard } from "@/components/training-plan/create/TrainingPlanBuilderEventCard";
 import type { TrainingPlanBuilderController } from "@/components/training-plan/create/useTrainingPlanBuilderController";
@@ -112,8 +113,6 @@ function BuilderSelectedDayPlanningPanel({
   selectedDayOffset,
   sessions,
 }: BuilderSelectedDayPlanningPanelProps) {
-  const planned = valueOrZero(point?.plannedLoadTss) + valueOrZero(point?.tentativePlannedLoadTss);
-  const recommended = valueOrZero(point?.targetLoadTss);
   const weekIndex = Math.floor(selectedDayOffset / 7);
   const title = dateLabel ?? formatBuilderWeekdayWithWeek(selectedDayOffset);
 
@@ -137,10 +136,7 @@ function BuilderSelectedDayPlanningPanel({
         `Week ${weekIndex + 1}`,
         `${sessions.length} workout${sessions.length === 1 ? "" : "s"}`,
       ]}
-      metrics={[
-        { label: "Recommended", value: formatTss(recommended) },
-        { label: "Planned", value: formatTss(planned) },
-      ]}
+      metrics={buildTrainingPathLoadMetrics(point, { includeCompleted: false })}
       testID="builder-selected-day-panel"
       title={title}
     >
@@ -180,12 +176,4 @@ function BuilderSelectedDayPlanningPanel({
       </ScrollView>
     </TrainingPathSelectedDayPanel>
   );
-}
-
-function valueOrZero(value: number | null | undefined) {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
-}
-
-function formatTss(value: number) {
-  return `${Math.round(value)} TSS`;
 }

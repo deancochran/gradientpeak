@@ -135,6 +135,42 @@ function getDaySignals(events: CalendarEvent[], goals: ProfileGoal[]): CalendarD
   );
 }
 
+const scheduleObjectTypeOrder: Record<Exclude<CalendarScheduleObject["type"], "goal">, number> = {
+  groupEvent: 0,
+  event: 1,
+  activity: 2,
+};
+
+function getScheduleObjectTime(object: Exclude<CalendarScheduleObject, { type: "goal" }>) {
+  const value =
+    object.type === "groupEvent"
+      ? object.groupEvent.starts_at
+      : object.type === "event"
+        ? object.event.starts_at
+        : object.activity.started_at;
+  const time = value ? new Date(value).getTime() : Number.POSITIVE_INFINITY;
+  return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
+}
+
+function compareScheduleObjects(
+  left: Exclude<CalendarScheduleObject, { type: "goal" }>,
+  right: Exclude<CalendarScheduleObject, { type: "goal" }>,
+) {
+  const leftTime = getScheduleObjectTime(left);
+  const rightTime = getScheduleObjectTime(right);
+  if (leftTime !== rightTime) return leftTime < rightTime ? -1 : 1;
+
+  const typeDifference = scheduleObjectTypeOrder[left.type] - scheduleObjectTypeOrder[right.type];
+  if (typeDifference !== 0) return typeDifference;
+
+  return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+}
+
+function getScheduleObjectRowKey(object: CalendarScheduleObject) {
+  if (object.type === "groupEvent") return `group-event:${object.id}`;
+  return `${object.type}:${object.id}`;
+}
+
 export function buildCalendarTimelineRows({
   activitiesByDate,
   rangeStart,
@@ -168,7 +204,9 @@ export function buildCalendarTimelineRows({
       },
     });
 
-    for (const goal of dayGoals) {
+    for (const goal of [...dayGoals].sort((left, right) =>
+      left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
+    )) {
       rows.push({
         key: `goal:${goal.id}`,
         type: "object",
@@ -181,42 +219,36 @@ export function buildCalendarTimelineRows({
       });
     }
 
-    for (const groupEvent of dayGroupEvents) {
-      rows.push({
-        key: `group-event:${groupEvent.id}`,
-        type: "object",
-        dateKey,
-        object: {
+    const timedObjects: Exclude<CalendarScheduleObject, { type: "goal" }>[] = [
+      ...dayGroupEvents.map(
+        (groupEvent): Exclude<CalendarScheduleObject, { type: "goal" }> => ({
           id: groupEvent.id,
           type: "groupEvent",
           groupEvent,
-        },
-      });
-    }
-
-    for (const event of dayEvents) {
-      rows.push({
-        key: `event:${event.id}`,
-        type: "object",
-        dateKey,
-        object: {
+        }),
+      ),
+      ...dayEvents.map(
+        (event): Exclude<CalendarScheduleObject, { type: "goal" }> => ({
           id: event.id,
           type: "event",
           event,
-        },
-      });
-    }
-
-    for (const activity of dayActivities) {
-      rows.push({
-        key: `activity:${activity.id}`,
-        type: "object",
-        dateKey,
-        object: {
+        }),
+      ),
+      ...dayActivities.map(
+        (activity): Exclude<CalendarScheduleObject, { type: "goal" }> => ({
           id: activity.id,
           type: "activity",
           activity,
-        },
+        }),
+      ),
+    ].sort(compareScheduleObjects);
+
+    for (const object of timedObjects) {
+      rows.push({
+        key: getScheduleObjectRowKey(object),
+        type: "object",
+        dateKey,
+        object,
       });
     }
   }

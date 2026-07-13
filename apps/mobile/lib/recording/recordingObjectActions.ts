@@ -29,7 +29,6 @@ export interface RecordingObjectActionCandidate {
   label?: string | null;
   category?: string | null;
   plan?: RecordingServiceActivityPlan & { id?: string | null };
-  planRouteId?: string | null;
   canReadGeometry?: boolean;
 }
 
@@ -119,9 +118,7 @@ export function resolveRecordingObjectAction({
         secondaryActions: selected ? ["detach"] : [],
         label: selected ? "Selected for Recording" : service?.plan ? "Replace Plan" : "Use Plan",
         disabledReason: null,
-        consequence: candidate.planRouteId
-          ? "Selecting this plan will replace the current route with the plan route."
-          : "Selecting this plan will remove the current route unless you choose another route.",
+        consequence: "Selecting this plan will keep route guidance unchanged.",
         command: selected ? null : "attach_plan",
         shouldNavigateToRecord: false,
         confirmationCopy: selected ? null : "Plan selected for recording.",
@@ -183,7 +180,6 @@ export async function handleRecordingObjectAction({
         category: candidate.plan.activity_category,
         gpsRecordingEnabled: true,
         plan: candidate.plan,
-        routeId: candidate.plan.route_id ?? null,
       };
       activitySelectionStore.setSelection(payload);
       navigateToRecord();

@@ -1,4 +1,10 @@
-const DAY_MS = 86_400_000;
+import {
+  aggregateDailyTrainingLoadAdjustmentsToWeeks,
+  type DailyTrainingLoadAdjustment,
+  type DailyTrainingLoadAdjustmentInput,
+  normalizeDailyTrainingLoadAdjustments,
+  type WeeklyTrainingLoadAdjustment,
+} from "@repo/core/training-timeline";
 
 export type DailyTrainingAdjustmentSeverity = "info" | "warning" | "risk";
 
@@ -8,16 +14,8 @@ export type DailyTrainingAdjustmentAnnotation = {
   message?: string;
 };
 
-export type DailyTrainingAdjustmentPoint = {
-  date: string;
+type DailyTrainingAdjustmentPresentation = {
   hasCompletedActivityWithoutLoad?: boolean;
-  plannedLoadTss: number;
-  tentativePlannedLoadTss: number;
-  completedLoadTss: number;
-  targetLoadTss: number;
-  actualOrScheduledLoadTss: number;
-  loadDeltaTss: number;
-  plannedDeltaTss: number;
   fitnessCtl?: number | null;
   targetFitnessCtl?: number | null;
   scheduledFitnessCtl?: number | null;
@@ -27,16 +25,13 @@ export type DailyTrainingAdjustmentPoint = {
   annotations: DailyTrainingAdjustmentAnnotation[];
 };
 
-export type DailyTrainingAdjustmentPointInput = Partial<
-  Omit<
-    DailyTrainingAdjustmentPoint,
-    "actualOrScheduledLoadTss" | "annotations" | "date" | "loadDeltaTss" | "plannedDeltaTss"
-  >
-> & {
-  actualOrScheduledLoadTss?: number | null;
-  annotations?: DailyTrainingAdjustmentAnnotation[];
-  date: string;
-};
+export type DailyTrainingAdjustmentPoint = DailyTrainingLoadAdjustment &
+  DailyTrainingAdjustmentPresentation;
+
+export type DailyTrainingAdjustmentPointInput = DailyTrainingLoadAdjustmentInput &
+  Partial<Omit<DailyTrainingAdjustmentPresentation, "annotations">> & {
+    annotations?: DailyTrainingAdjustmentAnnotation[];
+  };
 
 export type DailyTrainingAdjustmentSummary = {
   date: string;
@@ -46,16 +41,8 @@ export type DailyTrainingAdjustmentSummary = {
   loadDeltaTone: "neutral" | "increase" | "reduce";
 };
 
-export type WeeklyTrainingAdjustmentBucket = {
-  weekStartDate: string;
-  weekEndDate: string;
+export type WeeklyTrainingAdjustmentBucket = Omit<WeeklyTrainingLoadAdjustment, "points"> & {
   points: DailyTrainingAdjustmentPoint[];
-  plannedLoadTss: number;
-  completedLoadTss: number;
-  targetLoadTss: number;
-  actualOrScheduledLoadTss: number;
-  loadDeltaTss: number;
-  plannedDeltaTss: number;
 };
 
 export type TrainingPathDailyLoadInput = {
@@ -75,25 +62,6 @@ export type TrainingPathDailyFitnessInput = {
   atl?: number | null;
   tsb?: number | null;
 };
-
-function parseDateKey(dateKey: string) {
-  const [year, month, day] = dateKey.split("-").map(Number);
-  return new Date(Date.UTC(year ?? 1970, (month ?? 1) - 1, day ?? 1));
-}
-
-function toDateKey(date: Date) {
-  return date.toISOString().slice(0, 10);
-}
-
-function addDays(dateKey: string, days: number) {
-  const date = parseDateKey(dateKey);
-  date.setUTCDate(date.getUTCDate() + days);
-  return toDateKey(date);
-}
-
-function diffDays(startDate: string, endDate: string) {
-  return Math.round((parseDateKey(endDate).getTime() - parseDateKey(startDate).getTime()) / DAY_MS);
-}
 
 function normalizeNumber(value: number | null | undefined, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
@@ -115,33 +83,13 @@ export function normalizeDailyTrainingAdjustmentPoints(input: {
   endDate: string;
   points?: DailyTrainingAdjustmentPointInput[];
 }): DailyTrainingAdjustmentPoint[] {
-  const dayCount = diffDays(input.startDate, input.endDate) + 1;
-  if (dayCount <= 0) return [];
-
   const pointsByDate = new Map((input.points ?? []).map((point) => [point.date, point]));
 
-  return Array.from({ length: dayCount }, (_, index) => {
-    const date = addDays(input.startDate, index);
-    const raw = pointsByDate.get(date);
-    const plannedLoadTss = normalizeNumber(raw?.plannedLoadTss);
-    const tentativePlannedLoadTss = normalizeNumber(raw?.tentativePlannedLoadTss);
-    const completedLoadTss = normalizeNumber(raw?.completedLoadTss);
-    const targetLoadTss = normalizeNumber(raw?.targetLoadTss);
-    const actualOrScheduledLoadTss = normalizeNumber(
-      raw?.actualOrScheduledLoadTss,
-      completedLoadTss + plannedLoadTss,
-    );
-
+  return normalizeDailyTrainingLoadAdjustments(input).map((point) => {
+    const raw = pointsByDate.get(point.date);
     return {
-      date,
+      ...point,
       hasCompletedActivityWithoutLoad: raw?.hasCompletedActivityWithoutLoad === true,
-      plannedLoadTss,
-      tentativePlannedLoadTss,
-      completedLoadTss,
-      targetLoadTss,
-      actualOrScheduledLoadTss,
-      loadDeltaTss: actualOrScheduledLoadTss - targetLoadTss,
-      plannedDeltaTss: plannedLoadTss + tentativePlannedLoadTss - targetLoadTss,
       fitnessCtl: raw?.fitnessCtl ?? null,
       targetFitnessCtl: raw?.targetFitnessCtl ?? null,
       scheduledFitnessCtl: raw?.scheduledFitnessCtl ?? null,
@@ -173,33 +121,17 @@ export function getDailyTrainingAdjustmentSummary(input: {
 export function aggregateDailyTrainingAdjustmentsToWeeks(
   points: DailyTrainingAdjustmentPoint[],
 ): WeeklyTrainingAdjustmentBucket[] {
-  const buckets: WeeklyTrainingAdjustmentBucket[] = [];
-  for (let index = 0; index < points.length; index += 7) {
-    const weekPoints = points.slice(index, index + 7);
-    const weekStartDate = weekPoints[0]?.date;
-    const weekEndDate = weekPoints[weekPoints.length - 1]?.date;
-    if (!weekStartDate || !weekEndDate) continue;
-
-    const sum = (selector: (point: DailyTrainingAdjustmentPoint) => number) =>
-      weekPoints.reduce((total, point) => total + selector(point), 0);
-    const plannedLoadTss = sum((point) => point.plannedLoadTss);
-    const tentativePlannedLoadTss = sum((point) => point.tentativePlannedLoadTss);
-    const targetLoadTss = sum((point) => point.targetLoadTss);
-    const actualOrScheduledLoadTss = sum((point) => point.actualOrScheduledLoadTss);
-
-    buckets.push({
-      weekStartDate,
-      weekEndDate,
-      points: weekPoints,
-      plannedLoadTss,
-      completedLoadTss: sum((point) => point.completedLoadTss),
-      targetLoadTss,
-      actualOrScheduledLoadTss,
-      loadDeltaTss: actualOrScheduledLoadTss - targetLoadTss,
-      plannedDeltaTss: plannedLoadTss + tentativePlannedLoadTss - targetLoadTss,
-    });
-  }
-  return buckets;
+  const pointsByDate = new Map(points.map((point) => [point.date, point]));
+  return aggregateDailyTrainingLoadAdjustmentsToWeeks(points).map((bucket) => ({
+    ...bucket,
+    points: bucket.points.map(
+      (point) =>
+        pointsByDate.get(point.date) ?? {
+          ...point,
+          annotations: [],
+        },
+    ),
+  }));
 }
 
 export function buildDailyTrainingAdjustmentPointsFromTrainingPathData(input: {
@@ -251,7 +183,6 @@ export function buildDailyTrainingAdjustmentPointsFromTrainingPathData(input: {
         tentativePlannedLoadTss,
         completedLoadTss,
         targetLoadTss,
-        actualOrScheduledLoadTss: completedLoadTss + plannedLoadTss + tentativePlannedLoadTss,
         fitnessCtl: fitness?.ctl ?? null,
         targetFitnessCtl: targetFitness?.ctl ?? null,
         scheduledFitnessCtl: scheduledFitness?.ctl ?? null,

@@ -1,18 +1,10 @@
-import type { IntegrationProviderId } from "@repo/core";
+import type { IntegrationProviderId, OnboardingIntent } from "@repo/core";
 import type { ComponentType } from "react";
 
 export interface OnboardingData {
   full_name: string;
   username: string;
-  intent:
-    | "train_event"
-    | "improve_fitness"
-    | "track_activities"
-    | "groups"
-    | "follow_people"
-    | "coach_group"
-    | "explore"
-    | null;
+  intent: OnboardingIntent[];
   experience_level: "beginner" | "intermediate" | "advanced" | "skip" | null;
   dob: string | null;
   weight_kg: number | null;
@@ -64,12 +56,6 @@ export interface StepProps {
     options?: { source?: "estimated" | "imported" | "user" },
   ) => void;
   fieldSources?: OnboardingFieldSources;
-  integrations?: Array<{ provider: IntegrationProvider }>;
-  connectionOverview?: Array<{
-    canConnect: boolean;
-    connected: boolean;
-    provider: IntegrationProvider;
-  }>;
   providerSyncStatus?: ProviderSyncStatus;
   onRetryProviderSync?: () => void;
   onRefreshIntegrations?: () => void;

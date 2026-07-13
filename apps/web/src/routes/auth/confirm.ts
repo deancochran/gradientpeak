@@ -83,80 +83,76 @@ function getSafeFallbackTarget(request: Request, fallbackParam: string | null) {
   return defaultFallback;
 }
 
+export async function handleAuthConfirmRequest(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const error = searchParams.get("error");
+  const intent = searchParams.get("intent");
+  const target = searchParams.get("target");
+  const token = searchParams.get("token") ?? undefined;
+  const code = searchParams.get("code") ?? undefined;
+  const next = getSafeRedirectTarget(searchParams.get("next"));
+  const fallback = getSafeFallbackTarget(request, searchParams.get("fallback"));
+
+  if (error) {
+    const errorUrl = new URL("/auth/error", getPublicWebAppUrl(request));
+    errorUrl.searchParams.set("error", error);
+    return Response.redirect(errorUrl, 302);
+  }
+
+  if (target === "mobile" && intent) {
+    const openUrl = new URL("/auth/open", getPublicWebAppUrl(request));
+    openUrl.searchParams.set(
+      "next",
+      buildMobileCallbackUrl(
+        {
+          intent: intent as "email-verification" | "password-reset" | "post-sign-in",
+          ...(token ? { token } : {}),
+          ...(code ? { code } : {}),
+          ...(error ? { error } : {}),
+        },
+        {
+          mobileScheme:
+            process.env.EXPO_PUBLIC_APP_SCHEME ?? process.env.APP_SCHEME ?? "gradientpeak",
+          mobileCallbackPath: "callback",
+        },
+      ),
+    );
+    openUrl.searchParams.set("fallback", fallback);
+    return Response.redirect(openUrl, 302);
+  }
+
+  if (target === "web") {
+    return Response.redirect(
+      getSafeFallbackTarget(request, searchParams.get("next") ?? searchParams.get("fallback")),
+      302,
+    );
+  }
+
+  if (searchParams.get("token") || searchParams.get("intent")) {
+    const openUrl = new URL("/auth/open", getPublicWebAppUrl(request));
+    openUrl.searchParams.set("next", next);
+    openUrl.searchParams.set("fallback", fallback);
+    return Response.redirect(openUrl, 302);
+  }
+
+  if (searchParams.get("token_hash") || searchParams.get("type")) {
+    const errorUrl = new URL("/auth/error", getPublicWebAppUrl(request));
+    errorUrl.searchParams.set(
+      "error",
+      "This verification link uses the retired Supabase OTP flow. Request a new email and try again.",
+    );
+    return Response.redirect(errorUrl, 302);
+  }
+
+  const errorUrl = new URL("/auth/error", getPublicWebAppUrl(request));
+  errorUrl.searchParams.set("error", "Missing auth callback parameters");
+  return Response.redirect(errorUrl, 302);
+}
+
 export const Route = createFileRoute("/auth/confirm")({
   server: {
     handlers: {
-      GET: async ({ request }) => {
-        const { searchParams } = new URL(request.url);
-        const error = searchParams.get("error");
-        const intent = searchParams.get("intent");
-        const target = searchParams.get("target");
-        const token = searchParams.get("token") ?? undefined;
-        const code = searchParams.get("code") ?? undefined;
-        const next = getSafeRedirectTarget(searchParams.get("next"));
-        const fallback = getSafeFallbackTarget(request, searchParams.get("fallback"));
-
-        if (error) {
-          const errorUrl = new URL("/auth/error", getPublicWebAppUrl(request));
-          errorUrl.searchParams.set("error", error);
-          return Response.redirect(errorUrl, 302);
-        }
-
-        if (target === "mobile" && intent) {
-          const openUrl = new URL("/auth/open", getPublicWebAppUrl(request));
-          openUrl.searchParams.set(
-            "next",
-            buildMobileCallbackUrl(
-              {
-                intent: intent as "email-verification" | "password-reset" | "post-sign-in",
-                ...(token ? { token } : {}),
-                ...(code ? { code } : {}),
-                ...(error ? { error } : {}),
-              },
-              {
-                mobileScheme:
-                  process.env.EXPO_PUBLIC_APP_SCHEME ?? process.env.APP_SCHEME ?? "gradientpeak",
-                mobileCallbackPath: "callback",
-              },
-            ),
-          );
-          openUrl.searchParams.set("fallback", fallback);
-          return Response.redirect(openUrl, 302);
-        }
-
-        if (target === "web") {
-          return Response.redirect(
-            getSafeFallbackTarget(
-              request,
-              searchParams.get("next") ?? searchParams.get("fallback"),
-            ),
-            302,
-          );
-        }
-
-        if (searchParams.get("token") || searchParams.get("intent")) {
-          const openUrl = new URL("/auth/open", getPublicWebAppUrl(request));
-          openUrl.searchParams.set("next", next);
-          openUrl.searchParams.set("fallback", fallback);
-          return Response.redirect(openUrl, 302);
-        }
-
-        const hasLegacySupabaseOtpParams =
-          Boolean(searchParams.get("token_hash")) || Boolean(searchParams.get("type"));
-
-        if (hasLegacySupabaseOtpParams) {
-          const errorUrl = new URL("/auth/error", getPublicWebAppUrl(request));
-          errorUrl.searchParams.set(
-            "error",
-            "This verification link uses the retired Supabase OTP flow. Request a new email and try again.",
-          );
-          return Response.redirect(errorUrl, 302);
-        }
-
-        const errorUrl = new URL("/auth/error", getPublicWebAppUrl(request));
-        errorUrl.searchParams.set("error", "Missing auth callback parameters");
-        return Response.redirect(errorUrl, 302);
-      },
+      GET: ({ request }) => handleAuthConfirmRequest(request),
     },
   },
 });

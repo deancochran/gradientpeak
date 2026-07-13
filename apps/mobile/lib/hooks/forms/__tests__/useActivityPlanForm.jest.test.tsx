@@ -200,10 +200,9 @@ describe("useActivityPlanForm", () => {
     unmount();
   });
 
-  it("exposes required name and route-only structure errors", () => {
+  it("exposes required name and missing structure errors", () => {
     useActivityPlanCreationStore.setState({
       name: "",
-      routeId: "route-1",
       structure: { version: 2, intervals: [] },
     });
 
@@ -211,9 +210,6 @@ describe("useActivityPlanForm", () => {
 
     expect(result.current.validation.errors.name).toBe("Plan name is required.");
     expect(result.current.validation.errors.intervals).toBe("Add at least one interval.");
-    expect(result.current.validation.errors.route_id).toBe(
-      "This route is attached for context, but you still need structure before this plan can be saved.",
-    );
     expect(result.current.canSubmit).toBe(false);
 
     unmount();
@@ -293,7 +289,6 @@ describe("useActivityPlanForm", () => {
       description: null,
       activity_category: "bike",
       structure: expect.objectContaining({ version: 2 }),
-      route_id: null,
       notes: null,
     });
 

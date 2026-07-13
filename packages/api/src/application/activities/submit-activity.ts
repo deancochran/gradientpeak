@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { type ActivityFileType, activityLapRecordListSchema } from "@repo/core";
+import { activityLapRecordListSchema } from "@repo/core";
+import type { ActivityFileType } from "@repo/core/server/activity-files";
 import { activities, activityEfforts, integrationResourceLinks, profileMetrics } from "@repo/db";
 import { and, eq } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";

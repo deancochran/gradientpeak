@@ -12,7 +12,7 @@ import type {
   IntervalV2,
 } from "@repo/core";
 import { isTargetTypePermittedForActivity, sortTargetsByActivityPreference } from "@repo/core";
-import type { ActivityType } from "./activity-type-utils";
+import type { WahooActivityType } from "./activity-type-utils";
 import { toWahooTypes } from "./activity-type-utils";
 
 export interface WahooPlanJson {
@@ -51,7 +51,7 @@ export type WahooPlanContractValidation = {
 };
 
 export interface ConvertOptions {
-  activityType: ActivityType;
+  activityType: WahooActivityType;
   hasRoute?: boolean;
   name: string;
   description?: string;
@@ -262,7 +262,7 @@ function convertStep(step: IntervalStepV2, options: ConvertOptions): WahooInterv
   return interval;
 }
 
-function getDefaultTarget(activityType: ActivityType): WahooTarget {
+function getDefaultTarget(activityType: WahooActivityType): WahooTarget {
   if (activityType === "run") {
     return { type: "speed", low: 0.5, high: 8 };
   }

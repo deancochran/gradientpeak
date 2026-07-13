@@ -111,31 +111,15 @@ type MaterializedRecurrenceOccurrence = {
   occurrenceKey: string;
 };
 
-const plannedEventType = "planned_activity" as const;
+const plannedEventType = "planned" as const;
 const weekdayToRRuleDay = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"] as const;
 
-const eventTypeToDbMap: Record<CoreEventType, DbEventType> = {
-  planned: "planned_activity",
-  rest_day: "rest_day",
-  race_target: "race",
-  custom: "custom",
-  imported: "imported",
-};
-
-const dbEventTypeToCoreMap: Record<DbEventType, CoreEventType> = {
-  planned_activity: "planned",
-  rest_day: "rest_day",
-  race: "race_target",
-  custom: "custom",
-  imported: "imported",
-};
-
 function toDbEventType(eventType: CoreEventType): DbEventType {
-  return eventTypeToDbMap[eventType];
+  return eventType as DbEventType;
 }
 
 function toCoreEventType(eventType: DbEventType): CoreEventType {
-  return dbEventTypeToCoreMap[eventType];
+  return eventType as CoreEventType;
 }
 
 const _plannedEventSelect = `
@@ -366,7 +350,7 @@ const reconcileHistoricalCompletionsInputSchema = z
 const eventListSchema = z
   .object({
     event_types: z
-      .array(z.enum(["rest_day", "custom", "imported", "planned", "race_target"]))
+      .array(z.enum(["custom", "imported", "planned", "race_target"]))
       .min(1)
       .optional(),
     activity_category: z.string().optional(),
@@ -414,10 +398,22 @@ function toDayStartIso(dateValue: string): string {
   return `${toDateKey(dateValue)}T00:00:00.000Z`;
 }
 
+function toRangeStartIso(dateValue: string): string {
+  return dateOnlyPattern.test(dateValue.trim())
+    ? toDayStartIso(dateValue)
+    : toCanonicalInstantIso(dateValue);
+}
+
 function toNextDayStartIso(dateValue: string): string {
   const day = new Date(toDayStartIso(dateValue));
   day.setUTCDate(day.getUTCDate() + 1);
   return day.toISOString();
+}
+
+function toRangeEndIso(dateValue: string): string {
+  return dateOnlyPattern.test(dateValue.trim())
+    ? toNextDayStartIso(dateValue)
+    : toCanonicalInstantIso(dateValue);
 }
 
 function parseRRule(rule: string): Map<string, string> {
@@ -551,16 +547,12 @@ function mapEvent<T extends PlannedEventRecord>(event: T): MappedEvent<T> {
   };
 }
 
-function isLegacyRestDayEvent(
-  event: Pick<PlannedEventRecord, "event_type"> | null | undefined,
-): boolean {
-  return (event?.event_type ?? plannedEventType) === "rest_day";
+function mapEvents<T extends PlannedEventRecord>(events: T[] | null): Array<MappedEvent<T>> {
+  return (events || []).map((event) => mapEvent(event));
 }
 
-function mapEvents<T extends PlannedEventRecord>(events: T[] | null): Array<MappedEvent<T>> {
-  return (events || [])
-    .filter((event) => !isLegacyRestDayEvent(event))
-    .map((event) => mapEvent(event));
+function assertRestDayWritesBlocked(_eventType: CoreEventType, _action: "create" | "update"): void {
+  // No-op after canonical event_type migration; rest days are not persisted events.
 }
 
 async function enrichEventsWithActivityPlanIdentity<
@@ -586,15 +578,6 @@ async function enrichEventsWithActivityPlanIdentity<
   })) as T[];
 }
 
-function assertRestDayWritesBlocked(eventType: CoreEventType, action: "create" | "update"): void {
-  if (eventType !== "rest_day") return;
-
-  throw new TRPCError({
-    code: "BAD_REQUEST",
-    message: `Cannot ${action} rest_day events; rest is inferred from dates without scheduled planned events`,
-  });
-}
-
 async function countVisibleOwnedEventsInRange(
   repository: ReturnType<typeof getEventReadRepository>,
   input: Pick<
@@ -617,7 +600,7 @@ async function countVisibleOwnedEventsInRange(
     const rows = batch ?? [];
     if (rows.length === 0) break;
 
-    count += rows.filter((row) => !isLegacyRestDayEvent(row)).length;
+    count += rows.length;
 
     if (rows.length < pageSize) break;
 
@@ -774,8 +757,6 @@ function defaultTitleForEventType(eventType: CoreEventType): string {
   switch (eventType) {
     case "planned":
       return "Planned Activity";
-    case "rest_day":
-      return "Rest Day";
     case "race_target":
       return "Race Target";
     case "custom":
@@ -957,13 +938,6 @@ export const eventsRouter = createTRPCRouter({
       });
 
       if (!data) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Event not found",
-        });
-      }
-
-      if (isLegacyRestDayEvent(data as PlannedEventRecord)) {
         throw new TRPCError({
           code: "NOT_FOUND",
           message: "Event not found",
@@ -1163,8 +1137,6 @@ export const eventsRouter = createTRPCRouter({
       const existingEvent = existingEventRow as PlannedEventRecord;
       const existingEventType = toCoreEventType(existingEvent.event_type);
 
-      assertRestDayWritesBlocked(existingEventType, "update");
-
       if (existingEventType === "imported") {
         throw new TRPCError({
           code: "FORBIDDEN",
@@ -1236,8 +1208,6 @@ export const eventsRouter = createTRPCRouter({
 
       const existingEvent = existingEventRow as PlannedEventRecord;
       const existingEventType = toCoreEventType(existingEvent.event_type);
-
-      assertRestDayWritesBlocked(existingEventType, "update");
 
       if (existingEventType === "imported") {
         throw new TRPCError({
@@ -1474,13 +1444,6 @@ export const eventsRouter = createTRPCRouter({
     const limit = input.limit;
     const [cursorDate, cursorId] = input.cursor ? input.cursor.split("_") : [];
 
-    if (input.event_types?.every((eventType) => eventType === "rest_day")) {
-      return {
-        items: [],
-        nextCursor: undefined,
-      };
-    }
-
     const { rows, hasMore } = await listVisibleOwnedEvents({
       repository: eventReadRepository,
       query: {
@@ -1496,8 +1459,8 @@ export const eventsRouter = createTRPCRouter({
           | "strength"
           | "other"
           | undefined,
-        dateFrom: input.date_from ? toDayStartIso(input.date_from) : undefined,
-        dateTo: input.date_to ? toNextDayStartIso(input.date_to) : undefined,
+        dateFrom: input.date_from ? toRangeStartIso(input.date_from) : undefined,
+        dateTo: input.date_to ? toRangeEndIso(input.date_to) : undefined,
         eventTypes:
           input.event_types && input.event_types.length > 0
             ? [...new Set(input.event_types.map((eventType) => toDbEventType(eventType)))]
@@ -1507,7 +1470,7 @@ export const eventsRouter = createTRPCRouter({
             ? { startsAt: toCanonicalInstantIso(cursorDate), id: cursorId }
             : undefined,
       },
-      isVisible: (row) => !isLegacyRestDayEvent(row as PlannedEventRecord),
+      isVisible: () => true,
       buildCursor: (row) => ({
         startsAt: toCanonicalInstantIso(row.starts_at),
         id: row.id,

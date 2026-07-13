@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isSupportedActivityEffortCombination } from "@repo/core/athlete-inputs";
 import {
   calculateBestEfforts,
   calculateDecouplingFromStreams,
@@ -126,16 +127,23 @@ export function buildActivityFileBestEffortRows(input: {
   const { powerStream, timestamps, altitudeStream, speedStream } = input.streamMetadata;
   const effortsToInsert: Array<typeof activityEfforts.$inferInsert> = [];
 
-  if (powerStream.length > 0) {
+  if (
+    powerStream.length > 0 &&
+    isSupportedActivityEffortCombination({
+      activityCategory: input.activityType,
+      effortType: "power",
+    })
+  ) {
     for (const effort of calculateBestEfforts(powerStream, timestamps)) {
-      effortsToInsert.push(buildActivityFileBestEffortRow(input, effort, "power", "W"));
+      effortsToInsert.push(buildActivityFileBestEffortRow(input, effort, "power", "watts"));
     }
   }
 
-  if (input.activityType === "run" && speedStream.length > 0) {
-    const streamToUse = input.normalizedGradedSpeed
-      ? calculateGradedSpeedStream(speedStream, altitudeStream, timestamps)
-      : speedStream;
+  if (speedStream.length > 0 && (input.activityType === "run" || input.activityType === "swim")) {
+    const streamToUse =
+      input.activityType === "run" && input.normalizedGradedSpeed
+        ? calculateGradedSpeedStream(speedStream, altitudeStream, timestamps)
+        : speedStream;
     for (const effort of calculateBestEfforts(streamToUse, timestamps)) {
       effortsToInsert.push(
         buildActivityFileBestEffortRow(input, effort, "speed", "meters_per_second"),
@@ -156,9 +164,11 @@ function buildActivityFileBestEffortRow(
   },
   effort: ReturnType<typeof calculateBestEfforts>[number],
   effortType: "power" | "speed",
-  unit: "W" | "meters_per_second",
+  unit: "watts" | "meters_per_second",
 ): typeof activityEfforts.$inferInsert {
   const { timestamps } = input.streamMetadata;
+  const effortStartedAt = timestamps[effort.startIndex];
+  const streamStartedAt = timestamps[0];
 
   return {
     id: randomUUID(),
@@ -171,9 +181,9 @@ function buildActivityFileBestEffortRow(
     effort_type: effortType,
     duration_seconds: effort.duration,
     start_offset:
-      effort.startIndex !== undefined
-        ? Math.round(timestamps[effort.startIndex]! - timestamps[0]!)
-        : null,
+      effortStartedAt === undefined || streamStartedAt === undefined
+        ? null
+        : Math.round(effortStartedAt - streamStartedAt),
     unit,
     value: effort.value,
     source: "imported",

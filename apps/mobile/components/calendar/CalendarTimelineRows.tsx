@@ -8,7 +8,7 @@ import { TouchableOpacity, View } from "react-native";
 import { parseDateKey } from "@/lib/calendar/dateMath";
 import type { CalendarGroupEvent } from "@/lib/calendar/groupEventPlans";
 import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
-import { getActivityCategoryConfig, getActivityConfig } from "@/lib/constants/activities";
+import { getActivityCategoryConfig } from "@/lib/constants/activities";
 import {
   formatEstimatedDurationSeconds,
   formatEstimatedIntensityFactor,
@@ -266,9 +266,7 @@ function getActivityPlanConfig(activityCategory: string | null | undefined) {
     return getActivityCategoryConfig("other");
   }
 
-  return activityCategory.includes("_")
-    ? getActivityConfig(activityCategory)
-    : getActivityCategoryConfig(activityCategory);
+  return getActivityCategoryConfig(activityCategory);
 }
 
 function getEventPresentation(event: CalendarEvent) {
@@ -466,9 +464,8 @@ export const CalendarScheduleObjectCard = memo(function CalendarScheduleObjectCa
   if (object.type === "groupEvent") {
     const metrics = getGroupEventActivityPlanMetricLabels(object.groupEvent);
     const planLabel =
-      object.groupEvent.selectedActivityPlanOptionLabel?.trim() ||
       object.groupEvent.selectedActivityPlan?.name?.trim() ||
-      (object.groupEvent.activityPlanOptions.length > 0 ? "Activity plan RSVP" : null);
+      (object.groupEvent.activity_plan_id ? "Activity plan" : null);
     const subtitle = [object.groupEvent.group?.name, planLabel, metrics.join(" · ")]
       .filter((label): label is string => Boolean(label))
       .join(" · ");

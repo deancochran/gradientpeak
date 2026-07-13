@@ -286,7 +286,7 @@ describe("WahooSyncService", () => {
     });
   });
 
-  it("creates a scheduled route workout without a Wahoo plan for route-only activity plans", async () => {
+  it("creates a scheduled route workout without a Wahoo plan for route-only event plans", async () => {
     const repository = createRepositoryMock();
     repository.getRouteForSync.mockResolvedValueOnce({
       description: "Park loop",

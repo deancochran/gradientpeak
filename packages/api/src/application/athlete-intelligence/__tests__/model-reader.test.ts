@@ -259,7 +259,7 @@ function rows(): AthleteIntelligenceRows {
       {
         profileId,
         id: "event-1",
-        type: "planned_activity",
+        type: "planned",
         status: "scheduled",
         startsAt: new Date("2026-06-10T10:00:00.000Z"),
         endsAt: new Date("2026-06-10T11:00:00.000Z"),
@@ -326,7 +326,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     });
     expect(selects[3]).toMatchObject({
       limit: modelReaderBounds.activities + 1,
-      leftJoins: [expect.anything()],
+      leftJoins: [],
       orderBy: [expect.anything(), expect.anything()],
     });
     expect(selects[4]).toMatchObject({

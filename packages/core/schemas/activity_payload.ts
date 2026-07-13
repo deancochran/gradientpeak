@@ -310,18 +310,6 @@ export const shouldUseFollowAlong = (category: ActivityCategory): boolean => {
 };
 
 /**
- * Map old combined activityType to category
- * @deprecated Migration helper
- */
-export const mapActivityTypeToCategory = (activityType: string): ActivityCategory => {
-  if (activityType.includes("run")) return "run";
-  if (activityType.includes("bike")) return "bike";
-  if (activityType.includes("swim")) return "swim";
-  if (activityType.includes("strength")) return "strength";
-  return "other";
-};
-
-/**
  * Check if activity can be recorded on the phone
  * These activities support live metric tracking during recording
  */

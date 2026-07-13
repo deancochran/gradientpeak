@@ -47,11 +47,6 @@ export function useGroupDetailViewModel(input: UseGroupDetailViewModelOptions) {
       getNextPageParam: (lastPage) => lastPage.nextCursor,
     },
   );
-  const currentEventPlanOptionsQuery = api.groups.events.currentEventPlanOptions.useQuery(
-    { groupId: groupId ?? "" },
-    { enabled: Boolean(hasResolvedGroup && viewer?.canViewGroupEvents) },
-  );
-
   const members = useMemo(
     () => membersQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [membersQuery.data],
@@ -76,8 +71,6 @@ export function useGroupDetailViewModel(input: UseGroupDetailViewModelOptions) {
     invitationsQuery,
     joinRequests,
     joinRequestsQuery,
-    currentEventPlanOptions: currentEventPlanOptionsQuery.data ?? null,
-    currentEventPlanOptionsQuery,
     isLoading: detailQuery.isLoading,
     isError: detailQuery.isError,
     error: detailQuery.error,

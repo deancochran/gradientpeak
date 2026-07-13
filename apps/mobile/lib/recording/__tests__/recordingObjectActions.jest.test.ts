@@ -18,7 +18,6 @@ describe("handleRecordingObjectAction", () => {
       id: "plan-1",
       name: "Tempo",
       activity_category: "bike",
-      route_id: null,
     } as any;
 
     await handleRecordingObjectAction({

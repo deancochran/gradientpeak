@@ -254,22 +254,6 @@ async function requireActivityPlanReadForRow(input: {
   });
 }
 
-async function requireRouteRead(input: {
-  db: ReturnType<typeof getRequiredDb>;
-  routeId: string | null | undefined;
-  userId: string;
-}) {
-  if (!input.routeId) {
-    return;
-  }
-
-  await createContentAccessPermissions(input.db).requireRead(
-    input.userId,
-    { type: "activity_route", id: input.routeId },
-    "Route not found",
-  );
-}
-
 function withIdentityFields<
   T extends {
     id: string;
@@ -312,7 +296,6 @@ function buildCreateValues(
     created_at: now,
     updated_at: now,
     profile_id: profileId,
-    route_id: input.route_id ?? null,
     name: input.name,
     description: input.description?.trim() ? input.description.trim() : null,
     notes: input.notes ?? null,
@@ -604,13 +587,10 @@ export const activityPlansRouter = createTRPCRouter({
       });
     }
 
-    await requireRouteRead({ db, routeId: input.route_id, userId: ctx.session.user.id });
-
     const metrics = await computePlanMetrics(
       {
         activity_category: input.activity_category,
         structure: input.structure,
-        route_id: input.route_id,
       },
       estimationStore,
       ctx.session.user.id,
@@ -658,12 +638,6 @@ export const activityPlansRouter = createTRPCRouter({
         });
       }
 
-      await requireRouteRead({
-        db,
-        routeId: updates.route_id,
-        userId: ctx.session.user.id,
-      });
-
       if (updates.structure) {
         try {
           validateStructure(
@@ -680,12 +654,11 @@ export const activityPlansRouter = createTRPCRouter({
       }
 
       const metricsUpdates: Partial<ActivityPlanInsert> = {};
-      if (updates.structure || updates.route_id !== undefined || updates.activity_category) {
+      if (updates.structure || updates.activity_category) {
         await computePlanMetrics(
           {
             activity_category: updates.activity_category || existingRow.activity_category,
             structure: updates.structure || existingRow.structure,
-            route_id: updates.route_id !== undefined ? updates.route_id : existingRow.route_id,
           },
           estimationStore,
           ctx.session.user.id,
@@ -705,7 +678,6 @@ export const activityPlansRouter = createTRPCRouter({
         activity_category: updates.activity_category,
         structure: updates.structure,
         version: updates.version,
-        route_id: updates.route_id,
         template_visibility: updates.template_visibility,
         import_provider: updates.import_provider,
         import_external_id: updates.import_external_id,
@@ -791,22 +763,10 @@ export const activityPlansRouter = createTRPCRouter({
         });
       }
 
-      const duplicateRouteId = originalPlan.route_id
-        ? (
-            await createContentAccessPermissions(db).canRead(ctx.session.user.id, {
-              type: "activity_route",
-              id: originalPlan.route_id,
-            })
-          ).allowed
-          ? originalPlan.route_id
-          : null
-        : null;
-
       await computePlanMetrics(
         {
           activity_category: originalPlan.activity_category,
           structure: originalPlan.structure,
-          route_id: duplicateRouteId,
         },
         estimationStore,
         ctx.session.user.id,
@@ -825,7 +785,6 @@ export const activityPlansRouter = createTRPCRouter({
           activity_category: originalPlan.activity_category,
           structure: originalPlan.structure,
           version: originalPlan.version,
-          route_id: duplicateRouteId,
           profile_id: ctx.session.user.id,
           template_visibility: "private",
           import_provider: null,

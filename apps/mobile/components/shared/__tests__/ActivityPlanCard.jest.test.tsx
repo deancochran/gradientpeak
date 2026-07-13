@@ -79,7 +79,7 @@ describe("ActivityPlanCard", () => {
           id: "plan-1",
           name: "Tempo Builder",
           description: "Progressive tempo with a strong finish.",
-          activity_category: "outdoor_run",
+          activity_category: "run",
           updated_at: "2026-03-21T08:00:00.000",
           owner: null,
         }}
@@ -89,7 +89,7 @@ describe("ActivityPlanCard", () => {
 
     expect(screen.getByText("Tempo Builder")).toBeTruthy();
     expect(screen.getByText("Progressive tempo with a strong finish.")).toBeTruthy();
-    expect(screen.getByText("Outdoor Run")).toBeTruthy();
+    expect(screen.getByText("Run")).toBeTruthy();
     expect(screen.getByText("Mar 21, 2026 • 8:00 AM")).toBeTruthy();
     expect(screen.getByText("GradientPeak")).toBeTruthy();
     expect(screen.queryByText("Updated Mar 21, 2026")).toBeNull();
@@ -103,7 +103,7 @@ describe("ActivityPlanCard", () => {
         activityPlan={{
           id: "plan-1",
           name: "Tempo Builder",
-          activity_category: "outdoor_run",
+          activity_category: "run",
           updated_at: "2026-03-21T08:00:00.000",
           owner: {
             id: "owner-1",
@@ -129,7 +129,7 @@ describe("ActivityPlanCard", () => {
           id: "plan-list-1",
           name: "Tempo Builder",
           description: "Progressive tempo with a strong finish.",
-          activity_category: "outdoor_run",
+          activity_category: "run",
           authoritative_metrics: {
             estimated_duration: 3600,
             estimated_tss: 72,
@@ -153,7 +153,7 @@ describe("ActivityPlanCard", () => {
     );
 
     expect(screen.getByTestId("activity-plan-list-card")).toBeTruthy();
-    expect(screen.getByText("Outdoor Run")).toBeTruthy();
+    expect(screen.getByText("Run")).toBeTruthy();
     expect(screen.getByText("Tempo Builder")).toBeTruthy();
     expect(screen.getByText("Duration")).toBeTruthy();
     expect(screen.getByText("~1h")).toBeTruthy();

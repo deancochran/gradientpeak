@@ -195,7 +195,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         .where(
           and(
             eq(schema.events.id, eventId),
-            eq(schema.events.event_type, "planned_activity"),
+            eq(schema.events.event_type, "planned"),
             eq(schema.events.profile_id, profileId),
           ),
         )
@@ -244,8 +244,8 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
             activityCategory: schema.activityPlans.activity_category,
             structure: schema.activityPlans.structure,
             updatedAt: schema.activityPlans.updated_at,
-            routeId: schema.activityPlans.route_id,
           },
+          routeId: schema.events.route_id,
         })
         .from(schema.events)
 
@@ -254,7 +254,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
           and(
             eq(schema.events.id, eventId),
             eq(schema.events.profile_id, profileId),
-            eq(schema.events.event_type, "planned_activity"),
+            eq(schema.events.event_type, "planned"),
           ),
         )
         .limit(1);
@@ -270,7 +270,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
               description: row.activityPlan.description,
               id: row.activityPlan.id,
               name: row.activityPlan.name,
-              routeId: row.activityPlan.routeId,
+              routeId: row.routeId,
               structure: row.activityPlan.structure,
               updatedAt: row.activityPlan.updatedAt.toISOString(),
             }

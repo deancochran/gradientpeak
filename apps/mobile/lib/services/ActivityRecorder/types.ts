@@ -1,5 +1,4 @@
 import type {
-  CanonicalSport,
   ControlMode,
   CurrentMetricValue as CoreCurrentMetricValue,
   RecordingSessionArtifact as CoreRecordingSessionArtifact,
@@ -21,55 +20,11 @@ import type {
   RecordingTrainerIntentSource,
   RecordingTrainerMachineType,
 } from "@repo/core";
-import { Activity, Bike, Dumbbell, Footprints, Waves } from "lucide-react-native";
 
 export interface RecorderProfileRef {
   id: string;
 }
 
-/**
- * @deprecated Use getActivityDisplayName from @repo/core instead
- */
-export const ACTIVITY_NAMES = {
-  outdoor_run: "Run",
-  outdoor_bike: "Bike",
-  indoor_bike_trainer: "Trainer",
-  indoor_treadmill: "Treadmill",
-  indoor_strength: "Strength",
-  indoor_swim: "Swim",
-  other: "Other",
-} as const;
-
-/**
- * Get icon for activity category
- */
-export function getActivityIcon(category: CanonicalSport): any {
-  switch (category) {
-    case "run":
-      return Footprints;
-    case "bike":
-      return Bike;
-    case "strength":
-      return Dumbbell;
-    case "swim":
-      return Waves;
-    case "other":
-      return Activity;
-  }
-}
-
-/**
- * @deprecated Use getActivityIcon instead
- */
-export const ACTIVITY_ICONS = {
-  outdoor_run: Footprints,
-  outdoor_bike: Bike,
-  indoor_bike_trainer: Bike,
-  indoor_treadmill: Footprints,
-  indoor_strength: Dumbbell,
-  indoor_swim: Waves,
-  other: Activity,
-} as const;
 // ================================
 // Sensor Reading Types
 // ================================

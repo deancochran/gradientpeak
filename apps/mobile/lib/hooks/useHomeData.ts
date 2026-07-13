@@ -1,4 +1,3 @@
-import { format } from "date-fns";
 import { useMemo } from "react";
 import { api } from "@/lib/api";
 import { useProfileGoals } from "./useProfileGoals";
@@ -97,30 +96,6 @@ export function useHomeData() {
     };
   }, [data?.todaysActivity]);
 
-  // Transform upcoming activities
-  // Note: Keeping typo 'upcomingActivitys' for backward compatibility if used elsewhere
-  const upcomingActivitys = useMemo(() => {
-    if (!data?.schedule?.length) return [];
-
-    return data.schedule
-      .filter((a) => !a.isToday)
-      .map((activity) => {
-        const activityDate = new Date(activity.date);
-        return {
-          id: activity.id,
-          day: format(activityDate, "EEEE"),
-          type: activity.activityType || "Activity",
-          title: activity.activityName || "Planned Activity",
-          distance: activity.estimatedDistance
-            ? parseFloat((activity.estimatedDistance / 1000).toFixed(1))
-            : 0,
-          duration: activity.estimatedDuration || 0,
-          intensity: "Moderate",
-          status: "upcoming" as const,
-        };
-      });
-  }, [data?.schedule]);
-
   // Weekly stats
   const weeklyStats = useMemo(() => {
     if (!data?.weeklySummary) {
@@ -175,17 +150,6 @@ export function useHomeData() {
     };
   }, [data?.weeklySummary]);
 
-  // Backward-compatible property name; value is descriptive load context, not readiness.
-  const trainingReadiness = useMemo(() => {
-    return {
-      ...formStatus,
-      percentage: null,
-      ctlStatus: formStatus.ctl === null ? "Unknown" : "Long-term load",
-      atlStatus: formStatus.atl === null ? "Unknown" : "Recent load",
-      tsbStatus: formStatus.label,
-    };
-  }, [formStatus]);
-
   const hasData = !!(data?.activePlan || data?.todaysActivity || data?.schedule?.length);
 
   return {
@@ -193,15 +157,13 @@ export function useHomeData() {
     todaysActivity,
     weeklyStats,
     formStatus,
-    trainingReadiness,
-    upcomingActivitys,
     weeklyGoal,
     isLoading,
     hasData,
     refetch,
     // Expose raw new data for new components
     trends: data?.trends || [],
-    projectedFitness: data?.projectedFitness || [],
+    projectedLoad: data?.projectedLoad || [],
     idealFitnessCurve: data?.idealFitnessCurve || [],
     goalMetrics: data?.goalMetrics || null,
     consistency: data?.consistency || { streak: 0, weeklyCount: 0 },

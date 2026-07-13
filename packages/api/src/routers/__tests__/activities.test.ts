@@ -114,7 +114,6 @@ function buildActivityPlanRow(overrides: Record<string, unknown> = {}) {
     created_at: new Date("2026-01-01T00:00:00.000Z"),
     updated_at: new Date("2026-01-02T00:00:00.000Z"),
     profile_id: OWNER_ID,
-    route_id: null,
     name: "Planned Run",
     description: "",
     notes: null,

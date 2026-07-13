@@ -5,7 +5,7 @@ import { Calendar } from "lucide-react-native";
 import { View } from "react-native";
 import { ActivityPlanContentPreview } from "@/components/activity-plan/ActivityPlanContentPreview";
 import { api } from "@/lib/api";
-import { getActivityCategoryConfig, getActivityConfig } from "@/lib/constants/activities";
+import { getActivityCategoryConfig } from "@/lib/constants/activities";
 import {
   formatEstimatedDurationSeconds,
   formatEstimatedIntensityFactor,
@@ -150,9 +150,7 @@ export function ActivityPlanCard({
   const isCompact = variant === "compact";
   const isHero = variant === "hero";
   const isList = variant === "list";
-  const activityConfig = activity.activityType.includes("_")
-    ? getActivityConfig(activity.activityType)
-    : getActivityCategoryConfig(activity.activityType);
+  const activityConfig = getActivityCategoryConfig(activity.activityType);
 
   const routeId = activity.routeId;
   const { data: fetchedRoute } = api.routes.get.useQuery(

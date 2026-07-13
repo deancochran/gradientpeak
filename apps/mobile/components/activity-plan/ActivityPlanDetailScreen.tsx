@@ -30,7 +30,7 @@ import {
   getAuthoritativeActivityPlanMetrics,
 } from "@/lib/activityPlanMetrics";
 import { api } from "@/lib/api";
-import { getActivityCategoryConfig, getActivityConfig } from "@/lib/constants/activities";
+import { getActivityCategoryConfig } from "@/lib/constants/activities";
 import { ROUTES } from "@/lib/constants/routes";
 import { useRecordingLifecycle } from "@/lib/hooks/useActivityRecorder";
 import { useAuth } from "@/lib/hooks/useAuth";
@@ -55,30 +55,6 @@ export interface ActivityPlanDetailRouteParams {
   action?: string;
   template?: string;
   activityPlan?: string;
-}
-
-type RouteSeedPlan = {
-  route_id?: string | null;
-};
-
-function parseRouteSeedPlan(template?: string, activityPlanParam?: string): RouteSeedPlan | null {
-  if (template) {
-    try {
-      return JSON.parse(template) as RouteSeedPlan;
-    } catch (error) {
-      console.error("Failed to parse template:", error);
-    }
-  }
-
-  if (activityPlanParam) {
-    try {
-      return JSON.parse(activityPlanParam) as RouteSeedPlan;
-    } catch (error) {
-      console.error("Failed to parse activityPlan:", error);
-    }
-  }
-
-  return null;
 }
 
 export function ActivityPlanDetailScreen({
@@ -119,12 +95,24 @@ export function ActivityPlanDetailScreen({
     redirectOnNotFound(plannedActivityError);
   }, [plannedActivityError, redirectOnNotFound]);
 
-  const routeSeedPlan = React.useMemo(
-    () => parseRouteSeedPlan(template, activityPlanParam),
-    [activityPlanParam, template],
-  );
+  const activePlannedActivity = eventId ? plannedActivity : null;
+
+  const activityPlanRouteCandidate = React.useMemo(() => {
+    if (activePlannedActivity?.activity_plan) return activePlannedActivity.activity_plan;
+    if (fetchedPlan) return fetchedPlan;
+    const serializedPlan = template ?? activityPlanParam;
+    if (!serializedPlan) return null;
+    try {
+      return JSON.parse(serializedPlan) as { route_id?: string | null };
+    } catch {
+      return null;
+    }
+  }, [activityPlanParam, activePlannedActivity, fetchedPlan, template]);
+
   const routeId =
-    fetchedPlan?.route_id ?? plannedActivity?.activity_plan?.route_id ?? routeSeedPlan?.route_id;
+    (activePlannedActivity as { route_id?: string | null } | null | undefined)?.route_id ??
+    (activityPlanRouteCandidate as { route_id?: string | null } | null | undefined)?.route_id ??
+    null;
   const { data: route } = api.routes.get.useQuery({ id: routeId! }, { enabled: !!routeId });
   const { data: routeFull, isFetching: isFetchingRouteFull } = api.routes.loadFull.useQuery(
     { id: routeId! },
@@ -152,14 +140,14 @@ export function ActivityPlanDetailScreen({
     return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
   };
 
-  const isScheduled = !!plannedActivity?.scheduled_date;
+  const isScheduled = !!activePlannedActivity?.scheduled_date;
 
   const vm = useActivityPlanDetailViewModel({
     activityPlanParam,
     fetchedPlan,
     formatDuration,
     isScheduled,
-    plannedActivity,
+    plannedActivity: activePlannedActivity,
     profile,
     route,
     template,
@@ -168,9 +156,7 @@ export function ActivityPlanDetailScreen({
   const activityPlan = vm.activityPlan;
   const authoritativeMetrics = getAuthoritativeActivityPlanMetrics(activityPlan);
   const planRoute = getActivityPlanRoute(activityPlan);
-  const activityConfig = activityPlan?.activity_category?.includes("_")
-    ? getActivityConfig(activityPlan.activity_category)
-    : getActivityCategoryConfig(activityPlan?.activity_category ?? "other");
+  const activityConfig = getActivityCategoryConfig(activityPlan?.activity_category ?? "other");
 
   const recordingCandidate = React.useMemo<RecordingObjectActionCandidate | null>(() => {
     if (!activityPlan) return null;
@@ -180,7 +166,6 @@ export function ActivityPlanDetailScreen({
       label: activityPlan.name,
       category: activityPlan.activity_category,
       plan: activityPlan,
-      planRouteId: activityPlan.route_id ?? null,
     };
   }, [activityPlan]);
 

@@ -2,7 +2,6 @@ import {
   estimateConservativeFTPFromWeight,
   estimateMaxHRFromDOB,
   formatWeightForDisplay,
-  getProviderCapabilityDefinition,
 } from "@repo/core";
 import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Button } from "@repo/ui/components/button";
@@ -17,19 +16,19 @@ import { useZodForm } from "@repo/ui/hooks";
 import Constants from "expo-constants";
 import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
-import { Activity, Check, ChevronRight } from "lucide-react-native";
+import { Activity, Check } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, TouchableOpacity, View } from "react-native";
 import { z } from "zod";
+import { IntegrationProviderList } from "@/components/integrations/IntegrationProviderList";
 import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
-import { integrationProviders } from "@/lib/constants/integrations";
 import { isValidOnboardingUsername } from "@/lib/onboarding/validation";
 import { PRIMARY_SPORT_OPTIONS } from "../onboarding-data";
 import type { IntegrationProvider, OnboardingData, StepProps } from "../types";
 
 const INTENT_OPTIONS: Array<{
-  value: NonNullable<OnboardingData["intent"]>;
+  value: OnboardingData["intent"][number];
   label: string;
   description: string;
 }> = [
@@ -69,10 +68,6 @@ const INTENT_OPTIONS: Array<{
     description: "Set up the basics and decide later.",
   },
 ];
-
-function getIntegrationProviderMetadata(provider: IntegrationProvider) {
-  return { label: getProviderCapabilityDefinition(provider).label };
-}
 
 function getMobileRedirectUri(): string {
   if (Constants.expoConfig?.extra?.redirectUri) {
@@ -352,24 +347,36 @@ function IntentStep({ data, updateData }: StepProps) {
     <View className="gap-3">
       <SectionHeading
         title="What brings you here?"
-        description="Optional, but it helps us prioritize your setup."
+        description="Choose all that apply for personalization."
       />
-      {INTENT_OPTIONS.map((option) => (
-        <TouchableOpacity
-          key={option.value}
-          onPress={() => updateData({ intent: data.intent === option.value ? null : option.value })}
-          testID={`onboarding-intent-${option.value}`}
-          className={`p-4 border rounded-xl flex-row items-center justify-between ${
-            data.intent === option.value ? "border-primary bg-primary/5" : "border-border bg-card"
-          }`}
-        >
-          <View className="flex-1 pr-3">
-            <Text className="font-semibold text-base text-foreground">{option.label}</Text>
-            <Text className="text-sm text-muted-foreground">{option.description}</Text>
-          </View>
-          {data.intent === option.value && <Icon as={Check} className="text-primary" />}
-        </TouchableOpacity>
-      ))}
+      {INTENT_OPTIONS.map((option) => {
+        const isSelected = data.intent.includes(option.value);
+
+        return (
+          <TouchableOpacity
+            key={option.value}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: isSelected }}
+            onPress={() =>
+              updateData({
+                intent: isSelected
+                  ? data.intent.filter((intent) => intent !== option.value)
+                  : [...data.intent, option.value],
+              })
+            }
+            testID={`onboarding-intent-${option.value}`}
+            className={`p-4 border rounded-xl flex-row items-center justify-between ${
+              isSelected ? "border-primary bg-primary/5" : "border-border bg-card"
+            }`}
+          >
+            <View className="flex-1 pr-3">
+              <Text className="font-semibold text-base text-foreground">{option.label}</Text>
+              <Text className="text-sm text-muted-foreground">{option.description}</Text>
+            </View>
+            {isSelected && <Icon as={Check} className="text-primary" />}
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
@@ -520,21 +527,21 @@ export const CssStep = ({ data, updateData }: StepProps) => (
   </View>
 );
 
-export const IntegrationsStep = ({
-  connectionOverview = [],
-  integrations = [],
-  onRefreshIntegrations,
-}: StepProps) => {
+export const IntegrationsStep = ({ onRefreshIntegrations }: StepProps) => {
   const [statusModal, setStatusModal] = useState<null | { title: string; description: string }>(
     null,
   );
+  const [pendingProvider, setPendingProvider] = useState<IntegrationProvider | null>(null);
   const getAuthUrlMutation = api.integrations.getAuthUrl.useMutation();
-
-  const connectedProviders = new Set(integrations.map((integration) => integration.provider));
+  const {
+    data: syncOverview,
+    error: syncOverviewError,
+    isLoading,
+    refetch: refetchSyncOverview,
+  } = api.integrations.getSyncOverview.useQuery(undefined);
 
   const handleConnect = async (providerKey: IntegrationProvider) => {
-    const metadata = getIntegrationProviderMetadata(providerKey);
-
+    setPendingProvider(providerKey);
     try {
       const redirectUri = getMobileRedirectUri();
       const { url } = await getAuthUrlMutation.mutateAsync({
@@ -545,62 +552,33 @@ export const IntegrationsStep = ({
       const result = await WebBrowser.openAuthSessionAsync(url, redirectUri);
 
       if (result.type === "success") {
+        await refetchSyncOverview();
         onRefreshIntegrations?.();
-        setStatusModal({ title: "Success", description: `Connected to ${metadata.label}` });
+        setStatusModal({ title: "Success", description: "Integration connected." });
       }
     } catch (error) {
       console.error(error);
-      setStatusModal({ title: "Error", description: `Failed to connect to ${metadata.label}.` });
+      setStatusModal({ title: "Error", description: "Failed to connect integration." });
+    } finally {
+      setPendingProvider(null);
     }
   };
-
-  const providers =
-    connectionOverview.length > 0
-      ? connectionOverview.filter((item) => item.canConnect || item.connected)
-      : integrationProviders.map((provider) => ({
-          canConnect: true,
-          connected: connectedProviders.has(provider),
-          provider,
-        }));
 
   return (
     <View className="gap-4">
       <Text className="text-xl font-semibold mb-2">Connect Accounts</Text>
       <Text className="text-muted-foreground mb-4">Sync your activities automatically.</Text>
 
-      {providers.length === 0 ? (
-        <Text className="text-sm text-muted-foreground">
-          No provider connections are available in this environment.
-        </Text>
-      ) : null}
-
-      {providers.map((service) => {
-        const metadata = getIntegrationProviderMetadata(service.provider);
-
-        return (
-          <TouchableOpacity
-            key={service.provider}
-            onPress={() => handleConnect(service.provider)}
-            className={`flex-row items-center justify-between p-4 border rounded-xl mb-2 ${
-              connectedProviders.has(service.provider)
-                ? "border-green-500 bg-green-500/10"
-                : "border-border bg-card"
-            }`}
-          >
-            <View className="flex-row items-center gap-3">
-              <View className="w-8 h-8 rounded bg-muted items-center justify-center">
-                <Text className="font-bold text-xs">{metadata.label[0]}</Text>
-              </View>
-              <Text className="font-semibold">{metadata.label}</Text>
-            </View>
-            {connectedProviders.has(service.provider) ? (
-              <Icon as={Check} className="text-green-600" size={20} />
-            ) : (
-              <Icon as={ChevronRight} className="text-muted-foreground" size={20} />
-            )}
-          </TouchableOpacity>
-        );
-      })}
+      <IntegrationProviderList
+        error={syncOverviewError}
+        integrations={syncOverview ?? []}
+        isLoading={isLoading}
+        onConnect={(provider) => {
+          void handleConnect(provider);
+        }}
+        pendingByProvider={pendingProvider ? { [pendingProvider]: "connect" } : {}}
+        onRetry={refetchSyncOverview}
+      />
       {statusModal ? (
         <AppConfirmModal
           description={statusModal.description}
@@ -740,7 +718,14 @@ export const SummaryStep = ({ data }: { data: OnboardingData }) => {
   const summaryItems = [
     { label: "Full name", value: data.full_name.trim() },
     { label: "Username", value: data.username.trim() },
-    { label: "Intent", value: data.intent?.replace(/_/g, " "), capitalize: true },
+    {
+      label: "Intent",
+      value:
+        data.intent.length > 0
+          ? data.intent.map((intent) => intent.replace(/_/g, " ")).join(", ")
+          : null,
+      capitalize: true,
+    },
     { label: "Experience", value: data.experience_level, capitalize: true },
     { label: "Gender", value: data.gender, capitalize: true },
     { label: "Date of Birth", value: data.dob },

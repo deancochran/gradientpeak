@@ -152,7 +152,7 @@ export function useRecordScreenController() {
           gpsRecordingEnabled: selection.gpsRecordingEnabled,
           hasPlan: !!selection.plan,
           eventId: selection.eventId,
-          routeId: selection.routeId ?? selection.plan?.route_id ?? null,
+          routeId: selection.routeId ?? null,
         });
 
         console.log("[RecordModal] Processing selection with service method");
@@ -523,9 +523,8 @@ function prepareStandaloneRouteIfNeeded(
   selection: RecordingLaunchPayload,
 ) {
   const explicitRouteId = selection.routeId ?? null;
-  const planRouteId = selection.plan?.route_id ?? null;
 
-  if (!explicitRouteId || explicitRouteId === planRouteId) return;
+  if (!explicitRouteId) return;
 
   console.log("[RecordModal] Preparing standalone route from launch payload:", explicitRouteId);
   service.prepareRouteAttachment(explicitRouteId);

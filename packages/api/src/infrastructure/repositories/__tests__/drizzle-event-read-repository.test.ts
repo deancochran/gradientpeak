@@ -10,7 +10,7 @@ function createEventRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "event-1",
     profile_id: "profile-1",
-    event_type: "planned_activity",
+    event_type: "planned",
     title: "Tempo activity",
     description: "Midweek threshold session",
     all_day: false,
@@ -571,7 +571,7 @@ describe("drizzle-event-read-repository", () => {
     await repository.listOwnedEvents({
       profileId: "profile-1",
       limit: 25,
-      eventTypes: ["planned_activity", "race"],
+      eventTypes: ["planned", "race_target"],
       includeAdhoc: false,
       activityPlanId: "activity-plan-1",
       activityCategory: "bike",

@@ -94,7 +94,7 @@ function createEventRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "00000000-0000-4000-8000-000000000001",
     profile_id: "profile-123",
-    event_type: "planned_activity",
+    event_type: "planned",
     title: "Planned Activity",
     description: null,
     all_day: true,
@@ -329,8 +329,8 @@ describe("eventsRouter generalization", () => {
     const { caller } = createCaller({
       events: {
         data: [
-          createEventRow({ id: "a", event_type: "planned_activity" }),
-          createEventRow({ id: "b", event_type: "race" }),
+          createEventRow({ id: "a", event_type: "planned" }),
+          createEventRow({ id: "b", event_type: "race_target" }),
           createEventRow({ id: "c", event_type: "imported" }),
         ],
         error: null,
@@ -386,7 +386,7 @@ describe("eventsRouter generalization", () => {
       events: {
         data: createEventRow({
           id: "00000000-0000-4000-8000-000000000012",
-          event_type: "planned_activity",
+          event_type: "planned",
           activity_plan_id: "11111111-1111-4111-8111-111111111111",
           activity_plan: {
             id: "11111111-1111-4111-8111-111111111111",
@@ -426,7 +426,7 @@ describe("eventsRouter generalization", () => {
         data: [
           createEventRow({
             id: "planned-1",
-            event_type: "planned_activity",
+            event_type: "planned",
             activity_plan_id: "11111111-1111-4111-8111-111111111111",
             activity_plan: {
               id: "11111111-1111-4111-8111-111111111111",
@@ -474,7 +474,7 @@ describe("eventsRouter generalization", () => {
         data: [
           createEventRow({
             id: "today-1",
-            event_type: "race",
+            event_type: "race_target",
             starts_at: "2026-03-12T06:00:00.000Z",
           }),
         ],
@@ -506,15 +506,15 @@ describe("eventsRouter generalization", () => {
     });
   });
 
-  it("getWeekCount ignores legacy rest_day rows in the current UTC week", async () => {
+  it("getWeekCount counts canonical event rows in the current UTC week", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-11T15:00:00.000Z"));
 
     const { caller, callLog } = createCaller({
       events: {
         data: [
-          createEventRow({ id: "week-visible-1", event_type: "planned_activity" }),
-          createEventRow({ id: "week-hidden-rest", event_type: "rest_day" }),
+          createEventRow({ id: "week-visible-1", event_type: "planned" }),
+          createEventRow({ id: "week-visible-custom", event_type: "custom" }),
           createEventRow({ id: "week-visible-2", event_type: "custom" }),
         ],
         error: null,
@@ -523,7 +523,7 @@ describe("eventsRouter generalization", () => {
 
     const result = await caller.getWeekCount();
 
-    expect(result).toBe(2);
+    expect(result).toBe(3);
     expect(callLog).toContainEqual({
       table: "events",
       operation: "filter",
@@ -556,7 +556,7 @@ describe("eventsRouter generalization", () => {
       },
       events: {
         data: createEventRow({
-          event_type: "planned_activity",
+          event_type: "planned",
           activity_plan_id: "11111111-1111-4111-8111-111111111111",
         }),
         error: null,
@@ -575,9 +575,9 @@ describe("eventsRouter generalization", () => {
 
     const insertCall = callLog.find((call) => call.operation === "insert");
     expect(insertCall?.table).toBe("events");
-    expect((insertCall?.payload as any).event_type).toBe("planned_activity");
+    expect((insertCall?.payload as any).event_type).toBe("planned");
     expect(result.event_type).toBe("planned");
-    expect(result.legacy_event_type).toBe("planned_activity");
+    expect(result.legacy_event_type).toBe("planned");
   });
 
   it("create normalizes planned event scheduled_date to all-day persistence", async () => {
@@ -594,7 +594,7 @@ describe("eventsRouter generalization", () => {
         data: createEventRow({
           starts_at: "2026-03-12T00:00:00.000Z",
           ends_at: "2026-03-13T00:00:00.000Z",
-          event_type: "planned_activity",
+          event_type: "planned",
           activity_plan_id: "11111111-1111-4111-8111-111111111111",
         }),
         error: null,
@@ -617,7 +617,7 @@ describe("eventsRouter generalization", () => {
     });
 
     const insertCall = callLog.find((call) => call.operation === "insert");
-    expect((insertCall?.payload as any).event_type).toBe("planned_activity");
+    expect((insertCall?.payload as any).event_type).toBe("planned");
     expect((insertCall?.payload as any).all_day).toBe(true);
     expect((insertCall?.payload as any).starts_at).toBe("2026-03-12T00:00:00.000Z");
     expect((insertCall?.payload as any).ends_at).toBe("2026-03-13T00:00:00.000Z");
@@ -815,51 +815,6 @@ describe("eventsRouter generalization", () => {
     expect(callLog).toEqual([]);
   });
 
-  it("getById hides legacy rest_day rows", async () => {
-    const { caller } = createCaller({
-      events: {
-        data: createEventRow({
-          id: "00000000-0000-4000-8000-000000000011",
-          event_type: "rest_day",
-          title: "Legacy Rest Day",
-        }),
-        error: null,
-      },
-    });
-
-    await expect(caller.getById({ id: "00000000-0000-4000-8000-000000000011" })).rejects.toThrow(
-      "Event not found",
-    );
-  });
-
-  it("getToday filters legacy rest_day rows from responses", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-03-12T15:00:00.000Z"));
-
-    const { caller } = createCaller({
-      events: {
-        data: [
-          createEventRow({
-            id: "today-rest",
-            event_type: "rest_day",
-            starts_at: "2026-03-12T00:00:00.000Z",
-          }),
-          createEventRow({
-            id: "today-custom",
-            event_type: "custom",
-            title: "Mobility",
-            starts_at: "2026-03-12T08:00:00.000Z",
-          }),
-        ],
-        error: null,
-      },
-    });
-
-    const result = await caller.getToday();
-
-    expect(result.map((event) => event.id)).toEqual(["today-custom"]);
-  });
-
   it("update supports scoped future mutations", async () => {
     const { caller } = createCaller({
       events: [
@@ -1040,7 +995,7 @@ describe("eventsRouter generalization", () => {
         {
           data: createEventRow({
             id: eventId,
-            event_type: "planned_activity",
+            event_type: "planned",
             activity_plan_id: "22222222-2222-4222-8222-222222222222",
             status: "completed",
             linked_activity_id: linkedActivityId,
@@ -1053,7 +1008,7 @@ describe("eventsRouter generalization", () => {
           data: [
             createEventRow({
               id: eventId,
-              event_type: "planned_activity",
+              event_type: "planned",
               activity_plan_id: "22222222-2222-4222-8222-222222222222",
               status: "scheduled",
               linked_activity_id: null,
@@ -1098,7 +1053,7 @@ describe("eventsRouter generalization", () => {
         {
           data: createEventRow({
             id: eventId,
-            event_type: "planned_activity",
+            event_type: "planned",
             activity_plan_id: "33333333-3333-4333-8333-333333333333",
             status: "completed",
             linked_activity_id: linkedActivityId,
@@ -1109,7 +1064,7 @@ describe("eventsRouter generalization", () => {
           data: [
             createEventRow({
               id: eventId,
-              event_type: "planned_activity",
+              event_type: "planned",
               activity_plan_id: "33333333-3333-4333-8333-333333333333",
               notes: "updated note",
               status: "completed",
@@ -1263,27 +1218,6 @@ describe("eventsRouter generalization", () => {
     ).rejects.toThrow("Imported events are read-only");
   });
 
-  it("update blocks writes to legacy rest_day rows", async () => {
-    const { caller } = createCaller({
-      events: {
-        data: createEventRow({
-          id: "00000000-0000-4000-8000-000000000041",
-          event_type: "rest_day",
-        }),
-        error: null,
-      },
-    });
-
-    await expect(
-      caller.update({
-        id: "00000000-0000-4000-8000-000000000041",
-        patch: { notes: "should fail" },
-      }),
-    ).rejects.toThrow(
-      /Cannot update rest_day events; rest is inferred from dates without scheduled planned events/,
-    );
-  });
-
   it("update blocks changing another event into rest_day", async () => {
     const { caller } = createCaller({
       events: {
@@ -1359,27 +1293,6 @@ describe("eventsRouter generalization", () => {
     expect(result.linked_activity_id).toBe(activityId);
   });
 
-  it("blocks completion linking for legacy rest_day rows", async () => {
-    const { caller } = createCaller({
-      events: {
-        data: createEventRow({
-          id: "00000000-0000-4000-8000-000000000057",
-          event_type: "rest_day",
-        }),
-        error: null,
-      },
-    });
-
-    await expect(
-      caller.linkCompletion({
-        event_id: "00000000-0000-4000-8000-000000000057",
-        activity_id: "11111111-1111-4111-8111-111111111157",
-      }),
-    ).rejects.toThrow(
-      /Cannot update rest_day events; rest is inferred from dates without scheduled planned events/,
-    );
-  });
-
   it("unlinks a previously linked completion", async () => {
     const eventId = "00000000-0000-4000-8000-000000000051";
     const { caller, callLog } = createCaller({
@@ -1412,28 +1325,6 @@ describe("eventsRouter generalization", () => {
     expect((updateCall?.payload as any).linked_activity_id).toBeNull();
     expect((updateCall?.payload as any).status).toBe("scheduled");
     expect(result.linked_activity_id).toBeNull();
-  });
-
-  it("blocks completion unlinking for legacy rest_day rows", async () => {
-    const { caller } = createCaller({
-      events: {
-        data: createEventRow({
-          id: "00000000-0000-4000-8000-000000000058",
-          event_type: "rest_day",
-          status: "completed",
-          linked_activity_id: "11111111-1111-4111-8111-111111111158",
-        }),
-        error: null,
-      },
-    });
-
-    await expect(
-      caller.unlinkCompletion({
-        event_id: "00000000-0000-4000-8000-000000000058",
-      }),
-    ).rejects.toThrow(
-      /Cannot update rest_day events; rest is inferred from dates without scheduled planned events/,
-    );
   });
 
   it("linkCompletion returns not found when event does not exist", async () => {
@@ -1517,23 +1408,6 @@ describe("eventsRouter generalization", () => {
     expect(result.items[0]?.status).toBe("completed");
   });
 
-  it("list filters legacy rest_day rows from responses", async () => {
-    const { caller } = createCaller({
-      events: {
-        data: [
-          createEventRow({ id: "rest-hidden", event_type: "rest_day" }),
-          createEventRow({ id: "custom-visible", event_type: "custom", title: "Yoga" }),
-        ],
-        error: null,
-      },
-      activities: { data: [], error: null },
-    });
-
-    const result = await caller.list({ limit: 20, include_adhoc: true });
-
-    expect(result.items.map((event) => event.id)).toEqual(["custom-visible"]);
-  });
-
   it("listByWeek returns week events with lifecycle status", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-12T15:00:00.000Z"));
@@ -1543,7 +1417,7 @@ describe("eventsRouter generalization", () => {
         data: [
           createEventRow({
             id: "week-1",
-            event_type: "planned_activity",
+            event_type: "planned",
             activity_plan_id: "22222222-2222-4222-8222-222222222222",
             starts_at: "2026-03-10T00:00:00.000Z",
           }),
@@ -1589,28 +1463,7 @@ describe("eventsRouter generalization", () => {
     });
   });
 
-  it("listByWeek filters legacy rest_day rows", async () => {
-    const { caller } = createCaller({
-      events: {
-        data: [
-          createEventRow({ id: "week-rest", event_type: "rest_day" }),
-          createEventRow({ id: "week-race", event_type: "race" }),
-        ],
-        error: null,
-      },
-      activities: { data: [], error: null },
-    });
-
-    const result = await caller.listByWeek({
-      weekStart: "2026-03-08",
-      weekEnd: "2026-03-14",
-    });
-
-    expect(result.map((event) => event.id)).toEqual(["week-race"]);
-    expect(result[0]?.event_type).toBe("race_target");
-  });
-
-  it("list applies UTC-safe date boundaries for timestamp inputs", async () => {
+  it("list preserves exact instants for timestamp range inputs", async () => {
     const { caller, callLog } = createCaller({
       events: { data: [], error: null },
       activities: { data: [], error: null },
@@ -1630,12 +1483,41 @@ describe("eventsRouter generalization", () => {
     expect(rangeFilters).toContainEqual({
       type: "gte",
       column: "starts_at",
-      value: "2026-03-11T00:00:00.000Z",
+      value: "2026-03-11T04:30:00.000Z",
     });
     expect(rangeFilters).toContainEqual({
       type: "lt",
       column: "starts_at",
-      value: "2026-03-12T00:00:00.000Z",
+      value: "2026-03-11T16:00:00.000Z",
+    });
+  });
+
+  it("list keeps date-only end ranges inclusive", async () => {
+    const { caller, callLog } = createCaller({
+      events: { data: [], error: null },
+      activities: { data: [], error: null },
+    });
+
+    await caller.list({
+      limit: 20,
+      include_adhoc: true,
+      date_from: "2026-03-10",
+      date_to: "2026-03-12",
+    });
+
+    const rangeFilters = callLog
+      .filter((call) => call.table === "events" && call.operation === "filter")
+      .map((call) => call.payload as { type?: string; column?: string; value?: unknown });
+
+    expect(rangeFilters).toContainEqual({
+      type: "gte",
+      column: "starts_at",
+      value: "2026-03-10T00:00:00.000Z",
+    });
+    expect(rangeFilters).toContainEqual({
+      type: "lt",
+      column: "starts_at",
+      value: "2026-03-13T00:00:00.000Z",
     });
   });
 
@@ -1825,13 +1707,13 @@ describe("eventsRouter generalization", () => {
           data: [
             createEventRow({
               id: "double-1",
-              event_type: "planned_activity",
+              event_type: "planned",
               activity_plan_id: "55555555-5555-4555-8555-555555555555",
               starts_at: "2026-03-09T06:00:00.000Z",
             }),
             createEventRow({
               id: "double-2",
-              event_type: "planned_activity",
+              event_type: "planned",
               activity_plan_id: "55555555-5555-4555-8555-555555555555",
               starts_at: "2026-03-09T18:00:00.000Z",
             }),

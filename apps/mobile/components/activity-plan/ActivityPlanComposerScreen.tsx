@@ -2,7 +2,6 @@ import BottomSheet, { BottomSheetBackdrop } from "@gorhom/bottom-sheet";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   calculateActivityStatsV2,
-  decodePolyline,
   type IntensityTargetV2,
   type IntervalStepV2,
   type IntervalV2,
@@ -19,15 +18,11 @@ import {
   type ActivityPlanBasicsFormData,
   ActivityPlanBasicsSection,
 } from "@/components/activity-plan/ActivityPlanBasicsSection";
-import { ActivityPlanRouteSection } from "@/components/activity-plan/ActivityPlanRouteSection";
 import { StructureBuilderCard } from "@/components/activity-plan/structure/StructureBuilderCard";
 import { StructureIntervalSheet } from "@/components/activity-plan/structure/StructureIntervalSheet";
 import { useActivityPlanComposerProcess } from "@/components/activity-plan/useActivityPlanComposerProcess";
-import { useActivityPlanRouteUpload } from "@/components/activity-plan/useActivityPlanRouteUpload";
 import { StepEditorDialog } from "@/components/activity-plan/workout/StepEditorDialog";
 import { AppBottomSheetContent } from "@/components/shared/AppBottomSheet";
-import { api } from "@/lib/api";
-import { buildPlanRoute } from "@/lib/constants/routes";
 import { useActivityPlanForm } from "@/lib/hooks/forms/useActivityPlanForm";
 import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation";
 
@@ -106,7 +101,6 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     setName,
     setDescription,
     setActivityCategory,
-    setRouteId,
     submit,
     validation,
     canSubmit,
@@ -126,13 +120,16 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
         {
           text: "Schedule Now",
           onPress: () => {
-            router.replace(buildPlanRoute(planId, "schedule") as any);
+            router.replace({
+              pathname: "/activity-plan-detail",
+              params: { planId, action: "schedule" },
+            });
           },
         },
         {
           text: "View Plan",
           onPress: () => {
-            router.replace(buildPlanRoute(planId) as any);
+            router.replace({ pathname: "/activity-plan-detail", params: { planId } });
           },
         },
       ]);
@@ -224,12 +221,6 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     return interval?.steps.find((item) => item.id === editingStepId);
   }, [editingIntervalId, editingStepId, intervals]);
 
-  const routeQuery = api.routes.get.useQuery({ id: form.routeId! }, { enabled: !!form.routeId });
-  const { isUploadingRoute, pickGpxFile } = useActivityPlanRouteUpload({
-    planName: form.name,
-    onRouteUploaded: setRouteId,
-  });
-
   const structureStats = useMemo(() => {
     if (intervals.length === 0) {
       return {
@@ -280,7 +271,6 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     name: form.name,
     navigation,
     notes: form.notes,
-    routeId: form.routeId,
     structure: form.structure,
     submit,
   });
@@ -395,10 +385,6 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     );
   }
 
-  const routeCoordinates = routeQuery.data?.polyline
-    ? decodePolyline(routeQuery.data.polyline)
-    : null;
-
   const issueMaps = (() => {
     const intervalIssues: Record<string, { interval: number; step: number; total: number }> = {};
     const stepIssueCountsByInterval: Record<string, Record<string, number>> = {};
@@ -457,17 +443,6 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
             onChangeActivityCategory={(category) =>
               setActivityCategory(category as ActivityCategory)
             }
-          />
-
-          <ActivityPlanRouteSection
-            coordinates={routeCoordinates}
-            error={validation.errors.route_id}
-            isUploadingRoute={isUploadingRoute}
-            onClearRoute={() => setRouteId(null)}
-            onPickRoute={pickGpxFile}
-            onSelectRoute={setRouteId}
-            route={routeQuery.data}
-            routeId={form.routeId}
           />
 
           <StructureBuilderCard

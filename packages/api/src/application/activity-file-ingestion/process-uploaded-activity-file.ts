@@ -1,4 +1,4 @@
-import type { ActivityFileType } from "@repo/core";
+import type { ActivityFileType } from "@repo/core/server/activity-files";
 import {
   type ActivityFileIngestionRow,
   type ActivityRow,

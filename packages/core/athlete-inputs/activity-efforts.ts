@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { canonicalSportSchema } from "../schemas/sport";
+import type { CanonicalEffortUnit } from "../units/effort";
+import { ACTIVITY_EFFORT_HARD_BOUNDS } from "./activity-effort-policy";
 
 export const activityEffortTypeSchema = z.enum(["power", "speed"]);
 
@@ -79,6 +81,7 @@ export interface ActivityEffortDefinition {
   label: string;
   valueLabel: string;
   unit: string;
+  storageUnit: CanonicalEffortUnit;
   inputKind: ActivityEffortInputKind;
   min: number;
   max: number;
@@ -96,9 +99,10 @@ export const activityEffortDefinitions = [
     label: "Bike power",
     valueLabel: "Power",
     unit: "W",
+    storageUnit: "watts",
     inputKind: "integer",
     min: 1,
-    max: 2500,
+    max: ACTIVITY_EFFORT_HARD_BOUNDS.bikePowerWatts.max,
     decimals: 0,
     defaultValue: 250,
     defaultDurationSeconds: 1200,
@@ -111,9 +115,10 @@ export const activityEffortDefinitions = [
     label: "Run speed",
     valueLabel: "Speed",
     unit: "m/s",
+    storageUnit: "meters_per_second",
     inputKind: "decimal",
-    min: 0.5,
-    max: 12,
+    min: ACTIVITY_EFFORT_HARD_BOUNDS.runSpeedMetersPerSecond.min,
+    max: ACTIVITY_EFFORT_HARD_BOUNDS.runSpeedMetersPerSecond.max,
     decimals: 2,
     defaultValue: 4,
     defaultDurationSeconds: 1200,
@@ -126,13 +131,14 @@ export const activityEffortDefinitions = [
     label: "Swim speed",
     valueLabel: "Speed",
     unit: "m/s",
+    storageUnit: "meters_per_second",
     inputKind: "decimal",
-    min: 0.2,
-    max: 3,
+    min: ACTIVITY_EFFORT_HARD_BOUNDS.swimSpeedMetersPerSecond.min,
+    max: ACTIVITY_EFFORT_HARD_BOUNDS.swimSpeedMetersPerSecond.max,
     decimals: 2,
     defaultValue: 1.2,
-    defaultDurationSeconds: 400,
-    durationPresets: [50, 100, 200, 400, 1500],
+    defaultDurationSeconds: 300,
+    durationPresets: [30, 60, 120, 300, 1800],
   },
 ] as const satisfies readonly ActivityEffortDefinition[];
 
@@ -227,9 +233,17 @@ const activityEffortWritableFieldsSchema = z
   .object({
     activity_id: z.string().uuid().optional().nullable(),
     activity_category: canonicalSportSchema,
-    duration_seconds: z.number().int().positive(),
+    duration_seconds: z
+      .number()
+      .int()
+      .min(ACTIVITY_EFFORT_HARD_BOUNDS.durationSeconds.min)
+      .max(ACTIVITY_EFFORT_HARD_BOUNDS.durationSeconds.max),
     effort_type: activityEffortTypeSchema,
-    value: z.number().finite(),
+    value: z
+      .number()
+      .finite()
+      .min(ACTIVITY_EFFORT_HARD_BOUNDS.swimSpeedMetersPerSecond.min)
+      .max(ACTIVITY_EFFORT_HARD_BOUNDS.bikePowerWatts.max),
     start_offset: z.number().int().nonnegative().optional().nullable(),
     recorded_at: z.string().datetime(),
   })
@@ -266,7 +280,7 @@ export const createActivityEffortInputSchema = activityEffortWritableFieldsSchem
     });
     return {
       ...data,
-      unit: definition?.unit ?? "",
+      unit: definition?.storageUnit ?? "",
       value: definition ? normalizeActivityEffortValue(definition, data.value) : data.value,
     };
   });
@@ -274,7 +288,29 @@ export const createActivityEffortInputSchema = activityEffortWritableFieldsSchem
 export const updateActivityEffortInputSchema = activityEffortWritableFieldsSchema
   .partial()
   .extend({ id: z.string().uuid() })
-  .strict();
+  .strict()
+  .superRefine((data, ctx) => {
+    if (data.activity_category === undefined || data.effort_type === undefined) return;
+    const definition = getActivityEffortDefinition({
+      activityCategory: data.activity_category,
+      effortType: data.effort_type,
+    });
+    if (!definition) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "This effort type is not supported for the selected activity category",
+        path: ["effort_type"],
+      });
+      return;
+    }
+    if (data.value !== undefined && (data.value < definition.min || data.value > definition.max)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${definition.valueLabel} must be between ${definition.min} and ${definition.max} ${definition.unit}`,
+        path: ["value"],
+      });
+    }
+  });
 
 export interface ActivityEffortUpdateExisting {
   activity_category: ActivityEffortCategory;

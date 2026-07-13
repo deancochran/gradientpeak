@@ -150,8 +150,6 @@ const dashboardResponseSchema = z
         atl: z.number(),
         tsb: z.number(),
         loadBalanceStatus: z.string(),
-        /** @deprecated Use loadBalanceStatus. */
-        form: z.string(),
       })
       .strict(),
     trainingLoadState: z
@@ -201,17 +199,6 @@ const dashboardResponseSchema = z
           ctl: z.number(),
           atl: z.number(),
           tsb: z.number(),
-        })
-        .strict(),
-    ),
-    projectedFitness: z.array(
-      z
-        .object({
-          date: isoDateSchema,
-          ctl: z.number(),
-          atl: z.number(),
-          tsb: z.number(),
-          plannedTss: z.number(),
         })
         .strict(),
     ),
@@ -328,7 +315,7 @@ export const homeRouter = createTRPCRouter({
           .where(
             and(
               eq(schema.events.profile_id, userId),
-              eq(schema.events.event_type, "planned_activity"),
+              eq(schema.events.event_type, "planned"),
               gte(schema.events.starts_at, today),
               isNotNull(schema.events.training_plan_id),
             ),
@@ -437,7 +424,6 @@ export const homeRouter = createTRPCRouter({
         atl: 0,
         tsb: 0,
         loadBalanceStatus: "unknown",
-        form: "unknown",
       };
 
       // Apply Global CTL Override if enabled
@@ -523,7 +509,6 @@ export const homeRouter = createTRPCRouter({
             atl: Math.round(point.atl * 10) / 10,
             tsb: Math.round(point.tsb * 10) / 10,
             loadBalanceStatus,
-            form: loadBalanceStatus,
           };
         }
       }
@@ -676,7 +661,7 @@ export const homeRouter = createTRPCRouter({
           startsAtLt: projectionEnd,
         });
 
-      const projectedFitness = [];
+      const projectedLoad = [];
 
       // Create map of future TSS by date
       const futureTssByDate = new Map<string, number>();
@@ -706,7 +691,7 @@ export const homeRouter = createTRPCRouter({
           : [];
 
       for (const point of projectionReplay) {
-        projectedFitness.push({
+        projectedLoad.push({
           date: point.date,
           ctl: Math.round(point.ctl * 10) / 10,
           atl: Math.round(point.atl * 10) / 10,
@@ -829,8 +814,7 @@ export const homeRouter = createTRPCRouter({
         },
         schedule, // List of upcoming (including today)
         trends: fitnessTrends, // Historical actual CTL/ATL/TSB
-        projectedFitness, // Deprecated compatibility alias for projectedLoad
-        projectedLoad: projectedFitness,
+        projectedLoad,
         idealFitnessCurve, // Ideal CTL progression from training plan periodization
         goalMetrics, // User's fitness goal
         todaysActivity, // Convenience field

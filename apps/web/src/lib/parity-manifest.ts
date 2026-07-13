@@ -113,7 +113,6 @@ export const webParityManifest = {
     "auth.reset_password": "implemented",
     "auth.sign_in": "implemented",
     "auth.sign_up": "implemented",
-    "auth.sign_up_success": "implemented",
     "auth.verification_success": "implemented",
     "auth.verify_email": "implemented",
     "coaching.dashboard": "implemented",

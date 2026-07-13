@@ -245,8 +245,6 @@ const trainingLoadTrendsOutputSchema = z
         atl: z.number().finite(),
         tsb: z.number().finite(),
         loadBalanceStatus: z.string(),
-        /** @deprecated Use loadBalanceStatus. */
-        form: z.string(),
       })
       .strict()
       .nullable(),
@@ -534,7 +532,6 @@ export const trendsRouter = createTRPCRouter({
               atl: Math.round(finalATL * 10) / 10,
               tsb: Math.round(finalTSB * 10) / 10,
               loadBalanceStatus,
-              form: loadBalanceStatus,
             };
           })()
         : null;

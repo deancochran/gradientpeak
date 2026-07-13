@@ -14,7 +14,6 @@ import type {
   conversations,
   events,
   follows,
-  groupEventActivityPlans,
   groupEventRsvps,
   groupEventSeriesRsvps,
   groupEvents,
@@ -56,9 +55,6 @@ export type GroupJoinRequestInsert = InferInsertModel<typeof groupJoinRequests>;
 
 export type GroupEventRow = InferSelectModel<typeof groupEvents>;
 export type GroupEventInsert = InferInsertModel<typeof groupEvents>;
-
-export type GroupEventActivityPlanRow = InferSelectModel<typeof groupEventActivityPlans>;
-export type GroupEventActivityPlanInsert = InferInsertModel<typeof groupEventActivityPlans>;
 
 export type GroupEventRsvpRow = InferSelectModel<typeof groupEventRsvps>;
 export type GroupEventRsvpInsert = InferInsertModel<typeof groupEventRsvps>;

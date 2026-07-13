@@ -109,7 +109,6 @@ function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
     created_at: new Date("2026-03-01T10:00:00.000Z"),
     updated_at: new Date("2026-03-01T10:00:00.000Z"),
     profile_id: USER_ID,
-    route_id: null,
     name: "Tempo Builder",
     description: "Structured activity",
     notes: "Bring bottles",

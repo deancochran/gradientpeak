@@ -80,14 +80,6 @@ export const parityRegistry = [
   {
     area: "auth",
     backendOperations: [],
-    id: "auth.sign_up_success",
-    mobileRoute: "/(external)/sign-up-success",
-    policy: "required_on_web",
-    title: "Sign-up success screen",
-  },
-  {
-    area: "auth",
-    backendOperations: [],
     id: "auth.verification_success",
     mobileRoute: "/(external)/verification-success",
     policy: "required_on_web",

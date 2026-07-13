@@ -119,7 +119,7 @@ type WahooActivityPlan = {
   description: string | null;
   id: string;
   name: string;
-  route_id: string | null;
+  routeId: string | null;
   structure: unknown;
   updated_at: string;
 };
@@ -169,7 +169,7 @@ function normalizeActivityPlanRelation(
       description: activityPlan.description,
       id: activityPlan.id,
       name: activityPlan.name,
-      route_id: activityPlan.routeId,
+      routeId: activityPlan.routeId,
       structure: activityPlan.structure,
       updated_at: activityPlan.updatedAt,
     } as WahooActivityPlan;
@@ -188,8 +188,8 @@ function hasWorkoutIntervals(structure: unknown): structure is ActivityPlanStruc
   );
 }
 
-function isRouteOnlyActivityPlan(activityPlan: WahooActivityPlan): boolean {
-  return Boolean(activityPlan.route_id && !hasWorkoutIntervals(activityPlan.structure));
+function isRouteOnlyEventPlan(activityPlan: WahooActivityPlan): boolean {
+  return Boolean(activityPlan.routeId && !hasWorkoutIntervals(activityPlan.structure));
 }
 
 function resolveSyncMetrics(profile: WahooSyncProfileMetrics | null) {
@@ -334,10 +334,10 @@ export class WahooSyncService {
         };
       }
 
-      // 4b. Fetch route data if route_id is present
+      // 4b. Fetch route data if the event links a route.
       let routeData: RouteFileData | null = null;
       let gpxContent: string | null = null;
-      const routeId = activityPlan.route_id;
+      const routeId = activityPlan.routeId;
 
       if (routeId) {
         const route = await this.repository.getRouteForSync({ profileId, routeId });
@@ -384,7 +384,7 @@ export class WahooSyncService {
         refreshToken: freshIntegration.refreshToken || undefined,
       });
 
-      const routeOnly = isRouteOnlyActivityPlan(activityPlan);
+      const routeOnly = isRouteOnlyEventPlan(activityPlan);
 
       // 6. Validate compatibility
       const structure = activityPlan.structure as ActivityPlanStructureV2;
@@ -768,7 +768,7 @@ export class WahooSyncService {
       // Convert to Wahoo format
       const wahooPlan = convertToWahooPlan(structure, {
         activityType: activityType as any,
-        hasRoute: Boolean(planned.activity_plan.route_id),
+        hasRoute: Boolean(planned.activity_plan.routeId),
         name: planned.activity_plan.name,
         description: planned.activity_plan.description ?? undefined,
         ftp: profile?.ftp || undefined,
@@ -792,7 +792,7 @@ export class WahooSyncService {
 
       // Get workout type ID and duration
       const workoutTypeId = toWahooWorkoutTypeId(activityType as any, {
-        hasRoute: Boolean(planned.activity_plan.route_id),
+        hasRoute: Boolean(planned.activity_plan.routeId),
       });
       if (workoutTypeId === null) {
         return {

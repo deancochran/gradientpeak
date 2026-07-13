@@ -73,7 +73,7 @@ async function manualFtp(profileId: string) {
         eq(activityEfforts.activity_category, "bike"),
         eq(activityEfforts.effort_type, "power"),
         eq(activityEfforts.duration_seconds, 1200),
-        eq(activityEfforts.unit, "ftp_manual"),
+        eq(activityEfforts.unit, "watts"),
         isNull(activityEfforts.activity_id),
       ),
     );
@@ -230,6 +230,20 @@ describe("atomic profile update against PostgreSQL", () => {
       ftpHistory.find(isClearedProfileOverride),
     ];
     expect(tombstones.every(Boolean)).toBe(true);
+    expect(ftpHistory.find(isClearedProfileOverride)?.value).toBe(0);
+    await expect(
+      pool.query(
+        `insert into public.activity_efforts (
+          id, created_at, updated_at, profile_id, recorded_at, activity_category,
+          effort_type, duration_seconds, unit, value, source, method, provenance
+        ) values ($1, now(), now(), $2, now(), 'bike', 'power', 1200, 'watts',
+          0, 'manual', 'profile_update_override', '{"override_state":"active"}'::jsonb)`,
+        [randomUUID(), profileId],
+      ),
+    ).rejects.toMatchObject({
+      code: "23514",
+      constraint: "activity_efforts_value_finite_positive_check",
+    });
     const clearRecordedAt = new Date(
       Math.max(...tombstones.map((row) => row?.recorded_at.getTime() ?? 0)),
     );

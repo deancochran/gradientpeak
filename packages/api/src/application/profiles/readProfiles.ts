@@ -11,13 +11,13 @@ import {
   isActiveManualFtpOverride,
   isClearedProfileOverride,
   isProfileOverrideObservation,
+  PROFILE_UPDATE_OVERRIDE_METHOD,
 } from "../../utils/profile-override-observations";
 import {
   redactPrivateProfileDetailFields,
   redactProfileListFields,
 } from "../../utils/profile-privacy";
 
-const MANUAL_FTP_UNIT = "ftp_manual";
 const FTP_FRESHNESS_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
 
 const uuidSchema = z.string().uuid();
@@ -216,6 +216,7 @@ export async function getProfilePerformanceSnapshot(db: DbClient, profileId: str
       db
         .select({
           value: activityEfforts.value,
+          unit: activityEfforts.unit,
           recorded_at: activityEfforts.recorded_at,
           method: activityEfforts.method,
           provenance: activityEfforts.provenance,
@@ -228,8 +229,8 @@ export async function getProfilePerformanceSnapshot(db: DbClient, profileId: str
             eq(activityEfforts.activity_category, "bike"),
             eq(activityEfforts.effort_type, "power"),
             eq(activityEfforts.duration_seconds, 1200),
-            eq(activityEfforts.unit, MANUAL_FTP_UNIT),
             isNull(activityEfforts.activity_id),
+            eq(activityEfforts.method, PROFILE_UPDATE_OVERRIDE_METHOD),
           ),
         )
         .orderBy(desc(activityEfforts.recorded_at), desc(activityEfforts.created_at))
@@ -278,7 +279,7 @@ export async function getProfilePerformanceSnapshot(db: DbClient, profileId: str
           activity_category: "bike",
           duration_seconds: 1200,
           effort_type: "power",
-          unit: MANUAL_FTP_UNIT,
+          unit: manualFtpEffort.unit,
         }))
         ? [
             {

@@ -1,6 +1,7 @@
 import { Text } from "@repo/ui/components/text";
 import { View } from "react-native";
 import type { DailyTrainingAdjustmentPoint } from "./DailyTrainingAdjustmentChart";
+import { buildTrainingPathLoadMetrics } from "./trainingPathLoadMetrics";
 
 export type DailyTrainingAdjustmentTrayProps = {
   point: DailyTrainingAdjustmentPoint;
@@ -9,10 +10,6 @@ export type DailyTrainingAdjustmentTrayProps = {
 
 function valueOrZero(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
-}
-
-function formatTss(value: number) {
-  return `${Math.round(value)} TSS`;
 }
 
 function formatSignedTss(value: number) {
@@ -27,9 +24,8 @@ export function DailyTrainingAdjustmentTray({
 }: DailyTrainingAdjustmentTrayProps) {
   const target = valueOrZero(point.targetLoadTss);
   const actual = valueOrZero(point.actualOrScheduledLoadTss);
-  const planned = valueOrZero(point.plannedLoadTss) + valueOrZero(point.tentativePlannedLoadTss);
-  const displayedPlanned = actual > 0 ? actual : planned;
   const delta = valueOrZero(point.loadDeltaTss ?? actual - target);
+  const loadMetrics = buildTrainingPathLoadMetrics(point);
 
   return (
     <View className="gap-2 rounded-2xl bg-card px-3 py-3" testID={testID}>
@@ -41,8 +37,9 @@ export function DailyTrainingAdjustmentTray({
         <Text className="text-sm font-semibold text-foreground">{formatSignedTss(delta)}</Text>
       </View>
       <View className="flex-row flex-wrap items-center gap-x-4 gap-y-1">
-        <InlineMetric label="Recommended" value={formatTss(target)} />
-        <InlineMetric label="Planned" value={formatTss(displayedPlanned)} />
+        {loadMetrics.map((metric) => (
+          <InlineMetric key={metric.label} label={metric.label} value={metric.value} />
+        ))}
         {point.formTsb != null ? (
           <InlineMetric label="Form" value={point.formTsb.toFixed(1)} />
         ) : null}

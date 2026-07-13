@@ -23,6 +23,7 @@ import {
   TrainingPathWeekReviewSection,
   TrainingPathWeekReviewShell,
 } from "./TrainingPathWeekReviewShell";
+import { buildTrainingPathLoadMetrics } from "./trainingPathLoadMetrics";
 import type {
   TrainingPathCompletedActivity,
   TrainingPathScheduledItem,
@@ -80,10 +81,6 @@ type PlanWithCardMetadata = NonNullable<CalendarEvent["activity_plan"]> & {
 
 function formatLoad(value: number) {
   return `${Math.round(value)} TSS`;
-}
-
-function valueOrZero(value: number | null | undefined) {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function formatFullDateLabel(dateKey: string | null) {
@@ -470,10 +467,6 @@ export function TrainingPathSelectedDaySummaryCard({
   onOpenGroupEvent,
   onOpenScheduledEvent,
 }: TrainingPathSelectedDaySummaryCardProps) {
-  const target = valueOrZero(point?.targetLoadTss);
-  const planned = valueOrZero(point?.plannedLoadTss);
-  const tentative = valueOrZero(point?.tentativePlannedLoadTss);
-  const totalPlanned = planned + tentative;
   const eventCount = goals.length + events.length + groupEvents.length + completedActivities.length;
   const hasContent =
     goals.length > 0 ||
@@ -481,10 +474,7 @@ export function TrainingPathSelectedDaySummaryCard({
     groupEvents.length > 0 ||
     completedActivities.length > 0;
 
-  const metrics = [
-    { label: "Recommended", value: formatLoad(target) },
-    { label: "Planned", value: formatLoad(totalPlanned) },
-  ];
+  const metrics = buildTrainingPathLoadMetrics(point);
   const metadata = [`${eventCount} event${eventCount === 1 ? "" : "s"}`];
 
   return (

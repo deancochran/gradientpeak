@@ -35,12 +35,10 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     description,
     activityCategory,
     structure,
-    routeId,
     notes,
     setName,
     setDescription,
     setActivityCategory,
-    setRouteId,
     setNotes,
     reset,
   } = useActivityPlanCreationStore();
@@ -112,7 +110,6 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
       setName(existingPlan.name);
       setDescription(existingPlan.description || "");
       setActivityCategory(existingPlan.activity_category);
-      setRouteId(existingPlan.route_id || null);
       setNotes(existingPlan.notes || "");
 
       if (existingPlan.structure) {
@@ -122,16 +119,7 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
         });
       }
     }
-  }, [
-    existingPlan,
-    isEditMode,
-    setName,
-    setDescription,
-    setActivityCategory,
-    setRouteId,
-    setNotes,
-    reset,
-  ]);
+  }, [existingPlan, isEditMode, setName, setDescription, setActivityCategory, setNotes, reset]);
 
   // Calculate metrics from V2 structure
   const metrics = useMemo(() => {
@@ -183,10 +171,6 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
       const intervals = structureToValidate.intervals || [];
       if (intervals.length < 1) {
         errors.intervals = "Add at least one interval.";
-        if (routeId) {
-          errors.route_id =
-            "This route is attached for context, but you still need structure before this plan can be saved.";
-        }
       }
 
       getSaveableActivityPlanStructureIssues(structureToValidate).forEach((issue) => {
@@ -257,7 +241,7 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
 
       return errors;
     },
-    [name, activityCategory, structure, routeId],
+    [name, activityCategory, structure],
   );
 
   // Validation
@@ -269,7 +253,6 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
         name,
         description: description || null,
         activity_category: activityCategory,
-        route_id: routeId || null,
         notes: notes || null,
         structure: structureOverride,
       });
@@ -309,7 +292,7 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
 
       return { isValid: false, errors: schemaErrors };
     },
-    [validateStrictStructure, name, description, activityCategory, structure, routeId, notes],
+    [validateStrictStructure, name, description, activityCategory, structure, notes],
   );
 
   const validation = useMemo(() => validate(), [validate]);
@@ -331,7 +314,6 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
         description: description && description.trim() !== "" ? description : null,
         activity_category: activityCategory as any,
         structure: structureToSubmit,
-        route_id: routeId || null,
         notes: notes && notes.trim() !== "" ? notes : null,
         // estimated_duration and estimated_tss are now calculated server-side
       };
@@ -358,7 +340,6 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     description,
     activityCategory,
     structure,
-    routeId,
     notes,
     isEditMode,
     options.planId,
@@ -396,7 +377,6 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
       description,
       activityCategory,
       structure,
-      routeId,
       notes,
     },
 
@@ -404,7 +384,6 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
     setName,
     setDescription,
     setActivityCategory,
-    setRouteId,
     setNotes,
 
     // Metrics

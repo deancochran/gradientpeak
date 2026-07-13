@@ -13,7 +13,6 @@ import type {
   OnboardingData,
   OnboardingFieldSources,
   ProviderSyncStatus,
-  StepProps,
 } from "./types";
 
 export function useOnboardingFlow() {
@@ -353,7 +352,6 @@ export function useOnboardingFlow() {
     fieldSources,
     handleNext,
     handleSkip,
-    integrations: integrations as Array<{ provider: IntegrationProvider }>,
     isBusy,
     isLastStep,
     isProviderSyncBlocking,

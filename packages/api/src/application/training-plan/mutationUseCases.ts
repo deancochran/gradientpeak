@@ -14,7 +14,7 @@ import { enqueuePlannedWorkoutSyncAfterCalendarMutation } from "../../lib/provid
 import type { TrainingPlanRepository } from "../../repositories";
 import { mapTrainingPlanContentIdentity } from "./trainingPlanMapping";
 
-const plannedEventType = "planned_activity" as const;
+const plannedEventType = "planned" as const;
 
 type TrainingPlanCreateInput = z.infer<typeof trainingPlanCreateInputSchema>;
 type TrainingPlanUpdateInput = z.infer<typeof trainingPlanUpdateInputSchema> & {

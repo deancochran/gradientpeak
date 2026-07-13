@@ -517,6 +517,11 @@ describe("routesRouter", () => {
           from: vi.fn(() => ({
             where: vi.fn().mockResolvedValue([{ value: 0 }]),
           })),
+        }))
+        .mockImplementationOnce(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn().mockResolvedValue([{ value: 0 }]),
+          })),
         })),
       delete: vi.fn(() => ({
         where: vi.fn(() => ({

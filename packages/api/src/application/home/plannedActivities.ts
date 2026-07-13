@@ -57,7 +57,7 @@ export async function listPlannedActivitiesInRange(
     .where(
       and(
         eq(schema.events.profile_id, input.profileId),
-        eq(schema.events.event_type, "planned_activity"),
+        eq(schema.events.event_type, "planned"),
         gte(schema.events.starts_at, input.startsAtGte),
         lt(schema.events.starts_at, input.startsAtLt),
       ),

@@ -71,7 +71,6 @@ describe("system activity-template catalog", () => {
         description: template.description,
         name: template.name,
         notes: template.notes,
-        route_id: template.route_id,
         structure: template.structure,
         version: template.version,
       };

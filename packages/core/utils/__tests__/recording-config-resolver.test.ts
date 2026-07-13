@@ -67,9 +67,9 @@ describe("RecordingConfigResolver", () => {
       buildInput({
         gpsRecordingEnabled: true,
         gpsAvailable: true,
+        routeId: "route-1",
         plan: {
           hasStructure: true,
-          hasRoute: true,
           stepCount: 3,
           requiresManualAdvance: false,
         },
@@ -79,9 +79,9 @@ describe("RecordingConfigResolver", () => {
       buildInput({
         gpsRecordingEnabled: false,
         gpsAvailable: true,
+        routeId: "route-1",
         plan: {
           hasStructure: true,
-          hasRoute: true,
           stepCount: 3,
           requiresManualAdvance: false,
         },
@@ -102,7 +102,6 @@ describe("RecordingConfigResolver", () => {
         activityPlanId: "plan-1",
         plan: {
           hasStructure: true,
-          hasRoute: true,
           stepCount: 6,
           requiresManualAdvance: false,
         },
@@ -131,7 +130,6 @@ describe("RecordingConfigResolver", () => {
         activityPlanId: "plan-1",
         plan: {
           hasStructure: true,
-          hasRoute: false,
           stepCount: 4,
           requiresManualAdvance: false,
         },
@@ -351,7 +349,6 @@ describe("RecordingConfigResolver", () => {
         routeId: "route-1",
         plan: {
           hasStructure: true,
-          hasRoute: true,
           stepCount: 4,
           requiresManualAdvance: false,
         },
@@ -451,7 +448,6 @@ describe("RecordingConfigResolver", () => {
         routeId: "route-1",
         plan: {
           hasStructure: true,
-          hasRoute: true,
           stepCount: 1,
           requiresManualAdvance: false,
           structure: {
@@ -503,7 +499,6 @@ describe("RecordingConfigResolver", () => {
         routeId: "route-1",
         plan: {
           hasStructure: true,
-          hasRoute: true,
           stepCount: 1,
           requiresManualAdvance: false,
           structure: {
@@ -553,7 +548,6 @@ describe("RecordingConfigResolver", () => {
         gpsAvailable: true,
         plan: {
           hasStructure: true,
-          hasRoute: true,
           stepCount: 3,
           requiresManualAdvance: false,
         },
@@ -654,7 +648,6 @@ describe("RecordingConfigResolver", () => {
       launchSource: "activity_plan",
       plan: {
         hasStructure: true,
-        hasRoute: true,
         stepCount: 4,
         requiresManualAdvance: false,
       },

@@ -5,6 +5,9 @@ import { fireEvent, renderNative, screen } from "../../../../test/render-native"
 
 const backMock = jest.fn();
 const refetchMock = jest.fn();
+let integrationOverviewErrorMock: Error | null = null;
+let integrationOverviewMock: unknown[] | undefined;
+let integrationOverviewHasCachedDataMock = false;
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -68,125 +71,129 @@ jest.mock("@/lib/api", () => ({
       },
       getSyncOverview: {
         useQuery: () => ({
-          data: [
-            {
-              actions: ["disconnect"],
-              configured: true,
-              activityHistory: {
-                lastError: null,
-                lastFailedAt: null,
-                lastSucceededAt: null,
-                queuedJobId: null,
-                status: "unsupported",
-              },
-              plannedWorkouts: {
-                lastError: null,
-                lastFailedAt: null,
-                lastSucceededAt: null,
-                queuedJobId: null,
-                status: "unsupported",
-              },
-              providerHealth: {
-                lastError: null,
-                status: "connected",
-              },
-              setupData: {
-                lastError: null,
-                lastFailedAt: null,
-                lastSucceededAt: null,
-                status: "unsupported",
-              },
-              connected: true,
-              integrationId: "integration-strava",
-              label: "Strava",
-              primaryAction: "disconnect",
-              provider: "strava",
-              summary: {
-                badge: "Auto",
-                health: "connected",
-                subtitle: "Connected",
-                title: "Strava",
-              },
-            },
-            {
-              actions: ["disconnect", "sync_now"],
-              configured: true,
-              activityHistory: {
-                lastError: null,
-                lastFailedAt: null,
-                lastSucceededAt: null,
-                queuedJobId: null,
-                status: "idle",
-              },
-              plannedWorkouts: {
-                lastError: null,
-                lastFailedAt: null,
-                lastSucceededAt: null,
-                queuedJobId: null,
-                status: "automatic",
-              },
-              providerHealth: {
-                lastError: null,
-                status: "connected",
-              },
-              setupData: {
-                lastError: null,
-                lastFailedAt: null,
-                lastSucceededAt: "2026-05-17T12:00:00.000Z",
-                status: "refreshed",
-              },
-              connected: true,
-              integrationId: "integration-wahoo",
-              label: "Wahoo",
-              primaryAction: "disconnect",
-              provider: "wahoo",
-              summary: {
-                badge: "Auto",
-                health: "connected",
-                subtitle: "Connected",
-                title: "Wahoo",
-              },
-            },
-            {
-              actions: ["disconnect"],
-              configured: true,
-              activityHistory: {
-                lastError: "401 unauthorized",
-                lastFailedAt: "2026-05-17T12:00:00.000Z",
-                lastSucceededAt: null,
-                queuedJobId: null,
-                status: "failed",
-              },
-              plannedWorkouts: {
-                lastError: null,
-                lastFailedAt: null,
-                lastSucceededAt: null,
-                queuedJobId: null,
-                status: "unsupported",
-              },
-              providerHealth: {
-                lastError: "401 unauthorized",
-                status: "needs_reconnect",
-              },
-              setupData: {
-                lastError: null,
-                lastFailedAt: null,
-                lastSucceededAt: null,
-                status: "unsupported",
-              },
-              connected: true,
-              integrationId: "integration-garmin",
-              label: "Garmin Connect",
-              primaryAction: "reconnect",
-              provider: "garmin",
-              summary: {
-                badge: "Reconnect",
-                health: "needs_reconnect",
-                subtitle: "Sync paused",
-                title: "Garmin Connect",
-              },
-            },
-          ],
+          data:
+            integrationOverviewErrorMock && !integrationOverviewHasCachedDataMock
+              ? undefined
+              : (integrationOverviewMock ?? [
+                  {
+                    actions: ["disconnect"],
+                    configured: true,
+                    activityHistory: {
+                      lastError: null,
+                      lastFailedAt: null,
+                      lastSucceededAt: null,
+                      queuedJobId: null,
+                      status: "unsupported",
+                    },
+                    plannedWorkouts: {
+                      lastError: null,
+                      lastFailedAt: null,
+                      lastSucceededAt: null,
+                      queuedJobId: null,
+                      status: "unsupported",
+                    },
+                    providerHealth: {
+                      lastError: null,
+                      status: "connected",
+                    },
+                    setupData: {
+                      lastError: null,
+                      lastFailedAt: null,
+                      lastSucceededAt: null,
+                      status: "unsupported",
+                    },
+                    connected: true,
+                    integrationId: "integration-strava",
+                    label: "Strava",
+                    primaryAction: "disconnect",
+                    provider: "strava",
+                    summary: {
+                      badge: "Auto",
+                      health: "connected",
+                      subtitle: "Connected",
+                      title: "Strava",
+                    },
+                  },
+                  {
+                    actions: ["disconnect", "sync_now"],
+                    configured: true,
+                    activityHistory: {
+                      lastError: null,
+                      lastFailedAt: null,
+                      lastSucceededAt: null,
+                      queuedJobId: null,
+                      status: "idle",
+                    },
+                    plannedWorkouts: {
+                      lastError: null,
+                      lastFailedAt: null,
+                      lastSucceededAt: null,
+                      queuedJobId: null,
+                      status: "automatic",
+                    },
+                    providerHealth: {
+                      lastError: null,
+                      status: "connected",
+                    },
+                    setupData: {
+                      lastError: null,
+                      lastFailedAt: null,
+                      lastSucceededAt: "2026-05-17T12:00:00.000Z",
+                      status: "refreshed",
+                    },
+                    connected: true,
+                    integrationId: "integration-wahoo",
+                    label: "Wahoo",
+                    primaryAction: "disconnect",
+                    provider: "wahoo",
+                    summary: {
+                      badge: "Auto",
+                      health: "connected",
+                      subtitle: "Connected",
+                      title: "Wahoo",
+                    },
+                  },
+                  {
+                    actions: ["disconnect"],
+                    configured: true,
+                    activityHistory: {
+                      lastError: "401 unauthorized",
+                      lastFailedAt: "2026-05-17T12:00:00.000Z",
+                      lastSucceededAt: null,
+                      queuedJobId: null,
+                      status: "failed",
+                    },
+                    plannedWorkouts: {
+                      lastError: null,
+                      lastFailedAt: null,
+                      lastSucceededAt: null,
+                      queuedJobId: null,
+                      status: "unsupported",
+                    },
+                    providerHealth: {
+                      lastError: "401 unauthorized",
+                      status: "needs_reconnect",
+                    },
+                    setupData: {
+                      lastError: null,
+                      lastFailedAt: null,
+                      lastSucceededAt: null,
+                      status: "unsupported",
+                    },
+                    connected: true,
+                    integrationId: "integration-garmin",
+                    label: "Garmin Connect",
+                    primaryAction: "reconnect",
+                    provider: "garmin",
+                    summary: {
+                      badge: "Reconnect",
+                      health: "needs_reconnect",
+                      subtitle: "Sync paused",
+                      title: "Garmin Connect",
+                    },
+                  },
+                ]),
+          error: integrationOverviewErrorMock,
           refetch: refetchMock,
           isLoading: false,
         }),
@@ -262,6 +269,9 @@ describe("integrations screen", () => {
   beforeEach(() => {
     backMock.mockReset();
     refetchMock.mockReset();
+    integrationOverviewErrorMock = null;
+    integrationOverviewMock = undefined;
+    integrationOverviewHasCachedDataMock = false;
   });
 
   it("renders compact provider cards with one action", () => {
@@ -291,5 +301,36 @@ describe("integrations screen", () => {
     expect(
       screen.getAllByText("Disconnect Strava? Your GradientPeak data stays. Sync stops.").length,
     ).toBeTruthy();
+  });
+
+  it("shows the missing-credentials state for a successful empty response", () => {
+    integrationOverviewMock = [];
+    renderNative(<IntegrationsScreen />);
+
+    expect(screen.getByText("Server credentials are not configured.")).toBeTruthy();
+    expect(screen.queryByTestId("integration-provider-list-error")).toBeNull();
+  });
+
+  it("shows a retryable query error without enabling unknown providers", () => {
+    integrationOverviewErrorMock = new Error("network unavailable");
+    renderNative(<IntegrationsScreen />);
+
+    expect(screen.getByTestId("integration-provider-list-error")).toBeTruthy();
+    expect(screen.queryByTestId("integration-provider-fallback-strava")).toBeNull();
+    expect(screen.queryByTestId("integration-connect-strava")).toBeNull();
+    fireEvent.press(screen.getByTestId("integration-provider-list-retry"));
+    expect(refetchMock).toHaveBeenCalled();
+  });
+
+  it("keeps only cached configured providers actionable during a refresh error", () => {
+    integrationOverviewErrorMock = new Error("network unavailable");
+    integrationOverviewHasCachedDataMock = true;
+
+    renderNative(<IntegrationsScreen />);
+
+    expect(screen.getByTestId("integration-provider-list-error")).toBeTruthy();
+    expect(screen.getByTestId("integration-provider-strava")).toBeTruthy();
+    expect(screen.getByTestId("integration-disconnect-strava")).toBeTruthy();
+    expect(screen.queryByTestId("integration-provider-fallback-strava")).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { type ActivityRouteRow, activityPlans, activityRoutes } from "@repo/db";
+import { type ActivityRouteRow, activityRoutes, events, groupEvents } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, asc, count, desc, eq, gt, gte, ilike, lt, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -541,17 +541,18 @@ export const routesRouter = createTRPCRouter({
         });
       }
 
-      const [plansCountRow] = await db
-        .select({ value: count() })
-        .from(activityPlans)
-        .where(eq(activityPlans.route_id, input.id));
+      const [eventsCountRows, groupEventsCountRows] = await Promise.all([
+        db.select({ value: count() }).from(events).where(eq(events.route_id, input.id)),
+        db.select({ value: count() }).from(groupEvents).where(eq(groupEvents.route_id, input.id)),
+      ]);
 
-      const plansCount = plansCountRow?.value ?? 0;
+      const linkedEventsCount =
+        (eventsCountRows[0]?.value ?? 0) + (groupEventsCountRows[0]?.value ?? 0);
 
-      if (plansCount > 0) {
+      if (linkedEventsCount > 0) {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: `Cannot delete route because it is used by ${plansCount} activity plan${plansCount > 1 ? "s" : ""}. Please remove the route from those plans first.`,
+          message: `Cannot delete route because it is used by ${linkedEventsCount} event${linkedEventsCount > 1 ? "s" : ""}. Please remove the route from those events first.`,
         });
       }
 

@@ -23,6 +23,23 @@ function buildLocalChart(): BuilderDailyTrainingPathChartViewModel {
         readinessScore: null,
         annotations: [],
       },
+      {
+        date: "2026-01-06",
+        plannedLoadTss: 30,
+        tentativePlannedLoadTss: 5,
+        completedLoadTss: 25,
+        targetLoadTss: 40,
+        actualOrScheduledLoadTss: 25,
+        loadDeltaTss: -15,
+        plannedDeltaTss: -5,
+        fitnessCtl: null,
+        scheduledFitnessCtl: null,
+        targetFitnessCtl: null,
+        fatigueAtl: null,
+        formTsb: null,
+        readinessScore: null,
+        annotations: [],
+      },
     ],
     weeks: [
       {
@@ -83,6 +100,15 @@ describe("deriveTrainingPathChartFromActiveProjection", () => {
     expect(result.source).toBe("backend");
     expect(result.chart.dailyPoints[0]?.targetLoadTss).toBe(72);
     expect(result.chart.dailyPoints[0]?.loadDeltaTss).toBe(-52);
+    expect(result.chart.dailyPoints).toHaveLength(2);
+    expect(result.chart.dailyPoints[1]).toMatchObject({
+      date: "2026-01-06",
+      targetLoadTss: 40,
+      actualOrScheduledLoadTss: 25,
+      loadDeltaTss: -15,
+      plannedDeltaTss: -5,
+    });
+    expect(result.chart.weeks[0]?.tentativePlannedLoad).toBeNull();
   });
 
   it("keeps local daily targets when backend daily load points are missing", () => {

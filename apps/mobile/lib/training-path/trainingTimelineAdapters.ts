@@ -34,9 +34,8 @@ export function buildDailyTrainingAdjustmentPointsFromTimelineWindow(input: {
         plannedLoadTss: day.load.scheduledTss,
         tentativePlannedLoadTss: day.load.tentativeScheduledTss,
         completedLoadTss: day.load.completedTss,
+        remainingScheduledLoadTss: day.load.remainingTss,
         targetLoadTss: day.load.recommendedTss ?? day.load.plannedTss,
-        actualOrScheduledLoadTss:
-          day.load.completedTss + day.load.scheduledTss + day.load.tentativeScheduledTss,
         fitnessCtl: fitness?.ctl ?? null,
         targetFitnessCtl: targetFitness?.ctl ?? null,
         scheduledFitnessCtl: scheduledFitness?.ctl ?? null,

@@ -27,7 +27,7 @@ function buildEffortRow(overrides: Record<string, unknown> = {}) {
     effort_type: "speed" as const,
     duration_seconds: 600,
     start_offset: 30,
-    unit: "m/s",
+    unit: "meters_per_second",
     value: 4.2,
     source: null,
     method: null,
@@ -129,6 +129,9 @@ describe("activityEffortsRouter", () => {
       ...input,
       created_at: new Date("2026-03-03T00:00:00.000Z"),
       recorded_at: new Date(input.recorded_at),
+      source: "manual",
+      method: "manual_activity_effort_entry",
+      provenance: { trusted: true, observation_type: "observed", entered_by: "athlete" },
     });
     const { caller, spies } = createCaller({ insertResult: [insertedRow] });
 
@@ -148,7 +151,10 @@ describe("activityEffortsRouter", () => {
       duration_seconds: 600,
       effort_type: "speed",
       value: 4.2,
-      unit: "m/s",
+      unit: "meters_per_second",
+      source: "manual",
+      method: "manual_activity_effort_entry",
+      provenance: { trusted: true, observation_type: "observed", entered_by: "athlete" },
       start_offset: 30,
     });
     expect(insertedPayload.created_at).toBeInstanceOf(Date);
@@ -185,10 +191,47 @@ describe("activityEffortsRouter", () => {
 
     const updatePayload = (spies.set.mock.calls as any[][])[0]?.[0];
     expect(updatePayload).toMatchObject({ value: 4.8 });
-    expect(updatePayload.unit).toBe("m/s");
+    expect(updatePayload.unit).toBe("meters_per_second");
     expect(updatePayload.recorded_at).toBeInstanceOf(Date);
     expect(updatePayload.recorded_at.toISOString()).toBe(newRecordedAt);
     expect(updatePayload.updated_at).toBeInstanceOf(Date);
+  });
+
+  it("resets trusted imported provenance when observation fields are edited", async () => {
+    const activityId = "33333333-3333-4333-8333-333333333333";
+    const imported = buildEffortRow({
+      activity_id: activityId,
+      activity_category: "bike",
+      effort_type: "power",
+      duration_seconds: 300,
+      unit: "watts",
+      value: 320,
+      source: "imported",
+      method: "activity_file_best_effort",
+      provenance: { activity_id: activityId, derived_from: "activity_file_stream" },
+    });
+    const { caller, spies } = createCaller({
+      selectOneResult: [imported],
+      updateResult: [
+        buildEffortRow({
+          ...imported,
+          value: 330,
+          source: "manual",
+          method: "manual_activity_effort_entry",
+          provenance: { trusted: true, observation_type: "observed", entered_by: "athlete" },
+        }),
+      ],
+    });
+
+    await caller.update({ id: imported.id, value: 330 });
+
+    const updatePayload = (spies.set.mock.calls as any[][])[0]?.[0];
+    expect(updatePayload).toMatchObject({
+      value: 330,
+      source: "manual",
+      method: "manual_activity_effort_entry",
+      provenance: { trusted: true, observation_type: "observed", entered_by: "athlete" },
+    });
   });
 
   it("returns null for update when the effort is not owned or not found", async () => {

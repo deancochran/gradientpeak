@@ -1,14 +1,10 @@
 /**
  * Speed Curve Derivation
  *
- * Derives a complete speed curve from threshold pace using pace multipliers
- * based on exercise physiology research. Different durations correspond to
- * different energy systems (sprint, VO2max, threshold, tempo).
- *
- * Used during onboarding to generate estimated best efforts across all durations
- * from a single threshold pace input, creating a complete running performance profile.
+ * Represents a threshold-pace input without fabricating a full performance curve.
  */
 
+import { PROFILE_PERFORMANCE_THRESHOLD_BOUNDS } from "../athlete-inputs/profile-metrics";
 import type { DerivedEffort } from "./power-curve";
 
 /**
@@ -40,66 +36,42 @@ export const SPEED_MULTIPLIERS = {
 } as const;
 
 /**
- * Derives a complete speed curve from threshold pace.
- *
- * This function generates estimated speed efforts across standard durations
- * based on a single threshold pace input. It's used during onboarding to create
- * a comprehensive running performance profile from minimal user input.
+ * Returns one 60-minute running-threshold anchor. A single threshold input has
+ * no defensible information about sprint or shorter-duration performance.
  *
  * @param thresholdPaceSecondsPerKm - Threshold pace in seconds per kilometer (pace sustainable for 30-60 min)
- * @returns Array of speed efforts for standard durations (5s to 60m)
+ * @returns A single threshold speed anchor
  *
  * @example
  * const thresholdPace = 270; // 4:30/km
  * const speedCurve = deriveSpeedCurveFromThresholdPace(thresholdPace);
- * // Returns: [
- * //   { duration_seconds: 5, value: 4.26, ... },    // 5s sprint (2:20/km pace)
- * //   { duration_seconds: 300, value: 3.70, ... },  // 5m at threshold (4:30/km)
- * //   { duration_seconds: 3600, value: 3.40, ... }, // 60m tempo (4:54/km)
- * // ]
+ * // Returns: [{ duration_seconds: 3600, value: 3.7, ... }]
  */
 export function deriveSpeedCurveFromThresholdPace(
   thresholdPaceSecondsPerKm: number,
 ): DerivedEffort[] {
   // Validate input
-  if (thresholdPaceSecondsPerKm <= 0) {
+  if (!Number.isFinite(thresholdPaceSecondsPerKm) || thresholdPaceSecondsPerKm <= 0) {
     throw new Error("Threshold pace must be greater than 0");
   }
 
-  // Reasonable pace range check (2:00/km to 10:00/km = 120-600 s/km)
-  if (thresholdPaceSecondsPerKm < 120 || thresholdPaceSecondsPerKm > 600) {
-    throw new Error("Threshold pace must be between 2:00/km and 10:00/km");
+  const bounds = PROFILE_PERFORMANCE_THRESHOLD_BOUNDS.runningThresholdPaceSecondsPerKilometer;
+  if (thresholdPaceSecondsPerKm < bounds.min || thresholdPaceSecondsPerKm > bounds.max) {
+    throw new Error("Threshold pace is outside the accepted profile bounds");
   }
 
   // Convert threshold pace to speed (m/s)
   const thresholdSpeedMps = paceToSpeed(thresholdPaceSecondsPerKm);
 
-  // Generate speed curve for all standard durations
-  return STANDARD_SPEED_DURATIONS.map((duration) => {
-    // Determine speed multiplier based on duration
-    let multiplier: number;
-
-    if (duration < 60) {
-      multiplier = SPEED_MULTIPLIERS.sprint; // Sprint efforts
-    } else if (duration < 300) {
-      multiplier = SPEED_MULTIPLIERS.vo2max; // VO2max efforts
-    } else if (duration < 1200) {
-      multiplier = SPEED_MULTIPLIERS.threshold; // Threshold efforts
-    } else {
-      multiplier = SPEED_MULTIPLIERS.tempo; // Tempo/endurance efforts
-    }
-
-    // Apply multiplier to threshold speed
-    const speedMps = thresholdSpeedMps * multiplier;
-
-    return {
-      duration_seconds: duration,
+  return [
+    {
+      duration_seconds: 3_600,
       effort_type: "speed",
-      value: Math.round(speedMps * 100) / 100, // Round to 2 decimal places
+      value: Math.round(thresholdSpeedMps * 100) / 100,
       unit: "meters_per_second",
       activity_category: "run",
-    };
-  });
+    },
+  ];
 }
 
 /**

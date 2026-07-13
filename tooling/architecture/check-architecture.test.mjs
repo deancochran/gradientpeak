@@ -9,6 +9,7 @@ import {
   canonicalPolicy,
   compareBaseline,
   compareMergeBaseProtection,
+  currentTrackedFiles,
   validateReviewedEntries,
 } from "./check-architecture.mjs";
 
@@ -26,6 +27,17 @@ function fixtureConfig(owners, extra = {}) {
     ...extra,
   };
 }
+
+test("working-tree deletions leave verification input without excluding sibling paths", () => {
+  assert.deepEqual(
+    currentTrackedFiles(
+      ["packages/auth/private.ts", "packages/auth/public.ts"],
+      ["packages/auth/new.ts"],
+      ["packages/auth/private.ts"],
+    ),
+    ["packages/auth/new.ts", "packages/auth/public.ts"],
+  );
+});
 
 test("new cross-owner violations are reported and rejected by an empty baseline", () => {
   const root = resolve(architectureRoot, "fixtures/new-violation");

@@ -16,7 +16,7 @@ import {
 } from "../../api/src/lib/routes/route-file-helpers";
 import { getApiStorageService } from "../../api/src/storage-service";
 import { SYSTEM_ROUTE_TEMPLATES, type SystemRouteTemplate } from "../../core/samples";
-import { activityPlans, activityRoutes } from "../src/schema/tables";
+import { activityRoutes, events, groupEvents } from "../src/schema/tables";
 import { prepareDbEnv } from "./_helpers";
 
 const args = process.argv.slice(2);
@@ -229,13 +229,18 @@ async function seedSystemRoutes() {
   if (staleRoutes.length > 0 && !noDelete) {
     for (const stale of staleRoutes) {
       if (!isDryRun) {
-        const linkedPlans = await db
-          .select({ id: activityPlans.id })
-          .from(activityPlans)
-          .where(eq(activityPlans.route_id, stale.id))
+        const linkedEvents = await db
+          .select({ id: events.id })
+          .from(events)
+          .where(eq(events.route_id, stale.id))
+          .limit(1);
+        const linkedGroupEvents = await db
+          .select({ id: groupEvents.id })
+          .from(groupEvents)
+          .where(eq(groupEvents.route_id, stale.id))
           .limit(1);
 
-        if (linkedPlans.length === 0) {
+        if (linkedEvents.length === 0 && linkedGroupEvents.length === 0) {
           await db.delete(activityRoutes).where(eq(activityRoutes.id, stale.id));
           await storageService.storage.from(ROUTES_BUCKET).remove([stale.file_path]);
           deletedCount += 1;

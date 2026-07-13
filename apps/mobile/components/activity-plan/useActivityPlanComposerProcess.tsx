@@ -14,7 +14,6 @@ type ActivityPlanComposerProcessParams = {
   name: string;
   navigation: any;
   notes: string;
-  routeId: string | null;
   structure: unknown;
   submit: () => undefined | Promise<unknown>;
 };
@@ -30,7 +29,6 @@ export function useActivityPlanComposerProcess({
   name,
   navigation,
   notes,
-  routeId,
   structure,
   submit,
 }: ActivityPlanComposerProcessParams) {
@@ -42,10 +40,9 @@ export function useActivityPlanComposerProcess({
         description,
         activityCategory,
         structure,
-        routeId,
         notes,
       }),
-    [activityCategory, description, name, notes, routeId, structure],
+    [activityCategory, description, name, notes, structure],
   );
 
   useEffect(() => {

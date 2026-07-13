@@ -18,7 +18,6 @@ describe("on-demand estimator CPU benchmark", () => {
         description: null,
         activity_category: "run" as const,
         structure: { duration: 1200 + index, intensity: 0.7 + (index % 10) / 100 },
-        route_id: null,
         version: "1",
         updated_at: "2026-07-12T12:00:00.000Z",
       }));

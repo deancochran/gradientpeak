@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import {
   createActivityEffortInputSchema,
+  MANUAL_ACTIVITY_EFFORT_METHOD,
+  MANUAL_ACTIVITY_EFFORT_PROVENANCE,
   normalizeActivityEffortUpdate,
   updateActivityEffortInputSchema,
 } from "@repo/core/athlete-inputs";
@@ -33,6 +35,16 @@ const deleteActivityEffortOutputSchema = z
     deletedId: z.string().uuid(),
   })
   .strict();
+
+const observationFieldNames = [
+  "activity_id",
+  "activity_category",
+  "duration_seconds",
+  "effort_type",
+  "recorded_at",
+  "start_offset",
+  "value",
+] as const;
 
 export const activityEffortsRouter = createTRPCRouter({
   getForProfile: protectedProcedure.output(getForProfileOutputSchema).query(async ({ ctx }) => {
@@ -76,6 +88,9 @@ export const activityEffortsRouter = createTRPCRouter({
           created_at: new Date(),
           profile_id: ctx.session.user.id,
           recorded_at: new Date(input.recorded_at),
+          source: "manual",
+          method: MANUAL_ACTIVITY_EFFORT_METHOD,
+          provenance: MANUAL_ACTIVITY_EFFORT_PROVENANCE,
         })
         .returning();
 
@@ -98,7 +113,10 @@ export const activityEffortsRouter = createTRPCRouter({
           activity_id: activityEfforts.activity_id,
           duration_seconds: activityEfforts.duration_seconds,
           effort_type: activityEfforts.effort_type,
+          method: activityEfforts.method,
+          provenance: activityEfforts.provenance,
           recorded_at: activityEfforts.recorded_at,
+          source: activityEfforts.source,
           start_offset: activityEfforts.start_offset,
           value: activityEfforts.value,
         })
@@ -119,6 +137,11 @@ export const activityEffortsRouter = createTRPCRouter({
         }
       })();
 
+      const changesObservation = observationFieldNames.some(
+        (fieldName) => input[fieldName] !== undefined,
+      );
+      const resetsTrustedProvenance = changesObservation && existing.source !== "manual";
+
       const [data] = await db
         .update(activityEfforts)
         .set({
@@ -127,6 +150,13 @@ export const activityEffortsRouter = createTRPCRouter({
           recorded_at: normalizedPatch.recorded_at
             ? new Date(normalizedPatch.recorded_at)
             : undefined,
+          ...(resetsTrustedProvenance
+            ? {
+                source: "manual" as const,
+                method: MANUAL_ACTIVITY_EFFORT_METHOD,
+                provenance: MANUAL_ACTIVITY_EFFORT_PROVENANCE,
+              }
+            : {}),
           updated_at: new Date(),
         })
         .where(and(eq(activityEfforts.id, id), eq(activityEfforts.profile_id, ctx.session.user.id)))

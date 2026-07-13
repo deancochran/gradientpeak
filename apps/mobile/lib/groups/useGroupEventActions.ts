@@ -1,5 +1,4 @@
 import type {
-  CopySeriesActivityPlansToOccurrenceInput,
   CreateOneOffGroupEventInput,
   CreateRecurringEventSeriesInput,
   GroupEventRsvpStatus,
@@ -49,20 +48,6 @@ export function useGroupEventActions() {
       }
     },
   });
-  const copySeriesActivityPlansToOccurrenceMutation =
-    api.groups.events.copySeriesActivityPlansToOccurrence.useMutation({
-      onSuccess: async (_data, variables) => {
-        await Promise.all([
-          utils.groups.events.detail.invalidate({ groupEventId: variables.groupEventSeriesId }),
-          utils.groups.events.detail.invalidate({ groupEventId: variables.groupEventOccurrenceId }),
-          utils.groups.events.seriesOccurrences.invalidate(),
-          utils.groups.events.list.invalidate(),
-          utils.groups.events.myCalendarGroupEvents.invalidate(),
-          utils.groups.events.myUpcomingGroupEvents.invalidate(),
-          utils.groups.events.currentEventPlanOptions.invalidate(),
-        ]);
-      },
-    });
   const cancelMutation = api.groups.events.cancel.useMutation({
     onSuccess: async (data) => {
       await invalidateGroupEventMutationQueries(utils, {
@@ -94,13 +79,8 @@ export function useGroupEventActions() {
     createEvent: (input: CreateOneOffGroupEventInput) => createMutation.mutateAsync(input),
     createRecurringEventSeries: (input: CreateRecurringEventSeriesInput) =>
       createRecurringEventSeriesMutation.mutateAsync(input),
-    copySeriesActivityPlansToOccurrence: (input: CopySeriesActivityPlansToOccurrenceInput) =>
-      copySeriesActivityPlansToOccurrenceMutation.mutateAsync(input),
-    rsvp: (
-      groupEventId: string,
-      status: GroupEventRsvpStatus | null,
-      selectedGroupEventActivityPlanId?: string | null,
-    ) => rsvpMutation.mutateAsync({ groupEventId, status, selectedGroupEventActivityPlanId }),
+    rsvp: (groupEventId: string, status: GroupEventRsvpStatus | null) =>
+      rsvpMutation.mutateAsync({ groupEventId, status }),
     rsvpEventSeries: (input: RsvpEventSeriesInput) => rsvpEventSeriesMutation.mutateAsync(input),
     updateEvent: (input: UpdateOneOffGroupEventInput) => updateMutation.mutateAsync(input),
     updateEventOccurrence: (input: UpdateEventOccurrenceInput) =>
@@ -108,7 +88,6 @@ export function useGroupEventActions() {
     cancelMutation,
     createMutation,
     createRecurringEventSeriesMutation,
-    copySeriesActivityPlansToOccurrenceMutation,
     rsvpMutation,
     rsvpEventSeriesMutation,
     updateMutation,

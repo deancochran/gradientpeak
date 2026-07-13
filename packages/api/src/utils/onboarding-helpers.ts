@@ -11,87 +11,21 @@
 
 import { randomUUID } from "node:crypto";
 import {
+  type DerivedEffort,
+  derivePowerCurveFromFTP,
+  deriveSpeedCurveFromThresholdPace,
+  deriveSwimPaceCurveFromCSS,
+} from "@repo/core/calculations";
+import {
   type ActivityEffortInsert,
   activityEfforts,
-  type DrizzleDbClient,
   type ProfileMetricInsert,
   type PublicActivityCategory,
   type PublicEffortType,
   type PublicProfileMetricType,
   profileMetrics,
 } from "@repo/db";
-
-// These specific calculation modules are new and might not be in the main exports yet
-// Import them directly from their source files until they're properly exported
-const derivePowerCurveFromFTP = (ftp: number): DerivedEffort[] => {
-  // We'll implement inline to avoid import issues
-  const durations = [5, 10, 30, 60, 180, 300, 600, 1200, 1800, 3600];
-  const wPrime = 20000;
-  return durations.map((duration) => ({
-    duration_seconds: duration,
-    effort_type: "power" as const,
-    value: Math.round(ftp + wPrime / duration),
-    unit: "W",
-    activity_category: "bike" as const,
-  }));
-};
-
-const deriveSpeedCurveFromThresholdPace = (thresholdPaceSecondsPerKm: number): DerivedEffort[] => {
-  const durations = [5, 10, 30, 60, 180, 300, 600, 1200, 1800, 3600];
-  const thresholdSpeedMps = 1000 / thresholdPaceSecondsPerKm;
-
-  return durations.map((duration) => {
-    let multiplier: number;
-    if (duration < 60)
-      multiplier = 1.15; // Sprint
-    else if (duration < 300)
-      multiplier = 1.08; // VO2max
-    else if (duration < 1200)
-      multiplier = 1.0; // Threshold
-    else multiplier = 0.92; // Tempo
-
-    return {
-      duration_seconds: duration,
-      effort_type: "speed" as const,
-      value: Math.round(thresholdSpeedMps * multiplier * 100) / 100,
-      unit: "meters_per_second",
-      activity_category: "run" as const,
-    };
-  });
-};
-
-const deriveSwimPaceCurveFromCSS = (cssSecondsPerHundredMeters: number): DerivedEffort[] => {
-  const durations = [10, 20, 30, 60, 120, 180, 300, 600, 900, 1800];
-  const cssSpeedMps = 100 / cssSecondsPerHundredMeters;
-
-  return durations.map((duration) => {
-    let multiplier: number;
-    if (duration < 60)
-      multiplier = 1.1; // Sprint
-    else if (duration < 180)
-      multiplier = 1.06; // Middle
-    else if (duration < 600)
-      multiplier = 1.0; // CSS
-    else multiplier = 0.93; // Distance
-
-    return {
-      duration_seconds: duration,
-      effort_type: "speed" as const,
-      value: Math.round(cssSpeedMps * multiplier * 100) / 100,
-      unit: "meters_per_second",
-      activity_category: "swim" as const,
-    };
-  });
-};
-
-// Define types locally since they aren't exported at top level yet
-interface DerivedEffort {
-  duration_seconds: number;
-  effort_type: "power" | "speed";
-  value: number;
-  unit: string;
-  activity_category: "bike" | "run" | "swim";
-}
+import type { getRequiredDb } from "../db";
 
 interface BaselineProfile {
   max_hr: number;
@@ -108,6 +42,10 @@ interface BaselineProfile {
 type ProfileMetricType = PublicProfileMetricType;
 type ActivityCategory = PublicActivityCategory;
 type EffortType = PublicEffortType;
+type OnboardingTransaction = Parameters<
+  Parameters<ReturnType<typeof getRequiredDb>["transaction"]>[0]
+>[0];
+type OnboardingWriteClient = ReturnType<typeof getRequiredDb> | OnboardingTransaction;
 
 /**
  * Batch insert profile metrics with consistent formatting.
@@ -121,7 +59,7 @@ type EffortType = PublicEffortType;
  * @returns Insert result
  */
 export async function batchInsertProfileMetrics(
-  db: DrizzleDbClient,
+  tx: OnboardingWriteClient,
   profileId: string,
   metrics: Array<{
     metric_type: ProfileMetricType;
@@ -153,7 +91,7 @@ export async function batchInsertProfileMetrics(
     provenance: m.provenance,
   })) satisfies ProfileMetricInsert[];
 
-  await db.insert(profileMetrics).values(metricsToInsert);
+  await tx.insert(profileMetrics).values(metricsToInsert);
 }
 
 /**
@@ -165,32 +103,29 @@ export async function batchInsertProfileMetrics(
  * @param db - Drizzle database client
  * @param profileId - User's profile ID
  * @param efforts - Array of derived efforts to insert
- * @param source - Source of the efforts (e.g., 'onboarding', 'baseline_beginner')
+ * @param seedSource - Source of the modeled seed (e.g., 'onboarding', 'baseline_beginner')
  * @returns Insert result
  */
 export async function batchInsertActivityEfforts(
-  db: DrizzleDbClient,
+  tx: OnboardingWriteClient,
   profileId: string,
   efforts: DerivedEffort[],
   seedSource: string = "onboarding",
-  activityId: string | null = null,
 ) {
   if (efforts.length === 0) {
     return;
   }
 
-  // Some deployments require non-null activity_id while newer schema allows null.
-  // Use caller-provided activityId when available for compatibility.
   const effortsToInsert = efforts.map((e) => ({
     id: randomUUID(),
     created_at: new Date(),
     profile_id: profileId,
-    activity_id: activityId,
+    activity_id: null,
     activity_category: e.activity_category as ActivityCategory,
     duration_seconds: e.duration_seconds,
     effort_type: e.effort_type as EffortType,
     value: e.value,
-    unit: e.effort_type === "power" ? "W" : e.unit,
+    unit: e.unit,
     recorded_at: new Date(),
     start_offset: null,
     source: "derived",
@@ -199,7 +134,7 @@ export async function batchInsertActivityEfforts(
     provenance: { seed_source: seedSource },
   })) satisfies ActivityEffortInsert[];
 
-  await db.insert(activityEfforts).values(effortsToInsert);
+  await tx.insert(activityEfforts).values(effortsToInsert);
 }
 
 /**

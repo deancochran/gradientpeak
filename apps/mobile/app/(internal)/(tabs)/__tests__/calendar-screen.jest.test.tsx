@@ -10,11 +10,14 @@ const pushMock = jest.fn();
 const replaceMock = jest.fn();
 const eventsListUseQueryMock = jest.fn();
 const activitiesListUseQueryMock = jest.fn();
+const groupEventsListUseQueryMock = jest.fn();
 const mockFlatListScrollToIndex = jest.fn();
 const mockFlatListScrollToOffset = jest.fn();
 const utilsEventsInvalidateMock = jest.fn(async () => undefined);
+let mockAuthReady = true;
 const fixedNow = new Date("2026-03-23T12:00:00.000Z");
 const today = fixedNow.toISOString().split("T")[0]!;
+let mockTodayKey = today;
 
 type CalendarStoreState = {
   hydrated: boolean;
@@ -116,7 +119,7 @@ jest.mock("@/lib/auth/auth-headers", () => ({
 jest.mock("@/lib/stores/auth-store", () => ({
   __esModule: true,
   useAuthStore: (selector: any) =>
-    selector({ ready: true, session: { user: { id: "profile-1" } } }),
+    selector({ ready: mockAuthReady, session: { user: { id: "profile-1" } } }),
 }));
 
 jest.mock("@/lib/hooks/useProfileGoals", () => ({
@@ -129,7 +132,14 @@ jest.mock("@/lib/hooks/useProfileGoals", () => ({
         target_date: today,
       },
     ],
+    isError: false,
+    refetch: jest.fn(async () => undefined),
   }),
+}));
+
+jest.mock("@/lib/hooks/useLocalTodayKey", () => ({
+  __esModule: true,
+  useLocalTodayKey: () => mockTodayKey,
 }));
 
 jest.mock("@react-navigation/native", () => ({
@@ -294,96 +304,105 @@ jest.mock("@/lib/api", () => ({
     }),
     events: {
       list: {
-        useQuery: (input?: any, options?: any) =>
+        useInfiniteQuery: (input?: any, options?: any) =>
           eventsListUseQueryMock(input, options) ?? {
             data: {
-              items: [
+              pages: [
                 {
-                  id: "event-1",
-                  event_type: "custom",
-                  title: "Track activity",
-                  description: "Fast reps on the oval.",
-                  scheduled_date: today,
-                  starts_at: `${today}T05:00:00.000`,
-                  ends_at: `${today}T06:30:00.000`,
-                  all_day: false,
-                  notes: "Bring spikes",
-                },
-                {
-                  id: "event-2",
-                  event_type: "planned",
-                  title: "Tempo Builder",
-                  scheduled_date: today,
-                  starts_at: `${today}T06:30:00.000`,
-                  all_day: false,
-                  completed: false,
-                  activity_plan: {
-                    id: "plan-1",
-                    name: "Tempo Builder",
-                    description: "Progressive tempo with a strong finish.",
-                    activity_category: "outdoor_run",
-                    estimated_duration: 3600,
-                    estimated_tss: 72,
-                    intensity_factor: 0.82,
-                    structure: {
-                      version: 2,
-                      intervals: [
-                        {
-                          id: "interval-1",
-                          name: "Main set",
-                          repetitions: 1,
-                          steps: [
+                  items: [
+                    {
+                      id: "event-1",
+                      event_type: "custom",
+                      title: "Track activity",
+                      description: "Fast reps on the oval.",
+                      scheduled_date: today,
+                      starts_at: `${today}T05:00:00.000`,
+                      ends_at: `${today}T06:30:00.000`,
+                      all_day: false,
+                      notes: "Bring spikes",
+                    },
+                    {
+                      id: "event-2",
+                      event_type: "planned",
+                      title: "Tempo Builder",
+                      scheduled_date: today,
+                      starts_at: `${today}T06:30:00.000`,
+                      all_day: false,
+                      completed: false,
+                      activity_plan: {
+                        id: "plan-1",
+                        name: "Tempo Builder",
+                        description: "Progressive tempo with a strong finish.",
+                        activity_category: "outdoor_run",
+                        estimated_duration: 3600,
+                        estimated_tss: 72,
+                        intensity_factor: 0.82,
+                        structure: {
+                          version: 2,
+                          intervals: [
                             {
-                              id: "step-1",
-                              name: "Warmup",
-                              duration: { type: "time", seconds: 600 },
-                              targets: [{ type: "%FTP", intensity: 55 }],
-                            },
-                            {
-                              id: "step-2",
-                              name: "Tempo",
-                              duration: { type: "time", seconds: 1800 },
-                              targets: [{ type: "%FTP", intensity: 92 }],
-                            },
-                            {
-                              id: "step-3",
-                              name: "Cooldown",
-                              duration: { type: "time", seconds: 600 },
-                              targets: [{ type: "%FTP", intensity: 45 }],
+                              id: "interval-1",
+                              name: "Main set",
+                              repetitions: 1,
+                              steps: [
+                                {
+                                  id: "step-1",
+                                  name: "Warmup",
+                                  duration: { type: "time", seconds: 600 },
+                                  targets: [{ type: "%FTP", intensity: 55 }],
+                                },
+                                {
+                                  id: "step-2",
+                                  name: "Tempo",
+                                  duration: { type: "time", seconds: 1800 },
+                                  targets: [{ type: "%FTP", intensity: 92 }],
+                                },
+                                {
+                                  id: "step-3",
+                                  name: "Cooldown",
+                                  duration: { type: "time", seconds: 600 },
+                                  targets: [{ type: "%FTP", intensity: 45 }],
+                                },
+                              ],
                             },
                           ],
                         },
-                      ],
+                      },
                     },
-                  },
-                },
-                {
-                  id: "event-3",
-                  event_type: "custom",
-                  title: "Mobility session",
-                  description: "Gentle evening mobility.",
-                  scheduled_date: "2026-03-24",
-                  starts_at: "2026-03-24T18:00:00.000",
-                  all_day: false,
-                },
-                {
-                  id: "event-4",
-                  event_type: "rest_day",
-                  title: "Legacy rest day",
-                  scheduled_date: "2026-03-25",
-                  all_day: true,
-                },
-                {
-                  id: "event-5",
-                  event_type: "imported",
-                  title: "Imported ride",
-                  description: "Pulled in from provider sync.",
-                  scheduled_date: today,
-                  starts_at: `${today}T14:00:00.000`,
-                  all_day: false,
+                    {
+                      id: "event-3",
+                      event_type: "custom",
+                      title: "Mobility session",
+                      description: "Gentle evening mobility.",
+                      scheduled_date: "2026-03-24",
+                      starts_at: "2026-03-24T18:00:00.000",
+                      all_day: false,
+                    },
+                    {
+                      id: "event-4",
+                      event_type: "rest_day",
+                      title: "Legacy rest day",
+                      scheduled_date: "2026-03-25",
+                      all_day: true,
+                    },
+                    {
+                      id: "event-5",
+                      event_type: "imported",
+                      title: "Imported ride",
+                      description: "Pulled in from provider sync.",
+                      scheduled_date: today,
+                      starts_at: `${today}T14:00:00.000`,
+                      all_day: false,
+                    },
+                  ],
+                  nextCursor: undefined,
                 },
               ],
             },
+            fetchNextPage: jest.fn(async () => undefined),
+            hasNextPage: false,
+            isError: false,
+            isFetchingNextPage: false,
             isLoading: false,
             refetch: jest.fn(async () => undefined),
           },
@@ -392,18 +411,29 @@ jest.mock("@/lib/api", () => ({
     groups: {
       events: {
         myCalendarGroupEvents: {
-          useQuery: () => ({
-            data: { items: [] },
-            isLoading: false,
-            error: null,
-            refetch: jest.fn(async () => undefined),
-          }),
+          useInfiniteQuery: (input?: any, options?: any) =>
+            groupEventsListUseQueryMock(input, options) ?? {
+              data: { pages: [{ items: [], nextCursor: undefined }] },
+              fetchNextPage: jest.fn(async () => undefined),
+              hasNextPage: false,
+              isError: false,
+              isFetchingNextPage: false,
+              isLoading: false,
+              error: null,
+              refetch: jest.fn(async () => undefined),
+            },
         },
       },
     },
     activityPlans: {
       getManyByIds: {
-        useQuery: () => ({ data: { items: [] }, isLoading: false, error: null }),
+        useQuery: () => ({
+          data: { items: [] },
+          isError: false,
+          isLoading: false,
+          error: null,
+          refetch: jest.fn(async () => undefined),
+        }),
       },
     },
     activities: {
@@ -446,6 +476,7 @@ jest.mock("@/lib/api", () => ({
             fetchNextPage: jest.fn(async () => undefined),
             hasNextPage: false,
             isFetchingNextPage: false,
+            isError: false,
             isLoading: false,
             refetch: jest.fn(async () => undefined),
           },
@@ -456,9 +487,11 @@ jest.mock("@/lib/api", () => ({
 
 const CalendarScreenWithErrorBoundary = require("../calendar").default;
 const {
+  CALENDAR_EVENT_QUERY_LIMIT,
   DAY_RANGE_BACKWARD,
   DAY_RANGE_EXTENSION,
   DAY_RANGE_FORWARD,
+  GROUP_CALENDAR_EVENT_QUERY_LIMIT,
   buildDayQueryWindow,
   ensureDayQueryWindowCovers,
 } = require("@/components/calendar/useCalendarTimelineController");
@@ -480,8 +513,11 @@ describe("calendar day timeline screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     useCalendarStore = createCalendarStore();
+    mockAuthReady = true;
+    mockTodayKey = today;
     eventsListUseQueryMock.mockReset();
     activitiesListUseQueryMock.mockReset();
+    groupEventsListUseQueryMock.mockReset();
     mockFlatListScrollToIndex.mockClear();
     mockFlatListScrollToOffset.mockClear();
   });
@@ -493,6 +529,42 @@ describe("calendar day timeline screen", () => {
       expect.anything(),
       expect.objectContaining({ placeholderData: keepPreviousData }),
     );
+  });
+
+  it("shows loading rather than an error while auth is still initializing", () => {
+    mockAuthReady = false;
+    eventsListUseQueryMock.mockReturnValue({
+      data: undefined,
+      fetchNextPage: jest.fn(async () => undefined),
+      hasNextPage: false,
+      isError: false,
+      isFetchingNextPage: false,
+      isLoading: false,
+      refetch: jest.fn(async () => undefined),
+    });
+    activitiesListUseQueryMock.mockReturnValue({
+      data: undefined,
+      fetchNextPage: jest.fn(async () => undefined),
+      hasNextPage: false,
+      isError: false,
+      isFetchingNextPage: false,
+      isLoading: false,
+      refetch: jest.fn(async () => undefined),
+    });
+    groupEventsListUseQueryMock.mockReturnValue({
+      data: undefined,
+      fetchNextPage: jest.fn(async () => undefined),
+      hasNextPage: false,
+      isError: false,
+      isFetchingNextPage: false,
+      isLoading: false,
+      refetch: jest.fn(async () => undefined),
+    });
+
+    renderNative(<CalendarScreenWithErrorBoundary />);
+
+    expect(screen.getByTestId("calendar-screen-loading")).toBeTruthy();
+    expect(screen.queryByTestId("calendar-screen-ready")).toBeNull();
   });
 
   it("renders the day-first calendar timeline instead of the month grid", () => {
@@ -554,7 +626,7 @@ describe("calendar day timeline screen", () => {
     expect(screen.getByTestId("calendar-week-day-selected-2026-04-01")).toBeTruthy();
   });
 
-  it("defers persisted visible anchor updates until agenda scroll settles", () => {
+  it("keeps legacy persisted anchors out of manual scroll synchronization", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
     const list = screen.getByTestId("calendar-day-list");
     const aprilRow = { key: "day:2026-04-01", type: "day", dateKey: "2026-04-01" };
@@ -580,7 +652,7 @@ describe("calendar day timeline screen", () => {
       list.props.onMomentumScrollEnd();
     });
 
-    expect(useCalendarStore.getState().visibleAnchor).toBe("2026-04-01");
+    expect(useCalendarStore.getState().visibleAnchor).toBe(today);
   });
 
   it("updates the selected week date when agenda scrolling reveals non-header rows", () => {
@@ -662,7 +734,7 @@ describe("calendar day timeline screen", () => {
       list.props.onMomentumScrollEnd();
     });
 
-    expect(useCalendarStore.getState().visibleAnchor).toBe("2026-03-24");
+    expect(screen.getByTestId("calendar-week-day-selected-2026-03-24")).toBeTruthy();
   });
 
   it("opens completed activity rows from the calendar timeline", () => {
@@ -734,6 +806,20 @@ describe("calendar day timeline screen", () => {
     expect(screen.getByTestId(`calendar-week-day-selected-${today}`)).toBeTruthy();
   });
 
+  it("uses the rollover-aware local today key when resetting the calendar", () => {
+    const nextLocalDay = "2026-03-24";
+    const rendered = renderNative(<CalendarScreenWithErrorBoundary />);
+    mockTodayKey = nextLocalDay;
+
+    act(() => {
+      rendered.rerender(<CalendarScreenWithErrorBoundary />);
+    });
+    fireEvent.press(screen.getByTestId("calendar-reset-today-entry"));
+
+    expect(useCalendarStore.getState().activeDate).toBe(nextLocalDay);
+    expect(screen.getByTestId(`calendar-week-day-selected-${nextLocalDay}`)).toBeTruthy();
+  });
+
   it("recovers agenda snapping when the selected day has not been measured", () => {
     const rendered = renderNative(<CalendarScreenWithErrorBoundary />);
     const list = getFlatListByTestId(rendered, "calendar-day-list");
@@ -768,11 +854,26 @@ describe("calendar day timeline screen", () => {
     renderNative(<CalendarScreenWithErrorBoundary />);
 
     expect(eventsListUseQueryMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({ date_from: "2026-03-02", date_to: "2026-07-20" }),
+      expect.objectContaining({
+        date_from: "2026-03-02T05:00:00.000Z",
+        date_to: "2026-07-21T04:00:00.000Z",
+      }),
       expect.anything(),
     );
     expect(useCalendarStore.getState().activeDate).toBe(today);
-    expect(useCalendarStore.getState().visibleAnchor).toBe(today);
+    expect(useCalendarStore.getState().visibleAnchor).toBe("2026-03-01");
+  });
+
+  it("reconciles an external active date change while the tab remains mounted", () => {
+    renderNative(<CalendarScreenWithErrorBoundary />);
+    mockFlatListScrollToIndex.mockClear();
+
+    act(() => {
+      useCalendarStore.getState().setActiveDate("2026-04-01");
+    });
+
+    expect(screen.getByTestId("calendar-week-day-selected-2026-04-01")).toBeTruthy();
+    expect(screen.getByTestId("calendar-visible-month-label").props.children).toBe("April 2026");
   });
 
   it("opens the dedicated day route from a day row tap", () => {
@@ -811,7 +912,102 @@ describe("calendar day timeline screen", () => {
     );
   });
 
-  it("extends day scrolling continuously while loading more future days", () => {
+  it("renders personal events returned on later cursor pages", () => {
+    eventsListUseQueryMock.mockReturnValue({
+      data: {
+        pages: [
+          { items: [], nextCursor: "page-2" },
+          {
+            items: [
+              {
+                id: "event-page-2",
+                event_type: "custom",
+                title: "Later page event",
+                scheduled_date: today,
+                starts_at: `${today}T16:00:00.000`,
+                all_day: false,
+              },
+            ],
+            nextCursor: undefined,
+          },
+        ],
+      },
+      fetchNextPage: jest.fn(async () => undefined),
+      hasNextPage: false,
+      isError: false,
+      isFetchingNextPage: false,
+      isLoading: false,
+      refetch: jest.fn(async () => undefined),
+    });
+
+    renderNative(<CalendarScreenWithErrorBoundary />);
+
+    expect(screen.getByTestId("calendar-event-row-event-page-2")).toBeTruthy();
+  });
+
+  it("continues personal and group event cursor queries", () => {
+    const fetchNextEventsPage = jest.fn(async () => undefined);
+    const fetchNextGroupEventsPage = jest.fn(async () => undefined);
+    eventsListUseQueryMock.mockReturnValue({
+      data: { pages: [{ items: [], nextCursor: "event-page-2" }] },
+      fetchNextPage: fetchNextEventsPage,
+      hasNextPage: true,
+      isError: false,
+      isFetchingNextPage: false,
+      isLoading: false,
+      refetch: jest.fn(async () => undefined),
+    });
+    groupEventsListUseQueryMock.mockReturnValue({
+      data: { pages: [{ items: [], nextCursor: "group-page-2" }] },
+      fetchNextPage: fetchNextGroupEventsPage,
+      hasNextPage: true,
+      isError: false,
+      isFetchingNextPage: false,
+      isLoading: false,
+      refetch: jest.fn(async () => undefined),
+    });
+
+    renderNative(<CalendarScreenWithErrorBoundary />);
+
+    expect(fetchNextEventsPage).toHaveBeenCalledTimes(1);
+    expect(fetchNextGroupEventsPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses bounded cursor page sizes for personal and group events", () => {
+    renderNative(<CalendarScreenWithErrorBoundary />);
+
+    expect(CALENDAR_EVENT_QUERY_LIMIT).toBe(50);
+    expect(GROUP_CALENDAR_EVENT_QUERY_LIMIT).toBe(50);
+    expect(eventsListUseQueryMock).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: 50 }),
+      expect.objectContaining({ getNextPageParam: expect.any(Function) }),
+    );
+    expect(groupEventsListUseQueryMock).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: 50 }),
+      expect.objectContaining({ getNextPageParam: expect.any(Function) }),
+    );
+  });
+
+  it("shows a retryable warning when one calendar source fails", () => {
+    const refetch = jest.fn(async () => undefined);
+    groupEventsListUseQueryMock.mockReturnValue({
+      data: { pages: [{ items: [], nextCursor: undefined }] },
+      fetchNextPage: jest.fn(async () => undefined),
+      hasNextPage: false,
+      isError: true,
+      isFetchingNextPage: false,
+      isLoading: false,
+      refetch,
+    });
+
+    renderNative(<CalendarScreenWithErrorBoundary />);
+    fireEvent.press(screen.getByLabelText("Retry loading calendar items"));
+
+    expect(screen.getByTestId("calendar-partial-error")).toBeTruthy();
+    expect(refetch).toHaveBeenCalled();
+  });
+
+  it("shifts a bounded day window while loading future days", () => {
     const rendered = renderNative(<CalendarScreenWithErrorBoundary />);
     const list = getFlatListByTestId(rendered, "calendar-day-list");
 
@@ -828,12 +1024,15 @@ describe("calendar day timeline screen", () => {
     });
 
     expect(eventsListUseQueryMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({ date_from: "2026-03-02", date_to: "2026-08-19" }),
+      expect.objectContaining({
+        date_from: "2026-04-01T04:00:00.000Z",
+        date_to: "2026-08-20T04:00:00.000Z",
+      }),
       expect.anything(),
     );
   });
 
-  it("prepends past days without trimming future days", () => {
+  it("shifts a bounded day window while loading past days", () => {
     const rendered = renderNative(<CalendarScreenWithErrorBoundary />);
     const list = getFlatListByTestId(rendered, "calendar-day-list");
 
@@ -842,7 +1041,10 @@ describe("calendar day timeline screen", () => {
     });
 
     expect(eventsListUseQueryMock).toHaveBeenLastCalledWith(
-      expect.objectContaining({ date_from: "2026-01-31", date_to: "2026-07-20" }),
+      expect.objectContaining({
+        date_from: "2026-01-31T05:00:00.000Z",
+        date_to: "2026-06-21T04:00:00.000Z",
+      }),
       expect.anything(),
     );
   });

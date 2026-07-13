@@ -33,7 +33,8 @@ function createGroupEvent(overrides: Record<string, unknown> = {}) {
     is_recurring_series: false,
     is_recurring_occurrence: false,
     acceptedRsvpCount: 0,
-    activityPlanOptions: [],
+    activity_plan_id: null,
+    activity_plan: null,
     viewerRsvp: null,
     viewerSeriesRsvp: null,
     group: { id: "group-1", name: "Trail Crew", slug: "trail-crew", avatar_url: null },
@@ -191,10 +192,7 @@ describe("GroupEventDetailScreen", () => {
       <GroupEventDetailScreen
         event={
           createGroupEvent({
-            viewerRsvp: {
-              status: "accepted",
-              selected_group_event_activity_plan_id: null,
-            },
+            viewerRsvp: { status: "accepted" },
           }) as any
         }
         onRsvp={rsvpMock}
@@ -204,8 +202,8 @@ describe("GroupEventDetailScreen", () => {
     fireEvent.press(screen.getByText("Tentative"));
     fireEvent.press(screen.getByText("Clear"));
 
-    expect(rsvpMock).toHaveBeenCalledWith("tentative", null);
-    expect(rsvpMock).toHaveBeenCalledWith(null, null);
+    expect(rsvpMock).toHaveBeenCalledWith("tentative");
+    expect(rsvpMock).toHaveBeenCalledWith(null);
   });
 
   it("does not label current group events as plans without activity plan options", () => {
@@ -235,27 +233,14 @@ describe("GroupEventDetailScreen", () => {
     expect(screen.queryByText("1 going")).toBeNull();
   });
 
-  it("does not render activity plan details that are not visible to the viewer", () => {
+  it("renders the singular activity plan when it is visible to the viewer", () => {
     activityPlanItems = [{ id: "plan-visible", name: "Visible tempo plan" }];
 
     renderNative(
       <GroupEventDetailScreen
         event={
           createGroupEvent({
-            activityPlanOptions: [
-              {
-                id: "option-visible",
-                activity_plan_id: "plan-visible",
-                label: "Tempo",
-                sort_order: 0,
-              },
-              {
-                id: "option-private",
-                activity_plan_id: "plan-private",
-                label: "Private",
-                sort_order: 1,
-              },
-            ],
+            activity_plan_id: "plan-visible",
           }) as any
         }
         onActivityPlanPress={activityPlanPressMock}
@@ -264,44 +249,27 @@ describe("GroupEventDetailScreen", () => {
     );
 
     expect(screen.getByTestId("activity-plan-card-plan-visible")).toBeTruthy();
-    expect(screen.getByText("1 activity plan is not available to view.")).toBeTruthy();
-    expect(screen.queryByText("plan-private")).toBeNull();
 
     fireEvent.press(screen.getByTestId("activity-plan-card-plan-visible"));
-    fireEvent.press(screen.getByText("Private"));
 
     expect(activityPlanPressMock).toHaveBeenCalledWith("plan-visible");
-    expect(rsvpMock).toHaveBeenCalledWith("accepted", "option-private");
   });
 
-  it("limits occurrence override copy actions to event managers", () => {
-    const copySeriesPlansMock = jest.fn();
-    const occurrence = createGroupEvent({
-      id: "occurrence-1",
-      series_id: "series-1",
-      occurrence_key: "2026-05-21",
-      is_recurring_occurrence: true,
-    });
-
-    const { rerender } = renderNative(
+  it("omits the retired occurrence plan copy action for event managers", () => {
+    renderNative(
       <GroupEventDetailScreen
-        canManage={false}
-        event={occurrence as any}
-        onCopySeriesPlans={copySeriesPlansMock}
+        canManage
+        event={
+          createGroupEvent({
+            id: "occurrence-1",
+            series_id: "series-1",
+            occurrence_key: "2026-05-21",
+            is_recurring_occurrence: true,
+          }) as any
+        }
       />,
     );
 
     expect(screen.queryByText("Copy series plans to occurrence")).toBeNull();
-
-    rerender(
-      <GroupEventDetailScreen
-        canManage
-        event={occurrence as any}
-        onCopySeriesPlans={copySeriesPlansMock}
-      />,
-    );
-
-    fireEvent.press(screen.getByText("Copy series plans to occurrence"));
-    expect(copySeriesPlansMock).toHaveBeenCalledTimes(1);
   });
 });

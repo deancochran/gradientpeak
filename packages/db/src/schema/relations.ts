@@ -11,7 +11,6 @@ import {
   conversations,
   events,
   follows,
-  groupEventActivityPlans,
   groupEventRsvps,
   groupEventSeriesRsvps,
   groupEvents,
@@ -135,25 +134,13 @@ export const groupEventsRelations = relations(groupEvents, ({ one, many }) => ({
     fields: [groupEvents.route_id],
     references: [activityRoutes.id],
   }),
-  activityPlans: many(groupEventActivityPlans),
+  activityPlan: one(activityPlans, {
+    fields: [groupEvents.activity_plan_id],
+    references: [activityPlans.id],
+  }),
   rsvps: many(groupEventRsvps),
   seriesRsvps: many(groupEventSeriesRsvps),
 }));
-
-export const groupEventActivityPlansRelations = relations(
-  groupEventActivityPlans,
-  ({ one, many }) => ({
-    groupEvent: one(groupEvents, {
-      fields: [groupEventActivityPlans.group_event_id],
-      references: [groupEvents.id],
-    }),
-    activityPlan: one(activityPlans, {
-      fields: [groupEventActivityPlans.activity_plan_id],
-      references: [activityPlans.id],
-    }),
-    rsvps: many(groupEventRsvps),
-  }),
-);
 
 export const groupEventRsvpsRelations = relations(groupEventRsvps, ({ one }) => ({
   groupEvent: one(groupEvents, {
@@ -163,10 +150,6 @@ export const groupEventRsvpsRelations = relations(groupEventRsvps, ({ one }) => 
   profile: one(profiles, {
     fields: [groupEventRsvps.profile_id],
     references: [profiles.id],
-  }),
-  selectedActivityPlan: one(groupEventActivityPlans, {
-    fields: [groupEventRsvps.selected_group_event_activity_plan_id],
-    references: [groupEventActivityPlans.id],
   }),
 }));
 
@@ -186,7 +169,6 @@ export const activityRoutesRelations = relations(activityRoutes, ({ one, many })
     fields: [activityRoutes.profile_id],
     references: [profiles.id],
   }),
-  activityPlans: many(activityPlans),
   events: many(events),
   groupEvents: many(groupEvents),
 }));
@@ -196,13 +178,9 @@ export const activityPlansRelations = relations(activityPlans, ({ one, many }) =
     fields: [activityPlans.profile_id],
     references: [profiles.id],
   }),
-  route: one(activityRoutes, {
-    fields: [activityPlans.route_id],
-    references: [activityRoutes.id],
-  }),
   activities: many(activities),
   events: many(events),
-  groupEventActivityPlans: many(groupEventActivityPlans),
+  groupEvents: many(groupEvents),
 }));
 
 export const trainingPlansRelations = relations(trainingPlans, ({ one, many }) => ({
@@ -461,7 +439,6 @@ export const relationsSchema = {
   groupInvitationsRelations,
   groupJoinRequestsRelations,
   groupEventsRelations,
-  groupEventActivityPlansRelations,
   groupEventRsvpsRelations,
   activityRoutesRelations,
   activityPlansRelations,

@@ -15,6 +15,8 @@ import {
   buildActivityEffortCurves,
   buildBestActivityEffortCurve,
   getActivityEffortCurveBest,
+  getActivityEffortObservationStatus,
+  getObservedActivityEffortRecords,
 } from "@/lib/activity-efforts/curves";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
@@ -25,6 +27,8 @@ type ActivityEffortRow = ActivityEffortCurveRow;
 type EffortPoint = ActivityEffortCurvePoint;
 
 type ChartPoint = { x: number; y: number };
+
+export type EffortChartOrientation = "duration-horizontal" | "duration-vertical";
 
 type EffortChartBounds = {
   minDuration: number;
@@ -100,7 +104,10 @@ function getCoordinates(points: EffortPoint[], width: number, height: number, pa
 
 function getEffortChartBounds(points: EffortPoint[]): EffortChartBounds {
   const durations = points.map((point) => point.duration).filter(Number.isFinite);
-  const values = points.map((point) => point.value).filter(Number.isFinite);
+  const values = points
+    .map((point) => point.value)
+    .filter(Number.isFinite)
+    .map((value) => Math.max(value, 0));
   const rawMinDuration = durations.length > 0 ? Math.min(...durations) : 1;
   const minDuration = Math.max(rawMinDuration, 1);
   const maxDuration = durations.length > 0 ? Math.max(...durations, minDuration + 1) : 2;
@@ -117,23 +124,38 @@ function getEffortChartBounds(points: EffortPoint[]): EffortChartBounds {
   };
 }
 
-function getEffortChartCoordinates(
+function clampScale(value: number) {
+  return Math.min(Math.max(Number.isFinite(value) ? value : 0, 0), 1);
+}
+
+export function getEffortChartCoordinates(
   points: EffortPoint[],
   width: number,
   height: number,
   padding: { top: number; right: number; bottom: number; left: number },
   bounds: EffortChartBounds,
+  orientation: EffortChartOrientation = "duration-horizontal",
 ): ChartPoint[] {
-  const chartWidth = width - padding.left - padding.right;
-  const chartHeight = height - padding.top - padding.bottom;
+  const chartWidth = Math.max(width - padding.left - padding.right, 0);
+  const chartHeight = Math.max(height - padding.top - padding.bottom, 0);
   const valueRange = bounds.maxValue - bounds.minValue || 1;
 
-  return points.map((point) => ({
-    x:
-      padding.left +
-      scaleDuration(point.duration, bounds.minDuration, bounds.maxDuration) * chartWidth,
-    y: padding.top + (1 - (point.value - bounds.minValue) / valueRange) * chartHeight,
-  }));
+  return points.map((point) => {
+    const durationScale = clampScale(
+      scaleDuration(point.duration, bounds.minDuration, bounds.maxDuration),
+    );
+    const valueScale = clampScale((point.value - bounds.minValue) / valueRange);
+
+    return orientation === "duration-vertical"
+      ? {
+          x: padding.left + valueScale * chartWidth,
+          y: padding.top + (1 - durationScale) * chartHeight,
+        }
+      : {
+          x: padding.left + durationScale * chartWidth,
+          y: padding.top + (1 - valueScale) * chartHeight,
+        };
+  });
 }
 
 function formatAxisValue(value: number, unit: string) {
@@ -152,9 +174,10 @@ function filterRecordsByRange(records: ActivityEffortRow[], dateRange: DateRange
 }
 
 function buildEarliestComparableCurve(records: ActivityEffortRow[]) {
-  if (records.length === 0) return [];
+  const observedRecords = getObservedActivityEffortRecords(records);
+  if (observedRecords.length === 0) return [];
 
-  const chronological = [...records].sort(
+  const chronological = [...observedRecords].sort(
     (a, b) => new Date(a.recorded_at).getTime() - new Date(b.recorded_at).getTime(),
   );
   const earliestDay = new Date(chronological[0]?.recorded_at);
@@ -172,6 +195,14 @@ function getCurveEffortIds(records: ActivityEffortRow[]) {
     ...buildEarliestComparableCurve(records).map((point) => point.effortId),
     ...buildBestActivityEffortCurve(records).map((point) => point.effortId),
   ]);
+}
+
+function getEffortRecordStatusLabel(record: ActivityEffortRow) {
+  const status = getActivityEffortObservationStatus(record);
+  if (status === "modeled") return "Modeled threshold";
+  if (status === "review") return "Review effort";
+  if (status === "invalid") return "Invalid effort";
+  return null;
 }
 
 function MiniEffortVisual({ points }: { points: EffortPoint[] }) {
@@ -213,12 +244,16 @@ function EffortDetailChart({
   const allPoints = [...presentPoints, ...earliestPoints];
   const padding = { top: 20, right: 18, bottom: 44, left: 54 };
   const bounds = getEffortChartBounds(allPoints);
+  const orientation: EffortChartOrientation = curve.id.endsWith("_speed")
+    ? "duration-vertical"
+    : "duration-horizontal";
   const presentCoordinates = getEffortChartCoordinates(
     presentPoints,
     width,
     height,
     padding,
     bounds,
+    orientation,
   );
   const earliestCoordinates = getEffortChartCoordinates(
     earliestPoints,
@@ -226,6 +261,7 @@ function EffortDetailChart({
     height,
     padding,
     bounds,
+    orientation,
   );
   const chartLeft = padding.left;
   const chartRight = width - padding.right;
@@ -264,12 +300,16 @@ function EffortDetailChart({
         </View>
       ) : (
         <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
-          {valueTicks.map((tick) => {
+          {(orientation === "duration-vertical" ? durationTicks : valueTicks).map((tick) => {
             const valueRange = bounds.maxValue - bounds.minValue || 1;
             const y =
-              chartTop + (1 - (tick - bounds.minValue) / valueRange) * (chartBottom - chartTop);
+              orientation === "duration-vertical"
+                ? chartTop +
+                  (1 - scaleDuration(tick, bounds.minDuration, bounds.maxDuration)) *
+                    (chartBottom - chartTop)
+                : chartTop + (1 - (tick - bounds.minValue) / valueRange) * (chartBottom - chartTop);
             return (
-              <React.Fragment key={`value-${tick}`}>
+              <React.Fragment key={`vertical-${tick}`}>
                 <Line
                   x1={chartLeft}
                   x2={chartRight}
@@ -285,7 +325,9 @@ function EffortDetailChart({
                   fontSize={10}
                   textAnchor="end"
                 >
-                  {formatAxisValue(tick, curve.unit)}
+                  {orientation === "duration-vertical"
+                    ? formatDuration(Math.round(tick))
+                    : formatAxisValue(tick, curve.unit)}
                 </SvgText>
               </React.Fragment>
             );
@@ -306,13 +348,16 @@ function EffortDetailChart({
             stroke={colors.axis}
             strokeWidth={1.5}
           />
-          {durationTicks.map((tick) => {
+          {(orientation === "duration-vertical" ? valueTicks : durationTicks).map((tick) => {
+            const valueRange = bounds.maxValue - bounds.minValue || 1;
             const x =
               chartLeft +
-              scaleDuration(tick, bounds.minDuration, bounds.maxDuration) *
+              (orientation === "duration-vertical"
+                ? (tick - bounds.minValue) / valueRange
+                : scaleDuration(tick, bounds.minDuration, bounds.maxDuration)) *
                 (chartRight - chartLeft);
             return (
-              <React.Fragment key={`duration-${tick}`}>
+              <React.Fragment key={`horizontal-${tick}`}>
                 <Line
                   x1={x}
                   x2={x}
@@ -328,7 +373,9 @@ function EffortDetailChart({
                   fontSize={10}
                   textAnchor="middle"
                 >
-                  {formatDuration(Math.round(tick))}
+                  {orientation === "duration-vertical"
+                    ? formatAxisValue(tick, curve.unit)
+                    : formatDuration(Math.round(tick))}
                 </SvgText>
               </React.Fragment>
             );
@@ -340,8 +387,20 @@ function EffortDetailChart({
             fontSize={11}
             textAnchor="middle"
           >
-            Duration
+            {orientation === "duration-vertical" ? `Speed (${curve.unit})` : "Duration"}
           </SvgText>
+          {orientation === "duration-vertical" ? (
+            <SvgText
+              x={10}
+              y={(chartTop + chartBottom) / 2}
+              fill={colors.label}
+              fontSize={11}
+              textAnchor="middle"
+              transform={`rotate(-90 10 ${(chartTop + chartBottom) / 2})`}
+            >
+              Duration
+            </SvgText>
+          ) : null}
           <Path
             d={buildPath(earliestCoordinates)}
             stroke={colors.previous}
@@ -403,27 +462,33 @@ function EffortRecords({
       {records.length === 0 ? (
         <Text className="text-sm text-muted-foreground">No records in this range.</Text>
       ) : null}
-      {records.map((record) => (
-        <Pressable
-          key={record.id}
-          onPress={() => onOpenRecord(record.id)}
-          className="flex-row items-center justify-between gap-3 rounded-2xl border border-border bg-muted/10 px-4 py-3"
-          testID={`activity-effort-record-${record.id}`}
-        >
-          <View className="flex-1 gap-1">
-            <View className="flex-row items-center gap-2">
-              <Text className="text-sm font-semibold text-foreground">{formatValue(record)}</Text>
-              {curveEffortIds.has(record.id) ? (
-                <Icon as={CheckCircle2} size={14} className="text-primary" />
-              ) : null}
+      {records.map((record) => {
+        const statusLabel = getEffortRecordStatusLabel(record);
+        return (
+          <Pressable
+            key={record.id}
+            onPress={() => onOpenRecord(record.id)}
+            className="flex-row items-center justify-between gap-3 rounded-2xl border border-border bg-muted/10 px-4 py-3"
+            testID={`activity-effort-record-${record.id}`}
+          >
+            <View className="flex-1 gap-1">
+              <View className="flex-row items-center gap-2">
+                <Text className="text-sm font-semibold text-foreground">{formatValue(record)}</Text>
+                {curveEffortIds.has(record.id) ? (
+                  <Icon as={CheckCircle2} size={14} className="text-primary" />
+                ) : null}
+                {statusLabel ? (
+                  <Text className="text-xs font-medium text-muted-foreground">{statusLabel}</Text>
+                ) : null}
+              </View>
+              <Text className="text-xs text-muted-foreground">
+                {formatDate(record.recorded_at)} • {record.duration_seconds}s
+              </Text>
             </View>
-            <Text className="text-xs text-muted-foreground">
-              {formatDate(record.recorded_at)} • {record.duration_seconds}s
-            </Text>
-          </View>
-          <Text className="text-xs font-medium text-primary">Open</Text>
-        </Pressable>
-      ))}
+            <Text className="text-xs font-medium text-primary">Open</Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }

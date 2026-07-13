@@ -6,14 +6,14 @@
  * Wahoo API accepts GPX, TCX, and FIT formats - we use GPX for simplicity.
  */
 
-import type { ActivityType } from "./activity-type-utils";
+import type { WahooActivityType } from "./activity-type-utils";
 import { supportsRoutes, toSportName } from "./activity-type-utils";
 
 export interface RouteFileData {
   filePath: string;
   name: string;
   description?: string;
-  activityType: ActivityType;
+  activityType: WahooActivityType;
   totalDistance: number;
   totalAscent?: number;
   totalDescent?: number;
@@ -88,7 +88,7 @@ export function validateRouteForWahoo(routeData: RouteFileData): {
 /**
  * Get workout type family ID for route
  */
-export function getWorkoutTypeFamilyForRoute(activityType: ActivityType): number {
+export function getWorkoutTypeFamilyForRoute(activityType: WahooActivityType): number {
   const sport = toSportName(activityType);
 
   switch (sport) {

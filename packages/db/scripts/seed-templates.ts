@@ -29,7 +29,6 @@ function hasChanges(local: SystemTemplate, remote: ExistingActivityTemplate): bo
   if (local.name !== remote.name) return true;
   if (local.description !== (remote.description ?? null)) return true;
   if (local.activity_category !== remote.activity_category) return true;
-  if ((local.route_id ?? null) !== (remote.route_id ?? null)) return true;
   if ((local.notes ?? null) !== (remote.notes ?? null)) return true;
 
   const localStructure = stripIds(JSON.parse(JSON.stringify(local.structure)));
@@ -100,7 +99,6 @@ async function seedTemplates() {
                 description: template.description,
                 activity_category: template.activity_category,
                 structure: template.structure,
-                route_id: template.route_id ?? null,
                 notes: template.notes ?? null,
                 template_visibility: "public",
                 updated_at: new Date(),
@@ -128,7 +126,6 @@ async function seedTemplates() {
             description: template.description,
             activity_category: template.activity_category,
             structure: template.structure,
-            route_id: template.route_id ?? null,
             notes: template.notes ?? null,
             created_at: now,
             updated_at: now,

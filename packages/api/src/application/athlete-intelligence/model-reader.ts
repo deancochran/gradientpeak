@@ -10,7 +10,6 @@ import type { PreferredUnitSystem } from "@repo/core/units";
 import {
   activities,
   activityEfforts,
-  activityPlans,
   events,
   profileGoals,
   profileMetrics,
@@ -375,7 +374,7 @@ export function createDrizzleAthleteIntelligenceDataSource(
             profileId: activities.profile_id,
             id: activities.id,
             activityPlanId: activities.activity_plan_id,
-            routeId: activityPlans.route_id,
+            routeId: sql<string | null>`null`,
             type: activities.type,
             startedAt: activities.started_at,
             finishedAt: activities.finished_at,
@@ -440,13 +439,6 @@ export function createDrizzleAthleteIntelligenceDataSource(
             updatedAt: activities.updated_at,
           })
           .from(activities)
-          .leftJoin(
-            activityPlans,
-            and(
-              eq(activityPlans.id, activities.activity_plan_id),
-              eq(activityPlans.profile_id, activities.profile_id),
-            ),
-          )
           .where(
             and(
               eq(activities.profile_id, p),
@@ -1278,11 +1270,11 @@ export async function materializeAthleteIntelligenceModelInput(input: {
           ? normalizeSport(String(row.payload.sport))
           : null;
       const eventType =
-        row.type === "race"
-          ? "race"
+        row.type === "race_target"
+          ? "race_target"
           : row.type === "rest_day"
             ? "rest"
-            : row.type === "planned_activity"
+            : row.type === "planned"
               ? "training"
               : "other";
       const lifecycle =
@@ -1294,13 +1286,13 @@ export async function materializeAthleteIntelligenceModelInput(input: {
       // Completed history belongs to activities, not the current/future planned schedule.
       if (lifecycle === "completed") return [];
       const record = evidence(
-        eventType === "race" ? "goal" : "manual",
+        eventType === "race_target" ? "goal" : "manual",
         `event-${row.id}`,
         "record",
         row.updatedAt,
         null,
         null,
-        eventType === "race" ? "goal" : "manual_observation",
+        eventType === "race_target" ? "goal" : "manual_observation",
         sport,
       );
       const planLinkKinds = [

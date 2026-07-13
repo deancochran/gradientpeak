@@ -3,16 +3,17 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect } from "react";
 import { ActivityIndicator, View } from "react-native";
 
+/**
+ * @deprecated Historical deep-link alias. New flows should navigate directly to `/(external)/verify`.
+ */
 export default function SignUpSuccessScreen() {
   const router = useRouter();
-  const { email } = useLocalSearchParams<{ email: string }>();
+  const { email } = useLocalSearchParams<{ email?: string }>();
 
   useEffect(() => {
-    // Redirect to the new verify screen immediately
-    // This file is deprecated but kept for routing safety
     router.replace({
       pathname: "/(external)/verify",
-      params: { email: email || "" },
+      params: { email: email ?? "" },
     });
   }, [router, email]);
 

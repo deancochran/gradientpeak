@@ -27,6 +27,7 @@ describe("canonical effort units", () => {
     ["power", 1.2, "kW", { value: 1200, unit: "watts" }],
     ["speed", 36, "km/h", { value: 10, unit: "meters_per_second" }],
     ["speed", 10, "mph", { value: 4.4704, unit: "meters_per_second" }],
+    ["speed", 4.2, "meters_per_second", { value: 4.2, unit: "meters_per_second" }],
   ] as const)("normalizes %s aliases", (kind, value, unit, expected) => {
     expect(canonicalEffortValue({ kind, value, unit })).toEqual(expected);
   });

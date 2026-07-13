@@ -138,7 +138,6 @@ export class RecordingConfigResolver {
       routeGeometryAvailable: context.routeGeometryAvailable,
       plan: context.plan ?? {
         hasStructure: activityPlanId !== null,
-        hasRoute: routeId !== null,
         stepCount: 0,
         requiresManualAdvance: !snapshot.policies.controlPolicy.autoAdvanceSteps,
       },
@@ -664,7 +663,7 @@ export class RecordingConfigResolver {
   }
 
   private static hasRoute(input: RecordingConfigInput) {
-    return Boolean(input.plan?.hasRoute || input.routeId);
+    return Boolean(input.routeId);
   }
 
   private static hasRouteGeometry(input: RecordingConfigInput) {
@@ -724,7 +723,7 @@ export class RecordingConfigResolver {
     if (
       input.devices.ftmsTrainer?.autoControlEnabled &&
       !input.plan?.hasStructure &&
-      !input.plan?.hasRoute
+      !input.routeId
     ) {
       warnings.push(
         "Auto ERG requires a structured plan or route with grade data. You can still manually control the trainer.",
@@ -736,7 +735,7 @@ export class RecordingConfigResolver {
     }
 
     // Warn if planned but no structure
-    if (input.mode === "planned" && !input.plan?.hasStructure && !input.plan?.hasRoute) {
+    if (input.mode === "planned" && !input.plan?.hasStructure) {
       warnings.push("Selected plan has no structure. Recording as unplanned.");
     }
 

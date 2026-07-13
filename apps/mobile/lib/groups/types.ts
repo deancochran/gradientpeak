@@ -24,9 +24,7 @@ export type GroupEventSeriesOccurrencesResult = GroupOutputs["events"]["seriesOc
 export type GroupEventSeriesOccurrence = GroupEventSeriesOccurrencesResult["items"][number];
 export type GroupEventDetailResult = GroupOutputs["events"]["detail"];
 export type GroupEventDetail = GroupEventDetailResult["event"];
-export type CurrentGroupEventPlanOptionsResult = GroupOutputs["events"]["currentEventPlanOptions"];
-export type CurrentGroupEventPlan = NonNullable<CurrentGroupEventPlanOptionsResult["event"]>;
-export type GroupEventActivityPlanOption = GroupEventDetail["activityPlanOptions"][number];
+export type CurrentGroupEventPlan = GroupEventListItem;
 export type GroupEventRsvp = NonNullable<GroupEventDetail["viewerRsvp"]>;
 
 export type GroupListItem = GroupSummary | MyGroupSummary | ProfileGroupSummary;

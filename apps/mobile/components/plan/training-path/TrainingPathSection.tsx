@@ -139,19 +139,35 @@ export function TrainingPathSection({
             );
           }
           const selectedDayDate = context.selectedDate ?? selectedDate ?? null;
+          const previewingAnotherWeek =
+            !!context.selectedWeekStart && context.selectedWeekStart !== selectedWeek?.weekStart;
           return (
             <TrainingPathSelectedDaySummaryCard
-              loading={weekReviewLoading}
+              loading={weekReviewLoading || previewingAnotherWeek}
               date={selectedDayDate}
               point={context.selectedDayPoint}
-              goals={selectedWeekGoals.filter((goal) => goal.targetDate === selectedDayDate)}
-              events={selectedWeekEvents.filter((event) => event.date === selectedDayDate)}
-              groupEvents={selectedWeekGroupEvents.filter(
-                (event) => event.date === selectedDayDate,
-              )}
-              completedActivities={selectedWeekCompletedActivities.filter(
-                (activity) => activity.date === selectedDayDate,
-              )}
+              goals={
+                previewingAnotherWeek
+                  ? []
+                  : selectedWeekGoals.filter((goal) => goal.targetDate === selectedDayDate)
+              }
+              events={
+                previewingAnotherWeek
+                  ? []
+                  : selectedWeekEvents.filter((event) => event.date === selectedDayDate)
+              }
+              groupEvents={
+                previewingAnotherWeek
+                  ? []
+                  : selectedWeekGroupEvents.filter((event) => event.date === selectedDayDate)
+              }
+              completedActivities={
+                previewingAnotherWeek
+                  ? []
+                  : selectedWeekCompletedActivities.filter(
+                      (activity) => activity.date === selectedDayDate,
+                    )
+              }
               onOpenActivity={onOpenActivity}
               onOpenGoal={onOpenGoal}
               onOpenGroup={onOpenGroup}

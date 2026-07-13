@@ -38,7 +38,7 @@ export function isActiveManualFtpOverride(
     input.activity_category === "bike" &&
     input.effort_type === "power" &&
     input.duration_seconds === 1200 &&
-    input.unit === "ftp_manual"
+    (input.unit === "watts" || input.unit === "ftp_manual")
   );
 }
 

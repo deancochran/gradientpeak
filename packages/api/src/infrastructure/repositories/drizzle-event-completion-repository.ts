@@ -173,7 +173,7 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
         .where(
           and(
             eq(schema.events.profile_id, profileId),
-            inArray(schema.events.event_type, ["planned_activity", "race"]),
+            inArray(schema.events.event_type, ["planned", "race_target"]),
             isNull(schema.events.linked_activity_id),
             ne(schema.events.status, "cancelled"),
             gte(schema.events.starts_at, new Date(dateFromInclusiveIso)),
@@ -189,7 +189,7 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
         training_plan_id: row.training_plan_id,
         status: row.status,
         linked_activity_id: row.linked_activity_id,
-        event_type: row.event_type as "planned_activity" | "race",
+        event_type: row.event_type as "planned" | "race_target",
         starts_at: row.starts_at.toISOString(),
       }));
     },

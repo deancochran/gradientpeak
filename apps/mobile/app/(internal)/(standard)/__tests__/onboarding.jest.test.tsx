@@ -6,6 +6,46 @@ const replaceMock = jest.fn();
 const completeOnboardingMock = jest.fn(async () => undefined);
 const completeOnboardingMutationMock = jest.fn(async () => ({ ok: true }));
 let importedOnboardingValuesMock: unknown = null;
+let integrationOverviewMock: unknown[] = [];
+let integrationOverviewErrorMock: Error | null = null;
+const refetchIntegrationOverviewMock = jest.fn(async () => ({ data: [] }));
+
+const createIntegrationOverview = (provider: "strava" | "wahoo", configured: boolean) => ({
+  actions: [],
+  activityHistory: {
+    lastError: null,
+    lastFailedAt: null,
+    lastSucceededAt: null,
+    queuedJobId: null,
+    status: "idle",
+  },
+  configured,
+  connected: false,
+  integrationId: null,
+  label: provider === "strava" ? "Strava" : "Wahoo",
+  plannedWorkouts: {
+    lastError: null,
+    lastFailedAt: null,
+    lastSucceededAt: null,
+    queuedJobId: null,
+    status: "unsupported",
+  },
+  primaryAction: "connect",
+  provider,
+  providerHealth: { lastError: null, status: "unsupported" },
+  setupData: {
+    lastError: null,
+    lastFailedAt: null,
+    lastSucceededAt: null,
+    status: "idle",
+  },
+  summary: {
+    badge: "Available",
+    health: "unavailable",
+    subtitle: "Not connected",
+    title: provider === "strava" ? "Strava" : "Wahoo",
+  },
+});
 
 type MockPressableHandler = (...args: unknown[]) => unknown;
 
@@ -131,8 +171,13 @@ jest.mock("@/lib/api", () => ({
       list: {
         useQuery: () => ({ data: [], refetch: jest.fn(async () => ({ data: [] })) }),
       },
-      getConnectionOverview: {
-        useQuery: () => ({ data: [], refetch: jest.fn(async () => ({ data: [] })) }),
+      getSyncOverview: {
+        useQuery: () => ({
+          data: integrationOverviewMock,
+          error: integrationOverviewErrorMock,
+          isLoading: false,
+          refetch: refetchIntegrationOverviewMock,
+        }),
       },
       getAuthUrl: {
         useMutation: () => ({
@@ -214,6 +259,8 @@ describe("onboarding screen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     importedOnboardingValuesMock = null;
+    integrationOverviewMock = [];
+    integrationOverviewErrorMock = null;
   });
 
   const completeRequiredSteps = async () => {
@@ -240,6 +287,8 @@ describe("onboarding screen", () => {
   it("completes the required onboarding flow and submits the profile", async () => {
     renderNative(<OnboardingScreen />);
 
+    fireEvent.press(screen.getByTestId("onboarding-intent-train_event"));
+    fireEvent.press(screen.getByTestId("onboarding-intent-track_activities"));
     await completeRequiredSteps();
     fireEvent.press(screen.getByText("Finish"));
 
@@ -252,6 +301,7 @@ describe("onboarding screen", () => {
           max_hr: 185,
           weight_kg: 72,
           gender: "male",
+          intents: ["train_event", "track_activities"],
         }),
       );
       expect(completeOnboardingMock).toHaveBeenCalled();
@@ -272,6 +322,52 @@ describe("onboarding screen", () => {
     fireEvent.press(screen.getByTestId("onboarding-skip-button"));
 
     expect(screen.getByText("Connect Accounts")).toBeTruthy();
+  });
+
+  it("allows selecting more than one onboarding intent", () => {
+    renderNative(<OnboardingScreen />);
+
+    fireEvent.press(screen.getByTestId("onboarding-intent-train_event"));
+    fireEvent.press(screen.getByTestId("onboarding-intent-improve_fitness"));
+
+    expect(
+      screen.getByTestId("onboarding-intent-train_event").props.accessibilityState.checked,
+    ).toBe(true);
+    expect(
+      screen.getByTestId("onboarding-intent-improve_fitness").props.accessibilityState.checked,
+    ).toBe(true);
+  });
+
+  it("only shows integrations configured for the environment", async () => {
+    integrationOverviewMock = [
+      createIntegrationOverview("strava", true),
+      createIntegrationOverview("wahoo", false),
+    ];
+    renderNative(<OnboardingScreen />);
+
+    fireEvent.changeText(screen.getByTestId("onboarding-full-name-input"), "Riley Chen");
+    fireEvent.changeText(screen.getByTestId("onboarding-username-input"), "riley_runs");
+    await flushUsernameDebounce();
+    fireEvent.press(screen.getByText("Next"));
+
+    expect(screen.getByTestId("integration-provider-strava")).toBeTruthy();
+    expect(screen.queryByTestId("integration-provider-wahoo")).toBeNull();
+  });
+
+  it("shows retryable integration query errors without enabling unknown providers", async () => {
+    integrationOverviewErrorMock = new Error("network unavailable");
+    renderNative(<OnboardingScreen />);
+
+    fireEvent.changeText(screen.getByTestId("onboarding-full-name-input"), "Riley Chen");
+    fireEvent.changeText(screen.getByTestId("onboarding-username-input"), "riley_runs");
+    await flushUsernameDebounce();
+    fireEvent.press(screen.getByText("Next"));
+
+    expect(screen.getByTestId("integration-provider-list-error")).toBeTruthy();
+    expect(screen.queryByTestId("integration-provider-fallback-strava")).toBeNull();
+    expect(screen.queryByTestId("integration-connect-strava")).toBeNull();
+    fireEvent.press(screen.getByTestId("integration-provider-list-retry"));
+    expect(refetchIntegrationOverviewMock).toHaveBeenCalled();
   });
 
   it("lets users skip the signup onboarding flow after the intro", async () => {
@@ -304,6 +400,7 @@ describe("onboarding screen", () => {
         ftp: undefined,
         full_name: "Riley Chen",
         gender: undefined,
+        intents: [],
         max_hr: undefined,
         resting_hr: undefined,
         lthr: undefined,

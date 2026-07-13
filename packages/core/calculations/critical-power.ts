@@ -1,10 +1,15 @@
+import { classifyActivityEffortPlausibility } from "../athlete-inputs/activity-effort-policy";
 import type { CanonicalSport } from "../schemas";
 import type { BestEffort } from "../schemas/activity_efforts";
 
 export interface CriticalPowerResult {
+  source: "observed-curve-fit";
   cp: number;
   wPrime: number;
-  error: number; // R-squared or similar error metric could be useful, but for now maybe just standard error estimate if possible, or 0.
+  error: number;
+  fitMinDurationSeconds: number;
+  fitMaxDurationSeconds: number;
+  pointCount: number;
 }
 
 /**
@@ -71,20 +76,60 @@ export function calculateSeasonBestCurve(
  * m (slope) = W'
  * c (intercept) = CP
  *
- * @param seasonBestCurve - The season best power curve (list of BestEffort).
+ * The caller is responsible for supplying observed efforts; modeled threshold
+ * anchors are not sufficient evidence for this fit.
+ *
+ * @param seasonBestCurve - An observed season-best power curve.
  * @returns The calculated CP and W', or null if insufficient data.
  */
 export function calculateCriticalPower(seasonBestCurve: BestEffort[]): CriticalPowerResult | null {
-  // Filter for valid range: 3 minutes (180s) to 30 minutes (1800s)
-  // This avoids anaerobic skew (<3m) and aerobic drift (>30m)
-  const validEfforts = seasonBestCurve.filter(
-    (e) => e.duration_seconds >= 180 && e.duration_seconds <= 1800,
-  );
-
-  // Need at least 2 points for regression, but preferably more
-  if (validEfforts.length < 2) {
+  if (
+    seasonBestCurve.some(
+      (effort) => effort.activity_category !== "bike" || effort.effort_type !== "power",
+    )
+  ) {
     return null;
   }
+  const fitEfforts = seasonBestCurve.filter(
+    (e) => e.duration_seconds >= 180 && e.duration_seconds <= 1800,
+  );
+  if (fitEfforts.length < 3) {
+    return null;
+  }
+
+  const validEfforts = [...fitEfforts].sort(
+    (left, right) => left.duration_seconds - right.duration_seconds,
+  );
+  if (
+    validEfforts.some(
+      (effort) =>
+        classifyActivityEffortPlausibility({
+          activityCategory: effort.activity_category,
+          effortType: effort.effort_type,
+          durationSeconds: effort.duration_seconds,
+          value: effort.value,
+        }).classification !== "plausible",
+    )
+  ) {
+    return null;
+  }
+
+  for (let index = 1; index < validEfforts.length; index += 1) {
+    const previous = validEfforts[index - 1];
+    const current = validEfforts[index];
+    if (!previous || !current) return null;
+    if (current.duration_seconds === previous.duration_seconds || current.value > previous.value) {
+      return null;
+    }
+  }
+
+  const hasShortCoverage = validEfforts.some(
+    (effort) => effort.duration_seconds >= 180 && effort.duration_seconds <= 300,
+  );
+  const hasLongCoverage = validEfforts.some(
+    (effort) => effort.duration_seconds >= 900 && effort.duration_seconds <= 1_800,
+  );
+  if (!hasShortCoverage || !hasLongCoverage) return null;
 
   // Prepare data points for regression
   const n = validEfforts.length;
@@ -111,9 +156,7 @@ export function calculateCriticalPower(seasonBestCurve: BestEffort[]): CriticalP
   // Intercept (c) = (sumY - m*sumX) / n
 
   const denominator = n * sumXX - sumX * sumX;
-  if (denominator === 0) {
-    return null; // Vertical line, should not happen with 1/t
-  }
+  if (!Number.isFinite(denominator) || denominator === 0) return null;
 
   const slope = (n * sumXY - sumX * sumY) / denominator;
   const intercept = (sumY - slope * sumX) / n;
@@ -124,6 +167,7 @@ export function calculateCriticalPower(seasonBestCurve: BestEffort[]): CriticalP
 
   const cp = intercept;
   const wPrime = slope;
+  if (!Number.isFinite(cp) || !Number.isFinite(wPrime) || cp <= 0 || wPrime <= 0) return null;
 
   // Calculate R-squared (Coefficient of Determination)
   // SST = sum((y - meanY)^2)
@@ -146,10 +190,22 @@ export function calculateCriticalPower(seasonBestCurve: BestEffort[]): CriticalP
   }
 
   const rSquared = 1 - ssRes / ssTotal;
+  if (!Number.isFinite(rSquared)) return null;
+
+  const roundedCp = Math.round(cp);
+  const roundedWPrime = Math.round(wPrime);
+  if (roundedCp <= 0 || roundedWPrime <= 0) return null;
+  const firstEffort = validEfforts[0];
+  const lastEffort = validEfforts.at(-1);
+  if (!firstEffort || !lastEffort) return null;
 
   return {
-    cp: Math.round(cp),
-    wPrime: Math.round(wPrime),
-    error: rSquared, // Using R2 as a quality metric
+    source: "observed-curve-fit",
+    cp: roundedCp,
+    wPrime: roundedWPrime,
+    error: rSquared,
+    fitMinDurationSeconds: firstEffort.duration_seconds,
+    fitMaxDurationSeconds: lastEffort.duration_seconds,
+    pointCount: n,
   };
 }

@@ -26,7 +26,7 @@ export type ProfileFields = Partial<
   >
 >;
 
-const MANUAL_FTP_UNIT = "ftp_manual";
+const MANUAL_FTP_UNIT = "watts";
 
 export async function updateOwnedProfileFields(
   tx: ProfileUpdateTransaction,
@@ -118,7 +118,6 @@ export async function replaceManualFtp(
     eq(activityEfforts.activity_category, "bike"),
     eq(activityEfforts.effort_type, "power"),
     eq(activityEfforts.duration_seconds, 1200),
-    eq(activityEfforts.unit, MANUAL_FTP_UNIT),
     isNull(activityEfforts.activity_id),
     eq(activityEfforts.source, "manual"),
     eq(activityEfforts.method, PROFILE_UPDATE_OVERRIDE_METHOD),

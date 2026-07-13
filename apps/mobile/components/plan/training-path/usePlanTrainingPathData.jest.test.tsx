@@ -1,4 +1,5 @@
 import { renderHook } from "@testing-library/react-native";
+import { toLocalDayEndIso, toLocalDayStartIso } from "@/lib/calendar/dateMath";
 
 const queryResult = {
   data: { items: [] },
@@ -101,6 +102,11 @@ const { buildTrainingPreferencesLoadTimeline: mockBuildTrainingPreferencesLoadTi
   jest.requireMock("@/lib/training-plan-form/projectionPreview");
 
 describe("usePlanTrainingPathData", () => {
+  it("uses device-local calendar boundaries for dated activity queries", () => {
+    expect(toLocalDayStartIso("2026-07-13")).toBe(new Date("2026-07-13T00:00:00").toISOString());
+    expect(toLocalDayEndIso("2026-07-13")).toBe(new Date("2026-07-13T23:59:59.999").toISOString());
+  });
+
   beforeEach(() => {
     mockUseTrainingPlanSnapshot.mockClear();
     mockUsePlanDashboardViewModel.mockClear();

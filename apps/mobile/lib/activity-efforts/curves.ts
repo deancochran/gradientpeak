@@ -2,14 +2,19 @@ import {
   activityEffortDefinitions,
   formatEffortDuration,
   getActivityEffortDefinitionId,
+  getActivityEffortObservationStatus as getCoreActivityEffortObservationStatus,
 } from "@repo/core/athlete-inputs";
 
 export type ActivityEffortCurveRow = {
   id: string;
+  activity_id: string | null;
   activity_category: string;
   duration_seconds: number;
   effort_type: string;
+  method?: string | null;
+  provenance?: unknown;
   recorded_at: string | Date;
+  source?: string | null;
   unit: string;
   value: number;
 };
@@ -29,11 +34,35 @@ export type ActivityEffortCurve = {
   points: ActivityEffortCurvePoint[];
 };
 
+export function getActivityEffortObservationStatus(
+  record: ActivityEffortCurveRow,
+): ReturnType<typeof getCoreActivityEffortObservationStatus> {
+  const definitionId = getActivityEffortDefinitionId(record);
+  const definition = activityEffortDefinitions.find((candidate) => candidate.id === definitionId);
+  if (!definition) return "invalid";
+
+  return getCoreActivityEffortObservationStatus({
+    activityId: record.activity_id,
+    activityCategory: definition.activityCategory,
+    effortType: definition.effortType,
+    durationSeconds: record.duration_seconds,
+    value: record.value,
+    unit: record.unit,
+    source: record.source,
+    method: record.method,
+    provenance: record.provenance,
+  });
+}
+
+export function getObservedActivityEffortRecords(records: ActivityEffortCurveRow[]) {
+  return records.filter((record) => getActivityEffortObservationStatus(record) === "observed");
+}
+
 export function buildBestActivityEffortCurve(
   records: ActivityEffortCurveRow[],
 ): ActivityEffortCurvePoint[] {
   const bestByDuration = new Map<number, ActivityEffortCurveRow>();
-  for (const record of records) {
+  for (const record of getObservedActivityEffortRecords(records)) {
     const current = bestByDuration.get(record.duration_seconds);
     if (!current || record.value > current.value)
       bestByDuration.set(record.duration_seconds, record);
@@ -78,7 +107,7 @@ export function buildActivityEffortCurves(
 }
 
 export function getActivityEffortCurveBest(records: ActivityEffortCurveRow[]) {
-  return records.reduce<ActivityEffortCurveRow | null>(
+  return getObservedActivityEffortRecords(records).reduce<ActivityEffortCurveRow | null>(
     (best, record) => (!best || record.value > best.value ? record : best),
     null,
   );

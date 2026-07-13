@@ -1,92 +1,27 @@
 import { describe, expect, it } from "vitest";
-import {
-  derivePowerCurveFromFTP,
-  estimatePowerForDuration,
-  estimateWPrime,
-  STANDARD_POWER_DURATIONS,
-} from "../power-curve";
+import { derivePowerCurveFromFTP, estimatePowerForDuration, estimateWPrime } from "../power-curve";
 
 describe("derivePowerCurveFromFTP", () => {
-  it("should generate 10 power efforts from FTP", () => {
-    const ftp = 250;
-    const curve = derivePowerCurveFromFTP(ftp);
-
-    expect(curve).toHaveLength(10);
-    expect(curve.length).toBe(STANDARD_POWER_DURATIONS.length);
+  it("returns only a modeled 60-minute FTP threshold anchor", () => {
+    expect(derivePowerCurveFromFTP(250)).toEqual([
+      {
+        duration_seconds: 3_600,
+        effort_type: "power",
+        value: 250,
+        unit: "watts",
+        activity_category: "bike",
+      },
+    ]);
   });
 
-  it("should have 60-minute effort close to FTP", () => {
-    const ftp = 250;
-    const curve = derivePowerCurveFromFTP(ftp);
-
-    const sixtyMinEffort = curve.find((e) => e.duration_seconds === 3600);
-    expect(sixtyMinEffort).toBeDefined();
-    // 60-min includes W'/3600, so slightly higher than FTP
-    expect(sixtyMinEffort?.value).toBeCloseTo(256, 0); // 250 + 20000/3600 ≈ 256
-  });
-
-  it("should have 5-second effort significantly higher than FTP", () => {
-    const ftp = 250;
-    const curve = derivePowerCurveFromFTP(ftp);
-
-    const fiveSecEffort = curve.find((e) => e.duration_seconds === 5);
-    expect(fiveSecEffort).toBeDefined();
-    expect(fiveSecEffort?.value).toBeGreaterThan(1000);
-    expect(fiveSecEffort?.value).toBe(4250); // 250 + 20000/5
-  });
-
-  it("should use custom W' if provided", () => {
-    const ftp = 250;
-    const wPrime = 25000; // Higher anaerobic capacity
-    const curve = derivePowerCurveFromFTP(ftp, wPrime);
-
-    const fiveSecEffort = curve.find((e) => e.duration_seconds === 5);
-    expect(fiveSecEffort).toBeDefined();
-    expect(fiveSecEffort?.value).toBe(5250); // 250 + 25000/5
-  });
-
-  it("should have correct format for all efforts", () => {
-    const ftp = 250;
-    const curve = derivePowerCurveFromFTP(ftp);
-
-    curve.forEach((effort) => {
-      expect(effort.effort_type).toBe("power");
-      expect(effort.unit).toBe("watts");
-      expect(effort.activity_category).toBe("bike");
-      expect(effort.value).toBeGreaterThan(0);
-      expect(effort.duration_seconds).toBeGreaterThan(0);
-    });
-  });
-
-  it("should have shorter durations produce higher power", () => {
-    const ftp = 250;
-    const curve = derivePowerCurveFromFTP(ftp);
-
-    // Power should decrease as duration increases (except FTP at 60m)
-    for (let i = 0; i < curve.length - 1; i++) {
-      expect(curve[i]!.value).toBeGreaterThanOrEqual(curve[i + 1]!.value);
-    }
-  });
-
-  it("should throw error for invalid FTP", () => {
-    expect(() => derivePowerCurveFromFTP(0)).toThrow("FTP must be greater than 0");
-    expect(() => derivePowerCurveFromFTP(-100)).toThrow("FTP must be greater than 0");
-  });
-
-  it("should throw error for negative W'", () => {
-    expect(() => derivePowerCurveFromFTP(250, -1000)).toThrow(
-      "W' (anaerobic capacity) must be non-negative",
-    );
-  });
-
-  it("should work with W' = 0", () => {
-    const ftp = 250;
-    const curve = derivePowerCurveFromFTP(ftp, 0);
-
-    // All efforts should equal FTP when W' = 0
-    curve.forEach((effort) => {
-      expect(effort.value).toBe(250);
-    });
+  it.each([
+    0,
+    -100,
+    3_001,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+  ])("rejects invalid FTP %s", (ftp) => {
+    expect(() => derivePowerCurveFromFTP(ftp)).toThrow("FTP must be between 1 and 3000 watts");
   });
 });
 
@@ -134,32 +69,31 @@ describe("estimateWPrime", () => {
 });
 
 describe("estimatePowerForDuration", () => {
-  it("should calculate power for specific duration", () => {
-    const ftp = 250;
-    const wPrime = 20000;
+  const observedModel = {
+    source: "observed-curve-fit" as const,
+    cp: 250,
+    wPrime: 20_000,
+    fitMinDurationSeconds: 180,
+    fitMaxDurationSeconds: 1_200,
+  };
 
-    const power5min = estimatePowerForDuration(ftp, wPrime, 300);
-    expect(power5min).toBe(317); // 250 + 20000/300
-
-    const power20min = estimatePowerForDuration(ftp, wPrime, 1200);
-    expect(power20min).toBe(267); // 250 + 20000/1200
+  it("predicts within an explicit observed fit span", () => {
+    expect(estimatePowerForDuration(observedModel, 300)).toBe(317);
+    expect(estimatePowerForDuration(observedModel, 1_200)).toBe(267);
   });
 
-  it("should match curve values", () => {
-    const ftp = 250;
-    const wPrime = 20000;
-    const curve = derivePowerCurveFromFTP(ftp, wPrime);
-
-    const fiveMinEffort = curve.find((e) => e.duration_seconds === 300);
-    expect(fiveMinEffort).toBeDefined();
-    const calculatedPower = estimatePowerForDuration(ftp, wPrime, 300);
-
-    expect(calculatedPower).toBe(fiveMinEffort?.value);
+  it("rejects extrapolation outside the fit span and absolute CP domain", () => {
+    expect(() => estimatePowerForDuration(observedModel, 179)).toThrow("observed fit span");
+    expect(() => estimatePowerForDuration(observedModel, 1_201)).toThrow("observed fit span");
+    expect(() =>
+      estimatePowerForDuration({ ...observedModel, fitMinDurationSeconds: 60 }, 120),
+    ).toThrow("observed fit span");
   });
 
-  it("should throw error for invalid inputs", () => {
-    expect(() => estimatePowerForDuration(0, 20000, 300)).toThrow();
-    expect(() => estimatePowerForDuration(250, 20000, 0)).toThrow();
-    expect(() => estimatePowerForDuration(250, -1000, 300)).toThrow();
+  it("rejects invalid CP/W' parameters", () => {
+    expect(() => estimatePowerForDuration({ ...observedModel, wPrime: 0 }, 300)).toThrow();
+    expect(() =>
+      estimatePowerForDuration({ ...observedModel, fitMinDurationSeconds: Number.NaN }, 300),
+    ).toThrow("valid observed CP/W' fit");
   });
 });

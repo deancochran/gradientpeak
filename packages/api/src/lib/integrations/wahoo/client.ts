@@ -3,7 +3,7 @@
  * Handles communication with Wahoo's API for plans and workouts
  */
 
-import type { ActivityType } from "./activity-type-utils";
+import type { WahooActivityType } from "./activity-type-utils";
 
 const WAHOO_API_BASE = "https://api.wahooligan.com";
 
@@ -16,7 +16,7 @@ export interface WahooPlanData {
   structure: Record<string, any>;
   name: string;
   description: string;
-  activityType: ActivityType;
+  activityType: WahooActivityType;
   externalId: string; // Your activity_plan_id (from activity_plans table)
 }
 

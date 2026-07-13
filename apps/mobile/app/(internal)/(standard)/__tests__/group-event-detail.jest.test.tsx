@@ -5,7 +5,6 @@ import GroupEventDetailRoute from "../group-event-detail";
 
 const routerPushMock = jest.fn();
 const detailRefetchMock = jest.fn(async () => undefined);
-const copySeriesActivityPlansToOccurrenceMock = jest.fn(async () => ({}));
 const cancelEventMock = jest.fn(async () => ({}));
 const rsvpMock = jest.fn(async () => ({}));
 const rsvpEventSeriesMock = jest.fn(async () => ({}));
@@ -122,11 +121,9 @@ jest.mock("@/lib/groups", () => ({
   useGroupDetailViewModel: (...args: unknown[]) => useGroupDetailViewModelMock(...args),
   useGroupEventActions: () => ({
     cancelEvent: cancelEventMock,
-    copySeriesActivityPlansToOccurrence: copySeriesActivityPlansToOccurrenceMock,
     rsvp: rsvpMock,
     rsvpEventSeries: rsvpEventSeriesMock,
     cancelMutation: { isPending: false },
-    copySeriesActivityPlansToOccurrenceMutation: { isPending: false },
     rsvpMutation: { isPending: false },
     rsvpEventSeriesMutation: { isPending: false },
   }),
@@ -180,18 +177,10 @@ describe("group event detail route", () => {
     expect(screen.queryByTestId("group-event-detail-cancel")).toBeNull();
   });
 
-  it("copies series activity plans into an overridden occurrence", async () => {
+  it("does not expose removed copy-series-plans management for occurrences", () => {
     renderNative(<GroupEventDetailRoute />);
 
-    fireEvent.press(screen.getByTestId("group-event-detail-copy-series-plans"));
-
-    await waitFor(() => {
-      expect(copySeriesActivityPlansToOccurrenceMock).toHaveBeenCalledWith({
-        groupEventOccurrenceId: "99999999-9999-4999-8999-999999999999",
-        groupEventSeriesId: "88888888-8888-4888-8888-888888888888",
-      });
-    });
-    expect(detailRefetchMock).toHaveBeenCalled();
+    expect(screen.queryByTestId("group-event-detail-copy-series-plans")).toBeNull();
   });
 
   it("offers separate edit actions for the occurrence and series", () => {
@@ -225,11 +214,7 @@ describe("group event detail route", () => {
     fireEvent.press(screen.getByTestId("mock-rsvp-series"));
 
     await waitFor(() => {
-      expect(rsvpMock).toHaveBeenCalledWith(
-        "99999999-9999-4999-8999-999999999999",
-        "accepted",
-        "44444444-4444-4444-8444-444444444444",
-      );
+      expect(rsvpMock).toHaveBeenCalledWith("99999999-9999-4999-8999-999999999999", "accepted");
       expect(rsvpEventSeriesMock).toHaveBeenCalledWith({
         groupEventSeriesId: "88888888-8888-4888-8888-888888888888",
         status: "accepted",

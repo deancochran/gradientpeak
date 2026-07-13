@@ -1,4 +1,4 @@
-import { parseActivityFile } from "@repo/core";
+import { parseActivityFile } from "@repo/core/server/activity-files";
 import { useCallback, useState } from "react";
 import { api } from "@/lib/api";
 

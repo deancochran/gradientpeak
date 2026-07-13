@@ -57,13 +57,7 @@ export const likeEntityTypeEnum = pgEnum("like_entity_type", [
 
 export const eventStatusEnum = pgEnum("event_status", ["scheduled", "completed", "cancelled"]);
 
-export const eventTypeEnum = pgEnum("event_type", [
-  "planned_activity",
-  "rest_day",
-  "race",
-  "custom",
-  "imported",
-]);
+export const eventTypeEnum = pgEnum("event_type", ["planned", "race_target", "custom", "imported"]);
 
 export const genderEnum = pgEnum("gender", ["male", "female", "other"]);
 

@@ -8,7 +8,6 @@ const alertMock = jest.fn();
 const localSearchParamsMock = { groupEventId: "33333333-3333-4333-8333-333333333333" };
 const refetchMock = jest.fn(async () => undefined);
 const rsvpEventSeriesMock = jest.fn(async () => undefined);
-const copySeriesActivityPlansToOccurrenceMock = jest.fn(async () => undefined);
 const cancelEventMock = jest.fn(async () => undefined);
 const rsvpMock = jest.fn(async () => undefined);
 
@@ -167,8 +166,6 @@ jest.mock("@/lib/groups", () => ({
   useGroupEventActions: () => ({
     cancelEvent: cancelEventMock,
     cancelMutation: { isPending: false },
-    copySeriesActivityPlansToOccurrence: copySeriesActivityPlansToOccurrenceMock,
-    copySeriesActivityPlansToOccurrenceMutation: { isPending: false },
     rsvp: rsvpMock,
     rsvpEventSeries: rsvpEventSeriesMock,
     rsvpEventSeriesMutation: { isPending: false },
@@ -267,7 +264,7 @@ describe("group event detail route", () => {
     });
   });
 
-  it("exposes copy-series-plans management only for manageable occurrences", async () => {
+  it("does not expose removed copy-series-plans management for occurrences", () => {
     detailVm.event = {
       ...baseEvent,
       id: "44444444-4444-4444-8444-444444444444",
@@ -279,14 +276,6 @@ describe("group event detail route", () => {
 
     renderNative(<GroupEventDetailRoute />);
 
-    fireEvent.press(screen.getByTestId("group-event-detail-copy-series-plans"));
-
-    await waitFor(() => {
-      expect(copySeriesActivityPlansToOccurrenceMock).toHaveBeenCalledWith({
-        groupEventOccurrenceId: "44444444-4444-4444-8444-444444444444",
-        groupEventSeriesId: "33333333-3333-4333-8333-333333333333",
-      });
-    });
-    expect(refetchMock).toHaveBeenCalled();
+    expect(screen.queryByTestId("group-event-detail-copy-series-plans")).toBeNull();
   });
 });

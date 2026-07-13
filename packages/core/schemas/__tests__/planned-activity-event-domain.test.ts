@@ -25,9 +25,10 @@ describe("planned activity event domain schemas", () => {
     expect(parsed.success).toBe(true);
   });
 
-  it("maps legacy event types to the new core event domain", () => {
-    expect(eventTypeInputSchema.parse("planned_activity")).toBe("planned");
-    expect(eventTypeInputSchema.parse("race")).toBe("race_target");
+  it("rejects removed legacy event type labels", () => {
+    expect(eventTypeInputSchema.safeParse("planned_activity").success).toBe(false);
+    expect(eventTypeInputSchema.safeParse("race").success).toBe(false);
+    expect(eventTypeInputSchema.safeParse("rest_day").success).toBe(false);
   });
 
   it("validates RRULE-compatible recurrence strings", () => {
@@ -300,9 +301,7 @@ describe("planned activity event domain schemas", () => {
     expect(timestamped.success).toBe(false);
   });
 
-  it("rejects new rest-day writes while preserving legacy event-type parsing", () => {
-    expect(eventTypeInputSchema.parse("rest_day")).toBe("rest_day");
-
+  it("rejects rest-day event writes", () => {
     expect(
       eventCreateSchema.safeParse({
         event_type: "rest_day",

@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import {
-  copySeriesActivityPlansToOccurrenceInputSchema,
   createOneOffGroupEventInputSchema,
   createRecurringEventSeriesInputSchema,
   GROUP_EVENT_RSVP_STATUSES,
@@ -13,7 +12,6 @@ import {
 import {
   activityPlans,
   activityRoutes,
-  groupEventActivityPlans,
   groupEventRsvps,
   groupEventSeriesRsvps,
   groupEvents,
@@ -30,8 +28,6 @@ import {
   type GroupEventSeriesRsvpRow,
   type GroupEventSummaryGroupRow,
   getAcceptedRsvpCount,
-  getResolvedActivityPlanOptions,
-  serializeActivityPlanOption,
   serializeGroupEvent,
   serializeGroupEventsForViewer,
   serializeRsvp,
@@ -61,15 +57,8 @@ const seriesOccurrencesInputSchema = groupEventIdInputSchema.extend({
   limit: z.number().int().min(1).max(50).default(20),
 });
 const myCalendarGroupEventsInputSchema = listOneOffGroupEventsInputSchema.omit({ groupId: true });
-const currentEventPlanOptionsInputSchema = z.object({
-  groupId: z.string().uuid("Invalid group ID"),
-  referenceAt: z.string().datetime("Invalid datetime").optional(),
-  lookaheadEndsAt: z.string().datetime("Invalid datetime").optional(),
-});
 
 const GROUP_EVENT_RSVP_STATUS_ACCEPTED = GROUP_EVENT_RSVP_STATUSES[0];
-const GROUP_EVENT_RSVP_STATUS_DECLINED = GROUP_EVENT_RSVP_STATUSES[1];
-const GROUP_EVENT_RSVP_STATUS_TENTATIVE = GROUP_EVENT_RSVP_STATUSES[2];
 
 type MaterializedGroupEventOccurrence = {
   endsAt: string | null;
@@ -195,15 +184,6 @@ function pageResult<T>(items: T[], limit: number, getCursor: (item: T) => string
   };
 }
 
-function assertUniqueActivityPlanIds(activityPlans: { activityPlanId: string }[] | undefined) {
-  if (!activityPlans) return;
-
-  const uniqueIds = new Set(activityPlans.map((option) => option.activityPlanId));
-  if (uniqueIds.size !== activityPlans.length) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Activity plan options must be unique" });
-  }
-}
-
 function canUseActivityPlanForGroupEvent(
   activityPlan: Pick<
     typeof activityPlans.$inferSelect,
@@ -230,13 +210,12 @@ function canUseRouteForGroupEvent(
 
 async function assertActivityPlansAvailableForGroupEvent(
   db: Pick<ReturnType<typeof getRequiredDb>, "select">,
-  activityPlanInputs: { activityPlanId: string }[] | undefined,
+  activityPlanId: string | null | undefined,
   profileId: string,
 ) {
-  if (!activityPlanInputs?.length) return;
+  if (!activityPlanId) return;
 
-  const activityPlanIds = activityPlanInputs.map((option) => option.activityPlanId);
-  const rows = await db
+  const [row] = await db
     .select({
       id: activityPlans.id,
       profile_id: activityPlans.profile_id,
@@ -244,15 +223,10 @@ async function assertActivityPlansAvailableForGroupEvent(
       is_system_template: activityPlans.is_system_template,
     })
     .from(activityPlans)
-    .where(inArray(activityPlans.id, activityPlanIds));
+    .where(eq(activityPlans.id, activityPlanId))
+    .limit(1);
 
-  const accessibleIds = new Set(
-    rows
-      .filter((activityPlan) => canUseActivityPlanForGroupEvent(activityPlan, profileId))
-      .map((activityPlan) => activityPlan.id),
-  );
-
-  if (accessibleIds.size !== activityPlanIds.length) {
+  if (!row || !canUseActivityPlanForGroupEvent(row, profileId)) {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "Activity plan is not available for this group event",
@@ -289,12 +263,12 @@ async function assertRouteAvailableForGroupEvent(
 async function assertGroupEventResourcesAvailable(
   db: Pick<ReturnType<typeof getRequiredDb>, "select">,
   input: {
-    activityPlans?: { activityPlanId: string }[];
+    activityPlanId?: string | null;
     profileId: string;
     routeId?: string | null;
   },
 ) {
-  await assertActivityPlansAvailableForGroupEvent(db, input.activityPlans, input.profileId);
+  await assertActivityPlansAvailableForGroupEvent(db, input.activityPlanId, input.profileId);
   await assertRouteAvailableForGroupEvent(db, input.routeId, input.profileId);
 }
 
@@ -399,27 +373,6 @@ async function getGroupEventCursorFilter(
   return or(
     gt(groupEvents.starts_at, cursorEvent.starts_at),
     and(eq(groupEvents.starts_at, cursorEvent.starts_at), gt(groupEvents.id, cursorEvent.id)),
-  );
-}
-
-async function replaceActivityPlanOptions(
-  db: Pick<ReturnType<typeof getRequiredDb>, "delete" | "insert">,
-  groupEventId: string,
-  activityPlans: { activityPlanId: string; label?: string | null; sortOrder?: number }[],
-) {
-  await db
-    .delete(groupEventActivityPlans)
-    .where(eq(groupEventActivityPlans.group_event_id, groupEventId));
-
-  if (activityPlans.length === 0) return;
-
-  await db.insert(groupEventActivityPlans).values(
-    activityPlans.map((option, index) => ({
-      group_event_id: groupEventId,
-      activity_plan_id: option.activityPlanId,
-      label: option.label ?? null,
-      sort_order: option.sortOrder ?? index,
-    })),
   );
 }
 
@@ -536,44 +489,35 @@ export const groupEventsRouter = createTRPCRouter({
   create: protectedProcedure
     .input(createOneOffGroupEventInputSchema)
     .mutation(async ({ ctx, input }) => {
-      assertUniqueActivityPlanIds(input.activityPlans);
-
       const db = getRequiredDb(ctx);
       const profileId = await getCurrentProfileId(db, ctx.session.user.id);
       const group = await getActiveGroup(db, input.groupId);
       await requireGroupAdmin(db, input.groupId, profileId);
       await assertGroupEventResourcesAvailable(db, {
-        activityPlans: input.activityPlans,
+        activityPlanId: input.activityPlanId,
         profileId,
         routeId: input.routeId,
       });
 
-      const event = await db.transaction(async (tx) => {
-        const [createdEvent] = await tx
-          .insert(groupEvents)
-          .values({
-            group_id: input.groupId,
-            created_by_profile_id: profileId,
-            title: input.title,
-            description: input.description ?? null,
-            starts_at: new Date(input.startsAt),
-            ends_at: parseDateTime(input.endsAt),
-            timezone: input.timezone ?? null,
-            location_name: input.locationName ?? null,
-            route_id: input.routeId ?? null,
-          })
-          .returning();
+      const [event] = await db
+        .insert(groupEvents)
+        .values({
+          group_id: input.groupId,
+          created_by_profile_id: profileId,
+          title: input.title,
+          description: input.description ?? null,
+          starts_at: new Date(input.startsAt),
+          ends_at: parseDateTime(input.endsAt),
+          timezone: input.timezone ?? null,
+          location_name: input.locationName ?? null,
+          route_id: input.routeId ?? null,
+          activity_plan_id: input.activityPlanId ?? null,
+        })
+        .returning();
 
-        if (!createdEvent) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Group event could not be created" });
-        }
-
-        if (input.activityPlans?.length) {
-          await replaceActivityPlanOptions(tx, createdEvent.id, input.activityPlans);
-        }
-
-        return createdEvent;
-      });
+      if (!event) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Group event could not be created" });
+      }
 
       const [serializedEvent] = await serializeGroupEventsForViewer(db, [event], profileId, {
         groupById: new Map([[group.id, group]]),
@@ -584,14 +528,12 @@ export const groupEventsRouter = createTRPCRouter({
   createRecurringEventSeries: protectedProcedure
     .input(createRecurringEventSeriesInputSchema)
     .mutation(async ({ ctx, input }) => {
-      assertUniqueActivityPlanIds(input.activityPlans);
-
       const db = getRequiredDb(ctx);
       const profileId = await getCurrentProfileId(db, ctx.session.user.id);
       await getActiveGroup(db, input.groupId);
       await requireGroupAdmin(db, input.groupId, profileId);
       await assertGroupEventResourcesAvailable(db, {
-        activityPlans: input.activityPlans,
+        activityPlanId: input.activityPlanId,
         profileId,
         routeId: input.routeId,
       });
@@ -611,6 +553,7 @@ export const groupEventsRouter = createTRPCRouter({
             recurrence_timezone: input.recurrenceTimezone ?? input.timezone,
             location_name: input.locationName ?? null,
             route_id: input.routeId ?? null,
+            activity_plan_id: input.activityPlanId ?? null,
           })
           .returning();
 
@@ -619,10 +562,6 @@ export const groupEventsRouter = createTRPCRouter({
             code: "BAD_REQUEST",
             message: "Recurring group event series could not be created",
           });
-        }
-
-        if (input.activityPlans?.length) {
-          await replaceActivityPlanOptions(tx, createdEvent.id, input.activityPlans);
         }
 
         const occurrences = buildMaterializedGroupEventOccurrences({
@@ -647,6 +586,7 @@ export const groupEventsRouter = createTRPCRouter({
                 timezone: null,
                 location_name: null,
                 route_id: null,
+                activity_plan_id: null,
               })),
             )
             .onConflictDoNothing();
@@ -701,63 +641,15 @@ export const groupEventsRouter = createTRPCRouter({
   update: protectedProcedure
     .input(updateOneOffGroupEventInputSchema)
     .mutation(async ({ ctx, input }) => {
-      assertUniqueActivityPlanIds(input.activityPlans);
-
       const db = getRequiredDb(ctx);
       const profileId = await getCurrentProfileId(db, ctx.session.user.id);
       const { event: existingEvent } = await getGroupEventWithActiveGroup(db, input.groupEventId);
       await requireGroupAdmin(db, existingEvent.group_id, profileId);
       await assertGroupEventResourcesAvailable(db, {
-        activityPlans: input.activityPlans,
+        activityPlanId: input.activityPlanId,
         profileId,
         routeId: input.routeId,
       });
-
-      const event = await db.transaction(async (tx) => {
-        const [updatedEvent] = await tx
-          .update(groupEvents)
-          .set({
-            ...(input.title !== undefined ? { title: input.title } : {}),
-            ...(input.description !== undefined ? { description: input.description ?? null } : {}),
-            ...(input.startsAt !== undefined ? { starts_at: new Date(input.startsAt) } : {}),
-            ...(input.endsAt !== undefined ? { ends_at: parseDateTime(input.endsAt) } : {}),
-            ...(input.timezone !== undefined ? { timezone: input.timezone ?? null } : {}),
-            ...(input.locationName !== undefined
-              ? { location_name: input.locationName ?? null }
-              : {}),
-            ...(input.routeId !== undefined ? { route_id: input.routeId ?? null } : {}),
-            ...(input.cancelledAt !== undefined
-              ? { cancelled_at: parseDateTime(input.cancelledAt) }
-              : {}),
-            updated_at: new Date(),
-          })
-          .where(eq(groupEvents.id, input.groupEventId))
-          .returning();
-
-        if (!updatedEvent) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Group event not found" });
-        }
-
-        if (input.activityPlans !== undefined) {
-          await replaceActivityPlanOptions(tx, input.groupEventId, input.activityPlans);
-        }
-
-        return updatedEvent;
-      });
-
-      const [serializedEvent] = await serializeGroupEventsForViewer(db, [event], profileId);
-      return { event: serializedEvent };
-    }),
-
-  updateEventOccurrence: protectedProcedure
-    .input(updateEventOccurrenceInputSchema)
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      const profileId = await getCurrentProfileId(db, ctx.session.user.id);
-      const { event: existingEvent } = await getGroupEventWithActiveGroup(db, input.groupEventId);
-      assertSeriesOccurrence(existingEvent);
-      await requireGroupAdmin(db, existingEvent.group_id, profileId);
-      await assertRouteAvailableForGroupEvent(db, input.routeId, profileId);
 
       const [event] = await db
         .update(groupEvents)
@@ -771,6 +663,9 @@ export const groupEventsRouter = createTRPCRouter({
             ? { location_name: input.locationName ?? null }
             : {}),
           ...(input.routeId !== undefined ? { route_id: input.routeId ?? null } : {}),
+          ...(input.activityPlanId !== undefined
+            ? { activity_plan_id: input.activityPlanId ?? null }
+            : {}),
           ...(input.cancelledAt !== undefined
             ? { cancelled_at: parseDateTime(input.cancelledAt) }
             : {}),
@@ -787,62 +682,49 @@ export const groupEventsRouter = createTRPCRouter({
       return { event: serializedEvent };
     }),
 
-  copySeriesActivityPlansToOccurrence: protectedProcedure
-    .input(copySeriesActivityPlansToOccurrenceInputSchema)
+  updateEventOccurrence: protectedProcedure
+    .input(updateEventOccurrenceInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       const profileId = await getCurrentProfileId(db, ctx.session.user.id);
-      const [{ event: series }, { event: occurrence }] = await Promise.all([
-        getGroupEventWithActiveGroup(db, input.groupEventSeriesId),
-        getGroupEventWithActiveGroup(db, input.groupEventOccurrenceId),
-      ]);
-      assertSeriesRoot(series);
-      assertSeriesOccurrence(occurrence);
-
-      if (occurrence.series_id !== series.id || occurrence.group_id !== series.group_id) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Occurrence does not belong to the recurring series",
-        });
-      }
-
-      await requireGroupAdmin(db, series.group_id, profileId);
-
-      const copiedOptions = await db.transaction(async (tx) => {
-        const seriesOptions = await tx
-          .select()
-          .from(groupEventActivityPlans)
-          .where(eq(groupEventActivityPlans.group_event_id, series.id))
-          .orderBy(
-            asc(groupEventActivityPlans.sort_order),
-            asc(groupEventActivityPlans.created_at),
-          );
-
-        if (seriesOptions.length > 0) {
-          await tx
-            .insert(groupEventActivityPlans)
-            .values(
-              seriesOptions.map((option) => ({
-                group_event_id: occurrence.id,
-                activity_plan_id: option.activity_plan_id,
-                label: option.label,
-                sort_order: option.sort_order,
-              })),
-            )
-            .onConflictDoNothing();
-        }
-
-        return tx
-          .select()
-          .from(groupEventActivityPlans)
-          .where(eq(groupEventActivityPlans.group_event_id, occurrence.id))
-          .orderBy(
-            asc(groupEventActivityPlans.sort_order),
-            asc(groupEventActivityPlans.created_at),
-          );
+      const { event: existingEvent } = await getGroupEventWithActiveGroup(db, input.groupEventId);
+      assertSeriesOccurrence(existingEvent);
+      await requireGroupAdmin(db, existingEvent.group_id, profileId);
+      await assertGroupEventResourcesAvailable(db, {
+        activityPlanId: input.activityPlanId,
+        profileId,
+        routeId: input.routeId,
       });
 
-      return { activityPlanOptions: copiedOptions.map(serializeActivityPlanOption) };
+      const [event] = await db
+        .update(groupEvents)
+        .set({
+          ...(input.title !== undefined ? { title: input.title } : {}),
+          ...(input.description !== undefined ? { description: input.description ?? null } : {}),
+          ...(input.startsAt !== undefined ? { starts_at: new Date(input.startsAt) } : {}),
+          ...(input.endsAt !== undefined ? { ends_at: parseDateTime(input.endsAt) } : {}),
+          ...(input.timezone !== undefined ? { timezone: input.timezone ?? null } : {}),
+          ...(input.locationName !== undefined
+            ? { location_name: input.locationName ?? null }
+            : {}),
+          ...(input.routeId !== undefined ? { route_id: input.routeId ?? null } : {}),
+          ...(input.activityPlanId !== undefined
+            ? { activity_plan_id: input.activityPlanId ?? null }
+            : {}),
+          ...(input.cancelledAt !== undefined
+            ? { cancelled_at: parseDateTime(input.cancelledAt) }
+            : {}),
+          updated_at: new Date(),
+        })
+        .where(eq(groupEvents.id, input.groupEventId))
+        .returning();
+
+      if (!event) {
+        throw new TRPCError({ code: "NOT_FOUND", message: "Group event not found" });
+      }
+
+      const [serializedEvent] = await serializeGroupEventsForViewer(db, [event], profileId);
+      return { event: serializedEvent };
     }),
 
   cancel: protectedProcedure.input(cancelGroupEventInputSchema).mutation(async ({ ctx, input }) => {
@@ -910,48 +792,17 @@ export const groupEventsRouter = createTRPCRouter({
         };
       }
 
-      const activityPlanOptions = await getResolvedActivityPlanOptions(db, event);
-
-      let selectedGroupEventActivityPlanId = input.selectedGroupEventActivityPlanId ?? null;
-      if (selectedGroupEventActivityPlanId) {
-        const selectedOption = activityPlanOptions.find(
-          (option) => option.id === selectedGroupEventActivityPlanId,
-        );
-        if (!selectedOption) {
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Selected activity plan option is not part of this event",
-          });
-        }
-      }
-
-      if (
-        input.status === GROUP_EVENT_RSVP_STATUS_ACCEPTED &&
-        !selectedGroupEventActivityPlanId &&
-        activityPlanOptions.length > 0
-      ) {
-        selectedGroupEventActivityPlanId = activityPlanOptions[0]?.id ?? null;
-      }
-      if (
-        input.status === GROUP_EVENT_RSVP_STATUS_DECLINED ||
-        input.status === GROUP_EVENT_RSVP_STATUS_TENTATIVE
-      ) {
-        selectedGroupEventActivityPlanId = null;
-      }
-
       const [rsvp] = await db
         .insert(groupEventRsvps)
         .values({
           group_event_id: input.groupEventId,
           profile_id: profileId,
           status: input.status,
-          selected_group_event_activity_plan_id: selectedGroupEventActivityPlanId,
         })
         .onConflictDoUpdate({
           target: [groupEventRsvps.group_event_id, groupEventRsvps.profile_id],
           set: {
             status: input.status,
-            selected_group_event_activity_plan_id: selectedGroupEventActivityPlanId,
             updated_at: new Date(),
           },
         })
@@ -983,12 +834,10 @@ export const groupEventsRouter = createTRPCRouter({
             ),
           );
 
-        const activityPlanOptions = await getResolvedActivityPlanOptions(db, event);
         const acceptedRsvpCount = await getAcceptedRsvpCount(db, event.id);
         return {
           event: serializeGroupEvent(event, {
             acceptedRsvpCount,
-            activityPlanOptions,
             viewerRsvp: null,
             viewerSeriesRsvp: null,
           }),
@@ -1009,62 +858,14 @@ export const groupEventsRouter = createTRPCRouter({
         })
         .returning();
 
-      const activityPlanOptions = await getResolvedActivityPlanOptions(db, event);
       const acceptedRsvpCount = await getAcceptedRsvpCount(db, event.id);
       return {
         event: serializeGroupEvent(event, {
           acceptedRsvpCount,
-          activityPlanOptions,
           viewerRsvp: null,
           viewerSeriesRsvp: rsvp as GroupEventSeriesRsvpRow,
         }),
         rsvp: serializeSeriesRsvp(rsvp as GroupEventSeriesRsvpRow),
-      };
-    }),
-
-  currentEventPlanOptions: protectedProcedure
-    .input(currentEventPlanOptionsInputSchema)
-    .query(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      const profileId = await getCurrentProfileId(db, ctx.session.user.id);
-      const group = await getActiveGroup(db, input.groupId);
-      await requireGroupViewAccess(db, {
-        groupId: group.id,
-        profileId,
-        accessLevel: group.access_level,
-      });
-
-      const referenceAt = input.referenceAt ? new Date(input.referenceAt) : new Date();
-      const [event] = await db
-        .select()
-        .from(groupEvents)
-        .where(
-          and(
-            eq(groupEvents.group_id, group.id),
-            isNull(groupEvents.cancelled_at),
-            // Series roots are templates; this query only returns concrete one-off or occurrence rows.
-            or(isNull(groupEvents.recurrence_rule), isNotNull(groupEvents.series_id)),
-            or(
-              gte(groupEvents.starts_at, referenceAt),
-              and(lte(groupEvents.starts_at, referenceAt), gte(groupEvents.ends_at, referenceAt)),
-            ),
-            input.lookaheadEndsAt
-              ? lte(groupEvents.starts_at, new Date(input.lookaheadEndsAt))
-              : undefined,
-          ),
-        )
-        .orderBy(asc(groupEvents.starts_at), asc(groupEvents.id))
-        .limit(1);
-
-      if (!event) {
-        return { event: null, activityPlanOptions: [] };
-      }
-
-      const activityPlanOptions = await getResolvedActivityPlanOptions(db, event);
-      const [serializedEvent] = await serializeGroupEventsForViewer(db, [event], profileId);
-      return {
-        event: serializedEvent,
-        activityPlanOptions: activityPlanOptions.map(serializeActivityPlanOption),
       };
     }),
 

@@ -55,9 +55,6 @@ export async function invalidateGroupEventQueries(
     utils.groups.events.seriesOccurrences.invalidate(),
     utils.groups.events.myCalendarGroupEvents.invalidate(),
     utils.groups.events.myUpcomingGroupEvents.invalidate(),
-    input?.groupId
-      ? utils.groups.events.currentEventPlanOptions.invalidate({ groupId: input.groupId })
-      : utils.groups.events.currentEventPlanOptions.invalidate(),
   ]);
 }
 

@@ -94,7 +94,6 @@ export interface RecordingConfigInput {
   // Plan details (if planned)
   plan?: {
     hasStructure: boolean; // Has steps to follow
-    hasRoute: boolean; // Has GPS route
     stepCount: number;
     requiresManualAdvance: boolean; // Any "untilFinished" steps
     structure?: ActivityPlanStructureV2 | null;

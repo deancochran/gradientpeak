@@ -332,7 +332,6 @@ describe("homeRouter", () => {
       atl: 51.1,
       tsb: -8.9,
       loadBalanceStatus: "negative_balance",
-      form: "negative_balance",
     });
     expect(result.consistency).toEqual({ streak: 2, weeklyCount: 2 });
     expect(result.weeklySummary).toEqual({
@@ -375,11 +374,11 @@ describe("homeRouter", () => {
       estimatedDistance: 20000,
       estimatedTSS: 90,
     });
-    expect(result.projectedFitness).toEqual([
+    expect(result.projectedLoad).toEqual([
       { date: "2026-04-04", ctl: 43.1, atl: 49.3, tsb: -6.2, plannedTss: 90 },
       { date: "2026-04-05", ctl: 44.6, atl: 48.2, tsb: -3.6, plannedTss: 60 },
     ]);
-    expect(result.projectedLoad).toEqual(result.projectedFitness);
+    expect(result).not.toHaveProperty("projectedFitness");
     expect(JSON.stringify(result)).not.toMatch(/productive|fatigued|overreach/i);
     expect(result.goalMetrics).toEqual({
       targetCTL: 60,

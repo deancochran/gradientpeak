@@ -1,5 +1,4 @@
 import type {
-  groupEventActivityPlans,
   groupEventRsvps,
   groupEvents,
   groupInvitations,
@@ -12,8 +11,6 @@ export const GROUP_TEST_IDS = {
   viewerId: "11111111-1111-4111-8111-111111111111",
   groupId: "22222222-2222-4222-8222-222222222222",
   eventId: "33333333-3333-4333-8333-333333333333",
-  optionId: "44444444-4444-4444-8444-444444444444",
-  otherOptionId: "55555555-5555-4555-8555-555555555555",
   activityPlanId: "66666666-6666-4666-8666-666666666666",
   targetId: "33333333-3333-4333-8333-333333333333",
   invitationId: "44444444-4444-4444-8444-444444444444",
@@ -56,25 +53,12 @@ export function buildGroupEventRow(overrides: Partial<typeof groupEvents.$inferS
     occurrence_key: null,
     location_name: "Clubhouse",
     route_id: null,
+    activity_plan_id: null,
     cancelled_at: null,
     created_at: GROUP_TEST_NOW,
     updated_at: GROUP_TEST_NOW,
     ...overrides,
   } as typeof groupEvents.$inferSelect;
-}
-
-export function buildGroupEventActivityPlanRow(
-  overrides: Partial<typeof groupEventActivityPlans.$inferSelect> = {},
-) {
-  return {
-    id: GROUP_TEST_IDS.optionId,
-    group_event_id: GROUP_TEST_IDS.eventId,
-    activity_plan_id: GROUP_TEST_IDS.activityPlanId,
-    label: "A Group",
-    sort_order: 0,
-    created_at: GROUP_TEST_NOW,
-    ...overrides,
-  } as typeof groupEventActivityPlans.$inferSelect;
 }
 
 export function buildGroupEventRsvpRow(
@@ -84,7 +68,6 @@ export function buildGroupEventRsvpRow(
     group_event_id: GROUP_TEST_IDS.eventId,
     profile_id: GROUP_TEST_IDS.viewerId,
     status: "accepted",
-    selected_group_event_activity_plan_id: GROUP_TEST_IDS.optionId,
     created_at: GROUP_TEST_NOW,
     updated_at: GROUP_TEST_NOW,
     ...overrides,

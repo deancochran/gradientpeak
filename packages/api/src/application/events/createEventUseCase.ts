@@ -12,8 +12,8 @@ type ProtectedContext = Context & {
   };
 };
 
-type CoreEventType = "planned" | "rest_day" | "race_target" | "custom" | "imported";
-type DbEventType = "planned_activity" | "rest_day" | "race" | "custom" | "imported";
+type CoreEventType = "planned" | "race_target" | "custom" | "imported";
+type DbEventType = "planned" | "race_target" | "custom" | "imported";
 
 type NormalizedCreateInput = {
   activityPlanId: string | null;

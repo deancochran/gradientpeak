@@ -44,12 +44,6 @@ function estimationMemoKey(plan: SupportedActivityPlan, route: unknown): string 
   });
 }
 
-function shouldUseRouteForSavedPlanMetrics(structure: unknown): boolean {
-  if (!structure || typeof structure !== "object") return true;
-  const intervals = (structure as { intervals?: unknown }).intervals;
-  return !Array.isArray(intervals) || intervals.length === 0;
-}
-
 export async function getActivityPlanDerivedMetrics<TPlan extends SupportedActivityPlan>(
   plan: TPlan,
   db: DrizzleDbClient,
@@ -79,25 +73,15 @@ export async function getActivityPlansDerivedMetrics<TPlan extends SupportedActi
   if (normalizedPlans.length === 0) return [];
 
   const asOf = options?.asOf ?? new Date();
-  const routeIds = [
-    ...new Set(normalizedPlans.flatMap((plan) => (plan.route_id ? [plan.route_id] : []))),
-  ];
+  const routeIds: string[] = [];
   // This is the sole persistence read for estimation inputs in this request. The immutable
   // snapshot is shared by every plan and its maps memoize repeated route lookups locally.
   const snapshot = await loadEstimationSnapshot(estimationStore, userId, routeIds, asOf);
   const estimateMemo = new Map<string, MemoizedEstimate>();
 
   return normalizedPlans.map((plan) => {
-    const routeFacts = plan.route_id ? snapshot.getRoute(plan.route_id) : undefined;
     try {
-      const route =
-        routeFacts && shouldUseRouteForSavedPlanMetrics(plan.structure)
-          ? {
-              distance_meters: routeFacts.distance_meters ?? 0,
-              total_ascent: routeFacts.total_ascent ?? 0,
-              total_descent: routeFacts.total_descent ?? 0,
-            }
-          : undefined;
+      const route = undefined;
       const memoKey = estimationMemoKey(plan, route);
       let estimated = estimateMemo.get(memoKey);
       if (!estimated) {
@@ -113,7 +97,7 @@ export async function getActivityPlansDerivedMetrics<TPlan extends SupportedActi
       }
       return {
         ...buildEstimatedPlan(plan, estimated.estimation, estimated.metrics, {
-          route: snapshot.getRouteSummary(plan.route_id ?? "") ?? null,
+          route: null,
         }),
         estimate_computed_at: asOf.toISOString(),
         estimate_last_accessed_at: asOf.toISOString(),
@@ -122,7 +106,7 @@ export async function getActivityPlansDerivedMetrics<TPlan extends SupportedActi
       };
     } catch (error) {
       console.error(`Failed to estimate activity plan ${plan.id}:`, error);
-      return toFailedResult(plan, snapshot.getRouteSummary(plan.route_id ?? "") ?? null);
+      return toFailedResult(plan, null);
     }
   });
 }

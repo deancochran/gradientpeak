@@ -13,7 +13,7 @@ import {
   type TrainingPlanApplicationMode,
 } from "./schedulingUtils";
 
-const plannedEventType = "planned_activity" as const;
+const plannedEventType = "planned" as const;
 
 type ApplyTemplateInput = z.infer<typeof templateApplyInputSchema>;
 

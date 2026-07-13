@@ -101,7 +101,7 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
       .where(
         and(
           eq(schema.events.profile_id, input.profileId),
-          eq(schema.events.event_type, "planned_activity"),
+          eq(schema.events.event_type, "planned"),
           isNotNull(schema.events.training_plan_id),
           gte(schema.events.starts_at, new Date()),
         ),
@@ -280,7 +280,7 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
         .where(
           and(
             eq(schema.events.profile_id, profileId),
-            eq(schema.events.event_type, "planned_activity"),
+            eq(schema.events.event_type, "planned"),
             isNotNull(schema.events.training_plan_id),
             gte(schema.events.starts_at, new Date(todayStartIsoUtc())),
           ),

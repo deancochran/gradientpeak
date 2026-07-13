@@ -11,13 +11,9 @@
     "./forms": "./src/contracts/forms.ts",
     "./session": "./src/contracts/session.ts",
     "./callbacks": "./src/contracts/callbacks.ts",
-    "./session/*": "./src/contracts/session.ts",
     "./account-deletion": "./src/contracts/account-deletion.ts",
     "./env": "./src/runtime/env.ts",
-    "./server": "./src/runtime/server.ts",
-    "./client-shared": "./src/client/shared.ts",
-    "./web-client": "./src/client/web.ts",
-    "./expo-client": "./src/client/expo.ts"
+    "./server": "./src/runtime/server.ts"
   },
   "scripts": {
     "check-types": "tsc --noEmit",

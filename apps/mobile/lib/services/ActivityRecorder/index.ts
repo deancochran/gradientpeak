@@ -1568,7 +1568,6 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     return {
       hasStructure: this.stepCount > 0,
-      hasRoute: Boolean(this.getAttachedRouteId()),
       stepCount: this.stepCount,
       requiresManualAdvance: this.planExecution.hasManualAdvanceSteps(),
       structure: this._plan?.structure ?? null,
@@ -1709,7 +1708,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   get routeAttachment(): RecordingRouteAttachmentView {
-    return this.routeController.getRouteAttachment(this._plan?.route_id);
+    return this.routeController.getRouteAttachment();
   }
 
   get routeDistance(): number {
@@ -1733,7 +1732,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   private getAttachedRouteId(): string | null {
-    return this.routeController.getAttachedRouteId(this._plan?.route_id);
+    return this.routeController.getAttachedRouteId();
   }
 
   private clearCurrentRouteState(): void {
@@ -1803,18 +1802,6 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       throw new Error("no plan category found");
     }
 
-    // Load route if plan has one
-    if (plan.route_id) {
-      console.log("[Service] Plan has route, loading route data:", plan.route_id);
-      const operationId = this.routeController.beginPlanRouteAttachment();
-      this.loadRoute(plan.route_id, operationId).catch((error) => {
-        console.error("[Service] Failed to load route:", error);
-        // Continue without route - don't fail the whole plan selection
-      });
-    } else {
-      this.routeController.beginPlanRouteAttachment();
-    }
-
     try {
       this.planExecution.loadPlan(plan, eventId);
 
@@ -1850,7 +1837,6 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.hasConfiguredSetup = true;
     this._plan = undefined;
     this._eventId = undefined;
-    this.routeController.clearPlanAttachment();
     this.planExecution.clear();
 
     this.emit("planCleared");
@@ -1897,7 +1883,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
   public detachRoute(): void {
     this.hasConfiguredSetup = true;
-    this.routeController.detachRoute(this._plan?.route_id);
+    this.routeController.detachRoute();
     this.publishSessionUpdate();
   }
 
@@ -2798,7 +2784,6 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
           description: payload.plan.description || "",
           activity_category: payload.plan.activity_category || payload.category,
           structure: payload.plan.structure,
-          route_id: payload.plan.route_id || null,
         };
 
         if (payload.gpsRecordingEnabled && !this._gpsRecordingEnabled) {

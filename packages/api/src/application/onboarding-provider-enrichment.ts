@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { getActivityEffortObservationStatus } from "@repo/core/athlete-inputs";
 import type {
   DrizzleDbClient,
   IntegrationCredentialRow,
@@ -6,7 +7,7 @@ import type {
   PublicIntegrationProvider,
 } from "@repo/db";
 import { schema } from "@repo/db";
-import { and, desc, eq, gte, inArray, isNotNull } from "drizzle-orm";
+import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import {
   createWahooClient,
   type WahooApiError,
@@ -491,6 +492,7 @@ export class OnboardingProviderEnrichmentService {
       const ftp = normalizeFtp(powerZones.ftp ?? powerZones.critical_power);
 
       if (ftp !== null) {
+        await this.writeProviderMetric(integration, "ftp", ftp, "W", new Date());
         fieldsImported.push("ftp");
       }
 
@@ -701,8 +703,17 @@ export class OnboardingProviderEnrichmentService {
     const recentCutoff = new Date(
       Date.now() - RECENT_REAL_EFFORT_WINDOW_DAYS * 24 * 60 * 60 * 1000,
     );
-    const [recentRealBikePowerEffort] = await this.db
-      .select({ id: schema.activityEfforts.id })
+    const recentBikePowerEfforts = await this.db
+      .select({
+        id: schema.activityEfforts.id,
+        activityId: schema.activityEfforts.activity_id,
+        source: schema.activityEfforts.source,
+        method: schema.activityEfforts.method,
+        provenance: schema.activityEfforts.provenance,
+        unit: schema.activityEfforts.unit,
+        durationSeconds: schema.activityEfforts.duration_seconds,
+        value: schema.activityEfforts.value,
+      })
       .from(schema.activityEfforts)
       .where(
         and(
@@ -710,19 +721,32 @@ export class OnboardingProviderEnrichmentService {
           eq(schema.activityEfforts.activity_category, "bike"),
           eq(schema.activityEfforts.effort_type, "power"),
           gte(schema.activityEfforts.recorded_at, recentCutoff),
-          isNotNull(schema.activityEfforts.activity_id),
+          eq(schema.activityEfforts.source, "imported"),
+          eq(schema.activityEfforts.method, "activity_file_best_effort"),
         ),
-      )
-      .limit(1);
+      );
 
-    if (recentRealBikePowerEffort) return;
+    const hasObservedActivityEffort = recentBikePowerEfforts.some(
+      (effort) =>
+        getActivityEffortObservationStatus({
+          activityCategory: "bike",
+          effortType: "power",
+          durationSeconds: effort.durationSeconds,
+          value: effort.value,
+          unit: effort.unit,
+          activityId: effort.activityId,
+          source: effort.source,
+          method: effort.method,
+          provenance: effort.provenance,
+        }) === "observed",
+    );
+    if (hasObservedActivityEffort) return;
 
     await batchInsertActivityEfforts(
       this.db,
       profileId,
       deriveEffortsForSport("cycling", ftp),
       "provider_wahoo_ftp",
-      null,
     );
   }
 

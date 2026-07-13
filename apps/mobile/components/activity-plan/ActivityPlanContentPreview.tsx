@@ -28,6 +28,7 @@ type ActivityPlanPreviewLike = {
     ascent?: number | null;
     descent?: number | null;
   } | null;
+  /** @deprecated Activity plan routes are no longer owned by plans. */
   route_id?: string | null;
   structure?: unknown;
 };
@@ -259,7 +260,6 @@ export function ActivityPlanContentPreview({
     typeof tss === "number" ||
     typeof intensityFactor === "number" ||
     steps.length > 0 ||
-    !!plan?.route_id ||
     routeDistanceMeters !== null ||
     !!route?.name;
 

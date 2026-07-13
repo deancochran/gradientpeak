@@ -50,7 +50,7 @@ function serializeEventRow(row: {
   created_at: Date;
   description: string | null;
   ends_at: Date | null;
-  event_type: "planned_activity" | "rest_day" | "race" | "custom" | "imported";
+  event_type: "planned" | "race_target" | "custom" | "imported";
   id: string;
   linked_activity_id: string | null;
   notes: string | null;
@@ -180,7 +180,7 @@ export function createEventReadRepository(
         .where(
           and(
             eq(schema.events.profile_id, profileId),
-            eq(schema.events.event_type, "planned_activity"),
+            eq(schema.events.event_type, "planned"),
             gte(schema.events.starts_at, new Date(startsAtGte)),
             lte(schema.events.starts_at, new Date(startsAtLte)),
           ),
@@ -206,7 +206,6 @@ export function createEventReadRepository(
             id: schema.activityPlans.id,
             activity_category: schema.activityPlans.activity_category,
             structure: schema.activityPlans.structure,
-            route_id: schema.activityPlans.route_id,
           })
           .from(schema.activityPlans)
           .where(eq(schema.activityPlans.id, activityPlanId))
@@ -436,7 +435,7 @@ export function createEventReadRepository(
         .where(
           and(
             eq(schema.events.profile_id, profileId),
-            eq(schema.events.event_type, "planned_activity"),
+            eq(schema.events.event_type, "planned"),
             gte(schema.events.starts_at, new Date(startDateIso)),
             lt(schema.events.starts_at, new Date(endDateExclusiveIso)),
             ...(trainingPlanId ? [eq(schema.events.training_plan_id, trainingPlanId)] : []),

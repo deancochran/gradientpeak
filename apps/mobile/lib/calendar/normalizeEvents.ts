@@ -60,6 +60,10 @@ function getEventStartDateKey(event: CalendarEvent): string | null {
   }
 
   if (event.starts_at) {
+    if (event.all_day) {
+      return event.starts_at.match(/^\d{4}-\d{2}-\d{2}/)?.[0] ?? null;
+    }
+
     const startsAt = new Date(event.starts_at);
     if (!Number.isNaN(startsAt.getTime())) {
       return toDateKey(startsAt);
@@ -82,9 +86,15 @@ function compareEvents(left: CalendarEvent, right: CalendarEvent): number {
   if (left.all_day && !right.all_day) return -1;
   if (!left.all_day && right.all_day) return 1;
 
-  const leftTime = left.starts_at ? new Date(left.starts_at).getTime() : 0;
-  const rightTime = right.starts_at ? new Date(right.starts_at).getTime() : 0;
-  return leftTime - rightTime;
+  const getTime = (value?: string | null) => {
+    const time = value ? new Date(value).getTime() : Number.POSITIVE_INFINITY;
+    return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
+  };
+  const leftTime = getTime(left.starts_at);
+  const rightTime = getTime(right.starts_at);
+  if (leftTime !== rightTime) return leftTime < rightTime ? -1 : 1;
+
+  return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
 }
 
 export function buildEventsByDate(events: CalendarEvent[]): CalendarEventsByDate {

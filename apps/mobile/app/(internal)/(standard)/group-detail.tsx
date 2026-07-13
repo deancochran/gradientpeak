@@ -4,7 +4,6 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { Alert, Image, Pressable, View } from "react-native";
 import {
-  CurrentGroupEventPlanCard,
   GroupAccessLevelBadge,
   GroupEventCard,
   GroupEventEmptyState,
@@ -179,17 +178,11 @@ export default function GroupDetailScreen() {
         ),
     [pastEventsVm.events],
   );
-  const currentEvent = detailVm.currentEventPlanOptions?.event ?? null;
-  const showCurrentEvent = Boolean(
-    !detailVm.currentEventPlanOptionsQuery.isLoading && currentEvent && eventTab === "upcoming",
-  );
   const visibleEvents = useMemo(() => {
     if (eventTab !== "upcoming") return pastEvents;
     const concreteEvents = upcomingEventsVm.events.filter((event) => !event.is_recurring_series);
-    if (!showCurrentEvent || !currentEvent) return concreteEvents;
-
-    return concreteEvents.filter((event) => event.id !== currentEvent.id);
-  }, [currentEvent, eventTab, pastEvents, showCurrentEvent, upcomingEventsVm.events]);
+    return concreteEvents;
+  }, [eventTab, pastEvents, upcomingEventsVm.events]);
   const visibleEventsVm = eventTab === "upcoming" ? upcomingEventsVm : pastEventsVm;
   const emptyTitle = eventTab === "upcoming" ? "No upcoming events" : "No past events";
   const emptyDescription =
@@ -402,15 +395,6 @@ export default function GroupDetailScreen() {
                   </Pressable>
                 ) : null}
               </View>
-              {showCurrentEvent && currentEvent ? (
-                <CurrentGroupEventPlanCard
-                  event={currentEvent}
-                  onGroupPress={(eventGroup) =>
-                    router.push({ pathname: "/group-detail", params: { groupId: eventGroup.id } })
-                  }
-                  onPress={(event) => handleOpenEvent(event.id)}
-                />
-              ) : null}
               {visibleEventsVm.isLoading ? (
                 <GroupEventListSkeleton count={2} />
               ) : visibleEvents.length > 0 ? (
@@ -429,7 +413,7 @@ export default function GroupDetailScreen() {
                     />
                   ))}
                 </View>
-              ) : showCurrentEvent ? null : (
+              ) : (
                 <GroupEventEmptyState description={emptyDescription} title={emptyTitle} />
               )}
             </View>

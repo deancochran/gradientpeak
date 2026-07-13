@@ -130,6 +130,24 @@ describe("athletePreferenceProfileSchema", () => {
     expect(defaultAthletePreferenceProfile.dose_limits.sport_overrides).toEqual({});
   });
 
+  it("roundtrips optional onboarding personalization intents", () => {
+    const parsed = athletePreferenceProfileSchema.parse({
+      ...canonicalProfile,
+      onboarding_intents: ["improve_fitness", "groups"],
+    });
+
+    expect(parsed.onboarding_intents).toEqual(["improve_fitness", "groups"]);
+  });
+
+  it("rejects duplicate onboarding personalization intents", () => {
+    expect(
+      athletePreferenceProfileSchema.safeParse({
+        ...canonicalProfile,
+        onboarding_intents: ["explore", "explore"],
+      }).success,
+    ).toBe(false);
+  });
+
   it("rejects planner-only and internal fields from canonical persistence", () => {
     const result = athletePreferenceProfileSchema.safeParse({
       ...canonicalProfile,

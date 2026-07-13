@@ -11,6 +11,7 @@
  */
 
 import { z } from "zod";
+import { PROFILE_PERFORMANCE_THRESHOLD_BOUNDS } from "../athlete-inputs/profile-metrics";
 
 /**
  * Experience level for onboarding.
@@ -31,6 +32,27 @@ export type ExperienceLevel = z.infer<typeof experienceLevelSchema>;
 export const sportSchema = z.enum(["cycling", "running", "swimming", "strength", "other"]);
 
 export type Sport = z.infer<typeof sportSchema>;
+
+/** Personalization metadata selected during onboarding. */
+export const onboardingIntentSchema = z.enum([
+  "train_event",
+  "improve_fitness",
+  "track_activities",
+  "groups",
+  "follow_people",
+  "coach_group",
+  "explore",
+]);
+
+export type OnboardingIntent = z.infer<typeof onboardingIntentSchema>;
+
+/** A bounded set of distinct onboarding personalization selections. */
+export const onboardingIntentArraySchema = z
+  .array(onboardingIntentSchema)
+  .max(7, { message: "Select no more than 7 onboarding intents" })
+  .refine((intents) => new Set(intents).size === intents.length, {
+    message: "Onboarding intents must be unique",
+  });
 
 /**
  * Training frequency categories.
@@ -115,24 +137,34 @@ export const onboardingStep3Schema = z.object({
   // Cycling: FTP (Functional Threshold Power)
   ftp: z
     .number()
-    .positive({ message: "FTP must be positive" })
-    .max(1000, { message: "FTP must be less than 1000W" })
+    .min(PROFILE_PERFORMANCE_THRESHOLD_BOUNDS.ftpWatts.min, {
+      message: "FTP must be at least 20W",
+    })
+    .max(PROFILE_PERFORMANCE_THRESHOLD_BOUNDS.ftpWatts.max, {
+      message: "FTP must be at most 700W",
+    })
     .optional(),
 
   // Running: Threshold Pace (seconds per km)
   threshold_pace_seconds_per_km: z
     .number()
-    .positive({ message: "Threshold pace must be positive" })
-    .min(120, { message: "Pace must be slower than 2:00/km" })
-    .max(600, { message: "Pace must be faster than 10:00/km" })
+    .min(PROFILE_PERFORMANCE_THRESHOLD_BOUNDS.runningThresholdPaceSecondsPerKilometer.min, {
+      message: "Threshold pace must be no faster than 2:00/km",
+    })
+    .max(PROFILE_PERFORMANCE_THRESHOLD_BOUNDS.runningThresholdPaceSecondsPerKilometer.max, {
+      message: "Threshold pace must be no slower than 20:00/km",
+    })
     .optional(),
 
   // Swimming: Critical Swim Speed (seconds per 100m)
   css_seconds_per_hundred_meters: z
     .number()
-    .positive({ message: "CSS must be positive" })
-    .min(60, { message: "CSS must be slower than 1:00/100m" })
-    .max(300, { message: "CSS must be faster than 5:00/100m" })
+    .min(PROFILE_PERFORMANCE_THRESHOLD_BOUNDS.swimCssSecondsPerHundredMeters.min, {
+      message: "CSS must be no faster than 0:45/100m",
+    })
+    .max(PROFILE_PERFORMANCE_THRESHOLD_BOUNDS.swimCssSecondsPerHundredMeters.max, {
+      message: "CSS must be no slower than 10:00/100m",
+    })
     .optional(),
 
   // General: VO2max
@@ -175,6 +207,7 @@ export const completeOnboardingSchema = z.object({
   ...onboardingStep1Schema.shape,
   ...onboardingStep2Schema.shape,
   ...onboardingStep3Schema.shape,
+  intents: onboardingIntentArraySchema.default([]),
 });
 
 export type CompleteOnboarding = z.infer<typeof completeOnboardingSchema>;

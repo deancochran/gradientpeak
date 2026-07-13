@@ -1,7 +1,7 @@
 import { Text } from "@repo/ui/components/text";
 import { DashPathEffect, Circle as SkiaCircle, Rect as SkiaRect } from "@shopify/react-native-skia";
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { LayoutChangeEvent } from "react-native";
+import type { AccessibilityActionEvent, LayoutChangeEvent } from "react-native";
 import { View } from "react-native";
 import { ScrollView } from "react-native-gesture-handler";
 import { CartesianChart, Line } from "victory-native";
@@ -15,7 +15,11 @@ import {
   hasCompletedActivityWithoutLoad,
   useDailyTrainingAdjustmentChartPresentation,
 } from "./dailyTrainingAdjustmentChartPresentation";
-import { deriveTrainingPathChartWindow } from "./trainingPathChartWindow";
+import {
+  deriveTrainingPathChartWindow,
+  getNearestTrainingPathChartIndex,
+  getTrainingPathChartOffset,
+} from "./trainingPathChartWindow";
 import { useChartEdgePrefetch } from "./useChartEdgePrefetch";
 import { useInstantChartSelection } from "./useInstantChartSelection";
 
@@ -63,11 +67,12 @@ function buildTicks(domain: [number, number], count = 5) {
   return Array.from({ length: count }, (_, index) => max - ((max - min) * index) / (count - 1));
 }
 
-function getLoadBarGeometry(
+export function getLoadBarGeometry(
   points: Array<{ x: number }>,
   index: number,
   chartLeft: number,
   chartRight: number,
+  maximumWidth: number,
 ) {
   const point = points[index];
   if (!point) return null;
@@ -85,7 +90,7 @@ function getLoadBarGeometry(
       : chartRight - chartLeft;
   return {
     center: point.x,
-    width: Math.max(8, Math.min(28, Math.abs(Math.min(leftGap, rightGap)) * 0.72)),
+    width: Math.max(1, Math.min(maximumWidth, Math.abs(Math.min(leftGap, rightGap)) * 0.72)),
   };
 }
 
@@ -98,7 +103,9 @@ function FixedYAxisLabels({
 }) {
   return (
     <View
+      accessible={false}
       className="relative"
+      importantForAccessibility="no-hide-descendants"
       style={{ width: axisWidth, paddingTop: chartPadding.top, paddingBottom: chartPadding.bottom }}
       pointerEvents="none"
     >
@@ -138,7 +145,9 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
 }: DailyTrainingAdjustmentChartProps) {
   const [chartWidth, setChartWidth] = useState(320);
   const [viewportWidth, setViewportWidth] = useState(240);
+  const [hasContentMeasurement, setHasContentMeasurement] = useState(false);
   const [hasMounted, setHasMounted] = useState(false);
+  const [hasViewportLayout, setHasViewportLayout] = useState(false);
   const windowAnchorDateRef = useRef<string | null>(null);
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
@@ -169,12 +178,16 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
     : (chartWindow.anchorDate ?? visiblePoints[0]?.date ?? null);
 
   const {
+    beginMomentum,
     beginPreview,
-    commitNearestFromScrollEvent,
+    endDrag,
+    endMomentum,
     previewNearestFromScrollEvent,
     scrollRef,
+    selectRelative,
     selectedPoint,
   } = useInstantChartSelection({
+    isScrollReady: hasViewportLayout && hasContentMeasurement,
     onPreviewSelectedDateChange,
     onSelectedDateChange,
     points: visiblePoints,
@@ -229,16 +242,23 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
 
   const onViewportLayout = useCallback((event: LayoutChangeEvent) => {
     const measuredWidth = Math.floor(event.nativeEvent.layout.width);
-    if (measuredWidth >= 120)
+    if (measuredWidth > 0) setHasViewportLayout(true);
+    if (measuredWidth >= 120) {
       setViewportWidth((current) => (current === measuredWidth ? current : measuredWidth));
+    }
+  }, []);
+
+  const onContentSizeChange = useCallback((width: number) => {
+    if (width > 0) setHasContentMeasurement(true);
   }, []);
 
   const handleScroll = useCallback(
-    (event: Parameters<typeof commitNearestFromScrollEvent>[0]) => {
+    (event: Parameters<typeof previewNearestFromScrollEvent>[0]) => {
       const offsetX = event.nativeEvent.contentOffset.x;
-      const nearestIndex = Math.max(
-        0,
-        Math.min(visiblePoints.length - 1, Math.round(offsetX / slotWidth)),
+      const nearestIndex = getNearestTrainingPathChartIndex(
+        offsetX,
+        slotWidth,
+        visiblePoints.length,
       );
       windowAnchorDateRef.current =
         visiblePoints[nearestIndex]?.date ?? windowAnchorDateRef.current;
@@ -247,6 +267,18 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
     },
     [prefetchNearEdge, previewNearestFromScrollEvent, slotWidth, visiblePoints],
   );
+
+  const handleAccessibilityAction = useCallback(
+    (event: AccessibilityActionEvent) => {
+      if (event.nativeEvent.actionName === "increment") selectRelative(1);
+      if (event.nativeEvent.actionName === "decrement") selectRelative(-1);
+    },
+    [selectRelative],
+  );
+
+  const accessibilityValue = selectedPoint
+    ? `Selected date ${selectedPoint.date}`
+    : "No date selected";
 
   if (visiblePoints.length === 0) {
     return (
@@ -269,16 +301,33 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
           {hasMounted ? (
             <View className="flex-1 flex-row">
               <FixedYAxisLabels domain={loadDomain} />
-              <View className="flex-1" onLayout={onViewportLayout}>
+              <View className="flex-1" onLayout={onViewportLayout} testID={`${testID}-viewport`}>
+                <View
+                  accessible
+                  accessibilityActions={[
+                    { name: "increment", label: "Select next date" },
+                    { name: "decrement", label: "Select previous date" },
+                  ]}
+                  accessibilityHint="Adjust to select the next or previous date"
+                  accessibilityLabel="Daily training adjustment chart"
+                  accessibilityRole="adjustable"
+                  accessibilityValue={{ text: accessibilityValue }}
+                  className="absolute inset-0"
+                  onAccessibilityAction={handleAccessibilityAction}
+                  pointerEvents="none"
+                  testID={`${testID}-accessibility`}
+                />
                 <ScrollView
                   ref={scrollRef}
                   horizontal
                   contentContainerStyle={{ paddingHorizontal: sideInset }}
                   decelerationRate="fast"
-                  onMomentumScrollBegin={beginPreview}
-                  onMomentumScrollEnd={commitNearestFromScrollEvent}
+                  onContentSizeChange={onContentSizeChange}
+                  onMomentumScrollBegin={beginMomentum}
+                  onMomentumScrollEnd={endMomentum}
                   onScroll={handleScroll}
                   onScrollBeginDrag={beginPreview}
+                  onScrollEndDrag={endDrag}
                   scrollEventThrottle={16}
                   showsHorizontalScrollIndicator={false}
                   snapToAlignment="start"
@@ -341,6 +390,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                               index,
                               chartBounds.left,
                               chartBounds.right,
+                              barWidth,
                             );
                             const targetPoint = plottedPoints.targetLoad[index];
                             const plannedPoint = plottedPoints.plannedLoad[index];
@@ -350,7 +400,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                             const showCompletedActivityMarker =
                               hasCompletedActivityWithoutLoad(point);
                             if (!geometry) return null;
-                            const left = geometry.center - barWidth / 2;
+                            const left = geometry.center - geometry.width / 2;
                             const isSelected = point.date === selectedPoint?.date;
                             return (
                               <Fragment key={`day-${point.date}`}>
@@ -358,7 +408,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                                   <SkiaRect
                                     x={left - 3}
                                     y={chartBounds.top}
-                                    width={barWidth + 6}
+                                    width={geometry.width + 6}
                                     height={chartBounds.bottom - chartBounds.top}
                                     color={colors.selected}
                                   />
@@ -367,16 +417,16 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                                   <SkiaRect
                                     x={left}
                                     y={targetPoint.y}
-                                    width={barWidth}
+                                    width={geometry.width}
                                     height={chartBounds.bottom - targetPoint.y}
                                     color={colors.target}
                                   />
                                 ) : null}
                                 {typeof plannedPoint?.y === "number" ? (
                                   <SkiaRect
-                                    x={left + barWidth * 0.24}
+                                    x={left}
                                     y={plannedPoint.y}
-                                    width={barWidth * 0.52}
+                                    width={geometry.width}
                                     height={chartBounds.bottom - plannedPoint.y}
                                     color={colors.planned}
                                   />
@@ -385,9 +435,9 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                                 plannedWithTentativePoint.yValue != null &&
                                 plannedWithTentativePoint.yValue > (plannedPoint?.yValue ?? 0) ? (
                                   <SkiaRect
-                                    x={left + barWidth * 0.24}
+                                    x={left}
                                     y={plannedWithTentativePoint.y}
-                                    width={barWidth * 0.52}
+                                    width={geometry.width}
                                     height={
                                       (plannedPoint?.y ?? chartBounds.bottom) -
                                       plannedWithTentativePoint.y
@@ -397,9 +447,9 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                                 ) : null}
                                 {typeof completedPoint?.y === "number" ? (
                                   <SkiaRect
-                                    x={left + barWidth * 0.08}
+                                    x={left}
                                     y={completedPoint.y}
-                                    width={barWidth * 0.34}
+                                    width={geometry.width}
                                     height={chartBounds.bottom - completedPoint.y}
                                     color={colors.completed}
                                   />
@@ -457,6 +507,8 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                     ))}
                     <View
                       className="absolute bottom-0"
+                      accessible={false}
+                      importantForAccessibility="no-hide-descendants"
                       style={{
                         left: chartPadding.left,
                         right: chartPadding.right,
@@ -469,7 +521,7 @@ export const DailyTrainingAdjustmentChart = memo(function DailyTrainingAdjustmen
                           key={`x-label-${visiblePoints[index]?.date ?? index}`}
                           className="items-center"
                           style={{
-                            left: index * slotWidth - slotWidth / 2,
+                            left: getTrainingPathChartOffset(index, slotWidth) - slotWidth / 2,
                             position: "absolute",
                             width: slotWidth,
                           }}

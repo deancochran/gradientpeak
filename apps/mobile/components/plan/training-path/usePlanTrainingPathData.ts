@@ -1,14 +1,17 @@
 import { buildTrainingTimelineWindowFromLoadTimeline } from "@repo/core/training-timeline";
+import { formatLocalDateOnly } from "@repo/core/utils/fitness-inputs";
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
+import { toLocalDayEndIso, toLocalDayStartIso } from "@/lib/calendar/dateMath";
 import {
   attachSelectedGroupEventActivityPlans,
   getSelectedGroupEventActivityPlanIds,
   toGroupEventScheduledActivityPlanEvent,
 } from "@/lib/calendar/groupEventPlans";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { useLocalTodayKey } from "@/lib/hooks/useLocalTodayKey";
 import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
 import { useProfileSettings } from "@/lib/hooks/useProfileSettings";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
@@ -35,18 +38,6 @@ import { buildScheduledFitnessTrend, getWeekStartDateKey } from "./trainingPathU
 import { useScrollableTrainingPathWindow } from "./useScrollableTrainingPathWindow";
 import { useTrainingPathViewModel } from "./useTrainingPathViewModel";
 
-function getDateKey(value: Date) {
-  return value.toISOString().split("T")[0] ?? "";
-}
-
-function getDayStartIso(dateKey: string) {
-  return `${dateKey}T00:00:00.000Z`;
-}
-
-function getDayEndIso(dateKey: string) {
-  return `${dateKey}T23:59:59.999Z`;
-}
-
 function isPresent<T>(value: T | null | undefined): value is T {
   return value != null;
 }
@@ -58,6 +49,7 @@ export function usePlanTrainingPathData() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [pendingSelectedWeekStart, setPendingSelectedWeekStart] = useState<string | null>(null);
   const lastProjectionRefreshKeyRef = useRef<string | null>(null);
+  const todayKey = useLocalTodayKey();
   const eventsQueryEnabled = useAuthStore(
     (state) => state.ready && !!state.session && hasSessionAuthCredentials(),
   );
@@ -67,17 +59,16 @@ export function usePlanTrainingPathData() {
     enabled: eventsQueryEnabled,
   });
   const { data: activePlan, refetch: refetchActivePlan } = activePlanQuery;
-  const today = useMemo(() => new Date(), []);
-  const todayKey = useMemo(() => getDateKey(today), [today]);
+  const today = useMemo(() => new Date(`${todayKey}T12:00:00`), [todayKey]);
   const recentWindowStart = useMemo(() => {
     const start = new Date(today);
     start.setDate(start.getDate() - 45);
-    return getDateKey(start);
+    return formatLocalDateOnly(start);
   }, [today]);
   const upcomingWindowEnd = useMemo(() => {
     const end = new Date(today);
     end.setDate(end.getDate() + 365);
-    return getDateKey(end);
+    return formatLocalDateOnly(end);
   }, [today]);
 
   const upcomingPlannedEventsQuery = api.events.list.useQuery(
@@ -107,8 +98,8 @@ export function usePlanTrainingPathData() {
   const groupCalendarEventsQuery = api.groups.events.myUpcomingGroupEvents.useQuery(
     {
       includeCancelled: false,
-      startsAfter: `${recentWindowStart}T00:00:00.000Z`,
-      startsBefore: `${upcomingWindowEnd}T23:59:59.999Z`,
+      startsAfter: toLocalDayStartIso(recentWindowStart),
+      startsBefore: toLocalDayEndIso(upcomingWindowEnd),
       limit: 100,
     },
     {
@@ -148,8 +139,8 @@ export function usePlanTrainingPathData() {
   );
   const completedActivitiesQuery = api.activities.listPaginated.useInfiniteQuery(
     {
-      date_from: getDayStartIso(recentWindowStart),
-      date_to: getDayEndIso(todayKey),
+      date_from: toLocalDayStartIso(recentWindowStart),
+      date_to: toLocalDayEndIso(todayKey),
       limit: 50,
     },
     {

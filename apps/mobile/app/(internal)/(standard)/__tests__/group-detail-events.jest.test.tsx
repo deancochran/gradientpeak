@@ -127,11 +127,11 @@ jest.mock("@/lib/groups", () => ({
 const GroupDetailScreen = require("../group-detail").default;
 
 describe("group detail events", () => {
-  it("does not repeat the current event in the upcoming event list", () => {
+  it("shows upcoming concrete events without a separate current-plan panel", () => {
     renderNative(<GroupDetailScreen />);
 
-    expect(screen.getByTestId("current-event-event-current")).toBeTruthy();
-    expect(screen.queryByTestId("group-event-card-event-current")).toBeNull();
+    expect(screen.queryByTestId("current-event-event-current")).toBeNull();
+    expect(screen.getByTestId("group-event-card-event-current")).toBeTruthy();
     expect(screen.queryByTestId("group-event-card-event-series-root")).toBeNull();
     expect(screen.getByTestId("group-event-card-event-other")).toBeTruthy();
   });

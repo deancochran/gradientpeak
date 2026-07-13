@@ -1,4 +1,4 @@
-import type { ActivityFileType } from "@repo/core";
+import type { ActivityFileType } from "@repo/core/server/activity-files";
 import type { activities, activityEfforts } from "@repo/db";
 import type { getRequiredDb } from "../../db";
 import { submitActivity } from "../activities/submit-activity";

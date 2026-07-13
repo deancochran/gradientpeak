@@ -189,11 +189,8 @@ export function GroupEventCard({
           </Text>
         ) : null}
 
-        {event.activityPlanOptions.length > 0 ? (
-          <Text className="text-xs font-medium text-muted-foreground">
-            {event.activityPlanOptions.length} activity plan option
-            {event.activityPlanOptions.length === 1 ? "" : "s"}
-          </Text>
+        {event.activity_plan_id ? (
+          <Text className="text-xs font-medium text-muted-foreground">Activity plan</Text>
         ) : null}
       </View>
     </TouchableOpacity>
@@ -230,26 +227,23 @@ export function CurrentGroupEventPlanCard({
   onGroupPress?: (group: GroupEventOwner) => void;
   onPress?: (event: CurrentGroupEventPlan) => void;
 }) {
-  const optionCount = event.activityPlanOptions.length;
-  const hasActivityPlanOptions = optionCount > 0;
+  const hasActivityPlan = Boolean(event.activity_plan_id);
 
   return (
     <TouchableOpacity activeOpacity={0.85} disabled={!onPress} onPress={() => onPress?.(event)}>
       <View
-        className={`gap-2 rounded-2xl border p-4 ${hasActivityPlanOptions ? "border-primary/30 bg-primary/5" : "border-border bg-card"}`}
+        className={`gap-2 rounded-2xl border p-4 ${hasActivityPlan ? "border-primary/30 bg-primary/5" : "border-border bg-card"}`}
       >
         {event.group ? <GroupEventOwnerRow group={event.group} onPress={onGroupPress} /> : null}
         <Text className="text-xs font-semibold uppercase tracking-wide text-primary">
-          {hasActivityPlanOptions ? "Current / next plan" : "Current / next event"}
+          {hasActivityPlan ? "Current / next plan" : "Current / next event"}
         </Text>
         <Text className="text-base font-semibold text-foreground" numberOfLines={2}>
           {event.title}
         </Text>
         <Text className="text-xs text-muted-foreground">{formatGroupEventDateRange(event)}</Text>
-        {optionCount > 0 ? (
-          <Text className="text-xs text-muted-foreground">
-            {optionCount} plan option{optionCount === 1 ? "" : "s"}
-          </Text>
+        {hasActivityPlan ? (
+          <Text className="text-xs text-muted-foreground">Activity plan</Text>
         ) : null}
       </View>
     </TouchableOpacity>

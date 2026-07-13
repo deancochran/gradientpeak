@@ -9,7 +9,7 @@ function serializeCreatedEvent(row: {
   created_at: Date;
   description: string | null;
   ends_at: Date | null;
-  event_type: "planned_activity" | "rest_day" | "race" | "custom" | "imported";
+  event_type: "planned" | "race_target" | "custom" | "imported";
   id: string;
   linked_activity_id: string | null;
   notes: string | null;
@@ -49,7 +49,7 @@ function serializeSplitEventRow(row: {
   created_at: Date;
   description: string | null;
   ends_at: Date | null;
-  event_type: "planned_activity" | "rest_day" | "race" | "custom" | "imported";
+  event_type: "planned" | "race_target" | "custom" | "imported";
   id: string;
   linked_activity_id: string | null;
   notes: string | null;

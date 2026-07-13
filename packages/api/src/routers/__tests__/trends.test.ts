@@ -441,7 +441,6 @@ describe("trendsRouter", () => {
         atl: 35.2,
         tsb: -13.9,
         loadBalanceStatus: "negative_balance",
-        form: "negative_balance",
       },
       workload: {
         acwr: { current: 1.1, source: "tss" },
@@ -463,6 +462,7 @@ describe("trendsRouter", () => {
         training_quality: 0.82,
       },
     });
+    expect(result.currentStatus).not.toHaveProperty("form");
     expect(JSON.stringify(result)).not.toMatch(/productive|fatigued|overreach/i);
   });
 

@@ -24,6 +24,31 @@ describe("dailyTrainingPathModel", () => {
     });
   });
 
+  it("combines completed load with remaining scheduled and tentative load", () => {
+    const [point] = normalizeDailyTrainingAdjustmentPoints({
+      startDate: "2026-06-01",
+      endDate: "2026-06-01",
+      points: [
+        {
+          date: "2026-06-01",
+          plannedLoadTss: 40,
+          tentativePlannedLoadTss: 10,
+          completedLoadTss: 35,
+          targetLoadTss: 50,
+        },
+      ],
+    });
+
+    expect(point).toMatchObject({
+      plannedLoadTss: 40,
+      tentativePlannedLoadTss: 10,
+      completedLoadTss: 35,
+      actualOrScheduledLoadTss: 50,
+      loadDeltaTss: 0,
+      plannedDeltaTss: 0,
+    });
+  });
+
   it("returns a selected-day summary with signed delta labels", () => {
     const points = normalizeDailyTrainingAdjustmentPoints({
       startDate: "2026-06-01",
@@ -91,8 +116,8 @@ describe("dailyTrainingPathModel", () => {
       tentativePlannedLoadTss: 10,
       completedLoadTss: 20,
       targetLoadTss: 60,
-      actualOrScheduledLoadTss: 70,
-      loadDeltaTss: 10,
+      actualOrScheduledLoadTss: 50,
+      loadDeltaTss: -10,
       plannedDeltaTss: -10,
       fitnessCtl: 42,
       targetFitnessCtl: 44,

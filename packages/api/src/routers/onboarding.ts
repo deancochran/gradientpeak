@@ -11,10 +11,10 @@
 
 // Import calculation functions directly - they're exported from core package
 import { calculateAgeFromDOB, getBaselineProfile } from "@repo/core";
+import type { DerivedEffort } from "@repo/core/calculations";
 import { completeOnboardingSchema } from "@repo/core/schemas/onboarding";
-import { activities, publicIntegrationProviderSchema } from "@repo/db";
+import { publicIntegrationProviderSchema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import {
   OnboardingProfileNotFoundError,
@@ -230,15 +230,26 @@ export const onboardingRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       const userId = ctx.session.user.id;
+      const providerEnrichment = new OnboardingProviderEnrichmentService({ db });
 
       try {
-        await new OnboardingProviderEnrichmentService({ db }).assertCanComplete(userId);
+        await providerEnrichment.assertCanComplete(userId);
       } catch (error) {
         throw new TRPCError({
           code: "PRECONDITION_FAILED",
           message: error instanceof Error ? error.message : "Provider enrichment is still required",
         });
       }
+
+      const importedOnboardingValues = await providerEnrichment.getImportedOnboardingValues(userId);
+      const importedProviderFtp =
+        importedOnboardingValues.sources.ftp &&
+        typeof importedOnboardingValues.values.ftp === "number"
+          ? importedOnboardingValues.values.ftp
+          : undefined;
+      const usesUnchangedProviderFtp =
+        importedProviderFtp !== undefined &&
+        (input.ftp === undefined || input.ftp === importedProviderFtp);
 
       // Calculate age from DOB (default to 30 if missing for calculations ONLY)
       // DO NOT use this default for saving to the profile.
@@ -263,26 +274,7 @@ export const onboardingRouter = createTRPCRouter({
           )
         : null;
 
-      // 1. Update the authenticated user's profile with the supplied onboarding values.
-      try {
-        await persistOnboardingProfile({ db, profileId: userId, input });
-      } catch (error) {
-        if (error instanceof OnboardingProfileNotFoundError) {
-          throw new TRPCError({ code: "NOT_FOUND", message: error.message });
-        }
-
-        if (error instanceof TRPCError) {
-          throw error;
-        }
-
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to update profile during onboarding",
-          cause: error,
-        });
-      }
-
-      // 2. Prepare and insert profile metrics
+      // Prepare every row before opening the all-or-nothing write transaction.
       const metrics = prepareProfileMetrics(
         {
           weight_kg: input.weight_kg, // Pass undefined if missing, helper handles it
@@ -290,38 +282,20 @@ export const onboardingRouter = createTRPCRouter({
           resting_hr: input.resting_hr,
           lthr: input.lthr,
           vo2max: input.vo2max,
-          ftp: input.ftp,
+          ftp: usesUnchangedProviderFtp ? undefined : input.ftp,
           threshold_pace_seconds_per_km: input.threshold_pace_seconds_per_km,
           css_seconds_per_hundred_meters: input.css_seconds_per_hundred_meters,
         },
         baseline,
       );
 
-      try {
-        await batchInsertProfileMetrics(db, userId, metrics);
-      } catch (error) {
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to insert onboarding metrics",
-          cause: error,
-        });
-      }
-
-      // 3. Derive and insert all activity efforts
-      const allEfforts = [];
+      const allEfforts: DerivedEffort[] = [];
+      const providerFtpEfforts: DerivedEffort[] = [];
+      const otherEfforts: DerivedEffort[] = [];
       const warnings: string[] = [];
 
-      const [latestActivity] = await db
-        .select({ id: activities.id })
-        .from(activities)
-        .where(eq(activities.profile_id, userId))
-        .orderBy(desc(activities.started_at))
-        .limit(1);
-
-      const fallbackActivityId = latestActivity?.id ?? null;
-
       // Merge user input with baseline for performance metrics
-      const finalFtp = input.ftp ?? baseline?.ftp;
+      const finalFtp = input.ftp ?? importedProviderFtp ?? baseline?.ftp;
       const finalThresholdPace =
         input.threshold_pace_seconds_per_km ?? baseline?.threshold_pace_seconds_per_km;
       const finalCss =
@@ -329,49 +303,51 @@ export const onboardingRouter = createTRPCRouter({
 
       // Cycling/Triathlon: Derive power curve from FTP
       if (finalFtp) {
-        allEfforts.push(...deriveEffortsForSport("cycling", finalFtp));
+        const ftpEfforts = deriveEffortsForSport("cycling", finalFtp);
+        allEfforts.push(...ftpEfforts);
+        (usesUnchangedProviderFtp ? providerFtpEfforts : otherEfforts).push(...ftpEfforts);
       }
 
       // Running/Triathlon: Derive speed curve from threshold pace
       if (finalThresholdPace) {
-        allEfforts.push(...deriveEffortsForSport("running", finalThresholdPace));
+        const runningEfforts = deriveEffortsForSport("running", finalThresholdPace);
+        allEfforts.push(...runningEfforts);
+        otherEfforts.push(...runningEfforts);
       }
 
       // Swimming/Triathlon: Derive swim pace curve from CSS
       if (finalCss) {
-        allEfforts.push(...deriveEffortsForSport("swimming", finalCss));
+        const swimmingEfforts = deriveEffortsForSport("swimming", finalCss);
+        allEfforts.push(...swimmingEfforts);
+        otherEfforts.push(...swimmingEfforts);
       }
 
-      // Batch insert all derived efforts
-      if (allEfforts.length > 0) {
-        try {
-          await batchInsertActivityEfforts(
-            db,
-            userId,
-            allEfforts,
-            input.experience_level,
-            fallbackActivityId,
-          );
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "";
-          const isActivityIdNotNullViolation =
-            message.includes("activity_id") && message.includes("not-null");
+      let writeStage: "profile" | "metrics" | "efforts" = "profile";
+      try {
+        await db.transaction(async (tx) => {
+          await persistOnboardingProfile({ tx, profileId: userId, input });
 
-          if (isActivityIdNotNullViolation && !fallbackActivityId) {
-            warnings.push(
-              "Skipped effort insertion because this environment requires activity_id and no activities exist yet.",
-            );
-          } else {
-            throw new TRPCError({
-              code: "INTERNAL_SERVER_ERROR",
-              message: "Failed to insert onboarding efforts",
-              cause: error,
-            });
-          }
+          writeStage = "metrics";
+          await batchInsertProfileMetrics(tx, userId, metrics);
+
+          writeStage = "efforts";
+          await batchInsertActivityEfforts(tx, userId, otherEfforts, input.experience_level);
+          await batchInsertActivityEfforts(tx, userId, providerFtpEfforts, "provider_wahoo_ftp");
+        });
+      } catch (error) {
+        if (error instanceof OnboardingProfileNotFoundError) {
+          throw new TRPCError({ code: "NOT_FOUND", message: error.message });
         }
+
+        const message =
+          writeStage === "profile"
+            ? "Failed to update profile during onboarding"
+            : writeStage === "metrics"
+              ? "Failed to insert onboarding metrics"
+              : "Failed to insert onboarding efforts";
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message, cause: error });
       }
 
-      // 4. Return summary
       return {
         success: true,
         created: {

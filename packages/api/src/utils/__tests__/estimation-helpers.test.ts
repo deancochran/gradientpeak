@@ -143,7 +143,7 @@ describe("estimation-helpers", () => {
     expect(inputs.ftp).toBe(271);
   });
 
-  it("adds estimation for a single plan from the store-backed reader", async () => {
+  it("adds estimation for a single plan from the store-backed reader without plan route lookup", async () => {
     const estimationReader = createStoreReader({
       "route-1": {
         id: "route-1",
@@ -161,7 +161,6 @@ describe("estimation-helpers", () => {
         description: "",
         activity_category: "bike",
         structure: {},
-        route_id: "route-1",
       },
       estimationReader as any,
       "profile-1",
@@ -169,13 +168,12 @@ describe("estimation-helpers", () => {
 
     expect(estimationReader.getEstimationInputs).toHaveBeenCalledTimes(1);
     expect(estimationReader.getEstimationInputs).toHaveBeenCalledWith(
-      expect.objectContaining({ profileId: "profile-1", routeIds: ["route-1"] }),
+      expect.objectContaining({ profileId: "profile-1", routeIds: [] }),
     );
     expect(vi.mocked(estimationCore.estimateActivity).mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({
         ftp: 238,
         thresholdPaceSecondsPerKm: 240,
-        route: expect.objectContaining({ distanceMeters: 42000 }),
       }),
     );
     expect(result).toEqual(
@@ -186,9 +184,9 @@ describe("estimation-helpers", () => {
         confidence_score: 82,
         authoritative_metrics: expect.objectContaining({
           estimated_tss: 42,
-          estimated_duration: 4200,
+          estimated_duration: 1800,
           intensity_factor: 0.82,
-          estimated_distance: 42000,
+          estimated_distance: 0,
           provenance: expect.objectContaining({
             estimated_tss: "estimated",
             estimated_duration: "estimated",
@@ -196,16 +194,12 @@ describe("estimation-helpers", () => {
             estimated_distance: "estimated",
           }),
         }),
-        route: {
-          distance: 42000,
-          ascent: 350,
-          descent: 350,
-        },
+        route: null,
       }),
     );
   });
 
-  it("adds estimation for a single plan from the legacy reader", async () => {
+  it("adds estimation for a single plan from the legacy reader without plan route lookup", async () => {
     const { reader, calls } = createLegacyReader({
       profiles: { dob: "1990-01-01" },
       activity_efforts: [
@@ -233,7 +227,6 @@ describe("estimation-helpers", () => {
         description: "",
         activity_category: "bike",
         structure: {},
-        route_id: "route-legacy",
       },
       reader as any,
       "profile-1",
@@ -243,15 +236,14 @@ describe("estimation-helpers", () => {
       "profiles",
       "activity_efforts",
       "profile_metrics",
-      "activity_routes",
     ]);
-    expect(result.authoritative_metrics.estimated_distance).toBe(24000);
+    expect(result.authoritative_metrics.estimated_distance).toBe(0);
     expect(vi.mocked(estimationCore.estimateActivity).mock.calls[0]?.[0]).toEqual(
-      expect.objectContaining({ route: expect.objectContaining({ distanceMeters: 24000 }) }),
+      expect.not.objectContaining({ route: expect.anything() }),
     );
   });
 
-  it("dedupes routes, skips null plans, and falls back per failing plan", async () => {
+  it("skips null plans and falls back per failing plan without plan route lookups", async () => {
     const estimationReader = createStoreReader({
       "route-1": {
         id: "route-1",
@@ -278,7 +270,6 @@ describe("estimation-helpers", () => {
           description: "",
           activity_category: "bike",
           structure: {},
-          route_id: "route-1",
         },
         undefined,
         {
@@ -288,7 +279,6 @@ describe("estimation-helpers", () => {
           description: "",
           activity_category: "bike",
           structure: {},
-          route_id: "route-1",
         },
         {
           id: "plan-3",
@@ -297,7 +287,6 @@ describe("estimation-helpers", () => {
           description: "",
           activity_category: "bike",
           structure: { shouldThrow: true },
-          route_id: "route-2",
         },
       ],
       estimationReader as any,
@@ -307,18 +296,18 @@ describe("estimation-helpers", () => {
     expect(result).toHaveLength(3);
     expect(estimationReader.getEstimationInputs).toHaveBeenCalledTimes(1);
     expect(estimationReader.getEstimationInputs).toHaveBeenCalledWith(
-      expect.objectContaining({ routeIds: ["route-1", "route-2"] }),
+      expect.objectContaining({ routeIds: [] }),
     );
     expect(result[0]).toEqual(
       expect.objectContaining({
         id: "plan-1",
-        authoritative_metrics: expect.objectContaining({ estimated_distance: 10000 }),
+        authoritative_metrics: expect.objectContaining({ estimated_distance: 0 }),
       }),
     );
     expect(result[1]).toEqual(
       expect.objectContaining({
         id: "plan-2",
-        authoritative_metrics: expect.objectContaining({ estimated_distance: 10000 }),
+        authoritative_metrics: expect.objectContaining({ estimated_distance: 0 }),
       }),
     );
     expect(result[2]).toEqual(
@@ -339,7 +328,7 @@ describe("estimation-helpers", () => {
     expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
   });
 
-  it("computes metrics with a store-backed route", async () => {
+  it("computes metrics without requiring a plan route id", async () => {
     const estimationReader = createStoreReader({
       "route-1": {
         id: "route-1",
@@ -353,21 +342,20 @@ describe("estimation-helpers", () => {
       {
         activity_category: "bike",
         structure: {},
-        route_id: "route-1",
       },
       estimationReader as any,
       "profile-1",
     );
 
     expect(result).toEqual({
-      estimated_tss: 32,
-      estimated_duration_seconds: 3200,
+      estimated_tss: 42,
+      estimated_duration_seconds: 1800,
       intensity_factor: 0.82,
-      estimated_distance_meters: 32000,
+      estimated_distance_meters: 0,
     });
   });
 
-  it("does not treat attached route distance as authoritative when structure is present", async () => {
+  it("does not treat route distance as authoritative when structure is present", async () => {
     const estimationReader = createStoreReader({
       "route-1": {
         id: "route-1",
@@ -383,7 +371,6 @@ describe("estimation-helpers", () => {
         structure: {
           intervals: [{ id: "interval-1", repetitions: 1, steps: [{ id: "step-1" }] }],
         },
-        route_id: "route-1",
       },
       estimationReader as any,
       "profile-1",
@@ -400,7 +387,7 @@ describe("estimation-helpers", () => {
     );
   });
 
-  it("computes metrics with a legacy route row", async () => {
+  it("computes metrics with a legacy reader without plan route lookup", async () => {
     const { reader } = createLegacyReader({
       profiles: { dob: "1990-01-01" },
       activity_efforts: [],
@@ -417,17 +404,16 @@ describe("estimation-helpers", () => {
       {
         activity_category: "bike",
         structure: {},
-        route_id: "route-legacy",
       },
       reader as any,
       "profile-1",
     );
 
     expect(result).toEqual({
-      estimated_tss: 18,
+      estimated_tss: 42,
       estimated_duration_seconds: 1800,
       intensity_factor: 0.82,
-      estimated_distance_meters: 18000,
+      estimated_distance_meters: 0,
     });
   });
 });

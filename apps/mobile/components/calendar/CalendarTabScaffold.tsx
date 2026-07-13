@@ -11,6 +11,7 @@ type CalendarErrorScreenProps = {
 
 type CalendarReadyScreenProps = {
   hydrated: boolean;
+  hasPartialError: boolean;
   headerTitle: string;
   selectedDateKey: string;
   todayKey: string;
@@ -18,6 +19,7 @@ type CalendarReadyScreenProps = {
   dayListProps: CalendarDayListProps;
   onCreateEvent: () => void;
   onJumpToday: () => void;
+  onRetry: () => void;
   onSelectWeekDate: (dateKey: string) => void;
 };
 
@@ -55,6 +57,7 @@ export function CalendarErrorScreen({ onRetry }: CalendarErrorScreenProps) {
 
 export function CalendarReadyScreen({
   hydrated,
+  hasPartialError,
   headerTitle,
   selectedDateKey,
   todayKey,
@@ -62,6 +65,7 @@ export function CalendarReadyScreen({
   dayListProps,
   onCreateEvent,
   onJumpToday,
+  onRetry,
   onSelectWeekDate,
 }: CalendarReadyScreenProps) {
   return (
@@ -76,6 +80,26 @@ export function CalendarReadyScreen({
         todayKey={todayKey}
         onSelectDate={onSelectWeekDate}
       />
+
+      {hasPartialError ? (
+        <View
+          className="mx-4 mb-2 flex-row items-center justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2"
+          testID="calendar-partial-error"
+        >
+          <Text className="flex-1 text-xs text-foreground">
+            Some calendar items could not be loaded.
+          </Text>
+          <TouchableOpacity
+            accessibilityLabel="Retry loading calendar items"
+            accessibilityRole="button"
+            activeOpacity={0.85}
+            className="rounded-full border border-border bg-card px-3 py-1.5"
+            onPress={onRetry}
+          >
+            <Text className="text-xs font-medium text-foreground">Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       <View className="flex-1" testID="calendar-screen-content-ready">
         <CalendarDayList {...dayListProps} />

@@ -3,12 +3,13 @@
  * Processes webhook events and imports completed activities from Wahoo
  */
 
-import { parseActivityFile, type StandardActivity } from "@repo/core";
+import type { StandardActivity } from "@repo/core";
+import { parseActivityFile } from "@repo/core/server/activity-files";
 import {
   buildImportedActivityCreateInput,
   type ImportedActivityCreateInput,
 } from "../../provider-sync/imported-activity";
-import type { ActivityType } from "./activity-type-utils";
+import type { WahooActivityType } from "./activity-type-utils";
 import type { WahooWorkoutSummary } from "./client";
 
 interface WahooRepository {
@@ -56,7 +57,7 @@ function isExpectedProviderUniqueViolation(error: unknown): boolean {
 }
 
 // Wahoo workout type mapping to GradientPeak activity categories
-const WAHOO_WORKOUT_TYPE_MAP: Record<number, ActivityType> = {
+const WAHOO_WORKOUT_TYPE_MAP: Record<number, WahooActivityType> = {
   0: "bike", // BIKING OUTDOOR
   1: "run", // RUNNING OUTDOOR
   2: "other", // FITNESS EQUIPMENT (not 1:1 with a single GP category)
@@ -313,7 +314,7 @@ export class WahooActivityImporter {
    * In production, this should fetch the workout details from Wahoo API
    * to get the actual workout_type_id
    */
-  private inferActivityType(summary: WahooWorkoutSummary): ActivityType {
+  private inferActivityType(summary: WahooWorkoutSummary): WahooActivityType {
     const workoutTypeId = summary.workout?.workout_type_id;
     if (workoutTypeId !== undefined && WAHOO_WORKOUT_TYPE_MAP[workoutTypeId] !== undefined) {
       return WAHOO_WORKOUT_TYPE_MAP[workoutTypeId]!;
@@ -345,7 +346,7 @@ export class WahooActivityImporter {
   private resolveActivityType(
     summary: WahooWorkoutSummary,
     parsedActivity: StandardActivity | null,
-  ): ActivityType {
+  ): WahooActivityType {
     const fitType = parsedActivity?.metadata.type.toLowerCase();
     if (fitType) {
       if (fitType.includes("cycling") || fitType.includes("bike")) return "bike";
