@@ -145,6 +145,7 @@ jest.mock("@/lib/api", () => ({
 
 jest.mock("@repo/core", () => ({
   __esModule: true,
+  ...jest.requireActual("@repo/core"),
   estimateConservativeFTPFromWeight: jest.fn((weight?: number | null) => (weight ? 210 : null)),
   estimateMaxHRFromDOB: jest.fn((dob?: string | null) => (dob ? 185 : null)),
   formatWeightForDisplay: jest.fn((weight: number) => `${weight} kg`),

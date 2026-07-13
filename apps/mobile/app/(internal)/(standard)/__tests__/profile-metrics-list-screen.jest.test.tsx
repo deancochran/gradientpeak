@@ -32,6 +32,11 @@ jest.mock("react-native", () => ({
     ),
 }));
 
+jest.mock("expo-router", () => ({
+  __esModule: true,
+  Stack: { Screen: createHost("StackScreen") },
+}));
+
 jest.mock("@repo/ui/components/card", () => ({
   __esModule: true,
   Card: createHost("Card"),
@@ -149,7 +154,7 @@ describe("profile metrics list screen", () => {
     const cards = screen.UNSAFE_getAllByType(CompactInsightCard);
     expect(cards[0].props.testID).toBe("profile-metric-type-weight_kg");
     expect(cards[1].props.testID).toBe("profile-metric-type-lthr");
-    expect(cards[2].props.testID).toBe("profile-metric-type-resting_hr");
+    expect(cards[2].props.testID).toBe("profile-metric-type-ftp");
   });
 
   it("shows the latest value from the selected date range", () => {

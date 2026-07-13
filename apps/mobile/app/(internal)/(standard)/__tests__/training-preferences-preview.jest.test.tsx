@@ -1,6 +1,9 @@
 import { act, waitFor } from "@testing-library/react-native";
 
-import { createHost } from "../../../../test/mock-components";
+import {
+  createHost,
+  createFormComponentMocks as mockCreateFormComponentMocks,
+} from "../../../../test/mock-components";
 import { renderNative, screen } from "../../../../test/render-native";
 
 jest.mock("expo-router", () => ({
@@ -229,6 +232,8 @@ jest.mock("@repo/ui/components/date-input", () => ({
   DateInput: createHost("DateInput"),
 }));
 
+jest.mock("@repo/ui/components/form", () => mockCreateFormComponentMocks());
+
 jest.mock("@repo/ui/components/input", () => ({
   __esModule: true,
   Input: createHost("Input"),
@@ -307,16 +312,6 @@ const TrainingPreferencesScreen = require("../training-preferences").default;
 const getTextValues = () =>
   (screen as any).UNSAFE_getAllByType("Text").map((node: any) => getNodeText(node.props.children));
 
-const getChart = () => (screen as any).UNSAFE_getAllByType("DailyTrainingAdjustmentChart")[0];
-
-const getAllByTypeOrEmpty = (type: string) => {
-  try {
-    return (screen as any).UNSAFE_getAllByType(type);
-  } catch {
-    return [];
-  }
-};
-
 const getTab = (label: string) =>
   (screen as any).UNSAFE_getAllByType("Pressable").find((node: any) => {
     if (node.props?.accessibilityRole !== "tab") {
@@ -330,26 +325,7 @@ const getTab = (label: string) =>
       });
   });
 
-const getByTypeAndId = (type: string, id: string) =>
-  (screen as any)
-    .UNSAFE_getAllByType(type)
-    .find(
-      (node: any) => node.props.id === id || node.props.testId === id || node.props.testID === id,
-    );
-
-const getByTypeAndTestId = (type: string, testId: string) =>
-  (screen as any).UNSAFE_getAllByType(type).find((node: any) => node.props.testId === testId);
-
-const getButtonByLabel = (label: string) =>
-  (screen as any).UNSAFE_getAllByType("Button").find((node: any) => {
-    return node
-      .findAll((child: any) => child.type === "Text")
-      .some((child: any) => {
-        return getNodeText(child.props.children) === label;
-      });
-  });
-
-describe("training preferences projection preview", () => {
+describe("training preferences editor", () => {
   beforeEach(() => {
     upsertMock.mockReset();
     activePlanData = { id: "plan-1" };
@@ -415,26 +391,13 @@ describe("training preferences projection preview", () => {
 
     const tabLabels = getTextValues();
 
-    expect(tabLabels).toContain("Preferences");
+    expect(tabLabels).toContain("Adaptation");
     expect(tabLabels).toContain("Availability");
     expect(tabLabels).toContain("Schedule");
     expect(tabLabels).toContain("Training style");
     expect(tabLabels).toContain("Recovery");
     expect(tabLabels).toContain("Goal strategy");
     expect(tabLabels).not.toContain("Hide advanced");
-  });
-
-  it("renders updated preference tabs", () => {
-    renderNative(<TrainingPreferencesScreen />);
-
-    const tabLabels = getTextValues();
-
-    expect(tabLabels).toContain("Preferences");
-    expect(tabLabels).toContain("Availability");
-    expect(tabLabels).toContain("Schedule");
-    expect(tabLabels).toContain("Training style");
-    expect(tabLabels).toContain("Recovery");
-    expect(tabLabels).toContain("Goal strategy");
   });
 
   it("renders planner-backed preference controls", () => {
@@ -444,42 +407,38 @@ describe("training preferences projection preview", () => {
       getTab("Training style").props.onPress();
     });
 
-    let textValues = getTextValues();
+    expect(screen.getByTestId("preferences-strength-integration-priority").props.label).toBe(
+      "Strength / conditioning priority",
+    );
     expect(
-      getByTypeAndId("PercentSliderInput", "preferences-strength-integration").props.label,
-    ).toBe("Strength integration priority");
-    expect(
-      getByTypeAndId("PercentSliderInput", "preferences-strength-integration").props
-        .showNumericInput,
+      screen.getByTestId("preferences-strength-integration-priority").props.showNumericInput,
     ).toBe(false);
-    expect(
-      getByTypeAndId("PercentSliderInput", "preferences-key-session-density").props.label,
-    ).toBe("Key session density");
+    expect(screen.getByTestId("preferences-key-session-density").props.label).toBe(
+      "Key session density",
+    );
 
     act(() => {
       getTab("Recovery").props.onPress();
     });
 
-    textValues = getTextValues();
-    expect(getByTypeAndId("PercentSliderInput", "preferences-systemic-fatigue").props.label).toBe(
+    expect(screen.getByTestId("preferences-systemic-fatigue-tolerance").props.label).toBe(
       "Systemic fatigue tolerance",
     );
-    expect(
-      getByTypeAndId("PercentSliderInput", "preferences-double-day-tolerance").props.label,
-    ).toBe("Double-day tolerance");
-    expect(
-      getByTypeAndId("PercentSliderInput", "preferences-long-session-fatigue").props.label,
-    ).toBe("Long-session fatigue tolerance");
+    expect(screen.getByTestId("preferences-double-day-tolerance").props.label).toBe(
+      "Double-day tolerance",
+    );
+    expect(screen.getByTestId("preferences-long-session-fatigue-tolerance").props.label).toBe(
+      "Long-session fatigue tolerance",
+    );
 
     act(() => {
       getTab("Goal strategy").props.onPress();
     });
 
-    textValues = getTextValues();
-    expect(getByTypeAndId("PercentSliderInput", "preferences-taper-style").props.label).toBe(
+    expect(screen.getByTestId("preferences-taper-style-preference").props.label).toBe(
       "Taper style",
     );
-    expect(getByTypeAndId("PercentSliderInput", "preferences-priority-tradeoff").props.label).toBe(
+    expect(screen.getByTestId("preferences-priority-tradeoff-preference").props.label).toBe(
       "Priority tradeoff",
     );
 
@@ -492,23 +451,23 @@ describe("training preferences projection preview", () => {
     act(() => {
       screen.getByTestId("preferences-availability-toggle-monday").props.onPress();
     });
-    expect(
-      getByTypeAndId("IntegerStepper", "preferences-availability-window-monday-start").props.label,
-    ).toBe("Start minute");
-    expect(
-      getByTypeAndId("IntegerStepper", "preferences-availability-window-monday-end").props.label,
-    ).toBe("End minute");
-    expect(
-      getByTypeAndId("IntegerStepper", "preferences-availability-max-sessions-monday").props.label,
-    ).toBe("Max sessions");
+    expect(screen.getByTestId("preferences-availability-window-monday-start").props.label).toBe(
+      "Start minute",
+    );
+    expect(screen.getByTestId("preferences-availability-window-monday-end").props.label).toBe(
+      "End minute",
+    );
+    expect(screen.getByTestId("preferences-availability-max-sessions-monday").props.label).toBe(
+      "Max sessions",
+    );
 
     act(() => {
-      getTab("Preferences").props.onPress();
+      getTab("Adaptation").props.onPress();
     });
-    expect(getByTypeAndId("PercentSliderInput", "preferences-recency-adaptation").props.label).toBe(
+    expect(screen.getByTestId("preferences-recency-adaptation").props.label).toBe(
       "Recency adaptation",
     );
-    expect(getByTypeAndId("PercentSliderInput", "preferences-plan-churn").props.label).toBe(
+    expect(screen.getByTestId("preferences-plan-churn-tolerance").props.label).toBe(
       "Plan churn tolerance",
     );
 
@@ -520,135 +479,18 @@ describe("training preferences projection preview", () => {
     act(() => {
       screen.getByTestId("preferences-sport-override-toggle-run").props.onPress();
     });
+    expect(screen.getByTestId("preferences-sport-override-run-min-sessions").props.label).toBe(
+      "Min sessions",
+    );
+    expect(screen.getByTestId("preferences-sport-override-run-max-sessions").props.label).toBe(
+      "Max sessions",
+    );
+    expect(screen.getByTestId("preferences-sport-override-run-max-duration").props.label).toBe(
+      "Max session duration",
+    );
     expect(
-      getByTypeAndId("IntegerStepper", "preferences-sport-override-run-min-sessions").props.label,
-    ).toBe("Min sessions");
-    expect(
-      getByTypeAndId("IntegerStepper", "preferences-sport-override-run-max-sessions").props.label,
-    ).toBe("Max sessions");
-    expect(
-      getByTypeAndId("IntegerStepper", "preferences-sport-override-run-max-duration").props.label,
-    ).toBe("Max session duration");
-    expect(
-      getByTypeAndId("IntegerStepper", "preferences-sport-override-run-max-weekly-duration").props
-        .label,
+      screen.getByTestId("preferences-sport-override-run-max-weekly-duration").props.label,
     ).toBe("Max weekly duration");
-  });
-
-  it("updates preview chart data when draft sliders change", () => {
-    renderNative(<TrainingPreferencesScreen />);
-
-    const initialChart = getChart();
-    const initialLastRecommendedLoad = initialChart.props.points
-      .toReversed()
-      .find((point: any) => point.targetLoadTss != null)?.targetLoadTss;
-    const initialLastScheduledLoad = initialChart.props.points
-      .toReversed()
-      .find((point: any) => point.plannedLoadTss != null)?.plannedLoadTss;
-
-    act(() => {
-      getTab("Training style").props.onPress();
-    });
-
-    const aggressivenessSlider = getByTypeAndId(
-      "PercentSliderInput",
-      "preferences-progression-pace",
-    );
-
-    act(() => {
-      aggressivenessSlider.props.onChange(80);
-    });
-
-    const updatedChart = getChart();
-    const updatedLastRecommendedLoad = updatedChart.props.points
-      .toReversed()
-      .find((point: any) => point.targetLoadTss != null)?.targetLoadTss;
-    const updatedLastScheduledLoad = updatedChart.props.points
-      .toReversed()
-      .find((point: any) => point.plannedLoadTss != null)?.plannedLoadTss;
-
-    expect(updatedLastRecommendedLoad).not.toEqual(initialLastRecommendedLoad);
-    expect(updatedLastScheduledLoad).toEqual(initialLastScheduledLoad);
-  });
-
-  it("marks presets custom after a preset value is manually changed", () => {
-    renderNative(<TrainingPreferencesScreen />);
-
-    expect(screen.getByTestId("training-preferences-preset-custom").props.className).toContain(
-      "bg-primary",
-    );
-
-    act(() => {
-      screen.getByTestId("training-preferences-preset-balanced").props.onPress();
-    });
-
-    expect(screen.getByTestId("training-preferences-preset-balanced").props.className).toContain(
-      "bg-primary",
-    );
-
-    act(() => {
-      getTab("Training style").props.onPress();
-    });
-
-    act(() => {
-      getByTypeAndId("PercentSliderInput", "preferences-progression-pace").props.onChange(80);
-    });
-
-    act(() => {
-      getTab("Preferences").props.onPress();
-    });
-
-    expect(screen.getByTestId("training-preferences-preset-custom").props.className).toContain(
-      "bg-primary",
-    );
-  });
-
-  it("renders the preview training path chart", () => {
-    renderNative(<TrainingPreferencesScreen />);
-
-    expect(getChart().props.points.length).toBeGreaterThanOrEqual(3);
-    expect(getChart().props.density).toBe("compact");
-  });
-
-  it("shows a clear empty state when there is no active plan", () => {
-    activePlanData = undefined;
-    snapshotState = {
-      ...snapshotState,
-      plan: undefined,
-      idealCurveData: {
-        dataPoints: [],
-        targetCTL: null,
-        targetDate: null,
-      },
-    } as any;
-
-    renderNative(<TrainingPreferencesScreen />);
-
-    const textValues = getTextValues();
-
-    expect(textValues).toContain("Training Load Preview");
-    expect(textValues.some((value: string) => value.includes("Draft preview"))).toBe(false);
-    expect(textValues.some((value: string) => value.includes("Preview unavailable"))).toBe(false);
-    expect(getAllByTypeOrEmpty("DailyTrainingAdjustmentChart")).toHaveLength(1);
-  });
-
-  it("shows a baseline-curve message when projection data is missing", () => {
-    snapshotState = {
-      ...snapshotState,
-      idealCurveData: {
-        dataPoints: [],
-        targetCTL: 60,
-        targetDate: "2026-07-01",
-      },
-    };
-
-    renderNative(<TrainingPreferencesScreen />);
-
-    const textValues = getTextValues();
-
-    expect(textValues).toContain("Training Load Preview");
-    expect(textValues.some((value: string) => value.includes("Draft preview"))).toBe(false);
-    expect(textValues.some((value: string) => value.includes("Preview unavailable"))).toBe(false);
   });
 
   it("blocks saving when schedule limits conflict", () => {
@@ -658,13 +500,13 @@ describe("training preferences projection preview", () => {
       getTab("Schedule").props.onPress();
     });
 
-    const minSessionsStepper = getByTypeAndTestId("IntegerStepper", "preferences-min-sessions");
+    const minSessionsStepper = screen.getByTestId("preferences-min-sessions-per-week");
 
     act(() => {
       minSessionsStepper.props.onChange(8);
     });
 
-    const saveButton = getButtonByLabel("Save");
+    const saveButton = screen.getByTestId("training-preferences-save-button");
     const textValues = getTextValues();
 
     expect(saveButton.props.disabled).toBe(true);
@@ -676,48 +518,55 @@ describe("training preferences projection preview", () => {
     expect(upsertMock).not.toHaveBeenCalled();
   });
 
-  it("resets back to fetched settings after form edits", async () => {
+  it("converts fractional defaults to display percents and resets 60 back to 15", async () => {
     renderNative(<TrainingPreferencesScreen />);
 
     act(() => {
       getTab("Goal strategy").props.onPress();
     });
 
-    const surplusSlider = getByTypeAndId("PercentSliderInput", "preferences-target-surplus");
+    const surplusSlider = screen.getByTestId("preferences-target-surplus-preference");
+    expect(surplusSlider.props.value).toBe(15);
 
     act(() => {
       surplusSlider.props.onChange(60);
     });
 
     await waitFor(() => {
-      expect(getButtonByLabel("Save").props.disabled).toBe(false);
+      expect(screen.getByTestId("preferences-target-surplus-preference").props.value).toBe(60);
+      expect(screen.getByTestId("training-preferences-save-button").props.disabled).toBe(false);
     });
 
     act(() => {
-      getButtonByLabel("Reset").props.onPress();
+      screen.getByTestId("training-preferences-reset-button").props.onPress();
     });
 
-    const resetSlider = getByTypeAndId("PercentSliderInput", "preferences-target-surplus");
-
-    expect(resetSlider.props.value).toBe(15);
-    expect(getButtonByLabel("Save").props.disabled).toBe(true);
+    await waitFor(() => {
+      expect(screen.getByTestId("preferences-target-surplus-preference").props.value).toBe(15);
+      expect(screen.getByTestId("training-preferences-save-button").props.disabled).toBe(true);
+    });
   });
 
-  it("saves canonical preference sections including target surplus", async () => {
+  it("converts a display percent of 60 to a saved fraction of 0.6", async () => {
     renderNative(<TrainingPreferencesScreen />);
 
     act(() => {
       getTab("Goal strategy").props.onPress();
     });
 
-    const surplusSlider = getByTypeAndId("PercentSliderInput", "preferences-target-surplus");
+    const surplusSlider = screen.getByTestId("preferences-target-surplus-preference");
+    expect(surplusSlider.props.value).toBe(15);
 
     act(() => {
       surplusSlider.props.onChange(60);
     });
 
+    await waitFor(() => {
+      expect(screen.getByTestId("preferences-target-surplus-preference").props.value).toBe(60);
+    });
+
     await act(async () => {
-      await getButtonByLabel("Save").props.onPress();
+      await screen.getByTestId("training-preferences-save-button").props.onPress();
     });
 
     await waitFor(() => {
@@ -745,15 +594,15 @@ describe("training preferences projection preview", () => {
     });
 
     act(() => {
-      getByTypeAndTestId("Switch", "preferences-baseline-enabled").props.onCheckedChange(true);
+      screen.getByTestId("preferences-baseline-enabled").props.onValueChange(true);
     });
 
     act(() => {
-      getByTypeAndTestId("DateInput", "preferences-baseline-date").props.onChange("2026-04-03");
+      screen.getByTestId("preferences-baseline-date").props.onChange("2026-04-03");
     });
 
     await act(async () => {
-      await getButtonByLabel("Save").props.onPress();
+      await screen.getByTestId("training-preferences-save-button").props.onPress();
     });
 
     await waitFor(() => {
@@ -777,11 +626,11 @@ describe("training preferences projection preview", () => {
     });
 
     act(() => {
-      getByTypeAndTestId("Switch", "preferences-baseline-enabled").props.onCheckedChange(true);
+      screen.getByTestId("preferences-baseline-enabled").props.onValueChange(true);
     });
 
     act(() => {
-      getByTypeAndTestId("IntegerStepper", "preferences-baseline-ctl").props.onChange(220);
+      screen.getByTestId("preferences-baseline-ctl").props.onChange(220);
     });
 
     expect(screen.getByTestId("preferences-baseline-ctl-warning")).toBeTruthy();

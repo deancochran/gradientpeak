@@ -227,6 +227,11 @@ jest.mock("@repo/core", () => ({
   },
 }));
 
+jest.mock("@/lib/services/sentry", () => ({
+  __esModule: true,
+  captureException: jest.fn(),
+}));
+
 jest.mock("lucide-react-native", () => ({
   __esModule: true,
   Activity: createHost("Activity"),

@@ -100,7 +100,9 @@ jest.mock("@/lib/providers/ActivityRecorderProvider", () => ({
 
 jest.mock("@/lib/server-config", () => ({
   __esModule: true,
+  getServerConfig: () => ({ apiUrl: "http://localhost:3000" }),
   getReachableSupabaseStorageUrl: (path: string) => path,
+  subscribeServerConfig: () => jest.fn(),
 }));
 
 jest.mock("@/lib/performance", () => ({

@@ -1,4 +1,5 @@
 import React from "react";
+import { type Control, type FieldValues, useController } from "react-hook-form";
 
 export type HostProps = Record<string, unknown> & { children?: React.ReactNode };
 
@@ -110,19 +111,68 @@ export function createFormTextField<TValues extends Record<string, string>>() {
 }
 
 export function createFormComponentMocks() {
+  type ControlledFieldProps = Record<string, unknown> & {
+    control: Control<FieldValues>;
+    name: string;
+    testId?: string;
+  };
+
+  const createControlledField = (type: string) =>
+    function ControlledField({ control, name, testId, ...props }: ControlledFieldProps) {
+      const { field } = useController({ control, name });
+
+      return React.createElement(type, {
+        ...props,
+        id: testId,
+        name,
+        onChange: field.onChange,
+        onChangeText: field.onChange,
+        onValueChange: field.onChange,
+        testID: testId,
+        value: field.value,
+      });
+    };
+
+  function FormPercentSliderField({
+    control,
+    name,
+    testId,
+    valueMode = "percent",
+    ...props
+  }: ControlledFieldProps & { valueMode?: "fraction" | "percent" }) {
+    const { field } = useController({ control, name });
+    const formValue =
+      typeof field.value === "number" && Number.isFinite(field.value) ? field.value : 0;
+
+    return React.createElement("FormPercentSliderField", {
+      ...props,
+      id: testId,
+      name,
+      onChange: (displayPercent: number) => {
+        field.onChange(
+          valueMode === "fraction" ? Number((displayPercent / 100).toFixed(4)) : displayPercent,
+        );
+      },
+      testID: testId,
+      value: valueMode === "fraction" ? formValue * 100 : formValue,
+      valueMode,
+    });
+  }
+
   return {
     __esModule: true,
     Form: ({ children }: { children?: React.ReactNode }) => children,
-    FormBoundedNumberField: createHost("FormBoundedNumberField"),
-    FormDateInputField: createHost("FormDateInputField"),
+    FormBoundedNumberField: createControlledField("FormBoundedNumberField"),
+    FormDateInputField: createControlledField("FormDateInputField"),
     FormField: createHost("FormField"),
-    FormIntegerStepperField: createHost("FormIntegerStepperField"),
-    FormNumberField: createHost("FormNumberField"),
-    FormSegmentedSelectField: createHost("FormSegmentedSelectField"),
-    FormSelectField: createHost("FormSelectField"),
-    FormSwitchField: createHost("FormSwitchField"),
-    FormTextField: createHost("FormTextField"),
-    FormTextareaField: createHost("FormTextareaField"),
-    FormTimeInputField: createHost("FormTimeInputField"),
+    FormIntegerStepperField: createControlledField("FormIntegerStepperField"),
+    FormNumberField: createControlledField("FormNumberField"),
+    FormPercentSliderField,
+    FormSegmentedSelectField: createControlledField("FormSegmentedSelectField"),
+    FormSelectField: createControlledField("FormSelectField"),
+    FormSwitchField: createControlledField("FormSwitchField"),
+    FormTextField: createControlledField("FormTextField"),
+    FormTextareaField: createControlledField("FormTextareaField"),
+    FormTimeInputField: createControlledField("FormTimeInputField"),
   };
 }

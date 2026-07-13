@@ -220,8 +220,14 @@ jest.mock("@repo/ui/components/icon", () => ({
 
 jest.mock("@repo/ui/components/input", () => ({
   __esModule: true,
-  Input: ({ value, onChangeText, placeholder, ...props }: any) =>
-    React.createElement("TextInput", { value, onChangeText, placeholder, ...props }),
+  Input: ({ value, onChangeText, placeholder, testId, ...props }: any) =>
+    React.createElement("TextInput", {
+      value,
+      onChangeText,
+      placeholder,
+      testID: testId,
+      ...props,
+    }),
 }));
 
 jest.mock("@repo/ui/components/slider", () => ({

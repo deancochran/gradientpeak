@@ -201,7 +201,7 @@ jest.mock("@/lib/api", () => ({
 
 describe("event detail update screen", () => {
   function getDateInput(rendered: any, id: string) {
-    return rendered.UNSAFE_getAllByType("DateInput").find((node: any) => node.props.id === id);
+    return rendered.getByTestId(id);
   }
 
   beforeEach(() => {
@@ -253,7 +253,7 @@ describe("event detail update screen", () => {
 
     fireEvent(screen.getByTestId("event-detail-update-title-input"), "changeText", "Updated Event");
     await act(async () => {
-      getDateInput(rendered, "event-detail-update-start-date").props.onChange("2026-04-30");
+      getDateInput(rendered, "event-detail-update-start-date-button").props.onChange("2026-04-30");
     });
     await act(async () => {
       fireEvent.press(screen.getByTestId("event-detail-update-save-button"));
@@ -340,7 +340,7 @@ describe("event detail update screen", () => {
       fireEvent.press(screen.getByTestId("event-detail-update-recurrence-weekly"));
     });
     await act(async () => {
-      getDateInput(rendered, "event-detail-update-recurrence-end-date").props.onChange(
+      getDateInput(rendered, "event-detail-update-recurrence-end-date-button").props.onChange(
         "2026-04-30",
       );
     });

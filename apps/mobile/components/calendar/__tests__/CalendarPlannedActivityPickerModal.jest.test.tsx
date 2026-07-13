@@ -7,6 +7,11 @@ const activityPlansState = {
   error: null as Error | null,
 };
 
+jest.mock("expo-router", () => ({
+  __esModule: true,
+  useRouter: () => ({ navigate: jest.fn(), push: jest.fn() }),
+}));
+
 jest.mock("@repo/ui/components/icon", () => ({
   __esModule: true,
   Icon: createHost("Icon"),

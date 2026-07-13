@@ -127,6 +127,7 @@ jest.mock("@/lib/services/fit/GarminFitEncoder", () => ({
 jest.mock("@/lib/services/sentry", () => ({
   __esModule: true,
   initSentry: jest.fn(),
+  Sentry: { wrap: (component: unknown) => component },
 }));
 
 jest.mock("@/lib/stores/auth-store", () => ({

@@ -102,8 +102,8 @@ jest.mock("@repo/ui/components/icon", () => ({
 
 jest.mock("@repo/ui/components/input", () => ({
   __esModule: true,
-  Input: ({ value, onChangeText, ...props }: any) =>
-    React.createElement("TextInput", { value, onChangeText, ...props }),
+  Input: ({ value, onChangeText, testId, ...props }: any) =>
+    React.createElement("TextInput", { value, onChangeText, testID: testId, ...props }),
 }));
 
 jest.mock("@repo/ui/components/settings-group", () => ({

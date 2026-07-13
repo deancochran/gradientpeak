@@ -115,6 +115,12 @@ jest.mock("expo-haptics", () => ({
   selectionAsync: jest.fn(async () => undefined),
 }));
 
+jest.mock("@sentry/react-native", () => ({
+  __esModule: true,
+  init: jest.fn(),
+  wrap: <Component>(component: Component) => component,
+}));
+
 jest.mock("react-native-gesture-handler", () => ({
   __esModule: true,
   GestureHandlerRootView: createHost("GestureHandlerRootView"),
@@ -131,7 +137,19 @@ jest.mock("react-native-maps", () => ({
 
 jest.mock("@gorhom/bottom-sheet", () => ({
   __esModule: true,
-  default: createHost("BottomSheet"),
+  default: ({
+    children,
+    footerComponent: FooterComponent,
+    ...props
+  }: HostProps & {
+    footerComponent?: React.ComponentType<Record<string, unknown>>;
+  }) =>
+    React.createElement(
+      "BottomSheet",
+      props,
+      children,
+      FooterComponent ? React.createElement(FooterComponent, { animatedFooterPosition: 0 }) : null,
+    ),
   BottomSheetBackdrop: createLeafHost("BottomSheetBackdrop"),
   BottomSheetFlatList: ({
     data = [],
