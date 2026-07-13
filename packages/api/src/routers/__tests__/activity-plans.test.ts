@@ -122,7 +122,6 @@ function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
     import_external_id: null,
     is_system_template: false,
     likes_count: null,
-    is_public: false,
     ...overrides,
   };
 }
@@ -294,7 +293,6 @@ describe("activityPlansRouter", () => {
       id: "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       profile_id: OTHER_USER_ID,
       template_visibility: "public",
-      is_public: true,
     });
     const { caller } = createCaller({
       state: {
@@ -360,7 +358,6 @@ describe("activityPlansRouter", () => {
       id: "22222222-2222-4222-8222-222222222222",
       profile_id: OTHER_USER_ID,
       template_visibility: "public",
-      is_public: true,
     });
     const { caller } = createCaller({
       state: {
@@ -392,13 +389,11 @@ describe("activityPlansRouter", () => {
       id: "22222222-2222-4222-8222-222222222222",
       profile_id: OTHER_USER_ID,
       template_visibility: "private",
-      is_public: false,
     });
     const deniedPlan = createActivityPlanRow({
       id: "33333333-3333-4333-8333-333333333333",
       profile_id: OTHER_USER_ID,
       template_visibility: "private",
-      is_public: false,
     });
     const systemPlan = createActivityPlanRow({
       id: "44444444-4444-4444-8444-444444444444",
@@ -459,7 +454,6 @@ describe("activityPlansRouter", () => {
       id: "55555555-5555-4555-8555-555555555555",
       name: "Created Plan",
       template_visibility: "public",
-      is_public: true,
     });
     const { caller, callLog } = createCaller({
       state: {
@@ -481,7 +475,6 @@ describe("activityPlansRouter", () => {
       description: null,
       profile_id: USER_ID,
       template_visibility: "public",
-      is_public: true,
     });
     expect(result).toMatchObject({
       id: createdRow.id,
@@ -499,7 +492,6 @@ describe("activityPlansRouter", () => {
       id: existingRow.id,
       name: "After Update",
       template_visibility: "public",
-      is_public: true,
     });
     const { caller, callLog } = createCaller({
       state: {
@@ -519,7 +511,6 @@ describe("activityPlansRouter", () => {
     expect(updateCall?.payload).toMatchObject({
       name: "After Update",
       template_visibility: "public",
-      is_public: true,
     });
     expect(result).toMatchObject({ id: existingRow.id, visibility: "public" });
   });
@@ -563,7 +554,6 @@ describe("activityPlansRouter", () => {
       id: "88888888-8888-4888-8888-888888888888",
       profile_id: OTHER_USER_ID,
       template_visibility: "public",
-      is_public: true,
       name: "Shared Activity",
     });
     const duplicatedRow = createActivityPlanRow({
@@ -571,7 +561,6 @@ describe("activityPlansRouter", () => {
       profile_id: USER_ID,
       name: "Shared Activity (Copy)",
       template_visibility: "private",
-      is_public: false,
     });
     const { caller, callLog } = createCaller({
       state: {
@@ -589,7 +578,6 @@ describe("activityPlansRouter", () => {
       template_visibility: "private",
       import_provider: null,
       import_external_id: null,
-      is_public: false,
     });
     expect(result).toMatchObject({ id: duplicatedRow.id, visibility: "private" });
   });

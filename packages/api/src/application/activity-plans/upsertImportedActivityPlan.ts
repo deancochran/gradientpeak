@@ -51,7 +51,6 @@ export async function upsertImportedActivityPlan(
     import_provider: input.provider,
     import_external_id: input.externalId,
     is_system_template: false,
-    is_public: false,
   };
 
   const [row] = existingRow

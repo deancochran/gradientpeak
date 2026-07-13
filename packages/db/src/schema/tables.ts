@@ -284,7 +284,6 @@ export const activityPlans = pgTable(
     import_provider: text("import_provider"),
     import_external_id: text("import_external_id"),
     is_system_template: boolean("is_system_template").notNull().default(false),
-    is_public: boolean("is_public").notNull().default(false),
     likes_count: integer("likes_count").default(0),
   },
   (table) => [
@@ -628,7 +627,6 @@ export const trainingPlans = pgTable(
     description: text("description"),
     structure: jsonb("structure").notNull(),
     template_visibility: text("template_visibility").notNull().default("private"),
-    is_public: boolean("is_public").notNull().default(false),
     is_system_template: boolean("is_system_template").notNull().default(false),
     sessions_per_week_target: integer("sessions_per_week_target"),
     duration_hours: numeric("duration_hours", { precision: 12, scale: 2, mode: "number" }),

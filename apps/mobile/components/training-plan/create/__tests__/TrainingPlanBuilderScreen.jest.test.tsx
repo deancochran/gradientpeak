@@ -31,7 +31,6 @@ const activityPlan = {
   name: "Aerobic builder",
   created_at: ACTIVITY_PLAN_CREATED_AT,
   template_visibility: "public",
-  is_public: true,
   is_system_template: false,
   authoritative_metrics: { estimated_tss: 42, estimated_duration: 3600 },
 };

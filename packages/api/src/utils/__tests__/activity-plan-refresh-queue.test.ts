@@ -105,7 +105,6 @@ function createQueuedPlan(id: string) {
     import_external_id: null,
     is_system_template: false,
     likes_count: 0,
-    is_public: false,
   };
 }
 

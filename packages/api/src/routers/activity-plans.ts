@@ -225,7 +225,6 @@ function buildAccessiblePlanCondition(userId: string) {
 function buildDiscoverablePlanCondition() {
   return or(
     eq(activityPlans.template_visibility, "public"),
-    eq(activityPlans.is_public, true),
     eq(activityPlans.is_system_template, true),
   );
 }
@@ -329,7 +328,6 @@ function buildCreateValues(
     import_provider: input.import_provider ?? null,
     import_external_id: input.import_external_id ?? null,
     is_system_template: false,
-    is_public: templateVisibility === "public",
   };
 }
 
@@ -748,10 +746,6 @@ export const activityPlansRouter = createTRPCRouter({
         template_visibility: updates.template_visibility,
         import_provider: updates.import_provider,
         import_external_id: updates.import_external_id,
-        is_public:
-          updates.template_visibility === undefined
-            ? undefined
-            : updates.template_visibility === "public",
         ...metricsUpdates,
       };
 
@@ -874,7 +868,6 @@ export const activityPlansRouter = createTRPCRouter({
           import_provider: null,
           import_external_id: null,
           is_system_template: false,
-          is_public: false,
         })
         .returning();
 

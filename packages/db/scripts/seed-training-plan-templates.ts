@@ -89,7 +89,6 @@ async function seedTrainingPlanTemplates() {
                 structure: template.structure,
                 sessions_per_week_target: template.sessions_per_week_target,
                 duration_hours: template.duration_hours ?? null,
-                is_public: true,
                 template_visibility: "public",
                 updated_at: new Date(),
               })
@@ -111,7 +110,6 @@ async function seedTrainingPlanTemplates() {
             profile_id: null,
             is_system_template: true,
             template_visibility: "public",
-            is_public: true,
             name: template.name,
             description: template.description ?? null,
             structure: template.structure,

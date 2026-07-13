@@ -45,7 +45,6 @@ function createTrainingPlanRow(overrides: Partial<TrainingPlanRow> = {}): Traini
     description: "Build fitness",
     structure: {},
     template_visibility: "private",
-    is_public: false,
     is_system_template: false,
     sessions_per_week_target: null,
     duration_hours: null,

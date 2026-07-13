@@ -23,9 +23,7 @@ type TrainingPlanBuilderControllerOptions = {
 
 function toActivityPlanFacts(activityPlan: ActivityPlanListItem): TrainingPlanActivityPlanFacts {
   const isPublished =
-    activityPlan.template_visibility === "public" ||
-    activityPlan.is_public === true ||
-    activityPlan.is_system_template === true;
+    activityPlan.template_visibility === "public" || activityPlan.is_system_template === true;
 
   return {
     id: activityPlan.id,

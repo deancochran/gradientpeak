@@ -38,7 +38,6 @@ async function seedProfile() {
     full_name: "Canonical Activity Test",
     username: `canonical-${id.slice(0, 8)}`,
     onboarded: true,
-    is_public: false,
     created_at: now,
     updated_at: now,
   });

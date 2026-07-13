@@ -32,7 +32,6 @@ type HydratableActivityPlan = {
   id: string;
   name: string;
   template_visibility?: string | null;
-  is_public?: boolean | null;
   is_system_template?: boolean | null;
   authoritative_metrics?: {
     estimated_tss?: number | null;
@@ -45,9 +44,7 @@ function toActivityPlanFacts(activityPlan: HydratableActivityPlan): TrainingPlan
     id: activityPlan.id,
     name: activityPlan.name,
     published:
-      activityPlan.template_visibility === "public" ||
-      activityPlan.is_public === true ||
-      activityPlan.is_system_template === true,
+      activityPlan.template_visibility === "public" || activityPlan.is_system_template === true,
     accessible: true,
     estimatedTss: activityPlan.authoritative_metrics?.estimated_tss ?? null,
     estimatedDurationSeconds: activityPlan.authoritative_metrics?.estimated_duration ?? null,

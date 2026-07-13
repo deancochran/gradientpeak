@@ -65,7 +65,6 @@ async function insertTrainingPlan(input: {
     structure: Record<string, unknown>;
     profileId: string;
     templateVisibility?: "private" | "public";
-    isPublic?: boolean;
   };
 }): Promise<TrainingPlanRow> {
   const result = await input.db.execute(sql<TrainingPlanRow>`
@@ -74,16 +73,14 @@ async function insertTrainingPlan(input: {
       description,
       structure,
       profile_id,
-      template_visibility,
-      is_public
+      template_visibility
     )
     values (
       ${input.values.name},
       ${input.values.description},
       ${JSON.stringify(input.values.structure)}::jsonb,
       ${input.values.profileId}::uuid,
-      ${input.values.templateVisibility ?? null},
-      ${input.values.isPublic ?? null}
+      ${input.values.templateVisibility ?? "private"}
     )
     returning *
   `);
@@ -333,7 +330,6 @@ export async function duplicateTrainingPlanUseCase(input: {
       structure: duplicatedStructure,
       profileId: input.profileId,
       templateVisibility: "private",
-      isPublic: false,
     },
   });
 

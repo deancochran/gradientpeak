@@ -45,7 +45,6 @@ function buildActivityPlanRow(overrides: Record<string, unknown> = {}) {
     import_provider: null,
     import_external_id: null,
     is_system_template: false,
-    is_public: false,
     likes_count: null,
     ...overrides,
   };

@@ -17,7 +17,6 @@ type ActivityPlanPickerSource = NonNullable<
   description?: string | null;
   has_liked?: boolean | null;
   id: string;
-  is_public?: boolean | null;
   is_system_template?: boolean | null;
   likes_count?: number | null;
   name: string;
@@ -200,7 +199,7 @@ export function mapActivityPlanToResourcePickerItem(
     estimatedTss: metrics.estimated_tss,
     id: plan.id,
     hasLiked: plan.has_liked,
-    isPublic: plan.template_visibility === "public" || plan.is_public,
+    isPublic: plan.template_visibility === "public",
     isSystem: plan.is_system_template,
     likesCount: plan.likes_count,
     name: plan.name,

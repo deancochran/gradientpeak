@@ -15,7 +15,6 @@ describe("trainingPlansRouter.duplicate", () => {
             profile_id: "template-owner",
             template_visibility: "public",
             is_system_template: false,
-            is_public: true,
             structure: {
               id: sourcePlanId,
               plan_type: "periodized",
@@ -49,7 +48,6 @@ describe("trainingPlansRouter.duplicate", () => {
             profile_id: "profile-123",
             template_visibility: "private",
             is_system_template: false,
-            is_public: false,
             structure: {
               id: "33333333-3333-4333-8333-333333333333",
               plan_type: "periodized",
@@ -106,7 +104,6 @@ describe("trainingPlansRouter.duplicate", () => {
             profile_id: null,
             template_visibility: "public",
             is_system_template: true,
-            is_public: true,
             structure: {
               version: 1,
               start_date: "2026-01-05",
@@ -135,7 +132,6 @@ describe("trainingPlansRouter.duplicate", () => {
             profile_id: "profile-123",
             template_visibility: "private",
             is_system_template: false,
-            is_public: false,
             structure: {
               version: 1,
               start_date: "2026-01-05",

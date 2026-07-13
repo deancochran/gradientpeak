@@ -48,7 +48,6 @@ export interface ActivityPlan {
   notes?: string | null;
   profile_id?: string | null;
   template_visibility?: string | null;
-  is_public?: boolean | null;
   is_system_template?: boolean | null;
   created_at?: string;
   updated_at?: string;

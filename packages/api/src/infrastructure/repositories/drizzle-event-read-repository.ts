@@ -410,7 +410,8 @@ export function createEventReadRepository(
                 eq(schema.trainingPlans.id, trainingPlanId),
                 or(
                   eq(schema.trainingPlans.profile_id, profileId),
-                  eq(schema.trainingPlans.is_public, true),
+                  eq(schema.trainingPlans.template_visibility, "public"),
+                  eq(schema.trainingPlans.is_system_template, true),
                 ),
               ),
             )
