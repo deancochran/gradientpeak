@@ -2,6 +2,7 @@ import { EVIDENCE_VERSION, type EvidenceCandidate, resolveCanonicalThresholds } 
 import { profileMetrics } from "@repo/db";
 import { and, desc, eq, inArray, lte } from "drizzle-orm";
 import type { getRequiredDb } from "../../../../db";
+import { resolveLatestObservationsByKey } from "../../../../utils/profile-override-observations";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -100,18 +101,22 @@ export class MetricEvidenceAdapter {
           asOf: policy.asOf,
         })
       : [];
-    const latestRows = new Map<string, ProfileMetricRow>();
-
-    for (const row of rows
+    const orderedRows = rows
       .filter(
         (row) =>
           row.profile_id === input.profileId && row.recorded_at.getTime() <= policy.asOf.getTime(),
       )
-      .sort(compareRows)) {
-      if (!latestRows.has(row.metric_type)) latestRows.set(row.metric_type, row);
+      .sort(compareRows);
+    const resolvedLatestRows = resolveLatestObservationsByKey(
+      orderedRows,
+      (row) => row.metric_type,
+    );
+    const latestRows = new Map<string, ProfileMetricRow>();
+    for (const [type, row] of resolvedLatestRows) {
+      if (row) latestRows.set(type, row);
     }
 
-    const thresholdRows = rows.filter(
+    const thresholdRows = [...latestRows.values()].filter(
       (row) =>
         row.profile_id === input.profileId &&
         row.recorded_at.getTime() <= policy.asOf.getTime() &&
@@ -269,6 +274,7 @@ export class MetricEvidenceAdapter {
         value: profileMetrics.value,
         reference_activity_id: profileMetrics.reference_activity_id,
         source: profileMetrics.source,
+        method: profileMetrics.method,
         provenance: profileMetrics.provenance,
       })
       .from(profileMetrics)

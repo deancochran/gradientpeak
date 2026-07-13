@@ -23,6 +23,7 @@ import { listProfileMetricHistory } from "../application/profile-metrics/listPro
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { indexCursorSchema } from "../utils/index-cursor";
+import { isClearedProfileOverride } from "../utils/profile-override-observations";
 
 const createProfileMetricInputSchema = profileMetricCreatePayloadSchema
   .extend({ profile_id: z.string().uuid("Invalid profile ID") })
@@ -120,7 +121,7 @@ export const profileMetricsRouter = createTRPCRouter({
         .orderBy(desc(profileMetrics.recorded_at))
         .limit(1);
 
-      return parseNullableProfileMetricRow(data);
+      return parseNullableProfileMetricRow(data && !isClearedProfileOverride(data) ? data : null);
     }),
 
   /**

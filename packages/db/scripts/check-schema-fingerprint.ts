@@ -20,6 +20,8 @@ const transitionalExtras = JSON.parse(
   constraints: Array<{ table: string; name: string }>;
   indexes: Array<{ table: string; name: string }>;
   sequences: string[];
+  triggers: Array<{ table: string; name: string }>;
+  functions: string[];
 };
 
 function withoutDeclaredTransitionalExtras(fingerprint: Record<string, unknown>) {
@@ -33,6 +35,10 @@ function withoutDeclaredTransitionalExtras(fingerprint: Record<string, unknown>)
     transitionalExtras.indexes.map((entry) => `${entry.table}.${entry.name}`),
   );
   const excludedSequences = new Set(transitionalExtras.sequences);
+  const excludedTriggers = new Set(
+    transitionalExtras.triggers.map((entry) => `${entry.table}.${entry.name}`),
+  );
+  const excludedFunctions = new Set(transitionalExtras.functions);
   const filterEntries = (
     section: unknown,
     excluded: Set<string>,
@@ -80,6 +86,17 @@ function withoutDeclaredTransitionalExtras(fingerprint: Record<string, unknown>)
       throw new Error(`declared transitional fingerprint sequence is missing: ${sequence}`);
     }
   }
+  for (const entry of transitionalExtras.triggers) {
+    const expected = `${entry.table}.${entry.name}`;
+    if (!hasEntry(fingerprint.triggers, expected, (value) => `${value.table}.${value.name}`)) {
+      throw new Error(`declared transitional fingerprint trigger is missing: ${expected}`);
+    }
+  }
+  for (const identity of transitionalExtras.functions) {
+    if (!hasEntry(fingerprint.functions, identity, (value) => String(value.identity))) {
+      throw new Error(`declared transitional fingerprint function is missing: ${identity}`);
+    }
+  }
 
   return {
     ...fingerprint,
@@ -103,6 +120,14 @@ function withoutDeclaredTransitionalExtras(fingerprint: Record<string, unknown>)
     ),
     publicSequences: filterEntries(fingerprint.publicSequences, excludedSequences, (entry) =>
       String(entry.name),
+    ),
+    triggers: filterEntries(
+      fingerprint.triggers,
+      excludedTriggers,
+      (entry) => `${String(entry.table)}.${String(entry.name)}`,
+    ),
+    functions: filterEntries(fingerprint.functions, excludedFunctions, (entry) =>
+      String(entry.identity),
     ),
   };
 }

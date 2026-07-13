@@ -4,14 +4,24 @@ export type ActivityAnalysisProfileSnapshot = Pick<ProfileRow, "dob" | "gender">
 export type ActivityAnalysisMetricSnapshot = Omit<
   Pick<ProfileMetricRow, "metric_type" | "recorded_at" | "unit" | "value">,
   "value"
-> & { value: number };
+> & {
+  value: number;
+  id?: string;
+  method?: string | null;
+  provenance?: unknown;
+};
 export type ActivityAnalysisEffortSnapshot = Omit<
   Pick<
     ActivityEffortRow,
     "activity_category" | "duration_seconds" | "effort_type" | "recorded_at" | "unit" | "value"
   >,
   "value"
-> & { value: number };
+> & {
+  value: number;
+  id?: string;
+  method?: string | null;
+  provenance?: unknown;
+};
 
 export type ActivityAnalysisContextSnapshot = {
   profile: ActivityAnalysisProfileSnapshot;

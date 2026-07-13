@@ -4,6 +4,10 @@ import {
   type ThresholdActivityEffortObservation,
 } from "@repo/core/athlete-inputs";
 import type { ActivityAnalysisContextSnapshot, ActivityAnalysisStore } from "../../repositories";
+import {
+  filterSupersededProfileOverrides,
+  resolveLatestObservationsByKey,
+} from "../../utils/profile-override-observations";
 
 type ResolveActivityContextAsOfInput = {
   store: ActivityAnalysisStore;
@@ -41,12 +45,19 @@ export function resolveActivityContextFromEvidence(input: {
   const cutoff = asOf.getTime();
 
   const profileMetrics: ActivityAnalysisContext["profileMetrics"] = {};
-  const typedMetrics = snapshot.profileMetrics.filter(
-    (metric) => new Date(metric.recorded_at).getTime() <= cutoff,
-  );
-  const typedEfforts = snapshot.recentEfforts
+  const metricRows = snapshot.profileMetrics
+    .filter((metric) => new Date(metric.recorded_at).getTime() <= cutoff)
+    .sort(compareRecordedAtDesc);
+  const latestMetrics = resolveLatestObservationsByKey(metricRows, (metric) => metric.metric_type);
+  const typedMetrics = [...latestMetrics.values()].filter((metric) => metric !== null);
+  const effortRows = snapshot.recentEfforts
     .filter((effort) => new Date(effort.recorded_at).getTime() <= cutoff)
-    .slice(0, 50);
+    .sort(compareRecordedAtDesc);
+  const typedEfforts = filterSupersededProfileOverrides(
+    effortRows,
+    (effort) =>
+      `${effort.activity_category}:${effort.effort_type}:${effort.duration_seconds}:${effort.unit}`,
+  ).slice(0, 50);
 
   for (const metric of typedMetrics) {
     const metricValue = toNumber(metric.value);
@@ -71,6 +82,9 @@ export function resolveActivityContextFromEvidence(input: {
       profileMetrics.lthr = metricValue;
     }
   }
+
+  if (latestMetrics.get("weight_kg") === null) profileMetrics.weight_kg = null;
+  if (latestMetrics.get("lthr") === null) profileMetrics.lthr = null;
 
   const thresholds = resolveCanonicalThresholds({
     now: asOf.toISOString(),
@@ -156,6 +170,16 @@ function normalizeGender(
   }
 
   return null;
+}
+
+function compareRecordedAtDesc(
+  left: { id?: string; recorded_at: Date },
+  right: { id?: string; recorded_at: Date },
+) {
+  return (
+    right.recorded_at.getTime() - left.recorded_at.getTime() ||
+    (right.id ?? "").localeCompare(left.id ?? "")
+  );
 }
 
 function toIsoString(value: Date | string | null | undefined): string | null {

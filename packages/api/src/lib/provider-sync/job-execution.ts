@@ -3,6 +3,7 @@ import type { ProviderSyncJobRecord } from "../../repositories";
 import { logger } from "../logger";
 
 export type ProviderSyncJobOutcome = "completed" | "failed" | "dead_lettered";
+export type ProviderSyncExecutionContext = { signal: AbortSignal };
 
 export type ProviderSyncExecutionTelemetry = {
   attempts: number;
@@ -90,7 +91,10 @@ export async function executeProviderSyncJobs(input: {
   jobs: ProviderSyncJobRecord[];
   leaseRenewIntervalMs?: number;
   now?: () => number;
-  processJob: (job: ProviderSyncJobRecord) => Promise<ProviderSyncJobOutcome>;
+  processJob: (
+    job: ProviderSyncJobRecord,
+    context: ProviderSyncExecutionContext,
+  ) => Promise<ProviderSyncJobOutcome>;
   provider: string;
   renewLease?: (job: ProviderSyncJobRecord) => Promise<boolean>;
   telemetry?: ProviderSyncTelemetry;
@@ -107,20 +111,34 @@ export async function executeProviderSyncJobs(input: {
       const laneJobs = laneQueue.shift();
       if (!laneJobs) return;
       for (const job of laneJobs) {
+        const lease = new AbortController();
         let renewal: ReturnType<typeof setInterval> | undefined;
+        let renewalInFlight = false;
         if (input.renewLease && input.leaseRenewIntervalMs) {
           renewal = setInterval(() => {
-            input.renewLease?.(job).catch(() => {
-              logger.warn("Provider sync lease renewal failed", {
-                jobFamily: input.jobFamily,
-                provider: input.provider,
+            if (renewalInFlight || lease.signal.aborted) return;
+            renewalInFlight = true;
+            input
+              .renewLease?.(job)
+              .then((renewed) => {
+                if (!renewed) lease.abort(new Error("Provider sync lease ownership lost"));
+              })
+              .catch(() => {
+                lease.abort(new Error("Provider sync lease renewal failed"));
+                logger.warn("Provider sync lease renewal failed", {
+                  jobFamily: input.jobFamily,
+                  provider: input.provider,
+                });
+              })
+              .finally(() => {
+                renewalInFlight = false;
               });
-            });
           }, input.leaseRenewIntervalMs);
         }
-        const outcome = await input.processJob(job).finally(() => {
+        let outcome = await input.processJob(job, { signal: lease.signal }).finally(() => {
           if (renewal) clearInterval(renewal);
         });
+        if (lease.signal.aborted) outcome = "failed";
         if (outcome === "completed") completed += 1;
         else {
           failed += 1;

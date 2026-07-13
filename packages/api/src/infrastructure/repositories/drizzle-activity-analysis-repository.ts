@@ -30,11 +30,14 @@ export function createActivityAnalysisStore(db: DrizzleDbClient): ActivityAnalys
         .where(inArray(schema.profiles.id, profileIds)),
       db
         .select({
+          id: schema.profileMetrics.id,
           profile_id: schema.profileMetrics.profile_id,
           metric_type: schema.profileMetrics.metric_type,
           recorded_at: schema.profileMetrics.recorded_at,
           unit: schema.profileMetrics.unit,
           value: schema.profileMetrics.value,
+          method: schema.profileMetrics.method,
+          provenance: schema.profileMetrics.provenance,
         })
         .from(schema.profileMetrics)
         .where(
@@ -44,9 +47,10 @@ export function createActivityAnalysisStore(db: DrizzleDbClient): ActivityAnalys
             inArray(schema.profileMetrics.metric_type, metricTypes),
           ),
         )
-        .orderBy(desc(schema.profileMetrics.recorded_at)),
+        .orderBy(desc(schema.profileMetrics.recorded_at), desc(schema.profileMetrics.id)),
       db
         .select({
+          id: schema.activityEfforts.id,
           profile_id: schema.activityEfforts.profile_id,
           activity_category: schema.activityEfforts.activity_category,
           duration_seconds: schema.activityEfforts.duration_seconds,
@@ -54,6 +58,8 @@ export function createActivityAnalysisStore(db: DrizzleDbClient): ActivityAnalys
           recorded_at: schema.activityEfforts.recorded_at,
           unit: schema.activityEfforts.unit,
           value: schema.activityEfforts.value,
+          method: schema.activityEfforts.method,
+          provenance: schema.activityEfforts.provenance,
         })
         .from(schema.activityEfforts)
         .where(
@@ -63,7 +69,7 @@ export function createActivityAnalysisStore(db: DrizzleDbClient): ActivityAnalys
             inArray(schema.activityEfforts.effort_type, effortTypes),
           ),
         )
-        .orderBy(desc(schema.activityEfforts.recorded_at)),
+        .orderBy(desc(schema.activityEfforts.recorded_at), desc(schema.activityEfforts.id)),
     ]);
 
     const evidenceByProfileId = new Map<string, ActivityAnalysisContextSnapshot>();
@@ -82,6 +88,7 @@ export function createActivityAnalysisStore(db: DrizzleDbClient): ActivityAnalys
         profileMetrics: profileMetrics
           .filter((metric) => metric.profile_id === profileId)
           .map((metric) => ({
+            id: metric.id,
             metric_type: metric.metric_type as
               | "weight_kg"
               | "ftp"
@@ -91,16 +98,21 @@ export function createActivityAnalysisStore(db: DrizzleDbClient): ActivityAnalys
             recorded_at: metric.recorded_at,
             unit: metric.unit,
             value: toNumber(metric.value),
+            method: metric.method,
+            provenance: metric.provenance,
           })),
         recentEfforts: recentEfforts
           .filter((effort) => effort.profile_id === profileId)
           .map((effort) => ({
+            id: effort.id,
             activity_category: effort.activity_category,
             duration_seconds: effort.duration_seconds,
             effort_type: effort.effort_type,
             recorded_at: effort.recorded_at,
             unit: effort.unit,
             value: toNumber(effort.value),
+            method: effort.method,
+            provenance: effort.provenance,
           })),
       });
     }

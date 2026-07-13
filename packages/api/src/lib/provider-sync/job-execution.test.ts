@@ -167,4 +167,36 @@ describe("executeProviderSyncJobs", () => {
     await execution;
     vi.useRealTimers();
   });
+
+  it("aborts and fences execution when lease renewal loses ownership", async () => {
+    vi.useFakeTimers();
+    const observedAbort = vi.fn();
+    const execution = executeProviderSyncJobs({
+      concurrency: 1,
+      jobFamily: "lease-loss",
+      jobs: [job("job", "lane", 1)],
+      leaseRenewIntervalMs: 1000,
+      processJob: async (_job, { signal }) => {
+        await new Promise<void>((resolve) =>
+          signal.addEventListener(
+            "abort",
+            () => {
+              observedAbort();
+              resolve();
+            },
+            { once: true },
+          ),
+        );
+        return "completed";
+      },
+      provider: "wahoo",
+      renewLease: vi.fn().mockResolvedValue(false),
+      telemetry: { recordExecution: vi.fn() },
+    });
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(execution).resolves.toEqual({ completed: 0, failed: 1, processed: 1 });
+    expect(observedAbort).toHaveBeenCalledOnce();
+    vi.useRealTimers();
+  });
 });

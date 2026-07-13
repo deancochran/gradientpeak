@@ -48,5 +48,12 @@
     "provider_sync_state_idx_seq",
     "provider_webhook_receipts_idx_seq",
     "training_plans_idx_seq"
-  ]
+  ],
+  "triggers": [
+    {
+      "table": "provider_sync_jobs",
+      "name": "synchronize_provider_sync_job_queue_sequence"
+    }
+  ],
+  "functions": ["synchronize_provider_sync_job_queue_sequence()"]
 }

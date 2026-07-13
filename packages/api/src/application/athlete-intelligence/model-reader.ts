@@ -18,6 +18,11 @@ import {
 import { and, asc, desc, eq, gte, lte, type SQLWrapper, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 import {
+  filterSupersededProfileOverrides,
+  isClearedProfileOverride,
+  resolveLatestObservationsByKey,
+} from "../../utils/profile-override-observations";
+import {
   parseProfileTrainingSettings,
   readParsedProfileTrainingSettings,
 } from "../profile-settings/profileTrainingSettings";
@@ -64,6 +69,7 @@ export interface AthleteIntelligenceRows {
     createdAt: Date;
     updatedAt: Date;
     source?: "manual" | "test" | "imported" | "provider" | "estimated" | "derived" | null;
+    method?: string | null;
     provenance?: unknown;
   }>;
   activities: Array<{
@@ -103,6 +109,8 @@ export interface AthleteIntelligenceRows {
     startOffsetSeconds: number | null;
     unit: string;
     value: number;
+    method?: string | null;
+    provenance?: unknown;
     createdAt: Date;
     updatedAt: Date | null;
   }>;
@@ -345,6 +353,7 @@ export function createDrizzleAthleteIntelligenceDataSource(
             createdAt: profileMetrics.created_at,
             updatedAt: profileMetrics.updated_at,
             source: profileMetrics.source,
+            method: profileMetrics.method,
             provenance: profileMetrics.provenance,
           })
           .from(profileMetrics)
@@ -459,6 +468,8 @@ export function createDrizzleAthleteIntelligenceDataSource(
             startOffsetSeconds: activityEfforts.start_offset,
             unit: activityEfforts.unit,
             value: activityEfforts.value,
+            method: activityEfforts.method,
+            provenance: activityEfforts.provenance,
             createdAt: activityEfforts.created_at,
             updatedAt: activityEfforts.updated_at,
           })
@@ -682,6 +693,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
     .sort((a, b) => b.recordedAt.getTime() - a.recordedAt.getTime() || b.id.localeCompare(a.id))
     .slice(0, modelReaderBounds.metrics);
   for (const row of boundedMetrics) {
+    if (isClearedProfileOverride(row)) continue;
     const supportedType = metricTypes.includes(row.type as AthleteMetricType);
     const canonical = supportedType
       ? canonicalMetricValue(row.type as AthleteMetricType, row.value, row.unit)
@@ -703,17 +715,17 @@ export async function materializeAthleteIntelligenceModelInput(input: {
       !supportedType ? "unsupported" : canonical === null ? "incompatible_unit" : "compatible",
     );
   }
+  const resolvedLatestMetrics = resolveLatestObservationsByKey(boundedMetrics, (row) => row.type);
   const latest = new Map<AthleteMetricType, AthleteIntelligenceRows["metrics"][number]>();
-  for (const row of boundedMetrics)
-    if (
-      metricTypes.includes(row.type as AthleteMetricType) &&
-      !latest.has(row.type as AthleteMetricType)
-    )
-      latest.set(row.type as AthleteMetricType, row);
+  for (const [type, row] of resolvedLatestMetrics) {
+    if (row && metricTypes.includes(type as AthleteMetricType))
+      latest.set(type as AthleteMetricType, row);
+  }
+  const currentMetricRows = [...resolvedLatestMetrics.values()].filter((row) => row !== null);
   const canonicalFtp = resolveCanonicalThresholds({
     now: asOf.toISOString(),
     freshnessWindowMs: 90 * DAY,
-    directMetrics: boundedMetrics.flatMap((row) => {
+    directMetrics: currentMetricRows.flatMap((row) => {
       if (row.type !== "ftp" || canonicalMetricValue("ftp", row.value, row.unit) === null)
         return [];
       return [
@@ -740,7 +752,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
     }),
   }).cycling_ftp;
   if (canonicalFtp.observedAt !== null && canonicalFtp.source !== "observed_effort") {
-    const selectedFtp = boundedMetrics.find(
+    const selectedFtp = currentMetricRows.find(
       (row) => row.type === "ftp" && row.recordedAt.toISOString() === canonicalFtp.observedAt,
     );
     if (selectedFtp) latest.set("ftp", selectedFtp);
@@ -948,7 +960,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
       };
     });
   const includedActivities = new Set(activitiesOut.map((a) => a.sourceId));
-  const efforts = [...rows.efforts]
+  const boundedEfforts = [...rows.efforts]
     .filter(
       (r) =>
         r.recordedAt <= asOf &&
@@ -957,110 +969,113 @@ export async function materializeAthleteIntelligenceModelInput(input: {
         (!r.activityId || includedActivities.has(sourceId("activity", r.activityId, "record"))),
     )
     .sort((a, b) => b.recordedAt.getTime() - a.recordedAt.getTime() || b.id.localeCompare(a.id))
-    .slice(0, modelReaderBounds.efforts)
-    .flatMap((row) => {
-      const canonical = canonicalEffortValue(row.kind, row.value, row.unit);
-      const sport = normalizeSport(row.sport);
-      const effortLineage = row.activityId ?? `effort-${row.id}`;
-      evidence(
-        "effort",
-        row.id,
-        "value-raw",
-        row.recordedAt,
-        row.value,
-        row.unit,
-        "activity_effort",
+    .slice(0, modelReaderBounds.efforts);
+  const efforts = filterSupersededProfileOverrides(
+    boundedEfforts,
+    (row) => `${row.sport}:${row.kind}:${row.durationSeconds}:${row.unit}`,
+  ).flatMap((row) => {
+    const canonical = canonicalEffortValue(row.kind, row.value, row.unit);
+    const sport = normalizeSport(row.sport);
+    const effortLineage = row.activityId ?? `effort-${row.id}`;
+    evidence(
+      "effort",
+      row.id,
+      "value-raw",
+      row.recordedAt,
+      row.value,
+      row.unit,
+      "activity_effort",
+      sport,
+      effortLineage,
+      undefined,
+      row.value,
+      row.unit,
+      "valid",
+      canonical === null ? "incompatible_unit" : "compatible",
+    );
+    // The frozen effort union requires a positive canonical power/speed field, so an
+    // incompatible raw effort remains registry-only rather than fabricating a value.
+    if (!canonical) return [];
+    const record = evidence(
+      "effort",
+      row.id,
+      "record",
+      row.recordedAt,
+      null,
+      null,
+      "activity_effort",
+      sport,
+      effortLineage,
+    );
+    const durationEvidence = evidence(
+      "effort",
+      row.id,
+      "duration",
+      row.recordedAt,
+      row.durationSeconds,
+      "seconds",
+      "activity_effort",
+      sport,
+      effortLineage,
+    );
+    const valueEvidence = evidence(
+      "effort",
+      row.id,
+      "value",
+      row.recordedAt,
+      canonical.value,
+      canonical.unit,
+      "activity_effort",
+      sport,
+      effortLineage,
+    );
+    const start =
+      row.startOffsetSeconds === null
+        ? null
+        : measured(
+            "effort",
+            row.id,
+            "start",
+            row.recordedAt,
+            row.startOffsetSeconds,
+            "seconds",
+            "activity_effort",
+            sport,
+            effortLineage,
+          );
+    const end =
+      row.startOffsetSeconds === null
+        ? null
+        : measured(
+            "effort",
+            row.id,
+            "end",
+            row.recordedAt,
+            row.startOffsetSeconds + row.durationSeconds,
+            "seconds",
+            "activity_effort",
+            sport,
+            effortLineage,
+          );
+    return [
+      {
+        sourceId: record,
+        athleteId: input.profileId,
+        lineageGroupId: lineageId("activity", effortLineage),
+        activitySourceId: row.activityId ? sourceId("activity", row.activityId, "record") : null,
+        observedAt: row.recordedAt.toISOString(),
         sport,
-        effortLineage,
-        undefined,
-        row.value,
-        row.unit,
-        "valid",
-        canonical === null ? "incompatible_unit" : "compatible",
-      );
-      // The frozen effort union requires a positive canonical power/speed field, so an
-      // incompatible raw effort remains registry-only rather than fabricating a value.
-      if (!canonical) return [];
-      const record = evidence(
-        "effort",
-        row.id,
-        "record",
-        row.recordedAt,
-        null,
-        null,
-        "activity_effort",
-        sport,
-        effortLineage,
-      );
-      const durationEvidence = evidence(
-        "effort",
-        row.id,
-        "duration",
-        row.recordedAt,
-        row.durationSeconds,
-        "seconds",
-        "activity_effort",
-        sport,
-        effortLineage,
-      );
-      const valueEvidence = evidence(
-        "effort",
-        row.id,
-        "value",
-        row.recordedAt,
-        canonical.value,
-        canonical.unit,
-        "activity_effort",
-        sport,
-        effortLineage,
-      );
-      const start =
-        row.startOffsetSeconds === null
-          ? null
-          : measured(
-              "effort",
-              row.id,
-              "start",
-              row.recordedAt,
-              row.startOffsetSeconds,
-              "seconds",
-              "activity_effort",
-              sport,
-              effortLineage,
-            );
-      const end =
-        row.startOffsetSeconds === null
-          ? null
-          : measured(
-              "effort",
-              row.id,
-              "end",
-              row.recordedAt,
-              row.startOffsetSeconds + row.durationSeconds,
-              "seconds",
-              "activity_effort",
-              sport,
-              effortLineage,
-            );
-      return [
-        {
-          sourceId: record,
-          athleteId: input.profileId,
-          lineageGroupId: lineageId("activity", effortLineage),
-          activitySourceId: row.activityId ? sourceId("activity", row.activityId, "record") : null,
-          observedAt: row.recordedAt.toISOString(),
-          sport,
-          startOffsetSeconds: start,
-          endOffsetSeconds: end,
-          durationSeconds: row.durationSeconds,
-          evidenceSourceIds: [durationEvidence, valueEvidence],
-          kind: row.kind,
-          ...(row.kind === "power"
-            ? { powerWatts: canonical.value }
-            : { speedMetersPerSecond: canonical.value }),
-        },
-      ];
-    });
+        startOffsetSeconds: start,
+        endOffsetSeconds: end,
+        durationSeconds: row.durationSeconds,
+        evidenceSourceIds: [durationEvidence, valueEvidence],
+        kind: row.kind,
+        ...(row.kind === "power"
+          ? { powerWatts: canonical.value }
+          : { speedMetersPerSecond: canonical.value }),
+      },
+    ];
+  });
   const goals = [...rows.goals]
     .filter((r) => r.createdAt <= asOf && r.updatedAt <= asOf)
     .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime() || b.id.localeCompare(a.id))

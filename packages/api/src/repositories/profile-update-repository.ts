@@ -2,6 +2,12 @@ import { randomUUID } from "node:crypto";
 import { activityEfforts, profileMetrics, profiles } from "@repo/db";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import type { getRequiredDb } from "../db";
+import {
+  isClearedProfileOverride,
+  PROFILE_UPDATE_OVERRIDE_METHOD,
+  PROFILE_UPDATE_OVERRIDE_VERSION,
+  profileOverrideProvenance,
+} from "../utils/profile-override-observations";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 export type ProfileUpdateTransaction = Parameters<Parameters<DbClient["transaction"]>[0]>[0];
@@ -21,20 +27,6 @@ export type ProfileFields = Partial<
 >;
 
 const MANUAL_FTP_UNIT = "ftp_manual";
-export const PROFILE_UPDATE_OVERRIDE_METHOD = "profile_update_override";
-const PROFILE_UPDATE_OVERRIDE_VERSION = "profile-update-v1";
-
-type ProfileOverrideState = "active" | "cleared";
-
-function overrideProvenance(state: ProfileOverrideState) {
-  return { input: "profile_update", override_state: state };
-}
-
-export function isClearedProfileOverride(input: { method?: string | null; provenance?: unknown }) {
-  if (input.method !== PROFILE_UPDATE_OVERRIDE_METHOD) return false;
-  if (!input.provenance || typeof input.provenance !== "object") return false;
-  return (input.provenance as { override_state?: unknown }).override_state === "cleared";
-}
 
 export async function updateOwnedProfileFields(
   tx: ProfileUpdateTransaction,
@@ -71,7 +63,6 @@ export async function syncAppendOnlyProfileMetric(
 
   const [latest] = await tx
     .select({
-      id: profileMetrics.id,
       value: profileMetrics.value,
       recorded_at: profileMetrics.recorded_at,
       method: profileMetrics.method,
@@ -82,14 +73,7 @@ export async function syncAppendOnlyProfileMetric(
     .orderBy(desc(profileMetrics.recorded_at), desc(profileMetrics.idx))
     .limit(1);
 
-  if (input.value === null && latest) {
-    if (isClearedProfileOverride(latest)) return;
-    await tx
-      .update(profileMetrics)
-      .set({ updated_at: input.now, provenance: overrideProvenance("cleared") })
-      .where(eq(profileMetrics.id, latest.id));
-    return;
-  }
+  if (input.value === null && latest && isClearedProfileOverride(latest)) return;
   if (
     input.value !== null &&
     latest &&
@@ -98,7 +82,7 @@ export async function syncAppendOnlyProfileMetric(
   )
     return;
 
-  const state: ProfileOverrideState = input.value === null ? "cleared" : "active";
+  const state = input.value === null ? "cleared" : "active";
   const recordedAt =
     latest && latest.recorded_at >= input.now
       ? new Date(latest.recorded_at.getTime() + 1)
@@ -118,7 +102,7 @@ export async function syncAppendOnlyProfileMetric(
     source: "manual",
     method: PROFILE_UPDATE_OVERRIDE_METHOD,
     calculation_version: PROFILE_UPDATE_OVERRIDE_VERSION,
-    provenance: overrideProvenance(state),
+    provenance: profileOverrideProvenance(state),
   });
 }
 
@@ -141,7 +125,6 @@ export async function replaceManualFtp(
   );
   const [latest] = await tx
     .select({
-      id: activityEfforts.id,
       value: activityEfforts.value,
       unit: activityEfforts.unit,
       recorded_at: activityEfforts.recorded_at,
@@ -154,14 +137,7 @@ export async function replaceManualFtp(
     .limit(1);
   const effortValue = input.value === null ? 0 : Number((input.value / 0.95).toFixed(2));
 
-  if (input.value === null && latest) {
-    if (isClearedProfileOverride(latest)) return;
-    await tx
-      .update(activityEfforts)
-      .set({ updated_at: input.now, provenance: overrideProvenance("cleared") })
-      .where(eq(activityEfforts.id, latest.id));
-    return;
-  }
+  if (input.value === null && latest && isClearedProfileOverride(latest)) return;
   if (
     input.value !== null &&
     latest &&
@@ -171,7 +147,7 @@ export async function replaceManualFtp(
   )
     return;
 
-  const state: ProfileOverrideState = input.value === null ? "cleared" : "active";
+  const state = input.value === null ? "cleared" : "active";
   const recordedAt =
     latest && latest.recorded_at >= input.now
       ? new Date(latest.recorded_at.getTime() + 1)
@@ -193,6 +169,6 @@ export async function replaceManualFtp(
     source: "manual",
     method: PROFILE_UPDATE_OVERRIDE_METHOD,
     calculation_version: PROFILE_UPDATE_OVERRIDE_VERSION,
-    provenance: overrideProvenance(state),
+    provenance: profileOverrideProvenance(state),
   });
 }

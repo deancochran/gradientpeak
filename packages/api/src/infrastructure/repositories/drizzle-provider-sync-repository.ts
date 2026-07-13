@@ -1,5 +1,5 @@
 import { schema } from "@repo/db";
-import { and, asc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, or, sql } from "drizzle-orm";
 import type {
   CreateProviderSyncRepositoryOptions,
   ProviderSyncJobRecord,
@@ -310,6 +310,7 @@ export function createProviderSyncRepository({
             eq(schema.providerSyncJobs.id, id),
             eq(schema.providerSyncJobs.status, "running"),
             eq(schema.providerSyncJobs.locked_by, workerId),
+            gt(schema.providerSyncJobs.lock_expires_at, new Date()),
           ),
         )
         .returning({ id: schema.providerSyncJobs.id });
@@ -325,10 +326,56 @@ export function createProviderSyncRepository({
             eq(schema.providerSyncJobs.id, id),
             eq(schema.providerSyncJobs.status, "running"),
             eq(schema.providerSyncJobs.locked_by, workerId),
+            gt(schema.providerSyncJobs.lock_expires_at, new Date()),
           ),
         )
         .returning({ id: schema.providerSyncJobs.id });
       return Boolean(updated);
+    },
+
+    async finalizeWebhookReceiptJob(input) {
+      return db.transaction(async (tx) => {
+        const [ownedJob] = await tx
+          .update(schema.providerSyncJobs)
+          .set({
+            last_error: input.lastError ?? null,
+            lock_expires_at: null,
+            locked_at: null,
+            locked_by: null,
+            run_at: input.nextRunAt ? new Date(input.nextRunAt) : undefined,
+            status: input.jobStatus,
+            updated_at: new Date(),
+          })
+          .where(
+            and(
+              eq(schema.providerSyncJobs.id, input.jobId),
+              eq(schema.providerSyncJobs.status, "running"),
+              eq(schema.providerSyncJobs.locked_by, input.workerId),
+              gt(schema.providerSyncJobs.lock_expires_at, new Date()),
+            ),
+          )
+          .returning({ id: schema.providerSyncJobs.id });
+        if (!ownedJob) return false;
+
+        const [updatedReceipt] = await tx
+          .update(schema.providerWebhookReceipts)
+          .set({
+            last_error: input.lastError ?? null,
+            processed_at: input.receiptStatus === "processed" ? new Date() : null,
+            processing_status: input.receiptStatus,
+          })
+          .where(
+            and(
+              eq(schema.providerWebhookReceipts.id, input.receiptId),
+              eq(schema.providerWebhookReceipts.job_id, input.jobId),
+            ),
+          )
+          .returning({ id: schema.providerWebhookReceipts.id });
+        if (!updatedReceipt) {
+          throw new Error("Webhook receipt is not linked to the owned provider sync job");
+        }
+        return true;
+      });
     },
 
     async storeWebhookReceipt(input) {
@@ -616,6 +663,7 @@ export function createProviderSyncRepository({
             eq(schema.providerSyncJobs.id, id),
             eq(schema.providerSyncJobs.status, "running"),
             eq(schema.providerSyncJobs.locked_by, workerId),
+            gt(schema.providerSyncJobs.lock_expires_at, new Date()),
           ),
         )
         .returning({ id: schema.providerSyncJobs.id });

@@ -7,6 +7,10 @@ import type {
   WahooEventResourceProviderMetadata,
   WahooRepository,
 } from "../../repositories";
+import {
+  filterSupersededProfileOverrides,
+  resolveLatestObservationsByKey,
+} from "../../utils/profile-override-observations";
 
 function toIsoString(value: Date | null): string | null {
   return value ? value.toISOString() : null;
@@ -277,10 +281,13 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
       const [metricRows, bikePowerEfforts] = await Promise.all([
         db
           .select({
+            id: schema.profileMetrics.id,
             recordedAt: schema.profileMetrics.recorded_at,
             source: schema.profileMetrics.source,
             type: schema.profileMetrics.metric_type,
             value: schema.profileMetrics.value,
+            method: schema.profileMetrics.method,
+            provenance: schema.profileMetrics.provenance,
           })
           .from(schema.profileMetrics)
           .where(
@@ -292,10 +299,14 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
           .orderBy(desc(schema.profileMetrics.recorded_at)),
         db
           .select({
+            id: schema.activityEfforts.id,
             activityId: schema.activityEfforts.activity_id,
             observedAt: schema.activityEfforts.recorded_at,
             source: schema.activityEfforts.source,
             value: schema.activityEfforts.value,
+            unit: schema.activityEfforts.unit,
+            method: schema.activityEfforts.method,
+            provenance: schema.activityEfforts.provenance,
           })
           .from(schema.activityEfforts)
           .where(
@@ -309,13 +320,17 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
           .orderBy(desc(schema.activityEfforts.recorded_at)),
       ]);
 
+      const resolvedMetrics = resolveLatestObservationsByKey(metricRows, (row) => row.type);
       const latest = new Map<string, number>();
-      for (const row of metricRows) {
-        if (!latest.has(row.type)) latest.set(row.type, row.value);
-      }
+      for (const [type, row] of resolvedMetrics) if (row) latest.set(type, row.value);
+      const currentMetricRows = [...resolvedMetrics.values()].filter((row) => row !== null);
+      const currentBikePowerEfforts = filterSupersededProfileOverrides(
+        bikePowerEfforts,
+        (effort) => `bike:power:1200:${effort.unit}`,
+      );
 
       return {
-        bikePowerEfforts: bikePowerEfforts.map((effort) => ({
+        bikePowerEfforts: currentBikePowerEfforts.map((effort) => ({
           observationKind:
             effort.activityId !== null &&
             effort.source !== "derived" &&
@@ -325,7 +340,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
           observedAt: effort.observedAt.toISOString(),
           value: effort.value,
         })),
-        ftpMetrics: metricRows
+        ftpMetrics: currentMetricRows
           .filter((metric) => metric.type === "ftp")
           .map((metric) => ({
             observedAt: metric.recordedAt.toISOString(),

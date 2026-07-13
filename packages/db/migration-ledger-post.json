@@ -17,6 +17,14 @@
     {
       "version": "20260713053540",
       "name": "expand_provider_queue_sequence"
+    },
+    {
+      "version": "20260713061546",
+      "name": "synchronize_provider_queue_sequence"
+    },
+    {
+      "version": "20260713062706",
+      "name": "reconcile_provider_queue_sequence_coexistence"
     }
   ]
 }

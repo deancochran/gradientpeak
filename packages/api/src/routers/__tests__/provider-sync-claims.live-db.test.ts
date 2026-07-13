@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { db, pool } from "@repo/db/client";
-import { integrations, profiles, providerSyncJobs, users } from "@repo/db/schema";
+import {
+  integrations,
+  profiles,
+  providerSyncJobs,
+  providerWebhookReceipts,
+  users,
+} from "@repo/db/schema";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { createProviderSyncRepository } from "../../infrastructure/repositories";
@@ -46,6 +52,52 @@ afterAll(async () => {
 });
 
 describe("provider sync PostgreSQL claims", () => {
+  it("keeps mixed-version concurrent inserts in identical idx and queue_sequence order", async () => {
+    const owner = await seedOwner();
+    const repository = createProviderSyncRepository({ db });
+    const oldJobId = randomUUID();
+    const newJobId = randomUUID();
+    const lane = `mixed-${randomUUID()}`;
+    const insert = `
+      insert into public.provider_sync_jobs (
+        id, created_at, updated_at, profile_id, integration_id, provider,
+        job_type, sync_lane_key, status, priority, run_at, attempt, max_attempts,
+        payload
+      ) values ($1, now(), now(), $2, $3, 'wahoo', 'wahoo.publish_event',
+        $4, 'queued', 100, now(), 0, 3, '{}'::jsonb)
+    `;
+    const newWorkerInsert = insert
+      .replace("payload\n", "payload, queue_sequence\n")
+      .replace("'{}'::jsonb)", "'{}'::jsonb, $5)");
+    await Promise.all([
+      pool.query(insert, [oldJobId, owner.profileId, owner.integrationId, lane]),
+      pool.query(newWorkerInsert, [
+        newJobId,
+        owner.profileId,
+        owner.integrationId,
+        lane,
+        9_999_999,
+      ]),
+    ]);
+
+    const ordered = await pool.query<{ id: string; idx: number; queue_sequence: string }>(
+      `select id, idx, queue_sequence::text
+       from public.provider_sync_jobs where id = any($1::uuid[]) order by idx`,
+      [[oldJobId, newJobId]],
+    );
+    expect(ordered.rows).toHaveLength(2);
+    expect(ordered.rows.every((row) => String(row.idx) === row.queue_sequence)).toBe(true);
+
+    const claimed = await repository.claimDueJobs({
+      limit: 2,
+      lockExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+      now: new Date().toISOString(),
+      provider: "wahoo",
+      workerId: "mixed-version-worker",
+    });
+    expect(claimed.map((job) => job.id)).toEqual([ordered.rows[0]?.id]);
+  });
+
   it("uses immutable queue_sequence as lane precedence and run_at only for head eligibility", async () => {
     const owner = await seedOwner();
     const repository = createProviderSyncRepository({ db });
@@ -170,5 +222,102 @@ describe("provider sync PostgreSQL claims", () => {
       }),
     ).toBe(true);
     expect(await repository.markJobSucceeded(jobId, newWorker)).toBe(true);
+  });
+
+  it("atomically fences stale webhook receipt and job finalization after lease loss", async () => {
+    const owner = await seedOwner();
+    const repository = createProviderSyncRepository({ db });
+    const base = Date.parse("2026-07-13T14:00:00.000Z");
+    const jobId = randomUUID();
+    const receiptId = randomUUID();
+    await db.insert(providerSyncJobs).values({
+      attempt: 0,
+      created_at: new Date(base),
+      id: jobId,
+      integration_id: owner.integrationId,
+      job_type: "wahoo.process_webhook_receipt",
+      max_attempts: 3,
+      payload: { receiptId },
+      priority: 100,
+      profile_id: owner.profileId,
+      provider: "wahoo",
+      run_at: new Date(base - 1_000),
+      status: "queued",
+      sync_lane_key: `webhook-${receiptId}`,
+      updated_at: new Date(base),
+    });
+    await db.insert(providerWebhookReceipts).values({
+      created_at: new Date(base),
+      event_type: "workout_summary",
+      id: receiptId,
+      integration_id: owner.integrationId,
+      job_id: jobId,
+      payload: { event_type: "workout_summary", user: { id: 42 } },
+      processing_status: "pending",
+      provider: "wahoo",
+      received_at: new Date(base),
+    });
+
+    const staleWorker = `stale:${randomUUID()}`;
+    const ownerWorker = `owner:${randomUUID()}`;
+    await repository.claimDueJobs({
+      limit: 1,
+      lockExpiresAt: new Date(base + 1_000).toISOString(),
+      now: new Date(base).toISOString(),
+      provider: "wahoo",
+      workerId: staleWorker,
+    });
+    await repository.claimDueJobs({
+      limit: 1,
+      lockExpiresAt: new Date(base + 20_000).toISOString(),
+      now: new Date(base + 2_000).toISOString(),
+      provider: "wahoo",
+      workerId: ownerWorker,
+    });
+    expect(
+      await repository.renewJobLease({
+        id: jobId,
+        lockExpiresAt: new Date(base + 30_000).toISOString(),
+        workerId: staleWorker,
+      }),
+    ).toBe(false);
+    expect(
+      await repository.finalizeWebhookReceiptJob({
+        jobId,
+        jobStatus: "completed",
+        receiptId,
+        receiptStatus: "processed",
+        workerId: staleWorker,
+      }),
+    ).toBe(false);
+
+    const [stillPending] = await db
+      .select({
+        jobStatus: providerSyncJobs.status,
+        receiptStatus: providerWebhookReceipts.processing_status,
+      })
+      .from(providerSyncJobs)
+      .innerJoin(providerWebhookReceipts, eq(providerWebhookReceipts.job_id, providerSyncJobs.id))
+      .where(eq(providerSyncJobs.id, jobId));
+    expect(stillPending).toEqual({ jobStatus: "running", receiptStatus: "pending" });
+
+    expect(
+      await repository.finalizeWebhookReceiptJob({
+        jobId,
+        jobStatus: "completed",
+        receiptId,
+        receiptStatus: "processed",
+        workerId: ownerWorker,
+      }),
+    ).toBe(true);
+    const [consistent] = await db
+      .select({
+        jobStatus: providerSyncJobs.status,
+        receiptStatus: providerWebhookReceipts.processing_status,
+      })
+      .from(providerSyncJobs)
+      .innerJoin(providerWebhookReceipts, eq(providerWebhookReceipts.job_id, providerSyncJobs.id))
+      .where(eq(providerSyncJobs.id, jobId));
+    expect(consistent).toEqual({ jobStatus: "completed", receiptStatus: "processed" });
   });
 });

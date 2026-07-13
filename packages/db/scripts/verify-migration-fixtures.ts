@@ -238,7 +238,7 @@ async function main() {
     ) {
       throw new Error("provider queue sequence did not preserve immutable idx order");
     }
-    const insertedQueueRow = await target.query<{ queue_sequence: string }>(`
+    const insertedQueueRow = await target.query<{ idx: string; queue_sequence: string }>(`
       insert into public.provider_sync_jobs (
         id, profile_id, integration_id, provider, job_type, sync_lane_key
       ) values (
@@ -246,10 +246,10 @@ async function main() {
         '22222222-2222-4222-8222-222222222222',
         '33333333-3333-4333-8333-333333333333',
         'wahoo', 'fixture.third', 'fixture-lane'
-      ) returning queue_sequence::text
+      ) returning idx::text, queue_sequence::text
     `);
-    if (insertedQueueRow.rows[0]?.queue_sequence !== "8203") {
-      throw new Error("provider queue identity did not continue after the preserved maximum");
+    if (String(insertedQueueRow.rows[0]?.idx) !== insertedQueueRow.rows[0]?.queue_sequence) {
+      throw new Error("provider queue idx and queue_sequence did not advance identically");
     }
     const idxStorageAfterExpand = await readIdxStorageEvidence(target);
     if (
@@ -260,7 +260,11 @@ async function main() {
         `expand migration changed compatibility idx inventory: ${JSON.stringify(idxStorageAfterExpand.tables)}`,
       );
     }
-    const providerQueueObjects = await target.query<{ identity: string; index_count: string }>(`
+    const providerQueueObjects = await target.query<{
+      identity: string;
+      index_count: string;
+      trigger_count: string;
+    }>(`
       select
         coalesce((
           select identity_generation
@@ -272,11 +276,16 @@ async function main() {
         (select count(*)::text from pg_indexes
           where schemaname = 'public'
             and tablename = 'provider_sync_jobs'
-            and indexname = 'provider_sync_jobs_queue_sequence_key') as index_count
+            and indexname = 'provider_sync_jobs_queue_sequence_key') as index_count,
+        (select count(*)::text from pg_trigger
+          where tgrelid = 'public.provider_sync_jobs'::regclass
+            and tgname = 'synchronize_provider_sync_job_queue_sequence'
+            and not tgisinternal) as trigger_count
     `);
     if (
       providerQueueObjects.rows[0]?.identity !== "BY DEFAULT" ||
-      providerQueueObjects.rows[0]?.index_count !== "1"
+      providerQueueObjects.rows[0]?.index_count !== "1" ||
+      providerQueueObjects.rows[0]?.trigger_count !== "1"
     ) {
       throw new Error("provider queue_sequence identity/index contract is incomplete");
     }

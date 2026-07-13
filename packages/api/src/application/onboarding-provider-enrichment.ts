@@ -13,6 +13,7 @@ import {
   type WahooUser,
 } from "../lib/integrations/wahoo/client";
 import { batchInsertActivityEfforts, deriveEffortsForSport } from "../utils/onboarding-helpers";
+import { isClearedProfileOverride } from "../utils/profile-override-observations";
 
 const ONBOARDING_ENRICHMENT_RESOURCE = "onboarding_enrichment";
 const ONBOARDING_SYNC_MODE = "onboarding_enrichment";
@@ -229,6 +230,8 @@ export class OnboardingProviderEnrichmentService {
       .select({
         value: schema.profileMetrics.value,
         recorded_at: schema.profileMetrics.recorded_at,
+        method: schema.profileMetrics.method,
+        provenance: schema.profileMetrics.provenance,
       })
       .from(schema.profileMetrics)
       .where(
@@ -240,7 +243,8 @@ export class OnboardingProviderEnrichmentService {
       .orderBy(desc(schema.profileMetrics.recorded_at))
       .limit(1);
 
-    if (typeof latestWeight?.value === "number") values.weight_kg = latestWeight.value;
+    if (latestWeight && !isClearedProfileOverride(latestWeight))
+      values.weight_kg = latestWeight.value;
 
     const sourceHints = await this.getImportedFieldSources(profileId);
 

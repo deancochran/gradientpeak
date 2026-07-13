@@ -97,6 +97,15 @@ export interface ProviderSyncRepository {
   }): Promise<boolean>;
   markJobSucceeded(id: string, workerId: string): Promise<boolean>;
   renewJobLease(input: { id: string; lockExpiresAt: string; workerId: string }): Promise<boolean>;
+  finalizeWebhookReceiptJob(input: {
+    jobId: string;
+    jobStatus: Extract<ProviderSyncJobStatus, "completed" | "failed" | "dead_lettered">;
+    lastError?: string;
+    nextRunAt?: string;
+    receiptId: string;
+    receiptStatus: "failed" | "processed";
+    workerId: string;
+  }): Promise<boolean>;
   markWebhookReceiptProcessed(input: {
     id: string;
     lastError?: string;

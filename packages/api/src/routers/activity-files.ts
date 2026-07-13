@@ -27,6 +27,7 @@ import { getRequiredDb } from "../db";
 import { logger } from "../lib/logger";
 import { getApiStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { isClearedProfileOverride } from "../utils/profile-override-observations";
 import { fetchActivityTemperature } from "../utils/weather";
 
 const storageService = getApiStorageService();
@@ -236,7 +237,11 @@ async function getLatestProfileMetricValue(
   },
 ): Promise<number | null> {
   const row = await db
-    .select({ value: profileMetrics.value })
+    .select({
+      value: profileMetrics.value,
+      method: profileMetrics.method,
+      provenance: profileMetrics.provenance,
+    })
     .from(profileMetrics)
     .where(
       and(
@@ -249,7 +254,7 @@ async function getLatestProfileMetricValue(
     .limit(1)
     .then((rows) => rows[0] ?? null);
 
-  return toNumberOrNull(row?.value);
+  return row && !isClearedProfileOverride(row) ? toNumberOrNull(row.value) : null;
 }
 
 async function canAccessActivityStreams(

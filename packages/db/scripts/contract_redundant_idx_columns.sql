@@ -65,6 +65,16 @@ begin
   end if;
 end $$;
 
+-- The coexistence trigger depends on idx and must be retired atomically with
+-- the old-client contract. Rebase the surviving identity before dropping idx.
+drop trigger synchronize_provider_sync_job_queue_sequence on public.provider_sync_jobs;
+drop function public.synchronize_provider_sync_job_queue_sequence();
+select pg_catalog.setval(
+  pg_catalog.pg_get_serial_sequence('public.provider_sync_jobs', 'queue_sequence'),
+  greatest(coalesce((select max(queue_sequence) from public.provider_sync_jobs), 0), 1),
+  exists (select 1 from public.provider_sync_jobs)
+);
+
 alter table public.integrations drop constraint integrations_idx_unique;
 alter table public.oauth_states drop constraint oauth_states_idx_unique;
 drop index public.activities_idx_key;
@@ -149,5 +159,13 @@ begin
       and indexname = 'provider_sync_jobs_queue_sequence_key'
   ) then
     raise exception 'idx contract final fingerprint failed: queue_sequence index is missing';
+  end if;
+  if exists (
+    select 1 from pg_trigger
+    where tgrelid = 'public.provider_sync_jobs'::regclass
+      and tgname = 'synchronize_provider_sync_job_queue_sequence'
+      and not tgisinternal
+  ) then
+    raise exception 'idx contract final fingerprint failed: queue coexistence trigger remains';
   end if;
 end $$;

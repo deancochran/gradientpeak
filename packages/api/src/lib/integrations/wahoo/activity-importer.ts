@@ -104,8 +104,10 @@ export class WahooActivityImporter {
   async importWorkoutSummary(
     wahooUserId: number,
     summary: WahooWorkoutSummary,
+    options: { signal?: AbortSignal } = {},
   ): Promise<ImportResult> {
     try {
+      options.signal?.throwIfAborted();
       // 1. Find user by external_id
       const integration = await this.deps.repository.findWahooIntegrationByExternalId(
         wahooUserId.toString(),
@@ -148,6 +150,7 @@ export class WahooActivityImporter {
           };
         }
 
+        options.signal?.throwIfAborted();
         await this.deps.repository.createImportedActivityResourceLink({
           activityId: existingImport.activityId,
           externalId: summary.id.toString(),
@@ -177,10 +180,12 @@ export class WahooActivityImporter {
           })
         : null;
 
+      options.signal?.throwIfAborted();
       const activityFile = await this.downloadAndStoreActivityFile(
         summary.file?.url,
         integration.profileId,
         summary.id,
+        options.signal,
       );
 
       if (!activityFile) {
@@ -239,6 +244,7 @@ export class WahooActivityImporter {
       // 7. Create activity
       let newActivity: { id: string };
       try {
+        options.signal?.throwIfAborted();
         newActivity = await this.deps.submitActivity(activity);
       } catch (insertError) {
         if (!isExpectedProviderUniqueViolation(insertError)) {
@@ -256,6 +262,7 @@ export class WahooActivityImporter {
             provider: "wahoo",
           });
         if (concurrentImport?.profileId === integration.profileId) {
+          options.signal?.throwIfAborted();
           await this.deps.repository.createImportedActivityResourceLink({
             activityId: concurrentImport.activityId,
             externalId: summary.id.toString(),
@@ -353,13 +360,15 @@ export class WahooActivityImporter {
     url: string | undefined,
     profileId: string,
     workoutSummaryId: number,
+    signal?: AbortSignal,
   ): Promise<{ bytes: Uint8Array; path: string; size: number } | null> {
     if (!url) {
       return null;
     }
 
     try {
-      const response = await fetch(url);
+      signal?.throwIfAborted();
+      const response = await fetch(url, { signal });
       if (!response.ok) {
         console.warn(
           `Failed to download Wahoo activity file for summary ${workoutSummaryId}: ${response.status}`,
@@ -372,6 +381,7 @@ export class WahooActivityImporter {
       const activityFilePath = `activities/${profileId}/providers/wahoo/${workoutSummaryId}.fit`;
 
       try {
+        signal?.throwIfAborted();
         await this.deps.activityFileStorage.uploadActivityFile({
           bytes,
           contentType: "application/octet-stream",
@@ -386,6 +396,7 @@ export class WahooActivityImporter {
 
       return { bytes, path: activityFilePath, size: bytes.byteLength };
     } catch (error) {
+      if (signal?.aborted) throw error;
       console.warn(
         `Failed to fetch/store Wahoo activity file for summary ${workoutSummaryId}`,
         error,

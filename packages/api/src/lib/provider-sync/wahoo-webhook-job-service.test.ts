@@ -9,6 +9,7 @@ function createDeps() {
     providerSyncRepository: {
       claimDueJobs: vi.fn(),
       enqueueJob: vi.fn(),
+      finalizeWebhookReceiptJob: vi.fn().mockResolvedValue(true),
       getWebhookReceipt: vi.fn(),
       listWebhookReceipts: vi.fn().mockResolvedValue([]),
       markJobFailed: vi.fn(),
@@ -110,18 +111,19 @@ describe("WahooWebhookJobService", () => {
       processed: 1,
     });
 
-    expect(deps.importer.importWorkoutSummary).toHaveBeenCalledWith(42, {
-      id: 99,
-      duration_total_accum: 1200,
-    });
-    expect(deps.providerSyncRepository.markWebhookReceiptProcessed).toHaveBeenCalledWith({
-      id: "receipt-1",
-      status: "processed",
-    });
-    expect(deps.providerSyncRepository.markJobSucceeded).toHaveBeenCalledWith(
-      "job-1",
-      expect.stringMatching(/^worker-1:/),
+    expect(deps.importer.importWorkoutSummary).toHaveBeenCalledWith(
+      42,
+      { id: 99, duration_total_accum: 1200 },
+      { signal: expect.any(AbortSignal) },
     );
+    expect(deps.providerSyncRepository.finalizeWebhookReceiptJob).toHaveBeenCalledWith({
+      jobId: "job-1",
+      jobStatus: "completed",
+      receiptId: "receipt-1",
+      receiptStatus: "processed",
+      workerId: expect.stringMatching(/^worker-1:/),
+    });
+    expect(deps.providerSyncRepository.markWebhookReceiptProcessed).not.toHaveBeenCalled();
   });
 
   it("recovers pending receipts without jobs before processing due jobs", async () => {

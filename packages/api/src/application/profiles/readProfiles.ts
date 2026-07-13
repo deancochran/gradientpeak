@@ -3,8 +3,12 @@ import { activityEfforts, type PublicProfilesRow, profileMetrics, profiles } fro
 import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { getRequiredDb } from "../../db";
-import { isClearedProfileOverride } from "../../repositories/profile-update-repository";
 import { buildIndexPageInfo, parseIndexCursor } from "../../utils/index-cursor";
+import {
+  filterObservationsAfterLatestTombstone,
+  filterSupersededProfileOverrides,
+  isClearedProfileOverride,
+} from "../../utils/profile-override-observations";
 import {
   redactPrivateProfileDetailFields,
   redactProfileListFields,
@@ -200,6 +204,7 @@ export async function getProfilePerformanceSnapshot(db: DbClient, profileId: str
           value: profileMetrics.value,
           recorded_at: profileMetrics.recorded_at,
           source: profileMetrics.source,
+          method: profileMetrics.method,
           provenance: profileMetrics.provenance,
         })
         .from(profileMetrics)
@@ -232,6 +237,10 @@ export async function getProfilePerformanceSnapshot(db: DbClient, profileId: str
           recorded_at: activityEfforts.recorded_at,
           activity_id: activityEfforts.activity_id,
           source: activityEfforts.source,
+          id: activityEfforts.id,
+          unit: activityEfforts.unit,
+          method: activityEfforts.method,
+          provenance: activityEfforts.provenance,
         })
         .from(activityEfforts)
         .where(
@@ -251,7 +260,7 @@ export async function getProfilePerformanceSnapshot(db: DbClient, profileId: str
     now: now.toISOString(),
     freshnessWindowMs: FTP_FRESHNESS_WINDOW_MS,
     directMetrics: [
-      ...ftpMetrics.map((metric) => ({
+      ...filterObservationsAfterLatestTombstone(ftpMetrics, (metric) => "ftp").map((metric) => ({
         threshold: "cycling_ftp" as const,
         value: Number(metric.value),
         observedAt: metric.recorded_at.toISOString(),
@@ -269,7 +278,10 @@ export async function getProfilePerformanceSnapshot(db: DbClient, profileId: str
           ]
         : []),
     ],
-    activityEfforts: best20mEfforts.map((effort) => ({
+    activityEfforts: filterSupersededProfileOverrides(
+      best20mEfforts,
+      (effort) => `bike:power:1200:${effort.unit}`,
+    ).map((effort) => ({
       sport: "bike" as const,
       metric: "power" as const,
       value: Number(effort.value),

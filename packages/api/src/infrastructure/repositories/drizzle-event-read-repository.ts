@@ -15,6 +15,11 @@ import {
   sql,
 } from "drizzle-orm";
 import type { EventReadRepository } from "../../repositories";
+import {
+  filterSupersededProfileOverrides,
+  isClearedProfileOverride,
+  resolveLatestObservationsByKey,
+} from "../../utils/profile-override-observations";
 
 type EventReadDb = {
   execute: any;
@@ -214,7 +219,11 @@ export function createEventReadRepository(
           .limit(1)
           .then((rows) => rows[0] ?? null),
         db
-          .select({ value: schema.profileMetrics.value })
+          .select({
+            value: schema.profileMetrics.value,
+            method: schema.profileMetrics.method,
+            provenance: schema.profileMetrics.provenance,
+          })
           .from(schema.profileMetrics)
           .where(
             and(
@@ -226,7 +235,11 @@ export function createEventReadRepository(
           .limit(1)
           .then((rows) => rows[0] ?? null),
         db
-          .select({ value: schema.profileMetrics.value })
+          .select({
+            value: schema.profileMetrics.value,
+            method: schema.profileMetrics.method,
+            provenance: schema.profileMetrics.provenance,
+          })
           .from(schema.profileMetrics)
           .where(
             and(
@@ -247,16 +260,18 @@ export function createEventReadRepository(
               dob: profile.dob ? profile.dob.toISOString() : null,
             }
           : null,
-        lthrMetric: lthrMetric
-          ? {
-              value: lthrMetric.value,
-            }
-          : null,
-        weightMetric: weightMetric
-          ? {
-              value: weightMetric.value,
-            }
-          : null,
+        lthrMetric:
+          lthrMetric && !isClearedProfileOverride(lthrMetric)
+            ? {
+                value: lthrMetric.value,
+              }
+            : null,
+        weightMetric:
+          weightMetric && !isClearedProfileOverride(weightMetric)
+            ? {
+                value: weightMetric.value,
+              }
+            : null,
       };
     },
 
@@ -271,11 +286,14 @@ export function createEventReadRepository(
           .then((rows) => rows[0] ?? null),
         db
           .select({
+            id: schema.activityEfforts.id,
             effort_type: schema.activityEfforts.effort_type,
             duration_seconds: schema.activityEfforts.duration_seconds,
             value: schema.activityEfforts.value,
             unit: schema.activityEfforts.unit,
             activity_category: schema.activityEfforts.activity_category,
+            method: schema.activityEfforts.method,
+            provenance: schema.activityEfforts.provenance,
           })
           .from(schema.activityEfforts)
           .where(
@@ -290,10 +308,13 @@ export function createEventReadRepository(
           .limit(300),
         db
           .select({
+            id: schema.profileMetrics.id,
             metric_type: schema.profileMetrics.metric_type,
             unit: schema.profileMetrics.unit,
             value: schema.profileMetrics.value,
             recorded_at: schema.profileMetrics.recorded_at,
+            method: schema.profileMetrics.method,
+            provenance: schema.profileMetrics.provenance,
           })
           .from(schema.profileMetrics)
           .where(
@@ -349,13 +370,26 @@ export function createEventReadRepository(
               dob: profile.dob ? profile.dob.toISOString() : null,
             }
           : null,
-        efforts,
-        metrics: metrics.map((metric) => ({
-          metric_type: metric.metric_type as "weight_kg" | "ftp" | "resting_hr" | "max_hr" | "lthr",
-          unit: metric.unit,
-          value: metric.value,
-          recorded_at: metric.recorded_at.toISOString(),
-        })),
+        efforts: filterSupersededProfileOverrides(
+          efforts,
+          (effort) =>
+            `${effort.activity_category}:${effort.effort_type}:${effort.duration_seconds}:${effort.unit}`,
+        ),
+        metrics: [
+          ...resolveLatestObservationsByKey(metrics, (metric) => metric.metric_type).values(),
+        ]
+          .filter((metric) => metric !== null)
+          .map((metric) => ({
+            metric_type: metric.metric_type as
+              | "weight_kg"
+              | "ftp"
+              | "resting_hr"
+              | "max_hr"
+              | "lthr",
+            unit: metric.unit,
+            value: metric.value,
+            recorded_at: metric.recorded_at.toISOString(),
+          })),
         routes: routes.map((route) => ({
           ...route,
           updated_at: route.updated_at.toISOString(),

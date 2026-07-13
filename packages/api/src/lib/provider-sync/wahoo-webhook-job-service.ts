@@ -232,7 +232,7 @@ export class WahooWebhookJobService {
             lockExpiresAt: new Date(Date.now() + leaseMs).toISOString(),
             workerId,
           }),
-        processJob: async (job) => {
+        processJob: async (job, { signal }) => {
           if (!isWebhookJobPayload(job.payload)) {
             const finalized = await this.deps.providerSyncRepository.markJobFailed({
               id: job.id,
@@ -265,50 +265,49 @@ export class WahooWebhookJobService {
               receipt.payload.event_type !== "workout_summary" ||
               !receipt.payload.workout_summary
             ) {
-              await this.deps.providerSyncRepository.markWebhookReceiptProcessed({
-                id: receipt.id,
-                status: "processed",
-              });
-              const finalized = await this.deps.providerSyncRepository.markJobSucceeded(
-                job.id,
+              signal.throwIfAborted();
+              const finalized = await this.deps.providerSyncRepository.finalizeWebhookReceiptJob({
+                jobId: job.id,
+                jobStatus: "completed",
+                receiptId: receipt.id,
+                receiptStatus: "processed",
                 workerId,
-              );
+              });
               return finalized === false ? "failed" : "completed";
             }
 
+            signal.throwIfAborted();
             const result = await this.deps.importer.importWorkoutSummary(
               receipt.payload.user.id,
               receipt.payload.workout_summary as never,
+              { signal },
             );
             if (!result.success) {
               throw new Error(result.error ?? "Failed to import Wahoo webhook workout summary");
             }
 
-            await this.deps.providerSyncRepository.markWebhookReceiptProcessed({
-              id: receipt.id,
-              status: "processed",
-            });
-            const finalized = await this.deps.providerSyncRepository.markJobSucceeded(
-              job.id,
+            signal.throwIfAborted();
+            const finalized = await this.deps.providerSyncRepository.finalizeWebhookReceiptJob({
+              jobId: job.id,
+              jobStatus: "completed",
+              receiptId: receipt.id,
+              receiptStatus: "processed",
               workerId,
-            );
+            });
             return finalized === false ? "failed" : "completed";
           } catch (error) {
             const lastError =
               error instanceof Error ? error.message : "Unknown Wahoo webhook job failure";
             const shouldDeadLetter = job.attempt >= job.maxAttempts;
-            await this.deps.providerSyncRepository.markWebhookReceiptProcessed({
-              id: receipt.id,
-              lastError,
-              status: "failed",
-            });
-            const finalized = await this.deps.providerSyncRepository.markJobFailed({
-              id: job.id,
+            const finalized = await this.deps.providerSyncRepository.finalizeWebhookReceiptJob({
+              jobId: job.id,
+              jobStatus: shouldDeadLetter ? "dead_lettered" : "failed",
               lastError,
               nextRunAt: shouldDeadLetter
                 ? undefined
                 : addMinutes(now, Math.min(job.attempt * 5, 60)),
-              status: shouldDeadLetter ? "dead_lettered" : "failed",
+              receiptId: receipt.id,
+              receiptStatus: "failed",
               workerId,
             });
             return finalized === false || !shouldDeadLetter ? "failed" : "dead_lettered";
