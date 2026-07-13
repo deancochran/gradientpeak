@@ -1,3 +1,4 @@
+import { defaultAthletePreferenceProfile } from "@repo/core";
 import { schema } from "@repo/db";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -14,11 +15,15 @@ const homeMocks = vi.hoisted(() => ({
   replayTrainingLoadByDate: vi.fn(),
 }));
 
-vi.mock("@repo/core", () => ({
-  calculateAge: homeMocks.calculateAge,
-  calculateRollingTrainingQuality: homeMocks.calculateRollingTrainingQuality,
-  getLoadBalanceStatus: homeMocks.getLoadBalanceStatus,
-}));
+vi.mock("@repo/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/core")>();
+  return {
+    ...actual,
+    calculateAge: homeMocks.calculateAge,
+    calculateRollingTrainingQuality: homeMocks.calculateRollingTrainingQuality,
+    getLoadBalanceStatus: homeMocks.getLoadBalanceStatus,
+  };
+});
 
 vi.mock("@repo/core/load", () => ({
   buildDailyTssByDateSeries: homeMocks.buildDailyTssByDateSeries,
@@ -58,7 +63,7 @@ vi.mock("../../utils/workload", () => ({
 
 import { homeRouter } from "../home";
 
-type TableName = "activities" | "events" | "profiles";
+type TableName = "activities" | "events" | "profiles" | "profileTrainingSettings";
 
 type DbPlan = {
   execute?: Array<Array<Record<string, unknown>>>;
@@ -69,6 +74,7 @@ function getTableName(table: unknown): TableName {
   if (table === schema.profiles) return "profiles";
   if (table === schema.events) return "events";
   if (table === schema.activities) return "activities";
+  if (table === schema.profileTrainingSettings) return "profileTrainingSettings";
   throw new Error(`Unhandled table: ${String(table)}`);
 }
 
@@ -77,6 +83,7 @@ function createDbMock(plan: DbPlan = {}) {
     profiles: [...(plan.select?.profiles ?? [])],
     events: [...(plan.select?.events ?? [])],
     activities: [...(plan.select?.activities ?? [])],
+    profileTrainingSettings: [...(plan.select?.profileTrainingSettings ?? [])],
   } satisfies Record<TableName, Array<unknown[]>>;
   const executeQueue = [...(plan.execute ?? [])];
 
@@ -265,9 +272,25 @@ describe("homeRouter", () => {
             },
           ],
         ],
+        profileTrainingSettings: [
+          [
+            {
+              profileId: "11111111-1111-4111-8111-111111111111",
+              settings: {
+                ...defaultAthletePreferenceProfile,
+                baseline_fitness: {
+                  is_enabled: true,
+                  override_date: "2026-04-02T00:00:00.000Z",
+                  override_ctl: 55,
+                  override_atl: 60,
+                },
+              },
+              updatedAt: new Date("2026-04-01T00:00:00.000Z"),
+            },
+          ],
+        ],
       },
       execute: [
-        [{ settings: {} }],
         [
           {
             id: "plan-1",
@@ -292,6 +315,11 @@ describe("homeRouter", () => {
     });
 
     const result = await caller.getDashboard({ days: 2 });
+
+    expect(homeMocks.replayTrainingLoadByDate).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ initialCTL: 55, initialATL: 60 }),
+    );
 
     expect(result.activePlan).toEqual({
       id: "plan-1",
@@ -406,10 +434,7 @@ describe("homeRouter", () => {
         ],
         activities: [[]],
       },
-      execute: [
-        [{ settings: {} }],
-        [{ id: "plan-1", name: null, description: null, structure: {} }],
-      ],
+      execute: [[{ id: "plan-1", name: null, description: null, structure: {} }]],
     });
 
     await expect(caller.getDashboard({ days: 2 })).rejects.toMatchObject({
@@ -417,7 +442,7 @@ describe("homeRouter", () => {
     });
   });
 
-  it("getDashboard rejects invalid assembled schedule payloads", async () => {
+  it("getDashboard safely ignores malformed settings before validating assembled schedule", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
 
@@ -498,9 +523,17 @@ describe("homeRouter", () => {
             },
           ],
         ],
+        profileTrainingSettings: [
+          [
+            {
+              profileId: "11111111-1111-4111-8111-111111111111",
+              settings: { availability: {} },
+              updatedAt: new Date("2026-04-01T00:00:00.000Z"),
+            },
+          ],
+        ],
       },
       execute: [
-        [{ settings: {} }],
         [
           {
             id: "plan-1",

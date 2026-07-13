@@ -1,10 +1,11 @@
 import { calculateAge, calculateRollingTrainingQuality, getLoadBalanceStatus } from "@repo/core";
 import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core/load";
-import { type ProfileTrainingSettingsRow, schema, type TrainingPlanRow } from "@repo/db";
+import { schema, type TrainingPlanRow } from "@repo/db";
 import { and, asc, eq, gte, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { listActivitySummariesInRange } from "../application/home/activitySummaries";
 import { loadPlannedActivitiesWithEstimations } from "../application/home/plannedActivities";
+import { readParsedProfileTrainingSettings } from "../application/profile-settings/profileTrainingSettings";
 import { getRequiredDb } from "../db";
 import {
   createActivityAnalysisStore,
@@ -20,12 +21,6 @@ const upcomingDaysSchema = z.object({
 });
 
 const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-
-const profileTrainingSettingsRowSchema = z
-  .object({
-    settings: z.unknown(),
-  })
-  .strict();
 
 const dashboardTrainingPlanRowSchema = z
   .object({
@@ -263,20 +258,6 @@ const dashboardResponseSchema = z
 
 type DashboardTrainingPlanRow = Pick<TrainingPlanRow, "id" | "name" | "description" | "structure">;
 
-type ProfileTrainingSettingsSqlRow = Pick<ProfileTrainingSettingsRow, "settings">;
-
-async function getProfileTrainingSettings(db: ReturnType<typeof getRequiredDb>, profileId: string) {
-  const result = await db.execute(sql<ProfileTrainingSettingsSqlRow>`
-    select settings
-    from profile_training_settings
-    where profile_id = ${profileId}
-    limit 1
-  `);
-
-  const row = ((result as unknown as { rows: unknown[] }).rows ?? [])[0];
-  return row ? profileTrainingSettingsRowSchema.parse(row) : null;
-}
-
 async function getAccessibleTrainingPlan(
   db: ReturnType<typeof getRequiredDb>,
   input: { planId: string; profileId: string },
@@ -354,7 +335,7 @@ export const homeRouter = createTRPCRouter({
           .orderBy(asc(schema.events.starts_at))
           .limit(1)
           .then((rows) => rows[0] ?? null),
-        getProfileTrainingSettings(db, userId),
+        readParsedProfileTrainingSettings(db, userId),
       ]);
 
       const nextPlannedEvent = rawNextPlannedEvent
@@ -459,7 +440,7 @@ export const homeRouter = createTRPCRouter({
       };
 
       // Apply Global CTL Override if enabled
-      const settings = profileSettingsData?.settings as any;
+      const settings = profileSettingsData?.settings;
       const baselineFitness = settings?.baseline_fitness;
       let effectiveHistoryStart = historyStart;
       let initialCTL = 0;

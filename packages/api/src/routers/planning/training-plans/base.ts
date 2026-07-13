@@ -74,15 +74,14 @@ import {
   validatePlanFeasibility,
 } from "@repo/core";
 import { resolveCanonicalThresholds } from "@repo/core/athlete-inputs";
-import {
-  type ProfileGoalRow,
-  type ProfileTrainingSettingsRow,
-  schema,
-  type TrainingPlanRow,
-} from "@repo/db";
+import { type ProfileGoalRow, schema, type TrainingPlanRow } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
 import { z } from "zod";
+import {
+  parseProfileTrainingSettings,
+  readParsedProfileTrainingSettings,
+} from "../../../application/profile-settings/profileTrainingSettings";
 import {
   applyQuickAdjustmentUseCase,
   applyTrainingPlanTemplateUseCase,
@@ -163,8 +162,6 @@ type SafetyState = z.infer<typeof safetyStateSchema>;
 type DbClient = ReturnType<typeof getRequiredDb>;
 type LegacyPlanningReader = { from: (...args: any[]) => any };
 
-type ProfileTrainingSettingsSqlRow = Pick<ProfileTrainingSettingsRow, "settings">;
-
 type ProfileGoalSqlRow = Pick<
   ProfileGoalRow,
   "id" | "profile_id" | "title" | "priority" | "activity_category" | "target_payload"
@@ -223,20 +220,6 @@ async function getAccessibleTrainingPlan(input: {
   `);
 
   return getSqlRows<TrainingPlanRow>(result)[0] ?? null;
-}
-
-async function getProfileTrainingSettingsRow(input: {
-  db: DbClient;
-  profileId: string;
-}): Promise<ProfileTrainingSettingsSqlRow | null> {
-  const result = await input.db.execute(sql<ProfileTrainingSettingsSqlRow>`
-    select settings
-    from profile_training_settings
-    where profile_id = ${input.profileId}::uuid
-    limit 1
-  `);
-
-  return getSqlRows<ProfileTrainingSettingsSqlRow>(result)[0] ?? null;
 }
 
 async function _getOwnedTrainingPlan(input: {
@@ -2126,7 +2109,7 @@ async function loadProfileTrainingSettingsCreationDefaults(input: {
   profileId: string;
 }): Promise<z.infer<typeof creationNormalizationInputSchema>> {
   const settingsRow = input.db
-    ? await getProfileTrainingSettingsRow({ db: input.db, profileId: input.profileId })
+    ? await readParsedProfileTrainingSettings(input.db, input.profileId)
     : input.supabase
       ? await input.supabase
           .from("profile_training_settings")
@@ -2842,12 +2825,10 @@ export async function deriveProfileAwareCreationContext(input: {
             .where(eq(schema.profiles.id, input.profileId))
             .limit(1)
             .then((data) => ({ data, error: null })),
-          getProfileTrainingSettingsRow({ db: input.db, profileId: input.profileId }).then(
-            (data) => ({
-              data,
-              error: null,
-            }),
-          ),
+          readParsedProfileTrainingSettings(input.db, input.profileId).then((data) => ({
+            data,
+            error: null,
+          })),
         ])
       : await Promise.all([
           input.supabase
@@ -3003,11 +2984,8 @@ export async function deriveProfileAwareCreationContext(input: {
     lthr: lthrMetric?.value ? Number(lthrMetric.value) : null,
   };
 
-  const settings = settingsResult.data?.settings as any;
-  const parsedPreferenceProfile = athletePreferenceProfileSchema.safeParse(settings);
-  const preferenceProfile = parsedPreferenceProfile.success
-    ? parsedPreferenceProfile.data
-    : undefined;
+  const settings = parseProfileTrainingSettings(settingsResult.data?.settings);
+  const preferenceProfile = settings ?? undefined;
   const baselineFitnessOverride = settings?.baseline_fitness;
 
   const contextSummary = deriveCreationContext({
@@ -3365,7 +3343,7 @@ async function withProfileTrainingSettingsDefaults(input: {
   creationInput: z.infer<typeof creationNormalizationInputSchema>;
 }): Promise<z.infer<typeof creationNormalizationInputSchema>> {
   const settingsRow = input.db
-    ? await getProfileTrainingSettingsRow({ db: input.db, profileId: input.profileId })
+    ? await readParsedProfileTrainingSettings(input.db, input.profileId)
     : input.supabase
       ? await input.supabase
           .from("profile_training_settings")

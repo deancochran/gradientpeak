@@ -3,7 +3,6 @@ import {
   type AthleteMetricType,
   athleteIntelligenceModelInputSchema,
   athleteMetricRoleByType,
-  athletePreferenceProfileSchema,
   canonicalGoalObjectiveSchema,
   resolveCanonicalThresholds,
 } from "@repo/core";
@@ -16,10 +15,13 @@ import {
   profileGoals,
   profileMetrics,
   profiles,
-  profileTrainingSettings,
 } from "@repo/db";
 import { and, asc, desc, eq, gte, lte, type SQLWrapper, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
+import {
+  parseProfileTrainingSettings,
+  readParsedProfileTrainingSettings,
+} from "../profile-settings/profileTrainingSettings";
 import {
   addEvidence,
   canonicalEffortValue,
@@ -482,20 +484,7 @@ export function createDrizzleAthleteIntelligenceDataSource(
           )
           .orderBy(desc(activityEfforts.recorded_at), desc(activityEfforts.id))
           .limit(input.bounds.efforts + 1),
-        db
-          .select({
-            profileId: profileTrainingSettings.profile_id,
-            settings: profileTrainingSettings.settings,
-            updatedAt: profileTrainingSettings.updated_at,
-          })
-          .from(profileTrainingSettings)
-          .where(
-            and(
-              eq(profileTrainingSettings.profile_id, p),
-              lte(profileTrainingSettings.updated_at, input.asOf),
-            ),
-          )
-          .limit(1),
+        readParsedProfileTrainingSettings(db, p, { asOf: input.asOf }),
         db
           .select(eventSelection)
           .from(events)
@@ -548,7 +537,7 @@ export function createDrizzleAthleteIntelligenceDataSource(
         activities: activityRows.slice(0, input.bounds.activities),
         efforts: effortRows.slice(0, input.bounds.efforts),
         goals: goalRows,
-        trainingSettings: settingsRows[0] ?? null,
+        trainingSettings: settingsRows,
         schedule: boundedSchedule.rows,
         scheduleTruncated: boundedSchedule.truncated,
         readCoverage: {
@@ -1118,8 +1107,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
     });
   const currentSettings =
     rows.trainingSettings && rows.trainingSettings.updatedAt <= asOf ? rows.trainingSettings : null;
-  const parsedSettings = athletePreferenceProfileSchema.safeParse(currentSettings?.settings);
-  const settings = parsedSettings.success ? parsedSettings.data : null;
+  const settings = parseProfileTrainingSettings(currentSettings?.settings);
   const settingsAt = currentSettings?.updatedAt ?? profileAt;
   const contextId = evidence(
     "manual",

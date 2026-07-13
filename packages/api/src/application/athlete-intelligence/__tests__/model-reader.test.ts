@@ -709,6 +709,32 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     expect(result.trainingContext.strategy).toBeNull();
   });
 
+  it("falls back to absent-setting semantics for malformed persisted preferences", async () => {
+    const malformed = rows();
+    if (!malformed.trainingSettings) throw new Error("fixture settings missing");
+    malformed.trainingSettings = {
+      ...malformed.trainingSettings,
+      settings: { availability: {} },
+    };
+    const absent = rows();
+    absent.trainingSettings = null;
+
+    const [malformedResult, absentResult] = await Promise.all([
+      materializeAthleteIntelligenceModelInput({
+        dataSource: readRows(malformed),
+        profileId,
+        asOf,
+      }),
+      materializeAthleteIntelligenceModelInput({
+        dataSource: readRows(absent),
+        profileId,
+        asOf,
+      }),
+    ]);
+
+    expect(malformedResult.trainingContext).toEqual(absentResult.trainingContext);
+  });
+
   it("excludes future observations but includes bounded future planned schedule", async () => {
     const value = rows();
     value.metrics.push({
@@ -782,6 +808,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     expect(result.goals).toEqual([]);
     expect(result.plannedSchedule).toEqual([]);
     expect(result.trainingContext.maximumWeeklyMinutes.value).toBeNull();
+    expect(result.trainingContext.weeklyTimeWindows).toEqual([]);
 
     const futureProfile = rows();
     if (!futureProfile.profile) throw new Error("fixture profile missing");

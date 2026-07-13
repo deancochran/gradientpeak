@@ -1,6 +1,10 @@
-import type { athleteTrainingSettingsSchema } from "@repo/core";
+import {
+  type AthletePreferenceProfile,
+  athletePreferenceProfileSchema,
+  type athleteTrainingSettingsSchema,
+} from "@repo/core";
 import { type ProfileTrainingSettingsRow, profileTrainingSettings } from "@repo/db";
-import { eq } from "drizzle-orm";
+import { and, eq, lte } from "drizzle-orm";
 import type { z } from "zod";
 
 import type { getRequiredDb } from "../../db";
@@ -11,6 +15,11 @@ type ProfileTrainingSettingsSqlRow = Pick<
   ProfileTrainingSettingsRow,
   "profile_id" | "settings" | "updated_at"
 >;
+
+export function parseProfileTrainingSettings(settings: unknown): AthletePreferenceProfile | null {
+  const parsed = athletePreferenceProfileSchema.safeParse(settings);
+  return parsed.success ? parsed.data : null;
+}
 
 export function normalizeProfileTrainingSettingsRow(row: ProfileTrainingSettingsSqlRow) {
   return {
@@ -37,6 +46,32 @@ export async function readProfileTrainingSettings(db: DbClient, profileId: strin
     .limit(1);
 
   return (row as ProfileTrainingSettingsSqlRow | undefined) ?? null;
+}
+
+export async function readParsedProfileTrainingSettings(
+  db: DbClient,
+  profileId: string,
+  options: { asOf?: Date } = {},
+): Promise<{
+  profileId: string;
+  settings: AthletePreferenceProfile;
+  updatedAt: Date;
+} | null> {
+  const conditions = [eq(profileTrainingSettings.profile_id, profileId)];
+  if (options.asOf) conditions.push(lte(profileTrainingSettings.updated_at, options.asOf));
+
+  const [row] = await db
+    .select({
+      profileId: profileTrainingSettings.profile_id,
+      settings: profileTrainingSettings.settings,
+      updatedAt: profileTrainingSettings.updated_at,
+    })
+    .from(profileTrainingSettings)
+    .where(and(...conditions))
+    .limit(1);
+
+  const settings = parseProfileTrainingSettings(row?.settings);
+  return row && settings ? { ...row, settings } : null;
 }
 
 export async function upsertProfileTrainingSettings(

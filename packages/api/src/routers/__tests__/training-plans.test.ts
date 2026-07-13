@@ -708,7 +708,6 @@ describe("trainingPlansRouter plan_start_date support", () => {
             goal_strategy_preferences: {
               target_surplus_preference: 0.4,
             },
-            optimization_profile: "sustainable",
           },
         },
         error: null,
@@ -739,6 +738,37 @@ describe("trainingPlansRouter plan_start_date support", () => {
       variability: 0.348,
       recovery_priority: 0.718,
     });
+  });
+
+  it("uses existing creation defaults when persisted profile settings are malformed", async () => {
+    const baselineCaller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+    });
+    const malformedCaller = createTrainingPlansCaller({
+      activities: { data: [], error: null },
+      activity_efforts: { data: [], error: null },
+      profile_metrics: { data: [], error: null },
+      profile_training_settings: {
+        data: { profile_id: "profile-123", settings: { availability: {} } },
+        error: null,
+      },
+    });
+    const input = {
+      minimal_plan: {
+        plan_start_date: "2026-01-05",
+        goals: [nonBlockingGoal],
+      },
+      creation_input: {},
+    };
+
+    const [baseline, malformed] = await Promise.all([
+      baselineCaller.previewCreationConfig(input),
+      malformedCaller.previewCreationConfig(input),
+    ]);
+
+    expect(malformed.normalized_creation_config).toEqual(baseline.normalized_creation_config);
   });
 
   it("applies strict cap tuning without forcing blocking or unsafe feasibility", async () => {
