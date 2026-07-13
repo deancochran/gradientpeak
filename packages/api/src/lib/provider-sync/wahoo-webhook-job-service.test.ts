@@ -13,6 +13,7 @@ function createDeps() {
       listWebhookReceipts: vi.fn().mockResolvedValue([]),
       markJobFailed: vi.fn(),
       markJobSucceeded: vi.fn(),
+      renewJobLease: vi.fn().mockResolvedValue(true),
       markWebhookReceiptProcessed: vi.fn(),
       setWebhookReceiptJob: vi.fn(),
       storeWebhookReceipt: vi.fn(),
@@ -117,7 +118,10 @@ describe("WahooWebhookJobService", () => {
       id: "receipt-1",
       status: "processed",
     });
-    expect(deps.providerSyncRepository.markJobSucceeded).toHaveBeenCalledWith("job-1", "worker-1");
+    expect(deps.providerSyncRepository.markJobSucceeded).toHaveBeenCalledWith(
+      "job-1",
+      expect.stringMatching(/^worker-1:/),
+    );
   });
 
   it("recovers pending receipts without jobs before processing due jobs", async () => {

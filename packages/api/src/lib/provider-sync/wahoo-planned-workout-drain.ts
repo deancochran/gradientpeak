@@ -4,6 +4,7 @@ import {
   createWahooRepository,
 } from "../../infrastructure/repositories";
 import { createWahooRouteStorage, WahooSyncService } from "../integrations/wahoo/sync-service";
+import { getProcessProviderSyncLimiter } from "./job-execution";
 import { WahooSyncJobService } from "./wahoo-job-service";
 
 export type WahooPlannedWorkoutDrainResult = {
@@ -29,10 +30,12 @@ export async function drainDueWahooPlannedWorkoutJobs(input: {
   });
 
   return new WahooSyncJobService({
+    executionLimiter: getProcessProviderSyncLimiter(4),
     providerSyncRepository,
     syncService,
     wahooRepository,
   }).processDueJobs({
+    concurrency: 4,
     limit: input.limit ?? 3,
     workerId: input.workerId ?? "calendar-planned-workout-drain",
   });

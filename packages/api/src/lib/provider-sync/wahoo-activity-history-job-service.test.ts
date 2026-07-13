@@ -34,6 +34,7 @@ function createDeps() {
       claimDueJobs: vi.fn(),
       markJobFailed: vi.fn(),
       markJobSucceeded: vi.fn(),
+      renewJobLease: vi.fn().mockResolvedValue(true),
       updateSyncStateAfterFailure: vi.fn(),
       updateSyncStateAfterRun: vi.fn(),
     },
@@ -106,7 +107,10 @@ describe("WahooActivityHistoryJobService", () => {
       startDate: "2025-04-03T12:00:00.000Z",
     });
     expect(deps.importer.importWorkoutSummary).toHaveBeenCalledWith(77, createSummary(123));
-    expect(deps.providerSyncRepository.markJobSucceeded).toHaveBeenCalledWith("job-1", "worker-1");
+    expect(deps.providerSyncRepository.markJobSucceeded).toHaveBeenCalledWith(
+      "job-1",
+      expect.stringMatching(/^worker-1:/),
+    );
     expect(deps.providerSyncRepository.updateSyncStateAfterRun).toHaveBeenCalledWith({
       integrationId: "integration-1",
       provider: "wahoo",
@@ -170,7 +174,7 @@ describe("WahooActivityHistoryJobService", () => {
         id: "job-1",
         lastError: expect.stringContaining("storage offline"),
         status: "failed",
-        workerId: "wahoo-activity-history-worker",
+        workerId: expect.stringMatching(/^wahoo-activity-history-worker:/),
       }),
     );
     expect(deps.providerSyncRepository.updateSyncStateAfterFailure).toHaveBeenCalledWith(
@@ -221,7 +225,7 @@ describe("WahooActivityHistoryJobService", () => {
     expect(deps.importer.importWorkoutSummary).not.toHaveBeenCalled();
     expect(deps.providerSyncRepository.markJobSucceeded).toHaveBeenCalledWith(
       "job-1",
-      "wahoo-activity-history-worker",
+      expect.stringMatching(/^wahoo-activity-history-worker:/),
     );
     expect(deps.providerSyncRepository.updateSyncStateAfterRun).not.toHaveBeenCalled();
     expect(deps.providerSyncRepository.markJobFailed).not.toHaveBeenCalled();
@@ -264,7 +268,7 @@ describe("WahooActivityHistoryJobService", () => {
       id: "job-1",
       lastError: "Invalid Wahoo activity history job payload",
       status: "dead_lettered",
-      workerId: "wahoo-activity-history-worker",
+      workerId: expect.stringMatching(/^wahoo-activity-history-worker:/),
     });
     expect(deps.importer.importWorkoutSummary).not.toHaveBeenCalled();
   });

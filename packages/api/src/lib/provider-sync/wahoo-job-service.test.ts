@@ -8,6 +8,7 @@ function createDeps() {
       enqueueJob: vi.fn(),
       markJobFailed: vi.fn(),
       markJobSucceeded: vi.fn(),
+      renewJobLease: vi.fn().mockResolvedValue(true),
       touchSyncState: vi.fn(),
       updateSyncStateAfterFailure: vi.fn(),
       updateSyncStateAfterRun: vi.fn(),
@@ -101,7 +102,16 @@ describe("WahooSyncJobService", () => {
     });
 
     expect(deps.syncService.syncEvent).toHaveBeenCalledWith("event-1", "profile-1");
-    expect(deps.providerSyncRepository.markJobSucceeded).toHaveBeenCalledWith("job-1", "worker-1");
+    expect(deps.providerSyncRepository.claimDueJobs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        limit: 4,
+        workerId: expect.stringMatching(/^worker-1:/),
+      }),
+    );
+    expect(deps.providerSyncRepository.markJobSucceeded).toHaveBeenCalledWith(
+      "job-1",
+      expect.stringMatching(/^worker-1:/),
+    );
     expect(deps.providerSyncRepository.updateSyncStateAfterRun).toHaveBeenCalledWith(
       expect.objectContaining({
         integrationId: "integration-1",
@@ -142,7 +152,10 @@ describe("WahooSyncJobService", () => {
     });
 
     expect(deps.syncService.syncEvent).not.toHaveBeenCalled();
-    expect(deps.providerSyncRepository.markJobSucceeded).toHaveBeenCalledWith("job-1", "worker-1");
+    expect(deps.providerSyncRepository.markJobSucceeded).toHaveBeenCalledWith(
+      "job-1",
+      expect.stringMatching(/^worker-1:/),
+    );
     expect(deps.providerSyncRepository.updateSyncStateAfterRun).not.toHaveBeenCalled();
   });
 
@@ -181,7 +194,10 @@ describe("WahooSyncJobService", () => {
     });
 
     expect(deps.syncService.unsyncEvent).toHaveBeenCalledWith("event-1", "profile-1");
-    expect(deps.providerSyncRepository.markJobSucceeded).toHaveBeenCalledWith("job-1", "worker-1");
+    expect(deps.providerSyncRepository.markJobSucceeded).toHaveBeenCalledWith(
+      "job-1",
+      expect.stringMatching(/^worker-1:/),
+    );
     expect(deps.providerSyncRepository.markJobFailed).not.toHaveBeenCalled();
     expect(deps.providerSyncRepository.updateSyncStateAfterRun).not.toHaveBeenCalled();
   });
