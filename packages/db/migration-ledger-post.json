@@ -13,6 +13,10 @@
     {
       "version": "20260713034520",
       "name": "add_activity_file_ingestion_fk_index"
+    },
+    {
+      "version": "20260713053540",
+      "name": "expand_provider_queue_sequence"
     }
   ]
 }

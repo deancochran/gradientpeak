@@ -1,5 +1,6 @@
 #!/usr/bin/env tsx
 
+import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -12,6 +13,99 @@ const fingerprintPath = resolve(dbPackageRoot, "schema-fingerprint.json");
 const policy = JSON.parse(
   readFileSync(resolve(dbPackageRoot, "migration-policy.json"), "utf8"),
 ) as { ownedExtensions: string[] };
+const transitionalExtras = JSON.parse(
+  readFileSync(resolve(dbPackageRoot, "transitional-schema-extras.json"), "utf8"),
+) as {
+  columns: Array<{ table: string; name: string }>;
+  constraints: Array<{ table: string; name: string }>;
+  indexes: Array<{ table: string; name: string }>;
+  sequences: string[];
+};
+
+function withoutDeclaredTransitionalExtras(fingerprint: Record<string, unknown>) {
+  const excludedColumns = new Set(
+    transitionalExtras.columns.map((entry) => `${entry.table}.${entry.name}`),
+  );
+  const excludedConstraints = new Set(
+    transitionalExtras.constraints.map((entry) => `${entry.table}.${entry.name}`),
+  );
+  const excludedIndexes = new Set(
+    transitionalExtras.indexes.map((entry) => `${entry.table}.${entry.name}`),
+  );
+  const excludedSequences = new Set(transitionalExtras.sequences);
+  const filterEntries = (
+    section: unknown,
+    excluded: Set<string>,
+    key: (entry: Record<string, unknown>) => string,
+  ) =>
+    Array.isArray(section)
+      ? section.filter(
+          (entry) =>
+            !entry ||
+            typeof entry !== "object" ||
+            !excluded.has(key(entry as Record<string, unknown>)),
+        )
+      : section;
+  const hasEntry = (
+    section: unknown,
+    expected: string,
+    key: (entry: Record<string, unknown>) => string,
+  ) =>
+    Array.isArray(section) &&
+    section.some(
+      (entry) =>
+        entry && typeof entry === "object" && key(entry as Record<string, unknown>) === expected,
+    );
+
+  for (const entry of transitionalExtras.columns) {
+    const expected = `${entry.table}.${entry.name}`;
+    if (!hasEntry(fingerprint.columns, expected, (value) => `${value.table}.${value.name}`)) {
+      throw new Error(`declared transitional fingerprint column is missing: ${expected}`);
+    }
+  }
+  for (const entry of transitionalExtras.constraints) {
+    const expected = `${entry.table}.${entry.name}`;
+    if (!hasEntry(fingerprint.constraints, expected, (value) => `${value.table}.${value.name}`)) {
+      throw new Error(`declared transitional fingerprint constraint is missing: ${expected}`);
+    }
+  }
+  for (const entry of transitionalExtras.indexes) {
+    const expected = `${entry.table}.${entry.name}`;
+    if (!hasEntry(fingerprint.indexes, expected, (value) => `${value.table}.${value.name}`)) {
+      throw new Error(`declared transitional fingerprint index is missing: ${expected}`);
+    }
+  }
+  for (const sequence of transitionalExtras.sequences) {
+    if (!hasEntry(fingerprint.publicSequences, sequence, (value) => String(value.name))) {
+      throw new Error(`declared transitional fingerprint sequence is missing: ${sequence}`);
+    }
+  }
+
+  return {
+    ...fingerprint,
+    columns: filterEntries(
+      fingerprint.columns,
+      excludedColumns,
+      (entry) => `${String(entry.table)}.${String(entry.name)}`,
+    ),
+    constraints: filterEntries(
+      fingerprint.constraints,
+      excludedConstraints,
+      (entry) => `${String(entry.table)}.${String(entry.name)}`,
+    ),
+    indexes: filterEntries(
+      fingerprint.indexes,
+      excludedIndexes,
+      (entry) => `${String(entry.table)}.${String(entry.name)}`,
+    ),
+    publicRelations: filterEntries(fingerprint.publicRelations, excludedSequences, (entry) =>
+      String(entry.name),
+    ),
+    publicSequences: filterEntries(fingerprint.publicSequences, excludedSequences, (entry) =>
+      String(entry.name),
+    ),
+  };
+}
 
 function managedTableNames() {
   return Object.values(schema)
@@ -26,7 +120,10 @@ function managedTableNames() {
     .sort();
 }
 
-export async function createSchemaFingerprint(pool: Pool) {
+export async function createSchemaFingerprint(
+  pool: Pool,
+  options: { allowTransitionalExtras?: boolean } = {},
+) {
   await pool.query("set search_path = public, pg_catalog");
   const tables = managedTableNames();
   const result = await pool.query(
@@ -67,7 +164,7 @@ export async function createSchemaFingerprint(pool: Pool) {
           ) order by c.relname)
           from pg_class c
           join pg_namespace n on n.oid = c.relnamespace
-          left join pg_depend dep on dep.objid = c.oid and dep.classid = 'pg_class'::regclass and dep.deptype = 'a'
+           left join pg_depend dep on dep.objid = c.oid and dep.classid = 'pg_class'::regclass and dep.deptype in ('a', 'i')
           left join pg_class owned_table on owned_table.oid = dep.refobjid
           left join pg_attribute a on a.attrelid = dep.refobjid and a.attnum = dep.refobjsubid
           where n.nspname = 'public' and c.relkind = 'S'
@@ -240,22 +337,29 @@ export async function createSchemaFingerprint(pool: Pool) {
     `,
     [tables, policy.ownedExtensions],
   );
-  return result.rows[0]?.fingerprint as unknown;
+  const fingerprint = result.rows[0]?.fingerprint as Record<string, unknown>;
+  return options.allowTransitionalExtras
+    ? withoutDeclaredTransitionalExtras(fingerprint)
+    : fingerprint;
 }
 
 async function main() {
   const pool = new Pool({ connectionString: prepareDbEnv() });
   try {
-    const actual = await createSchemaFingerprint(pool);
+    const actual = await createSchemaFingerprint(pool, { allowTransitionalExtras: true });
     const serialized = `${JSON.stringify(actual, null, 2)}\n`;
     if (process.argv.includes("--write")) {
       writeFileSync(fingerprintPath, serialized);
+      execFileSync("pnpm", ["exec", "biome", "format", "--write", fingerprintPath], {
+        cwd: dbPackageRoot,
+        stdio: "inherit",
+      });
       console.log(`[db:schema:fingerprint] wrote ${fingerprintPath}`);
       return;
     }
 
-    const expected = readFileSync(fingerprintPath, "utf8");
-    if (expected !== serialized) {
+    const expected = JSON.parse(readFileSync(fingerprintPath, "utf8")) as unknown;
+    if (JSON.stringify(expected) !== JSON.stringify(actual)) {
       throw new Error(
         "managed schema fingerprint drifted; inspect DB/schema changes before running db:schema:fingerprint:write",
       );

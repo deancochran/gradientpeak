@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
+  bigint,
   boolean,
   check,
   date,
@@ -42,7 +43,6 @@ export const profiles = pgTable(
   "profiles",
   {
     id: uuid("id").primaryKey(),
-    idx: integer("idx"),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -219,7 +219,6 @@ export const activityRoutes = pgTable(
   "activity_routes",
   {
     id: uuid("id").primaryKey(),
-    idx: serial("idx").notNull(),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -239,7 +238,6 @@ export const activityRoutes = pgTable(
     is_public: boolean("is_public").notNull().default(false),
   },
   (table) => [
-    uniqueIndex("activity_routes_idx_key").on(table.idx),
     check("activity_routes_total_distance_check", sql`${table.total_distance} >= 0`),
     check("activity_routes_total_ascent_check", sql`${table.total_ascent} >= 0`),
     check("activity_routes_total_descent_check", sql`${table.total_descent} >= 0`),
@@ -264,7 +262,6 @@ export const activityPlans = pgTable(
   "activity_plans",
   {
     id: uuid("id").primaryKey(),
-    idx: serial("idx").notNull(),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -285,7 +282,6 @@ export const activityPlans = pgTable(
     is_system_template: boolean("is_system_template").notNull().default(false),
   },
   (table) => [
-    uniqueIndex("activity_plans_idx_key").on(table.idx),
     check(
       "activity_plans_template_visibility_check",
       sql`${table.template_visibility} = any(array['private'::text, 'public'::text])`,
@@ -521,7 +517,6 @@ export const trainingPlans = pgTable(
   "training_plans",
   {
     id: uuid("id").primaryKey(),
-    idx: serial("idx").notNull(),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -538,7 +533,6 @@ export const trainingPlans = pgTable(
     duration_hours: numeric("duration_hours", { precision: 12, scale: 2, mode: "number" }),
   },
   (table) => [
-    uniqueIndex("training_plans_idx_key").on(table.idx),
     check(
       "training_plans_template_visibility_check",
       sql`${table.template_visibility} = any(array['private'::text, 'public'::text])`,
@@ -566,7 +560,6 @@ export const events = pgTable(
   "events",
   {
     id: uuid("id").primaryKey(),
-    idx: serial("idx").notNull(),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -610,7 +603,6 @@ export const events = pgTable(
     payload: jsonb("payload"),
   },
   (table) => [
-    uniqueIndex("events_idx_key").on(table.idx),
     unique("events_id_profile_id_unique").on(table.id, table.profile_id),
     check(
       "events_time_window",
@@ -755,7 +747,6 @@ export const activities = pgTable(
   "activities",
   {
     id: uuid("id").primaryKey(),
-    idx: serial("idx").notNull(),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -827,7 +818,6 @@ export const activities = pgTable(
     map_bounds: jsonb("map_bounds"),
   },
   (table) => [
-    uniqueIndex("activities_idx_key").on(table.idx),
     unique("activities_id_profile_id_unique").on(table.id, table.profile_id),
     index("idx_activities_activity_plan")
       .on(table.activity_plan_id)
@@ -974,7 +964,6 @@ export const integrations = pgTable(
   "integrations",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    idx: serial("idx").notNull().unique(),
     profile_id: uuid("profile_id")
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
@@ -1105,7 +1094,6 @@ export const oauthStates = pgTable(
   "oauth_states",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    idx: serial("idx").notNull().unique(),
     state: text("state").notNull(),
     profile_id: uuid("profile_id")
       .notNull()
@@ -1127,7 +1115,6 @@ export const integrationResourceLinks = pgTable(
   "integration_resource_links",
   {
     id: uuid("id").primaryKey(),
-    idx: serial("idx").notNull(),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -1150,7 +1137,6 @@ export const integrationResourceLinks = pgTable(
     payload_hash: text("payload_hash"),
   },
   (table) => [
-    uniqueIndex("integration_resource_links_idx_key").on(table.idx),
     unique("integration_resource_links_internal_unique").on(
       table.integration_id,
       table.resource_kind,
@@ -1175,7 +1161,6 @@ export const providerSyncState = pgTable(
   "provider_sync_state",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    idx: serial("idx").notNull(),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -1203,7 +1188,6 @@ export const providerSyncState = pgTable(
     metadata: jsonb("metadata").notNull().default(sql`'{}'::jsonb`),
   },
   (table) => [
-    uniqueIndex("provider_sync_state_idx_key").on(table.idx),
     unique("provider_sync_state_integration_resource_unique").on(
       table.integration_id,
       table.resource,
@@ -1216,7 +1200,9 @@ export const providerSyncJobs = pgTable(
   "provider_sync_jobs",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    idx: serial("idx").notNull(),
+    queue_sequence: bigint("queue_sequence", { mode: "number" })
+      .generatedByDefaultAsIdentity()
+      .notNull(),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -1250,7 +1236,7 @@ export const providerSyncJobs = pgTable(
     locked_by: text("locked_by"),
   },
   (table) => [
-    uniqueIndex("provider_sync_jobs_idx_key").on(table.idx),
+    uniqueIndex("provider_sync_jobs_queue_sequence_key").on(table.queue_sequence),
     index("idx_provider_sync_jobs_status_run_at_priority").on(
       table.status,
       table.run_at,
@@ -1275,7 +1261,6 @@ export const providerWebhookReceipts = pgTable(
   "provider_webhook_receipts",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    idx: serial("idx").notNull(),
     created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -1299,7 +1284,6 @@ export const providerWebhookReceipts = pgTable(
     last_error: text("last_error"),
   },
   (table) => [
-    uniqueIndex("provider_webhook_receipts_idx_key").on(table.idx),
     unique("provider_webhook_receipts_event_unique").on(
       table.provider,
       table.provider_account_id,

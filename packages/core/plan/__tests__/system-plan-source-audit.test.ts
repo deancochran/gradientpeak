@@ -11,7 +11,7 @@ import {
 
 const TRAINING_PLAN_MIGRATION_PATH = resolve(
   __dirname,
-  "../../../db/supabase/migrations/20260308173500_remake_system_training_plan_templates.sql",
+  "../../../db/supabase/migrations-archive/20260308173500_remake_system_training_plan_templates.sql",
 );
 
 describe("system plan source audit", () => {

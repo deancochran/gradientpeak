@@ -1,0 +1,52 @@
+{
+  "columns": [
+    { "table": "activities", "name": "idx" },
+    { "table": "activity_plans", "name": "idx" },
+    { "table": "activity_routes", "name": "idx" },
+    { "table": "events", "name": "idx" },
+    { "table": "integration_resource_links", "name": "idx" },
+    { "table": "integrations", "name": "idx" },
+    { "table": "oauth_states", "name": "idx" },
+    { "table": "profiles", "name": "idx" },
+    { "table": "provider_sync_jobs", "name": "idx" },
+    { "table": "provider_sync_state", "name": "idx" },
+    { "table": "provider_webhook_receipts", "name": "idx" },
+    { "table": "training_plans", "name": "idx" }
+  ],
+  "constraints": [
+    { "table": "integrations", "name": "integrations_idx_unique" },
+    { "table": "oauth_states", "name": "oauth_states_idx_unique" }
+  ],
+  "indexes": [
+    { "table": "activities", "name": "activities_idx_key" },
+    { "table": "activity_plans", "name": "activity_plans_idx_key" },
+    { "table": "activity_routes", "name": "activity_routes_idx_key" },
+    { "table": "events", "name": "events_idx_key" },
+    {
+      "table": "integration_resource_links",
+      "name": "integration_resource_links_idx_key"
+    },
+    { "table": "integrations", "name": "integrations_idx_unique" },
+    { "table": "oauth_states", "name": "oauth_states_idx_unique" },
+    { "table": "provider_sync_jobs", "name": "provider_sync_jobs_idx_key" },
+    { "table": "provider_sync_state", "name": "provider_sync_state_idx_key" },
+    {
+      "table": "provider_webhook_receipts",
+      "name": "provider_webhook_receipts_idx_key"
+    },
+    { "table": "training_plans", "name": "training_plans_idx_key" }
+  ],
+  "sequences": [
+    "activities_idx_seq",
+    "activity_plans_idx_seq",
+    "activity_routes_idx_seq",
+    "events_idx_seq",
+    "integration_resource_links_idx_seq",
+    "integrations_idx_seq",
+    "oauth_states_idx_seq",
+    "provider_sync_jobs_idx_seq",
+    "provider_sync_state_idx_seq",
+    "provider_webhook_receipts_idx_seq",
+    "training_plans_idx_seq"
+  ]
+}

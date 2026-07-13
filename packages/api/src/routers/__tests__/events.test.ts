@@ -93,7 +93,6 @@ type MockDb = {
 function createEventRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "00000000-0000-4000-8000-000000000001",
-    idx: 1,
     profile_id: "profile-123",
     event_type: "planned_activity",
     title: "Planned Activity",

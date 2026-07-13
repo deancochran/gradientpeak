@@ -3,7 +3,6 @@ import type { ActivityPlanRow, ActivityRow, EventRow, PublicEventStatus } from "
 type EventCompletionBase = Pick<
   EventRow,
   | "id"
-  | "idx"
   | "profile_id"
   | "event_type"
   | "title"

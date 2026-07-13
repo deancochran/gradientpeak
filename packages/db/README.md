@@ -49,7 +49,7 @@ pnpm --filter @repo/db self-host:down
 
 The checked-in fingerprint covers every public relation and sequence (including unmanaged extras), managed columns/defaults/indexes/constraints/enums, RLS and ACL/default ACL state, owned extensions, public/auth functions and triggers, and owned storage buckets/policies. Update it only from the guarded disposable fresh target.
 
-`db:verify:static` needs no database. `db:verify` builds both fresh and upgrade disposable databases, verifies schema/data convergence, fingerprints all owned surfaces, checks storage/security, lints the same disposable target, and runs an empty diff. Shared-local ledger diagnostics are deliberately separate: `db:migration:ledger:pre` expects exactly 71 entries and `db:migration:ledger:post` expects exactly the three active entries.
+`db:verify:static` needs no database. `db:verify` builds both fresh and upgrade disposable databases, verifies schema/data convergence, fingerprints all owned surfaces, checks storage/security, lints the same disposable target, and runs an empty diff. Shared-local ledger diagnostics are deliberately separate: `db:migration:ledger:pre` expects exactly 71 entries and `db:migration:ledger:post` expects exactly the four active entries.
 
 ## Baseline reconciliation
 
@@ -62,7 +62,9 @@ For a fresh target, run the active chain normally. For an existing pre-consolida
 3. Use `migration repair --status applied 20260713034500` so the target records the schema it already has.
 4. Re-list the ledger. Only then run normal migration-up for post-baseline files.
 
-No reconciliation command is automated because it changes an environment ledger. Run it once per explicitly approved target after taking a backup. `migration-history-mismatches.json` explicitly records 36 ledger-only versions whose SQL is unavailable and 17 archive-only versions absent from the captured endpoint. The disposable upgrade fixture recreates the captured schema/71-entry ledger with representative data, performs metadata reconciliation, applies the two followups, and requires exact three-entry ledger, schema, storage, and data convergence. The security followup also restores hosted storage buckets and policies because existing targets skip the baseline.
+No reconciliation command is automated because it changes an environment ledger. Run it once per explicitly approved target after taking a backup. `migration-history-mismatches.json` explicitly records 36 ledger-only versions whose SQL is unavailable and 17 archive-only versions absent from the captured endpoint. The disposable upgrade fixture recreates the captured schema/71-entry ledger with representative data, performs metadata reconciliation, applies the three followups, and requires exact four-entry ledger, schema, storage, and data convergence. The security followup also restores hosted storage buckets and policies because existing targets skip the baseline.
+
+The provider queue-sequence followup is expand-only: it adds and backfills `queue_sequence` while legacy `idx` columns and their relations remain available during the old-client soak. `transitional-schema-extras.json` declares those temporary physical extras so parity and fingerprint checks remain strict. `scripts/contract_redundant_idx_columns.sql` is never auto-applied; run it only in an explicitly approved quiescent transaction after the old-client soak. The disposable upgrade fixture proves both the expand state and the guarded final contract without changing a shared database.
 
 Use idempotent DDL such as `create index if not exists` and `alter table if exists` for live-drift repair migrations. Use stricter DDL for new product schema where drift should fail loudly.
 

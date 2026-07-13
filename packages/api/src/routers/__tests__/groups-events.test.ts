@@ -30,7 +30,6 @@ const NOW = GROUP_TEST_NOW;
 function buildActivityPlanRow(overrides: Record<string, unknown> = {}) {
   return {
     id: ACTIVITY_PLAN_ID,
-    idx: 0,
     created_at: NOW,
     updated_at: NOW,
     profile_id: VIEWER_ID,
@@ -52,7 +51,6 @@ function buildActivityPlanRow(overrides: Record<string, unknown> = {}) {
 function buildActivityRouteRow(overrides: Record<string, unknown> = {}) {
   return {
     id: ROUTE_ID,
-    idx: 0,
     created_at: NOW,
     updated_at: NOW,
     profile_id: VIEWER_ID,

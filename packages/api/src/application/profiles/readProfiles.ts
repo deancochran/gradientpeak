@@ -56,7 +56,6 @@ const publicProfileRowSchema = z
 
 const profileBaseSelect = {
   id: profiles.id,
-  idx: profiles.idx,
   created_at: profiles.created_at,
   updated_at: profiles.updated_at,
   email: profiles.email,
@@ -83,7 +82,6 @@ export type SessionUser = {
 type ProfileBaseRow = Pick<
   PublicProfilesRow,
   | "id"
-  | "idx"
   | "created_at"
   | "updated_at"
   | "email"

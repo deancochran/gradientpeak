@@ -465,16 +465,6 @@
       "generated": ""
     },
     {
-      "name": "idx",
-      "type": "integer",
-      "table": "activities",
-      "default": "nextval('activities_idx_seq'::regclass)",
-      "notNull": true,
-      "identity": "",
-      "position": 2,
-      "generated": ""
-    },
-    {
       "name": "created_at",
       "type": "timestamp with time zone",
       "table": "activities",
@@ -1295,16 +1285,6 @@
       "generated": ""
     },
     {
-      "name": "idx",
-      "type": "integer",
-      "table": "activity_plans",
-      "default": "nextval('activity_plans_idx_seq'::regclass)",
-      "notNull": true,
-      "identity": "",
-      "position": 2,
-      "generated": ""
-    },
-    {
       "name": "created_at",
       "type": "timestamp with time zone",
       "table": "activity_plans",
@@ -1452,16 +1432,6 @@
       "notNull": true,
       "identity": "",
       "position": 1,
-      "generated": ""
-    },
-    {
-      "name": "idx",
-      "type": "integer",
-      "table": "activity_routes",
-      "default": "nextval('activity_routes_idx_seq'::regclass)",
-      "notNull": true,
-      "identity": "",
-      "position": 2,
       "generated": ""
     },
     {
@@ -1952,16 +1922,6 @@
       "notNull": true,
       "identity": "",
       "position": 1,
-      "generated": ""
-    },
-    {
-      "name": "idx",
-      "type": "integer",
-      "table": "events",
-      "default": "nextval('events_idx_seq'::regclass)",
-      "notNull": true,
-      "identity": "",
-      "position": 2,
       "generated": ""
     },
     {
@@ -3055,16 +3015,6 @@
       "generated": ""
     },
     {
-      "name": "idx",
-      "type": "integer",
-      "table": "integration_resource_links",
-      "default": "nextval('integration_resource_links_idx_seq'::regclass)",
-      "notNull": true,
-      "identity": "",
-      "position": 2,
-      "generated": ""
-    },
-    {
       "name": "created_at",
       "type": "timestamp with time zone",
       "table": "integration_resource_links",
@@ -3192,16 +3142,6 @@
       "notNull": true,
       "identity": "",
       "position": 1,
-      "generated": ""
-    },
-    {
-      "name": "idx",
-      "type": "integer",
-      "table": "integrations",
-      "default": "nextval('integrations_idx_seq'::regclass)",
-      "notNull": true,
-      "identity": "",
-      "position": 2,
       "generated": ""
     },
     {
@@ -3452,16 +3392,6 @@
       "notNull": true,
       "identity": "",
       "position": 1,
-      "generated": ""
-    },
-    {
-      "name": "idx",
-      "type": "integer",
-      "table": "oauth_states",
-      "default": "nextval('oauth_states_idx_seq'::regclass)",
-      "notNull": true,
-      "identity": "",
-      "position": 2,
       "generated": ""
     },
     {
@@ -3815,16 +3745,6 @@
       "generated": ""
     },
     {
-      "name": "idx",
-      "type": "integer",
-      "table": "profiles",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 2,
-      "generated": ""
-    },
-    {
       "name": "created_at",
       "type": "timestamp with time zone",
       "table": "profiles",
@@ -3972,16 +3892,6 @@
       "notNull": true,
       "identity": "",
       "position": 1,
-      "generated": ""
-    },
-    {
-      "name": "idx",
-      "type": "integer",
-      "table": "provider_sync_jobs",
-      "default": "nextval('provider_sync_jobs_idx_seq'::regclass)",
-      "notNull": true,
-      "identity": "",
-      "position": 2,
       "generated": ""
     },
     {
@@ -4215,6 +4125,16 @@
       "generated": ""
     },
     {
+      "name": "queue_sequence",
+      "type": "bigint",
+      "table": "provider_sync_jobs",
+      "default": "",
+      "notNull": true,
+      "identity": "d",
+      "position": 26,
+      "generated": ""
+    },
+    {
       "name": "id",
       "type": "uuid",
       "table": "provider_sync_state",
@@ -4222,16 +4142,6 @@
       "notNull": true,
       "identity": "",
       "position": 1,
-      "generated": ""
-    },
-    {
-      "name": "idx",
-      "type": "integer",
-      "table": "provider_sync_state",
-      "default": "nextval('provider_sync_state_idx_seq'::regclass)",
-      "notNull": true,
-      "identity": "",
-      "position": 2,
       "generated": ""
     },
     {
@@ -4402,16 +4312,6 @@
       "notNull": true,
       "identity": "",
       "position": 1,
-      "generated": ""
-    },
-    {
-      "name": "idx",
-      "type": "integer",
-      "table": "provider_webhook_receipts",
-      "default": "nextval('provider_webhook_receipts_idx_seq'::regclass)",
-      "notNull": true,
-      "identity": "",
-      "position": 2,
       "generated": ""
     },
     {
@@ -4652,16 +4552,6 @@
       "notNull": true,
       "identity": "",
       "position": 1,
-      "generated": ""
-    },
-    {
-      "name": "idx",
-      "type": "integer",
-      "table": "training_plans",
-      "default": "nextval('training_plans_idx_seq'::regclass)",
-      "notNull": true,
-      "identity": "",
-      "position": 2,
       "generated": ""
     },
     {
@@ -4912,11 +4802,6 @@
       "definition": "CREATE UNIQUE INDEX activities_id_profile_id_unique ON public.activities USING btree (id, profile_id)"
     },
     {
-      "name": "activities_idx_key",
-      "table": "activities",
-      "definition": "CREATE UNIQUE INDEX activities_idx_key ON public.activities USING btree (idx)"
-    },
-    {
       "name": "activities_pkey",
       "table": "activities",
       "definition": "CREATE UNIQUE INDEX activities_pkey ON public.activities USING btree (id)"
@@ -5002,11 +4887,6 @@
       "definition": "CREATE INDEX idx_activity_file_ingestions_status ON public.activity_file_ingestions USING btree (status)"
     },
     {
-      "name": "activity_plans_idx_key",
-      "table": "activity_plans",
-      "definition": "CREATE UNIQUE INDEX activity_plans_idx_key ON public.activity_plans USING btree (idx)"
-    },
-    {
       "name": "activity_plans_pkey",
       "table": "activity_plans",
       "definition": "CREATE UNIQUE INDEX activity_plans_pkey ON public.activity_plans USING btree (id)"
@@ -5035,11 +4915,6 @@
       "name": "idx_activity_plans_visibility",
       "table": "activity_plans",
       "definition": "CREATE INDEX idx_activity_plans_visibility ON public.activity_plans USING btree (template_visibility)"
-    },
-    {
-      "name": "activity_routes_idx_key",
-      "table": "activity_routes",
-      "definition": "CREATE UNIQUE INDEX activity_routes_idx_key ON public.activity_routes USING btree (idx)"
     },
     {
       "name": "activity_routes_pkey",
@@ -5170,11 +5045,6 @@
       "name": "events_id_profile_id_unique",
       "table": "events",
       "definition": "CREATE UNIQUE INDEX events_id_profile_id_unique ON public.events USING btree (id, profile_id)"
-    },
-    {
-      "name": "events_idx_key",
-      "table": "events",
-      "definition": "CREATE UNIQUE INDEX events_idx_key ON public.events USING btree (idx)"
     },
     {
       "name": "events_pkey",
@@ -5432,11 +5302,6 @@
       "definition": "CREATE UNIQUE INDEX integration_resource_links_external_unique ON public.integration_resource_links USING btree (integration_id, resource_kind, external_id)"
     },
     {
-      "name": "integration_resource_links_idx_key",
-      "table": "integration_resource_links",
-      "definition": "CREATE UNIQUE INDEX integration_resource_links_idx_key ON public.integration_resource_links USING btree (idx)"
-    },
-    {
       "name": "integration_resource_links_internal_unique",
       "table": "integration_resource_links",
       "definition": "CREATE UNIQUE INDEX integration_resource_links_internal_unique ON public.integration_resource_links USING btree (integration_id, resource_kind, internal_resource_id)"
@@ -5460,11 +5325,6 @@
       "name": "idx_integrations_provider",
       "table": "integrations",
       "definition": "CREATE INDEX idx_integrations_provider ON public.integrations USING btree (provider)"
-    },
-    {
-      "name": "integrations_idx_unique",
-      "table": "integrations",
-      "definition": "CREATE UNIQUE INDEX integrations_idx_unique ON public.integrations USING btree (idx)"
     },
     {
       "name": "integrations_pkey",
@@ -5535,11 +5395,6 @@
       "name": "idx_oauth_states_profile_id",
       "table": "oauth_states",
       "definition": "CREATE INDEX idx_oauth_states_profile_id ON public.oauth_states USING btree (profile_id)"
-    },
-    {
-      "name": "oauth_states_idx_unique",
-      "table": "oauth_states",
-      "definition": "CREATE UNIQUE INDEX oauth_states_idx_unique ON public.oauth_states USING btree (idx)"
     },
     {
       "name": "oauth_states_pkey",
@@ -5642,24 +5497,19 @@
       "definition": "CREATE INDEX idx_provider_sync_jobs_supersedes_job_id ON public.provider_sync_jobs USING btree (supersedes_job_id) WHERE (supersedes_job_id IS NOT NULL)"
     },
     {
-      "name": "provider_sync_jobs_idx_key",
-      "table": "provider_sync_jobs",
-      "definition": "CREATE UNIQUE INDEX provider_sync_jobs_idx_key ON public.provider_sync_jobs USING btree (idx)"
-    },
-    {
       "name": "provider_sync_jobs_pkey",
       "table": "provider_sync_jobs",
       "definition": "CREATE UNIQUE INDEX provider_sync_jobs_pkey ON public.provider_sync_jobs USING btree (id)"
     },
     {
+      "name": "provider_sync_jobs_queue_sequence_key",
+      "table": "provider_sync_jobs",
+      "definition": "CREATE UNIQUE INDEX provider_sync_jobs_queue_sequence_key ON public.provider_sync_jobs USING btree (queue_sequence)"
+    },
+    {
       "name": "idx_provider_sync_state_provider_next_sync",
       "table": "provider_sync_state",
       "definition": "CREATE INDEX idx_provider_sync_state_provider_next_sync ON public.provider_sync_state USING btree (provider, next_sync_at)"
-    },
-    {
-      "name": "provider_sync_state_idx_key",
-      "table": "provider_sync_state",
-      "definition": "CREATE UNIQUE INDEX provider_sync_state_idx_key ON public.provider_sync_state USING btree (idx)"
     },
     {
       "name": "provider_sync_state_integration_resource_unique",
@@ -5690,11 +5540,6 @@
       "name": "provider_webhook_receipts_event_unique",
       "table": "provider_webhook_receipts",
       "definition": "CREATE UNIQUE INDEX provider_webhook_receipts_event_unique ON public.provider_webhook_receipts USING btree (provider, provider_account_id, provider_event_id)"
-    },
-    {
-      "name": "provider_webhook_receipts_idx_key",
-      "table": "provider_webhook_receipts",
-      "definition": "CREATE UNIQUE INDEX provider_webhook_receipts_idx_key ON public.provider_webhook_receipts USING btree (idx)"
     },
     {
       "name": "provider_webhook_receipts_pkey",
@@ -5735,11 +5580,6 @@
       "name": "idx_training_plans_visibility",
       "table": "training_plans",
       "definition": "CREATE INDEX idx_training_plans_visibility ON public.training_plans USING btree (template_visibility)"
-    },
-    {
-      "name": "training_plans_idx_key",
-      "table": "training_plans",
-      "definition": "CREATE UNIQUE INDEX training_plans_idx_key ON public.training_plans USING btree (idx)"
     },
     {
       "name": "training_plans_pkey",
@@ -6779,13 +6619,6 @@
       "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
     },
     {
-      "kind": "u",
-      "name": "integrations_idx_unique",
-      "table": "integrations",
-      "validated": true,
-      "definition": "UNIQUE (idx)"
-    },
-    {
       "kind": "p",
       "name": "integrations_pkey",
       "table": "integrations",
@@ -6868,13 +6701,6 @@
       "table": "notifications",
       "validated": true,
       "definition": "FOREIGN KEY (user_id) REFERENCES profiles(id)"
-    },
-    {
-      "kind": "u",
-      "name": "oauth_states_idx_unique",
-      "table": "oauth_states",
-      "validated": true,
-      "definition": "UNIQUE (idx)"
     },
     {
       "kind": "p",
@@ -7177,62 +7003,6 @@
       "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
       "rls": false,
       "kind": "S",
-      "name": "activities_idx_seq",
-      "managed": false,
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
-      "rls": false,
-      "kind": "S",
-      "name": "activity_plans_idx_seq",
-      "managed": false,
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
-      "rls": false,
-      "kind": "S",
-      "name": "activity_routes_idx_seq",
-      "managed": false,
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
-      "rls": false,
-      "kind": "S",
-      "name": "events_idx_seq",
-      "managed": false,
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
-      "rls": false,
-      "kind": "S",
-      "name": "integration_resource_links_idx_seq",
-      "managed": false,
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
-      "rls": false,
-      "kind": "S",
-      "name": "integrations_idx_seq",
-      "managed": false,
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
-      "rls": false,
-      "kind": "S",
-      "name": "oauth_states_idx_seq",
-      "managed": false,
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
-      "rls": false,
-      "kind": "S",
       "name": "profile_metrics_idx_seq",
       "managed": false,
       "forceRls": false
@@ -7241,31 +7011,7 @@
       "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
       "rls": false,
       "kind": "S",
-      "name": "provider_sync_jobs_idx_seq",
-      "managed": false,
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
-      "rls": false,
-      "kind": "S",
-      "name": "provider_sync_state_idx_seq",
-      "managed": false,
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
-      "rls": false,
-      "kind": "S",
-      "name": "provider_webhook_receipts_idx_seq",
-      "managed": false,
-      "forceRls": false
-    },
-    {
-      "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
-      "rls": false,
-      "kind": "S",
-      "name": "training_plans_idx_seq",
+      "name": "provider_sync_jobs_queue_sequence_seq",
       "managed": false,
       "forceRls": false
     },
@@ -7593,63 +7339,13 @@
   "publicSequences": [
     {
       "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
-      "name": "activities_idx_seq",
-      "definition": "public.activities_idx_seq"
-    },
-    {
-      "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
-      "name": "activity_plans_idx_seq",
-      "definition": "public.activity_plans_idx_seq"
-    },
-    {
-      "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
-      "name": "activity_routes_idx_seq",
-      "definition": "public.activity_routes_idx_seq"
-    },
-    {
-      "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
-      "name": "events_idx_seq",
-      "definition": "public.events_idx_seq"
-    },
-    {
-      "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
-      "name": "integration_resource_links_idx_seq",
-      "definition": "public.integration_resource_links_idx_seq"
-    },
-    {
-      "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
-      "name": "integrations_idx_seq",
-      "definition": "public.integrations_idx_seq"
-    },
-    {
-      "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
-      "name": "oauth_states_idx_seq",
-      "definition": "public.oauth_states_idx_seq"
-    },
-    {
-      "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
       "name": "profile_metrics_idx_seq",
       "definition": "public.profile_metrics_idx_seq"
     },
     {
       "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
-      "name": "provider_sync_jobs_idx_seq",
-      "definition": "public.provider_sync_jobs_idx_seq"
-    },
-    {
-      "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
-      "name": "provider_sync_state_idx_seq",
-      "definition": "public.provider_sync_state_idx_seq"
-    },
-    {
-      "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
-      "name": "provider_webhook_receipts_idx_seq",
-      "definition": "public.provider_webhook_receipts_idx_seq"
-    },
-    {
-      "acl": "{postgres=rwU/postgres,service_role=rwU/postgres}",
-      "name": "training_plans_idx_seq",
-      "definition": "public.training_plans_idx_seq"
+      "name": "provider_sync_jobs_queue_sequence_seq",
+      "definition": "public.provider_sync_jobs_queue_sequence_seq"
     }
   ],
   "storagePolicies": [

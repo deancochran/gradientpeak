@@ -37,7 +37,6 @@ function createSnapshot(overrides: Partial<InferredStateSnapshot> = {}): Inferre
 function createTrainingPlanRow(overrides: Partial<TrainingPlanRow> = {}): TrainingPlanRow {
   return {
     id: "plan-1",
-    idx: 1,
     created_at: new Date("2026-04-01T00:00:00.000Z"),
     updated_at: new Date("2026-04-01T00:00:00.000Z"),
     profile_id: "profile-1",

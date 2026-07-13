@@ -74,7 +74,6 @@ function createCaller(db: any, userId = OWNER_ID) {
 function createRouteRow(overrides: Record<string, unknown> = {}) {
   return {
     id: ROUTE_ID,
-    idx: 1,
     profile_id: OWNER_ID,
     name: "River Loop",
     description: "Steady weekend route",

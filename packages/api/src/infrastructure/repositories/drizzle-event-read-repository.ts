@@ -47,7 +47,6 @@ function serializeEventRow(row: {
   ends_at: Date | null;
   event_type: "planned_activity" | "rest_day" | "race" | "custom" | "imported";
   id: string;
-  idx: number | null;
   linked_activity_id: string | null;
   notes: string | null;
   occurrence_key: string | null;
@@ -66,7 +65,6 @@ function serializeEventRow(row: {
 }) {
   return {
     ...row,
-    idx: row.idx ?? 0,
     all_day: row.all_day ?? false,
     linked_activity_id: row.linked_activity_id,
     occurrence_key: row.occurrence_key ?? "",
@@ -89,7 +87,6 @@ function serializeEventRow(row: {
 
 const eventColumns = {
   id: schema.events.id,
-  idx: schema.events.idx,
   profile_id: schema.events.profile_id,
   event_type: schema.events.event_type,
   title: schema.events.title,

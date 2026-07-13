@@ -102,7 +102,6 @@ vi.mock("@repo/db", () => {
     publicIntegrationProviderSchema,
     publicIntegrationsRowSchema: z.object({
       id: z.string().uuid(),
-      idx: z.number().int(),
       profile_id: z.string().uuid(),
       provider: publicIntegrationProviderSchema,
       external_id: z.string().min(1),
@@ -247,7 +246,6 @@ describe("integrationsRouter", () => {
     const rows = [
       {
         id: "77777777-7777-4777-8777-777777777777",
-        idx: 1,
         profile_id: SESSION_USER_ID,
         provider: "strava",
         external_id: "ext-1",
@@ -266,7 +264,6 @@ describe("integrationsRouter", () => {
     await expect(caller.list()).resolves.toEqual([
       {
         id: "77777777-7777-4777-8777-777777777777",
-        idx: 1,
         profile_id: SESSION_USER_ID,
         provider: "strava",
         external_id: "ext-1",
@@ -286,7 +283,6 @@ describe("integrationsRouter", () => {
     mocks.repositories.integrations.listByProfileId.mockResolvedValue([
       {
         id: "77777777-7777-4777-8777-777777777777",
-        idx: 1,
         profile_id: SESSION_USER_ID,
         provider: "wahoo",
         external_id: "77",
@@ -396,7 +392,6 @@ describe("integrationsRouter", () => {
     mocks.repositories.integrations.listByProfileId.mockResolvedValue([
       {
         id: "77777777-7777-4777-8777-777777777777",
-        idx: 1,
         profile_id: SESSION_USER_ID,
         provider: "wahoo",
         external_id: "77",
@@ -457,7 +452,6 @@ describe("integrationsRouter", () => {
     vi.setSystemTime(new Date("2026-04-02T09:30:00.000Z"));
     mocks.repositories.integrations.findByProfileIdAndProvider.mockResolvedValue({
       id: "77777777-7777-4777-8777-777777777777",
-      idx: 1,
       profile_id: SESSION_USER_ID,
       provider: "wahoo",
       external_id: "77",
@@ -511,7 +505,6 @@ describe("integrationsRouter", () => {
     mocks.repositories.integrations.listByProfileId.mockResolvedValue([
       {
         id: "77777777-7777-4777-8777-777777777777",
-        idx: 1,
         profile_id: SESSION_USER_ID,
         provider: "wahoo",
         external_id: "77",
@@ -580,7 +573,6 @@ describe("integrationsRouter", () => {
     mocks.repositories.integrations.listByProfileId.mockResolvedValue([
       {
         id: "77777777-7777-4777-8777-777777777777",
-        idx: 1,
         profile_id: SESSION_USER_ID,
         provider: "wahoo",
         external_id: "77",
@@ -641,7 +633,6 @@ describe("integrationsRouter", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     mocks.repositories.integrations.findByProfileIdAndProvider.mockResolvedValue({
       id: "77777777-7777-4777-8777-777777777777",
-      idx: 1,
       profile_id: SESSION_USER_ID,
       provider: "wahoo",
       external_id: "77",
@@ -681,7 +672,6 @@ describe("integrationsRouter", () => {
     const caller = createCaller();
     mocks.repositories.integrations.findByProfileIdAndProvider.mockResolvedValue({
       id: "77777777-7777-4777-8777-777777777777",
-      idx: 1,
       profile_id: SESSION_USER_ID,
       provider: "strava",
       external_id: "strava-1",
@@ -957,7 +947,6 @@ describe("integrationsRouter", () => {
     });
     mocks.repositories.integrations.upsertByProfileIdAndProvider.mockResolvedValue({
       id: "77777777-7777-4777-8777-777777777777",
-      idx: 1,
       profile_id: OTHER_USER_ID,
       provider: "trainingpeaks",
       external_id: "ext-42",
@@ -1101,7 +1090,6 @@ describe("integrationsRouter", () => {
     });
     mocks.repositories.integrations.upsertByProfileIdAndProvider.mockResolvedValue({
       id: "77777777-7777-4777-8777-777777777777",
-      idx: 1,
       profile_id: OTHER_USER_ID,
       provider: "wahoo",
       external_id: "wahoo-user-42",

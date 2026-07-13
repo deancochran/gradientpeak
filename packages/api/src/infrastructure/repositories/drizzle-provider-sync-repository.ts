@@ -225,7 +225,7 @@ export function createProviderSyncRepository({
                   from provider_sync_jobs earlier_provider_sync_jobs
                   where earlier_provider_sync_jobs.sync_lane_key = provider_sync_jobs.sync_lane_key
                     and earlier_provider_sync_jobs.status in ('queued', 'failed', 'running')
-                    and earlier_provider_sync_jobs.idx < provider_sync_jobs.idx
+                    and earlier_provider_sync_jobs.queue_sequence < provider_sync_jobs.queue_sequence
                 )
               )
               and (
@@ -244,15 +244,15 @@ export function createProviderSyncRepository({
           ), ranked_rows as (
             select
               candidate_rows.id,
-              candidate_rows.idx,
+              candidate_rows.queue_sequence,
               candidate_rows.status,
               row_number() over (
                 partition by coalesce(candidate_rows.sync_lane_key, candidate_rows.id::text)
-                order by candidate_rows.idx asc
+                order by candidate_rows.queue_sequence asc
               ) as lane_rank
             from candidate_rows
           ), selected_rows as (
-            select id, idx, status = 'running' as stale_lock_recovered
+            select id, queue_sequence, status = 'running' as stale_lock_recovered
             from ranked_rows
             where lane_rank = 1
             limit ${limit}
@@ -281,7 +281,7 @@ export function createProviderSyncRepository({
             provider_sync_jobs.payload_hash as "payloadHash",
             provider_sync_jobs.profile_id as "profileId",
             provider_sync_jobs.provider,
-            selected_rows.idx as "queueSequence",
+            selected_rows.queue_sequence as "queueSequence",
             provider_sync_jobs.resource_kind as "resourceKind",
             provider_sync_jobs.run_at as "runAt",
             selected_rows.stale_lock_recovered as "staleLockRecovered",

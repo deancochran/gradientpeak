@@ -1,12 +1,20 @@
 #!/usr/bin/env tsx
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { getTableColumns, getTableName } from "drizzle-orm";
 import { Pool } from "pg";
 import { schema } from "../src/schema";
 import * as enumSchema from "../src/schema/enums";
-import { prepareDbEnv } from "./_helpers";
+import { dbPackageRoot, prepareDbEnv } from "./_helpers";
 
 const databaseUrl = prepareDbEnv();
+const transitionalExtras = JSON.parse(
+  readFileSync(resolve(dbPackageRoot, "transitional-schema-extras.json"), "utf8"),
+) as { columns: Array<{ table: string; name: string }> };
+const allowedExtraColumns = new Set(
+  transitionalExtras.columns.map((entry) => `${entry.table}.${entry.name}`),
+);
 
 type ExpectedColumn = {
   name: string;
@@ -89,10 +97,11 @@ async function getActualColumnsByTable(pool: Pool) {
     table_name: string;
     column_name: string;
     is_nullable: "YES" | "NO";
+    is_identity: "YES" | "NO";
     column_default: string | null;
   }>(
     `
-      select table_name, column_name, is_nullable, column_default
+      select table_name, column_name, is_nullable, is_identity, column_default
       from information_schema.columns
       where table_schema = 'public'
       order by table_name asc, ordinal_position asc
@@ -105,7 +114,7 @@ async function getActualColumnsByTable(pool: Pool) {
     existing.push({
       name: row.column_name,
       isNullable: row.is_nullable === "YES",
-      hasDefault: row.column_default !== null,
+      hasDefault: row.column_default !== null || row.is_identity === "YES",
     });
     columnsByTable.set(row.table_name, existing);
   }
@@ -159,7 +168,8 @@ async function main() {
       );
       const extraColumns = actualColumns.filter(
         (column) =>
-          !expectedTable.columns.some((expectedColumn) => expectedColumn.name === column.name),
+          !expectedTable.columns.some((expectedColumn) => expectedColumn.name === column.name) &&
+          !allowedExtraColumns.has(`${expectedTable.tableName}.${column.name}`),
       );
 
       if (actualColumns.length === 0) {
@@ -199,6 +209,15 @@ async function main() {
             `table ${expectedTable.tableName}.${expectedColumn.name} is missing expected default`,
           );
         }
+      }
+    }
+
+    for (const declaredExtra of transitionalExtras.columns) {
+      const actualColumns = actualColumnsByTable.get(declaredExtra.table) ?? [];
+      if (!actualColumns.some((column) => column.name === declaredExtra.name)) {
+        driftMessages.push(
+          `declared transitional column ${declaredExtra.table}.${declaredExtra.name} is missing before contract`,
+        );
       }
     }
 

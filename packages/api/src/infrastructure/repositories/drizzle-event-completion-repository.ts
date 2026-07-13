@@ -31,7 +31,6 @@ function applyDeleteScopeFilters(input: {
 
 const splitCompletionEventColumns = {
   id: schema.events.id,
-  idx: schema.events.idx,
   profile_id: schema.events.profile_id,
   event_type: schema.events.event_type,
   title: schema.events.title,

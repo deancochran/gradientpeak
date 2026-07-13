@@ -9,7 +9,6 @@ const pgDialect = new PgDialect();
 function createEventRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "event-1",
-    idx: 1,
     profile_id: "profile-1",
     event_type: "planned_activity",
     title: "Tempo activity",
@@ -38,7 +37,6 @@ function createEventRow(overrides: Record<string, unknown> = {}) {
 function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "activity-plan-1",
-    idx: 1,
     created_at: new Date("2026-04-01T00:00:00.000Z"),
     updated_at: new Date("2026-04-01T00:00:00.000Z"),
     profile_id: "profile-1",

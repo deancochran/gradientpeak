@@ -40,7 +40,6 @@ function getTableName(table: unknown): TableName {
 function createProfileRow(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: SESSION_USER_ID,
-    idx: 1,
     created_at: new Date("2026-04-01T10:00:00.000Z"),
     updated_at: new Date("2026-04-02T12:00:00.000Z"),
     email: "athlete@example.com",

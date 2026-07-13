@@ -89,7 +89,6 @@ export const publicActivitiesUpdateSchema = createUpdateSchema(activities);
 export const publicActivitiesCreateSchema = publicActivitiesInsertSchema.partial({
   created_at: true,
   id: true,
-  idx: true,
   is_private: true,
   updated_at: true,
 });

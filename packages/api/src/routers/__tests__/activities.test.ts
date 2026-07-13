@@ -59,7 +59,6 @@ const PLAN_ID = "77777777-7777-4777-8777-777777777777";
 function buildActivityRow(overrides: Record<string, unknown> = {}) {
   return {
     id: ACTIVITY_ID,
-    idx: 1,
     created_at: new Date("2026-01-01T00:00:00.000Z"),
     updated_at: new Date("2026-01-01T00:00:00.000Z"),
     profile_id: OWNER_ID,
@@ -112,7 +111,6 @@ function buildActivityRow(overrides: Record<string, unknown> = {}) {
 function buildActivityPlanRow(overrides: Record<string, unknown> = {}) {
   return {
     id: PLAN_ID,
-    idx: 0,
     created_at: new Date("2026-01-01T00:00:00.000Z"),
     updated_at: new Date("2026-01-02T00:00:00.000Z"),
     profile_id: OWNER_ID,
@@ -943,7 +941,6 @@ describe("activitiesRouter", () => {
         likes_count: 5,
         activity_plans: {
           ...activityPlan,
-          idx: 0,
           created_at: "2026-01-01T00:00:00.000Z",
           updated_at: "2026-01-02T00:00:00.000Z",
         },

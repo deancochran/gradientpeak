@@ -140,7 +140,6 @@ function toCoreEventType(eventType: DbEventType): CoreEventType {
 
 const _plannedEventSelect = `
   id,
-  idx,
   profile_id,
   event_type,
   title,
@@ -169,7 +168,6 @@ type PlannedEventRecord = Omit<
   Pick<
     EventRow,
     | "id"
-    | "idx"
     | "profile_id"
     | "event_type"
     | "title"

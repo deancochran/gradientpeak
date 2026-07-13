@@ -274,7 +274,6 @@ export async function getActivityByIdForViewer({
       activity_plans: row.activityPlan
         ? {
             ...row.activityPlan,
-            idx: row.activityPlan.idx ?? 0,
             created_at:
               row.activityPlan.created_at instanceof Date
                 ? row.activityPlan.created_at.toISOString()

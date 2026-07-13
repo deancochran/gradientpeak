@@ -46,7 +46,7 @@ afterAll(async () => {
 });
 
 describe("provider sync PostgreSQL claims", () => {
-  it("uses immutable idx as lane precedence and run_at only for head eligibility", async () => {
+  it("uses immutable queue_sequence as lane precedence and run_at only for head eligibility", async () => {
     const owner = await seedOwner();
     const repository = createProviderSyncRepository({ db });
     const base = Date.parse("2026-07-13T12:00:00.000Z");

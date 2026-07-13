@@ -105,7 +105,6 @@ const activityPlanRowSchema = publicActivityPlansRowSchema
 
 const serializedActivityPlanSchema = activityPlanRowSchema.transform((row) => ({
   ...row,
-  idx: row.idx ?? 0,
   created_at: row.created_at.toISOString(),
   updated_at: row.updated_at.toISOString(),
 }));
