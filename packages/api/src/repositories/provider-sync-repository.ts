@@ -16,8 +16,10 @@ export type ProviderSyncJobRecord = {
   payloadHash: string | null;
   profileId: string;
   provider: "wahoo" | "strava" | "trainingpeaks" | "garmin" | "zwift";
+  queueSequence?: number;
   resourceKind: "event" | "activity_plan" | "activity_route" | "activity" | null;
   runAt: string;
+  staleLockRecovered?: boolean;
   status: ProviderSyncJobStatus;
   supersedesJobId: string | null;
   syncLaneKey: string | null;
@@ -57,6 +59,11 @@ export type ProviderWebhookReceiptRecord = {
 };
 
 export interface ProviderSyncRepository {
+  getQueueTelemetry?(input: {
+    jobTypes?: string[];
+    now: string;
+    provider?: "wahoo";
+  }): Promise<{ deadLetterDepth: number; oldestDueAt: string | null; queueDepth: number }>;
   claimDueJobs(input: {
     jobTypes?: string[];
     limit: number;
@@ -86,9 +93,10 @@ export interface ProviderSyncRepository {
     lastError: string;
     nextRunAt?: string;
     status: Extract<ProviderSyncJobStatus, "queued" | "failed" | "dead_lettered">;
-    workerId?: string;
-  }): Promise<void>;
-  markJobSucceeded(id: string, workerId?: string): Promise<void>;
+    workerId: string;
+  }): Promise<boolean>;
+  markJobSucceeded(id: string, workerId: string): Promise<boolean>;
+  renewJobLease(input: { id: string; lockExpiresAt: string; workerId: string }): Promise<boolean>;
   markWebhookReceiptProcessed(input: {
     id: string;
     lastError?: string;

@@ -28,8 +28,10 @@ type ProviderSyncJobSqlRow = {
   payloadHash: string | null;
   profileId: string;
   provider: ProviderSyncJobRecord["provider"];
+  queueSequence?: number;
   resourceKind: ProviderSyncJobRecord["resourceKind"];
   runAt: Date | string;
+  staleLockRecovered?: boolean;
   status: ProviderSyncJobRecord["status"];
   supersedesJobId: string | null;
   syncLaneKey: string | null;
@@ -47,6 +49,46 @@ export function createProviderSyncRepository({
   db,
 }: CreateProviderSyncRepositoryOptions): ProviderSyncRepository {
   return {
+    async getQueueTelemetry({ jobTypes, now, provider }) {
+      const result = await db.execute(sql<{
+        deadLetterDepth: number | string;
+        oldestDueAt: Date | string | null;
+        queueDepth: number | string;
+      }>`
+        select
+          count(*) filter (
+            where status in ('queued', 'failed', 'running')
+              and run_at <= ${new Date(now)}
+              and (lock_expires_at is null or lock_expires_at <= ${new Date(now)})
+          ) as "queueDepth",
+          min(run_at) filter (
+            where status in ('queued', 'failed', 'running')
+              and run_at <= ${new Date(now)}
+              and (lock_expires_at is null or lock_expires_at <= ${new Date(now)})
+          ) as "oldestDueAt",
+          count(*) filter (where status = 'dead_lettered') as "deadLetterDepth"
+        from provider_sync_jobs
+        where (${provider ?? null}::text is null or provider = ${provider ?? null}::integration_provider)
+          and ${
+            jobTypes?.length
+              ? sql`job_type = any(array[${sql.join(jobTypes, sql`, `)}]::text[])`
+              : sql`true`
+          }
+      `);
+      const row = getSqlRows<{
+        deadLetterDepth: number | string;
+        oldestDueAt: Date | string | null;
+        queueDepth: number | string;
+      }>(result)[0];
+      return {
+        deadLetterDepth: Number(row?.deadLetterDepth ?? 0),
+        oldestDueAt:
+          row?.oldestDueAt instanceof Date
+            ? row.oldestDueAt.toISOString()
+            : (row?.oldestDueAt ?? null),
+        queueDepth: Number(row?.queueDepth ?? 0),
+      };
+    },
     async enqueueJob(input) {
       if (input.syncLaneKey) {
         const [existingLaneJob] = await db
@@ -180,6 +222,16 @@ export function createProviderSyncRepository({
                 sync_lane_key is null
                 or not exists (
                   select 1
+                  from provider_sync_jobs earlier_provider_sync_jobs
+                  where earlier_provider_sync_jobs.sync_lane_key = provider_sync_jobs.sync_lane_key
+                    and earlier_provider_sync_jobs.status in ('queued', 'failed', 'running')
+                    and earlier_provider_sync_jobs.idx < provider_sync_jobs.idx
+                )
+              )
+              and (
+                sync_lane_key is null
+                or not exists (
+                  select 1
                   from provider_sync_jobs running_provider_sync_jobs
                   where running_provider_sync_jobs.sync_lane_key = provider_sync_jobs.sync_lane_key
                     and running_provider_sync_jobs.status = 'running'
@@ -192,13 +244,15 @@ export function createProviderSyncRepository({
           ), ranked_rows as (
             select
               candidate_rows.id,
+              candidate_rows.idx,
+              candidate_rows.status,
               row_number() over (
                 partition by coalesce(candidate_rows.sync_lane_key, candidate_rows.id::text)
-                order by candidate_rows.priority asc, candidate_rows.run_at asc
+                order by candidate_rows.idx asc
               ) as lane_rank
             from candidate_rows
           ), selected_rows as (
-            select id
+            select id, idx, status = 'running' as stale_lock_recovered
             from ranked_rows
             where lane_rank = 1
             limit ${limit}
@@ -227,8 +281,10 @@ export function createProviderSyncRepository({
             provider_sync_jobs.payload_hash as "payloadHash",
             provider_sync_jobs.profile_id as "profileId",
             provider_sync_jobs.provider,
+            selected_rows.idx as "queueSequence",
             provider_sync_jobs.resource_kind as "resourceKind",
             provider_sync_jobs.run_at as "runAt",
+            selected_rows.stale_lock_recovered as "staleLockRecovered",
             provider_sync_jobs.status,
             provider_sync_jobs.supersedes_job_id as "supersedesJobId",
             provider_sync_jobs.sync_lane_key as "syncLaneKey"
@@ -239,7 +295,7 @@ export function createProviderSyncRepository({
     },
 
     async markJobSucceeded(id, workerId) {
-      await db
+      const [updated] = await db
         .update(schema.providerSyncJobs)
         .set({
           last_error: null,
@@ -253,9 +309,26 @@ export function createProviderSyncRepository({
           and(
             eq(schema.providerSyncJobs.id, id),
             eq(schema.providerSyncJobs.status, "running"),
-            workerId ? eq(schema.providerSyncJobs.locked_by, workerId) : undefined,
+            eq(schema.providerSyncJobs.locked_by, workerId),
           ),
-        );
+        )
+        .returning({ id: schema.providerSyncJobs.id });
+      return Boolean(updated);
+    },
+
+    async renewJobLease({ id, lockExpiresAt, workerId }) {
+      const [updated] = await db
+        .update(schema.providerSyncJobs)
+        .set({ lock_expires_at: new Date(lockExpiresAt), updated_at: new Date() })
+        .where(
+          and(
+            eq(schema.providerSyncJobs.id, id),
+            eq(schema.providerSyncJobs.status, "running"),
+            eq(schema.providerSyncJobs.locked_by, workerId),
+          ),
+        )
+        .returning({ id: schema.providerSyncJobs.id });
+      return Boolean(updated);
     },
 
     async storeWebhookReceipt(input) {
@@ -527,7 +600,7 @@ export function createProviderSyncRepository({
     },
 
     async markJobFailed({ id, lastError, nextRunAt, status, workerId }) {
-      await db
+      const [updated] = await db
         .update(schema.providerSyncJobs)
         .set({
           last_error: lastError,
@@ -542,9 +615,11 @@ export function createProviderSyncRepository({
           and(
             eq(schema.providerSyncJobs.id, id),
             eq(schema.providerSyncJobs.status, "running"),
-            workerId ? eq(schema.providerSyncJobs.locked_by, workerId) : undefined,
+            eq(schema.providerSyncJobs.locked_by, workerId),
           ),
-        );
+        )
+        .returning({ id: schema.providerSyncJobs.id });
+      return Boolean(updated);
     },
 
     async touchSyncState({

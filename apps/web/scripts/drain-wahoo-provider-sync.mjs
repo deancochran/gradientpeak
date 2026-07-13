@@ -3,6 +3,7 @@ const drainUrl =
   "http://127.0.0.1:3000/api/internal/provider-sync/wahoo/drain";
 const intervalMs = Number(process.env.WAHOO_PROVIDER_SYNC_DRAIN_INTERVAL_MS ?? "60000");
 const startupRetryMs = Number(process.env.WAHOO_PROVIDER_SYNC_STARTUP_RETRY_MS ?? "2000");
+const requestTimeoutMs = getProviderSyncRequestTimeoutMs();
 const once = process.argv.includes("--once");
 const secret = process.env.INTERNAL_PROVIDER_SYNC_SECRET;
 
@@ -19,6 +20,7 @@ async function drain() {
       "content-type": "application/json",
     },
     body: "{}",
+    signal: AbortSignal.timeout(requestTimeoutMs),
   });
   const text = await response.text();
 
@@ -49,3 +51,5 @@ async function run() {
 }
 
 await run();
+
+import { getProviderSyncRequestTimeoutMs } from "./provider-sync-config.mjs";

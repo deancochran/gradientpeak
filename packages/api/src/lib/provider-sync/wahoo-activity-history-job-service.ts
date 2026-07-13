@@ -1,6 +1,12 @@
 import type { ProviderSyncRepository, WahooIntegrationRecord } from "../../repositories";
 import type { WahooActivityImporter } from "../integrations/wahoo/activity-importer";
 import { WahooClient, type WahooWorkoutSummary } from "../integrations/wahoo/client";
+import { logger } from "../logger";
+import {
+  createProviderSyncWorkerId,
+  executeProviderSyncJobs,
+  type ProviderSyncConcurrencyLimiter,
+} from "./job-execution";
 
 const WAHOO_ACTIVITY_HISTORY_JOB = "wahoo.activity_history_reconcile";
 const WAHOO_ACTIVITY_HISTORY_RESOURCE = "historical_activities";
@@ -58,6 +64,7 @@ export class WahooActivityHistoryJobService {
   constructor(
     private readonly deps: {
       importer: WahooActivityImporter;
+      executionLimiter?: ProviderSyncConcurrencyLimiter;
       providerSyncRepository: ProviderSyncRepository;
       wahooClientFactory?: (integration: WahooIntegrationRecord) => WahooWorkoutSummaryClient;
       wahooRepository: {
@@ -66,112 +73,140 @@ export class WahooActivityHistoryJobService {
     },
   ) {}
 
-  async processDueJobs(input: { limit?: number; workerId?: string }): Promise<{
-    completed: number;
-    failed: number;
-    processed: number;
-  }> {
+  async processDueJobs(input: {
+    concurrency?: number;
+    leaseMs?: number;
+    limit?: number;
+    workerId?: string;
+  }): Promise<{ completed: number; failed: number; processed: number }> {
+    const concurrency = Math.max(1, Math.floor(input.concurrency ?? 2));
+    const requested = Math.min(Math.max(1, Math.floor(input.limit ?? 5)), concurrency);
+    const capacity = this.deps.executionLimiter?.reserve(requested) ?? requested;
+    if (capacity === 0) return { completed: 0, failed: 0, processed: 0 };
     const now = new Date().toISOString();
-    const workerId = input.workerId ?? "wahoo-activity-history-worker";
-    const jobs = await this.deps.providerSyncRepository.claimDueJobs({
-      jobTypes: [WAHOO_ACTIVITY_HISTORY_JOB],
-      limit: input.limit ?? 5,
-      lockExpiresAt: addMinutes(now, 10),
-      now,
-      provider: "wahoo",
-      workerId,
-    });
+    const leaseMs = input.leaseMs ?? 10 * 60_000;
+    const workerId = createProviderSyncWorkerId(input.workerId ?? "wahoo-activity-history-worker");
 
-    let completed = 0;
-    let failed = 0;
+    try {
+      const jobs = await this.deps.providerSyncRepository.claimDueJobs({
+        jobTypes: [WAHOO_ACTIVITY_HISTORY_JOB],
+        limit: capacity,
+        lockExpiresAt: new Date(Date.parse(now) + leaseMs).toISOString(),
+        now,
+        provider: "wahoo",
+        workerId,
+      });
 
-    for (const job of jobs) {
-      if (!isActivityHistoryPayload(job.payload)) {
-        await this.deps.providerSyncRepository.markJobFailed({
-          id: job.id,
-          lastError: "Invalid Wahoo activity history job payload",
-          status: "dead_lettered",
-          workerId,
-        });
-        failed += 1;
-        continue;
-      }
-
-      try {
-        const integration = await this.deps.wahooRepository.findWahooIntegrationByProfileId(
-          job.profileId,
-        );
-        if (!integration || integration.id !== job.integrationId) {
-          await this.deps.providerSyncRepository.markJobSucceeded(job.id, workerId);
-          completed += 1;
-          continue;
-        }
-
-        if (!/^\d+$/.test(integration.externalId)) {
-          throw new Error("Wahoo integration external ID is not numeric");
-        }
-        const providerUserId = Number.parseInt(integration.externalId, 10);
-
-        const windowMonths = job.payload.windowMonths ?? DEFAULT_HISTORY_WINDOW_MONTHS;
-        const client = (this.deps.wahooClientFactory ?? createDefaultWahooClient)(integration);
-        const summaries = await this.listAllSummaries(client, {
-          endDate: now,
-          startDate: subtractMonths(now, windowMonths),
-        });
-
-        const importErrors: string[] = [];
-        for (const summary of summaries) {
-          const result = await this.deps.importer.importWorkoutSummary(providerUserId, summary);
-          if (!result.success) {
-            importErrors.push(result.error ?? `Failed to import Wahoo summary ${summary.id}`);
-            console.warn("[Wahoo Activity History] Failed to import summary", {
-              error: result.error,
-              summaryId: summary.id,
+      return await executeProviderSyncJobs({
+        concurrency: capacity,
+        getEndingQueueTelemetry: () =>
+          this.deps.providerSyncRepository.getQueueTelemetry?.({
+            jobTypes: [WAHOO_ACTIVITY_HISTORY_JOB],
+            now: new Date().toISOString(),
+            provider: "wahoo",
+          }) ?? Promise.resolve({ deadLetterDepth: 0, oldestDueAt: null, queueDepth: 0 }),
+        jobFamily: "activity_history",
+        jobs,
+        leaseRenewIntervalMs: Math.max(1_000, Math.floor(leaseMs / 3)),
+        provider: "wahoo",
+        renewLease: (job) =>
+          this.deps.providerSyncRepository.renewJobLease({
+            id: job.id,
+            lockExpiresAt: new Date(Date.now() + leaseMs).toISOString(),
+            workerId,
+          }),
+        processJob: async (job) => {
+          if (!isActivityHistoryPayload(job.payload)) {
+            const finalized = await this.deps.providerSyncRepository.markJobFailed({
+              id: job.id,
+              lastError: "Invalid Wahoo activity history job payload",
+              status: "dead_lettered",
+              workerId,
             });
+            return finalized === false ? "failed" : "dead_lettered";
           }
-        }
 
-        if (importErrors.length > 0) {
-          throw new Error(
-            `Wahoo activity history partially failed: ${importErrors.slice(0, 3).join("; ")}`,
-          );
-        }
+          try {
+            const integration = await this.deps.wahooRepository.findWahooIntegrationByProfileId(
+              job.profileId,
+            );
+            if (!integration || integration.id !== job.integrationId) {
+              const finalized = await this.deps.providerSyncRepository.markJobSucceeded(
+                job.id,
+                workerId,
+              );
+              return finalized === false ? "failed" : "completed";
+            }
 
-        await this.deps.providerSyncRepository.markJobSucceeded(job.id, workerId);
-        await this.deps.providerSyncRepository.updateSyncStateAfterRun({
-          integrationId: job.integrationId,
-          provider: "wahoo",
-          resource: WAHOO_ACTIVITY_HISTORY_RESOURCE,
-          succeeded: true,
-        });
-        completed += 1;
-      } catch (error) {
-        const lastError =
-          error instanceof Error ? error.message : "Unknown Wahoo activity history job failure";
-        const shouldDeadLetter = job.attempt >= job.maxAttempts;
-        await this.deps.providerSyncRepository.markJobFailed({
-          id: job.id,
-          lastError,
-          nextRunAt: shouldDeadLetter ? undefined : addMinutes(now, Math.min(job.attempt * 5, 60)),
-          status: shouldDeadLetter ? "dead_lettered" : "failed",
-          workerId,
-        });
-        await this.deps.providerSyncRepository.updateSyncStateAfterFailure({
-          integrationId: job.integrationId,
-          lastError,
-          nextSyncAt: shouldDeadLetter ? undefined : addMinutes(now, Math.min(job.attempt * 5, 60)),
-          provider: "wahoo",
-          resource: WAHOO_ACTIVITY_HISTORY_RESOURCE,
-        });
-        failed += 1;
-      }
+            if (!/^\d+$/.test(integration.externalId)) {
+              throw new Error("Wahoo integration external ID is not numeric");
+            }
+            const providerUserId = Number.parseInt(integration.externalId, 10);
+            const windowMonths = job.payload.windowMonths ?? DEFAULT_HISTORY_WINDOW_MONTHS;
+            const client = (this.deps.wahooClientFactory ?? createDefaultWahooClient)(integration);
+            const summaries = await this.listAllSummaries(client, {
+              endDate: now,
+              startDate: subtractMonths(now, windowMonths),
+            });
+
+            const importErrors: string[] = [];
+            for (const summary of summaries) {
+              const result = await this.deps.importer.importWorkoutSummary(providerUserId, summary);
+              if (!result.success) {
+                importErrors.push(result.error ?? "Failed to import Wahoo summary");
+                logger.warn("Wahoo activity history summary import failed", {
+                  jobFamily: "activity_history",
+                  provider: "wahoo",
+                });
+              }
+            }
+            if (importErrors.length > 0) {
+              throw new Error(
+                `Wahoo activity history partially failed: ${importErrors.slice(0, 3).join("; ")}`,
+              );
+            }
+
+            const finalized = await this.deps.providerSyncRepository.markJobSucceeded(
+              job.id,
+              workerId,
+            );
+            if (finalized === false) return "failed";
+            await this.deps.providerSyncRepository.updateSyncStateAfterRun({
+              integrationId: job.integrationId,
+              provider: "wahoo",
+              resource: WAHOO_ACTIVITY_HISTORY_RESOURCE,
+              succeeded: true,
+            });
+            return "completed";
+          } catch (error) {
+            const lastError =
+              error instanceof Error ? error.message : "Unknown Wahoo activity history job failure";
+            const shouldDeadLetter = job.attempt >= job.maxAttempts;
+            const nextRunAt = shouldDeadLetter
+              ? undefined
+              : addMinutes(now, Math.min(job.attempt * 5, 60));
+            const finalized = await this.deps.providerSyncRepository.markJobFailed({
+              id: job.id,
+              lastError,
+              nextRunAt,
+              status: shouldDeadLetter ? "dead_lettered" : "failed",
+              workerId,
+            });
+            if (finalized === false) return "failed";
+            await this.deps.providerSyncRepository.updateSyncStateAfterFailure({
+              integrationId: job.integrationId,
+              lastError,
+              nextSyncAt: nextRunAt,
+              provider: "wahoo",
+              resource: WAHOO_ACTIVITY_HISTORY_RESOURCE,
+            });
+            return shouldDeadLetter ? "dead_lettered" : "failed";
+          }
+        },
+      });
+    } finally {
+      this.deps.executionLimiter?.release(capacity);
     }
-
-    return {
-      completed,
-      failed,
-      processed: jobs.length,
-    };
   }
 
   private async listAllSummaries(

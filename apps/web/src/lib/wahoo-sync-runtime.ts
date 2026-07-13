@@ -4,6 +4,7 @@ import {
   createWahooImportActivityFileStorage,
   createWahooRepository,
   createWahooRouteStorage,
+  getProcessProviderSyncLimiter,
   submitActivity,
   WahooActivityHistoryJobService,
   WahooSyncJobService,
@@ -12,12 +13,33 @@ import {
 } from "@repo/api/webhooks";
 import { db } from "@repo/db/client";
 import { createClient } from "@supabase/supabase-js";
+import { getProviderSyncRequestTimeoutMs } from "../../scripts/provider-sync-config.mjs";
 
 const serverSupabaseUrl =
   process.env.NEXT_PRIVATE_SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
 
+function boundedInteger(value: string | undefined, fallback: number, maximum: number): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, maximum) : fallback;
+}
+
+export function getWahooDrainConfig() {
+  return {
+    concurrency: boundedInteger(process.env.WAHOO_PROVIDER_SYNC_CONCURRENCY, 4, 16),
+    leaseMs: boundedInteger(process.env.WAHOO_PROVIDER_SYNC_LEASE_MS, 10 * 60_000, 30 * 60_000),
+    limit: boundedInteger(process.env.WAHOO_PROVIDER_SYNC_DRAIN_LIMIT, 20, 100),
+    requestTimeoutMs: getProviderSyncRequestTimeoutMs(process.env),
+  };
+}
+
 export function createWahooSyncRuntime() {
-  const supabase = createClient(serverSupabaseUrl!, process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY!);
+  const config = getWahooDrainConfig();
+  const executionLimiter = getProcessProviderSyncLimiter(config.concurrency);
+  const serverSupabaseSecretKey = process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY;
+  if (!serverSupabaseUrl || !serverSupabaseSecretKey) {
+    throw new Error("Wahoo sync runtime requires server-side Supabase configuration");
+  }
+  const supabase = createClient(serverSupabaseUrl, serverSupabaseSecretKey);
 
   const wahooRepository = createWahooRepository({ db });
   const providerSyncRepository = createProviderSyncRepository({ db });
@@ -92,16 +114,19 @@ export function createWahooSyncRuntime() {
 
   return {
     activityHistoryJobs: new WahooActivityHistoryJobService({
+      executionLimiter,
       importer,
       providerSyncRepository,
       wahooRepository,
     }),
     syncJobs: new WahooSyncJobService({
+      executionLimiter,
       providerSyncRepository,
       syncService,
       wahooRepository,
     }),
     webhookJobs: new WahooWebhookJobService({
+      executionLimiter,
       importer,
       providerSyncRepository,
       wahooRepository,

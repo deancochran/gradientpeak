@@ -1,5 +1,10 @@
 import type { ProviderSyncRepository, WahooRepository } from "../../repositories";
 import type { WahooSyncService } from "../integrations/wahoo/sync-service";
+import {
+  createProviderSyncWorkerId,
+  executeProviderSyncJobs,
+  type ProviderSyncConcurrencyLimiter,
+} from "./job-execution";
 import { WahooPlannedWorkoutProvider } from "./planned-workouts/wahoo-planned-workout-provider";
 
 const WAHOO_PUBLISH_HORIZON_DAYS = 6;
@@ -33,6 +38,7 @@ export class WahooSyncJobService {
   constructor(
     private readonly deps: {
       providerSyncRepository: ProviderSyncRepository;
+      executionLimiter?: ProviderSyncConcurrencyLimiter;
       syncService: WahooSyncService;
       wahooRepository: WahooRepository;
     },
@@ -58,107 +64,138 @@ export class WahooSyncJobService {
     }).enqueueUnsyncEvent(input);
   }
 
-  async processDueJobs(input: { limit?: number; workerId?: string }): Promise<{
-    completed: number;
-    failed: number;
-    processed: number;
-  }> {
+  async processDueJobs(input: {
+    concurrency?: number;
+    leaseMs?: number;
+    limit?: number;
+    workerId?: string;
+  }): Promise<{ completed: number; failed: number; processed: number }> {
+    const concurrency = Math.max(1, Math.floor(input.concurrency ?? 4));
+    const requested = Math.min(Math.max(1, Math.floor(input.limit ?? 10)), concurrency);
+    const capacity = this.deps.executionLimiter?.reserve(requested) ?? requested;
+    if (capacity === 0) return { completed: 0, failed: 0, processed: 0 };
     const now = new Date().toISOString();
-    const workerId = input.workerId ?? "wahoo-sync-worker";
-    const jobs = await this.deps.providerSyncRepository.claimDueJobs({
-      jobTypes: [WAHOO_PUBLISH_EVENT_JOB, WAHOO_UNSYNC_EVENT_JOB],
-      limit: input.limit ?? 10,
-      lockExpiresAt: addMinutes(now, 5),
-      now,
-      provider: "wahoo",
-      workerId,
-    });
+    const leaseMs = input.leaseMs ?? 5 * 60_000;
+    const workerId = createProviderSyncWorkerId(input.workerId ?? "wahoo-sync-worker");
 
-    let completed = 0;
-    let failed = 0;
+    try {
+      const jobs = await this.deps.providerSyncRepository.claimDueJobs({
+        jobTypes: [WAHOO_PUBLISH_EVENT_JOB, WAHOO_UNSYNC_EVENT_JOB],
+        limit: capacity,
+        lockExpiresAt: new Date(Date.parse(now) + leaseMs).toISOString(),
+        now,
+        provider: "wahoo",
+        workerId,
+      });
 
-    for (const job of jobs) {
-      if (!isWahooJobPayload(job.payload)) {
-        await this.deps.providerSyncRepository.markJobFailed({
-          id: job.id,
-          lastError: "Invalid Wahoo job payload",
-          status: "dead_lettered",
-          workerId,
-        });
-        failed += 1;
-        continue;
-      }
-
-      try {
-        const integration = await this.deps.wahooRepository.findWahooIntegrationByProfileId(
-          job.profileId,
-        );
-        if (!integration || integration.id !== job.integrationId) {
-          await this.deps.providerSyncRepository.markJobSucceeded(job.id, workerId);
-          completed += 1;
-          continue;
-        }
-
-        if (job.jobType === WAHOO_PUBLISH_EVENT_JOB) {
-          const result = await this.deps.syncService.syncEvent(job.payload.eventId, job.profileId);
-          if (!result.success) {
-            throw new Error(result.error ?? "Wahoo publish job failed");
+      return await executeProviderSyncJobs({
+        concurrency: capacity,
+        getEndingQueueTelemetry: () =>
+          this.deps.providerSyncRepository.getQueueTelemetry?.({
+            jobTypes: [WAHOO_PUBLISH_EVENT_JOB, WAHOO_UNSYNC_EVENT_JOB],
+            now: new Date().toISOString(),
+            provider: "wahoo",
+          }) ?? Promise.resolve({ deadLetterDepth: 0, oldestDueAt: null, queueDepth: 0 }),
+        jobFamily: "planned_workouts",
+        jobs,
+        leaseRenewIntervalMs: Math.max(1_000, Math.floor(leaseMs / 3)),
+        provider: "wahoo",
+        renewLease: (job) =>
+          this.deps.providerSyncRepository.renewJobLease({
+            id: job.id,
+            lockExpiresAt: new Date(Date.now() + leaseMs).toISOString(),
+            workerId,
+          }),
+        processJob: async (job) => {
+          if (!isWahooJobPayload(job.payload)) {
+            const finalized = await this.deps.providerSyncRepository.markJobFailed({
+              id: job.id,
+              lastError: "Invalid Wahoo job payload",
+              status: "dead_lettered",
+              workerId,
+            });
+            return finalized === false ? "failed" : "dead_lettered";
           }
-        } else if (job.jobType === WAHOO_UNSYNC_EVENT_JOB) {
-          const result = await this.deps.syncService.unsyncEvent(
-            job.payload.eventId,
-            job.profileId,
-          );
-          if (
-            !result.success &&
-            result.action === "no_change" &&
-            result.error === "Sync record not found"
-          ) {
-            await this.deps.providerSyncRepository.markJobSucceeded(job.id, workerId);
-            completed += 1;
-            continue;
-          }
-          if (!result.success) {
-            throw new Error(result.error ?? "Wahoo unsync job failed");
-          }
-        } else {
-          throw new Error(`Unsupported Wahoo job type: ${job.jobType}`);
-        }
 
-        await this.deps.providerSyncRepository.markJobSucceeded(job.id, workerId);
-        await this.deps.providerSyncRepository.updateSyncStateAfterRun({
-          integrationId: job.integrationId,
-          provider: "wahoo",
-          resource: WAHOO_RESOURCE,
-          succeeded: true,
-        });
-        completed += 1;
-      } catch (error) {
-        const lastError = error instanceof Error ? error.message : "Unknown Wahoo job failure";
-        const shouldDeadLetter = job.attempt >= job.maxAttempts;
-        await this.deps.providerSyncRepository.markJobFailed({
-          id: job.id,
-          lastError,
-          nextRunAt: shouldDeadLetter ? undefined : addMinutes(now, Math.min(job.attempt * 5, 60)),
-          status: shouldDeadLetter ? "dead_lettered" : "failed",
-          workerId,
-        });
-        await this.deps.providerSyncRepository.updateSyncStateAfterFailure({
-          integrationId: job.integrationId,
-          lastError,
-          nextSyncAt: shouldDeadLetter ? undefined : addMinutes(now, Math.min(job.attempt * 5, 60)),
-          provider: "wahoo",
-          resource: WAHOO_RESOURCE,
-        });
-        failed += 1;
-      }
+          try {
+            const integration = await this.deps.wahooRepository.findWahooIntegrationByProfileId(
+              job.profileId,
+            );
+            if (!integration || integration.id !== job.integrationId) {
+              const finalized = await this.deps.providerSyncRepository.markJobSucceeded(
+                job.id,
+                workerId,
+              );
+              return finalized === false ? "failed" : "completed";
+            }
+
+            if (job.jobType === WAHOO_PUBLISH_EVENT_JOB) {
+              const result = await this.deps.syncService.syncEvent(
+                job.payload.eventId,
+                job.profileId,
+              );
+              if (!result.success) throw new Error(result.error ?? "Wahoo publish job failed");
+            } else if (job.jobType === WAHOO_UNSYNC_EVENT_JOB) {
+              const result = await this.deps.syncService.unsyncEvent(
+                job.payload.eventId,
+                job.profileId,
+              );
+              if (
+                !result.success &&
+                result.action === "no_change" &&
+                result.error === "Sync record not found"
+              ) {
+                const finalized = await this.deps.providerSyncRepository.markJobSucceeded(
+                  job.id,
+                  workerId,
+                );
+                return finalized === false ? "failed" : "completed";
+              }
+              if (!result.success) throw new Error(result.error ?? "Wahoo unsync job failed");
+            } else {
+              throw new Error(`Unsupported Wahoo job type: ${job.jobType}`);
+            }
+
+            const finalized = await this.deps.providerSyncRepository.markJobSucceeded(
+              job.id,
+              workerId,
+            );
+            if (finalized === false) return "failed";
+            await this.deps.providerSyncRepository.updateSyncStateAfterRun({
+              integrationId: job.integrationId,
+              provider: "wahoo",
+              resource: WAHOO_RESOURCE,
+              succeeded: true,
+            });
+            return "completed";
+          } catch (error) {
+            const lastError = error instanceof Error ? error.message : "Unknown Wahoo job failure";
+            const shouldDeadLetter = job.attempt >= job.maxAttempts;
+            const nextRunAt = shouldDeadLetter
+              ? undefined
+              : addMinutes(now, Math.min(job.attempt * 5, 60));
+            const finalized = await this.deps.providerSyncRepository.markJobFailed({
+              id: job.id,
+              lastError,
+              nextRunAt,
+              status: shouldDeadLetter ? "dead_lettered" : "failed",
+              workerId,
+            });
+            if (finalized === false) return "failed";
+            await this.deps.providerSyncRepository.updateSyncStateAfterFailure({
+              integrationId: job.integrationId,
+              lastError,
+              nextSyncAt: nextRunAt,
+              provider: "wahoo",
+              resource: WAHOO_RESOURCE,
+            });
+            return shouldDeadLetter ? "dead_lettered" : "failed";
+          }
+        },
+      });
+    } finally {
+      this.deps.executionLimiter?.release(capacity);
     }
-
-    return {
-      completed,
-      failed,
-      processed: jobs.length,
-    };
   }
 }
 
