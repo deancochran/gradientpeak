@@ -184,12 +184,9 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
 
     async getEventActivityPlanId({ eventId, profileId }) {
       const [row] = await db
-        .select({ activityPlanId: schema.eventScheduleLinks.activity_plan_id })
+        .select({ activityPlanId: schema.events.activity_plan_id })
         .from(schema.events)
-        .leftJoin(
-          schema.eventScheduleLinks,
-          eq(schema.events.id, schema.eventScheduleLinks.event_id),
-        )
+
         .where(
           and(
             eq(schema.events.id, eventId),
@@ -246,14 +243,8 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
           },
         })
         .from(schema.events)
-        .leftJoin(
-          schema.eventScheduleLinks,
-          eq(schema.events.id, schema.eventScheduleLinks.event_id),
-        )
-        .leftJoin(
-          schema.activityPlans,
-          eq(schema.eventScheduleLinks.activity_plan_id, schema.activityPlans.id),
-        )
+
+        .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
         .where(
           and(
             eq(schema.events.id, eventId),

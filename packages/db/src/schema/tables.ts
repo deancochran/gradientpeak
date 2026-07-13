@@ -587,17 +587,21 @@ export const events = pgTable(
     ends_at: timestamp("ends_at", { withTimezone: true, mode: "date" }),
     scheduled_date: text("scheduled_date"),
     read_only: boolean("read_only"),
-    training_plan_id: uuid("training_plan_id"),
-    activity_plan_id: uuid("activity_plan_id"),
-    linked_activity_id: uuid("linked_activity_id"),
-    route_id: uuid("route_id"),
+    training_plan_id: uuid("training_plan_id").references(() => trainingPlans.id, {
+      onDelete: "set null",
+    }),
+    activity_plan_id: uuid("activity_plan_id").references(() => activityPlans.id, {
+      onDelete: "set null",
+    }),
+    linked_activity_id: uuid("linked_activity_id").references(() => activities.id),
+    route_id: uuid("route_id").references(() => activityRoutes.id),
     recurrence_rule: text("recurrence_rule"),
     recurrence_timezone: text("recurrence_timezone"),
-    series_id: uuid("series_id"),
+    series_id: uuid("series_id").references((): AnyPgColumn => events.id),
     source_provider: text("source_provider"),
     occurrence_key: text("occurrence_key").notNull().default(""),
     original_starts_at: timestamp("original_starts_at", { withTimezone: true, mode: "date" }),
-    integration_account_id: uuid("integration_account_id"),
+    integration_account_id: uuid("integration_account_id").references(() => integrations.id),
     external_calendar_id: text("external_calendar_id"),
     external_event_id: text("external_event_id"),
     schedule_batch_id: uuid("schedule_batch_id"),
@@ -612,99 +616,16 @@ export const events = pgTable(
       "events_time_window",
       sql`${table.ends_at} is null or ${table.ends_at} > ${table.starts_at}`,
     ),
-    index("idx_events_event_type_starts_at").on(table.event_type, table.starts_at),
-    index("idx_events_profile_starts_at").on(table.profile_id, table.starts_at),
-    index("idx_events_profile_status_starts_at").on(
-      table.profile_id,
-      table.status,
-      table.starts_at,
-    ),
-  ],
-);
-
-export const eventScheduleLinks = pgTable(
-  "event_schedule_links",
-  {
-    event_id: uuid("event_id").primaryKey(),
-    profile_id: uuid("profile_id")
-      .notNull()
-      .references(() => profiles.id, { onDelete: "cascade" }),
-    training_plan_id: uuid("training_plan_id").references(() => trainingPlans.id, {
-      onDelete: "set null",
-    }),
-    activity_plan_id: uuid("activity_plan_id").references(() => activityPlans.id, {
-      onDelete: "set null",
-    }),
-    linked_activity_id: uuid("linked_activity_id").references(() => activities.id),
-    route_id: uuid("route_id").references(() => activityRoutes.id),
-    schedule_batch_id: uuid("schedule_batch_id"),
-    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    foreignKey({
-      columns: [table.event_id, table.profile_id],
-      foreignColumns: [events.id, events.profile_id],
-      name: "event_schedule_links_event_profile_fkey",
-    }).onDelete("cascade"),
-    index("idx_event_schedule_links_profile_id").on(table.profile_id),
-    index("idx_event_schedule_links_training_plan_id")
-      .on(table.training_plan_id)
-      .where(sql`${table.training_plan_id} is not null`),
-    index("idx_event_schedule_links_activity_plan_id")
-      .on(table.activity_plan_id)
-      .where(sql`${table.activity_plan_id} is not null`),
-    index("idx_event_schedule_links_linked_activity_id")
-      .on(table.linked_activity_id)
-      .where(sql`${table.linked_activity_id} is not null`),
-    index("idx_event_schedule_links_route_id")
-      .on(table.route_id)
-      .where(sql`${table.route_id} is not null`),
-    index("idx_event_schedule_links_schedule_batch")
-      .on(table.profile_id, table.schedule_batch_id)
-      .where(sql`${table.schedule_batch_id} is not null`),
-  ],
-);
-
-export const eventExternalLinks = pgTable(
-  "event_external_links",
-  {
-    event_id: uuid("event_id").primaryKey(),
-    profile_id: uuid("profile_id")
-      .notNull()
-      .references(() => profiles.id, { onDelete: "cascade" }),
-    source_provider: text("source_provider"),
-    integration_account_id: uuid("integration_account_id").references(() => integrations.id),
-    external_calendar_id: text("external_calendar_id"),
-    external_event_id: text("external_event_id"),
-    occurrence_key: text("occurrence_key").notNull().default(""),
-    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    foreignKey({
-      columns: [table.event_id, table.profile_id],
-      foreignColumns: [events.id, events.profile_id],
-      name: "event_external_links_event_profile_fkey",
-    }).onDelete("cascade"),
     check(
-      "event_external_links_calendar_non_empty",
+      "events_external_calendar_non_empty",
       sql`${table.external_calendar_id} is null or btrim(${table.external_calendar_id}) <> ''`,
     ),
     check(
-      "event_external_links_event_non_empty",
+      "events_external_event_non_empty",
       sql`${table.external_event_id} is null or btrim(${table.external_event_id}) <> ''`,
     ),
     check(
-      "event_external_links_source_identity_complete",
+      "events_source_identity_complete",
       sql`(
         ${table.source_provider} is null
         and ${table.integration_account_id} is null
@@ -718,10 +639,30 @@ export const eventExternalLinks = pgTable(
       )`,
     ),
     check(
-      "event_external_links_source_provider_non_empty",
+      "events_source_provider_non_empty",
       sql`${table.source_provider} is null or btrim(${table.source_provider}) <> ''`,
     ),
-    uniqueIndex("idx_event_external_links_identity_unique")
+    check(
+      "events_recurrence_rule_non_empty",
+      sql`${table.recurrence_rule} is null or btrim(${table.recurrence_rule}) <> ''`,
+    ),
+    check(
+      "events_recurrence_timezone_non_empty",
+      sql`${table.recurrence_timezone} is null or btrim(${table.recurrence_timezone}) <> ''`,
+    ),
+    check(
+      "events_recurrence_timezone_requires_rule",
+      sql`${table.recurrence_timezone} is null or ${table.recurrence_rule} is not null`,
+    ),
+    check(
+      "events_series_occurrence_key_required",
+      sql`${table.series_id} is null or btrim(${table.occurrence_key}) <> ''`,
+    ),
+    check(
+      "events_series_not_self",
+      sql`${table.series_id} is null or ${table.series_id} <> ${table.id}`,
+    ),
+    uniqueIndex("idx_events_external_identity_unique")
       .on(
         table.source_provider,
         table.integration_account_id,
@@ -732,65 +673,34 @@ export const eventExternalLinks = pgTable(
       .where(
         sql`${table.source_provider} is not null and ${table.integration_account_id} is not null and ${table.external_calendar_id} is not null and ${table.external_event_id} is not null`,
       ),
-    index("idx_event_external_links_profile_id").on(table.profile_id),
-    index("idx_event_external_links_integration_calendar_updated")
+    uniqueIndex("idx_events_series_occurrence_unique")
+      .on(table.series_id, table.occurrence_key)
+      .where(sql`${table.series_id} is not null`),
+    index("idx_events_training_plan_id")
+      .on(table.training_plan_id)
+      .where(sql`${table.training_plan_id} is not null`),
+    index("idx_events_activity_plan_id")
+      .on(table.activity_plan_id)
+      .where(sql`${table.activity_plan_id} is not null`),
+    index("idx_events_linked_activity_id")
+      .on(table.linked_activity_id)
+      .where(sql`${table.linked_activity_id} is not null`),
+    index("idx_events_route_id").on(table.route_id).where(sql`${table.route_id} is not null`),
+    index("idx_events_schedule_batch")
+      .on(table.profile_id, table.schedule_batch_id)
+      .where(sql`${table.schedule_batch_id} is not null`),
+    index("idx_events_integration_calendar_updated")
       .on(table.integration_account_id, table.external_calendar_id, table.updated_at)
       .where(
         sql`${table.integration_account_id} is not null and ${table.external_calendar_id} is not null`,
       ),
-  ],
-);
-
-export const eventRecurrence = pgTable(
-  "event_recurrence",
-  {
-    event_id: uuid("event_id").primaryKey(),
-    profile_id: uuid("profile_id")
-      .notNull()
-      .references(() => profiles.id, { onDelete: "cascade" }),
-    recurrence_rule: text("recurrence_rule"),
-    recurrence_timezone: text("recurrence_timezone"),
-    series_id: uuid("series_id").references(() => events.id, { onDelete: "cascade" }),
-    occurrence_key: text("occurrence_key").notNull().default(""),
-    original_starts_at: timestamp("original_starts_at", { withTimezone: true, mode: "date" }),
-    recurrence: jsonb("recurrence"),
-    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    foreignKey({
-      columns: [table.event_id, table.profile_id],
-      foreignColumns: [events.id, events.profile_id],
-      name: "event_recurrence_event_profile_fkey",
-    }).onDelete("cascade"),
-    check(
-      "event_recurrence_rule_non_empty",
-      sql`${table.recurrence_rule} is null or btrim(${table.recurrence_rule}) <> ''`,
+    index("idx_events_event_type_starts_at").on(table.event_type, table.starts_at),
+    index("idx_events_profile_starts_at").on(table.profile_id, table.starts_at),
+    index("idx_events_profile_status_starts_at").on(
+      table.profile_id,
+      table.status,
+      table.starts_at,
     ),
-    check(
-      "event_recurrence_timezone_non_empty",
-      sql`${table.recurrence_timezone} is null or btrim(${table.recurrence_timezone}) <> ''`,
-    ),
-    check(
-      "event_recurrence_timezone_requires_rule",
-      sql`${table.recurrence_timezone} is null or ${table.recurrence_rule} is not null`,
-    ),
-    check(
-      "event_recurrence_series_occurrence_key_required",
-      sql`${table.series_id} is null or btrim(${table.occurrence_key}) <> ''`,
-    ),
-    check(
-      "event_recurrence_series_not_self",
-      sql`${table.series_id} is null or ${table.series_id} <> ${table.event_id}`,
-    ),
-    index("idx_event_recurrence_profile_id").on(table.profile_id),
-    uniqueIndex("idx_event_recurrence_series_occurrence_unique")
-      .on(table.series_id, table.occurrence_key)
-      .where(sql`${table.series_id} is not null`),
   ],
 );
 

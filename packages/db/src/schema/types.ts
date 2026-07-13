@@ -16,9 +16,6 @@ import type {
   contentAccessGrants,
   conversationParticipants,
   conversations,
-  eventExternalLinks,
-  eventRecurrence,
-  eventScheduleLinks,
   events,
   follows,
   groupEventActivityPlans,
@@ -106,17 +103,8 @@ export type ActivityLapInsert = InferInsertModel<typeof activityLaps>;
 export type ActivityFileIngestionRow = InferSelectModel<typeof activityFileIngestions>;
 export type ActivityFileIngestionInsert = InferInsertModel<typeof activityFileIngestions>;
 
-type BaseEventRow = InferSelectModel<typeof events>;
+export type EventRow = InferSelectModel<typeof events>;
 export type EventInsert = InferInsertModel<typeof events>;
-
-export type EventScheduleLinkRow = InferSelectModel<typeof eventScheduleLinks>;
-export type EventScheduleLinkInsert = InferInsertModel<typeof eventScheduleLinks>;
-
-export type EventExternalLinkRow = InferSelectModel<typeof eventExternalLinks>;
-export type EventExternalLinkInsert = InferInsertModel<typeof eventExternalLinks>;
-
-export type EventRecurrenceRow = InferSelectModel<typeof eventRecurrence>;
-export type EventRecurrenceInsert = InferInsertModel<typeof eventRecurrence>;
 
 export type ActivityRow = BaseActivityRow &
   Partial<
@@ -141,35 +129,6 @@ export type ActivityRow = BaseActivityRow &
   > &
   Partial<Pick<ActivityImportRow, "activity_file_path">> &
   Partial<Pick<ActivityGeometryRow, "map_bounds" | "polyline">>;
-
-export type EventRow = BaseEventRow &
-  Partial<
-    Pick<
-      EventScheduleLinkRow,
-      | "activity_plan_id"
-      | "linked_activity_id"
-      | "route_id"
-      | "schedule_batch_id"
-      | "training_plan_id"
-    >
-  > &
-  Partial<
-    Pick<
-      EventExternalLinkRow,
-      "external_calendar_id" | "external_event_id" | "integration_account_id" | "source_provider"
-    >
-  > &
-  Partial<
-    Pick<
-      EventRecurrenceRow,
-      | "occurrence_key"
-      | "original_starts_at"
-      | "recurrence"
-      | "recurrence_rule"
-      | "recurrence_timezone"
-      | "series_id"
-    >
-  >;
 
 export type ContentAccessGrantRow = InferSelectModel<typeof contentAccessGrants>;
 export type ContentAccessGrantInsert = InferInsertModel<typeof contentAccessGrants>;

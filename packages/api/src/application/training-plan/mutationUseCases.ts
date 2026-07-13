@@ -248,13 +248,7 @@ export async function deleteTrainingPlanUseCase(input: {
       and(
         eq(schema.events.event_type, plannedEventType),
         eq(schema.events.profile_id, input.profileId),
-        sql`exists (
-          select 1
-          from event_schedule_links
-          where event_schedule_links.event_id = events.id
-            and event_schedule_links.profile_id = ${input.profileId}::uuid
-            and event_schedule_links.training_plan_id = ${input.id}::uuid
-        )`,
+        eq(schema.events.training_plan_id, input.id),
       ),
     )
     .returning({ id: schema.events.id });

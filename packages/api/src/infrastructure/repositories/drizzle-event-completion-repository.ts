@@ -1,5 +1,5 @@
 import { type DrizzleDbClient, schema } from "@repo/db";
-import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lt, ne, or } from "drizzle-orm";
 import type { EventCompletionRepository, EventDeleteScope } from "../../repositories";
 
 function applyDeleteScopeFilters(input: {
@@ -18,32 +18,14 @@ function applyDeleteScopeFilters(input: {
   if (input.scope === "future") {
     return and(
       ...baseConditions,
-      or(
-        eq(schema.events.id, seriesId),
-        sql`exists (
-          select 1
-          from event_recurrence
-          where event_recurrence.event_id = ${schema.events.id}
-            and event_recurrence.profile_id = ${schema.events.profile_id}
-            and event_recurrence.series_id = ${seriesId}::uuid
-        )`,
-      ),
+      or(eq(schema.events.id, seriesId), eq(schema.events.series_id, seriesId)),
       gte(schema.events.starts_at, new Date(input.anchorEvent.starts_at)),
     );
   }
 
   return and(
     ...baseConditions,
-    or(
-      eq(schema.events.id, seriesId),
-      sql`exists (
-        select 1
-        from event_recurrence
-        where event_recurrence.event_id = ${schema.events.id}
-          and event_recurrence.profile_id = ${schema.events.profile_id}
-          and event_recurrence.series_id = ${seriesId}::uuid
-      )`,
-    ),
+    or(eq(schema.events.id, seriesId), eq(schema.events.series_id, seriesId)),
   );
 }
 
@@ -62,15 +44,15 @@ const splitCompletionEventColumns = {
   updated_at: schema.events.updated_at,
   starts_at: schema.events.starts_at,
   ends_at: schema.events.ends_at,
-  activity_plan_id: schema.eventScheduleLinks.activity_plan_id,
-  training_plan_id: schema.eventScheduleLinks.training_plan_id,
-  linked_activity_id: schema.eventScheduleLinks.linked_activity_id,
-  recurrence_rule: schema.eventRecurrence.recurrence_rule,
-  recurrence_timezone: schema.eventRecurrence.recurrence_timezone,
-  series_id: schema.eventRecurrence.series_id,
-  source_provider: schema.eventExternalLinks.source_provider,
-  occurrence_key: schema.eventRecurrence.occurrence_key,
-  original_starts_at: schema.eventRecurrence.original_starts_at,
+  activity_plan_id: schema.events.activity_plan_id,
+  training_plan_id: schema.events.training_plan_id,
+  linked_activity_id: schema.events.linked_activity_id,
+  recurrence_rule: schema.events.recurrence_rule,
+  recurrence_timezone: schema.events.recurrence_timezone,
+  series_id: schema.events.series_id,
+  source_provider: schema.events.source_provider,
+  occurrence_key: schema.events.occurrence_key,
+  original_starts_at: schema.events.original_starts_at,
 };
 
 function serializeCompletionRow(
@@ -107,15 +89,7 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
           ...splitCompletionEventColumns,
         })
         .from(schema.events)
-        .leftJoin(
-          schema.eventScheduleLinks,
-          eq(schema.events.id, schema.eventScheduleLinks.event_id),
-        )
-        .leftJoin(schema.eventRecurrence, eq(schema.events.id, schema.eventRecurrence.event_id))
-        .leftJoin(
-          schema.eventExternalLinks,
-          eq(schema.events.id, schema.eventExternalLinks.event_id),
-        )
+
         .where(and(eq(schema.events.id, eventId), eq(schema.events.profile_id, profileId)))
         .limit(1);
 
@@ -131,6 +105,7 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
           .update(schema.events)
           .set({
             status,
+            linked_activity_id: linkedActivityId,
             updated_at: now,
           })
           .where(and(eq(schema.events.id, eventId), eq(schema.events.profile_id, profileId)))
@@ -138,35 +113,9 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
 
         if (!updatedEvent) return [];
 
-        await tx
-          .insert(schema.eventScheduleLinks)
-          .values({
-            event_id: eventId,
-            profile_id: profileId,
-            linked_activity_id: linkedActivityId,
-            created_at: now,
-            updated_at: now,
-          })
-          .onConflictDoUpdate({
-            target: schema.eventScheduleLinks.event_id,
-            set: {
-              linked_activity_id: linkedActivityId,
-              updated_at: now,
-            },
-          });
-
         return tx
           .select(splitCompletionEventColumns)
           .from(schema.events)
-          .leftJoin(
-            schema.eventScheduleLinks,
-            eq(schema.events.id, schema.eventScheduleLinks.event_id),
-          )
-          .leftJoin(schema.eventRecurrence, eq(schema.events.id, schema.eventRecurrence.event_id))
-          .leftJoin(
-            schema.eventExternalLinks,
-            eq(schema.events.id, schema.eventExternalLinks.event_id),
-          )
           .where(and(eq(schema.events.id, eventId), eq(schema.events.profile_id, profileId)))
           .limit(1);
       });
@@ -214,22 +163,19 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
         .select({
           id: schema.events.id,
           starts_at: schema.events.starts_at,
-          activity_plan_id: schema.eventScheduleLinks.activity_plan_id,
-          training_plan_id: schema.eventScheduleLinks.training_plan_id,
+          activity_plan_id: schema.events.activity_plan_id,
+          training_plan_id: schema.events.training_plan_id,
           status: schema.events.status,
-          linked_activity_id: schema.eventScheduleLinks.linked_activity_id,
+          linked_activity_id: schema.events.linked_activity_id,
           event_type: schema.events.event_type,
         })
         .from(schema.events)
-        .leftJoin(
-          schema.eventScheduleLinks,
-          eq(schema.events.id, schema.eventScheduleLinks.event_id),
-        )
+
         .where(
           and(
             eq(schema.events.profile_id, profileId),
             inArray(schema.events.event_type, ["planned_activity", "race"]),
-            isNull(schema.eventScheduleLinks.linked_activity_id),
+            isNull(schema.events.linked_activity_id),
             ne(schema.events.status, "cancelled"),
             gte(schema.events.starts_at, new Date(dateFromInclusiveIso)),
             lt(schema.events.starts_at, new Date(dateToExclusiveIso)),
@@ -256,6 +202,7 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
           .update(schema.events)
           .set({
             status: "completed",
+            linked_activity_id: activityId,
             updated_at: now,
           })
           .where(
@@ -263,13 +210,7 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
               eq(schema.events.id, eventId),
               eq(schema.events.profile_id, profileId),
               ne(schema.events.status, "cancelled"),
-              sql`not exists (
-                select 1
-                from event_schedule_links
-                where event_schedule_links.event_id = ${schema.events.id}
-                  and event_schedule_links.profile_id = ${schema.events.profile_id}
-                  and event_schedule_links.linked_activity_id is not null
-              )`,
+              isNull(schema.events.linked_activity_id),
             ),
           )
           .returning({
@@ -280,35 +221,14 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
 
         if (!updatedEvent) return [];
 
-        await tx
-          .insert(schema.eventScheduleLinks)
-          .values({
-            event_id: eventId,
-            profile_id: profileId,
-            linked_activity_id: activityId,
-            created_at: now,
-            updated_at: now,
-          })
-          .onConflictDoUpdate({
-            target: schema.eventScheduleLinks.event_id,
-            set: {
-              linked_activity_id: activityId,
-              updated_at: now,
-            },
-          });
-
         return tx
           .select({
             id: schema.events.id,
-            training_plan_id: schema.eventScheduleLinks.training_plan_id,
+            training_plan_id: schema.events.training_plan_id,
             starts_at: schema.events.starts_at,
             updated_at: schema.events.updated_at,
           })
           .from(schema.events)
-          .leftJoin(
-            schema.eventScheduleLinks,
-            eq(schema.events.id, schema.eventScheduleLinks.event_id),
-          )
           .where(and(eq(schema.events.id, eventId), eq(schema.events.profile_id, profileId)))
           .limit(1);
       });
@@ -326,15 +246,12 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
     async listOwnedEventsForDeleteScope({ anchorEvent, profileId, scope }) {
       const rows = await db
         .select({
-          activity_plan_id: schema.eventScheduleLinks.activity_plan_id,
+          activity_plan_id: schema.events.activity_plan_id,
           id: schema.events.id,
           event_type: schema.events.event_type,
         })
         .from(schema.events)
-        .leftJoin(
-          schema.eventScheduleLinks,
-          eq(schema.events.id, schema.eventScheduleLinks.event_id),
-        )
+
         .where(applyDeleteScopeFilters({ anchorEvent, profileId, scope }));
 
       return rows;
@@ -344,16 +261,24 @@ export function createEventCompletionRepository(db: DrizzleDbClient): EventCompl
       const rows = await db.transaction(async (tx) => {
         const candidates = await tx
           .select({
-            activity_plan_id: schema.eventScheduleLinks.activity_plan_id,
+            activity_plan_id: schema.events.activity_plan_id,
             id: schema.events.id,
             event_type: schema.events.event_type,
           })
           .from(schema.events)
-          .leftJoin(
-            schema.eventScheduleLinks,
-            eq(schema.events.id, schema.eventScheduleLinks.event_id),
-          )
           .where(applyDeleteScopeFilters({ anchorEvent, profileId, scope }));
+
+        if (scope === "single" && anchorEvent.series_id === null) {
+          await tx
+            .update(schema.events)
+            .set({ series_id: null, updated_at: new Date() })
+            .where(
+              and(
+                eq(schema.events.profile_id, profileId),
+                eq(schema.events.series_id, anchorEvent.id),
+              ),
+            );
+        }
 
         await tx
           .delete(schema.events)

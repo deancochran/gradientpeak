@@ -6,7 +6,6 @@ import {
 import {
   activities,
   activitySummaries,
-  eventScheduleLinks,
   events,
   publicActivitiesRowSchema,
   publicActivityCategorySchema,
@@ -215,9 +214,8 @@ export const activitiesRouter = createTRPCRouter({
     let linkedActivityPlanId: string | null = null;
     if (input.eventId) {
       const [linkedEvent] = await db
-        .select({ activity_plan_id: eventScheduleLinks.activity_plan_id })
+        .select({ activity_plan_id: events.activity_plan_id })
         .from(events)
-        .leftJoin(eventScheduleLinks, eq(events.id, eventScheduleLinks.event_id))
         .where(
           and(
             eq(events.id, input.eventId),

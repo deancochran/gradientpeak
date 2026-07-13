@@ -316,20 +316,16 @@ export const homeRouter = createTRPCRouter({
       const [rawNextPlannedEvent, profileSettingsData] = await Promise.all([
         db
           .select({
-            training_plan_id: schema.eventScheduleLinks.training_plan_id,
+            training_plan_id: schema.events.training_plan_id,
             starts_at: schema.events.starts_at,
           })
           .from(schema.events)
-          .innerJoin(
-            schema.eventScheduleLinks,
-            eq(schema.eventScheduleLinks.event_id, schema.events.id),
-          )
           .where(
             and(
               eq(schema.events.profile_id, userId),
               eq(schema.events.event_type, "planned_activity"),
               gte(schema.events.starts_at, today),
-              isNotNull(schema.eventScheduleLinks.training_plan_id),
+              isNotNull(schema.events.training_plan_id),
             ),
           )
           .orderBy(asc(schema.events.starts_at))

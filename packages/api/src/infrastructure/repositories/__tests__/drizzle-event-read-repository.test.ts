@@ -534,29 +534,17 @@ describe("drizzle-event-read-repository", () => {
     });
   });
 
-  it("prefers split schedule-link values over legacy event links", async () => {
-    const scheduleLink = {
-      event_id: "event-1",
-      profile_id: "profile-1",
-      training_plan_id: "split-training-plan",
-      activity_plan_id: "split-activity-plan",
-      linked_activity_id: "split-activity",
-      route_id: "split-route",
-      schedule_batch_id: "split-batch",
-      created_at: new Date("2026-04-01T00:00:00.000Z"),
-      updated_at: new Date("2026-04-01T00:00:00.000Z"),
-    };
+  it("reads consolidated schedule-link values from the event", async () => {
     const repository = createEventReadRepository(
       createQueryMapDbMock({
         events: {
           data: [
             {
               ...createEventRow({
-                training_plan_id: "legacy-training-plan",
-                activity_plan_id: "legacy-activity-plan",
-                linked_activity_id: "legacy-activity",
+                training_plan_id: "training-plan",
+                activity_plan_id: "activity-plan",
+                linked_activity_id: "activity",
               }),
-              schedule_link: scheduleLink,
             },
           ],
           error: null,
@@ -570,9 +558,9 @@ describe("drizzle-event-read-repository", () => {
         profileId: "profile-1",
       }),
     ).resolves.toMatchObject({
-      training_plan_id: "split-training-plan",
-      activity_plan_id: "split-activity-plan",
-      linked_activity_id: "split-activity",
+      training_plan_id: "training-plan",
+      activity_plan_id: "activity-plan",
+      linked_activity_id: "activity",
     });
   });
 
@@ -599,7 +587,7 @@ describe("drizzle-event-read-repository", () => {
 
     expect(selects).toHaveLength(1);
     expect(selects[0]?.table).toBe("events");
-    expect(selects[0]?.leftJoinArgs).toHaveLength(4);
+    expect(selects[0]?.leftJoinArgs).toHaveLength(1);
     expect(selects[0]?.limitArg).toBe(25);
     expect(selects[0]?.orderByArgs.map(toSql)).toEqual([
       '"events"."starts_at" asc',
@@ -609,8 +597,8 @@ describe("drizzle-event-read-repository", () => {
     const whereSql = toSql(selects[0]?.whereArg);
     expect(whereSql).toContain('"events"."profile_id" = $1');
     expect(whereSql).toContain('"events"."event_type" in ($2, $3)');
-    expect(whereSql).toContain('"event_schedule_links"."training_plan_id" is not null');
-    expect(whereSql).toContain('"event_schedule_links"."activity_plan_id" = $4');
+    expect(whereSql).toContain('"events"."training_plan_id" is not null');
+    expect(whereSql).toContain('"events"."activity_plan_id" = $4');
     expect(whereSql).toContain('"events"."starts_at" >= $5');
     expect(whereSql).toContain('"events"."starts_at" < $6');
     expect(whereSql).toContain('"events"."starts_at" > $7');

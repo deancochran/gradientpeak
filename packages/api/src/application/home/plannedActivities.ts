@@ -52,11 +52,8 @@ export async function listPlannedActivitiesInRange(
       activity_plan: schema.activityPlans,
     })
     .from(schema.events)
-    .leftJoin(schema.eventScheduleLinks, eq(schema.eventScheduleLinks.event_id, schema.events.id))
-    .leftJoin(
-      schema.activityPlans,
-      eq(schema.eventScheduleLinks.activity_plan_id, schema.activityPlans.id),
-    )
+
+    .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
     .where(
       and(
         eq(schema.events.profile_id, input.profileId),

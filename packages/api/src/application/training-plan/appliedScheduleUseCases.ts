@@ -2,7 +2,7 @@ import { formatDateOnlyUtc } from "@repo/core";
 import { schema } from "@repo/db";
 import type { DrizzleDbClient } from "@repo/db/client";
 import { TRPCError } from "@trpc/server";
-import { and, eq, gte, ne, sql } from "drizzle-orm";
+import { and, eq, gte, ne } from "drizzle-orm";
 import { logger } from "../../lib/logger";
 import { enqueuePlannedWorkoutSyncAfterCalendarMutation } from "../../lib/provider-sync/planned-workouts";
 import type { TrainingPlanRepository } from "../../repositories";
@@ -52,13 +52,7 @@ export async function removeAppliedScheduleUseCase(input: {
       and(
         eq(schema.events.profile_id, input.profileId),
         eq(schema.events.event_type, plannedEventType),
-        sql`exists (
-            select 1
-            from event_schedule_links
-            where event_schedule_links.event_id = events.id
-              and event_schedule_links.profile_id = ${input.profileId}::uuid
-              and event_schedule_links.schedule_batch_id = ${input.scheduleBatchId}::uuid
-          )`,
+        eq(schema.events.schedule_batch_id, input.scheduleBatchId),
         gte(schema.events.starts_at, new Date(todayStartIsoUtc())),
         ne(schema.events.status, "completed"),
       ),

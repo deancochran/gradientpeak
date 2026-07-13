@@ -93,19 +93,16 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
 
     const activeEvents = await db
       .select({
-        training_plan_id: schema.eventScheduleLinks.training_plan_id,
+        training_plan_id: schema.events.training_plan_id,
         starts_at: schema.events.starts_at,
       })
       .from(schema.events)
-      .innerJoin(
-        schema.eventScheduleLinks,
-        eq(schema.eventScheduleLinks.event_id, schema.events.id),
-      )
+
       .where(
         and(
           eq(schema.events.profile_id, input.profileId),
           eq(schema.events.event_type, "planned_activity"),
-          isNotNull(schema.eventScheduleLinks.training_plan_id),
+          isNotNull(schema.events.training_plan_id),
           gte(schema.events.starts_at, new Date()),
         ),
       )
@@ -274,20 +271,17 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
     async getActivePlanFromFutureEvents(profileId) {
       const upcomingEvents = await db
         .select({
-          training_plan_id: schema.eventScheduleLinks.training_plan_id,
-          schedule_batch_id: schema.eventScheduleLinks.schedule_batch_id,
+          training_plan_id: schema.events.training_plan_id,
+          schedule_batch_id: schema.events.schedule_batch_id,
           starts_at: schema.events.starts_at,
         })
         .from(schema.events)
-        .innerJoin(
-          schema.eventScheduleLinks,
-          eq(schema.eventScheduleLinks.event_id, schema.events.id),
-        )
+
         .where(
           and(
             eq(schema.events.profile_id, profileId),
             eq(schema.events.event_type, "planned_activity"),
-            isNotNull(schema.eventScheduleLinks.training_plan_id),
+            isNotNull(schema.events.training_plan_id),
             gte(schema.events.starts_at, new Date(todayStartIsoUtc())),
           ),
         )

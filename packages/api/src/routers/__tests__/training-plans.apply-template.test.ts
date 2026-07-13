@@ -204,11 +204,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
     const eventInsertCall = callLog.find(
       (call) => call.table === "events" && call.operation === "insert",
     );
-    const scheduleLinkInsertCall = callLog.find(
-      (call) => call.table === "event_schedule_links" && call.operation === "insert",
-    );
     const insertedRows = (eventInsertCall?.payload as Array<Record<string, unknown>>) ?? [];
-    const insertedLinks = (scheduleLinkInsertCall?.payload as Array<Record<string, unknown>>) ?? [];
 
     expect(result.applied_plan_id).toBe("11111111-1111-4111-8111-111111111111");
     expect(result.scheduled_sessions_created).toBe(2);
@@ -220,21 +216,9 @@ describe("trainingPlansRouter.applyTemplate", () => {
     expect(insertedRows[1]?.schedule_batch_id).toBe(result.schedule_batch_id);
     expect(insertedRows[0]?.training_plan_id).toBe(result.applied_plan_id);
     expect(insertedRows[1]?.training_plan_id).toBe(result.applied_plan_id);
-    expect(insertedLinks).toEqual([
-      {
-        event_id: "event-1",
-        profile_id: "profile-123",
-        training_plan_id: result.applied_plan_id,
-        activity_plan_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-        schedule_batch_id: result.schedule_batch_id,
-      },
-      {
-        event_id: "event-2",
-        profile_id: "profile-123",
-        training_plan_id: result.applied_plan_id,
-        activity_plan_id: null,
-        schedule_batch_id: result.schedule_batch_id,
-      },
+    expect(insertedRows.map((row) => row.activity_plan_id)).toEqual([
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      null,
     ]);
     const createdPlanInsert = callLog.find(
       (call) => call.table === "training_plans" && call.operation === "insert",

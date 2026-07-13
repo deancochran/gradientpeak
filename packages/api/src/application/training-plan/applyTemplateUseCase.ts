@@ -125,20 +125,8 @@ export async function applyTrainingPlanTemplateUseCase(input: {
         and(
           ...deleteBaseFilters,
           activePlanLookup.scheduleBatchId
-            ? sql`exists (
-                select 1
-                from event_schedule_links
-                where event_schedule_links.event_id = events.id
-                  and event_schedule_links.profile_id = ${profileId}::uuid
-                  and event_schedule_links.schedule_batch_id = ${activePlanLookup.scheduleBatchId}::uuid
-              )`
-            : sql`exists (
-                select 1
-                from event_schedule_links
-                where event_schedule_links.event_id = events.id
-                  and event_schedule_links.profile_id = ${profileId}::uuid
-                  and event_schedule_links.training_plan_id = ${activePlanLookup.trainingPlanId}::uuid
-              )`,
+            ? eq(schema.events.schedule_batch_id, activePlanLookup.scheduleBatchId)
+            : eq(schema.events.training_plan_id, activePlanLookup.trainingPlanId),
         ),
       )
       .returning({ id: schema.events.id });
@@ -334,20 +322,6 @@ export async function applyTrainingPlanTemplateUseCase(input: {
         message: "Failed to create the full scheduled training plan event set.",
       });
     }
-
-    await tx.insert(schema.eventScheduleLinks).values(
-      events.flatMap((event, index) => {
-        const eventRow = eventRows[index];
-        if (!eventRow) return [];
-        return {
-          event_id: event.id,
-          profile_id: profileId,
-          training_plan_id: appliedPlanId,
-          activity_plan_id: eventRow.activity_plan_id ?? null,
-          schedule_batch_id,
-        };
-      }) satisfies Array<typeof schema.eventScheduleLinks.$inferInsert>,
-    );
 
     return events;
   });

@@ -63,39 +63,25 @@ function serializeEventRow(row: {
   title: string | null;
   training_plan_id: string | null;
   updated_at: Date;
-  external_link?: typeof schema.eventExternalLinks.$inferSelect | null;
-  recurrence?: typeof schema.eventRecurrence.$inferSelect | null;
-  schedule_link?: typeof schema.eventScheduleLinks.$inferSelect | null;
 }) {
-  const {
-    external_link: externalLink = null,
-    recurrence = null,
-    schedule_link: scheduleLink = null,
-    ...eventRow
-  } = row;
-
   return {
-    ...eventRow,
-    activity_plan_id: scheduleLink?.activity_plan_id ?? row.activity_plan_id,
+    ...row,
     idx: row.idx ?? 0,
     all_day: row.all_day ?? false,
-    linked_activity_id: scheduleLink?.linked_activity_id ?? row.linked_activity_id,
+    linked_activity_id: row.linked_activity_id,
     occurrence_key: row.occurrence_key ?? "",
-    recurrence_rule: recurrence?.recurrence_rule ?? row.recurrence_rule,
-    recurrence_timezone: recurrence?.recurrence_timezone ?? row.recurrence_timezone,
-    series_id: recurrence?.series_id ?? row.series_id,
-    source_provider: externalLink?.source_provider ?? row.source_provider,
+    recurrence_rule: row.recurrence_rule,
+    recurrence_timezone: row.recurrence_timezone,
+    series_id: row.series_id,
+    source_provider: row.source_provider,
     status: row.status ?? "scheduled",
     timezone: row.timezone ?? "UTC",
     title: row.title ?? "",
-    training_plan_id: scheduleLink?.training_plan_id ?? row.training_plan_id,
+    training_plan_id: row.training_plan_id,
     created_at: row.created_at.toISOString(),
     starts_at: row.starts_at.toISOString(),
     ends_at: row.ends_at?.toISOString() ?? null,
-    original_starts_at:
-      recurrence?.original_starts_at?.toISOString() ??
-      row.original_starts_at?.toISOString() ??
-      null,
+    original_starts_at: row.original_starts_at?.toISOString() ?? null,
     updated_at: row.updated_at.toISOString(),
     activity_plan: serializeActivityPlanRow(row.activity_plan),
   };
@@ -110,17 +96,17 @@ const eventColumns = {
   description: schema.events.description,
   all_day: schema.events.all_day,
   timezone: schema.events.timezone,
-  activity_plan_id: schema.eventScheduleLinks.activity_plan_id,
-  training_plan_id: schema.eventScheduleLinks.training_plan_id,
-  recurrence_rule: schema.eventRecurrence.recurrence_rule,
-  recurrence_timezone: schema.eventRecurrence.recurrence_timezone,
-  series_id: schema.eventRecurrence.series_id,
-  source_provider: schema.eventExternalLinks.source_provider,
-  occurrence_key: schema.eventRecurrence.occurrence_key,
-  original_starts_at: schema.eventRecurrence.original_starts_at,
+  activity_plan_id: schema.events.activity_plan_id,
+  training_plan_id: schema.events.training_plan_id,
+  recurrence_rule: schema.events.recurrence_rule,
+  recurrence_timezone: schema.events.recurrence_timezone,
+  series_id: schema.events.series_id,
+  source_provider: schema.events.source_provider,
+  occurrence_key: schema.events.occurrence_key,
+  original_starts_at: schema.events.original_starts_at,
   notes: schema.events.notes,
   status: schema.events.status,
-  linked_activity_id: schema.eventScheduleLinks.linked_activity_id,
+  linked_activity_id: schema.events.linked_activity_id,
   created_at: schema.events.created_at,
   updated_at: schema.events.updated_at,
   starts_at: schema.events.starts_at,
@@ -138,24 +124,9 @@ export function createEventReadRepository(
         .select({
           ...eventColumns,
           activity_plan: schema.activityPlans,
-          external_link: schema.eventExternalLinks,
-          recurrence: schema.eventRecurrence,
-          schedule_link: schema.eventScheduleLinks,
         })
         .from(schema.events)
-        .leftJoin(
-          schema.eventScheduleLinks,
-          eq(schema.events.id, schema.eventScheduleLinks.event_id),
-        )
-        .leftJoin(
-          schema.activityPlans,
-          eq(schema.eventScheduleLinks.activity_plan_id, schema.activityPlans.id),
-        )
-        .leftJoin(
-          schema.eventExternalLinks,
-          eq(schema.events.id, schema.eventExternalLinks.event_id),
-        )
-        .leftJoin(schema.eventRecurrence, eq(schema.events.id, schema.eventRecurrence.event_id))
+        .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
         .where(and(eq(schema.events.id, eventId), eq(schema.events.profile_id, profileId)))
         .limit(1);
 
@@ -425,27 +396,19 @@ export function createEventReadRepository(
       const plannedEvents = await db
         .select({
           starts_at: schema.events.starts_at,
-          training_plan_id: schema.eventScheduleLinks.training_plan_id,
+          training_plan_id: schema.events.training_plan_id,
           activity_plan: schema.activityPlans,
         })
         .from(schema.events)
-        .leftJoin(
-          schema.eventScheduleLinks,
-          eq(schema.events.id, schema.eventScheduleLinks.event_id),
-        )
-        .leftJoin(
-          schema.activityPlans,
-          eq(schema.eventScheduleLinks.activity_plan_id, schema.activityPlans.id),
-        )
+
+        .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
         .where(
           and(
             eq(schema.events.profile_id, profileId),
             eq(schema.events.event_type, "planned_activity"),
             gte(schema.events.starts_at, new Date(startDateIso)),
             lt(schema.events.starts_at, new Date(endDateExclusiveIso)),
-            ...(trainingPlanId
-              ? [eq(schema.eventScheduleLinks.training_plan_id, trainingPlanId)]
-              : []),
+            ...(trainingPlanId ? [eq(schema.events.training_plan_id, trainingPlanId)] : []),
           ),
         );
 
@@ -495,8 +458,8 @@ export function createEventReadRepository(
 
     async listOwnedEvents(input) {
       const conditions = [eq(schema.events.profile_id, input.profileId)];
-      const trainingPlanId = schema.eventScheduleLinks.training_plan_id;
-      const activityPlanId = schema.eventScheduleLinks.activity_plan_id;
+      const trainingPlanId = schema.events.training_plan_id;
+      const activityPlanId = schema.events.activity_plan_id;
 
       if (input.eventTypes && input.eventTypes.length > 0) {
         conditions.push(inArray(schema.events.event_type, input.eventTypes));
@@ -538,21 +501,11 @@ export function createEventReadRepository(
         .select({
           ...eventColumns,
           activity_plan: schema.activityPlans,
-          external_link: schema.eventExternalLinks,
-          recurrence: schema.eventRecurrence,
-          schedule_link: schema.eventScheduleLinks,
         })
         .from(schema.events)
-        .leftJoin(
-          schema.eventScheduleLinks,
-          eq(schema.events.id, schema.eventScheduleLinks.event_id),
-        )
+
         .leftJoin(schema.activityPlans, eq(activityPlanId, schema.activityPlans.id))
-        .leftJoin(
-          schema.eventExternalLinks,
-          eq(schema.events.id, schema.eventExternalLinks.event_id),
-        )
-        .leftJoin(schema.eventRecurrence, eq(schema.events.id, schema.eventRecurrence.event_id))
+
         .where(and(...conditions))
         .orderBy(asc(schema.events.starts_at), asc(schema.events.id))
         .limit(input.limit);

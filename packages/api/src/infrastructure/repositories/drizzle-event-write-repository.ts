@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { type DrizzleDbClient, schema } from "@repo/db";
-import { and, eq, gte, or, sql } from "drizzle-orm";
+import { and, eq, gte, or } from "drizzle-orm";
 import type { EventDeleteScope, EventWriteRepository } from "../../repositories";
 
 function serializeCreatedEvent(row: {
@@ -89,32 +89,14 @@ function applyWriteScopeFilters(input: {
   if (input.scope === "future") {
     return and(
       ...baseConditions,
-      or(
-        eq(schema.events.id, seriesId),
-        sql`exists (
-          select 1
-          from event_recurrence
-          where event_recurrence.event_id = ${schema.events.id}
-            and event_recurrence.profile_id = ${schema.events.profile_id}
-            and event_recurrence.series_id = ${seriesId}::uuid
-        )`,
-      ),
+      or(eq(schema.events.id, seriesId), eq(schema.events.series_id, seriesId)),
       gte(schema.events.starts_at, new Date(input.anchorEvent.starts_at)),
     );
   }
 
   return and(
     ...baseConditions,
-    or(
-      eq(schema.events.id, seriesId),
-      sql`exists (
-        select 1
-        from event_recurrence
-        where event_recurrence.event_id = ${schema.events.id}
-          and event_recurrence.profile_id = ${schema.events.profile_id}
-          and event_recurrence.series_id = ${seriesId}::uuid
-      )`,
-    ),
+    or(eq(schema.events.id, seriesId), eq(schema.events.series_id, seriesId)),
   );
 }
 
@@ -133,24 +115,21 @@ const splitEventReturningColumns = {
   updated_at: schema.events.updated_at,
   starts_at: schema.events.starts_at,
   ends_at: schema.events.ends_at,
-  activity_plan_id: schema.eventScheduleLinks.activity_plan_id,
-  training_plan_id: schema.eventScheduleLinks.training_plan_id,
-  linked_activity_id: schema.eventScheduleLinks.linked_activity_id,
-  recurrence_rule: schema.eventRecurrence.recurrence_rule,
-  recurrence_timezone: schema.eventRecurrence.recurrence_timezone,
-  series_id: schema.eventRecurrence.series_id,
-  occurrence_key: schema.eventRecurrence.occurrence_key,
-  original_starts_at: schema.eventRecurrence.original_starts_at,
-  source_provider: schema.eventExternalLinks.source_provider,
+  activity_plan_id: schema.events.activity_plan_id,
+  training_plan_id: schema.events.training_plan_id,
+  linked_activity_id: schema.events.linked_activity_id,
+  recurrence_rule: schema.events.recurrence_rule,
+  recurrence_timezone: schema.events.recurrence_timezone,
+  series_id: schema.events.series_id,
+  occurrence_key: schema.events.occurrence_key,
+  original_starts_at: schema.events.original_starts_at,
+  source_provider: schema.events.source_provider,
 };
 
 async function loadSplitEvent(db: any, eventId: string, profileId: string) {
   const [row] = await db
     .select(splitEventReturningColumns)
     .from(schema.events)
-    .leftJoin(schema.eventScheduleLinks, eq(schema.events.id, schema.eventScheduleLinks.event_id))
-    .leftJoin(schema.eventRecurrence, eq(schema.events.id, schema.eventRecurrence.event_id))
-    .leftJoin(schema.eventExternalLinks, eq(schema.events.id, schema.eventExternalLinks.event_id))
     .where(and(eq(schema.events.id, eventId), eq(schema.events.profile_id, profileId)))
     .limit(1);
 
@@ -217,54 +196,21 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
             status: input.status,
             notes: input.notes,
             description: input.description,
-          })
-          .returning({ id: schema.events.id });
-
-        if (!eventRow) return [];
-
-        if (input.activityPlanId || input.trainingPlanId) {
-          await tx.insert(schema.eventScheduleLinks).values({
-            event_id: eventId,
-            profile_id: input.profileId,
             activity_plan_id: input.activityPlanId,
             training_plan_id: input.trainingPlanId,
-            created_at: now,
-            updated_at: now,
-          });
-        }
-
-        if (
-          input.recurrenceRule ||
-          input.recurrenceTimezone ||
-          input.seriesId ||
-          input.occurrenceKey ||
-          input.originalStartsAt
-        ) {
-          await tx.insert(schema.eventRecurrence).values({
-            event_id: eventId,
-            profile_id: input.profileId,
             recurrence_rule: input.recurrenceRule,
             recurrence_timezone: input.recurrenceTimezone,
             series_id: input.seriesId ?? null,
             occurrence_key: input.occurrenceKey ?? "",
             original_starts_at: input.originalStartsAt ? new Date(input.originalStartsAt) : null,
-            created_at: now,
-            updated_at: now,
-          });
-        }
+          })
+          .returning({ id: schema.events.id });
+
+        if (!eventRow) return [];
 
         return tx
           .select(splitEventReturningColumns)
           .from(schema.events)
-          .leftJoin(
-            schema.eventScheduleLinks,
-            eq(schema.events.id, schema.eventScheduleLinks.event_id),
-          )
-          .leftJoin(schema.eventRecurrence, eq(schema.events.id, schema.eventRecurrence.event_id))
-          .leftJoin(
-            schema.eventExternalLinks,
-            eq(schema.events.id, schema.eventExternalLinks.event_id),
-          )
           .where(and(eq(schema.events.id, eventId), eq(schema.events.profile_id, input.profileId)))
           .limit(1);
       });
@@ -281,19 +227,10 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
       const rows = await db
         .select(splitEventReturningColumns)
         .from(schema.events)
-        .leftJoin(
-          schema.eventScheduleLinks,
-          eq(schema.events.id, schema.eventScheduleLinks.event_id),
-        )
-        .leftJoin(schema.eventRecurrence, eq(schema.events.id, schema.eventRecurrence.event_id))
-        .leftJoin(
-          schema.eventExternalLinks,
-          eq(schema.events.id, schema.eventExternalLinks.event_id),
-        )
         .where(
           and(
             eq(schema.events.profile_id, profileId),
-            or(eq(schema.events.id, seriesId), eq(schema.eventRecurrence.series_id, seriesId)),
+            or(eq(schema.events.id, seriesId), eq(schema.events.series_id, seriesId)),
           ),
         );
 
@@ -330,6 +267,11 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
         ...(timezone !== undefined ? { timezone: timezone as string } : {}),
         ...(startsAt ? { starts_at: new Date(startsAt as string) } : {}),
         ...(endsAt !== undefined ? { ends_at: endsAt ? new Date(endsAt as string) : null } : {}),
+        ...(activityPlanId !== undefined ? { activity_plan_id: activityPlanId } : {}),
+        ...(trainingPlanId !== undefined ? { training_plan_id: trainingPlanId } : {}),
+        ...(linkedActivityId !== undefined ? { linked_activity_id: linkedActivityId } : {}),
+        ...(recurrenceRule !== undefined ? { recurrence_rule: recurrenceRule } : {}),
+        ...(recurrenceTimezone !== undefined ? { recurrence_timezone: recurrenceTimezone } : {}),
         updated_at: now,
       };
 
@@ -339,61 +281,6 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
           .set(eventUpdateValues)
           .where(applyWriteScopeFilters({ anchorEvent, profileId, scope }))
           .returning({ id: schema.events.id });
-
-        for (const updatedEvent of updatedEvents) {
-          if (
-            activityPlanId !== undefined ||
-            trainingPlanId !== undefined ||
-            linkedActivityId !== undefined
-          ) {
-            await tx
-              .insert(schema.eventScheduleLinks)
-              .values({
-                event_id: updatedEvent.id,
-                profile_id: profileId,
-                activity_plan_id: activityPlanId === undefined ? null : activityPlanId,
-                training_plan_id: trainingPlanId === undefined ? null : trainingPlanId,
-                linked_activity_id: linkedActivityId === undefined ? null : linkedActivityId,
-                created_at: now,
-                updated_at: now,
-              })
-              .onConflictDoUpdate({
-                target: schema.eventScheduleLinks.event_id,
-                set: {
-                  ...(activityPlanId !== undefined ? { activity_plan_id: activityPlanId } : {}),
-                  ...(trainingPlanId !== undefined ? { training_plan_id: trainingPlanId } : {}),
-                  ...(linkedActivityId !== undefined
-                    ? { linked_activity_id: linkedActivityId }
-                    : {}),
-                  updated_at: now,
-                },
-              });
-          }
-
-          if (recurrenceRule !== undefined || recurrenceTimezone !== undefined) {
-            await tx
-              .insert(schema.eventRecurrence)
-              .values({
-                event_id: updatedEvent.id,
-                profile_id: profileId,
-                recurrence_rule: recurrenceRule,
-                recurrence_timezone: recurrenceTimezone,
-                occurrence_key: "",
-                created_at: now,
-                updated_at: now,
-              })
-              .onConflictDoUpdate({
-                target: schema.eventRecurrence.event_id,
-                set: {
-                  ...(recurrenceRule !== undefined ? { recurrence_rule: recurrenceRule } : {}),
-                  ...(recurrenceTimezone !== undefined
-                    ? { recurrence_timezone: recurrenceTimezone }
-                    : {}),
-                  updated_at: now,
-                },
-              });
-          }
-        }
 
         return Promise.all(updatedEvents.map((event) => loadSplitEvent(tx, event.id, profileId)));
       });

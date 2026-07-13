@@ -4408,11 +4408,8 @@ const trainingPlansProcedures = {
     const plannedActivitiesEvents = await db
       .select({ starts_at: schema.events.starts_at, activity_plan: schema.activityPlans })
       .from(schema.events)
-      .leftJoin(schema.eventScheduleLinks, eq(schema.eventScheduleLinks.event_id, schema.events.id))
-      .leftJoin(
-        schema.activityPlans,
-        eq(schema.eventScheduleLinks.activity_plan_id, schema.activityPlans.id),
-      )
+
+      .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
       .where(
         and(
           eq(schema.events.profile_id, ctx.session.user.id),
@@ -4468,11 +4465,8 @@ const trainingPlansProcedures = {
         activity_plan: schema.activityPlans,
       })
       .from(schema.events)
-      .leftJoin(schema.eventScheduleLinks, eq(schema.eventScheduleLinks.event_id, schema.events.id))
-      .leftJoin(
-        schema.activityPlans,
-        eq(schema.eventScheduleLinks.activity_plan_id, schema.activityPlans.id),
-      )
+
+      .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
       .where(
         and(
           eq(schema.events.profile_id, ctx.session.user.id),
@@ -4897,18 +4891,12 @@ const trainingPlansProcedures = {
       const plannedActivitiesEventsRaw = await db
         .select({ starts_at: schema.events.starts_at, activity_plan: schema.activityPlans })
         .from(schema.events)
-        .leftJoin(
-          schema.eventScheduleLinks,
-          eq(schema.eventScheduleLinks.event_id, schema.events.id),
-        )
-        .leftJoin(
-          schema.activityPlans,
-          eq(schema.eventScheduleLinks.activity_plan_id, schema.activityPlans.id),
-        )
+
+        .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
         .where(
           and(
             eq(schema.events.profile_id, ctx.session.user.id),
-            eq(schema.eventScheduleLinks.training_plan_id, input.training_plan_id),
+            eq(schema.events.training_plan_id, input.training_plan_id),
             eq(schema.events.event_type, plannedEventType),
             gte(schema.events.starts_at, new Date(toDayStartIso(startDateOnly))),
             lt(schema.events.starts_at, new Date(toNextDayStartIso(todayDateOnly))),
