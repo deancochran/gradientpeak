@@ -14,8 +14,8 @@ import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import {
   type ActivityEffortFormInput,
   type ActivityEffortFormValues,
+  activityEffortCategoryOptions,
   activityEffortFormSchema,
-  activityTypeOptions,
 } from "../../lib/activity-route-form-schemas";
 
 type ActivityEffortFormProps = {
@@ -104,7 +104,7 @@ export function ActivityEffortForm({
           control={form.control}
           label="Activity category"
           name="activity_category"
-          options={activityTypeOptions.map((option) => ({ ...option }))}
+          options={activityEffortCategoryOptions.map((option) => ({ ...option }))}
         />
         <FormSegmentedSelectField
           control={form.control}

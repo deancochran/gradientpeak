@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { RecordingServiceActivityPlan } from "./index";
+import { type CanonicalSport, canonicalSportSchema } from "./sport";
 
 export type {
   ActivityPlanStructureV2,
@@ -145,7 +146,7 @@ export const ActivityUploadSchema = z
   .object({
     name: z.string().min(1),
     notes: z.string().optional().nullable(),
-    type: z.enum(["bike", "run", "swim", "strength", "other"]),
+    type: canonicalSportSchema,
     startedAt: z.string(),
     finishedAt: z.string(),
     durationSeconds: z.number().int().min(0),
@@ -179,9 +180,6 @@ export type ActivityUpload = z.infer<typeof ActivityUploadSchema>;
 // ACTIVITY TYPE SCHEMA
 // ==============================
 
-// Import database types
-import type { CanonicalSport } from "./sport";
-
 export type ActivityCategory = CanonicalSport;
 
 // ==============================
@@ -190,7 +188,7 @@ export type ActivityCategory = CanonicalSport;
 
 export const ActivityPayloadSchema = z
   .object({
-    category: z.enum(["run", "bike", "swim", "strength", "other"]),
+    category: canonicalSportSchema,
     gpsRecordingEnabled: z.boolean(),
     eventId: z.string().optional(),
     plan: z.custom<RecordingServiceActivityPlan>().optional(),

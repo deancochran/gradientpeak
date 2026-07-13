@@ -1,4 +1,9 @@
-import { calculateAge, calculateRollingTrainingQuality, getLoadBalanceStatus } from "@repo/core";
+import {
+  calculateAge,
+  calculateRollingTrainingQuality,
+  canonicalSportSchema,
+  getLoadBalanceStatus,
+} from "@repo/core";
 import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core/load";
 import { schema, type TrainingPlanRow } from "@repo/db";
 import { and, asc, eq, gte, isNotNull, sql } from "drizzle-orm";
@@ -102,7 +107,7 @@ const workloadEnvelopeSchema = z
     previous: z.number().optional(),
     identity: z
       .object({
-        sport: z.enum(["run", "bike", "swim", "strength", "other"]),
+        sport: canonicalSportSchema,
         method: z.enum(["power_threshold", "run_pace_threshold", "heart_rate_reserve"]),
         source: z.literal("activity_analysis"),
         version: z.literal("1"),

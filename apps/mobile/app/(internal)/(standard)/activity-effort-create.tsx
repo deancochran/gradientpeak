@@ -1,3 +1,4 @@
+import { activityEffortSportSchema } from "@repo/core";
 import {
   type ActivityEffortCategory,
   type ActivityEffortType,
@@ -31,7 +32,7 @@ import { api } from "@/lib/api";
 import { handleSubmitFormError } from "@/lib/utils/formErrors";
 
 const effortSchema = z.object({
-  activity_category: z.enum(["bike", "run", "swim"]),
+  activity_category: activityEffortSportSchema,
   effort_type: z.enum(["power", "speed"]),
   duration_seconds: z.number().int().positive("Duration must be positive"),
   value: z.number().positive("Value must be positive"),

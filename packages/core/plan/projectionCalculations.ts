@@ -8,7 +8,7 @@ import {
   type AthletePreferenceProfile,
   defaultAthletePreferenceProfile,
 } from "../schemas/settings/profile_settings";
-import type { CanonicalSport } from "../schemas/sport";
+import { type CanonicalSport, canonicalSportValues } from "../schemas/sport";
 import type {
   CreationContextSummary,
   GoalTargetV2,
@@ -3258,7 +3258,7 @@ function buildSportLoadStates(input: {
   ) as ProjectionSport[];
   const sports: ProjectionSport[] = prescribedSports.length
     ? prescribedSports
-    : ["run", "bike", "swim", "strength", "other"];
+    : [...canonicalSportValues];
   const weights = new Map<ProjectionSport, number>(sports.map((sport) => [sport, 0]));
 
   if (input.trainingPrescription) {

@@ -1,3 +1,10 @@
+import {
+  type ActivityEffortSport,
+  activityEffortSportSchema,
+  BestEffortSchema,
+  type CanonicalSport,
+  canonicalSportSchema,
+} from "@repo/core";
 import { z } from "zod";
 
 export const activityTypeOptions = [
@@ -6,7 +13,13 @@ export const activityTypeOptions = [
   { label: "Swim", value: "swim" },
   { label: "Strength", value: "strength" },
   { label: "Other", value: "other" },
-] as const;
+] as const satisfies readonly { label: string; value: CanonicalSport }[];
+
+export const activityEffortCategoryOptions = [
+  { label: "Run", value: "run" },
+  { label: "Ride", value: "bike" },
+  { label: "Swim", value: "swim" },
+] as const satisfies readonly { label: string; value: ActivityEffortSport }[];
 
 export const routeUploadFormSchema = z.object({
   description: z.string(),
@@ -14,13 +27,13 @@ export const routeUploadFormSchema = z.object({
 });
 
 export const activityImportFormSchema = z.object({
-  activityType: z.enum(["run", "bike", "swim", "strength", "other"]),
+  activityType: canonicalSportSchema,
   name: z.string().trim().min(1, "Enter a name for this imported activity."),
   notes: z.string(),
 });
 
-export const activityEffortFormSchema = z.object({
-  activity_category: z.enum(["run", "bike", "swim", "strength", "other"]),
+export const activityEffortFormSchema = BestEffortSchema.extend({
+  activity_category: activityEffortSportSchema,
   duration_seconds: z.coerce.number().int().positive("Duration must be positive."),
   effort_type: z.enum(["power", "speed"]),
   recorded_at: z.string().min(1, "Choose when this effort was recorded."),

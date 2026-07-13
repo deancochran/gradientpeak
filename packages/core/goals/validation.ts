@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { goalTargetSportSchema } from "../schemas/sport";
 import { parseMmSsToSeconds } from "../utils/fitness-inputs";
 import { parseDateOnly, parseDistanceKmToMeters, parseGoalDurationSeconds } from "./parsers";
 import type { GoalTargetForValidation, TrainingPlanFormForValidation } from "./types";
@@ -13,7 +14,7 @@ export const goalTargetValidationSchema = z
   .object({
     id: z.string().min(1),
     targetType: z.enum(["race_performance", "pace_threshold", "power_threshold", "hr_threshold"]),
-    activityCategory: z.enum(["run", "bike", "swim", "other"]).optional(),
+    activityCategory: goalTargetSportSchema.optional(),
     distanceKm: z.string().optional(),
     completionTimeHms: z.string().optional(),
     paceMmSs: z.string().optional(),

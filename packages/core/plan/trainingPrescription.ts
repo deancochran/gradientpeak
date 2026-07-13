@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { ProfileGoal, ProfileGoalTarget } from "../schemas/goals/profile_goals";
 import type { AthletePreferenceProfile } from "../schemas/settings/profile_settings";
-import { type CanonicalSport, canonicalSportSchema } from "../schemas/sport";
+import { type CanonicalSport, canonicalSportSchema, canonicalSportValues } from "../schemas/sport";
 import type { TrainingPlanCreationConfig } from "../schemas/training-plan-structure/creation-config-schemas";
 
 const bounded01Schema = z.number().min(0).max(1);
@@ -798,7 +798,7 @@ export function resolveTrainingPrescription(input: {
     categoryWeights.set("strength", 0.12 + strengthPriority * 0.22);
   }
   const totalWeight = [...categoryWeights.values()].reduce((sum, weight) => sum + weight, 0) || 1;
-  const order: CanonicalSport[] = ["run", "bike", "swim", "strength", "other"];
+  const order = canonicalSportValues;
   const normalized = [...categoryWeights.entries()]
     .map(([category, weight]) => [category, weight / totalWeight] as const)
     .sort((a, b) => b[1] - a[1] || order.indexOf(a[0]) - order.indexOf(b[0]));

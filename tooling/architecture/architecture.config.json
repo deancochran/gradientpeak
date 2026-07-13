@@ -309,8 +309,8 @@
       "id": "activity-category",
       "db": { "file": "packages/db/src/schema/enums.ts", "symbol": "activityCategoryEnum" },
       "core": {
-        "file": "packages/core/schemas/activity_plan_structure.ts",
-        "symbol": "activityCategoryEnum"
+        "file": "packages/core/schemas/sport.ts",
+        "symbol": "canonicalSportSchema"
       }
     },
     {

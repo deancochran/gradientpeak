@@ -8,7 +8,7 @@ import {
   addActivityTargetCompatibilityIssuesToZodContext,
 } from "./activity_target_capabilities";
 import { profileGoalLegacySchema, profileGoalTargetSchema } from "./goals/profile_goals";
-import type { canonicalSportSchema } from "./sport";
+import { canonicalSportSchema } from "./sport";
 import {
   minimalTrainingPlanCreateSchema,
   trainingPlanCreateSchema,
@@ -120,7 +120,7 @@ export * from "./template_library";
 // Note: estimated_duration and estimated_tss are calculated server-side and NOT part of the input
 const activityPlanBaseSchema = z
   .object({
-    activity_category: z.enum(["run", "bike", "swim", "strength", "other"]),
+    activity_category: canonicalSportSchema,
     name: z.string().min(1, "Plan name is required"),
     description: z.string().max(1000).nullable().optional(),
     structure: saveableActivityPlanStructureSchemaV2,

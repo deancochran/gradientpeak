@@ -1,11 +1,12 @@
 import { z } from "zod";
 
 import { recordingCapabilitiesSchema } from "./recording_config";
+import { canonicalSportSchema } from "./sport";
 
 const isoTimestampSchema = z.string().min(1);
 const nullableUuidSchema = z.string().uuid().nullable();
 
-export const recordingActivityCategorySchema = z.enum(["run", "bike", "swim", "strength", "other"]);
+export const recordingActivityCategorySchema = canonicalSportSchema;
 
 export const recordingGpsModeSchema = z.enum(["on", "off"]);
 

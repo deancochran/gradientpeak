@@ -1,6 +1,7 @@
 import { z } from "zod";
+import { canonicalSportSchema } from "../schemas/sport";
 
-export const planningActivityCategorySchema = z.enum(["run", "bike", "swim", "strength", "other"]);
+export const planningActivityCategorySchema = canonicalSportSchema;
 
 export const planningPrimaryFocusSchema = z.enum([
   "rest",

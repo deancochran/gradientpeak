@@ -41,7 +41,10 @@ export const ACTIVITY_CATEGORY_CONFIGS = {
     bgColor: "bg-gray-50",
     borderColor: "border-gray-200",
   },
-} as const;
+} as const satisfies Record<
+  CanonicalSport,
+  { name: string; icon: typeof Activity; color: string; bgColor: string; borderColor: string }
+>;
 
 /**
  * Get activity configuration for category + location

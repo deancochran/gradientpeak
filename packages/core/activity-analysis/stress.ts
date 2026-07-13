@@ -1,7 +1,7 @@
 import type { AggregatedStream } from "../calculations";
 import { calculateHRZones, calculatePowerZones } from "../calculations";
 import { calculateTrainingTSS, getTrainingIntensityZone } from "../load/tss";
-import type { CanonicalSport } from "../schemas/sport";
+import { type CanonicalSport, canonicalSportValues } from "../schemas/sport";
 import type { ActivityDerivedMetrics, ActivityTssIdentity, ActivityZoneEntry } from "./contracts";
 
 export type ActivityAnalysisContext = {
@@ -214,9 +214,9 @@ export function analyzeActivityDerivedMetrics(
     avgSpeed: activity.avg_speed_mps,
     thresholdSpeedMps,
   });
-  const sport = (["run", "bike", "swim", "strength", "other"] as const).find(
-    (candidate) => candidate === activity.type,
-  ) as CanonicalSport | undefined;
+  const sport = canonicalSportValues.find((candidate) => candidate === activity.type) as
+    | CanonicalSport
+    | undefined;
   const method =
     powerIntensityFactor !== null
       ? "power_threshold"

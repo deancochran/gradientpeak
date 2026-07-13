@@ -1,4 +1,5 @@
 import { invalidatePostActivityIngestionQueries } from "@repo/api/client";
+import { type CanonicalSport, canonicalSportSchema } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import {
@@ -29,12 +30,12 @@ const ACTIVITY_TYPES = [
   { value: "swim", label: "Swim" },
   { value: "strength", label: "Strength" },
   { value: "other", label: "Other" },
-] as const;
+] as const satisfies readonly { value: CanonicalSport; label: string }[];
 
 const activityImportSchema = z.object({
   historicalName: z.string().trim().min(1, "Enter a name for this imported activity."),
   historicalNotes: z.string(),
-  historicalActivityType: z.enum(["run", "bike", "swim", "strength", "other"]),
+  historicalActivityType: canonicalSportSchema,
 });
 
 function isActivityParseFailureMessage(message: string) {

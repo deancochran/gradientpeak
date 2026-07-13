@@ -40,14 +40,13 @@
       ]
     },
     "contract-structural-collision": {
-      "count": 16,
+      "count": 15,
       "fingerprints": [
         "00ca6d50a51164a9d627",
         "1410a9f3c186f3d9ebeb",
         "1b3c62254e0ee13e961d",
         "21350c8031f449471401",
         "235bbae0250327b0719b",
-        "27c8059d4a273521318f",
         "38a479917ac938bf0613",
         "3cfbfa6ae4c2338a1eab",
         "4f51c46e30042d7fdc80",

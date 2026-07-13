@@ -4,6 +4,7 @@ import {
   distanceKmToMetersSchema,
   paceMmSsToMpsSchema,
 } from "../schemas/form-schemas";
+import { canonicalSportValues } from "../schemas/sport";
 import {
   type GoalTargetV2,
   type TrainingGoal,
@@ -349,8 +350,11 @@ export function deriveActivityCategoriesFromGoalTargets(
     return ["run"];
   }
 
-  const order = ["run", "bike", "swim", "strength", "other"];
-  return Array.from(categories).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  const order = canonicalSportValues;
+  return Array.from(categories).sort(
+    (a, b) =>
+      order.indexOf(a as (typeof order)[number]) - order.indexOf(b as (typeof order)[number]),
+  );
 }
 
 function getPositiveNumber(value: unknown): number | null {

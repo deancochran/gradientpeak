@@ -3,10 +3,11 @@ import {
   resolveCanonicalThresholds,
   type ThresholdMetricSource,
 } from "../athlete-inputs/canonical-thresholds";
+import { canonicalSportSchema } from "../schemas/sport";
 
 const dateLikeSchema = z.union([z.string(), z.date()]).nullable().optional();
 
-const activityCategorySchema = z.enum(["run", "bike", "swim", "strength", "other"]);
+const activityCategorySchema = canonicalSportSchema;
 const effortTypeSchema = z.enum(["power", "speed"]);
 const genderSchema = z.enum(["male", "female", "other", "prefer_not_to_say"]);
 const preferredUnitsSchema = z.enum(["metric", "imperial"]);

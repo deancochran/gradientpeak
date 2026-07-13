@@ -251,6 +251,23 @@ describe("activityEffortsRouter", () => {
     expect(spies.insert).not.toHaveBeenCalled();
   });
 
+  it("rejects activity categories outside the shared effort subset", async () => {
+    const { caller, spies } = createCaller();
+
+    await expect(
+      caller.create({
+        activity_id: null,
+        activity_category: "strength",
+        duration_seconds: 600,
+        effort_type: "speed",
+        value: 4.2,
+        recorded_at: "2026-03-02T12:34:56.000Z",
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    expect(spies.insert).not.toHaveBeenCalled();
+  });
+
   it("rejects malformed effort rows before returning them", async () => {
     const { caller } = createCaller({
       selectResult: [buildEffortRow({ id: "not-a-uuid" })],

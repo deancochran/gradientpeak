@@ -94,6 +94,42 @@ test("reviewed persistence and platform enum distinctions pass", () => {
   );
 });
 
+test("only imported schema composition is exempt from contract collision detection", () => {
+  const root = resolve(architectureRoot, "fixtures/schema-composition");
+  const config = fixtureConfig({
+    core: { roots: ["core"], packageJson: "core/package.json" },
+    web: { roots: ["web"], packageJson: "web/package.json" },
+  });
+  const { active } = analyzeProject(root, config, [
+    "core/canonical.ts",
+    "core/package.json",
+    "web/contracts.ts",
+    "web/package.json",
+  ]);
+  const structuralCollisions = active.filter(
+    (finding) => finding.category === "contract-structural-collision",
+  );
+
+  assert(
+    structuralCollisions.some((finding) =>
+      finding.details.names.includes("duplicateCategorySchema"),
+    ),
+  );
+  assert(
+    structuralCollisions.some((finding) =>
+      finding.details.names.includes("duplicatePayloadSchema"),
+    ),
+  );
+  assert.equal(
+    structuralCollisions.some(
+      (finding) =>
+        finding.details.names.includes("canonicalCategoryAliasSchema") ||
+        finding.details.names.includes("composedCanonicalPayloadSchema"),
+    ),
+    false,
+  );
+});
+
 test("unsafe production typing ratchets stable fingerprints per file and owner", () => {
   const finding = {
     category: "unsafe-as-any",

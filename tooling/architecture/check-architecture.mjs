@@ -334,11 +334,36 @@ function importedTypeBindings(sourceFile) {
   return names;
 }
 
-function isDerivedOrReplica(node, importedBindings) {
-  if (!ts.isTypeAliasDeclaration(node)) return false;
-  const text = node.type.getText();
-  if (/\bRouter(?:Inputs|Outputs)\b/.test(text)) return true;
-  return ts.isTypeReferenceNode(node.type) && importedBindings.has(node.type.typeName.getText());
+function importedSchemaBindings(sourceFile) {
+  const names = new Set();
+  for (const statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !statement.importClause?.namedBindings) continue;
+    const bindings = statement.importClause.namedBindings;
+    if (!ts.isNamedImports(bindings)) continue;
+    for (const element of bindings.elements) {
+      const importedName = element.propertyName?.text ?? element.name.text;
+      if (/Schema$/.test(importedName)) names.add(element.name.text);
+    }
+  }
+  return names;
+}
+
+function containsImportedSchemaReference(node, schemaBindings) {
+  if (ts.isIdentifier(node)) return schemaBindings.has(node.text);
+  let found = false;
+  ts.forEachChild(node, (child) => {
+    if (!found && containsImportedSchemaReference(child, schemaBindings)) found = true;
+  });
+  return found;
+}
+
+function isDerivedOrReplica(node, importedBindings, schemaBindings, initializer) {
+  if (ts.isTypeAliasDeclaration(node)) {
+    const text = node.type.getText();
+    if (/\bRouter(?:Inputs|Outputs)\b/.test(text)) return true;
+    return ts.isTypeReferenceNode(node.type) && importedBindings.has(node.type.typeName.getText());
+  }
+  return Boolean(initializer && containsImportedSchemaReference(initializer, schemaBindings));
 }
 
 function extractLiteralValues(initializer) {
@@ -370,15 +395,34 @@ function extractLiteralValues(initializer) {
 function symbolValues(root, mapping) {
   const path = resolve(root, mapping.file);
   const sourceFile = sourceFileFor(mapping.file, readFileSync(path, "utf8"));
+  const declarations = new Map();
   for (const statement of sourceFile.statements) {
     if (!ts.isVariableStatement(statement)) continue;
     for (const declaration of statement.declarationList.declarations) {
-      if (ts.isIdentifier(declaration.name) && declaration.name.text === mapping.symbol) {
-        return extractLiteralValues(declaration.initializer);
-      }
+      if (ts.isIdentifier(declaration.name) && declaration.initializer)
+        declarations.set(declaration.name.text, declaration.initializer);
     }
   }
-  return [];
+
+  function resolveLiteralValues(expression, visited = new Set()) {
+    const direct = extractLiteralValues(expression);
+    if (direct.length > 0) return direct;
+    if (ts.isIdentifier(expression) && !visited.has(expression.text)) {
+      visited.add(expression.text);
+      const initializer = declarations.get(expression.text);
+      return initializer ? resolveLiteralValues(initializer, visited) : [];
+    }
+    if (ts.isCallExpression(expression)) {
+      const argument = /(?:pgEnum|\.enum)$/.test(expression.expression.getText())
+        ? expression.arguments[expression.arguments.length - 1]
+        : expression.arguments[0];
+      return argument ? resolveLiteralValues(argument, visited) : [];
+    }
+    return [];
+  }
+
+  const initializer = declarations.get(mapping.symbol);
+  return initializer ? resolveLiteralValues(initializer) : [];
 }
 
 function isTrpcCall(node) {
@@ -627,6 +671,7 @@ export function analyzeProject(root, config, trackedFiles) {
     if (!sourceFile) continue;
     const exportList = exportedLocalNames(sourceFile);
     const importedBindings = importedTypeBindings(sourceFile);
+    const schemaBindings = importedSchemaBindings(sourceFile);
     for (const statement of sourceFile.statements) {
       const exported =
         isExported(statement) ||
@@ -645,7 +690,11 @@ export function analyzeProject(root, config, trackedFiles) {
         const kind = candidate.exported
           ? contractKind(candidate.node, candidate.name, candidate.initializer)
           : undefined;
-        if (kind && candidate.name && !isDerivedOrReplica(candidate.node, importedBindings)) {
+        if (
+          kind &&
+          candidate.name &&
+          !isDerivedOrReplica(candidate.node, importedBindings, schemaBindings, candidate.initializer)
+        ) {
           contracts.push({
             owner,
             path,

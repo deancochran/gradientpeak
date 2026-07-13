@@ -4,6 +4,7 @@ import {
   type ActivityTargetCategory,
   getLegacyActivityTargetCompatibilityIssues,
 } from "./activity_target_capabilities";
+import { canonicalSportSchema } from "./sport";
 
 // ==============================
 // ENUMS
@@ -28,7 +29,7 @@ export const durationUnitEnum = z.enum(["seconds", "minutes", "meters", "km", "r
 
 export const durationTypeEnum = z.enum(["time", "distance", "repetitions"]);
 
-export const activityCategoryEnum = z.enum(["run", "bike", "swim", "strength", "other"]);
+export const activityCategoryEnum = canonicalSportSchema;
 
 // ==============================
 // CONTROL
