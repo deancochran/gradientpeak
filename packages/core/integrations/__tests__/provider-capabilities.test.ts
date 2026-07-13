@@ -3,10 +3,18 @@ import {
   getConfigurableProviderActions,
   getProviderSyncMode,
   getProvidersWithCapability,
+  integrationProviderIdValues,
+  providerCapabilityRegistry,
   providerHasCapability,
 } from "../provider-capabilities";
 
 describe("provider capability registry", () => {
+  it("has one capability definition for every provider ID", () => {
+    expect(providerCapabilityRegistry.map((provider) => provider.id)).toEqual(
+      integrationProviderIdValues,
+    );
+  });
+
   it("marks Wahoo as the MVP file-first activity import provider", () => {
     expect(providerHasCapability("wahoo", "activity_history_read")).toBe(true);
     expect(providerHasCapability("wahoo", "activity_file_download")).toBe(true);

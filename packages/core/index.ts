@@ -239,6 +239,7 @@ export {
 } from "./recording-metrics"; // Live/replay recording metrics accumulator
 export * from "./samples"; // Sample data for testing and development
 export * from "./schemas"; // Zod schemas and types (includes formatDuration for DurationV2)
+export * from "./social"; // Social engagement entity taxonomy
 export * from "./sports"; // Canonical sport registry and heuristics
 export * from "./training-timeline"; // Canonical training timeline read model
 export type { StandardActivity } from "./types/normalization";

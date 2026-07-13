@@ -1,15 +1,16 @@
 import { z } from "zod";
 
-export const integrationProviderIdSchema = z.enum([
+export const integrationProviderIdValues = [
   "wahoo",
   "strava",
   "trainingpeaks",
   "garmin",
   "zwift",
-]);
+] as const;
+export const integrationProviderIdSchema = z.enum(integrationProviderIdValues);
 export type IntegrationProviderId = z.infer<typeof integrationProviderIdSchema>;
 
-export const providerCapabilitySchema = z.enum([
+export const providerCapabilityValues = [
   "profile_enrichment_read",
   "activity_history_read",
   "activity_file_download",
@@ -18,7 +19,8 @@ export const providerCapabilitySchema = z.enum([
   "completed_activity_push",
   "route_push",
   "webhook_activity_updates",
-]);
+] as const;
+export const providerCapabilitySchema = z.enum(providerCapabilityValues);
 export type ProviderCapability = z.infer<typeof providerCapabilitySchema>;
 
 export const providerConfigurableActionSchema = z.enum([
@@ -44,8 +46,8 @@ const automaticSyncCapabilities = [
   "webhook_activity_updates",
 ] as const satisfies readonly ProviderCapability[];
 
-export const providerCapabilityRegistry = [
-  {
+const providerCapabilityMap = {
+  wahoo: {
     id: "wahoo",
     label: "Wahoo",
     capabilities: [
@@ -67,7 +69,7 @@ export const providerCapabilityRegistry = [
       webhook_activity_updates: "automatic",
     },
   },
-  {
+  strava: {
     id: "strava",
     label: "Strava",
     capabilities: ["activity_history_read", "completed_activity_push", "webhook_activity_updates"],
@@ -77,7 +79,7 @@ export const providerCapabilityRegistry = [
       webhook_activity_updates: "automatic",
     },
   },
-  {
+  trainingpeaks: {
     id: "trainingpeaks",
     label: "TrainingPeaks",
     capabilities: ["planned_activity_push"],
@@ -85,7 +87,7 @@ export const providerCapabilityRegistry = [
       planned_activity_push: "automatic",
     },
   },
-  {
+  garmin: {
     id: "garmin",
     label: "Garmin",
     capabilities: ["activity_history_read"],
@@ -93,25 +95,22 @@ export const providerCapabilityRegistry = [
       activity_history_read: "manual",
     },
   },
-  {
+  zwift: {
     id: "zwift",
     label: "Zwift",
     capabilities: [],
     syncModes: {},
   },
-] as const satisfies readonly ProviderCapabilityDefinition[];
+} as const satisfies Record<IntegrationProviderId, ProviderCapabilityDefinition>;
+
+export const providerCapabilityRegistry = integrationProviderIdValues.map(
+  (provider) => providerCapabilityMap[provider],
+) satisfies readonly ProviderCapabilityDefinition[];
 
 export function getProviderCapabilityDefinition(
   provider: IntegrationProviderId,
 ): ProviderCapabilityDefinition {
-  return (
-    providerCapabilityRegistry.find((definition) => definition.id === provider) ?? {
-      id: provider,
-      label: provider,
-      capabilities: [],
-      syncModes: {},
-    }
-  );
+  return providerCapabilityMap[provider];
 }
 
 export function providerHasCapability(

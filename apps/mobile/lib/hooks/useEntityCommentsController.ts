@@ -1,13 +1,7 @@
+import type { SocialCommentEntityType } from "@repo/core";
 import { skipToken } from "@tanstack/react-query";
 import { Alert } from "react-native";
 import { api } from "@/lib/api";
-
-export type SocialCommentEntityType =
-  | "activity"
-  | "training_plan"
-  | "activity_plan"
-  | "route"
-  | "event";
 
 function isValidUuid(value: string): boolean {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

@@ -1,3 +1,4 @@
+import type { SocialCommentEntityType } from "@repo/core";
 import { Avatar, AvatarFallback } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
@@ -9,7 +10,7 @@ import { api } from "../../lib/api/client";
 
 type EntityCommentsCardProps = {
   entityId: string | null | undefined;
-  entityType: "activity" | "route";
+  entityType: Extract<SocialCommentEntityType, "activity" | "route">;
   helperText: string;
   testId: string;
 };

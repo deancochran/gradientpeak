@@ -1,3 +1,4 @@
+import { socialCommentEntityTypeSchema, socialLikeEntityTypeSchema } from "@repo/core";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import {
@@ -18,14 +19,6 @@ import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { indexCursorSchema } from "../utils/index-cursor";
 
-const likeEntityTypeSchema = z.enum(["activity", "training_plan", "activity_plan", "route"]);
-const commentEntityTypeSchema = z.enum([
-  "activity",
-  "training_plan",
-  "activity_plan",
-  "route",
-  "event",
-]);
 const socialGraphInputSchema = z
   .object({
     user_id: z.string().uuid(),
@@ -65,7 +58,9 @@ export const socialRouter = createTRPCRouter({
     ),
 
   toggleLike: protectedProcedure
-    .input(z.object({ entity_id: z.string().uuid(), entity_type: likeEntityTypeSchema }).strict())
+    .input(
+      z.object({ entity_id: z.string().uuid(), entity_type: socialLikeEntityTypeSchema }).strict(),
+    )
     .mutation(({ ctx, input }) =>
       toggleContentLike({
         db: getRequiredDb(ctx),
@@ -138,7 +133,7 @@ export const socialRouter = createTRPCRouter({
       z
         .object({
           entity_id: z.string().uuid(),
-          entity_type: commentEntityTypeSchema,
+          entity_type: socialCommentEntityTypeSchema,
           content: z.string().min(1).max(1000),
         })
         .strict(),
@@ -158,7 +153,7 @@ export const socialRouter = createTRPCRouter({
       z
         .object({
           entity_id: z.string().uuid(),
-          entity_type: commentEntityTypeSchema,
+          entity_type: socialCommentEntityTypeSchema,
           limit: z.number().min(1).max(100).default(20),
           cursor: indexCursorSchema.optional(),
           direction: z.enum(["forward", "backward"]).optional(),

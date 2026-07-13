@@ -1,4 +1,9 @@
 import { randomUUID } from "node:crypto";
+import {
+  type SocialCommentEntityType,
+  type SocialLikeEntityType,
+  socialCommentEntityTypeSchema,
+} from "@repo/core";
 import { activities, events, likes } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, eq, sql } from "drizzle-orm";
@@ -8,21 +13,12 @@ import { createContentAccessPermissions } from "../permissions/content-access";
 import { getSqlCount } from "../utils/sql";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
-export type LikeEntityType = "activity" | "training_plan" | "activity_plan" | "route";
-export type CommentEntityType = LikeEntityType | "event";
-const commentEntityTypeSchema = z.enum([
-  "activity",
-  "training_plan",
-  "activity_plan",
-  "route",
-  "event",
-]);
 const commentInsertRowSchema = z
   .object({
     id: z.string().uuid(),
     profile_id: z.string().uuid(),
     entity_id: z.string().uuid(),
-    entity_type: commentEntityTypeSchema,
+    entity_type: socialCommentEntityTypeSchema,
     content: z.string(),
     created_at: z.union([z.date(), z.string()]),
   })
@@ -46,7 +42,7 @@ function toIsoString(value: Date | string): string {
 export async function canAccessSocialContent(
   db: DbClient,
   entityId: string,
-  entityType: CommentEntityType,
+  entityType: SocialCommentEntityType,
   viewerId: string,
 ) {
   if (entityType === "activity") {
@@ -80,7 +76,7 @@ export async function toggleContentLikeRecord(
   db: DbClient,
   viewerId: string,
   entityId: string,
-  entityType: LikeEntityType,
+  entityType: SocialLikeEntityType,
 ) {
   return db.transaction(async (tx) => {
     await tx.execute(
@@ -114,7 +110,7 @@ export async function toggleContentLikeRecord(
 export async function addContentCommentRecord(
   db: DbClient,
   viewerId: string,
-  input: { entity_id: string; entity_type: CommentEntityType; content: string },
+  input: { entity_id: string; entity_type: SocialCommentEntityType; content: string },
 ) {
   const insertResult = await db.execute(sql`
     insert into comments (profile_id, entity_id, entity_type, content)
@@ -146,7 +142,7 @@ export async function loadContentComments(
   db: DbClient,
   input: {
     entityId: string;
-    entityType: CommentEntityType;
+    entityType: SocialCommentEntityType;
     limit: number;
     offset: number;
   },

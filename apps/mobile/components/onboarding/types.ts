@@ -1,3 +1,4 @@
+import type { IntegrationProviderId } from "@repo/core";
 import type { ComponentType } from "react";
 
 export interface OnboardingData {
@@ -32,7 +33,7 @@ export interface OnboardingData {
 
 export type StepId = "profile" | "connect_import" | "training_baseline" | "summary";
 
-export type IntegrationProvider = "strava" | "wahoo" | "trainingpeaks" | "garmin" | "zwift";
+export type IntegrationProvider = IntegrationProviderId;
 
 export type OnboardingFieldSources = Partial<Record<keyof OnboardingData, string>>;
 

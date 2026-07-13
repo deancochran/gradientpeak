@@ -2,6 +2,7 @@ import {
   estimateConservativeFTPFromWeight,
   estimateMaxHRFromDOB,
   formatWeightForDisplay,
+  getProviderCapabilityDefinition,
 } from "@repo/core";
 import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Button } from "@repo/ui/components/button";
@@ -69,16 +70,8 @@ const INTENT_OPTIONS: Array<{
   },
 ];
 
-const INTEGRATION_PROVIDER_LABELS: Record<IntegrationProvider, string> = {
-  garmin: "Garmin",
-  strava: "Strava",
-  trainingpeaks: "TrainingPeaks",
-  wahoo: "Wahoo",
-  zwift: "Zwift",
-};
-
 function getIntegrationProviderMetadata(provider: IntegrationProvider) {
-  return { label: INTEGRATION_PROVIDER_LABELS[provider] };
+  return { label: getProviderCapabilityDefinition(provider).label };
 }
 
 function getMobileRedirectUri(): string {
