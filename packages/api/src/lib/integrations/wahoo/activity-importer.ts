@@ -12,7 +12,6 @@ import type { ActivityType } from "./activity-type-utils";
 import type { WahooWorkoutSummary } from "./client";
 
 interface WahooRepository {
-  createImportedActivity(input: ImportedActivityCreateInput): Promise<{ id: string }>;
   findImportedActivityLinkByExternalId(input: {
     externalId: string;
     integrationId: string;
@@ -37,6 +36,23 @@ interface WahooRepository {
     externalId: string,
   ): Promise<{ integrationId: string; profileId: string } | null>;
   getEventActivityPlanId(input: { eventId: string; profileId: string }): Promise<string | null>;
+}
+
+const EXPECTED_PROVIDER_UNIQUE_CONSTRAINTS = new Set([
+  "idx_activity_imports_external_unique",
+  "integration_resource_links_external_unique",
+]);
+
+function isExpectedProviderUniqueViolation(error: unknown): boolean {
+  let candidate: unknown = error;
+  for (let depth = 0; depth < 3 && candidate && typeof candidate === "object"; depth += 1) {
+    const record = candidate as { code?: unknown; constraint?: unknown; cause?: unknown };
+    if (record.code === "23505" && typeof record.constraint === "string") {
+      return EXPECTED_PROVIDER_UNIQUE_CONSTRAINTS.has(record.constraint);
+    }
+    candidate = record.cause;
+  }
+  return false;
 }
 
 // Wahoo workout type mapping to GradientPeak activity categories
@@ -76,6 +92,7 @@ export class WahooActivityImporter {
       activityFileStorage: WahooActivityImportFileStorage;
       activityFileParser?: WahooActivityFileParser;
       repository: WahooRepository;
+      submitActivity(input: ImportedActivityCreateInput): Promise<{ id: string }>;
     },
   ) {}
 
@@ -124,16 +141,21 @@ export class WahooActivityImporter {
       });
 
       if (existingImport) {
-        if (existingImport.profileId === integration.profileId) {
-          await this.deps.repository.createImportedActivityResourceLink({
-            activityId: existingImport.activityId,
-            externalId: summary.id.toString(),
-            integrationId: integration.integrationId,
-            profileId: integration.profileId,
-            provider: "wahoo",
-            providerUpdatedAt: summary.updated_at ?? summary.created_at ?? null,
-          });
+        if (existingImport.profileId !== integration.profileId) {
+          return {
+            success: false,
+            error: "Provider activity identity is owned by another profile",
+          };
         }
+
+        await this.deps.repository.createImportedActivityResourceLink({
+          activityId: existingImport.activityId,
+          externalId: summary.id.toString(),
+          integrationId: integration.integrationId,
+          profileId: integration.profileId,
+          provider: "wahoo",
+          providerUpdatedAt: summary.updated_at ?? summary.created_at ?? null,
+        });
 
         console.log(`Activity ${summary.id} already imported, skipping`);
         return {
@@ -215,10 +237,46 @@ export class WahooActivityImporter {
       });
 
       // 7. Create activity
-      let newActivity;
+      let newActivity: { id: string };
       try {
-        newActivity = await this.deps.repository.createImportedActivity(activity);
+        newActivity = await this.deps.submitActivity(activity);
       } catch (insertError) {
+        if (!isExpectedProviderUniqueViolation(insertError)) {
+          console.error("Failed to import Wahoo activity:", insertError);
+          return {
+            success: false,
+            error: `Database error: ${insertError instanceof Error ? insertError.message : String(insertError)}`,
+          };
+        }
+        // The provider/external-id constraint is the race-safe idempotency authority.
+        // A concurrent importer may have committed after our preflight lookup.
+        const concurrentImport =
+          await this.deps.repository.findImportedActivityByProviderExternalId({
+            externalId: summary.id.toString(),
+            provider: "wahoo",
+          });
+        if (concurrentImport?.profileId === integration.profileId) {
+          await this.deps.repository.createImportedActivityResourceLink({
+            activityId: concurrentImport.activityId,
+            externalId: summary.id.toString(),
+            integrationId: integration.integrationId,
+            profileId: integration.profileId,
+            provider: "wahoo",
+            providerUpdatedAt: summary.updated_at ?? summary.created_at ?? null,
+          });
+          return {
+            success: true,
+            skipped: true,
+            reason: "Activity already imported",
+            activityId: concurrentImport.activityId,
+          };
+        }
+        if (concurrentImport) {
+          return {
+            success: false,
+            error: "Provider activity identity is owned by another profile",
+          };
+        }
         console.error("Failed to import Wahoo activity:", insertError);
         return {
           success: false,
@@ -374,6 +432,7 @@ export function createActivityImporter(deps: {
   activityFileStorage: WahooActivityImportFileStorage;
   activityFileParser?: WahooActivityFileParser;
   repository: WahooRepository;
+  submitActivity(input: ImportedActivityCreateInput): Promise<{ id: string }>;
 }) {
   return new WahooActivityImporter(deps);
 }

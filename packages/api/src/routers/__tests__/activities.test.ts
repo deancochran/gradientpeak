@@ -1,6 +1,10 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("node:crypto", () => ({
+  randomUUID: () => "33333333-3333-4333-8333-333333333333",
+}));
+
 const pgDialect = new PgDialect();
 
 const mockActivityAnalysis = vi.hoisted(() => ({
@@ -705,6 +709,16 @@ describe("activitiesRouter", () => {
         activities: [createdActivity],
         activity_file_ingestions: [ingestion],
       },
+      queryActivitiesFindFirst: [createdActivity],
+      queryActivitySummariesFindFirst: [
+        buildActivitySummaryRow({
+          activity_id: ACTIVITY_ID,
+          duration_seconds: 3600,
+          moving_seconds: 3500,
+          distance_meters: 10000,
+          calories: 640,
+        }),
+      ],
     });
 
     const caller = createCaller(db);

@@ -474,6 +474,7 @@ describe("activityFilesRouter", () => {
         [processingIngestion],
         [{ value: "168" }],
         [{ value: "52" }],
+        [activity],
         [processingIngestion],
         [readyIngestion],
       ],

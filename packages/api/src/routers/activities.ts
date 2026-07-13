@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import {
   ActivityUploadSchema,
   activityDerivedMetricsSchema,
@@ -25,6 +24,7 @@ import {
   listActivitiesForProfile,
   mergeActivitySummary,
 } from "../application/activities/activity-reads";
+import { submitActivity } from "../application/activities/submit-activity";
 import { createActivityFileIngestion } from "../application/activity-file-ingestion/ingestion-state";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
@@ -161,8 +161,6 @@ const _totalRowSchema = z.object({ total: z.union([z.number(), z.string()]) }).s
 
 const _likeRowSchema = z.object({ entity_id: z.string().uuid() }).strict();
 
-const insertedActivityIdRowSchema = z.object({ id: z.string().uuid() }).strict();
-
 function parseActivityRow(value: unknown) {
   return activityRowSchema.parse(value);
 }
@@ -238,41 +236,39 @@ export const activitiesRouter = createTRPCRouter({
       linkedActivityPlanId = linkedEvent.activity_plan_id;
     }
 
-    const createdActivityId = await db.transaction(async (tx) => {
-      const now = new Date();
-      const [activity] = await tx
-        .insert(activities)
-        .values({
-          id: randomUUID(),
-          profile_id: input.profile_id,
-          activity_plan_id: linkedActivityPlanId,
-          name: input.name,
-          notes: input.notes ?? null,
-          type: input.type,
-          started_at: new Date(input.startedAt),
-          finished_at: new Date(input.finishedAt),
-          is_private: false,
-          created_at: now,
-          updated_at: now,
-        })
-        .returning({ id: activities.id });
-
-      if (!activity) {
-        throw new Error("Failed to create activity");
-      }
-
-      await tx.insert(activitySummaries).values({
-        activity_id: activity.id,
-        profile_id: input.profile_id,
-        duration_seconds,
-        moving_seconds: input.movingSeconds,
-        distance_meters: input.distanceMeters,
-        normalized_power: input.metrics.normalized_power ?? null,
-        created_at: now,
-        updated_at: now,
-      });
-
-      return insertedActivityIdRowSchema.parse(activity).id;
+    const { id: createdActivityId } = await submitActivity(db, {
+      profileId: input.profile_id,
+      activityPlanId: linkedActivityPlanId,
+      name: input.name,
+      notes: input.notes ?? null,
+      activityType: input.type,
+      isPrivate: false,
+      startedAt: new Date(input.startedAt),
+      finishedAt: new Date(input.finishedAt),
+      durationSeconds: duration_seconds,
+      movingSeconds: input.movingSeconds,
+      distanceMeters: input.distanceMeters,
+      calories: null,
+      elevationGainMeters: null,
+      avgHeartRate: null,
+      maxHeartRate: null,
+      avgPower: null,
+      maxPower: null,
+      normalizedPower: input.metrics.normalized_power ?? null,
+      avgCadence: null,
+      maxCadence: null,
+      avgSpeedMps: null,
+      maxSpeedMps: null,
+      normalizedSpeedMps: null,
+      normalizedGradedSpeedMps: null,
+      efficiencyFactor: null,
+      aerobicDecoupling: null,
+      avgTemperature: null,
+      deviceManufacturer: null,
+      deviceProduct: null,
+      laps: null,
+      mapBounds: null,
+      polyline: null,
     });
 
     const createdActivity = await db.query.activities.findFirst({
@@ -315,87 +311,69 @@ export const activitiesRouter = createTRPCRouter({
         });
       }
 
-      const created = await db.transaction(async (tx) => {
-        const now = new Date();
-        const [activity] = await tx
-          .insert(activities)
-          .values({
-            id: randomUUID(),
-            profile_id: input.profileId,
-            activity_plan_id: input.activityPlanId ?? null,
-            name: input.name,
-            notes: input.notes ?? null,
-            type: input.activityType,
-            started_at: new Date(input.startedAt),
-            finished_at: new Date(input.finishedAt),
-            is_private: input.is_private ?? true,
-            created_at: now,
-            updated_at: now,
-          })
-          .returning();
-
-        if (!activity) {
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Failed to create activity",
-          });
-        }
-
-        const summary = {
-          activity_id: activity.id,
-          profile_id: input.profileId,
-          duration_seconds: input.durationSeconds,
-          moving_seconds: input.movingSeconds,
-          distance_meters: input.distanceMeters,
-          elevation_gain_meters: null,
-          elevation_loss_meters: null,
-          calories: input.calories ?? null,
-          avg_heart_rate: null,
-          max_heart_rate: null,
-          avg_power: null,
-          max_power: null,
-          normalized_power: null,
-          avg_cadence: null,
-          max_cadence: null,
-          avg_speed_mps: null,
-          max_speed_mps: null,
-          normalized_speed_mps: null,
-          normalized_graded_speed_mps: null,
-          avg_temperature: null,
-          avg_swolf: null,
-          efficiency_factor: null,
-          aerobic_decoupling: null,
-          pool_length: null,
-          total_strokes: null,
-          created_at: now,
-          updated_at: now,
-        };
-
-        await tx.insert(activitySummaries).values(summary);
-
-        const ingestion = await createActivityFileIngestion(tx, {
-          activityId: activity.id,
-          profileId: input.profileId,
-          source: input.source,
-          filePath: null,
-          fileSize: input.localFileMetadata?.fileSize ?? null,
-          fileType: input.localFileMetadata?.fileType ?? null,
-          now,
-        });
-
-        return {
-          activity,
-          summary,
-          ingestion,
-        };
+      const created = await submitActivity(db, {
+        profileId: input.profileId,
+        activityPlanId: input.activityPlanId ?? null,
+        name: input.name,
+        notes: input.notes ?? null,
+        activityType: input.activityType,
+        isPrivate: input.is_private ?? true,
+        startedAt: new Date(input.startedAt),
+        finishedAt: new Date(input.finishedAt),
+        durationSeconds: input.durationSeconds,
+        movingSeconds: input.movingSeconds,
+        distanceMeters: input.distanceMeters,
+        calories: input.calories ?? null,
+        elevationGainMeters: null,
+        avgHeartRate: null,
+        maxHeartRate: null,
+        avgPower: null,
+        maxPower: null,
+        normalizedPower: null,
+        avgCadence: null,
+        maxCadence: null,
+        avgSpeedMps: null,
+        maxSpeedMps: null,
+        normalizedSpeedMps: null,
+        normalizedGradedSpeedMps: null,
+        efficiencyFactor: null,
+        aerobicDecoupling: null,
+        avgTemperature: null,
+        deviceManufacturer: null,
+        deviceProduct: null,
+        laps: null,
+        mapBounds: null,
+        polyline: null,
+        composition: {
+          persist: async (tx, { activityId, now }) =>
+            createActivityFileIngestion(tx, {
+              activityId,
+              profileId: input.profileId,
+              source: input.source,
+              filePath: null,
+              fileSize: input.localFileMetadata?.fileSize ?? null,
+              fileType: input.localFileMetadata?.fileType ?? null,
+              now,
+            }),
+        },
       });
 
-      const data = parseActivityRow(
-        mergeActivitySummary(
-          created.activity,
-          created.summary as typeof activitySummaries.$inferSelect,
-        ),
-      );
+      const activity = await db.query.activities.findFirst({
+        where: eq(activities.id, created.id),
+      });
+      const summary = await db.query.activitySummaries.findFirst({
+        where: eq(activitySummaries.activity_id, created.id),
+      });
+      if (!activity || !summary || !created.compositionResult)
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to load created activity",
+        });
+      const ingestion = created.compositionResult as Awaited<
+        ReturnType<typeof createActivityFileIngestion>
+      >;
+
+      const data = parseActivityRow(mergeActivitySummary(activity, summary));
 
       await markProfileAnalysisDirty(db, {
         profileId: ctx.session.user.id,
@@ -406,9 +384,9 @@ export const activitiesRouter = createTRPCRouter({
       return {
         ...data,
         ingestion: {
-          id: created.ingestion.id,
-          status: created.ingestion.status,
-          source: created.ingestion.source,
+          id: ingestion.id,
+          status: ingestion.status,
+          source: ingestion.source,
         },
       };
     }),

@@ -4,6 +4,7 @@ import {
   createWahooImportActivityFileStorage,
   createWahooRepository,
   createWahooRouteStorage,
+  submitActivity,
   WahooActivityHistoryJobService,
   WahooSyncJobService,
   WahooSyncService,
@@ -22,6 +23,37 @@ export function createWahooSyncRuntime() {
   const providerSyncRepository = createProviderSyncRepository({ db });
   const importer = createActivityImporter({
     repository: wahooRepository,
+    submitActivity: (input) =>
+      submitActivity(db, {
+        ...input,
+        notes: null,
+        activityType: input.type,
+        isPrivate: false,
+        startedAt: new Date(input.startedAt),
+        finishedAt: new Date(input.finishedAt),
+        importSource: null,
+        importFileType: "fit",
+        importOriginalFileName: null,
+        maxHeartRate: null,
+        maxPower: null,
+        maxCadence: null,
+        maxSpeedMps: null,
+        normalizedSpeedMps: null,
+        normalizedGradedSpeedMps: null,
+        efficiencyFactor: null,
+        aerobicDecoupling: null,
+        avgTemperature: null,
+        deviceManufacturer: null,
+        deviceProduct: null,
+        laps: null,
+        mapBounds: null,
+        providerProvenance: {
+          provider: input.provider,
+          externalId: input.externalId,
+          integrationId: input.integrationId,
+          providerUpdatedAt: input.providerUpdatedAt,
+        },
+      }),
     activityFileStorage: createWahooImportActivityFileStorage({
       async uploadActivityFile(input) {
         const { error: bucketError } = await supabase.storage.createBucket("activity-files", {

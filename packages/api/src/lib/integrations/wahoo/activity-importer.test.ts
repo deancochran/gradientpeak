@@ -38,7 +38,7 @@ function createSummary(overrides: Partial<WahooWorkoutSummary> = {}): WahooWorko
 
 function createRepositoryMock() {
   return {
-    createImportedActivity: vi.fn().mockResolvedValue({ id: "activity-1" }),
+    submitActivity: vi.fn().mockResolvedValue({ id: "activity-1" }),
     createImportedActivityResourceLink: vi.fn().mockResolvedValue(undefined),
     findImportedActivityByProviderExternalId: vi.fn().mockResolvedValue(null),
     findImportedActivityLinkByExternalId: vi.fn().mockResolvedValue(null),
@@ -74,7 +74,11 @@ describe("activity-importer", () => {
     const repository = createRepositoryMock();
     repository.findWahooIntegrationByExternalId.mockResolvedValueOnce(null);
     const activityFileStorage = { uploadActivityFile: vi.fn() };
-    const importer = createActivityImporter({ activityFileStorage, repository });
+    const importer = createActivityImporter({
+      activityFileStorage,
+      repository,
+      submitActivity: repository.submitActivity,
+    });
 
     await expect(importer.importWorkoutSummary(77, createSummary())).resolves.toEqual({
       success: false,
@@ -82,7 +86,7 @@ describe("activity-importer", () => {
     });
 
     expect(repository.findImportedActivityLinkByExternalId).not.toHaveBeenCalled();
-    expect(repository.createImportedActivity).not.toHaveBeenCalled();
+    expect(repository.submitActivity).not.toHaveBeenCalled();
     expect(activityFileStorage.uploadActivityFile).not.toHaveBeenCalled();
   });
 
@@ -93,7 +97,11 @@ describe("activity-importer", () => {
       linkId: "link-1",
     });
     const activityFileStorage = { uploadActivityFile: vi.fn() };
-    const importer = createActivityImporter({ activityFileStorage, repository });
+    const importer = createActivityImporter({
+      activityFileStorage,
+      repository,
+      submitActivity: repository.submitActivity,
+    });
 
     await expect(importer.importWorkoutSummary(77, createSummary())).resolves.toEqual({
       success: true,
@@ -108,7 +116,7 @@ describe("activity-importer", () => {
     });
     expect(repository.findImportedActivityByProviderExternalId).not.toHaveBeenCalled();
     expect(repository.findLinkedPlannedEventId).not.toHaveBeenCalled();
-    expect(repository.createImportedActivity).not.toHaveBeenCalled();
+    expect(repository.submitActivity).not.toHaveBeenCalled();
     expect(activityFileStorage.uploadActivityFile).not.toHaveBeenCalled();
   });
 
@@ -119,7 +127,11 @@ describe("activity-importer", () => {
       profileId: "profile-1",
     });
     const activityFileStorage = { uploadActivityFile: vi.fn() };
-    const importer = createActivityImporter({ activityFileStorage, repository });
+    const importer = createActivityImporter({
+      activityFileStorage,
+      repository,
+      submitActivity: repository.submitActivity,
+    });
 
     await expect(importer.importWorkoutSummary(77, createSummary())).resolves.toEqual({
       success: true,
@@ -137,28 +149,32 @@ describe("activity-importer", () => {
       providerUpdatedAt: "2026-04-03T11:05:00.000Z",
     });
     expect(repository.findLinkedPlannedEventId).not.toHaveBeenCalled();
-    expect(repository.createImportedActivity).not.toHaveBeenCalled();
+    expect(repository.submitActivity).not.toHaveBeenCalled();
     expect(activityFileStorage.uploadActivityFile).not.toHaveBeenCalled();
   });
 
-  it("skips a cross-profile existing import without creating a resource link", async () => {
+  it("fails a cross-profile provider identity collision without disclosing its activity ID", async () => {
     const repository = createRepositoryMock();
     repository.findImportedActivityByProviderExternalId.mockResolvedValueOnce({
       activityId: "existing-activity",
       profileId: "other-profile",
     });
     const activityFileStorage = { uploadActivityFile: vi.fn() };
-    const importer = createActivityImporter({ activityFileStorage, repository });
-
-    await expect(importer.importWorkoutSummary(77, createSummary())).resolves.toEqual({
-      success: true,
-      skipped: true,
-      reason: "Activity already imported",
-      activityId: "existing-activity",
+    const importer = createActivityImporter({
+      activityFileStorage,
+      repository,
+      submitActivity: repository.submitActivity,
     });
 
+    const result = await importer.importWorkoutSummary(77, createSummary());
+    expect(result).toEqual({
+      success: false,
+      error: "Provider activity identity is owned by another profile",
+    });
+    expect(result).not.toHaveProperty("activityId");
+
     expect(repository.createImportedActivityResourceLink).not.toHaveBeenCalled();
-    expect(repository.createImportedActivity).not.toHaveBeenCalled();
+    expect(repository.submitActivity).not.toHaveBeenCalled();
     expect(activityFileStorage.uploadActivityFile).not.toHaveBeenCalled();
   });
 
@@ -166,9 +182,13 @@ describe("activity-importer", () => {
     const repository = createRepositoryMock();
     repository.findLinkedPlannedEventId.mockResolvedValueOnce("event-1");
     repository.getEventActivityPlanId.mockResolvedValueOnce("plan-1");
-    repository.createImportedActivity.mockResolvedValueOnce({ id: "activity-99" });
+    repository.submitActivity.mockResolvedValueOnce({ id: "activity-99" });
     const activityFileStorage = { uploadActivityFile: vi.fn().mockResolvedValue(undefined) };
-    const importer = createActivityImporter({ activityFileStorage, repository });
+    const importer = createActivityImporter({
+      activityFileStorage,
+      repository,
+      submitActivity: repository.submitActivity,
+    });
     const fitBytes = new TextEncoder().encode("fit-binary-data");
     fetchMock.mockResolvedValueOnce({
       ok: true,
@@ -189,7 +209,7 @@ describe("activity-importer", () => {
       contentType: "application/octet-stream",
       path: "activities/profile-1/providers/wahoo/123.fit",
     });
-    expect(repository.createImportedActivity).toHaveBeenCalledWith({
+    expect(repository.submitActivity).toHaveBeenCalledWith({
       integrationId: "integration-1",
       profileId: "profile-1",
       provider: "wahoo",
@@ -253,6 +273,7 @@ describe("activity-importer", () => {
       activityFileStorage,
       activityFileParser,
       repository,
+      submitActivity: repository.submitActivity,
     });
     const fitBytes = new TextEncoder().encode("fit-binary-data");
     fetchMock.mockResolvedValueOnce({
@@ -268,7 +289,7 @@ describe("activity-importer", () => {
       bytes: fitBytes,
       fileName: "activities/profile-1/providers/wahoo/123.fit",
     });
-    expect(repository.createImportedActivity).toHaveBeenCalledWith(
+    expect(repository.submitActivity).toHaveBeenCalledWith(
       expect.objectContaining({
         startedAt: "2026-04-03T09:30:00.000Z",
         finishedAt: "2026-04-03T10:25:00.000Z",
@@ -293,7 +314,11 @@ describe("activity-importer", () => {
     const activityFileStorage = {
       uploadActivityFile: vi.fn().mockRejectedValue(new Error("storage offline")),
     };
-    const importer = createActivityImporter({ activityFileStorage, repository });
+    const importer = createActivityImporter({
+      activityFileStorage,
+      repository,
+      submitActivity: repository.submitActivity,
+    });
     const fitBytes = new TextEncoder().encode("fit-binary-data");
     fetchMock.mockResolvedValueOnce({
       ok: true,
@@ -305,7 +330,74 @@ describe("activity-importer", () => {
       error: "Failed to fetch/store Wahoo FIT file for summary 123",
     });
 
-    expect(repository.createImportedActivity).not.toHaveBeenCalled();
+    expect(repository.submitActivity).not.toHaveBeenCalled();
+  });
+
+  it("resolves a provider uniqueness race to the existing activity and repairs its link", async () => {
+    const repository = createRepositoryMock();
+    repository.submitActivity.mockRejectedValueOnce(
+      Object.assign(new Error("duplicate key"), {
+        code: "23505",
+        constraint: "idx_activity_imports_external_unique",
+      }),
+    );
+    repository.findImportedActivityByProviderExternalId
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ activityId: "concurrent-activity", profileId: "profile-1" });
+    const activityFileStorage = { uploadActivityFile: vi.fn().mockResolvedValue(undefined) };
+    const importer = createActivityImporter({
+      activityFileStorage,
+      repository,
+      submitActivity: repository.submitActivity,
+    });
+    const fitBytes = new TextEncoder().encode("fit-binary-data");
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      arrayBuffer: async () => fitBytes.buffer,
+    } as Response);
+
+    await expect(importer.importWorkoutSummary(77, createSummary())).resolves.toEqual({
+      success: true,
+      skipped: true,
+      reason: "Activity already imported",
+      activityId: "concurrent-activity",
+    });
+    expect(repository.submitActivity).toHaveBeenCalledOnce();
+    expect(repository.createImportedActivityResourceLink).toHaveBeenCalledWith({
+      activityId: "concurrent-activity",
+      externalId: "123",
+      integrationId: "integration-1",
+      profileId: "profile-1",
+      provider: "wahoo",
+      providerUpdatedAt: "2026-04-03T11:05:00.000Z",
+    });
+  });
+
+  it("does not treat an unrelated submission failure as a recoverable race", async () => {
+    const repository = createRepositoryMock();
+    repository.submitActivity.mockRejectedValueOnce(
+      Object.assign(new Error("connection lost"), {
+        code: "08006",
+      }),
+    );
+    repository.findImportedActivityByProviderExternalId
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ activityId: "existing-activity", profileId: "profile-1" });
+    const activityFileStorage = { uploadActivityFile: vi.fn().mockResolvedValue(undefined) };
+    const importer = createActivityImporter({
+      activityFileStorage,
+      repository,
+      submitActivity: repository.submitActivity,
+    });
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      arrayBuffer: async () => new TextEncoder().encode("fit-binary-data").buffer,
+    } as Response);
+
+    const result = await importer.importWorkoutSummary(77, createSummary());
+    expect(result).toEqual({ success: false, error: "Database error: connection lost" });
+    expect(repository.findImportedActivityByProviderExternalId).toHaveBeenCalledOnce();
+    expect(repository.createImportedActivityResourceLink).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -314,7 +406,11 @@ describe("activity-importer", () => {
   ])("falls back to other for $label", async ({ workout }) => {
     const repository = createRepositoryMock();
     const activityFileStorage = { uploadActivityFile: vi.fn() };
-    const importer = createActivityImporter({ activityFileStorage, repository });
+    const importer = createActivityImporter({
+      activityFileStorage,
+      repository,
+      submitActivity: repository.submitActivity,
+    });
     const fitBytes = new TextEncoder().encode("fit-binary-data");
     fetchMock.mockResolvedValue({
       ok: true,
@@ -330,7 +426,7 @@ describe("activity-importer", () => {
       ),
     ).resolves.toMatchObject({ success: true });
 
-    expect(repository.createImportedActivity).toHaveBeenCalledWith(
+    expect(repository.submitActivity).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "other",
         name: "other Activity",
@@ -344,7 +440,11 @@ describe("activity-importer", () => {
 
     const repository = createRepositoryMock();
     const activityFileStorage = { uploadActivityFile: vi.fn() };
-    const importer = createActivityImporter({ activityFileStorage, repository });
+    const importer = createActivityImporter({
+      activityFileStorage,
+      repository,
+      submitActivity: repository.submitActivity,
+    });
     const fitBytes = new TextEncoder().encode("fit-binary-data");
     fetchMock.mockResolvedValueOnce({
       ok: true,
@@ -361,7 +461,7 @@ describe("activity-importer", () => {
       ),
     ).resolves.toMatchObject({ success: true });
 
-    expect(repository.createImportedActivity).toHaveBeenCalledWith(
+    expect(repository.submitActivity).toHaveBeenCalledWith(
       expect.objectContaining({
         startedAt: "2026-04-03T11:45:00.000Z",
         finishedAt: "2026-04-03T12:00:00.000Z",

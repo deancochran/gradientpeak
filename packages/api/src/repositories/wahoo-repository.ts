@@ -61,31 +61,6 @@ export interface WahooRepository {
     externalWorkoutId: string;
   }): Promise<string | null>;
   getEventActivityPlanId(input: { eventId: string; profileId: string }): Promise<string | null>;
-  createImportedActivity(input: {
-    activityPlanId: string | null;
-    avgCadence: number | null;
-    avgHeartRate: number | null;
-    avgPower: number | null;
-    avgSpeedMps: number | null;
-    calories: number | null;
-    distanceMeters: number;
-    durationSeconds: number;
-    elevationGainMeters: number | null;
-    externalId: string;
-    finishedAt: string;
-    activityFilePath: string;
-    activityFileSize: number;
-    integrationId: string;
-    movingSeconds: number;
-    name: string;
-    normalizedPower: number | null;
-    polyline: string | null;
-    profileId: string;
-    providerUpdatedAt: string | null;
-    provider: "wahoo";
-    startedAt: string;
-    type: string;
-  }): Promise<{ id: string }>;
   getEventResourceLink(input: {
     eventId: string;
     profileId: string;
