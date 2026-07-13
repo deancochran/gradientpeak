@@ -915,6 +915,7 @@ export const activityFileIngestions = pgTable(
       sql`${table.file_size} is null or ${table.file_size} >= 0`,
     ),
     check("activity_file_ingestions_attempt_count_check", sql`${table.attempt_count} >= 0`),
+    index("idx_activity_file_ingestions_activity_profile").on(table.activity_id, table.profile_id),
     index("idx_activity_file_ingestions_activity_id").on(table.activity_id),
     index("idx_activity_file_ingestions_profile_id").on(table.profile_id),
     index("idx_activity_file_ingestions_status").on(table.status),

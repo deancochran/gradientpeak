@@ -218,6 +218,20 @@
       "when": 1784376180000,
       "tag": "0031_add_auth_updated_at_defaults",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1784376240000,
+      "tag": "0032_restore_public_table_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1784376300000,
+      "tag": "0033_add_activity_file_ingestion_fk_index",
+      "breakpoints": true
     }
   ]
 }
