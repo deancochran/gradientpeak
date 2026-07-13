@@ -1,11 +1,11 @@
+import type { CanonicalSport } from "../schemas/sport";
+import type { MinimalTrainingPlanCreate } from "../schemas/training_plan_structure";
 import {
+  parseDateOnly,
   parseDistanceKmToMeters,
   parseHmsToSeconds,
   parseMmSsToSeconds,
-} from "../forms/input-parsers";
-import type { CanonicalSport } from "../schemas/sport";
-import type { MinimalTrainingPlanCreate } from "../schemas/training_plan_structure";
-import { parseDateOnly } from "../utils/fitness-inputs";
+} from "../utils/fitness-inputs";
 import { canonicalizeMinimalTrainingPlanCreate } from "./canonicalization";
 
 export type PreviewGoalTargetInput = {

@@ -138,19 +138,15 @@ describe("athlete intelligence developer vocabulary", () => {
     expect(physicalDimensionSchema.safeParse("generic_score").success).toBe(false);
   });
 
-  it("keeps canonical evidence, model, policy, and projection exports separate from legacy APIs", () => {
+  it("exports only canonical evidence, model, policy, and projection APIs", () => {
     expect(canonical).toMatchObject({
       athleteIntelligenceModelInputSchema: expect.anything(),
       evidenceItemSchema: expect.anything(),
       calculateGoalDemandV1: expect.any(Function),
       assembleWholeAthleteProjectionV1: expect.any(Function),
-      legacy: expect.any(Object),
     });
+    expect(canonical).not.toHaveProperty("legacy");
     expect(canonical).not.toHaveProperty("evaluateGoalGaps");
     expect(canonical).not.toHaveProperty("deriveGoalRequirementSet");
-    expect(canonical.legacy).toMatchObject({
-      evaluateGoalGaps: expect.any(Function),
-      deriveGoalRequirementSet: expect.any(Function),
-    });
   });
 });

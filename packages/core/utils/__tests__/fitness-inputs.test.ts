@@ -1,5 +1,3 @@
-import { describe, expect, it } from "vitest";
-
 import {
   clampInteger,
   clampNumber,
@@ -22,7 +20,8 @@ import {
   parseMmSsToSeconds,
   parseNumberOrUndefined,
   roundToDecimals,
-} from "../fitness-inputs";
+} from "@repo/core/utils/fitness-inputs";
+import { describe, expect, it } from "vitest";
 
 describe("fitness input utilities", () => {
   it("parses bounded numbers and integers", () => {

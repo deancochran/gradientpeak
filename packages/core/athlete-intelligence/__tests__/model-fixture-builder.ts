@@ -13,7 +13,6 @@ type ModelSlice =
   | "goals"
   | "trainingContext"
   | "readCoverage"
-  | "scheduleReadState"
   | "plannedSchedule";
 
 /** Typed slice replacements for Core tests; callers must explicitly replace complete slices. */
@@ -264,7 +263,6 @@ export function buildAthleteIntelligenceModel(
       efforts: { state: "complete", reason: null },
       schedules: { state: "complete", reason: null },
     },
-    scheduleReadState: "complete",
     plannedSchedule: [],
     ...overrides,
   });

@@ -117,6 +117,7 @@
     "./hooks": "./src/hooks/index.ts",
     "./lib": "./src/lib/index.ts",
     "./lib/cn": "./src/lib/cn.ts",
+    "./lib/fitness-inputs": "./src/lib/fitness-inputs.ts",
     "./lib/*": "./src/lib/*.ts",
     "./registry": "./src/registry/index.ts",
     "./test/react-native": "./src/test/react-native.tsx",

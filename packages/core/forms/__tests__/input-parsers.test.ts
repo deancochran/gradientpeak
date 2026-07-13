@@ -1,3 +1,4 @@
+import { parseHmsToSeconds as parseCanonicalHms } from "@repo/core/utils/fitness-inputs";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -14,6 +15,10 @@ import {
 } from "../input-parsers";
 
 describe("input parsers", () => {
+  it("keeps the forms compatibility subpath on the canonical implementation", () => {
+    expect(parseHmsToSeconds).toBe(parseCanonicalHms);
+  });
+
   it("parses and bounds numeric values", () => {
     expect(parseBoundedNumber("12.678", { min: 0, max: 20, decimals: 2 })).toBe(12.68);
     expect(parseBoundedNumber("-2", { min: 0, max: 10 })).toBe(0);

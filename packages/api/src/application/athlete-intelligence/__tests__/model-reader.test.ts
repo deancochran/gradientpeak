@@ -947,7 +947,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
       sourceId: "manual:event-historical-open-000:record",
       lineageGroupId: "manual-test:event-historical-open-000",
     });
-    expect(result.scheduleReadState).toBe("truncated");
+    expect(result.readCoverage?.schedules.state).toBe("truncated");
   });
 
   it("pages past more than 100 ineligible recurring rows at the data-source boundary", async () => {
@@ -1025,7 +1025,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
       state: "truncated",
       reason: "query_limit_reached",
     });
-    expect(result.scheduleReadState).toBe("truncated");
+    expect(result.readCoverage?.schedules.state).toBe("truncated");
   });
 
   it("materializes a header-only consistency goal without borrowing a payload sport", async () => {
@@ -1068,7 +1068,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
       state: "truncated",
       reason: "source_window_truncated",
     });
-    expect(result.scheduleReadState).toBe("truncated");
+    expect(result.readCoverage?.schedules.state).toBe("truncated");
   });
 
   it("uses recurring limit-plus-one overflow without marking an exact exhausted bound truncated", async () => {
@@ -1345,6 +1345,6 @@ describe("materializeAthleteIntelligenceModelInput", () => {
       goalId: "goal-1",
       asOf,
     });
-    expect(result.scheduleReadState).toBe("truncated");
+    expect(result.readCoverage?.schedules.state).toBe("truncated");
   });
 });

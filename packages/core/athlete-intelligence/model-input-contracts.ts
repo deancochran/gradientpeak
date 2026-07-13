@@ -392,8 +392,6 @@ export const athleteIntelligenceModelInputSchema = z
       efforts: { state: "complete", reason: null },
       schedules: { state: "complete", reason: null },
     }),
-    /** @deprecated Use readCoverage.schedules. Kept while canonical readers migrate. */
-    scheduleReadState: z.enum(["complete", "truncated"]),
     plannedSchedule: z.array(plannedScheduleObservationSchema).max(MAX_OBSERVATIONS),
   })
   .strict()
@@ -447,8 +445,6 @@ export const athleteIntelligenceModelInputSchema = z
         code: "custom",
         message: "Activity window must end at or before assessment",
       });
-    if (input.scheduleReadState !== input.readCoverage.schedules.state)
-      issue("Legacy schedule read state must match bounded schedule coverage");
     if (
       input.activities.some(
         (activity) =>

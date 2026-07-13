@@ -1,10 +1,10 @@
 import { formatPace, paceToSpeed, speedToPace } from "../calculations/speed-curve";
-import { formatSecondsToHms, parseHmsToSeconds, parseMmSsToSeconds } from "../forms/input-parsers";
 import {
   type CanonicalGoalActivityCategory,
   type ProfileGoal,
   profileGoalCreateSchema,
 } from "../schemas/goals/profile_goals";
+import { formatSecondsToHms, parseHmsToSeconds, parseMmSsToSeconds } from "../utils/fitness-inputs";
 
 export type GoalEditorGoalType =
   | "race_performance"

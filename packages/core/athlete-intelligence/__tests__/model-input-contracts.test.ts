@@ -220,7 +220,6 @@ function input() {
       ctlOverride: ev(null, "training_load"),
       atlOverride: ev(null, "training_load"),
     },
-    scheduleReadState: "complete",
     plannedSchedule: [
       {
         sourceId: scheduleSourceId,
@@ -374,15 +373,8 @@ describe("athlete intelligence model input contracts", () => {
     expect(parsed.data.plannedSchedule[0]?.recurrence?.timezone).toBe("Europe/London");
   });
 
-  it("requires a valid schedule read state and accepts truncated reads", () => {
-    const missing: Omit<ReturnType<typeof input>, "scheduleReadState"> & {
-      scheduleReadState?: string;
-    } = input();
-    delete missing.scheduleReadState;
-    rejects(missing as ReturnType<typeof input>);
-
+  it("accepts truncated schedule read coverage", () => {
     const truncated = input();
-    truncated.scheduleReadState = "truncated";
     (truncated as ReturnType<typeof input> & { readCoverage?: unknown }).readCoverage = {
       metrics: { state: "complete", reason: null },
       activities: { state: "complete", reason: null },
@@ -392,7 +384,7 @@ describe("athlete intelligence model input contracts", () => {
     expect(athleteIntelligenceModelInputSchema.safeParse(truncated).success).toBe(true);
   });
 
-  it("rejects malformed, contradictory, and unreasoned bounded read coverage", () => {
+  it("rejects malformed and unreasoned bounded read coverage", () => {
     const malformed = input() as ReturnType<typeof input> & { readCoverage?: unknown };
     malformed.readCoverage = {
       metrics: { state: "complete", reason: "query_limit_reached" },
@@ -402,17 +394,7 @@ describe("athlete intelligence model input contracts", () => {
     };
     rejects(malformed as ReturnType<typeof input>);
 
-    const contradictory = input() as ReturnType<typeof input> & { readCoverage?: unknown };
-    contradictory.readCoverage = {
-      metrics: { state: "complete", reason: null },
-      activities: { state: "complete", reason: null },
-      efforts: { state: "complete", reason: null },
-      schedules: { state: "truncated", reason: "query_limit_reached" },
-    };
-    rejects(contradictory as ReturnType<typeof input>);
-
     const truncated = input() as ReturnType<typeof input> & { readCoverage?: unknown };
-    truncated.scheduleReadState = "truncated";
     truncated.readCoverage = {
       metrics: { state: "truncated", reason: "source_window_truncated" },
       activities: { state: "complete", reason: null },

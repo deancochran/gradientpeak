@@ -1,8 +1,7 @@
-import { kgToLbs, lbsToKg } from "../calculations";
-
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const HMS_PATTERN = /^([0-9]+):([0-5][0-9]):([0-5][0-9])$/;
 const MMSS_PATTERN = /^([0-9]+):([0-5][0-9])$/;
+const POUNDS_PER_KILOGRAM = 2.20462;
 
 export interface NumberParseOptions {
   min?: number;
@@ -102,6 +101,14 @@ export function formatDateOnly(date: Date): string {
   return date.toISOString().split("T")[0] ?? "";
 }
 
+/** Formats a date from its local calendar fields for legacy form callers. */
+export function formatLocalDateOnly(date: Date): string {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export function parseHmsToSeconds(value: string | undefined): number | undefined {
   const trimmed = value?.trim() ?? "";
   const match = HMS_PATTERN.exec(trimmed);
@@ -190,7 +197,7 @@ export function convertWeightFromKg(valueKg: number, unit: WeightUnit): number {
     return valueKg;
   }
 
-  return kgToLbs(valueKg);
+  return valueKg * POUNDS_PER_KILOGRAM;
 }
 
 export function convertWeightToKg(value: number, unit: WeightUnit): number {
@@ -198,7 +205,7 @@ export function convertWeightToKg(value: number, unit: WeightUnit): number {
     return value;
   }
 
-  return lbsToKg(value);
+  return value / POUNDS_PER_KILOGRAM;
 }
 
 export function formatWeightForDisplay(

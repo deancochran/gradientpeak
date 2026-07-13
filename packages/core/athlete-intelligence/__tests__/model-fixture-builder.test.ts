@@ -27,24 +27,9 @@ describe("buildAthleteIntelligenceModel", () => {
         efforts: { state: "complete", reason: null },
         schedules: { state: "truncated", reason: "source_window_truncated" },
       },
-      scheduleReadState: "truncated",
     });
 
     expect(model.readCoverage.activities.state).toBe("truncated");
-    expect(model.scheduleReadState).toBe("truncated");
-  });
-
-  it("rejects incoherent legacy schedule state supplied through overrides", () => {
-    expect(() =>
-      buildAthleteIntelligenceModel({
-        readCoverage: {
-          metrics: { state: "complete", reason: null },
-          activities: { state: "complete", reason: null },
-          efforts: { state: "complete", reason: null },
-          schedules: { state: "truncated", reason: "query_limit_reached" },
-        },
-        scheduleReadState: "complete",
-      }),
-    ).toThrow();
+    expect(model.readCoverage.schedules.state).toBe("truncated");
   });
 });

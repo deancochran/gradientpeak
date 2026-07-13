@@ -1,16 +1,15 @@
 import { z } from "zod";
-
-import {
-  parseDateOnly,
-  parseDistanceKmToMeters,
-  parseHmsToSeconds,
-  parseMmSsToSeconds,
-} from "../forms/input-parsers";
 import type { ProfileGoal } from "../schemas/goals/profile_goals";
 import type { AthleteTrainingSettings } from "../schemas/settings/profile_settings";
 import type { CanonicalSport } from "../schemas/sport";
 import type { CreationAvailabilityConfig } from "../schemas/training-plan-structure/creation-config-schemas";
 import type { CreationFeasibilitySafetySummary } from "../schemas/training-plan-structure/diagnostics-context-schemas";
+import {
+  parseDateOnly,
+  parseDistanceKmToMeters,
+  parseHmsToSeconds,
+  parseMmSsToSeconds,
+} from "../utils/fitness-inputs";
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
 export const MIN_PREP_DAYS_BETWEEN_GOALS = 21;

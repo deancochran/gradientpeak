@@ -111,7 +111,6 @@ function model(
     efforts: [],
     goals: [],
     plannedSchedule: [],
-    scheduleReadState: "complete",
     trainingContext: {
       sourceId: trainingId,
       athleteId: "athlete-1",

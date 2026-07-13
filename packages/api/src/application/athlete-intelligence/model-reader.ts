@@ -1308,7 +1308,6 @@ export async function materializeAthleteIntelligenceModelInput(input: {
         efforts: { state: "complete", reason: null },
         schedules: scheduleCoverage,
       };
-  const scheduleReadState = scheduleCoverage.state;
   return athleteIntelligenceModelInputSchema.parse({
     contractVersion: "phase-1",
     assessmentAsOf: asOf.toISOString(),
@@ -1323,6 +1322,5 @@ export async function materializeAthleteIntelligenceModelInput(input: {
     trainingContext,
     plannedSchedule,
     readCoverage,
-    scheduleReadState,
   });
 }

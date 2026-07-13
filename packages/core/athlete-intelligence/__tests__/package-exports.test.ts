@@ -1,28 +1,25 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
 import {
   assembleAthleteState,
   athleteStateVectorSchema,
   requestScopedAthletePlanningContextSchema,
-} from "../index";
+} from "@repo/core/athlete-intelligence";
+import { describe, expect, it } from "vitest";
 
 const PACKAGE_MANIFEST_PATH = resolve(__dirname, "../../package.json");
 
 describe("athlete intelligence package exports", () => {
-  it("exposes only the canonical module and deliberate legacy compatibility entry", () => {
+  it("exposes only the canonical athlete-intelligence module", () => {
     const manifest = JSON.parse(readFileSync(PACKAGE_MANIFEST_PATH, "utf8")) as {
       exports: Record<string, string>;
     };
 
     expect(manifest.exports["./athlete-intelligence"]).toBe("./athlete-intelligence/index.ts");
-    expect(manifest.exports["./athlete-intelligence/legacy"]).toBe(
-      "./athlete-intelligence/legacy.ts",
-    );
     expect(Object.keys(manifest.exports)).not.toContain("./athlete-intelligence/*");
     expect(
       Object.keys(manifest.exports).filter((entry) => entry.startsWith("./athlete-intelligence/")),
-    ).toEqual(["./athlete-intelligence/legacy"]);
+    ).toEqual([]);
   });
 
   it("intentionally exports planning context and ephemeral athlete state", () => {

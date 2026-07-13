@@ -5,12 +5,6 @@ export * from "./evidence";
 export * from "./evidence-contracts";
 export * from "./evidence-resolver";
 export * from "./goal-demand-policy-contracts";
-/**
- * @deprecated Legacy capability and generic gap contracts are isolated from the
- * canonical evidence-to-projection path. Import from `./legacy` only while
- * migrating existing consumers; new calculation work belongs in this barrel.
- */
-export * as legacy from "./legacy";
 export * from "./lineage";
 export * from "./metric-catalog";
 export * from "./model-input-contracts";

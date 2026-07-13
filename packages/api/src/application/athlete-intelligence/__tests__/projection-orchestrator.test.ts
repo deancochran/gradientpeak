@@ -298,7 +298,6 @@ function canonicalModel(): AthleteIntelligenceModelInput {
         evidenceSourceIds: [profileSource],
       },
     ],
-    scheduleReadState: "complete",
   });
 }
 
@@ -551,7 +550,6 @@ describe("projectAthleteIntelligence", () => {
       efforts: recurring.readCoverage?.efforts ?? { state: "complete", reason: null },
       schedules: { state: "truncated", reason: "query_limit_reached" },
     };
-    recurring.scheduleReadState = "truncated";
     const truncated = await project(athleteIntelligenceModelInputSchema.parse(recurring));
     expect(truncated.feasibility.scheduleCoverage).toMatchObject({
       state: "insufficient_evidence",
