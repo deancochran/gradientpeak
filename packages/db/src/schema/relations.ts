@@ -4,12 +4,8 @@ import {
   activities,
   activityEfforts,
   activityFileIngestions,
-  activityGeometry,
-  activityImports,
-  activityLaps,
   activityPlans,
   activityRoutes,
-  activitySummaries,
   comments,
   conversationParticipants,
   conversations,
@@ -43,12 +39,8 @@ import {
 export const profilesRelations = relations(profiles, ({ many }) => ({
   activities: many(activities),
   activityFileIngestions: many(activityFileIngestions),
-  activityGeometry: many(activityGeometry),
-  activityImports: many(activityImports),
-  activityLaps: many(activityLaps),
   activityPlans: many(activityPlans),
   activityRoutes: many(activityRoutes),
-  activitySummaries: many(activitySummaries),
   conversationParticipants: many(conversationParticipants),
   conversationsStarted: many(messages, { relationName: "messageSender" }),
   events: many(events),
@@ -269,64 +261,7 @@ export const activitiesRelations = relations(activities, ({ one, many }) => ({
     references: [activityPlans.id],
   }),
   efforts: many(activityEfforts),
-  summary: one(activitySummaries, {
-    fields: [activities.id],
-    references: [activitySummaries.activity_id],
-  }),
-  import: one(activityImports, {
-    fields: [activities.id],
-    references: [activityImports.activity_id],
-  }),
-  geometry: one(activityGeometry, {
-    fields: [activities.id],
-    references: [activityGeometry.activity_id],
-  }),
-  laps: many(activityLaps),
   fileIngestions: many(activityFileIngestions),
-}));
-
-export const activitySummariesRelations = relations(activitySummaries, ({ one }) => ({
-  activity: one(activities, {
-    fields: [activitySummaries.activity_id],
-    references: [activities.id],
-  }),
-  profile: one(profiles, {
-    fields: [activitySummaries.profile_id],
-    references: [profiles.id],
-  }),
-}));
-
-export const activityImportsRelations = relations(activityImports, ({ one }) => ({
-  activity: one(activities, {
-    fields: [activityImports.activity_id],
-    references: [activities.id],
-  }),
-  profile: one(profiles, {
-    fields: [activityImports.profile_id],
-    references: [profiles.id],
-  }),
-}));
-
-export const activityGeometryRelations = relations(activityGeometry, ({ one }) => ({
-  activity: one(activities, {
-    fields: [activityGeometry.activity_id],
-    references: [activities.id],
-  }),
-  profile: one(profiles, {
-    fields: [activityGeometry.profile_id],
-    references: [profiles.id],
-  }),
-}));
-
-export const activityLapsRelations = relations(activityLaps, ({ one }) => ({
-  activity: one(activities, {
-    fields: [activityLaps.activity_id],
-    references: [activities.id],
-  }),
-  profile: one(profiles, {
-    fields: [activityLaps.profile_id],
-    references: [profiles.id],
-  }),
 }));
 
 export const activityFileIngestionsRelations = relations(activityFileIngestions, ({ one }) => ({
@@ -533,10 +468,6 @@ export const relationsSchema = {
   trainingPlansRelations,
   eventsRelations,
   activitiesRelations,
-  activitySummariesRelations,
-  activityImportsRelations,
-  activityGeometryRelations,
-  activityLapsRelations,
   activityFileIngestionsRelations,
   activityEffortsRelations,
   integrationsRelations,

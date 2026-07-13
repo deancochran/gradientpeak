@@ -1,15 +1,7 @@
-import { analyzeActivityDerivedMetrics } from "@repo/core";
-import {
-  activities,
-  activityFileIngestions,
-  activityGeometry,
-  activityImports,
-  activityLaps,
-  activityPlans,
-  activitySummaries,
-} from "@repo/db";
+import { analyzeActivityDerivedMetrics, parseActivityLapRecords } from "@repo/core";
+import { activities, activityFileIngestions, activityPlans } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, count, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, ilike, lte, or, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 import { createActivityAnalysisStore } from "../../infrastructure/repositories";
 import {
@@ -36,115 +28,8 @@ export type ActivityListQueryInput = {
 
 const tssSortMaxCandidates = 500;
 
-function mergeActivitySummary<T extends typeof activities.$inferSelect>(
-  activity: T,
-  summary: typeof activitySummaries.$inferSelect | null,
-): T {
-  if (!summary) return activity;
-  return {
-    ...activity,
-    ...Object.fromEntries(
-      [
-        "duration_seconds",
-        "moving_seconds",
-        "distance_meters",
-        "elevation_gain_meters",
-        "elevation_loss_meters",
-        "calories",
-        "avg_heart_rate",
-        "max_heart_rate",
-        "avg_power",
-        "max_power",
-        "normalized_power",
-        "avg_cadence",
-        "max_cadence",
-        "avg_speed_mps",
-        "max_speed_mps",
-        "normalized_speed_mps",
-        "normalized_graded_speed_mps",
-        "avg_temperature",
-        "avg_swolf",
-        "efficiency_factor",
-        "aerobic_decoupling",
-        "pool_length",
-        "total_strokes",
-      ].map((key) => [key, summary[key as keyof typeof summary]]),
-    ),
-  } as T;
-}
-
-function mergeActivitySplitTables<T extends typeof activities.$inferSelect>(
-  activity: T,
-  split: {
-    geometry?: typeof activityGeometry.$inferSelect | null;
-    import?: typeof activityImports.$inferSelect | null;
-    laps?: unknown[];
-    summary?: typeof activitySummaries.$inferSelect | null;
-  },
-): T {
-  const merged = mergeActivitySummary(activity, split.summary ?? null);
-  const legacy = merged as typeof merged & Record<string, unknown>;
-  const imported = split.import ?? null;
-  const geometry = split.geometry ?? null;
-  return {
-    ...merged,
-    provider: imported?.provider ?? legacy.provider,
-    external_id: imported?.external_id ?? legacy.external_id,
-    device_manufacturer: imported?.device_manufacturer ?? legacy.device_manufacturer,
-    device_product: imported?.device_product ?? legacy.device_product,
-    activity_file_path: imported?.activity_file_path ?? legacy.activity_file_path,
-    activity_file_size: imported?.activity_file_size ?? legacy.activity_file_size,
-    import_source: imported?.import_source ?? legacy.import_source,
-    import_file_type: imported?.import_file_type ?? legacy.import_file_type,
-    import_original_file_name:
-      imported?.import_original_file_name ?? legacy.import_original_file_name,
-    polyline: geometry?.polyline ?? legacy.polyline,
-    map_bounds: geometry?.map_bounds ?? legacy.map_bounds,
-    laps: split.laps ?? legacy.laps,
-  } as T;
-}
-
-async function loadSplitMaps(db: Db, profileId: string, activityIds: string[]) {
-  if (!activityIds.length)
-    return {
-      summaries: new Map<string, typeof activitySummaries.$inferSelect>(),
-      imports: new Map<string, typeof activityImports.$inferSelect>(),
-      geometries: new Map<string, typeof activityGeometry.$inferSelect>(),
-    };
-  const [summaries, imports, geometries] = await Promise.all([
-    db
-      .select()
-      .from(activitySummaries)
-      .where(
-        and(
-          eq(activitySummaries.profile_id, profileId),
-          inArray(activitySummaries.activity_id, activityIds),
-        ),
-      ),
-    db
-      .select()
-      .from(activityImports)
-      .where(
-        and(
-          eq(activityImports.profile_id, profileId),
-          inArray(activityImports.activity_id, activityIds),
-        ),
-      ),
-    db
-      .select()
-      .from(activityGeometry)
-      .where(
-        and(
-          eq(activityGeometry.profile_id, profileId),
-          inArray(activityGeometry.activity_id, activityIds),
-        ),
-      ),
-  ]);
-  return {
-    summaries: new Map(summaries.map((row) => [row.activity_id, row])),
-    imports: new Map(imports.map((row) => [row.activity_id, row])),
-    geometries: new Map(geometries.map((row) => [row.activity_id, row])),
-  };
+export function normalizeActivityLaps<T extends typeof activities.$inferSelect>(activity: T): T {
+  return { ...activity, laps: parseActivityLapRecords(activity.laps) };
 }
 
 export async function listActivitiesForProfile({
@@ -169,8 +54,8 @@ export async function listActivitiesForProfile({
   if (input.date_from) conditions.push(gte(activities.started_at, new Date(input.date_from)));
   if (input.date_to) conditions.push(lte(activities.started_at, new Date(input.date_to)));
   const whereClause = and(...conditions);
-  const distance = sql<number>`${activitySummaries.distance_meters}`;
-  const duration = sql<number>`${activitySummaries.duration_seconds}`;
+  const distance = sql<number>`${activities.distance_meters}`;
+  const duration = sql<number>`${activities.duration_seconds}`;
   const candidateLimit = Math.min(
     Math.max(offset + input.limit, input.limit),
     tssSortMaxCandidates,
@@ -187,7 +72,6 @@ export async function listActivitiesForProfile({
         ? db
             .select({ activity: activities })
             .from(activities)
-            .leftJoin(activitySummaries, eq(activities.id, activitySummaries.activity_id))
             .where(whereClause)
             .orderBy(
               input.sort_order === "asc"
@@ -214,18 +98,7 @@ export async function listActivitiesForProfile({
   const activityRows = rawRows.map((row) =>
     row && typeof row === "object" && "activity" in row ? row.activity : row,
   ) as Array<typeof activities.$inferSelect>;
-  const splits = await loadSplitMaps(
-    db,
-    profileId,
-    activityRows.map((activity) => activity.id),
-  );
-  const data = activityRows.map((activity) =>
-    mergeActivitySplitTables(activity, {
-      summary: splits.summaries.get(activity.id),
-      import: splits.imports.get(activity.id),
-      geometry: splits.geometries.get(activity.id),
-    }),
-  );
+  const data = activityRows.map(normalizeActivityLaps);
   const derived = await buildActivityDerivedSummaryMap({
     store: createActivityAnalysisStore(db),
     profileId,
@@ -300,45 +173,7 @@ export async function getActivityByIdForViewer({
   ]);
   const row = record[0];
   if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
-  const [lapRows, summary, imported, geometry] = await Promise.all([
-    db
-      .select({ payload: activityLaps.payload })
-      .from(activityLaps)
-      .where(
-        and(
-          eq(activityLaps.activity_id, activityId),
-          eq(activityLaps.profile_id, row.activity.profile_id),
-        ),
-      )
-      .orderBy(activityLaps.lap_index),
-    db.query.activitySummaries.findFirst({
-      where: and(
-        eq(activitySummaries.activity_id, activityId),
-        eq(activitySummaries.profile_id, row.activity.profile_id),
-      ),
-    }),
-    db.query.activityImports.findFirst({
-      where: and(
-        eq(activityImports.activity_id, activityId),
-        eq(activityImports.profile_id, row.activity.profile_id),
-      ),
-    }),
-    db.query.activityGeometry.findFirst({
-      where: and(
-        eq(activityGeometry.activity_id, activityId),
-        eq(activityGeometry.profile_id, row.activity.profile_id),
-      ),
-    }),
-  ]);
-  const activity = mergeActivitySplitTables(row.activity, {
-    summary,
-    import: imported,
-    geometry,
-    laps:
-      summary || imported || geometry || lapRows.length
-        ? lapRows.map((lap) => lap.payload).filter((payload) => payload !== undefined)
-        : undefined,
-  });
+  const activity = normalizeActivityLaps(row.activity);
   const context = await resolveActivityContextAsOf({
     store: createActivityAnalysisStore(db),
     profileId: activity.profile_id,
@@ -390,5 +225,3 @@ export async function getActivityByIdForViewer({
   });
   return { ...response, activity: { ...response.activity, ingestion: ingestion ?? null } };
 }
-
-export { mergeActivitySummary };

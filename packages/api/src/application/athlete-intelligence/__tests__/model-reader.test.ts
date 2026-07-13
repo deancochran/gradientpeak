@@ -326,7 +326,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     });
     expect(selects[3]).toMatchObject({
       limit: modelReaderBounds.activities + 1,
-      leftJoins: [expect.anything(), expect.anything()],
+      leftJoins: [expect.anything()],
       orderBy: [expect.anything(), expect.anything()],
     });
     expect(selects[4]).toMatchObject({

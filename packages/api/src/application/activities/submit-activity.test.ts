@@ -1,13 +1,4 @@
-import {
-  activities,
-  activityEfforts,
-  activityGeometry,
-  activityImports,
-  activityLaps,
-  activitySummaries,
-  integrationResourceLinks,
-  profileMetrics,
-} from "@repo/db";
+import { activities, activityEfforts, integrationResourceLinks, profileMetrics } from "@repo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { getRequiredDb } from "../../db";
 import { type ActivitySubmission, submitActivity } from "./submit-activity";
@@ -47,6 +38,7 @@ function createDb(
 ) {
   const committed: unknown[] = [];
   const insertedValues: Array<{ table: unknown; values: unknown }> = [];
+  const updatedValues: Array<{ table: unknown; values: unknown }> = [];
   const transaction = vi.fn(async (callback: (tx: MockTx) => Promise<void>) => {
     const staged: unknown[] = [];
     const tx = {
@@ -69,8 +61,9 @@ function createDb(
         }),
       })),
       update: vi.fn((table: unknown) => ({
-        set: vi.fn(() => ({
+        set: vi.fn((values: unknown) => ({
           where: vi.fn(async () => {
+            updatedValues.push({ table, values });
             if (table === failOn) throw new Error("write failed");
             staged.push(table);
           }),
@@ -86,7 +79,13 @@ function createDb(
     await callback(tx);
     committed.push(...staged);
   });
-  return { db: { transaction } as unknown as DbClient, committed, insertedValues, transaction };
+  return {
+    db: { transaction } as unknown as DbClient,
+    committed,
+    insertedValues,
+    updatedValues,
+    transaction,
+  };
 }
 
 function createInput(): ActivitySubmission {
@@ -144,10 +143,10 @@ describe("submitActivity", () => {
     expect(committed).toEqual(
       expect.arrayContaining([
         activities,
-        activitySummaries,
-        activityImports,
-        activityGeometry,
-        activityLaps,
+        activities,
+        activities,
+        activities,
+        activities,
         integrationResourceLinks,
       ]),
     );
@@ -193,15 +192,61 @@ describe("submitActivity", () => {
     });
     expect(committed).toEqual(
       expect.arrayContaining([
-        activityImports,
-        activitySummaries,
-        activityGeometry,
-        activityLaps,
+        activities,
+        activities,
+        activities,
+        activities,
         activityEfforts,
         profileMetrics,
       ]),
     );
     expect(committed).toContain(activities);
+  });
+
+  it("preserves omitted laps and geometry while explicit null clears them", async () => {
+    const omitted = createDb();
+    await submitActivity(omitted.db, {
+      kind: "enrich",
+      activityId: "activity-1",
+      profileId: "profile-1",
+      activityFilePath: "recorded.fit",
+      activityFileSize: 50,
+      activityFileType: "fit",
+      deviceManufacturer: null,
+      deviceProduct: null,
+      summaryValues: {},
+      efforts: [],
+      detectedLTHR: null,
+      activityCompletedAt: new Date(),
+    });
+    const omittedSet = omitted.updatedValues.at(-1)?.values as Record<string, unknown>;
+    expect(omittedSet).not.toHaveProperty("laps");
+    expect(omittedSet).not.toHaveProperty("map_bounds");
+    expect(omittedSet).not.toHaveProperty("polyline");
+
+    const cleared = createDb();
+    await submitActivity(cleared.db, {
+      kind: "enrich",
+      activityId: "activity-1",
+      profileId: "profile-1",
+      activityFilePath: "recorded.fit",
+      activityFileSize: 50,
+      activityFileType: "fit",
+      deviceManufacturer: null,
+      deviceProduct: null,
+      laps: null,
+      mapBounds: null,
+      polyline: null,
+      summaryValues: {},
+      efforts: [],
+      detectedLTHR: null,
+      activityCompletedAt: new Date(),
+    });
+    expect(cleared.updatedValues.at(-1)?.values).toMatchObject({
+      laps: [],
+      map_bounds: null,
+      polyline: null,
+    });
   });
 
   it("rejects existing-ID enrichment when the activity is not owned by the profile", async () => {
@@ -282,7 +327,7 @@ describe("submitActivity", () => {
   });
 
   it("rolls back without partial persistence when a projection write fails", async () => {
-    const { db, committed } = createDb(activityImports);
+    const { db, committed } = createDb(activities);
     await expect(submitActivity(db, createInput())).rejects.toThrow("write failed");
     expect(committed).toEqual([]);
   });
@@ -301,10 +346,7 @@ describe("submitActivity", () => {
       composition: { persist: (tx, context) => composition(tx as unknown as MockTx, context) },
     });
     expect(transaction).toHaveBeenCalledOnce();
-    expect(committed).toEqual(
-      expect.arrayContaining([activities, activitySummaries, ingestionTable]),
-    );
-    expect(committed).not.toContain(activityImports);
+    expect(committed).toEqual(expect.arrayContaining([activities, ingestionTable]));
     expect(result.compositionResult).toEqual({ id: "ingestion-1", status: "pending_upload" });
   });
 });

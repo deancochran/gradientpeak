@@ -7,7 +7,7 @@
 import { randomUUID } from "node:crypto";
 import { type ActivityFileType, inferActivityFileType, parseActivityFile } from "@repo/core";
 import { detectLTHR, estimateVO2Max } from "@repo/core/calculations";
-import { activities, activityEfforts, activityImports, profileMetrics } from "@repo/db";
+import { activities, activityEfforts, profileMetrics } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, lte } from "drizzle-orm";
 import { z } from "zod";
@@ -259,12 +259,11 @@ async function canAccessActivityStreams(
 ): Promise<string | null> {
   const [activity] = await db
     .select({
-      activity_file_path: activityImports.activity_file_path,
+      activity_file_path: activities.activity_file_path,
       profile_id: activities.profile_id,
       is_private: activities.is_private,
     })
     .from(activities)
-    .leftJoin(activityImports, eq(activities.id, activityImports.activity_id))
     .where(eq(activities.id, activityId))
     .limit(1);
 

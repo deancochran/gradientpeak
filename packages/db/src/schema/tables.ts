@@ -823,7 +823,7 @@ export const activities = pgTable(
     import_file_type: text("import_file_type"),
     import_original_file_name: text("import_original_file_name"),
     polyline: text("polyline"),
-    laps: jsonb("laps"),
+    laps: jsonb("laps").$type<unknown[]>().notNull().default([]),
     map_bounds: jsonb("map_bounds"),
   },
   (table) => [
@@ -835,183 +835,41 @@ export const activities = pgTable(
     index("idx_activities_profile_started").on(table.profile_id, table.started_at),
     index("idx_activities_started").on(table.started_at),
     index("idx_activities_type").on(table.type),
-  ],
-);
-
-export const activitySummaries = pgTable(
-  "activity_summaries",
-  {
-    activity_id: uuid("activity_id").primaryKey(),
-    profile_id: uuid("profile_id")
-      .notNull()
-      .references(() => profiles.id, { onDelete: "cascade" }),
-    duration_seconds: integer("duration_seconds").notNull().default(0),
-    moving_seconds: integer("moving_seconds").notNull().default(0),
-    distance_meters: integer("distance_meters").notNull().default(0),
-    elevation_gain_meters: numeric("elevation_gain_meters", {
-      precision: 10,
-      scale: 2,
-      mode: "number",
-    }),
-    elevation_loss_meters: numeric("elevation_loss_meters", {
-      precision: 10,
-      scale: 2,
-      mode: "number",
-    }),
-    calories: integer("calories"),
-    avg_heart_rate: integer("avg_heart_rate"),
-    max_heart_rate: integer("max_heart_rate"),
-    avg_power: integer("avg_power"),
-    max_power: integer("max_power"),
-    normalized_power: integer("normalized_power"),
-    avg_cadence: integer("avg_cadence"),
-    max_cadence: integer("max_cadence"),
-    avg_speed_mps: numeric("avg_speed_mps", { precision: 6, scale: 2, mode: "number" }),
-    max_speed_mps: numeric("max_speed_mps", { precision: 6, scale: 2, mode: "number" }),
-    normalized_speed_mps: numeric("normalized_speed_mps", {
-      precision: 6,
-      scale: 2,
-      mode: "number",
-    }),
-    normalized_graded_speed_mps: numeric("normalized_graded_speed_mps", {
-      precision: 6,
-      scale: 2,
-      mode: "number",
-    }),
-    avg_temperature: numeric("avg_temperature", { mode: "number" }),
-    avg_swolf: numeric("avg_swolf", { mode: "number" }),
-    efficiency_factor: numeric("efficiency_factor", { mode: "number" }),
-    aerobic_decoupling: numeric("aerobic_decoupling", { mode: "number" }),
-    pool_length: numeric("pool_length", { mode: "number" }),
-    total_strokes: integer("total_strokes"),
-    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    foreignKey({
-      columns: [table.activity_id, table.profile_id],
-      foreignColumns: [activities.id, activities.profile_id],
-      name: "activity_summaries_activity_profile_fkey",
-    }).onDelete("cascade"),
-    check("activity_summaries_distance_meters_check", sql`${table.distance_meters} >= 0`),
-    check("activity_summaries_duration_seconds_check", sql`${table.duration_seconds} >= 0`),
-    check("activity_summaries_moving_seconds_check", sql`${table.moving_seconds} >= 0`),
+    check("activities_distance_meters_check", sql`${table.distance_meters} >= 0`),
+    check("activities_duration_seconds_check", sql`${table.duration_seconds} >= 0`),
+    check("activities_moving_seconds_check", sql`${table.moving_seconds} >= 0`),
     check(
-      "activity_summaries_moving_time_check",
-      sql`${table.moving_seconds} >= 0 and ${table.moving_seconds} <= ${table.duration_seconds}`,
+      "activities_moving_time_check",
+      sql`${table.moving_seconds} <= ${table.duration_seconds}`,
     ),
-    index("idx_activity_summaries_profile_id").on(table.profile_id),
-  ],
-);
-
-export const activityImports = pgTable(
-  "activity_imports",
-  {
-    activity_id: uuid("activity_id").primaryKey(),
-    profile_id: uuid("profile_id")
-      .notNull()
-      .references(() => profiles.id, { onDelete: "cascade" }),
-    provider: integrationProviderEnum("provider"),
-    external_id: text("external_id"),
-    device_manufacturer: text("device_manufacturer"),
-    device_product: text("device_product"),
-    activity_file_path: text("activity_file_path"),
-    activity_file_size: integer("activity_file_size"),
-    import_source: text("import_source"),
-    import_file_type: text("import_file_type"),
-    import_original_file_name: text("import_original_file_name"),
-    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    foreignKey({
-      columns: [table.activity_id, table.profile_id],
-      foreignColumns: [activities.id, activities.profile_id],
-      name: "activity_imports_activity_profile_fkey",
-    }).onDelete("cascade"),
     check(
-      "activity_imports_import_file_type_non_empty_check",
+      "activities_import_file_type_non_empty_check",
       sql`${table.import_file_type} is null or btrim(${table.import_file_type}) <> ''`,
     ),
     check(
-      "activity_imports_import_original_file_name_non_empty_check",
+      "activities_import_original_file_name_non_empty_check",
       sql`${table.import_original_file_name} is null or btrim(${table.import_original_file_name}) <> ''`,
     ),
     check(
-      "activity_imports_import_source_check",
+      "activities_import_source_check",
       sql`${table.import_source} is null or ${table.import_source} = 'manual_historical'`,
     ),
-    uniqueIndex("idx_activity_imports_external_unique")
+    check(
+      "activities_provider_identity_check",
+      sql`(${table.provider} is null) = (${table.external_id} is null)`,
+    ),
+    check("activities_laps_array_check", sql`jsonb_typeof(${table.laps}) = 'array'`),
+    check("activities_laps_count_check", sql`jsonb_array_length(${table.laps}) <= 1000`),
+    check("activities_laps_size_check", sql`pg_column_size(${table.laps}) <= 1048576`),
+    uniqueIndex("idx_activities_provider_external_unique")
       .on(table.provider, table.external_id)
-      .where(sql`${table.external_id} is not null and ${table.provider} is not null`),
-    index("idx_activity_imports_profile_id").on(table.profile_id),
-    index("idx_activity_imports_provider_external")
+      .where(sql`${table.provider} is not null and ${table.external_id} is not null`),
+    index("idx_activities_provider_external")
       .on(table.provider, table.external_id)
       .where(sql`${table.external_id} is not null`),
-  ],
-);
-
-export const activityGeometry = pgTable(
-  "activity_geometry",
-  {
-    activity_id: uuid("activity_id").primaryKey(),
-    profile_id: uuid("profile_id")
-      .notNull()
-      .references(() => profiles.id, { onDelete: "cascade" }),
-    polyline: text("polyline"),
-    map_bounds: jsonb("map_bounds"),
-    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    foreignKey({
-      columns: [table.activity_id, table.profile_id],
-      foreignColumns: [activities.id, activities.profile_id],
-      name: "activity_geometry_activity_profile_fkey",
-    }).onDelete("cascade"),
-    index("idx_activity_geometry_profile_id").on(table.profile_id),
-  ],
-);
-
-export const activityLaps = pgTable(
-  "activity_laps",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    activity_id: uuid("activity_id").notNull(),
-    profile_id: uuid("profile_id")
-      .notNull()
-      .references(() => profiles.id, { onDelete: "cascade" }),
-    lap_index: integer("lap_index").notNull(),
-    payload: jsonb("payload").notNull(),
-    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
-      .defaultNow()
-      .notNull(),
-  },
-  (table) => [
-    foreignKey({
-      columns: [table.activity_id, table.profile_id],
-      foreignColumns: [activities.id, activities.profile_id],
-      name: "activity_laps_activity_profile_fkey",
-    }).onDelete("cascade"),
-    unique("activity_laps_activity_index_unique").on(table.activity_id, table.lap_index),
-    check("activity_laps_lap_index_check", sql`${table.lap_index} >= 0`),
-    index("idx_activity_laps_activity_id").on(table.activity_id),
-    index("idx_activity_laps_profile_id").on(table.profile_id),
+    index("idx_activities_activity_file_path")
+      .on(table.activity_file_path)
+      .where(sql`${table.activity_file_path} is not null`),
   ],
 );
 

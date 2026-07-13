@@ -10,7 +10,6 @@ import {
   activities,
   activityEfforts,
   activityPlans,
-  activitySummaries,
   events,
   profileGoals,
   profileMetrics,
@@ -296,7 +295,7 @@ export function createDrizzleAthleteIntelligenceDataSource(
         : input.asOf;
       const scheduleThrough = targetEnd > input.asOf ? targetEnd : input.asOf;
       const temporalSummary = <T>(summaryValue: SQLWrapper, legacyValue: SQLWrapper) =>
-        sql<T>`case when ${activitySummaries.updated_at} <= ${input.asOf} then coalesce(${summaryValue}, ${legacyValue}) else ${legacyValue} end`;
+        sql<T>`case when ${activities.updated_at} <= ${input.asOf} then coalesce(${summaryValue}, ${legacyValue}) else ${legacyValue} end`;
       const eventSelection = {
         profileId: events.profile_id,
         id: events.id,
@@ -369,76 +368,66 @@ export function createDrizzleAthleteIntelligenceDataSource(
             startedAt: activities.started_at,
             finishedAt: activities.finished_at,
             durationSeconds: temporalSummary<number>(
-              activitySummaries.duration_seconds,
+              activities.duration_seconds,
               activities.duration_seconds,
             ),
             movingSeconds: temporalSummary<number>(
-              activitySummaries.moving_seconds,
+              activities.moving_seconds,
               activities.moving_seconds,
             ),
             distanceMeters: temporalSummary<number>(
-              activitySummaries.distance_meters,
+              activities.distance_meters,
               activities.distance_meters,
             ),
             ascentMeters: temporalSummary<number | null>(
-              activitySummaries.elevation_gain_meters,
+              activities.elevation_gain_meters,
               activities.elevation_gain_meters,
             ),
             descentMeters: temporalSummary<number | null>(
-              activitySummaries.elevation_loss_meters,
+              activities.elevation_loss_meters,
               activities.elevation_loss_meters,
             ),
-            calories: temporalSummary<number | null>(
-              activitySummaries.calories,
-              activities.calories,
-            ),
+            calories: temporalSummary<number | null>(activities.calories, activities.calories),
             averageHeartRate: temporalSummary<number | null>(
-              activitySummaries.avg_heart_rate,
+              activities.avg_heart_rate,
               activities.avg_heart_rate,
             ),
             maximumHeartRate: temporalSummary<number | null>(
-              activitySummaries.max_heart_rate,
+              activities.max_heart_rate,
               activities.max_heart_rate,
             ),
             averagePower: temporalSummary<number | null>(
-              activitySummaries.avg_power,
+              activities.avg_power,
               activities.avg_power,
             ),
             maximumPower: temporalSummary<number | null>(
-              activitySummaries.max_power,
+              activities.max_power,
               activities.max_power,
             ),
             normalizedPower: temporalSummary<number | null>(
-              activitySummaries.normalized_power,
+              activities.normalized_power,
               activities.normalized_power,
             ),
             averageCadence: temporalSummary<number | null>(
-              activitySummaries.avg_cadence,
+              activities.avg_cadence,
               activities.avg_cadence,
             ),
             maximumCadence: temporalSummary<number | null>(
-              activitySummaries.max_cadence,
+              activities.max_cadence,
               activities.max_cadence,
             ),
             averageSpeed: temporalSummary<number | null>(
-              activitySummaries.avg_speed_mps,
+              activities.avg_speed_mps,
               activities.avg_speed_mps,
             ),
             maximumSpeed: temporalSummary<number | null>(
-              activitySummaries.max_speed_mps,
+              activities.max_speed_mps,
               activities.max_speed_mps,
             ),
             createdAt: activities.created_at,
             updatedAt: activities.updated_at,
           })
           .from(activities)
-          .leftJoin(
-            activitySummaries,
-            and(
-              eq(activitySummaries.activity_id, activities.id),
-              eq(activitySummaries.profile_id, activities.profile_id),
-            ),
-          )
           .leftJoin(
             activityPlans,
             and(

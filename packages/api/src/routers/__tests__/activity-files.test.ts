@@ -75,6 +75,7 @@ vi.mock("@repo/core", () => ({
   parseFitFileWithSDK: mocks.parseFitFileWithSDK,
   simplifyCoordinates: vi.fn((coords) => coords),
   canTransitionActivityFileIngestionStatus: vi.fn(() => true),
+  activityLapRecordListSchema: { parse: vi.fn((value) => value) },
 }));
 
 vi.mock("@repo/core/calculations", () => ({
@@ -512,21 +513,15 @@ describe("activityFilesRouter", () => {
       activity: { id: activityId },
       ingestion: { id: ingestionId, status: "ready" },
     });
-    expect(callLog.insertCalls).toEqual(
+    expect(callLog.updateCalls).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          values: expect.objectContaining({
-            activity_id: activityId,
+          set: expect.objectContaining({
             activity_file_path: `activities/${userId}/uploads/phase5.fit`,
             activity_file_size: 12345,
             import_file_type: "fit",
-            profile_id: userId,
+            laps: expect.any(Array),
           }),
-        }),
-        expect.objectContaining({
-          values: expect.arrayContaining([
-            expect.objectContaining({ activity_id: activityId, lap_index: 0, profile_id: userId }),
-          ]),
         }),
       ]),
     );

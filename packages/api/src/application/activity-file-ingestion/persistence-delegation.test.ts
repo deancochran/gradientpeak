@@ -98,7 +98,34 @@ describe("activity file persistence adapters", () => {
         kind: "enrich",
         activityId: "activity-1",
         activityFilePath: "recorded.fit",
+        mapBounds: undefined,
+        polyline: undefined,
       }),
+    );
+  });
+
+  it("delegates an intentional geometry clear explicitly", async () => {
+    const completedAt = new Date("2026-01-01T11:00:00Z");
+    await persistExistingActivityFileEnrichment({} as DbClient, {
+      activityId: "activity-1",
+      profileId: "profile-1",
+      activityFilePath: "recorded.fit",
+      activityFileSize: 30,
+      activityFileType: "fit",
+      parsedData: { metadata: { type: "bike", startTime: completedAt } },
+      enrichment: {
+        activityCompletedAt: completedAt,
+        activityCompletedAtIso: completedAt.toISOString(),
+        detectedLTHR: null,
+        effortsToInsert: [],
+        replaceGeometry: true,
+        geometry: { mapBounds: null, polyline: null },
+        summaryValues: {},
+      },
+    });
+    expect(submitActivity).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ mapBounds: null, polyline: null, laps: undefined }),
     );
   });
 });

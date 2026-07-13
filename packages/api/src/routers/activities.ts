@@ -5,7 +5,6 @@ import {
 } from "@repo/core";
 import {
   activities,
-  activitySummaries,
   events,
   publicActivitiesRowSchema,
   publicActivityCategorySchema,
@@ -21,7 +20,6 @@ import {
 import {
   getActivityByIdForViewer,
   listActivitiesForProfile,
-  mergeActivitySummary,
 } from "../application/activities/activity-reads";
 import { submitActivity } from "../application/activities/submit-activity";
 import { createActivityFileIngestion } from "../application/activity-file-ingestion/ingestion-state";
@@ -281,14 +279,7 @@ export const activitiesRouter = createTRPCRouter({
       });
     }
 
-    const summary = await db.query.activitySummaries.findFirst({
-      where: and(
-        eq(activitySummaries.activity_id, createdActivityId),
-        eq(activitySummaries.profile_id, ctx.session.user.id),
-      ),
-    });
-
-    const data = parseActivityRow(mergeActivitySummary(createdActivity, summary ?? null));
+    const data = parseActivityRow(createdActivity);
 
     return data;
   }),
@@ -355,10 +346,7 @@ export const activitiesRouter = createTRPCRouter({
       const activity = await db.query.activities.findFirst({
         where: eq(activities.id, created.id),
       });
-      const summary = await db.query.activitySummaries.findFirst({
-        where: eq(activitySummaries.activity_id, created.id),
-      });
-      if (!activity || !summary || !created.compositionResult)
+      if (!activity || !created.compositionResult)
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to load created activity",
@@ -367,7 +355,7 @@ export const activitiesRouter = createTRPCRouter({
         ReturnType<typeof createActivityFileIngestion>
       >;
 
-      const data = parseActivityRow(mergeActivitySummary(activity, summary));
+      const data = parseActivityRow(activity);
 
       return {
         ...data,

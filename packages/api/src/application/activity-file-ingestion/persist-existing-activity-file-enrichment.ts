@@ -1,5 +1,5 @@
 import type { ActivityFileType } from "@repo/core";
-import type { activityEfforts, activityGeometry, activitySummaries } from "@repo/db";
+import type { activities, activityEfforts } from "@repo/db";
 import type { getRequiredDb } from "../../db";
 import { submitActivity } from "../activities/submit-activity";
 
@@ -12,7 +12,7 @@ interface ParsedActivityFilePersistenceData {
     manufacturer?: unknown;
     product?: unknown;
   } & Record<string, unknown>;
-  laps?: unknown[];
+  laps?: unknown[] | null;
 }
 
 interface ExistingActivityFileEnrichmentPersistenceData {
@@ -21,10 +21,14 @@ interface ExistingActivityFileEnrichmentPersistenceData {
   detectedLTHR: number | null;
   effortsToInsert: Array<typeof activityEfforts.$inferInsert>;
   geometry: {
-    mapBounds: (typeof activityGeometry.$inferInsert)["map_bounds"];
-    polyline: (typeof activityGeometry.$inferInsert)["polyline"];
+    mapBounds: (typeof activities.$inferInsert)["map_bounds"];
+    polyline: (typeof activities.$inferInsert)["polyline"];
   };
-  summaryValues: typeof activitySummaries.$inferInsert;
+  replaceGeometry?: boolean;
+  summaryValues: Partial<typeof activities.$inferInsert> & {
+    activity_id?: string;
+    profile_id?: string;
+  };
 }
 
 export interface PersistExistingActivityFileEnrichmentInput {
@@ -42,6 +46,9 @@ export async function persistExistingActivityFileEnrichment(
   input: PersistExistingActivityFileEnrichmentInput,
 ) {
   const { enrichment } = input;
+  const replaceGeometry =
+    enrichment.replaceGeometry ??
+    (enrichment.geometry.mapBounds != null || enrichment.geometry.polyline != null);
   await submitActivity(db, {
     kind: "enrich",
     activityId: input.activityId,
@@ -51,9 +58,9 @@ export async function persistExistingActivityFileEnrichment(
     activityFileType: input.activityFileType,
     deviceManufacturer: input.parsedData.metadata.manufacturer,
     deviceProduct: input.parsedData.metadata.product,
-    laps: input.parsedData.laps ?? null,
-    mapBounds: enrichment.geometry.mapBounds,
-    polyline: enrichment.geometry.polyline,
+    laps: input.parsedData.laps,
+    mapBounds: replaceGeometry ? enrichment.geometry.mapBounds : undefined,
+    polyline: replaceGeometry ? enrichment.geometry.polyline : undefined,
     summaryValues: enrichment.summaryValues,
     efforts: enrichment.effortsToInsert,
     detectedLTHR: enrichment.detectedLTHR,

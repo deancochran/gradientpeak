@@ -346,14 +346,16 @@ function createDbMock(options: {
       }
 
       if (fields && "activity" in fields) {
+        const where = vi.fn(() => ({
+          orderBy,
+          limit: vi.fn(() => Promise.resolve(options.joinedRows ?? options.activityRows ?? [])),
+        }));
         return {
           from: vi.fn(() => ({
+            where,
             leftJoin: vi.fn(() => {
               const joinedBuilder = {
-                where: vi.fn(() => ({
-                  orderBy,
-                  limit: vi.fn(() => Promise.resolve(options.joinedRows ?? [])),
-                })),
+                where,
               };
               return joinedBuilder;
             }),
@@ -481,6 +483,7 @@ describe("activitiesRouter", () => {
     expect(result.items).toEqual([
       {
         ...rows[0],
+        laps: [],
         likes_count: 3,
         has_liked: true,
         derived,
@@ -489,12 +492,12 @@ describe("activitiesRouter", () => {
     expect(mockActivityAnalysis.buildActivityDerivedSummaryMap).toHaveBeenCalledWith(
       expect.objectContaining({
         profileId: OWNER_ID,
-        activities: rows,
+        activities: [{ ...rows[0], laps: [] }],
       }),
     );
   });
 
-  it("overlays split summary import and geometry values in paginated list responses", async () => {
+  it("uses canonical parent values in paginated list responses", async () => {
     const rows = [
       buildActivityRow({
         distance_meters: 1,
@@ -534,12 +537,12 @@ describe("activitiesRouter", () => {
     });
 
     expect(result.items[0]).toMatchObject({
-      distance_meters: 12345,
-      duration_seconds: 3600,
-      provider: "wahoo",
-      external_id: "split-external-id",
-      polyline: "split-polyline",
-      map_bounds: { split: true },
+      distance_meters: 1,
+      duration_seconds: 2,
+      provider: null,
+      external_id: null,
+      polyline: "legacy-polyline",
+      map_bounds: { legacy: true },
     });
   });
 
@@ -561,8 +564,8 @@ describe("activitiesRouter", () => {
     });
 
     const orderSql = db.__spies.orderBy.mock.calls.flat().map(toSql).join("\n");
-    expect(orderSql).toContain('"activity_summaries"."distance_meters"');
-    expect(orderSql).toContain('"activity_summaries"."duration_seconds" desc');
+    expect(orderSql).toContain('"activities"."distance_meters"');
+    expect(orderSql).toContain('"activities"."duration_seconds" desc');
   });
 
   it("sorts paginated results by derived tss before slicing", async () => {
@@ -745,10 +748,10 @@ describe("activitiesRouter", () => {
       name: "Recorder Run",
       notes: "Phone GPS",
       is_private: true,
-      duration_seconds: 3600,
-      moving_seconds: 3500,
-      distance_meters: 10000,
-      calories: 640,
+      duration_seconds: 2700,
+      moving_seconds: 2650,
+      distance_meters: 9000,
+      calories: null,
       ingestion: {
         id: ingestion.id,
         status: "pending_upload",
@@ -763,10 +766,6 @@ describe("activitiesRouter", () => {
       notes: "Phone GPS",
       type: "run",
       is_private: true,
-    });
-    expect(findInsertedValue(db, "activity_summaries")).toMatchObject({
-      activity_id: ACTIVITY_ID,
-      profile_id: OWNER_ID,
       duration_seconds: 3600,
       moving_seconds: 3500,
       distance_meters: 10000,
@@ -870,6 +869,7 @@ describe("activitiesRouter", () => {
     expect(result).toEqual({
       activity: {
         ...activity,
+        laps: [],
         likes_count: 5,
         activity_plans: {
           ...activityPlan,
@@ -890,13 +890,13 @@ describe("activitiesRouter", () => {
     );
   });
 
-  it("prefers split activity detail values and treats empty split laps as authoritative", async () => {
+  it("uses canonical parent detail values and preserves lap order", async () => {
     const activity = buildActivityRow({
       id: ACTIVITY_ID,
       profile_id: OWNER_ID,
       distance_meters: 1,
       duration_seconds: 2,
-      provider: null,
+      provider: "wahoo",
       external_id: "legacy-external-id",
       polyline: "legacy-polyline",
       map_bounds: { legacy: true },
@@ -934,12 +934,12 @@ describe("activitiesRouter", () => {
     const result = await caller.getById({ id: ACTIVITY_ID });
 
     expect(result.activity).toMatchObject({
-      distance_meters: 22222,
-      duration_seconds: 3333,
-      external_id: "split-external-id",
-      polyline: "split-polyline",
-      map_bounds: { split: true },
-      laps: [],
+      distance_meters: 1,
+      duration_seconds: 2,
+      external_id: "legacy-external-id",
+      polyline: "legacy-polyline",
+      map_bounds: { legacy: true },
+      laps: [{ legacy: true }],
     });
   });
 

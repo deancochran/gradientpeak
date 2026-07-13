@@ -1,15 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { db, pool } from "@repo/db/client";
-import {
-  activities,
-  activityFileIngestions,
-  activityGeometry,
-  activityImports,
-  activitySummaries,
-  integrations,
-  profiles,
-  users,
-} from "@repo/db/schema";
+import { activities, activityFileIngestions, integrations, profiles, users } from "@repo/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import {
@@ -150,18 +141,12 @@ describe("canonical activity persistence against PostgreSQL", () => {
     };
     await submitActivity(db, enrichment);
     const [activity] = await db.select().from(activities).where(eq(activities.id, created.id));
-    const [summary] = await db
-      .select()
-      .from(activitySummaries)
-      .where(eq(activitySummaries.activity_id, created.id));
+    const [summary] = await db.select().from(activities).where(eq(activities.id, created.id));
     const [activityImport] = await db
       .select()
-      .from(activityImports)
-      .where(eq(activityImports.activity_id, created.id));
-    const [geometry] = await db
-      .select()
-      .from(activityGeometry)
-      .where(eq(activityGeometry.activity_id, created.id));
+      .from(activities)
+      .where(eq(activities.id, created.id));
+    const [geometry] = await db.select().from(activities).where(eq(activities.id, created.id));
     expect(activity).toMatchObject({
       profile_id: profileId,
       name: "Enriched activity",
@@ -187,13 +172,8 @@ describe("canonical activity persistence against PostgreSQL", () => {
     expect(
       await db
         .select()
-        .from(activitySummaries)
-        .where(
-          and(
-            eq(activitySummaries.activity_id, created.id),
-            eq(activitySummaries.profile_id, otherProfileId),
-          ),
-        ),
+        .from(activities)
+        .where(and(eq(activities.id, created.id), eq(activities.profile_id, otherProfileId))),
     ).toEqual([]);
   });
 
@@ -229,15 +209,15 @@ describe("canonical activity persistence against PostgreSQL", () => {
     expect(duplicate).toMatchObject({
       cause: {
         code: "23505",
-        constraint: "idx_activity_imports_external_unique",
+        constraint: "idx_activities_provider_external_unique",
       },
     });
     const imports = await db
       .select()
-      .from(activityImports)
-      .where(eq(activityImports.external_id, externalId));
+      .from(activities)
+      .where(eq(activities.external_id, externalId));
     expect(imports).toHaveLength(1);
-    expect(imports[0]?.activity_id).toBe(first.id);
+    expect(imports[0]?.id).toBe(first.id);
   });
 
   it("commits recording ingestion with its activity projection", async (context) => {

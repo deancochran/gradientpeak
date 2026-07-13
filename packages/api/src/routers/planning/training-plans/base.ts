@@ -174,18 +174,18 @@ const activitySummaryColumns = {
   type: schema.activities.type,
   started_at: schema.activities.started_at,
   finished_at: schema.activities.finished_at,
-  duration_seconds: schema.activitySummaries.duration_seconds,
-  moving_seconds: schema.activitySummaries.moving_seconds,
-  distance_meters: schema.activitySummaries.distance_meters,
-  avg_heart_rate: schema.activitySummaries.avg_heart_rate,
-  max_heart_rate: schema.activitySummaries.max_heart_rate,
-  avg_power: schema.activitySummaries.avg_power,
-  max_power: schema.activitySummaries.max_power,
-  avg_speed_mps: schema.activitySummaries.avg_speed_mps,
-  max_speed_mps: schema.activitySummaries.max_speed_mps,
-  normalized_power: schema.activitySummaries.normalized_power,
-  normalized_speed_mps: schema.activitySummaries.normalized_speed_mps,
-  normalized_graded_speed_mps: schema.activitySummaries.normalized_graded_speed_mps,
+  duration_seconds: schema.activities.duration_seconds,
+  moving_seconds: schema.activities.moving_seconds,
+  distance_meters: schema.activities.distance_meters,
+  avg_heart_rate: schema.activities.avg_heart_rate,
+  max_heart_rate: schema.activities.max_heart_rate,
+  avg_power: schema.activities.avg_power,
+  max_power: schema.activities.max_power,
+  avg_speed_mps: schema.activities.avg_speed_mps,
+  max_speed_mps: schema.activities.max_speed_mps,
+  normalized_power: schema.activities.normalized_power,
+  normalized_speed_mps: schema.activities.normalized_speed_mps,
+  normalized_graded_speed_mps: schema.activities.normalized_graded_speed_mps,
 } as const;
 
 function getSqlRows<T>(result: unknown) {
@@ -2437,10 +2437,7 @@ async function estimateCurrentCtl(input: {
     ? await input.db
         .select(activitySummaryColumns)
         .from(schema.activities)
-        .innerJoin(
-          schema.activitySummaries,
-          eq(schema.activitySummaries.activity_id, schema.activities.id),
-        )
+
         .where(
           and(
             eq(schema.activities.profile_id, profileId),
@@ -2773,10 +2770,6 @@ export async function deriveProfileAwareCreationContext(input: {
           input.db
             .select(activitySummaryColumns)
             .from(schema.activities)
-            .innerJoin(
-              schema.activitySummaries,
-              eq(schema.activitySummaries.activity_id, schema.activities.id),
-            )
             .where(
               and(
                 eq(schema.activities.profile_id, input.profileId),
@@ -4336,10 +4329,6 @@ const trainingPlansProcedures = {
     const activities = await db
       .select(activitySummaryColumns)
       .from(schema.activities)
-      .innerJoin(
-        schema.activitySummaries,
-        eq(schema.activitySummaries.activity_id, schema.activities.id),
-      )
       .where(
         and(
           eq(schema.activities.profile_id, ctx.session.user.id),
@@ -4376,10 +4365,6 @@ const trainingPlansProcedures = {
     const weekActivities = await db
       .select(activitySummaryColumns)
       .from(schema.activities)
-      .innerJoin(
-        schema.activitySummaries,
-        eq(schema.activitySummaries.activity_id, schema.activities.id),
-      )
       .where(
         and(
           eq(schema.activities.profile_id, ctx.session.user.id),
@@ -4596,10 +4581,7 @@ const trainingPlansProcedures = {
       const actualCurve = await db
         .select(activitySummaryColumns)
         .from(schema.activities)
-        .innerJoin(
-          schema.activitySummaries,
-          eq(schema.activitySummaries.activity_id, schema.activities.id),
-        )
+
         .where(
           and(
             eq(schema.activities.profile_id, ctx.session.user.id),
@@ -4732,10 +4714,7 @@ const trainingPlansProcedures = {
       const baselineActivities = await db
         .select(activitySummaryColumns)
         .from(schema.activities)
-        .innerJoin(
-          schema.activitySummaries,
-          eq(schema.activitySummaries.activity_id, schema.activities.id),
-        )
+
         .where(
           and(
             eq(schema.activities.profile_id, ctx.session.user.id),
@@ -4769,10 +4748,7 @@ const trainingPlansProcedures = {
       const activities = await db
         .select(activitySummaryColumns)
         .from(schema.activities)
-        .innerJoin(
-          schema.activitySummaries,
-          eq(schema.activitySummaries.activity_id, schema.activities.id),
-        )
+
         .where(
           and(
             eq(schema.activities.profile_id, ctx.session.user.id),
@@ -4946,10 +4922,7 @@ const trainingPlansProcedures = {
       const completedActivities = await db
         .select(activitySummaryColumns)
         .from(schema.activities)
-        .innerJoin(
-          schema.activitySummaries,
-          eq(schema.activitySummaries.activity_id, schema.activities.id),
-        )
+
         .where(
           and(
             eq(schema.activities.profile_id, ctx.session.user.id),
@@ -5069,10 +5042,7 @@ const trainingPlansProcedures = {
       const activities = await db
         .select(activitySummaryColumns)
         .from(schema.activities)
-        .innerJoin(
-          schema.activitySummaries,
-          eq(schema.activitySummaries.activity_id, schema.activities.id),
-        )
+
         .where(
           and(
             eq(schema.activities.profile_id, ctx.session.user.id),
@@ -5224,10 +5194,7 @@ const trainingPlansProcedures = {
       const activities = await db
         .select(activitySummaryColumns)
         .from(schema.activities)
-        .innerJoin(
-          schema.activitySummaries,
-          eq(schema.activitySummaries.activity_id, schema.activities.id),
-        )
+
         .where(
           and(
             eq(schema.activities.profile_id, ctx.session.user.id),
@@ -5347,10 +5314,7 @@ const trainingPlansProcedures = {
           name: schema.activities.name,
         })
         .from(schema.activities)
-        .innerJoin(
-          schema.activitySummaries,
-          eq(schema.activitySummaries.activity_id, schema.activities.id),
-        )
+
         .where(
           and(
             eq(schema.activities.profile_id, ctx.session.user.id),
@@ -5454,14 +5418,11 @@ const trainingPlansProcedures = {
       // Get completed activities for this week
       const activities = await db
         .select({
-          distance_meters: schema.activitySummaries.distance_meters,
-          duration_seconds: schema.activitySummaries.duration_seconds,
+          distance_meters: schema.activities.distance_meters,
+          duration_seconds: schema.activities.duration_seconds,
         })
         .from(schema.activities)
-        .innerJoin(
-          schema.activitySummaries,
-          eq(schema.activitySummaries.activity_id, schema.activities.id),
-        )
+
         .where(
           and(
             eq(schema.activities.profile_id, ctx.session.user.id),

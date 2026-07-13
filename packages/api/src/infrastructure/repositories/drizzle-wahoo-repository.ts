@@ -125,14 +125,14 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
     async findImportedActivityByProviderExternalId({ externalId, provider }) {
       const [row] = await db
         .select({
-          activityId: schema.activityImports.activity_id,
-          profileId: schema.activityImports.profile_id,
+          activityId: schema.activities.id,
+          profileId: schema.activities.profile_id,
         })
-        .from(schema.activityImports)
+        .from(schema.activities)
         .where(
           and(
-            eq(schema.activityImports.provider, provider),
-            eq(schema.activityImports.external_id, externalId),
+            eq(schema.activities.provider, provider),
+            eq(schema.activities.external_id, externalId),
           ),
         )
         .limit(1);

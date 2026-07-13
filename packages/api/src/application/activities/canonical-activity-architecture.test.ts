@@ -20,4 +20,10 @@ describe("canonical activity submission architecture", () => {
     expect(repository).not.toContain("insert(schema.activities)");
     expect(repository).not.toContain("insert(schema.activityImports)");
   });
+
+  it("routes allowed canonical field mutations through the canonical persistence service", () => {
+    const mutations = source("./activity-mutations.ts");
+    expect(mutations).toContain("updateCanonicalActivityFields");
+    expect(mutations).not.toContain(".update(activities)");
+  });
 });

@@ -338,7 +338,7 @@ describe("activity-importer", () => {
     repository.submitActivity.mockRejectedValueOnce(
       Object.assign(new Error("duplicate key"), {
         code: "23505",
-        constraint: "idx_activity_imports_external_unique",
+        constraint: "idx_activities_provider_external_unique",
       }),
     );
     repository.findImportedActivityByProviderExternalId

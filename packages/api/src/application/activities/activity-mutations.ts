@@ -2,6 +2,7 @@ import { activities } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
+import { updateCanonicalActivityFields } from "./submit-activity";
 
 type ActivitiesDb = ReturnType<typeof getRequiredDb>;
 
@@ -24,23 +25,15 @@ export async function updateActivityForProfile({
 }) {
   const { id, ...updates } = input;
 
-  const [data] = await db
-    .update(activities)
-    .set({
-      ...updates,
-      updated_at: new Date(),
-    })
-    .where(and(eq(activities.id, id), eq(activities.profile_id, profileId)))
-    .returning();
+  const data = await db.transaction((tx) =>
+    updateCanonicalActivityFields(tx, { activityId: id, profileId, fields: updates }),
+  );
 
   if (!data) {
     throw new TRPCError({
       code: "NOT_FOUND",
       message: "Activity not found",
     });
-  }
-
-  if (input.normalized_power !== undefined) {
   }
 
   return data;

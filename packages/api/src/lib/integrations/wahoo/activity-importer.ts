@@ -39,7 +39,7 @@ interface WahooRepository {
 }
 
 const EXPECTED_PROVIDER_UNIQUE_CONSTRAINTS = new Set([
-  "idx_activity_imports_external_unique",
+  "idx_activities_provider_external_unique",
   "integration_resource_links_external_unique",
 ]);
 

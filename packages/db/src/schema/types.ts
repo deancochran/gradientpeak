@@ -4,12 +4,8 @@ import type {
   activities,
   activityEfforts,
   activityFileIngestions,
-  activityGeometry,
-  activityImports,
-  activityLaps,
   activityPlans,
   activityRoutes,
-  activitySummaries,
   coachesAthletes,
   coachingInvitations,
   comments,
@@ -85,50 +81,14 @@ export type ActivityPlanInsert = InferInsertModel<typeof activityPlans>;
 export type TrainingPlanRow = InferSelectModel<typeof trainingPlans>;
 export type TrainingPlanInsert = InferInsertModel<typeof trainingPlans>;
 
-type BaseActivityRow = InferSelectModel<typeof activities>;
+export type ActivityRow = InferSelectModel<typeof activities>;
 export type ActivityInsert = InferInsertModel<typeof activities>;
-
-export type ActivitySummaryRow = InferSelectModel<typeof activitySummaries>;
-export type ActivitySummaryInsert = InferInsertModel<typeof activitySummaries>;
-
-export type ActivityImportRow = InferSelectModel<typeof activityImports>;
-export type ActivityImportInsert = InferInsertModel<typeof activityImports>;
-
-export type ActivityGeometryRow = InferSelectModel<typeof activityGeometry>;
-export type ActivityGeometryInsert = InferInsertModel<typeof activityGeometry>;
-
-export type ActivityLapRow = InferSelectModel<typeof activityLaps>;
-export type ActivityLapInsert = InferInsertModel<typeof activityLaps>;
 
 export type ActivityFileIngestionRow = InferSelectModel<typeof activityFileIngestions>;
 export type ActivityFileIngestionInsert = InferInsertModel<typeof activityFileIngestions>;
 
 export type EventRow = InferSelectModel<typeof events>;
 export type EventInsert = InferInsertModel<typeof events>;
-
-export type ActivityRow = BaseActivityRow &
-  Partial<
-    Pick<
-      ActivitySummaryRow,
-      | "avg_cadence"
-      | "avg_heart_rate"
-      | "avg_power"
-      | "avg_speed_mps"
-      | "calories"
-      | "distance_meters"
-      | "duration_seconds"
-      | "max_cadence"
-      | "max_heart_rate"
-      | "max_power"
-      | "max_speed_mps"
-      | "moving_seconds"
-      | "normalized_graded_speed_mps"
-      | "normalized_power"
-      | "normalized_speed_mps"
-    >
-  > &
-  Partial<Pick<ActivityImportRow, "activity_file_path">> &
-  Partial<Pick<ActivityGeometryRow, "map_bounds" | "polyline">>;
 
 export type ContentAccessGrantRow = InferSelectModel<typeof contentAccessGrants>;
 export type ContentAccessGrantInsert = InferInsertModel<typeof contentAccessGrants>;
