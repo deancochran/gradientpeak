@@ -1,4 +1,12 @@
-import { ADJUSTMENT_PRESETS, type AdjustmentType, getAdjustmentSummary } from "@repo/core/plan";
+import type { inferRouterOutputs } from "@repo/api/client";
+import type { AppRouter } from "@repo/api/react";
+import {
+  ADJUSTMENT_PRESETS,
+  type AdjustmentType,
+  getAdjustmentSummary,
+  type QuickAdjustmentPlanStructure,
+} from "@repo/core/plan";
+import type { TrainingPlan } from "@repo/core/schemas";
 import { THEME } from "@repo/tailwindcss/native";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
@@ -13,11 +21,21 @@ import type { SmartSuggestion } from "@/lib/hooks/useSmartSuggestions";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 import { useTheme } from "@/lib/stores/theme-store";
 
+type TrainingPlanQueryOutput = NonNullable<inferRouterOutputs<AppRouter>["trainingPlans"]["get"]>;
+type AdjustableTrainingPlanStructure = TrainingPlan & QuickAdjustmentPlanStructure;
+type QuickAdjustPlan = Omit<TrainingPlanQueryOutput, "structure"> & {
+  structure: AdjustableTrainingPlanStructure;
+};
+
+type ApplicableSmartSuggestion = Omit<SmartSuggestion, "adjustedStructure"> & {
+  adjustedStructure: AdjustableTrainingPlanStructure;
+};
+
 interface QuickAdjustSheetProps {
   visible: boolean;
   onClose: () => void;
-  plan: any;
-  smartSuggestion?: SmartSuggestion | null;
+  plan: QuickAdjustPlan | null;
+  smartSuggestion?: ApplicableSmartSuggestion | null;
 }
 
 export function QuickAdjustSheet({
@@ -71,7 +89,10 @@ export function QuickAdjustSheet({
     const preset = ADJUSTMENT_PRESETS.find((p) => p.type === type);
     if (!preset) return;
 
-    const adjustedStructure = preset.calculate(plan.structure);
+    const adjustedStructure = {
+      ...plan.structure,
+      ...preset.calculate(plan.structure),
+    } satisfies AdjustableTrainingPlanStructure;
     const changes = getAdjustmentSummary(plan.structure, adjustedStructure);
 
     Alert.alert(
@@ -93,11 +114,13 @@ export function QuickAdjustSheet({
   };
 
   const handleCustomAdjustment = () => {
+    if (!plan) return;
+
     onClose();
     navigateTo({
       pathname: ROUTES.PLAN.TRAINING_PLAN.EDIT,
       params: { id: plan.id, initialTab: "plan" },
-    } as any);
+    });
   };
 
   return (

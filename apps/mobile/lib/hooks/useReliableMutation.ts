@@ -23,6 +23,7 @@
 
 import { invalidateSchedulingQueries, type SchedulingRefreshScope } from "@repo/api/client";
 import { useQueryClient } from "@tanstack/react-query";
+import type { UseTRPCMutationOptions, UseTRPCMutationResult } from "@trpc/react-query/shared";
 import { Alert } from "react-native";
 import { showErrorAlert } from "@/lib/utils/formErrors";
 
@@ -32,7 +33,16 @@ type InvalidationTarget =
     }
   | (() => Promise<unknown> | unknown);
 
-export interface ReliableMutationOptions {
+type ReliableMutationHook<TInput, TError, TOutput> = {
+  useMutation: <TContext = unknown>(
+    options?: UseTRPCMutationOptions<TInput, TError, TOutput, TContext>,
+  ) => UseTRPCMutationResult<TOutput, TError, TInput, TContext>;
+};
+
+export type ReliableMutationOptions<TInput, TError, TOutput, TContext = unknown> = Omit<
+  UseTRPCMutationOptions<TInput, TError, TOutput, TContext>,
+  "onError" | "onSuccess"
+> & {
   /**
    * Utils to invalidate (just pass the utils objects)
    * @example invalidate: [utils.activities, utils.profile]
@@ -52,36 +62,38 @@ export interface ReliableMutationOptions {
   /**
    * Custom error handling
    */
-  onError?: (error: any) => void;
+  onError?: NonNullable<UseTRPCMutationOptions<TInput, TError, TOutput, TContext>["onError"]>;
 
   /**
    * Custom success handling
    */
-  onSuccess?: (data: any) => void | Promise<void>;
+  onSuccess?: NonNullable<UseTRPCMutationOptions<TInput, TError, TOutput, TContext>["onSuccess"]>;
 
   /**
    * Suppress automatic error alerts
    */
   silent?: boolean;
-}
+};
 
 /**
  * Wraps API useMutation with reliability guarantees
  * Works with existing code patterns - no refactoring needed
  */
-export function useReliableMutation<T extends { useMutation: any }>(
-  mutation: T,
-  options: ReliableMutationOptions = {},
-) {
+export function useReliableMutation<TInput, TError, TOutput, TContext = unknown>(
+  mutation: ReliableMutationHook<TInput, TError, TOutput>,
+  options: ReliableMutationOptions<TInput, TError, TOutput, TContext> = {},
+): UseTRPCMutationResult<TOutput, TError, TInput, TContext> {
   const queryClient = useQueryClient();
+  const { invalidate, onError, onSuccess, refresh, silent, success, ...mutationOptions } = options;
 
-  return mutation.useMutation({
-    onSuccess: async (data: any, _variables: any, _context: any) => {
+  return mutation.useMutation<TContext>({
+    ...mutationOptions,
+    onSuccess: async (data, variables, onMutateResult, context) => {
       const refreshTasks: Promise<unknown>[] = [];
 
-      if (options.invalidate) {
+      if (invalidate) {
         refreshTasks.push(
-          ...options.invalidate.map((target) => {
+          ...invalidate.map((target) => {
             if (typeof target === "function") {
               return Promise.resolve(target());
             }
@@ -91,27 +103,27 @@ export function useReliableMutation<T extends { useMutation: any }>(
         );
       }
 
-      if (options.refresh) {
-        refreshTasks.push(invalidateSchedulingQueries(queryClient, options.refresh));
+      if (refresh) {
+        refreshTasks.push(invalidateSchedulingQueries(queryClient, refresh));
       }
 
       if (refreshTasks.length > 0) {
         await Promise.all(refreshTasks);
       }
 
-      await options.onSuccess?.(data);
+      await onSuccess?.(data, variables, onMutateResult, context);
 
       // Show success message after required refresh work completes
-      if (options.success) {
-        Alert.alert("Success", options.success);
+      if (success) {
+        Alert.alert("Success", success);
       }
     },
-    onError: (error: any, _variables: any, _context: any) => {
+    onError: async (error, variables, onMutateResult, context) => {
       // Custom error callback first
-      options.onError?.(error);
+      await onError?.(error, variables, onMutateResult, context);
 
       // Show error alert unless silent
-      if (!options.silent) {
+      if (!silent) {
         showErrorAlert(error);
       }
     },
