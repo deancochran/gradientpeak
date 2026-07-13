@@ -218,6 +218,13 @@
       "when": 1784376120000,
       "tag": "0030_expand_and_backfill_activity_extensions",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1784376180000,
+      "tag": "0031_add_auth_updated_at_defaults",
+      "breakpoints": true
     }
   ]
 }
