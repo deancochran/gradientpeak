@@ -44,6 +44,7 @@ Use this file when working in `apps/web`.
 
 - Run the narrowest relevant web checks while iterating.
 - Use repo-wide checks before final integration when the change crosses package boundaries.
+- Start protected route, query-state, and form work from the [web/shared UI exemplars](../../docs/agent-exemplars.md).
 
 ## References
 

@@ -47,6 +47,7 @@ Use this file when working in `packages/db`.
 ## Validation
 
 - Use package or repo DB commands relevant to the change, including migration and local DB workflows.
+- A schema or migration change requires `pnpm --filter @repo/db db:verify`; start from the [migration safety exemplar](../../docs/agent-exemplars.md).
 
 ## References
 

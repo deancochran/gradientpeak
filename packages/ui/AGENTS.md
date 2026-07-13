@@ -22,7 +22,7 @@ Use this file when working in `packages/ui`.
 
 - Treat `package.json` `exports` as the canonical public API and keep subpath exports explicit and stable across web and native entrypoints.
 - Prefer adding reusable primitives here instead of duplicating app-local UI.
-- Preserve stable package entrypoints under `src/components/*` and `src/index.ts`.
+- Preserve stable package entrypoints declared by `package.json` exports; do not assume `src/index.ts` is a public root import unless that export exists.
 - Keep app-owned preview entrypoints in the apps, not in this package.
 - Respect generated and synced asset boundaries.
 - Keep shared primitives thin over Radix UI and React Native Primitives so accessibility and composition semantics stay intact.
@@ -34,8 +34,14 @@ Use this file when working in `packages/ui`.
 - Supply form `defaultValues` from the root, avoid nested form providers, and do not double-register controlled inputs.
 - Use CVA for stable variant APIs instead of scattering ad hoc class branching across components.
 - Use React `useId` for accessibility relationships such as label, description, and error IDs.
-- Do not hand-edit synced registry files or generated theme outputs when a package workflow should be used instead.
-- Follow the documented `sync:shadcn-theme`, `generate:theme`, and add-component workflows when relevant.
+- Do not hand-edit synced registry files, generated testing artifacts, or generated theme outputs when a package workflow should be used instead.
+- Theme workflows live in `tooling/tailwindcss`: use `pnpm --filter @repo/tailwindcss sync:shadcn-theme` or `pnpm --filter @repo/tailwindcss generate:theme` when relevant. Do not invent package-local add-component scripts.
+
+## Validation
+
+- Use `pnpm --filter @repo/ui check-types` and `pnpm --filter @repo/ui test` while iterating.
+- Run `pnpm --filter @repo/ui check:testing-artifacts` after changing generated UI testing inputs.
+- For accessible web form behavior, begin with the [web form exemplar](../../docs/agent-exemplars.md); preserve equivalent semantics on native rather than importing web implementation details.
 
 ## Avoid
 

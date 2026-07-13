@@ -45,7 +45,7 @@ Use this file when working in `apps/mobile`.
 - Reuse canonical cards anywhere the entity appears, including lists, search results, pickers, previews, and associated-content sections.
 - Associated resources on detail screens should appear as tappable cards and navigate to their detail screens when the user can view them.
 - Do not render associated resource IDs, labels, or one-off mini summaries when a canonical card exists.
-- Examples: activity plans use `ActivityPlanCard`, training plans use `TrainingPlanCard`, group events use `GroupEventCard`, groups use `GroupCard` or `GroupCompactCard`, and activities use `ActivityCard`.
+- Examples: activity plans use `ActivityPlanCard`, training plans use `TrainingPlanCard`, group events use `GroupEventCard`, groups use `GroupCard` with its supported variants, and activities use `ActivityCard`.
 
 ## UI/UX Field Standards
 
@@ -82,6 +82,8 @@ Use this file when working in `apps/mobile`.
 
 - Prefer the narrowest relevant mobile checks first.
 - Common commands from the repo root are `pnpm --filter mobile check-types`, `pnpm --filter mobile lint`, `pnpm --filter mobile test`, and `pnpm --filter mobile test:e2e` when needed.
+- Begin UI/data-flow work with the [mobile exemplars](../../docs/agent-exemplars.md). Reuse their state and accessibility behavior, not their feature-specific copy.
+- Observable mobile UI, navigation, or interaction changes require Maestro/manual video evidence under the coordination policy. If unavailable, the handoff must state `mobile video evidence local-only/deferred`.
 
 ## References
 

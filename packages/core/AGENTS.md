@@ -12,7 +12,7 @@ Use this file when working in `packages/core`.
 
 - Shared business logic.
 - Calculations and estimators.
-- Shared Zod schemas and domain contracts.
+- Reusable Zod schemas and framework-free domain contracts shared across surfaces.
 - Framework-free helpers used across web, mobile, and server code.
 
 ## Rules
@@ -21,6 +21,7 @@ Use this file when working in `packages/core`.
 - Prefer pure functions and deterministic helpers.
 - Adapt app, network, and DB shapes before they cross into core.
 - Put shared schemas here when multiple surfaces depend on the same contract.
+- Keep transport-specific request and response DTOs in `@repo/api`; Core owns reusable domain contracts, not protocol-specific wrappers.
 - Treat root exports and subpath exports as stable package API surface, and change them intentionally instead of encouraging deep imports into internals.
 - Keep the package compatible with the strictest consumer environment by preferring strict TypeScript and runtime-neutral module behavior.
 
@@ -40,6 +41,7 @@ Use this file when working in `packages/core`.
 ## Validation
 
 - Use `pnpm --filter @repo/core check-types` and `pnpm --filter @repo/core test` for package-scoped verification.
+- For a new shared concept, begin with the [Core contract exemplar](../../docs/agent-exemplars.md) and add behavior tests before migrating consumers.
 
 ## References
 

@@ -30,6 +30,8 @@ Use this file when working in `packages/api`.
 
 - Keep package request, response, and domain contracts typed end to end.
 - Avoid duplicating contract definitions that already exist in `@repo/core`, `@repo/auth`, or `@repo/db`.
+- Define public transport request/response DTOs in API, reusing Core's reusable domain contracts within them; do not move transport-specific wrappers into Core or expose persistence row schemas as accidental client contracts.
+- Keep `TRPCError` mapping at the router boundary. Application and repository code return typed domain/application failures rather than transport errors or database messages.
 - Configure `superjson` symmetrically across server and client integration points and treat transformer changes as API contract changes.
 
 ## Avoid
@@ -41,6 +43,7 @@ Use this file when working in `packages/api`.
 
 - Prefer package-scoped checks while iterating.
 - Main commands are `pnpm --filter @repo/api check-types` and `pnpm --filter @repo/api test`.
+- For a new procedure or transaction, begin with the [thin router and transactional write exemplars](../../docs/agent-exemplars.md).
 
 ## References
 

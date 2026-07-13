@@ -13,6 +13,7 @@ Use this file when working in `apps/mobile/app`.
 ## Rules
 
 - Keep route files focused on screen composition, navigation, and route-owned state.
+- Do not define reusable API payload/row contracts, framework-free scoring, or recursive domain-data manipulation in route files; move those to the canonical API/Core owner or a typed app adapter.
 - Preserve route-group meaning such as `(external)` for public flows and `(internal)` for authenticated app flows.
 - Keep layout files responsible for navigation structure, providers, and broad gating behavior.
 - Prefer layout-level access enforcement and route-group structure over duplicated public and private screen trees.

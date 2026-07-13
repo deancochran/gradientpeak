@@ -54,3 +54,20 @@ pnpm check:architecture
 Review the JSON diff: it contains only category counts and hashed, path-normalized fingerprints—never
 source snippets. Do not update the baseline merely to make a new violation pass. Fixture tests live
 beside the checker and prove both rejection and reviewed distinction behavior.
+
+## Guidance and exemplar validation
+
+`pnpm check:guidance` validates the checked exemplar catalog at `docs/agent-exemplars.md` and every
+`AGENTS.md`. Local Markdown links in both the catalog and every `AGENTS.md` must resolve to files. Catalog
+files containing `@deprecated` are rejected unless the link has a documented
+`<!-- guidance: allow-deprecated reason -->` marker immediately before, on, or after its line.
+
+The gate also checks backticked `apps/`, `packages/`, `tooling/`, and `docs/` paths in `AGENTS.md`, plus
+backticked `pnpm` script references (including every command in a chained span and
+`pnpm --filter <workspace> <script>`). Known generic pnpm
+operations such as `pnpm install` are deliberately ignored to avoid treating ordinary package-manager use
+as a script reference. Run its deterministic fixture coverage with:
+
+```sh
+node --test tooling/architecture/check-guidance.test.mjs
+```

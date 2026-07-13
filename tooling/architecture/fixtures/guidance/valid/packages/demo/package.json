@@ -1,0 +1,6 @@
+{
+  "name": "@fixture/demo",
+  "scripts": {
+    "check-types": "node --version"
+  }
+}

@@ -16,6 +16,7 @@ Use this file when working in `apps/web/src/routes`.
 - Keep auth and access control in `beforeLoad`, middleware, or server-side route boundaries.
 - Keep search params and route contracts typed.
 - Keep critical route-owned data prefetched at the loader boundary, and let secondary work start without blocking first render when possible.
+- Render loading, error, empty, and data states distinctly; never turn a failed query into an empty state.
 - Use route files to describe navigation, gating, and loading boundaries, not reusable business workflows.
 - Move reusable UI into `components/` or `@repo/ui`.
 - Move durable business logic into `@repo/api`, `@repo/core`, or route-adjacent helpers when appropriate.
