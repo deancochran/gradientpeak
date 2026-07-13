@@ -320,7 +320,15 @@ export const feedRouter = createTRPCRouter({
       const derivedMap = await buildActivityDerivedSummaryMap({
         store: createActivityAnalysisStore(db),
         profileId: userId,
-        activities: activities as any,
+        activities: activities.map((activity) => ({
+          ...activity,
+          max_power: activity.max_power ?? null,
+          avg_speed_mps: activity.avg_speed_mps ?? null,
+          max_speed_mps: activity.max_speed_mps ?? null,
+          normalized_power: activity.normalized_power ?? null,
+          normalized_speed_mps: activity.normalized_speed_mps ?? null,
+          normalized_graded_speed_mps: activity.normalized_graded_speed_mps ?? null,
+        })),
       });
 
       return feedResponseSchema.parse(

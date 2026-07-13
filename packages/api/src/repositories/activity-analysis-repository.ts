@@ -1,11 +1,11 @@
 import type { ActivityEffortRow, ProfileMetricRow, ProfileRow } from "@repo/db";
 
-type ActivityAnalysisProfileSnapshot = Pick<ProfileRow, "dob" | "gender">;
-type ActivityAnalysisMetricSnapshot = Omit<
+export type ActivityAnalysisProfileSnapshot = Pick<ProfileRow, "dob" | "gender">;
+export type ActivityAnalysisMetricSnapshot = Omit<
   Pick<ProfileMetricRow, "metric_type" | "recorded_at" | "unit" | "value">,
   "value"
 > & { value: number };
-type ActivityAnalysisEffortSnapshot = Omit<
+export type ActivityAnalysisEffortSnapshot = Omit<
   Pick<
     ActivityEffortRow,
     "activity_category" | "duration_seconds" | "effort_type" | "recorded_at" | "unit" | "value"
@@ -24,4 +24,7 @@ export interface ActivityAnalysisStore {
     asOf: Date;
     profileId: string;
   }): Promise<ActivityAnalysisContextSnapshot>;
+  loadContextEvidence?(input: {
+    requests: Array<{ asOf: Date; profileId: string }>;
+  }): Promise<Map<string, ActivityAnalysisContextSnapshot>>;
 }

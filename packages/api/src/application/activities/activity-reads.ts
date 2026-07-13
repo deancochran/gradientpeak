@@ -1,4 +1,8 @@
-import { analyzeActivityDerivedMetrics, parseActivityLapRecords } from "@repo/core";
+import {
+  type ActivityListDerivedSummary,
+  analyzeActivityDerivedMetrics,
+  parseActivityLapRecords,
+} from "@repo/core";
 import { activities, activityFileIngestions, activityPlans } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, count, desc, eq, gte, ilike, lte, or, sql } from "drizzle-orm";
@@ -26,7 +30,26 @@ export type ActivityListQueryInput = {
   sort_order: "asc" | "desc";
 };
 
-const tssSortMaxCandidates = 500;
+const tssSortBatchSize = 200;
+
+type ActivityRow = typeof activities.$inferSelect;
+
+function compareTssCandidates(
+  a: { activity: ActivityRow; derived: ActivityListDerivedSummary | null },
+  b: { activity: ActivityRow; derived: ActivityListDerivedSummary | null },
+  sortOrder: ActivityListQueryInput["sort_order"],
+) {
+  const aTss = a.derived?.tss ?? null;
+  const bTss = b.derived?.tss ?? null;
+  if (aTss !== bTss) {
+    if (aTss === null) return sortOrder === "asc" ? -1 : 1;
+    if (bTss === null) return sortOrder === "asc" ? 1 : -1;
+    return sortOrder === "asc" ? aTss - bTss : bTss - aTss;
+  }
+
+  const startedAtDifference = b.activity.started_at.getTime() - a.activity.started_at.getTime();
+  return startedAtDifference || a.activity.id.localeCompare(b.activity.id);
+}
 
 export function normalizeActivityLaps<T extends typeof activities.$inferSelect>(activity: T): T {
   return { ...activity, laps: parseActivityLapRecords(activity.laps) };
@@ -56,45 +79,96 @@ export async function listActivitiesForProfile({
   const whereClause = and(...conditions);
   const distance = sql<number>`${activities.distance_meters}`;
   const duration = sql<number>`${activities.duration_seconds}`;
-  const candidateLimit = Math.min(
-    Math.max(offset + input.limit, input.limit),
-    tssSortMaxCandidates,
-  );
   const rowsPromise =
-    input.sort_by === "tss"
+    input.sort_by === "distance" || input.sort_by === "duration"
       ? db
+          .select({ activity: activities })
+          .from(activities)
+          .where(whereClause)
+          .orderBy(
+            input.sort_order === "asc"
+              ? input.sort_by === "distance"
+                ? distance
+                : duration
+              : desc(input.sort_by === "distance" ? distance : duration),
+          )
+          .limit(input.limit)
+          .offset(offset)
+      : db
           .select()
           .from(activities)
           .where(whereClause)
-          .orderBy(desc(activities.started_at))
-          .limit(candidateLimit)
-      : input.sort_by === "distance" || input.sort_by === "duration"
-        ? db
-            .select({ activity: activities })
-            .from(activities)
-            .where(whereClause)
-            .orderBy(
-              input.sort_order === "asc"
-                ? input.sort_by === "distance"
-                  ? distance
-                  : duration
-                : desc(input.sort_by === "distance" ? distance : duration),
-            )
-            .limit(input.limit)
-            .offset(offset)
-        : db
-            .select()
-            .from(activities)
-            .where(whereClause)
-            .orderBy(
-              input.sort_order === "asc" ? activities.started_at : desc(activities.started_at),
-            )
-            .limit(input.limit)
-            .offset(offset);
-  const [totalRows, rawRows] = await Promise.all([
-    db.select({ total: count() }).from(activities).where(whereClause),
-    rowsPromise,
-  ]);
+          .orderBy(input.sort_order === "asc" ? activities.started_at : desc(activities.started_at))
+          .limit(input.limit)
+          .offset(offset);
+  const totalRowsPromise = db.select({ total: count() }).from(activities).where(whereClause);
+  if (input.sort_by === "tss") {
+    const totalRows = await totalRowsPromise;
+    const total = Number(totalRows[0]?.total ?? 0);
+    // TSS depends on the athlete context at each activity timestamp and therefore cannot be
+    // expressed as a canonical activities-table sort. Read every matching row in bounded
+    // batches, load one fixed evidence snapshot for the candidates, then apply one deterministic
+    // global ordering before slicing the page. Cross-request cursor stability under new writes
+    // intentionally retains the existing index-offset semantics.
+    const candidates: Array<{
+      activity: ActivityRow;
+      derived: ActivityListDerivedSummary | null;
+    }> = [];
+    for (let batchOffset = 0; batchOffset < total; batchOffset += tssSortBatchSize) {
+      const batch = (await db
+        .select()
+        .from(activities)
+        .where(whereClause)
+        .orderBy(desc(activities.started_at), desc(activities.id))
+        .limit(tssSortBatchSize)
+        .offset(batchOffset)) as ActivityRow[];
+      if (batch.length === 0) break;
+      const normalizedBatch = batch.map(normalizeActivityLaps);
+      candidates.push(
+        ...normalizedBatch.map((activity) => ({
+          activity,
+          derived: null,
+        })),
+      );
+      if (batch.length < tssSortBatchSize) break;
+    }
+
+    const derivedByActivityId = await buildActivityDerivedSummaryMap({
+      store: createActivityAnalysisStore(db),
+      profileId,
+      activities: candidates.map(({ activity }) => activity),
+    });
+    for (const candidate of candidates) {
+      candidate.derived = derivedByActivityId.get(candidate.activity.id) ?? null;
+    }
+
+    const page = candidates
+      .sort((a, b) => compareTssCandidates(a, b, input.sort_order))
+      .slice(offset, offset + input.limit);
+    const likeStats = await loadLikeStats(db, {
+      entityType: "activity",
+      entityIds: page.map(({ activity }) => activity.id),
+      viewerProfileId: profileId,
+    });
+    const items = page.map(({ activity, derived }) =>
+      mapActivityToListDerivedResponse({
+        activity: {
+          ...activity,
+          likes_count: getLikeStats(likeStats, activity.id).likes_count,
+        },
+        has_liked: getLikeStats(likeStats, activity.id).has_liked,
+        derived,
+      }),
+    );
+    return {
+      items,
+      total,
+      ...buildIndexPageInfo({ offset, limit: input.limit, total }),
+    };
+  }
+
+  const [totalRows, rawRows] = await Promise.all([totalRowsPromise, rowsPromise]);
+  const total = Number(totalRows[0]?.total ?? 0);
   const activityRows = rawRows.map((row) =>
     row && typeof row === "object" && "activity" in row ? row.activity : row,
   ) as Array<typeof activities.$inferSelect>;
@@ -102,7 +176,7 @@ export async function listActivitiesForProfile({
   const derived = await buildActivityDerivedSummaryMap({
     store: createActivityAnalysisStore(db),
     profileId,
-    activities: data as any,
+    activities: data,
   });
   const ids = data.map((activity) => activity.id);
   const likeStats = await loadLikeStats(db, {
@@ -110,25 +184,17 @@ export async function listActivitiesForProfile({
     entityIds: ids,
     viewerProfileId: profileId,
   });
-  let items = data.map((activity) =>
+  const items = data.map((activity) =>
     mapActivityToListDerivedResponse({
       activity: { ...activity, likes_count: getLikeStats(likeStats, activity.id).likes_count },
       has_liked: getLikeStats(likeStats, activity.id).has_liked,
       derived: derived.get(activity.id) ?? null,
     }),
   );
-  if (input.sort_by === "tss")
-    items = items
-      .sort((a: any, b: any) =>
-        input.sort_order === "asc"
-          ? (a.derived?.tss ?? -Infinity) - (b.derived?.tss ?? -Infinity)
-          : (b.derived?.tss ?? -Infinity) - (a.derived?.tss ?? -Infinity),
-      )
-      .slice(offset, offset + input.limit);
   return {
     items,
-    total: Number(totalRows[0]?.total ?? 0),
-    ...buildIndexPageInfo({ offset, limit: input.limit, total: Number(totalRows[0]?.total ?? 0) }),
+    total,
+    ...buildIndexPageInfo({ offset, limit: input.limit, total }),
   };
 }
 

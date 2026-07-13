@@ -294,12 +294,20 @@ function createDbMock(options: {
 }) {
   const insertValues = vi.fn();
   const deleteWhere = vi.fn(() => Promise.resolve());
-  const offset = vi.fn(() => Promise.resolve(options.activityRows ?? []));
-  const limit = vi.fn(() => ({
-    offset,
-    then: (onFulfilled: (value: unknown[]) => unknown) =>
-      Promise.resolve(options.activityRows ?? []).then(onFulfilled),
-  }));
+  const offset = vi.fn();
+  const limit = vi.fn((limitValue: number) => {
+    const limitedRows = (options.activityRows ?? []).slice(0, limitValue);
+    return {
+      offset: (offsetValue: number) => {
+        offset(offsetValue);
+        return Promise.resolve(
+          (options.activityRows ?? []).slice(offsetValue, offsetValue + limitValue),
+        );
+      },
+      then: (onFulfilled: (value: unknown[]) => unknown) =>
+        Promise.resolve(limitedRows).then(onFulfilled),
+    };
+  });
   const orderBy = vi.fn((..._args: unknown[]) => ({
     limit,
     then: (onFulfilled: (value: unknown[]) => unknown) =>
@@ -637,24 +645,86 @@ describe("activitiesRouter", () => {
     expect(result.hasMore).toBe(false);
     expect(result.nextCursor).toBeUndefined();
     expect(result.items.map((item: any) => item.id)).toEqual([ACTIVITY_ID_3, ACTIVITY_ID]);
-    expect(db.__spies.limit).toHaveBeenCalledWith(3);
+    expect(db.__spies.limit).toHaveBeenCalledWith(200);
   });
 
-  it("caps paginated tss candidate loading", async () => {
-    const db = createDbMock({
-      activityRows: [buildActivityRow()],
-      totalRows: [{ total: 1000 }],
-    });
-    const caller = createCaller(db);
+  it("globally paginates more than 500 derived tss rows with stable ties and nulls", async () => {
+    const rows = Array.from({ length: 525 }, (_, index) =>
+      buildActivityRow({
+        id: `00000000-0000-4000-8000-${index.toString().padStart(12, "0")}`,
+        name: `Activity ${index}`,
+        started_at: new Date(Date.UTC(2025, 0, 1) + index * 1000),
+        finished_at: new Date(Date.UTC(2025, 0, 1) + index * 1000 + 500),
+      }),
+    );
+    const tssById = new Map(
+      rows.map((row, index) => [row.id, index < 5 ? null : Math.floor(index / 2)]),
+    );
+    mockActivityAnalysis.buildActivityDerivedSummaryMap.mockImplementation(
+      async ({ activities: batch }: { activities: Array<{ id: string }> }) =>
+        new Map(
+          batch.map((activity) => [
+            activity.id,
+            {
+              tss: tssById.get(activity.id) ?? null,
+              intensity_factor: null,
+              computed_as_of: "2026-01-01T00:00:00.000Z",
+            },
+          ]),
+        ),
+    );
+    const expected = (sortOrder: "asc" | "desc") =>
+      rows
+        .map((activity) => ({ activity, tss: tssById.get(activity.id) ?? null }))
+        .sort((a, b) => {
+          if (a.tss !== b.tss) {
+            if (a.tss === null) return sortOrder === "asc" ? -1 : 1;
+            if (b.tss === null) return sortOrder === "asc" ? 1 : -1;
+            return sortOrder === "asc" ? a.tss - b.tss : b.tss - a.tss;
+          }
+          return (
+            b.activity.started_at.getTime() - a.activity.started_at.getTime() ||
+            a.activity.id.localeCompare(b.activity.id)
+          );
+        })
+        .map(({ activity }) => activity.id);
+    const benchmarkSamples: number[] = [];
 
-    await caller.listPaginated({
-      limit: 50,
-      cursor: "index:900",
-      sort_by: "tss",
-      sort_order: "desc",
-    });
+    for (const testCase of [
+      { offset: 490, limit: 20, sortOrder: "asc" as const },
+      { offset: 500, limit: 10, sortOrder: "desc" as const },
+      { offset: 510, limit: 15, sortOrder: "desc" as const },
+    ]) {
+      const db = createDbMock({ activityRows: rows, totalRows: [{ total: rows.length }] });
+      const benchmarkStart = performance.now();
+      const result = await createCaller(db).listPaginated({
+        limit: testCase.limit,
+        cursor: `index:${testCase.offset}`,
+        sort_by: "tss",
+        sort_order: testCase.sortOrder,
+      });
+      benchmarkSamples.push(performance.now() - benchmarkStart);
 
-    expect(db.__spies.limit).toHaveBeenCalledWith(500);
+      expect(result.items.map((item) => item.id)).toEqual(
+        expected(testCase.sortOrder).slice(testCase.offset, testCase.offset + testCase.limit),
+      );
+      expect(result.total).toBe(525);
+      expect(result.hasMore).toBe(testCase.offset + testCase.limit < 525);
+      expect(result.nextCursor).toBe(
+        testCase.offset + testCase.limit < 525
+          ? `index:${testCase.offset + testCase.limit}`
+          : undefined,
+      );
+      expect(db.__spies.offset).toHaveBeenCalledWith(0);
+      expect(db.__spies.offset).toHaveBeenCalledWith(200);
+      expect(db.__spies.offset).toHaveBeenCalledWith(400);
+      expect(db.__spies.limit.mock.calls.filter(([value]) => value === 200)).toHaveLength(3);
+    }
+
+    benchmarkSamples.sort((a, b) => a - b);
+    const p95 = benchmarkSamples[Math.ceil(benchmarkSamples.length * 0.95) - 1] ?? 0;
+    expect(mockActivityAnalysis.buildActivityDerivedSummaryMap).toHaveBeenCalledTimes(3);
+    expect(p95, `525-row TSS pagination p95=${p95.toFixed(2)}ms`).toBeLessThan(250);
   });
 
   it("creates an activity linked to a planned-activity event", async () => {

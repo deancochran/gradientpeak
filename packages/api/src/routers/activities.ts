@@ -29,10 +29,6 @@ import { indexCursorSchema } from "../utils/index-cursor";
 
 const isoDatetimeSchema = z.string().datetime({ offset: true });
 
-// TSS is computed from activity context, so the DB cannot order by it exactly.
-// Bound the recency candidate window to avoid unbounded full-history reads.
-const _tssSortMaxCandidates = 500;
-
 const activityTimestampSchema = z.coerce.date();
 
 const activityRowSchema = publicActivitiesRowSchema

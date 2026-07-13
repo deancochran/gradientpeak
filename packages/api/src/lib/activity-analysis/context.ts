@@ -3,7 +3,7 @@ import {
   resolveCanonicalThresholds,
   type ThresholdActivityEffortObservation,
 } from "@repo/core/athlete-inputs";
-import type { ActivityAnalysisStore } from "../../repositories";
+import type { ActivityAnalysisContextSnapshot, ActivityAnalysisStore } from "../../repositories";
 
 type ResolveActivityContextAsOfInput = {
   store: ActivityAnalysisStore;
@@ -16,11 +16,37 @@ export async function resolveActivityContextAsOf(
 ): Promise<ActivityAnalysisContext> {
   const { store, profileId, activityTimestamp } = input;
   const asOf = activityTimestamp instanceof Date ? activityTimestamp : new Date(activityTimestamp);
-  const snapshot = await store.getContextSnapshot({ asOf, profileId });
+  const evidence = store.loadContextEvidence
+    ? ((await store.loadContextEvidence({ requests: [{ asOf, profileId }] })).get(profileId) ??
+      emptyContextEvidence)
+    : await store.getContextSnapshot({ asOf, profileId });
+  return resolveActivityContextFromEvidence({ activityTimestamp: asOf, evidence });
+}
+
+const emptyContextEvidence: ActivityAnalysisContextSnapshot = {
+  profile: { dob: null, gender: null },
+  profileMetrics: [],
+  recentEfforts: [],
+};
+
+export function resolveActivityContextFromEvidence(input: {
+  activityTimestamp: string | Date;
+  evidence: ActivityAnalysisContextSnapshot;
+}): ActivityAnalysisContext {
+  const asOf =
+    input.activityTimestamp instanceof Date
+      ? input.activityTimestamp
+      : new Date(input.activityTimestamp);
+  const snapshot = input.evidence;
+  const cutoff = asOf.getTime();
 
   const profileMetrics: ActivityAnalysisContext["profileMetrics"] = {};
-  const typedMetrics = snapshot.profileMetrics;
-  const typedEfforts = snapshot.recentEfforts;
+  const typedMetrics = snapshot.profileMetrics.filter(
+    (metric) => new Date(metric.recorded_at).getTime() <= cutoff,
+  );
+  const typedEfforts = snapshot.recentEfforts
+    .filter((effort) => new Date(effort.recorded_at).getTime() <= cutoff)
+    .slice(0, 50);
 
   for (const metric of typedMetrics) {
     const metricValue = toNumber(metric.value);

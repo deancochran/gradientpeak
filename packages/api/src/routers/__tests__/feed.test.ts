@@ -205,7 +205,12 @@ describe("feedRouter", () => {
         activities: expect.arrayContaining([
           expect.objectContaining({
             id: ACTIVITY_ID,
+            profile_id: OWNER_ID,
             elevation_gain_meters: 450.25,
+          }),
+          expect.objectContaining({
+            id: ACTIVITY_ID_2,
+            profile_id: VIEWER_ID,
           }),
         ]),
       }),
