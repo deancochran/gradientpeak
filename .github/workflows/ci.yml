@@ -30,8 +30,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Migration integrity
-        run: pnpm --filter @repo/db db:migration:check
+      - name: Start local database
+        run: pnpm --filter @repo/db self-host:up
+
+      - name: Verify database migrations
+        run: pnpm --filter @repo/db db:verify
+
+      - name: Stop local database
+        if: always()
+        run: pnpm --filter @repo/db self-host:down
 
       - name: Format and lint
         run: pnpm check:ci
