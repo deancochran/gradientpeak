@@ -280,6 +280,31 @@ export const profileQuickUpdateSchema = z.object({
 export type ProfileQuickUpdateData = z.infer<typeof profileQuickUpdateSchema>;
 
 /**
+ * Canonical transport input for `profiles.update`.
+ *
+ * This intentionally preserves the API's existing acceptance semantics rather
+ * than applying the stricter, presentation-specific rules used by profile forms.
+ */
+export const profilePatchInputSchema = z
+  .object({
+    username: optionalUsernameSchema.optional(),
+    weight_kg: optionalWeightKgSchema.optional(),
+    ftp: optionalFtpSchema.optional(),
+    threshold_hr: optionalThresholdHrSchema.optional(),
+    avatar_url: z.string().nullable().optional(),
+    cover_url: z.string().nullable().optional(),
+    bio: z.string().max(500).nullable().optional(),
+    dob: z.string().nullable().optional(),
+    preferred_units: preferredUnitSystemSchema.nullable().optional(),
+    language: z.string().max(10).nullable().optional(),
+    is_public: z.boolean().optional(),
+  })
+  .strict();
+
+export type ProfilePatchInput = z.input<typeof profilePatchInputSchema>;
+export type ProfilePatch = z.output<typeof profilePatchInputSchema>;
+
+/**
  * Avatar update schema (avatar only)
  */
 export const profileAvatarUpdateSchema = z.object({

@@ -1,8 +1,10 @@
+import type { ProfilePatchInput } from "@repo/core";
 import {
   defaultPreferredUnitSystem,
   type PreferredUnitSystem,
   resolvePreferredUnitSystem,
 } from "@repo/core/units";
+import { z } from "zod";
 
 export type ProfileEditFormDefaults = {
   username: string | null;
@@ -12,6 +14,29 @@ export type ProfileEditFormDefaults = {
   language: string | null;
   is_public: boolean | null;
 };
+
+export const profileEditFormSchema = z.object({
+  username: z.string().min(3, "Username must be at least 3 characters").nullable(),
+  bio: z.string().max(500, "Bio must be 500 characters or less").nullable(),
+  dob: z.string().nullable(),
+  preferred_units: z.enum(["metric", "imperial"]).nullable(),
+  language: z.string().nullable(),
+  is_public: z.boolean().nullable(),
+});
+
+export type ProfileEditForm = z.infer<typeof profileEditFormSchema>;
+
+/** Maps mobile form values to the canonical API patch while preserving blank handling. */
+export function toProfilePatchInput(values: ProfileEditForm): ProfilePatchInput {
+  return {
+    username: values.username || null,
+    bio: values.bio || null,
+    dob: values.dob || null,
+    preferred_units: values.preferred_units || null,
+    language: values.language || null,
+    is_public: values.is_public ?? undefined,
+  };
+}
 
 export function getProfileEditFormDefaults(profile?: {
   username?: string | null;

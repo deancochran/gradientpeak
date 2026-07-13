@@ -1,4 +1,3 @@
-import { preferredUnitSystemSchema } from "@repo/core/units";
 import { THEME } from "@repo/tailwindcss/native";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
@@ -29,28 +28,21 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { z } from "zod";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { AppSelectionModal } from "@/components/shared/AppSelectionModal";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { getProfileEditFormDefaults } from "@/lib/profile/profile-edit-form";
+import {
+  getProfileEditFormDefaults,
+  type ProfileEditForm,
+  profileEditFormSchema,
+  toProfilePatchInput,
+} from "@/lib/profile/profile-edit-form";
 import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useTheme } from "@/lib/stores/theme-store";
 import { handleSubmitFormError } from "@/lib/utils/formErrors";
-
-const profileEditSchema = z.object({
-  username: z.string().min(3, "Username must be at least 3 characters").nullable(),
-  bio: z.string().max(500, "Bio must be 500 characters or less").nullable(),
-  dob: z.string().nullable(), // Format: YYYY-MM-DD
-  preferred_units: preferredUnitSystemSchema.nullable(),
-  language: z.string().nullable(),
-  is_public: z.boolean().nullable(),
-});
-
-type ProfileEditForm = z.infer<typeof profileEditSchema>;
 
 const AVATAR_MIME_TYPES = {
   jpg: "image/jpeg",
@@ -112,7 +104,7 @@ function ProfileEditScreen() {
       ? getReachableSupabaseStorageUrl(profile.cover_url)
       : null;
   const form = useZodForm({
-    schema: profileEditSchema,
+    schema: profileEditFormSchema,
     defaultValues: getProfileEditFormDefaults(profile),
   });
   const watchedUsername = form.watch("username");
@@ -127,14 +119,7 @@ function ProfileEditScreen() {
     form,
     shouldRethrow: false,
     onSubmit: async (data) => {
-      await updateProfileMutation.mutateAsync({
-        username: data.username || null,
-        bio: data.bio || null,
-        dob: data.dob || null,
-        preferred_units: data.preferred_units || null,
-        language: data.language || null,
-        is_public: data.is_public ?? undefined,
-      });
+      await updateProfileMutation.mutateAsync(toProfilePatchInput(data));
 
       await Promise.all([utils.profiles.invalidate(), refreshProfile()]);
       router.back();

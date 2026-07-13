@@ -1,3 +1,4 @@
+import type { ProfilePatchInput } from "@repo/core";
 import {
   defaultPreferredUnitSystem,
   preferredUnitSystemSchema,
@@ -25,6 +26,17 @@ export const settingsProfileFormSchema = z.object({
 
 export type SettingsProfileFormInput = z.input<typeof settingsProfileFormSchema>;
 export type SettingsProfileFormValues = z.infer<typeof settingsProfileFormSchema>;
+
+/** Maps web form values to the canonical API patch without changing web form semantics. */
+export function toProfilePatchInput(values: SettingsProfileFormValues): ProfilePatchInput {
+  return {
+    bio: values.bio?.trim() ? values.bio.trim() : null,
+    is_public: values.is_public,
+    language: values.language?.trim() ? values.language.trim() : null,
+    preferred_units: values.preferred_units,
+    username: values.username.trim() === "" ? null : values.username.trim(),
+  };
+}
 
 export function getSettingsProfileFormDefaults(profile?: {
   bio?: string | null;

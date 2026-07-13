@@ -1,9 +1,8 @@
-import { profileQuickUpdateSchema } from "@repo/core";
+import { profilePatchInputSchema } from "@repo/core";
 import {
   resolveCanonicalThresholds,
   type ThresholdActivityEffortObservation,
 } from "@repo/core/athlete-inputs";
-import { preferredUnitSystemSchema } from "@repo/core/units";
 import { activityEfforts } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, gte } from "drizzle-orm";
@@ -52,19 +51,6 @@ const trainingZonesUpdateSchema = z
   .strict();
 
 const uuidSchema = z.string().uuid();
-
-const profileUpdateInputSchema = profileQuickUpdateSchema
-  .partial()
-  .extend({
-    avatar_url: z.string().nullable().optional(),
-    cover_url: z.string().nullable().optional(),
-    bio: z.string().max(500).nullable().optional(),
-    dob: z.string().nullable().optional(),
-    preferred_units: preferredUnitSystemSchema.nullable().optional(),
-    language: z.string().max(10).nullable().optional(),
-    is_public: z.boolean().optional(),
-  })
-  .strict();
 
 export const profilesRouter = createTRPCRouter({
   get: protectedProcedure.query(async ({ ctx }) => {
@@ -129,7 +115,7 @@ export const profilesRouter = createTRPCRouter({
       }
     }),
 
-  update: protectedProcedure.input(profileUpdateInputSchema).mutation(async ({ ctx, input }) => {
+  update: protectedProcedure.input(profilePatchInputSchema).mutation(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
 
     try {

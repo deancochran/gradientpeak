@@ -49,6 +49,7 @@ import {
   optionalRestingHrSchema,
   optionalThresholdHrSchema,
   optionalWeightKgSchema,
+  profilePatchInputSchema,
   profileQuickUpdateSchema,
   profileSettingsFormSchema,
   restingHrSchema,
@@ -97,6 +98,8 @@ export {
 } from "./forms/primitives";
 export type {
   ProfileAvatarUpdateData,
+  ProfilePatch,
+  ProfilePatchInput,
   ProfileQuickUpdateData,
   ProfileSettingsFormData,
 } from "./forms/profile";
@@ -117,6 +120,7 @@ export {
   optionalThresholdHrSchema,
   optionalWeightKgSchema,
   profileAvatarUpdateSchema,
+  profilePatchInputSchema,
   profileQuickUpdateSchema,
   profileSettingsFormSchema,
   restingHrSchema,

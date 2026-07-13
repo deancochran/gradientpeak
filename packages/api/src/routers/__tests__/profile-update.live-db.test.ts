@@ -125,6 +125,40 @@ describe("atomic profile update against PostgreSQL", () => {
     );
   });
 
+  it("accepts the canonical patch's numeric string and blank metric transport values", async () => {
+    const profileId = await seedProfile(`transport-${randomUUID().slice(0, 8)}`);
+    const caller = profilesRouter.createCaller(
+      await createApiContext({
+        db,
+        headers: new Headers({ "x-client-type": "server" }),
+        auth: {
+          session: {
+            sessionId: randomUUID(),
+            transport: "cookie",
+            user: { id: profileId, email: `${profileId}@profile-update.test`, emailVerified: true },
+          },
+        },
+      }),
+    );
+
+    await caller.update({ weight_kg: "70.5", threshold_hr: "180", ftp: "300" });
+    expect(await getSerializedProfile(db, profileId)).toMatchObject({
+      weight_kg: 70.5,
+      threshold_hr: 180,
+      ftp: 300,
+    });
+
+    await caller.update({ weight_kg: "", threshold_hr: " ", ftp: "" });
+    expect(await getSerializedProfile(db, profileId)).toMatchObject({
+      weight_kg: null,
+      threshold_hr: null,
+      ftp: null,
+    });
+    expect((await manualMetrics(profileId, "weight_kg")).some(isClearedProfileOverride)).toBe(true);
+    expect((await manualMetrics(profileId, "lthr")).some(isClearedProfileOverride)).toBe(true);
+    expect((await manualFtp(profileId)).some(isClearedProfileOverride)).toBe(true);
+  });
+
   it("keeps append-only override history and agrees across profile and as-of activity analysis", async () => {
     const profileId = await seedProfile(`profile-${randomUUID().slice(0, 8)}`);
     const request = {

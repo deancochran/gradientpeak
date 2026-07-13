@@ -332,6 +332,15 @@ describe("profilesRouter", () => {
     expect(calls.updates).toHaveLength(0);
   });
 
+  it("rejects unknown profile patch keys before persistence", async () => {
+    const { caller, calls } = createCaller();
+
+    await expect(caller.update({ unexpected: true } as never)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+    expect(calls.updates).toHaveLength(0);
+  });
+
   it("returns a stable conflict error when the typed username update violates uniqueness", async () => {
     const { caller } = createCaller({
       transactionError: {

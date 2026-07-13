@@ -7,7 +7,7 @@ import { z } from "zod";
 
 import { buildFlashHref } from "../flash";
 import { createServerActionCaller } from "../server-action-api";
-import { settingsProfileFormSchema } from "./form-schemas";
+import { settingsProfileFormSchema, toProfilePatchInput } from "./form-schemas";
 
 const storageService = getApiStorageService();
 const PROFILE_AVATAR_BUCKET = "profile-avatars";
@@ -42,13 +42,7 @@ export const updateSettingsProfileAction = createServerFn({ method: "POST" })
     try {
       const caller = await createServerActionCaller();
 
-      await caller.profiles.update({
-        bio: data.bio?.trim() ? data.bio.trim() : null,
-        is_public: data.is_public,
-        language: data.language?.trim() ? data.language.trim() : null,
-        preferred_units: data.preferred_units,
-        username: data.username.trim() === "" ? null : data.username.trim(),
-      });
+      await caller.profiles.update(toProfilePatchInput(data));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to update profile";
 
