@@ -16,6 +16,7 @@ import {
   resolveActivityContextFromEvidence,
 } from "../../lib/activity-analysis";
 import { isClearedProfileOverride } from "../../utils/profile-override-observations";
+import { deriveProfileAwareCreationContext } from "../planning/training-plans";
 import { profilesRouter } from "../profiles";
 
 const seededUserIds: string[] = [];
@@ -204,6 +205,39 @@ describe("atomic profile update against PostgreSQL", () => {
       weight_kg: null,
       threshold_hr: null,
       ftp: null,
+    });
+    const profileCaller = profilesRouter.createCaller(
+      await createApiContext({
+        db,
+        headers: new Headers({ "x-client-type": "server" }),
+        auth: {
+          session: {
+            sessionId: randomUUID(),
+            transport: "cookie",
+            user: { id: profileId, email: `${profileId}@profile-update.test`, emailVerified: true },
+          },
+        },
+      }),
+    );
+    await expect(profileCaller.getZones()).resolves.toMatchObject({
+      powerZones: null,
+      profile: { weight_kg: undefined, threshold_hr: undefined, ftp: undefined },
+    });
+    await expect(
+      deriveProfileAwareCreationContext({
+        db,
+        store: analysisStore,
+        profileId,
+        asOfIso: afterClear.toISOString(),
+      }),
+    ).resolves.toMatchObject({
+      contextSummary: {
+        missing_optional_calibration_fields: expect.arrayContaining([
+          "weight_kg",
+          "threshold_hr",
+          "ftp",
+        ]),
+      },
     });
     await expect(
       resolveActivityContextAsOf({

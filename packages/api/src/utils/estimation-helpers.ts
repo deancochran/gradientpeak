@@ -11,6 +11,11 @@ import type { EstimationActivityPlanInput as CoreEstimationActivityPlanInput } f
 import { buildEstimationContext, estimateActivity, estimateMetrics } from "@repo/core/estimation";
 import type { ActivityPlanRow } from "@repo/db";
 import type { EventReadRepository } from "../repositories";
+import {
+  filterObservationsAfterLatestTombstone,
+  filterSupersededProfileOverrides,
+  resolveLatestObservationsByKey,
+} from "./profile-override-observations";
 
 function shouldUseRouteForSavedPlanMetrics(structure: unknown): boolean {
   if (!structure || typeof structure !== "object") {
@@ -212,21 +217,25 @@ async function getEstimationProfileInputs(
 
   const { data: efforts } = await legacyReader
     .from("activity_efforts")
-    .select("effort_type, duration_seconds, value, unit, activity_category")
+    .select(
+      "id, activity_id, effort_type, duration_seconds, value, unit, activity_category, recorded_at, source, method, provenance",
+    )
     .eq("profile_id", userId)
     .gte("recorded_at", ninetyDaysAgoIso)
     .lte("recorded_at", asOf.toISOString())
     .in("effort_type", ["power", "speed"])
     .order("recorded_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(300);
 
   const { data: metrics } = await legacyReader
     .from("profile_metrics")
-    .select("metric_type, unit, value, recorded_at")
+    .select("id, metric_type, unit, value, recorded_at, source, method, provenance")
     .eq("profile_id", userId)
     .lte("recorded_at", asOf.toISOString())
     .in("metric_type", ["weight_kg", "ftp", "resting_hr", "max_hr", "lthr"])
-    .order("recorded_at", { ascending: false });
+    .order("recorded_at", { ascending: false })
+    .order("id", { ascending: false });
 
   let weightKg: number | null = null;
   let restingHr: number | null = null;
@@ -234,22 +243,51 @@ async function getEstimationProfileInputs(
   let lthr: number | null = null;
 
   const legacyEfforts = (efforts || []) as Array<{
+    id: string;
+    activity_id: string | null;
     effort_type: string;
     duration_seconds: number;
     value: number;
     unit: string;
     activity_category: string;
+    recorded_at: string;
+    source: string | null;
+    method: string | null;
+    provenance: unknown;
   }>;
   const legacyMetrics = (metrics || []) as Array<{
+    id: string;
     metric_type: string;
     unit?: string;
     value: number;
     recorded_at: string;
+    source: string | null;
+    method: string | null;
+    provenance: unknown;
   }>;
 
-  const thresholds = resolveEstimationThresholds(legacyEfforts, legacyMetrics, asOf.toISOString());
+  const currentEfforts = filterSupersededProfileOverrides(
+    legacyEfforts,
+    (effort) =>
+      `${effort.activity_category}:${effort.effort_type}:${effort.duration_seconds}:${effort.unit}`,
+  );
+  const currentMetrics = filterObservationsAfterLatestTombstone(
+    legacyMetrics,
+    (metric) => metric.metric_type,
+  );
 
-  for (const metric of legacyMetrics) {
+  const thresholds = resolveEstimationThresholds(
+    currentEfforts,
+    currentMetrics,
+    asOf.toISOString(),
+  );
+
+  const latestMetrics = resolveLatestObservationsByKey(
+    legacyMetrics,
+    (metric) => metric.metric_type,
+  );
+  for (const metric of latestMetrics.values()) {
+    if (!metric) continue;
     if (metric.metric_type === "weight_kg" && weightKg === null) {
       weightKg = metric.value;
       continue;

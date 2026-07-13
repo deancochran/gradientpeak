@@ -260,7 +260,7 @@ export async function getProfilePerformanceSnapshot(db: DbClient, profileId: str
     now: now.toISOString(),
     freshnessWindowMs: FTP_FRESHNESS_WINDOW_MS,
     directMetrics: [
-      ...filterObservationsAfterLatestTombstone(ftpMetrics, (metric) => "ftp").map((metric) => ({
+      ...filterObservationsAfterLatestTombstone(ftpMetrics, () => "ftp").map((metric) => ({
         threshold: "cycling_ftp" as const,
         value: Number(metric.value),
         observedAt: metric.recorded_at.toISOString(),

@@ -129,6 +129,11 @@ import { createTRPCRouter, protectedProcedure } from "../../../trpc";
 import { getActivityPlansDerivedMetrics } from "../../../utils/activity-plan-derived-metrics";
 import { addEstimationToPlans } from "../../../utils/estimation-helpers";
 import { indexCursorSchema } from "../../../utils/index-cursor";
+import {
+  filterObservationsAfterLatestTombstone,
+  filterSupersededProfileOverrides,
+  resolveLatestObservationsByKey,
+} from "../../../utils/profile-override-observations";
 
 const feasibilityStateSchema = z.enum(["feasible", "aggressive", "unsafe"]);
 const safetyStateSchema = z.enum(["safe", "caution", "exceeded"]);
@@ -2781,36 +2786,49 @@ export async function deriveProfileAwareCreationContext(input: {
             .then((data) => ({ data, error: null })),
           input.db
             .select({
+              id: schema.activityEfforts.id,
+              activity_id: schema.activityEfforts.activity_id,
               recorded_at: schema.activityEfforts.recorded_at,
               effort_type: schema.activityEfforts.effort_type,
               duration_seconds: schema.activityEfforts.duration_seconds,
               value: schema.activityEfforts.value,
               activity_category: schema.activityEfforts.activity_category,
+              unit: schema.activityEfforts.unit,
+              source: schema.activityEfforts.source,
+              method: schema.activityEfforts.method,
+              provenance: schema.activityEfforts.provenance,
             })
             .from(schema.activityEfforts)
             .where(
               and(
                 eq(schema.activityEfforts.profile_id, input.profileId),
                 gte(schema.activityEfforts.recorded_at, recentEffortsCutoff),
+                lte(schema.activityEfforts.recorded_at, asOf),
               ),
             )
-            .orderBy(sql`${schema.activityEfforts.recorded_at} desc`)
+            .orderBy(desc(schema.activityEfforts.recorded_at), desc(schema.activityEfforts.id))
             .limit(200)
             .then((data) => ({ data, error: null })),
           input.db
             .select({
+              id: schema.profileMetrics.id,
               metric_type: schema.profileMetrics.metric_type,
               value: schema.profileMetrics.value,
               recorded_at: schema.profileMetrics.recorded_at,
+              unit: schema.profileMetrics.unit,
+              source: schema.profileMetrics.source,
+              method: schema.profileMetrics.method,
+              provenance: schema.profileMetrics.provenance,
             })
             .from(schema.profileMetrics)
             .where(
               and(
                 eq(schema.profileMetrics.profile_id, input.profileId),
                 inArray(schema.profileMetrics.metric_type, ["ftp", "lthr", "weight_kg"]),
+                lte(schema.profileMetrics.recorded_at, asOf),
               ),
             )
-            .orderBy(sql`${schema.profileMetrics.recorded_at} desc`)
+            .orderBy(desc(schema.profileMetrics.recorded_at), desc(schema.profileMetrics.id))
             .then((data) => ({ data, error: null })),
           input.db
             .select({ dob: schema.profiles.dob, gender: schema.profiles.gender })
@@ -2835,17 +2853,23 @@ export async function deriveProfileAwareCreationContext(input: {
             .limit(300),
           input.supabase
             ?.from("activity_efforts")
-            .select("recorded_at, effort_type, duration_seconds, value, activity_category")
+            .select(
+              "id, activity_id, recorded_at, effort_type, duration_seconds, value, activity_category, unit, source, method, provenance",
+            )
             .eq("profile_id", input.profileId)
             .gte("recorded_at", recentEffortsCutoff.toISOString())
+            .lte("recorded_at", asOf.toISOString())
             .order("recorded_at", { ascending: false })
+            .order("id", { ascending: false })
             .limit(200),
           input.supabase
             ?.from("profile_metrics")
-            .select("metric_type, value, recorded_at")
+            .select("id, metric_type, value, recorded_at, unit, source, method, provenance")
             .eq("profile_id", input.profileId)
             .in("metric_type", ["ftp", "lthr", "weight_kg"])
-            .order("recorded_at", { ascending: false }),
+            .lte("recorded_at", asOf.toISOString())
+            .order("recorded_at", { ascending: false })
+            .order("id", { ascending: false }),
           input.supabase?.from("profiles").select("dob, gender").eq("id", input.profileId).limit(1),
           input.supabase
             ?.from("profile_training_settings")
@@ -2924,7 +2948,12 @@ export async function deriveProfileAwareCreationContext(input: {
   const primaryCategory =
     Object.entries(activityCounts).sort((a: any, b: any) => b[1] - a[1])[0]?.[0] ?? undefined;
 
-  const efforts = (effortsResult.error ? [] : (effortsResult.data ?? [])).map((effort: any) => ({
+  const efforts = filterSupersededProfileOverrides(
+    effortsResult.error ? [] : (effortsResult.data ?? []),
+    (effort: any) =>
+      `${effort.activity_category}:${effort.effort_type}:${effort.duration_seconds}:${effort.unit}`,
+  ).map((effort: any) => ({
+    ...effort,
     recorded_at: effort.recorded_at,
     effort_type: effort.effort_type,
     duration_seconds: effort.duration_seconds,
@@ -2932,7 +2961,10 @@ export async function deriveProfileAwareCreationContext(input: {
     activity_category: effort.activity_category,
   }));
 
-  const profileMetricsRows = profileMetricsResult.error ? [] : (profileMetricsResult.data ?? []);
+  const profileMetricsRows = filterObservationsAfterLatestTombstone(
+    profileMetricsResult.error ? [] : (profileMetricsResult.data ?? []),
+    (metric: any) => metric.metric_type,
+  );
 
   const thresholds = resolveCanonicalThresholds({
     now: asOf.toISOString(),
@@ -2960,15 +2992,24 @@ export async function deriveProfileAwareCreationContext(input: {
               value: Number(effort.value),
               durationSeconds: 1200,
               observedAt: new Date(effort.recorded_at).toISOString(),
-              observationKind: "actual" as const,
+              observationKind:
+                effort.activity_id !== null &&
+                effort.source !== "derived" &&
+                effort.source !== "estimated"
+                  ? ("actual" as const)
+                  : ("derived" as const),
             },
           ]
         : [],
     ),
   });
 
-  const lthrMetric = profileMetricsRows.find((metric: any) => metric.metric_type === "lthr");
-  const weightMetric = profileMetricsRows.find((metric: any) => metric.metric_type === "weight_kg");
+  const latestProfileMetrics = resolveLatestObservationsByKey(
+    profileMetricsResult.error ? [] : (profileMetricsResult.data ?? []),
+    (metric: any) => metric.metric_type,
+  );
+  const lthrMetric = latestProfileMetrics.get("lthr");
+  const weightMetric = latestProfileMetrics.get("weight_kg");
 
   const profileMetrics = {
     ftp: thresholds.cycling_ftp.value === null ? null : Math.round(thresholds.cycling_ftp.value),
