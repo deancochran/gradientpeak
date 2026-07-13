@@ -133,12 +133,13 @@ export default function ProfileTabScreen() {
       newPassword: "",
     },
   });
-  const { data: publicProfile } = api.profiles.getPublicById.useQuery(
-    { id: user?.id ?? "" },
-    { enabled: Boolean(user?.id) },
-  );
-  const followersCount = publicProfile?.followers_count ?? profile?.followers_count ?? 0;
-  const followingCount = publicProfile?.following_count ?? profile?.following_count ?? 0;
+  const { data: publicProfile, isLoading: publicProfileLoading } =
+    api.profiles.getPublicById.useQuery({ id: user?.id ?? "" }, { enabled: Boolean(user?.id) });
+  const socialCountsStatus = publicProfile
+    ? ("ready" as const)
+    : publicProfileLoading
+      ? ("loading" as const)
+      : ("error" as const);
 
   const handleSignOut = () => {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
@@ -243,9 +244,10 @@ export default function ProfileTabScreen() {
           onProfilePress={() => navigateTo(ROUTES.PROFILE_SETTINGS as any)}
           profile={{
             ...profile,
-            followers_count: followersCount,
-            following_count: followingCount,
+            followers_count: publicProfile?.followers_count,
+            following_count: publicProfile?.following_count,
           }}
+          socialCountsStatus={socialCountsStatus}
           supportingText="Manage your account, content library, and profile settings."
           testID="profile-tab-summary"
         />

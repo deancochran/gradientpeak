@@ -17,14 +17,14 @@ const defaultAuthState = {
     username: "Athlete",
     avatar_url: null,
     is_public: true,
-    followers_count: 0,
-    following_count: 0,
   },
   canUpdateEmail: true,
   updateEmailUnavailableReason: null as string | null,
 };
 
 let publicProfileState: typeof defaultPublicProfile | null | undefined = defaultPublicProfile;
+let publicProfileIsError = false;
+let publicProfileIsLoading = false;
 let authState = defaultAuthState;
 
 const ButtonHost = createButtonComponent();
@@ -157,7 +157,11 @@ jest.mock("@/lib/api", () => ({
   api: {
     profiles: {
       getPublicById: {
-        useQuery: () => ({ data: publicProfileState }),
+        useQuery: () => ({
+          data: publicProfileState,
+          isError: publicProfileIsError,
+          isLoading: publicProfileIsLoading,
+        }),
       },
     },
     groups: {
@@ -229,6 +233,8 @@ describe("ProfileTabScreen", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     publicProfileState = defaultPublicProfile;
+    publicProfileIsError = false;
+    publicProfileIsLoading = false;
     authState = defaultAuthState;
   });
 
@@ -388,21 +394,32 @@ describe("ProfileTabScreen", () => {
     expect(updatePasswordMock).not.toHaveBeenCalled();
   });
 
-  it("falls back to local profile social counts when public profile stats are unavailable", () => {
+  it("shows social counts as loading while public profile stats load", () => {
     publicProfileState = undefined;
-    authState = {
-      ...defaultAuthState,
-      profile: {
-        ...defaultAuthState.profile,
-        followers_count: 7,
-        following_count: 11,
-      },
-    };
+    publicProfileIsLoading = true;
 
     renderNative(<ProfileTabScreen />);
 
-    expect(screen.getByText("7")).toBeTruthy();
-    expect(screen.getByText("11")).toBeTruthy();
+    expect(screen.getAllByText("Loading...")).toHaveLength(2);
+    expect(screen.queryByText("0")).toBeNull();
+  });
+
+  it("shows unavailable social counts when public profile stats fail", () => {
+    publicProfileState = undefined;
+    publicProfileIsError = true;
+
+    renderNative(<ProfileTabScreen />);
+
+    expect(screen.getAllByText("Unavailable")).toHaveLength(2);
+    expect(screen.queryByText("0")).toBeNull();
+  });
+
+  it("shows confirmed zero social counts from the public profile", () => {
+    publicProfileState = { followers_count: 0, following_count: 0 };
+
+    renderNative(<ProfileTabScreen />);
+
+    expect(screen.getAllByText("0")).toHaveLength(2);
   });
 
   it("toggles dark mode from profile settings", () => {

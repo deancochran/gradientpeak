@@ -30,6 +30,7 @@ type ProfileSummaryCardProps = {
   onProfilePress?: () => void;
   profile: ProfileSummary;
   showMetadata?: boolean;
+  socialCountsStatus?: "error" | "loading" | "ready";
   supportingText?: string | null;
   testID?: string;
 };
@@ -64,6 +65,7 @@ export function ProfileSummaryCard({
   onProfilePress,
   profile,
   showMetadata = false,
+  socialCountsStatus = "ready",
   supportingText,
   testID,
 }: ProfileSummaryCardProps) {
@@ -142,14 +144,14 @@ export function ProfileSummaryCard({
             label="Followers"
             onPress={onFollowersPress}
             testID={testID ? `${testID}-followers` : "profile-summary-followers"}
-            value={profile.followers_count ?? 0}
+            value={formatSocialCount(profile.followers_count, socialCountsStatus)}
           />
           <ProfileStatButton
             disabled={!onFollowingPress}
             label="Following"
             onPress={onFollowingPress}
             testID={testID ? `${testID}-following` : "profile-summary-following"}
-            value={profile.following_count ?? 0}
+            value={formatSocialCount(profile.following_count, socialCountsStatus)}
           />
         </View>
 
@@ -189,6 +191,15 @@ export function ProfileSummaryCard({
   );
 }
 
+function formatSocialCount(
+  count: number | null | undefined,
+  status: "error" | "loading" | "ready",
+): number | string {
+  if (status === "loading") return "Loading...";
+  if (status === "error") return "Unavailable";
+  return count ?? "—";
+}
+
 function ProfileStatButton({
   disabled,
   label,
@@ -200,7 +211,7 @@ function ProfileStatButton({
   label: string;
   onPress?: () => void;
   testID: string;
-  value: number;
+  value: number | string;
 }) {
   return (
     <TouchableOpacity

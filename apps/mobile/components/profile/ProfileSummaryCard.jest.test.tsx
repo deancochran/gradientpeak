@@ -47,7 +47,7 @@ describe("ProfileSummaryCard", () => {
     expect(screen.getByText("fallback")).toBeTruthy();
     expect(screen.getByText("F")).toBeTruthy();
     expect(screen.getByText("Private profile")).toBeTruthy();
-    expect(screen.getAllByText("0")).toHaveLength(2);
+    expect(screen.getAllByText("—")).toHaveLength(2);
   });
 
   it("uses remote social counts and keeps follower actions tappable when available", () => {

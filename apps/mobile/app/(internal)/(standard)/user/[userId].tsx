@@ -49,9 +49,9 @@ function UserDetailScreen() {
     if (isOwnProfile && profile) {
       return {
         ...profile,
-        followers_count: targetProfile?.followers_count ?? profile.followers_count ?? 0,
-        following_count: targetProfile?.following_count ?? profile.following_count ?? 0,
-        follow_status: targetProfile?.follow_status ?? profile.follow_status ?? null,
+        followers_count: targetProfile?.followers_count ?? 0,
+        following_count: targetProfile?.following_count ?? 0,
+        follow_status: targetProfile?.follow_status ?? null,
       };
     }
 
