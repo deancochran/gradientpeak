@@ -41,9 +41,68 @@ async function executionTime(sql: string) {
   return { milliseconds: Number(match[1]), plan };
 }
 
+async function ensureTransactionalLegacyTables() {
+  const state = await client.query<{ present: number }>(`
+    select count(*)::int present from (values
+      (to_regclass('public.activity_summaries')),
+      (to_regclass('public.activity_imports')),
+      (to_regclass('public.activity_geometry')),
+      (to_regclass('public.activity_laps'))
+    ) tables(table_name) where table_name is not null
+  `);
+  const present = state.rows[0]?.present ?? 0;
+  if (present === 4) return false;
+  assert(present === 0, "refusing to modify a partial legacy activity-table state");
+
+  // These representative legacy tables exist only inside the caller's rollback transaction.
+  // Never drop or replace an existing object here.
+  await client.query(`
+    create table public.activity_summaries (
+      activity_id uuid primary key, profile_id uuid not null,
+      duration_seconds integer not null default 0, moving_seconds integer not null default 0,
+      distance_meters integer not null default 0, elevation_gain_meters numeric(10,2),
+      elevation_loss_meters numeric(10,2), calories integer, avg_heart_rate integer,
+      max_heart_rate integer, avg_power integer, max_power integer, normalized_power integer,
+      avg_cadence integer, max_cadence integer, avg_speed_mps numeric(6,2),
+      max_speed_mps numeric(6,2), normalized_speed_mps numeric(6,2),
+      normalized_graded_speed_mps numeric(6,2), avg_temperature numeric, avg_swolf numeric,
+      efficiency_factor numeric, aerobic_decoupling numeric, pool_length numeric,
+      total_strokes integer, created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now(),
+      constraint activity_summaries_activity_index unique(activity_id,profile_id)
+    );
+    create index idx_activity_summaries_profile_id on public.activity_summaries(profile_id);
+    create table public.activity_imports (
+      activity_id uuid primary key, profile_id uuid not null,
+      provider integration_provider, external_id text, device_manufacturer text,
+      device_product text, activity_file_path text, activity_file_size integer,
+      import_source text, import_file_type text, import_original_file_name text,
+      created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+    );
+    create unique index idx_activity_imports_external_unique on public.activity_imports(provider,external_id) where provider is not null and external_id is not null;
+    create index idx_activity_imports_profile_id on public.activity_imports(profile_id);
+    create table public.activity_geometry (
+      activity_id uuid primary key, profile_id uuid not null, polyline text, map_bounds jsonb,
+      created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+    );
+    create index idx_activity_geometry_profile_id on public.activity_geometry(profile_id);
+    create table public.activity_laps (
+      id uuid primary key default gen_random_uuid(), activity_id uuid not null,
+      profile_id uuid not null, lap_index integer not null, payload jsonb not null,
+      created_at timestamptz not null default now(), updated_at timestamptz not null default now(),
+      constraint activity_laps_activity_index_unique unique(activity_id,lap_index),
+      constraint activity_laps_lap_index_check check(lap_index>=0)
+    );
+    create index idx_activity_laps_activity_id on public.activity_laps(activity_id);
+    create index idx_activity_laps_profile_id on public.activity_laps(profile_id);
+  `);
+  return true;
+}
+
 await client.connect();
 try {
   await client.query("begin");
+  const createdLegacyTables = await ensureTransactionalLegacyTables();
   await client.query("set local session_replication_role = replica");
   const profile = "f0000000-0000-4000-8000-000000000001";
   await client.query(
@@ -208,11 +267,15 @@ try {
   const restored = await client.query(
     "select to_regclass('public.activity_summaries') summary,to_regclass('public.activity_imports') imports,to_regclass('public.activity_geometry') geometry,to_regclass('public.activity_laps') laps",
   );
+  const restoredValues = Object.values(restored.rows[0] ?? {});
   assert(
-    Object.values(restored.rows[0] ?? {}).every(Boolean),
-    "transaction rollback did not recreate child tables",
+    createdLegacyTables
+      ? restoredValues.every((value) => value === null)
+      : restoredValues.every(Boolean),
+    "transaction rollback did not restore the original child-table state",
   );
   await client.query("begin");
+  await ensureTransactionalLegacyTables();
   await client.query("set local session_replication_role=replica");
   await client.query(
     "insert into public.profiles(id,email) values($1,'activity-supabase@test.invalid')",
