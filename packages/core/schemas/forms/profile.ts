@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { preferredUnitSystemSchema } from "../../units";
 import {
   emptyStringToNull,
   optionalUrlSchema,
@@ -243,7 +244,7 @@ export const profileSettingsFormSchema = z
     dob: optionalDobSchema,
     avatar_url: optionalUrlSchema,
     cover_url: optionalUrlSchema,
-    preferred_units: z.enum(["metric", "imperial"]).optional().nullable(),
+    preferred_units: preferredUnitSystemSchema.optional().nullable(),
     language: z.string().max(10).optional().nullable(),
     onboarded: z.boolean().optional().nullable(),
   })

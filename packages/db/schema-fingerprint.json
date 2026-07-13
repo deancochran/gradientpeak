@@ -6806,6 +6806,13 @@
       "definition": "PRIMARY KEY (id)"
     },
     {
+      "kind": "c",
+      "name": "profiles_preferred_units_check",
+      "table": "profiles",
+      "validated": true,
+      "definition": "CHECK (preferred_units IS NULL OR (preferred_units = ANY (ARRAY['metric'::text, 'imperial'::text])))"
+    },
+    {
       "kind": "f",
       "name": "provider_sync_jobs_integration_id_integrations_id_fk",
       "table": "provider_sync_jobs",

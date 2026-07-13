@@ -203,7 +203,7 @@
   },
   "allowedDependencies": {
     "core": [],
-    "db": [],
+    "db": ["core"],
     "auth": ["db"],
     "api": ["auth", "core", "db"],
     "ui": ["core"],

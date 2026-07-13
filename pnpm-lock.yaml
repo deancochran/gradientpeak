@@ -738,6 +738,9 @@ importers:
 
   packages/db:
     dependencies:
+      '@repo/core':
+        specifier: workspace:*
+        version: link:../core
       dotenv:
         specifier: ^17.2.3
         version: 17.3.1

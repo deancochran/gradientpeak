@@ -1,3 +1,4 @@
+import { preferredUnitSystemSchema } from "@repo/core/units";
 import { THEME } from "@repo/tailwindcss/native";
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
@@ -34,6 +35,7 @@ import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { AppSelectionModal } from "@/components/shared/AppSelectionModal";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { getProfileEditFormDefaults } from "@/lib/profile/profile-edit-form";
 import { getReachableSupabaseStorageUrl } from "@/lib/server-config";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useTheme } from "@/lib/stores/theme-store";
@@ -43,7 +45,7 @@ const profileEditSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters").nullable(),
   bio: z.string().max(500, "Bio must be 500 characters or less").nullable(),
   dob: z.string().nullable(), // Format: YYYY-MM-DD
-  preferred_units: z.enum(["metric", "imperial"]).nullable(),
+  preferred_units: preferredUnitSystemSchema.nullable(),
   language: z.string().nullable(),
   is_public: z.boolean().nullable(),
 });
@@ -111,28 +113,14 @@ function ProfileEditScreen() {
       : null;
   const form = useZodForm({
     schema: profileEditSchema,
-    defaultValues: {
-      username: profile?.username || null,
-      bio: profile?.bio || null,
-      dob: profile?.dob || null,
-      preferred_units: profile?.preferred_units || "metric",
-      language: profile?.language || "en",
-      is_public: profile?.is_public ?? true,
-    },
+    defaultValues: getProfileEditFormDefaults(profile),
   });
   const watchedUsername = form.watch("username");
   const watchedIsPublic = form.watch("is_public");
   const profileInitial = watchedUsername?.charAt(0)?.toUpperCase() || "U";
 
   useEffect(() => {
-    form.reset({
-      username: profile?.username || null,
-      bio: profile?.bio || null,
-      dob: profile?.dob || null,
-      preferred_units: profile?.preferred_units || "metric",
-      language: profile?.language || "en",
-      is_public: profile?.is_public ?? true,
-    });
+    form.reset(getProfileEditFormDefaults(profile));
   }, [form, profile]);
 
   const submitForm = useZodFormSubmit<ProfileEditForm>({

@@ -43,6 +43,7 @@ import { RouteFlashToast, type RouteFlashType } from "../../components/route-fla
 import { api } from "../../lib/api/client";
 import { signOutAction } from "../../lib/auth/server-actions";
 import {
+  getSettingsProfileFormDefaults,
   type SettingsProfileFormInput,
   type SettingsProfileFormValues,
   settingsProfileFormSchema,
@@ -91,25 +92,13 @@ function SettingsPage() {
 
   const form = useForm<SettingsProfileFormInput, undefined, SettingsProfileFormValues>({
     resolver: zodResolver(settingsProfileFormSchema),
-    defaultValues: {
-      bio: "",
-      is_public: false,
-      language: "",
-      preferred_units: "metric",
-      username: "",
-    },
+    defaultValues: getSettingsProfileFormDefaults(),
   });
 
   useEffect(() => {
     if (!profile || form.formState.isDirty) return;
 
-    form.reset({
-      bio: profile.bio ?? "",
-      is_public: profile.is_public ?? false,
-      language: profile.language ?? "",
-      preferred_units: profile.preferred_units ?? "metric",
-      username: profile.username ?? "",
-    });
+    form.reset(getSettingsProfileFormDefaults(profile));
   }, [form, form.formState.isDirty, profile]);
 
   const { data: avatarUrlData } = api.storage.getSignedUrl.useQuery(

@@ -1,4 +1,5 @@
 import type { EvidenceItem, EvidenceSourceType } from "@repo/core";
+import { canonicalEffortValue as normalizeCanonicalEffortValue } from "@repo/core/units";
 
 export type EvidenceRegistry = Record<string, EvidenceItem>;
 
@@ -158,24 +159,5 @@ export function canonicalEffortValue(
   value: number,
   unit: string,
 ): { value: number; unit: "watts" | "meters_per_second" } | null {
-  const normalized = unit.trim().toLowerCase().replaceAll(" ", "");
-
-  if (kind === "power") {
-    if (["w", "watt", "watts"].includes(normalized)) return { value, unit: "watts" };
-    if (["kw", "kilowatt", "kilowatts"].includes(normalized)) {
-      return { value: value * 1_000, unit: "watts" };
-    }
-    return null;
-  }
-
-  if (["m/s", "mps", "meterpersecond", "meterspersecond"].includes(normalized)) {
-    return { value, unit: "meters_per_second" };
-  }
-  if (["km/h", "kph", "kmh", "kilometersperhour"].includes(normalized)) {
-    return { value: value / 3.6, unit: "meters_per_second" };
-  }
-  if (["mph", "milesperhour"].includes(normalized)) {
-    return { value: value * 0.44704, unit: "meters_per_second" };
-  }
-  return null;
+  return normalizeCanonicalEffortValue({ kind, value, unit });
 }

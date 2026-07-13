@@ -1,6 +1,6 @@
 import { z } from "zod";
-
 import type { profileQuickUpdateSchema } from "../schemas";
+import { preferredUnitSystemSchema } from "../units";
 
 export interface ProfileWithDob {
   dob: string | null;
@@ -53,7 +53,7 @@ export const publicProfileViewSchema = z.object({
   id: z.string().uuid(),
   is_public: z.boolean().nullable().optional(),
   language: z.string().nullable(),
-  preferred_units: z.string().nullable(),
+  preferred_units: preferredUnitSystemSchema.nullable(),
   username: z.string().nullable(),
 });
 

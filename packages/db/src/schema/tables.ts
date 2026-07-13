@@ -1,3 +1,4 @@
+import { type PreferredUnitSystem, preferredUnitSystemValues } from "@repo/core/units";
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
@@ -39,6 +40,9 @@ import {
   profileMetricTypeEnum,
 } from "./enums";
 
+const preferredUnitSystemDbValues =
+  preferredUnitSystemValues satisfies readonly PreferredUnitSystem[];
+
 export const profiles = pgTable(
   "profiles",
   {
@@ -58,7 +62,7 @@ export const profiles = pgTable(
     dob: timestamp("dob", { withTimezone: true, mode: "date" }),
     gender: genderEnum("gender"),
     language: text("language"),
-    preferred_units: text("preferred_units", { enum: ["metric", "imperial"] }),
+    preferred_units: text("preferred_units", { enum: preferredUnitSystemDbValues }),
     onboarded: boolean("onboarded"),
     is_public: boolean("is_public").default(false).notNull(),
   },
@@ -70,6 +74,10 @@ export const profiles = pgTable(
       foreignColumns: [users.id],
       name: "profiles_id_fkey",
     }).onDelete("cascade"),
+    check(
+      "profiles_preferred_units_check",
+      sql`${table.preferred_units} is null or ${table.preferred_units} in ('metric', 'imperial')`,
+    ),
   ],
 );
 

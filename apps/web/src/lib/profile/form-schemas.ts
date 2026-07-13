@@ -1,3 +1,8 @@
+import {
+  defaultPreferredUnitSystem,
+  preferredUnitSystemSchema,
+  resolvePreferredUnitSystem,
+} from "@repo/core/units";
 import { z } from "zod";
 
 export const settingsProfileFormSchema = z.object({
@@ -6,7 +11,7 @@ export const settingsProfileFormSchema = z.object({
     .union([z.boolean(), z.enum(["true", "false"]).transform((value) => value === "true")])
     .optional(),
   language: z.string().trim().max(10, "Language must be 10 characters or fewer").optional(),
-  preferred_units: z.enum(["metric", "imperial"]).optional(),
+  preferred_units: preferredUnitSystemSchema.optional(),
   username: z
     .string()
     .trim()
@@ -20,3 +25,21 @@ export const settingsProfileFormSchema = z.object({
 
 export type SettingsProfileFormInput = z.input<typeof settingsProfileFormSchema>;
 export type SettingsProfileFormValues = z.infer<typeof settingsProfileFormSchema>;
+
+export function getSettingsProfileFormDefaults(profile?: {
+  bio?: string | null;
+  is_public?: boolean | null;
+  language?: string | null;
+  preferred_units?: unknown;
+  username?: string | null;
+}): SettingsProfileFormValues {
+  return {
+    bio: profile?.bio ?? "",
+    is_public: profile?.is_public ?? false,
+    language: profile?.language ?? "",
+    preferred_units: profile
+      ? resolvePreferredUnitSystem(profile.preferred_units)
+      : defaultPreferredUnitSystem,
+    username: profile?.username ?? "",
+  };
+}

@@ -3,6 +3,7 @@ import {
   resolveCanonicalThresholds,
   type ThresholdActivityEffortObservation,
 } from "@repo/core/athlete-inputs";
+import { preferredUnitSystemSchema } from "@repo/core/units";
 import { activityEfforts } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, gte } from "drizzle-orm";
@@ -59,7 +60,7 @@ const profileUpdateInputSchema = profileQuickUpdateSchema
     cover_url: z.string().nullable().optional(),
     bio: z.string().max(500).nullable().optional(),
     dob: z.string().nullable().optional(),
-    preferred_units: z.enum(["metric", "imperial"]).nullable().optional(),
+    preferred_units: preferredUnitSystemSchema.nullable().optional(),
     language: z.string().max(10).nullable().optional(),
     is_public: z.boolean().optional(),
   })

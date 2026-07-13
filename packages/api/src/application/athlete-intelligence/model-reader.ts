@@ -6,6 +6,7 @@ import {
   canonicalGoalObjectiveSchema,
   resolveCanonicalThresholds,
 } from "@repo/core";
+import type { PreferredUnitSystem } from "@repo/core/units";
 import {
   activities,
   activityEfforts,
@@ -56,7 +57,7 @@ export interface AthleteIntelligenceRows {
   profile: {
     id: string;
     dob: Date | null;
-    preferredUnits: "metric" | "imperial" | null;
+    preferredUnits: PreferredUnitSystem | null;
     updatedAt: Date;
   } | null;
   metrics: Array<{

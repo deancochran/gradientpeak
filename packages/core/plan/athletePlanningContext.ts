@@ -4,13 +4,13 @@ import {
   type ThresholdMetricSource,
 } from "../athlete-inputs/canonical-thresholds";
 import { canonicalSportSchema } from "../schemas/sport";
+import { preferredUnitSystemSchema } from "../units";
 
 const dateLikeSchema = z.union([z.string(), z.date()]).nullable().optional();
 
 const activityCategorySchema = canonicalSportSchema;
 const effortTypeSchema = z.enum(["power", "speed"]);
 const genderSchema = z.enum(["male", "female", "other", "prefer_not_to_say"]);
-const preferredUnitsSchema = z.enum(["metric", "imperial"]);
 
 export const athleteContextMetricTypeSchema = z.enum([
   "weight_kg",
@@ -55,7 +55,7 @@ export const athleteContextProfileSourceSchema = z
   .object({
     dob: dateLikeSchema,
     gender: z.enum(["male", "female", "other"]).nullable().optional(),
-    preferred_units: preferredUnitsSchema.nullable().optional(),
+    preferred_units: preferredUnitSystemSchema.nullable().optional(),
   })
   .strict();
 
@@ -118,7 +118,7 @@ export const athletePlanningContextSchema = z
         birthDate: z.string().nullable(),
         ageYears: athleteContextEvidenceValueSchema,
         gender: genderSchema.nullable(),
-        preferredUnits: preferredUnitsSchema.nullable(),
+        preferredUnits: preferredUnitSystemSchema.nullable(),
       })
       .strict(),
     body: z

@@ -1,4 +1,5 @@
 import { resolveCanonicalThresholds, type ThresholdMetricSource } from "@repo/core/athlete-inputs";
+import { preferredUnitSystemSchema } from "@repo/core/units";
 import { activityEfforts, type PublicProfilesRow, profileMetrics, profiles } from "@repo/db";
 import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -25,7 +26,7 @@ const nullableCoverUrlSchema = z.string().nullable();
 const nullableUsernameSchema = z.string().nullable();
 const nullableBioSchema = z.string().nullable();
 const nullableGenderSchema = z.string().nullable();
-const nullablePreferredUnitsSchema = z.enum(["metric", "imperial"]).nullable();
+const nullablePreferredUnitsSchema = preferredUnitSystemSchema.nullable();
 const nullableLanguageSchema = z.string().nullable();
 const nullableFollowStatusSchema = z.enum(["pending", "accepted"]).nullable();
 

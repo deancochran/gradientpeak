@@ -72,6 +72,7 @@
     "./utils/recording-trainer-policy": "./utils/recording-trainer-policy.ts",
     "./utils/stream-sampling": "./utils/stream-sampling.ts",
     "./utils/temporal-metrics": "./utils/temporal-metrics.ts",
+    "./units": "./units/index.ts",
     "./ftms": "./ftms/index.ts",
     "./ftms/*": "./ftms/*.ts",
     "./ftms-types": "./ftms-types.ts"
