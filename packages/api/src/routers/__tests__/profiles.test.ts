@@ -23,6 +23,7 @@ type SelectPlan = Partial<Record<TableName, Array<unknown[]>>>;
 type DbPlan = {
   select?: SelectPlan;
   execute?: Array<Array<Record<string, unknown>>>;
+  transactionError?: unknown;
 };
 
 const SESSION_USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -73,82 +74,92 @@ function createDbMock(plan: DbPlan = {}) {
     inserts: [] as Array<{ table: TableName; values: Record<string, unknown> }>,
     deletes: [] as TableName[],
     executes: [] as unknown[],
+    transactions: 0,
+  };
+
+  const db = {
+    select: () => {
+      let tableName: TableName | null = null;
+      const limitArgs: unknown[] = [];
+      const offsetArgs: unknown[] = [];
+
+      const builder: any = {
+        from: (table: unknown) => {
+          tableName = getTableName(table);
+          return builder;
+        },
+        where: () => builder,
+        orderBy: () => builder,
+        limit: (...args: unknown[]) => {
+          limitArgs.push(...args);
+          return builder;
+        },
+        offset: (...args: unknown[]) => {
+          offsetArgs.push(...args);
+          return builder;
+        },
+        then: (onFulfilled: (value: unknown[]) => unknown) => {
+          if (!tableName) {
+            throw new Error("Select called without table");
+          }
+
+          calls.selects.push({
+            table: tableName,
+            limitArgs: [...limitArgs],
+            offsetArgs: [...offsetArgs],
+          });
+          const rows = selectQueues[tableName].shift() ?? [];
+          return Promise.resolve(rows).then(onFulfilled);
+        },
+      };
+
+      return builder;
+    },
+    update: (table: unknown) => {
+      const tableName = getTableName(table);
+      return {
+        set: (values: Record<string, unknown>) => ({
+          where: () => {
+            calls.updates.push({ table: tableName, values });
+            return {
+              returning: () => Promise.resolve([{ id: SESSION_USER_ID }]),
+            };
+          },
+        }),
+      };
+    },
+    insert: (table: unknown) => {
+      const tableName = getTableName(table);
+      return {
+        values: (values: Record<string, unknown>) => {
+          calls.inserts.push({ table: tableName, values });
+          return Promise.resolve();
+        },
+      };
+    },
+    delete: (table: unknown) => {
+      const tableName = getTableName(table);
+      return {
+        where: () => {
+          calls.deletes.push(tableName);
+          return Promise.resolve();
+        },
+      };
+    },
+    execute: async (query: unknown) => {
+      calls.executes.push(query);
+      return { rows: executeQueue.shift() ?? [] };
+    },
+    transaction: async (callback: (tx: unknown) => Promise<unknown>) => {
+      calls.transactions += 1;
+      if (plan.transactionError) throw plan.transactionError;
+      return callback(db);
+    },
   };
 
   return {
     calls,
-    db: {
-      select: () => {
-        let tableName: TableName | null = null;
-        const limitArgs: unknown[] = [];
-        const offsetArgs: unknown[] = [];
-
-        const builder: any = {
-          from: (table: unknown) => {
-            tableName = getTableName(table);
-            return builder;
-          },
-          where: () => builder,
-          orderBy: () => builder,
-          limit: (...args: unknown[]) => {
-            limitArgs.push(...args);
-            return builder;
-          },
-          offset: (...args: unknown[]) => {
-            offsetArgs.push(...args);
-            return builder;
-          },
-          then: (onFulfilled: (value: unknown[]) => unknown) => {
-            if (!tableName) {
-              throw new Error("Select called without table");
-            }
-
-            calls.selects.push({
-              table: tableName,
-              limitArgs: [...limitArgs],
-              offsetArgs: [...offsetArgs],
-            });
-            const rows = selectQueues[tableName].shift() ?? [];
-            return Promise.resolve(rows).then(onFulfilled);
-          },
-        };
-
-        return builder;
-      },
-      update: (table: unknown) => {
-        const tableName = getTableName(table);
-        return {
-          set: (values: Record<string, unknown>) => ({
-            where: () => {
-              calls.updates.push({ table: tableName, values });
-              return Promise.resolve();
-            },
-          }),
-        };
-      },
-      insert: (table: unknown) => {
-        const tableName = getTableName(table);
-        return {
-          values: (values: Record<string, unknown>) => {
-            calls.inserts.push({ table: tableName, values });
-            return Promise.resolve();
-          },
-        };
-      },
-      delete: (table: unknown) => {
-        const tableName = getTableName(table);
-        return {
-          where: () => {
-            calls.deletes.push(tableName);
-            return Promise.resolve();
-          },
-        };
-      },
-      execute: async (query: unknown) => {
-        calls.executes.push(query);
-        return { rows: executeQueue.shift() ?? [] };
-      },
-    },
+    db,
   };
 }
 
@@ -265,12 +276,12 @@ describe("profilesRouter", () => {
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 
-  it("update persists profile fields plus legacy fields and returns the refreshed profile", async () => {
+  it("update atomically persists all typed profile fields and returns the refreshed profile", async () => {
     const { caller, calls } = createCaller({
       select: {
         profiles: [[createProfileRow({ bio: "Updated bio", username: "updated_athlete" })]],
-        profileMetrics: [[{ value: "68.2" }], [{ value: "182" }], []],
-        activityEfforts: [[{ value: 320, recorded_at: new Date() }], []],
+        profileMetrics: [[], [], [{ value: "68.2" }], [{ value: "182" }], []],
+        activityEfforts: [[], [{ value: 320, recorded_at: new Date() }], []],
       },
     });
 
@@ -298,6 +309,9 @@ describe("profilesRouter", () => {
         cover_url: "https://example.com/updated-cover.png",
         bio: "Updated bio",
         is_public: false,
+        username: "updated_athlete",
+        language: "fr",
+        preferred_units: "imperial",
       },
     });
     expect(calls.updates[0]?.values.dob).toBeInstanceOf(Date);
@@ -306,7 +320,21 @@ describe("profilesRouter", () => {
       "profileMetrics",
       "activityEfforts",
     ]);
-    expect(calls.executes).toHaveLength(1);
+    expect(calls.transactions).toBe(1);
+    expect(calls.executes).toHaveLength(0);
+  });
+
+  it("returns a stable conflict error when the typed username update violates uniqueness", async () => {
+    const { caller } = createCaller({
+      transactionError: {
+        cause: { code: "23505", constraint: "profiles_username_unique_idx" },
+      },
+    });
+
+    await expect(caller.update({ username: "existing_athlete" })).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "That username is already taken",
+    });
   });
 
   it("list returns public-safe rows and respects limit/cursor", async () => {
@@ -413,8 +441,8 @@ describe("profilesRouter", () => {
     const { caller, calls } = createCaller({
       select: {
         profiles: [[createProfileRow()]],
-        profileMetrics: [[{ value: "69.5" }], [{ value: "178" }], []],
-        activityEfforts: [[{ value: 315.79, recorded_at: new Date() }], []],
+        profileMetrics: [[], [{ value: "69.5" }], [{ value: "178" }], []],
+        activityEfforts: [[], [{ value: 315.79, recorded_at: new Date() }], []],
       },
     });
 
@@ -422,7 +450,7 @@ describe("profilesRouter", () => {
 
     expect(result.threshold_hr).toBe(178);
     expect(result.ftp).toBe(300);
-    expect(calls.deletes).toEqual(["activityEfforts"]);
+    expect(calls.deletes).toEqual([]);
     expect(calls.inserts.map((entry) => entry.table)).toEqual([
       "profileMetrics",
       "activityEfforts",

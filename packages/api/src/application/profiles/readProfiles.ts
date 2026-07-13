@@ -3,6 +3,7 @@ import { activityEfforts, type PublicProfilesRow, profileMetrics, profiles } fro
 import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { getRequiredDb } from "../../db";
+import { isClearedProfileOverride } from "../../repositories/profile-update-repository";
 import { buildIndexPageInfo, parseIndexCursor } from "../../utils/index-cursor";
 import {
   redactPrivateProfileDetailFields,
@@ -168,7 +169,11 @@ export async function getProfilePerformanceSnapshot(db: DbClient, profileId: str
   const [weightMetric, lthrMetric, ftpMetrics, manualFtpEffort, best20mEfforts] = await Promise.all(
     [
       db
-        .select({ value: profileMetrics.value })
+        .select({
+          value: profileMetrics.value,
+          method: profileMetrics.method,
+          provenance: profileMetrics.provenance,
+        })
         .from(profileMetrics)
         .where(
           and(
@@ -176,16 +181,20 @@ export async function getProfilePerformanceSnapshot(db: DbClient, profileId: str
             eq(profileMetrics.metric_type, "weight_kg"),
           ),
         )
-        .orderBy(desc(profileMetrics.recorded_at))
+        .orderBy(desc(profileMetrics.recorded_at), desc(profileMetrics.idx))
         .limit(1)
         .then((rows) => rows[0] ?? null),
       db
-        .select({ value: profileMetrics.value })
+        .select({
+          value: profileMetrics.value,
+          method: profileMetrics.method,
+          provenance: profileMetrics.provenance,
+        })
         .from(profileMetrics)
         .where(
           and(eq(profileMetrics.profile_id, profileId), eq(profileMetrics.metric_type, "lthr")),
         )
-        .orderBy(desc(profileMetrics.recorded_at))
+        .orderBy(desc(profileMetrics.recorded_at), desc(profileMetrics.idx))
         .limit(1)
         .then((rows) => rows[0] ?? null),
       db
@@ -199,7 +208,12 @@ export async function getProfilePerformanceSnapshot(db: DbClient, profileId: str
         .where(and(eq(profileMetrics.profile_id, profileId), eq(profileMetrics.metric_type, "ftp")))
         .orderBy(desc(profileMetrics.recorded_at)),
       db
-        .select({ value: activityEfforts.value, recorded_at: activityEfforts.recorded_at })
+        .select({
+          value: activityEfforts.value,
+          recorded_at: activityEfforts.recorded_at,
+          method: activityEfforts.method,
+          provenance: activityEfforts.provenance,
+        })
         .from(activityEfforts)
         .where(
           and(
@@ -211,7 +225,7 @@ export async function getProfilePerformanceSnapshot(db: DbClient, profileId: str
             isNull(activityEfforts.activity_id),
           ),
         )
-        .orderBy(desc(activityEfforts.recorded_at))
+        .orderBy(desc(activityEfforts.recorded_at), desc(activityEfforts.created_at))
         .limit(1)
         .then((rows) => rows[0] ?? null),
       db
@@ -245,7 +259,7 @@ export async function getProfilePerformanceSnapshot(db: DbClient, profileId: str
         observedAt: metric.recorded_at.toISOString(),
         source: thresholdMetricSource(metric.source, metric.provenance),
       })),
-      ...(manualFtpEffort
+      ...(manualFtpEffort && !isClearedProfileOverride(manualFtpEffort)
         ? [
             {
               threshold: "cycling_ftp" as const,
@@ -272,8 +286,14 @@ export async function getProfilePerformanceSnapshot(db: DbClient, profileId: str
 
   return {
     ftp: cyclingFtp.value === null ? null : Math.round(cyclingFtp.value),
-    threshold_hr: toNullableNumber(lthrMetric?.value),
-    weight_kg: toNullableNumber(weightMetric?.value),
+    threshold_hr:
+      lthrMetric && !isClearedProfileOverride(lthrMetric)
+        ? toNullableNumber(lthrMetric.value)
+        : null,
+    weight_kg:
+      weightMetric && !isClearedProfileOverride(weightMetric)
+        ? toNullableNumber(weightMetric.value)
+        : null,
   };
 }
 

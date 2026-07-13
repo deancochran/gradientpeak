@@ -1,12 +1,11 @@
-import { randomUUID } from "node:crypto";
 import { profileQuickUpdateSchema } from "@repo/core";
 import {
   resolveCanonicalThresholds,
   type ThresholdActivityEffortObservation,
 } from "@repo/core/athlete-inputs";
-import { activityEfforts, profileMetrics, profiles } from "@repo/db";
+import { activityEfforts } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte } from "drizzle-orm";
 import { z } from "zod";
 import { getProfileStats } from "../application/profiles/getProfileStats";
 import {
@@ -16,6 +15,11 @@ import {
   getSerializedProfile,
   listProfiles,
 } from "../application/profiles/readProfiles";
+import {
+  ProfileUpdateNotFoundError,
+  ProfileUsernameConflictError,
+  updateProfile,
+} from "../application/profiles/updateProfile";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { indexCursorSchema } from "../utils/index-cursor";
@@ -56,90 +60,6 @@ const profileUpdateInputSchema = profileQuickUpdateSchema
     is_public: z.boolean().optional(),
   })
   .strict();
-
-const MANUAL_FTP_UNIT = "ftp_manual";
-
-type DbClient = ReturnType<typeof getRequiredDb>;
-
-async function syncProfileMetric(
-  db: DbClient,
-  input: {
-    profileId: string;
-    metricType: "lthr" | "weight_kg";
-    value: number | null | undefined;
-  },
-) {
-  if (input.value === undefined) {
-    return;
-  }
-
-  if (input.value === null) {
-    await db
-      .delete(profileMetrics)
-      .where(
-        and(
-          eq(profileMetrics.profile_id, input.profileId),
-          eq(profileMetrics.metric_type, input.metricType),
-          isNull(profileMetrics.reference_activity_id),
-        ),
-      );
-
-    return;
-  }
-
-  await db.insert(profileMetrics).values({
-    id: randomUUID(),
-    created_at: new Date(),
-    profile_id: input.profileId,
-    metric_type: input.metricType,
-    recorded_at: new Date(),
-    unit: input.metricType === "weight_kg" ? "kg" : "bpm",
-    notes: null,
-    reference_activity_id: null,
-    value: input.value,
-  });
-}
-
-async function syncManualFtp(
-  db: DbClient,
-  input: { profileId: string; value: number | null | undefined },
-) {
-  if (input.value === undefined) {
-    return;
-  }
-
-  await db
-    .delete(activityEfforts)
-    .where(
-      and(
-        eq(activityEfforts.profile_id, input.profileId),
-        eq(activityEfforts.activity_category, "bike"),
-        eq(activityEfforts.effort_type, "power"),
-        eq(activityEfforts.duration_seconds, 1200),
-        eq(activityEfforts.unit, MANUAL_FTP_UNIT),
-        isNull(activityEfforts.activity_id),
-      ),
-    );
-
-  if (input.value === null) {
-    return;
-  }
-
-  await db.insert(activityEfforts).values({
-    id: randomUUID(),
-    created_at: new Date(),
-    updated_at: new Date(),
-    profile_id: input.profileId,
-    activity_id: null,
-    recorded_at: new Date(),
-    activity_category: "bike",
-    effort_type: "power",
-    duration_seconds: 1200,
-    start_offset: null,
-    unit: MANUAL_FTP_UNIT,
-    value: Number((input.value / 0.95).toFixed(2)),
-  });
-}
 
 export const profilesRouter = createTRPCRouter({
   get: protectedProcedure.query(async ({ ctx }) => {
@@ -208,55 +128,20 @@ export const profilesRouter = createTRPCRouter({
     const db = getRequiredDb(ctx);
 
     try {
-      const profileUpdate = {
+      await updateProfile(db, {
+        profileId: ctx.session.user.id,
         avatar_url: input.avatar_url,
         cover_url: input.cover_url,
         bio: input.bio,
         dob: input.dob === undefined ? undefined : input.dob === null ? null : new Date(input.dob),
         is_public: input.is_public,
-        updated_at: new Date(),
-      };
-
-      if (Object.values(profileUpdate).some((value) => value !== undefined)) {
-        await db.update(profiles).set(profileUpdate).where(eq(profiles.id, ctx.session.user.id));
-      }
-
-      const legacySetClauses = [] as ReturnType<typeof sql>[];
-
-      if (input.username !== undefined) {
-        legacySetClauses.push(sql`"username" = ${input.username}`);
-      }
-      if (input.language !== undefined) {
-        legacySetClauses.push(sql`"language" = ${input.language}`);
-      }
-      if (input.preferred_units !== undefined) {
-        legacySetClauses.push(sql`"preferred_units" = ${input.preferred_units}`);
-      }
-
-      if (legacySetClauses.length > 0) {
-        await db.execute(sql`
-            update "profiles"
-            set ${sql.join([...legacySetClauses, sql`"updated_at" = now()`], sql`, `)}
-            where "id" = ${ctx.session.user.id}
-          `);
-      }
-
-      await Promise.all([
-        syncProfileMetric(db, {
-          profileId: ctx.session.user.id,
-          metricType: "weight_kg",
-          value: input.weight_kg,
-        }),
-        syncProfileMetric(db, {
-          profileId: ctx.session.user.id,
-          metricType: "lthr",
-          value: input.threshold_hr,
-        }),
-        syncManualFtp(db, {
-          profileId: ctx.session.user.id,
-          value: input.ftp,
-        }),
-      ]);
+        username: input.username,
+        language: input.language,
+        preferred_units: input.preferred_units,
+        weight_kg: input.weight_kg,
+        threshold_hr: input.threshold_hr,
+        ftp: input.ftp,
+      });
 
       const profile = await getSerializedProfile(db, ctx.session.user.id);
 
@@ -271,6 +156,12 @@ export const profilesRouter = createTRPCRouter({
     } catch (error) {
       if (error instanceof TRPCError) {
         throw error;
+      }
+      if (error instanceof ProfileUpdateNotFoundError) {
+        throw new TRPCError({ code: "NOT_FOUND", message: error.message });
+      }
+      if (error instanceof ProfileUsernameConflictError) {
+        throw new TRPCError({ code: "CONFLICT", message: error.message });
       }
 
       throw new TRPCError({
@@ -490,21 +381,11 @@ export const profilesRouter = createTRPCRouter({
       const db = getRequiredDb(ctx);
 
       try {
-        await Promise.all([
-          input.threshold_hr === undefined
-            ? Promise.resolve()
-            : syncProfileMetric(db, {
-                profileId: ctx.session.user.id,
-                metricType: "lthr",
-                value: input.threshold_hr,
-              }),
-          input.ftp === undefined
-            ? Promise.resolve()
-            : syncManualFtp(db, {
-                profileId: ctx.session.user.id,
-                value: input.ftp,
-              }),
-        ]);
+        await updateProfile(db, {
+          profileId: ctx.session.user.id,
+          threshold_hr: input.threshold_hr,
+          ftp: input.ftp,
+        });
 
         const profile = await getSerializedProfile(db, ctx.session.user.id);
 
