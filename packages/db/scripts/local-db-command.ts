@@ -1,5 +1,6 @@
 #!/usr/bin/env tsx
 
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 import { dbPackageRoot, prepareDbEnv, runSupabaseCli, supabaseCliRoot } from "./_helpers";
@@ -21,10 +22,10 @@ function readSupabaseConfigToml() {
   return readFileSync(`${supabaseCliRoot}/config.toml`, "utf8");
 }
 
-function getConfiguredInbucketSmtpPort() {
+function getConfiguredLocalSmtpPort() {
   const configToml = readSupabaseConfigToml();
-  const inbucketSection = configToml.match(/\[inbucket\]([\s\S]*?)(?:\n\[|$)/m)?.[1];
-  const match = inbucketSection?.match(/^smtp_port\s*=\s*(\d+)/m);
+  const localSmtpSection = configToml.match(/\[local_smtp\]([\s\S]*?)(?:\n\[|$)/)?.[1];
+  const match = localSmtpSection?.match(/^smtp_port\s*=\s*(\d+)/m);
 
   if (!match?.[1]) {
     return null;
@@ -39,12 +40,10 @@ function getSupabaseMailpitContainerName() {
 
 function isContainerRunning(name: string) {
   try {
-    const output = require("node:child_process")
-      .execFileSync("docker", ["ps", "-q", "-f", `name=^${name}$`], {
-        stdio: "pipe",
-        encoding: "utf8",
-      })
-      .trim();
+    const output = execFileSync("docker", ["ps", "-q", "-f", `name=^${name}$`], {
+      stdio: "pipe",
+      encoding: "utf8",
+    }).trim();
     return output.length > 0;
   } catch {
     return false;
@@ -54,12 +53,12 @@ function isContainerRunning(name: string) {
 function showMailpitStatus() {
   const supabaseMailpitContainerName = getSupabaseMailpitContainerName();
   const supabaseMailpitRunning = isContainerRunning(supabaseMailpitContainerName);
-  const configuredInbucketSmtpPort = getConfiguredInbucketSmtpPort();
+  const configuredLocalSmtpPort = getConfiguredLocalSmtpPort();
   console.info(`Supabase Mailpit UI: ${supabaseMailpitRunning ? "running" : "stopped"}`);
 
-  if (configuredInbucketSmtpPort) {
+  if (configuredLocalSmtpPort) {
     console.info(
-      `Mailpit SMTP: 127.0.0.1:${configuredInbucketSmtpPort} (direct from Supabase Inbucket)`,
+      `Mailpit SMTP: 127.0.0.1:${configuredLocalSmtpPort} (direct from Supabase Mailpit)`,
     );
   } else {
     console.info("Mailpit SMTP: not exposed by Supabase config");

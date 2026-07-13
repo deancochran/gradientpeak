@@ -23,13 +23,13 @@ type SequenceSecurityRow = {
 
 const securityMigrationPath = fileURLToPath(
   new URL(
-    "../supabase/migrations/20260718120300_restore_public_table_security.sql",
+    "../supabase/migrations/20260713034515_restore_public_table_security.sql",
     import.meta.url,
   ),
 );
 const indexMigrationPath = fileURLToPath(
   new URL(
-    "../supabase/migrations/20260718120400_add_activity_file_ingestion_fk_index.sql",
+    "../supabase/migrations/20260713034520_add_activity_file_ingestion_fk_index.sql",
     import.meta.url,
   ),
 );

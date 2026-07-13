@@ -1,0 +1,18 @@
+{
+  "capturedAt": "2026-07-13T00:00:00.000Z",
+  "source": "expected reconciled ledger derived from the active authoritative migration filenames",
+  "entries": [
+    {
+      "version": "20260713034500",
+      "name": "baseline"
+    },
+    {
+      "version": "20260713034515",
+      "name": "restore_public_table_security"
+    },
+    {
+      "version": "20260713034520",
+      "name": "add_activity_file_ingestion_fk_index"
+    }
+  ]
+}

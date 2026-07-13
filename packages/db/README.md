@@ -12,9 +12,11 @@
 ## Source of truth
 
 - Drizzle schema in `src/schema/**` is the relational source of truth.
-- `drizzle/0000_baseline.sql` is the fresh-environment baseline generated from that schema.
-- `drizzle/baseline-strategy.md` documents the baseline cutover policy.
-- `supabase/` holds the retained local Supabase CLI assets used by DB-owned local workflows.
+- `supabase/migrations/` is the only deployable migration authority.
+- `drizzle/deploy/` is a byte-equivalent review/tooling mirror, never a second authoring location.
+- `supabase/migrations-archive/` preserves the previous deployed files byte-for-byte; it is not read by the Supabase CLI.
+- `migration-policy.json`, `migration-lock.json`, the pre/post ledger snapshots, and `migration-history-mismatches.json` define the cutover and its supported endpoints.
+- Drizzle has no deploy command. Its config points at the Supabase authority, while Studio remains available for inspection.
 
 ## Common commands
 
@@ -25,10 +27,12 @@ pnpm --filter @repo/db self-host:up
 pnpm --filter @repo/db db:reset
 pnpm --filter @repo/db db:verify:static
 pnpm --filter @repo/db db:verify
+pnpm --filter @repo/db db:migration:check
 pnpm --filter @repo/db db:schema:check
-pnpm --filter @repo/db db:lint
+pnpm --filter @repo/db db:schema:fingerprint
+pnpm --filter @repo/db db:lint:local # explicit shared-local diagnostic only
 pnpm --filter @repo/db db:migration:new <name>
-pnpm --filter @repo/db db:migrate
+pnpm --filter @repo/db db:migration:sync
 pnpm --filter @repo/db seed-templates
 pnpm --filter @repo/db seed-training-plans
 pnpm --filter @repo/db self-host:down
@@ -37,15 +41,28 @@ pnpm --filter @repo/db self-host:down
 ## Migration workflow
 
 1. Change `src/schema/**` first when the object is Drizzle-managed.
-2. Generate or write the matching migration in `supabase/migrations/`.
-3. Reset or migrate a local Supabase database before treating the change as ready.
-4. Run `pnpm --filter @repo/db db:schema:check` to catch schema drift.
-5. Run `pnpm --filter @repo/db db:lint` for Supabase linter coverage when the local stack is available.
-6. Run `pnpm --filter @repo/db check-types` and `pnpm --filter @repo/db lint` before handing off DB changes.
+2. Create exactly one timestamp with `pnpm --filter @repo/db db:migration:new <name>`.
+3. Author SQL only in the new `supabase/migrations/` file, then run `db:migration:sync` to regenerate its `drizzle/deploy/` mirror.
+4. Run `db:migration:check`. It rejects duplicate versions/content, archive mutation, baseline hash drift, stale mismatch catalogs, and byte-level mirror drift.
+5. Run `db:verify`. Its create/drop operations require both `--disposable` and `--local`, enforce a localhost URL, and never inspect or mutate the shared local database.
+6. `db:diff` builds the same disposable authoritative target, runs Supabase lint against it, and requires an empty public-schema shadow diff.
 
-`pnpm --filter @repo/db db:verify` runs the package type check, package lint, schema parity check, and Supabase DB lint in one pass against the local database.
+The checked-in fingerprint covers every public relation and sequence (including unmanaged extras), managed columns/defaults/indexes/constraints/enums, RLS and ACL/default ACL state, owned extensions, public/auth functions and triggers, and owned storage buckets/policies. Update it only from the guarded disposable fresh target.
 
-`pnpm --filter @repo/db db:verify:static` runs the package type check, package lint, and Drizzle migration check without requiring local Supabase. Use it in CI and quick handoffs when Docker/local database services are unavailable.
+`db:verify:static` needs no database. `db:verify` builds both fresh and upgrade disposable databases, verifies schema/data convergence, fingerprints all owned surfaces, checks storage/security, lints the same disposable target, and runs an empty diff. Shared-local ledger diagnostics are deliberately separate: `db:migration:ledger:pre` expects exactly 71 entries and `db:migration:ledger:post` expects exactly the three active entries.
+
+## Baseline reconciliation
+
+The old active chain could not build a fresh shadow: its first migration inserted into `training_plans` before that table was created. Rewriting that deployed SQL would invalidate history, so all 52 repository migration files are preserved exactly under `supabase/migrations-archive/`. The active `20260713034500_baseline.sql` is a schema-only snapshot of the verified managed database, followed by idempotent security/index migrations.
+
+For a fresh target, run the active chain normally. For an existing pre-consolidation target, **do not execute the baseline over existing objects**:
+
+1. Read that target's migration ledger and compare every version/name with `migration-ledger-pre.json`. Stop on any difference; partial/intermediate ledgers are unsupported.
+2. Use Supabase `migration repair --status reverted` for each captured legacy version. This changes ledger metadata only; it does not undo SQL.
+3. Use `migration repair --status applied 20260713034500` so the target records the schema it already has.
+4. Re-list the ledger. Only then run normal migration-up for post-baseline files.
+
+No reconciliation command is automated because it changes an environment ledger. Run it once per explicitly approved target after taking a backup. `migration-history-mismatches.json` explicitly records 36 ledger-only versions whose SQL is unavailable and 17 archive-only versions absent from the captured endpoint. The disposable upgrade fixture recreates the captured schema/71-entry ledger with representative data, performs metadata reconciliation, applies the two followups, and requires exact three-entry ledger, schema, storage, and data convergence. The security followup also restores hosted storage buckets and policies because existing targets skip the baseline.
 
 Use idempotent DDL such as `create index if not exists` and `alter table if exists` for live-drift repair migrations. Use stricter DDL for new product schema where drift should fail loudly.
 

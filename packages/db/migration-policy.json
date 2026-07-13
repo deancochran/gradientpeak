@@ -1,0 +1,32 @@
+{
+  "authorityDirectory": "supabase/migrations",
+  "archiveDirectory": "supabase/migrations-archive",
+  "mirrorDirectory": "drizzle/deploy",
+  "baseline": {
+    "version": "20260713034500",
+    "name": "baseline",
+    "sha256": "53340b6dc05864e7196116d71886f14a3a98874027d6826c39f5bae5976bc75a"
+  },
+  "ledgerEvidence": {
+    "capturedAt": "2026-07-13",
+    "preReconciliationFile": "migration-ledger-pre.json",
+    "postReconciliationFile": "migration-ledger-post.json",
+    "mismatchCatalogFile": "migration-history-mismatches.json",
+    "reconciliation": {
+      "legacyVersions": "reverted",
+      "baselineVersion": "applied",
+      "postBaselineVersions": "pending"
+    }
+  },
+  "ownedExtensions": ["pg_trgm"],
+  "contentAliases": [
+    [
+      "supabase/migrations-archive/20260522120000_add_profile_cover_url.sql",
+      "supabase/migrations-archive/20260522150500_add_profile_cover_url.sql"
+    ],
+    [
+      "supabase/migrations-archive/20260718120400_add_activity_file_ingestion_fk_index.sql",
+      "supabase/migrations/20260713034520_add_activity_file_ingestion_fk_index.sql"
+    ]
+  ]
+}

@@ -14,6 +14,7 @@ Use this file when working in `packages/db/drizzle`.
 - Add descriptive forward migrations that match the current schema intent.
 - Keep migration changes aligned with `packages/db/src/schema/**` ownership.
 - Treat old migrations and baseline files as historical artifacts unless there is a clear reason to touch them.
+- Author deployable SQL in `supabase/migrations/` and regenerate `drizzle/deploy/` with the package sync command; never edit the mirror directly.
 - Review generated SQL before committing it, especially for renames, drops, type changes, and constraint rewrites.
 - Prefer additive and operationally safe migration steps, and split backfill, default, and constraint enforcement when data preservation matters.
 - Use custom SQL only when the change cannot be represented safely or clearly through normal Drizzle migration generation.

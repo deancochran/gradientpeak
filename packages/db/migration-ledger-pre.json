@@ -1,0 +1,290 @@
+{
+  "capturedAt": "2026-07-13T04:26:52.976Z",
+  "source": "captured pre-reconciliation local and connected Supabase ledger; immutable endpoint evidence",
+  "entries": [
+    {
+      "version": "20260301000000",
+      "name": "baseline"
+    },
+    {
+      "version": "20260308173500",
+      "name": "remake_system_training_plan_templates"
+    },
+    {
+      "version": "20260413152000",
+      "name": "add_activity_plans_is_public"
+    },
+    {
+      "version": "20260413174000",
+      "name": "add_activity_routes_is_public"
+    },
+    {
+      "version": "20260413175000",
+      "name": "add_coaching_tables"
+    },
+    {
+      "version": "20260413193000",
+      "name": "add_discover_search_trigram_indexes"
+    },
+    {
+      "version": "20260419120000",
+      "name": "add_activity_plan_derived_metric_projections"
+    },
+    {
+      "version": "20260419123000",
+      "name": "add_profile_estimation_state"
+    },
+    {
+      "version": "20260419130000",
+      "name": "add_activity_plan_refresh_queue"
+    },
+    {
+      "version": "20260420120000",
+      "name": "fix_activity_plan_derived_metrics_cache"
+    },
+    {
+      "version": "20260420140000",
+      "name": "backfill_profile_goal_target_dates"
+    },
+    {
+      "version": "20260422233000",
+      "name": "add_system_route_templates"
+    },
+    {
+      "version": "20260423150000",
+      "name": "remove_unused_route_metadata"
+    },
+    {
+      "version": "20260423163000",
+      "name": "fix_activity_routes_template_visibility_drift"
+    },
+    {
+      "version": "20260423221325",
+      "name": "ensure_profile_avatar_storage"
+    },
+    {
+      "version": "20260424143000",
+      "name": "remove_goal_milestone_event_column"
+    },
+    {
+      "version": "20260428102000",
+      "name": "drop_activity_routes_activity_category"
+    },
+    {
+      "version": "20260429120000",
+      "name": "add_content_access_grants"
+    },
+    {
+      "version": "20260512175500",
+      "name": "rename_fit_activity_file_columns"
+    },
+    {
+      "version": "20260520120000",
+      "name": "make_activity_plan_description_nullable"
+    },
+    {
+      "version": "20260521120000",
+      "name": "add_groups_core_mvp"
+    },
+    {
+      "version": "20260521130000",
+      "name": "add_one_off_group_events"
+    },
+    {
+      "version": "20260521140000",
+      "name": "add_recurring_group_events"
+    },
+    {
+      "version": "20260522120000",
+      "name": "add_profile_cover_url"
+    },
+    {
+      "version": "20260522150500",
+      "name": "add_profile_cover_url"
+    },
+    {
+      "version": "20260524000322",
+      "name": "database_foundation_indexes_and_function_hardening"
+    },
+    {
+      "version": "20260524000328",
+      "name": "move_pg_trgm_extension_to_extensions_schema"
+    },
+    {
+      "version": "20260524001000",
+      "name": "enable_rls_on_sensitive_internal_tables"
+    },
+    {
+      "version": "20260524002000",
+      "name": "enable_rls_on_public_app_tables"
+    },
+    {
+      "version": "20260524003000",
+      "name": "add_internal_provider_sync_diagnostics"
+    },
+    {
+      "version": "20260524004000",
+      "name": "split_integration_credentials"
+    },
+    {
+      "version": "20260524005000",
+      "name": "split_activity_event_tables"
+    },
+    {
+      "version": "20260524006000",
+      "name": "lock_down_public_table_grants"
+    },
+    {
+      "version": "20260524006100",
+      "name": "drop_legacy_integration_token_columns"
+    },
+    {
+      "version": "20260524143000",
+      "name": "add_profile_estimation_dirty_since"
+    },
+    {
+      "version": "20260524150000",
+      "name": "add_group_event_cancelled_notification_type"
+    },
+    {
+      "version": "20260526192536",
+      "name": "add_activity_file_ingestions_for_local_maestro"
+    },
+    {
+      "version": "20260527120000",
+      "name": "add_social_platform_foundation"
+    },
+    {
+      "version": "20260527153000",
+      "name": "add_profile_preferred_temperature_unit"
+    },
+    {
+      "version": "20260527230000",
+      "name": "add_provider_sync_sessions"
+    },
+    {
+      "version": "20260528031454",
+      "name": "repair_missing_local_migration_chain"
+    },
+    {
+      "version": "20260528110000",
+      "name": "expand_like_entity_types"
+    },
+    {
+      "version": "20260528120000",
+      "name": "add_deep_link_route_and_event_resource_types"
+    },
+    {
+      "version": "20260528130000",
+      "name": "add_push_notification_deliveries"
+    },
+    {
+      "version": "20260528140000",
+      "name": "add_push_notification_jobs_and_typed_statuses"
+    },
+    {
+      "version": "20260528143000",
+      "name": "add_activity_weather_summary_fields"
+    },
+    {
+      "version": "20260529120000",
+      "name": "add_activity_location_name"
+    },
+    {
+      "version": "20260529123000",
+      "name": "optimize_feed_query_indexes"
+    },
+    {
+      "version": "20260529130000",
+      "name": "add_activity_plan_location_name"
+    },
+    {
+      "version": "20260530120000",
+      "name": "hard_cut_canonical_events"
+    },
+    {
+      "version": "20260531120000",
+      "name": "add_ftp_profile_metric_type"
+    },
+    {
+      "version": "20260531123000",
+      "name": "backfill_missing_profile_usernames"
+    },
+    {
+      "version": "20260601120000",
+      "name": "add_profile_full_name_length_check"
+    },
+    {
+      "version": "20260601123000",
+      "name": "restrict_social_entity_types"
+    },
+    {
+      "version": "20260602133000",
+      "name": "add_event_activity_option_defaults"
+    },
+    {
+      "version": "20260602143000",
+      "name": "event_route_plan_hard_cut"
+    },
+    {
+      "version": "20260602160000",
+      "name": "event_time_hard_cut"
+    },
+    {
+      "version": "20260602170000",
+      "name": "remove_stored_event_type"
+    },
+    {
+      "version": "20260603190000",
+      "name": "add_route_activity_category"
+    },
+    {
+      "version": "20260605130000",
+      "name": "add_activity_efforts_category_metric_curve_index"
+    },
+    {
+      "version": "20260606120000",
+      "name": "add_event_origin_schedule_provenance"
+    },
+    {
+      "version": "20260608120000",
+      "name": "add_profiles_onboarded_identity_check"
+    },
+    {
+      "version": "20260608123000",
+      "name": "add_schedule_instances"
+    },
+    {
+      "version": "20260609103000",
+      "name": "add_profile_goals_start_date"
+    },
+    {
+      "version": "20260609120000",
+      "name": "drop_activity_title_description"
+    },
+    {
+      "version": "20260610120000",
+      "name": "add_event_collections_hard_cut"
+    },
+    {
+      "version": "20260610123000",
+      "name": "enable_event_collections_rls"
+    },
+    {
+      "version": "20260610133000",
+      "name": "default_event_rsvp_tentative"
+    },
+    {
+      "version": "20260610143000",
+      "name": "backfill_activity_route_location_name"
+    },
+    {
+      "version": "20260610150000",
+      "name": "restrict_event_rsvp_status_values"
+    },
+    {
+      "version": "20260611180000",
+      "name": "add_handle_new_user_function"
+    }
+  ]
+}

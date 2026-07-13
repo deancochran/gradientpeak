@@ -10,7 +10,7 @@ const expand = await readFile(
 );
 const contract = await readFile(`${root}/scripts/contract_activity_extension_tables.sql`, "utf8");
 const supabaseExpand = await readFile(
-  `${root}/supabase/migrations/20260718120100_expand_and_backfill_activity_extensions.sql`,
+  `${root}/supabase/migrations-archive/20260718120100_expand_and_backfill_activity_extensions.sql`,
   "utf8",
 );
 if (!process.env.DATABASE_URL) throw new Error("DATABASE_URL is required");
