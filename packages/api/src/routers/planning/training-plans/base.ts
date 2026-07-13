@@ -132,6 +132,7 @@ import { indexCursorSchema } from "../../../utils/index-cursor";
 import {
   filterObservationsAfterLatestTombstone,
   filterSupersededProfileOverrides,
+  isActiveManualFtpOverride,
   resolveLatestObservationsByKey,
 } from "../../../utils/profile-override-observations";
 
@@ -2969,19 +2970,35 @@ export async function deriveProfileAwareCreationContext(input: {
   const thresholds = resolveCanonicalThresholds({
     now: asOf.toISOString(),
     freshnessWindowMs: 90 * 24 * 60 * 60 * 1000,
-    directMetrics: profileMetricsRows.flatMap((metric: any) =>
-      metric.metric_type === "ftp" && Number.isFinite(Number(metric.value))
-        ? [
-            {
-              threshold: "cycling_ftp" as const,
-              value: Number(metric.value),
-              observedAt: new Date(metric.recorded_at).toISOString(),
-              source: "provider" as const,
-            },
-          ]
-        : [],
-    ),
+    directMetrics: [
+      ...profileMetricsRows.flatMap((metric: any) =>
+        metric.metric_type === "ftp" && Number.isFinite(Number(metric.value))
+          ? [
+              {
+                threshold: "cycling_ftp" as const,
+                value: Number(metric.value),
+                observedAt: new Date(metric.recorded_at).toISOString(),
+                source: "provider" as const,
+              },
+            ]
+          : [],
+      ),
+      ...efforts.flatMap((effort: any) =>
+        isActiveManualFtpOverride(effort)
+          ? [
+              {
+                threshold: "cycling_ftp" as const,
+                value: Number(effort.value) * 0.95,
+                observedAt: new Date(effort.recorded_at).toISOString(),
+                source: "manual" as const,
+                locked: true,
+              },
+            ]
+          : [],
+      ),
+    ],
     activityEfforts: efforts.flatMap((effort: any) =>
+      !isActiveManualFtpOverride(effort) &&
       effort.activity_category === "bike" &&
       effort.effort_type === "power" &&
       effort.duration_seconds === 1200

@@ -6,6 +6,7 @@ import {
 import type { ActivityAnalysisContextSnapshot, ActivityAnalysisStore } from "../../repositories";
 import {
   filterSupersededProfileOverrides,
+  isActiveManualFtpOverride,
   resolveLatestObservationsByKey,
 } from "../../utils/profile-override-observations";
 
@@ -89,19 +90,35 @@ export function resolveActivityContextFromEvidence(input: {
   const thresholds = resolveCanonicalThresholds({
     now: asOf.toISOString(),
     freshnessWindowMs: 90 * 24 * 60 * 60 * 1000,
-    directMetrics: typedMetrics.flatMap((metric) =>
-      metric.metric_type === "ftp" && metric.unit === "W"
-        ? [
-            {
-              threshold: "cycling_ftp" as const,
-              value: toNumber(metric.value) ?? 0,
-              observedAt: toIsoString(metric.recorded_at) ?? asOf.toISOString(),
-              source: "provider" as const,
-            },
-          ]
-        : [],
-    ),
+    directMetrics: [
+      ...typedMetrics.flatMap((metric) =>
+        metric.metric_type === "ftp" && metric.unit === "W"
+          ? [
+              {
+                threshold: "cycling_ftp" as const,
+                value: toNumber(metric.value) ?? 0,
+                observedAt: toIsoString(metric.recorded_at) ?? asOf.toISOString(),
+                source: "provider" as const,
+              },
+            ]
+          : [],
+      ),
+      ...typedEfforts.flatMap((effort) =>
+        isActiveManualFtpOverride(effort)
+          ? [
+              {
+                threshold: "cycling_ftp" as const,
+                value: effort.value * 0.95,
+                observedAt: toIsoString(effort.recorded_at) ?? asOf.toISOString(),
+                source: "manual" as const,
+                locked: true,
+              },
+            ]
+          : [],
+      ),
+    ],
     activityEfforts: typedEfforts.flatMap((effort): ThresholdActivityEffortObservation[] => {
+      if (isActiveManualFtpOverride(effort)) return [];
       const value = normalizeSpeedMetersPerSecond(effort.value, effort.unit);
       if (effort.duration_seconds !== 1200) return [];
       if (effort.activity_category === "bike" && effort.effort_type === "power") {

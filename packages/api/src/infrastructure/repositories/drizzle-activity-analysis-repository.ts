@@ -51,6 +51,7 @@ export function createActivityAnalysisStore(db: DrizzleDbClient): ActivityAnalys
       db
         .select({
           id: schema.activityEfforts.id,
+          activity_id: schema.activityEfforts.activity_id,
           profile_id: schema.activityEfforts.profile_id,
           activity_category: schema.activityEfforts.activity_category,
           duration_seconds: schema.activityEfforts.duration_seconds,
@@ -60,6 +61,7 @@ export function createActivityAnalysisStore(db: DrizzleDbClient): ActivityAnalys
           value: schema.activityEfforts.value,
           method: schema.activityEfforts.method,
           provenance: schema.activityEfforts.provenance,
+          source: schema.activityEfforts.source,
         })
         .from(schema.activityEfforts)
         .where(
@@ -105,6 +107,7 @@ export function createActivityAnalysisStore(db: DrizzleDbClient): ActivityAnalys
           .filter((effort) => effort.profile_id === profileId)
           .map((effort) => ({
             id: effort.id,
+            activity_id: effort.activity_id,
             activity_category: effort.activity_category,
             duration_seconds: effort.duration_seconds,
             effort_type: effort.effort_type,
@@ -113,6 +116,7 @@ export function createActivityAnalysisStore(db: DrizzleDbClient): ActivityAnalys
             value: toNumber(effort.value),
             method: effort.method,
             provenance: effort.provenance,
+            source: effort.source,
           })),
       });
     }

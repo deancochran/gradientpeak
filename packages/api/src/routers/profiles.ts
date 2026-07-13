@@ -23,7 +23,10 @@ import {
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { indexCursorSchema } from "../utils/index-cursor";
-import { filterSupersededProfileOverrides } from "../utils/profile-override-observations";
+import {
+  filterSupersededProfileOverrides,
+  isActiveManualFtpOverride,
+} from "../utils/profile-override-observations";
 
 const profileListFiltersSchema = z
   .object({
@@ -244,11 +247,17 @@ export const profilesRouter = createTRPCRouter({
 
       const threshold_hr = performance.threshold_hr ?? undefined;
       const weight_kg = performance.weight_kg ?? undefined;
+      const currentThresholdEfforts = filterSupersededProfileOverrides(
+        thresholdEfforts,
+        (effort) =>
+          `${effort.activity_category}:${effort.effort_type}:${effort.duration_seconds}:${effort.unit}`,
+      );
+      const manualFtpEffort = currentThresholdEfforts.find(isActiveManualFtpOverride);
       const thresholds = resolveCanonicalThresholds({
         now: new Date().toISOString(),
         freshnessWindowMs: 90 * 24 * 60 * 60 * 1000,
-        directMetrics:
-          performance.ftp === null
+        directMetrics: [
+          ...(performance.ftp === null
             ? []
             : [
                 {
@@ -257,52 +266,63 @@ export const profilesRouter = createTRPCRouter({
                   observedAt: new Date().toISOString(),
                   source: "provider" as const,
                 },
-              ],
-        activityEfforts: filterSupersededProfileOverrides(
-          thresholdEfforts,
-          (effort) =>
-            `${effort.activity_category}:${effort.effort_type}:${effort.duration_seconds}:${effort.unit}`,
-        ).flatMap((effort): ThresholdActivityEffortObservation[] => {
-          if (effort.duration_seconds !== 1200) return [];
-          const observedAt = effort.recorded_at.toISOString();
-          if (effort.activity_category === "bike" && effort.effort_type === "power") {
-            return [
-              {
-                sport: "bike" as const,
-                metric: "power" as const,
-                value: Number(effort.value),
-                durationSeconds: 1200,
-                observedAt,
-                observationKind:
-                  effort.activity_id !== null &&
-                  effort.source !== "derived" &&
-                  effort.source !== "estimated"
-                    ? ("actual" as const)
-                    : ("derived" as const),
-              },
-            ];
-          }
-          if (effort.activity_category === "run" && effort.effort_type === "speed") {
-            const speed =
-              effort.unit === "km_per_hour"
-                ? Number(effort.value) / 3.6
-                : effort.unit === "meters_per_second" || effort.unit === "m/s"
-                  ? Number(effort.value)
-                  : null;
-            if (speed === null) return [];
-            return [
-              {
-                sport: "run" as const,
-                metric: "speed" as const,
-                value: speed,
-                durationSeconds: 1200,
-                observedAt,
-                observationKind: "actual" as const,
-              },
-            ];
-          }
-          return [];
-        }),
+              ]),
+          ...(manualFtpEffort
+            ? [
+                {
+                  threshold: "cycling_ftp" as const,
+                  value: Number(manualFtpEffort.value) * 0.95,
+                  observedAt: manualFtpEffort.recorded_at.toISOString(),
+                  source: "manual" as const,
+                  locked: true,
+                },
+              ]
+            : []),
+        ],
+        activityEfforts: currentThresholdEfforts.flatMap(
+          (effort): ThresholdActivityEffortObservation[] => {
+            if (isActiveManualFtpOverride(effort)) return [];
+            if (effort.duration_seconds !== 1200) return [];
+            const observedAt = effort.recorded_at.toISOString();
+            if (effort.activity_category === "bike" && effort.effort_type === "power") {
+              return [
+                {
+                  sport: "bike" as const,
+                  metric: "power" as const,
+                  value: Number(effort.value),
+                  durationSeconds: 1200,
+                  observedAt,
+                  observationKind:
+                    effort.activity_id !== null &&
+                    effort.source !== "derived" &&
+                    effort.source !== "estimated"
+                      ? ("actual" as const)
+                      : ("derived" as const),
+                },
+              ];
+            }
+            if (effort.activity_category === "run" && effort.effort_type === "speed") {
+              const speed =
+                effort.unit === "km_per_hour"
+                  ? Number(effort.value) / 3.6
+                  : effort.unit === "meters_per_second" || effort.unit === "m/s"
+                    ? Number(effort.value)
+                    : null;
+              if (speed === null) return [];
+              return [
+                {
+                  sport: "run" as const,
+                  metric: "speed" as const,
+                  value: speed,
+                  durationSeconds: 1200,
+                  observedAt,
+                  observationKind: "actual" as const,
+                },
+              ];
+            }
+            return [];
+          },
+        ),
       });
       const ftp =
         thresholds.cycling_ftp.value === null

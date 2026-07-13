@@ -9,6 +9,7 @@ import type {
 } from "../../repositories";
 import {
   filterSupersededProfileOverrides,
+  isActiveManualFtpOverride,
   resolveLatestObservationsByKey,
 } from "../../utils/profile-override-observations";
 
@@ -317,7 +318,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
               eq(schema.activityEfforts.duration_seconds, 1200),
             ),
           )
-          .orderBy(desc(schema.activityEfforts.recorded_at)),
+          .orderBy(desc(schema.activityEfforts.recorded_at), desc(schema.activityEfforts.id)),
       ]);
 
       const resolvedMetrics = resolveLatestObservationsByKey(metricRows, (row) => row.type);
@@ -328,25 +329,47 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         bikePowerEfforts,
         (effort) => `bike:power:1200:${effort.unit}`,
       );
+      const isManualFtp = (effort: (typeof currentBikePowerEfforts)[number]) =>
+        isActiveManualFtpOverride({
+          ...effort,
+          activity_id: effort.activityId,
+          activity_category: "bike",
+          duration_seconds: 1200,
+          effort_type: "power",
+        });
+      const manualFtpEffort = currentBikePowerEfforts.find(isManualFtp);
 
       return {
-        bikePowerEfforts: currentBikePowerEfforts.map((effort) => ({
-          observationKind:
-            effort.activityId !== null &&
-            effort.source !== "derived" &&
-            effort.source !== "estimated"
-              ? "actual"
-              : "derived",
-          observedAt: effort.observedAt.toISOString(),
-          value: effort.value,
-        })),
-        ftpMetrics: currentMetricRows
-          .filter((metric) => metric.type === "ftp")
-          .map((metric) => ({
-            observedAt: metric.recordedAt.toISOString(),
-            source: thresholdMetricSource(metric.source),
-            value: metric.value,
+        bikePowerEfforts: currentBikePowerEfforts
+          .filter((effort) => !isManualFtp(effort))
+          .map((effort) => ({
+            observationKind:
+              effort.activityId !== null &&
+              effort.source !== "derived" &&
+              effort.source !== "estimated"
+                ? "actual"
+                : "derived",
+            observedAt: effort.observedAt.toISOString(),
+            value: effort.value,
           })),
+        ftpMetrics: [
+          ...currentMetricRows
+            .filter((metric) => metric.type === "ftp")
+            .map((metric) => ({
+              observedAt: metric.recordedAt.toISOString(),
+              source: thresholdMetricSource(metric.source),
+              value: metric.value,
+            })),
+          ...(manualFtpEffort
+            ? [
+                {
+                  observedAt: manualFtpEffort.observedAt.toISOString(),
+                  source: "manual" as const,
+                  value: manualFtpEffort.value * 0.95,
+                },
+              ]
+            : []),
+        ],
         maxHr: latest.get("max_hr") ?? null,
         thresholdHr: latest.get("lthr") ?? null,
       };

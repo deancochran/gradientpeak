@@ -167,6 +167,18 @@ describe("atomic profile update against PostgreSQL", () => {
     expect(ftpRows).toHaveLength(2);
     expect(ftpRows.some((row) => row.id === initialFtp?.id)).toBe(true);
     expect(Math.max(...ftpRows.map((row) => Number(row.value))) * 0.95).toBeCloseTo(310, 1);
+    const analysisStore = createActivityAnalysisStore(db);
+    const activePlanningContext = await deriveProfileAwareCreationContext({
+      db,
+      store: analysisStore,
+      profileId,
+      asOfIso: new Date(
+        Math.max(...ftpRows.map((row) => row.recorded_at.getTime())) + 1,
+      ).toISOString(),
+    });
+    expect(activePlanningContext.contextSummary.missing_optional_calibration_fields).not.toContain(
+      "ftp",
+    );
 
     await updateProfile(db, { profileId, weight_kg: null, threshold_hr: null, ftp: null });
     const weightHistory = await manualMetrics(profileId, "weight_kg");
@@ -191,7 +203,6 @@ describe("atomic profile update against PostgreSQL", () => {
       Math.min(...tombstones.map((row) => row?.recorded_at.getTime() ?? 0)) - 1,
     );
     const afterClear = new Date(clearRecordedAt.getTime() + 1);
-    const analysisStore = createActivityAnalysisStore(db);
     const batchEvidence = await analysisStore.loadContextEvidence?.({
       requests: [
         { profileId, asOf: beforeClear },

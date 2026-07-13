@@ -19,6 +19,7 @@ import { and, asc, desc, eq, gte, lte, type SQLWrapper, sql } from "drizzle-orm"
 import type { getRequiredDb } from "../../db";
 import {
   filterSupersededProfileOverrides,
+  isActiveManualFtpOverride,
   isClearedProfileOverride,
   resolveLatestObservationsByKey,
 } from "../../utils/profile-override-observations";
@@ -111,6 +112,7 @@ export interface AthleteIntelligenceRows {
     value: number;
     method?: string | null;
     provenance?: unknown;
+    source?: "manual" | "test" | "imported" | "provider" | "estimated" | "derived" | null;
     createdAt: Date;
     updatedAt: Date | null;
   }>;
@@ -470,6 +472,7 @@ export function createDrizzleAthleteIntelligenceDataSource(
             value: activityEfforts.value,
             method: activityEfforts.method,
             provenance: activityEfforts.provenance,
+            source: activityEfforts.source,
             createdAt: activityEfforts.created_at,
             updatedAt: activityEfforts.updated_at,
           })
@@ -722,37 +725,76 @@ export async function materializeAthleteIntelligenceModelInput(input: {
       latest.set(type as AthleteMetricType, row);
   }
   const currentMetricRows = [...resolvedLatestMetrics.values()].filter((row) => row !== null);
+  const currentOverrideEfforts = filterSupersededProfileOverrides(
+    [...rows.efforts]
+      .filter(
+        (row) =>
+          row.recordedAt <= asOf &&
+          row.createdAt <= asOf &&
+          (row.updatedAt === null || row.updatedAt <= asOf),
+      )
+      .sort((a, b) => b.recordedAt.getTime() - a.recordedAt.getTime() || b.id.localeCompare(a.id)),
+    (row) => `${row.sport}:${row.kind}:${row.durationSeconds}:${row.unit}`,
+  );
+  const isManualFtpEffort = (row: AthleteIntelligenceRows["efforts"][number]) =>
+    isActiveManualFtpOverride({
+      ...row,
+      activity_id: row.activityId,
+      activity_category: row.sport,
+      duration_seconds: row.durationSeconds,
+      effort_type: row.kind,
+    });
+  const manualFtpEffort = currentOverrideEfforts.find(isManualFtpEffort);
+  const manualFtpMetric: AthleteIntelligenceRows["metrics"][number] | null = manualFtpEffort
+    ? {
+        profileId: manualFtpEffort.profileId,
+        id: `manual-ftp-${manualFtpEffort.id}`,
+        referenceActivityId: null,
+        type: "ftp",
+        value: manualFtpEffort.value * 0.95,
+        unit: "W",
+        recordedAt: manualFtpEffort.recordedAt,
+        createdAt: manualFtpEffort.createdAt,
+        updatedAt: manualFtpEffort.updatedAt ?? manualFtpEffort.createdAt,
+        source: "manual",
+        method: manualFtpEffort.method,
+        provenance: manualFtpEffort.provenance,
+      }
+    : null;
   const canonicalFtp = resolveCanonicalThresholds({
     now: asOf.toISOString(),
     freshnessWindowMs: 90 * DAY,
-    directMetrics: currentMetricRows.flatMap((row) => {
-      if (row.type !== "ftp" || canonicalMetricValue("ftp", row.value, row.unit) === null)
-        return [];
-      return [
-        {
-          threshold: "cycling_ftp" as const,
-          value: row.value,
-          observedAt: row.recordedAt.toISOString(),
-          source:
-            row.source === "manual" || row.source === "provider" || row.source === "estimated"
-              ? row.source
-              : ("modeled" as const),
-          locked:
-            typeof row.provenance === "object" &&
-            row.provenance !== null &&
-            ((row.provenance as Record<string, unknown>).manual_override === true ||
-              (
-                (row.provenance as Record<string, unknown>).manual_override as
-                  | { locked?: boolean }
-                  | undefined
-              )?.locked === true ||
-              (row.provenance as Record<string, unknown>).locked === true),
-        },
-      ];
-    }),
+    directMetrics: [...currentMetricRows, ...(manualFtpMetric ? [manualFtpMetric] : [])].flatMap(
+      (row) => {
+        if (row.type !== "ftp" || canonicalMetricValue("ftp", row.value, row.unit) === null)
+          return [];
+        return [
+          {
+            threshold: "cycling_ftp" as const,
+            value: row.value,
+            observedAt: row.recordedAt.toISOString(),
+            source:
+              row.source === "manual" || row.source === "provider" || row.source === "estimated"
+                ? row.source
+                : ("modeled" as const),
+            locked:
+              row === manualFtpMetric ||
+              (typeof row.provenance === "object" &&
+                row.provenance !== null &&
+                ((row.provenance as Record<string, unknown>).manual_override === true ||
+                  (
+                    (row.provenance as Record<string, unknown>).manual_override as
+                      | { locked?: boolean }
+                      | undefined
+                  )?.locked === true ||
+                  (row.provenance as Record<string, unknown>).locked === true)),
+          },
+        ];
+      },
+    ),
   }).cycling_ftp;
   if (canonicalFtp.observedAt !== null && canonicalFtp.source !== "observed_effort") {
-    const selectedFtp = currentMetricRows.find(
+    const selectedFtp = [...currentMetricRows, ...(manualFtpMetric ? [manualFtpMetric] : [])].find(
       (row) => row.type === "ftp" && row.recordedAt.toISOString() === canonicalFtp.observedAt,
     );
     if (selectedFtp) latest.set("ftp", selectedFtp);
@@ -974,6 +1016,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
     boundedEfforts,
     (row) => `${row.sport}:${row.kind}:${row.durationSeconds}:${row.unit}`,
   ).flatMap((row) => {
+    if (isManualFtpEffort(row)) return [];
     const canonical = canonicalEffortValue(row.kind, row.value, row.unit);
     const sport = normalizeSport(row.sport);
     const effortLineage = row.activityId ?? `effort-${row.id}`;

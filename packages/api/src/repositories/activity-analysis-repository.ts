@@ -19,8 +19,10 @@ export type ActivityAnalysisEffortSnapshot = Omit<
 > & {
   value: number;
   id?: string;
+  activity_id?: string | null;
   method?: string | null;
   provenance?: unknown;
+  source?: string | null;
 };
 
 export type ActivityAnalysisContextSnapshot = {

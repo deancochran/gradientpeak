@@ -14,6 +14,7 @@ import type { EventReadRepository } from "../repositories";
 import {
   filterObservationsAfterLatestTombstone,
   filterSupersededProfileOverrides,
+  isActiveManualFtpOverride,
   resolveLatestObservationsByKey,
 } from "./profile-override-observations";
 
@@ -321,11 +322,16 @@ async function getEstimationProfileInputs(
 
 function resolveEstimationThresholds(
   efforts: Array<{
+    activity_id?: string | null;
     effort_type: string;
     duration_seconds: number;
     value: number;
     unit: string;
     activity_category: string;
+    recorded_at?: string;
+    source?: string | null;
+    method?: string | null;
+    provenance?: unknown;
   }>,
   metrics: Array<{ metric_type: string; unit?: string; value: number; recorded_at?: string }>,
   now: string,
@@ -333,19 +339,35 @@ function resolveEstimationThresholds(
   return resolveCanonicalThresholds({
     now,
     freshnessWindowMs: 90 * 24 * 60 * 60 * 1000,
-    directMetrics: metrics.flatMap((metric) =>
-      metric.metric_type === "ftp" && metric.unit === "W" && Number.isFinite(Number(metric.value))
-        ? [
-            {
-              threshold: "cycling_ftp" as const,
-              value: Number(metric.value),
-              observedAt: metric.recorded_at ?? now,
-              source: "provider" as const,
-            },
-          ]
-        : [],
-    ),
+    directMetrics: [
+      ...metrics.flatMap((metric) =>
+        metric.metric_type === "ftp" && metric.unit === "W" && Number.isFinite(Number(metric.value))
+          ? [
+              {
+                threshold: "cycling_ftp" as const,
+                value: Number(metric.value),
+                observedAt: metric.recorded_at ?? now,
+                source: "provider" as const,
+              },
+            ]
+          : [],
+      ),
+      ...efforts.flatMap((effort) =>
+        isActiveManualFtpOverride(effort)
+          ? [
+              {
+                threshold: "cycling_ftp" as const,
+                value: Number(effort.value) * 0.95,
+                observedAt: effort.recorded_at ?? now,
+                source: "manual" as const,
+                locked: true,
+              },
+            ]
+          : [],
+      ),
+    ],
     activityEfforts: efforts.flatMap((effort): ThresholdActivityEffortObservation[] => {
+      if (isActiveManualFtpOverride(effort)) return [];
       const value = normalizeThresholdEffortValue(effort.value, effort.unit);
       if (value === null || effort.duration_seconds !== 1200) return [];
       if (effort.activity_category === "bike" && effort.effort_type === "power") {

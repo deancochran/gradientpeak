@@ -20,6 +20,28 @@ export function isClearedProfileOverride(input: ProfileOverrideObservation) {
   return (input.provenance as { override_state?: unknown }).override_state === "cleared";
 }
 
+export function isActiveManualFtpOverride(
+  input: ProfileOverrideObservation & {
+    activity_id?: string | null;
+    activity_category?: string | null;
+    duration_seconds?: number;
+    effort_type?: string;
+    source?: string | null;
+    unit?: string | null;
+  },
+) {
+  return (
+    isProfileOverrideObservation(input) &&
+    !isClearedProfileOverride(input) &&
+    input.source === "manual" &&
+    input.activity_id === null &&
+    input.activity_category === "bike" &&
+    input.effort_type === "power" &&
+    input.duration_seconds === 1200 &&
+    input.unit === "ftp_manual"
+  );
+}
+
 /** Rows must be newest-first. A tombstone resolves its key to null without reviving older rows. */
 export function resolveLatestObservationsByKey<T extends ProfileOverrideObservation>(
   rows: readonly T[],

@@ -100,6 +100,7 @@ describe("resolveActivityContextAsOf", () => {
       recentEfforts: [
         {
           id: "ftp-reactivated",
+          activity_id: null,
           activity_category: "bike" as const,
           duration_seconds: 1200,
           effort_type: "power" as const,
@@ -108,9 +109,11 @@ describe("resolveActivityContextAsOf", () => {
           value: 320 / 0.95,
           method: "profile_update_override",
           provenance: active,
+          source: "manual",
         },
         {
           id: "ftp-cleared",
+          activity_id: null,
           activity_category: "bike" as const,
           duration_seconds: 1200,
           effort_type: "power" as const,
@@ -119,9 +122,11 @@ describe("resolveActivityContextAsOf", () => {
           value: 0,
           method: "profile_update_override",
           provenance: cleared,
+          source: "manual",
         },
         {
           id: "ftp-active",
+          activity_id: null,
           activity_category: "bike" as const,
           duration_seconds: 1200,
           effort_type: "power" as const,
@@ -130,6 +135,7 @@ describe("resolveActivityContextAsOf", () => {
           value: 300 / 0.95,
           method: "profile_update_override",
           provenance: active,
+          source: "manual",
         },
       ],
     };

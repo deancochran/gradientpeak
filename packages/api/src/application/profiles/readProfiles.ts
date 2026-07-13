@@ -7,7 +7,9 @@ import { buildIndexPageInfo, parseIndexCursor } from "../../utils/index-cursor";
 import {
   filterObservationsAfterLatestTombstone,
   filterSupersededProfileOverrides,
+  isActiveManualFtpOverride,
   isClearedProfileOverride,
+  isProfileOverrideObservation,
 } from "../../utils/profile-override-observations";
 import {
   redactPrivateProfileDetailFields,
@@ -216,6 +218,7 @@ export async function getProfilePerformanceSnapshot(db: DbClient, profileId: str
           recorded_at: activityEfforts.recorded_at,
           method: activityEfforts.method,
           provenance: activityEfforts.provenance,
+          source: activityEfforts.source,
         })
         .from(activityEfforts)
         .where(
@@ -266,7 +269,16 @@ export async function getProfilePerformanceSnapshot(db: DbClient, profileId: str
         observedAt: metric.recorded_at.toISOString(),
         source: thresholdMetricSource(metric.source, metric.provenance),
       })),
-      ...(manualFtpEffort && !isClearedProfileOverride(manualFtpEffort)
+      ...(manualFtpEffort &&
+      (!isProfileOverrideObservation(manualFtpEffort) ||
+        isActiveManualFtpOverride({
+          ...manualFtpEffort,
+          activity_id: null,
+          activity_category: "bike",
+          duration_seconds: 1200,
+          effort_type: "power",
+          unit: MANUAL_FTP_UNIT,
+        }))
         ? [
             {
               threshold: "cycling_ftp" as const,
@@ -281,17 +293,30 @@ export async function getProfilePerformanceSnapshot(db: DbClient, profileId: str
     activityEfforts: filterSupersededProfileOverrides(
       best20mEfforts,
       (effort) => `bike:power:1200:${effort.unit}`,
-    ).map((effort) => ({
-      sport: "bike" as const,
-      metric: "power" as const,
-      value: Number(effort.value),
-      durationSeconds: 1200,
-      observedAt: effort.recorded_at.toISOString(),
-      observationKind:
-        effort.activity_id !== null && effort.source !== "derived" && effort.source !== "estimated"
-          ? ("actual" as const)
-          : ("derived" as const),
-    })),
+    ).flatMap((effort) =>
+      isActiveManualFtpOverride({
+        ...effort,
+        activity_category: "bike",
+        duration_seconds: 1200,
+        effort_type: "power",
+      })
+        ? []
+        : [
+            {
+              sport: "bike" as const,
+              metric: "power" as const,
+              value: Number(effort.value),
+              durationSeconds: 1200,
+              observedAt: effort.recorded_at.toISOString(),
+              observationKind:
+                effort.activity_id !== null &&
+                effort.source !== "derived" &&
+                effort.source !== "estimated"
+                  ? ("actual" as const)
+                  : ("derived" as const),
+            },
+          ],
+    ),
   }).cycling_ftp;
 
   return {
