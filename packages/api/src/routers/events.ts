@@ -1646,23 +1646,20 @@ export const eventsRouter = createTRPCRouter({
             !!plan,
         );
 
-      const currentWeekDerivedPlans = await getActivityPlansDerivedMetrics(
-        currentWeekPlans,
+      const allDerivedPlans = await getActivityPlansDerivedMetrics(
+        [...currentWeekPlans, activityPlan as any],
         db,
         eventReadRepository,
         ctx.session.user.id,
+        { asOf: new Date() },
       );
+      const currentWeekDerivedPlans = allDerivedPlans.slice(0, currentWeekPlans.length);
       const currentWeeklyTSS = currentWeekDerivedPlans.reduce(
         (sum, plan) => sum + plan.authoritative_metrics.estimated_tss,
         0,
       );
 
-      const newActivityDerivedPlan = await getActivityPlanDerivedMetrics(
-        activityPlan as any,
-        db,
-        eventReadRepository,
-        ctx.session.user.id,
-      );
+      const newActivityDerivedPlan = allDerivedPlans[currentWeekPlans.length]!;
       const newWeeklyTSS =
         currentWeeklyTSS + newActivityDerivedPlan.authoritative_metrics.estimated_tss;
 

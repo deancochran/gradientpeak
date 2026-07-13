@@ -25,6 +25,8 @@ export interface Route {
 // ==============================
 
 export interface EstimationContext {
+  /** Stable instant for age and other date-sensitive calculations. */
+  asOf?: Date;
   // User profile data
   profile: ProfileWithDob;
 
@@ -92,6 +94,7 @@ export interface EstimationRouteInput {
 }
 
 export interface BuildEstimationContextParams {
+  asOf?: Date;
   userProfile: EstimationProfileInput;
   fitnessState?: FitnessState;
   activityPlan: EstimationActivityPlanInput;

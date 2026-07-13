@@ -1,7 +1,6 @@
 import type { ActivityFileType } from "@repo/core";
 import type { activityEfforts, activityGeometry, activitySummaries } from "@repo/db";
 import type { getRequiredDb } from "../../db";
-import { markProfileAnalysisDirty } from "../../utils/profile-estimation-state";
 import { submitActivity } from "../activities/submit-activity";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
@@ -62,11 +61,5 @@ export async function persistExistingActivityFileEnrichment(
     activityType: input.parsedData.metadata.type,
     startedAt: input.parsedData.metadata.startTime,
     finishedAt: enrichment.activityCompletedAt,
-  });
-
-  await markProfileAnalysisDirty(db, {
-    profileId: input.profileId,
-    kinds: ["fitness", "performance", "metrics"],
-    dirtySince: enrichment.activityCompletedAtIso,
   });
 }

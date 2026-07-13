@@ -29,7 +29,6 @@ import { createActivityFileIngestion } from "../application/activity-file-ingest
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { indexCursorSchema } from "../utils/index-cursor";
-import { markProfileAnalysisDirty } from "../utils/profile-estimation-state";
 
 const isoDatetimeSchema = z.string().datetime({ offset: true });
 
@@ -292,11 +291,6 @@ export const activitiesRouter = createTRPCRouter({
     });
 
     const data = parseActivityRow(mergeActivitySummary(createdActivity, summary ?? null));
-    await markProfileAnalysisDirty(db, {
-      profileId: ctx.session.user.id,
-      kinds: ["fitness"],
-      dirtySince: data.started_at,
-    });
 
     return data;
   }),
@@ -376,12 +370,6 @@ export const activitiesRouter = createTRPCRouter({
       >;
 
       const data = parseActivityRow(mergeActivitySummary(activity, summary));
-
-      await markProfileAnalysisDirty(db, {
-        profileId: ctx.session.user.id,
-        kinds: ["fitness"],
-        dirtySince: data.started_at,
-      });
 
       return {
         ...data,

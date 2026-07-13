@@ -88,6 +88,10 @@ function createLegacyReader(tableResults: Record<string, unknown>) {
             values[`gte:${column}`] = value;
             return builder;
           }),
+          lte: vi.fn((column: string, value: unknown) => {
+            values[`lte:${column}`] = value;
+            return builder;
+          }),
           in: vi.fn((column: string, value: unknown) => {
             values[`in:${column}`] = value;
             return builder;
@@ -163,13 +167,8 @@ describe("estimation-helpers", () => {
       "profile-1",
     );
 
-    expect(estimationReader.getEstimationInputs).toHaveBeenCalledTimes(2);
-    expect(estimationReader.getEstimationInputs).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({ profileId: "profile-1", routeIds: [] }),
-    );
-    expect(estimationReader.getEstimationInputs).toHaveBeenNthCalledWith(
-      2,
+    expect(estimationReader.getEstimationInputs).toHaveBeenCalledTimes(1);
+    expect(estimationReader.getEstimationInputs).toHaveBeenCalledWith(
       expect.objectContaining({ profileId: "profile-1", routeIds: ["route-1"] }),
     );
     expect(vi.mocked(estimationCore.estimateActivity).mock.calls[0]?.[0]).toEqual(
@@ -306,9 +305,8 @@ describe("estimation-helpers", () => {
     );
 
     expect(result).toHaveLength(3);
-    expect(estimationReader.getEstimationInputs).toHaveBeenCalledTimes(2);
-    expect(estimationReader.getEstimationInputs).toHaveBeenNthCalledWith(
-      2,
+    expect(estimationReader.getEstimationInputs).toHaveBeenCalledTimes(1);
+    expect(estimationReader.getEstimationInputs).toHaveBeenCalledWith(
       expect.objectContaining({ routeIds: ["route-1", "route-2"] }),
     );
     expect(result[0]).toEqual(

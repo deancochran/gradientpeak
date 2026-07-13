@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 const { randomUuidState } = vi.hoisted(() => ({
   randomUuidState: {
@@ -10,17 +10,10 @@ vi.mock("node:crypto", () => ({
   randomUUID: () => randomUuidState.next,
 }));
 
-vi.mock("../../utils/profile-estimation-state", () => ({
-  bumpProfileEstimationState: vi.fn(async () => undefined),
-  markProfileAnalysisDirty: vi.fn(async () => undefined),
-}));
-
 import { createRouterCaller } from "../../test/router";
-import { markProfileAnalysisDirty } from "../../utils/profile-estimation-state";
 import { activityEffortsRouter } from "../activity-efforts";
 
 const userId = "11111111-1111-4111-8111-111111111111";
-const markProfileAnalysisDirtyMock = vi.mocked(markProfileAnalysisDirty);
 
 function buildEffortRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -108,10 +101,6 @@ function createCaller(options?: {
 }
 
 describe("activityEffortsRouter", () => {
-  beforeEach(() => {
-    markProfileAnalysisDirtyMock.mockClear();
-  });
-
   it("gets the current profile's efforts", async () => {
     const efforts = [buildEffortRow()];
     const { caller, spies } = createCaller({ selectResult: efforts });
@@ -165,14 +154,9 @@ describe("activityEffortsRouter", () => {
     expect(insertedPayload.created_at).toBeInstanceOf(Date);
     expect(insertedPayload.recorded_at).toBeInstanceOf(Date);
     expect(insertedPayload.recorded_at.toISOString()).toBe(input.recorded_at);
-    expect(markProfileAnalysisDirtyMock).toHaveBeenCalledWith(expect.anything(), {
-      profileId: userId,
-      kinds: ["performance"],
-      dirtySince: insertedRow.recorded_at,
-    });
   });
 
-  it("updates an owned effort, normalizes timestamps, and marks dirty from the earliest timestamp", async () => {
+  it("updates an owned effort and normalizes timestamps", async () => {
     const oldRecordedAt = new Date("2026-03-01T10:00:00.000Z");
     const newRecordedAt = "2026-03-02T12:34:56.000Z";
     const updatedRow = buildEffortRow({
@@ -205,14 +189,9 @@ describe("activityEffortsRouter", () => {
     expect(updatePayload.recorded_at).toBeInstanceOf(Date);
     expect(updatePayload.recorded_at.toISOString()).toBe(newRecordedAt);
     expect(updatePayload.updated_at).toBeInstanceOf(Date);
-    expect(markProfileAnalysisDirtyMock).toHaveBeenCalledWith(expect.anything(), {
-      profileId: userId,
-      kinds: ["performance"],
-      dirtySince: oldRecordedAt,
-    });
   });
 
-  it("returns null for update when the effort is not owned or not found without marking dirty", async () => {
+  it("returns null for update when the effort is not owned or not found", async () => {
     const { caller, spies } = createCaller({
       selectOneResult: [],
       updateResult: [],
@@ -228,7 +207,6 @@ describe("activityEffortsRouter", () => {
     expect(spies.limit).toHaveBeenCalledOnce();
     expect(spies.update).not.toHaveBeenCalled();
     expect(spies.updateReturning).not.toHaveBeenCalled();
-    expect(markProfileAnalysisDirtyMock).not.toHaveBeenCalled();
   });
 
   it("returns a success payload after deleting an owned effort", async () => {
@@ -239,29 +217,19 @@ describe("activityEffortsRouter", () => {
     const result = await caller.delete({ id });
 
     expect(result).toEqual({ success: true, deletedId: id });
-    expect(spies.select).toHaveBeenCalledOnce();
-    expect(spies.limit).toHaveBeenCalledOnce();
     expect(spies.delete).toHaveBeenCalledOnce();
     expect(spies.whereForDelete).toHaveBeenCalledOnce();
-    expect(markProfileAnalysisDirtyMock).toHaveBeenCalledWith(expect.anything(), {
-      profileId: userId,
-      kinds: ["performance"],
-      dirtySince: existing.recorded_at,
-    });
   });
 
-  it("returns idempotent success for delete when the effort is not owned or not found without marking dirty", async () => {
+  it("returns idempotent success for delete when the effort is not owned or not found", async () => {
     const { caller, spies } = createCaller({ selectOneResult: [] });
     const id = "22222222-2222-4222-8222-222222222222";
 
     const result = await caller.delete({ id });
 
     expect(result).toEqual({ success: true, deletedId: id });
-    expect(spies.select).toHaveBeenCalledOnce();
-    expect(spies.limit).toHaveBeenCalledOnce();
     expect(spies.delete).toHaveBeenCalledOnce();
     expect(spies.whereForDelete).toHaveBeenCalledOnce();
-    expect(markProfileAnalysisDirtyMock).not.toHaveBeenCalled();
   });
 
   it("rejects unexpected create input keys at the router boundary", async () => {

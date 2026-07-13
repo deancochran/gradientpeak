@@ -741,6 +741,8 @@ describe("trainingPlansRouter plan_start_date support", () => {
   });
 
   it("uses existing creation defaults when persisted profile settings are malformed", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
     const baselineCaller = createTrainingPlansCaller({
       activities: { data: [], error: null },
       activity_efforts: { data: [], error: null },
@@ -769,6 +771,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
     ]);
 
     expect(malformed.normalized_creation_config).toEqual(baseline.normalized_creation_config);
+    vi.useRealTimers();
   });
 
   it("applies strict cap tuning without forcing blocking or unsafe feasibility", async () => {

@@ -67,6 +67,18 @@ export type ActivityPlanRouteSummary = {
   descent?: number;
 };
 
+export type EstimationSnapshot = Readonly<{
+  /**
+   * Fixes metric/effort freshness, age, and access-expiry evaluation for this request.
+   * Route facts are current because route history is not versioned. The snapshot is internally
+   * consistent for this load; it is not a reconstruction of historical route state.
+   */
+  asOf: Date;
+  profile: Awaited<ReturnType<typeof getEstimationProfileInputsFromData>>;
+  getRoute(id: string): Readonly<Record<string, any>> | undefined;
+  getRouteSummary(id: string): Readonly<ActivityPlanRouteSummary> | undefined;
+}>;
+
 function buildRouteSummary(
   route:
     | {
@@ -100,45 +112,22 @@ function buildRouteSummary(
   };
 }
 
-export async function getEstimationProfileInputsFromStore(
-  store: EstimationReadStore,
-  userId: string,
+function getEstimationProfileInputsFromData(
+  data: Awaited<ReturnType<EstimationReadStore["getEstimationInputs"]>>,
+  asOf: Date,
 ) {
-  const data = await store.getEstimationInputs({
-    effortCutoffIso: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
-    profileId: userId,
-    routeIds: [],
-  });
-
   let weightKg: number | null = null;
   let restingHr: number | null = null;
   let maxHr: number | null = null;
   let lthr: number | null = null;
-
-  const thresholds = resolveEstimationThresholds(
-    data.efforts,
-    data.metrics,
-    new Date().toISOString(),
-  );
-
+  const thresholds = resolveEstimationThresholds(data.efforts, data.metrics, asOf.toISOString());
   for (const metric of data.metrics) {
-    if (metric.metric_type === "weight_kg" && weightKg === null) {
-      weightKg = Number(metric.value);
-      continue;
-    }
-    if (metric.metric_type === "resting_hr" && restingHr === null) {
+    if (metric.metric_type === "weight_kg" && weightKg === null) weightKg = Number(metric.value);
+    else if (metric.metric_type === "resting_hr" && restingHr === null)
       restingHr = Number(metric.value);
-      continue;
-    }
-    if (metric.metric_type === "max_hr" && maxHr === null) {
-      maxHr = Number(metric.value);
-      continue;
-    }
-    if (metric.metric_type === "lthr" && lthr === null) {
-      lthr = Number(metric.value);
-    }
+    else if (metric.metric_type === "max_hr" && maxHr === null) maxHr = Number(metric.value);
+    else if (metric.metric_type === "lthr" && lthr === null) lthr = Number(metric.value);
   }
-
   return {
     ftp: thresholds.cycling_ftp.value === null ? null : Math.round(thresholds.cycling_ftp.value),
     dob: data.profile?.dob ?? null,
@@ -153,17 +142,45 @@ export async function getEstimationProfileInputsFromStore(
   };
 }
 
-export async function getRoutesMapFromStore(
+export async function loadEstimationSnapshot(
+  store: EstimationReadStore,
+  profileId: string,
+  routeIds: string[],
+  asOf: Date,
+): Promise<EstimationSnapshot> {
+  const data = await store.getEstimationInputs({
+    asOfIso: asOf.toISOString(),
+    effortCutoffIso: new Date(asOf.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString(),
+    profileId,
+    routeIds: [...new Set(routeIds)],
+  });
+  const routes = new Map(
+    data.routes.map((route) => [route.id, Object.freeze({ ...route })] as const),
+  );
+  const routeSummaries = new Map(
+    data.routes.flatMap((route) => {
+      const summary = buildRouteSummary({
+        distance_meters: route.distance_meters ?? undefined,
+        total_ascent: route.total_ascent ?? undefined,
+        total_descent: route.total_descent ?? undefined,
+      });
+      return summary ? [[route.id, Object.freeze(summary)] as const] : [];
+    }),
+  );
+  return Object.freeze({
+    asOf: new Date(asOf),
+    profile: Object.freeze(getEstimationProfileInputsFromData(data, asOf)),
+    getRoute: (id: string) => routes.get(id),
+    getRouteSummary: (id: string) => routeSummaries.get(id),
+  });
+}
+
+export async function getEstimationProfileInputsFromStore(
   store: EstimationReadStore,
   userId: string,
-  routeIds: string[],
+  asOf = new Date(),
 ) {
-  const data = await store.getEstimationInputs({
-    effortCutoffIso: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString(),
-    profileId: userId,
-    routeIds,
-  });
-  return new Map(data.routes.map((route) => [route.id, route]));
+  return (await loadEstimationSnapshot(store, userId, [], asOf)).profile;
 }
 
 function isLegacyEstimationReadClient(
@@ -175,6 +192,7 @@ function isLegacyEstimationReadClient(
 async function getEstimationProfileInputs(
   legacyReader: LegacyEstimationReadClient,
   userId: string,
+  asOf: Date,
 ): Promise<{
   ftp?: number | null;
   dob?: string | null;
@@ -184,7 +202,7 @@ async function getEstimationProfileInputs(
   weight_kg?: number | null;
   threshold_pace_seconds_per_km?: number | null;
 }> {
-  const ninetyDaysAgoIso = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+  const ninetyDaysAgoIso = new Date(asOf.getTime() - 90 * 24 * 60 * 60 * 1000).toISOString();
 
   const { data: profile } = await legacyReader
     .from("profiles")
@@ -197,6 +215,7 @@ async function getEstimationProfileInputs(
     .select("effort_type, duration_seconds, value, unit, activity_category")
     .eq("profile_id", userId)
     .gte("recorded_at", ninetyDaysAgoIso)
+    .lte("recorded_at", asOf.toISOString())
     .in("effort_type", ["power", "speed"])
     .order("recorded_at", { ascending: false })
     .limit(300);
@@ -205,6 +224,7 @@ async function getEstimationProfileInputs(
     .from("profile_metrics")
     .select("metric_type, unit, value, recorded_at")
     .eq("profile_id", userId)
+    .lte("recorded_at", asOf.toISOString())
     .in("metric_type", ["weight_kg", "ftp", "resting_hr", "max_hr", "lthr"])
     .order("recorded_at", { ascending: false });
 
@@ -227,11 +247,7 @@ async function getEstimationProfileInputs(
     recorded_at: string;
   }>;
 
-  const thresholds = resolveEstimationThresholds(
-    legacyEfforts,
-    legacyMetrics,
-    new Date().toISOString(),
-  );
+  const thresholds = resolveEstimationThresholds(legacyEfforts, legacyMetrics, asOf.toISOString());
 
   for (const metric of legacyMetrics) {
     if (metric.metric_type === "weight_kg" && weightKg === null) {
@@ -438,30 +454,28 @@ export async function addEstimationToPlan<TPlan extends EstimationActivityPlanIn
   plan: TPlan,
   estimationReader: EstimationReadStore | LegacyEstimationReadClient,
   userId: string,
+  asOf = new Date(),
 ): Promise<ActivityPlanWithEstimation<TPlan>> {
-  const profile = isLegacyEstimationReadClient(estimationReader)
-    ? await getEstimationProfileInputs(estimationReader, userId)
-    : await getEstimationProfileInputsFromStore(estimationReader, userId);
+  if (!isLegacyEstimationReadClient(estimationReader)) {
+    const [result] = await addEstimationToPlans([plan], estimationReader, userId, asOf);
+    return result ?? buildFailedEstimationPlan(plan);
+  }
+  const profile = await getEstimationProfileInputs(estimationReader, userId, asOf);
 
   // Fetch route if referenced
   let route: any;
   if (plan.route_id && shouldUseRouteForSavedPlanMetrics(plan.structure)) {
-    if (isLegacyEstimationReadClient(estimationReader)) {
-      const { data: routeData } = await estimationReader
-        .from("activity_routes")
-        .select("distance_meters:total_distance, total_ascent, total_descent")
-        .eq("id", plan.route_id)
-        .single();
-      route = routeData;
-    } else {
-      route = (await getRoutesMapFromStore(estimationReader, userId, [plan.route_id])).get(
-        plan.route_id,
-      );
-    }
+    const { data: routeData } = await estimationReader
+      .from("activity_routes")
+      .select("distance_meters:total_distance, total_ascent, total_descent")
+      .eq("id", plan.route_id)
+      .single();
+    route = routeData;
   }
 
   // Build estimation context
   const context = buildEstimationContext({
+    asOf,
     userProfile: profile || {},
     activityPlan: toEstimationActivityPlan(plan),
     route,
@@ -485,15 +499,28 @@ export async function computePlanMetrics(
   },
   estimationReader: EstimationReadStore | LegacyEstimationReadClient,
   userId: string,
+  asOf = new Date(),
 ): Promise<{
   estimated_tss: number;
   estimated_duration_seconds: number;
   intensity_factor: number;
   estimated_distance_meters: number;
 }> {
-  const profile = isLegacyEstimationReadClient(estimationReader)
-    ? await getEstimationProfileInputs(estimationReader, userId)
-    : await getEstimationProfileInputsFromStore(estimationReader, userId);
+  const snapshot = !isLegacyEstimationReadClient(estimationReader)
+    ? await loadEstimationSnapshot(
+        estimationReader,
+        userId,
+        planInput.route_id ? [planInput.route_id] : [],
+        asOf,
+      )
+    : null;
+  const profile =
+    snapshot?.profile ??
+    (await getEstimationProfileInputs(
+      estimationReader as LegacyEstimationReadClient,
+      userId,
+      asOf,
+    ));
 
   let route: any;
   if (planInput.route_id && shouldUseRouteForSavedPlanMetrics(planInput.structure)) {
@@ -513,12 +540,11 @@ export async function computePlanMetrics(
                 }
               : undefined,
           )
-      : (await getRoutesMapFromStore(estimationReader, userId, [planInput.route_id])).get(
-          planInput.route_id,
-        );
+      : snapshot?.getRoute(planInput.route_id);
   }
 
   const context = buildEstimationContext({
+    asOf,
     userProfile: profile || {},
     activityPlan: {
       activity_category: planInput.activity_category as any,
@@ -547,14 +573,11 @@ export async function addEstimationToPlans<TPlan extends EstimationActivityPlanI
   plans: Array<TPlan | null | undefined>,
   estimationReader: EstimationReadStore | LegacyEstimationReadClient,
   userId: string,
+  asOf = new Date(),
 ): Promise<ActivityPlanWithEstimation<TPlan>[]> {
   const normalizedPlans = plans.filter((plan): plan is TPlan => !!plan && typeof plan === "object");
 
   if (normalizedPlans.length === 0) return [];
-
-  const profile = isLegacyEstimationReadClient(estimationReader)
-    ? await getEstimationProfileInputs(estimationReader, userId)
-    : await getEstimationProfileInputsFromStore(estimationReader, userId);
 
   // Collect all route IDs
   const routeIds = normalizedPlans
@@ -563,9 +586,27 @@ export async function addEstimationToPlans<TPlan extends EstimationActivityPlanI
     .filter((id): id is string => !!id)
     .filter((id, index, self) => self.indexOf(id) === index); // Unique
 
+  const snapshot = !isLegacyEstimationReadClient(estimationReader)
+    ? await loadEstimationSnapshot(estimationReader, userId, routeIds, asOf)
+    : null;
+  const profile =
+    snapshot?.profile ??
+    (await getEstimationProfileInputs(
+      estimationReader as LegacyEstimationReadClient,
+      userId,
+      asOf,
+    ));
+
   // Fetch all routes at once
   let routesMap = new Map<string, any>();
-  if (routeIds.length > 0) {
+  if (snapshot) {
+    routesMap = new Map(
+      routeIds.flatMap((routeId) => {
+        const route = snapshot.getRoute(routeId);
+        return route ? [[routeId, route] as const] : [];
+      }),
+    );
+  } else if (routeIds.length > 0) {
     if (isLegacyEstimationReadClient(estimationReader)) {
       const { data: routes } = await estimationReader
         .from("activity_routes")
@@ -575,13 +616,15 @@ export async function addEstimationToPlans<TPlan extends EstimationActivityPlanI
       if (routes) {
         routesMap = new Map((routes as Array<{ id: string }>).map((route) => [route.id, route]));
       }
-    } else {
-      routesMap = await getRoutesMapFromStore(estimationReader, userId, routeIds);
     }
   }
 
   // Calculate estimation for each plan
   const results: ActivityPlanWithEstimation<TPlan>[] = [];
+  const estimateMemo = new Map<
+    string,
+    { estimation: ReturnType<typeof estimateActivity>; metrics: ReturnType<typeof estimateMetrics> }
+  >();
 
   for (const plan of normalizedPlans) {
     const route = plan.route_id ? routesMap.get(plan.route_id) : undefined;
@@ -591,17 +634,28 @@ export async function addEstimationToPlans<TPlan extends EstimationActivityPlanI
         ? route
         : undefined;
 
-      const context = buildEstimationContext({
-        userProfile: profile || {},
-        activityPlan: toEstimationActivityPlan(plan),
+      const memoKey = JSON.stringify({
+        activity_category: plan.activity_category,
+        structure: plan.structure,
         route: authoritativeRoute,
       });
-
-      const estimation = estimateActivity(context);
-      const metrics = estimateMetrics(estimation, context);
+      let estimated = estimateMemo.get(memoKey);
+      if (!estimated) {
+        const context = buildEstimationContext({
+          asOf,
+          userProfile: profile || {},
+          activityPlan: toEstimationActivityPlan(plan),
+          route: authoritativeRoute,
+        });
+        const estimation = estimateActivity(context);
+        estimated = { estimation, metrics: estimateMetrics(estimation, context) };
+        estimateMemo.set(memoKey, estimated);
+      }
 
       results.push(
-        buildEstimatedPlan(plan, estimation, metrics, { route: buildRouteSummary(route) }),
+        buildEstimatedPlan(plan, estimated.estimation, estimated.metrics, {
+          route: buildRouteSummary(route),
+        }),
       );
     } catch (error) {
       console.error(`Failed to estimate plan ${plan.id}:`, error);
@@ -621,6 +675,7 @@ export async function estimatePlannedActivity(
   scheduledDate: Date,
   estimationStore: PlannedActivityEstimationStore,
   userId: string,
+  asOf = new Date(),
 ): Promise<{
   estimated_tss: number;
   estimated_duration: number;
@@ -634,7 +689,13 @@ export async function estimatePlannedActivity(
     throw new Error("Activity plan not found");
   }
 
-  const profile = await getEstimationProfileInputsFromStore(estimationStore, userId);
+  const snapshot = await loadEstimationSnapshot(
+    estimationStore,
+    userId,
+    plan.route_id ? [plan.route_id] : [],
+    asOf,
+  );
+  const profile = snapshot.profile;
 
   // Fetch current fitness state
   const fitnessData = await estimationStore.getLatestFitnessSnapshot(userId);
@@ -649,9 +710,7 @@ export async function estimatePlannedActivity(
       }
     | undefined;
   if (plan.route_id) {
-    const routeData = (await getRoutesMapFromStore(estimationStore, userId, [plan.route_id])).get(
-      plan.route_id,
-    );
+    const routeData = snapshot.getRoute(plan.route_id);
     if (routeData) {
       route = {
         distance_meters: routeData.distance_meters ?? 0,
@@ -663,6 +722,7 @@ export async function estimatePlannedActivity(
 
   // Build estimation context with fitness state
   const context = buildEstimationContext({
+    asOf,
     userProfile: profile || {},
     fitnessState:
       fitnessData &&

@@ -9,10 +9,6 @@ import {
 } from "@repo/db";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../utils/profile-estimation-state", () => ({
-  bumpProfileEstimationState: vi.fn(async () => undefined),
-}));
-
 const wahooClientMock = {
   getUserProfile: vi.fn(async () => ({
     birth: "1990-01-01",

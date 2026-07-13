@@ -25,6 +25,7 @@ export function estimateMetrics(
     context.thresholdHr,
     context.weightKg,
     activityCategory,
+    context.asOf,
   );
 
   // Estimate distance
@@ -72,6 +73,7 @@ function estimateCalories(
   thresholdHr?: number | null,
   weightKg?: number | null,
   activityCategory: CanonicalSport = "other",
+  asOf = new Date(),
 ): number {
   // Method 1: Power-based (most accurate for cycling)
   if (ftp && activityCategory === "bike") {
@@ -84,7 +86,7 @@ function estimateCalories(
   // Method 2: HR-based estimation
   // Note: Need to calculate age from dob
   // Calculate age from date of birth
-  const age = profile.dob ? calculateAgeFromDOB(profile.dob) : undefined;
+  const age = profile.dob ? calculateAgeFromDOB(profile.dob, asOf) : undefined;
   if (thresholdHr && weightKg && age) {
     const avgHR = estimateAvgHR(intensityFactor, thresholdHr);
     if (avgHR) {
@@ -239,13 +241,13 @@ export function estimateZoneDistribution(
 /**
  * Calculate age from date of birth string
  */
-function calculateAgeFromDOB(dob: string): number {
+export function calculateAgeFromDOB(dob: string, asOf: Date): number {
   const birthDate = new Date(dob);
-  const today = new Date();
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const monthDiff = today.getMonth() - birthDate.getMonth();
+  const today = asOf;
+  let age = today.getUTCFullYear() - birthDate.getUTCFullYear();
+  const monthDiff = today.getUTCMonth() - birthDate.getUTCMonth();
 
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+  if (monthDiff < 0 || (monthDiff === 0 && today.getUTCDate() < birthDate.getUTCDate())) {
     age--;
   }
 

@@ -23,7 +23,6 @@ import { listProfileMetricHistory } from "../application/profile-metrics/listPro
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { indexCursorSchema } from "../utils/index-cursor";
-import { markProfileAnalysisDirty } from "../utils/profile-estimation-state";
 
 const createProfileMetricInputSchema = profileMetricCreatePayloadSchema
   .extend({ profile_id: z.string().uuid("Invalid profile ID") })
@@ -181,12 +180,6 @@ export const profileMetricsRouter = createTRPCRouter({
         throw new Error("Failed to create profile metric");
       }
 
-      await markProfileAnalysisDirty(db, {
-        profileId: input.profile_id,
-        kinds: ["metrics"],
-        dirtySince: data.recorded_at,
-      });
-
       return parseProfileMetricRow(data);
     }),
 
@@ -239,14 +232,6 @@ export const profileMetricsRouter = createTRPCRouter({
         )
         .returning();
 
-      if (data) {
-        await markProfileAnalysisDirty(db, {
-          profileId: ctx.session.user.id,
-          kinds: ["metrics"],
-          dirtySince: getEarliestDate(existing?.recorded_at, data.recorded_at),
-        });
-      }
-
       return data ? parseProfileMetricRow(data) : data;
     }),
 
@@ -257,38 +242,12 @@ export const profileMetricsRouter = createTRPCRouter({
     .input(deleteProfileMetricInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
-      const [existing] = await db
-        .select({ recorded_at: profileMetrics.recorded_at })
-        .from(profileMetrics)
-        .where(
-          and(eq(profileMetrics.id, input.id), eq(profileMetrics.profile_id, ctx.session.user.id)),
-        )
-        .limit(1);
-
       await db
         .delete(profileMetrics)
         .where(
           and(eq(profileMetrics.id, input.id), eq(profileMetrics.profile_id, ctx.session.user.id)),
         );
 
-      if (existing) {
-        await markProfileAnalysisDirty(db, {
-          profileId: ctx.session.user.id,
-          kinds: ["metrics"],
-          dirtySince: existing.recorded_at,
-        });
-      }
-
       return deleteProfileMetricOutputSchema.parse({ success: true });
     }),
 });
-
-function getEarliestDate(...values: Array<Date | string | null | undefined>) {
-  const dates = values
-    .filter((value): value is Date | string => value != null)
-    .map((value) => new Date(value))
-    .filter((value) => Number.isFinite(value.getTime()));
-
-  if (dates.length === 0) return null;
-  return new Date(Math.min(...dates.map((value) => value.getTime())));
-}

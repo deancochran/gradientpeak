@@ -3,12 +3,10 @@ import type { getRequiredDb } from "../../db";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 
-const { submitActivity, markProfileAnalysisDirty } = vi.hoisted(() => ({
+const { submitActivity } = vi.hoisted(() => ({
   submitActivity: vi.fn(),
-  markProfileAnalysisDirty: vi.fn(),
 }));
 vi.mock("../activities/submit-activity", () => ({ submitActivity }));
-vi.mock("../../utils/profile-estimation-state", () => ({ markProfileAnalysisDirty }));
 
 import { persistExistingActivityFileEnrichment } from "./persist-existing-activity-file-enrichment";
 import { persistNewActivityFileImport } from "./persist-new-activity-file-import";
@@ -66,7 +64,7 @@ describe("activity file persistence adapters", () => {
     expect(submitActivity).toHaveBeenCalledWith(db, input);
   });
 
-  it("delegates recorded enrichment and preserves post-persistence dirty-state handling", async () => {
+  it("delegates recorded enrichment to the canonical submission service", async () => {
     const db = {};
     const completedAt = new Date("2026-01-01T11:00:00Z");
     await persistExistingActivityFileEnrichment(db as unknown as DbClient, {
@@ -102,10 +100,5 @@ describe("activity file persistence adapters", () => {
         activityFilePath: "recorded.fit",
       }),
     );
-    expect(markProfileAnalysisDirty).toHaveBeenCalledWith(db, {
-      profileId: "profile-1",
-      kinds: ["fitness", "performance", "metrics"],
-      dirtySince: completedAt.toISOString(),
-    });
   });
 });

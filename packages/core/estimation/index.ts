@@ -302,10 +302,11 @@ export function getTSSRange(estimation: EstimationResult): [number, number] {
  * Helper to build estimation context from common data sources
  */
 export function buildEstimationContext(params: BuildEstimationContextParams): EstimationContext {
-  const { userProfile, fitnessState, activityPlan, route, scheduledDate, weeklyPlannedTSS } =
+  const { asOf, userProfile, fitnessState, activityPlan, route, scheduledDate, weeklyPlannedTSS } =
     params;
 
   return {
+    asOf,
     profile: {
       ...userProfile,
       dob: userProfile.dob ?? null,

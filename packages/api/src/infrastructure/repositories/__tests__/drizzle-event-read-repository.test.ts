@@ -167,7 +167,35 @@ function toSql(fragment: unknown) {
   return pgDialect.sqlToQuery(fragment as any).sql;
 }
 
+function toQuery(fragment: unknown) {
+  return pgDialect.sqlToQuery(fragment as any);
+}
+
 describe("drizzle-event-read-repository", () => {
+  it("uses supplied asOf for route access-grant expiry while reading current route facts", async () => {
+    const { db, selects } = createSelectCaptureDb({
+      profiles: [],
+      activity_efforts: [],
+      profile_metrics: [],
+      activity_routes: [],
+    });
+    const repository = createEventReadRepository(db);
+    const asOfIso = "2026-04-19T12:34:56.000Z";
+
+    await repository.getEstimationInputs({
+      asOfIso,
+      effortCutoffIso: "2026-01-19T12:34:56.000Z",
+      profileId: "profile-1",
+      routeIds: ["route-1"],
+    });
+
+    const routeWhere = selects.find((select) => select.table === "activity_routes")?.whereArg;
+    const query = toQuery(routeWhere);
+    expect(query.sql).toContain("content_access_grants.expires_at > $");
+    expect(query.sql).not.toContain("now() ");
+    expect(query.params).toContainEqual(new Date(asOfIso));
+  });
+
   it("fetches validate constraint plans by id after router permission checks", async () => {
     const { db, selects } = createSelectCaptureDb({
       training_plans: [{ id: "training-plan-1", structure: { block: "build" } }],
@@ -267,6 +295,7 @@ describe("drizzle-event-read-repository", () => {
 
     await expect(
       withRoutes.getEstimationInputs({
+        asOfIso: "2026-05-01T00:00:00.000Z",
         effortCutoffIso: "2026-03-01T00:00:00.000Z",
         profileId: "profile-1",
         routeIds: ["route-1"],
@@ -302,6 +331,7 @@ describe("drizzle-event-read-repository", () => {
 
     await expect(
       withoutRoutes.getEstimationInputs({
+        asOfIso: "2026-05-01T00:00:00.000Z",
         effortCutoffIso: "2026-03-01T00:00:00.000Z",
         profileId: "profile-1",
         routeIds: [],

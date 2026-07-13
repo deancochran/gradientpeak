@@ -1,469 +1,201 @@
-import { createHash } from "node:crypto";
-import { profileEstimationState } from "@repo/db";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@repo/core/estimation", async () => {
-  const actual =
-    await vi.importActual<typeof import("@repo/core/estimation")>("@repo/core/estimation");
+const estimateActivity = vi.hoisted(() =>
+  vi.fn((context: any) => {
+    if (context.structure?.fail) throw new Error("expected failure");
+    const duration = context.structure?.duration ?? 1800;
+    const routeDistance = context.route?.distanceMeters ?? 0;
+    const profileFactor = context.ftp ? context.ftp / 100 : 1;
+    return {
+      tss: duration / 60 + routeDistance / 1000 + profileFactor,
+      duration,
+      intensityFactor: 0.8,
+      confidence: "medium",
+      confidenceScore: 75,
+      estimatedPowerZones: [0, 61],
+      warnings: context.structure?.warning ? ["fixture warning"] : [],
+    };
+  }),
+);
 
+vi.mock("@repo/core/estimation", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/core/estimation")>();
   return {
     ...actual,
-    estimateActivity: vi.fn((context: any) => ({
-      tss: (context.route?.distanceMeters ?? 0) > 0 ? 95 : 55,
-      duration: (context.route?.distanceMeters ?? 0) > 0 ? 5400 : 2700,
-      intensityFactor: 0.84,
-      confidence: "moderate",
-      confidenceScore: 84,
-      estimatedPowerZones: [0, 61, 80],
-      factors: [],
-      warnings: [],
-    })),
-    estimateMetrics: vi.fn((_estimation: any, context: any) => ({
-      calories: 640,
+    estimateActivity,
+    estimateMetrics: vi.fn((estimation: any, context: any) => ({
+      calories: estimation.tss * 4,
       distance: context.route?.distanceMeters ?? 0,
     })),
   };
 });
 
-import * as estimationCore from "@repo/core/estimation";
-import {
-  ACTIVITY_PLAN_CACHE_HOT_ACCESS_WINDOW_MS,
-  ACTIVITY_PLAN_CACHE_STALE_AFTER_MS,
-  ESTIMATOR_VERSION,
-  getActivityPlanDerivedMetrics,
-  getActivityPlansDerivedMetrics,
-  listHotStaleActivityPlansForProfile,
-  refreshHotStaleActivityPlanDerivedMetricsForProfile,
-} from "../activity-plan-derived-metrics";
+import { getActivityPlansDerivedMetrics } from "../activity-plan-derived-metrics";
+import { loadEstimationSnapshot } from "../estimation-helpers";
 
-function createEstimationStore(routeFixtures: Record<string, Record<string, unknown>>) {
-  return {
-    getEstimationInputs: vi.fn(async ({ routeIds }: { routeIds: string[] }) => ({
-      profile: { dob: "1990-01-01" },
-      efforts: [
-        {
-          effort_type: "power" as const,
-          activity_category: "bike" as const,
-          duration_seconds: 1200,
-          value: 250,
-          unit: "watts",
-        },
-      ],
-      metrics: [
-        { metric_type: "weight_kg", value: 72 },
-        { metric_type: "resting_hr", value: 48 },
-      ],
-      routes: routeIds.map((routeId) => routeFixtures[routeId]).filter(Boolean),
-    })),
-  };
-}
+const asOf = new Date("2026-07-12T12:00:00.000Z");
 
-function createDbMock(cachedRows: unknown[] = []) {
-  const insertCalls: unknown[][] = [];
-  const stateRow = {
-    profile_id: "profile-1",
-    metrics_revision: 0,
-    performance_revision: 0,
-    fitness_revision: 0,
-    updated_at: new Date("2026-04-19T12:00:00.000Z"),
-  };
-
-  return {
-    db: {
-      select: () => ({
-        from: (table: unknown) => ({
-          where: () => ({
-            limit: async () => (table === profileEstimationState ? [stateRow] : cachedRows),
-            then: (onFulfilled: (value: unknown[]) => unknown) =>
-              Promise.resolve(table === profileEstimationState ? [stateRow] : cachedRows).then(
-                onFulfilled,
-              ),
-          }),
-        }),
-      }),
-      insert: () => ({
-        values: (rows: unknown | unknown[]) => {
-          insertCalls.push(Array.isArray(rows) ? rows : [rows]);
-          return {
-            onConflictDoUpdate: async () => undefined,
-          };
-        },
-      }),
-    },
-    insertCalls,
-  };
-}
-
-function createMaintenanceDbMock(plans: unknown[] = []) {
-  const insertCalls: unknown[][] = [];
-  const stateRow = {
-    profile_id: "profile-1",
-    metrics_revision: 0,
-    performance_revision: 0,
-    fitness_revision: 0,
-    updated_at: new Date("2026-04-19T12:00:00.000Z"),
-  };
-
-  return {
-    db: {
-      select: (selection?: unknown) => ({
-        from: (table: unknown) => {
-          if (table === profileEstimationState) {
-            return {
-              where: () => ({
-                limit: async () => [stateRow],
-              }),
-            };
-          }
-
-          return {
-            innerJoin: () => ({
-              where: () => ({
-                orderBy: () => ({
-                  limit: async () =>
-                    selection && typeof selection === "object" && "plan" in (selection as object)
-                      ? plans.map((plan) => ({ plan }))
-                      : [],
-                }),
-              }),
-            }),
-            where: () => ({
-              then: (onFulfilled: (value: unknown[]) => unknown) =>
-                Promise.resolve([]).then(onFulfilled),
-              limit: async () => [],
-            }),
-          };
-        },
-      }),
-      insert: () => ({
-        values: (rows: unknown | unknown[]) => {
-          insertCalls.push(Array.isArray(rows) ? rows : [rows]);
-          return {
-            onConflictDoUpdate: async () => undefined,
-          };
-        },
-      }),
-    },
-    insertCalls,
-  };
-}
-
-function createPlan(overrides: Record<string, unknown> = {}) {
+function plan(overrides: Record<string, unknown> = {}) {
   return {
     id: "plan-1",
     profile_id: "profile-1",
-    name: "Threshold ride",
-    description: "",
+    name: "Plan",
+    description: null,
     activity_category: "bike" as const,
-    structure: {},
-    route_id: "route-1",
-    version: "1.0",
-    updated_at: "2026-04-19T12:00:00.000Z",
+    structure: { duration: 1800 },
+    route_id: null,
+    version: "1",
+    updated_at: asOf,
     ...overrides,
   };
 }
 
-function buildExpectedFingerprint() {
-  return createHash("sha256")
-    .update(
-      JSON.stringify({
-        estimator_version: ESTIMATOR_VERSION,
-        plan_updated_at: "2026-04-19T12:00:00.000Z",
-        plan_version: "1.0",
-        route_id: "route-1",
-        route_distance_meters: 42000,
-        route_total_ascent: 300,
-        route_total_descent: 300,
-        route_updated_at: "2026-04-19T11:00:00.000Z",
-        metrics_revision: 0,
-        performance_revision: 0,
-        fitness_revision: 0,
-      }),
-    )
-    .digest("hex");
+function store(overrides: Record<string, unknown> = {}) {
+  return {
+    getEstimationInputs: vi.fn(async () => ({
+      profile: { dob: "1990-07-12" },
+      efforts: [],
+      metrics: [
+        { metric_type: "ftp" as const, unit: "W", value: 250, recorded_at: asOf.toISOString() },
+      ],
+      routes: [],
+      ...overrides,
+    })),
+  };
 }
 
-afterEach(() => {
-  vi.clearAllMocks();
-  vi.restoreAllMocks();
-  vi.useRealTimers();
-});
-
-describe("activity-plan-derived-metrics", () => {
-  it("returns cached metrics without recomputing when the fingerprint matches", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-19T14:00:00.000Z"));
-
-    const estimationStore = createEstimationStore({
-      "route-1": {
-        id: "route-1",
-        distance_meters: 42000,
-        total_ascent: 300,
-        total_descent: 300,
-        updated_at: "2026-04-19T11:00:00.000Z",
-      },
-    });
-    const cachedRow = {
-      activity_plan_id: "plan-1",
-      profile_id: "profile-1",
-      estimator_version: ESTIMATOR_VERSION,
-      input_fingerprint: buildExpectedFingerprint(),
-      estimated_tss: 77,
-      estimated_duration_seconds: 4300,
-      intensity_factor: 0.79,
-      estimated_calories: 500,
-      estimated_distance_meters: 42000,
-      estimated_zones: ["Z2", "Z3"],
-      confidence: "high",
-      confidence_score: 91,
-      computed_at: new Date("2026-04-19T12:30:00.000Z"),
-      last_accessed_at: new Date("2026-04-19T12:30:00.000Z"),
-      created_at: new Date("2026-04-19T12:30:00.000Z"),
-      updated_at: new Date("2026-04-19T12:30:00.000Z"),
-      id: "projection-1",
+describe("on-demand activity plan estimation", () => {
+  it("exposes frozen route facts through readonly lookups at the request access time", async () => {
+    const route = {
+      id: "route-1",
+      distance_meters: 10_000,
+      total_ascent: 100,
+      total_descent: 90,
     };
-    const { db, insertCalls } = createDbMock([cachedRow]);
-
-    const result = await getActivityPlanDerivedMetrics(
-      createPlan(),
-      db as any,
-      estimationStore as any,
+    const snapshot = await loadEstimationSnapshot(
+      store({ routes: [route] }) as any,
       "profile-1",
+      ["route-1"],
+      asOf,
     );
 
-    expect(result).toMatchObject({
-      estimate_source: "cache",
-      estimator_version: ESTIMATOR_VERSION,
-      authoritative_metrics: {
-        estimated_tss: 77,
-        estimated_duration: 4300,
-        intensity_factor: 0.79,
-        estimated_distance: 42000,
-      },
-      route: {
-        distance: 42000,
-        ascent: 300,
-        descent: 300,
-      },
-    });
-    expect(vi.mocked(estimationCore.estimateActivity)).not.toHaveBeenCalled();
-    expect(insertCalls).toHaveLength(1);
-    expect(insertCalls[0]?.[0]).toMatchObject({
-      activity_plan_id: "plan-1",
-      last_accessed_at: new Date("2026-04-19T14:00:00.000Z"),
-      computed_at: new Date("2026-04-19T12:30:00.000Z"),
-    });
+    const routeFact = snapshot.getRoute("route-1");
+    const summary = snapshot.getRouteSummary("route-1");
+    expect(snapshot.asOf).toEqual(asOf);
+    expect(routeFact).toEqual(route);
+    expect(summary).toEqual({ distance: 10_000, ascent: 100, descent: 90 });
+    expect(Object.isFrozen(routeFact)).toBe(true);
+    expect(Object.isFrozen(summary)).toBe(true);
+    expect(() => Object.assign(routeFact!, { distance_meters: 1 })).toThrow(TypeError);
+    expect(snapshot.getRoute("route-1")?.distance_meters).toBe(10_000);
   });
 
-  it("recomputes stale cache for recently accessed plans", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-20T12:00:00.000Z"));
-
-    const estimationStore = createEstimationStore({
-      "route-1": {
-        id: "route-1",
-        distance_meters: 42000,
-        total_ascent: 300,
-        total_descent: 300,
-        updated_at: "2026-04-19T11:00:00.000Z",
-      },
-    });
-    const staleHotRow = {
-      activity_plan_id: "plan-1",
-      profile_id: "profile-1",
-      estimator_version: ESTIMATOR_VERSION,
-      input_fingerprint: buildExpectedFingerprint(),
-      estimated_tss: 77,
-      estimated_duration_seconds: 4300,
-      intensity_factor: 0.79,
-      estimated_calories: 500,
-      estimated_distance_meters: 42000,
-      estimated_zones: ["Z2", "Z3"],
-      confidence: "high",
-      confidence_score: 91,
-      computed_at: new Date(Date.now() - ACTIVITY_PLAN_CACHE_STALE_AFTER_MS - 60_000),
-      last_accessed_at: new Date(Date.now() - ACTIVITY_PLAN_CACHE_HOT_ACCESS_WINDOW_MS + 60_000),
-      created_at: new Date("2026-04-19T12:30:00.000Z"),
-      updated_at: new Date("2026-04-19T12:30:00.000Z"),
-      id: "projection-2",
-    };
-    const { db, insertCalls } = createDbMock([staleHotRow]);
-
-    const result = await getActivityPlanDerivedMetrics(
-      createPlan(),
-      db as any,
-      estimationStore as any,
-      "profile-1",
-    );
-
-    expect(result).toMatchObject({
-      estimate_source: "computed",
-      estimate_computed_at: "2026-04-20T12:00:00.000Z",
-      estimate_last_accessed_at: "2026-04-20T12:00:00.000Z",
-      authoritative_metrics: {
-        estimated_tss: 95,
-        estimated_duration: 5400,
-      },
-    });
-    expect(vi.mocked(estimationCore.estimateActivity)).toHaveBeenCalledTimes(1);
-    expect(insertCalls).toHaveLength(1);
-  });
-
-  it("reuses stale cache for cold plans and only touches access time", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-20T12:00:00.000Z"));
-
-    const estimationStore = createEstimationStore({
-      "route-1": {
-        id: "route-1",
-        distance_meters: 42000,
-        total_ascent: 300,
-        total_descent: 300,
-        updated_at: "2026-04-19T11:00:00.000Z",
-      },
-    });
-    const staleColdRow = {
-      activity_plan_id: "plan-1",
-      profile_id: "profile-1",
-      estimator_version: ESTIMATOR_VERSION,
-      input_fingerprint: buildExpectedFingerprint(),
-      estimated_tss: 77,
-      estimated_duration_seconds: 4300,
-      intensity_factor: 0.79,
-      estimated_calories: 500,
-      estimated_distance_meters: 42000,
-      estimated_zones: ["Z2", "Z3"],
-      confidence: "high",
-      confidence_score: 91,
-      computed_at: new Date(Date.now() - ACTIVITY_PLAN_CACHE_STALE_AFTER_MS - 60_000),
-      last_accessed_at: new Date(Date.now() - ACTIVITY_PLAN_CACHE_HOT_ACCESS_WINDOW_MS - 60_000),
-      created_at: new Date("2026-04-19T12:30:00.000Z"),
-      updated_at: new Date("2026-04-19T12:30:00.000Z"),
-      id: "projection-3",
-    };
-    const { db, insertCalls } = createDbMock([staleColdRow]);
-
-    const result = await getActivityPlanDerivedMetrics(
-      createPlan(),
-      db as any,
-      estimationStore as any,
-      "profile-1",
-    );
-
-    expect(result).toMatchObject({
-      estimate_source: "cache",
-      estimate_computed_at: staleColdRow.computed_at.toISOString(),
-      estimate_last_accessed_at: staleColdRow.last_accessed_at.toISOString(),
-      authoritative_metrics: {
-        estimated_tss: 77,
-        estimated_duration: 4300,
-      },
-    });
-    expect(vi.mocked(estimationCore.estimateActivity)).not.toHaveBeenCalled();
-    expect(insertCalls).toHaveLength(1);
-    expect(insertCalls[0]?.[0]).toMatchObject({
-      activity_plan_id: "plan-1",
-      last_accessed_at: new Date("2026-04-20T12:00:00.000Z"),
-      computed_at: staleColdRow.computed_at,
-    });
-  });
-
-  it("computes and seeds cache rows on miss", async () => {
-    const estimationStore = createEstimationStore({
-      "route-1": {
-        id: "route-1",
-        distance_meters: 42000,
-        total_ascent: 300,
-        total_descent: 300,
-        updated_at: "2026-04-19T11:00:00.000Z",
-      },
-    });
-    const { db, insertCalls } = createDbMock([]);
-
-    const result = await getActivityPlansDerivedMetrics(
-      [createPlan()],
-      db as any,
-      estimationStore as any,
-      "profile-1",
-    );
-
-    expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({
-      estimated_calories: 640,
-      estimated_zones: ["Z2", "Z3"],
-      estimate_source: "computed",
-      estimator_version: ESTIMATOR_VERSION,
-      authoritative_metrics: {
-        estimated_tss: 95,
-        estimated_duration: 5400,
-        intensity_factor: 0.84,
-        estimated_distance: 42000,
-      },
-      route: {
-        distance: 42000,
-        ascent: 300,
-        descent: 300,
-      },
-    });
-    expect(vi.mocked(estimationCore.estimateActivity)).toHaveBeenCalledTimes(1);
-    expect(insertCalls).toHaveLength(1);
-    expect(insertCalls[0]?.[0]).toMatchObject({
-      activity_plan_id: "plan-1",
-      profile_id: "profile-1",
-      estimator_version: ESTIMATOR_VERSION,
-      estimated_tss: 95,
-      estimated_duration_seconds: 5400,
-      estimated_calories: 640,
-      estimated_distance_meters: 42000,
-    });
-  });
-
-  it("selects only hot stale plans for background refresh work", async () => {
-    const { db } = createMaintenanceDbMock([createPlan(), createPlan({ id: "plan-2" })]);
-
-    const result = await listHotStaleActivityPlansForProfile(db as any, {
-      profileId: "profile-1",
-      limit: 10,
-      now: new Date("2026-04-20T12:00:00.000Z"),
-    });
-
-    expect(result).toHaveLength(2);
-    expect(result.map((plan) => plan.id)).toEqual(["plan-1", "plan-2"]);
-  });
-
-  it("refreshes only the selected hot stale plans in a bounded batch", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-20T12:00:00.000Z"));
-
-    const estimationStore = createEstimationStore({
-      "route-1": {
-        id: "route-1",
-        distance_meters: 42000,
-        total_ascent: 300,
-        total_descent: 300,
-        updated_at: "2026-04-19T11:00:00.000Z",
-      },
-    });
-    const maintenancePlan = createPlan();
-    const { db, insertCalls } = createMaintenanceDbMock([maintenancePlan]);
-
-    const result = await refreshHotStaleActivityPlanDerivedMetricsForProfile(
-      db as any,
-      estimationStore as any,
-      "profile-1",
+  it("loads one canonical snapshot, propagates asOf, memoizes duplicate inputs, and performs no writes", async () => {
+    estimateActivity.mockClear();
+    const inputStore = store();
+    const db = new Proxy(
+      {},
       {
-        limit: 25,
-        now: new Date("2026-04-20T12:00:00.000Z"),
+        get: () => () =>
+          Promise.reject(new Error("estimation reads must not use the write client")),
       },
     );
+    const result = await getActivityPlansDerivedMetrics(
+      [plan(), plan({ id: "plan-2" })],
+      db as any,
+      inputStore as any,
+      "profile-1",
+      { asOf },
+    );
 
-    expect(result).toEqual({ refreshedCount: 1, planIds: ["plan-1"] });
-    expect(vi.mocked(estimationCore.estimateActivity)).toHaveBeenCalledTimes(1);
-    expect(insertCalls).toHaveLength(1);
-    expect(insertCalls[0]?.[0]).toMatchObject({
-      activity_plan_id: "plan-1",
-      estimated_tss: 95,
-      estimated_duration_seconds: 5400,
+    expect(inputStore.getEstimationInputs).toHaveBeenCalledOnce();
+    expect(inputStore.getEstimationInputs).toHaveBeenCalledWith({
+      asOfIso: asOf.toISOString(),
+      effortCutoffIso: "2026-04-13T12:00:00.000Z",
+      profileId: "profile-1",
+      routeIds: [],
+    });
+    expect(estimateActivity).toHaveBeenCalledOnce();
+    expect(result.map((item) => item.estimate_source)).toEqual(["computed", "computed"]);
+    expect(result[0]?.estimate_computed_at).toBe(asOf.toISOString());
+  });
+
+  it("memoizes a duplicate-heavy batch by normalized plan and route content", async () => {
+    estimateActivity.mockClear();
+    const duplicates = Array.from({ length: 100 }, (_, index) => plan({ id: `plan-${index}` }));
+    const result = await getActivityPlansDerivedMetrics(
+      duplicates,
+      {} as any,
+      store() as any,
+      "profile-1",
+      { asOf },
+    );
+
+    expect(result).toHaveLength(100);
+    expect(estimateActivity).toHaveBeenCalledOnce();
+  });
+
+  it("changes deterministically with plan, profile, and route snapshot facts", async () => {
+    const route = { id: "route-1", distance_meters: 10_000, total_ascent: 10, total_descent: 10 };
+    const [base] = await getActivityPlansDerivedMetrics(
+      [plan()],
+      {} as any,
+      store() as any,
+      "profile-1",
+      { asOf },
+    );
+    const [changedPlan] = await getActivityPlansDerivedMetrics(
+      [plan({ structure: { duration: 3600 } })],
+      {} as any,
+      store() as any,
+      "profile-1",
+      { asOf },
+    );
+    const [changedProfile] = await getActivityPlansDerivedMetrics(
+      [plan()],
+      {} as any,
+      store({
+        metrics: [{ metric_type: "ftp", unit: "W", value: 300, recorded_at: asOf.toISOString() }],
+      }) as any,
+      "profile-1",
+      { asOf },
+    );
+    const [changedRoute] = await getActivityPlansDerivedMetrics(
+      [plan({ route_id: "route-1", structure: {} })],
+      {} as any,
+      store({ routes: [route] }) as any,
+      "profile-1",
+      { asOf },
+    );
+
+    expect(changedPlan?.authoritative_metrics.estimated_tss).not.toBe(
+      base?.authoritative_metrics.estimated_tss,
+    );
+    expect(changedProfile?.authoritative_metrics.estimated_tss).not.toBe(
+      base?.authoritative_metrics.estimated_tss,
+    );
+    expect(changedRoute?.authoritative_metrics.estimated_distance).toBe(10_000);
+  });
+
+  it("preserves warnings and excludes failed estimates from aggregation", async () => {
+    const result = await getActivityPlansDerivedMetrics(
+      [plan({ structure: { warning: true } }), plan({ id: "failed", structure: { fail: true } })],
+      {} as any,
+      store() as any,
+      "profile-1",
+      { asOf },
+    );
+
+    expect(result[0]).toMatchObject({
+      estimation_status: "estimated",
+      estimation_warnings: ["fixture warning"],
+      counts_toward_aggregation: true,
+    });
+    expect(result[1]).toMatchObject({
+      estimation_status: "failed",
+      estimate_source: "failed",
+      counts_toward_aggregation: false,
+      authoritative_metrics: { estimated_tss: 0 },
     });
   });
 });

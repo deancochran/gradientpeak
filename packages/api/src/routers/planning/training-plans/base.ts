@@ -3541,18 +3541,26 @@ export async function getPlanTabProjectionService({
   const activityPlans = (plannedActivitiesRaw || [])
     .map((item: any) => item.activity_plan)
     .filter((item): item is NonNullable<typeof item> => item !== null);
+  const ownedActivityPlansRaw = await loadOwnedActivityPlansForScheduleGap({
+    db,
+    supabase: fallbackSupabase,
+    profileId,
+  });
+  const estimationPlans = [...activityPlans, ...ownedActivityPlansRaw].filter(
+    (plan, index, plans) => plans.findIndex((candidate) => candidate.id === plan.id) === index,
+  );
 
   const estimationReader = db ? createEventReadRepository(db) : fallbackSupabase!;
   const plansWithEstimations =
-    activityPlans.length > 0
+    estimationPlans.length > 0
       ? db
         ? await getActivityPlansDerivedMetrics(
-            activityPlans as any,
+            estimationPlans as any,
             db,
             estimationReader as any,
             profileId,
           )
-        : await addEstimationToPlans(activityPlans, estimationReader as any, profileId)
+        : await addEstimationToPlans(estimationPlans, estimationReader as any, profileId)
       : [];
   const failedEstimations = plansWithEstimations.filter(
     (item: any) => item.counts_toward_aggregation === false,
@@ -3791,13 +3799,10 @@ export async function getPlanTabProjectionService({
     scheduleRecommendation,
     loadComparison,
   });
+  const estimatedPlansById = new Map(plansWithEstimations.map((plan: any) => [plan.id, plan]));
   const ownedActivityPlans =
     activityPlanMatchTarget.targetTssDelta && activityPlanMatchTarget.targetTssDelta > 0
-      ? await loadOwnedActivityPlansForScheduleGap({
-          db,
-          supabase: fallbackSupabase,
-          profileId,
-        })
+      ? ownedActivityPlansRaw.map((plan) => estimatedPlansById.get(plan.id) ?? plan)
       : [];
   const activityPlanMatches = buildScheduleGapActivityPlanMatches({
     targetDate: activityPlanMatchTarget.targetDate,

@@ -104,6 +104,11 @@ export interface EventReadRepository {
     weightMetric: ProfileMetricValue | null;
   }>;
   getEstimationInputs(input: {
+    /**
+     * Stable request instant for metric/effort freshness and access-expiry evaluation.
+     * Route rows are current facts: routes have no historical versions to reconstruct at asOf.
+     */
+    asOfIso: string;
     effortCutoffIso: string;
     profileId: string;
     routeIds: string[];

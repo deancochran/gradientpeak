@@ -253,19 +253,8 @@ export async function loadOwnedActivityPlansForScheduleGap(input: {
   const limit = input.limit ?? 25;
   if (input.db) {
     const result = await input.db.execute(sql<any>`
-      select
-        activity_plans.*,
-        cached_metrics.estimated_tss,
-        cached_metrics.estimated_duration_seconds
+      select activity_plans.*
       from activity_plans
-      left join lateral (
-        select estimated_tss, estimated_duration_seconds
-        from activity_plan_derived_metrics_cache
-        where activity_plan_derived_metrics_cache.activity_plan_id = activity_plans.id
-          and activity_plan_derived_metrics_cache.profile_id = ${input.profileId}::uuid
-        order by computed_at desc
-        limit 1
-      ) cached_metrics on true
       where activity_plans.profile_id = ${input.profileId}::uuid
       order by activity_plans.created_at desc, activity_plans.id asc
       limit ${limit}
@@ -273,8 +262,9 @@ export async function loadOwnedActivityPlansForScheduleGap(input: {
     return getSqlRows<ActivityPlanLike>(result);
   }
 
+  if (!input.supabase) return [];
   const { data } = await input.supabase
-    ?.from("activity_plans")
+    .from("activity_plans")
     .select("*")
     .eq("profile_id", input.profileId)
     .order("created_at", { ascending: false })

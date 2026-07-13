@@ -20,7 +20,6 @@ import {
   type PublicProfileMetricType,
   profileMetrics,
 } from "@repo/db";
-import { bumpProfileEstimationState } from "./profile-estimation-state";
 
 // These specific calculation modules are new and might not be in the main exports yet
 // Import them directly from their source files until they're properly exported
@@ -155,7 +154,6 @@ export async function batchInsertProfileMetrics(
   })) satisfies ProfileMetricInsert[];
 
   await db.insert(profileMetrics).values(metricsToInsert);
-  await bumpProfileEstimationState(db, profileId, ["metrics"]);
 }
 
 /**
@@ -202,7 +200,6 @@ export async function batchInsertActivityEfforts(
   })) satisfies ActivityEffortInsert[];
 
   await db.insert(activityEfforts).values(effortsToInsert);
-  await bumpProfileEstimationState(db, profileId, ["performance"]);
 }
 
 /**

@@ -17,10 +17,6 @@
       "types": "./src/context.ts",
       "default": "./src/context.ts"
     },
-    "./maintenance": {
-      "types": "./src/maintenance.ts",
-      "default": "./src/maintenance.ts"
-    },
     "./query-client": {
       "types": "./src/query-client.ts",
       "default": "./src/query-client.ts"

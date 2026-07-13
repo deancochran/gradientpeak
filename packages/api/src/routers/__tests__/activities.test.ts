@@ -46,10 +46,6 @@ vi.mock("../../lib/activity-analysis", () => ({
   resolveActivityContextAsOf: mockActivityAnalysis.resolveActivityContextAsOf,
 }));
 
-vi.mock("../../utils/profile-estimation-state", () => ({
-  markProfileAnalysisDirty: vi.fn(async () => undefined),
-}));
-
 import { activitiesRouter } from "../activities";
 
 const OWNER_ID = "11111111-1111-4111-8111-111111111111";

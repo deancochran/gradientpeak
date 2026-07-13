@@ -27,7 +27,6 @@ import { getRequiredDb } from "../db";
 import { logger } from "../lib/logger";
 import { getApiStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
-import { markProfileAnalysisDirty } from "../utils/profile-estimation-state";
 import { fetchActivityTemperature } from "../utils/weather";
 
 const storageService = getApiStorageService();
@@ -391,7 +390,13 @@ async function buildActivityFileEnrichment(
     duration,
     avgHeartRate: summary.avgHeartRate,
     recordedAt: activityCompletedAt,
-    streamMetadata: { powerStream, hrStream, timestamps, altitudeStream, speedStream },
+    streamMetadata: {
+      powerStream,
+      hrStream,
+      timestamps,
+      altitudeStream,
+      speedStream,
+    },
   });
 
   let resolvedAvgTemperature = avgTemperature;
@@ -630,7 +635,9 @@ export const activityFilesRouter = createTRPCRouter({
         let parsedData: z.infer<typeof parsedActivityFileCompatibilitySchema>;
         const activityFileType = getActivityFileTypeFromPath(activityFilePath);
         try {
-          logger.debug("[processActivityFile] Parsing activity file", { activityFileType });
+          logger.debug("[processActivityFile] Parsing activity file", {
+            activityFileType,
+          });
           const activityFileBlob = requireBlobLike(activityFile);
           const buffer = await toBufferFromBlobLike(activityFileBlob);
           parsedData = parsedActivityFileCompatibilitySchema.parse(
@@ -809,7 +816,13 @@ export const activityFilesRouter = createTRPCRouter({
           distance,
           duration,
           avgHeartRate,
-          streamMetadata: { powerStream, hrStream, timestamps, altitudeStream, speedStream },
+          streamMetadata: {
+            powerStream,
+            hrStream,
+            timestamps,
+            altitudeStream,
+            speedStream,
+          },
         });
 
         // ========================================================================
@@ -939,12 +952,6 @@ export const activityFilesRouter = createTRPCRouter({
           activityId: createdActivity.id,
         });
 
-        await markProfileAnalysisDirty(db, {
-          profileId: userId,
-          kinds: ["fitness"],
-          dirtySince: activityCompletedAtIso,
-        });
-
         // ========================================================================
         // T-5.4, T-5.5, T-5.6: Post-Processing (Best Efforts, Profile Metrics, Notifications)
         // ========================================================================
@@ -955,18 +962,18 @@ export const activityFilesRouter = createTRPCRouter({
           activityType,
           recordedAt: activityCompletedAt,
           normalizedGradedSpeed,
-          streamMetadata: { powerStream, timestamps, altitudeStream, speedStream },
+          streamMetadata: {
+            powerStream,
+            timestamps,
+            altitudeStream,
+            speedStream,
+          },
         });
 
         // Bulk insert efforts
         if (effortsToInsert.length > 0) {
           try {
             await db.insert(activityEfforts).values(effortsToInsert);
-            await markProfileAnalysisDirty(db, {
-              profileId: userId,
-              kinds: ["performance"],
-              dirtySince: activityCompletedAtIso,
-            });
           } catch (effortsError) {
             logger.error("Failed to insert best efforts", getErrorDetails(effortsError));
           }
@@ -984,11 +991,6 @@ export const activityFilesRouter = createTRPCRouter({
               value: detectedLTHR,
               unit: "bpm",
               recorded_at: new Date(activityCompletedAtIso),
-            });
-            await markProfileAnalysisDirty(db, {
-              profileId: userId,
-              kinds: ["metrics"],
-              dirtySince: activityCompletedAtIso,
             });
           }
         }
@@ -1185,7 +1187,10 @@ export const activityFilesRouter = createTRPCRouter({
         const activityFileBlob = requireBlobLike(activityFile);
         const buffer = await toBufferFromBlobLike(activityFileBlob);
         const parsedData = parsedActivityFileCompatibilitySchema.parse(
-          parseActivityFile({ data: buffer, fileName: resolvedActivityFilePath }),
+          parseActivityFile({
+            data: buffer,
+            fileName: resolvedActivityFilePath,
+          }),
         );
 
         // Extract streams in a format suitable for frontend charting

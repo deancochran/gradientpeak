@@ -1,14 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-
-vi.mock("../../utils/profile-estimation-state", () => ({
-  bumpProfileEstimationState: vi.fn(async () => undefined),
-  markProfileAnalysisDirty: vi.fn(async () => undefined),
-}));
-
-import { markProfileAnalysisDirty } from "../../utils/profile-estimation-state";
+import { describe, expect, it } from "vitest";
 import { profileMetricsRouter } from "../profile-metrics";
-
-const markProfileAnalysisDirtyMock = vi.mocked(markProfileAnalysisDirty);
 
 type QueryPlan = {
   selectResult?: unknown[];
@@ -142,10 +133,6 @@ function createCaller(plan: QueryPlan = {}, userId = "11111111-1111-4111-8111-11
 }
 
 describe("profileMetricsRouter", () => {
-  beforeEach(() => {
-    markProfileAnalysisDirtyMock.mockClear();
-  });
-
   it("lists metrics and forwards pagination to the db query", async () => {
     const rows = [
       createProfileMetricRow(),
@@ -259,11 +246,6 @@ describe("profileMetricsRouter", () => {
       }),
     );
     expect(result).toEqual(created);
-    expect(markProfileAnalysisDirtyMock).toHaveBeenCalledWith(expect.anything(), {
-      profileId: "11111111-1111-4111-8111-111111111111",
-      kinds: ["metrics"],
-      dirtySince: created.recorded_at,
-    });
   });
 
   it("fails when a returned db row does not match the public metric shape", async () => {
@@ -331,10 +313,5 @@ describe("profileMetricsRouter", () => {
         expect.objectContaining({ operation: "delete.where" }),
       ]),
     );
-    expect(markProfileAnalysisDirtyMock).toHaveBeenCalledWith(expect.anything(), {
-      profileId: "11111111-1111-4111-8111-111111111111",
-      kinds: ["metrics"],
-      dirtySince: existing.recorded_at,
-    });
   });
 });

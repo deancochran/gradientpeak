@@ -292,7 +292,8 @@ export function createEventReadRepository(
       };
     },
 
-    async getEstimationInputs({ effortCutoffIso, profileId, routeIds }) {
+    async getEstimationInputs({ asOfIso, effortCutoffIso, profileId, routeIds }) {
+      const asOf = new Date(asOfIso);
       const [profile, efforts, metrics, routes] = await Promise.all([
         db
           .select({ dob: schema.profiles.dob })
@@ -313,6 +314,7 @@ export function createEventReadRepository(
             and(
               eq(schema.activityEfforts.profile_id, profileId),
               gte(schema.activityEfforts.recorded_at, new Date(effortCutoffIso)),
+              lte(schema.activityEfforts.recorded_at, asOf),
               inArray(schema.activityEfforts.effort_type, ["power", "speed"]),
             ),
           )
@@ -329,6 +331,7 @@ export function createEventReadRepository(
           .where(
             and(
               eq(schema.profileMetrics.profile_id, profileId),
+              lte(schema.profileMetrics.recorded_at, asOf),
               inArray(schema.profileMetrics.metric_type, [
                 "weight_kg",
                 "ftp",
@@ -364,7 +367,7 @@ export function createEventReadRepository(
                         and content_access_grants.grantee_profile_id = ${profileId}::uuid
                         and content_access_grants.access_level in ('read', 'read_geometry')
                         and content_access_grants.revoked_at is null
-                        and (content_access_grants.expires_at is null or content_access_grants.expires_at > now())
+                        and (content_access_grants.expires_at is null or content_access_grants.expires_at > ${asOf})
                     )`,
                   ),
                 ),

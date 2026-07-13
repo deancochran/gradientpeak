@@ -51,7 +51,6 @@ import { Route as ProtectedRoutesRouteIdIndexRouteImport } from './routes/_prote
 import { Route as ProtectedRecordRouteIndexRouteImport } from './routes/_protected/record/route/index'
 import { Route as ProtectedActivityEffortsEffortIdIndexRouteImport } from './routes/_protected/activity-efforts/$effortId/index'
 import { Route as ProtectedActivitiesActivityIdIndexRouteImport } from './routes/_protected/activities/$activityId/index'
-import { Route as ApiInternalActivityPlanDerivedMetricsDrainRefreshQueueRouteImport } from './routes/api/internal/activity-plan-derived-metrics/drain-refresh-queue'
 import { Route as ApiIntegrationsCallbackProviderRouteImport } from './routes/api/integrations/callback/$provider'
 import { Route as ProtectedUserUserIdFollowingRouteImport } from './routes/_protected/user/$userId/following'
 import { Route as ProtectedUserUserIdFollowersRouteImport } from './routes/_protected/user/$userId/followers'
@@ -282,12 +281,6 @@ const ProtectedActivitiesActivityIdIndexRoute =
     path: '/activities/$activityId/',
     getParentRoute: () => ProtectedRoute,
   } as any)
-const ApiInternalActivityPlanDerivedMetricsDrainRefreshQueueRoute =
-  ApiInternalActivityPlanDerivedMetricsDrainRefreshQueueRouteImport.update({
-    id: '/api/internal/activity-plan-derived-metrics/drain-refresh-queue',
-    path: '/api/internal/activity-plan-derived-metrics/drain-refresh-queue',
-    getParentRoute: () => rootRouteImport,
-  } as any)
 const ApiIntegrationsCallbackProviderRoute =
   ApiIntegrationsCallbackProviderRouteImport.update({
     id: '/api/integrations/callback/$provider',
@@ -392,7 +385,6 @@ export interface FileRoutesByFullPath {
   '/user/$userId/followers': typeof ProtectedUserUserIdFollowersRoute
   '/user/$userId/following': typeof ProtectedUserUserIdFollowingRoute
   '/api/integrations/callback/$provider': typeof ApiIntegrationsCallbackProviderRoute
-  '/api/internal/activity-plan-derived-metrics/drain-refresh-queue': typeof ApiInternalActivityPlanDerivedMetricsDrainRefreshQueueRoute
   '/activities/$activityId/': typeof ProtectedActivitiesActivityIdIndexRoute
   '/activity-efforts/$effortId/': typeof ProtectedActivityEffortsEffortIdIndexRoute
   '/record/route/': typeof ProtectedRecordRouteIndexRoute
@@ -444,7 +436,6 @@ export interface FileRoutesByTo {
   '/user/$userId/followers': typeof ProtectedUserUserIdFollowersRoute
   '/user/$userId/following': typeof ProtectedUserUserIdFollowingRoute
   '/api/integrations/callback/$provider': typeof ApiIntegrationsCallbackProviderRoute
-  '/api/internal/activity-plan-derived-metrics/drain-refresh-queue': typeof ApiInternalActivityPlanDerivedMetricsDrainRefreshQueueRoute
   '/activities/$activityId': typeof ProtectedActivitiesActivityIdIndexRoute
   '/activity-efforts/$effortId': typeof ProtectedActivityEffortsEffortIdIndexRoute
   '/record/route': typeof ProtectedRecordRouteIndexRoute
@@ -500,7 +491,6 @@ export interface FileRoutesById {
   '/_protected/user/$userId/followers': typeof ProtectedUserUserIdFollowersRoute
   '/_protected/user/$userId/following': typeof ProtectedUserUserIdFollowingRoute
   '/api/integrations/callback/$provider': typeof ApiIntegrationsCallbackProviderRoute
-  '/api/internal/activity-plan-derived-metrics/drain-refresh-queue': typeof ApiInternalActivityPlanDerivedMetricsDrainRefreshQueueRoute
   '/_protected/activities/$activityId/': typeof ProtectedActivitiesActivityIdIndexRoute
   '/_protected/activity-efforts/$effortId/': typeof ProtectedActivityEffortsEffortIdIndexRoute
   '/_protected/record/route/': typeof ProtectedRecordRouteIndexRoute
@@ -556,7 +546,6 @@ export interface FileRouteTypes {
     | '/user/$userId/followers'
     | '/user/$userId/following'
     | '/api/integrations/callback/$provider'
-    | '/api/internal/activity-plan-derived-metrics/drain-refresh-queue'
     | '/activities/$activityId/'
     | '/activity-efforts/$effortId/'
     | '/record/route/'
@@ -608,7 +597,6 @@ export interface FileRouteTypes {
     | '/user/$userId/followers'
     | '/user/$userId/following'
     | '/api/integrations/callback/$provider'
-    | '/api/internal/activity-plan-derived-metrics/drain-refresh-queue'
     | '/activities/$activityId'
     | '/activity-efforts/$effortId'
     | '/record/route'
@@ -663,7 +651,6 @@ export interface FileRouteTypes {
     | '/_protected/user/$userId/followers'
     | '/_protected/user/$userId/following'
     | '/api/integrations/callback/$provider'
-    | '/api/internal/activity-plan-derived-metrics/drain-refresh-queue'
     | '/_protected/activities/$activityId/'
     | '/_protected/activity-efforts/$effortId/'
     | '/_protected/record/route/'
@@ -694,7 +681,6 @@ export interface RootRouteChildren {
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
   ApiWebhooksWahooRoute: typeof ApiWebhooksWahooRoute
   ApiIntegrationsCallbackProviderRoute: typeof ApiIntegrationsCallbackProviderRoute
-  ApiInternalActivityPlanDerivedMetricsDrainRefreshQueueRoute: typeof ApiInternalActivityPlanDerivedMetricsDrainRefreshQueueRoute
   ApiInternalProviderSyncWahooDrainRoute: typeof ApiInternalProviderSyncWahooDrainRoute
   ApiInternalProviderSyncWahooRetryRoute: typeof ApiInternalProviderSyncWahooRetryRoute
   ApiInternalProviderSyncWahooStatusRoute: typeof ApiInternalProviderSyncWahooStatusRoute
@@ -996,13 +982,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedActivitiesActivityIdIndexRouteImport
       parentRoute: typeof ProtectedRoute
     }
-    '/api/internal/activity-plan-derived-metrics/drain-refresh-queue': {
-      id: '/api/internal/activity-plan-derived-metrics/drain-refresh-queue'
-      path: '/api/internal/activity-plan-derived-metrics/drain-refresh-queue'
-      fullPath: '/api/internal/activity-plan-derived-metrics/drain-refresh-queue'
-      preLoaderRoute: typeof ApiInternalActivityPlanDerivedMetricsDrainRefreshQueueRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/integrations/callback/$provider': {
       id: '/api/integrations/callback/$provider'
       path: '/api/integrations/callback/$provider'
@@ -1203,8 +1182,6 @@ const rootRouteChildren: RootRouteChildren = {
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,
   ApiWebhooksWahooRoute: ApiWebhooksWahooRoute,
   ApiIntegrationsCallbackProviderRoute: ApiIntegrationsCallbackProviderRoute,
-  ApiInternalActivityPlanDerivedMetricsDrainRefreshQueueRoute:
-    ApiInternalActivityPlanDerivedMetricsDrainRefreshQueueRoute,
   ApiInternalProviderSyncWahooDrainRoute:
     ApiInternalProviderSyncWahooDrainRoute,
   ApiInternalProviderSyncWahooRetryRoute:
