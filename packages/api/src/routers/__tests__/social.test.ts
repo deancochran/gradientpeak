@@ -155,9 +155,7 @@ describe("socialRouter", () => {
         profiles: [[{ is_public: false }]],
       },
       execute: [
-        [],
         [{ follower_id: SESSION_USER_ID, following_id: TARGET_USER_ID, status: "pending" }],
-        [{ has_notification: false }],
         [],
       ],
     });
@@ -170,7 +168,7 @@ describe("socialRouter", () => {
       status: "pending",
     });
     expect(calls.selects).toEqual([{ table: "profiles" }]);
-    expect(calls.executes).toHaveLength(4);
+    expect(calls.executes).toHaveLength(2);
   });
 
   it("unfollowUser deletes the relationship and returns success", async () => {
@@ -186,6 +184,7 @@ describe("socialRouter", () => {
     const { caller, calls } = createCaller({
       execute: [
         [{ follower_id: FOLLOWER_ID, following_id: SESSION_USER_ID, status: "pending" }],
+        [{ follower_id: FOLLOWER_ID }],
         [],
         [],
         [],
@@ -202,7 +201,7 @@ describe("socialRouter", () => {
     const { caller, calls } = createCaller({
       execute: [
         [{ follower_id: FOLLOWER_ID, following_id: SESSION_USER_ID, status: "pending" }],
-        [],
+        [{ follower_id: FOLLOWER_ID }],
         [],
       ],
     });
@@ -260,7 +259,7 @@ describe("socialRouter", () => {
   });
 
   it("getFollowers returns follower rows with relationship status for the viewer", async () => {
-    const { caller } = createCaller({
+    const { caller, calls } = createCaller({
       select: {
         profiles: [[{ is_public: true }]],
       },
@@ -284,7 +283,7 @@ describe("socialRouter", () => {
           },
         ],
         [{ value: 3 }],
-        [{ follower_id: FOLLOWER_ID, status: "accepted" }],
+        [{ following_id: FOLLOWER_ID, status: "accepted" }],
       ],
     });
 
@@ -315,10 +314,36 @@ describe("socialRouter", () => {
       hasMore: true,
       nextCursor: "index:2",
     });
+    expect(calls.selects).toEqual([{ table: "profiles" }]);
+    expect(calls.executes).toHaveLength(3);
+  });
+
+  it("getFollowers exposes the viewer's outbound follow state required by relationship-list UI", async () => {
+    const { caller } = createCaller({
+      select: { profiles: [[{ is_public: true }]] },
+      execute: [
+        [
+          {
+            id: FOLLOWER_ID,
+            username: "follower-one",
+            avatar_url: null,
+            is_public: true,
+            created_at: "2026-04-01T12:00:00.000Z",
+            updated_at: "2026-04-01T12:00:00.000Z",
+          },
+        ],
+        [{ value: 1 }],
+        [{ following_id: FOLLOWER_ID, status: "pending" }],
+      ],
+    });
+
+    const result = await caller.getFollowers({ user_id: TARGET_USER_ID, limit: 20 });
+
+    expect(result.users[0]?.follow_status).toBe("pending");
   });
 
   it("getFollowing returns followed users with viewer-specific relationship status", async () => {
-    const { caller } = createCaller({
+    const { caller, calls } = createCaller({
       select: {
         profiles: [[{ is_public: true }]],
       },
@@ -373,6 +398,8 @@ describe("socialRouter", () => {
       hasMore: false,
       nextCursor: undefined,
     });
+    expect(calls.selects).toEqual([{ table: "profiles" }]);
+    expect(calls.executes).toHaveLength(3);
   });
 
   it("getFollowers rejects private social graph access for non-followers", async () => {
@@ -485,7 +512,7 @@ describe("socialRouter", () => {
 
   it("getComments returns serialized comments with nested profile data", async () => {
     const createdAt = new Date("2026-04-03T14:00:00.000Z");
-    const { caller } = createCaller({
+    const { caller, calls } = createCaller({
       execute: [
         [
           {
@@ -527,6 +554,7 @@ describe("socialRouter", () => {
       hasMore: true,
       nextCursor: "index:1",
     });
+    expect(calls.executes).toHaveLength(2);
   });
 
   it("getComments allows system training plans with null owner profile_id", async () => {

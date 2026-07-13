@@ -1,21 +1,23 @@
-import { randomUUID } from "node:crypto";
-import { activities, events, likes, profiles, type publicNotificationTypeSchema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
-import { searchSocialUsers, socialProfileListItemSchema } from "../application/social/searchUsers";
+import {
+  addContentComment,
+  deleteOwnedComment,
+  readContentComments,
+  toggleContentLike,
+} from "../application/social/contentEngagement";
+import {
+  acceptFollowRequest,
+  followUser,
+  rejectFollowRequest,
+  unfollowUser,
+} from "../application/social/followMutations";
+import { searchSocialUsers } from "../application/social/searchUsers";
+import { readSocialGraph } from "../application/social/socialGraph";
 import { getRequiredDb } from "../db";
-import { createContentAccessPermissions } from "../permissions/content-access";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
-import { buildIndexPageInfo, indexCursorSchema, parseIndexCursor } from "../utils/index-cursor";
-import { buildUuidInList, getSqlCount } from "../utils/sql";
+import { indexCursorSchema } from "../utils/index-cursor";
 
-type DbClient = ReturnType<typeof getRequiredDb>;
-
-const uuidSchema = z.string().uuid();
-const nullableAvatarUrlSchema = z.string().nullable();
-const nullableUsernameSchema = z.string().nullable();
-const followStatusSchema = z.enum(["pending", "accepted"]);
 const likeEntityTypeSchema = z.enum(["activity", "training_plan", "activity_plan", "route"]);
 const commentEntityTypeSchema = z.enum([
   "activity",
@@ -24,651 +26,86 @@ const commentEntityTypeSchema = z.enum([
   "route",
   "event",
 ]);
-type FollowNotificationType = Extract<
-  z.infer<typeof publicNotificationTypeSchema>,
-  "follow_request" | "new_follower"
->;
-
-const followRecordSchema = z
+const socialGraphInputSchema = z
   .object({
-    follower_id: uuidSchema,
-    following_id: uuidSchema,
-    status: followStatusSchema,
+    user_id: z.string().uuid(),
+    limit: z.number().min(1).max(50).default(20),
+    cursor: indexCursorSchema.optional(),
+    direction: z.enum(["forward", "backward"]).optional(),
   })
   .strict();
-
-const followerRelationshipRowSchema = z
-  .object({
-    follower_id: uuidSchema,
-    status: followStatusSchema,
-  })
-  .strict();
-
-const followingRelationshipRowSchema = z
-  .object({
-    following_id: uuidSchema,
-    status: followStatusSchema,
-  })
-  .strict();
-
-const commentInsertRowSchema = z
-  .object({
-    id: uuidSchema,
-    profile_id: uuidSchema,
-    entity_id: uuidSchema,
-    entity_type: commentEntityTypeSchema,
-    content: z.string(),
-    created_at: z.union([z.date(), z.string()]),
-  })
-  .strict();
-
-const commentOwnerRowSchema = z.object({ profile_id: uuidSchema }).strict();
-
-const commentListRowSchema = z
-  .object({
-    id: uuidSchema,
-    content: z.string(),
-    created_at: z.union([z.date(), z.string()]),
-    profile_id: uuidSchema.nullable(),
-    profile_username: nullableUsernameSchema,
-    profile_avatar_url: nullableAvatarUrlSchema,
-  })
-  .strict();
-
-function toIsoString(value: Date | string): string {
-  return value instanceof Date ? value.toISOString() : value;
-}
-
-async function getFollowRecord(db: DbClient, followerId: string, followingId: string) {
-  const result = await db.execute(sql`
-    select follower_id, following_id, status
-    from follows
-    where follower_id = ${followerId}::uuid
-      and following_id = ${followingId}::uuid
-    limit 1
-  `);
-
-  const row = result.rows[0];
-  return row ? followRecordSchema.parse(row) : null;
-}
-
-async function deleteFollowRequestNotification(db: DbClient, userId: string, actorId: string) {
-  await db.execute(sql`
-    delete from notifications
-    where user_id = ${userId}::uuid
-      and actor_id = ${actorId}::uuid
-      and type = 'follow_request'
-  `);
-}
-
-async function hasFollowRequestNotification(db: DbClient, userId: string, actorId: string) {
-  const result = await db.execute(sql<{ has_notification: boolean }>`
-    select exists(
-      select 1
-      from notifications
-      where user_id = ${userId}::uuid
-        and actor_id = ${actorId}::uuid
-        and type = 'follow_request'
-    ) as has_notification
-  `);
-
-  return Boolean(result.rows[0]?.has_notification);
-}
-
-async function createNotification(
-  db: DbClient,
-  input: {
-    user_id: string;
-    actor_id: string;
-    type: FollowNotificationType;
-  },
-) {
-  await db.execute(sql`
-    insert into notifications (user_id, actor_id, type)
-    values (${input.user_id}::uuid, ${input.actor_id}::uuid, ${input.type})
-  `);
-}
-
-/**
- * Check if a user has access to view an activity.
- * Returns true if: user owns the activity, OR activity is public.
- */
-async function checkActivityAccess(
-  db: DbClient,
-  activityId: string,
-  userId: string,
-): Promise<boolean> {
-  const activity = await db.query.activities.findFirst({
-    columns: {
-      profile_id: true,
-      is_private: true,
-    },
-    where: eq(activities.id, activityId),
-  });
-
-  if (!activity) {
-    return false;
-  }
-
-  if (activity.profile_id === userId) {
-    return true;
-  }
-
-  if (!activity.is_private) {
-    return true;
-  }
-
-  return false;
-}
-
-async function checkPlanAccess(
-  db: DbClient,
-  planId: string,
-  planType: "training_plan" | "activity_plan",
-  userId: string,
-): Promise<boolean> {
-  const decision = await createContentAccessPermissions(db).canRead(userId, {
-    type: planType,
-    id: planId,
-  });
-
-  return decision.allowed;
-}
-
-async function checkRouteAccess(db: DbClient, routeId: string, userId: string): Promise<boolean> {
-  const decision = await createContentAccessPermissions(db).canRead(userId, {
-    type: "activity_route",
-    id: routeId,
-  });
-
-  return decision.allowed;
-}
-
-async function requireProfileSocialGraphAccess(
-  db: DbClient,
-  targetUserId: string,
-  currentUserId: string,
-) {
-  if (targetUserId === currentUserId) {
-    return;
-  }
-
-  const [targetProfile] = await db
-    .select({ is_public: profiles.is_public })
-    .from(profiles)
-    .where(eq(profiles.id, targetUserId))
-    .limit(1);
-
-  if (!targetProfile) {
-    throw new TRPCError({
-      code: "NOT_FOUND",
-      message: "Profile not found",
-    });
-  }
-
-  if (targetProfile.is_public !== false) {
-    return;
-  }
-
-  const relationship = await getFollowRecord(db, currentUserId, targetUserId);
-
-  if (relationship?.status !== "accepted") {
-    throw new TRPCError({
-      code: "FORBIDDEN",
-      message: "You don't have permission to view this profile's social graph",
-    });
-  }
-}
-
-async function checkEventAccess(db: DbClient, eventId: string, userId: string): Promise<boolean> {
-  const event = await db.query.events.findFirst({
-    columns: {
-      profile_id: true,
-    },
-    where: eq(events.id, eventId),
-  });
-
-  if (!event) {
-    return false;
-  }
-
-  return event.profile_id === userId;
-}
 
 export const socialRouter = createTRPCRouter({
   followUser: protectedProcedure
     .input(z.object({ target_user_id: z.string().uuid() }).strict())
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-
-      if (ctx.session.user.id === input.target_user_id) {
-        throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Cannot follow yourself",
-        });
-      }
-
-      const [targetProfile] = await db
-        .select({ is_public: profiles.is_public })
-        .from(profiles)
-        .where(eq(profiles.id, input.target_user_id))
-        .limit(1);
-
-      if (!targetProfile) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Target user not found",
-        });
-      }
-
-      const existingFollow = await getFollowRecord(db, ctx.session.user.id, input.target_user_id);
-
-      if (existingFollow) {
-        if (existingFollow.status === "accepted") {
-          return { ...existingFollow, already_following: true };
-        }
-
-        if (existingFollow.status === "pending") {
-          return { ...existingFollow, already_pending: true };
-        }
-      }
-
-      const status = targetProfile.is_public ? "accepted" : "pending";
-
-      const now = new Date();
-      const insertResult = await db.execute(sql`
-        insert into follows (follower_id, following_id, status, created_at, updated_at)
-        values (${ctx.session.user.id}::uuid, ${input.target_user_id}::uuid, ${status}, ${now}, ${now})
-        returning follower_id, following_id, status
-      `);
-
-      const insertedFollow = followRecordSchema.parse(insertResult.rows[0]);
-
-      if (status === "pending") {
-        const existingNotification = await hasFollowRequestNotification(
-          db,
-          input.target_user_id,
-          ctx.session.user.id,
-        );
-
-        if (!existingNotification) {
-          try {
-            await createNotification(db, {
-              user_id: input.target_user_id,
-              actor_id: ctx.session.user.id,
-              type: "follow_request",
-            });
-          } catch (error) {
-            console.error("Failed to create follow request notification:", error);
-          }
-        }
-      }
-
-      return insertedFollow;
-    }),
+    .mutation(({ ctx, input }) =>
+      followUser({
+        db: getRequiredDb(ctx),
+        viewerId: ctx.session.user.id,
+        targetUserId: input.target_user_id,
+      }),
+    ),
 
   unfollowUser: protectedProcedure
     .input(z.object({ target_user_id: z.string().uuid() }).strict())
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-
-      await db.execute(sql`
-        delete from follows
-        where follower_id = ${ctx.session.user.id}::uuid
-          and following_id = ${input.target_user_id}::uuid
-      `);
-
-      return { success: true };
-    }),
+    .mutation(({ ctx, input }) =>
+      unfollowUser(getRequiredDb(ctx), ctx.session.user.id, input.target_user_id),
+    ),
 
   acceptFollowRequest: protectedProcedure
     .input(z.object({ follower_id: z.string().uuid() }).strict())
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      const existingFollow = await getFollowRecord(db, input.follower_id, ctx.session.user.id);
-
-      if (!existingFollow) {
-        try {
-          await deleteFollowRequestNotification(db, ctx.session.user.id, input.follower_id);
-        } catch (error) {
-          console.error("Failed to delete orphan notification:", error);
-        }
-
-        return {
-          success: true,
-          message: "No pending request found - notification cleaned up",
-        };
-      }
-
-      if (existingFollow.status === "accepted") {
-        await deleteFollowRequestNotification(db, ctx.session.user.id, input.follower_id);
-
-        return { success: true, message: "Already following" };
-      }
-
-      await db.execute(sql`
-        update follows
-        set status = 'accepted'
-        where follower_id = ${input.follower_id}::uuid
-          and following_id = ${ctx.session.user.id}::uuid
-          and status = 'pending'
-      `);
-
-      await deleteFollowRequestNotification(db, ctx.session.user.id, input.follower_id);
-
-      try {
-        await createNotification(db, {
-          user_id: input.follower_id,
-          actor_id: ctx.session.user.id,
-          type: "new_follower",
-        });
-      } catch (error) {
-        console.error("Failed to create follow accepted notification:", error);
-      }
-
-      return { success: true };
-    }),
+    .mutation(({ ctx, input }) =>
+      acceptFollowRequest(getRequiredDb(ctx), ctx.session.user.id, input.follower_id),
+    ),
 
   rejectFollowRequest: protectedProcedure
     .input(z.object({ follower_id: z.string().uuid() }).strict())
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      const existingFollow = await getFollowRecord(db, input.follower_id, ctx.session.user.id);
-
-      if (!existingFollow) {
-        try {
-          await deleteFollowRequestNotification(db, ctx.session.user.id, input.follower_id);
-        } catch (error) {
-          console.error("Failed to delete orphan notification:", error);
-        }
-
-        return {
-          success: true,
-          message: "No pending request found - notification cleaned up",
-        };
-      }
-
-      if (existingFollow.status !== "pending") {
-        await deleteFollowRequestNotification(db, ctx.session.user.id, input.follower_id);
-
-        return { success: true, message: "Follow request already processed" };
-      }
-
-      await db.execute(sql`
-        delete from follows
-        where follower_id = ${input.follower_id}::uuid
-          and following_id = ${ctx.session.user.id}::uuid
-          and status = 'pending'
-      `);
-
-      await deleteFollowRequestNotification(db, ctx.session.user.id, input.follower_id);
-
-      return { success: true };
-    }),
+    .mutation(({ ctx, input }) =>
+      rejectFollowRequest(getRequiredDb(ctx), ctx.session.user.id, input.follower_id),
+    ),
 
   toggleLike: protectedProcedure
-    .input(
-      z
-        .object({
-          entity_id: z.string().uuid(),
-          entity_type: likeEntityTypeSchema,
-        })
-        .strict(),
-    )
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      const userId = ctx.session.user.id;
+    .input(z.object({ entity_id: z.string().uuid(), entity_type: likeEntityTypeSchema }).strict())
+    .mutation(({ ctx, input }) =>
+      toggleContentLike({
+        db: getRequiredDb(ctx),
+        viewerId: ctx.session.user.id,
+        entityId: input.entity_id,
+        entityType: input.entity_type,
+      }),
+    ),
 
-      if (input.entity_type === "activity") {
-        const hasAccess = await checkActivityAccess(db, input.entity_id, userId);
-
-        if (!hasAccess) {
-          throw new TRPCError({
-            code: "FORBIDDEN",
-            message: "You don't have permission to like this activity",
-          });
-        }
-      }
-
-      if (input.entity_type === "training_plan" || input.entity_type === "activity_plan") {
-        const hasAccess = await checkPlanAccess(db, input.entity_id, input.entity_type, userId);
-
-        if (!hasAccess) {
-          throw new TRPCError({
-            code: "FORBIDDEN",
-            message: `You don't have permission to like this ${input.entity_type}`,
-          });
-        }
-      }
-
-      if (input.entity_type === "route") {
-        const hasAccess = await checkRouteAccess(db, input.entity_id, userId);
-
-        if (!hasAccess) {
-          throw new TRPCError({
-            code: "FORBIDDEN",
-            message: "You don't have permission to like this route",
-          });
-        }
-      }
-
-      return db.transaction(async (tx) => {
-        // Serialize toggles for this unique tuple; the unique constraint remains the final invariant.
-        await tx.execute(
-          sql`select pg_advisory_xact_lock(hashtextextended(${`${userId}:${input.entity_type}:${input.entity_id}`}, 0))`,
-        );
-
-        const deleted = await tx
-          .delete(likes)
-          .where(
-            and(
-              eq(likes.profile_id, userId),
-              eq(likes.entity_id, input.entity_id),
-              eq(likes.entity_type, input.entity_type),
-            ),
-          )
-          .returning({ id: likes.id });
-
-        if (deleted.length > 0) return { liked: false };
-
-        await tx
-          .insert(likes)
-          .values({
-            id: randomUUID(),
-            created_at: new Date(),
-            profile_id: userId,
-            entity_id: input.entity_id,
-            entity_type: input.entity_type,
-          })
-          .onConflictDoNothing({
-            target: [likes.profile_id, likes.entity_type, likes.entity_id],
-          });
-
-        return { liked: true };
+  getFollowers: protectedProcedure.input(socialGraphInputSchema).query(async ({ ctx, input }) => {
+    try {
+      return await readSocialGraph({
+        db: getRequiredDb(ctx),
+        viewerId: ctx.session.user.id,
+        targetUserId: input.user_id,
+        direction: "followers",
+        limit: input.limit,
+        cursor: input.cursor,
       });
-    }),
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to fetch followers" });
+    }
+  }),
 
-  getFollowers: protectedProcedure
-    .input(
-      z
-        .object({
-          user_id: z.string().uuid(),
-          limit: z.number().min(1).max(50).default(20),
-          cursor: indexCursorSchema.optional(),
-          direction: z.enum(["forward", "backward"]).optional(),
-        })
-        .strict(),
-    )
-    .query(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-
-      try {
-        const currentUserId = ctx.session.user.id;
-        const offset = parseIndexCursor(input.cursor);
-
-        await requireProfileSocialGraphAccess(db, input.user_id, currentUserId);
-
-        const followersResult = await db.execute(sql`
-          select p.id, p.username, p.avatar_url, p.is_public, p.created_at, p.updated_at
-          from follows f
-          join profiles p on p.id = f.follower_id
-          where f.following_id = ${input.user_id}::uuid
-            and f.status = 'accepted'
-          order by p.created_at desc, p.id asc
-          limit ${input.limit}
-          offset ${offset}
-        `);
-
-        const followers = z.array(socialProfileListItemSchema).parse(followersResult.rows);
-        const total = await getSqlCount(
-          db.execute(sql`
-          select count(*)::int as value
-          from follows
-          where following_id = ${input.user_id}::uuid
-            and status = 'accepted'
-        `),
-        );
-
-        let usersWithRelationship = followers;
-
-        if (currentUserId !== input.user_id) {
-          const followerIds = followers.map((follower) => follower.id);
-
-          if (followerIds.length > 0) {
-            const relationshipsResult = await db.execute(sql`
-              select follower_id, status
-              from follows
-              where following_id = ${currentUserId}::uuid
-                and follower_id in (${buildUuidInList(followerIds)})
-            `);
-
-            const relationships = z
-              .array(followerRelationshipRowSchema)
-              .parse(relationshipsResult.rows);
-
-            const statusMap = new Map(
-              relationships.map((relationship) => [relationship.follower_id, relationship.status]),
-            );
-
-            usersWithRelationship = followers.map((follower) => ({
-              ...follower,
-              follow_status: statusMap.get(follower.id) ?? null,
-            }));
-          }
-        } else {
-          usersWithRelationship = followers.map((follower) => ({
-            ...follower,
-            follow_status: "accepted" as const,
-          }));
-        }
-
-        return {
-          users: usersWithRelationship,
-          total,
-          ...buildIndexPageInfo({ offset, limit: input.limit, total }),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
-
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to fetch followers",
-        });
-      }
-    }),
-
-  getFollowing: protectedProcedure
-    .input(
-      z
-        .object({
-          user_id: z.string().uuid(),
-          limit: z.number().min(1).max(50).default(20),
-          cursor: indexCursorSchema.optional(),
-          direction: z.enum(["forward", "backward"]).optional(),
-        })
-        .strict(),
-    )
-    .query(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-
-      try {
-        const currentUserId = ctx.session.user.id;
-        const offset = parseIndexCursor(input.cursor);
-
-        await requireProfileSocialGraphAccess(db, input.user_id, currentUserId);
-
-        const followingResult = await db.execute(sql`
-          select p.id, p.username, p.avatar_url, p.is_public, p.created_at, p.updated_at
-          from follows f
-          join profiles p on p.id = f.following_id
-          where f.follower_id = ${input.user_id}::uuid
-            and f.status = 'accepted'
-          order by p.created_at desc, p.id asc
-          limit ${input.limit}
-          offset ${offset}
-        `);
-
-        const following = z.array(socialProfileListItemSchema).parse(followingResult.rows);
-        const total = await getSqlCount(
-          db.execute(sql`
-          select count(*)::int as value
-          from follows
-          where follower_id = ${input.user_id}::uuid
-            and status = 'accepted'
-        `),
-        );
-
-        let usersWithRelationship = following;
-
-        if (currentUserId !== input.user_id) {
-          const followingIds = following.map((followedUser) => followedUser.id);
-
-          if (followingIds.length > 0) {
-            const relationshipsResult = await db.execute(sql`
-              select following_id, status
-              from follows
-              where follower_id = ${currentUserId}::uuid
-                and following_id in (${buildUuidInList(followingIds)})
-            `);
-
-            const relationships = z
-              .array(followingRelationshipRowSchema)
-              .parse(relationshipsResult.rows);
-
-            const statusMap = new Map(
-              relationships.map((relationship) => [relationship.following_id, relationship.status]),
-            );
-
-            usersWithRelationship = following.map((followedUser) => ({
-              ...followedUser,
-              follow_status: statusMap.get(followedUser.id) ?? null,
-            }));
-          }
-        } else {
-          usersWithRelationship = following.map((followedUser) => ({
-            ...followedUser,
-            follow_status: "accepted" as const,
-          }));
-        }
-
-        return {
-          users: usersWithRelationship,
-          total,
-          ...buildIndexPageInfo({ offset, limit: input.limit, total }),
-        };
-      } catch (error) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
-
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to fetch following",
-        });
-      }
-    }),
+  getFollowing: protectedProcedure.input(socialGraphInputSchema).query(async ({ ctx, input }) => {
+    try {
+      return await readSocialGraph({
+        db: getRequiredDb(ctx),
+        viewerId: ctx.session.user.id,
+        targetUserId: input.user_id,
+        direction: "following",
+        limit: input.limit,
+        cursor: input.cursor,
+      });
+    } catch (error) {
+      if (error instanceof TRPCError) throw error;
+      throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to fetch following" });
+    }
+  }),
 
   searchUsers: protectedProcedure
     .input(
@@ -684,23 +121,15 @@ export const socialRouter = createTRPCRouter({
         .strict(),
     )
     .query(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-
       try {
         return await searchSocialUsers({
-          db,
+          db: getRequiredDb(ctx),
           viewerId: ctx.session.user.id,
           input,
         });
       } catch (error) {
-        if (error instanceof TRPCError) {
-          throw error;
-        }
-
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to search users",
-        });
+        if (error instanceof TRPCError) throw error;
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to search users" });
       }
     }),
 
@@ -714,110 +143,15 @@ export const socialRouter = createTRPCRouter({
         })
         .strict(),
     )
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      const userId = ctx.session.user.id;
-
-      if (input.entity_type === "activity") {
-        const hasAccess = await checkActivityAccess(db, input.entity_id, userId);
-
-        if (!hasAccess) {
-          throw new TRPCError({
-            code: "FORBIDDEN",
-            message: "You don't have permission to comment on this activity",
-          });
-        }
-      }
-
-      if (input.entity_type === "training_plan" || input.entity_type === "activity_plan") {
-        const hasAccess = await checkPlanAccess(db, input.entity_id, input.entity_type, userId);
-
-        if (!hasAccess) {
-          throw new TRPCError({
-            code: "FORBIDDEN",
-            message: `You don't have permission to comment on this ${input.entity_type}`,
-          });
-        }
-      }
-
-      if (input.entity_type === "route") {
-        const hasAccess = await checkRouteAccess(db, input.entity_id, userId);
-
-        if (!hasAccess) {
-          throw new TRPCError({
-            code: "FORBIDDEN",
-            message: "You don't have permission to comment on this route",
-          });
-        }
-      }
-
-      if (input.entity_type === "event") {
-        const hasAccess = await checkEventAccess(db, input.entity_id, userId);
-
-        if (!hasAccess) {
-          throw new TRPCError({
-            code: "FORBIDDEN",
-            message: "You don't have permission to view comments on this event",
-          });
-        }
-      }
-
-      const insertResult = await db.execute(sql`
-        insert into comments (profile_id, entity_id, entity_type, content)
-        values (
-          ${userId}::uuid,
-          ${input.entity_id}::uuid,
-          ${input.entity_type},
-          ${input.content.trim()}
-        )
-        returning id, profile_id, entity_id, entity_type, content, created_at
-      `);
-
-      const insertedComment = commentInsertRowSchema.parse(insertResult.rows[0]);
-
-      return {
-        ...insertedComment,
-        created_at: toIsoString(insertedComment.created_at),
-      };
-    }),
+    .mutation(({ ctx, input }) =>
+      addContentComment({ db: getRequiredDb(ctx), viewerId: ctx.session.user.id, input }),
+    ),
 
   deleteComment: protectedProcedure
     .input(z.object({ comment_id: z.string().uuid() }).strict())
-    .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-
-      const commentResult = await db.execute(sql`
-        select profile_id
-        from comments
-        where id = ${input.comment_id}::uuid
-        limit 1
-      `);
-
-      const existingComment = commentResult.rows[0]
-        ? commentOwnerRowSchema.parse(commentResult.rows[0])
-        : null;
-
-      if (!existingComment) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "Comment not found",
-        });
-      }
-
-      if (existingComment.profile_id !== ctx.session.user.id) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "You can only delete your own comments",
-        });
-      }
-
-      await db.execute(sql`
-        delete from comments
-        where id = ${input.comment_id}::uuid
-      `);
-
-      return { success: true };
-    }),
+    .mutation(({ ctx, input }) =>
+      deleteOwnedComment(getRequiredDb(ctx), ctx.session.user.id, input.comment_id),
+    ),
 
   getComments: protectedProcedure
     .input(
@@ -831,97 +165,7 @@ export const socialRouter = createTRPCRouter({
         })
         .strict(),
     )
-    .query(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      const userId = ctx.session.user.id;
-      const offset = parseIndexCursor(input.cursor);
-
-      if (input.entity_type === "activity") {
-        const hasAccess = await checkActivityAccess(db, input.entity_id, userId);
-
-        if (!hasAccess) {
-          throw new TRPCError({
-            code: "FORBIDDEN",
-            message: "You don't have permission to view comments on this activity",
-          });
-        }
-      }
-
-      if (input.entity_type === "training_plan" || input.entity_type === "activity_plan") {
-        const hasAccess = await checkPlanAccess(db, input.entity_id, input.entity_type, userId);
-
-        if (!hasAccess) {
-          throw new TRPCError({
-            code: "FORBIDDEN",
-            message: `You don't have permission to view comments on this ${input.entity_type}`,
-          });
-        }
-      }
-
-      if (input.entity_type === "route") {
-        const hasAccess = await checkRouteAccess(db, input.entity_id, userId);
-
-        if (!hasAccess) {
-          throw new TRPCError({
-            code: "FORBIDDEN",
-            message: "You don't have permission to view comments on this route",
-          });
-        }
-      }
-
-      if (input.entity_type === "event") {
-        const hasAccess = await checkEventAccess(db, input.entity_id, userId);
-
-        if (!hasAccess) {
-          throw new TRPCError({
-            code: "FORBIDDEN",
-            message: "You don't have permission to view comments on this event",
-          });
-        }
-      }
-
-      const commentsResult = await db.execute(sql`
-        select
-          c.id,
-          c.content,
-          c.created_at,
-          p.id as profile_id,
-          p.username as profile_username,
-          p.avatar_url as profile_avatar_url
-        from comments c
-        left join profiles p on p.id = c.profile_id
-        where c.entity_id = ${input.entity_id}::uuid
-          and c.entity_type = ${input.entity_type}
-        order by c.created_at asc
-        limit ${input.limit}
-        offset ${offset}
-      `);
-
-      const comments = z.array(commentListRowSchema).parse(commentsResult.rows);
-      const total = await getSqlCount(
-        db.execute(sql`
-        select count(*)::int as value
-        from comments
-        where entity_id = ${input.entity_id}::uuid
-          and entity_type = ${input.entity_type}
-      `),
-      );
-
-      return {
-        comments: comments.map((comment) => ({
-          id: comment.id,
-          content: comment.content,
-          created_at: toIsoString(comment.created_at),
-          profile: comment.profile_id
-            ? {
-                id: comment.profile_id,
-                username: comment.profile_username,
-                avatar_url: comment.profile_avatar_url,
-              }
-            : null,
-        })),
-        total,
-        ...buildIndexPageInfo({ offset, limit: input.limit, total }),
-      };
-    }),
+    .query(({ ctx, input }) =>
+      readContentComments({ db: getRequiredDb(ctx), viewerId: ctx.session.user.id, input }),
+    ),
 });

@@ -154,7 +154,7 @@ describe("feedRouter", () => {
       },
     ];
 
-    const { caller } = createCaller({
+    const { caller, db } = createCaller({
       execute: [activityRows, [{ entity_id: ACTIVITY_ID, comments_count: 2 }]],
       likeStatsRows: [{ entity_id: ACTIVITY_ID, likes_count: 4, has_liked: true }],
     });
@@ -215,6 +215,8 @@ describe("feedRouter", () => {
         ]),
       }),
     );
+    expect(db.execute).toHaveBeenCalledTimes(2);
+    expect(db.select).toHaveBeenCalledTimes(1);
   });
 
   it("getFeed uses a stable composite cursor for activities with matching timestamps", async () => {
@@ -365,7 +367,7 @@ describe("feedRouter", () => {
   it("getActivity returns detail data including likes and ordered comments", async () => {
     const startedAt = new Date("2026-04-03T10:00:00.000Z");
 
-    const { caller } = createCaller({
+    const { caller, db } = createCaller({
       execute: [
         [
           {
@@ -463,6 +465,8 @@ describe("feedRouter", () => {
         },
       ],
     });
+    expect(db.execute).toHaveBeenCalledTimes(2);
+    expect(db.select).toHaveBeenCalledTimes(1);
   });
 
   it("getActivity rejects private activities for non-followers", async () => {
