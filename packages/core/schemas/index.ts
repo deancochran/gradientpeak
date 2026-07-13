@@ -173,6 +173,7 @@ export const trainingPlanCreateInputSchema = z.object({
   name: z.string().min(1, "Plan name is required").max(255, "Plan name is too long"),
   description: z.string().max(1000, "Description is too long").optional().nullable(),
   structure: trainingPlanCreateSchema, // Validates structure without ID requirement
+  template_visibility: z.enum(["private", "public"]).optional(),
   is_active: z.boolean().optional(),
 });
 

@@ -132,9 +132,13 @@ function ChoicePill({
 }) {
   return (
     <Pressable
-      accessibilityRole="button"
+      accessibilityLabel={children}
+      accessibilityRole="radio"
+      accessibilityState={{ selected: isSelected }}
       className={`${
-        isSelected ? "rounded-full bg-primary px-3.5 py-2" : "rounded-full bg-muted/60 px-3.5 py-2"
+        isSelected
+          ? "min-h-11 justify-center rounded-full bg-primary px-3.5 py-2"
+          : "min-h-11 justify-center rounded-full bg-muted/60 px-3.5 py-2"
       } ${className ?? ""}`}
       onPress={onPress}
     >
@@ -254,8 +258,9 @@ export function TrainingPlanBuilderEventEditor({
             variant="compact"
           />
           <Pressable
+            accessibilityLabel="Reassign workout"
             accessibilityRole="button"
-            className="self-start rounded-full px-1 py-1"
+            className="min-h-11 justify-center self-start rounded-full px-2 py-1"
             onPress={() => onOpenActivityPicker(event.localId)}
             testID="builder-session-reassign-workout"
           >
@@ -270,8 +275,9 @@ export function TrainingPlanBuilderEventEditor({
             variant="compact"
           />
           <Pressable
+            accessibilityLabel="Reassign workout"
             accessibilityRole="button"
-            className="self-start rounded-full px-1 py-1"
+            className="min-h-11 justify-center self-start rounded-full px-2 py-1"
             onPress={() => onOpenActivityPicker(event.localId)}
             testID="builder-session-reassign-workout"
           >
@@ -280,8 +286,9 @@ export function TrainingPlanBuilderEventEditor({
         </View>
       ) : (
         <Pressable
+          accessibilityLabel="Choose workout"
           accessibilityRole="button"
-          className="rounded-2xl border border-dashed border-border px-4 py-3"
+          className="min-h-11 rounded-2xl border border-dashed border-border px-4 py-3"
           onPress={() => onOpenActivityPicker(event.localId)}
           testID="builder-session-assign-workout"
         >
@@ -294,8 +301,10 @@ export function TrainingPlanBuilderEventEditor({
           <Text className="text-sm font-semibold text-muted-foreground">Week</Text>
           <View className="flex-row items-center gap-3">
             <Pressable
+              accessibilityLabel="Move workout to previous week"
               accessibilityRole="button"
-              className="h-9 w-9 items-center justify-center rounded-full bg-muted/60 disabled:opacity-40"
+              accessibilityState={{ disabled: weekIndex <= 0 }}
+              className="h-11 w-11 items-center justify-center rounded-full bg-muted/60 disabled:opacity-40"
               disabled={weekIndex <= 0}
               onPress={() => moveWeek(-1)}
             >
@@ -305,8 +314,9 @@ export function TrainingPlanBuilderEventEditor({
               Week {weekIndex + 1}
             </Text>
             <Pressable
+              accessibilityLabel="Move workout to next week"
               accessibilityRole="button"
-              className="h-9 w-9 items-center justify-center rounded-full bg-muted/60"
+              className="h-11 w-11 items-center justify-center rounded-full bg-muted/60"
               onPress={() => moveWeek(1)}
             >
               <ChevronRight size={18} className="text-foreground" />

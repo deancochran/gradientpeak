@@ -41,6 +41,42 @@ export function mapTrainingPlanOwnerIdentity<T extends { profile_id: string | nu
   };
 }
 
+export function sanitizeTrainingPlanForViewer<
+  T extends TrainingPlanWithIdentityFields & { structure: unknown },
+>(plan: T, viewerProfileId: string): T {
+  if (
+    plan.profile_id === viewerProfileId ||
+    !plan.structure ||
+    typeof plan.structure !== "object"
+  ) {
+    return plan;
+  }
+
+  const {
+    builder_planning_snapshot: _builderSnapshot,
+    metadata,
+    ...publicStructure
+  } = plan.structure as Record<string, unknown>;
+  let publicMetadata = metadata;
+  if (metadata && typeof metadata === "object") {
+    const {
+      creation_config_snapshot: _creationConfig,
+      creation_form_snapshot: _creationForm,
+      creation_calibration: _creationCalibration,
+      ...safeMetadata
+    } = metadata as Record<string, unknown>;
+    publicMetadata = Object.keys(safeMetadata).length > 0 ? safeMetadata : undefined;
+  }
+
+  return {
+    ...plan,
+    structure: {
+      ...publicStructure,
+      ...(publicMetadata === undefined ? {} : { metadata: publicMetadata }),
+    },
+  };
+}
+
 export function validatePersistedTrainingPlanStructure(plan: TrainingPlanRow) {
   try {
     if (plan.structure) {
@@ -72,7 +108,10 @@ export async function serializeTrainingPlanForViewer(input: {
   ]);
 
   return {
-    ...mapTrainingPlanOwnerIdentity(input.plan, profileIdentityMap),
+    ...mapTrainingPlanOwnerIdentity(
+      sanitizeTrainingPlanForViewer(input.plan, input.profileId),
+      profileIdentityMap,
+    ),
     ...getLikeStats(likeStats, input.plan.id),
   };
 }

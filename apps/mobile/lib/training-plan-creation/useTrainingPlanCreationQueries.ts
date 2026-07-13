@@ -91,33 +91,6 @@ export function useTrainingPlanCreationQueries({
       onUpdateError?.(error);
     },
   });
-  const createFromCreationConfigMutation = useReliableMutation(
-    api.trainingPlans.createFromCreationConfig,
-    {
-      invalidate: [utils.trainingPlans],
-      silent: true,
-      onSuccess: (createdPlan) => {
-        onCreated?.(createdPlan);
-      },
-      onError: (error) => {
-        onCreateError?.(error);
-      },
-    },
-  );
-  const updateFromCreationConfigMutation = useReliableMutation(
-    api.trainingPlans.updateFromCreationConfig,
-    {
-      invalidate: [utils.trainingPlans],
-      silent: true,
-      onSuccess: (updatedPlan) => {
-        onUpdated?.(updatedPlan);
-      },
-      onError: (error) => {
-        onUpdateError?.(error);
-      },
-    },
-  );
-
   return {
     profileQuery,
     profileMetricsQuery,
@@ -129,7 +102,5 @@ export function useTrainingPlanCreationQueries({
     linkedActivityPlansQuery,
     createPlanMutation,
     updatePlanMutation,
-    createFromCreationConfigMutation,
-    updateFromCreationConfigMutation,
   };
 }

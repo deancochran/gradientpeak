@@ -1,3 +1,7 @@
+import {
+  type CanonicalTrainingPlanStructure,
+  canonicalTrainingPlanStructureSchema,
+} from "../schemas/training_plan_structure";
 import { addDaysDateOnlyUtc } from "./dateOnlyUtc";
 
 type SessionSource = Record<string, unknown>;
@@ -11,14 +15,39 @@ export type MaterializedPlanEventType = "planned";
 export interface MaterializedPlanEvent {
   scheduled_date: string;
   starts_at: string;
-  ends_at: string;
+  ends_at: string | null;
+  timezone: "UTC";
   title: string;
+  description: string | null;
   event_title_override: string | null;
   event_type: MaterializedPlanEventType;
   activity_plan_id: string | null;
-  all_day: true;
+  all_day: boolean;
   source_day_offset: number;
   source_path: string;
+}
+
+function getCanonicalStructure(planStructure: unknown): CanonicalTrainingPlanStructure | null {
+  const directResult = canonicalTrainingPlanStructureSchema.safeParse(planStructure);
+  if (directResult.success) {
+    return directResult.data;
+  }
+
+  // Persistence adds the relational id and the application adapter may add start_date.
+  // Remove only those boundary-owned fields without admitting other legacy fields.
+  if (planStructure && typeof planStructure === "object" && !Array.isArray(planStructure)) {
+    const {
+      id: _persistedId,
+      start_date: _legacyStartDate,
+      ...candidate
+    } = planStructure as Record<string, unknown>;
+    const adaptedResult = canonicalTrainingPlanStructureSchema.safeParse(candidate);
+    if (adaptedResult.success) {
+      return adaptedResult.data;
+    }
+  }
+
+  return null;
 }
 
 function getSessionTitleOverride(session: SessionSource): string | null {
@@ -50,6 +79,52 @@ function toDayStartIso(dateOnly: string): string {
 
 function toNextDayStartIso(dateOnly: string): string {
   return `${addDaysDateOnlyUtc(dateOnly, 1)}T00:00:00.000Z`;
+}
+
+function getEventTiming(scheduledDate: string, startTime?: string) {
+  if (startTime) {
+    return {
+      starts_at: `${scheduledDate}T${startTime}:00.000Z`,
+      ends_at: null,
+      all_day: false,
+    } as const;
+  }
+
+  return {
+    starts_at: toDayStartIso(scheduledDate),
+    ends_at: toNextDayStartIso(scheduledDate),
+    all_day: true,
+  } as const;
+}
+
+function materializeCanonicalPlan(
+  structure: CanonicalTrainingPlanStructure,
+  startDate: string,
+): MaterializedPlanEvent[] {
+  return structure.sessions
+    .map((session, index) => {
+      const scheduledDate = addDaysDateOnlyUtc(startDate, session.offset_days);
+      const overrides = session.event_overrides;
+      const eventTitleOverride = overrides?.title ?? null;
+      const timing = getEventTiming(scheduledDate, overrides?.start_time);
+
+      return {
+        scheduled_date: scheduledDate,
+        ...timing,
+        timezone: "UTC" as const,
+        title: eventTitleOverride ?? "Planned Session",
+        description: overrides?.description ?? null,
+        event_title_override: eventTitleOverride,
+        event_type: "planned" as const,
+        activity_plan_id: session.activity_plan_id,
+        source_day_offset: session.offset_days,
+        source_path: `sessions.${index}`,
+      };
+    })
+    .sort(
+      (a, b) =>
+        a.starts_at.localeCompare(b.starts_at) || a.source_path.localeCompare(b.source_path),
+    );
 }
 
 function isDateOnlyString(value: unknown): value is string {
@@ -124,12 +199,15 @@ function shouldMaterializeSession(session: SessionSource): boolean {
 }
 
 /**
- * Materializes a template-like plan structure into all-day event records.
+ * Materializes a training plan structure into deterministic event records.
  *
  * Supported inputs:
- * - Root `sessions` with `scheduled_date` or `offset_days`/`day_offset`
- * - Nested `blocks[]`, `weeks[]`, and `days[]` with inherited offsets or `start_date`
+ * - Canonical version-1 relative sessions, anchored exclusively to `startDate`
+ * - Legacy root or nested sessions with inherited offsets, explicit dates, or `start_date`
  *
+ * Canonical `start_time` values are interpreted as UTC wall-clock times because the
+ * canonical contract has no timezone field. Date-only arithmetic also uses UTC, so
+ * materialization is independent of the runtime timezone and daylight-saving changes.
  * The function is pure and performs no I/O.
  */
 export function materializePlanToEvents(
@@ -144,6 +222,12 @@ export function materializePlanToEvents(
     return [];
   }
 
+  const canonicalStructure = getCanonicalStructure(planStructure);
+  if (canonicalStructure) {
+    return materializeCanonicalPlan(canonicalStructure, startDate);
+  }
+
+  // Everything below is the quarantined compatibility path for pre-canonical structures.
   const root = planStructure as Record<string, unknown>;
   const rootStartDate = isDateOnlyString(root.start_date) ? root.start_date : startDate;
 
@@ -169,7 +253,8 @@ export function materializePlanToEvents(
     const eventTitleOverride = getSessionTitleOverride(session);
     const title = eventTitleOverride ?? getLegacySessionTitle(session) ?? fallbackTitle;
 
-    const key = `${scheduledDate}|planned|${activityPlanId ?? "none"}|${title}`;
+    const timing = getEventTiming(scheduledDate);
+    const key = `${timing.starts_at}|planned|${activityPlanId ?? "none"}|${title}`;
     if (dedupe.has(key)) {
       return;
     }
@@ -177,13 +262,13 @@ export function materializePlanToEvents(
 
     materialized.push({
       scheduled_date: scheduledDate,
-      starts_at: toDayStartIso(scheduledDate),
-      ends_at: toNextDayStartIso(scheduledDate),
+      ...timing,
+      timezone: "UTC",
       title,
+      description: null,
       event_title_override: eventTitleOverride,
       event_type: "planned",
       activity_plan_id: activityPlanId,
-      all_day: true,
       source_day_offset: diffDateOnly(baseDate, scheduledDate),
       source_path: sourcePath.join("."),
     });

@@ -74,6 +74,16 @@ describe("trainingPlansRouter.applyTemplate", () => {
           error: null,
         },
         {
+          data: [
+            {
+              training_plan_id: "22222222-2222-4222-8222-222222222222",
+              schedule_batch_id: "33333333-3333-4333-8333-333333333333",
+              starts_at: "2026-03-12T00:00:00.000Z",
+            },
+          ],
+          error: null,
+        },
+        {
           data: [{ id: "removed-1" }, { id: "removed-2" }],
           error: null,
         },
@@ -118,15 +128,33 @@ describe("trainingPlansRouter.applyTemplate", () => {
                 {
                   offset_days: 2,
                   title: "Session B",
+                  activity_plan_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                 },
               ],
             },
           },
           error: null,
         },
+        {
+          data: {
+            id: "22222222-2222-4222-8222-222222222222",
+            name: "Current Plan",
+            description: null,
+            profile_id: "profile-123",
+            is_system_template: false,
+            template_visibility: "private",
+            sessions_per_week_target: 4,
+            duration_hours: 9,
+            structure: {},
+          },
+          error: null,
+        },
       ],
       activity_plans: {
-        data: [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Tempo Builder" }],
+        data: [
+          { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Tempo Builder" },
+          { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "Endurance Builder" },
+        ],
         error: null,
       },
     });
@@ -182,6 +210,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
                 {
                   offset_days: 2,
                   title: "Session B",
+                  activity_plan_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                 },
               ],
             },
@@ -190,7 +219,10 @@ describe("trainingPlansRouter.applyTemplate", () => {
         },
       ],
       activity_plans: {
-        data: [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Tempo Builder" }],
+        data: [
+          { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Tempo Builder" },
+          { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "Endurance Builder" },
+        ],
         error: null,
       },
     });
@@ -211,14 +243,19 @@ describe("trainingPlansRouter.applyTemplate", () => {
     expect(typeof result.schedule_batch_id).toBe("string");
     expect(insertedRows).toHaveLength(2);
     expect(insertedRows[0]?.title).toBe("Tempo Builder");
-    expect(insertedRows[1]?.title).toBe("Session B");
+    expect(insertedRows[1]?.title).toBe("Endurance Builder");
     expect(insertedRows[0]?.schedule_batch_id).toBe(result.schedule_batch_id);
     expect(insertedRows[1]?.schedule_batch_id).toBe(result.schedule_batch_id);
     expect(insertedRows[0]?.training_plan_id).toBe(result.applied_plan_id);
     expect(insertedRows[1]?.training_plan_id).toBe(result.applied_plan_id);
+    expect(insertedRows.map((row) => row.id)).toEqual([
+      expect.stringMatching(/^[0-9a-f-]{36}$/),
+      expect.stringMatching(/^[0-9a-f-]{36}$/),
+    ]);
+    expect(insertedRows[0]?.id).not.toBe(insertedRows[1]?.id);
     expect(insertedRows.map((row) => row.activity_plan_id)).toEqual([
       "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      null,
+      "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     ]);
     const createdPlanInsert = callLog.find(
       (call) => call.table === "training_plans" && call.operation === "insert",
@@ -259,12 +296,17 @@ describe("trainingPlansRouter.applyTemplate", () => {
             sessions_per_week_target: 4,
             duration_hours: 9,
             structure: {
-              start_date: "2026-01-01",
+              id: "11111111-1111-4111-8111-111111111111",
+              version: 1,
               sessions: [
                 {
                   offset_days: 0,
-                  event_title_override: "Race Simulation",
                   activity_plan_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  event_overrides: {
+                    title: "Race Simulation",
+                    description: "Stay controlled through halfway.",
+                    start_time: "07:30",
+                  },
                 },
               ],
             },
@@ -290,6 +332,10 @@ describe("trainingPlansRouter.applyTemplate", () => {
     const insertedRows = (eventInsertCall?.payload as Array<Record<string, unknown>>) ?? [];
 
     expect(insertedRows[0]?.title).toBe("Race Simulation");
+    expect(insertedRows[0]?.description).toBe("Stay controlled through halfway.");
+    expect(insertedRows[0]?.scheduled_date).toBe("2026-03-10");
+    expect(insertedRows[0]?.all_day).toBe(false);
+    expect(insertedRows[0]?.starts_at).toEqual(new Date("2026-03-10T07:30:00.000Z"));
   });
 
   it("fails when no schedulable event rows can be created", async () => {
@@ -336,7 +382,42 @@ describe("trainingPlansRouter.applyTemplate", () => {
         start_date: "2026-03-10",
       }),
     ).rejects.toThrow(
-      "This training plan could not be scheduled because its linked activities are not available to your account.",
+      "This training plan cannot be scheduled because a linked activity template is unavailable: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    );
+  });
+
+  it("rejects a plan with a schedulable session that has no linked activity plan", async () => {
+    const { caller, callLog } = createCaller({
+      training_plans: [
+        {
+          data: {
+            id: "11111111-1111-4111-8111-111111111111",
+            name: "Broken Template Plan",
+            description: null,
+            profile_id: "template-owner",
+            is_system_template: false,
+            template_visibility: "public",
+            structure: {
+              start_date: "2026-01-01",
+              sessions: [{ offset_days: 0, title: "Unlinked planned session" }],
+            },
+          },
+          error: null,
+        },
+      ],
+    });
+
+    await expect(
+      caller.applyTemplate({
+        template_type: "training_plan",
+        template_id: "11111111-1111-4111-8111-111111111111",
+        start_date: "2026-03-10",
+      }),
+    ).rejects.toThrow(
+      "This training plan cannot be scheduled because 1 planned session has no valid linked activity plan.",
+    );
+    expect(callLog.some((call) => call.table === "events" && call.operation === "insert")).toBe(
+      false,
     );
   });
 
@@ -389,7 +470,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
         start_date: "2026-03-10",
       }),
     ).rejects.toThrow(
-      "This system training plan cannot be scheduled because a linked activity template is unavailable: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "This training plan cannot be scheduled because a linked activity template is unavailable: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     );
 
     const eventInsertCall = callLog.find(
@@ -447,7 +528,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
         start_date: "2026-03-10",
       }),
     ).rejects.toThrow(
-      "This system training plan cannot be scheduled because linked activity templates are unavailable: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa, bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "This training plan cannot be scheduled because linked activity templates are unavailable: aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa, bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     );
 
     const eventInsertCall = callLog.find(
@@ -494,6 +575,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
                   {
                     offset_days: 2,
                     title: "Session B",
+                    activity_plan_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                   },
                 ],
               },
@@ -517,8 +599,8 @@ describe("trainingPlansRouter.applyTemplate", () => {
       );
       const insertedRows = (eventInsertCall?.payload as Array<Record<string, unknown>>) ?? [];
 
-      expect(insertedRows[0]?.starts_at).toBe("2026-03-15T00:00:00.000Z");
-      expect(insertedRows[1]?.starts_at).toBe("2026-03-17T00:00:00.000Z");
+      expect(insertedRows[0]?.starts_at).toEqual(new Date("2026-03-15T00:00:00.000Z"));
+      expect(insertedRows[1]?.starts_at).toEqual(new Date("2026-03-17T00:00:00.000Z"));
     } finally {
       vi.useRealTimers();
     }
@@ -547,15 +629,31 @@ describe("trainingPlansRouter.applyTemplate", () => {
               duration_hours: 9,
               structure: {
                 sessions: [
-                  { offset_days: 0, title: "Session A" },
-                  { offset_days: 7, title: "Session B" },
-                  { offset_days: 14, title: "Session C" },
+                  {
+                    offset_days: 0,
+                    title: "Session A",
+                    activity_plan_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  },
+                  {
+                    offset_days: 7,
+                    title: "Session B",
+                    activity_plan_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  },
+                  {
+                    offset_days: 14,
+                    title: "Session C",
+                    activity_plan_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  },
                 ],
               },
             },
             error: null,
           },
         ],
+        activity_plans: {
+          data: [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Tempo Builder" }],
+          error: null,
+        },
       });
 
       const result = await caller.applyTemplate({
@@ -573,7 +671,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
       expect(result.scheduled_sessions_created).toBe(1);
       expect(result.scheduled_sessions_skipped).toBe(2);
       expect(insertedRows).toHaveLength(1);
-      expect(insertedRows[0]?.starts_at).toBe("2026-03-20T00:00:00.000Z");
+      expect(insertedRows[0]?.starts_at).toEqual(new Date("2026-03-20T00:00:00.000Z"));
     } finally {
       vi.useRealTimers();
     }

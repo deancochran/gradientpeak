@@ -1560,6 +1560,27 @@ describe("training plan creation domain", () => {
     expect(canonicalTrainingPlanStructureSchema.parse(structure)).toEqual(structure);
   });
 
+  it("keeps consistency-intent plans locally saveable without authoritative preview", () => {
+    const fixtures = createTrainingPlanBuilderFixtures();
+    const state = {
+      ...fixtures.readyState,
+      goalContext: {
+        selectedGoals: [
+          fixtures.localGoal({
+            title: "Train consistently",
+            objective: { type: "consistency" as const, target_sessions_per_week: 3 },
+          }),
+        ],
+      },
+    };
+
+    expect(selectSaveReadiness(state).canSave).toBe(true);
+    expect(toTrainingPlanCreatePayload(state).structure.goal_blueprints?.[0]?.objective).toEqual({
+      type: "consistency",
+      target_sessions_per_week: 3,
+    });
+  });
+
   it("copies selected profile goal data into date-agnostic goal context snapshots", () => {
     const fixtures = createTrainingPlanBuilderFixtures();
     const state = trainingPlanBuilderReducer(fixtures.readyState, {
@@ -2002,6 +2023,9 @@ describe("training plan creation domain", () => {
     expect(canonicalTrainingPlanStructureSchema.parse(structure)).toEqual(structure);
     expect(trainingPlanCreateInputSchema.parse(payload)).toEqual(payload);
     expect(trainingPlanFinalCreatePayloadSchema.parse(payload)).toEqual(payload);
+    expect(payload.name).toBe(state.details.name.trim());
+    expect(payload.description).toBe(state.details.description.trim() || null);
+    expect(payload.template_visibility).toBe(state.details.templateVisibility);
     for (const forbidden of [
       "scheduled_date",
       "session_type",

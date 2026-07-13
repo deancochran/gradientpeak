@@ -35,10 +35,10 @@ export type MaterializedSystemPlanEstimationSource = "missing" | "structure" | "
 export interface MaterializedSystemPlanLoadSession {
   scheduled_date: string;
   starts_at: string;
-  ends_at: string;
+  ends_at: string | null;
   title: string;
   event_type: "planned";
-  all_day: true;
+  all_day: boolean;
   activity_plan_id: string | null;
   resolved_activity_template_id: string | null;
   activity_category: SystemTemplate["activity_category"] | null;

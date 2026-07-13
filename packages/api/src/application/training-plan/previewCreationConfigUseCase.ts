@@ -235,13 +235,6 @@ export async function previewCreationConfigUseCase<
       contextSummary: evaluation.contextSummary,
     });
 
-  if (projectionChart.inferred_current_state && input.repository) {
-    await input.repository.persistInferredStateSnapshot({
-      profileId: input.profileId,
-      inferredStateSnapshot: projectionChart.inferred_current_state,
-    });
-  }
-
   const previewSnapshotToken = input.deps.buildCreationPreviewSnapshotToken({
     minimalPlan: input.params.minimal_plan,
     finalConfig: evaluation.finalConfig,

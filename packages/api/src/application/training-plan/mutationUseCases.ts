@@ -1,6 +1,7 @@
 import {
   persistedTrainingPlanStructureSchema,
   type trainingPlanCreateInputSchema,
+  trainingPlanCreateSchema,
   trainingPlanSchema,
   type trainingPlanUpdateInputSchema,
 } from "@repo/core";
@@ -42,6 +43,47 @@ function parseTrainingPlanStructureOrThrow(input: {
   });
 }
 
+function parseTrainingPlanCreateStructureOrThrow(input: {
+  value: unknown;
+  message: string;
+}): z.infer<typeof trainingPlanCreateSchema> {
+  const parsed = trainingPlanCreateSchema.safeParse(input.value);
+  if (parsed.success) return parsed.data;
+
+  throw new TRPCError({
+    code: "BAD_REQUEST",
+    message: input.message,
+    cause: parsed.error,
+  });
+}
+
+async function requirePublishedLinkedActivityPlans(input: {
+  db: DrizzleDbClient;
+  structure: z.infer<typeof trainingPlanSchema>;
+}) {
+  const activityPlanIds = Array.from(
+    new Set(input.structure.sessions.map((session) => session.activity_plan_id)),
+  );
+  const result = await input.db.execute(sql<{ id: string }>`
+    select id
+    from activity_plans
+    where id in (${sql.join(
+      activityPlanIds.map((id) => sql`${id}::uuid`),
+      sql`, `,
+    )})
+      and (template_visibility = 'public' or is_system_template = true)
+  `);
+  const publishedIds = new Set(getSqlRows<{ id: string }>(result).map((row) => row.id));
+  const rejectedIds = activityPlanIds.filter((id) => !publishedIds.has(id));
+
+  if (rejectedIds.length > 0) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Training plan contains missing, inaccessible, or unpublished activity plans: ${rejectedIds.join(", ")}`,
+    });
+  }
+}
+
 async function enqueuePlannedWorkoutSyncForCalendarWrite(input: {
   db: DrizzleDbClient;
   eventIds: string[];
@@ -69,6 +111,7 @@ async function insertTrainingPlan(input: {
 }): Promise<TrainingPlanRow> {
   const result = await input.db.execute(sql<TrainingPlanRow>`
     insert into training_plans (
+      id,
       name,
       description,
       structure,
@@ -76,6 +119,7 @@ async function insertTrainingPlan(input: {
       template_visibility
     )
     values (
+      ${(input.values.structure as { id: string }).id}::uuid,
       ${input.values.name},
       ${input.values.description},
       ${JSON.stringify(input.values.structure)}::jsonb,
@@ -89,6 +133,7 @@ async function insertTrainingPlan(input: {
   if (!row) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "Failed to save training plan" });
   }
+
   return row;
 }
 
@@ -172,6 +217,14 @@ export async function createTrainingPlanUseCase(input: {
     });
   }
 
+  await requirePublishedLinkedActivityPlans({
+    db: input.db,
+    structure: parseTrainingPlanStructureOrThrow({
+      value: structureWithId,
+      message: "Invalid training plan structure",
+    }),
+  });
+
   return insertTrainingPlan({
     db: input.db,
     values: {
@@ -179,6 +232,7 @@ export async function createTrainingPlanUseCase(input: {
       description: input.values.description ?? null,
       structure: structureWithId,
       profileId: input.profileId,
+      templateVisibility: input.values.template_visibility,
     },
   });
 }
@@ -190,10 +244,10 @@ export async function updateTrainingPlanUseCase(input: {
   values: TrainingPlanUpdateInput;
 }) {
   const { id, template_visibility, ...updates } = input.values;
-  const structure =
+  const submittedStructure =
     updates.structure === undefined
       ? undefined
-      : parseTrainingPlanStructureOrThrow({
+      : parseTrainingPlanCreateStructureOrThrow({
           value: updates.structure,
           message: "Invalid training plan structure",
         });
@@ -206,6 +260,17 @@ export async function updateTrainingPlanUseCase(input: {
       message: "Training plan not found or you don't have permission to edit it",
     });
   }
+
+  const structure = submittedStructure
+    ? trainingPlanSchema.parse({ ...submittedStructure, id })
+    : undefined;
+  const effectiveStructure =
+    structure ??
+    parseTrainingPlanStructureOrThrow({
+      value: existing.structure,
+      message: "Existing training plan structure is invalid",
+    });
+  await requirePublishedLinkedActivityPlans({ db: input.db, structure: effectiveStructure });
 
   const data = await updateOwnedTrainingPlanRow({
     db: input.db,

@@ -244,12 +244,18 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
     },
 
     async createTrainingPlan(input: CreateTrainingPlanRecordInput): Promise<TrainingPlanRow> {
+      const structure = input.structure as Record<string, unknown>;
+      const id =
+        typeof structure.id === "string" && isUuidString(structure.id)
+          ? structure.id
+          : crypto.randomUUID();
       const [data] = await db
         .insert(schema.trainingPlans)
         .values({
+          id,
           name: input.name,
           description: input.description,
-          structure: input.structure as TrainingPlanInsert["structure"],
+          structure: { ...structure, id } as TrainingPlanInsert["structure"],
           profile_id: input.profileId,
         })
         .returning();

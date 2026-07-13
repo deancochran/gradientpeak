@@ -5563,6 +5563,7 @@ const trainingPlansProcedures = {
     .query(async ({ ctx, input }) => {
       return getTrainingPlanTemplateUseCase({
         id: input.id,
+        profileId: ctx.session.user.id,
         repository: createTrainingPlanRepository(getRequiredDb(ctx)),
       });
     }),
@@ -5576,8 +5577,10 @@ const trainingPlansProcedures = {
       return applyTrainingPlanTemplateUseCase({
         db,
         permissions,
+        permissionsFactory: createContentAccessPermissions,
         profileId,
         repository: createTrainingPlanRepository(db),
+        repositoryFactory: createTrainingPlanRepository,
         values: input,
       });
     }),

@@ -101,17 +101,20 @@ export function mapPlanningContextToTrainingPlanCreateInput({
   isActive = true,
   name,
   snapshotOptions = {},
+  templateVisibility = "private",
 }: {
   context: PlanningContext;
   description?: string | null;
   isActive?: boolean;
   name: string;
   snapshotOptions?: PlanningSnapshotOptions;
+  templateVisibility?: "private" | "public";
 }): PlanningTrainingPlanCreateInput {
   return planningTrainingPlanCreateInputSchema.parse({
     name: name.trim(),
     description: description?.trim() || null,
     is_active: isActive,
+    template_visibility: templateVisibility,
     structure: mapPlanningContextToCanonicalTrainingPlanStructure(context, snapshotOptions),
   });
 }
@@ -122,17 +125,20 @@ export function mapPlanningContextToTrainingPlanUpdateInput({
   name,
   planId,
   snapshotOptions = {},
+  templateVisibility,
 }: {
   context: PlanningContext;
   description?: string | null;
   name: string;
   planId: string;
   snapshotOptions?: PlanningSnapshotOptions;
+  templateVisibility?: "private" | "public";
 }): PlanningTrainingPlanUpdateInput {
   return planningTrainingPlanUpdateInputSchema.parse({
     id: planId,
     name: name.trim(),
     description: description?.trim() || null,
+    ...(templateVisibility ? { template_visibility: templateVisibility } : {}),
     structure: mapPlanningContextToCanonicalTrainingPlanStructure(context, snapshotOptions),
   });
 }

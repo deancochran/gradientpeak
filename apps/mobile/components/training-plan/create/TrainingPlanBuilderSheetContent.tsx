@@ -3,6 +3,7 @@ import { validatePlanningPreferencesConsistency } from "@repo/core";
 import { Form, FormTextareaField, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm } from "@repo/ui/hooks";
+import { useRouter } from "expo-router";
 import {
   createContext,
   type Dispatch,
@@ -16,7 +17,7 @@ import {
   useState,
 } from "react";
 import { type UseFormReturn, useWatch } from "react-hook-form";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
 import { z } from "zod";
 import type { ActivityPlan } from "@/components/shared/ActivityPlanCard";
 import {
@@ -411,6 +412,41 @@ function TrainingPlanBuilderMetadataSheetContent({
             name="description"
             placeholder="What this plan is designed to do"
           />
+          <View className="gap-2">
+            <Text className="text-sm font-medium text-foreground">Visibility</Text>
+            <View className="flex-row gap-2">
+              {(["private", "public"] as const).map((visibility) => {
+                const selected = details.templateVisibility === visibility;
+                const label = visibility === "public" ? "Public" : "Private";
+                return (
+                  <Pressable
+                    accessibilityLabel={`${label} training plan`}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: selected }}
+                    className={`min-h-11 flex-1 items-center justify-center rounded-xl border px-3 py-2 ${
+                      selected ? "border-primary bg-primary/10" : "border-border"
+                    }`}
+                    key={visibility}
+                    onPress={() =>
+                      builder.actions.updateDetails({ templateVisibility: visibility })
+                    }
+                  >
+                    <Text
+                      className={`text-sm font-medium ${
+                        selected ? "text-primary" : "text-foreground"
+                      }`}
+                    >
+                      {label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Text className="text-xs text-muted-foreground">
+              Public plans can be discovered by other athletes. Private plans remain visible only to
+              you.
+            </Text>
+          </View>
         </View>
       </View>
     </Form>
@@ -448,6 +484,7 @@ export function TrainingPlanBuilderSheetContent({
   setActivityPlanSearchQuery,
   setSelectedSessionId,
 }: TrainingPlanBuilderSheetContentProps) {
+  const router = useRouter();
   const sheetDrafts = useTrainingPlanBuilderSheetDrafts();
   const { activityPlanItems, activityPlansQuery, state } = builder;
   const { athleteContextFields, schedulingPreview } = builder.derived;
@@ -494,12 +531,20 @@ export function TrainingPlanBuilderSheetContent({
       <BuilderGoalEditorContent
         goalContext={state.goalContext}
         isLoadingProfileGoals={builder.profileGoalsQuery.isLoading}
-        profileGoals={builder.profileGoalsQuery.goals}
+        isProfileGoalsError={builder.profileGoalsQuery.isError}
+        profileGoals={builder.profileGoalsQuery.goals.filter(
+          (goal) => typeof goal.target_date === "string" && goal.target_date >= state.anchorDate,
+        )}
+        onChooseNoGoal={builder.actions.clearGoals}
         onCreateLocalGoal={() => pushSheet("localGoalCreate")}
+        onCreateProfileGoal={() =>
+          router.push({ pathname: "/goal-create", params: { returnToTrainingPlanCreate: "1" } })
+        }
         onRemoveLocalGoal={builder.actions.removeLocalGoal}
         onRemoveSelectedGoal={(sourceProfileGoalId) =>
           builder.actions.removeSelectedGoal(sourceProfileGoalId)
         }
+        onRetryProfileGoals={() => void builder.profileGoalsQuery.refetch()}
         onToggleSelectedGoal={builder.actions.toggleSelectedGoal}
       />
     );

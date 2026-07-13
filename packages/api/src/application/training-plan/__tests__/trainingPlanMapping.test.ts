@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   mapTrainingPlanContentIdentity,
   mapTrainingPlanOwnerIdentity,
+  sanitizeTrainingPlanForViewer,
 } from "../trainingPlanMapping";
 
 describe("training plan response mapping", () => {
@@ -47,5 +48,41 @@ describe("training plan response mapping", () => {
     expect(
       mapTrainingPlanOwnerIdentity({ id: "plan-2", profile_id: "profile-2" }, profileIdentityMap),
     ).toMatchObject({ owner: null });
+  });
+
+  it("removes private builder and creation metadata for non-owner reads", () => {
+    const plan = {
+      id: "plan-1",
+      profile_id: "owner-1",
+      template_visibility: "public",
+      structure: {
+        version: 1,
+        builder_planning_snapshot: { version: 1, private: true },
+        metadata: {
+          creation_config_snapshot: { private: true },
+          creation_form_snapshot: { private: true },
+          creation_calibration: { private: true },
+          safe_summary: "retained",
+        },
+        sessions: [],
+      },
+    };
+
+    expect(sanitizeTrainingPlanForViewer(plan, "viewer-2").structure).toEqual({
+      version: 1,
+      metadata: { safe_summary: "retained" },
+      sessions: [],
+    });
+  });
+
+  it("preserves private planning context for the owner after publication", () => {
+    const plan = {
+      id: "plan-1",
+      profile_id: "owner-1",
+      template_visibility: "public",
+      structure: { builder_planning_snapshot: { version: 1 } },
+    };
+
+    expect(sanitizeTrainingPlanForViewer(plan, "owner-1")).toBe(plan);
   });
 });

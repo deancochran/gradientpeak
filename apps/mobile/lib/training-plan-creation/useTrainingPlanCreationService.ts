@@ -11,6 +11,8 @@ import { subscribeToTrainingPlanGoalCreation } from "./goalCreationHandoff";
 import {
   createTrainingPlanBuilderStateFromExistingPlan,
   getTrainingPlanStructureActivityPlanIds,
+  toTrainingPlanCreatePayload,
+  toTrainingPlanUpdatePayload,
 } from "./mappers";
 import {
   deriveTrainingPlanCreationSession,
@@ -45,10 +47,6 @@ function toBuilderGoalTargetOffset(anchorDate: string, targetDate: string | null
   return /^\d{4}-\d{2}-\d{2}$/.test(targetDate)
     ? Math.max(0, diffDateOnlyUtcDays(anchorDate, targetDate))
     : null;
-}
-
-function isActiveProfileGoal(goal: TrainingPlanCreationProfileGoalSnapshot, anchorDate: string) {
-  return typeof goal.target_date === "string" && goal.target_date >= anchorDate;
 }
 
 function toSelectedGoalBlueprint(input: {
@@ -95,7 +93,6 @@ export function useTrainingPlanCreationService({
     createDefaultTrainingPlanBuilderState(),
   );
   const hasHydratedAthleteContextRef = useRef(false);
-  const hasHydratedActiveGoalsRef = useRef(false);
   const hydratedEditPlanIdRef = useRef<string | null>(null);
   const {
     profileQuery,
@@ -108,8 +105,6 @@ export function useTrainingPlanCreationService({
     linkedActivityPlansQuery,
     createPlanMutation,
     updatePlanMutation,
-    createFromCreationConfigMutation,
-    updateFromCreationConfigMutation,
   } = useTrainingPlanCreationQueries({
     activityPlanPicker,
     mode,
@@ -209,59 +204,6 @@ export function useTrainingPlanCreationService({
   }, [editPlanQuery.data, isEditMode, linkedActivityPlansQuery.data, planId]);
 
   useEffect(() => {
-    if (
-      isEditMode ||
-      hasHydratedActiveGoalsRef.current ||
-      !profileGoalsQuery.hasProfileId ||
-      profileGoalsQuery.isLoading ||
-      profileGoalsQuery.isFetching
-    ) {
-      return;
-    }
-
-    const activeGoals = profileGoalsQuery.goals
-      .filter((goal) => isActiveProfileGoal(goal, state.anchorDate))
-      .map((goal) =>
-        toSelectedGoalBlueprint({
-          anchorDate: state.anchorDate,
-          createLocalId,
-          goal,
-        }),
-      );
-
-    if (activeGoals.length > 0) {
-      const existingLocalGoals = state.goalContext.selectedGoals.filter(
-        (goal) => !goal.sourceProfileGoalId,
-      );
-      const existingProfileGoalIds = new Set(
-        state.goalContext.selectedGoals.flatMap((goal) =>
-          goal.sourceProfileGoalId ? [goal.sourceProfileGoalId] : [],
-        ),
-      );
-      dispatch({
-        type: "goalContext.replaceSelectedGoals",
-        goals: [
-          ...existingLocalGoals,
-          ...state.goalContext.selectedGoals.filter((goal) => goal.sourceProfileGoalId),
-          ...activeGoals.filter(
-            (goal) => !existingProfileGoalIds.has(goal.sourceProfileGoalId ?? ""),
-          ),
-        ],
-      });
-    }
-
-    hasHydratedActiveGoalsRef.current = true;
-  }, [
-    isEditMode,
-    profileGoalsQuery.goals,
-    profileGoalsQuery.hasProfileId,
-    profileGoalsQuery.isFetching,
-    profileGoalsQuery.isLoading,
-    state.anchorDate,
-    state.goalContext.selectedGoals,
-  ]);
-
-  useEffect(() => {
     return subscribeToTrainingPlanGoalCreation((goal) => {
       dispatch({
         type: "goalContext.toggleSelectedGoal",
@@ -330,20 +272,8 @@ export function useTrainingPlanCreationService({
       planId,
     ],
   );
-  const { previewLifecycle, projection, saveLifecycle, savePlanRoute } = planningSession;
-  const activeSaveCommit =
-    mode === "edit" ? savePlanRoute.updateCommit : savePlanRoute.createCommit;
+  const { previewLifecycle, projection, saveLifecycle } = planningSession;
   const activeSaveLifecycle = mode === "edit" ? saveLifecycle.update : saveLifecycle.create;
-  const backendSaveBlocker = useMemo(
-    () =>
-      activeSaveCommit.ok
-        ? null
-        : {
-            code: "backend_save_unavailable",
-            message: `Backend save is not ready: ${activeSaveCommit.reason}`,
-          },
-    [activeSaveCommit],
-  );
   const activityPlanPickerState = useMemo(() => {
     return deriveActivityPlanPickerState({
       athleteContext: state.athleteContext,
@@ -369,82 +299,66 @@ export function useTrainingPlanCreationService({
   );
 
   const createPlan = useCallback(async () => {
-    if (savePlanRoute.createRoute === "backend") {
-      if (!savePlanRoute.createCommit.ok) return;
-      await createFromCreationConfigMutation.mutateAsync(savePlanRoute.createCommit.input);
-      return;
-    }
-    throw new Error(
-      `Backend save is not ready: ${savePlanRoute.createDegradedReason ?? "backend commit input is unavailable."}`,
+    await createPlanMutation.mutateAsync(
+      toTrainingPlanCreatePayload(state, {
+        backendPlanning: {
+          projectionSource:
+            previewLifecycle.status === "backend_preview_ready" ? "backend" : "local",
+          previewSnapshotToken:
+            previewLifecycle.status === "backend_preview_ready"
+              ? previewLifecycle.snapshotToken
+              : null,
+        },
+      }),
     );
-  }, [
-    createFromCreationConfigMutation,
-    savePlanRoute.createCommit,
-    savePlanRoute.createDegradedReason,
-    savePlanRoute.createRoute,
-  ]);
+  }, [createPlanMutation, previewLifecycle, state]);
 
   const updatePlan = useCallback(async () => {
     if (!planId) {
       throw new Error("Missing training plan id for update.");
     }
-    if (savePlanRoute.updateRoute === "backend") {
-      if (!savePlanRoute.updateCommit.ok) return;
-      await updateFromCreationConfigMutation.mutateAsync(savePlanRoute.updateCommit.input);
-      return;
-    }
-    throw new Error(
-      `Backend save is not ready: ${savePlanRoute.updateDegradedReason ?? "backend commit input is unavailable."}`,
+    await updatePlanMutation.mutateAsync(
+      toTrainingPlanUpdatePayload(planId, state, {
+        backendPlanning: {
+          projectionSource:
+            previewLifecycle.status === "backend_preview_ready" ? "backend" : "local",
+          previewSnapshotToken:
+            previewLifecycle.status === "backend_preview_ready"
+              ? previewLifecycle.snapshotToken
+              : null,
+        },
+      }),
     );
-  }, [
-    planId,
-    savePlanRoute.updateCommit,
-    savePlanRoute.updateDegradedReason,
-    savePlanRoute.updateRoute,
-    updateFromCreationConfigMutation,
-  ]);
+  }, [planId, previewLifecycle, state, updatePlanMutation]);
 
   const savePlan = useMemo(
     () => ({
-      ...savePlanRoute,
       mode,
       label: mode === "edit" ? "Save" : "Create",
-      canSave: localProjection.saveReadiness.canSave && activeSaveCommit.ok,
-      blockers: backendSaveBlocker
-        ? [...localProjection.saveReadiness.blockers, backendSaveBlocker]
-        : localProjection.saveReadiness.blockers,
-      degradedReason:
-        mode === "edit" ? savePlanRoute.updateDegradedReason : savePlanRoute.createDegradedReason,
-      isPending:
-        createPlanMutation.isPending ||
-        updatePlanMutation.isPending ||
-        createFromCreationConfigMutation.isPending ||
-        updateFromCreationConfigMutation.isPending,
+      canSave: localProjection.saveReadiness.canSave,
+      blockers: localProjection.saveReadiness.blockers,
+      degradedReason: null,
+      isPending: createPlanMutation.isPending || updatePlanMutation.isPending,
       previewLifecycle,
       readiness: deriveTrainingPlanReadinessPresentation({
-        canSave: localProjection.saveReadiness.canSave && activeSaveCommit.ok,
+        canSave: localProjection.saveReadiness.canSave,
         localBlockerCount: localProjection.saveReadiness.blockers.length,
         mode,
         previewLifecycle,
         saveLifecycle: activeSaveLifecycle,
       }),
-      route: mode === "edit" ? savePlanRoute.updateRoute : savePlanRoute.createRoute,
+      route: "canonical" as const,
       saveLifecycle: activeSaveLifecycle,
       execute: mode === "edit" ? updatePlan : createPlan,
     }),
     [
-      activeSaveCommit.ok,
       activeSaveLifecycle,
-      backendSaveBlocker,
-      createFromCreationConfigMutation.isPending,
       createPlan,
       createPlanMutation.isPending,
       localProjection.saveReadiness.blockers,
       localProjection.saveReadiness.canSave,
       mode,
       previewLifecycle,
-      savePlanRoute,
-      updateFromCreationConfigMutation.isPending,
       updatePlan,
       updatePlanMutation.isPending,
     ],

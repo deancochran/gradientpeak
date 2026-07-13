@@ -18,6 +18,35 @@ export function TrainingPlanBuilderScreen({
   const controller = useTrainingPlanBuilderController({ mode, planId });
   const { builder } = controller;
 
+  if (
+    mode === "edit" &&
+    (builder.editPlanQuery.isError || builder.linkedActivityPlansQuery.isError)
+  ) {
+    const error = builder.editPlanQuery.error ?? builder.linkedActivityPlansQuery.error;
+    return (
+      <>
+        <Stack.Screen options={{ title: "Edit training plan" }} />
+        <View className="flex-1 items-center justify-center gap-3 bg-background px-6">
+          <Text className="text-center text-lg font-semibold text-foreground">
+            Could not load this training plan
+          </Text>
+          <Text className="text-center text-sm text-muted-foreground">
+            {error?.message || "Check your connection and try again."}
+          </Text>
+          <Button
+            accessibilityLabel="Retry loading training plan"
+            onPress={() => {
+              void builder.editPlanQuery.refetch();
+              void builder.linkedActivityPlansQuery.refetch();
+            }}
+          >
+            <Text>Retry</Text>
+          </Button>
+        </View>
+      </>
+    );
+  }
+
   if (builder.isHydratingEditPlan) {
     return (
       <>
@@ -37,6 +66,8 @@ export function TrainingPlanBuilderScreen({
           title: controller.header.title,
           headerRight: () => (
             <Button
+              accessibilityLabel={controller.header.primaryLabel}
+              accessibilityState={{ disabled: controller.header.primaryDisabled }}
               disabled={controller.header.primaryDisabled}
               onPress={() => void controller.header.save()}
               size="sm"

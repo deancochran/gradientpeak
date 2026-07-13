@@ -7,6 +7,7 @@ import { loadProfileIdentityMap } from "../../utils/profile-identity";
 import {
   mapTrainingPlanContentIdentity,
   mapTrainingPlanOwnerIdentity,
+  sanitizeTrainingPlanForViewer,
   serializeTrainingPlanForViewer,
 } from "./trainingPlanMapping";
 
@@ -121,7 +122,10 @@ export async function listTrainingPlansUseCase(input: {
 
   return {
     items: pageItems.map((plan) => ({
-      ...mapTrainingPlanOwnerIdentity(mapTrainingPlanContentIdentity(plan), profileIdentityMap),
+      ...mapTrainingPlanOwnerIdentity(
+        mapTrainingPlanContentIdentity(sanitizeTrainingPlanForViewer(plan, input.profileId)),
+        profileIdentityMap,
+      ),
       ...getLikeStats(likeStats, plan.id),
     })),
     total,

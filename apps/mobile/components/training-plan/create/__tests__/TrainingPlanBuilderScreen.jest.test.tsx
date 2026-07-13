@@ -36,11 +36,11 @@ const activityPlan = {
 };
 
 let mockPreviewCreationConfigData: unknown;
+let mockPreviewCreationConfigError: Error | null;
+let mockEditPlanError: Error | null;
 const mockMutations = {
   create: jest.fn(),
   update: jest.fn(),
-  createFromCreationConfig: jest.fn(),
-  updateFromCreationConfig: jest.fn(),
 };
 let mockMutationIndex = 0;
 
@@ -50,6 +50,7 @@ const editableTrainingPlan = {
   description: "Edit this plan",
   template_visibility: "private",
   structure: {
+    id: "22222222-2222-4222-8222-222222222222",
     version: 1,
     sessions: [
       {
@@ -104,8 +105,8 @@ jest.mock("expo-router", () => ({
 
 jest.mock("@repo/ui/components/button", () => ({
   __esModule: true,
-  Button: ({ children, onPress, testID, disabled }: any) => (
-    <Pressable disabled={disabled} onPress={onPress} testID={testID}>
+  Button: ({ children, onPress, testID, disabled, ...props }: any) => (
+    <Pressable disabled={disabled} onPress={onPress} testID={testID} {...props}>
       {children}
     </Pressable>
   ),
@@ -190,11 +191,15 @@ jest.mock("@/components/plan/training-path/DailyTrainingAdjustmentChart", () => 
 
 jest.mock("../BuilderGoalEditorSheetContent", () => ({
   __esModule: true,
-  BuilderGoalEditorContent: ({ goalContext, onCreateLocalGoal }: any) => (
+  BuilderGoalEditorContent: ({ goalContext, onCreateLocalGoal, onChooseNoGoal }: any) => (
     <View testID="builder-goal-editor-modal">
-      <Pressable testID="builder-create-plan-goal" onPress={onCreateLocalGoal}>
-        <Text>Create plan goal</Text>
+      <Pressable testID="builder-no-goal-choice" onPress={onChooseNoGoal}>
+        <Text>No goal</Text>
       </Pressable>
+      <Pressable testID="builder-create-plan-goal" onPress={onCreateLocalGoal}>
+        <Text>Plan-only intent</Text>
+      </Pressable>
+      <Text>New profile goal</Text>
       {goalContext.selectedGoals.map((goal: any) => (
         <Text key={goal.localId}>{goal.title}</Text>
       ))}
@@ -268,6 +273,7 @@ jest.mock("../BuilderStrategyComposer", () => ({
     onOpenGoals,
     onOpenPlanningConstraints,
     renderBelowChart,
+    modules,
     savePlan,
     state,
   }: any) => (
@@ -284,6 +290,11 @@ jest.mock("../BuilderStrategyComposer", () => ({
       <Pressable onPress={onOpenPlanningConstraints}>
         <Text>Preferences</Text>
       </Pressable>
+      <View testID="builder-adaptive-modules">
+        {modules.map((module: any) => (
+          <View key={module.id} accessibilityLabel={`${module.title}, ${module.status}`} />
+        ))}
+      </View>
       <View testID="builder-save-route-status">
         <Text>Plan readiness</Text>
         <Text>{savePlan?.readiness?.label ?? "Needs setup"}</Text>
@@ -371,15 +382,22 @@ jest.mock("@/lib/api", () => ({
       previewCreationConfig: {
         useQuery: () => ({
           data: mockPreviewCreationConfigData,
-          error: null,
+          error: mockPreviewCreationConfigError,
           isFetching: false,
           isLoading: false,
+          refetch: jest.fn(),
         }),
       },
       get: {
         useQuery: (input: { id?: string } | symbol) => ({
-          data: typeof input === "object" && input?.id ? editableTrainingPlan : undefined,
+          data:
+            !mockEditPlanError && typeof input === "object" && input?.id
+              ? editableTrainingPlan
+              : undefined,
+          error: mockEditPlanError,
+          isError: Boolean(mockEditPlanError),
           isLoading: false,
+          refetch: jest.fn(),
         }),
       },
     },
@@ -417,12 +435,7 @@ jest.mock("@/lib/api", () => ({
 jest.mock("@/lib/hooks/useReliableMutation", () => ({
   __esModule: true,
   useReliableMutation: () => {
-    const keys = [
-      "create",
-      "update",
-      "createFromCreationConfig",
-      "updateFromCreationConfig",
-    ] as const;
+    const keys = ["create", "update"] as const;
     const key = keys[mockMutationIndex % keys.length];
     mockMutationIndex += 1;
     return { isPending: false, mutateAsync: mockMutations[key] };
@@ -441,6 +454,8 @@ describe("TrainingPlanBuilderScreen", () => {
     activityPlanCardProps.length = 0;
     trainingPathChartProps.length = 0;
     mockPreviewCreationConfigData = undefined;
+    mockPreviewCreationConfigError = null;
+    mockEditPlanError = null;
     mockMutationIndex = 0;
     for (const mutation of Object.values(mockMutations)) {
       mutation.mockReset();
@@ -470,6 +485,17 @@ describe("TrainingPlanBuilderScreen", () => {
     fireEvent.press(screen.getByText("Goals"));
 
     expect(screen.getByTestId("builder-goal-editor-modal")).toBeTruthy();
+    expect(screen.getByTestId("builder-no-goal-choice")).toBeTruthy();
+    expect(screen.getByText("Plan-only intent")).toBeTruthy();
+    expect(screen.getByText("New profile goal")).toBeTruthy();
+  });
+
+  it("uses the adaptive module registry to render production builder modules", () => {
+    renderNative(<TrainingPlanBuilderScreen />);
+
+    expect(screen.getByTestId("builder-adaptive-modules")).toBeTruthy();
+    expect(screen.getByLabelText("Plan goals, empty")).toBeTruthy();
+    expect(screen.getByLabelText("Training plan metadata, empty")).toBeTruthy();
   });
 
   it("creates a full plan-local goal without using profile goal creation", () => {
@@ -545,7 +571,7 @@ describe("TrainingPlanBuilderScreen", () => {
     expect(screen.getByTestId("builder-session-editor-modal")).toBeTruthy();
   });
 
-  it("routes create through backend creation-config when preview snapshot is available", async () => {
+  it("routes create through the canonical mutation and preserves the authored payload", async () => {
     mockPreviewCreationConfigData = {
       projection_chart: { readiness_score: 80, display_points: [] },
       preview_snapshot: { token: "snapshot-token" },
@@ -583,30 +609,27 @@ describe("TrainingPlanBuilderScreen", () => {
     fireEvent.press(screen.getByText("Create"));
 
     await waitFor(() => {
-      expect(mockMutations.createFromCreationConfig).toHaveBeenCalledTimes(1);
+      expect(mockMutations.create).toHaveBeenCalledTimes(1);
     });
-    expect(mockMutations.create).not.toHaveBeenCalled();
-  });
-
-  it("blocks create when backend preview snapshot is unavailable", async () => {
-    renderNative(<TrainingPlanBuilderScreen />);
-
-    act(() =>
-      publishTrainingPlanGoalCreation({
-        id: "profile-goal-1",
-        title: "Raise FTP",
-        target_date: FUTURE_GOAL_TARGET_DATE,
-        priority: 10,
-        activity_category: "bike",
-        objective: {
-          type: "threshold",
-          metric: "power",
-          activity_category: "bike",
-          value: 310,
-          test_duration_s: 1200,
-        },
+    expect(mockMutations.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "FTP build",
+        structure: expect.objectContaining({
+          sessions: [
+            expect.objectContaining({
+              activity_plan_id: activityPlan.id,
+              offset_days: 0,
+            }),
+          ],
+        }),
       }),
     );
+  });
+
+  it("saves a zero-goal plan when the advisory preview errors", async () => {
+    mockPreviewCreationConfigError = new Error("offline");
+    renderNative(<TrainingPlanBuilderScreen />);
+
     fireEvent.press(screen.getByText("Name your plan"));
     fireEvent.changeText(
       screen.getByPlaceholderText("Base builder, race prep, return to training..."),
@@ -622,9 +645,12 @@ describe("TrainingPlanBuilderScreen", () => {
     fireEvent.press(screen.getByText("Create"));
 
     await waitFor(() => {
-      expect(mockMutations.create).not.toHaveBeenCalled();
+      expect(mockMutations.create).toHaveBeenCalledTimes(1);
     });
-    expect(mockMutations.createFromCreationConfig).not.toHaveBeenCalled();
+    const payload = mockMutations.create.mock.calls[0]?.[0];
+    expect(payload.structure.goal_blueprints).toBeUndefined();
+    expect(payload.structure.builder_planning_snapshot.goal_context.selected_goals).toEqual([]);
+    expect(screen.getByText("Preview unavailable")).toBeTruthy();
   });
 
   it("hydrates edit mode into the new builder save flow", async () => {
@@ -636,5 +662,24 @@ describe("TrainingPlanBuilderScreen", () => {
       expect(screen.getByText("Save")).toBeTruthy();
       expect(screen.getByText("Existing builder plan")).toBeTruthy();
     });
+    fireEvent.press(screen.getByText("Existing builder plan"));
+    expect(screen.getByLabelText("Private training plan").props.accessibilityState).toEqual({
+      checked: true,
+    });
+    fireEvent.press(screen.getByLabelText("Public training plan"));
+    expect(screen.getByLabelText("Public training plan").props.accessibilityState).toEqual({
+      checked: true,
+    });
+  });
+
+  it("shows an explicit retry state when edit hydration fails", () => {
+    mockEditPlanError = new Error("Plan unavailable");
+
+    renderNative(
+      <TrainingPlanBuilderScreen mode="edit" planId="22222222-2222-4222-8222-222222222222" />,
+    );
+
+    expect(screen.getByText("Could not load this training plan")).toBeTruthy();
+    expect(screen.getByLabelText("Retry loading training plan")).toBeTruthy();
   });
 });

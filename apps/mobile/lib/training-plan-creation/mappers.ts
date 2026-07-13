@@ -4,6 +4,7 @@ import {
   mapPlanningContextToTrainingPlanCreateInput,
   mapPlanningContextToTrainingPlanUpdateInput,
   type PlanningSnapshotOptions,
+  trainingPlanSchema,
 } from "@repo/core";
 import type { z } from "zod";
 import { createDefaultTrainingPlanBuilderState } from "./defaults";
@@ -19,6 +20,15 @@ import type {
 type TrainingPlanStructure = z.output<typeof canonicalTrainingPlanStructureSchema>;
 
 export type TrainingPlanBuilderPlanningSnapshotOptions = PlanningSnapshotOptions;
+
+function parsePersistedCanonicalStructure(structure: unknown): TrainingPlanStructure {
+  const persisted = trainingPlanSchema.safeParse(structure);
+  if (persisted.success) {
+    const { id: _id, ...canonical } = persisted.data;
+    return canonicalTrainingPlanStructureSchema.parse(canonical);
+  }
+  return canonicalTrainingPlanStructureSchema.parse(structure);
+}
 
 type HydratableTrainingPlan = {
   id: string;
@@ -71,6 +81,7 @@ export function toTrainingPlanCreatePayload(
     description: state.details.description,
     isActive: true,
     snapshotOptions: options,
+    templateVisibility: state.details.templateVisibility,
   });
 }
 
@@ -85,16 +96,19 @@ export function toTrainingPlanUpdatePayload(
     name: state.details.name.trim(),
     description: state.details.description,
     snapshotOptions: options,
+    templateVisibility: state.details.templateVisibility,
   });
 }
 
 export function getTrainingPlanStructureActivityPlanIds(structure: unknown): string[] {
-  const parsed = canonicalTrainingPlanStructureSchema.safeParse(structure);
-  if (!parsed.success) {
+  let parsed: TrainingPlanStructure;
+  try {
+    parsed = parsePersistedCanonicalStructure(structure);
+  } catch {
     return [];
   }
 
-  return Array.from(new Set(parsed.data.sessions.map((session) => session.activity_plan_id)));
+  return Array.from(new Set(parsed.sessions.map((session) => session.activity_plan_id)));
 }
 
 export function createTrainingPlanBuilderStateFromExistingPlan({
@@ -106,7 +120,7 @@ export function createTrainingPlanBuilderStateFromExistingPlan({
   fallbackDate?: string;
   plan: HydratableTrainingPlan;
 }): TrainingPlanBuilderState {
-  const structure = canonicalTrainingPlanStructureSchema.parse(plan.structure);
+  const structure = parsePersistedCanonicalStructure(plan.structure);
   const defaultState = createDefaultTrainingPlanBuilderState();
   const activityPlanFactsById = new Map(
     activityPlans.map(

@@ -145,6 +145,7 @@ export function createTrainingPlanBuilderActions(input: {
       }),
     removeSelectedGoal: (sourceProfileGoalId: string) =>
       dispatch({ type: "goalContext.removeSelectedGoal", sourceProfileGoalId }),
+    clearGoals: () => dispatch({ type: "goalContext.replaceSelectedGoals", goals: [] }),
     addLocalGoal: (goal: string | Omit<TrainingPlanBuilderGoalBlueprint, "localId">) =>
       dispatch({
         type: "goalContext.addLocalGoal",

@@ -156,7 +156,7 @@ describe("previewCreationConfigUseCase phase 4 diagnostics", () => {
     expect(result.override_audit.effective.enabled).toBe(false);
   });
 
-  it("uses prior inferred snapshot from repository and persists posterior inferred snapshot", async () => {
+  it("uses the prior inferred snapshot without persisting the preview result", async () => {
     const deps = createDeps();
     const repository = {
       getPriorInferredStateSnapshot: vi.fn(async () => ({
@@ -186,7 +186,7 @@ describe("previewCreationConfigUseCase phase 4 diagnostics", () => {
       persistInferredStateSnapshot: vi.fn(async () => undefined),
     };
 
-    await previewCreationConfigUseCase({
+    const result = await previewCreationConfigUseCase({
       creationContextReader: {} as any,
       profileId: "profile-1",
       params: {
@@ -208,14 +208,12 @@ describe("previewCreationConfigUseCase phase 4 diagnostics", () => {
         }),
       }),
     );
-    expect(repository.persistInferredStateSnapshot).toHaveBeenCalledWith(
+    expect(result.projection_chart.inferred_current_state).toEqual(
       expect.objectContaining({
-        profileId: "profile-1",
-        inferredStateSnapshot: expect.objectContaining({
-          mean: expect.objectContaining({ ctl: 44 }),
-        }),
+        mean: expect.objectContaining({ ctl: 44 }),
       }),
     );
+    expect(repository.persistInferredStateSnapshot).not.toHaveBeenCalled();
   });
 
   it("returns baseline snapshot without delta diagnostics for first preview", async () => {

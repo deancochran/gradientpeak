@@ -5,6 +5,7 @@ import { TRPCError } from "@trpc/server";
 import type { TrainingPlanRepository, TrainingPlanTemplateListFilters } from "../../repositories";
 import { getLikeStats, loadLikeStats } from "../../repositories/like-stats";
 import { buildIndexPageInfo, parseIndexCursor } from "../../utils/index-cursor";
+import { sanitizeTrainingPlanForViewer } from "./trainingPlanMapping";
 
 type TrainingPlanTemplateListInput = TrainingPlanTemplateListFilters & {
   cursor?: string;
@@ -113,7 +114,9 @@ export async function listTrainingPlanTemplatesUseCase(input: {
   query: TrainingPlanTemplateListInput;
   repository: TrainingPlanRepository;
 }) {
-  const templates = await input.repository.listPublicTemplateTrainingPlans(input.query);
+  const templates = (await input.repository.listPublicTemplateTrainingPlans(input.query)).map(
+    (plan) => sanitizeTrainingPlanForViewer(plan, input.profileId),
+  );
   const offset = parseIndexCursor(input.query.cursor);
   const pageItems = templates.slice(offset, offset + input.query.limit);
   const pageInfo = buildIndexPageInfo({
@@ -167,16 +170,18 @@ export async function auditTrainingPlanTemplateHealthUseCase(input: {
 
 export async function getTrainingPlanTemplateUseCase(input: {
   id: string;
+  profileId: string;
   repository: TrainingPlanRepository;
 }) {
-  const template = await input.repository.getPublicTemplateTrainingPlan(input.id);
+  const foundTemplate = await input.repository.getPublicTemplateTrainingPlan(input.id);
 
-  if (!template) {
+  if (!foundTemplate) {
     throw new TRPCError({
       code: "NOT_FOUND",
       message: "Template not found",
     });
   }
+  const template = sanitizeTrainingPlanForViewer(foundTemplate, input.profileId);
 
   return {
     id: template.id,

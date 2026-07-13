@@ -136,6 +136,7 @@ describe("planningCanonicalStructure", () => {
       context,
       name: "  Base Builder  ",
       description: "  Keep it steady  ",
+      templateVisibility: "public",
     });
     const updatePayload = mapPlanningContextToTrainingPlanUpdateInput({
       context,
@@ -148,6 +149,7 @@ describe("planningCanonicalStructure", () => {
       name: "Base Builder",
       description: "Keep it steady",
       is_active: true,
+      template_visibility: "public",
       structure: { version: 1 },
     });
     expect(updatePayload).toMatchObject({
@@ -156,5 +158,6 @@ describe("planningCanonicalStructure", () => {
       description: null,
       structure: { version: 1 },
     });
+    expect(updatePayload.template_visibility).toBeUndefined();
   });
 });

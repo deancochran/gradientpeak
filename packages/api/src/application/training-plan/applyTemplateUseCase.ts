@@ -1,17 +1,15 @@
 import type { templateApplyInputSchema } from "@repo/core";
-import { schema } from "@repo/db";
+import { type EventInsert, schema } from "@repo/db";
 import type { DrizzleDbClient } from "@repo/db/client";
 import { TRPCError } from "@trpc/server";
 import { and, eq, gte, ne, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { logger } from "../../lib/logger";
 import { enqueuePlannedWorkoutSyncAfterCalendarMutation } from "../../lib/provider-sync/planned-workouts";
+import { drainDueWahooPlannedWorkoutJobs } from "../../lib/provider-sync/wahoo-planned-workout-drain";
 import { needsContentGrantForRow } from "../../permissions/content-access";
 import type { TrainingPlanRepository } from "../../repositories";
-import {
-  materializeAppliedTrainingPlan,
-  type TrainingPlanApplicationMode,
-} from "./schedulingUtils";
+import { materializeAppliedTrainingPlan } from "./schedulingUtils";
 
 const plannedEventType = "planned" as const;
 
@@ -29,27 +27,22 @@ type ContentPermissions = {
 };
 
 type InsertedEventIdentity = { id: string };
-type PlannedEventInsertRow = {
-  profile_id: string;
-  event_type: typeof plannedEventType;
-  title: string;
-  all_day: boolean;
-  timezone: "UTC";
-  starts_at: string;
-  ends_at: string;
-  status: "scheduled";
-  activity_plan_id: string | null;
-  training_plan_id: string;
-  payload: {
-    training_plan_generation: {
-      application_mode: TrainingPlanApplicationMode;
-      applied_start_date: string;
-      source_day_offset: number;
-      source_path: string;
-      target_date: string | null;
-    };
-  };
-};
+type PlannedEventInsertRow = Pick<
+  EventInsert,
+  | "activity_plan_id"
+  | "all_day"
+  | "description"
+  | "ends_at"
+  | "event_type"
+  | "payload"
+  | "profile_id"
+  | "scheduled_date"
+  | "starts_at"
+  | "status"
+  | "timezone"
+  | "title"
+  | "training_plan_id"
+>;
 
 function getSqlRows<T>(result: unknown) {
   return ((result as { rows?: T[] }).rows ?? []) as T[];
@@ -70,26 +63,13 @@ function todayStartIsoUtc(): string {
   return toDayStartIso(todayDateOnlyUtc());
 }
 
-async function enqueuePlannedWorkoutSyncForCalendarWrite(input: {
-  db: DrizzleDbClient;
-  eventIds: string[];
-  operation: "publish" | "unsync";
-  profileId: string;
-}) {
-  try {
-    await enqueuePlannedWorkoutSyncAfterCalendarMutation(input);
-  } catch (error) {
-    logger.error("Failed to enqueue planned workout sync after calendar write", {
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
-  }
-}
-
 export async function applyTrainingPlanTemplateUseCase(input: {
   db: DrizzleDbClient;
   permissions: ContentPermissions;
+  permissionsFactory?: (db: DrizzleDbClient) => ContentPermissions;
   profileId: string;
   repository: TrainingPlanRepository;
+  repositoryFactory?: (db: DrizzleDbClient) => TrainingPlanRepository;
   values: ApplyTemplateInput;
 }) {
   if (input.values.template_type !== "training_plan") {
@@ -99,45 +79,13 @@ export async function applyTrainingPlanTemplateUseCase(input: {
     });
   }
 
-  const { db, permissions, profileId, repository } = input;
-  const activePlanLookup = await repository.getActivePlanFromFutureEvents(profileId);
-  let scheduled_sessions_replaced = 0;
-
-  if (activePlanLookup) {
-    if (!input.values.replace_existing) {
-      throw new TRPCError({
-        code: "CONFLICT",
-        message:
-          "You already have scheduled sessions from another training plan. Replace them first.",
-      });
-    }
-
-    const deleteBaseFilters = [
-      eq(schema.events.profile_id, profileId),
-      eq(schema.events.event_type, plannedEventType),
-      gte(schema.events.starts_at, new Date(todayStartIsoUtc())),
-      ne(schema.events.status, "completed"),
-    ] as const;
-
-    const removedEvents = await db
-      .delete(schema.events)
-      .where(
-        and(
-          ...deleteBaseFilters,
-          activePlanLookup.scheduleBatchId
-            ? eq(schema.events.schedule_batch_id, activePlanLookup.scheduleBatchId)
-            : eq(schema.events.training_plan_id, activePlanLookup.trainingPlanId),
-        ),
-      )
-      .returning({ id: schema.events.id });
-
-    scheduled_sessions_replaced = removedEvents.length;
-    await Promise.all(removedEvents.map((event) => permissions.revokeEventGrants(event.id)));
-    await enqueuePlannedWorkoutSyncForCalendarWrite({
-      db,
-      eventIds: removedEvents.map((event) => event.id),
-      operation: "unsync",
-      profileId,
+  const { db, profileId, repository } = input;
+  const preliminaryActivePlanLookup = await repository.getActivePlanFromFutureEvents(profileId);
+  if (preliminaryActivePlanLookup && !input.values.replace_existing) {
+    throw new TRPCError({
+      code: "CONFLICT",
+      message:
+        "You already have scheduled sessions from another training plan. Replace them first.",
     });
   }
 
@@ -168,6 +116,17 @@ export async function applyTrainingPlanTemplateUseCase(input: {
 
   const appliedPlanId = templatePlan.id as string;
   const materializedSessions = materializedApplication.materializedSessions;
+  const unlinkedSessions = materializedSessions.filter(
+    (session) => session.event_type === "planned" && !session.activity_plan_id,
+  );
+  if (unlinkedSessions.length > 0) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `This training plan cannot be scheduled because ${unlinkedSessions.length} planned ${
+        unlinkedSessions.length === 1 ? "session has" : "sessions have"
+      } no valid linked activity plan.`,
+    });
+  }
   const candidatePlanIds = Array.from(
     new Set(
       materializedSessions
@@ -247,10 +206,10 @@ export async function applyTrainingPlanTemplateUseCase(input: {
   }
 
   const unresolvedPlanIds = candidatePlanIds.filter((planId) => !allowedPlanIds.has(planId));
-  if (templatePlan.is_system_template === true && unresolvedPlanIds.length > 0) {
+  if (unresolvedPlanIds.length > 0) {
     throw new TRPCError({
       code: "BAD_REQUEST",
-      message: `This system training plan cannot be scheduled because ${
+      message: `This training plan cannot be scheduled because ${
         unresolvedPlanIds.length === 1
           ? "a linked activity template is"
           : "linked activity templates are"
@@ -260,7 +219,6 @@ export async function applyTrainingPlanTemplateUseCase(input: {
 
   const eventRows: PlannedEventInsertRow[] = materializedSessions
     .filter((session) => session.event_type === "planned")
-    .filter((session) => !session.activity_plan_id || allowedPlanIds.has(session.activity_plan_id))
     .map((session) => ({
       profile_id: profileId,
       event_type: plannedEventType,
@@ -270,10 +228,12 @@ export async function applyTrainingPlanTemplateUseCase(input: {
           ? allowedPlanNameById.get(session.activity_plan_id)
           : undefined) ??
         session.title,
+      description: session.description,
       all_day: session.all_day,
-      timezone: "UTC",
-      starts_at: session.starts_at,
-      ends_at: session.ends_at,
+      timezone: session.timezone,
+      starts_at: new Date(session.starts_at),
+      ends_at: session.ends_at ? new Date(session.ends_at) : null,
+      scheduled_date: session.scheduled_date,
       status: "scheduled" as const,
       activity_plan_id: session.activity_plan_id,
       training_plan_id: appliedPlanId,
@@ -305,69 +265,144 @@ export async function applyTrainingPlanTemplateUseCase(input: {
     });
   }
 
-  const insertedEvents = await db.transaction(async (tx): Promise<InsertedEventIdentity[]> => {
-    const eventInsertRows = eventRows.map((eventRow) => ({
-      ...eventRow,
-      schedule_batch_id,
-    })) as unknown as Array<typeof schema.events.$inferInsert>;
-
-    const events = await tx
-      .insert(schema.events)
-      .values(eventInsertRows)
-      .returning({ id: schema.events.id });
-
-    if (events.length !== eventRows.length) {
-      throw new TRPCError({
-        code: "INTERNAL_SERVER_ERROR",
-        message: "Failed to create the full scheduled training plan event set.",
-      });
-    }
-
-    return events;
-  });
-
-  await Promise.all(
-    insertedEvents.map((event, index) => {
-      const eventRow = eventRows[index];
-      if (!eventRow) return Promise.resolve();
-
-      const linkedPlanAccess = eventRow.activity_plan_id
-        ? allowedPlanAccessById.get(eventRow.activity_plan_id)
-        : null;
-      const shouldGrantLinkedPlan = linkedPlanAccess
-        ? needsContentGrantForRow(linkedPlanAccess, profileId)
-        : false;
-      const shouldGrantTrainingPlan = needsContentGrantForRow(
-        {
-          ownerProfileId: templatePlan.profile_id,
-          isPublic: templatePlan.template_visibility === "public",
-          isSystem: templatePlan.is_system_template,
-        },
-        profileId,
-      );
-
-      if (!shouldGrantLinkedPlan && !linkedPlanAccess?.routeId && !shouldGrantTrainingPlan) {
-        return Promise.resolve();
+  const { insertedEvents, removedEvents, shouldDrainProviderJobs } = await db.transaction(
+    async (
+      tx,
+    ): Promise<{
+      insertedEvents: InsertedEventIdentity[];
+      removedEvents: InsertedEventIdentity[];
+      shouldDrainProviderJobs: boolean;
+    }> => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${profileId}, 0))`);
+      // The transaction exposes Drizzle's query/write surface but omits the root
+      // client's handle. Supplying that handle keeps downstream repository
+      // factories on the transaction while satisfying the shared client type.
+      const transactionDb: DrizzleDbClient = Object.assign(tx, { $client: db.$client });
+      const transactionRepository = input.repositoryFactory?.(transactionDb) ?? repository;
+      const activePlanLookup = await transactionRepository.getActivePlanFromFutureEvents(profileId);
+      if (activePlanLookup && !input.values.replace_existing) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message:
+            "You already have scheduled sessions from another training plan. Replace them first.",
+        });
       }
 
-      return permissions.grantEventContentAccess({
-        actorProfileId: profileId,
-        granteeProfileId: profileId,
-        eventId: event.id,
-        activityPlanId: eventRow.activity_plan_id,
-        trainingPlanId: shouldGrantTrainingPlan ? appliedPlanId : null,
+      const removedEvents = activePlanLookup
+        ? await tx
+            .delete(schema.events)
+            .where(
+              and(
+                eq(schema.events.profile_id, profileId),
+                eq(schema.events.event_type, plannedEventType),
+                gte(schema.events.starts_at, new Date(todayStartIsoUtc())),
+                ne(schema.events.status, "completed"),
+                activePlanLookup.scheduleBatchId
+                  ? eq(schema.events.schedule_batch_id, activePlanLookup.scheduleBatchId)
+                  : eq(schema.events.training_plan_id, activePlanLookup.trainingPlanId),
+              ),
+            )
+            .returning({ id: schema.events.id })
+        : [];
+
+      const eventInsertRows: EventInsert[] = eventRows.map((eventRow) => ({
+        ...eventRow,
+        id: crypto.randomUUID(),
+        schedule_batch_id,
+      }));
+      const insertedEvents = await tx
+        .insert(schema.events)
+        .values(eventInsertRows)
+        .returning({ id: schema.events.id });
+
+      if (insertedEvents.length !== eventRows.length) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to create the full scheduled training plan event set.",
+        });
+      }
+
+      const permissions = input.permissionsFactory?.(transactionDb) ?? input.permissions;
+      for (const event of removedEvents) {
+        await permissions.revokeEventGrants(event.id);
+      }
+      const unsyncResult = await enqueuePlannedWorkoutSyncAfterCalendarMutation({
+        db: transactionDb,
+        drainDueJobs: false,
+        eventIds: removedEvents.map((event) => event.id),
+        operation: "unsync",
+        profileId,
       });
-    }),
+      if (unsyncResult && !unsyncResult.success) {
+        throw new Error("Failed to queue provider unsync for the replaced training plan schedule.");
+      }
+
+      for (const [index, event] of insertedEvents.entries()) {
+        const eventRow = eventRows[index];
+        if (!eventRow) continue;
+
+        const linkedPlanAccess = eventRow.activity_plan_id
+          ? allowedPlanAccessById.get(eventRow.activity_plan_id)
+          : null;
+        const shouldGrantLinkedPlan = linkedPlanAccess
+          ? needsContentGrantForRow(linkedPlanAccess, profileId)
+          : false;
+        const shouldGrantTrainingPlan = needsContentGrantForRow(
+          {
+            ownerProfileId: templatePlan.profile_id,
+            isPublic: templatePlan.template_visibility === "public",
+            isSystem: templatePlan.is_system_template,
+          },
+          profileId,
+        );
+
+        if (!shouldGrantLinkedPlan && !linkedPlanAccess?.routeId && !shouldGrantTrainingPlan) {
+          continue;
+        }
+
+        await permissions.grantEventContentAccess({
+          actorProfileId: profileId,
+          granteeProfileId: profileId,
+          eventId: event.id,
+          activityPlanId: eventRow.activity_plan_id ?? null,
+          trainingPlanId: shouldGrantTrainingPlan ? appliedPlanId : null,
+        });
+      }
+
+      const publishResult = await enqueuePlannedWorkoutSyncAfterCalendarMutation({
+        db: transactionDb,
+        drainDueJobs: false,
+        eventIds: insertedEvents
+          .filter((_, index) => Boolean(eventRows[index]?.activity_plan_id))
+          .map((event) => event.id),
+        operation: "publish",
+        profileId,
+      });
+      if (publishResult && !publishResult.success) {
+        throw new Error("Failed to queue provider publication for the training plan schedule.");
+      }
+
+      return {
+        insertedEvents,
+        removedEvents,
+        shouldDrainProviderJobs: Boolean(unsyncResult?.queued || publishResult?.queued),
+      };
+    },
   );
 
-  await enqueuePlannedWorkoutSyncForCalendarWrite({
-    db,
-    eventIds: insertedEvents
-      .filter((_, index) => Boolean(eventRows[index]?.activity_plan_id))
-      .map((event) => event.id),
-    operation: "publish",
-    profileId,
-  });
+  if (shouldDrainProviderJobs) {
+    try {
+      await drainDueWahooPlannedWorkoutJobs({
+        db,
+        limit: 3,
+        workerId: "training-plan-application-planned-workout-drain",
+      });
+    } catch (error) {
+      logger.error("Failed to drain queued provider jobs after training plan application", {
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  }
 
   return {
     applied_plan_id: appliedPlanId,
@@ -376,7 +411,7 @@ export async function applyTrainingPlanTemplateUseCase(input: {
     schedule_batch_id,
     scheduled_sessions_created: insertedEvents.length,
     scheduled_sessions_skipped: materializedApplication.skippedSessions,
-    scheduled_sessions_replaced,
+    scheduled_sessions_replaced: removedEvents.length,
     cache_tags: ["events.list", "trainingPlans.list"],
   };
 }

@@ -70,10 +70,12 @@ function createMissingReturningDb(method: "insert" | "update") {
 
 describe("drizzle-training-plan-repository", () => {
   it("creates a training plan and returns the inserted row", async () => {
+    const planId = "11111111-1111-4111-8111-111111111111";
     const createdPlan = createTrainingPlanRow({
+      id: planId,
       name: "Spring build",
       description: "Target June event",
-      structure: { block: "base" },
+      structure: { id: planId, block: "base" },
     });
     const { db, callLog } = createQueryMapDbMock({
       training_plans: { data: [createdPlan], error: null },
@@ -84,7 +86,7 @@ describe("drizzle-training-plan-repository", () => {
       profileId: "profile-1",
       name: "Spring build",
       description: "Target June event",
-      structure: { block: "base" },
+      structure: { id: planId, block: "base" },
     });
 
     expect(result).toEqual(createdPlan);
@@ -92,12 +94,35 @@ describe("drizzle-training-plan-repository", () => {
       table: "training_plans",
       operation: "insert",
       payload: {
+        id: planId,
         profile_id: "profile-1",
         name: "Spring build",
         description: "Target June event",
-        structure: { block: "base" },
+        structure: { id: planId, block: "base" },
       },
     });
+  });
+
+  it("generates a required relational id aligned with structure.id", async () => {
+    const { db, callLog } = createQueryMapDbMock();
+    const repository = createTrainingPlanRepository(db);
+
+    await repository.createTrainingPlan({
+      profileId: "profile-1",
+      name: "Generated id plan",
+      description: null,
+      structure: { block: "base" },
+    });
+
+    const insert = callLog.find(
+      (call) => call.table === "training_plans" && call.operation === "insert",
+    );
+    const payload = insert?.payload as {
+      id?: unknown;
+      structure?: { id?: unknown };
+    };
+    expect(payload.id).toEqual(expect.stringMatching(/^[0-9a-f-]{36}$/));
+    expect(payload.structure?.id).toBe(payload.id);
   });
 
   it("throws BAD_REQUEST when create returns no row", async () => {
