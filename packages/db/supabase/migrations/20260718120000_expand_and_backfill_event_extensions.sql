@@ -1,5 +1,11 @@
--- Consolidate one-to-one event extension data onto events. Abort rather than
--- choosing an authority when deployed rows disagree.
+-- ONE-TIME PRE-AUTHORITY BACKFILL. Do not rerun after events becomes authoritative.
+-- Child non-null values are authoritative only during this initial backfill.
+-- DEPLOYMENT STOP CONDITION: drain all legacy event, iCal, and provider workers and
+-- pause every event write before running this migration. SQL cannot prove external
+-- quiescence. Keep writes paused through commit, deploy the parent-authority app,
+-- then resume event workers and writes only after that cutover is complete.
+select pg_advisory_xact_lock(hashtextextended('gradientpeak.event-extension-cutover', 0));
+
 alter table public.events
   add column if not exists training_plan_id uuid,
   add column if not exists activity_plan_id uuid,

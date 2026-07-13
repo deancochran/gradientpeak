@@ -1,3 +1,11 @@
+-- ONE-TIME PRE-AUTHORITY BACKFILL. Do not rerun after events becomes authoritative.
+-- Child non-null values are authoritative only during this initial backfill.
+-- DEPLOYMENT STOP CONDITION: drain all legacy event, iCal, and provider workers and
+-- pause every event write before running this migration. SQL cannot prove external
+-- quiescence. Keep writes paused through commit, deploy the parent-authority app,
+-- then resume event workers and writes only after that cutover is complete.
+SELECT pg_advisory_xact_lock(hashtextextended('gradientpeak.event-extension-cutover', 0));
+--> statement-breakpoint
 ALTER TABLE "events"
   ADD COLUMN IF NOT EXISTS "training_plan_id" uuid,
   ADD COLUMN IF NOT EXISTS "activity_plan_id" uuid,
