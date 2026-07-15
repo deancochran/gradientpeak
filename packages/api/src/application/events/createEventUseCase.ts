@@ -1,3 +1,4 @@
+import { getScheduledDateKey } from "@repo/core";
 import type { PublicEventStatus } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import type { Context } from "../../context";
@@ -29,6 +30,7 @@ type NormalizedCreateInput = {
     exceptions?: unknown[];
   } | null;
   sourceProvider: string | null;
+  scheduledDate: string;
   startsAt: string;
   status: PublicEventStatus;
   timezone: string;
@@ -191,6 +193,7 @@ export async function createEventUseCase<
       title: normalizedCreate.title,
       allDay: normalizedCreate.allDay,
       timezone: normalizedCreate.timezone,
+      scheduledDate: normalizedCreate.scheduledDate,
       startsAt: occurrences[0]?.startsAt ?? normalizedCreate.startsAt,
       endsAt: occurrences[0]?.endsAt ?? normalizedCreate.endsAt,
       status: normalizedCreate.status,
@@ -214,6 +217,10 @@ export async function createEventUseCase<
         title: normalizedCreate.title,
         allDay: normalizedCreate.allDay,
         timezone: normalizedCreate.timezone,
+        scheduledDate:
+          normalizedEventType === "planned"
+            ? occurrence.startsAt.slice(0, 10)
+            : getScheduledDateKey(occurrence.startsAt, normalizedCreate.timezone),
         startsAt: occurrence.startsAt,
         endsAt: occurrence.endsAt,
         status: normalizedCreate.status,

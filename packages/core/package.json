@@ -70,6 +70,7 @@
     "./utils/recording-plan-target-resolver": "./utils/recording-plan-target-resolver.ts",
     "./utils/recording-source-resolver": "./utils/recording-source-resolver.ts",
     "./utils/recording-trainer-policy": "./utils/recording-trainer-policy.ts",
+    "./utils/schedule-date": "./utils/schedule-date.ts",
     "./utils/stream-sampling": "./utils/stream-sampling.ts",
     "./utils/temporal-metrics": "./utils/temporal-metrics.ts",
     "./units": "./units/index.ts",

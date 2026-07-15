@@ -42,6 +42,7 @@ const splitCompletionEventColumns = {
   created_at: schema.events.created_at,
   updated_at: schema.events.updated_at,
   starts_at: schema.events.starts_at,
+  scheduled_date: schema.events.scheduled_date,
   ends_at: schema.events.ends_at,
   activity_plan_id: schema.events.activity_plan_id,
   training_plan_id: schema.events.training_plan_id,

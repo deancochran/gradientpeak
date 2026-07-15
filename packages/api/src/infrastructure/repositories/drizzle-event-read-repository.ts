@@ -1,3 +1,4 @@
+import { getScheduledDateKey } from "@repo/core";
 import { type DrizzleDbClient, schema } from "@repo/db";
 import {
   and,
@@ -9,6 +10,7 @@ import {
   gte,
   inArray,
   isNotNull,
+  isNull,
   lt,
   lte,
   or,
@@ -59,6 +61,7 @@ function serializeEventRow(row: {
   profile_id: string;
   recurrence_rule: string | null;
   recurrence_timezone: string | null;
+  scheduled_date: string | null;
   series_id: string | null;
   source_provider: string | null;
   starts_at: Date;
@@ -83,6 +86,8 @@ function serializeEventRow(row: {
     training_plan_id: row.training_plan_id,
     created_at: row.created_at.toISOString(),
     starts_at: row.starts_at.toISOString(),
+    scheduled_date:
+      row.scheduled_date ?? getScheduledDateKey(row.starts_at.toISOString(), row.timezone),
     ends_at: row.ends_at?.toISOString() ?? null,
     original_starts_at: row.original_starts_at?.toISOString() ?? null,
     updated_at: row.updated_at.toISOString(),
@@ -112,6 +117,7 @@ const eventColumns = {
   created_at: schema.events.created_at,
   updated_at: schema.events.updated_at,
   starts_at: schema.events.starts_at,
+  scheduled_date: schema.events.scheduled_date,
   ends_at: schema.events.ends_at,
 } as const;
 
@@ -426,6 +432,7 @@ export function createEventReadRepository(
       const plannedEvents = await db
         .select({
           starts_at: schema.events.starts_at,
+          scheduled_date: schema.events.scheduled_date,
           training_plan_id: schema.events.training_plan_id,
           activity_plan: schema.activityPlans,
         })
@@ -474,7 +481,8 @@ export function createEventReadRepository(
         trainingPlan,
         plannedActivities: plannedEvents.map((item) => ({
           starts_at: item.starts_at.toISOString(),
-          scheduled_date: item.starts_at.toISOString().split("T")[0] ?? "",
+          scheduled_date:
+            item.scheduled_date ?? getScheduledDateKey(item.starts_at.toISOString(), "UTC"),
           training_plan_id: item.training_plan_id,
           activity_plan: item.activity_plan as any,
         })),
@@ -490,6 +498,8 @@ export function createEventReadRepository(
       const conditions = [eq(schema.events.profile_id, input.profileId)];
       const trainingPlanId = schema.events.training_plan_id;
       const activityPlanId = schema.events.activity_plan_id;
+      const isPersistedDateAnchoredEvent = and(isNotNull(schema.events.scheduled_date));
+      const isTimedOrLegacyEvent = isNull(schema.events.scheduled_date);
 
       if (input.eventTypes && input.eventTypes.length > 0) {
         conditions.push(inArray(schema.events.event_type, input.eventTypes));
@@ -506,11 +516,23 @@ export function createEventReadRepository(
       }
 
       if (input.dateFrom) {
-        conditions.push(gte(schema.events.starts_at, new Date(input.dateFrom)));
+        const scheduleDateFrom = input.dateFrom.slice(0, 10);
+        conditions.push(
+          or(
+            and(isPersistedDateAnchoredEvent, gte(schema.events.scheduled_date, scheduleDateFrom)),
+            and(isTimedOrLegacyEvent, gte(schema.events.starts_at, new Date(input.dateFrom))),
+          )!,
+        );
       }
 
       if (input.dateTo) {
-        conditions.push(lt(schema.events.starts_at, new Date(input.dateTo)));
+        const scheduleDateTo = input.dateTo.slice(0, 10);
+        conditions.push(
+          or(
+            and(isPersistedDateAnchoredEvent, lt(schema.events.scheduled_date, scheduleDateTo)),
+            and(isTimedOrLegacyEvent, lt(schema.events.starts_at, new Date(input.dateTo))),
+          )!,
+        );
       }
 
       if (input.cursor) {

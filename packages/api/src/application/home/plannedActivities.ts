@@ -1,3 +1,4 @@
+import { getScheduledDateKey } from "@repo/core";
 import { type EventRow, type PublicActivityPlansRow, schema } from "@repo/db";
 import { and, asc, eq, gte, lt } from "drizzle-orm";
 import { z } from "zod";
@@ -48,6 +49,7 @@ export async function listPlannedActivitiesInRange(
     .select({
       id: schema.events.id,
       starts_at: schema.events.starts_at,
+      scheduled_date: schema.events.scheduled_date,
       notes: schema.events.notes,
       activity_plan: schema.activityPlans,
     })
@@ -69,7 +71,8 @@ export async function listPlannedActivitiesInRange(
       plannedActivityRowSchema.parse({
         ...row,
         activity_plan: (row.activity_plan as PublicActivityPlansRow | null) ?? null,
-        scheduled_date: row.starts_at.toISOString().split("T")[0] ?? "",
+        scheduled_date:
+          row.scheduled_date ?? getScheduledDateKey(row.starts_at.toISOString(), "UTC"),
       }) as PlannedActivityRow,
   );
 }

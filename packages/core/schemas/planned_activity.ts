@@ -9,6 +9,14 @@ const dateOnlyStringSchema = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Invalid date format (expected YYYY-MM-DD)");
 
+export const scheduledDateSchema = dateOnlyStringSchema.refine((value) => {
+  const [year = 0, month = 0, day = 0] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+  );
+}, "Invalid calendar date");
+
 const rruleFrequencies = new Set(["DAILY", "WEEKLY", "MONTHLY", "YEARLY"]);
 
 function isValidIcalRRule(value: string): boolean {
@@ -312,6 +320,7 @@ const editableEventSchedulePatchSchema = z
     starts_at: dateTimeStringSchema.optional(),
     ends_at: dateTimeStringSchema.nullable().optional(),
     all_day: z.boolean().optional(),
+    scheduled_date: scheduledDateSchema.optional(),
     timezone: z.string().min(1).max(120).optional(),
   })
   .strict();
@@ -387,6 +396,7 @@ export const customEventCreateSchema = z
     starts_at: dateTimeStringSchema,
     ends_at: dateTimeStringSchema.nullable().optional(),
     all_day: z.boolean().default(false),
+    scheduled_date: scheduledDateSchema.optional(),
     timezone: z.string().min(1).max(120).default("UTC"),
     notes: z.string().max(2000).nullable().optional(),
     description: z.string().max(5000).nullable().optional(),
@@ -403,7 +413,7 @@ export const plannedActivityEventCreateSchema = z
     route_id: z.string().uuid().nullable().optional(),
     training_plan_id: z.string().uuid().nullable().optional(),
     title: z.string().min(1).max(255),
-    scheduled_date: dateOnlyStringSchema,
+    scheduled_date: scheduledDateSchema,
     all_day: z.literal(true).default(true),
     timezone: z.string().min(1).max(120).default("UTC"),
     notes: z.string().max(2000).nullable().optional(),

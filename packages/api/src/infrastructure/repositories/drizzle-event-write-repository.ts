@@ -18,6 +18,7 @@ function serializeCreatedEvent(row: {
   profile_id: string;
   recurrence_rule: string | null;
   recurrence_timezone: string | null;
+  scheduled_date: string | null;
   series_id: string | null;
   source_provider: string | null;
   starts_at: Date;
@@ -58,6 +59,7 @@ function serializeSplitEventRow(row: {
   profile_id: string;
   recurrence_rule: string | null;
   recurrence_timezone: string | null;
+  scheduled_date: string | null;
   series_id: string | null;
   source_provider: string | null;
   starts_at: Date;
@@ -116,6 +118,7 @@ const splitEventReturningColumns = {
   linked_activity_id: schema.events.linked_activity_id,
   recurrence_rule: schema.events.recurrence_rule,
   recurrence_timezone: schema.events.recurrence_timezone,
+  scheduled_date: schema.events.scheduled_date,
   series_id: schema.events.series_id,
   occurrence_key: schema.events.occurrence_key,
   original_starts_at: schema.events.original_starts_at,
@@ -188,6 +191,7 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
             all_day: input.allDay,
             timezone: input.timezone,
             starts_at: new Date(input.startsAt),
+            scheduled_date: input.scheduledDate,
             ends_at: input.endsAt ? new Date(input.endsAt) : null,
             status: input.status,
             notes: input.notes,
@@ -244,6 +248,7 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
       const timezone = eventUpdates["timezone"];
       const startsAt = eventUpdates["starts_at"];
       const endsAt = eventUpdates["ends_at"];
+      const scheduledDate = eventUpdates["scheduled_date"];
       const activityPlanId = eventUpdates["activity_plan_id"] as string | null | undefined;
       const trainingPlanId = eventUpdates["training_plan_id"] as string | null | undefined;
       const linkedActivityId = eventUpdates["linked_activity_id"] as string | null | undefined;
@@ -262,6 +267,7 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
         ...(allDay !== undefined ? { all_day: allDay as boolean } : {}),
         ...(timezone !== undefined ? { timezone: timezone as string } : {}),
         ...(startsAt ? { starts_at: new Date(startsAt as string) } : {}),
+        ...(scheduledDate !== undefined ? { scheduled_date: scheduledDate as string } : {}),
         ...(endsAt !== undefined ? { ends_at: endsAt ? new Date(endsAt as string) : null } : {}),
         ...(activityPlanId !== undefined ? { activity_plan_id: activityPlanId } : {}),
         ...(trainingPlanId !== undefined ? { training_plan_id: trainingPlanId } : {}),

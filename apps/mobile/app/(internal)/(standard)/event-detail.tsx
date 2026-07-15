@@ -32,6 +32,7 @@ import { EntityCommentsSection } from "@/components/social/EntityCommentsSection
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { getEventStatusLabel, getEventTitle } from "@/lib/calendar/eventPresentation";
+import { formatEventTime, getEventScheduledDate } from "@/lib/calendar/eventSchedule";
 import { ROUTES } from "@/lib/constants/routes";
 import { markEstimated } from "@/lib/estimatedMetrics";
 import { useDeletedDetailRedirect } from "@/lib/hooks/useDeletedDetailRedirect";
@@ -57,6 +58,8 @@ function formatEventTimeRange(event: {
   all_day?: boolean | null;
   ends_at?: string | null;
   starts_at?: string | null;
+  timezone?: string | null;
+  preserveInstant?: boolean;
 }) {
   if (event.all_day) {
     return "All day";
@@ -72,15 +75,21 @@ function formatEventTimeRange(event: {
   }
 
   if (!event.ends_at) {
-    return format(start, "h:mm a");
+    return event.preserveInstant
+      ? format(start, "h:mm a")
+      : formatEventTime(event.starts_at, event.timezone);
   }
 
   const end = new Date(event.ends_at);
   if (Number.isNaN(end.getTime())) {
-    return format(start, "h:mm a");
+    return event.preserveInstant
+      ? format(start, "h:mm a")
+      : formatEventTime(event.starts_at, event.timezone);
   }
 
-  return `${format(start, "h:mm a")} - ${format(end, "h:mm a")}`;
+  const formatTime = (instant: Date, isoInstant: string) =>
+    event.preserveInstant ? format(instant, "h:mm a") : formatEventTime(isoInstant, event.timezone);
+  return `${formatTime(start, event.starts_at)} - ${formatTime(end, event.ends_at)}`;
 }
 
 type EventMutationScope = "single" | "future" | "series";
@@ -314,6 +323,7 @@ export default function EventDetailScreen() {
   const statusLabel = event ? getEventStatusLabel(event as any) : null;
   const displayStartsAt = event ? new Date(event.starts_at) : new Date();
   const displayAllDay = !!event?.all_day;
+  const displayScheduleDate = event ? getEventScheduledDate(event) : null;
   const displayNotes = event?.notes ?? "";
 
   const handleOpenPlanDetail = () => {
@@ -562,13 +572,17 @@ export default function EventDetailScreen() {
 
             <View className="gap-1">
               <Text className="text-sm font-medium text-foreground">
-                {formatScheduleDateLabel(displayStartsAt)}
+                {displayAllDay && displayScheduleDate
+                  ? formatScheduleDateLabel(new Date(`${displayScheduleDate}T12:00:00.000Z`))
+                  : formatScheduleDateLabel(displayStartsAt)}
               </Text>
               <Text className="text-sm text-muted-foreground">
                 {formatEventTimeRange({
                   all_day: displayAllDay,
                   starts_at: displayStartsAt.toISOString(),
                   ends_at: event?.ends_at ?? null,
+                  timezone: event?.timezone,
+                  preserveInstant: event?.event_type === "imported" || completed,
                 })}
               </Text>
               {recurring ? (

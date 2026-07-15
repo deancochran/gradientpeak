@@ -27,6 +27,7 @@ export * from "./recording-config-resolver";
 export * from "./recording-plan-target-resolver";
 export * from "./recording-source-resolver";
 export * from "./recording-trainer-policy";
+export * from "./schedule-date";
 export * from "./stream-sampling";
 
 // Export temporal metrics utilities

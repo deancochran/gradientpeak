@@ -1,3 +1,5 @@
+import { scheduledDateTimeToIsoInstant } from "@repo/core";
+
 export type PlanningEvent = {
   id: string;
   title?: string | null;
@@ -143,6 +145,7 @@ export function formatEventTimeRange(event: PlanningEvent) {
   const startLabel = start.toLocaleTimeString([], {
     hour: "numeric",
     minute: "2-digit",
+    timeZone: event.timezone ?? "UTC",
   });
 
   if (!event.ends_at) {
@@ -154,7 +157,11 @@ export function formatEventTimeRange(event: PlanningEvent) {
     return startLabel;
   }
 
-  return `${startLabel} - ${end.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+  return `${startLabel} - ${end.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: event.timezone ?? "UTC",
+  })}`;
 }
 
 export function compareEventsByStart(a: PlanningEvent, b: PlanningEvent) {
@@ -163,18 +170,6 @@ export function compareEventsByStart(a: PlanningEvent, b: PlanningEvent) {
 
 export function buildAllDayStartIso(dateKey: string) {
   return new Date(`${dateKey}T00:00:00.000Z`).toISOString();
-}
-
-export function buildTimedStartIso(dateKey: string, time: string) {
-  return new Date(`${dateKey}T${time}:00`).toISOString();
-}
-
-export function buildTimedEndIso(startsAtIso: string, durationMs: number | null) {
-  if (durationMs === null) {
-    return null;
-  }
-
-  return new Date(new Date(startsAtIso).getTime() + durationMs).toISOString();
 }
 
 export function getEventDurationMs(event: PlanningEvent) {
@@ -188,6 +183,45 @@ export function getEventDurationMs(event: PlanningEvent) {
   }
 
   return duration;
+}
+
+export function buildCalendarEventUpdatePatch({
+  allDay,
+  event,
+  notes,
+  scheduledDate,
+  time,
+  title,
+}: {
+  allDay: boolean;
+  event: PlanningEvent;
+  notes?: string;
+  scheduledDate: string;
+  time?: string;
+  title: string;
+}) {
+  const timezone = event.timezone ?? "UTC";
+  const startsAt = allDay
+    ? buildAllDayStartIso(scheduledDate)
+    : scheduledDateTimeToIsoInstant({
+        scheduledDate,
+        time: time ?? "09:00",
+        timeZone: timezone,
+      });
+  const durationMs = getEventDurationMs(event);
+
+  return {
+    all_day: allDay,
+    ends_at:
+      allDay || durationMs === null
+        ? undefined
+        : new Date(new Date(startsAt).getTime() + durationMs).toISOString(),
+    notes: notes?.trim() ? notes.trim() : null,
+    scheduled_date: scheduledDate,
+    starts_at: startsAt,
+    timezone,
+    title,
+  };
 }
 
 export function getEventTypeLabel(eventType: string | null | undefined) {

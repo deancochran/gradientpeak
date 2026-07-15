@@ -29,7 +29,6 @@ import {
   getEventTitle,
   getEventTypeLabel,
   getMonthKey,
-  getTodayDateKey,
   isValidMonthKey,
 } from "../../../../lib/planning";
 import { deleteCalendarEventAction } from "../../../../lib/planning/server-actions";
@@ -68,7 +67,11 @@ function EventDetailPage() {
     return <p className="text-sm text-muted-foreground">Event not found.</p>;
   }
 
-  const scheduledDate = event.scheduled_date ?? getTodayDateKey();
+  const scheduledDate = event.scheduled_date;
+
+  if (!scheduledDate) {
+    return <p className="text-sm text-muted-foreground">Event schedule is unavailable.</p>;
+  }
 
   return (
     <div className="space-y-6">

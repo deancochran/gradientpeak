@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import { Modal, Pressable, ScrollView, TouchableOpacity, View } from "react-native";
 import { z } from "zod";
 import { InlineNotice, SettingsRow } from "@/components/shared/LayoutPrimitives";
+import { dateKeyToLocalDate, getDeviceTimeZone } from "@/lib/calendar/eventSchedule";
 
 export type ManualEventCreateType = "race_target" | "custom";
 
@@ -48,8 +49,10 @@ type CalendarManualCreateModalProps = {
     createType: ManualEventCreateType;
     title: string;
     notes: string;
+    scheduledDate: string;
     startsAt: Date;
     allDay: boolean;
+    timezone: string;
     recurrence?: { rule: string; timezone: string };
   }) => void;
 };
@@ -59,10 +62,10 @@ function getRRuleWeekday(dateKey: string): string {
   return ["SU", "MO", "TU", "WE", "TH", "FR", "SA"][day] ?? "MO";
 }
 
-function buildWeeklyRecurrence(dateKey: string, occurrenceCount: number) {
+function buildWeeklyRecurrence(dateKey: string, occurrenceCount: number, timezone: string) {
   return {
     rule: `FREQ=WEEKLY;INTERVAL=1;COUNT=${occurrenceCount};BYDAY=${getRRuleWeekday(dateKey)}`,
-    timezone: "UTC",
+    timezone,
   };
 }
 
@@ -70,7 +73,7 @@ function buildInitialValues(
   activeDate: string,
   _createType: ManualEventCreateType,
 ): CalendarManualCreateFormValues {
-  const startsAt = new Date(`${activeDate}T09:00:00.000Z`);
+  const startsAt = dateKeyToLocalDate(activeDate, 9);
 
   return {
     title: "",
@@ -161,14 +164,16 @@ export function CalendarManualCreateModal({
         createType,
         title: data.title,
         notes: data.notes ?? "",
+        scheduledDate: data.scheduled_date,
         startsAt: buildStartsAt({
           scheduledDate: data.scheduled_date,
           scheduledTime: data.scheduled_time,
           allDay: data.all_day,
         }),
         allDay: data.all_day,
+        timezone: getDeviceTimeZone(),
         recurrence: repeatWeekly
-          ? buildWeeklyRecurrence(data.scheduled_date, repeatOccurrenceCount)
+          ? buildWeeklyRecurrence(data.scheduled_date, repeatOccurrenceCount, getDeviceTimeZone())
           : undefined,
       });
     },

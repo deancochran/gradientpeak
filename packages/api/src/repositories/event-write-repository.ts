@@ -18,6 +18,7 @@ export interface CreateOwnedEventInput {
   recurrenceTimezone: string | null;
   seriesId?: string | null;
   sourceProvider: string | null;
+  scheduledDate: string;
   startsAt: string;
   status: "scheduled" | "completed" | "cancelled";
   timezone: string;

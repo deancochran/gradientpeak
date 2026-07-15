@@ -21,6 +21,7 @@ import { type ActivityPlan, ActivityPlanCard } from "@/components/shared/Activit
 import { ClearFieldAction } from "@/components/shared/ClearFieldAction";
 import { EmptyState, ErrorState, LoadingState } from "@/components/shared/ScreenState";
 import { SearchField } from "@/components/shared/SearchField";
+import { eventDateForEditor, getDeviceTimeZone } from "@/lib/calendar/eventSchedule";
 
 export type CreateEventType = "custom" | "planned";
 export type EventRecurrenceFrequency = "none" | "daily" | "weekly" | "monthly";
@@ -88,6 +89,7 @@ export function parseRecurrenceEndDate(event: {
 export function buildRecurrenceFromFrequency(
   frequency: EventRecurrenceFrequency,
   endDate: string | null,
+  timezone = getDeviceTimeZone(),
 ) {
   if (frequency === "none") {
     return null;
@@ -101,7 +103,7 @@ export function buildRecurrenceFromFrequency(
 
   return {
     rule: `FREQ=${frequency.toUpperCase()};UNTIL=${untilDate}T235959Z`,
-    timezone: "UTC",
+    timezone,
   };
 }
 
@@ -115,14 +117,13 @@ function buildLocalDateAtHour(dateKey: string | undefined, hour: number) {
   return new Date(year ?? fallback.getFullYear(), (month ?? 1) - 1, day ?? 1, hour, 0, 0, 0);
 }
 
-export function parseEventDateForEditor(event: { starts_at: string; all_day?: boolean | null }) {
-  if (event.all_day) {
-    const dateOnly = event.starts_at.slice(0, 10);
-    const [year, month, day] = dateOnly.split("-").map(Number);
-    return new Date(year ?? 1970, (month ?? 1) - 1, day ?? 1, 12, 0, 0, 0);
-  }
-
-  return new Date(event.starts_at);
+export function parseEventDateForEditor(event: {
+  starts_at: string;
+  all_day?: boolean | null;
+  scheduled_date?: string | null;
+  timezone?: string | null;
+}) {
+  return eventDateForEditor(event);
 }
 
 export function buildCreateStartsAt(dateKey?: string) {

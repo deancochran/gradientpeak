@@ -67,6 +67,17 @@ describe("calendar event presentation", () => {
     expect(getEventSupportingLine(event)).toBe("Bring passport and race packet.");
   });
 
+  it("formats scheduled event times in the event timezone", () => {
+    expect(
+      getEventTimeLabel({
+        id: "timezone-1",
+        event_type: "custom",
+        starts_at: "2026-06-02T16:30:00.000Z",
+        timezone: "America/Los_Angeles",
+      }),
+    ).toBe("9:30 AM");
+  });
+
   it("does not present planned-event metadata when no activity plan is associated", () => {
     const event = {
       id: "planned-without-plan",

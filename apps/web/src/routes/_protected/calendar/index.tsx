@@ -73,7 +73,8 @@ function CalendarIndexPage() {
   const eventsByDate = useMemo(() => {
     const grouped = new Map<string, PlanningEvent[]>();
     for (const event of events) {
-      const dateKey = event.scheduled_date ?? toDateKey(new Date(event.starts_at ?? Date.now()));
+      const dateKey = event.scheduled_date;
+      if (!dateKey) continue;
       const bucket = grouped.get(dateKey) ?? [];
       bucket.push(event);
       grouped.set(dateKey, bucket);

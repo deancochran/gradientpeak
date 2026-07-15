@@ -92,7 +92,7 @@ export function CalendarEventForm({ event, month, view }: CalendarEventFormProps
           <DateInput
             id="event-date"
             label="Date"
-            name="date"
+            name="scheduled_date"
             value={date}
             onChange={(value) => setDate(value ?? "")}
           />

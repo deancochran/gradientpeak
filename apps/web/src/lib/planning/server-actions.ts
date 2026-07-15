@@ -4,6 +4,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 import { buildFlashHref } from "../flash";
+import { buildCalendarEventUpdatePatch, type PlanningEvent } from "../planning";
 import { createServerActionCaller } from "../server-action-api";
 
 const goalActionSchema = z.object({
@@ -24,13 +25,11 @@ const deleteEventActionSchema = z.object({
 
 const updateEventActionSchema = z.object({
   all_day: z.enum(["true", "false"]).optional(),
-  date: z.string().min(1),
+  scheduled_date: z.string().min(1),
   event_id: z.string().uuid(),
   notes: z.string().optional(),
   redirectTo: z.string().optional(),
-  starts_at_iso: z.string().optional(),
   time: z.string().optional(),
-  timezone: z.string().optional(),
   title: z.string().trim().min(1),
 });
 
@@ -45,66 +44,6 @@ function getRedirectTarget(data: unknown, fallback: string) {
 
   const redirectTo = data.get("redirectTo");
   return typeof redirectTo === "string" && redirectTo.length > 0 ? redirectTo : fallback;
-}
-
-function buildAllDayStartIso(dateKey: string) {
-  return new Date(`${dateKey}T00:00:00.000Z`).toISOString();
-}
-
-function _buildTimedStartIso(dateKey: string, time: string) {
-  return new Date(`${dateKey}T${time}:00`).toISOString();
-}
-
-function getTimeZoneOffsetMs(date: Date, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).formatToParts(date);
-
-  const values = Object.fromEntries(
-    parts.filter((part) => part.type !== "literal").map((part) => [part.type, Number(part.value)]),
-  );
-
-  const asUtc = Date.UTC(
-    values.year ?? 1970,
-    (values.month ?? 1) - 1,
-    values.day ?? 1,
-    values.hour ?? 0,
-    values.minute ?? 0,
-    values.second ?? 0,
-  );
-
-  return asUtc - date.getTime();
-}
-
-function buildTimedStartIsoInTimeZone(dateKey: string, time: string, timeZone: string) {
-  const [year, month, day] = dateKey.split("-").map(Number);
-  const [hours, minutes] = time.split(":").map(Number);
-  const utcGuess = new Date(
-    Date.UTC(year ?? 1970, (month ?? 1) - 1, day ?? 1, hours ?? 0, minutes ?? 0, 0),
-  );
-  const offset = getTimeZoneOffsetMs(utcGuess, timeZone);
-  const adjusted = new Date(utcGuess.getTime() - offset);
-  const adjustedOffset = getTimeZoneOffsetMs(adjusted, timeZone);
-  return new Date(utcGuess.getTime() - adjustedOffset).toISOString();
-}
-
-function getEventDurationMs(
-  startsAt: string | null | undefined,
-  endsAt: string | null | undefined,
-) {
-  if (!startsAt || !endsAt) {
-    return null;
-  }
-
-  const duration = new Date(endsAt).getTime() - new Date(startsAt).getTime();
-  return Number.isFinite(duration) && duration > 0 ? duration : null;
 }
 
 export const createPlanGoalAction = createServerFn({ method: "POST" }).handler(async ({ data }) => {
@@ -208,29 +147,19 @@ export const updateCalendarEventAction = createServerFn({ method: "POST" }).hand
     try {
       const caller = await createServerActionCaller();
       const existingEvent = await caller.events.getById({ id: parsedData.event_id });
-      const allDay = parsedData.all_day === "true";
-      const resolvedTimeZone = existingEvent.timezone ?? "UTC";
-      const startsAt = allDay
-        ? buildAllDayStartIso(parsedData.date)
-        : buildTimedStartIsoInTimeZone(
-            parsedData.date,
-            parsedData.time ?? "09:00",
-            resolvedTimeZone,
-          );
-      const durationMs = getEventDurationMs(existingEvent.starts_at, existingEvent.ends_at);
+      const patch = buildCalendarEventUpdatePatch({
+        allDay: parsedData.all_day === "true",
+        event: existingEvent as PlanningEvent,
+        notes: parsedData.notes,
+        scheduledDate: parsedData.scheduled_date,
+        time: parsedData.time,
+        title: parsedData.title,
+      });
 
       await caller.events.update({
         id: parsedData.event_id,
         patch: {
-          all_day: allDay,
-          ends_at:
-            allDay || durationMs === null
-              ? undefined
-              : new Date(new Date(startsAt).getTime() + durationMs).toISOString(),
-          notes: parsedData.notes?.trim() ? parsedData.notes.trim() : null,
-          starts_at: startsAt,
-          timezone: resolvedTimeZone,
-          title: parsedData.title,
+          ...patch,
         },
         scope: "single",
       });

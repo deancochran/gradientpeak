@@ -11,10 +11,14 @@ import { z } from "zod";
 import { AppFormModal } from "@/components/shared/AppFormModal";
 import { type ResourcePickerItem, ResourcePickerModal } from "@/components/shared/resource-picker";
 import { api } from "@/lib/api";
+import {
+  buildScheduledInstant,
+  getDeviceTimeZone,
+  getEventScheduledDate,
+} from "@/lib/calendar/eventSchedule";
 import { refreshScheduleViews } from "@/lib/scheduling/refreshScheduleViews";
 import {
   type ActivityPlanListItem,
-  buildAllDayStartIso,
   buildRecurrenceFromFrequency,
   parseEventDateForEditor,
   parseRecurrenceEndDate,
@@ -71,6 +75,8 @@ function toDateOnly(value: Date) {
 
 function buildDraftFromEvent(event: any): CreateEventDraft {
   const startsAt = parseEventDateForEditor(event);
+  const scheduledDate = getEventScheduledDate(event) ?? toDateOnly(startsAt);
+  const timezone = event.timezone || getDeviceTimeZone();
   const recurrenceFrequency = parseRecurrenceFrequency(event);
   const recurrenceEndDate = parseRecurrenceEndDate(event);
 
@@ -79,7 +85,8 @@ function buildDraftFromEvent(event: any): CreateEventDraft {
       mode: "planned",
       activityPlanId: event.activity_plan_id ?? event.activity_plan?.id ?? null,
       activityPlanName: event.activity_plan?.name ?? null,
-      scheduledDate: toDateOnly(startsAt),
+      scheduledDate,
+      timezone,
       recurrenceFrequency,
       recurrenceEndDate,
       title: event.title ?? event.activity_plan?.name ?? "Planned Activity",
@@ -89,8 +96,11 @@ function buildDraftFromEvent(event: any): CreateEventDraft {
 
   return {
     mode: "custom",
+    eventType: event.event_type === "race_target" ? "race_target" : "custom",
     title: event.title ?? "",
     startsAt,
+    scheduledDate,
+    timezone,
     allDay: !!event.all_day,
     recurrenceFrequency,
     recurrenceEndDate,
@@ -129,10 +139,10 @@ function toMainFormValues(draft: CreateEventDraft): CreateEventFormValues {
 
   return {
     allDay: draft.allDay,
-    customDate: toDateOnly(draft.startsAt),
+    customDate: draft.scheduledDate,
     customTime: format(draft.startsAt, "HH:mm"),
     notes: draft.notes,
-    plannedDate: toDateOnly(draft.startsAt),
+    plannedDate: draft.scheduledDate,
     recurrenceEndDate: draft.recurrenceEndDate,
     title: draft.title,
   };
@@ -165,6 +175,7 @@ function applyMainFormValues(
     allDay: values.allDay,
     notes: values.notes,
     recurrenceEndDate: values.recurrenceEndDate,
+    scheduledDate: values.customDate || draft.scheduledDate,
     startsAt,
     title: values.title,
   };
@@ -182,19 +193,23 @@ function areMainFormValuesEqual(left: CreateEventFormValues, right: CreateEventF
   );
 }
 
-function buildUpdatePatch(draft: CreateEventDraft) {
+export function buildUpdatePatch(draft: CreateEventDraft) {
   const notes = draft.notes.trim() ? draft.notes.trim() : null;
 
   if (draft.mode === "planned") {
-    const startsAt = buildStartsAtFromDateOnly(draft.scheduledDate);
     return {
       activity_plan_id: draft.activityPlanId,
       all_day: true,
       event_type: "planned" as const,
       notes,
-      recurrence: buildRecurrenceFromFrequency(draft.recurrenceFrequency, draft.recurrenceEndDate),
-      starts_at: buildAllDayStartIso(startsAt),
-      timezone: "UTC",
+      recurrence: buildRecurrenceFromFrequency(
+        draft.recurrenceFrequency,
+        draft.recurrenceEndDate,
+        draft.timezone,
+      ),
+      starts_at: `${draft.scheduledDate}T00:00:00.000Z`,
+      scheduled_date: draft.scheduledDate,
+      timezone: draft.timezone,
       title: draft.title.trim() || draft.activityPlanName?.trim() || "Planned Activity",
     };
   }
@@ -202,11 +217,18 @@ function buildUpdatePatch(draft: CreateEventDraft) {
   return {
     activity_plan_id: null,
     all_day: draft.allDay,
-    event_type: "custom" as const,
+    event_type: draft.eventType,
     notes,
-    recurrence: buildRecurrenceFromFrequency(draft.recurrenceFrequency, draft.recurrenceEndDate),
-    starts_at: draft.allDay ? buildAllDayStartIso(draft.startsAt) : draft.startsAt.toISOString(),
-    timezone: "UTC",
+    recurrence: buildRecurrenceFromFrequency(
+      draft.recurrenceFrequency,
+      draft.recurrenceEndDate,
+      draft.timezone,
+    ),
+    scheduled_date: draft.scheduledDate,
+    starts_at: draft.allDay
+      ? `${draft.scheduledDate}T00:00:00.000Z`
+      : buildScheduledInstant(draft.scheduledDate, draft.startsAt, draft.timezone),
+    timezone: draft.timezone,
     title: draft.title.trim(),
   };
 }
@@ -415,13 +437,13 @@ export const CreateEventFlow = forwardRef<
     setDraft((current) => {
       if (current.mode === mode) return current;
       if (mode === "planned") {
-        const scheduledDate =
-          current.mode === "custom" ? toDateOnly(current.startsAt) : current.scheduledDate;
+        const scheduledDate = current.scheduledDate;
         return {
           mode: "planned",
           activityPlanId: null,
           activityPlanName: null,
           scheduledDate,
+          timezone: current.timezone,
           recurrenceFrequency: current.recurrenceFrequency,
           recurrenceEndDate: current.recurrenceEndDate,
           title: current.title,
@@ -435,8 +457,11 @@ export const CreateEventFlow = forwardRef<
           : current.startsAt;
       return {
         mode: "custom",
+        eventType: "custom",
         title: current.title,
         startsAt,
+        scheduledDate: current.scheduledDate,
+        timezone: current.timezone,
         allDay: current.mode === "planned" ? true : current.allDay,
         recurrenceFrequency: current.recurrenceFrequency,
         recurrenceEndDate: current.recurrenceEndDate,
@@ -452,8 +477,11 @@ export const CreateEventFlow = forwardRef<
       const startsAt = buildStartsAtFromDateOnly(current.scheduledDate);
       return {
         mode: "custom",
+        eventType: "custom",
         title: current.title,
         startsAt,
+        scheduledDate: current.scheduledDate,
+        timezone: current.timezone,
         allDay: true,
         recurrenceFrequency: current.recurrenceFrequency,
         recurrenceEndDate: current.recurrenceEndDate,
@@ -518,11 +546,19 @@ export const CreateEventFlow = forwardRef<
 
   const runUpdate = (nextDraft: CreateEventDraft, scope: EventMutationScope = "single") => {
     if (!updateEvent?.id || !validateDraft(nextDraft)) return;
-    updateMutation.mutate({
-      id: updateEvent.id,
-      scope,
-      patch: buildUpdatePatch(nextDraft),
-    } as any);
+    try {
+      updateMutation.mutate({
+        id: updateEvent.id,
+        scope,
+        patch: buildUpdatePatch(nextDraft),
+      } as any);
+    } catch (error) {
+      setFormErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "This time cannot be scheduled in the event time zone.",
+      );
+    }
   };
 
   const submitCreate = () => {
@@ -539,7 +575,15 @@ export const CreateEventFlow = forwardRef<
     }
 
     if (!validateDraft(draft)) return;
-    createMutation.mutate(buildCreateEventInput(draft, { trainingPlanId }) as any);
+    try {
+      createMutation.mutate(buildCreateEventInput(draft, { trainingPlanId }) as any);
+    } catch (error) {
+      setFormErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "This time cannot be scheduled in the event time zone.",
+      );
+    }
   };
 
   const pending = createMutation.isPending || updateMutation.isPending;

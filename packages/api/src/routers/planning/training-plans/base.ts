@@ -74,6 +74,7 @@ import {
   validatePlanFeasibility,
 } from "@repo/core";
 import { resolveCanonicalThresholds } from "@repo/core/athlete-inputs";
+import { getScheduledDateKey } from "@repo/core/utils/schedule-date";
 import { type ProfileGoalRow, schema, type TrainingPlanRow } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
@@ -3561,7 +3562,9 @@ export async function getPlanTabProjectionService({
     : await (async () => {
         let plannedActivitiesQuery: any = fallbackSupabase
           ?.from("events")
-          .select("id, starts_at, training_plan_id, activity_plan:activity_plans (*)")
+          .select(
+            "id, starts_at, scheduled_date, training_plan_id, activity_plan:activity_plans (*)",
+          )
           .eq("profile_id", profileId)
           .eq("event_type", plannedEventType)
           .gte("starts_at", toDayStartIso(input.start_date))
@@ -3579,12 +3582,15 @@ export async function getPlanTabProjectionService({
         return (
           (data || []) as Array<{
             starts_at?: string | null;
+            scheduled_date?: string | null;
             training_plan_id?: string | null;
             activity_plan?: unknown;
           }>
         ).map((item: any) => ({
           ...item,
-          scheduled_date: item.starts_at?.split("T")[0] ?? "",
+          scheduled_date:
+            item.scheduled_date ??
+            (item.starts_at ? getScheduledDateKey(item.starts_at, "UTC") : ""),
           activity_plan: item.activity_plan as any,
         }));
       })();
@@ -4449,7 +4455,11 @@ const trainingPlansProcedures = {
     const weekEndDate = endOfWeek.toISOString().split("T")[0] || "";
 
     const plannedActivitiesEvents = await db
-      .select({ starts_at: schema.events.starts_at, activity_plan: schema.activityPlans })
+      .select({
+        starts_at: schema.events.starts_at,
+        scheduled_date: schema.events.scheduled_date,
+        activity_plan: schema.activityPlans,
+      })
       .from(schema.events)
 
       .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
@@ -4465,7 +4475,8 @@ const trainingPlansProcedures = {
     const plannedActivities = plannedActivitiesEvents.map((item: any) => ({
       ...item,
       starts_at: item.starts_at.toISOString(),
-      scheduled_date: item.starts_at.toISOString().split("T")[0] ?? "",
+      scheduled_date:
+        item.scheduled_date ?? getScheduledDateKey(item.starts_at.toISOString(), "UTC"),
     }));
 
     // Extract activity plans and add estimations
@@ -4505,6 +4516,7 @@ const trainingPlansProcedures = {
       .select({
         id: schema.events.id,
         starts_at: schema.events.starts_at,
+        scheduled_date: schema.events.scheduled_date,
         activity_plan: schema.activityPlans,
       })
       .from(schema.events)
@@ -4524,7 +4536,8 @@ const trainingPlansProcedures = {
     const upcomingActivitiesRaw = upcomingActivitiesEventsRaw.map((item: any) => ({
       ...item,
       starts_at: item.starts_at.toISOString(),
-      scheduled_date: item.starts_at.toISOString().split("T")[0] ?? "",
+      scheduled_date:
+        item.scheduled_date ?? getScheduledDateKey(item.starts_at.toISOString(), "UTC"),
     }));
 
     // Add estimations to upcoming activity plans
@@ -4923,7 +4936,11 @@ const trainingPlansProcedures = {
       const todayDateOnly = today.toISOString().split("T")[0] || "";
 
       const plannedActivitiesEventsRaw = await db
-        .select({ starts_at: schema.events.starts_at, activity_plan: schema.activityPlans })
+        .select({
+          starts_at: schema.events.starts_at,
+          scheduled_date: schema.events.scheduled_date,
+          activity_plan: schema.activityPlans,
+        })
         .from(schema.events)
 
         .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
@@ -4940,7 +4957,8 @@ const trainingPlansProcedures = {
       const plannedActivitiesRaw = plannedActivitiesEventsRaw.map((item: any) => ({
         ...item,
         starts_at: item.starts_at.toISOString(),
-        scheduled_date: item.starts_at.toISOString().split("T")[0] ?? "",
+        scheduled_date:
+          item.scheduled_date ?? getScheduledDateKey(item.starts_at.toISOString(), "UTC"),
       }));
 
       // Extract activity plans and add estimations

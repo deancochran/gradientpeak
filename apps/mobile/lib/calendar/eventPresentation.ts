@@ -2,6 +2,7 @@ import { format } from "date-fns";
 import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
 import { formatEstimatedDurationSeconds, formatEstimatedTss } from "@/lib/estimatedMetrics";
 import { isActivityCompleted } from "@/lib/utils/plan/dateGrouping";
+import { formatEventTime } from "./eventSchedule";
 import type { CalendarEvent } from "./normalizeEvents";
 
 function readMetric(value: unknown): number | null {
@@ -54,7 +55,14 @@ export function getEventTitle(event: CalendarEvent): string {
 
 export function getEventTimeLabel(event: CalendarEvent): string {
   if (event.all_day) return "All day";
-  if (event.starts_at) return format(new Date(event.starts_at), "h:mm a");
+  if (event.starts_at) {
+    const preservesActivityInstant =
+      event.event_type === "imported" ||
+      (event.event_type === "planned" && hasActivityPlan(event) && isActivityCompleted(event));
+    return preservesActivityInstant
+      ? format(new Date(event.starts_at), "h:mm a")
+      : formatEventTime(event.starts_at, event.timezone);
+  }
   return "Scheduled";
 }
 
