@@ -1,3 +1,4 @@
+import type { ActivityTssIdentity } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import { DashPathEffect, Circle as SkiaCircle, Rect as SkiaRect } from "@shopify/react-native-skia";
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -6,6 +7,7 @@ import { View } from "react-native";
 import { ScrollView } from "react-native-gesture-handler";
 import { CartesianChart, Line } from "victory-native";
 import { useTheme } from "@/lib/stores/theme-store";
+import type { CompletedObservationState } from "@/lib/training-path/completedTssObservation";
 import { DailyTrainingAdjustmentTray } from "./DailyTrainingAdjustmentTray";
 import {
   type DailyTrainingAdjustmentChartDatum,
@@ -24,8 +26,11 @@ import { useChartEdgePrefetch } from "./useChartEdgePrefetch";
 import { useInstantChartSelection } from "./useInstantChartSelection";
 
 export type DailyTrainingAdjustmentPoint = {
+  completedObservationState?: CompletedObservationState;
+  completedTssIdentity?: ActivityTssIdentity | null;
   date: string;
   hasCompletedActivityWithoutLoad?: boolean;
+  hasTargetLoad?: boolean;
   plannedLoadTss?: number | null;
   tentativePlannedLoadTss?: number | null;
   completedLoadTss?: number | null;

@@ -16,16 +16,14 @@ import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useWatch } from "react-hook-form";
 import { ActivityIndicator, View } from "react-native";
-import { GlobalTrainingPreferenceCatalogSection } from "@/components/settings/training-preferences/GlobalTrainingPreferenceCatalogSection";
-import type { WeekdayKey } from "@/components/settings/training-preferences/sections/AvailabilitySection";
+import {
+  getAvailabilityWindowValidation,
+  type WeekdayKey,
+} from "@/components/settings/training-preferences/sections/AvailabilitySection";
 import type { SportOverrideKey } from "@/components/settings/training-preferences/sections/ScheduleSection";
 import { TrainingPreferencesBottomSheet } from "@/components/settings/training-preferences/TrainingPreferencesBottomSheet";
-import { TrainingPreferencesContent } from "@/components/settings/training-preferences/TrainingPreferencesContent";
-import { TrainingPreferencesPanel } from "@/components/settings/training-preferences/TrainingPreferencesPanel";
-import {
-  type PreferencesTabKey,
-  TrainingPreferencesTabs,
-} from "@/components/settings/training-preferences/TrainingPreferencesTabs";
+import { TrainingPreferencesSurface } from "@/components/settings/training-preferences/TrainingPreferencesSurface";
+import type { PreferencesTabKey } from "@/components/settings/training-preferences/TrainingPreferencesTabs";
 import { api } from "@/lib/api";
 import { useProfileSettings } from "@/lib/hooks/useProfileSettings";
 import { handleSubmitFormError } from "@/lib/utils/formErrors";
@@ -34,6 +32,30 @@ const defaultAvailabilityWindow = {
   start_minute_of_day: 360,
   end_minute_of_day: 540,
 };
+
+type AvailabilityWindow = NonNullable<
+  NonNullable<AthleteTrainingSettingsFormInput["availability"]["weekly_windows"]>[number]["windows"]
+>[number];
+
+function sortAvailabilityWindows(windows: AvailabilityWindow[]): AvailabilityWindow[] {
+  return [...windows].sort(
+    (left, right) =>
+      left.start_minute_of_day - right.start_minute_of_day ||
+      left.end_minute_of_day - right.end_minute_of_day,
+  );
+}
+
+function normalizeAvailability(
+  availability: AthleteTrainingSettingsFormInput["availability"],
+): AthleteTrainingSettingsFormInput["availability"] {
+  return {
+    ...availability,
+    weekly_windows: (availability.weekly_windows ?? []).map((dayConfig) => ({
+      ...dayConfig,
+      windows: sortAvailabilityWindows(dayConfig.windows ?? []),
+    })),
+  };
+}
 
 const defaultSportDoseOverride = {
   min_sessions_per_week: 0,
@@ -49,6 +71,7 @@ function createTrainingPreferencesFormDefaults(
 
   return {
     ...normalized,
+    availability: normalizeAvailability(normalized.availability),
     baseline_fitness: normalized.baseline_fitness ?? {
       ...defaultAthletePreferenceProfile.baseline_fitness,
     },
@@ -106,6 +129,20 @@ export function TrainingPreferencesEditor({
   const draft = (useWatch({ control: form.control }) ??
     form.getValues()) as AthleteTrainingSettingsFormInput;
 
+  useEffect(() => {
+    for (const [dayIndex, dayConfig] of (draft.availability.weekly_windows ?? []).entries()) {
+      const windows = dayConfig.windows ?? [];
+      const sortedWindows = sortAvailabilityWindows(windows);
+      if (sortedWindows.some((window, index) => window !== windows[index])) {
+        form.setValue(`availability.weekly_windows.${dayIndex}.windows`, sortedWindows, {
+          shouldDirty: true,
+          shouldTouch: true,
+          shouldValidate: true,
+        });
+      }
+    }
+  }, [draft.availability.weekly_windows, form]);
+
   const upsertMutation = api.profileSettings.upsert.useMutation();
   const submitForm = useZodFormSubmit<AthleteTrainingSettings>({
     form,
@@ -159,10 +196,18 @@ export function TrainingPreferencesEditor({
     };
   }, [draft]);
 
+  const availabilityWindowValidation = useMemo(
+    () => getAvailabilityWindowValidation(draft.availability),
+    [draft.availability],
+  );
+
   const saveDisabled =
     !settingsQuery.profileId ||
     !hasUnsavedChanges ||
+    form.formState.isValidating ||
+    Object.keys(form.formState.errors).length > 0 ||
     scheduleValidation.issues.length > 0 ||
+    availabilityWindowValidation.size > 0 ||
     isSaving;
   const saveButtonState = submitForm.getSubmitButtonState({
     disabled: saveDisabled,
@@ -229,6 +274,70 @@ export function TrainingPreferencesEditor({
     },
     [form],
   );
+  const addAvailabilityWindow = useCallback(
+    (day: WeekdayKey) => {
+      const currentDays = form.getValues("availability.weekly_windows") ?? [];
+      const dayIndex = currentDays.findIndex((item) => item.day === day);
+      if (dayIndex < 0) return "Enable this day before adding a window.";
+
+      const dayConfig = currentDays[dayIndex];
+      if (!dayConfig) return "Enable this day before adding a window.";
+      const windows = dayConfig.windows ?? [];
+      if (windows.length >= 4) return "Maximum 4 windows per day.";
+
+      const previousEnd = windows.reduce(
+        (maximumEnd, window) => Math.max(maximumEnd, window.end_minute_of_day),
+        360,
+      );
+      if (previousEnd >= 1440) {
+        return "No room remains after the last window. End it earlier before adding another.";
+      }
+
+      const nextDays = [...currentDays];
+      nextDays[dayIndex] = {
+        ...dayConfig,
+        windows: sortAvailabilityWindows([
+          ...windows,
+          {
+            start_minute_of_day: previousEnd,
+            end_minute_of_day: Math.min(previousEnd + 180, 1440),
+          },
+        ]),
+      };
+      form.setValue("availability.weekly_windows", nextDays, {
+        shouldDirty: true,
+        shouldTouch: true,
+        shouldValidate: true,
+      });
+      return null;
+    },
+    [form],
+  );
+  const removeAvailabilityWindow = useCallback(
+    (day: WeekdayKey, windowIndex: number) => {
+      const currentDays = form.getValues("availability.weekly_windows") ?? [];
+      const dayIndex = currentDays.findIndex((item) => item.day === day);
+      const dayConfig = currentDays[dayIndex];
+      const windows = dayConfig?.windows ?? [];
+      if (!dayConfig || !windows[windowIndex]) return;
+
+      const remainingWindows = windows.filter((_, index) => index !== windowIndex);
+      const nextDays =
+        remainingWindows.length === 0
+          ? currentDays.filter((_, index) => index !== dayIndex)
+          : currentDays.map((item, index) =>
+              index === dayIndex
+                ? { ...dayConfig, windows: sortAvailabilityWindows(remainingWindows) }
+                : item,
+            );
+      form.setValue("availability.weekly_windows", nextDays, {
+        shouldDirty: true,
+        shouldTouch: true,
+        shouldValidate: true,
+      });
+    },
+    [form],
+  );
   const toggleSportDoseOverride = useCallback(
     (sport: SportOverrideKey) => {
       const currentOverrides = form.getValues("dose_limits.sport_overrides") ?? {};
@@ -275,78 +384,27 @@ export function TrainingPreferencesEditor({
         saveLabel={saveButtonState.label}
         saveLoadingLabel={saveButtonState.loadingLabel}
       >
-        <TrainingPreferencesContent>
-          <TrainingPreferencesTabs
-            activeTab={activeTab}
-            onSelectTab={setActiveTab}
-            visibleTabs={visibleTabs}
-          />
-
-          <TrainingPreferencesPanel>
-            {activeTab === "preferences" ? (
-              <GlobalTrainingPreferenceCatalogSection
-                activeTab={activeTab}
-                availability={draft.availability}
-                baselineFitness={draft.baseline_fitness}
-                control={form.control}
-                doseLimits={draft.dose_limits}
-                manualBaselineCtlWarning={manualBaselineCtlWarning}
-                onToggleAdvancedBaselineControls={() =>
-                  setShowAdvancedBaselineControls((value) => !value)
-                }
-                onToggleAvailabilityDay={toggleAvailabilityDay}
-                onToggleHardRestDay={toggleHardRestDay}
-                onToggleSportDoseOverride={toggleSportDoseOverride}
-                scheduleValidation={scheduleValidation}
-                showAdvancedBaselineControls={showAdvancedBaselineControls}
-              />
-            ) : null}
-
-            {activeTab === "availability" ? (
-              <GlobalTrainingPreferenceCatalogSection
-                activeTab={activeTab}
-                availability={draft.availability}
-                baselineFitness={draft.baseline_fitness}
-                control={form.control}
-                doseLimits={draft.dose_limits}
-                manualBaselineCtlWarning={manualBaselineCtlWarning}
-                onToggleAdvancedBaselineControls={() =>
-                  setShowAdvancedBaselineControls((value) => !value)
-                }
-                onToggleAvailabilityDay={toggleAvailabilityDay}
-                onToggleHardRestDay={toggleHardRestDay}
-                onToggleSportDoseOverride={toggleSportDoseOverride}
-                scheduleValidation={scheduleValidation}
-                showAdvancedBaselineControls={showAdvancedBaselineControls}
-              />
-            ) : null}
-
-            {[
-              "schedule",
-              "training-style",
-              "recovery",
-              "goal-strategy",
-              "baseline-fitness",
-            ].includes(activeTab) ? (
-              <GlobalTrainingPreferenceCatalogSection
-                activeTab={activeTab}
-                availability={draft.availability}
-                baselineFitness={draft.baseline_fitness}
-                control={form.control}
-                doseLimits={draft.dose_limits}
-                manualBaselineCtlWarning={manualBaselineCtlWarning}
-                onToggleAdvancedBaselineControls={() =>
-                  setShowAdvancedBaselineControls((value) => !value)
-                }
-                onToggleAvailabilityDay={toggleAvailabilityDay}
-                onToggleHardRestDay={toggleHardRestDay}
-                onToggleSportDoseOverride={toggleSportDoseOverride}
-                scheduleValidation={scheduleValidation}
-                showAdvancedBaselineControls={showAdvancedBaselineControls}
-              />
-            ) : null}
-          </TrainingPreferencesPanel>
-        </TrainingPreferencesContent>
+        <TrainingPreferencesSurface
+          presentation="full"
+          activeTab={activeTab}
+          availability={draft.availability}
+          baselineFitness={draft.baseline_fitness}
+          control={form.control}
+          doseLimits={draft.dose_limits}
+          manualBaselineCtlWarning={manualBaselineCtlWarning}
+          onAddAvailabilityWindow={addAvailabilityWindow}
+          onRemoveAvailabilityWindow={removeAvailabilityWindow}
+          onSelectTab={setActiveTab}
+          onToggleAdvancedBaselineControls={() =>
+            setShowAdvancedBaselineControls((value) => !value)
+          }
+          onToggleAvailabilityDay={toggleAvailabilityDay}
+          onToggleHardRestDay={toggleHardRestDay}
+          onToggleSportDoseOverride={toggleSportDoseOverride}
+          scheduleValidation={scheduleValidation}
+          showAdvancedBaselineControls={showAdvancedBaselineControls}
+          visibleTabs={visibleTabs}
+        />
       </TrainingPreferencesBottomSheet>
     </Form>
   );

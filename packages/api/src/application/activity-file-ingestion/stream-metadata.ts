@@ -24,6 +24,11 @@ export interface ActivityFileStreamMetadata {
   cadenceStream: number[];
   altitudeStream: number[];
   speedStream: number[];
+  powerTimestamps?: number[];
+  hrTimestamps?: number[];
+  cadenceTimestamps?: number[];
+  altitudeTimestamps?: number[];
+  speedTimestamps?: number[];
   coords: ActivityFileCoordinate[];
   avgTemperature: number | null;
 }
@@ -45,22 +50,44 @@ export function collectActivityFileStreamMetadata(
   records: ActivityFileStreamRecord[],
 ): ActivityFileStreamMetadata {
   const powerStream: number[] = [];
+  const powerTimestamps: number[] = [];
   const hrStream: number[] = [];
+  const hrTimestamps: number[] = [];
   const timestamps: number[] = [];
   const cadenceStream: number[] = [];
+  const cadenceTimestamps: number[] = [];
   const altitudeStream: number[] = [];
+  const altitudeTimestamps: number[] = [];
   const speedStream: number[] = [];
+  const speedTimestamps: number[] = [];
   const coords: ActivityFileCoordinate[] = [];
   let tempSum = 0;
   let tempCount = 0;
 
   for (const record of records) {
-    if (record.timestamp !== undefined) timestamps.push(record.timestamp.getTime() / 1000);
-    if (record.power !== undefined) powerStream.push(record.power);
-    if (record.heartRate !== undefined) hrStream.push(record.heartRate);
-    if (record.cadence !== undefined) cadenceStream.push(record.cadence);
-    if (record.altitude !== undefined) altitudeStream.push(record.altitude);
-    if (record.speed !== undefined) speedStream.push(record.speed);
+    const timestamp =
+      record.timestamp === undefined ? undefined : record.timestamp.getTime() / 1000;
+    if (timestamp !== undefined) timestamps.push(timestamp);
+    if (record.power !== undefined && timestamp !== undefined) {
+      powerStream.push(record.power);
+      powerTimestamps.push(timestamp);
+    }
+    if (record.heartRate !== undefined && timestamp !== undefined) {
+      hrStream.push(record.heartRate);
+      hrTimestamps.push(timestamp);
+    }
+    if (record.cadence !== undefined && timestamp !== undefined) {
+      cadenceStream.push(record.cadence);
+      cadenceTimestamps.push(timestamp);
+    }
+    if (record.altitude !== undefined && timestamp !== undefined) {
+      altitudeStream.push(record.altitude);
+      altitudeTimestamps.push(timestamp);
+    }
+    if (record.speed !== undefined && timestamp !== undefined) {
+      speedStream.push(record.speed);
+      speedTimestamps.push(timestamp);
+    }
     if (record.temperature !== undefined) {
       tempSum += record.temperature;
       tempCount++;
@@ -77,6 +104,11 @@ export function collectActivityFileStreamMetadata(
     cadenceStream,
     altitudeStream,
     speedStream,
+    powerTimestamps,
+    hrTimestamps,
+    cadenceTimestamps,
+    altitudeTimestamps,
+    speedTimestamps,
     coords,
     avgTemperature: tempCount > 0 ? tempSum / tempCount : null,
   };

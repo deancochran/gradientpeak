@@ -21,8 +21,16 @@ import { PerformanceBeacon } from "@/lib/performance";
 import { QueryProvider } from "@/lib/providers/QueryProvider";
 import { TelemetryProvider } from "@/lib/providers/TelemetryProvider";
 import { initializeServerConfig, useServerConfig } from "@/lib/server-config";
+import {
+  finalizedArtifactReferencesLocalFiles,
+  loadPendingFinalizedArtifact,
+} from "@/lib/services/ActivityRecorder/finalizedArtifactStorage";
 import { LocationManager } from "@/lib/services/ActivityRecorder/location";
 import { StreamBuffer } from "@/lib/services/ActivityRecorder/StreamBuffer";
+import {
+  incompleteQueueJobReferencesLocalFiles,
+  loadActivitySubmissionQueueJobs,
+} from "@/lib/services/activitySubmissionQueue";
 import { GarminFitEncoder } from "@/lib/services/fit/GarminFitEncoder";
 import { initSentry, Sentry } from "@/lib/services/sentry";
 import { useAuthStore } from "@/lib/stores/auth-store";
@@ -120,13 +128,27 @@ function RootLayout() {
 
   // Clean up any orphaned recording files on app startup
   React.useEffect(() => {
-    StreamBuffer.cleanupOrphanedRecordings().catch((error) => {
-      console.warn("Failed to cleanup orphaned recordings:", error);
-    });
+    void Promise.all([loadPendingFinalizedArtifact(), loadActivitySubmissionQueueJobs()])
+      .then(([pendingArtifact, queueJobs]) => {
+        const hasRecoverableSubmission =
+          finalizedArtifactReferencesLocalFiles(pendingArtifact) ||
+          queueJobs.some(incompleteQueueJobReferencesLocalFiles);
 
-    GarminFitEncoder.cleanupOrphanedRecordings().catch((error) => {
-      console.warn("Failed to cleanup orphaned FIT recordings:", error);
-    });
+        if (hasRecoverableSubmission) {
+          return;
+        }
+
+        StreamBuffer.cleanupOrphanedRecordings().catch((error) => {
+          console.warn("Failed to cleanup orphaned recordings:", error);
+        });
+
+        GarminFitEncoder.cleanupOrphanedRecordings().catch((error) => {
+          console.warn("Failed to cleanup orphaned FIT recordings:", error);
+        });
+      })
+      .catch((error) => {
+        console.warn("Failed to inspect pending activity submissions before cleanup:", error);
+      });
 
     LocationManager.cleanupOrphanedBackgroundTracking().catch((error) => {
       console.warn("Failed to cleanup orphaned background location tracking:", error);

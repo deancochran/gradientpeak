@@ -1,17 +1,15 @@
 import {
+  createEmptyGoalDraft,
   estimateConservativeFTPFromWeight,
   estimateMaxHRFromDOB,
   formatWeightForDisplay,
+  getGoalDraftQualityFeedback,
 } from "@repo/core";
-import { BoundedNumberInput } from "@repo/ui/components/bounded-number-input";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
-import { DateInput as DateField } from "@repo/ui/components/date-input";
 import { Form, FormTextField } from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
-import { PaceSecondsField } from "@repo/ui/components/pace-seconds-field";
 import { Text } from "@repo/ui/components/text";
-import { WeightInputField } from "@repo/ui/components/weight-input-field";
 import { useZodForm } from "@repo/ui/hooks";
 import Constants from "expo-constants";
 import * as Linking from "expo-linking";
@@ -20,12 +18,26 @@ import { Activity, Check } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, TouchableOpacity, View } from "react-native";
 import { z } from "zod";
+import {
+  type AthleteBaselineChange,
+  type AthleteBaselineFieldSources,
+  AthleteBaselineFields,
+} from "@/components/athlete-baseline";
+import { GoalEditorForm } from "@/components/goals";
 import { IntegrationProviderList } from "@/components/integrations/IntegrationProviderList";
+import { applyCompactTrainingPreferencesChange } from "@/components/settings/training-preferences/compactTrainingPreferences";
+import { TrainingPreferencesSurface } from "@/components/settings/training-preferences/TrainingPreferencesSurface";
 import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { api } from "@/lib/api";
 import { isValidOnboardingUsername } from "@/lib/onboarding/validation";
-import { PRIMARY_SPORT_OPTIONS } from "../onboarding-data";
+import {
+  getCompactTrainingPreferencesValue,
+  getTrainingPreferencesSummary,
+  PRIMARY_SPORT_OPTIONS,
+} from "../onboarding-data";
 import type { IntegrationProvider, OnboardingData, StepProps } from "../types";
+
+export { GroupsAndPeopleStep } from "./GroupsAndPeopleStep";
 
 const INTENT_OPTIONS: Array<{
   value: OnboardingData["intent"][number];
@@ -206,6 +218,18 @@ export const IdentityStep = ({ data, updateData, usernameAvailability }: StepPro
                 size="small"
                 testID="onboarding-username-checking"
               />
+            ) : usernameAvailability?.isError ? (
+              <Text className="text-xs text-destructive" testID="onboarding-username-error">
+                Username availability could not be checked. Try again.
+              </Text>
+            ) : usernameAvailability?.available === true ? (
+              <Text className="text-xs text-success" testID="onboarding-username-available">
+                Username is available
+              </Text>
+            ) : usernameAvailability?.available === false ? (
+              <Text className="text-xs text-destructive" testID="onboarding-username-unavailable">
+                That username is already taken
+              </Text>
             ) : null}
           </View>
         </View>
@@ -213,97 +237,6 @@ export const IdentityStep = ({ data, updateData, usernameAvailability }: StepPro
     </View>
   );
 };
-
-export const ExperienceStep = ({ data, updateData }: StepProps) => (
-  <View className="gap-4">
-    <Text className="text-xl font-semibold mb-2">What&apos;s your experience?</Text>
-    {(["beginner", "intermediate", "advanced"] as const).map((level) => (
-      <TouchableOpacity
-        key={level}
-        onPress={() =>
-          updateData({ experience_level: data.experience_level === level ? null : level })
-        }
-        testID={`onboarding-experience-${level}`}
-        className={`p-4 border rounded-xl flex-row items-center justify-between ${
-          data.experience_level === level ? "border-primary bg-primary/5" : "border-border bg-card"
-        }`}
-      >
-        <View>
-          <Text className="font-semibold capitalize text-lg">{level}</Text>
-          <Text className="text-muted-foreground text-sm">
-            {level === "beginner"
-              ? "New to training metrics"
-              : level === "intermediate"
-                ? "Familiar with zones"
-                : "Data obsessed"}
-          </Text>
-        </View>
-        {data.experience_level === level && <Icon as={Check} className="text-primary" />}
-      </TouchableOpacity>
-    ))}
-  </View>
-);
-
-export const GenderStep = ({ data, updateData, fieldSources }: StepProps) => (
-  <View className="gap-4">
-    <Text className="text-xl font-semibold mb-2">How do you identify?</Text>
-    {fieldSources?.gender ? (
-      <Text className="text-xs text-muted-foreground">From {fieldSources.gender}</Text>
-    ) : null}
-    {(["male", "female", "other"] as const).map((gender) => (
-      <TouchableOpacity
-        key={gender}
-        onPress={() => updateData({ gender: data.gender === gender ? null : gender })}
-        testID={`onboarding-gender-${gender}`}
-        className={`p-4 border rounded-xl flex-row items-center justify-between ${
-          data.gender === gender ? "border-primary bg-primary/5" : "border-border bg-card"
-        }`}
-      >
-        <Text className="font-semibold capitalize text-lg">{gender}</Text>
-        {data.gender === gender && <Icon as={Check} className="text-primary" />}
-      </TouchableOpacity>
-    ))}
-  </View>
-);
-
-export const DobStep = ({ data, updateData, fieldSources }: StepProps) => (
-  <View className="gap-4">
-    <Text className="text-xl font-semibold">When were you born?</Text>
-    {fieldSources?.dob ? (
-      <Text className="text-xs text-muted-foreground">From {fieldSources.dob}</Text>
-    ) : null}
-    <DateField
-      id="onboarding-dob"
-      label="Date of birth"
-      value={data.dob ?? undefined}
-      onChange={(nextDate) => updateData({ dob: nextDate ?? null })}
-      helperText="Used for age-based heart rate estimates and training zones."
-      placeholder="Select your date of birth"
-      maximumDate={new Date()}
-      accessibilityHint="Choose your date of birth"
-    />
-  </View>
-);
-
-export const WeightStep = ({ data, updateData, fieldSources }: StepProps) => (
-  <View className="gap-4">
-    <Text className="text-xl font-semibold mb-2">What is your weight?</Text>
-    {fieldSources?.weight_kg ? (
-      <Text className="text-xs text-muted-foreground">From {fieldSources.weight_kg}</Text>
-    ) : null}
-    <WeightInputField
-      id="onboarding-weight"
-      label="Current weight"
-      valueKg={data.weight_kg}
-      onChangeKg={(weight_kg) => updateData({ weight_kg })}
-      unit={data.weight_unit}
-      onUnitChange={(weight_unit) => updateData({ weight_unit })}
-      helperText="Switch units if needed. We keep the saved value aligned to your profile metrics."
-      placeholder={data.weight_unit === "kg" ? "70.0" : "154.3"}
-      required
-    />
-  </View>
-);
 
 export const SportStep = ({ data, updateData }: StepProps) => {
   const toggleSport = (sport: OnboardingData["sport_interests"][number]) => {
@@ -386,144 +319,6 @@ export const ProfileAndIntentStep = (props: StepProps) => (
     <IdentityStep {...props} />
     <IntentStep {...props} />
     <SportStep {...props} />
-  </View>
-);
-
-export const MaxHrStep = ({ data, updateData, fieldSources }: StepProps) => {
-  const estimatedMaxHr = estimateMaxHRFromDOB(data.dob);
-
-  return (
-    <View className="gap-4">
-      <Text className="text-xl font-semibold mb-2">Max Heart Rate</Text>
-      {fieldSources?.max_hr ? (
-        <Text className="text-xs text-muted-foreground">{fieldSources.max_hr}</Text>
-      ) : null}
-      <BoundedNumberInput
-        id="onboarding-max-hr"
-        label="Max HR"
-        value={data.max_hr?.toString() ?? ""}
-        onChange={(value) => {
-          if (!value.trim()) {
-            updateData({ max_hr: null });
-          }
-        }}
-        onNumberChange={(value) => updateData({ max_hr: value ? Math.round(value) : null })}
-        min={100}
-        max={220}
-        decimals={0}
-        unitLabel="bpm"
-        helperText="Optional. Add a tested value, or use the age-based estimate below."
-        placeholder="185"
-      />
-      {estimatedMaxHr ? (
-        <Button variant="outline" onPress={() => updateData({ max_hr: estimatedMaxHr })}>
-          <Text>Use estimate ({estimatedMaxHr} bpm)</Text>
-        </Button>
-      ) : (
-        <Text className="text-sm text-muted-foreground">
-          Add your date of birth first if you want a quick estimate.
-        </Text>
-      )}
-    </View>
-  );
-};
-
-export const RestingHrStep = ({ data, updateData }: StepProps) => (
-  <View className="gap-4">
-    <Text className="text-xl font-semibold mb-2">Resting Heart Rate</Text>
-    <BoundedNumberInput
-      id="onboarding-resting-hr"
-      label="Resting HR"
-      value={data.resting_hr?.toString() ?? ""}
-      onChange={(value) => {
-        if (!value.trim()) {
-          updateData({ resting_hr: null });
-        }
-      }}
-      onNumberChange={(value) => updateData({ resting_hr: value ? Math.round(value) : null })}
-      min={30}
-      max={100}
-      decimals={0}
-      unitLabel="bpm"
-      helperText="Optional. Best measured first thing in the morning."
-      placeholder="60"
-    />
-  </View>
-);
-
-export const FtpStep = ({ data, updateData, fieldSources }: StepProps) => {
-  const estimatedFtp = estimateConservativeFTPFromWeight(data.weight_kg);
-
-  return (
-    <View className="gap-4">
-      <Text className="text-xl font-semibold mb-2">Functional Threshold Power (FTP)</Text>
-      {fieldSources?.ftp ? (
-        <Text className="text-xs text-muted-foreground">From {fieldSources.ftp}</Text>
-      ) : null}
-      <BoundedNumberInput
-        id="onboarding-ftp"
-        label="FTP"
-        value={data.ftp?.toString() ?? ""}
-        onChange={(value) => {
-          if (!value.trim()) {
-            updateData({ ftp: null });
-          }
-        }}
-        onNumberChange={(value) => updateData({ ftp: value ? Math.round(value) : null })}
-        min={50}
-        max={500}
-        decimals={0}
-        unitLabel="W"
-        helperText="Optional. Use a recent tested value, or start with a conservative estimate."
-        placeholder="250"
-      />
-      {estimatedFtp ? (
-        <Button variant="outline" onPress={() => updateData({ ftp: estimatedFtp })}>
-          <Text>Use estimate ({estimatedFtp} W)</Text>
-        </Button>
-      ) : (
-        <Text className="text-sm text-muted-foreground">
-          Add your weight first if you want a quick starter estimate.
-        </Text>
-      )}
-    </View>
-  );
-};
-
-export const ThresholdPaceStep = ({ data, updateData }: StepProps) => (
-  <View className="gap-4">
-    <Text className="text-xl font-semibold mb-2">Threshold Running Pace</Text>
-    <Text className="text-muted-foreground mb-4">
-      Optional. Use your hard 20-40 minute pace if you know it.
-    </Text>
-
-    <PaceSecondsField
-      id="onboarding-threshold-pace"
-      label="Threshold pace"
-      valueSeconds={data.threshold_pace}
-      onChangeSeconds={(threshold_pace) => updateData({ threshold_pace })}
-      helperText="Enter pace in mm:ss per kilometer."
-      placeholder="4:30"
-    />
-  </View>
-);
-
-export const CssStep = ({ data, updateData }: StepProps) => (
-  <View className="gap-4">
-    <Text className="text-xl font-semibold mb-2">Critical Swim Speed</Text>
-    <Text className="text-muted-foreground mb-4">
-      Optional. Use your sustainable pace per 100m if you know it.
-    </Text>
-
-    <PaceSecondsField
-      id="onboarding-css"
-      label="CSS"
-      valueSeconds={data.css}
-      onChangeSeconds={(css) => updateData({ css })}
-      helperText="Enter pace in mm:ss per 100 meters."
-      placeholder="1:45"
-      unitLabel="/100m"
-    />
   </View>
 );
 
@@ -666,44 +461,209 @@ export const ConnectAndImportStep = (props: StepProps) => {
   );
 };
 
-export const TrainingBaselineStep = (props: StepProps) => {
-  const { data } = props;
-  const showCycling = data.sport_interests.includes("cycling");
-  const showRunning = data.sport_interests.includes("running");
-  const showSwimming = data.sport_interests.includes("swimming");
+export const TrainingBaselineStep = ({ data, fieldSources, updateData }: StepProps) => {
+  const baselineSources: AthleteBaselineFieldSources = {
+    experience: fieldSources?.experience_level,
+    dob: fieldSources?.dob,
+    gender: fieldSources?.gender,
+    weightKg: fieldSources?.weight_kg,
+    weightDisplayUnit: fieldSources?.weight_unit,
+    maxHr: fieldSources?.max_hr,
+    restingHr: fieldSources?.resting_hr,
+    ftp: fieldSources?.ftp,
+    thresholdPaceSecondsPerKm: fieldSources?.threshold_pace,
+    cssSecondsPer100m: fieldSources?.css,
+  };
+
+  const handleBaselineChange = (change: AthleteBaselineChange) => {
+    const options = {
+      source: change.source === "estimated" ? ("estimated" as const) : ("user" as const),
+    };
+
+    switch (change.field) {
+      case "experience":
+        updateData({ experience_level: change.value }, options);
+        break;
+      case "dob":
+        updateData({ dob: change.value }, options);
+        break;
+      case "gender":
+        updateData({ gender: change.value }, options);
+        break;
+      case "weightKg":
+        updateData({ weight_kg: change.value }, options);
+        break;
+      case "weightDisplayUnit":
+        updateData({ weight_unit: change.value }, options);
+        break;
+      case "maxHr":
+        updateData({ max_hr: change.value }, options);
+        break;
+      case "restingHr":
+        updateData({ resting_hr: change.value }, options);
+        break;
+      case "ftp":
+        updateData({ ftp: change.value }, options);
+        break;
+      case "thresholdPaceSecondsPerKm":
+        updateData({ threshold_pace: change.value }, options);
+        break;
+      case "cssSecondsPer100m":
+        updateData({ css: change.value }, options);
+        break;
+    }
+  };
+
+  return (
+    <View className="gap-3">
+      <SectionHeading
+        title="Training baseline"
+        description="Review imported or estimated values. Every field is optional; metrics can be excluded from this setup."
+      />
+      <AthleteBaselineFields
+        value={{
+          experience: data.experience_level,
+          dob: data.dob,
+          gender: data.gender,
+          weightKg: data.weight_kg,
+          weightDisplayUnit: data.weight_unit,
+          maxHr: data.max_hr,
+          restingHr: data.resting_hr,
+          ftp: data.ftp,
+          thresholdPaceSecondsPerKm: data.threshold_pace,
+          cssSecondsPer100m: data.css,
+        }}
+        onChange={handleBaselineChange}
+        visibleSports={data.sport_interests.filter(
+          (sport): sport is "cycling" | "running" | "swimming" =>
+            sport === "cycling" || sport === "running" || sport === "swimming",
+        )}
+        sources={baselineSources}
+        estimates={{
+          maxHr: estimateMaxHRFromDOB(data.dob),
+          ftp: estimateConservativeFTPFromWeight(data.weight_kg),
+        }}
+      />
+      <Text className="text-xs text-muted-foreground">
+        Excluding a metric means it is not used for this setup. Existing historical observations
+        remain available and require a separate evidence-management action to remove.
+      </Text>
+    </View>
+  );
+};
+
+export const GoalsPreferencesStep = ({ data, updateData }: StepProps) => {
+  const initialGoalDraftRef = useRef(data.goal_draft ?? createEmptyGoalDraft());
+  const goalFeedback = data.goal_draft
+    ? getGoalDraftQualityFeedback({ draft: data.goal_draft })
+    : null;
+
+  const handlePreferencesChange = (
+    change: Parameters<typeof applyCompactTrainingPreferencesChange>[1],
+  ) => {
+    if (data.training_preferences_hydration_status !== "ready") {
+      return;
+    }
+
+    try {
+      const patch = { ...data.training_preferences_patch, ...change };
+      const trainingSettings = applyCompactTrainingPreferencesChange(data.training_settings, patch);
+      updateData({
+        compact_training_preferences: getCompactTrainingPreferencesValue(trainingSettings),
+        should_save_training_preferences: true,
+        training_settings: trainingSettings,
+        training_preferences_patch: patch,
+        training_preferences_error: null,
+      });
+    } catch (error) {
+      updateData({
+        training_preferences_error:
+          error instanceof Error ? error.message : "Review these optional training preferences.",
+      });
+    }
+  };
+
+  const addGoal = () => {
+    const goalDraft = createEmptyGoalDraft();
+    initialGoalDraftRef.current = goalDraft;
+    updateData({ goal_draft: goalDraft, should_create_goal: true });
+  };
 
   return (
     <View className="gap-8">
       <View className="gap-3">
         <SectionHeading
-          title="Training baseline"
-          description="Review imported or estimated values. Every field here is optional and can be cleared."
+          title="Training preferences"
+          description="Choose a starting approach and weekly dose. You can fine-tune advanced settings later."
         />
-        <ExperienceStep {...props} />
-      </View>
-
-      <View className="gap-5">
-        <DobStep {...props} />
-        <GenderStep {...props} />
-        <WeightStep {...props} />
-      </View>
-
-      <View className="gap-5">
-        <MaxHrStep {...props} />
-        <RestingHrStep {...props} />
-      </View>
-
-      {showCycling || showRunning || showSwimming ? (
-        <View className="gap-5">
-          <SectionHeading
-            title="Sport-specific metrics"
-            description="We only show metrics for the sports you selected."
+        <View
+          accessibilityState={{
+            disabled: data.training_preferences_hydration_status !== "ready",
+          }}
+          pointerEvents={data.training_preferences_hydration_status === "ready" ? "auto" : "none"}
+          testID="onboarding-training-preferences-controls"
+        >
+          <TrainingPreferencesSurface
+            presentation="compact"
+            value={data.compact_training_preferences}
+            onChange={handlePreferencesChange}
           />
-          {showCycling ? <FtpStep {...props} /> : null}
-          {showRunning ? <ThresholdPaceStep {...props} /> : null}
-          {showSwimming ? <CssStep {...props} /> : null}
         </View>
-      ) : null}
+        {data.training_preferences_hydration_status === "loading" ? (
+          <Text className="text-sm text-muted-foreground" testID="onboarding-preferences-loading">
+            Loading your current training preferences…
+          </Text>
+        ) : null}
+        {data.training_preferences_hydration_status === "error" ? (
+          <Text className="text-sm text-destructive" testID="onboarding-preferences-query-error">
+            Training preferences are unavailable and will be skipped. You can still add a goal and
+            continue.
+          </Text>
+        ) : null}
+        {data.training_preferences_error ? (
+          <Text
+            className="text-sm text-destructive"
+            testID="onboarding-training-preferences-feedback"
+          >
+            {data.training_preferences_error} That change was not applied. Skip keeps your existing
+            training preferences unchanged.
+          </Text>
+        ) : null}
+      </View>
+
+      <View className="gap-3">
+        <SectionHeading
+          title="Goal (optional)"
+          description="Add one plan-ready goal now, or skip it and create one later."
+        />
+        {!data.should_create_goal ? (
+          <Button onPress={addGoal} testID="onboarding-add-goal" variant="outline">
+            <Text>Add a goal</Text>
+          </Button>
+        ) : (
+          <View className="gap-3">
+            <Button
+              onPress={() => updateData({ goal_draft: null, should_create_goal: false })}
+              testID="onboarding-remove-goal"
+              variant="ghost"
+            >
+              <Text className="text-muted-foreground">Remove goal</Text>
+            </Button>
+            <GoalEditorForm
+              contentSizing="intrinsic"
+              initialValue={initialGoalDraftRef.current}
+              onDraftChange={(goal_draft) => updateData({ goal_draft })}
+              onSubmit={() => undefined}
+              showSubmitAction={false}
+            />
+            {goalFeedback && !goalFeedback.canGuidePlan ? (
+              <Text className="text-sm text-muted-foreground" testID="onboarding-goal-feedback">
+                {goalFeedback.message} An incomplete goal will be skipped and will not block setup.
+              </Text>
+            ) : null}
+          </View>
+        )}
+      </View>
     </View>
   );
 };
@@ -748,6 +708,42 @@ export const SummaryStep = ({ data }: { data: OnboardingData }) => {
       value: data.threshold_pace ? `${formatDuration(data.threshold_pace)} /km` : null,
     },
     { label: "CSS", value: data.css ? `${formatDuration(data.css)} /100m` : null },
+    {
+      label: "Training preferences",
+      value:
+        data.training_preferences_hydration_status === "error"
+          ? "Unavailable — skipped"
+          : data.should_save_training_preferences
+            ? getTrainingPreferencesSummary(data.training_settings)
+            : "Skipped",
+      capitalize: true,
+    },
+    {
+      label: "Goal",
+      value:
+        data.should_create_goal && data.goal_draft
+          ? getGoalDraftQualityFeedback({ draft: data.goal_draft }).canGuidePlan
+            ? `Create ${data.goal_draft.title.trim()}`
+            : "Skip incomplete goal"
+          : "Skip",
+    },
+    {
+      label: "Groups & people",
+      value:
+        [
+          data.selected_invitation_ids.length
+            ? `${data.selected_invitation_ids.length} invitation${data.selected_invitation_ids.length === 1 ? "" : "s"}`
+            : null,
+          data.selected_group_actions.length
+            ? `${data.selected_group_actions.length} group${data.selected_group_actions.length === 1 ? "" : "s"}`
+            : null,
+          data.selected_follow_profile_ids.length
+            ? `${data.selected_follow_profile_ids.length} profile${data.selected_follow_profile_ids.length === 1 ? "" : "s"} to follow`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(", ") || "Skipped",
+    },
   ].filter((item) => item.value !== null && item.value !== undefined);
 
   return (

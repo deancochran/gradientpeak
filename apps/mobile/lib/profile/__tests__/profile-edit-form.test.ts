@@ -1,6 +1,10 @@
 import { defaultPreferredUnitSystem } from "@repo/core/units";
 import { describe, expect, it } from "vitest";
-import { getProfileEditFormDefaults, toProfilePatchInput } from "../profile-edit-form";
+import {
+  getProfileEditFormDefaults,
+  profileEditFormSchema,
+  toProfilePatchInput,
+} from "../profile-edit-form";
 
 describe("profile edit form defaults", () => {
   it("uses the Core default for absent or null preferred-unit values", () => {
@@ -16,9 +20,16 @@ describe("profile edit form defaults", () => {
     );
   });
 
+  it("loads the persisted full name and requires a non-blank canonical identity", () => {
+    expect(getProfileEditFormDefaults({ full_name: "Riley Chen" }).full_name).toBe("Riley Chen");
+    expect(profileEditFormSchema.shape.full_name.safeParse("   ").success).toBe(false);
+    expect(profileEditFormSchema.shape.full_name.parse("  Riley Chen  ")).toBe("Riley Chen");
+  });
+
   it("maps mobile blanks and visibility to the canonical patch without changing defaults", () => {
     expect(
       toProfilePatchInput({
+        full_name: "Riley Chen",
         username: "",
         bio: "",
         dob: "",
@@ -27,6 +38,7 @@ describe("profile edit form defaults", () => {
         is_public: null,
       }),
     ).toEqual({
+      full_name: "Riley Chen",
       username: null,
       bio: null,
       dob: null,

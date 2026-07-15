@@ -7,7 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import { Input } from "@repo/ui/components/input";
+import { SearchField } from "@repo/ui/components/search-field";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { CalendarDays, Check, Loader2 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -24,7 +24,7 @@ export const Route = createFileRoute("/_protected/record/plan")({
   component: RecordPlanPage,
 });
 
-function RecordPlanPage() {
+export function RecordPlanPage() {
   const navigate = Route.useNavigate();
   const launcher = Route.useSearch();
   const [searchText, setSearchText] = useState("");
@@ -60,7 +60,6 @@ function RecordPlanPage() {
         ...launcher,
         category,
         eventId,
-        routeId: event?.activity_plan?.route_id ?? launcher.routeId ?? undefined,
       },
     });
   };
@@ -98,10 +97,16 @@ function RecordPlanPage() {
           <CardDescription>Search today&apos;s scheduled plans before you start.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Input
+          <SearchField
+            accessibilityLabel="Search today's plans"
+            loading={isLoading}
+            loadingLabel="Loading today's plans"
+            maxLength={80}
+            name="planSearch"
+            onValueChange={setSearchText}
             placeholder="Search today's plans"
+            testId="record-plan-search"
             value={searchText}
-            onChange={(event) => setSearchText(event.currentTarget.value)}
           />
           <div className="flex flex-wrap gap-2">
             <Button
@@ -180,7 +185,6 @@ function RecordPlanPage() {
                   <div className="flex flex-wrap gap-2">
                     <Badge variant="outline">{category}</Badge>
                     <Badge variant="outline">{formatScheduledTime(event.scheduled_date)}</Badge>
-                    {plan.route_id ? <Badge>Includes route</Badge> : null}
                   </div>
                 </div>
               </CardHeader>
@@ -188,7 +192,7 @@ function RecordPlanPage() {
                 <p className="text-sm text-muted-foreground">
                   {isSelected
                     ? "Attached to the launcher. Choosing it again keeps this activity selected."
-                    : "Attach this activity to carry its category and linked route back to the launcher."}
+                    : "Attach this activity to carry its category back to the launcher."}
                 </p>
                 <Button onClick={() => attachPlan(event.id)}>
                   {isSelected ? <Check className="mr-2 h-4 w-4" /> : null}

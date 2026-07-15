@@ -6872,7 +6872,11 @@
       "name": "gpx-routes",
       "public": false,
       "fileSizeLimit": 10485760,
-      "allowedMimeTypes": ["application/gpx+xml", "application/xml"]
+      "allowedMimeTypes": [
+        "application/gpx+xml",
+        "application/vnd.garmin.tcx+xml",
+        "application/xml"
+      ]
     },
     {
       "id": "profile-avatars",

@@ -2,6 +2,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   clearActivitySubmissionQueueJobs,
+  incompleteQueueJobReferencesLocalFiles,
+  loadActivitySubmissionQueueJobByArtifactId,
   loadActivitySubmissionQueueJobs,
   removeActivitySubmissionQueueJob,
   saveActivitySubmissionQueueJobs,
@@ -69,6 +71,38 @@ describe("activity submission queue storage", () => {
     await upsertActivitySubmissionQueueJob(updated);
 
     await expect(loadActivitySubmissionQueueJobs()).resolves.toEqual([updated]);
+  });
+
+  it("serializes concurrent updates without dropping jobs", async () => {
+    const secondJob = { ...baseJob, id: "job-2", artifactId: "artifact-2" };
+
+    await Promise.all([
+      upsertActivitySubmissionQueueJob(baseJob),
+      upsertActivitySubmissionQueueJob(secondJob),
+    ]);
+
+    await expect(loadActivitySubmissionQueueJobs()).resolves.toEqual([baseJob, secondJob]);
+  });
+
+  it("loads an existing job by artifact or session identity", async () => {
+    await saveActivitySubmissionQueueJobs([baseJob]);
+
+    await expect(loadActivitySubmissionQueueJobByArtifactId("artifact-1")).resolves.toEqual(
+      baseJob,
+    );
+    await expect(loadActivitySubmissionQueueJobByArtifactId("session-1")).resolves.toEqual(baseJob);
+  });
+
+  it("only treats incomplete jobs with local references as recoverable", () => {
+    expect(incompleteQueueJobReferencesLocalFiles(baseJob)).toBe(true);
+    expect(incompleteQueueJobReferencesLocalFiles({ ...baseJob, status: "complete" })).toBe(false);
+    expect(
+      incompleteQueueJobReferencesLocalFiles({
+        ...baseJob,
+        localActivityFilePath: "",
+        streamArtifactPaths: [],
+      }),
+    ).toBe(false);
   });
 
   it("removes and clears queue jobs", async () => {

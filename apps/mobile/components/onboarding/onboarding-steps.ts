@@ -1,6 +1,9 @@
+import { isProfileMetricValueWithinRange } from "@repo/core/athlete-inputs";
 import { isValidIdentity } from "@/lib/onboarding/validation";
 import {
   ConnectAndImportStep,
+  GoalsPreferencesStep,
+  GroupsAndPeopleStep,
   ProfileAndIntentStep,
   SummaryStep,
   TrainingBaselineStep,
@@ -33,11 +36,30 @@ export function getOnboardingSteps(options: {
       component: TrainingBaselineStep,
       shouldShow: () => true,
       isValid: (data) =>
-        (!data.max_hr || (data.max_hr >= 100 && data.max_hr <= 220)) &&
-        (!data.resting_hr || (data.resting_hr >= 30 && data.resting_hr <= 100)) &&
-        (!data.ftp || (data.ftp >= 50 && data.ftp <= 500)) &&
-        (!data.threshold_pace || (data.threshold_pace >= 120 && data.threshold_pace <= 600)) &&
-        (!data.css || (data.css >= 60 && data.css <= 300)),
+        (data.weight_kg === null || isProfileMetricValueWithinRange("weight_kg", data.weight_kg)) &&
+        (data.max_hr === null || isProfileMetricValueWithinRange("max_hr", data.max_hr)) &&
+        (data.resting_hr === null ||
+          isProfileMetricValueWithinRange("resting_hr", data.resting_hr)) &&
+        (data.ftp === null || isProfileMetricValueWithinRange("ftp", data.ftp)) &&
+        (data.threshold_pace === null ||
+          isProfileMetricValueWithinRange("threshold_pace_seconds_per_km", data.threshold_pace)) &&
+        (data.css === null || isProfileMetricValueWithinRange("css_seconds_per_100m", data.css)),
+    },
+    {
+      id: "goals_preferences",
+      canSkip: true,
+      component: GoalsPreferencesStep,
+      shouldShow: () => true,
+      isValid: (data) =>
+        data.training_preferences_hydration_status !== "loading" &&
+        data.training_preferences_error === null,
+    },
+    {
+      id: "groups_people",
+      canSkip: true,
+      component: GroupsAndPeopleStep,
+      shouldShow: () => true,
+      isValid: () => true,
     },
     {
       id: "summary",

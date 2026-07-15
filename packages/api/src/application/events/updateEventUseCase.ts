@@ -21,6 +21,7 @@ type EventMutationScope = "single" | "future" | "series";
 
 type NormalizedEventUpdatePatch = {
   activity_plan_id?: string | null;
+  route_id?: string | null;
   training_plan_id?: string | null;
   notes?: string | null;
   event_type?: CoreEventType;
@@ -52,6 +53,7 @@ type EventRecord = {
   profile_id: string;
   recurrence_rule: string | null;
   recurrence_timezone: string | null;
+  route_id?: string | null;
   series_id: string | null;
   source_provider: string | null;
   starts_at: string;
@@ -230,6 +232,28 @@ export async function updateEventUseCase<
     }
   }
 
+  if (typeof patch.route_id === "string") {
+    if (permissions) {
+      await permissions.requireRead(
+        ctx.session.user.id,
+        { type: "activity_route", id: patch.route_id },
+        "Route not found or not accessible",
+      );
+    } else {
+      const route = await eventWriteRepository.getAccessibleActivityRoute({
+        profileId: ctx.session.user.id,
+        routeId: patch.route_id,
+      });
+
+      if (!route) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Route not found or not accessible",
+        });
+      }
+    }
+  }
+
   if (typeof patch.training_plan_id === "string") {
     if (permissions) {
       await permissions.requireRead(
@@ -257,6 +281,7 @@ export async function updateEventUseCase<
       ? { event_type: dependencies.toDbEventType(patch.event_type) }
       : {}),
     ...(patch.activity_plan_id !== undefined ? { activity_plan_id: patch.activity_plan_id } : {}),
+    ...(patch.route_id !== undefined ? { route_id: patch.route_id } : {}),
     ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
     ...(patch.lifecycle !== undefined
       ? { status: dependencies.toPersistableEventStatus(patch.lifecycle) }
@@ -360,6 +385,7 @@ export async function updateEventUseCase<
             description: representative.description,
             recurrenceRule: representative.recurrence_rule,
             recurrenceTimezone: representative.recurrence_timezone,
+            routeId: representative.route_id ?? null,
             seriesId: representative.series_id ?? representative.id,
             occurrenceKey: occurrence.occurrenceKey,
             originalStartsAt: occurrence.startsAt,

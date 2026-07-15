@@ -3,6 +3,7 @@ import { Icon } from "@repo/ui/components/icon";
 import { Progress } from "@repo/ui/components/progress";
 import { Text } from "@repo/ui/components/text";
 import { ArrowRight } from "lucide-react-native";
+import { useRef } from "react";
 import { ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useOnboardingFlow } from "@/components/onboarding/useOnboardingFlow";
@@ -11,6 +12,35 @@ import { AppConfirmModal } from "@/components/shared/AppFormModal";
 export default function OnboardingScreen() {
   const flow = useOnboardingFlow();
   const CurrentStep = flow.currentStep?.component;
+  const statusActionPendingRef = useRef(false);
+
+  const handleStatusModalPrimary = async () => {
+    if (statusActionPendingRef.current) {
+      return;
+    }
+
+    const statusModal = flow.statusModal;
+    if (!statusModal?.onPrimary) {
+      flow.setStatusModal(null);
+      return;
+    }
+
+    statusActionPendingRef.current = true;
+    flow.setStatusModal(null);
+    try {
+      await statusModal.onPrimary();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      statusActionPendingRef.current = false;
+    }
+  };
+
+  const handleStatusModalSecondary = async () => {
+    const statusModal = flow.statusModal;
+    flow.setStatusModal(null);
+    await statusModal?.onSecondary?.();
+  };
 
   if (!flow.currentStep || !CurrentStep) return null;
 
@@ -72,10 +102,24 @@ export default function OnboardingScreen() {
             description={flow.statusModal.description}
             onClose={() => flow.setStatusModal(null)}
             primaryAction={{
-              label: "OK",
-              onPress: () => flow.setStatusModal(null),
+              label: flow.statusModal.primaryLabel ?? "OK",
+              onPress: () => {
+                void handleStatusModalPrimary();
+              },
               testID: "onboarding-status-confirm",
             }}
+            secondaryAction={
+              flow.statusModal.onPrimary || flow.statusModal.onSecondary
+                ? {
+                    label: flow.statusModal.secondaryLabel ?? "Dismiss",
+                    onPress: () => {
+                      void handleStatusModalSecondary();
+                    },
+                    testID: "onboarding-status-dismiss",
+                    variant: "outline",
+                  }
+                : undefined
+            }
             testID="onboarding-status-modal"
             title={flow.statusModal.title}
           />

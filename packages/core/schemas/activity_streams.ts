@@ -1,13 +1,15 @@
 import { z } from "zod";
 
 const finiteNumberSchema = z.number().finite();
-const timestampLikeSchema = z.union([finiteNumberSchema, z.string()]);
+const timestampLikeSchema = z.union([finiteNumberSchema, z.string(), z.date()]);
 
 export const activityStreamRecordSchema = z
   .object({
     heartRate: finiteNumberSchema.optional(),
     heart_rate: finiteNumberSchema.optional(),
     heart_rate_bpm: finiteNumberSchema.optional(),
+    power: finiteNumberSchema.optional(),
+    speed: finiteNumberSchema.optional(),
     startTime: timestampLikeSchema.optional(),
     time: timestampLikeSchema.optional(),
     timestamp: timestampLikeSchema.optional(),

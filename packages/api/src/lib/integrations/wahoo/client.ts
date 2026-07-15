@@ -4,6 +4,7 @@
  */
 
 import type { WahooActivityType } from "./activity-type-utils";
+import { WahooReconnectRequiredError } from "./credentials";
 
 const WAHOO_API_BASE = "https://api.wahooligan.com";
 
@@ -344,7 +345,10 @@ export class WahooClient {
   /**
    * Fetch completed workout summaries for a bounded history window.
    */
-  async listWorkoutSummaries(input: WahooWorkoutSummaryListInput): Promise<WahooWorkoutSummary[]> {
+  async listWorkoutSummaries(input: WahooWorkoutSummaryListInput): Promise<{
+    sourceCount: number;
+    summaries: WahooWorkoutSummary[];
+  }> {
     const params = new URLSearchParams({
       page: String(input.page ?? 1),
       per_page: String(input.perPage ?? 50),
@@ -359,7 +363,8 @@ export class WahooClient {
     const start = new Date(input.startDate).getTime();
     const end = new Date(input.endDate).getTime();
 
-    return (response.workouts ?? [])
+    const workouts = response.workouts ?? [];
+    const summaries = workouts
       .filter((workout) => {
         const starts = new Date(workout.starts).getTime();
         return Number.isFinite(starts) && starts >= start && starts <= end;
@@ -379,6 +384,7 @@ export class WahooClient {
           },
         ];
       });
+    return { sourceCount: workouts.length, summaries };
   }
 
   /**
@@ -491,26 +497,22 @@ export class WahooClient {
    * Handle API error responses
    */
   private async handleErrorResponse(response: Response): Promise<WahooApiError> {
-    let errorMessage = `Wahoo API error: ${response.status} ${response.statusText}`;
     let errorCode = `HTTP_${response.status}`;
 
     try {
-      const errorData = await response.json();
-      console.error("[Wahoo API] Error response:", errorData);
-      if (errorData.error) {
-        errorMessage = errorData.error;
-      }
-      if (errorData.error_description) {
-        errorMessage += `: ${errorData.error_description}`;
-      }
-      if (errorData.code) {
+      const errorData = (await response.json()) as { code?: unknown };
+      if (typeof errorData.code === "string") {
         errorCode = errorData.code;
       }
     } catch {
-      // Response wasn't JSON, use default message
-      console.error("[Wahoo API] Non-JSON error response:", response.statusText);
+      // Response wasn't JSON; retain the status-based details.
     }
 
+    if (response.status === 401) {
+      return new WahooReconnectRequiredError();
+    }
+
+    const errorMessage = `Wahoo API error: ${response.status} ${response.statusText}`;
     const error: WahooApiError = new Error(errorMessage);
     error.status = response.status;
     error.code = errorCode;
@@ -574,7 +576,24 @@ export async function refreshWahooAccessToken(
   });
 
   if (!response.ok) {
-    throw new Error("Failed to refresh Wahoo access token");
+    let errorCode = `HTTP_${response.status}`;
+    try {
+      const errorData = (await response.json()) as { error?: unknown };
+      if (typeof errorData.error === "string") errorCode = errorData.error;
+    } catch {
+      // Retain status-based details without exposing the response body.
+    }
+
+    if (response.status === 401 || errorCode.toLowerCase() === "invalid_grant") {
+      throw new WahooReconnectRequiredError();
+    }
+
+    const error: WahooApiError = new Error(
+      `Wahoo token refresh failed: ${response.status} ${response.statusText}`,
+    );
+    error.status = response.status;
+    error.code = errorCode;
+    throw error;
   }
 
   const data = (await response.json()) as {

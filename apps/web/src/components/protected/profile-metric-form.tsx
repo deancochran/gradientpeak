@@ -2,23 +2,29 @@ import {
   PROFILE_METRIC_RANGES,
   PROFILE_METRIC_UNITS,
   type ProfileMetricType,
+  profileMetricDefinitions,
 } from "@repo/core/schemas/profile-metrics";
 import { Button } from "@repo/ui/components/button";
 import { DialogFooter } from "@repo/ui/components/dialog";
 import {
   Form,
   FormBoundedNumberField,
+  FormControl,
   FormDateTimeField,
+  FormField,
+  FormItem,
+  FormMessage,
   FormTextareaField,
 } from "@repo/ui/components/form";
 import { LoadingButton } from "@repo/ui/components/loading";
+import { PaceSecondsField } from "@repo/ui/components/pace-seconds-field";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { z } from "zod";
 
 const profileMetricFormSchema = z.object({
   notes: z.string().max(1000).optional(),
   recorded_at: z.string().min(1, "Choose when this metric was recorded."),
-  value: z.coerce.number().positive("Enter a positive value."),
+  value: z.coerce.number().nonnegative("Enter zero or a positive value."),
 });
 
 export type ProfileMetricFormInput = z.input<typeof profileMetricFormSchema>;
@@ -45,7 +51,7 @@ export function getProfileMetricFormValues(
   return {
     notes: metric?.notes ?? "",
     recorded_at: toDateTimeLocalValue(metric?.recorded_at ?? new Date()),
-    value: metric?.value ?? PROFILE_METRIC_RANGES[metricType].min,
+    value: metric?.value ?? profileMetricDefinitions[metricType].defaultValue,
   };
 }
 
@@ -74,19 +80,50 @@ export function ProfileMetricForm({
     label: "Save",
     submittingLabel: "Saving...",
   });
+  const paceUnit =
+    metricType === "threshold_pace_seconds_per_km"
+      ? "/km"
+      : metricType === "css_seconds_per_100m"
+        ? "/100m"
+        : null;
 
   return (
     <Form {...form}>
       <form className="space-y-4" onSubmit={submit.handleSubmit}>
-        <FormBoundedNumberField
-          control={form.control}
-          decimals={2}
-          label={`Value (${PROFILE_METRIC_UNITS[metricType]})`}
-          max={PROFILE_METRIC_RANGES[metricType].max}
-          min={PROFILE_METRIC_RANGES[metricType].min}
-          name="value"
-          unitLabel={PROFILE_METRIC_UNITS[metricType]}
-        />
+        {paceUnit ? (
+          <FormField
+            control={form.control}
+            name="value"
+            render={({ field, fieldState }) => (
+              <FormItem>
+                <FormControl>
+                  <PaceSecondsField
+                    error={fieldState.error?.message}
+                    formControl={form.control}
+                    helperText="Enter minutes and seconds for the displayed distance."
+                    id="profile-metric-pace"
+                    label={profileMetricDefinitions[metricType].label}
+                    onBlur={field.onBlur}
+                    onChangeSeconds={field.onChange}
+                    unitLabel={paceUnit}
+                    valueSeconds={typeof field.value === "number" ? field.value : null}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        ) : (
+          <FormBoundedNumberField
+            control={form.control}
+            decimals={profileMetricDefinitions[metricType].decimals}
+            label={`Value (${PROFILE_METRIC_UNITS[metricType]})`}
+            max={PROFILE_METRIC_RANGES[metricType].max}
+            min={PROFILE_METRIC_RANGES[metricType].min}
+            name="value"
+            unitLabel={PROFILE_METRIC_UNITS[metricType]}
+          />
+        )}
         <FormDateTimeField control={form.control} label="Recorded at" name="recorded_at" />
         <FormTextareaField
           control={form.control}

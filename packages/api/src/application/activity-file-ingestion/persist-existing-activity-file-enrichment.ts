@@ -37,6 +37,7 @@ export interface PersistExistingActivityFileEnrichmentInput {
   activityFilePath: string;
   activityFileSize: number | null;
   activityFileType: ActivityFileType;
+  activityType: string;
   parsedData: ParsedActivityFilePersistenceData;
   enrichment: ExistingActivityFileEnrichmentPersistenceData;
 }
@@ -65,7 +66,7 @@ export async function persistExistingActivityFileEnrichment(
     efforts: enrichment.effortsToInsert,
     detectedLTHR: enrichment.detectedLTHR,
     activityCompletedAt: enrichment.activityCompletedAt,
-    activityType: input.parsedData.metadata.type,
+    activityType: input.activityType,
     startedAt: input.parsedData.metadata.startTime,
     finishedAt: enrichment.activityCompletedAt,
   });

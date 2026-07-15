@@ -27,6 +27,32 @@ describe("buildTrainingPathLoadMetrics", () => {
         targetLoadTss: 70,
       }),
     ).toContainEqual({ label: "Completed", value: "Unavailable" });
+    expect(
+      buildTrainingPathLoadMetrics({
+        completedLoadTss: 35,
+        hasCompletedActivityWithoutLoad: true,
+      }),
+    ).toContainEqual({ label: "Completed", value: "35 TSS + unavailable" });
+    expect(
+      buildTrainingPathLoadMetrics({ completedLoadTss: null, completedLoadUnavailable: true }),
+    ).toContainEqual({ label: "Completed", value: "Unavailable" });
+  });
+
+  it("omits an unavailable recommendation while preserving explicit recommended zero", () => {
+    expect(buildTrainingPathLoadMetrics({ plannedLoadTss: 30, targetLoadTss: null })).toEqual([
+      { label: "Planned", value: "30 TSS" },
+    ]);
+    expect(
+      buildTrainingPathLoadMetrics({
+        hasTargetLoad: false,
+        plannedLoadTss: 30,
+        targetLoadTss: 0,
+      }),
+    ).toEqual([{ label: "Planned", value: "30 TSS" }]);
+    expect(buildTrainingPathLoadMetrics({ plannedLoadTss: 30, targetLoadTss: 0 })).toContainEqual({
+      label: "Recommended",
+      value: "0 TSS",
+    });
   });
 
   it("omits completed load in the date-agnostic builder", () => {

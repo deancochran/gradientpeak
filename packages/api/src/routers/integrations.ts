@@ -1,3 +1,4 @@
+import { isProviderRuntimeEnabled } from "@repo/core";
 import {
   type PublicIntegrationProvider,
   publicIntegrationProviderSchema,
@@ -33,6 +34,10 @@ import { getApiStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure, publicProcedure } from "../trpc";
 
 const storageService = getApiStorageService();
+
+function isDefiniteStorageNotFound(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "status" in error && error.status === 404;
+}
 
 const providerSchema = publicIntegrationProviderSchema;
 
@@ -232,16 +237,47 @@ const icalRemoveFeedResultSchema = z
   .strict();
 
 const wahooSyncActionSchema = z.enum(["created", "updated", "recreated", "no_change"]);
+const wahooSyncFailureCodeSchema = z.enum([
+  "missing_metric",
+  "unsupported_target",
+  "unsupported_sport",
+  "invalid_plan",
+  "missing_plan",
+  "missing_event",
+  "missing_integration",
+  "reconnect_required",
+  "provider_failure",
+]);
+const wahooSyncFailureCategorySchema = z.enum(["eligibility", "integration", "provider"]);
 
-const wahooSyncResultSchema = z
+const wahooSyncSuccessSchema = z
   .object({
-    success: z.boolean(),
+    success: z.literal(true),
     action: wahooSyncActionSchema,
     workoutId: z.string().min(1).optional(),
     warnings: z.array(z.string()).optional(),
-    error: z.string().min(1).optional(),
+    error: z.undefined().optional(),
+    failureCode: z.undefined().optional(),
+    failureCategory: z.undefined().optional(),
+    retryable: z.undefined().optional(),
   })
   .strict();
+const wahooSyncFailureSchema = z
+  .object({
+    success: z.literal(false),
+    action: z.literal("no_change"),
+    workoutId: z.undefined().optional(),
+    warnings: z.array(z.string()).optional(),
+    error: z.string().min(1),
+    failureCode: wahooSyncFailureCodeSchema,
+    failureCategory: wahooSyncFailureCategorySchema,
+    retryable: z.boolean(),
+  })
+  .strict();
+const wahooSyncResultSchema = z.discriminatedUnion("success", [
+  wahooSyncSuccessSchema,
+  wahooSyncFailureSchema,
+]);
 
 const wahooEventSyncStatusSchema = z.union([
   z
@@ -264,16 +300,10 @@ const wahooEventSyncStatusSchema = z.union([
   z.null(),
 ]);
 
-const wahooTestSyncResultSchema = z
-  .object({
-    success: z.boolean(),
-    action: wahooSyncActionSchema,
-    workoutId: z.string().min(1).optional(),
-    error: z.string().min(1).optional(),
-    warnings: z.array(z.string()).optional(),
-    timestamp: z.string().datetime(),
-  })
-  .strict();
+const wahooTestSyncResultSchema = z.discriminatedUnion("success", [
+  wahooSyncSuccessSchema.extend({ timestamp: z.string().datetime() }),
+  wahooSyncFailureSchema.extend({ timestamp: z.string().datetime() }),
+]);
 
 const refreshTokenProviderResponseSchema = z
   .object({
@@ -367,7 +397,13 @@ function getWahooSyncService(ctx: Context) {
     storage: createWahooRouteStorage({
       async downloadRouteGpx(filePath) {
         const { data, error } = await storageService.storage.from(ROUTES_BUCKET).download(filePath);
-        if (error || !data) return null;
+        if (error) {
+          if (isDefiniteStorageNotFound(error)) return null;
+          throw error;
+        }
+        if (!data) {
+          throw new Error("Route storage download returned no data");
+        }
         return data.text();
       },
     }),
@@ -395,6 +431,18 @@ const getAuthUrlInputSchema = z
     redirectUri: z.string().url().optional(), // Mobile app provides its redirect URI
   })
   .strict();
+
+function requireAllowedMobileRedirect(redirectUri?: string): string {
+  const target = redirectUri ?? getDefaultMobileRedirect();
+  const allowed = new Set([getDefaultMobileRedirect()]);
+  if (!allowed.has(target)) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "OAuth redirect URI is not allowed",
+    });
+  }
+  return target;
+}
 
 const disconnectInputSchema = z
   .object({
@@ -475,7 +523,7 @@ export const integrationsRouter = createTRPCRouter({
     const repositories = getIntegrationsRepositories(ctx);
     const now = new Date();
 
-    if (!isProviderOAuthConfigured(input.provider)) {
+    if (!isProviderRuntimeEnabled(input.provider) || !isProviderOAuthConfigured(input.provider)) {
       throw new TRPCError({
         code: "BAD_REQUEST",
         message: "Integration is not configured on this server",
@@ -498,7 +546,7 @@ export const integrationsRouter = createTRPCRouter({
       state,
       profileId: ctx.session.user.id,
       provider: input.provider,
-      mobileRedirectUri: input.redirectUri || getDefaultMobileRedirect(),
+      mobileRedirectUri: requireAllowedMobileRedirect(input.redirectUri),
       createdAt: now,
       expiresAt: new Date(now.getTime() + 10 * 60 * 1000),
     });
@@ -677,7 +725,9 @@ export const integrationsRouter = createTRPCRouter({
         });
       }
 
-      const integration = await repositories.integrations.upsertByProfileIdAndProvider({
+      const integration = await repositories.integrations.upsertFromOAuthState({
+        state: input.state,
+        now,
         profileId: input.userId,
         provider: input.provider,
         externalId: input.externalId,
@@ -687,18 +737,28 @@ export const integrationsRouter = createTRPCRouter({
         scope: input.scope,
       });
 
-      if (input.provider === "wahoo" && supportsActivityHistorySync(input.provider)) {
-        await enqueueActivityHistoryReconcile({
-          integrationId: integration.id,
-          profileId: input.userId,
-          provider: input.provider,
-          providerSyncRepository: createProviderSyncRepository({ db: getRequiredDb(ctx) }),
-          trigger: "connect",
+      if (!integration) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Invalid or expired OAuth state",
         });
       }
 
-      // Clean up the OAuth state after successful storage
-      await repositories.oauthStates.deleteByState(input.state);
+      if (input.provider === "wahoo" && supportsActivityHistorySync(input.provider)) {
+        try {
+          await enqueueActivityHistoryReconcile({
+            integrationId: integration.id,
+            profileId: input.userId,
+            provider: input.provider,
+            providerSyncRepository: createProviderSyncRepository({ db: getRequiredDb(ctx) }),
+            trigger: "connect",
+          });
+        } catch (error) {
+          logger.warn("Wahoo connection stored without initial history job", {
+            errorName: error instanceof Error ? error.name : "unknown",
+          });
+        }
+      }
 
       return strictSuccessSchema.parse({ success: true });
     }),
@@ -970,6 +1030,13 @@ export const integrationsRouter = createTRPCRouter({
             workoutId: result.workoutId,
             error: result.error,
             warnings: result.warnings,
+            ...(result.success
+              ? {}
+              : {
+                  failureCode: result.failureCode,
+                  failureCategory: result.failureCategory,
+                  retryable: result.retryable,
+                }),
             timestamp: new Date().toISOString(),
           },
           "Wahoo test sync normalization returned invalid data",

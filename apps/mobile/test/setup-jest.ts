@@ -243,6 +243,20 @@ jest.mock("react-native-css/components/react-native-safe-area-context", () => ({
   SafeAreaView: createHost("SafeAreaView"),
 }));
 
+jest.mock("react-native-safe-area-context", () => ({
+  __esModule: true,
+  initialWindowMetrics: {
+    frame: { height: 844, width: 390, x: 0, y: 0 },
+    insets: { bottom: 0, left: 0, right: 0, top: 0 },
+  },
+  SafeAreaConsumer: ({ children }: { children: (insets: unknown) => unknown }) =>
+    children({ bottom: 0, left: 0, right: 0, top: 0 }),
+  SafeAreaProvider: createHost("SafeAreaProvider"),
+  SafeAreaView: createHost("SafeAreaView"),
+  useSafeAreaFrame: () => ({ height: 844, width: 390, x: 0, y: 0 }),
+  useSafeAreaInsets: () => ({ bottom: 0, left: 0, right: 0, top: 0 }),
+}));
+
 jest.mock("@garmin/fitsdk", () => ({
   __esModule: true,
   Decoder: class MockDecoder {

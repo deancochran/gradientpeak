@@ -26,9 +26,14 @@ export async function persistOnboardingProfile({
   const [updatedProfile] = await tx
     .update(profiles)
     .set({
-      dob: input.dob ? new Date(input.dob) : undefined,
+      dob:
+        input.baseline_field_sources?.dob === "cleared"
+          ? null
+          : input.dob
+            ? new Date(input.dob)
+            : undefined,
       full_name: input.full_name,
-      gender: input.gender,
+      gender: input.baseline_field_sources?.gender === "cleared" ? null : input.gender,
       onboarded: true,
       username: input.username,
       updated_at: new Date(),

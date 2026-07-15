@@ -1,6 +1,6 @@
 import { downsampleStream, getSamplingStrategy } from "@repo/core";
-import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
-import { Text } from "@repo/ui/components/text";
+import { ChartCard, ChartEmptyState } from "@repo/ui/components/chart";
+import { summarizeChartValues } from "@repo/ui/lib/chart";
 import { Circle, useFont } from "@shopify/react-native-skia";
 import { useMemo } from "react";
 import { View } from "react-native";
@@ -112,6 +112,11 @@ interface StreamChartProps {
   showLegend?: boolean;
 }
 
+function formatSummaryValue(value: number, unit: string) {
+  const formatted = Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1);
+  return `${formatted} ${unit}`;
+}
+
 export function StreamChart({
   title,
   streams,
@@ -122,6 +127,31 @@ export function StreamChart({
   const font = useFont(require("@/assets/fonts/SpaceMono-Regular.ttf"), 12);
   const { state, isActive } = useChartPressState({ x: 0, y: {} });
   const { state: transformState } = useChartTransformState();
+  const summary = useMemo(
+    () =>
+      streams.flatMap((stream) => {
+        const values = summarizeChartValues(
+          stream.stream.values as Array<number | null | undefined>,
+        );
+        if (!values) return [];
+        const trend =
+          values.direction === "up"
+            ? "increasing"
+            : values.direction === "down"
+              ? "decreasing"
+              : "steady";
+        return [
+          {
+            label: stream.label,
+            value: `Latest ${formatSummaryValue(values.last, stream.unit)} · Min ${formatSummaryValue(
+              values.min,
+              stream.unit,
+            )} · Max ${formatSummaryValue(values.max, stream.unit)} · ${trend}`,
+          },
+        ];
+      }),
+    [streams],
+  );
 
   // Prepare chart data
   const chartData = useMemo(() => {
@@ -201,105 +231,97 @@ export function StreamChart({
 
   if (chartData.length === 0) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>{title}</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <View style={{ height }} className="items-center justify-center bg-muted rounded-lg">
-            <Text className="text-muted-foreground">No data available</Text>
-          </View>
-        </CardContent>
-      </Card>
+      <ChartCard title={title}>
+        <View style={{ height }}>
+          <ChartEmptyState message="No data available" />
+        </View>
+      </ChartCard>
     );
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        {showLegend && (
-          <View className="flex-row flex-wrap gap-3 mt-2">
-            {streams.map((stream) => (
-              <View key={stream.type} className="flex-row items-center gap-1">
-                <View className="w-3 h-3 rounded-full" style={{ backgroundColor: stream.color }} />
-                <Text className="text-xs text-muted-foreground">{stream.label}</Text>
-              </View>
-            ))}
-          </View>
+    <ChartCard
+      title={title}
+      legend={
+        showLegend
+          ? streams.map((stream) => ({
+              id: stream.type,
+              color: stream.color,
+              label: stream.label,
+            }))
+          : undefined
+      }
+      summary={summary}
+    >
+      <View style={{ height }}>
+        {font && (
+          <CartesianChart
+            data={chartData}
+            xKey="x"
+            yKeys={streams.map((s) => s.stream.type)}
+            axisOptions={{
+              font,
+              formatXLabel: (value) => {
+                if (xAxisType === "time") {
+                  const minutes = Math.floor(value / 60);
+                  return `${minutes}m`;
+                }
+                return `${value.toFixed(1)}km`;
+              },
+            }}
+            chartPressState={state}
+            transformState={transformState}
+          >
+            {({ points }) => (
+              <>
+                {streams.map((stream) => (
+                  <Line
+                    key={stream.type}
+                    points={points[stream.type]}
+                    color={stream.color}
+                    strokeWidth={2}
+                    connectMissingData={false}
+                    animate={{ type: "timing", duration: 300 }}
+                  />
+                ))}
+                {isActive &&
+                  streams.map((stream) => {
+                    const point = (state.y as StreamPressState)[stream.type];
+                    if (!point) return null;
+                    return (
+                      <Circle
+                        key={`active-${stream.type}`}
+                        cx={state.x.position}
+                        cy={point.position}
+                        r={6}
+                        color={stream.color}
+                        opacity={0.8}
+                      />
+                    );
+                  })}
+              </>
+            )}
+          </CartesianChart>
         )}
-      </CardHeader>
-      <CardContent>
-        <View style={{ height }}>
-          {font && (
-            <CartesianChart
-              data={chartData}
-              xKey="x"
-              yKeys={streams.map((s) => s.stream.type)}
-              axisOptions={{
-                font,
-                formatXLabel: (value) => {
-                  if (xAxisType === "time") {
-                    const minutes = Math.floor(value / 60);
-                    return `${minutes}m`;
-                  }
-                  return `${value.toFixed(1)}km`;
-                },
-              }}
-              chartPressState={state}
-              transformState={transformState}
-            >
-              {({ points }) => (
-                <>
-                  {streams.map((stream) => (
-                    <Line
-                      key={stream.type}
-                      points={points[stream.type]}
-                      color={stream.color}
-                      strokeWidth={2}
-                      connectMissingData={false}
-                      animate={{ type: "timing", duration: 300 }}
-                    />
-                  ))}
-                  {isActive &&
-                    streams.map((stream) => {
-                      const point = (state.y as StreamPressState)[stream.type];
-                      if (!point) return null;
-                      return (
-                        <Circle
-                          key={`active-${stream.type}`}
-                          cx={state.x.position}
-                          cy={point.position}
-                          r={6}
-                          color={stream.color}
-                          opacity={0.8}
-                        />
-                      );
-                    })}
-                </>
-              )}
-            </CartesianChart>
-          )}
-        </View>
+      </View>
 
-        {isActive ? (
-          <InteractiveChartValueTray
-            testID="stream-chart-active-values"
-            items={streams.map((stream) => {
-              const value = (state.y as StreamPressState)[stream.type]?.value?.value;
-              return {
-                key: stream.type,
-                label: stream.label,
-                value:
-                  typeof value === "number" && Number.isFinite(value)
-                    ? `${value.toFixed(0)} ${stream.unit}`
-                    : `-- ${stream.unit}`,
-                color: stream.color,
-              };
-            })}
-          />
-        ) : null}
-      </CardContent>
-    </Card>
+      {isActive ? (
+        <InteractiveChartValueTray
+          testID="stream-chart-active-values"
+          items={streams.map((stream) => {
+            const value = (state.y as StreamPressState)[stream.type]?.value?.value;
+            return {
+              key: stream.type,
+              label: stream.label,
+              value:
+                typeof value === "number" && Number.isFinite(value)
+                  ? `${value.toFixed(0)} ${stream.unit}`
+                  : `-- ${stream.unit}`,
+              color: stream.color,
+            };
+          })}
+        />
+      ) : null}
+    </ChartCard>
   );
 }

@@ -1,4 +1,9 @@
-import type { ActivityPlanStructureV2, IntervalStepV2, IntervalV2 } from "@repo/core";
+import type {
+  ActivityPlanStructureV2,
+  IntensityTargetV2,
+  IntervalStepV2,
+  IntervalV2,
+} from "@repo/core";
 import { describe, expect, it } from "vitest";
 import {
   calculateWorkoutDuration,
@@ -41,14 +46,25 @@ describe("plan-converter", () => {
         repetitions: 2,
         steps: [
           createStep({ name: "Time", duration: { type: "time", seconds: 30 } }),
-          createStep({ name: "Distance", duration: { type: "distance", meters: 250 } }),
+          createStep({
+            name: "Distance",
+            duration: { type: "distance", meters: 250 },
+          }),
           createStep({ name: "Open", duration: { type: "untilFinished" } }),
-          createStep({ name: "Reps", duration: { type: "repetitions", count: 3 } }),
+          createStep({
+            name: "Reps",
+            duration: { type: "repetitions", count: 3 },
+          }),
         ],
       }),
       createInterval({
         repetitions: 1,
-        steps: [createStep({ name: "Cool Down", duration: { type: "time", seconds: 15 } })],
+        steps: [
+          createStep({
+            name: "Cool Down",
+            duration: { type: "time", seconds: 15 },
+          }),
+        ],
       }),
     ]);
 
@@ -122,78 +138,161 @@ describe("plan-converter", () => {
   });
 
   it.each([
-    ["%FTP", undefined],
-    ["%FTP", null],
-    ["%FTP", 0],
-    ["%FTP", -1],
-    ["%FTP", Number.NaN],
-    ["%FTP", Number.POSITIVE_INFINITY],
-    ["RPE", undefined],
-    ["RPE", null],
-    ["RPE", 0],
-    ["RPE", -1],
-    ["RPE", Number.NaN],
-    ["RPE", Number.POSITIVE_INFINITY],
-  ] as const)("requires a finite positive FTP for cycling %s targets when FTP is %s", (targetType, ftp) => {
-    const structure = createStructure([
-      createInterval({
-        steps: [createStep({ targets: [{ type: targetType, intensity: 70 }] })],
-      }),
-    ]);
+    {
+      activityType: "bike",
+      target: { type: "%FTP", intensity: 70 },
+      error: "%FTP targets require a finite positive FTP in the athlete profile",
+    },
+    {
+      activityType: "bike",
+      target: { type: "watts", intensity: 200 },
+      expectedTarget: { type: "watts", low: 190, high: 210 },
+    },
+    {
+      activityType: "bike",
+      target: { type: "bpm", intensity: 150 },
+      expectedTarget: { type: "hr", low: 145, high: 155 },
+    },
+    {
+      activityType: "bike",
+      target: { type: "%ThresholdHR", intensity: 80 },
+      error: "%ThresholdHR targets require a finite positive threshold heart rate",
+    },
+    {
+      activityType: "bike",
+      target: { type: "%MaxHR", intensity: 80 },
+      error: "%MaxHR targets require a finite positive maximum heart rate",
+    },
+    {
+      activityType: "bike",
+      target: { type: "speed", intensity: 18 },
+      error: "speed targets are not supported for bike workouts",
+    },
+    {
+      activityType: "bike",
+      target: { type: "cadence", intensity: 100 },
+      expectedTarget: { type: "rpm", low: 95, high: 105 },
+    },
+    {
+      activityType: "bike",
+      target: { type: "RPE", intensity: 7 },
+      error: "RPE targets are not supported by Wahoo",
+    },
+    {
+      activityType: "run",
+      target: { type: "%FTP", intensity: 70 },
+      error: "%FTP targets are not supported for run workouts",
+    },
+    {
+      activityType: "run",
+      target: { type: "watts", intensity: 200 },
+      error: "watts targets are not supported for run workouts",
+    },
+    {
+      activityType: "run",
+      target: { type: "bpm", intensity: 150 },
+      expectedTarget: { type: "hr", low: 145, high: 155 },
+    },
+    {
+      activityType: "run",
+      target: { type: "%ThresholdHR", intensity: 80 },
+      error: "%ThresholdHR targets require a finite positive threshold heart rate",
+    },
+    {
+      activityType: "run",
+      target: { type: "%MaxHR", intensity: 80 },
+      error: "%MaxHR targets require a finite positive maximum heart rate",
+    },
+    {
+      activityType: "run",
+      target: { type: "speed", intensity: 18 },
+      expectedTarget: { type: "speed", low: 4.75, high: 5.25 },
+    },
+    {
+      activityType: "run",
+      target: { type: "cadence", intensity: 100 },
+      expectedTarget: { type: "rpm", low: 95, high: 105 },
+    },
+    {
+      activityType: "run",
+      target: { type: "RPE", intensity: 7 },
+      error: "RPE targets are not supported by Wahoo",
+    },
+  ] satisfies Array<{
+    activityType: "bike" | "run";
+    target: IntensityTargetV2;
+    expectedTarget?: { type: string; low: number; high: number };
+    error?: string;
+  }>)("preserves or rejects $activityType $target.type with zero athlete metrics without domain substitution", ({
+    activityType,
+    target,
+    expectedTarget,
+    error,
+  }) => {
+    const convert = () =>
+      convertToWahooPlan(
+        createStructure([
+          createInterval({
+            steps: [createStep({ name: "Sparse target", targets: [target] })],
+          }),
+        ]),
+        {
+          activityType,
+          name: "Sparse athlete workout",
+          ftp: 0,
+          max_hr: 0,
+          threshold_hr: 0,
+        },
+      );
 
+    if (error) {
+      expect(convert).toThrow(error);
+      return;
+    }
+
+    expect(convert().intervals[0]?.targets).toEqual([expectedTarget]);
+  });
+
+  it("rejects cycling RPE even when FTP exists rather than fabricating FTP intensity", () => {
     expect(() =>
-      convertToWahooPlan(structure, {
-        activityType: "bike",
-        name: "FTP Workout",
-        ftp: ftp as number,
-      }),
-    ).toThrow("A positive FTP is required to sync a workout with FTP-relative targets to Wahoo.");
+      convertToWahooPlan(
+        createStructure([
+          createInterval({
+            steps: [
+              createStep({
+                name: "Hard effort",
+                targets: [{ type: "RPE", intensity: 8 }],
+              }),
+            ],
+          }),
+        ]),
+        { activityType: "bike", ftp: 250, name: "RPE Ride" },
+      ),
+    ).toThrow("RPE targets are not supported by Wahoo");
   });
 
-  it("converts cycling RPE targets with a valid FTP header", () => {
-    const plan = convertToWahooPlan(
-      createStructure([
-        createInterval({
-          steps: [
-            createStep({
-              name: "Hard effort",
-              targets: [{ type: "RPE", intensity: 8 }],
-            }),
-          ],
-        }),
-      ]),
-      { activityType: "bike", ftp: 250, name: "RPE Ride" },
-    );
-
-    expect(plan.header.ftp).toBe(250);
-    expect(plan.intervals[0]?.targets?.[0]).toMatchObject({ type: "ftp" });
-    expect(plan.intervals[0]?.targets?.[0]?.low).toBeCloseTo(0.855);
-    expect(plan.intervals[0]?.targets?.[0]?.high).toBeCloseTo(0.945);
+  it("reports unsupported RPE instead of requiring FTP when watts is also present", () => {
+    expect(() =>
+      convertToWahooPlan(
+        createStructure([
+          createInterval({
+            steps: [
+              createStep({
+                name: "Power with perceived effort guidance",
+                targets: [
+                  { type: "watts", intensity: 220 },
+                  { type: "RPE", intensity: 8 },
+                ],
+              }),
+            ],
+          }),
+        ]),
+        { activityType: "bike", name: "Power Ride" },
+      ),
+    ).toThrow("RPE targets are not supported by Wahoo");
   });
 
-  it("does not require FTP when a cycling watts target takes priority over RPE", () => {
-    const plan = convertToWahooPlan(
-      createStructure([
-        createInterval({
-          steps: [
-            createStep({
-              name: "Power with perceived effort guidance",
-              targets: [
-                { type: "watts", intensity: 220 },
-                { type: "RPE", intensity: 8 },
-              ],
-            }),
-          ],
-        }),
-      ]),
-      { activityType: "bike", name: "Power Ride" },
-    );
-
-    expect(plan.header.ftp).toBeUndefined();
-    expect(plan.intervals[0]?.targets).toEqual([{ type: "watts", low: 209, high: 231 }]);
-  });
-
-  it("converts single-step duration and uses run-native fallbacks", () => {
+  it("converts single-step duration without inventing a target", () => {
     const structure = createStructure([
       createInterval({
         steps: [
@@ -201,11 +300,6 @@ describe("plan-converter", () => {
             name: "Cadence Drills",
             duration: { type: "repetitions", count: 4 },
             targets: [{ type: "cadence", intensity: 95 }],
-          }),
-          createStep({
-            name: "Free Run",
-            duration: { type: "untilFinished" },
-            targets: [{ type: "RPE", intensity: 8 }],
           }),
         ],
       }),
@@ -228,17 +322,25 @@ describe("plan-converter", () => {
         intensity_type: "active",
         targets: [{ type: "rpm", low: 90.25, high: 99.75 }],
       },
-      {
-        name: "Free Run",
-        exit_trigger_type: "time",
-        exit_trigger_value: 300,
-        intensity_type: "active",
-        targets: [{ type: "speed", low: 0.5, high: 8 }],
-      },
     ]);
   });
 
-  it("prefers run-native targets over power-relative targets", () => {
+  it("rejects targetless steps because the Wahoo contract has no no-target representation", () => {
+    expect(() =>
+      convertToWahooPlan(
+        createStructure([
+          createInterval({
+            steps: [createStep({ name: "Free Ride", targets: [] })],
+          }),
+        ]),
+        { activityType: "bike", name: "Open Workout" },
+      ),
+    ).toThrow(
+      'Step "Free Ride" cannot be synced to Wahoo without a target. Wahoo\'s plan contract requires every step to contain a target.',
+    );
+  });
+
+  it("does not hide an invalid secondary target behind a representable run target", () => {
     const structure = createStructure([
       createInterval({
         steps: [
@@ -250,56 +352,61 @@ describe("plan-converter", () => {
               { type: "bpm", intensity: 158 },
             ],
           }),
+        ],
+      }),
+    ]);
+
+    expect(() =>
+      convertToWahooPlan(structure, {
+        activityType: "run",
+        name: "Marathon Pace Long Run",
+      }),
+    ).toThrow("%FTP targets are not supported for run workouts");
+  });
+
+  it("converts persisted V2 km/h speed for Wahoo while identifying the chosen target", () => {
+    const structure = createStructure([
+      createInterval({
+        steps: [
           createStep({
-            name: "Easy Finish",
-            duration: { type: "time", seconds: 600 },
-            targets: [{ type: "%FTP", intensity: 60 }],
+            name: "Fast Run",
+            targets: [
+              { type: "bpm", intensity: 158 },
+              { type: "speed", intensity: 18 },
+              { type: "cadence", intensity: 176 },
+            ],
           }),
         ],
       }),
     ]);
 
-    const plan = convertToWahooPlan(structure, {
-      activityType: "run",
-      name: "Marathon Pace Long Run",
-    });
-
-    expect(plan.header.ftp).toBeUndefined();
-    expect(plan.intervals).toEqual([
-      {
-        name: "Marathon Pace",
-        exit_trigger_type: "time",
-        exit_trigger_value: 1200,
-        intensity_type: "active",
-        targets: [{ type: "hr", low: 153, high: 163 }],
-      },
-      {
-        name: "Easy Finish",
-        exit_trigger_type: "time",
-        exit_trigger_value: 600,
-        intensity_type: "active",
-        targets: [{ type: "speed", low: 0.5, high: 8 }],
-      },
-    ]);
+    expect(
+      convertToWahooPlan(structure, { activityType: "run", name: "Fast Run" }).intervals[0]
+        ?.targets,
+    ).toEqual([{ type: "speed", low: 4.75, high: 5.25 }]);
+    expect(
+      validateWahooCompatibility(structure, { activityType: "run", name: "Fast Run" }).warnings,
+    ).toContain(
+      'Step "Fast Run" has multiple targets. Wahoo will display the selected speed target; every secondary target must also be compatible.',
+    );
   });
 
-  it("does not convert globally invalid run power targets even when max HR is available", () => {
-    const plan = convertToWahooPlan(
-      createStructure([
-        createInterval({
-          steps: [
-            createStep({
-              name: "Warmup",
-              targets: [{ type: "%FTP", intensity: 65 }],
-            }),
-          ],
-        }),
-      ]),
-      { activityType: "run", max_hr: 193, name: "Run" },
-    );
-
-    expect(plan.header.max_hr).toBeUndefined();
-    expect(plan.intervals[0]?.targets).toEqual([{ type: "speed", low: 0.5, high: 8 }]);
+  it("does not substitute max HR for an invalid run power target", () => {
+    expect(() =>
+      convertToWahooPlan(
+        createStructure([
+          createInterval({
+            steps: [
+              createStep({
+                name: "Warmup",
+                targets: [{ type: "%FTP", intensity: 65 }],
+              }),
+            ],
+          }),
+        ]),
+        { activityType: "run", max_hr: 193, name: "Run" },
+      ),
+    ).toThrow("%FTP targets are not supported for run workouts");
   });
 
   it("throws when the activity type is unsupported by Wahoo", () => {
@@ -357,48 +464,43 @@ describe("plan-converter", () => {
     });
   });
 
-  it("falls back away from unsupported max-heart-rate targets", () => {
-    const plan = convertToWahooPlan(
-      createStructure([
-        createInterval({
-          steps: [
-            createStep({
-              name: "Max HR Unsupported",
-              targets: [{ type: "%MaxHR", intensity: 85 }],
-            }),
-          ],
-        }),
-      ]),
-      { activityType: "run", name: "Run" },
-    );
-
-    expect(plan.header.max_hr).toBeUndefined();
-    expect(plan.intervals[0]?.targets).toEqual([{ type: "speed", low: 0.5, high: 8 }]);
+  it("rejects max-heart-rate targets when maximum heart rate is unavailable", () => {
+    expect(() =>
+      convertToWahooPlan(
+        createStructure([
+          createInterval({
+            steps: [
+              createStep({
+                name: "Max HR Unsupported",
+                targets: [{ type: "%MaxHR", intensity: 85 }],
+              }),
+            ],
+          }),
+        ]),
+        { activityType: "run", name: "Run" },
+      ),
+    ).toThrow("%MaxHR targets require a finite positive maximum heart rate");
   });
 
-  it("falls run threshold-heart-rate targets back to max-heart-rate when LTHR is unavailable", () => {
-    const plan = convertToWahooPlan(
-      createStructure([
-        createInterval({
-          steps: [
-            createStep({
-              name: "Warmup",
-              targets: [{ type: "%ThresholdHR", intensity: 65 }],
-            }),
-          ],
-        }),
-      ]),
-      { activityType: "run", max_hr: 193, name: "Run" },
-    );
-
-    expect(plan.header.max_hr).toBe(193);
-    expect(plan.header.threshold_hr).toBeUndefined();
-    expect(plan.intervals[0]?.targets?.[0]).toMatchObject({ type: "max_hr" });
-    expect(plan.intervals[0]?.targets?.[0]?.low).toBeCloseTo(0.6175);
-    expect(plan.intervals[0]?.targets?.[0]?.high).toBeCloseTo(0.6825);
+  it("does not substitute max HR for a threshold-heart-rate target", () => {
+    expect(() =>
+      convertToWahooPlan(
+        createStructure([
+          createInterval({
+            steps: [
+              createStep({
+                name: "Warmup",
+                targets: [{ type: "%ThresholdHR", intensity: 65 }],
+              }),
+            ],
+          }),
+        ]),
+        { activityType: "run", max_hr: 193, name: "Run" },
+      ),
+    ).toThrow("%ThresholdHR targets require a finite positive threshold heart rate");
   });
 
-  it("treats lightweight compatibility warnings as syncable", () => {
+  it("marks explicit RPE incompatible even when another target is present", () => {
     const structure = createStructure([
       createInterval({
         steps: [
@@ -414,31 +516,109 @@ describe("plan-converter", () => {
       }),
     ]);
 
-    expect(validateWahooCompatibility(structure)).toEqual({
-      compatible: true,
+    expect(
+      validateWahooCompatibility(structure, {
+        activityType: "bike",
+        name: "Ride",
+      }),
+    ).toEqual({
+      compatible: false,
+      issues: [
+        {
+          code: "unsupported_target",
+          message:
+            'Step "Mixed Guidance" cannot be synced to Wahoo: RPE targets are not supported by Wahoo; add a provider-supported physiological target',
+        },
+      ],
       warnings: [
-        'Step "Mixed Guidance" has multiple targets. Wahoo devices only show the first target.',
-        'Step "Mixed Guidance" uses RPE targets. These will be converted to approximate FTP percentages.',
+        'Step "Mixed Guidance" has multiple targets. Wahoo will display the selected bpm target; every secondary target must also be compatible.',
+        'Step "Mixed Guidance" cannot be synced to Wahoo: RPE targets are not supported by Wahoo; add a provider-supported physiological target',
         'Step "Mixed Guidance" uses repetitions as duration. This will be converted to time estimate.',
       ],
     });
   });
 
+  it("classifies targetless, unsupported, and missing-metric targets actionably", () => {
+    const result = validateWahooCompatibility(
+      createStructure([
+        createInterval({
+          steps: [
+            createStep({ name: "Free Ride", targets: [] }),
+            createStep({
+              name: "Run Power",
+              targets: [{ type: "watts", intensity: 250 }],
+            }),
+            createStep({
+              name: "Threshold",
+              targets: [{ type: "%ThresholdHR", intensity: 90 }],
+            }),
+          ],
+        }),
+      ]),
+      { activityType: "run", name: "Unsupported Run" },
+    );
+
+    expect(result.issues).toEqual([
+      {
+        code: "unsupported_target",
+        message:
+          'Step "Free Ride" has no target. Wahoo requires every workout step to contain a target.',
+      },
+      {
+        code: "unsupported_target",
+        message:
+          'Step "Run Power" cannot be synced to Wahoo: watts targets are not supported for run workouts',
+      },
+      {
+        code: "missing_metric",
+        message:
+          'Step "Threshold" cannot be synced to Wahoo: %ThresholdHR targets require a finite positive threshold heart rate in the athlete profile',
+      },
+    ]);
+  });
+
   it("marks empty or oversized workouts as incompatible", () => {
-    expect(validateWahooCompatibility({ version: 2, intervals: [] as never[] })).toEqual({
+    expect(
+      validateWahooCompatibility(
+        { version: 2, intervals: [] as never[] },
+        { activityType: "bike", name: "Empty" },
+      ),
+    ).toEqual({
       compatible: false,
+      issues: [
+        {
+          code: "invalid_plan",
+          message: "Workout has no intervals. Wahoo requires at least one interval.",
+        },
+      ],
       warnings: ["Workout has no intervals. Wahoo requires at least one interval."],
     });
 
     const oversized = createStructure([
       createInterval({
         repetitions: 101,
-        steps: [createStep({ name: "Endless Repeats" })],
+        steps: [
+          createStep({
+            name: "Endless Repeats",
+            targets: [{ type: "watts", intensity: 200 }],
+          }),
+        ],
       }),
     ]);
 
-    expect(validateWahooCompatibility(oversized)).toEqual({
+    expect(
+      validateWahooCompatibility(oversized, {
+        activityType: "bike",
+        name: "Oversized",
+      }),
+    ).toEqual({
       compatible: false,
+      issues: [
+        {
+          code: "invalid_plan",
+          message: "Workout has 101 steps. Wahoo may have issues with very long workouts.",
+        },
+      ],
       warnings: ["Workout has 101 steps. Wahoo may have issues with very long workouts."],
     });
   });

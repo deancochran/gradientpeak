@@ -47,8 +47,11 @@ describe("profile metric definitions", () => {
 
   it("formats values with canonical units", () => {
     expect(formatProfileMetricValue({ metric_type: "ftp", value: 245 })).toBe("245 W");
+    expect(
+      formatProfileMetricValue({ metric_type: "threshold_pace_seconds_per_km", value: 270 }),
+    ).toBe("4:30 /km");
     expect(formatProfileMetricValue({ metric_type: "css_seconds_per_100m", value: 100 })).toBe(
-      "100 seconds_per_100m",
+      "1:40 /100m",
     );
     expect(formatProfileMetricValue({ metric_type: "stress_score", value: 7 })).toBe("7");
   });

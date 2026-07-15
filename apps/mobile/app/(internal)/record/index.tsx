@@ -73,7 +73,7 @@ function RecordScreen() {
         description={
           controller.resourcePickerScope === "activityPlans"
             ? "Search activity plans visible to your profile."
-            : "Search routes visible to your profile, or upload a new GPX route."
+            : "Search routes visible to your profile, or upload a new route file."
         }
         onClose={controller.onCloseResourcePicker}
         onSelect={controller.onSelectResource}
@@ -87,7 +87,7 @@ function RecordScreen() {
             >
               <Icon as={Upload} size={16} className="text-foreground" />
               <Text className="text-sm font-semibold text-foreground">
-                {routeUpload.isUploadingRoute ? "Uploading route..." : "Upload New GPX Route"}
+                {routeUpload.isUploadingRoute ? "Uploading route..." : "Upload New Route"}
               </Text>
             </Pressable>
           ) : undefined

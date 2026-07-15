@@ -66,6 +66,21 @@ describe("dailyTrainingPathModel", () => {
     );
   });
 
+  it("keeps no-goal summaries nullable instead of emitting target comparison copy", () => {
+    const points = normalizeDailyTrainingAdjustmentPoints({
+      startDate: "2026-06-01",
+      endDate: "2026-06-01",
+      points: [{ date: "2026-06-01", completedLoadTss: 55, hasTargetLoad: false }],
+    });
+
+    expect(getDailyTrainingAdjustmentSummary({ points })).toMatchObject({
+      loadDeltaLabel: null,
+      plannedDeltaLabel: null,
+      loadDeltaTone: null,
+      point: { hasTargetLoad: false },
+    });
+  });
+
   it("aggregates daily points into weekly compatibility buckets", () => {
     const points = normalizeDailyTrainingAdjustmentPoints({
       startDate: "2026-06-01",

@@ -1,8 +1,3 @@
-import BottomSheet, {
-  BottomSheetBackdrop,
-  type BottomSheetBackdropProps,
-  BottomSheetView,
-} from "@gorhom/bottom-sheet";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
@@ -19,7 +14,7 @@ import {
 } from "react-native";
 import Svg, { Circle, Line, Path } from "react-native-svg";
 import { AppHeader, CompactInsightCard } from "@/components/shared";
-import { AppBottomSheetContent } from "@/components/shared/AppBottomSheet";
+import { AppBottomSheet } from "@/components/shared/AppBottomSheet";
 import { api } from "@/lib/api";
 import { useTheme } from "@/lib/stores/theme-store";
 import { getResolvedThemeScale, type ResolvedThemeMode } from "@/lib/theme";
@@ -43,6 +38,25 @@ export function getTrendNativeVisualTokens(mode: ResolvedThemeMode) {
     bottomSheetHandleIndicatorStyle: { backgroundColor: theme.mutedForeground },
     inputPlaceholderColor: theme.mutedForeground,
     refreshControlColor: theme.primary,
+  };
+}
+
+export function getTrendsLoadState({
+  hasError,
+  hasLoadedSource,
+  insightCount,
+  isLoading,
+}: {
+  hasError: boolean;
+  hasLoadedSource: boolean;
+  insightCount: number;
+  isLoading: boolean;
+}) {
+  const showInitialLoading = isLoading && !hasLoadedSource;
+  return {
+    showInitialLoading,
+    showFullError: hasError && insightCount === 0 && !showInitialLoading,
+    showPartialError: hasError && insightCount > 0,
   };
 }
 
@@ -344,6 +358,8 @@ function TrendInsightCard({ insight, onPress }: { insight: Insight; onPress: () 
 }
 
 type TrendRangeMode = "30d" | "3m" | "6m" | "1y" | "custom";
+
+export const TREND_CUSTOM_RANGE_SNAP_POINTS = ["60%", "92%"];
 
 const RANGE_OPTIONS: { label: string; value: TrendRangeMode; days: number }[] = [
   { label: "30D", value: "30d", days: 30 },
@@ -806,6 +822,10 @@ function TrendRangeControls({
           <Pressable
             key={option.value}
             onPress={() => onChangeRange(option.value)}
+            accessibilityRole="button"
+            accessibilityLabel={`Show trends for ${option.label}`}
+            accessibilityState={{ selected: range.mode === option.value }}
+            accessibilityHint="Updates the visible trend date range"
             className={`flex-1 rounded-xl py-2 ${range.mode === option.value ? "bg-background" : "bg-transparent"}`}
             testID={`trend-range-${option.value}`}
           >
@@ -818,6 +838,10 @@ function TrendRangeControls({
         ))}
         <Pressable
           onPress={onOpenCustom}
+          accessibilityRole="button"
+          accessibilityLabel="Choose a custom trend date range"
+          accessibilityState={{ selected: range.mode === "custom" }}
+          accessibilityHint="Opens custom start and end date controls"
           className={`ml-1 flex-row items-center justify-center gap-1 rounded-xl px-3 py-2 ${range.mode === "custom" ? "bg-background" : "bg-transparent"}`}
           testID="trend-range-custom"
         >
@@ -855,20 +879,9 @@ function CustomRangeSheet({
 }) {
   const [startValue, setStartValue] = React.useState(toInputDate(start));
   const [endValue, setEndValue] = React.useState(toInputDate(end));
-  const snapPoints = React.useMemo(() => ["42%"], []);
+  const snapPoints = React.useMemo(() => TREND_CUSTOM_RANGE_SNAP_POINTS, []);
   const { resolvedTheme } = useTheme();
   const nativeVisualTokens = getTrendNativeVisualTokens(resolvedTheme);
-  const renderBackdrop = React.useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        appearsOnIndex={0}
-        disappearsOnIndex={-1}
-        pressBehavior="close"
-      />
-    ),
-    [],
-  );
 
   React.useEffect(() => {
     if (visible) {
@@ -877,75 +890,63 @@ function CustomRangeSheet({
     }
   }, [end, start, visible]);
 
-  if (!visible) return null;
-
   return (
-    <BottomSheet
-      index={0}
-      snapPoints={snapPoints}
-      enablePanDownToClose
-      backdropComponent={renderBackdrop}
+    <AppBottomSheet
+      contentPaddingBottom={24}
+      description="Use YYYY-MM-DD for the start and end dates."
+      initialSnapIndex={0}
       onClose={onClose}
-      backgroundStyle={nativeVisualTokens.bottomSheetBackgroundStyle}
-      handleIndicatorStyle={nativeVisualTokens.bottomSheetHandleIndicatorStyle}
+      snapPoints={snapPoints}
+      testID="trend-custom-range-sheet"
+      title="Custom date range"
+      visible={visible}
     >
-      <BottomSheetView className="flex-1">
-        <AppBottomSheetContent paddingHorizontal={20} paddingTop={8} paddingBottom={96}>
-          <View className="gap-5">
-            <View className="gap-1">
-              <Text className="text-lg font-semibold text-foreground">Custom date range</Text>
-              <Text className="text-sm text-muted-foreground">
-                Use YYYY-MM-DD for the start and end dates.
-              </Text>
-            </View>
-
-            <View className="gap-3">
-              <View className="gap-2">
-                <Text className="text-sm font-medium text-foreground">Start date</Text>
-                <TextInput
-                  value={startValue}
-                  onChangeText={setStartValue}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor={nativeVisualTokens.inputPlaceholderColor}
-                  className="rounded-2xl border border-border bg-card px-4 py-3 text-base text-foreground"
-                  testID="trend-custom-start-date"
-                />
-              </View>
-              <View className="gap-2">
-                <Text className="text-sm font-medium text-foreground">End date</Text>
-                <TextInput
-                  value={endValue}
-                  onChangeText={setEndValue}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor={nativeVisualTokens.inputPlaceholderColor}
-                  className="rounded-2xl border border-border bg-card px-4 py-3 text-base text-foreground"
-                  testID="trend-custom-end-date"
-                />
-              </View>
-            </View>
-
-            <Pressable
-              onPress={() => {
-                const nextStart = new Date(`${startValue}T00:00:00`);
-                const nextEnd = new Date(`${endValue}T00:00:00`);
-                if (!Number.isNaN(nextStart.getTime()) && !Number.isNaN(nextEnd.getTime())) {
-                  onApply(
-                    nextStart <= nextEnd ? nextStart : nextEnd,
-                    nextStart <= nextEnd ? nextEnd : nextStart,
-                  );
-                }
-              }}
-              className="rounded-2xl bg-primary px-4 py-4"
-              testID="trend-custom-apply"
-            >
-              <Text className="text-center text-sm font-semibold text-primary-foreground">
-                Apply range
-              </Text>
-            </Pressable>
+      <View className="gap-5">
+        <View className="gap-3">
+          <View className="gap-2">
+            <Text className="text-sm font-medium text-foreground">Start date</Text>
+            <TextInput
+              value={startValue}
+              onChangeText={setStartValue}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={nativeVisualTokens.inputPlaceholderColor}
+              className="rounded-2xl border border-border bg-card px-4 py-3 text-base text-foreground"
+              testID="trend-custom-start-date"
+            />
           </View>
-        </AppBottomSheetContent>
-      </BottomSheetView>
-    </BottomSheet>
+          <View className="gap-2">
+            <Text className="text-sm font-medium text-foreground">End date</Text>
+            <TextInput
+              value={endValue}
+              onChangeText={setEndValue}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={nativeVisualTokens.inputPlaceholderColor}
+              className="rounded-2xl border border-border bg-card px-4 py-3 text-base text-foreground"
+              testID="trend-custom-end-date"
+            />
+          </View>
+        </View>
+
+        <Pressable
+          onPress={() => {
+            const nextStart = new Date(`${startValue}T00:00:00`);
+            const nextEnd = new Date(`${endValue}T00:00:00`);
+            if (!Number.isNaN(nextStart.getTime()) && !Number.isNaN(nextEnd.getTime())) {
+              onApply(
+                nextStart <= nextEnd ? nextStart : nextEnd,
+                nextStart <= nextEnd ? nextEnd : nextStart,
+              );
+            }
+          }}
+          className="rounded-2xl bg-primary px-4 py-4"
+          testID="trend-custom-apply"
+        >
+          <Text className="text-center text-sm font-semibold text-primary-foreground">
+            Apply range
+          </Text>
+        </Pressable>
+      </View>
+    </AppBottomSheet>
   );
 }
 
@@ -1134,6 +1135,21 @@ export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfac
     zones.data,
     peakPower.data,
   ]);
+  const hasLoadedSource = [
+    profileMetrics.data,
+    volume.data,
+    load.data,
+    consistency.data,
+    performance.data,
+    zones.data,
+    peakPower.data,
+  ].some((data) => data !== undefined);
+  const { showInitialLoading, showFullError, showPartialError } = getTrendsLoadState({
+    hasError: Boolean(hasError),
+    hasLoadedSource,
+    insightCount: insights.length,
+    isLoading,
+  });
 
   return (
     <View
@@ -1151,7 +1167,7 @@ export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfac
       ) : (
         <AppHeader title="Trends" />
       )}
-      {isLoading ? (
+      {showInitialLoading ? (
         <View
           className={
             embedded
@@ -1162,7 +1178,7 @@ export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfac
           <ActivityIndicator color={nativeVisualTokens.activityIndicatorColor} />
           <Text className="mt-3 text-sm text-muted-foreground">Building your insight cards...</Text>
         </View>
-      ) : hasError ? (
+      ) : showFullError ? (
         embedded ? (
           <View className="items-center justify-center rounded-3xl border border-border bg-card p-6">
             <Text className="text-center text-lg font-semibold text-foreground">
@@ -1171,6 +1187,14 @@ export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfac
             <Text className="mt-2 text-center text-sm text-muted-foreground">
               Some insight data could not be loaded. Try again later.
             </Text>
+            <Pressable
+              accessibilityRole="button"
+              className="mt-4 rounded-xl border border-border px-4 py-2"
+              onPress={handleRefresh}
+              testID="trends-retry"
+            >
+              <Text className="font-semibold text-foreground">Retry</Text>
+            </Pressable>
           </View>
         ) : (
           <ScrollView
@@ -1190,17 +1214,39 @@ export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfac
             <Text className="mt-2 text-center text-sm text-muted-foreground">
               Some insight data could not be loaded. Pull to refresh or try again later.
             </Text>
+            <Pressable
+              accessibilityRole="button"
+              className="mt-4 rounded-xl border border-border px-4 py-2"
+              onPress={handleRefresh}
+              testID="trends-retry"
+            >
+              <Text className="font-semibold text-foreground">Retry</Text>
+            </Pressable>
           </ScrollView>
         )
       ) : embedded ? (
-        <View className="flex-row flex-wrap gap-4">
-          {insights.map((insight) => (
-            <TrendInsightCard
-              key={insight.id}
-              insight={insight}
-              onPress={() => setSelectedInsight(insight)}
-            />
-          ))}
+        <View className="gap-3">
+          {showPartialError ? (
+            <Pressable
+              accessibilityRole="button"
+              className="rounded-2xl border border-border bg-card p-3"
+              onPress={handleRefresh}
+              testID="trends-partial-error"
+            >
+              <Text className="text-sm text-muted-foreground">
+                Some trends are unavailable. Showing the insights that loaded. Tap to retry.
+              </Text>
+            </Pressable>
+          ) : null}
+          <View className="flex-row flex-wrap gap-4">
+            {insights.map((insight) => (
+              <TrendInsightCard
+                key={insight.id}
+                insight={insight}
+                onPress={() => setSelectedInsight(insight)}
+              />
+            ))}
+          </View>
         </View>
       ) : (
         <ScrollView
@@ -1215,6 +1261,18 @@ export function TrendsInsightsSurface({ embedded = false }: TrendsInsightsSurfac
           }
           showsVerticalScrollIndicator={false}
         >
+          {showPartialError ? (
+            <Pressable
+              accessibilityRole="button"
+              className="rounded-2xl border border-border bg-card p-3"
+              onPress={handleRefresh}
+              testID="trends-partial-error"
+            >
+              <Text className="text-sm text-muted-foreground">
+                Some trends are unavailable. Showing the insights that loaded. Tap to retry.
+              </Text>
+            </Pressable>
+          ) : null}
           <View className="flex-row flex-wrap gap-4">
             {insights.map((insight) => (
               <TrendInsightCard

@@ -1,3 +1,4 @@
+import { DEFAULT_WEEKLY_COUNT_RECURRENCE } from "@repo/core/recurrence";
 import type { Meta, StoryObj } from "@storybook/react";
 import type * as React from "react";
 import { useForm } from "react-hook-form";
@@ -21,6 +22,7 @@ import {
 } from "../components/alert-dialog/index.native";
 import { AspectRatio } from "../components/aspect-ratio/index.native";
 import { Button } from "../components/button/index.native";
+import { ChartCard, ChartEmptyState } from "../components/chart/index.native";
 import {
   Collapsible,
   CollapsibleContent,
@@ -62,6 +64,7 @@ import {
 } from "../components/menubar/index.native";
 import { NativeOnlyAnimatedView } from "../components/native-only-animated-view/index.native";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/popover/index.native";
+import { RecurrenceFields } from "../components/recurrence-fields/index.native";
 import { Text } from "../components/text/index.native";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../components/tooltip/index.native";
 
@@ -122,6 +125,36 @@ export const AccordionStory: Story = {
           </AccordionContent>
         </AccordionItem>
       </Accordion>
+    </NativeFrame>
+  ),
+};
+
+export const ChartStory: Story = {
+  name: "Chart",
+  render: () => (
+    <NativeFrame>
+      <ChartCard
+        legend={[{ color: "#2563eb", id: "load", label: "Training load" }]}
+        summary={[
+          { label: "Latest", value: "412" },
+          { label: "Trend", value: "Up 6%" },
+        ]}
+        title="Training load trend"
+      >
+        <ChartEmptyState message="Renderer preview area" />
+      </ChartCard>
+    </NativeFrame>
+  ),
+};
+
+export const RecurrenceFieldsStory: Story = {
+  name: "Recurrence Fields",
+  render: () => (
+    <NativeFrame>
+      <RecurrenceFields
+        onChange={() => {}}
+        value={{ ...DEFAULT_WEEKLY_COUNT_RECURRENCE, enabled: true }}
+      />
     </NativeFrame>
   ),
 };

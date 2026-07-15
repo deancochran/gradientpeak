@@ -10,14 +10,12 @@ const {
   refreshWahooAccessTokenMock,
   supportsRoutesMock,
   validateRouteForWahooMock,
-  validateWahooCompatibilityMock,
 } = vi.hoisted(() => ({
   createWahooClientMock: vi.fn(),
   refreshWahooAccessTokenMock: vi.fn(),
   supportsRoutesMock: vi.fn(),
   calculateWorkoutDurationMock: vi.fn(),
   convertToWahooPlanMock: vi.fn(),
-  validateWahooCompatibilityMock: vi.fn(),
   validateRouteForWahooMock: vi.fn(),
   extractStartCoordinatesMock: vi.fn(),
   prepareGPXForWahooMock: vi.fn(),
@@ -40,10 +38,10 @@ vi.mock("./activity-type-utils", () => ({
   }),
 }));
 
-vi.mock("./plan-converter", () => ({
+vi.mock("./plan-converter", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./plan-converter")>()),
   calculateWorkoutDuration: calculateWorkoutDurationMock,
   convertToWahooPlan: convertToWahooPlanMock,
-  validateWahooCompatibility: validateWahooCompatibilityMock,
 }));
 
 vi.mock("./route-converter", () => ({
@@ -54,6 +52,32 @@ vi.mock("./route-converter", () => ({
 }));
 
 import { WahooSyncService } from "./sync-service";
+
+const intervalId = "00000000-0000-4000-8000-000000000001";
+const stepId = "00000000-0000-4000-8000-000000000002";
+
+function createValidStructure(
+  targets: Array<{ intensity: number; type: string }> = [{ type: "watts", intensity: 200 }],
+) {
+  return {
+    version: 2 as const,
+    intervals: [
+      {
+        id: intervalId,
+        name: "Main set",
+        repetitions: 1,
+        steps: [
+          {
+            id: stepId,
+            duration: { type: "time" as const, seconds: 1800 },
+            name: "Endurance",
+            targets,
+          },
+        ],
+      },
+    ],
+  };
+}
 
 function createRepositoryMock() {
   return {
@@ -76,13 +100,19 @@ function createRepositoryMock() {
         id: "plan-1",
         name: "Long Ride",
         routeId: null,
-        structure: { intervals: [] },
+        structure: createValidStructure(),
         updatedAt: "2026-04-01T09:00:00.000Z",
       },
     }),
     getProfileSyncMetrics: vi.fn().mockResolvedValue({
       bikePowerEfforts: [],
-      ftpMetrics: [{ observedAt: "2026-03-01T12:00:00.000Z", source: "provider", value: 250 }],
+      ftpMetrics: [
+        {
+          observedAt: "2026-03-01T12:00:00.000Z",
+          source: "provider",
+          value: 250,
+        },
+      ],
       maxHr: 190,
       thresholdHr: 170,
     }),
@@ -117,12 +147,17 @@ describe("WahooSyncService", () => {
     calculateWorkoutDurationMock.mockReturnValue(1800);
     convertToWahooPlanMock.mockReset();
     convertToWahooPlanMock.mockReturnValue({ header: {}, intervals: [] });
-    validateWahooCompatibilityMock.mockReset();
-    validateWahooCompatibilityMock.mockReturnValue({ compatible: true, warnings: [] });
     validateRouteForWahooMock.mockReset();
-    validateRouteForWahooMock.mockReturnValue({ valid: true, errors: [], warnings: [] });
+    validateRouteForWahooMock.mockReturnValue({
+      valid: true,
+      errors: [],
+      warnings: [],
+    });
     extractStartCoordinatesMock.mockReset();
-    extractStartCoordinatesMock.mockReturnValue({ latitude: 35.1, longitude: -80.8 });
+    extractStartCoordinatesMock.mockReturnValue({
+      latitude: 35.1,
+      longitude: -80.8,
+    });
     prepareGPXForWahooMock.mockReset();
     prepareGPXForWahooMock.mockReturnValue("encoded-gpx");
     getWorkoutTypeFamilyForRouteMock.mockReset();
@@ -149,9 +184,20 @@ describe("WahooSyncService", () => {
     const repository = createRepositoryMock();
     repository.getProfileSyncMetrics.mockResolvedValueOnce({
       bikePowerEfforts: [
-        { observationKind: "actual", observedAt: "2026-04-02T12:00:00.000Z", value: 300 },
+        {
+          observationKind: "actual",
+          observedAt: "2026-04-02T12:00:00.000Z",
+          value: 300,
+          evidence: "imported_activity_stream",
+        },
       ],
-      ftpMetrics: [{ observedAt: "2026-04-03T10:00:00.000Z", source: "manual", value: 250 }],
+      ftpMetrics: [
+        {
+          observedAt: "2026-04-03T10:00:00.000Z",
+          source: "manual",
+          value: 250,
+        },
+      ],
       maxHr: 190,
       thresholdHr: 170,
     });
@@ -168,8 +214,34 @@ describe("WahooSyncService", () => {
     });
 
     expect(convertToWahooPlanMock).toHaveBeenCalledWith(
-      { intervals: [] },
+      expect.objectContaining({ intervals: expect.any(Array) }),
       expect.objectContaining({ ftp: 285, max_hr: 190, threshold_hr: 170 }),
+    );
+  });
+
+  it("uses the activity sport LTHR before a generic or different-sport value", async () => {
+    const repository = createRepositoryMock();
+    repository.getProfileSyncMetrics.mockResolvedValueOnce({
+      bikePowerEfforts: [],
+      ftpMetrics: [],
+      maxHr: 190,
+      thresholdHr: 160,
+      thresholdHrBySport: { bike: 155, run: 172 },
+    });
+    const wahooClient = createClientMock();
+    createWahooClientMock.mockReturnValueOnce(wahooClient);
+    const service = new WahooSyncService({
+      repository,
+      storage: { downloadRouteGpx: vi.fn() },
+    });
+
+    await expect(service.syncEvent("event-1", "profile-1")).resolves.toMatchObject({
+      success: true,
+    });
+
+    expect(convertToWahooPlanMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ threshold_hr: 155 }),
     );
   });
 
@@ -177,9 +249,19 @@ describe("WahooSyncService", () => {
     const repository = createRepositoryMock();
     repository.getProfileSyncMetrics.mockResolvedValueOnce({
       bikePowerEfforts: [
-        { observationKind: "derived", observedAt: "2026-04-02T12:00:00.000Z", value: 300 },
+        {
+          observationKind: "derived",
+          observedAt: "2026-04-02T12:00:00.000Z",
+          value: 300,
+        },
       ],
-      ftpMetrics: [{ observedAt: "2026-04-03T10:00:00.000Z", source: "provider", value: 250 }],
+      ftpMetrics: [
+        {
+          observedAt: "2026-04-03T10:00:00.000Z",
+          source: "provider",
+          value: 250,
+        },
+      ],
       maxHr: 190,
       thresholdHr: 170,
     });
@@ -196,8 +278,272 @@ describe("WahooSyncService", () => {
     });
 
     expect(convertToWahooPlanMock).toHaveBeenCalledWith(
-      { intervals: [] },
+      expect.objectContaining({ intervals: expect.any(Array) }),
       expect.objectContaining({ ftp: 250 }),
+    );
+  });
+
+  it("uses real compatibility validation to classify a missing target metric", async () => {
+    const repository = createRepositoryMock();
+    repository.getProfileSyncMetrics.mockResolvedValueOnce({
+      bikePowerEfforts: [],
+      ftpMetrics: [],
+      maxHr: null,
+      thresholdHr: null,
+    });
+    repository.getPlannedEventForSync.mockResolvedValueOnce({
+      id: "event-1",
+      startsAt: "2026-04-05T09:00:00.000Z",
+      activityPlan: {
+        activityCategory: "bike",
+        description: "FTP workout",
+        id: "plan-1",
+        name: "Threshold Ride",
+        routeId: null,
+        structure: createValidStructure([{ type: "%FTP", intensity: 100 }]),
+        updatedAt: "2026-04-01T09:00:00.000Z",
+      },
+    });
+    const wahooClient = createClientMock();
+    createWahooClientMock.mockReturnValueOnce(wahooClient);
+    const service = new WahooSyncService({
+      repository,
+      storage: { downloadRouteGpx: vi.fn() },
+    });
+
+    await expect(service.syncEvent("event-1", "profile-1")).resolves.toMatchObject({
+      success: false,
+      action: "no_change",
+      error:
+        'Step "Endurance" cannot be synced to Wahoo: %FTP targets require a finite positive FTP in the athlete profile',
+      failureCode: "missing_metric",
+      failureCategory: "eligibility",
+      retryable: false,
+    });
+    expect(wahooClient.createPlan).not.toHaveBeenCalled();
+  });
+
+  it("uses real compatibility validation to classify an unsupported RPE target", async () => {
+    const repository = createRepositoryMock();
+    const planned = await repository.getPlannedEventForSync();
+    repository.getPlannedEventForSync.mockResolvedValueOnce({
+      ...planned!,
+      activityPlan: {
+        ...planned!.activityPlan!,
+        structure: createValidStructure([{ type: "RPE", intensity: 3 }]),
+      },
+    });
+    const wahooClient = createClientMock();
+    createWahooClientMock.mockReturnValueOnce(wahooClient);
+    const service = new WahooSyncService({
+      repository,
+      storage: { downloadRouteGpx: vi.fn() },
+    });
+
+    await expect(service.syncEvent("event-1", "profile-1")).resolves.toMatchObject({
+      success: false,
+      action: "no_change",
+      failureCode: "unsupported_target",
+      failureCategory: "eligibility",
+      retryable: false,
+    });
+    expect(wahooClient.createPlan).not.toHaveBeenCalled();
+  });
+
+  it("keeps an unknown converter exception retryable", async () => {
+    const repository = createRepositoryMock();
+    createWahooClientMock.mockReturnValueOnce(createClientMock());
+    convertToWahooPlanMock.mockImplementationOnce(() => {
+      throw new Error("Unexpected converter failure");
+    });
+    const service = new WahooSyncService({
+      repository,
+      storage: { downloadRouteGpx: vi.fn() },
+    });
+
+    await expect(service.syncEvent("event-1", "profile-1")).resolves.toMatchObject({
+      success: false,
+      failureCode: "provider_failure",
+      failureCategory: "provider",
+      retryable: true,
+    });
+  });
+
+  it("classifies a malformed persisted structured plan as invalid_plan", async () => {
+    const repository = createRepositoryMock();
+    const planned = await repository.getPlannedEventForSync();
+    repository.getPlannedEventForSync.mockResolvedValueOnce({
+      ...planned!,
+      activityPlan: {
+        ...planned!.activityPlan!,
+        structure: { intervals: "not-an-array", version: 2 },
+      },
+    });
+    const service = new WahooSyncService({
+      repository,
+      storage: { downloadRouteGpx: vi.fn() },
+    });
+
+    await expect(service.syncEvent("event-1", "profile-1")).resolves.toMatchObject({
+      success: false,
+      failureCode: "invalid_plan",
+      failureCategory: "eligibility",
+      retryable: false,
+    });
+    expect(createWahooClientMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { version: 2, intervals: "not-an-array" },
+    { version: 1, intervals: [] },
+    { version: 2, intervals: [], unexpected: true },
+  ])("classifies a malformed route-bearing plan as invalid_plan: %j", async (structure) => {
+    const repository = createRepositoryMock();
+    const planned = await repository.getPlannedEventForSync();
+    repository.getPlannedEventForSync.mockResolvedValueOnce({
+      ...planned!,
+      activityPlan: {
+        ...planned!.activityPlan!,
+        routeId: "route-1",
+        structure,
+      },
+    });
+    const service = new WahooSyncService({
+      repository,
+      storage: { downloadRouteGpx: vi.fn() },
+    });
+
+    await expect(service.syncEvent("event-1", "profile-1")).resolves.toMatchObject({
+      success: false,
+      failureCode: "invalid_plan",
+      failureCategory: "eligibility",
+      retryable: false,
+    });
+    expect(repository.getRouteForSync).not.toHaveBeenCalled();
+    expect(createWahooClientMock).not.toHaveBeenCalled();
+  });
+
+  it("classifies a missing explicit route as invalid_plan", async () => {
+    const repository = createRepositoryMock();
+    const planned = await repository.getPlannedEventForSync();
+    repository.getPlannedEventForSync.mockResolvedValueOnce({
+      ...planned!,
+      activityPlan: { ...planned!.activityPlan!, routeId: "route-missing" },
+    });
+    const service = new WahooSyncService({
+      repository,
+      storage: { downloadRouteGpx: vi.fn() },
+    });
+
+    await expect(service.syncEvent("event-1", "profile-1")).resolves.toMatchObject({
+      success: false,
+      failureCode: "invalid_plan",
+      failureCategory: "eligibility",
+      retryable: false,
+    });
+    expect(createWahooClientMock).not.toHaveBeenCalled();
+    expect(repository.createEventResourceLink).not.toHaveBeenCalled();
+  });
+
+  it("keeps a route storage download exception retryable", async () => {
+    const repository = createRepositoryMock();
+    const planned = await repository.getPlannedEventForSync();
+    repository.getPlannedEventForSync.mockResolvedValueOnce({
+      ...planned!,
+      activityPlan: { ...planned!.activityPlan!, routeId: "route-1" },
+    });
+    repository.getRouteForSync.mockResolvedValueOnce({
+      description: null,
+      filePath: "routes/route-1.gpx",
+      id: "route-1",
+      name: "Route One",
+      totalAscent: 10,
+      totalDescent: 10,
+      totalDistance: 1000,
+    });
+    const storageFailure = new Error("Route storage temporarily unavailable");
+    const service = new WahooSyncService({
+      repository,
+      storage: { downloadRouteGpx: vi.fn().mockRejectedValue(storageFailure) },
+    });
+
+    await expect(service.syncEvent("event-1", "profile-1")).resolves.toMatchObject({
+      success: false,
+      error: storageFailure.message,
+      failureCode: "provider_failure",
+      failureCategory: "provider",
+      retryable: true,
+    });
+    expect(createWahooClientMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps an explicit route upload failure retryable", async () => {
+    const repository = createRepositoryMock();
+    const planned = await repository.getPlannedEventForSync();
+    repository.getPlannedEventForSync.mockResolvedValueOnce({
+      ...planned!,
+      activityPlan: { ...planned!.activityPlan!, routeId: "route-1" },
+    });
+    repository.getRouteForSync.mockResolvedValueOnce({
+      description: null,
+      filePath: "routes/route-1.gpx",
+      id: "route-1",
+      name: "Route One",
+      totalAscent: 10,
+      totalDescent: 10,
+      totalDistance: 1000,
+    });
+    const wahooClient = createClientMock();
+    wahooClient.createRoute.mockRejectedValueOnce(new Error("Wahoo unavailable"));
+    createWahooClientMock.mockReturnValueOnce(wahooClient);
+    const service = new WahooSyncService({
+      repository,
+      storage: { downloadRouteGpx: vi.fn().mockResolvedValue("<gpx />") },
+    });
+
+    await expect(service.syncEvent("event-1", "profile-1")).resolves.toMatchObject({
+      success: false,
+      failureCode: "provider_failure",
+      failureCategory: "provider",
+      retryable: true,
+    });
+    expect(wahooClient.createPlan).not.toHaveBeenCalled();
+    expect(repository.createEventResourceLink).not.toHaveBeenCalled();
+  });
+
+  it("accepts zero-valued finite route coordinates", async () => {
+    const repository = createRepositoryMock();
+    const planned = await repository.getPlannedEventForSync();
+    repository.getPlannedEventForSync.mockResolvedValueOnce({
+      ...planned!,
+      activityPlan: { ...planned!.activityPlan!, routeId: "route-1" },
+    });
+    repository.getRouteForSync.mockResolvedValueOnce({
+      description: null,
+      filePath: "routes/equator.gpx",
+      id: "route-1",
+      name: "Equator Route",
+      totalAscent: 0,
+      totalDescent: 0,
+      totalDistance: 1000,
+    });
+    extractStartCoordinatesMock.mockReturnValueOnce({
+      latitude: 0,
+      longitude: 0,
+    });
+    const wahooClient = createClientMock();
+    createWahooClientMock.mockReturnValueOnce(wahooClient);
+    const service = new WahooSyncService({
+      repository,
+      storage: { downloadRouteGpx: vi.fn().mockResolvedValue("<gpx />") },
+    });
+
+    await expect(service.syncEvent("event-1", "profile-1")).resolves.toMatchObject({
+      success: true,
+      action: "created",
+    });
+    expect(wahooClient.createRoute).toHaveBeenCalledWith(
+      expect.objectContaining({ startLat: 0, startLng: 0 }),
     );
   });
 
@@ -221,7 +567,7 @@ describe("WahooSyncService", () => {
         id: "plan-1",
         name: "Long Ride",
         routeId: "route-1",
-        structure: { intervals: [{ repetitions: 1, steps: [] }] },
+        structure: createValidStructure(),
         updatedAt: "2026-04-01T09:00:00.000Z",
       },
     });
@@ -230,7 +576,9 @@ describe("WahooSyncService", () => {
       errors: [],
       warnings: ["Route is very short (less than 100 meters)"],
     });
-    const storage = { downloadRouteGpx: vi.fn().mockResolvedValue("<gpx></gpx>") };
+    const storage = {
+      downloadRouteGpx: vi.fn().mockResolvedValue("<gpx></gpx>"),
+    };
     const wahooClient = createClientMock();
     createWahooClientMock.mockReturnValueOnce(wahooClient);
     const service = new WahooSyncService({ repository, storage });
@@ -280,7 +628,14 @@ describe("WahooSyncService", () => {
       integrationId: "integration-1",
       provider: "wahoo",
       externalId: "43",
-      providerMetadata: { wahoo: { planId: 42, routeId: 41 } },
+      providerMetadata: {
+        wahoo: {
+          planId: 42,
+          routeId: 41,
+          sourcePlanId: "plan-1",
+          sourceRouteId: "route-1",
+        },
+      },
       syncedAt: "2026-04-03T12:00:00.000Z",
       updatedAt: "2026-04-03T12:00:00.000Z",
     });
@@ -306,15 +661,13 @@ describe("WahooSyncService", () => {
         id: "plan-1",
         name: "Park Run",
         routeId: "route-1",
-        structure: { intervals: [] },
+        structure: { version: 2, intervals: [] },
         updatedAt: "2026-04-01T09:00:00.000Z",
       },
     });
-    validateWahooCompatibilityMock.mockReturnValueOnce({
-      compatible: false,
-      warnings: ["Workout has no intervals. Wahoo requires at least one interval."],
-    });
-    const storage = { downloadRouteGpx: vi.fn().mockResolvedValue("<gpx></gpx>") };
+    const storage = {
+      downloadRouteGpx: vi.fn().mockResolvedValue("<gpx></gpx>"),
+    };
     const wahooClient = createClientMock();
     createWahooClientMock.mockReturnValueOnce(wahooClient);
     const service = new WahooSyncService({ repository, storage });
@@ -340,7 +693,6 @@ describe("WahooSyncService", () => {
       ascent: 120,
       descent: 115,
     });
-    expect(validateWahooCompatibilityMock).not.toHaveBeenCalled();
     expect(convertToWahooPlanMock).not.toHaveBeenCalled();
     expect(wahooClient.getPlans).not.toHaveBeenCalled();
     expect(wahooClient.createPlan).not.toHaveBeenCalled();
@@ -358,7 +710,13 @@ describe("WahooSyncService", () => {
       integrationId: "integration-1",
       provider: "wahoo",
       externalId: "43",
-      providerMetadata: { wahoo: { routeId: 41 } },
+      providerMetadata: {
+        wahoo: {
+          routeId: 41,
+          sourcePlanId: "plan-1",
+          sourceRouteId: "route-1",
+        },
+      },
       syncedAt: "2026-04-03T12:00:00.000Z",
       updatedAt: "2026-04-03T12:00:00.000Z",
     });
@@ -369,6 +727,9 @@ describe("WahooSyncService", () => {
     repository.getEventResourceLink.mockResolvedValueOnce({
       externalId: "workout-77",
       id: "sync-1",
+      providerMetadata: {
+        wahoo: { sourcePlanId: "plan-1", sourceRouteId: null },
+      },
       updatedAt: "2026-04-02T09:00:00.000Z",
     });
     repository.getPlannedEventForSync.mockResolvedValueOnce({
@@ -380,7 +741,7 @@ describe("WahooSyncService", () => {
         id: "plan-1",
         name: "Updated Workout Name",
         routeId: null,
-        structure: { intervals: [] },
+        structure: createValidStructure(),
         updatedAt: "2026-04-01T09:00:00.000Z",
       },
     });
@@ -465,7 +826,9 @@ describe("WahooSyncService", () => {
     repository.getEventResourceLink.mockResolvedValueOnce({
       externalId: "workout-77",
       id: "sync-1",
-      providerMetadata: { wahoo: { planId: 55 } },
+      providerMetadata: {
+        wahoo: { planId: 55, sourcePlanId: "plan-1", sourceRouteId: null },
+      },
       updatedAt: "2026-04-01T09:00:00.000Z",
     });
     repository.getPlannedEventForSync.mockResolvedValueOnce({
@@ -476,8 +839,8 @@ describe("WahooSyncService", () => {
         description: "Structure changed",
         id: "plan-1",
         name: "Rebuilt Workout",
-        routeId: "route-1",
-        structure: { intervals: [{ repetitions: 1, steps: [] }] },
+        routeId: null,
+        structure: createValidStructure(),
         updatedAt: "2026-04-03T09:00:00.000Z",
       },
     });
@@ -509,16 +872,177 @@ describe("WahooSyncService", () => {
       name: "Rebuilt Workout",
       scheduledDate: "2026-04-06T07:30:00.000Z",
       externalId: "event-1",
-      workoutTypeId: 0,
+      routeId: undefined,
+      workoutTypeId: 12,
       durationMinutes: 62,
     });
     expect(wahooClient.deleteWorkout).toHaveBeenCalledWith("workout-77");
     expect(repository.updateEventResourceLink).toHaveBeenCalledWith({
       id: "sync-1",
       externalId: "99",
-      providerMetadata: { wahoo: { planId: 88 } },
+      providerMetadata: {
+        wahoo: {
+          planId: 88,
+          routeId: undefined,
+          sourcePlanId: "plan-1",
+        },
+      },
       updatedAt: "2026-04-03T12:00:00.000Z",
     });
+  });
+
+  it("recreates the Wahoo workout when the event selects a different activity plan", async () => {
+    const repository = createRepositoryMock();
+    const planned = await repository.getPlannedEventForSync();
+    repository.getPlannedEventForSync.mockResolvedValueOnce({
+      ...planned!,
+      activityPlan: { ...planned!.activityPlan!, id: "plan-2" },
+    });
+    repository.getEventResourceLink.mockResolvedValueOnce({
+      externalId: "workout-77",
+      id: "sync-1",
+      providerMetadata: {
+        wahoo: { planId: 55, sourcePlanId: "plan-1", sourceRouteId: null },
+      },
+      updatedAt: "2026-04-02T09:00:00.000Z",
+    });
+    const wahooClient = createClientMock();
+    wahooClient.createPlan.mockResolvedValueOnce({ id: 88 });
+    wahooClient.createWorkout.mockResolvedValueOnce({ id: 99 });
+    createWahooClientMock.mockReturnValueOnce(wahooClient);
+    const service = new WahooSyncService({
+      repository,
+      storage: { downloadRouteGpx: vi.fn() },
+    });
+
+    await expect(service.syncEvent("event-1", "profile-1")).resolves.toMatchObject({
+      success: true,
+      action: "recreated",
+      workoutId: "99",
+    });
+
+    expect(wahooClient.createPlan).toHaveBeenCalledWith(
+      expect.objectContaining({ externalId: "plan-2" }),
+    );
+    expect(repository.updateEventResourceLink).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerMetadata: {
+          wahoo: {
+            planId: 88,
+            routeId: undefined,
+            sourcePlanId: "plan-2",
+          },
+        },
+      }),
+    );
+  });
+
+  it("uploads and attaches a replacement route when the event route changes", async () => {
+    const repository = createRepositoryMock();
+    const planned = await repository.getPlannedEventForSync();
+    repository.getPlannedEventForSync.mockResolvedValueOnce({
+      ...planned!,
+      activityPlan: { ...planned!.activityPlan!, routeId: "route-2" },
+    });
+    repository.getEventResourceLink.mockResolvedValueOnce({
+      externalId: "workout-77",
+      id: "sync-1",
+      providerMetadata: {
+        wahoo: {
+          planId: 55,
+          routeId: 40,
+          sourcePlanId: "plan-1",
+          sourceRouteId: "route-1",
+        },
+      },
+      updatedAt: "2026-04-02T09:00:00.000Z",
+    });
+    repository.getRouteForSync.mockResolvedValueOnce({
+      description: "Replacement route",
+      filePath: "routes/replacement.gpx",
+      id: "route-2",
+      name: "Replacement",
+      totalAscent: 100,
+      totalDescent: 90,
+      totalDistance: 12000,
+    });
+    const storage = {
+      downloadRouteGpx: vi.fn().mockResolvedValue("<gpx></gpx>"),
+    };
+    const wahooClient = createClientMock();
+    wahooClient.createPlan.mockResolvedValueOnce({ id: 88 });
+    wahooClient.createWorkout.mockResolvedValueOnce({ id: 99 });
+    createWahooClientMock.mockReturnValueOnce(wahooClient);
+    const service = new WahooSyncService({ repository, storage });
+
+    await expect(service.syncEvent("event-1", "profile-1")).resolves.toMatchObject({
+      success: true,
+      action: "recreated",
+    });
+
+    expect(storage.downloadRouteGpx).toHaveBeenCalledWith("routes/replacement.gpx");
+    expect(wahooClient.createRoute).toHaveBeenCalled();
+    expect(wahooClient.createWorkout).toHaveBeenCalledWith(
+      expect.objectContaining({ routeId: 41, workoutTypeId: 0 }),
+    );
+    expect(repository.updateEventResourceLink).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerMetadata: {
+          wahoo: {
+            planId: 88,
+            routeId: 41,
+            sourcePlanId: "plan-1",
+            sourceRouteId: "route-2",
+          },
+        },
+      }),
+    );
+  });
+
+  it("recreates without a route when the event route is cleared", async () => {
+    const repository = createRepositoryMock();
+    repository.getEventResourceLink.mockResolvedValueOnce({
+      externalId: "workout-77",
+      id: "sync-1",
+      providerMetadata: {
+        wahoo: {
+          planId: 55,
+          routeId: 40,
+          sourcePlanId: "plan-1",
+          sourceRouteId: "route-1",
+        },
+      },
+      updatedAt: "2026-04-02T09:00:00.000Z",
+    });
+    const wahooClient = createClientMock();
+    wahooClient.createPlan.mockResolvedValueOnce({ id: 88 });
+    wahooClient.createWorkout.mockResolvedValueOnce({ id: 99 });
+    createWahooClientMock.mockReturnValueOnce(wahooClient);
+    const service = new WahooSyncService({
+      repository,
+      storage: { downloadRouteGpx: vi.fn() },
+    });
+
+    await expect(service.syncEvent("event-1", "profile-1")).resolves.toMatchObject({
+      success: true,
+      action: "recreated",
+    });
+
+    expect(wahooClient.createRoute).not.toHaveBeenCalled();
+    expect(wahooClient.createWorkout).toHaveBeenCalledWith(
+      expect.objectContaining({ routeId: undefined, workoutTypeId: 12 }),
+    );
+    expect(repository.updateEventResourceLink).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerMetadata: {
+          wahoo: {
+            planId: 88,
+            routeId: undefined,
+            sourcePlanId: "plan-1",
+          },
+        },
+      }),
+    );
   });
 
   it("keeps the local sync record when remote Wahoo delete fails", async () => {

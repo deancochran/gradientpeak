@@ -1,7 +1,7 @@
 import {
-  calculateCriticalPower,
   calculateSeasonBestCurve,
   estimatePowerForDuration,
+  evaluateCriticalPower,
 } from "@repo/core/calculations";
 import { publicActivityCategorySchema, publicEffortTypeSchema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
@@ -13,7 +13,7 @@ import { createTRPCRouter, protectedProcedure } from "../trpc";
 const analyticsInputSchema = z.object({
   activity_category: publicActivityCategorySchema,
   effort_type: publicEffortTypeSchema,
-  days: z.number().optional().default(90),
+  days: z.number().int().min(1).max(365).optional().default(90),
 });
 
 const predictPerformanceInputSchema = analyticsInputSchema.extend({
@@ -27,10 +27,29 @@ const predictPerformanceOutputSchema = z.object({
     source: z.literal("observed-curve-fit"),
     cp: z.number(),
     wPrime: z.number(),
+    rSquared: z.number(),
+    /** @deprecated Compatibility alias for rSquared. */
     error: z.number(),
+    rmseWatts: z.number().nonnegative(),
+    maxAbsoluteResidualWatts: z.number().nonnegative(),
     fitMinDurationSeconds: z.number(),
     fitMaxDurationSeconds: z.number(),
     pointCount: z.number().int().positive(),
+    activityCount: z.number().int().positive(),
+    residuals: z.array(
+      z.object({
+        pointId: z.string(),
+        durationSeconds: z.number().positive(),
+        observedWatts: z.number().positive(),
+        predictedWatts: z.number().positive(),
+        residualWatts: z.number(),
+      }),
+    ),
+    stability: z.object({
+      maxCpChangeRatio: z.number().nonnegative(),
+      maxWPrimeChangeRatio: z.number().nonnegative(),
+      maxPredictionChangeRatio: z.number().nonnegative(),
+    }),
   }),
 });
 
@@ -68,15 +87,15 @@ export const analyticsRouter = createTRPCRouter({
         effort_type: input.effort_type,
       });
 
-      const model = calculateCriticalPower(curve);
+      const evaluation = evaluateCriticalPower(curve);
 
-      if (!model) {
+      if (evaluation.status === "abstained") {
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message:
-            "Insufficient data to calculate performance model. Need at least 3 observed max efforts between 3 and 30 minutes, including short and long coverage.",
+          message: `Critical-power model abstained: ${evaluation.reason}.`,
         });
       }
+      const model = evaluation.model;
 
       let predictedValue: number;
       try {

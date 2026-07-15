@@ -37,7 +37,7 @@ import {
   Trophy,
 } from "lucide-react-native";
 import type React from "react";
-import { forwardRef, useEffect, useImperativeHandle, useMemo } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef } from "react";
 import { Pressable, View } from "react-native";
 import { z } from "zod";
 import { AppFormModal } from "@/components/shared/AppFormModal";
@@ -52,11 +52,13 @@ interface GoalEditorModalProps {
   onSubmit: (value: GoalEditorDraft) => void;
 }
 
-interface GoalEditorFormProps {
+export interface GoalEditorFormProps {
   initialValue: GoalEditorDraft;
   submitLabel?: string;
   isSubmitting?: boolean;
   showSubmitAction?: boolean;
+  contentSizing?: "fill" | "intrinsic";
+  onDraftChange?: (draft: GoalEditorDraft) => void;
   onSubmit: (value: GoalEditorDraft) => void;
 }
 
@@ -333,6 +335,8 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
       submitLabel = "Save Goal",
       isSubmitting = false,
       showSubmitAction = true,
+      contentSizing = "fill",
+      onDraftChange,
       onSubmit,
     },
     ref,
@@ -345,6 +349,10 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
       },
     });
     const draft = form.watch() as GoalEditorDraft;
+    const onDraftChangeRef = useRef(onDraftChange);
+    const lastEmittedDraftRef = useRef<string | null>(null);
+    const shouldObserveDraft = onDraftChange !== undefined;
+    onDraftChangeRef.current = onDraftChange;
 
     useEffect(() => {
       form.reset({
@@ -352,6 +360,27 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
         ...initialValue,
       });
     }, [form, initialValue]);
+
+    useEffect(() => {
+      if (!shouldObserveDraft) {
+        return;
+      }
+
+      const emitDraft = (value: GoalEditorDraft) => {
+        const nextDraft = { ...value };
+        const serializedDraft = JSON.stringify(nextDraft);
+        if (serializedDraft === lastEmittedDraftRef.current) {
+          return;
+        }
+
+        lastEmittedDraftRef.current = serializedDraft;
+        onDraftChangeRef.current?.(nextDraft);
+      };
+
+      emitDraft(form.getValues() as GoalEditorDraft);
+      const subscription = form.watch((value) => emitDraft(value as GoalEditorDraft));
+      return () => subscription.unsubscribe();
+    }, [form, shouldObserveDraft]);
 
     const goalTypeOption = useMemo(() => getGoalTypeOption(draft.goalType), [draft.goalType]);
     const activityOption = useMemo(
@@ -437,7 +466,10 @@ export const GoalEditorForm = forwardRef<GoalEditorFormHandle, GoalEditorFormPro
 
     return (
       <Form {...form}>
-        <View className="flex-1 gap-3">
+        <View
+          className={contentSizing === "intrinsic" ? "gap-3" : "flex-1 gap-3"}
+          testID="goal-editor-form"
+        >
           <GoalSection icon={Trophy} title="Choose a template">
             <View className="flex-row flex-wrap gap-1.5">
               {GOAL_PRESETS.map((preset) => (

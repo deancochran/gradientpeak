@@ -26,6 +26,7 @@ describe("resolveCanonicalThresholds", () => {
           durationSeconds: 1200,
           observedAt: now,
           observationKind: "actual",
+          evidence: "imported_activity_stream",
         },
       ],
     });
@@ -52,6 +53,7 @@ describe("resolveCanonicalThresholds", () => {
           durationSeconds: 1200,
           observedAt: now,
           observationKind: "actual",
+          evidence: "imported_activity_stream",
         },
         {
           sport: "run",
@@ -60,6 +62,7 @@ describe("resolveCanonicalThresholds", () => {
           durationSeconds: 1200,
           observedAt: now,
           observationKind: "actual",
+          evidence: "imported_activity_stream",
         },
         {
           sport: "swim",
@@ -68,11 +71,13 @@ describe("resolveCanonicalThresholds", () => {
           durationSeconds: 1200,
           observedAt: now,
           observationKind: "actual",
+          evidence: "imported_activity_stream",
         },
       ],
     });
 
     expect(result.cycling_ftp.value).toBe(285);
+    expect(result.cycling_ftp).toMatchObject({ confidence: "medium", estimate: true });
     expect(result.running_threshold_pace).toMatchObject({
       value: 250,
       unit: "s/1000m",
@@ -153,6 +158,7 @@ describe("resolveCanonicalThresholds", () => {
           durationSeconds: 1200,
           observedAt: "2026-06-01T12:00:00.000Z",
           observationKind: "actual",
+          evidence: "imported_activity_stream",
         },
         {
           sport: "bike",
@@ -161,6 +167,7 @@ describe("resolveCanonicalThresholds", () => {
           durationSeconds: 1199,
           observedAt: now,
           observationKind: "actual",
+          evidence: "imported_activity_stream",
         },
       ],
     });
@@ -168,5 +175,69 @@ describe("resolveCanonicalThresholds", () => {
     expect(result.cycling_ftp.source).toBe("unknown");
     expect(result.running_threshold_pace.source).toBe("unknown");
     expect(result.swimming_css.source).toBe("unknown");
+  });
+
+  it("does not trust an actual flag without provenance-backed evidence", () => {
+    const result = resolveCanonicalThresholds({
+      now,
+      freshnessWindowMs,
+      activityEfforts: [
+        {
+          sport: "bike",
+          metric: "power",
+          value: 300,
+          durationSeconds: 1200,
+          observedAt: now,
+          observationKind: "actual",
+        },
+      ],
+    });
+
+    expect(result.cycling_ftp).toMatchObject({ value: null, source: "unknown" });
+  });
+
+  it("identifies validated tests separately while preserving observed-effort precedence", () => {
+    const result = resolveCanonicalThresholds({
+      now,
+      freshnessWindowMs,
+      directMetrics: [
+        {
+          threshold: "swimming_css",
+          value: 95,
+          observedAt: now,
+          source: "validated_test",
+          calculationVersion: "css_400m_200m_v1",
+        },
+        {
+          threshold: "cycling_ftp",
+          value: 250,
+          observedAt: now,
+          source: "validated_test",
+          calculationVersion: "bike_test_v1",
+        },
+      ],
+      activityEfforts: [
+        {
+          sport: "bike",
+          metric: "power",
+          value: 300,
+          durationSeconds: 1200,
+          observedAt: now,
+          observationKind: "actual",
+          evidence: "imported_activity_stream",
+        },
+      ],
+    });
+
+    expect(result.swimming_css).toMatchObject({
+      source: "validated_test",
+      confidence: "high",
+      estimate: false,
+      calculationVersion: "css_400m_200m_v1",
+    });
+    expect(result.cycling_ftp).toMatchObject({
+      source: "observed_effort",
+      calculationVersion: "twenty_minute_effort_v1",
+    });
   });
 });

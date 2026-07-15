@@ -1,13 +1,34 @@
-import { activities, activityEfforts, integrationResourceLinks, profileMetrics } from "@repo/db";
+import {
+  activities,
+  activityEfforts,
+  activityFileIngestions,
+  integrationResourceLinks,
+  profileMetrics,
+} from "@repo/db";
 import { describe, expect, it, vi } from "vitest";
 import type { getRequiredDb } from "../../db";
-import { type ActivitySubmission, submitActivity } from "./submit-activity";
+import {
+  type ActivitySubmission,
+  recordingSessionActivityId,
+  submitActivity,
+} from "./submit-activity";
+
+describe("recordingSessionActivityId", () => {
+  it("returns a stable profile-scoped UUID", () => {
+    const first = recordingSessionActivityId("profile-1", "session-1");
+
+    expect(first).toBe(recordingSessionActivityId("profile-1", "session-1"));
+    expect(first).not.toBe(recordingSessionActivityId("profile-2", "session-1"));
+    expect(first).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-a[0-9a-f]{3}-[0-9a-f]{12}$/);
+  });
+});
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 interface MockTx {
+  execute(query: unknown): Promise<unknown>;
   select(): {
     from(table: unknown): {
-      where(condition: unknown): {
+      where(condition: unknown): PromiseLike<unknown[]> & {
         limit(count: number): Promise<unknown[]>;
       };
     };
@@ -43,12 +64,16 @@ function createDb(
     const staged: unknown[] = [];
     const tx = {
       select: vi.fn(() => ({
-        from: vi.fn(() => ({
-          where: vi.fn(() => ({
-            limit: vi.fn().mockResolvedValue(existingActivity ? [existingActivity] : []),
-          })),
+        from: vi.fn((table: unknown) => ({
+          where: vi.fn(() => {
+            const rows = table === activities && existingActivity ? [existingActivity] : [];
+            return Object.assign(Promise.resolve(rows), {
+              limit: vi.fn().mockResolvedValue(rows),
+            });
+          }),
         })),
       })),
+      execute: vi.fn().mockResolvedValue({ rows: [] }),
       insert: vi.fn((table: unknown) => ({
         values: vi.fn((values: unknown) => {
           if (table === failOn) throw new Error("write failed");
@@ -137,8 +162,34 @@ function createInput(): ActivitySubmission {
 
 describe("submitActivity", () => {
   it("atomically creates every canonical provider projection", async () => {
-    const { db, committed, transaction } = createDb();
-    await submitActivity(db, createInput());
+    const { db, committed, insertedValues, transaction } = createDb();
+    await submitActivity(db, {
+      ...createInput(),
+      analysis: {
+        efforts: [
+          {
+            id: "effort-1",
+            created_at: new Date("2026-01-01T11:00:00Z"),
+            profile_id: "wrong-profile",
+            activity_id: "wrong-activity",
+            activity_category: "bike",
+            effort_type: "power",
+            duration_seconds: 300,
+            recorded_at: new Date("2026-01-01T11:00:00Z"),
+            unit: "watts",
+            value: 250,
+          },
+        ],
+        detectedLTHR: null,
+        activityCompletedAt: new Date("2026-01-01T11:00:00Z"),
+        ingestion: {
+          source: "provider_sync",
+          provider: "wahoo",
+          externalId: "external-1",
+          fileType: "fit",
+        },
+      },
+    });
     expect(transaction).toHaveBeenCalledOnce();
     expect(committed).toEqual(
       expect.arrayContaining([
@@ -148,7 +199,24 @@ describe("submitActivity", () => {
         activities,
         activities,
         integrationResourceLinks,
+        activityEfforts,
+        activityFileIngestions,
       ]),
+    );
+    expect(insertedValues.find((entry) => entry.table === activityEfforts)?.values).toEqual([
+      expect.objectContaining({
+        activity_id: expect.any(String),
+        profile_id: "profile-1",
+        duration_seconds: 300,
+      }),
+    ]);
+    expect(insertedValues.find((entry) => entry.table === activityFileIngestions)?.values).toEqual(
+      expect.objectContaining({
+        source: "provider_sync",
+        status: "ready",
+        provider: "wahoo",
+        external_id: "external-1",
+      }),
     );
   });
 
@@ -329,6 +397,40 @@ describe("submitActivity", () => {
   it("rolls back without partial persistence when a projection write fails", async () => {
     const { db, committed } = createDb(activities);
     await expect(submitActivity(db, createInput())).rejects.toThrow("write failed");
+    expect(committed).toEqual([]);
+  });
+
+  it("rolls back activity enrichment when generated evidence reconciliation fails", async () => {
+    const { db, committed } = createDb(activityEfforts);
+    await expect(
+      submitActivity(db, {
+        kind: "enrich",
+        activityId: "activity-1",
+        profileId: "profile-1",
+        activityFilePath: "recorded.fit",
+        activityFileSize: 1,
+        activityFileType: "fit",
+        deviceManufacturer: null,
+        deviceProduct: null,
+        summaryValues: {},
+        efforts: [
+          {
+            id: "effort-1",
+            created_at: new Date(),
+            profile_id: "profile-1",
+            activity_id: "activity-1",
+            recorded_at: new Date(),
+            activity_category: "bike",
+            effort_type: "power",
+            duration_seconds: 300,
+            unit: "watts",
+            value: 250,
+          },
+        ],
+        detectedLTHR: null,
+        activityCompletedAt: new Date(),
+      }),
+    ).rejects.toThrow("write failed");
     expect(committed).toEqual([]);
   });
 

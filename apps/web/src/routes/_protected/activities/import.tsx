@@ -1,60 +1,132 @@
-import { zodResolver } from "@hookform/resolvers/zod";
 import { invalidatePostActivityIngestionQueries } from "@repo/api/client";
+import { buildManualActivityImportProvenance } from "@repo/core/activity-files";
+import { canonicalSportSchema } from "@repo/core/schemas/sport";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
-import {
-  Form,
-  FormSegmentedSelectField,
-  FormTextareaField,
-  FormTextField,
-} from "@repo/ui/components/form";
-import { LoadingButton } from "@repo/ui/components/loading";
 import { useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Upload } from "lucide-react";
-import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { UploadFileField } from "../../../components/protected/upload-file-field";
 import {
-  type ActivityImportFormValues,
-  activityImportFormSchema,
-  activityTypeOptions,
-} from "../../../lib/activity-route-form-schemas";
-import {
-  formatFileSize,
-  getSingleFileSelection,
-  uploadFileToSignedUrl,
-} from "../../../lib/activity-route-upload";
+  ActivityImportForm,
+  type ActivityImportPhase,
+  type BrowserActivityImportValues,
+} from "../../../components/protected/activity-import-form";
+import { uploadFileToSignedUrl } from "../../../lib/activity-route-upload";
 import { api } from "../../../lib/api/client";
-import { buildManualHistoricalImportProvenance } from "../../../lib/recording-web";
+import { type RecordingLauncherSearch, validateRecordingSearch } from "../../../lib/recording-web";
+
+export type ActivityImportSearch = Partial<RecordingLauncherSearch> & {
+  activityType?: "run" | "bike" | "swim" | "strength" | "other";
+  from?: "record";
+};
+
+export function validateActivityImportSearch(
+  search: Record<string, unknown>,
+): ActivityImportSearch {
+  const activityType = canonicalSportSchema.safeParse(search.activityType).success
+    ? canonicalSportSchema.parse(search.activityType)
+    : canonicalSportSchema.safeParse(search.category).success
+      ? canonicalSportSchema.parse(search.category)
+      : "bike";
+
+  const from = search.from === "record" ? "record" : undefined;
+  const recordingSearch =
+    from === "record"
+      ? validateRecordingSearch({
+          ...search,
+          category: search.category ?? activityType,
+        })
+      : undefined;
+
+  return {
+    ...recordingSearch,
+    activityType,
+    from,
+  };
+}
 
 export const Route = createFileRoute("/_protected/activities/import")({
   component: ActivityImportPage,
+  validateSearch: validateActivityImportSearch,
 });
 
-function ActivityImportPage() {
+export function ActivityImportPage() {
   const navigate = Route.useNavigate();
+  const search = Route.useSearch();
   const queryClient = useQueryClient();
   const utils = api.useUtils();
-  const [files, setFiles] = useState<
-    Array<{ file?: File; name: string; size?: number | null; type?: string | null }>
-  >([]);
-  const selectedFile = getSingleFileSelection(files);
-  const form = useForm<ActivityImportFormValues>({
-    defaultValues: {
-      activityType: "bike",
-      name: "",
-      notes: "",
-    },
-    resolver: zodResolver(activityImportFormSchema),
-  });
   const getSignedUrlMutation = api.activityFiles.getSignedUploadUrl.useMutation();
   const processActivityFileMutation = api.activityFiles.processActivityFile.useMutation();
-  const isSubmitting =
-    form.formState.isSubmitting ||
-    getSignedUrlMutation.isPending ||
-    processActivityFileMutation.isPending;
+  const [phase, setPhase] = useState<ActivityImportPhase>("idle");
+  const [importedActivity, setImportedActivity] = useState<{ id: string; name: string } | null>(
+    null,
+  );
+  const [navigationFailed, setNavigationFailed] = useState(false);
+  const [navigationPending, setNavigationPending] = useState(false);
+  const importInFlight = useRef(false);
+  const importedActivityRef = useRef<{ id: string; name: string } | null>(null);
+
+  const openImportedActivity = async (activity: { id: string; name: string }) => {
+    setNavigationPending(true);
+    try {
+      await navigate({
+        params: { activityId: activity.id },
+        to: "/activities/$activityId",
+      });
+      setNavigationFailed(false);
+    } catch {
+      setNavigationFailed(true);
+    } finally {
+      setNavigationPending(false);
+    }
+  };
+
+  const importActivity = async (values: BrowserActivityImportValues) => {
+    if (importInFlight.current || importedActivityRef.current) {
+      return;
+    }
+    importInFlight.current = true;
+
+    let activity: { id: string; name: string };
+    try {
+      setPhase("signing");
+      const signedUrlData = await getSignedUrlMutation.mutateAsync({
+        fileName: values.file.name,
+        fileSize: values.file.size,
+      });
+
+      setPhase("uploading");
+      await uploadFileToSignedUrl(values.file, signedUrlData.signedUrl);
+
+      setPhase("processing");
+      const result = await processActivityFileMutation.mutateAsync({
+        activityFilePath: signedUrlData.filePath,
+        activityType: values.sport,
+        importProvenance: buildManualActivityImportProvenance(values.file.name),
+        name: values.name,
+        notes: values.notes ?? undefined,
+      });
+      activity = result.activity;
+    } catch (error) {
+      setPhase("idle");
+      toast.error("Activity import failed");
+      importInFlight.current = false;
+      throw error;
+    }
+
+    importedActivityRef.current = activity;
+    setImportedActivity(activity);
+    setPhase("success");
+    toast.success(`Imported ${activity.name}`);
+
+    await Promise.allSettled([
+      Promise.resolve().then(() => invalidatePostActivityIngestionQueries(queryClient)),
+      Promise.resolve().then(() => utils.activities.invalidate()),
+    ]);
+    await openImportedActivity(activity);
+    importInFlight.current = false;
+  };
 
   return (
     <div className="container mx-auto max-w-3xl space-y-6 py-4">
@@ -70,121 +142,42 @@ function ActivityImportPage() {
         <CardHeader>
           <CardTitle>Completed activity file</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-6">
-          <UploadFileField
-            accept=".fit,.gpx,.tcx,application/gpx+xml,application/vnd.garmin.tcx+xml,application/xml,text/xml,application/octet-stream"
-            description="Choose one completed FIT, GPX, or TCX recording from your device."
-            error={form.formState.errors.root?.message}
-            files={files}
-            helperText={
-              selectedFile
-                ? formatFileSize(selectedFile.size)
-                : "Supported now: .fit, .gpx, and .tcx."
-            }
-            id="activity-file"
-            label="Activity file"
-            onFilesChange={(nextFiles) => {
-              setFiles(nextFiles);
-              const nextFile = getSingleFileSelection(nextFiles);
-              if (nextFile && !form.getValues("name").trim()) {
-                form.setValue("name", nextFile.name.replace(/\.(fit|gpx|tcx)$/i, ""), {
-                  shouldDirty: true,
+        <CardContent>
+          <ActivityImportForm
+            initialSport={search.activityType ?? "bike"}
+            onCancel={() => {
+              if (search.from === "record") {
+                void navigate({
+                  search: validateRecordingSearch(search),
+                  to: "/record",
                 });
+                return;
               }
+              void navigate({ to: "/activities" });
             }}
-            onReset={() => setFiles([])}
-            required
-            testId="activity-import-file-input"
+            onSubmit={importActivity}
+            phase={phase}
           />
-
-          <Form {...form}>
-            <form
-              className="space-y-4"
-              onSubmit={form.handleSubmit(async (values) => {
-                if (!selectedFile) {
-                  form.setError("root", { message: "Choose a FIT, GPX, or TCX file to import." });
-                  return;
-                }
-
-                try {
-                  const signedUrlData = await getSignedUrlMutation.mutateAsync({
-                    fileName: selectedFile.name,
-                    fileSize: selectedFile.size,
-                  });
-
-                  await uploadFileToSignedUrl(selectedFile.file, signedUrlData.signedUrl);
-
-                  const result = await processActivityFileMutation.mutateAsync({
-                    activityType: values.activityType,
-                    activityFilePath: signedUrlData.filePath,
-                    importProvenance: buildManualHistoricalImportProvenance(selectedFile.name),
-                    name: values.name.trim(),
-                    notes: values.notes.trim() || undefined,
-                  });
-
-                  await invalidatePostActivityIngestionQueries(queryClient);
-                  await utils.activities.invalidate();
-                  toast.success(`Imported ${result.activity.name}`);
-                  void navigate({
-                    to: "/activities/$activityId",
-                    params: { activityId: result.activity.id },
-                  });
-                } catch (error) {
-                  const message =
-                    error instanceof Error
-                      ? error.message
-                      : "The activity file could not be imported.";
-                  form.setError("root", { message });
-                  toast.error("Activity import failed");
-                }
-              })}
-            >
-              <FormTextField
-                control={form.control}
-                label="Activity name"
-                name="name"
-                testId="activity-import-name-input"
-              />
-              <FormSegmentedSelectField
-                control={form.control}
-                label="Activity type"
-                name="activityType"
-                options={activityTypeOptions.map((option) => ({ ...option }))}
-                testId="activity-import-type-select"
-              />
-              <FormTextareaField
-                className="min-h-28"
-                control={form.control}
-                label="Notes"
-                name="notes"
-                placeholder="Optional notes"
-                testId="activity-import-notes-input"
-              />
-              {form.formState.errors.root?.message ? (
-                <p className="text-sm text-destructive">{form.formState.errors.root.message}</p>
-              ) : null}
-              <div className="flex flex-wrap justify-end gap-3">
-                <Button
-                  onClick={() => void navigate({ to: "/activities" })}
-                  type="button"
-                  variant="outline"
-                >
-                  Cancel
-                </Button>
-                <LoadingButton
-                  disabled={!selectedFile || isSubmitting}
-                  loading={isSubmitting}
-                  loadingLabel="Importing activity..."
-                  type="submit"
-                >
-                  <Upload className="mr-2 h-4 w-4" />
-                  Import activity
-                </LoadingButton>
-              </div>
-            </form>
-          </Form>
         </CardContent>
       </Card>
+
+      {importedActivity && navigationFailed ? (
+        <Card>
+          <CardContent className="space-y-3 py-6">
+            <p className="text-sm text-destructive" role="alert">
+              {importedActivity.name} was imported successfully, but it could not be opened
+              automatically. You do not need to import the file again.
+            </p>
+            <Button
+              disabled={navigationPending}
+              onClick={() => void openImportedActivity(importedActivity)}
+              type="button"
+            >
+              {navigationPending ? "Opening activity..." : "Open activity"}
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }

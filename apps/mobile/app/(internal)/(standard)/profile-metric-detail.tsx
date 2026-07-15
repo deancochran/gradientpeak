@@ -3,6 +3,7 @@ import {
   getProfileMetricDefinition,
   isProfileMetricType,
 } from "@repo/core/athlete-inputs";
+import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import {
   DropdownMenu,
@@ -80,8 +81,10 @@ export default function ProfileMetricDetailScreen() {
     setShowDeleteConfirm(true);
   };
 
-  const renderHeaderActions = () =>
-    !metric ? null : (
+  const renderHeaderActions = () => {
+    if (!metric) return null;
+    const isManual = metric.source === "manual";
+    return (
       <DropdownMenu>
         <DropdownMenuTrigger testID="profile-metric-detail-options-trigger">
           <View className="rounded-full p-2">
@@ -89,22 +92,46 @@ export default function ProfileMetricDetailScreen() {
           </View>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" sideOffset={6}>
-          <DropdownMenuItem
-            onPress={() => navigateTo(ROUTES.PROFILE_METRICS.EDIT(metric.id) as Href)}
-            testID="profile-metric-detail-options-edit"
-          >
-            <Text>Edit Metric</Text>
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onPress={handleDelete}
-            variant="destructive"
-            testID="profile-metric-detail-options-delete"
-          >
-            <Text>{deleteMutation.isPending ? "Deleting..." : "Delete Metric"}</Text>
-          </DropdownMenuItem>
+          {isManual ? (
+            <>
+              <DropdownMenuItem
+                onPress={() => navigateTo(ROUTES.PROFILE_METRICS.EDIT(metric.id) as Href)}
+                testID="profile-metric-detail-options-edit"
+              >
+                <Text>Edit Metric</Text>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onPress={handleDelete}
+                variant="destructive"
+                testID="profile-metric-detail-options-delete"
+              >
+                <Text>{deleteMutation.isPending ? "Deleting..." : "Delete Metric"}</Text>
+              </DropdownMenuItem>
+            </>
+          ) : (
+            <DropdownMenuItem
+              onPress={() =>
+                navigateTo({
+                  pathname: ROUTES.PROFILE_METRICS.CREATE,
+                  params: {
+                    metricType: metric.metric_type,
+                    recordedAt:
+                      metric.recorded_at instanceof Date
+                        ? metric.recorded_at.toISOString()
+                        : metric.recorded_at,
+                    value: String(metric.value),
+                  },
+                } as Href)
+              }
+              testID="profile-metric-detail-options-override"
+            >
+              <Text>Add Manual Override</Text>
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     );
+  };
 
   if (isLoading) {
     return (
@@ -163,9 +190,23 @@ export default function ProfileMetricDetailScreen() {
                     Type: {getMetricLabel(metric.metric_type)}
                   </Text>
                 </View>
+                <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
+                  <Text className="text-xs font-medium capitalize text-foreground">
+                    Source: {(metric.source ?? "unknown").replaceAll("_", " ")}
+                  </Text>
+                </View>
               </View>
             </CardContent>
           </Card>
+
+          {metric.metric_type === "css_seconds_per_100m" ? (
+            <Button
+              onPress={() => navigateTo(ROUTES.PROFILE_METRICS.CSS_TEST as Href)}
+              testId="profile-metric-css-test"
+            >
+              <Text>Record 400m / 200m CSS test</Text>
+            </Button>
+          ) : null}
 
           {metric.notes ? (
             <Card className="rounded-3xl border border-border bg-card">

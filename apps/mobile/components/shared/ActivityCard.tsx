@@ -5,6 +5,11 @@ import { MessageCircle, Route } from "lucide-react-native";
 import type { ReactNode } from "react";
 import { useMemo } from "react";
 import { Pressable, View } from "react-native";
+import {
+  formatCalibrationQuality,
+  getActivityLoadLabels,
+  getThresholdNextAction,
+} from "@/lib/activity-load-presentation";
 import { getActivityCategoryConfig } from "@/lib/constants/activities";
 import { formatDistanceMeters } from "@/lib/display/formatters";
 import { formatEstimatedIntensityFactor, formatEstimatedTss } from "@/lib/estimatedMetrics";
@@ -45,9 +50,15 @@ export type ActivityCardActivity = {
   derived?: {
     tss?: number | null;
     intensity_factor?: number | null;
+    method?: string | null;
+    unavailable_reason?: string | null;
+    calibration_quality?: CalibrationQuality | null;
     stress?: {
       tss?: number | null;
       intensity_factor?: number | null;
+      method?: string | null;
+      unavailable_reason?: string | null;
+      calibration_quality?: CalibrationQuality | null;
     } | null;
   } | null;
   ingestion?: {
@@ -55,6 +66,20 @@ export type ActivityCardActivity = {
     last_error_message?: string | null;
   } | null;
   profile?: ActivityCardOwner | null;
+};
+
+type CalibrationQuality = {
+  source:
+    | "manual"
+    | "validated_test"
+    | "observed_effort"
+    | "provider"
+    | "modeled"
+    | "estimated"
+    | "unknown";
+  observed_at: string | null;
+  stale: boolean;
+  estimate: boolean;
 };
 
 export type ActivityCardOwner = {
@@ -110,6 +135,33 @@ function getDerivedValue(activity: ActivityCardActivity, key: "tss" | "intensity
   return activity.derived?.[key] ?? activity.derived?.stress?.[key] ?? null;
 }
 
+function getLoadPresentation(activity: ActivityCardActivity) {
+  const method = activity.derived?.method ?? activity.derived?.stress?.method ?? null;
+  const unavailableReason =
+    activity.derived?.unavailable_reason ?? activity.derived?.stress?.unavailable_reason ?? null;
+  const labels = getActivityLoadLabels(method);
+  const unavailableText =
+    unavailableReason === "private_data"
+      ? "Private"
+      : unavailableReason === "threshold_missing"
+        ? "No prior threshold"
+        : unavailableReason === "invalid_data"
+          ? "Invalid data"
+          : unavailableReason === "activity_data_missing"
+            ? "Missing activity data"
+            : "--";
+  return { ...labels, unavailableText };
+}
+
+function getCalibrationText(activity: ActivityCardActivity): string | null {
+  const quality =
+    activity.derived?.calibration_quality ?? activity.derived?.stress?.calibration_quality ?? null;
+  if (quality) return formatCalibrationQuality(quality, activity.started_at);
+  const unavailableReason =
+    activity.derived?.unavailable_reason ?? activity.derived?.stress?.unavailable_reason ?? null;
+  return unavailableReason === "threshold_missing" ? getThresholdNextAction(activity.type) : null;
+}
+
 function getIngestionStatusText(activity: ActivityCardActivity): string | null {
   const status = activity.ingestion?.status;
 
@@ -128,6 +180,7 @@ function ActivityMetricsRow({
 }) {
   const tss = getDerivedValue(activity, "tss");
   const intensityFactor = getDerivedValue(activity, "intensity_factor");
+  const loadPresentation = getLoadPresentation(activity);
   const metrics: ResourceMetric[] = [];
 
   if (typeof activity.distance_meters === "number" && activity.distance_meters > 0) {
@@ -139,13 +192,13 @@ function ActivityMetricsRow({
   }
 
   metrics.push({
-    label: "TSS",
-    value: formatEstimatedTss(tss, { includeUnit: false }) ?? "--",
+    label: loadPresentation.load,
+    value: formatEstimatedTss(tss, { includeUnit: false }) ?? loadPresentation.unavailableText,
     tone: "primary",
   });
 
   metrics.push({
-    label: "IF",
+    label: loadPresentation.intensity,
     value: formatEstimatedIntensityFactor(intensityFactor) ?? "--",
     tone: "primary",
   });
@@ -220,6 +273,7 @@ export function ActivityCard({
   }, [activity.polyline, shouldShowCompactRoutePreview, shouldShowVisualPreview]);
   const routeCoordinates = decodedPolylineCoordinates;
   const ingestionStatusText = getIngestionStatusText(activity);
+  const calibrationText = getCalibrationText(activity);
 
   return (
     <ResourceCardShell contentClassName="gap-3 px-3" onPress={onPress} testID={testID}>
@@ -279,6 +333,10 @@ export function ActivityCard({
       />
 
       <ActivityMetricsRow activity={activity} compact={false} />
+
+      {calibrationText ? (
+        <Text className="text-xs text-muted-foreground">{calibrationText}</Text>
+      ) : null}
 
       {ingestionStatusText ? (
         <Text

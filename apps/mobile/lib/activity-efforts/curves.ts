@@ -1,9 +1,23 @@
 import {
   activityEffortDefinitions,
+  formatActivityEffortValue,
   formatEffortDuration,
   getActivityEffortDefinitionId,
   getActivityEffortObservationStatus as getCoreActivityEffortObservationStatus,
 } from "@repo/core/athlete-inputs";
+
+export function formatActivityEffortPresentationValue(record: ActivityEffortCurveRow) {
+  if (
+    record.activity_category === "swim" &&
+    record.effort_type === "speed" &&
+    Number.isFinite(record.value) &&
+    record.value > 0
+  ) {
+    const seconds = Math.round(100 / record.value);
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}/100m`;
+  }
+  return formatActivityEffortValue(record);
+}
 
 export type ActivityEffortCurveRow = {
   id: string;

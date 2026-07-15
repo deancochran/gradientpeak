@@ -1,4 +1,5 @@
 import {
+  activityTssIdentityMethodValues,
   calculateAge,
   calculateRollingTrainingQuality,
   canonicalSportSchema,
@@ -218,7 +219,7 @@ const workloadMetricSchema = z
     identity: z
       .object({
         sport: canonicalSportSchema,
-        method: z.enum(["power_threshold", "run_pace_threshold", "heart_rate_reserve"]),
+        method: z.enum(activityTssIdentityMethodValues),
         source: z.literal("activity_analysis"),
         version: z.literal("1"),
       })

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { type ActivityPlanInsert, activityPlans } from "@repo/db";
-import { and, eq } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 
 type ActivityPlansDb = ReturnType<typeof getRequiredDb>;
@@ -26,20 +26,12 @@ export async function upsertImportedActivityPlan(
   db: ActivityPlansDb,
   input: ImportedActivityPlanInput,
 ) {
-  const [existingRow] = await db
-    .select()
-    .from(activityPlans)
-    .where(
-      and(
-        eq(activityPlans.profile_id, input.profileId),
-        eq(activityPlans.import_provider, input.provider),
-        eq(activityPlans.import_external_id, input.externalId),
-      ),
-    )
-    .limit(1);
-
-  const payload: Partial<ActivityPlanInsert> = {
-    updated_at: new Date(),
+  const id = randomUUID();
+  const now = new Date();
+  const payload = {
+    id,
+    created_at: now,
+    updated_at: now,
     name: input.template.name,
     description: input.template.description?.trim() ? input.template.description.trim() : null,
     notes: input.template.notes ?? null,
@@ -51,24 +43,34 @@ export async function upsertImportedActivityPlan(
     import_provider: input.provider,
     import_external_id: input.externalId,
     is_system_template: false,
-  };
+  } satisfies ActivityPlanInsert;
 
-  const [row] = existingRow
-    ? await db
-        .update(activityPlans)
-        .set(payload)
-        .where(
-          and(eq(activityPlans.id, existingRow.id), eq(activityPlans.profile_id, input.profileId)),
-        )
-        .returning()
-    : await db
-        .insert(activityPlans)
-        .values({
-          id: randomUUID(),
-          created_at: new Date(),
-          ...payload,
-        } as ActivityPlanInsert)
-        .returning();
+  const [row] = await db
+    .insert(activityPlans)
+    .values(payload)
+    .onConflictDoUpdate({
+      target: [
+        activityPlans.profile_id,
+        activityPlans.import_provider,
+        activityPlans.import_external_id,
+      ],
+      targetWhere: sql`${activityPlans.import_provider} is not null and ${activityPlans.import_external_id} is not null`,
+      set: {
+        updated_at: now,
+        name: payload.name,
+        description: payload.description,
+        notes: payload.notes,
+        activity_category: payload.activity_category,
+        structure: payload.structure,
+        version: payload.version,
+        profile_id: payload.profile_id,
+        template_visibility: payload.template_visibility,
+        import_provider: payload.import_provider,
+        import_external_id: payload.import_external_id,
+        is_system_template: payload.is_system_template,
+      },
+    })
+    .returning();
 
-  return { action: existingRow ? ("updated" as const) : ("created" as const), row };
+  return { action: row?.id === id ? ("created" as const) : ("updated" as const), row };
 }

@@ -159,6 +159,7 @@ export {
   FormDateInputField,
   FormDateTimeField,
   FormDurationField,
+  FormFileField,
   FormIntegerStepperField,
   FormNumberField,
   FormPaceField,

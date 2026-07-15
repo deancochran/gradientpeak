@@ -61,7 +61,7 @@ export async function loadSocialGraph(
       ? sql`following_id = ${input.targetUserId}::uuid`
       : sql`follower_id = ${input.targetUserId}::uuid`;
   const usersResult = await db.execute(sql`
-    select p.id, p.username, p.avatar_url, p.is_public, p.created_at, p.updated_at
+    select p.id, p.username, p.full_name, p.avatar_url, p.is_public, p.created_at, p.updated_at
     from follows f join profiles p on ${profileJoin}
     where ${listCondition} and f.status = 'accepted'
     order by p.created_at desc, p.id asc

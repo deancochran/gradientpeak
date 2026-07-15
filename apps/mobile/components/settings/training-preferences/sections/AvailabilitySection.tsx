@@ -1,9 +1,16 @@
-import type { TrainingPreferenceField } from "@repo/core";
+import {
+  formatMinuteOfDaySummary,
+  minuteOfDayToTimeInput,
+  type TrainingPreferenceField,
+  timeInputToMinuteOfDay,
+} from "@repo/core";
 import type { AthleteTrainingSettingsFormInput } from "@repo/core/schemas/settings/profile_settings";
 import { Button } from "@repo/ui/components/button";
-import { FormIntegerStepperField } from "@repo/ui/components/form";
+import { FormField, FormIntegerStepperField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
-import type { Control } from "react-hook-form";
+import { TimeInput } from "@repo/ui/components/time-input";
+import { useEffect, useState } from "react";
+import type { Control, FieldPath } from "react-hook-form";
 import { View } from "react-native";
 import { ReadOnlyTrainingPreferenceField } from "@/components/settings/training-preferences/TrainingPreferenceFieldRenderer";
 
@@ -19,18 +26,85 @@ export const weekdayOptions = [
 
 export type WeekdayKey = (typeof weekdayOptions)[number]["key"];
 
-function formatMinuteOfDay(minuteOfDay: number | null | undefined) {
-  if (typeof minuteOfDay !== "number" || !Number.isFinite(minuteOfDay)) return "--:--";
-  const boundedMinute = Math.max(0, Math.min(1440, Math.round(minuteOfDay)));
-  const hours = Math.floor(boundedMinute / 60);
-  const minutes = boundedMinute % 60;
-  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+const maxWindowsPerDay = 4;
+
+export function getAvailabilityWindowValidation(
+  availability: AthleteTrainingSettingsFormInput["availability"],
+) {
+  const errors = new Map<string, string>();
+
+  for (const dayConfig of availability.weekly_windows ?? []) {
+    const chronologicalWindows = (dayConfig.windows ?? [])
+      .map((window, index) => ({ index, window }))
+      .sort(
+        (left, right) =>
+          left.window.start_minute_of_day - right.window.start_minute_of_day ||
+          left.window.end_minute_of_day - right.window.end_minute_of_day,
+      );
+    let latestPriorEnd = 0;
+    for (const [chronologicalIndex, { index, window }] of chronologicalWindows.entries()) {
+      const key = `${dayConfig.day}:${index}`;
+      if (window.end_minute_of_day <= window.start_minute_of_day) {
+        errors.set(key, "End time must be after start time. Overnight windows aren't supported.");
+      } else if (chronologicalIndex > 0 && window.start_minute_of_day < latestPriorEnd) {
+        errors.set(
+          key,
+          "Start this window at or after the previous window ends. Adjacent windows are allowed.",
+        );
+      }
+      latestPriorEnd = Math.max(latestPriorEnd, window.end_minute_of_day);
+    }
+  }
+
+  return errors;
+}
+
+function MinuteOfDayTimeField({
+  context,
+  control,
+  error,
+  label,
+  name,
+  testId,
+}: {
+  context: "start" | "end";
+  control: Control<AthleteTrainingSettingsFormInput>;
+  error?: string;
+  label: string;
+  name: FieldPath<AthleteTrainingSettingsFormInput>;
+  testId: string;
+}) {
+  return (
+    <FormField
+      control={control}
+      name={name}
+      render={({ field, fieldState }) => (
+        <TimeInput
+          clearable={false}
+          error={error ?? fieldState.error?.message}
+          helperText={context === "end" ? "Choosing midnight means end of day (24:00)." : undefined}
+          is24Hour
+          label={label}
+          onChange={(nextValue) => {
+            if (typeof nextValue !== "string") return;
+            field.onChange(timeInputToMinuteOfDay(nextValue, context));
+          }}
+          pickerPresentation="modal"
+          required
+          testId={testId}
+          value={minuteOfDayToTimeInput(field.value as number, context)}
+        />
+      )}
+    />
+  );
 }
 
 type GlobalAvailabilitySectionProps = {
   mode?: "global-edit";
   availability: AthleteTrainingSettingsFormInput["availability"];
   control: Control<AthleteTrainingSettingsFormInput>;
+  onAddAvailabilityWindow: (day: WeekdayKey) => string | null;
+  onRemoveAvailabilityWindow: (day: WeekdayKey, windowIndex: number) => void;
   onToggleAvailabilityDay: (day: WeekdayKey) => void;
   onToggleHardRestDay: (day: WeekdayKey) => void;
 };
@@ -43,6 +117,13 @@ type PlanLocalAvailabilitySectionProps = {
 type AvailabilitySectionProps = GlobalAvailabilitySectionProps | PlanLocalAvailabilitySectionProps;
 
 export function AvailabilitySection(props: AvailabilitySectionProps) {
+  const [windowFeedback, setWindowFeedback] = useState<Partial<Record<WeekdayKey, string>>>({});
+  const editableAvailability = props.mode === "plan-local-readonly" ? null : props.availability;
+
+  useEffect(() => {
+    if (editableAvailability) setWindowFeedback({});
+  }, [editableAvailability]);
+
   if (props.mode === "plan-local-readonly") {
     return (
       <View className="gap-3 rounded-2xl border border-border bg-card p-3">
@@ -61,7 +142,15 @@ export function AvailabilitySection(props: AvailabilitySectionProps) {
     );
   }
 
-  const { availability, control, onToggleAvailabilityDay, onToggleHardRestDay } = props;
+  const {
+    availability,
+    control,
+    onAddAvailabilityWindow,
+    onRemoveAvailabilityWindow,
+    onToggleAvailabilityDay,
+    onToggleHardRestDay,
+  } = props;
+  const windowValidation = getAvailabilityWindowValidation(availability);
 
   return (
     <View className="gap-3 rounded-2xl border border-border bg-card p-3">
@@ -101,7 +190,7 @@ export function AvailabilitySection(props: AvailabilitySectionProps) {
             const windowIndex = weeklyWindows.findIndex((item) => item.day === day.key);
             const enabled = windowIndex >= 0;
             const windowConfig = enabled ? weeklyWindows[windowIndex] : null;
-            const firstWindow = windowConfig?.windows?.[0];
+            const windows = windowConfig?.windows ?? [];
             return (
               <View
                 key={day.key}
@@ -123,33 +212,88 @@ export function AvailabilitySection(props: AvailabilitySectionProps) {
                 {enabled ? (
                   <View className="gap-2">
                     <Text className="text-xs leading-4 text-muted-foreground">
-                      {formatMinuteOfDay(firstWindow?.start_minute_of_day)}–
-                      {formatMinuteOfDay(firstWindow?.end_minute_of_day)} · max{" "}
-                      {windowConfig?.max_sessions ?? 0} session
+                      {windows.length} availability {windows.length === 1 ? "window" : "windows"} ·
+                      max {windowConfig?.max_sessions ?? 0} session
                       {(windowConfig?.max_sessions ?? 0) === 1 ? "" : "s"}
                     </Text>
-                    <View className="flex-row gap-2">
-                      <View className="flex-1">
-                        <FormIntegerStepperField
-                          control={control}
-                          label="Start minute"
-                          max={1439}
-                          min={0}
-                          name={`availability.weekly_windows.${windowIndex}.windows.0.start_minute_of_day`}
-                          testId={`preferences-availability-window-${day.key}-start`}
-                        />
-                      </View>
-                      <View className="flex-1">
-                        <FormIntegerStepperField
-                          control={control}
-                          label="End minute"
-                          max={1440}
-                          min={1}
-                          name={`availability.weekly_windows.${windowIndex}.windows.0.end_minute_of_day`}
-                          testId={`preferences-availability-window-${day.key}-end`}
-                        />
-                      </View>
-                    </View>
+                    {windows.map((window, timeWindowIndex) => {
+                      const windowError = windowValidation.get(`${day.key}:${timeWindowIndex}`);
+                      const pathPrefix =
+                        `availability.weekly_windows.${windowIndex}.windows.${timeWindowIndex}` as const;
+                      return (
+                        <View
+                          className="gap-2 rounded-lg border border-border p-2"
+                          // biome-ignore lint/suspicious/noArrayIndexKey: persisted windows have no stable identifier.
+                          key={`${day.key}-${timeWindowIndex}`}
+                          testID={`preferences-availability-window-${day.key}-${timeWindowIndex}`}
+                        >
+                          <View className="flex-row items-center justify-between gap-2">
+                            <Text className="text-xs font-medium text-foreground">
+                              Window {timeWindowIndex + 1}:{" "}
+                              {formatMinuteOfDaySummary(window.start_minute_of_day, "start")}–
+                              {formatMinuteOfDaySummary(window.end_minute_of_day, "end")}
+                              {window.end_minute_of_day === 1440 ? " (end of day)" : ""}
+                            </Text>
+                            <Button
+                              accessibilityLabel={`Remove ${day.label} window ${timeWindowIndex + 1}`}
+                              onPress={() => onRemoveAvailabilityWindow(day.key, timeWindowIndex)}
+                              size="sm"
+                              testID={`preferences-availability-window-${day.key}-${timeWindowIndex}-remove`}
+                              variant="ghost"
+                            >
+                              <Text>Remove</Text>
+                            </Button>
+                          </View>
+                          <View className="flex-row gap-2">
+                            <View className="flex-1">
+                              <MinuteOfDayTimeField
+                                context="start"
+                                control={control}
+                                error={windowError}
+                                label="Start time"
+                                name={`${pathPrefix}.start_minute_of_day`}
+                                testId={`preferences-availability-window-${day.key}-${timeWindowIndex}-start`}
+                              />
+                            </View>
+                            <View className="flex-1">
+                              <MinuteOfDayTimeField
+                                context="end"
+                                control={control}
+                                error={windowError}
+                                label="End time"
+                                name={`${pathPrefix}.end_minute_of_day`}
+                                testId={`preferences-availability-window-${day.key}-${timeWindowIndex}-end`}
+                              />
+                            </View>
+                          </View>
+                        </View>
+                      );
+                    })}
+                    <Button
+                      disabled={windows.length >= maxWindowsPerDay}
+                      onPress={() => {
+                        const feedback = onAddAvailabilityWindow(day.key);
+                        setWindowFeedback((current) => ({
+                          ...current,
+                          [day.key]: feedback ?? undefined,
+                        }));
+                      }}
+                      size="sm"
+                      testID={`preferences-availability-window-${day.key}-add`}
+                      variant="outline"
+                    >
+                      <Text>Add window</Text>
+                    </Button>
+                    {windows.length >= maxWindowsPerDay ? (
+                      <Text className="text-xs text-muted-foreground">
+                        Maximum 4 windows per day.
+                      </Text>
+                    ) : null}
+                    {windowFeedback[day.key] ? (
+                      <Text className="text-xs font-medium text-destructive">
+                        {windowFeedback[day.key]}
+                      </Text>
+                    ) : null}
                     <FormIntegerStepperField
                       control={control}
                       label="Max sessions"

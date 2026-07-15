@@ -249,6 +249,25 @@ describe("activity efforts list", () => {
     expect(screen.getAllByText("Bike power curve").length).toBeGreaterThan(0);
   });
 
+  it("presents swim speed as pace per 100 meters", () => {
+    mockActivityEfforts = [
+      {
+        id: "swim-effort",
+        ...trustedImportedObservation("swim-activity"),
+        activity_category: "swim",
+        effort_type: "speed",
+        recorded_at: "2026-03-05T00:00:00.000Z",
+        duration_seconds: 1200,
+        value: 1,
+        unit: "meters_per_second",
+      },
+    ];
+
+    renderNative(<ActivityEffortsList />);
+
+    expect(screen.getByText("Best 1:40/100m")).toBeTruthy();
+  });
+
   it("shows nonlinear effort duration ticks across sprint, tempo, and endurance", () => {
     renderNative(<ActivityEffortsList />);
 

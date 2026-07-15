@@ -10,6 +10,24 @@ export async function invalidateGroupListQueries(utils: GroupApiUtils) {
   ]);
 }
 
+export async function invalidateOnboardingSocialQueries(utils: GroupApiUtils) {
+  await Promise.allSettled([
+    utils.groups.listDiscoverable.invalidate(),
+    utils.groups.myGroups.invalidate(),
+    utils.groups.myInvitations.invalidate(),
+    utils.groups.forProfile.invalidate(),
+    utils.groups.detail.invalidate(),
+    utils.groups.members.invalidate(),
+    utils.groups.pendingInvitations.invalidate(),
+    utils.groups.pendingJoinRequests.invalidate(),
+    utils.social.searchUsers.invalidate(),
+    utils.social.getFollowers.invalidate(),
+    utils.social.getFollowing.invalidate(),
+    utils.profiles.invalidate(),
+    utils.feed.getFeed.invalidate(),
+  ]);
+}
+
 export async function invalidateGroupDetailQueries(
   utils: GroupApiUtils,
   input?: { groupId?: string | null; slug?: string | null },

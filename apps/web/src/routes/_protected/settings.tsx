@@ -28,12 +28,12 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  FormSwitchField,
   FormTextareaField,
   FormTextField,
 } from "@repo/ui/components/form";
 import { Label } from "@repo/ui/components/label";
 import { LoadingButton } from "@repo/ui/components/loading";
-import { Switch } from "@repo/ui/components/switch";
 import { createFileRoute } from "@tanstack/react-router";
 import { Calendar, Camera, Loader2, Mail, Trash2, UserRound } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -201,6 +201,9 @@ function ProfileInformationCard({
   onAvatarFilesChange: (files: AvatarFile[]) => void;
   onProfileSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
 }) {
+  const publicValue = form.watch("is_public");
+  const isPublic = publicValue === true || publicValue === "true";
+
   return (
     <Card>
       <CardHeader>
@@ -311,31 +314,15 @@ function ProfileInformationCard({
                 placeholder="en"
               />
             </div>
-            <FormField
+            <FormSwitchField
+              className="rounded-lg border p-4"
               control={form.control}
+              description="Make your profile and activities visible to everyone."
+              label="Public Account"
               name="is_public"
-              render={({ field }) => (
-                <FormItem className="flex items-start justify-between gap-4 rounded-lg border p-4">
-                  <div className="space-y-1">
-                    <FormLabel>Public Account</FormLabel>
-                    <p className="text-sm text-muted-foreground">
-                      Make your profile and activities visible to everyone.
-                    </p>
-                  </div>
-                  <FormControl>
-                    <input
-                      type="hidden"
-                      name="is_public"
-                      value={field.value === true || field.value === "true" ? "true" : "false"}
-                    />
-                    <Switch
-                      checked={field.value === true || field.value === "true"}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
+              switchLabel="Public account"
             />
+            <input type="hidden" name="is_public" value={isPublic ? "true" : "false"} />
             <LoadingButton
               type="submit"
               disabled={form.formState.isSubmitting || !form.formState.isDirty}

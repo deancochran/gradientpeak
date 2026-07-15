@@ -63,7 +63,7 @@ function buildMessage(input: SendAuthEmailInput) {
 
 function maskEmail(email: string) {
   const [name, domain] = email.split("@");
-  if (!name || !domain) return email;
+  if (!name || !domain) return "[redacted]";
   return `${name.slice(0, 2)}***@${domain}`;
 }
 
@@ -89,6 +89,14 @@ function logAuthEmailEvent(
 }
 
 export function createAuthMailer(env: AuthRuntimeEnv): AuthMailer {
+  if (
+    env.emailMode === "log" &&
+    process.env.NODE_ENV !== "development" &&
+    process.env.NODE_ENV !== "test"
+  ) {
+    throw new Error("Auth log email mode is only available in development or test");
+  }
+
   return {
     async send(input) {
       if (env.emailMode === "disabled") return;

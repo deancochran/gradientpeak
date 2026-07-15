@@ -21,6 +21,16 @@ const boundedResultSchema = calculationResultSchema.superRefine((result, context
     context.addIssue({ code: "custom", message: "Projection source ID is too long" });
 });
 
+const unavailableCapabilityDefault = {
+  state: "insufficient_evidence" as const,
+  estimate: null,
+  unit: null,
+  uncertainty: 1,
+  missingDataState: "required_data_missing" as const,
+  reasonCodes: ["capability_evidence_missing"],
+  contributingSourceIds: [],
+};
+
 const effortCapabilitySchema = z
   .object({
     goalSourceId: z.string().min(1).max(256),
@@ -32,6 +42,10 @@ const effortCapabilitySchema = z
 export const capabilityProjectionSchema = z
   .object({
     ftp: boundedResultSchema,
+    runningThresholdPace: boundedResultSchema.default(unavailableCapabilityDefault),
+    swimmingCss: boundedResultSchema.default(unavailableCapabilityDefault),
+    criticalPowerWatts: boundedResultSchema.default(unavailableCapabilityDefault),
+    wPrimeJoules: boundedResultSchema.default(unavailableCapabilityDefault),
     wattsPerKilogram: boundedResultSchema,
     heartRateReserve: boundedResultSchema,
     effortCurves: z.array(effortCapabilitySchema).max(32),

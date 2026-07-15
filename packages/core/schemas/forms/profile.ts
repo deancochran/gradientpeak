@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { preferredUnitSystemSchema } from "../../units";
+import { onboardingStep1Schema } from "../onboarding";
 import {
   emptyStringToNull,
   optionalUrlSchema,
@@ -288,6 +289,7 @@ export type ProfileQuickUpdateData = z.infer<typeof profileQuickUpdateSchema>;
 export const profilePatchInputSchema = z
   .object({
     username: optionalUsernameSchema.optional(),
+    full_name: onboardingStep1Schema.shape.full_name.optional(),
     weight_kg: optionalWeightKgSchema.optional(),
     ftp: optionalFtpSchema.optional(),
     threshold_hr: optionalThresholdHrSchema.optional(),

@@ -123,11 +123,23 @@ export class WahooWebhookJobService {
       };
     }
 
-    const queuedJob = await this.enqueueReceiptJob({
-      integrationId: integration.integrationId,
-      profileId: integration.profileId,
-      receiptId: receipt.id,
-    });
+    let queuedJob: { jobId: string; queued: boolean };
+    try {
+      queuedJob = await this.enqueueReceiptJob({
+        integrationId: integration.integrationId,
+        profileId: integration.profileId,
+        receiptId: receipt.id,
+      });
+    } catch (error) {
+      console.warn("Wahoo webhook receipt persisted for pending-job recovery", {
+        errorName: error instanceof Error ? error.name : "unknown",
+      });
+      return {
+        jobId: null,
+        queued: false,
+        receiptId: receipt.id,
+      };
+    }
 
     return {
       jobId: queuedJob.jobId,

@@ -159,11 +159,12 @@ describe("extracted inputs native", () => {
 
   it("PaceSecondsField converts pace text into seconds", () => {
     const onChangeSeconds = jest.fn();
-    const { getByDisplayValue } = renderNative(
+    const { getByDisplayValue, getByTestId } = renderNative(
       <PaceSecondsField {...paceSecondsFieldFixtures.easy} onChangeSeconds={onChangeSeconds} />,
     );
 
     const input = getByDisplayValue("5:30");
+    expect(getByTestId("easy-pace-seconds-field")).toBe(input);
     fireEvent(input, "changeText", "5:45");
     fireEvent(input, "blur");
 

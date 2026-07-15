@@ -66,6 +66,35 @@ describe("WahooWebhookJobService", () => {
     });
   });
 
+  it("acknowledges a durable receipt when immediate enqueue fails", async () => {
+    const deps = createDeps();
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    deps.wahooRepository.findWahooIntegrationByExternalId.mockResolvedValue({
+      integrationId: "integration-1",
+      profileId: "profile-1",
+    });
+    deps.providerSyncRepository.storeWebhookReceipt.mockResolvedValue({
+      id: "receipt-1",
+      inserted: true,
+    });
+    deps.providerSyncRepository.enqueueJob.mockRejectedValue(new Error("queue unavailable"));
+
+    const service = new WahooWebhookJobService(deps as never);
+
+    await expect(
+      service.storeAndEnqueueReceipt({
+        event_type: "workout_summary",
+        user: { id: 42 },
+        workout_summary: { id: 99 },
+      }),
+    ).resolves.toEqual({
+      jobId: null,
+      queued: false,
+      receiptId: "receipt-1",
+    });
+    expect(deps.providerSyncRepository.setWebhookReceiptJob).not.toHaveBeenCalled();
+  });
+
   it("processes queued workout summary receipts through the importer", async () => {
     const deps = createDeps();
     deps.providerSyncRepository.claimDueJobs.mockResolvedValue([

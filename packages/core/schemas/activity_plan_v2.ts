@@ -1,5 +1,25 @@
 import { z } from "zod";
 
+/** Device/product integrity limits for plans that can be saved or exported. */
+export const ACTIVITY_PLAN_V2_SAVEABLE_LIMITS = {
+  maxExpandedDurationSeconds: 7 * 24 * 60 * 60,
+  maxExpandedStepCount: 1_000,
+  maxIntervalRepetitions: 50,
+  maxStepDurationSeconds: 24 * 60 * 60,
+  maxStepDistanceMeters: 1_000_000,
+  maxStepRepetitionCount: 10_000,
+  maxTargetIntensity: {
+    "%FTP": 300,
+    "%MaxHR": 200,
+    "%ThresholdHR": 200,
+    watts: 3_000,
+    bpm: 250,
+    speed: 100,
+    cadence: 300,
+    RPE: 10,
+  },
+} as const;
+
 // ==============================
 // ACTIVITY PLAN STRUCTURE V2
 // Simplified flat structure - no nested repetitions
@@ -82,7 +102,7 @@ const intensityTargetBPMSchemaV2 = z.object({
 
 const intensityTargetSpeedSchemaV2 = z.object({
   type: z.literal("speed"),
-  intensity: z.number().nonnegative().max(100), // m/s
+  intensity: z.number().nonnegative().max(100), // persisted V2 contract: km/h
 });
 
 const intensityTargetCadenceSchemaV2 = z.object({
@@ -107,6 +127,16 @@ export const intensityTargetSchemaV2 = z.discriminatedUnion("type", [
 ]);
 
 export type IntensityTargetV2 = z.infer<typeof intensityTargetSchemaV2>;
+
+/** Converts the persisted/UI V2 speed target in km/h to runtime/export m/s. */
+export function activityPlanSpeedKphToMetersPerSecond(speedKph: number): number {
+  return speedKph / 3.6;
+}
+
+/** Converts runtime/import m/s to the persisted/UI V2 speed target in km/h. */
+export function activityPlanSpeedMetersPerSecondToKph(speedMetersPerSecond: number): number {
+  return speedMetersPerSecond * 3.6;
+}
 
 // ==============================
 // INTERVAL STEP V2 (Nested inside intervals)
@@ -134,7 +164,12 @@ export type IntervalStepV2 = z.infer<typeof intervalStepSchemaV2>;
 export const intervalSchemaV2 = z.object({
   id: z.string().uuid(),
   name: z.string().min(1).max(100),
-  repetitions: z.number().int().min(1).max(50).default(1),
+  repetitions: z
+    .number()
+    .int()
+    .min(1)
+    .max(ACTIVITY_PLAN_V2_SAVEABLE_LIMITS.maxIntervalRepetitions)
+    .default(1),
   steps: z.array(intervalStepSchemaV2).min(1).max(20),
   notes: z.string().max(1000).optional(),
 });
@@ -161,14 +196,51 @@ export function getSaveableActivityPlanStructureIssues(
   structure: ActivityPlanStructureV2,
 ): ActivityPlanStructureValidationIssue[] {
   const issues: ActivityPlanStructureValidationIssue[] = [];
+  let expandedDurationSeconds = 0;
+  let expandedStepCount = 0;
 
   structure.intervals.forEach((interval, intervalIndex) => {
+    expandedStepCount += interval.steps.length * interval.repetitions;
+
     interval.steps.forEach((step, stepIndex) => {
+      const durationPath = ["intervals", intervalIndex, "steps", stepIndex, "duration"];
+
       if (step.duration.type === "untilFinished") {
         issues.push({
-          path: ["intervals", intervalIndex, "steps", stepIndex, "duration"],
+          path: durationPath,
           message:
             "Saved steps need an explicit time, distance, or repetitions duration. 'Until finished' cannot produce trustworthy IF/TSS.",
+        });
+      }
+
+      if (step.duration.type === "time") {
+        expandedDurationSeconds += step.duration.seconds * interval.repetitions;
+
+        if (step.duration.seconds > ACTIVITY_PLAN_V2_SAVEABLE_LIMITS.maxStepDurationSeconds) {
+          issues.push({
+            path: [...durationPath, "seconds"],
+            message: `Saved steps cannot exceed ${ACTIVITY_PLAN_V2_SAVEABLE_LIMITS.maxStepDurationSeconds} seconds.`,
+          });
+        }
+      }
+
+      if (
+        step.duration.type === "distance" &&
+        step.duration.meters > ACTIVITY_PLAN_V2_SAVEABLE_LIMITS.maxStepDistanceMeters
+      ) {
+        issues.push({
+          path: [...durationPath, "meters"],
+          message: `Saved steps cannot exceed ${ACTIVITY_PLAN_V2_SAVEABLE_LIMITS.maxStepDistanceMeters} meters.`,
+        });
+      }
+
+      if (
+        step.duration.type === "repetitions" &&
+        step.duration.count > ACTIVITY_PLAN_V2_SAVEABLE_LIMITS.maxStepRepetitionCount
+      ) {
+        issues.push({
+          path: [...durationPath, "count"],
+          message: `Saved repetition steps cannot exceed ${ACTIVITY_PLAN_V2_SAVEABLE_LIMITS.maxStepRepetitionCount} repetitions.`,
         });
       }
 
@@ -178,8 +250,41 @@ export function getSaveableActivityPlanStructureIssues(
           message: "Each saved step needs an intensity target.",
         });
       }
+
+      step.targets?.forEach((target, targetIndex) => {
+        const maximum = ACTIVITY_PLAN_V2_SAVEABLE_LIMITS.maxTargetIntensity[target.type];
+
+        if (target.intensity > maximum) {
+          issues.push({
+            path: [
+              "intervals",
+              intervalIndex,
+              "steps",
+              stepIndex,
+              "targets",
+              targetIndex,
+              "intensity",
+            ],
+            message: `Saved ${target.type} targets cannot exceed ${maximum}.`,
+          });
+        }
+      });
     });
   });
+
+  if (expandedStepCount > ACTIVITY_PLAN_V2_SAVEABLE_LIMITS.maxExpandedStepCount) {
+    issues.push({
+      path: ["intervals"],
+      message: `Saved plans cannot exceed ${ACTIVITY_PLAN_V2_SAVEABLE_LIMITS.maxExpandedStepCount} expanded steps.`,
+    });
+  }
+
+  if (expandedDurationSeconds > ACTIVITY_PLAN_V2_SAVEABLE_LIMITS.maxExpandedDurationSeconds) {
+    issues.push({
+      path: ["intervals"],
+      message: `Saved plans cannot exceed ${ACTIVITY_PLAN_V2_SAVEABLE_LIMITS.maxExpandedDurationSeconds} seconds of expanded duration.`,
+    });
+  }
 
   return issues;
 }
@@ -355,7 +460,7 @@ export function formatIntensityTarget(target: IntensityTargetV2): string {
     case "bpm":
       return `${Math.round(target.intensity)} bpm`;
     case "speed":
-      return `${target.intensity.toFixed(1)} m/s`;
+      return `${target.intensity.toFixed(1)} km/h`;
     case "cadence":
       return `${Math.round(target.intensity)} rpm`;
     case "RPE":

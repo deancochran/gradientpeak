@@ -16,6 +16,10 @@ import {
   deriveSpeedCurveFromThresholdPace,
   deriveSwimPaceCurveFromCSS,
 } from "@repo/core/calculations";
+import type {
+  OnboardingBaselineFieldSource,
+  OnboardingBaselineFieldSources,
+} from "@repo/core/schemas/onboarding";
 import {
   type ActivityEffortInsert,
   activityEfforts,
@@ -46,6 +50,13 @@ type OnboardingTransaction = Parameters<
   Parameters<ReturnType<typeof getRequiredDb>["transaction"]>[0]
 >[0];
 type OnboardingWriteClient = ReturnType<typeof getRequiredDb> | OnboardingTransaction;
+type OnboardingMetricSourceField = Exclude<keyof OnboardingBaselineFieldSources, "dob" | "gender">;
+
+type PrepareProfileMetricsOptions = {
+  fieldSources?: OnboardingBaselineFieldSources;
+  preserveImportedFields?: ReadonlySet<OnboardingMetricSourceField>;
+  importedProvenance?: Partial<Record<OnboardingMetricSourceField, Record<string, unknown>>>;
+};
 
 /**
  * Batch insert profile metrics with consistent formatting.
@@ -188,6 +199,7 @@ export function prepareProfileMetrics(
     css_seconds_per_hundred_meters?: number;
   },
   baseline: BaselineProfile | null,
+  options: PrepareProfileMetricsOptions = {},
 ): Array<{
   metric_type: ProfileMetricType;
   value: number;
@@ -209,96 +221,148 @@ export function prepareProfileMetrics(
     provenance: Record<string, unknown>;
   }> = [];
 
+  const sourceFor = (
+    field: OnboardingMetricSourceField,
+    hasSubmittedValue: boolean,
+  ): Exclude<OnboardingBaselineFieldSource, "cleared"> | "baseline" | null => {
+    const explicitSource = options.fieldSources?.[field];
+    if (explicitSource === "cleared") return null;
+    if (hasSubmittedValue) return explicitSource ?? "manual";
+    return "baseline";
+  };
+  const observationFor = (
+    field: OnboardingMetricSourceField,
+    source: Exclude<ReturnType<typeof sourceFor>, null>,
+    baselineSource?: string,
+  ) => {
+    if (source === "baseline") {
+      return {
+        observationSource: "estimated" as const,
+        method: "onboarding_baseline_seed",
+        provenance: {
+          input: "onboarding",
+          seed_type: "baseline",
+          baseline_source: baselineSource,
+        },
+      };
+    }
+    return {
+      observationSource: source,
+      method: `onboarding_${source}_seed`,
+      provenance: {
+        input: "onboarding",
+        seed_type: source,
+        ...(source === "imported" ? options.importedProvenance?.[field] : undefined),
+      },
+    };
+  };
+  const shouldPreserveImported = (field: OnboardingMetricSourceField) =>
+    options.preserveImportedFields?.has(field) ?? false;
+
   // Weight (if provided)
-  if (input.weight_kg) {
+  const weightSource = sourceFor("weight_kg", input.weight_kg !== undefined);
+  if (input.weight_kg && weightSource && !shouldPreserveImported("weight_kg")) {
+    const observation = observationFor("weight_kg", weightSource);
     metrics.push({
       metric_type: "weight_kg",
       value: input.weight_kg,
       unit: "kg",
-      observationSource: "manual",
-      method: "onboarding_manual_seed",
+      observationSource: observation.observationSource,
+      method: observation.method,
       calculationVersion: "onboarding-v1",
-      provenance: { input: "onboarding", seed_type: "manual" },
+      provenance: observation.provenance,
     });
   }
 
   // Merge HR and FTP metrics with baseline
-  const ftp = input.ftp ?? baseline?.ftp;
-  const maxHR = input.max_hr ?? baseline?.max_hr;
-  const restingHR = input.resting_hr ?? baseline?.resting_hr;
+  const ftpSource = sourceFor("ftp", input.ftp !== undefined);
+  const maxHrSource = sourceFor("max_hr", input.max_hr !== undefined);
+  const restingHrSource = sourceFor("resting_hr", input.resting_hr !== undefined);
+  const ftp = ftpSource ? (input.ftp ?? baseline?.ftp) : undefined;
+  const maxHR = maxHrSource ? (input.max_hr ?? baseline?.max_hr) : undefined;
+  const restingHR = restingHrSource ? (input.resting_hr ?? baseline?.resting_hr) : undefined;
 
-  if (maxHR) {
+  if (maxHR && maxHrSource && !shouldPreserveImported("max_hr")) {
+    const observation = observationFor("max_hr", maxHrSource, baseline?.source);
     metrics.push({
       metric_type: "max_hr",
       value: maxHR,
       unit: "bpm",
-      source: input.max_hr ? undefined : baseline?.source,
-      observationSource: input.max_hr ? "manual" : "estimated",
-      method: input.max_hr ? "onboarding_manual_seed" : "onboarding_baseline_seed",
+      source: maxHrSource === "baseline" ? baseline?.source : undefined,
+      observationSource: observation.observationSource,
+      method: observation.method,
       calculationVersion: "onboarding-v1",
-      provenance: {
-        input: "onboarding",
-        seed_type: input.max_hr ? "manual" : "baseline",
-        baseline_source: input.max_hr ? undefined : baseline?.source,
-      },
+      provenance: observation.provenance,
     });
   }
 
-  if (restingHR) {
+  if (restingHR && restingHrSource && !shouldPreserveImported("resting_hr")) {
+    const observation = observationFor("resting_hr", restingHrSource, baseline?.source);
     metrics.push({
       metric_type: "resting_hr",
       value: restingHR,
       unit: "bpm",
-      source: input.resting_hr ? undefined : baseline?.source,
-      observationSource: input.resting_hr ? "manual" : "estimated",
-      method: input.resting_hr ? "onboarding_manual_seed" : "onboarding_baseline_seed",
+      source: restingHrSource === "baseline" ? baseline?.source : undefined,
+      observationSource: observation.observationSource,
+      method: observation.method,
       calculationVersion: "onboarding-v1",
-      provenance: {
-        input: "onboarding",
-        seed_type: input.resting_hr ? "manual" : "baseline",
-        baseline_source: input.resting_hr ? undefined : baseline?.source,
-      },
+      provenance: observation.provenance,
     });
   }
 
-  if (ftp) {
+  if (ftp && ftpSource && !shouldPreserveImported("ftp")) {
+    const observation = observationFor("ftp", ftpSource, baseline?.source);
     metrics.push({
       metric_type: "ftp",
       value: ftp,
       unit: "W",
-      source: input.ftp ? undefined : baseline?.source,
-      observationSource: input.ftp ? "manual" : "estimated",
-      method: input.ftp ? "onboarding_manual_seed" : "onboarding_baseline_seed",
+      source: ftpSource === "baseline" ? baseline?.source : undefined,
+      observationSource: observation.observationSource,
+      method: observation.method,
       calculationVersion: "onboarding-v1",
-      provenance: {
-        input: "onboarding",
-        seed_type: input.ftp ? "manual" : "baseline",
-        baseline_source: input.ftp ? undefined : baseline?.source,
-      },
+      provenance: observation.provenance,
     });
   }
 
-  if (input.threshold_pace_seconds_per_km) {
+  const thresholdPaceSource = sourceFor(
+    "threshold_pace_seconds_per_km",
+    input.threshold_pace_seconds_per_km !== undefined,
+  );
+  if (
+    input.threshold_pace_seconds_per_km &&
+    thresholdPaceSource &&
+    !shouldPreserveImported("threshold_pace_seconds_per_km")
+  ) {
+    const observation = observationFor("threshold_pace_seconds_per_km", thresholdPaceSource);
     metrics.push({
       metric_type: "threshold_pace_seconds_per_km",
       value: input.threshold_pace_seconds_per_km,
       unit: "seconds_per_km",
-      observationSource: "manual",
-      method: "onboarding_manual_seed",
+      observationSource: observation.observationSource,
+      method: observation.method,
       calculationVersion: "onboarding-v1",
-      provenance: { input: "onboarding", seed_type: "manual" },
+      provenance: observation.provenance,
     });
   }
 
-  if (input.css_seconds_per_hundred_meters) {
+  const cssSource = sourceFor(
+    "css_seconds_per_hundred_meters",
+    input.css_seconds_per_hundred_meters !== undefined,
+  );
+  if (
+    input.css_seconds_per_hundred_meters &&
+    cssSource &&
+    !shouldPreserveImported("css_seconds_per_hundred_meters")
+  ) {
+    const observation = observationFor("css_seconds_per_hundred_meters", cssSource);
     metrics.push({
       metric_type: "css_seconds_per_100m",
       value: input.css_seconds_per_hundred_meters,
       unit: "seconds_per_100m",
-      observationSource: "manual",
-      method: "onboarding_manual_seed",
+      observationSource: observation.observationSource,
+      method: observation.method,
       calculationVersion: "onboarding-v1",
-      provenance: { input: "onboarding", seed_type: "manual" },
+      provenance: observation.provenance,
     });
   }
 

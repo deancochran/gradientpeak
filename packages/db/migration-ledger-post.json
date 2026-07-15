@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-07-13T00:00:00.000Z",
+  "capturedAt": "2026-07-14T00:00:00.000Z",
   "source": "expected reconciled ledger derived from the active authoritative migration filenames",
   "entries": [
     {
@@ -37,6 +37,10 @@
     {
       "version": "20260713165000",
       "name": "event_route_plan_hard_cut"
+    },
+    {
+      "version": "20260714200637",
+      "name": "harden_route_storage_contract"
     }
   ]
 }

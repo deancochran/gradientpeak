@@ -8,7 +8,11 @@ export type ActivityAnalysisMetricSnapshot = Omit<
   value: number;
   id?: string;
   method?: string | null;
+  calculation_version?: string | null;
   provenance?: unknown;
+  reference_activity_id?: string | null;
+  reference_activity_category?: string | null;
+  source?: ProfileMetricRow["source"];
 };
 export type ActivityAnalysisEffortSnapshot = Omit<
   Pick<
@@ -35,8 +39,10 @@ export interface ActivityAnalysisStore {
   getContextSnapshot(input: {
     asOf: Date;
     profileId: string;
+    evidenceScope?: "thresholds";
   }): Promise<ActivityAnalysisContextSnapshot>;
   loadContextEvidence?(input: {
     requests: Array<{ asOf: Date; profileId: string }>;
+    evidenceScope?: "thresholds";
   }): Promise<Map<string, ActivityAnalysisContextSnapshot>>;
 }

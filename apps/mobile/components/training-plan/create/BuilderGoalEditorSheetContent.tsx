@@ -232,7 +232,12 @@ export function BuilderLocalGoalCreateContent({
 
   return (
     <View className="gap-4" testID="builder-local-goal-create-form">
-      <GoalEditorForm initialValue={initialDraft} submitLabel="Add to plan" onSubmit={save} />
+      <GoalEditorForm
+        contentSizing="intrinsic"
+        initialValue={initialDraft}
+        submitLabel="Add to plan"
+        onSubmit={save}
+      />
     </View>
   );
 }

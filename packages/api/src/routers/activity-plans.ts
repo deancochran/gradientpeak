@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import {
   type ActivityTargetCategory,
   activityPlanCreateSchema,
@@ -11,13 +12,15 @@ import {
   type ActivityPlanInsert,
   type ActivityPlanRow,
   activityPlans,
+  events,
   publicActivityCategorySchema,
   publicActivityPlansRowSchema,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, asc, count, desc, eq, gt, ilike, inArray, lt, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, gte, ilike, inArray, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { upsertImportedActivityPlan } from "../application/activity-plans/upsertImportedActivityPlan";
+import { enqueueProviderPlannedActivityJobs } from "../application/events";
 import type { Context } from "../context";
 import { getRequiredDb } from "../db";
 import { createEventReadRepository } from "../infrastructure/repositories";
@@ -136,15 +139,11 @@ function getEstimationStore(ctx: Context) {
 const createActivityPlanInput = activityPlanCreateSchema.safeExtend({
   structure: saveableActivityPlanStructureSchemaV2,
   template_visibility: templateVisibilitySchema.optional(),
-  import_provider: z.string().min(1).max(64).optional(),
-  import_external_id: z.string().min(1).max(255).optional(),
 });
 
 const updateActivityPlanInput = activityPlanUpdateSchema.safeExtend({
   structure: saveableActivityPlanStructureSchemaV2.optional(),
   template_visibility: templateVisibilitySchema.optional(),
-  import_provider: z.string().min(1).max(64).nullable().optional(),
-  import_external_id: z.string().min(1).max(255).nullable().optional(),
 });
 
 const updateActivityPlanWithIdInput = updateActivityPlanInput
@@ -303,8 +302,8 @@ function buildCreateValues(
     structure: input.structure,
     version: "1.0",
     template_visibility: templateVisibility,
-    import_provider: input.import_provider ?? null,
-    import_external_id: input.import_external_id ?? null,
+    import_provider: null,
+    import_external_id: null,
     is_system_template: false,
   };
 }
@@ -638,10 +637,10 @@ export const activityPlansRouter = createTRPCRouter({
         });
       }
 
-      if (updates.structure) {
+      if (updates.structure || updates.activity_category) {
         try {
           validateStructure(
-            updates.structure,
+            updates.structure || existingRow.structure,
             (updates.activity_category || existingRow.activity_category) as ActivityTargetCategory,
           );
         } catch (validationError) {
@@ -679,8 +678,6 @@ export const activityPlansRouter = createTRPCRouter({
         structure: updates.structure,
         version: updates.version,
         template_visibility: updates.template_visibility,
-        import_provider: updates.import_provider,
-        import_external_id: updates.import_external_id,
         ...metricsUpdates,
       };
 
@@ -697,6 +694,50 @@ export const activityPlansRouter = createTRPCRouter({
         });
       }
 
+      let plannedWorkoutSync = null;
+      const descriptionChanged =
+        updates.description !== undefined && updateValues.description !== existingRow.description;
+      const materialPlanChanged =
+        (updates.name !== undefined && updates.name !== existingRow.name) ||
+        descriptionChanged ||
+        (updates.activity_category !== undefined &&
+          updates.activity_category !== existingRow.activity_category) ||
+        (updates.structure !== undefined &&
+          !isDeepStrictEqual(updates.structure, existingRow.structure));
+
+      if (materialPlanChanged) {
+        const linkedEvents = await db
+          .select({ id: events.id })
+          .from(events)
+          .where(
+            and(
+              eq(events.profile_id, ctx.session.user.id),
+              eq(events.activity_plan_id, id),
+              eq(events.event_type, "planned"),
+              eq(events.status, "scheduled"),
+              gte(events.starts_at, new Date()),
+            ),
+          );
+
+        if (linkedEvents.length > 0) {
+          try {
+            plannedWorkoutSync = await enqueueProviderPlannedActivityJobs(ctx, {
+              eventIds: linkedEvents.map((event) => event.id),
+              operation: "publish",
+            });
+          } catch (error) {
+            plannedWorkoutSync = {
+              affectedCount: linkedEvents.length,
+              operation: "publish" as const,
+              queued: false,
+              success: false,
+              error:
+                error instanceof Error ? error.message : "Unknown planned workout enqueue failure",
+            };
+          }
+        }
+      }
+
       const planWithEstimation = await getActivityPlanDerivedMetrics(
         serializeActivityPlanRow(updatedRow),
         db,
@@ -704,11 +745,64 @@ export const activityPlansRouter = createTRPCRouter({
         ctx.session.user.id,
       );
 
-      return withIdentityFields(planWithEstimation);
+      return {
+        ...withIdentityFields(planWithEstimation),
+        plannedWorkoutSync,
+        wahooSync: plannedWorkoutSync,
+      };
     }),
 
   delete: protectedProcedure.input(activityPlanIdInputSchema).mutation(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
+
+    const [ownedPlan] = await db
+      .select({ id: activityPlans.id })
+      .from(activityPlans)
+      .where(and(eq(activityPlans.id, input.id), eq(activityPlans.profile_id, ctx.session.user.id)))
+      .limit(1);
+
+    if (!ownedPlan) {
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Activity plan not found or you don't have permission to delete it",
+      });
+    }
+
+    const linkedEvents = await db
+      .select({ id: events.id })
+      .from(events)
+      .where(
+        and(
+          eq(events.profile_id, ctx.session.user.id),
+          eq(events.activity_plan_id, input.id),
+          eq(events.event_type, "planned"),
+          eq(events.status, "scheduled"),
+          gte(events.starts_at, new Date()),
+        ),
+      );
+
+    let plannedWorkoutSync = null;
+    if (linkedEvents.length > 0) {
+      try {
+        plannedWorkoutSync = await enqueueProviderPlannedActivityJobs(ctx, {
+          eventIds: linkedEvents.map((event) => event.id),
+          operation: "unsync",
+        });
+      } catch (error) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Activity plan cannot be deleted until linked device workouts can be unsynced",
+          cause: error,
+        });
+      }
+
+      if (plannedWorkoutSync && !plannedWorkoutSync.success) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Activity plan cannot be deleted until linked device workouts can be unsynced",
+        });
+      }
+    }
 
     const deletedRows = await db
       .delete(activityPlans)
@@ -722,7 +816,11 @@ export const activityPlansRouter = createTRPCRouter({
       });
     }
 
-    return { success: true };
+    return {
+      success: true,
+      plannedWorkoutSync,
+      wahooSync: plannedWorkoutSync,
+    };
   }),
 
   duplicate: protectedProcedure

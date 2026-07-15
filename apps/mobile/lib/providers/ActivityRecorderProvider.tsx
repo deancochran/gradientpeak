@@ -85,7 +85,9 @@ export function ActivityRecorderProvider({
         "→",
         currentProfileId,
       );
-      serviceRef.current.cleanup();
+      void serviceRef.current.cleanup({ dispose: true }).catch((error) => {
+        console.error("[ActivityRecorderProvider] Failed to dispose recorder service", error);
+      });
       serviceRef.current = null;
     }
 
@@ -110,7 +112,9 @@ export function ActivityRecorderProvider({
     return () => {
       if (serviceRef.current) {
         console.log("[ActivityRecorderProvider] Provider unmounting - cleanup service");
-        serviceRef.current.cleanup();
+        void serviceRef.current.cleanup({ dispose: true }).catch((error) => {
+          console.error("[ActivityRecorderProvider] Failed to dispose recorder service", error);
+        });
         serviceRef.current = null;
         profileIdRef.current = null;
       }

@@ -73,8 +73,9 @@ describe("activity file persistence adapters", () => {
       activityFilePath: "recorded.fit",
       activityFileSize: 30,
       activityFileType: "fit",
+      activityType: "bike",
       parsedData: {
-        metadata: { type: "bike", startTime: new Date(), manufacturer: "Wahoo" },
+        metadata: { type: "cycling", startTime: new Date(), manufacturer: "Wahoo" },
         laps: [],
       },
       enrichment: {
@@ -98,6 +99,7 @@ describe("activity file persistence adapters", () => {
         kind: "enrich",
         activityId: "activity-1",
         activityFilePath: "recorded.fit",
+        activityType: "bike",
         mapBounds: undefined,
         polyline: undefined,
       }),
@@ -112,6 +114,7 @@ describe("activity file persistence adapters", () => {
       activityFilePath: "recorded.fit",
       activityFileSize: 30,
       activityFileType: "fit",
+      activityType: "bike",
       parsedData: { metadata: { type: "bike", startTime: completedAt } },
       enrichment: {
         activityCompletedAt: completedAt,

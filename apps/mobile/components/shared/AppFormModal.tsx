@@ -12,6 +12,7 @@ import {
   type ScrollViewProps,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 interface AppFormModalProps {
   children: React.ReactNode;
@@ -40,6 +41,9 @@ export function AppFormModal({
   tertiaryAction,
   title,
 }: AppFormModalProps) {
+  const { bottom: bottomSafeAreaInset } = useSafeAreaInsets();
+  const { contentContainerStyle, ...resolvedScrollProps } = scrollProps ?? {};
+  const footerPaddingBottom = 16 + bottomSafeAreaInset;
   const handleClose = () => {
     if (dismissDisabled) {
       return;
@@ -51,7 +55,7 @@ export function AppFormModal({
   return (
     <Modal animationType="slide" presentationStyle="pageSheet" visible onRequestClose={handleClose}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         className="flex-1 bg-background"
         testID={testID}
       >
@@ -76,16 +80,33 @@ export function AppFormModal({
           <ScrollView
             className="flex-1"
             contentContainerClassName="p-4 gap-4"
+            contentContainerStyle={[
+              {
+                paddingBottom:
+                  footerContent || primaryAction || secondaryAction || tertiaryAction
+                    ? 16
+                    : footerPaddingBottom,
+              },
+              contentContainerStyle,
+            ]}
             keyboardShouldPersistTaps="handled"
-            {...scrollProps}
+            {...resolvedScrollProps}
           >
             {children}
           </ScrollView>
 
           {footerContent ? (
-            <View className="border-t border-border bg-background px-4 py-4">{footerContent}</View>
+            <View
+              className="border-t border-border bg-background px-4 pt-4"
+              style={{ paddingBottom: footerPaddingBottom }}
+            >
+              {footerContent}
+            </View>
           ) : primaryAction || secondaryAction || tertiaryAction ? (
-            <View className="border-t border-border bg-background px-4 py-4">
+            <View
+              className="border-t border-border bg-background px-4 pt-4"
+              style={{ paddingBottom: footerPaddingBottom }}
+            >
               <View className="gap-3">
                 {tertiaryAction ? <View>{tertiaryAction}</View> : null}
                 <View className="flex-row gap-3">

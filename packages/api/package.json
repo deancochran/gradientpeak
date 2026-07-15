@@ -39,6 +39,7 @@
     }
   },
   "scripts": {
+    "backfill:activity-evidence": "pnpm --filter @repo/db exec tsx ../api/scripts/backfill-activity-evidence.ts",
     "check-types": "tsc --noEmit",
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",

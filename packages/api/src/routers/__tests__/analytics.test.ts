@@ -90,13 +90,19 @@ function collectSqlMetadata(
 
 function createCaller(rows: ReturnType<typeof createEffortRow>[], userId = OWNER_ID) {
   let whereArg: unknown;
+  let limitArg: number | undefined;
 
   const db = {
     select: vi.fn(() => ({
       from: vi.fn(() => ({
         where: vi.fn((condition: unknown) => {
           whereArg = condition;
-          return Promise.resolve(rows);
+          return {
+            limit: vi.fn((limit: number) => {
+              limitArg = limit;
+              return Promise.resolve(rows.slice(0, limit));
+            }),
+          };
         }),
       })),
     })),
@@ -104,7 +110,7 @@ function createCaller(rows: ReturnType<typeof createEffortRow>[], userId = OWNER
 
   const caller = createRouterCaller(analyticsRouter, { db, userId });
 
-  return { caller, getWhereArg: () => whereArg };
+  return { caller, getWhereArg: () => whereArg, getLimitArg: () => limitArg };
 }
 
 afterEach(() => {
@@ -116,7 +122,7 @@ describe("analyticsRouter", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
 
-    const { caller, getWhereArg } = createCaller([
+    const { caller, getWhereArg, getLimitArg } = createCaller([
       createEffortRow({ duration_seconds: 60, value: 320 }),
       createEffortRow({ duration_seconds: 60, value: 340 }),
       createEffortRow({ duration_seconds: 300, value: 255 }),
@@ -140,6 +146,21 @@ describe("analyticsRouter", () => {
     expect(metadata.params).toEqual(
       expect.arrayContaining([OWNER_ID, "bike", "power", new Date("2026-03-04T12:00:00.000Z")]),
     );
+    expect(getLimitArg()).toBe(10_000);
+  });
+
+  it("bounds the analytics lookback window", async () => {
+    const { caller } = createCaller([]);
+
+    for (const days of [0, 1.5, 366]) {
+      await expect(
+        caller.getSeasonBestCurve({
+          activity_category: "bike",
+          effort_type: "power",
+          days,
+        }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
+    }
   });
 
   it("excludes modeled and provenance-free synthetic rows from season bests", async () => {
@@ -241,9 +262,68 @@ describe("analyticsRouter", () => {
         fitMinDurationSeconds: 180,
         fitMaxDurationSeconds: 1200,
         pointCount: 4,
+        activityCount: 4,
       },
     });
-    expect(result.model.error).toBeGreaterThan(0.99);
+    expect(result.model.rSquared).toBeGreaterThan(0.99);
+    expect(result.model.error).toBe(result.model.rSquared);
+    expect(result.model.rmseWatts).toBeCloseTo(0, 8);
+    expect(result.model.residuals).toHaveLength(4);
+    expect(result.model.stability.maxPredictionChangeRatio).toBeCloseTo(0, 8);
+  });
+
+  it("fits mixed manual and imported observations without exposing activity identifiers", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
+    const firstActivityId = crypto.randomUUID();
+    const secondActivityId = crypto.randomUUID();
+    const powerAt = (duration: number) => 250 + 15_000 / duration;
+    const { caller } = createCaller([
+      createEffortRow({
+        activity_id: firstActivityId,
+        duration_seconds: 180,
+        value: powerAt(180),
+        provenance: { activity_id: firstActivityId, derived_from: "activity_file_stream" },
+      }),
+      createEffortRow({
+        activity_id: null,
+        duration_seconds: 300,
+        value: powerAt(300),
+        source: "manual",
+        method: "manual_activity_effort_entry",
+        calculation_version: null,
+        provenance: { trusted: true, observation_type: "observed", entered_by: "athlete" },
+      }),
+      createEffortRow({
+        activity_id: secondActivityId,
+        duration_seconds: 600,
+        value: powerAt(600),
+        provenance: { activity_id: secondActivityId, derived_from: "activity_file_stream" },
+      }),
+      createEffortRow({
+        activity_id: secondActivityId,
+        duration_seconds: 1_200,
+        value: powerAt(1_200),
+        provenance: { activity_id: secondActivityId, derived_from: "activity_file_stream" },
+      }),
+    ]);
+
+    const result = await caller.predictPerformance({
+      activity_category: "bike",
+      effort_type: "power",
+      days: 90,
+      duration: 900,
+    });
+
+    expect(result.model.activityCount).toBe(2);
+    expect(result.model.residuals.map((residual) => residual.pointId)).toEqual([
+      "point-1",
+      "point-2",
+      "point-3",
+      "point-4",
+    ]);
+    expect(JSON.stringify(result.model.residuals)).not.toContain(firstActivityId);
+    expect(JSON.stringify(result.model.residuals)).not.toContain(secondActivityId);
   });
 
   it("rejects extrapolated and non-power critical-power predictions", async () => {
@@ -287,8 +367,33 @@ describe("analyticsRouter", () => {
       }),
     ).rejects.toMatchObject({
       code: "BAD_REQUEST",
-      message:
-        "Insufficient data to calculate performance model. Need at least 3 observed max efforts between 3 and 30 minutes, including short and long coverage.",
+      message: "Critical-power model abstained: insufficient-points.",
+    } as Partial<TRPCError>);
+  });
+
+  it("rejects a fit sourced from only one activity with an explicit reason", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
+    const activityId = crypto.randomUUID();
+    const observed = (duration: number) =>
+      createEffortRow({
+        activity_id: activityId,
+        duration_seconds: duration,
+        value: 250 + 15_000 / duration,
+        provenance: { activity_id: activityId, derived_from: "activity_file_stream" },
+      });
+    const { caller } = createCaller([observed(180), observed(600), observed(1_200)]);
+
+    await expect(
+      caller.predictPerformance({
+        activity_category: "bike",
+        effort_type: "power",
+        days: 90,
+        duration: 900,
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Critical-power model abstained: insufficient-independent-activities.",
     } as Partial<TRPCError>);
   });
 });

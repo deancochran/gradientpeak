@@ -177,6 +177,7 @@ describe("extracted inputs web", () => {
     );
 
     const input = screen.getByLabelText(paceSecondsFieldFixtures.easy.label);
+    expect(screen.getByTestId("easy-pace-seconds-field")).toBe(input);
     fireEvent.change(input, {
       currentTarget: { value: "5:45" },
       target: { value: "5:45" },

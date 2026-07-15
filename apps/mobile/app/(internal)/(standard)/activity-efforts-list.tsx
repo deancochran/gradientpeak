@@ -1,4 +1,4 @@
-import { formatActivityEffortValue, formatEffortDuration } from "@repo/core/athlete-inputs";
+import { formatEffortDuration } from "@repo/core/athlete-inputs";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { type Href, Stack } from "expo-router";
@@ -14,6 +14,7 @@ import {
   type ActivityEffortCurveRow,
   buildActivityEffortCurves,
   buildBestActivityEffortCurve,
+  formatActivityEffortPresentationValue,
   getActivityEffortCurveBest,
   getActivityEffortObservationStatus,
   getObservedActivityEffortRecords,
@@ -54,7 +55,7 @@ function formatDate(value: string | Date) {
 }
 
 function formatValue(effort: ActivityEffortRow) {
-  return formatActivityEffortValue(effort);
+  return formatActivityEffortPresentationValue(effort);
 }
 
 function formatDuration(seconds: number) {
@@ -202,7 +203,15 @@ function getEffortRecordStatusLabel(record: ActivityEffortRow) {
   if (status === "modeled") return "Modeled threshold";
   if (status === "review") return "Review effort";
   if (status === "invalid") return "Invalid effort";
-  return null;
+  const sourceLabel =
+    record.source === "manual"
+      ? "Manual"
+      : record.source === "provider"
+        ? "Provider"
+        : "Activity observed";
+  return record.duration_seconds === 1200
+    ? `${sourceLabel} • Load calibration eligible`
+    : sourceLabel;
 }
 
 function MiniEffortVisual({ points }: { points: EffortPoint[] }) {
@@ -546,7 +555,7 @@ function ActivityEffortsList() {
         <View className="gap-1">
           <Text className="text-xl font-semibold text-foreground">Activity effort trends</Text>
           <Text className="text-sm text-muted-foreground">
-            Open power curves, pace/speed curves, and other effort trends from your saved efforts.
+            Compare observed bike power, run speed, and swim speed across durations.
           </Text>
         </View>
 
@@ -567,6 +576,8 @@ function ActivityEffortsList() {
             {effortCurves.map((curve) => {
               const policy = getActivityInsightVisualPolicy("activityEfforts");
               const best = getActivityEffortCurveBest(curve.records);
+              const observedRecords = getObservedActivityEffortRecords(curve.records);
+              const latestObserved = observedRecords[0];
               return (
                 <CompactInsightCard
                   key={curve.id}
@@ -576,9 +587,9 @@ function ActivityEffortsList() {
                   hasData={Boolean(best)}
                   layout={policy.compactLayout}
                   summary={
-                    curve.records.length === 0
-                      ? "No efforts yet"
-                      : `${curve.records.length} efforts across ${curve.points.length} durations`
+                    observedRecords.length === 0
+                      ? "No observed efforts yet"
+                      : `${observedRecords.length} observed • ${curve.points.length} durations${latestObserved ? ` • ${formatDate(latestObserved.recorded_at)}` : ""}`
                   }
                   visualPolicy={{ source: policy.source, visualType: policy.visualType }}
                   onPress={() => setSelectedCurveId(curve.id)}

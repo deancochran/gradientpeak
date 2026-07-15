@@ -1,5 +1,6 @@
 import { profilePatchInputSchema } from "@repo/core";
 import {
+  getActivityEffortThresholdEvidence,
   resolveCanonicalThresholds,
   type ThresholdActivityEffortObservation,
 } from "@repo/core/athlete-inputs";
@@ -125,8 +126,9 @@ export const profilesRouter = createTRPCRouter({
         cover_url: input.cover_url,
         bio: input.bio,
         dob: input.dob === undefined ? undefined : input.dob === null ? null : new Date(input.dob),
+        full_name: input.full_name,
         is_public: input.is_public,
-        username: input.username,
+        username: input.username == null ? input.username : input.username.toLowerCase(),
         language: input.language,
         preferred_units: input.preferred_units,
         weight_kg: input.weight_kg,
@@ -285,6 +287,18 @@ export const profilesRouter = createTRPCRouter({
                     effort.source !== "estimated"
                       ? ("actual" as const)
                       : ("derived" as const),
+                  evidence:
+                    getActivityEffortThresholdEvidence({
+                      activityCategory: effort.activity_category,
+                      activityId: effort.activity_id,
+                      durationSeconds: effort.duration_seconds,
+                      effortType: effort.effort_type,
+                      method: effort.method,
+                      provenance: effort.provenance,
+                      source: effort.source,
+                      unit: effort.unit,
+                      value: Number(effort.value),
+                    }) ?? undefined,
                 },
               ];
             }
@@ -304,6 +318,18 @@ export const profilesRouter = createTRPCRouter({
                   durationSeconds: 1200,
                   observedAt,
                   observationKind: "actual" as const,
+                  evidence:
+                    getActivityEffortThresholdEvidence({
+                      activityCategory: effort.activity_category,
+                      activityId: effort.activity_id,
+                      durationSeconds: effort.duration_seconds,
+                      effortType: effort.effort_type,
+                      method: effort.method,
+                      provenance: effort.provenance,
+                      source: effort.source,
+                      unit: effort.unit,
+                      value: Number(effort.value),
+                    }) ?? undefined,
                 },
               ];
             }

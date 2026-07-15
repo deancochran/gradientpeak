@@ -5,33 +5,37 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { detectLTHR, estimateVO2Max } from "@repo/core/calculations";
+import {
+  type ActivityCalibrationQuality,
+  type ActivityStreamThresholdIdentity,
+  activityStreamAnalysisSchema,
+  analyzeActivityStreams,
+  canonicalSportSchema,
+} from "@repo/core";
 import {
   type ActivityFileType,
   inferActivityFileType,
   parseActivityFile,
 } from "@repo/core/server/activity-files";
-import { activities, activityEfforts, profileMetrics } from "@repo/db";
+import { activities } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, lte } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
+import { analyzeParsedActivityFile } from "../application/activity-file-ingestion/analyze-parsed-activity-file";
 import { persistExistingActivityFileEnrichment } from "../application/activity-file-ingestion/persist-existing-activity-file-enrichment";
 import { persistNewActivityFileImport } from "../application/activity-file-ingestion/persist-new-activity-file-import";
 import { processUploadedActivityFile } from "../application/activity-file-ingestion/process-uploaded-activity-file";
-import {
-  buildActivityFileBestEffortRows,
-  calculateActivityFileStreamDerivedCalculations,
-  calculateActivityFileStreamDerivedMetrics,
-} from "../application/activity-file-ingestion/stream-derived-calculations";
+import { calculateActivityFileStreamDerivedMetrics } from "../application/activity-file-ingestion/stream-derived-calculations";
 import {
   buildActivityGeometry,
   collectActivityFileStreamMetadata,
 } from "../application/activity-file-ingestion/stream-metadata";
 import { getRequiredDb } from "../db";
+import { createActivityAnalysisStore } from "../infrastructure/repositories/drizzle-activity-analysis-repository";
+import { resolveActivityContextAsOf } from "../lib/activity-analysis/context";
 import { logger } from "../lib/logger";
 import { getApiStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
-import { isClearedProfileOverride } from "../utils/profile-override-observations";
 import { fetchActivityTemperature } from "../utils/weather";
 
 const storageService = getApiStorageService();
@@ -42,6 +46,21 @@ const ACTIVITY_FILE_BUCKET_SIZE_LIMIT = "50MB";
 const ACTIVITY_FILE_TYPES = [".fit", ".gpx", ".tcx"];
 
 const ACTIVITY_FILE_NAME_PATTERN = /^[^/\\\0]+$/;
+
+function toStreamThresholdIdentity(
+  quality: ActivityCalibrationQuality | null | undefined,
+): ActivityStreamThresholdIdentity | null {
+  if (!quality) return null;
+  return {
+    source: quality.source,
+    observed_at: quality.observed_at,
+    confidence: quality.confidence,
+    stale: quality.stale,
+    estimate: quality.estimate,
+    calculation_version: quality.calculation_version ?? null,
+  };
+}
+
 const activityFileNameSchema = z
   .string()
   .trim()
@@ -120,6 +139,16 @@ const parsedActivityFileCompatibilitySchema = z
   })
   .passthrough();
 
+const getStreamsOutputSchema = z
+  .object({
+    records: z.array(activityFileParserRecordCompatibilitySchema),
+    laps: z.array(z.unknown()),
+    lengths: z.array(z.unknown()),
+    summary: activityFileParserSummaryCompatibilitySchema,
+    analysis: activityStreamAnalysisSchema,
+  })
+  .strict();
+
 const signedUploadUrlDataSchema = z.object({
   signedUrl: z.string().url(),
   token: z.string().min(1),
@@ -176,12 +205,6 @@ const markUploadedAndProcessInput = z
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 
-function toNumberOrNull(value: number | string | null | undefined): number | null {
-  if (value === null || value === undefined) return null;
-  const numericValue = Number(value);
-  return Number.isFinite(numericValue) ? numericValue : null;
-}
-
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error && error.message) {
     return error.message;
@@ -213,10 +236,6 @@ function getErrorDetails(error: unknown) {
   };
 }
 
-function toStringOrNull(value: unknown): string | null {
-  return typeof value === "string" && value.trim().length > 0 ? value : null;
-}
-
 function isOwnedActivityFilePath(userId: string, filePath: string): boolean {
   return filePath.startsWith(`${userId}/`) || filePath.startsWith(`activities/${userId}/`);
 }
@@ -232,45 +251,17 @@ async function toBufferFromBlobLike(blob: BlobLike): Promise<Buffer> {
   return Buffer.from(arrayBuffer);
 }
 
-async function getLatestProfileMetricValue(
-  db: DbClient,
-  input: {
-    profileId: string;
-    metricType: "lthr" | "max_hr" | "resting_hr";
-    recordedAtLte: Date;
-  },
-): Promise<number | null> {
-  const row = await db
-    .select({
-      value: profileMetrics.value,
-      method: profileMetrics.method,
-      provenance: profileMetrics.provenance,
-    })
-    .from(profileMetrics)
-    .where(
-      and(
-        eq(profileMetrics.profile_id, input.profileId),
-        eq(profileMetrics.metric_type, input.metricType),
-        lte(profileMetrics.recorded_at, input.recordedAtLte),
-      ),
-    )
-    .orderBy(desc(profileMetrics.recorded_at))
-    .limit(1)
-    .then((rows) => rows[0] ?? null);
-
-  return row && !isClearedProfileOverride(row) ? toNumberOrNull(row.value) : null;
-}
-
 async function canAccessActivityStreams(
   db: DbClient,
   activityId: string,
   userId: string,
-): Promise<string | null> {
+): Promise<{ activityFilePath: string | null; activityType: string }> {
   const [activity] = await db
     .select({
       activity_file_path: activities.activity_file_path,
       profile_id: activities.profile_id,
       is_private: activities.is_private,
+      type: activities.type,
     })
     .from(activities)
     .where(eq(activities.id, activityId))
@@ -281,7 +272,10 @@ async function canAccessActivityStreams(
   }
 
   if (activity.profile_id === userId) {
-    return activity.activity_file_path ?? null;
+    return {
+      activityFilePath: activity.activity_file_path ?? null,
+      activityType: activity.type,
+    };
   }
 
   throw new TRPCError({
@@ -357,116 +351,6 @@ async function parseStoredActivityFile(input: {
   }
 }
 
-async function buildActivityFileEnrichment(
-  db: DbClient,
-  input: {
-    profileId: string;
-    activityId: string;
-    activityType: string;
-    parsedData: ParsedActivityFile;
-  },
-) {
-  const { summary, records } = input.parsedData;
-  const startTime = input.parsedData.metadata.startTime;
-  const duration = summary.totalTime;
-
-  if (duration <= 0) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "Activity has zero duration and cannot be processed.",
-    });
-  }
-
-  const distance = summary.totalDistance || 0;
-  const activityCompletedAt = new Date(startTime.getTime() + duration * 1000);
-  const activityCompletedAtIso = activityCompletedAt.toISOString();
-  const { powerStream, hrStream, timestamps, altitudeStream, speedStream, coords, avgTemperature } =
-    collectActivityFileStreamMetadata(records);
-
-  const {
-    normalizedPower,
-    normalizedSpeed,
-    normalizedGradedSpeed,
-    efficiencyFactor,
-    aerobicDecoupling,
-    effortsToInsert,
-  } = calculateActivityFileStreamDerivedCalculations({
-    activityId: input.activityId,
-    profileId: input.profileId,
-    activityType: input.activityType,
-    distance,
-    duration,
-    avgHeartRate: summary.avgHeartRate,
-    recordedAt: activityCompletedAt,
-    streamMetadata: {
-      powerStream,
-      hrStream,
-      timestamps,
-      altitudeStream,
-      speedStream,
-    },
-  });
-
-  let resolvedAvgTemperature = avgTemperature;
-  if (resolvedAvgTemperature === null && coords[0]) {
-    resolvedAvgTemperature = await fetchActivityTemperature(
-      coords[0].latitude,
-      coords[0].longitude,
-      startTime,
-    );
-  }
-
-  const lthr =
-    (await getLatestProfileMetricValue(db, {
-      profileId: input.profileId,
-      metricType: "lthr",
-      recordedAtLte: activityCompletedAt,
-    })) ?? 170;
-  const restingHR =
-    (await getLatestProfileMetricValue(db, {
-      profileId: input.profileId,
-      metricType: "resting_hr",
-      recordedAtLte: activityCompletedAt,
-    })) ?? 60;
-
-  const geometry = buildActivityGeometry(records);
-  const detectedLTHR = hrStream.length > 0 ? detectLTHR(hrStream, timestamps) : null;
-  if (summary.maxHeartRate && restingHR) void estimateVO2Max(summary.maxHeartRate, restingHR);
-
-  return {
-    activityCompletedAt,
-    activityCompletedAtIso,
-    detectedLTHR: detectedLTHR && detectedLTHR > lthr ? detectedLTHR : null,
-    effortsToInsert,
-    geometry,
-    summaryValues: {
-      activity_id: input.activityId,
-      profile_id: input.profileId,
-      duration_seconds: Math.round(duration),
-      moving_seconds: Math.round(duration),
-      distance_meters: Math.round(distance),
-      elevation_gain_meters: summary.totalAscent ? Math.round(summary.totalAscent) : null,
-      calories: summary.calories ? Math.round(summary.calories) : null,
-      avg_heart_rate: summary.avgHeartRate ? Math.round(summary.avgHeartRate) : null,
-      max_heart_rate: summary.maxHeartRate ? Math.round(summary.maxHeartRate) : null,
-      avg_power: summary.avgPower ? Math.round(summary.avgPower) : null,
-      max_power: summary.maxPower ? Math.round(summary.maxPower) : null,
-      normalized_power: normalizedPower ? Math.round(normalizedPower) : null,
-      avg_cadence: summary.avgCadence ? Math.round(summary.avgCadence) : null,
-      max_cadence: summary.maxCadence ? Math.round(summary.maxCadence) : null,
-      avg_speed_mps: summary.avgSpeed ?? (distance && duration ? distance / duration : null),
-      max_speed_mps: summary.maxSpeed ?? null,
-      normalized_speed_mps: normalizedSpeed || null,
-      normalized_graded_speed_mps: normalizedGradedSpeed || null,
-      efficiency_factor: efficiencyFactor || null,
-      aerobic_decoupling: aerobicDecoupling || null,
-      avg_temperature: resolvedAvgTemperature ? Math.round(resolvedAvgTemperature) : null,
-      updated_at: new Date(),
-    },
-    startedAt: startTime,
-  };
-}
-
 async function upsertExistingActivityFileEnrichment(
   db: DbClient,
   input: {
@@ -479,7 +363,7 @@ async function upsertExistingActivityFileEnrichment(
     parsedData: ParsedActivityFile;
   },
 ) {
-  const enrichment = await buildActivityFileEnrichment(db, {
+  const enrichment = await analyzeParsedActivityFile(db, {
     profileId: input.profileId,
     activityId: input.activityId,
     activityType: input.activityType,
@@ -492,6 +376,7 @@ async function upsertExistingActivityFileEnrichment(
     activityFilePath: input.activityFilePath,
     activityFileSize: input.activityFileSize,
     activityFileType: input.activityFileType,
+    activityType: input.activityType,
     parsedData: input.parsedData,
     enrichment,
   });
@@ -510,7 +395,7 @@ export const activityFilesRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { fileName, fileSize } = input;
+      const { fileName } = input;
       const userId = ctx.session?.user?.id;
       const supabase = storageService;
 
@@ -722,43 +607,18 @@ export const activityFilesRouter = createTRPCRouter({
         // ========================================================================
         // T-307: Extract streams for calculations
         // ========================================================================
-        const powerStream: number[] = [];
-        const hrStream: number[] = [];
-        const timestamps: number[] = [];
-        const altitudeStream: number[] = [];
-        const speedStream: number[] = [];
-        const coords: { latitude: number; longitude: number }[] = [];
-
-        for (const record of records) {
-          if (record.timestamp !== undefined) {
-            timestamps.push(record.timestamp.getTime() / 1000);
-          }
-          if (record.power !== undefined) {
-            powerStream.push(record.power);
-          }
-          if (record.heartRate !== undefined) {
-            hrStream.push(record.heartRate);
-          }
-          if (record.altitude !== undefined) {
-            altitudeStream.push(record.altitude);
-          }
-          if (record.speed !== undefined) {
-            speedStream.push(record.speed);
-          }
-          // Collect valid coordinates for polyline
-          if (
-            record.positionLat !== undefined &&
-            record.positionLong !== undefined &&
-            Math.abs(record.positionLat) <= 90 &&
-            Math.abs(record.positionLong) <= 180 &&
-            !(record.positionLat === 0 && record.positionLong === 0)
-          ) {
-            coords.push({
-              latitude: record.positionLat,
-              longitude: record.positionLong,
-            });
-          }
-        }
+        const {
+          powerStream,
+          powerTimestamps,
+          hrStream,
+          hrTimestamps,
+          timestamps,
+          altitudeStream,
+          altitudeTimestamps,
+          speedStream,
+          speedTimestamps,
+          coords,
+        } = collectActivityFileStreamMetadata(records);
 
         // ========================================================================
         // Calculate Polyline and Bounds (commented out until migration is applied)
@@ -788,31 +648,6 @@ export const activityFilesRouter = createTRPCRouter({
         const activityCompletedAt = new Date(startTime.getTime() + duration * 1000);
         const activityCompletedAtIso = activityCompletedAt.toISOString();
 
-        // Cold Start: Default to 170bpm if no LTHR found
-        const lthr =
-          (await getLatestProfileMetricValue(db, {
-            profileId: userId,
-            metricType: "lthr",
-            recordedAtLte: activityCompletedAt,
-          })) ?? 170;
-
-        // Cold Start: Default to 190bpm if no Max HR found
-        const _maxHR =
-          maxHeartRate ??
-          (await getLatestProfileMetricValue(db, {
-            profileId: userId,
-            metricType: "max_hr",
-            recordedAtLte: activityCompletedAt,
-          })) ??
-          190;
-
-        const restingHR =
-          (await getLatestProfileMetricValue(db, {
-            profileId: userId,
-            metricType: "resting_hr",
-            recordedAtLte: activityCompletedAt,
-          })) ?? 60;
-
         const {
           normalizedPower,
           normalizedSpeed,
@@ -826,10 +661,14 @@ export const activityFilesRouter = createTRPCRouter({
           avgHeartRate,
           streamMetadata: {
             powerStream,
+            powerTimestamps,
             hrStream,
+            hrTimestamps,
             timestamps,
             altitudeStream,
+            altitudeTimestamps,
             speedStream,
+            speedTimestamps,
           },
         });
 
@@ -873,6 +712,13 @@ export const activityFilesRouter = createTRPCRouter({
         // T-313, T-314: Create activity record
         // ========================================================================
         const endTime = new Date(activityCompletedAtIso);
+        const requestedActivityId = randomUUID();
+        const artifactAnalysis = await analyzeParsedActivityFile(db, {
+          profileId: userId,
+          activityId: requestedActivityId,
+          activityType,
+          parsedData,
+        });
 
         logger.debug("[processActivityFile] Attempting to insert activity record", {
           profile_id: userId,
@@ -883,9 +729,10 @@ export const activityFilesRouter = createTRPCRouter({
           activity_file_path: activityFilePath,
         });
 
-        let createdActivity;
+        let createdActivity: Awaited<ReturnType<typeof persistNewActivityFileImport>>;
         try {
           createdActivity = await persistNewActivityFileImport(db, {
+            requestedActivityId,
             profileId: userId,
             name,
             notes: notes || null,
@@ -922,6 +769,15 @@ export const activityFilesRouter = createTRPCRouter({
             laps: parsedData.laps ?? null,
             mapBounds: geometry.mapBounds,
             polyline: geometry.polyline,
+            analysis: {
+              efforts: artifactAnalysis.effortsToInsert,
+              detectedLTHR: artifactAnalysis.detectedLTHR,
+              activityCompletedAt: artifactAnalysis.activityCompletedAt,
+              ingestion: {
+                source: "manual_import",
+                fileType: activityFileType,
+              },
+            },
           });
         } catch (insertError) {
           // T-316: Cleanup uploaded file on failure
@@ -959,54 +815,6 @@ export const activityFilesRouter = createTRPCRouter({
         logger.debug("[processActivityFile] Activity record created successfully", {
           activityId: createdActivity.id,
         });
-
-        // ========================================================================
-        // T-5.4, T-5.5, T-5.6: Post-Processing (Best Efforts, Profile Metrics, Notifications)
-        // ========================================================================
-
-        const effortsToInsert = buildActivityFileBestEffortRows({
-          activityId: createdActivity.id,
-          profileId: userId,
-          activityType,
-          recordedAt: activityCompletedAt,
-          normalizedGradedSpeed,
-          streamMetadata: {
-            powerStream,
-            timestamps,
-            altitudeStream,
-            speedStream,
-          },
-        });
-
-        // Bulk insert efforts
-        if (effortsToInsert.length > 0) {
-          try {
-            await db.insert(activityEfforts).values(effortsToInsert);
-          } catch (effortsError) {
-            logger.error("Failed to insert best efforts", getErrorDetails(effortsError));
-          }
-        }
-
-        // 2. Detect LTHR
-        if (hrStream.length > 0) {
-          const detectedLTHR = detectLTHR(hrStream, timestamps);
-          if (detectedLTHR && detectedLTHR > lthr) {
-            await db.insert(profileMetrics).values({
-              id: randomUUID(),
-              created_at: new Date(),
-              profile_id: userId,
-              metric_type: "lthr",
-              value: detectedLTHR,
-              unit: "bpm",
-              recorded_at: new Date(activityCompletedAtIso),
-            });
-          }
-        }
-
-        // 3. Estimate VO2 Max
-        if (maxHeartRate && restingHR) {
-          void estimateVO2Max(maxHeartRate, restingHR);
-        }
 
         return {
           success: true,
@@ -1158,6 +966,7 @@ export const activityFilesRouter = createTRPCRouter({
         activityId: z.string().uuid(),
       }),
     )
+    .output(getStreamsOutputSchema)
     .query(async ({ ctx, input }) => {
       const { activityId } = input;
       const userId = ctx.session?.user?.id;
@@ -1169,9 +978,9 @@ export const activityFilesRouter = createTRPCRouter({
       }
 
       try {
-        const resolvedActivityFilePath = await canAccessActivityStreams(db, activityId, userId);
+        const access = await canAccessActivityStreams(db, activityId, userId);
 
-        if (!resolvedActivityFilePath) {
+        if (!access.activityFilePath) {
           throw new TRPCError({
             code: "NOT_FOUND",
             message: "Activity does not have an associated activity file",
@@ -1181,7 +990,7 @@ export const activityFilesRouter = createTRPCRouter({
         // Download activity file from storage
         const { data: activityFile, error: downloadError } = await supabase.storage
           .from(ACTIVITY_FILE_BUCKET)
-          .download(resolvedActivityFilePath);
+          .download(access.activityFilePath);
 
         if (downloadError || !activityFile) {
           throw new TRPCError({
@@ -1197,9 +1006,45 @@ export const activityFilesRouter = createTRPCRouter({
         const parsedData = parsedActivityFileCompatibilitySchema.parse(
           parseActivityFile({
             data: buffer,
-            fileName: resolvedActivityFilePath,
+            fileName: access.activityFilePath,
           }),
         );
+
+        const sport = canonicalSportSchema.parse(access.activityType);
+        const context = await resolveActivityContextAsOf({
+          store: createActivityAnalysisStore(db),
+          profileId: userId,
+          activityTimestamp: parsedData.metadata.startTime,
+          activityId,
+          evidenceScope: "thresholds",
+        });
+        const sportLthr =
+          context.profileMetrics.lthr_by_sport?.[sport] ?? context.profileMetrics.lthr;
+        const analysis = analyzeActivityStreams({
+          records: parsedData.records,
+          sport,
+          thresholds: {
+            lthrBySport: { [sport]: sportLthr },
+            ftpWatts: context.profileMetrics.ftp,
+            runThresholdSpeedMps: context.profileMetrics.threshold_speed_mps,
+            swimThresholdSpeedMps: context.profileMetrics.swim_threshold_speed_mps,
+            identities: {
+              lthrBySport: {
+                [sport]: toStreamThresholdIdentity(
+                  context.calibrationQuality?.lthrBySport?.[sport] ??
+                    context.calibrationQuality?.lthr,
+                ),
+              },
+              ftpWatts: toStreamThresholdIdentity(context.calibrationQuality?.ftp),
+              runThresholdSpeedMps: toStreamThresholdIdentity(
+                context.calibrationQuality?.runThreshold,
+              ),
+              swimThresholdSpeedMps: toStreamThresholdIdentity(
+                context.calibrationQuality?.swimThreshold,
+              ),
+            },
+          },
+        });
 
         // Extract streams in a format suitable for frontend charting
         // We return the raw records, the frontend can map them to arrays
@@ -1208,6 +1053,7 @@ export const activityFilesRouter = createTRPCRouter({
           laps: parsedData.laps,
           lengths: parsedData.lengths,
           summary: parsedData.summary,
+          analysis,
         };
       } catch (error) {
         if (error instanceof TRPCError) {

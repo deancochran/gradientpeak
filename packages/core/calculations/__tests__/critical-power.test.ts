@@ -1,21 +1,32 @@
 import { describe, expect, it } from "vitest";
-import type { BestEffort } from "../../schemas/activity_efforts";
-import { calculateCriticalPower, calculateSeasonBestCurve } from "../critical-power";
+import {
+  calculateCriticalPower,
+  calculateSeasonBestCurve,
+  evaluateCriticalPower,
+  type ObservedCriticalPowerEffort,
+} from "../critical-power";
 
 // Helper to create mock efforts
 const createEffort = (
   duration: number,
   value: number,
-  overrides: Partial<BestEffort> = {},
-): BestEffort => ({
-  activity_category: "bike",
-  effort_type: "power",
-  duration_seconds: duration,
-  value,
-  unit: "watts",
-  recorded_at: new Date().toISOString(),
-  ...overrides,
-});
+  overrides: Partial<ObservedCriticalPowerEffort> = {},
+): ObservedCriticalPowerEffort => {
+  const activityId = overrides.activity_id ?? `activity-${duration}`;
+  return {
+    activity_category: "bike",
+    effort_type: "power",
+    duration_seconds: duration,
+    value,
+    unit: "watts",
+    recorded_at: new Date().toISOString(),
+    activity_id: activityId,
+    source: "imported",
+    method: "activity_file_best_effort",
+    provenance: { activity_id: activityId, derived_from: "activity_file_stream" },
+    ...overrides,
+  };
+};
 
 describe("calculateSeasonBestCurve", () => {
   it("should filter out non-bike activities", () => {
@@ -110,8 +121,69 @@ describe("calculateCriticalPower", () => {
       fitMinDurationSeconds: 180,
       fitMaxDurationSeconds: 1_200,
       pointCount: 4,
+      activityCount: 4,
     });
-    expect(result?.error).toBeGreaterThan(0.99);
+    expect(result?.rSquared).toBeGreaterThan(0.99);
+    expect(result?.error).toBe(result?.rSquared);
+    expect(result?.rmseWatts).toBeCloseTo(0, 8);
+    expect(result?.residuals).toHaveLength(4);
+    expect(result?.stability.maxPredictionChangeRatio).toBeCloseTo(0, 8);
+  });
+
+  it("predicts a held-out point within the observed domain", () => {
+    const result = calculateCriticalPower([
+      createEffort(180, 250 + 15_000 / 180),
+      createEffort(300, 250 + 15_000 / 300),
+      createEffort(900, 250 + 15_000 / 900),
+      createEffort(1_200, 250 + 15_000 / 1_200),
+    ]);
+
+    expect(result).not.toBeNull();
+    expect(result && Math.round(result.cp + result.wPrime / 600)).toBe(275);
+  });
+
+  it("requires trusted observations from at least two independent activities", () => {
+    const sameActivity = [180, 600, 1_200].map((duration) =>
+      createEffort(duration, 250 + 15_000 / duration, {
+        activity_id: "one-activity",
+        provenance: { activity_id: "one-activity", derived_from: "activity_file_stream" },
+      }),
+    );
+    expect(evaluateCriticalPower(sameActivity)).toEqual({
+      status: "abstained",
+      reason: "insufficient-independent-activities",
+    });
+
+    expect(
+      evaluateCriticalPower([
+        createEffort(180, 333),
+        createEffort(600, 275, { source: "estimated" }),
+        createEffort(1_200, 263),
+      ]),
+    ).toEqual({ status: "abstained", reason: "untrusted-effort" });
+  });
+
+  it("rejects poor fits and point-dominated fits with explicit reasons", () => {
+    expect(
+      evaluateCriticalPower([
+        createEffort(180, 340),
+        createEffort(300, 300),
+        createEffort(600, 292),
+        createEffort(1_200, 250),
+      ]),
+    ).toMatchObject({ status: "abstained", reason: "poor-fit" });
+
+    expect(
+      evaluateCriticalPower(
+        [
+          createEffort(180, 340),
+          createEffort(300, 300),
+          createEffort(600, 276),
+          createEffort(1_200, 263),
+        ],
+        { minRSquared: 0, maxPredictionChangeRatio: 0.001 },
+      ),
+    ).toMatchObject({ status: "abstained", reason: "dominant-point" });
   });
 
   it("requires coverage in both the 3-5m and 15-30m windows", () => {

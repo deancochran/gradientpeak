@@ -113,7 +113,6 @@ export default function ProfileTabScreen() {
     profile,
     updateEmail,
     updatePassword,
-    deleteAccount,
     canUpdateEmail,
     updateEmailUnavailableReason,
   } = useAuth();
@@ -205,28 +204,6 @@ export default function ProfileTabScreen() {
     },
   });
 
-  const handleDeleteAccount = () => {
-    Alert.alert(
-      "Delete Account",
-      "This permanently deletes your account and data. This cannot be undone.",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            void deleteAccount().catch((error: unknown) => {
-              Alert.alert(
-                "Error",
-                error instanceof Error ? error.message : "Failed to delete account",
-              );
-            });
-          },
-        },
-      ],
-    );
-  };
-
   return (
     <View className="flex-1 bg-background" testID="profile-tab-screen">
       <AppHeader title="Profile" />
@@ -259,6 +236,15 @@ export default function ProfileTabScreen() {
           description="Open measurements grouped by profile metric type or activity effort type."
           testID="profile-tab-metric-entries"
         >
+          <SettingItem
+            type="button"
+            label="Trends"
+            description="Training load, consistency, volume, and performance insight cards."
+            buttonLabel="Open"
+            variant="outline"
+            onPress={() => navigateTo("/(internal)/(tabs)/trends")}
+            testID="profile-tab-trends"
+          />
           <SettingItem
             type="button"
             label="Profile Metrics"
@@ -424,15 +410,6 @@ export default function ProfileTabScreen() {
             variant="destructive"
             onPress={handleSignOut}
             testID="profile-tab-sign-out"
-          />
-          <SettingItem
-            type="button"
-            label="Delete Account"
-            description="Permanently delete your account and all data."
-            buttonLabel="Delete"
-            variant="destructive"
-            onPress={handleDeleteAccount}
-            testID="profile-tab-delete-account"
           />
         </SettingsGroup>
       </ScrollView>

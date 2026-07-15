@@ -17,13 +17,14 @@ import { DurationInput } from "@repo/ui/components/duration-input";
 import {
   Form,
   FormBoundedNumberField,
+  FormDateTimeField,
   FormNumberField,
   FormSegmentedSelectField,
 } from "@repo/ui/components/form";
 import { PaceInput } from "@repo/ui/components/pace-input";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
-import { Stack, useRouter } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import React from "react";
 import { ScrollView, View } from "react-native";
 import { z } from "zod";
@@ -49,16 +50,31 @@ type ActivityEffortSubmission = Pick<
   "activity_category" | "effort_type" | "duration_seconds" | "value" | "recorded_at"
 >;
 
+function toLocalDateTimeValue(date: Date) {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
+    date.getHours(),
+  )}:${pad(date.getMinutes())}`;
+}
+
+function toApiDateTimeValue(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 export function prepareActivityEffortSubmission(
   data: FormValues,
   pace: string,
 ): { effort?: ActivityEffortSubmission; error?: string } {
+  const recordedAt = toApiDateTimeValue(data.recorded_at);
+  if (!recordedAt) return { error: "Enter a valid recorded date and time." };
+
   const base = {
     activity_category: data.activity_category,
     effort_type: data.effort_type,
     duration_seconds: data.duration_seconds,
     value: data.value,
-    recorded_at: data.recorded_at,
+    recorded_at: recordedAt,
   };
 
   if (data.effort_type !== "speed" || data.speed_entry_mode === "direct") {
@@ -70,7 +86,10 @@ export function prepareActivityEffortSubmission(
     const speed =
       paceSeconds == null
         ? null
-        : speedMetersPerSecondFromPace({ paceSeconds, distanceUnitMeters: 1000 });
+        : speedMetersPerSecondFromPace({
+            paceSeconds,
+            distanceUnitMeters: data.activity_category === "swim" ? 100 : 1000,
+          });
     if (speed == null) return { error: "Enter a valid pace." };
     return { effort: { ...base, value: speed } };
   }
@@ -111,17 +130,39 @@ function formatPace(seconds: number | null) {
 }
 
 function ActivityEffortCreate() {
+  const params = useLocalSearchParams<{
+    activityCategory?: string;
+    effortType?: string;
+    durationSeconds?: string;
+    recordedAt?: string;
+    value?: string;
+  }>();
   const router = useRouter();
   const utils = api.useUtils();
+  const initialCategoryResult = activityEffortSportSchema.safeParse(params.activityCategory);
+  const initialCategory = initialCategoryResult.success ? initialCategoryResult.data : "bike";
+  const initialDefinition =
+    getActivityEffortDefinition({
+      activityCategory: initialCategory,
+      effortType: params.effortType === "speed" ? "speed" : "power",
+    }) ?? getDefaultActivityEffortDefinition(initialCategory);
+  const initialDuration = Number(params.durationSeconds);
+  const initialValue = Number(params.value);
 
   const form = useZodForm({
     schema: effortSchema,
     defaultValues: {
-      activity_category: "bike",
-      effort_type: "power",
-      duration_seconds: 1200,
-      value: 250,
-      recorded_at: new Date().toISOString(),
+      activity_category: initialCategory,
+      effort_type: initialDefinition.effortType,
+      duration_seconds: Number.isFinite(initialDuration)
+        ? initialDuration
+        : initialDefinition.defaultDurationSeconds,
+      value: Number.isFinite(initialValue) ? initialValue : initialDefinition.defaultValue,
+      recorded_at: toLocalDateTimeValue(
+        params.recordedAt && !Number.isNaN(new Date(params.recordedAt).getTime())
+          ? new Date(params.recordedAt)
+          : new Date(),
+      ),
       speed_entry_mode: "direct",
       distance_meters: 1000,
       elapsed_duration: "0:20:00",
@@ -141,6 +182,7 @@ function ActivityEffortCreate() {
   const valueDescriptor = activityEffortToInputDescriptor(effortDefinition);
   const previousDefinitionIdRef = React.useRef(effortDefinition.id);
   const speedEntryMode = form.watch("speed_entry_mode");
+  const selectedDurationSeconds = form.watch("duration_seconds");
   const [pace, setPace] = React.useState(() =>
     formatPace(
       paceSecondsFromSpeedMetersPerSecond({ speedMetersPerSecond: 4, distanceUnitMeters: 1000 }),
@@ -183,11 +225,11 @@ function ActivityEffortCreate() {
       formatPace(
         paceSecondsFromSpeedMetersPerSecond({
           speedMetersPerSecond: form.getValues("value"),
-          distanceUnitMeters: 1000,
+          distanceUnitMeters: selectedCategory === "swim" ? 100 : 1000,
         }),
       ),
     );
-  }, [form, selectedEffortType, speedEntryMode]);
+  }, [form, selectedCategory, selectedEffortType, speedEntryMode]);
 
   const createMutation = api.activityEfforts.create.useMutation();
   const submitForm = useZodFormSubmit<FormValues>({
@@ -255,6 +297,16 @@ function ActivityEffortCreate() {
               testId="activity-category-segments"
             />
 
+            <FormDateTimeField
+              control={form.control}
+              dateLabel="Recorded date"
+              disabled={isSubmitting}
+              label="Recorded"
+              name="recorded_at"
+              testId="activity-effort-recorded-at"
+              timeLabel="Recorded time"
+            />
+
             <FormSegmentedSelectField
               control={form.control}
               disabled={isSubmitting}
@@ -317,12 +369,20 @@ function ActivityEffortCreate() {
                   <View pointerEvents={isSubmitting ? "none" : "auto"}>
                     <PaceInput
                       id="effort-pace-input"
-                      label="Pace"
+                      label={selectedCategory === "swim" ? "Pace (/100m)" : "Pace (/km)"}
                       onChange={setPace}
                       onPaceSecondsChange={() => undefined}
                       value={pace}
                     />
                   </View>
+                ) : null}
+
+                {selectedCategory === "swim" &&
+                speedEntryMode !== "distance_elapsed" &&
+                selectedDurationSeconds === 1200 ? (
+                  <Text className="text-xs text-muted-foreground">
+                    A valid observed 20-minute swim can provide the current estimated CSS input.
+                  </Text>
                 ) : null}
 
                 {speedEntryMode === "distance_elapsed" ? (

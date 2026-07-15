@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from "@repo/ui/components/card";
 import { InlineLoadingStatus, LoadingButton } from "@repo/ui/components/loading";
+import { SearchField } from "@repo/ui/components/search-field";
 import { keepPreviousData } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
@@ -21,6 +22,7 @@ import {
   Target,
   Users,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { api } from "../../lib/api/client";
 
@@ -72,6 +74,7 @@ const QUICK_LINKS = [
 
 function SearchPage() {
   const { q } = Route.useSearch();
+  const [searchValue, setSearchValue] = useState(q ?? "");
   const query = q?.trim() ?? "";
   const normalizedQuery = query.toLowerCase();
   const filteredLinks =
@@ -92,6 +95,10 @@ function SearchPage() {
   const users = data?.users ?? [];
   const isUpdatingProfiles = isFetching && !isLoading;
 
+  useEffect(() => {
+    setSearchValue(q ?? "");
+  }, [q]);
+
   return (
     <div className="space-y-8">
       <section className="space-y-3">
@@ -100,12 +107,20 @@ function SearchPage() {
           <Badge variant="outline">Discover</Badge>
         </div>
         <form method="get" action="/search" className="flex gap-2">
-          <input
-            name="q"
-            defaultValue={q ?? ""}
-            placeholder="Search profiles, plans, routes, or actions"
-            className="flex h-11 w-full rounded-xl border bg-background px-4 text-sm outline-none ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
-          />
+          <div className="flex-1">
+            <SearchField
+              accessibilityLabel="Search profiles and web sections"
+              clearTestId="global-search-clear"
+              loading={isFetching}
+              loadingLabel="Searching profiles"
+              name="q"
+              onValueChange={setSearchValue}
+              placeholder="Search profiles, plans, routes, or actions"
+              testId="global-search-input"
+              value={searchValue}
+              className="h-11 rounded-xl"
+            />
+          </div>
           <LoadingButton loading={isFetching} loadingLabel="Searching..." type="submit">
             Search
           </LoadingButton>

@@ -69,7 +69,13 @@ jest.mock("@repo/ui/components/form", () => ({
       ...props,
       onChangeText: (value: string) => props.control?.setValue?.(name, value),
     }),
-  FormTimeInputField: mockCreateHost("FormTimeInputField"),
+  FormTimeInputField: ({ testId, name, ...props }: any) =>
+    React.createElement("FormTimeInputField", {
+      testID: testId,
+      name,
+      ...props,
+      onChangeText: (value: string) => props.control?.setValue?.(name, value),
+    }),
 }));
 
 const { CalendarManualCreateModal } = require("../CalendarManualCreateModal");
@@ -92,7 +98,7 @@ describe("CalendarManualCreateModal", () => {
     );
 
     fireEvent.changeText(screen.getByTestId("manual-create-title-input"), "Tuesday mobility");
-    fireEvent.press(screen.getByTestId("manual-create-repeat-weekly-toggle"));
+    fireEvent(screen.getByLabelText("Repeat weekly"), "onCheckedChange", true);
     fireEvent.press(screen.getByTestId("manual-create-submit"));
 
     expect(submitMock).toHaveBeenCalledWith(
@@ -104,6 +110,133 @@ describe("CalendarManualCreateModal", () => {
           timezone: "UTC",
         },
       }),
+    );
+  });
+
+  it("keeps custom-event recurrence within supported bounds", () => {
+    renderNative(
+      <CalendarManualCreateModal
+        visible
+        activeDate="2026-06-02"
+        createType="custom"
+        submitting={false}
+        onClose={jest.fn()}
+        onSubmit={submitMock}
+      />,
+    );
+
+    fireEvent.changeText(screen.getByTestId("manual-create-title-input"), "Tuesday mobility");
+    fireEvent(screen.getByLabelText("Repeat weekly"), "onCheckedChange", true);
+    for (let index = 0; index < 60; index++) {
+      fireEvent.press(screen.getByLabelText("Increase occurrence count"));
+    }
+    fireEvent.press(screen.getByTestId("manual-create-submit"));
+
+    expect(submitMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        recurrence: {
+          rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=52;BYDAY=TU",
+          timezone: "UTC",
+        },
+      }),
+    );
+
+    submitMock.mockClear();
+    for (let index = 0; index < 60; index++) {
+      fireEvent.press(screen.getByLabelText("Decrease occurrence count"));
+    }
+    fireEvent.press(screen.getByTestId("manual-create-submit"));
+
+    expect(submitMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        recurrence: {
+          rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=2;BYDAY=TU",
+          timezone: "UTC",
+        },
+      }),
+    );
+  });
+
+  it("omits recurrence when weekly repeat is disabled", () => {
+    renderNative(
+      <CalendarManualCreateModal
+        visible
+        activeDate="2026-06-02"
+        createType="custom"
+        submitting={false}
+        onClose={jest.fn()}
+        onSubmit={submitMock}
+      />,
+    );
+
+    fireEvent.changeText(screen.getByTestId("manual-create-title-input"), "Tuesday mobility");
+    fireEvent.press(screen.getByTestId("manual-create-submit"));
+
+    expect(submitMock).toHaveBeenCalledWith(expect.objectContaining({ recurrence: undefined }));
+  });
+
+  it.each([
+    ["UTC+14", -14 * 60, "00:30", "2026-06-01T10:30:00.000Z", 1, "MO"],
+    ["UTC-12", 12 * 60, "23:30", "2026-06-03T11:30:00.000Z", 3, "WE"],
+  ] as const)("derives BYDAY from the persisted startsAt instant in %s", (_timezone, timezoneOffsetMinutes, scheduledTime, expectedStartsAt, expectedUtcDay, expectedByDay) => {
+    renderNative(
+      <CalendarManualCreateModal
+        visible
+        activeDate="2026-06-02"
+        createType="custom"
+        submitting={false}
+        onClose={jest.fn()}
+        onSubmit={submitMock}
+      />,
+    );
+
+    fireEvent.changeText(screen.getByTestId("manual-create-title-input"), "Boundary event");
+    fireEvent.changeText(screen.getByTestId("manual-create-time-button"), scheduledTime);
+    fireEvent(screen.getByLabelText("Repeat weekly"), "onCheckedChange", true);
+
+    const RealDate = Date;
+    class MockLocalDate extends RealDate {
+      constructor(...args: unknown[]) {
+        if (args.length >= 2) {
+          const [year, month, day = 1, hours = 0, minutes = 0, seconds = 0, ms = 0] =
+            args as number[];
+          super(
+            RealDate.UTC(year ?? 1970, month ?? 0, day, hours, minutes, seconds, ms) +
+              timezoneOffsetMinutes * 60_000,
+          );
+          return;
+        }
+
+        if (args.length === 1) {
+          super(args[0] as string | number);
+          return;
+        }
+
+        super();
+      }
+    }
+
+    global.Date = MockLocalDate as DateConstructor;
+    try {
+      fireEvent.press(screen.getByTestId("manual-create-submit"));
+    } finally {
+      global.Date = RealDate;
+    }
+
+    const submitted = submitMock.mock.calls.at(-1)?.[0] as {
+      startsAt: Date;
+      recurrence: { rule: string; timezone: string };
+    };
+    const backendWeekdays = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
+
+    expect(submitted.startsAt.toISOString()).toBe(expectedStartsAt);
+    expect(submitted.startsAt.getUTCDay()).toBe(expectedUtcDay);
+    expect(submitted.recurrence).toEqual({
+      rule: `FREQ=WEEKLY;INTERVAL=1;COUNT=4;BYDAY=${expectedByDay}`,
+      timezone: "UTC",
+    });
+    expect(submitted.recurrence.rule).toContain(
+      `BYDAY=${backendWeekdays[submitted.startsAt.getUTCDay()]}`,
     );
   });
 });

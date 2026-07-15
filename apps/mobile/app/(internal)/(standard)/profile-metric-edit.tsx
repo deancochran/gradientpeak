@@ -1,38 +1,52 @@
 import {
+  addProfileMetricValueRangeIssue,
   getProfileMetricDefinition,
   type ProfileMetricType,
   profileMetricToInputDescriptor,
   profileMetricTypeSchema,
-  profileMetricTypes,
 } from "@repo/core/athlete-inputs";
 import {
   Form,
   FormBoundedNumberField,
   FormDateTimeField,
-  FormSegmentedSelectField,
   FormTextareaField,
   FormWeightInputField,
 } from "@repo/ui/components/form";
+import { Label } from "@repo/ui/components/label";
+import { PaceSecondsField } from "@repo/ui/components/pace-seconds-field";
+import {
+  NativeSelectScrollView,
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@repo/ui/components/select";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { skipToken } from "@tanstack/react-query";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import React from "react";
-import type { Control } from "react-hook-form";
+import { type Control, Controller } from "react-hook-form";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { z } from "zod";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/hooks/useAuth";
+import { profileMetricSections } from "@/lib/profile-metrics/trends";
 import { handleSubmitFormError } from "@/lib/utils/formErrors";
 
-const profileMetricEditSchema = z.object({
-  metric_type: profileMetricTypeSchema,
-  value: z.number({ message: "Value is required" }).finite(),
-  recorded_at: z.string().min(1, "Recorded date is required"),
-  notes: z.string().max(1000, "Notes must be less than 1000 characters").nullable(),
-});
+const profileMetricEditSchema = z
+  .object({
+    metric_type: profileMetricTypeSchema,
+    value: z.number({ message: "Value is required" }).finite(),
+    recorded_at: z.string().min(1, "Recorded date is required"),
+    notes: z.string().max(1000, "Notes must be less than 1000 characters").nullable(),
+  })
+  .superRefine(addProfileMetricValueRangeIssue);
 
 type ProfileMetricEditForm = z.infer<typeof profileMetricEditSchema>;
 
@@ -55,6 +69,35 @@ function MetricValueField({
 }) {
   const descriptor = profileMetricToInputDescriptor(getProfileMetricDefinition(metricType));
   const description = `Enter ${descriptor.label.toLowerCase()} between ${descriptor.min} and ${descriptor.max}${descriptor.unit !== "scale" ? ` ${descriptor.unit}` : ""}.`;
+
+  if (metricType === "threshold_pace_seconds_per_km" || metricType === "css_seconds_per_100m") {
+    const unitLabel = metricType === "threshold_pace_seconds_per_km" ? "/km" : "/100m";
+    return (
+      <Controller
+        control={control}
+        name="value"
+        render={({ field, fieldState }) => (
+          <PaceSecondsField
+            error={fieldState.error?.message}
+            formControl={control}
+            helperText={
+              metricType === "threshold_pace_seconds_per_km"
+                ? "Enter pace between 2:00 and 20:00."
+                : "Enter pace between 0:45 and 10:00."
+            }
+            id="profile-metric-value"
+            label={descriptor.label}
+            onBlur={field.onBlur}
+            onChangeSeconds={field.onChange}
+            required
+            testId="profile-metric-value"
+            unitLabel={unitLabel}
+            valueSeconds={typeof field.value === "number" ? field.value : null}
+          />
+        )}
+      />
+    );
+  }
 
   if (descriptor.inputKind === "weight") {
     return (
@@ -87,8 +130,18 @@ function MetricValueField({
 }
 
 function ProfileMetricEditScreen() {
-  const { id } = useLocalSearchParams<{ id?: string }>();
+  const { id, metricType, recordedAt, value } = useLocalSearchParams<{
+    id?: string;
+    metricType?: string;
+    recordedAt?: string;
+    value?: string;
+  }>();
   const isEditMode = Boolean(id);
+  const overrideMetricTypeResult = profileMetricTypeSchema.safeParse(metricType);
+  const initialMetricType = overrideMetricTypeResult.success
+    ? overrideMetricTypeResult.data
+    : "weight_kg";
+  const initialValue = Number(value);
   const router = useRouter();
   const { user } = useAuth();
   const utils = api.useUtils();
@@ -100,9 +153,11 @@ function ProfileMetricEditScreen() {
   const form = useZodForm({
     schema: profileMetricEditSchema,
     defaultValues: {
-      metric_type: "weight_kg",
-      value: getProfileMetricDefinition("weight_kg").defaultValue,
-      recorded_at: toDateTimeInputValue(null),
+      metric_type: initialMetricType,
+      value: Number.isFinite(initialValue)
+        ? initialValue
+        : getProfileMetricDefinition(initialMetricType).defaultValue,
+      recorded_at: toDateTimeInputValue(recordedAt ?? null),
       notes: null,
     },
   });
@@ -203,17 +258,71 @@ function ProfileMetricEditScreen() {
       >
         <Form {...form}>
           <View className="gap-5">
-            <FormSegmentedSelectField
-              control={form.control}
-              disabled={isEditMode || isSaving}
-              label="Metric"
-              name="metric_type"
-              options={profileMetricTypes.map((metricType) => ({
-                label: getProfileMetricDefinition(metricType).label,
-                value: metricType,
-              }))}
-              testId="profile-metric-type"
-            />
+            {isEditMode ? (
+              <View className="gap-1">
+                <Text className="text-sm font-medium text-foreground">Metric</Text>
+                <Text className="text-base text-foreground" testID="profile-metric-type-static">
+                  {getProfileMetricDefinition(selectedMetricType).label}
+                </Text>
+              </View>
+            ) : (
+              <Controller
+                control={form.control}
+                name="metric_type"
+                render={({ field }) => (
+                  <View className="gap-2">
+                    <Label nativeID="profile-metric-type-label">
+                      <Text className="text-sm font-medium text-foreground">Metric</Text>
+                    </Label>
+                    <Select
+                      value={{
+                        label: getProfileMetricDefinition(field.value).label,
+                        value: field.value,
+                      }}
+                      onValueChange={(option) => {
+                        if (option?.value && option.value !== field.value) {
+                          field.onChange(option.value as ProfileMetricType);
+                        }
+                      }}
+                    >
+                      <SelectTrigger
+                        accessibilityHint="Opens metric options grouped by category"
+                        accessibilityLabel="Metric"
+                        disabled={isSaving}
+                        testId="profile-metric-type-trigger"
+                      >
+                        <SelectValue placeholder="Select a metric" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <NativeSelectScrollView>
+                          {profileMetricSections.map((section) => (
+                            <SelectGroup key={section.id}>
+                              <SelectLabel>{section.title}</SelectLabel>
+                              {section.metricTypes.map((metricType) => {
+                                const definition = getProfileMetricDefinition(metricType);
+                                return (
+                                  <SelectItem
+                                    key={metricType}
+                                    label={definition.label}
+                                    testID={`profile-metric-type-${metricType}`}
+                                    value={metricType}
+                                  >
+                                    {definition.label}
+                                  </SelectItem>
+                                );
+                              })}
+                            </SelectGroup>
+                          ))}
+                        </NativeSelectScrollView>
+                      </SelectContent>
+                    </Select>
+                    <Text className="text-xs text-muted-foreground">
+                      Choose the measurement you want to record.
+                    </Text>
+                  </View>
+                )}
+              />
+            )}
             <MetricValueField control={form.control} metricType={selectedMetricType} />
             <FormDateTimeField
               control={form.control}

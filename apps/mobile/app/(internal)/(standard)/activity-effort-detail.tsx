@@ -1,5 +1,5 @@
 import { decodePolyline } from "@repo/core";
-import { formatActivityEffortValue, formatEffortDuration } from "@repo/core/athlete-inputs";
+import { formatEffortDuration } from "@repo/core/athlete-inputs";
 import { Card, CardContent } from "@repo/ui/components/card";
 import {
   DropdownMenu,
@@ -18,6 +18,7 @@ import { ActivityRouteMap } from "@/components/activity/maps/ActivityRouteMap";
 import { ActivityCard, type ActivityCardActivity } from "@/components/shared/ActivityCard";
 import { AppConfirmModal } from "@/components/shared/AppFormModal";
 import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
+import { formatActivityEffortPresentationValue } from "@/lib/activity-efforts/curves";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { formatDateStamp } from "@/lib/display/formatters";
@@ -71,24 +72,51 @@ export default function ActivityEffortDetailScreen() {
     setShowDeleteConfirm(true);
   };
 
-  const renderHeaderActions = () => (
-    <DropdownMenu>
-      <DropdownMenuTrigger testID="activity-effort-detail-options-trigger">
-        <View className="rounded-full p-2">
-          <Icon as={Ellipsis} size={18} className="text-foreground" />
-        </View>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" sideOffset={6}>
-        <DropdownMenuItem
-          onPress={handleDelete}
-          variant="destructive"
-          testID="activity-effort-detail-options-delete"
-        >
-          <Text>{deleteMutation.isPending ? "Deleting..." : "Delete Effort"}</Text>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+  const renderHeaderActions = () => {
+    if (!effort) return null;
+    const isManual = effort.source === "manual";
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger testID="activity-effort-detail-options-trigger">
+          <View className="rounded-full p-2">
+            <Icon as={Ellipsis} size={18} className="text-foreground" />
+          </View>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" sideOffset={6}>
+          {isManual ? (
+            <DropdownMenuItem
+              onPress={handleDelete}
+              variant="destructive"
+              testID="activity-effort-detail-options-delete"
+            >
+              <Text>{deleteMutation.isPending ? "Deleting..." : "Delete Effort"}</Text>
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem
+              onPress={() =>
+                navigateTo({
+                  pathname: "/(internal)/(standard)/activity-effort-create",
+                  params: {
+                    activityCategory: effort.activity_category,
+                    effortType: effort.effort_type,
+                    durationSeconds: String(effort.duration_seconds),
+                    recordedAt:
+                      effort.recorded_at instanceof Date
+                        ? effort.recorded_at.toISOString()
+                        : effort.recorded_at,
+                    value: String(effort.value),
+                  },
+                } as Href)
+              }
+              testID="activity-effort-detail-options-override"
+            >
+              <Text>Add Manual Effort</Text>
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  };
 
   if (isLoading) {
     return (
@@ -145,7 +173,7 @@ export default function ActivityEffortDetailScreen() {
               <View className="flex-row flex-wrap gap-2">
                 <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
                   <Text className="text-xs font-medium text-foreground">
-                    Value: {formatActivityEffortValue(effort)}
+                    Value: {formatActivityEffortPresentationValue(effort)}
                   </Text>
                 </View>
                 <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
@@ -160,6 +188,11 @@ export default function ActivityEffortDetailScreen() {
                     </Text>
                   </View>
                 ) : null}
+                <View className="rounded-full border border-border bg-muted/20 px-3 py-1.5">
+                  <Text className="text-xs font-medium capitalize text-foreground">
+                    Source: {(effort.source ?? "unknown").replaceAll("_", " ")}
+                  </Text>
+                </View>
               </View>
             </CardContent>
           </Card>

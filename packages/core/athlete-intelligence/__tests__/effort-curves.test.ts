@@ -97,6 +97,59 @@ const target = (durationSeconds: number): EffortCurveTarget => ({
 });
 
 describe("calculateDurationAwareEffortCurve", () => {
+  it("interpolates swim capability in seconds per 100m without extrapolating", () => {
+    const swimTarget = (durationSeconds: number): EffortCurveTarget => ({
+      durationSeconds,
+      modality: "pace",
+      unit: "seconds_per_100m",
+      sport: "swim",
+    });
+    const swimModel = model([
+      effort({ id: "swim-short", duration: 300, value: 100 / 90, kind: "speed", sport: "swim" }),
+      effort({ id: "swim-long", duration: 1_200, value: 100 / 105, kind: "speed", sport: "swim" }),
+    ]);
+
+    const available = calculateDurationAwareEffortCurve({
+      model: swimModel,
+      threshold: swimTarget(600),
+      highIntensity: swimTarget(450),
+    });
+    const insufficient = calculateDurationAwareEffortCurve({
+      model: swimModel,
+      threshold: swimTarget(1_800),
+      highIntensity: swimTarget(1_800),
+    }).threshold;
+
+    expect(available.threshold).toMatchObject({
+      state: "estimated",
+      unit: "seconds_per_100m",
+      reasonCodes: ["log_duration_interpolation"],
+    });
+    expect(available.threshold.estimate).toBeCloseTo(97.5);
+    expect(insufficient).toMatchObject({
+      state: "insufficient_evidence",
+      reasonCodes: ["extrapolation_prohibited"],
+    });
+  });
+
+  it("returns unsupported for a swim target expressed as running pace", () => {
+    const result = calculateDurationAwareEffortCurve({
+      model: model([]),
+      threshold: {
+        durationSeconds: 600,
+        modality: "pace",
+        unit: "seconds_per_kilometer",
+        sport: "swim",
+      },
+      highIntensity: target(600),
+    }).threshold;
+
+    expect(result).toMatchObject({
+      state: "unsupported",
+      reasonCodes: ["unsupported_effort_curve_unit"],
+    });
+  });
+
   it("interpolates arbitrary durations continuously in log-duration space", () => {
     const result = calculateDurationAwareEffortCurve({
       model: model([

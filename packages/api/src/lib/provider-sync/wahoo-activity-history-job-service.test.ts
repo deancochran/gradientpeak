@@ -4,6 +4,7 @@ import { WahooActivityHistoryJobService } from "./wahoo-activity-history-job-ser
 function createSummary(id: number) {
   return {
     id,
+    workout_id: 456,
     started_at: "2026-04-03T10:00:00.000Z",
     updated_at: "2026-04-03T11:05:00.000Z",
     ascent_accum: 789,
@@ -39,10 +40,12 @@ function createDeps() {
       updateSyncStateAfterRun: vi.fn(),
     },
     wahooClient: {
+      getWorkoutSummary: vi.fn(),
       listWorkoutSummaries: vi.fn(),
     },
     wahooRepository: {
       findWahooIntegrationByProfileId: vi.fn(),
+      updateWahooIntegrationTokens: vi.fn().mockResolvedValue(undefined),
     },
   };
 }
@@ -53,7 +56,7 @@ describe("WahooActivityHistoryJobService", () => {
     vi.restoreAllMocks();
   });
 
-  it("reconciles due activity history jobs through the importer", async () => {
+  it("reconciles history using refreshed and persisted credentials", async () => {
     const deps = createDeps();
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
@@ -76,21 +79,37 @@ describe("WahooActivityHistoryJobService", () => {
     ]);
     deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue({
       accessToken: "access-1",
+      expiresAt: "2026-04-03T12:00:30.000Z",
       externalId: "77",
       id: "integration-1",
       profileId: "profile-1",
       refreshToken: "refresh-1",
     });
-    deps.wahooClient.listWorkoutSummaries.mockResolvedValueOnce([createSummary(123)]);
+    deps.wahooClient.listWorkoutSummaries.mockResolvedValueOnce({
+      sourceCount: 50,
+      summaries: [{ ...createSummary(123), file: undefined }],
+    });
+    deps.wahooClient.listWorkoutSummaries.mockResolvedValueOnce({
+      sourceCount: 0,
+      summaries: [],
+    });
+    deps.wahooClient.getWorkoutSummary.mockResolvedValueOnce(createSummary(123));
     deps.importer.importWorkoutSummary.mockResolvedValue({
       success: true,
       activityId: "activity-1",
+    });
+    const wahooClientFactory = vi.fn(() => deps.wahooClient);
+    const refreshAccessToken = vi.fn().mockResolvedValue({
+      accessToken: "access-2",
+      expiresAt: "2026-04-03T14:00:00.000Z",
+      refreshToken: "refresh-2",
     });
 
     const service = new WahooActivityHistoryJobService({
       importer: deps.importer as never,
       providerSyncRepository: deps.providerSyncRepository as never,
-      wahooClientFactory: () => deps.wahooClient,
+      refreshAccessToken,
+      wahooClientFactory,
       wahooRepository: deps.wahooRepository,
     });
 
@@ -106,6 +125,17 @@ describe("WahooActivityHistoryJobService", () => {
       perPage: 50,
       startDate: "2025-04-03T12:00:00.000Z",
     });
+    expect(deps.wahooClient.listWorkoutSummaries).toHaveBeenCalledTimes(2);
+    expect(deps.wahooClient.getWorkoutSummary).toHaveBeenCalledWith("456");
+    expect(deps.wahooRepository.updateWahooIntegrationTokens).toHaveBeenCalledWith({
+      accessToken: "access-2",
+      expiresAt: "2026-04-03T14:00:00.000Z",
+      id: "integration-1",
+      refreshToken: "refresh-2",
+    });
+    expect(wahooClientFactory).toHaveBeenCalledWith(
+      expect.objectContaining({ accessToken: "access-2", refreshToken: "refresh-2" }),
+    );
     expect(deps.importer.importWorkoutSummary).toHaveBeenCalledWith(77, createSummary(123));
     expect(deps.providerSyncRepository.markJobSucceeded).toHaveBeenCalledWith(
       "job-1",
@@ -141,15 +171,16 @@ describe("WahooActivityHistoryJobService", () => {
     ]);
     deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue({
       accessToken: "access-1",
+      expiresAt: null,
       externalId: "77",
       id: "integration-1",
       profileId: "profile-1",
       refreshToken: null,
     });
-    deps.wahooClient.listWorkoutSummaries.mockResolvedValueOnce([
-      createSummary(123),
-      createSummary(124),
-    ]);
+    deps.wahooClient.listWorkoutSummaries.mockResolvedValueOnce({
+      sourceCount: 2,
+      summaries: [createSummary(123), createSummary(124)],
+    });
     deps.importer.importWorkoutSummary
       .mockResolvedValueOnce({ success: false, error: "storage offline" })
       .mockResolvedValueOnce({ success: true, skipped: true, reason: "Activity already imported" });

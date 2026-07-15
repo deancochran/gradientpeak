@@ -72,6 +72,12 @@
  * ```
  */
 
+import {
+  DEFAULT_WEEKLY_COUNT_RECURRENCE,
+  serializeWeeklyCountRecurrence,
+  type WeeklyCountRecurrence,
+  type WeeklyCountRecurrencePayload,
+} from "@repo/core/recurrence";
 import { THEME } from "@repo/tailwindcss/native";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -82,6 +88,7 @@ import {
   FormTimeInputField,
 } from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
+import { RecurrenceFields } from "@repo/ui/components/recurrence-fields";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useQueryClient } from "@tanstack/react-query";
@@ -215,18 +222,6 @@ function buildAllDayStartIso(value: Date) {
   return `${toDateOnlyString(value)}T00:00:00.000Z`;
 }
 
-function getRRuleWeekday(dateKey: string): string {
-  const day = new Date(`${dateKey}T00:00:00.000Z`).getUTCDay();
-  return ["SU", "MO", "TU", "WE", "TH", "FR", "SA"][day] ?? "MO";
-}
-
-function buildWeeklyRecurrence(dateKey: string, occurrenceCount: number) {
-  return {
-    rule: `FREQ=WEEKLY;INTERVAL=1;COUNT=${occurrenceCount};BYDAY=${getRRuleWeekday(dateKey)}`,
-    timezone: "UTC",
-  };
-}
-
 function buildStartsAtFromEditorValues(input: {
   scheduledDate: string;
   scheduledTime: string | null;
@@ -249,7 +244,7 @@ function parseEventDateForEditor(event: { starts_at: string; all_day?: boolean |
 
 function toScheduleCreatePayload(input: {
   data: ScheduleActivityModalFormOutput;
-  recurrence: ReturnType<typeof buildWeeklyRecurrence> | undefined;
+  recurrence: WeeklyCountRecurrencePayload | undefined;
 }) {
   return {
     activity_plan_id: input.data.activityPlanId,
@@ -326,8 +321,9 @@ export function ScheduleActivityModal({
 
   const [showConstraintDetails, setShowConstraintDetails] = useState(false);
   const [localEditScope, setLocalEditScope] = useState<EditScope | null>(null);
-  const [repeatWeekly, setRepeatWeekly] = useState(false);
-  const [repeatOccurrenceCount, setRepeatOccurrenceCount] = useState(4);
+  const [recurrence, setRecurrence] = useState<WeeklyCountRecurrence>({
+    ...DEFAULT_WEEKLY_COUNT_RECURRENCE,
+  });
 
   const scheduledDateString = form.watch("scheduledDate");
   const scheduledTimeString = form.watch("scheduledTime");
@@ -380,8 +376,7 @@ export function ScheduleActivityModal({
       form.reset();
       setShowConstraintDetails(false);
       setLocalEditScope(null);
-      setRepeatWeekly(false);
-      setRepeatOccurrenceCount(4);
+      setRecurrence({ ...DEFAULT_WEEKLY_COUNT_RECURRENCE });
     }
   }, [visible, form]);
 
@@ -463,9 +458,10 @@ export function ScheduleActivityModal({
         createMutation,
         toScheduleCreatePayload({
           data,
-          recurrence: repeatWeekly
-            ? buildWeeklyRecurrence(data.scheduledDate, repeatOccurrenceCount)
-            : undefined,
+          recurrence: serializeWeeklyCountRecurrence({
+            recurrence,
+            startInstant: data.scheduledDate,
+          }),
         }),
       );
 
@@ -711,60 +707,12 @@ export function ScheduleActivityModal({
                     {...minimumScheduleDateProps}
                   />
 
-                  <View className="rounded-xl border border-border bg-card px-3 py-3">
-                    <View className="flex-row items-center justify-between gap-3">
-                      <View className="flex-1 gap-1">
-                        <Text className="text-sm font-medium text-foreground">Repeat weekly</Text>
-                        <Text className="text-xs text-muted-foreground">
-                          Schedule this activity every week on the selected day.
-                        </Text>
-                      </View>
-                      <Pressable
-                        accessibilityRole="switch"
-                        accessibilityState={{ checked: repeatWeekly }}
-                        className={`rounded-full px-3 py-2 ${repeatWeekly ? "bg-primary" : "bg-muted"}`}
-                        disabled={isSubmitting}
-                        onPress={() => setRepeatWeekly((current) => !current)}
-                        testID="schedule-repeat-weekly-toggle"
-                      >
-                        <Text
-                          className={`text-xs font-semibold ${repeatWeekly ? "text-primary-foreground" : "text-foreground"}`}
-                        >
-                          {repeatWeekly ? "On" : "Off"}
-                        </Text>
-                      </Pressable>
-                    </View>
-
-                    {repeatWeekly ? (
-                      <View className="mt-3 gap-2 border-t border-border pt-3">
-                        <Text className="text-xs font-medium text-muted-foreground">
-                          Ends after {repeatOccurrenceCount} occurrences
-                        </Text>
-                        <View className="flex-row gap-2">
-                          <Pressable
-                            className="rounded-md border border-border px-3 py-2"
-                            disabled={isSubmitting || repeatOccurrenceCount <= 2}
-                            onPress={() =>
-                              setRepeatOccurrenceCount((current) => Math.max(2, current - 1))
-                            }
-                            testID="schedule-repeat-count-decrement"
-                          >
-                            <Text className="text-sm text-foreground">-</Text>
-                          </Pressable>
-                          <Pressable
-                            className="rounded-md border border-border px-3 py-2"
-                            disabled={isSubmitting || repeatOccurrenceCount >= 52}
-                            onPress={() =>
-                              setRepeatOccurrenceCount((current) => Math.min(52, current + 1))
-                            }
-                            testID="schedule-repeat-count-increment"
-                          >
-                            <Text className="text-sm text-foreground">+</Text>
-                          </Pressable>
-                        </View>
-                      </View>
-                    ) : null}
-                  </View>
+                  <RecurrenceFields
+                    disabled={isSubmitting}
+                    onChange={setRecurrence}
+                    testIdPrefix="schedule"
+                    value={recurrence}
+                  />
                 </View>
               )}
             </Form>

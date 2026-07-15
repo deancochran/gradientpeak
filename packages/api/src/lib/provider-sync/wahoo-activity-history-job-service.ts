@@ -1,6 +1,12 @@
 import type { ProviderSyncRepository, WahooIntegrationRecord } from "../../repositories";
 import type { WahooActivityImporter } from "../integrations/wahoo/activity-importer";
-import { WahooClient, type WahooWorkoutSummary } from "../integrations/wahoo/client";
+import {
+  refreshWahooAccessToken,
+  WahooClient,
+  type WahooTokenRefreshResult,
+  type WahooWorkoutSummary,
+} from "../integrations/wahoo/client";
+import { resolveWahooCredentials } from "../integrations/wahoo/credentials";
 import { logger } from "../logger";
 import {
   createProviderSyncWorkerId,
@@ -24,7 +30,8 @@ type WahooWorkoutSummaryClient = {
     page?: number;
     perPage?: number;
     startDate: string;
-  }): Promise<WahooWorkoutSummary[]>;
+  }): Promise<{ sourceCount: number; summaries: WahooWorkoutSummary[] }>;
+  getWorkoutSummary?(workoutSummaryId: string): Promise<WahooWorkoutSummary>;
 };
 
 function addMinutes(isoString: string, minutes: number): string {
@@ -66,9 +73,16 @@ export class WahooActivityHistoryJobService {
       importer: WahooActivityImporter;
       executionLimiter?: ProviderSyncConcurrencyLimiter;
       providerSyncRepository: ProviderSyncRepository;
+      refreshAccessToken?: (refreshToken: string) => Promise<WahooTokenRefreshResult>;
       wahooClientFactory?: (integration: WahooIntegrationRecord) => WahooWorkoutSummaryClient;
       wahooRepository: {
         findWahooIntegrationByProfileId(profileId: string): Promise<WahooIntegrationRecord | null>;
+        updateWahooIntegrationTokens(input: {
+          accessToken: string;
+          expiresAt: string | null;
+          id: string;
+          refreshToken: string | null;
+        }): Promise<void>;
       };
     },
   ) {}
@@ -141,9 +155,17 @@ export class WahooActivityHistoryJobService {
             if (!/^\d+$/.test(integration.externalId)) {
               throw new Error("Wahoo integration external ID is not numeric");
             }
-            const providerUserId = Number.parseInt(integration.externalId, 10);
+            const resolvedIntegration = await resolveWahooCredentials({
+              integration,
+              persistTokens: (tokens) =>
+                this.deps.wahooRepository.updateWahooIntegrationTokens(tokens),
+              refreshAccessToken: this.deps.refreshAccessToken ?? refreshWahooAccessToken,
+            });
+            const providerUserId = Number.parseInt(resolvedIntegration.externalId, 10);
             const windowMonths = job.payload.windowMonths ?? DEFAULT_HISTORY_WINDOW_MONTHS;
-            const client = (this.deps.wahooClientFactory ?? createDefaultWahooClient)(integration);
+            const client = (this.deps.wahooClientFactory ?? createDefaultWahooClient)(
+              resolvedIntegration,
+            );
             const summaries = await this.listAllSummaries(client, {
               endDate: now,
               startDate: subtractMonths(now, windowMonths),
@@ -151,7 +173,33 @@ export class WahooActivityHistoryJobService {
 
             const importErrors: string[] = [];
             for (const summary of summaries) {
-              const result = await this.deps.importer.importWorkoutSummary(providerUserId, summary);
+              const importSummary = summary.file?.url
+                ? summary
+                : await (async () => {
+                    if (!client.getWorkoutSummary) {
+                      throw new Error(
+                        `Wahoo summary ${summary.id} omitted its artifact URL and detail lookup is unavailable`,
+                      );
+                    }
+                    const workoutId = summary.workout_id ?? summary.workout?.id;
+                    if (!workoutId) {
+                      throw new Error(
+                        `Wahoo summary ${summary.id} omitted its artifact URL and workout identity`,
+                      );
+                    }
+                    const detail = await client.getWorkoutSummary(workoutId.toString());
+                    return {
+                      ...summary,
+                      ...detail,
+                      workout_id: summary.workout_id ?? detail.workout_id,
+                      workout: summary.workout ?? detail.workout,
+                      started_at: detail.started_at ?? summary.started_at,
+                    };
+                  })();
+              const result = await this.deps.importer.importWorkoutSummary(
+                providerUserId,
+                importSummary,
+              );
               if (!result.success) {
                 importErrors.push(result.error ?? "Failed to import Wahoo summary");
                 logger.warn("Wahoo activity history summary import failed", {
@@ -216,14 +264,14 @@ export class WahooActivityHistoryJobService {
     const summaries: WahooWorkoutSummary[] = [];
 
     for (let page = 1; ; page += 1) {
-      const pageSummaries = await client.listWorkoutSummaries({
+      const pageResult = await client.listWorkoutSummaries({
         ...input,
         page,
         perPage: DEFAULT_PAGE_SIZE,
       });
-      summaries.push(...pageSummaries);
+      summaries.push(...pageResult.summaries);
 
-      if (pageSummaries.length < DEFAULT_PAGE_SIZE) {
+      if (pageResult.sourceCount < DEFAULT_PAGE_SIZE) {
         return summaries;
       }
     }

@@ -15,6 +15,7 @@ import type { getRequiredDb } from "../../db";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 type ActivityEffortRow = z.infer<typeof publicActivityEffortsRowSchema>;
+const MAX_ANALYTICS_EFFORT_ROWS = 10_000;
 
 export type ObservedBestEffort = BestEffort &
   Pick<
@@ -45,7 +46,8 @@ export async function getOwnedBestEfforts(
         eq(activityEfforts.effort_type, input.effort_type),
         gte(activityEfforts.recorded_at, cutoffDate),
       ),
-    );
+    )
+    .limit(MAX_ANALYTICS_EFFORT_ROWS);
 
   return rows
     .map((row) => publicActivityEffortsRowSchema.parse(row))

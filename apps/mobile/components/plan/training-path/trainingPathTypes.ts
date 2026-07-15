@@ -1,7 +1,9 @@
+import type { ActivityTssIdentity } from "@repo/core";
 import type { ActivityCardActivity } from "@/components/shared/ActivityCard";
 import type { ActivityPlan, PlannedActivity } from "@/components/shared/ActivityPlanCard";
 import type { CalendarGroupEvent } from "@/lib/calendar/groupEventPlans";
 import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
+import type { CompletedObservationState } from "@/lib/training-path/completedTssObservation";
 
 export type TrainingPathRange = "goal" | "season" | "all";
 
@@ -19,6 +21,7 @@ export type TrainingPathEmptyState =
   | "noProjection";
 
 export type TrainingPathWeek = {
+  completedLoadUnavailable?: boolean;
   weekStart: string;
   weekEnd: string;
   label: string;
@@ -40,13 +43,14 @@ export type TrainingPathWeekSummary = {
   weekStart: string;
   weekEnd: string;
   dateLabel: string;
-  loadDelta: number;
-  headline: string;
-  body: string;
-  completedLoad: number;
+  loadDelta: number | null;
+  headline: string | null;
+  body: string | null;
+  completedLoad: number | null;
+  completedLoadUnavailable?: boolean;
   plannedLoad: number;
   tentativePlannedLoad: number;
-  targetLoad: number;
+  targetLoad: number | null;
   fitness: number | null;
   targetFitness: number | null;
   fitnessGapToIdeal: number | null;
@@ -105,6 +109,9 @@ export type TrainingPathViewModel = {
 };
 
 export type TrainingPathLoadPoint = {
+  completed_observation_state?: CompletedObservationState;
+  completed_tss_identity?: ActivityTssIdentity | null;
+  has_unavailable_completed_activity?: boolean;
   date: string;
   completed_load_tss?: number | null;
   scheduled_load_tss?: number | null;

@@ -8,15 +8,19 @@ import type { DurationInputProps } from "./shared";
 
 function DurationInput({
   accessibilityHint,
+  disabled = false,
   error,
   helperText = "Use h:mm:ss format",
   id,
   label,
+  name: _name,
+  onBlur,
   onChange,
   onDurationSecondsChange,
   placeholder = "e.g., 1:35:00",
   required = false,
   value,
+  testId,
 }: DurationInputProps) {
   const [draftValue, setDraftValue] = useState(value);
 
@@ -34,28 +38,42 @@ function DurationInput({
       </Label>
       <Input
         accessibilityLabel={label}
-        accessibilityHint={accessibilityHint ?? "Enter a duration in h:mm:ss format"}
+        accessibilityHint={[
+          required ? "Required" : undefined,
+          accessibilityHint ?? "Enter a duration in h:mm:ss format",
+          helperText,
+          error ? `Error: ${error}` : undefined,
+        ]
+          .filter(Boolean)
+          .join(". ")}
+        accessibilityState={{ disabled }}
+        aria-invalid={!!error}
+        aria-required={required}
         className={error ? "border-destructive bg-destructive/5" : undefined}
+        editable={!disabled}
         value={draftValue}
         onBlur={() => {
-          const normalized = normalizeDurationInput(draftValue);
-          if (!normalized) {
-            return;
+          if (!disabled) {
+            const normalized = normalizeDurationInput(draftValue);
+            if (normalized) {
+              if (normalized !== draftValue) {
+                setDraftValue(normalized);
+                onChange(normalized);
+              }
+              onDurationSecondsChange?.(parseHmsToSeconds(normalized));
+            }
           }
-
-          if (normalized !== draftValue) {
-            setDraftValue(normalized);
-            onChange(normalized);
-          }
-          onDurationSecondsChange?.(parseHmsToSeconds(normalized));
+          onBlur?.();
         }}
         onChangeText={(nextValue) => {
+          if (disabled) return;
           setDraftValue(nextValue);
           onChange(nextValue);
           onDurationSecondsChange?.(parseHmsToSeconds(nextValue));
         }}
         keyboardType="numbers-and-punctuation"
         placeholder={placeholder}
+        testId={testId}
       />
       {helperText ? <Text className="text-xs text-muted-foreground">{helperText}</Text> : null}
       {error ? <Text className="text-xs text-destructive">Adjust this field: {error}</Text> : null}

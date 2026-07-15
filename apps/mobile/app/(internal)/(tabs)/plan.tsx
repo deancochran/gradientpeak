@@ -1,3 +1,5 @@
+import { Button } from "@repo/ui/components/button";
+import { Text } from "@repo/ui/components/text";
 import { useRouter } from "expo-router";
 import { useCallback } from "react";
 import { RefreshControl, ScrollView, View } from "react-native";
@@ -61,6 +63,32 @@ function PlanDashboardScreen() {
         }
       >
         <View className="gap-5 px-2 pb-6 pt-3">
+          {trainingPath.queryFailureCount > 0 ? (
+            <View
+              className="mx-2 gap-2 rounded-2xl border border-destructive/40 bg-card p-4"
+              testID="plan-query-error"
+            >
+              <Text className="font-semibold text-foreground">
+                {trainingPath.hasUsableData
+                  ? "Some plan details could not be refreshed"
+                  : "Your plan could not be loaded"}
+              </Text>
+              <Text className="text-sm text-muted-foreground">
+                {trainingPath.hasUsableData
+                  ? "Available schedule and training data is still shown below."
+                  : "Check your connection and retry loading your plan."}
+              </Text>
+              <Button
+                className="self-start"
+                onPress={trainingPath.handleRefresh}
+                size="sm"
+                variant="outline"
+                testID="plan-query-retry"
+              >
+                <Text>Retry</Text>
+              </Button>
+            </View>
+          ) : null}
           <TrainingPathSection
             dailyPoints={trainingPath.dailyTrainingPathPoints}
             chartLoading={trainingPath.chartLoading}

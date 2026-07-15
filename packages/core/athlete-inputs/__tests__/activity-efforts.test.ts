@@ -3,6 +3,7 @@ import {
   ACTIVITY_EFFORT_HARD_BOUNDS,
   classifyActivityEffortPlausibility,
   getActivityEffortObservationStatus,
+  getActivityEffortThresholdEvidence,
   MANUAL_ACTIVITY_EFFORT_PROVENANCE,
 } from "../activity-effort-policy";
 import {
@@ -11,6 +12,7 @@ import {
   formatEffortDuration,
   getActivityEffortDefinition,
   getActivityEffortDefinitionsForCategory,
+  normalizeActivityEffortUpdate,
   paceSecondsFromSpeedMetersPerSecond,
   speedMetersPerSecondFromDistanceAndElapsedSeconds,
   speedMetersPerSecondFromPace,
@@ -32,7 +34,7 @@ describe("activity effort definitions", () => {
       getActivityEffortDefinition({ activityCategory: "swim", effortType: "speed" }),
     ).toMatchObject({
       defaultDurationSeconds: 300,
-      durationPresets: [30, 60, 120, 300, 1_800],
+      durationPresets: [30, 60, 120, 300, 1_200, 1_800],
     });
   });
 
@@ -90,6 +92,27 @@ describe("activity effort definitions", () => {
         value: 13,
       }).success,
     ).toBe(true);
+  });
+
+  it("allows explicit activity linkage and start offsets to be cleared", () => {
+    const normalized = normalizeActivityEffortUpdate(
+      {
+        activity_id: "00000000-0000-4000-8000-000000000010",
+        activity_category: "run",
+        duration_seconds: 600,
+        effort_type: "speed",
+        recorded_at: "2026-07-09T12:00:00.000Z",
+        start_offset: 30,
+        value: 4,
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000001",
+        activity_id: null,
+        start_offset: null,
+      },
+    );
+
+    expect(normalized).toMatchObject({ activity_id: null, start_offset: null });
   });
 
   it("formats effort values and durations", () => {
@@ -219,6 +242,29 @@ describe("activity effort plausibility policy", () => {
         provenance: { derived_from: "activity_file_stream" },
       }),
     ).toBe("review");
+  });
+
+  it("requires trusted provenance and exactly 20 minutes for threshold evidence", () => {
+    const imported = {
+      activityCategory: "bike" as const,
+      effortType: "power" as const,
+      durationSeconds: 1200,
+      value: 250,
+      unit: "watts",
+      activityId: "activity-1",
+      source: "imported",
+      method: "activity_file_best_effort",
+      provenance: { derived_from: "activity_file_stream", activity_id: "activity-1" },
+    };
+
+    expect(getActivityEffortThresholdEvidence(imported)).toBe("imported_activity_stream");
+    expect(getActivityEffortThresholdEvidence({ ...imported, durationSeconds: 1199 })).toBeNull();
+    expect(
+      getActivityEffortThresholdEvidence({
+        ...imported,
+        provenance: { derived_from: "activity_file_stream", activity_id: "other" },
+      }),
+    ).toBeNull();
   });
 });
 

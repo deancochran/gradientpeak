@@ -24,7 +24,7 @@ export async function drainDueWahooPlannedWorkoutJobs(input: {
     repository: wahooRepository,
     storage: createWahooRouteStorage({
       async downloadRouteGpx() {
-        return null;
+        throw new Error("Route storage is unavailable during inline planned-workout drain");
       },
     }),
   });

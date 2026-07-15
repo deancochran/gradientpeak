@@ -7,7 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@repo/ui/components/card";
-import { Input } from "@repo/ui/components/input";
+import { SearchField } from "@repo/ui/components/search-field";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Check, Loader2, Route as RouteIcon } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -20,7 +20,7 @@ export const Route = createFileRoute("/_protected/record/route/")({
   component: RecordRoutePage,
 });
 
-function RecordRoutePage() {
+export function RecordRoutePage() {
   const navigate = Route.useNavigate();
   const launcher = Route.useSearch();
   const [searchText, setSearchText] = useState("");
@@ -79,10 +79,16 @@ function RecordRoutePage() {
           <CardDescription>Search your saved route library.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Input
+          <SearchField
+            accessibilityLabel="Search routes"
+            loading={routesQuery.isFetching}
+            loadingLabel="Loading routes"
+            maxLength={80}
+            name="routeSearch"
+            onValueChange={setSearchText}
             placeholder="Search routes"
+            testId="record-route-search"
             value={searchText}
-            onChange={(event) => setSearchText(event.currentTarget.value)}
           />
           {launcher.routeId ? (
             <Button variant="ghost" className="px-0 text-destructive" onClick={detachRoute}>

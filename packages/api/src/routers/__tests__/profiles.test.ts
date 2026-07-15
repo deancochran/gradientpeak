@@ -278,7 +278,15 @@ describe("profilesRouter", () => {
   it("update atomically persists all typed profile fields and returns the refreshed profile", async () => {
     const { caller, calls } = createCaller({
       select: {
-        profiles: [[createProfileRow({ bio: "Updated bio", username: "updated_athlete" })]],
+        profiles: [
+          [
+            createProfileRow({
+              bio: "Updated bio",
+              full_name: "Updated Athlete",
+              username: "updated_athlete",
+            }),
+          ],
+        ],
         profileMetrics: [[], [], [{ value: "68.2" }], [{ value: "182" }], []],
         activityEfforts: [[], [{ value: 320, recorded_at: new Date() }], []],
       },
@@ -290,6 +298,7 @@ describe("profilesRouter", () => {
       cover_url: "https://example.com/updated-cover.png",
       is_public: false,
       dob: "1991-02-03T00:00:00.000Z",
+      full_name: "Updated Athlete",
       username: "updated_athlete",
       language: "fr",
       preferred_units: "imperial",
@@ -299,6 +308,7 @@ describe("profilesRouter", () => {
     });
 
     expect(result.username).toBe("updated_athlete");
+    expect(result.full_name).toBe("Updated Athlete");
     expect(result.bio).toBe("Updated bio");
     expect(calls.updates).toHaveLength(1);
     expect(calls.updates[0]).toMatchObject({
@@ -307,6 +317,7 @@ describe("profilesRouter", () => {
         avatar_url: null,
         cover_url: "https://example.com/updated-cover.png",
         bio: "Updated bio",
+        full_name: "Updated Athlete",
         is_public: false,
         username: "updated_athlete",
         language: "fr",
@@ -423,19 +434,33 @@ describe("profilesRouter", () => {
           [
             {
               activity_category: "bike",
+              activity_id: "bike-activity",
               duration_seconds: 1200,
               effort_type: "power",
               recorded_at: new Date(),
               unit: "watts",
               value: 310,
+              source: "imported",
+              method: "activity_file_best_effort",
+              provenance: {
+                activity_id: "bike-activity",
+                derived_from: "activity_file_stream",
+              },
             },
             {
               activity_category: "run",
+              activity_id: "run-activity",
               duration_seconds: 1200,
               effort_type: "speed",
               recorded_at: new Date(),
               unit: "meters_per_second",
               value: 4.5,
+              source: "imported",
+              method: "activity_file_best_effort",
+              provenance: {
+                activity_id: "run-activity",
+                derived_from: "activity_file_stream",
+              },
             },
           ],
         ],

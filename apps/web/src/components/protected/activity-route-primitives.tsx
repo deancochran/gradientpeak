@@ -12,6 +12,11 @@ import { cn } from "@repo/ui/lib/cn";
 import { Heart, MapPin } from "lucide-react";
 import type { ReactNode } from "react";
 import {
+  formatCalibrationQuality,
+  getActivityLoadLabels,
+  getThresholdNextAction,
+} from "../../lib/activity-load-presentation";
+import {
   buildElevationPolylinePoints,
   buildMapPolylinePoints,
   formatCompactDuration,
@@ -191,6 +196,24 @@ export function LikeToggleButton({
 }
 
 export function ActivityListCard({ activity, onOpen }: { activity: any; onOpen: () => void }) {
+  const loadMethod = activity.derived?.method;
+  const loadLabels = getActivityLoadLabels(loadMethod);
+  const unavailableValue =
+    activity.derived?.unavailable_reason === "private_data"
+      ? "Private"
+      : activity.derived?.unavailable_reason === "threshold_missing"
+        ? "No prior threshold"
+        : activity.derived?.unavailable_reason === "invalid_data"
+          ? "Invalid data"
+          : "Missing activity data";
+  const calibrationText = formatCalibrationQuality(
+    activity.derived?.calibration_quality,
+    activity.started_at,
+  );
+  const thresholdAction =
+    activity.derived?.unavailable_reason === "threshold_missing"
+      ? getThresholdNextAction(activity.type)
+      : null;
   return (
     <Card className="transition-colors hover:border-primary/30">
       <CardContent className="space-y-4 p-4">
@@ -216,14 +239,25 @@ export function ActivityListCard({ activity, onOpen }: { activity: any; onOpen: 
           <MetricPill label="Distance" value={formatDistance(activity.distance_meters)} />
           <MetricPill label="Duration" value={formatDuration(activity.duration_seconds)} />
           <MetricPill
-            label="TSS"
-            value={activity.derived?.tss != null ? `${Math.round(activity.derived.tss)}` : "-"}
+            label={loadLabels.load}
+            value={
+              activity.derived?.tss != null
+                ? `${Math.round(activity.derived.tss)}`
+                : unavailableValue
+            }
           />
           <MetricPill
-            label="Avg power"
-            value={activity.avg_power != null ? `${Math.round(activity.avg_power)} W` : "-"}
+            label={loadLabels.intensity}
+            value={
+              activity.derived?.intensity_factor != null
+                ? Number(activity.derived.intensity_factor).toFixed(2)
+                : "-"
+            }
           />
         </div>
+        {calibrationText || thresholdAction ? (
+          <p className="text-xs text-muted-foreground">{calibrationText ?? thresholdAction}</p>
+        ) : null}
       </CardContent>
     </Card>
   );

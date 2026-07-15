@@ -32,21 +32,27 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Start local database
-        run: pnpm --filter @repo/db self-host:up
-
-      - name: Verify database migrations
-        run: pnpm --filter @repo/db db:verify
-
-      - name: Stop local database
-        if: always()
-        run: pnpm --filter @repo/db self-host:down
-
       - name: Format, lint, and architecture baseline
         run: pnpm check:ci
 
       - name: Type check
         run: pnpm check-types
 
+      - name: Start local database
+        run: pnpm --filter @repo/db self-host:up
+
+      - name: Verify database migrations
+        run: pnpm --filter @repo/db db:verify
+
+      - name: Run live database tests
+        run: pnpm --filter @repo/api test:live-db
+
+      - name: Stop local database
+        if: always()
+        run: pnpm --filter @repo/db self-host:down
+
       - name: Tests
         run: pnpm test
+
+      - name: Production build
+        run: pnpm build

@@ -11,6 +11,7 @@ export type ProfileCardProfile = {
   cover_url?: string | null;
   followers_count?: number | null;
   following_count?: number | null;
+  full_name?: string | null;
   id?: string | null;
   is_public?: boolean | null;
   username?: string | null;
@@ -18,28 +19,35 @@ export type ProfileCardProfile = {
 
 export type ProfileCardProps = {
   actions?: ReactNode;
+  disabled?: boolean;
   emailFallback?: string | null;
   onPress?: () => void;
   profile: ProfileCardProfile;
+  selected?: boolean;
   supportingText?: string | null;
   testID?: string;
 };
 
 function getProfileInitial(profile: ProfileCardProfile, emailFallback?: string | null) {
   return (
-    profile.username?.charAt(0)?.toUpperCase() || emailFallback?.charAt(0)?.toUpperCase() || "A"
+    profile.full_name?.trim().charAt(0)?.toUpperCase() ||
+    profile.username?.charAt(0)?.toUpperCase() ||
+    emailFallback?.charAt(0)?.toUpperCase() ||
+    "A"
   );
 }
 
 function getDisplayName(profile: ProfileCardProfile, emailFallback?: string | null) {
-  return profile.username || emailFallback?.split("@")[0] || "Athlete";
+  return profile.full_name?.trim() || profile.username || emailFallback?.split("@")[0] || "Athlete";
 }
 
 export function ProfileCard({
   actions,
+  disabled,
   emailFallback,
   onPress,
   profile,
+  selected,
   supportingText,
   testID = "profile-card",
 }: ProfileCardProps) {
@@ -48,9 +56,13 @@ export function ProfileCard({
   const displayName = getDisplayName(profile, emailFallback);
   const usernameLabel = profile.username ? `@${profile.username}` : null;
   const visibilityLabel = profile.is_public ? "Public profile" : "Private profile";
+  const isDisabled = disabled ?? !onPress;
 
   return (
-    <Card className="overflow-hidden rounded-3xl border border-border bg-card" testID={testID}>
+    <Card
+      className={`overflow-hidden rounded-3xl border bg-card ${selected ? "border-primary" : "border-border"}`}
+      testID={testID}
+    >
       {coverUri ? (
         <Image
           accessibilityLabel="Profile cover photo"
@@ -61,13 +73,15 @@ export function ProfileCard({
       ) : null}
       <CardContent className="gap-4 p-4">
         <Pressable
+          accessibilityLabel={`${selected ? "Deselect" : "Select"} profile ${displayName}`}
           accessibilityRole={onPress ? "button" : undefined}
+          accessibilityState={{ disabled: isDisabled, selected }}
           className="flex-row items-start gap-3"
-          disabled={!onPress}
-          onPress={onPress}
+          disabled={isDisabled}
+          onPress={isDisabled ? undefined : onPress}
           testID={`${testID}-identity`}
         >
-          <Avatar alt={profile.username || "User profile"} className="h-16 w-16">
+          <Avatar alt={displayName} className="h-16 w-16">
             {avatarUri ? <AvatarImage key={avatarUri} source={{ uri: avatarUri }} /> : null}
             <AvatarFallback>
               <Text className="text-xl font-semibold text-muted-foreground">
@@ -106,10 +120,16 @@ export function ProfileCard({
           </Text>
         ) : null}
 
-        <View className="flex-row gap-3">
-          <ProfileCardStat label="Followers" value={profile.followers_count ?? 0} />
-          <ProfileCardStat label="Following" value={profile.following_count ?? 0} />
-        </View>
+        {profile.followers_count != null || profile.following_count != null ? (
+          <View className="flex-row gap-3">
+            {profile.followers_count != null ? (
+              <ProfileCardStat label="Followers" value={profile.followers_count} />
+            ) : null}
+            {profile.following_count != null ? (
+              <ProfileCardStat label="Following" value={profile.following_count} />
+            ) : null}
+          </View>
+        ) : null}
 
         {actions ? <View className="gap-2">{actions}</View> : null}
       </CardContent>

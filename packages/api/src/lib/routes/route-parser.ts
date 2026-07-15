@@ -1,5 +1,80 @@
 import type { LatLngAlt } from "@repo/core";
+import { MAX_ROUTE_POINT_COUNT } from "@repo/core/route-files";
 import { DOMParser } from "@xmldom/xmldom";
+
+export type RouteContentFormat = "gpx" | "tcx";
+
+const unsafeXmlDeclarationPattern = /<!\s*(?:DOCTYPE|ENTITY)\b/i;
+
+function assertSafeXml(content: string) {
+  if (unsafeXmlDeclarationPattern.test(content)) {
+    throw new Error("Route XML declarations are not allowed");
+  }
+}
+
+function parseXmlDocument(content: string): Document {
+  assertSafeXml(content);
+  let hasParseError = false;
+  const parser = new DOMParser({
+    errorHandler: {
+      warning: () => {
+        hasParseError = true;
+      },
+      error: () => {
+        hasParseError = true;
+      },
+      fatalError: () => {
+        hasParseError = true;
+      },
+    },
+  });
+  const document = parser.parseFromString(content, "text/xml");
+
+  if (hasParseError || elementsByLocalName(document, "parsererror").length > 0) {
+    throw new Error("Invalid route file: XML parsing error");
+  }
+
+  return document;
+}
+
+function getDocumentFormat(document: Document): RouteContentFormat {
+  const rootLocalName = document.documentElement?.localName;
+  if (rootLocalName === "gpx") return "gpx";
+  if (rootLocalName === "TrainingCenterDatabase") return "tcx";
+  throw new Error("Unsupported route file root element");
+}
+
+function getExpectedFormat(fileType?: string): RouteContentFormat | undefined {
+  switch (fileType?.toLowerCase()) {
+    case undefined:
+    case "xml":
+    case "application/xml":
+    case "text/xml":
+      return undefined;
+    case "gpx":
+    case "application/gpx+xml":
+      return "gpx";
+    case "tcx":
+    case "application/vnd.garmin.tcx+xml":
+      return "tcx";
+    default:
+      throw new Error(`Unsupported route file type: ${fileType}`);
+  }
+}
+
+function elementsByLocalName(
+  parent: Document | Element,
+  localName: string,
+): HTMLCollectionOf<Element> {
+  return parent.getElementsByTagNameNS("*", localName);
+}
+
+function appendCoordinate(coordinates: LatLngAlt[], coordinate: LatLngAlt) {
+  if (coordinates.length >= MAX_ROUTE_POINT_COUNT) {
+    throw new Error(`Route exceeds the ${MAX_ROUTE_POINT_COUNT} point limit`);
+  }
+  coordinates.push(coordinate);
+}
 
 export interface ParsedRoute {
   name?: string;
@@ -20,20 +95,10 @@ export interface ParsedRoute {
  * Parse GPX file content and extract route data
  */
 export function parseGPX(gpxContent: string): ParsedRoute {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(gpxContent, "text/xml");
+  return parseRouteWithFormat(gpxContent, "gpx").route;
+}
 
-  // Check for parsing errors
-  const parserError = doc.getElementsByTagName("parsererror")[0];
-  if (parserError) {
-    throw new Error("Invalid GPX file: XML parsing error");
-  }
-
-  const gpxElement = doc.documentElement;
-  if (gpxElement.nodeName !== "gpx") {
-    throw new Error("Invalid GPX file: root element must be <gpx>");
-  }
-
+function parseGPXDocument(doc: Document): ParsedRoute {
   // Extract metadata
   const metadata = extractMetadata(doc);
 
@@ -58,19 +123,10 @@ export function parseGPX(gpxContent: string): ParsedRoute {
  * Parse TCX course/activity content and extract route data.
  */
 export function parseTCX(tcxContent: string): ParsedRoute {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(tcxContent, "text/xml");
+  return parseRouteWithFormat(tcxContent, "tcx").route;
+}
 
-  const parserError = doc.getElementsByTagName("parsererror")[0];
-  if (parserError) {
-    throw new Error("Invalid TCX file: XML parsing error");
-  }
-
-  const rootName = doc.documentElement.nodeName.toLowerCase();
-  if (!rootName.endsWith("trainingcenterdatabase")) {
-    throw new Error("Invalid TCX file: root element must be <TrainingCenterDatabase>");
-  }
-
+function parseTCXDocument(doc: Document): ParsedRoute {
   const name = extractFirstText(doc, "Name") ?? extractFirstText(doc, "Id");
   const time = extractFirstText(doc, "Id");
   const coordinates = extractTCXCoordinates(doc);
@@ -91,24 +147,24 @@ export function parseTCX(tcxContent: string): ParsedRoute {
  */
 function extractName(doc: Document): string | undefined {
   // Try metadata name first
-  const metadataName = doc.getElementsByTagName("name")[0];
+  const metadataName = elementsByLocalName(doc, "name")[0];
   if (metadataName?.textContent) {
     return metadataName.textContent.trim();
   }
 
   // Try first track name
-  const tracks = doc.getElementsByTagName("trk");
+  const tracks = elementsByLocalName(doc, "trk");
   if (tracks.length > 0 && tracks[0]) {
-    const trkName = tracks[0].getElementsByTagName("name")[0];
+    const trkName = elementsByLocalName(tracks[0], "name")[0];
     if (trkName?.textContent) {
       return trkName.textContent.trim();
     }
   }
 
   // Try first route name
-  const routes = doc.getElementsByTagName("rte");
+  const routes = elementsByLocalName(doc, "rte");
   if (routes.length > 0 && routes[0]) {
-    const rteName = routes[0].getElementsByTagName("name")[0];
+    const rteName = elementsByLocalName(routes[0], "name")[0];
     if (rteName?.textContent) {
       return rteName.textContent.trim();
     }
@@ -123,22 +179,22 @@ function extractName(doc: Document): string | undefined {
 function extractMetadata(doc: Document): ParsedRoute["metadata"] {
   const metadata: ParsedRoute["metadata"] = {};
 
-  const metadataElement = doc.getElementsByTagName("metadata")[0];
+  const metadataElement = elementsByLocalName(doc, "metadata")[0];
   if (metadataElement) {
-    const authorElement = metadataElement.getElementsByTagName("author")[0];
+    const authorElement = elementsByLocalName(metadataElement, "author")[0];
     if (authorElement) {
-      const nameElement = authorElement.getElementsByTagName("name")[0];
+      const nameElement = elementsByLocalName(authorElement, "name")[0];
       if (nameElement?.textContent) {
         metadata.author = nameElement.textContent.trim();
       }
     }
 
-    const timeElement = metadataElement.getElementsByTagName("time")[0];
+    const timeElement = elementsByLocalName(metadataElement, "time")[0];
     if (timeElement?.textContent) {
       metadata.time = timeElement.textContent.trim();
     }
 
-    const boundsElement = metadataElement.getElementsByTagName("bounds")[0];
+    const boundsElement = elementsByLocalName(metadataElement, "bounds")[0];
     if (boundsElement) {
       const minLat = parseFloat(boundsElement.getAttribute("minlat") || "0");
       const maxLat = parseFloat(boundsElement.getAttribute("maxlat") || "0");
@@ -159,23 +215,23 @@ function extractCoordinates(doc: Document): LatLngAlt[] {
   const coordinates: LatLngAlt[] = [];
 
   // Extract from tracks (most common in GPX files)
-  const tracks = doc.getElementsByTagName("trk");
+  const tracks = elementsByLocalName(doc, "trk");
   for (let i = 0; i < tracks.length; i++) {
     const track = tracks[i];
     if (!track) continue;
-    const segments = track.getElementsByTagName("trkseg");
+    const segments = elementsByLocalName(track, "trkseg");
 
     for (let j = 0; j < segments.length; j++) {
       const segment = segments[j];
       if (!segment) continue;
-      const trackPoints = segment.getElementsByTagName("trkpt");
+      const trackPoints = elementsByLocalName(segment, "trkpt");
 
       for (let k = 0; k < trackPoints.length; k++) {
         const trackPoint = trackPoints[k];
         if (!trackPoint) continue;
         const point = parseTrackPoint(trackPoint);
         if (point) {
-          coordinates.push(point);
+          appendCoordinate(coordinates, point);
         }
       }
     }
@@ -183,18 +239,18 @@ function extractCoordinates(doc: Document): LatLngAlt[] {
 
   // If no tracks found, try routes
   if (coordinates.length === 0) {
-    const routes = doc.getElementsByTagName("rte");
+    const routes = elementsByLocalName(doc, "rte");
     for (let i = 0; i < routes.length; i++) {
       const route = routes[i];
       if (!route) continue;
-      const routePoints = route.getElementsByTagName("rtept");
+      const routePoints = elementsByLocalName(route, "rtept");
 
       for (let j = 0; j < routePoints.length; j++) {
         const routePoint = routePoints[j];
         if (!routePoint) continue;
         const point = parseRoutePoint(routePoint);
         if (point) {
-          coordinates.push(point);
+          appendCoordinate(coordinates, point);
         }
       }
     }
@@ -202,13 +258,13 @@ function extractCoordinates(doc: Document): LatLngAlt[] {
 
   // If still no coordinates, try waypoints as a last resort
   if (coordinates.length === 0) {
-    const waypoints = doc.getElementsByTagName("wpt");
+    const waypoints = elementsByLocalName(doc, "wpt");
     for (let i = 0; i < waypoints.length; i++) {
       const waypoint = waypoints[i];
       if (!waypoint) continue;
       const point = parseWaypoint(waypoint);
       if (point) {
-        coordinates.push(point);
+        appendCoordinate(coordinates, point);
       }
     }
   }
@@ -227,7 +283,7 @@ function parseTrackPoint(element: Element): LatLngAlt | null {
     return null;
   }
 
-  const elevationElement = element.getElementsByTagName("ele")[0];
+  const elevationElement = elementsByLocalName(element, "ele")[0];
   const altitude = elevationElement?.textContent
     ? parseFloat(elevationElement.textContent)
     : undefined;
@@ -257,49 +313,42 @@ function parseWaypoint(element: Element): LatLngAlt | null {
  * Main route parser that handles different file types
  * Currently supports GPX, can be extended for TCX, FIT, etc.
  */
-export function parseRoute(routeContent: string, fileType?: string): ParsedRoute {
-  // Auto-detect file type from content if not provided
-  const detectedType = fileType || detectFileType(routeContent);
+export function parseRouteWithFormat(
+  routeContent: string,
+  fileType?: string,
+): { format: RouteContentFormat; route: ParsedRoute } {
+  const expectedFormat = getExpectedFormat(fileType);
+  const document = parseXmlDocument(routeContent);
+  const format = getDocumentFormat(document);
 
-  switch (detectedType.toLowerCase()) {
-    case "gpx":
-    case "application/gpx+xml":
-    case "text/xml":
-      return parseGPX(routeContent);
-
-    case "tcx":
-    case "application/vnd.garmin.tcx+xml":
-      return parseTCX(routeContent);
-
-    default:
-      throw new Error(`Unsupported route file type: ${detectedType}`);
+  if (expectedFormat && expectedFormat !== format) {
+    throw new Error("Route file extension does not match its content");
   }
+
+  return {
+    format,
+    route: format === "gpx" ? parseGPXDocument(document) : parseTCXDocument(document),
+  };
+}
+
+export function parseRoute(routeContent: string, fileType?: string): ParsedRoute {
+  return parseRouteWithFormat(routeContent, fileType).route;
 }
 
 /**
  * Detect file type from content
  */
-function detectFileType(content: string): string {
-  const trimmed = content.trim();
-
-  if (trimmed.includes("<TrainingCenterDatabase")) {
-    return "tcx";
-  }
-
-  if (trimmed.startsWith("<?xml") || trimmed.includes("<gpx")) {
-    return "gpx";
-  }
-
-  throw new Error("Unable to detect route file type");
+export function detectRouteContentFormat(content: string): RouteContentFormat {
+  return getDocumentFormat(parseXmlDocument(content));
 }
 
 function extractTCXCoordinates(doc: Document): LatLngAlt[] {
   const coordinates: LatLngAlt[] = [];
-  const trackpoints = doc.getElementsByTagName("Trackpoint");
+  const trackpoints = elementsByLocalName(doc, "Trackpoint");
 
   for (let index = 0; index < trackpoints.length; index += 1) {
     const point = parseTCXTrackpoint(trackpoints[index]);
-    if (point) coordinates.push(point);
+    if (point) appendCoordinate(coordinates, point);
   }
 
   return coordinates;
@@ -308,7 +357,7 @@ function extractTCXCoordinates(doc: Document): LatLngAlt[] {
 function parseTCXTrackpoint(element: Element | undefined): LatLngAlt | null {
   if (!element) return null;
 
-  const position = element.getElementsByTagName("Position")[0];
+  const position = elementsByLocalName(element, "Position")[0];
   if (!position) return null;
 
   const latitude = parseNumberText(position, "LatitudeDegrees");
@@ -331,7 +380,7 @@ function parseNumberText(element: Element, tagName: string) {
 }
 
 function extractFirstText(element: Document | Element, tagName: string) {
-  return element.getElementsByTagName(tagName)[0]?.textContent?.trim() || undefined;
+  return elementsByLocalName(element, tagName)[0]?.textContent?.trim() || undefined;
 }
 
 /**
@@ -349,6 +398,10 @@ export function validateRoute(route: ParsedRoute): {
 
   if (route.coordinates && route.coordinates.length < 2) {
     errors.push("Route must have at least two coordinates");
+  }
+
+  if (route.coordinates && route.coordinates.length > MAX_ROUTE_POINT_COUNT) {
+    errors.push(`Route must contain at most ${MAX_ROUTE_POINT_COUNT} coordinates`);
   }
 
   // Check for invalid coordinates

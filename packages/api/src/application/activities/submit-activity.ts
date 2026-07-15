@@ -1,12 +1,23 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { activityLapRecordListSchema } from "@repo/core";
 import type { ActivityFileType } from "@repo/core/server/activity-files";
-import { activities, activityEfforts, integrationResourceLinks, profileMetrics } from "@repo/db";
+import {
+  activities,
+  type activityEfforts,
+  activityFileIngestions,
+  integrationResourceLinks,
+} from "@repo/db";
 import { and, eq } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
+import { reconcileGeneratedActivityEvidence } from "./reconcile-activity-evidence";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 type TransactionClient = Parameters<Parameters<DbClient["transaction"]>[0]>[0];
+
+export function recordingSessionActivityId(profileId: string, sessionId: string): string {
+  const hash = createHash("sha256").update(`${profileId}:${sessionId}`).digest("hex");
+  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+}
 
 export interface ActivitySubmissionComposition<Result = unknown> {
   persist(tx: TransactionClient, context: { activityId: string; now: Date }): Promise<Result>;
@@ -14,6 +25,7 @@ export interface ActivitySubmissionComposition<Result = unknown> {
 
 export interface ActivitySubmission {
   kind?: "create";
+  requestedActivityId?: string;
   profileId: string;
   name: string;
   notes: string | null;
@@ -57,6 +69,17 @@ export interface ActivitySubmission {
     integrationId: string;
     providerUpdatedAt: string | null;
   };
+  analysis?: {
+    efforts: Array<typeof activityEfforts.$inferInsert>;
+    detectedLTHR: number | null;
+    activityCompletedAt: Date;
+    ingestion?: {
+      source: "manual_import" | "provider_sync";
+      provider?: "wahoo" | null;
+      externalId?: string | null;
+      fileType: ActivityFileType;
+    };
+  };
   composition?: ActivitySubmissionComposition;
 }
 
@@ -86,10 +109,57 @@ export interface ExistingActivityEnrichmentSubmission {
   isPrivate?: boolean;
   startedAt?: Date;
   finishedAt?: Date;
+  ingestion?: {
+    source: "manual_import" | "provider_sync";
+    provider?: "wahoo" | null;
+    externalId?: string | null;
+  };
 }
 
 function stringOrNull(value: unknown) {
   return typeof value === "string" && value.trim() ? value : null;
+}
+
+async function persistReadyActivityFileIngestion(
+  tx: TransactionClient,
+  input: {
+    activityId: string;
+    profileId: string;
+    source: "manual_import" | "provider_sync";
+    provider?: "wahoo" | null;
+    externalId?: string | null;
+    filePath: string | null;
+    fileSize: number | null;
+    fileType: ActivityFileType;
+    now: Date;
+  },
+) {
+  await tx
+    .delete(activityFileIngestions)
+    .where(
+      and(
+        eq(activityFileIngestions.activity_id, input.activityId),
+        eq(activityFileIngestions.source, input.source),
+      ),
+    );
+  await tx.insert(activityFileIngestions).values({
+    id: randomUUID(),
+    activity_id: input.activityId,
+    profile_id: input.profileId,
+    source: input.source,
+    provider: input.provider ?? null,
+    external_id: input.externalId ?? null,
+    file_path: input.filePath,
+    file_size: input.fileSize,
+    file_type: input.fileType,
+    status: "ready",
+    attempt_count: 1,
+    requested_at: input.now,
+    started_at: input.now,
+    completed_at: input.now,
+    created_at: input.now,
+    updated_at: input.now,
+  });
 }
 
 export async function updateCanonicalActivityFields(
@@ -116,7 +186,8 @@ export async function submitActivity(
   db: DbClient,
   input: ActivitySubmission | ExistingActivityEnrichmentSubmission,
 ) {
-  const activityId = input.kind === "enrich" ? input.activityId : randomUUID();
+  const activityId =
+    input.kind === "enrich" ? input.activityId : (input.requestedActivityId ?? randomUUID());
   let compositionResult: unknown;
   await db.transaction(async (tx) => {
     const now = new Date();
@@ -164,30 +235,27 @@ export async function submitActivity(
           updated_at: now,
         })
         .where(and(eq(activities.id, activityId), eq(activities.profile_id, input.profileId)));
-      await tx.delete(activityEfforts).where(eq(activityEfforts.activity_id, activityId));
-      if (input.efforts.length)
-        await tx.insert(activityEfforts).values(
-          input.efforts.map((effort) => ({
-            ...effort,
-            activity_id: activityId,
-            profile_id: input.profileId,
-          })),
-        );
-      if (input.detectedLTHR)
-        await tx.insert(profileMetrics).values({
-          id: randomUUID(),
-          created_at: now,
-          profile_id: input.profileId,
-          metric_type: "lthr",
-          value: input.detectedLTHR,
-          unit: "bpm",
-          recorded_at: input.activityCompletedAt,
-          reference_activity_id: activityId,
-          source: "derived",
-          method: "activity_file_lthr_detection",
-          calculation_version: "activity-file-lthr-v1",
-          provenance: { activity_id: activityId, derived_from: "activity_file_stream" },
+      await reconcileGeneratedActivityEvidence(tx, {
+        activityId,
+        profileId: input.profileId,
+        efforts: input.efforts,
+        detectedLTHR: input.detectedLTHR,
+        activityCompletedAt: input.activityCompletedAt,
+        now,
+      });
+      if (input.ingestion) {
+        await persistReadyActivityFileIngestion(tx, {
+          activityId,
+          profileId: input.profileId,
+          source: input.ingestion.source,
+          provider: input.ingestion.provider,
+          externalId: input.ingestion.externalId,
+          filePath: input.activityFilePath,
+          fileSize: input.activityFileSize,
+          fileType: input.activityFileType,
+          now,
         });
+      }
       return;
     }
     const provenance = input.providerProvenance;
@@ -253,6 +321,30 @@ export async function submitActivity(
         created_at: now,
         updated_at: now,
       });
+    if (input.analysis) {
+      await reconcileGeneratedActivityEvidence(tx, {
+        activityId,
+        profileId: input.profileId,
+        efforts: input.analysis.efforts,
+        detectedLTHR: input.analysis.detectedLTHR,
+        activityCompletedAt: input.analysis.activityCompletedAt,
+        now,
+      });
+      const ingestion = input.analysis.ingestion;
+      if (ingestion) {
+        await persistReadyActivityFileIngestion(tx, {
+          activityId,
+          profileId: input.profileId,
+          source: ingestion.source,
+          provider: ingestion.provider,
+          externalId: ingestion.externalId,
+          filePath: input.activityFilePath ?? null,
+          fileSize: input.activityFileSize ?? null,
+          fileType: ingestion.fileType,
+          now,
+        });
+      }
+    }
     if (input.composition) {
       compositionResult = await input.composition.persist(tx, { activityId, now });
     }

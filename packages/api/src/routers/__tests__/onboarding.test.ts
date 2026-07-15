@@ -1,9 +1,11 @@
 import { defaultAthletePreferenceProfile } from "@repo/core";
+import type { CompleteOnboarding } from "@repo/core/schemas/onboarding";
 import {
   activities,
   activityEfforts,
   integrationCredentials,
   integrations,
+  profileGoals,
   profileMetrics,
   profiles,
   profileTrainingSettings,
@@ -25,6 +27,7 @@ vi.mock("../../lib/integrations/wahoo/client", () => ({
 }));
 
 import { OnboardingProviderEnrichmentService } from "../../application/onboarding-provider-enrichment";
+import { getOnboardingGoalId } from "../../repositories/onboarding-lifecycle-repository";
 import { onboardingRouter } from "../onboarding";
 
 type InsertCall = {
@@ -56,6 +59,17 @@ function createCaller(params?: {
   } | null;
   profileMetricRows?: Array<{ value: number; recorded_at: Date; notes?: string | null }>;
   profileTrainingSettingsValue?: unknown;
+  existingGoalRow?: {
+    id: string;
+    profile_id: string;
+    target_date: string;
+    title: string;
+    priority: number;
+    activity_category: string;
+    target_payload: unknown;
+  };
+  failGoalWrite?: boolean;
+  failSettingsWriteAfter?: number;
   syncRows?: Array<{
     integration_id: string;
     metadata: Record<string, unknown>;
@@ -71,18 +85,26 @@ function createCaller(params?: {
   const activityEffortRows = params?.activityEffortRows ?? [];
   const profileRow = params?.profileRow ?? null;
   const profileMetricRows = params?.profileMetricRows ?? [];
-  const profileTrainingSettingsValue = params?.profileTrainingSettingsValue;
+  let profileTrainingSettingsValue = params?.profileTrainingSettingsValue;
+  let storedGoal = params?.existingGoalRow;
+  let settingsWriteCount = 0;
   const syncRows = params?.syncRows ?? [];
+  let lifecycleOnboarded = profileRow?.onboarded ?? false;
   const insertCalls: InsertCall[] = [];
   const updateCalls: Array<{ table: unknown; values: unknown }> = [];
 
   const db = {
+    transaction: async () => undefined,
     update: (table: unknown) => {
       expect(table).toBe(profiles);
 
       return {
         set: (values: unknown) => {
           updateCalls.push({ table, values });
+          if (values && typeof values === "object" && "onboarded" in values) {
+            lifecycleOnboarded =
+              (values as { onboarded?: boolean }).onboarded ?? lifecycleOnboarded;
+          }
 
           return {
             where: () => ({
@@ -96,12 +118,33 @@ function createCaller(params?: {
       values: (values: unknown[] | unknown) => {
         insertCalls.push({ table, values });
         return {
-          onConflictDoUpdate: async () => [],
+          onConflictDoNothing: async () => {
+            if (table === profileGoals) {
+              if (params?.failGoalWrite) throw new Error("goal write unavailable");
+              if (!storedGoal) {
+                storedGoal = values as typeof storedGoal;
+              }
+            }
+            return [];
+          },
+          onConflictDoUpdate: async () => {
+            if (table === profileTrainingSettings) {
+              settingsWriteCount += 1;
+              if (
+                params?.failSettingsWriteAfter !== undefined &&
+                settingsWriteCount > params.failSettingsWriteAfter
+              ) {
+                throw new Error("settings write unavailable");
+              }
+              profileTrainingSettingsValue = (values as { settings: unknown }).settings;
+            }
+            return [];
+          },
           then: (resolve: (value: unknown[]) => void) => resolve([]),
         };
       },
     }),
-    select: () => ({
+    select: (selection?: Record<string, unknown>) => ({
       from: (table: unknown) => {
         if (table === integrations) {
           return {
@@ -127,6 +170,19 @@ function createCaller(params?: {
         }
 
         if (table === profiles) {
+          if (selection && "id" in selection) {
+            const rows = updatedProfileId
+              ? [{ id: updatedProfileId, onboarded: lifecycleOnboarded }]
+              : [];
+            return {
+              where: () => ({
+                limit: () => ({
+                  for: async () => rows,
+                  then: (resolve: (value: typeof rows) => void) => resolve(rows),
+                }),
+              }),
+            };
+          }
           return {
             where: () => ({
               limit: async () => (profileRow ? [profileRow] : []),
@@ -145,12 +201,35 @@ function createCaller(params?: {
         }
 
         if (table === profileTrainingSettings) {
+          const rows = () =>
+            profileTrainingSettingsValue === undefined
+              ? []
+              : [{ settings: profileTrainingSettingsValue }];
           return {
             where: () => ({
-              limit: async () =>
-                profileTrainingSettingsValue === undefined
-                  ? []
-                  : [{ settings: profileTrainingSettingsValue }],
+              limit: () => ({
+                for: async () => rows(),
+                then: (resolve: (value: ReturnType<typeof rows>) => void) => resolve(rows()),
+              }),
+            }),
+          };
+        }
+
+        if (table === profileGoals) {
+          const goalRow = storedGoal
+            ? {
+                id: storedGoal.id,
+                profile_id: storedGoal.profile_id,
+                target_date: storedGoal.target_date,
+                title: storedGoal.title,
+                priority: storedGoal.priority,
+                activity_category: storedGoal.activity_category,
+                target_payload: storedGoal.target_payload,
+              }
+            : null;
+          return {
+            where: () => ({
+              limit: async () => (goalRow ? [goalRow] : []),
             }),
           };
         }
@@ -186,8 +265,16 @@ function createCaller(params?: {
       },
     }),
   };
+  let transactionTail = Promise.resolve<unknown>(undefined);
   Object.assign(db, {
-    transaction: async (callback: (tx: typeof db) => Promise<unknown>) => callback(db),
+    transaction: (callback: (tx: typeof db) => Promise<unknown>) => {
+      const result = transactionTail.then(() => callback(db));
+      transactionTail = result.then(
+        () => undefined,
+        () => undefined,
+      );
+      return result;
+    },
   });
 
   const caller = onboardingRouter.createCaller({
@@ -402,6 +489,7 @@ describe("onboardingRouter", () => {
       username: "provider-athlete",
       experience_level: "advanced",
       ftp: 248,
+      baseline_field_sources: { ftp: "imported" },
     });
 
     expect(result.created.profile_metrics).toBe(0);
@@ -456,6 +544,107 @@ describe("onboardingRouter", () => {
         provenance: { seed_source: "advanced" },
       }),
     ]);
+  });
+
+  it("persists explicit DOB and gender clears as profile nulls", async () => {
+    const { caller, updateCalls } = createCaller();
+
+    await caller.completeOnboarding({
+      full_name: "Clearing Athlete",
+      username: "clearing-athlete",
+      baseline_field_sources: { dob: "cleared", gender: "cleared" },
+    });
+
+    expect(updateCalls.find((call) => call.table === profiles)?.values).toEqual(
+      expect.objectContaining({ dob: null, gender: null }),
+    );
+  });
+
+  it("persists explicit estimated, imported, and manual metric provenance", async () => {
+    const { caller, insertCalls } = createCaller();
+
+    await caller.completeOnboarding({
+      full_name: "Sourced Athlete",
+      username: "sourced-athlete",
+      experience_level: "advanced",
+      max_hr: 185,
+      resting_hr: 52,
+      ftp: 250,
+      baseline_field_sources: {
+        max_hr: "estimated",
+        resting_hr: "imported",
+        ftp: "manual",
+      },
+    });
+
+    expect(insertCalls.find((call) => call.table === profileMetrics)?.values).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          metric_type: "max_hr",
+          source: "estimated",
+          method: "onboarding_estimated_seed",
+          provenance: expect.objectContaining({ seed_type: "estimated" }),
+        }),
+        expect.objectContaining({
+          metric_type: "resting_hr",
+          source: "imported",
+          method: "onboarding_imported_seed",
+          provenance: expect.objectContaining({ seed_type: "imported" }),
+        }),
+        expect.objectContaining({
+          metric_type: "ftp",
+          source: "manual",
+          method: "onboarding_manual_seed",
+          provenance: expect.objectContaining({ seed_type: "manual" }),
+        }),
+      ]),
+    );
+    expect(insertCalls.find((call) => call.table === activityEfforts)?.values).toEqual([
+      expect.objectContaining({ provenance: { seed_source: "manual" } }),
+    ]);
+  });
+
+  it("suppresses cleared generated metrics and efforts without deleting historical evidence", async () => {
+    const historicalMetric = { value: 275, recorded_at: new Date("2025-01-01T00:00:00.000Z") };
+    const { caller, insertCalls } = createCaller({ profileMetricRows: [historicalMetric] });
+
+    await caller.completeOnboarding({
+      full_name: "Clear Baseline Athlete",
+      username: "clear-baseline-athlete",
+      experience_level: "beginner",
+      dob: "1990-01-01T00:00:00.000Z",
+      gender: "male",
+      weight_kg: 70,
+      max_hr: 190,
+      ftp: 260,
+      threshold_pace_seconds_per_km: 270,
+      css_seconds_per_hundred_meters: 100,
+      baseline_field_sources: {
+        max_hr: "cleared",
+        ftp: "cleared",
+        threshold_pace_seconds_per_km: "cleared",
+        css_seconds_per_hundred_meters: "cleared",
+      },
+    });
+
+    const insertedMetrics =
+      (insertCalls.find((call) => call.table === profileMetrics)?.values as
+        | Array<{ metric_type: string }>
+        | undefined) ?? [];
+    expect(insertedMetrics.map(({ metric_type }) => metric_type)).not.toEqual(
+      expect.arrayContaining([
+        "max_hr",
+        "ftp",
+        "threshold_pace_seconds_per_km",
+        "css_seconds_per_100m",
+      ]),
+    );
+    expect(insertCalls.some((call) => call.table === activityEfforts)).toBe(false);
+    // Completion deliberately has no delete/tombstone path; historical evidence is left untouched.
+    expect(historicalMetric).toEqual({
+      value: 275,
+      recorded_at: new Date("2025-01-01T00:00:00.000Z"),
+    });
   });
 
   it("writes Wahoo enrichment values to canonical storage and sync state", async () => {
@@ -710,6 +899,33 @@ describe("onboardingRouter", () => {
     ).resolves.toMatchObject({ success: true });
   });
 
+  it("returns a stable conflict when the username is claimed during completion", async () => {
+    const { caller, db } = createCaller();
+    const transactionDb = db as typeof db & {
+      transaction: (callback: (tx: typeof db) => Promise<unknown>) => Promise<unknown>;
+    };
+    transactionDb.transaction = async () => {
+      throw {
+        code: "23505",
+        constraint: "profiles_username_unique_idx",
+      };
+    };
+
+    await expect(
+      caller.completeOnboarding({
+        full_name: "Test Athlete",
+        username: "testathlete",
+        experience_level: "beginner",
+        dob: "1990-01-01T00:00:00.000Z",
+        weight_kg: 70,
+        gender: "male",
+      }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "That username is already taken",
+    });
+  });
+
   it("blocks completion while Wahoo onboarding enrichment is running", async () => {
     const userId = "11111111-1111-4111-8111-111111111111";
     const integrationId = "22222222-2222-4222-8222-222222222222";
@@ -735,5 +951,326 @@ describe("onboardingRouter", () => {
         gender: "male",
       }),
     ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+  });
+
+  const lifecycleProfile: CompleteOnboarding = {
+    full_name: "Lifecycle Athlete",
+    username: "lifecycle-athlete",
+    experience_level: "skip",
+    intents: ["train_event", "groups"],
+    ftp: 250,
+  };
+  const lifecycleGoal = {
+    target_date: "2026-09-13",
+    title: "Break 20 for 5K",
+    priority: 1,
+    activity_category: "run" as const,
+    target_payload: {
+      type: "event_performance" as const,
+      activity_category: "run" as const,
+      distance_m: 5000,
+      target_time_s: 1200,
+      tolerance_pct: 0.02,
+      environment: "road" as const,
+    },
+  };
+  const lifecycleSettingsPatch = { preset: "push_harder" as const };
+
+  it("completes lifecycle setup once and makes a repeat effect-idempotent", async () => {
+    const { caller, insertCalls } = createCaller();
+
+    const first = await caller.completeLifecycleSetup({
+      profile: lifecycleProfile,
+      goal: lifecycleGoal,
+      settings_patch: lifecycleSettingsPatch,
+    });
+    const repeated = await caller.completeLifecycleSetup({
+      profile: { ...lifecycleProfile, full_name: "Do Not Rewrite", username: "different-name" },
+      goal: lifecycleGoal,
+      settings_patch: lifecycleSettingsPatch,
+    });
+
+    expect(first).toMatchObject({
+      status: "completed",
+      goal: { status: "saved", retryable: false },
+      settings: { status: "saved", retryable: false },
+      retryable: false,
+      cache_tags: [
+        "onboarding.getImportedOnboardingValues",
+        "goals.list",
+        "profileSettings.getForProfile",
+      ],
+    });
+    expect(repeated).toMatchObject({
+      status: "already_completed",
+      goal: { status: "saved", retryable: false },
+      settings: { status: "unchanged", retryable: false },
+    });
+    expect(insertCalls.filter((call) => call.table === profileMetrics)).toHaveLength(1);
+    expect(insertCalls.filter((call) => call.table === activityEfforts)).toHaveLength(1);
+    expect(
+      new Set(
+        insertCalls
+          .filter((call) => call.table === profileGoals)
+          .map((call) => (call.values as { id: string }).id),
+      ),
+    ).toEqual(new Set([getOnboardingGoalId("11111111-1111-4111-8111-111111111111")]));
+    expect(
+      insertCalls.filter((call) => call.table === profileTrainingSettings).at(-1)?.values,
+    ).toMatchObject({
+      profile_id: "11111111-1111-4111-8111-111111111111",
+      settings: { onboarding_intents: ["train_event", "groups"] },
+    });
+  });
+
+  it("patches only named compact settings and preserves newer advanced settings", async () => {
+    const current = {
+      ...defaultAthletePreferenceProfile,
+      dose_limits: {
+        ...defaultAthletePreferenceProfile.dose_limits,
+        min_sessions_per_week: 2,
+        max_sessions_per_week: 8,
+        max_weekly_duration_minutes: 900,
+        sport_overrides: {
+          run: { max_sessions_per_week: 6 },
+          bike: { max_sessions_per_week: 7 },
+        },
+      },
+      recovery_preferences: {
+        ...defaultAthletePreferenceProfile.recovery_preferences,
+        post_goal_recovery_days: 12,
+      },
+    };
+    const { caller, insertCalls } = createCaller({
+      profileRow: { dob: null, gender: null, onboarded: true },
+      profileTrainingSettingsValue: current,
+    });
+
+    await caller.completeLifecycleSetup({
+      profile: lifecycleProfile,
+      settings_patch: { minSessionsPerWeek: 4 },
+    });
+
+    const saved = insertCalls.filter((call) => call.table === profileTrainingSettings).at(-1)
+      ?.values as { settings: typeof current };
+    expect(saved.settings.dose_limits.min_sessions_per_week).toBe(4);
+    expect(saved.settings.dose_limits.max_sessions_per_week).toBe(8);
+    expect(saved.settings.dose_limits.max_weekly_duration_minutes).toBe(900);
+    expect(saved.settings.dose_limits.sport_overrides).toEqual(current.dose_limits.sport_overrides);
+    expect(saved.settings.recovery_preferences.post_goal_recovery_days).toBe(12);
+    expect(saved.settings.onboarding_intents).toEqual(lifecycleProfile.intents);
+  });
+
+  it("uses canonical defaults when no settings row exists", async () => {
+    const { caller, insertCalls } = createCaller({
+      profileRow: { dob: null, gender: null, onboarded: true },
+    });
+
+    await caller.completeLifecycleSetup({
+      profile: lifecycleProfile,
+      settings_patch: { maxWeeklyMinutes: 480, preset: "safer" },
+    });
+
+    const saved = insertCalls.filter((call) => call.table === profileTrainingSettings).at(-1)
+      ?.values as { settings: typeof defaultAthletePreferenceProfile };
+    expect(saved.settings.dose_limits.min_sessions_per_week).toBe(3);
+    expect(saved.settings.dose_limits.max_weekly_duration_minutes).toBe(480);
+    expect(saved.settings.training_style.progression_pace).toBe(0.25);
+  });
+
+  it("treats reordered sport override records as unchanged", async () => {
+    const settings = {
+      ...defaultAthletePreferenceProfile,
+      dose_limits: {
+        ...defaultAthletePreferenceProfile.dose_limits,
+        sport_overrides: {
+          bike: { max_sessions_per_week: 5 },
+          run: { max_sessions_per_week: 4 },
+        },
+      },
+      onboarding_intents: lifecycleProfile.intents,
+    };
+    const { caller } = createCaller({
+      profileRow: { dob: null, gender: null, onboarded: true },
+      profileTrainingSettingsValue: settings,
+    });
+
+    await expect(
+      caller.completeLifecycleSetup({ profile: lifecycleProfile, settings_patch: {} }),
+    ).resolves.toMatchObject({ settings: { status: "unchanged", retryable: false } });
+  });
+
+  it("rejects malformed compact settings before writes", async () => {
+    const { caller, insertCalls, updateCalls } = createCaller();
+
+    await expect(
+      caller.completeLifecycleSetup({
+        profile: lifecycleProfile,
+        settings_patch: { minSessionsPerWeek: 9, maxSessionsPerWeek: 2 },
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(insertCalls).toEqual([]);
+    expect(updateCalls).toEqual([]);
+  });
+
+  it("returns a retryable partial failure when a valid patch conflicts with latest settings", async () => {
+    const { caller } = createCaller({
+      profileRow: { dob: null, gender: null, onboarded: true },
+      profileTrainingSettingsValue: {
+        ...defaultAthletePreferenceProfile,
+        dose_limits: { ...defaultAthletePreferenceProfile.dose_limits, max_sessions_per_week: 3 },
+      },
+    });
+
+    await expect(
+      caller.completeLifecycleSetup({
+        profile: lifecycleProfile,
+        settings_patch: { minSessionsPerWeek: 4 },
+      }),
+    ).resolves.toMatchObject({
+      status: "already_completed",
+      settings: { status: "failed", retryable: true, failure_code: "temporarily_unavailable" },
+      retryable: true,
+    });
+  });
+
+  it("serializes rapid completion calls at the profile lock without duplicate observations", async () => {
+    const { caller, insertCalls } = createCaller();
+
+    const results = await Promise.all([
+      caller.completeLifecycleSetup({ profile: lifecycleProfile }),
+      caller.completeLifecycleSetup({ profile: lifecycleProfile }),
+    ]);
+
+    expect(results.map((result) => result.status).sort()).toEqual([
+      "already_completed",
+      "completed",
+    ]);
+    expect(insertCalls.filter((call) => call.table === profileMetrics)).toHaveLength(1);
+    expect(insertCalls.filter((call) => call.table === activityEfforts)).toHaveLength(1);
+  });
+
+  it("keeps legacy completion compatible while suppressing retry observations", async () => {
+    const { caller, insertCalls } = createCaller();
+
+    await expect(caller.completeOnboarding(lifecycleProfile)).resolves.toMatchObject({
+      success: true,
+      created: { profile_metrics: 1, activity_efforts: 1 },
+    });
+    await expect(
+      caller.completeOnboarding({
+        ...lifecycleProfile,
+        full_name: "Finalized identity must not change",
+      }),
+    ).resolves.toMatchObject({
+      success: true,
+      created: { profile_metrics: 0, activity_efforts: 0 },
+    });
+    expect(insertCalls.filter((call) => call.table === profileMetrics)).toHaveLength(1);
+    expect(insertCalls.filter((call) => call.table === activityEfforts)).toHaveLength(1);
+  });
+
+  it("repairs optional sections after onboarding and skips volatile provider prerequisites", async () => {
+    const userId = "11111111-1111-4111-8111-111111111111";
+    const integrationId = "22222222-2222-4222-8222-222222222222";
+    const { caller } = createCaller({
+      profileRow: { dob: null, gender: null, onboarded: true },
+      integrationRows: [{ id: integrationId, provider: "wahoo", profile_id: userId }],
+      syncRows: [
+        {
+          integration_id: integrationId,
+          metadata: { status: "running", blocking: true },
+          last_sync_started_at: new Date("2026-05-16T00:00:00.000Z"),
+        },
+      ],
+    });
+
+    await expect(
+      caller.completeLifecycleSetup({
+        profile: lifecycleProfile,
+        goal: lifecycleGoal,
+        settings_patch: lifecycleSettingsPatch,
+      }),
+    ).resolves.toMatchObject({
+      status: "already_completed",
+      goal: { status: "saved" },
+      settings: { status: "saved" },
+    });
+  });
+
+  it("continues to settings when goal persistence fails", async () => {
+    const { caller } = createCaller({ failGoalWrite: true });
+
+    await expect(
+      caller.completeLifecycleSetup({
+        profile: lifecycleProfile,
+        goal: lifecycleGoal,
+        settings_patch: lifecycleSettingsPatch,
+      }),
+    ).resolves.toMatchObject({
+      status: "completed",
+      goal: { status: "failed", retryable: true, failure_code: "temporarily_unavailable" },
+      settings: { status: "saved", retryable: false },
+      retryable: true,
+    });
+  });
+
+  it("keeps a saved goal when optional settings persistence fails", async () => {
+    const { caller } = createCaller({ failSettingsWriteAfter: 1 });
+
+    await expect(
+      caller.completeLifecycleSetup({
+        profile: lifecycleProfile,
+        goal: lifecycleGoal,
+        settings_patch: lifecycleSettingsPatch,
+      }),
+    ).resolves.toMatchObject({
+      status: "completed",
+      goal: { status: "saved", retryable: false },
+      settings: {
+        status: "failed",
+        retryable: true,
+        failure_code: "temporarily_unavailable",
+      },
+      retryable: true,
+    });
+  });
+
+  it("does not overwrite a deterministic onboarding goal conflict", async () => {
+    const userId = "11111111-1111-4111-8111-111111111111";
+    const { caller } = createCaller({
+      existingGoalRow: {
+        id: getOnboardingGoalId(userId),
+        profile_id: userId,
+        ...lifecycleGoal,
+        title: "Existing different goal",
+      },
+    });
+
+    await expect(
+      caller.completeLifecycleSetup({ profile: lifecycleProfile, goal: lifecycleGoal }),
+    ).resolves.toMatchObject({
+      status: "completed",
+      goal: { status: "failed", retryable: false, failure_code: "content_conflict" },
+      settings: { status: "skipped", retryable: false },
+    });
+  });
+
+  it("derives lifecycle ownership only from the authenticated session", async () => {
+    const userId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const { caller, insertCalls } = createCaller({ userId });
+
+    await caller.completeLifecycleSetup({
+      profile: lifecycleProfile,
+      goal: lifecycleGoal,
+      settings_patch: lifecycleSettingsPatch,
+    });
+
+    expect(insertCalls.find((call) => call.table === profileGoals)?.values).toMatchObject({
+      profile_id: userId,
+    });
+    expect(
+      insertCalls.filter((call) => call.table === profileTrainingSettings).at(-1)?.values,
+    ).toMatchObject({ profile_id: userId });
   });
 });

@@ -33,6 +33,8 @@ export function useActivityPlanComposerProcess({
   submit,
 }: ActivityPlanComposerProcessParams) {
   const initialSignatureRef = useRef<string | null>(null);
+  const submitRef = useRef(submit);
+  submitRef.current = submit;
   const formSignature = useMemo(
     () =>
       JSON.stringify({
@@ -85,7 +87,7 @@ export function useActivityPlanComposerProcess({
         <LoadingButton
           variant="ghost"
           size="sm"
-          onPress={submit}
+          onPress={() => submitRef.current()}
           disabled={!canSubmit || isLoading || isSubmitting}
           loading={isSubmitting}
           loadingLabel="Saving..."
@@ -95,7 +97,7 @@ export function useActivityPlanComposerProcess({
         </LoadingButton>
       ),
     });
-  }, [navigation, isEditMode, submit, canSubmit, isLoading, isSubmitting]);
+  }, [navigation, isEditMode, canSubmit, isLoading, isSubmitting]);
 
   return {
     isDirty,

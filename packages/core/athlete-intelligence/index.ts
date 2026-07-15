@@ -11,6 +11,7 @@ export * from "./model-input-contracts";
 export * from "./physical-dimensions";
 export * from "./planning-context";
 export * from "./policies/activity-readiness";
+export * from "./policies/critical-power-capability";
 export * from "./policies/effort-curves";
 export * from "./policies/goal-demand";
 export * from "./policies/physiology-metrics";

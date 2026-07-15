@@ -13,9 +13,11 @@ const mockStorage = vi.hoisted(() => ({
 }));
 
 const mockRouteParser = vi.hoisted(() => ({
-  parseRoute: vi.fn(),
+  parseRouteWithFormat: vi.fn(),
   validateRoute: vi.fn(),
 }));
+
+const mockLogger = vi.hoisted(() => ({ error: vi.fn() }));
 
 const mockCore = vi.hoisted(() => ({
   calculateRouteStats: vi.fn(),
@@ -48,9 +50,11 @@ vi.mock("../../storage-service", () => ({
 }));
 
 vi.mock("../../lib/routes/route-parser", () => ({
-  parseRoute: mockRouteParser.parseRoute,
+  parseRouteWithFormat: mockRouteParser.parseRouteWithFormat,
   validateRoute: mockRouteParser.validateRoute,
 }));
+
+vi.mock("../../lib/logger", () => ({ logger: mockLogger }));
 
 vi.mock("@repo/core", () => ({
   calculateRouteStats: mockCore.calculateRouteStats,
@@ -114,12 +118,19 @@ beforeEach(() => {
   mockStorage.upload.mockResolvedValue({ error: null });
   mockStorage.download.mockResolvedValue({ error: null, data: null });
   mockStorage.remove.mockResolvedValue({ error: null });
-  mockRouteParser.parseRoute.mockReturnValue({
-    coordinates: [
-      { latitude: 40.1, longitude: -74.1, altitude: 10 },
-      { latitude: 40.2, longitude: -74.2, altitude: 20 },
-    ],
-  });
+  mockRandomUUID.mockReturnValue(UPLOADED_ROUTE_ID);
+  mockRouteParser.parseRouteWithFormat.mockImplementation((content: string, fileType?: string) => ({
+    format:
+      fileType === "tcx" || (fileType === "xml" && content.includes("TrainingCenterDatabase"))
+        ? "tcx"
+        : "gpx",
+    route: {
+      coordinates: [
+        { latitude: 40.1, longitude: -74.1, altitude: 10 },
+        { latitude: 40.2, longitude: -74.2, altitude: 20 },
+      ],
+    },
+  }));
   mockRouteParser.validateRoute.mockReturnValue({ valid: true, errors: [] });
   mockCore.calculateRouteStats.mockReturnValue({
     totalDistance: 1000,
@@ -332,7 +343,7 @@ describe("routesRouter", () => {
 
     expect(mockStorage.download).toHaveBeenCalledWith(`${OWNER_ID}/route.gpx`);
     expect(fileData.text).toHaveBeenCalled();
-    expect(mockRouteParser.parseRoute).toHaveBeenCalledWith("<gpx>route</gpx>", "gpx");
+    expect(mockRouteParser.parseRouteWithFormat).toHaveBeenCalledWith("<gpx>route</gpx>", "gpx");
     expect(result).toEqual({
       id: ROUTE_ID,
       name: "River Loop",
@@ -410,8 +421,9 @@ describe("routesRouter", () => {
     };
 
     mockStorage.download.mockResolvedValue({ error: null, data: fileData });
-    mockRouteParser.parseRoute.mockReturnValue({
-      coordinates: [{ latitude: 40.1, longitude: -74.1, altitude: Number.NaN }],
+    mockRouteParser.parseRouteWithFormat.mockReturnValue({
+      format: "gpx",
+      route: { coordinates: [{ latitude: 40.1, longitude: -74.1, altitude: Number.NaN }] },
     });
 
     const db = {
@@ -427,11 +439,9 @@ describe("routesRouter", () => {
   });
 
   it("uploads a parsed route, stores the file, and persists derived metadata", async () => {
-    vi.spyOn(Date, "now").mockReturnValue(1_706_000_000_000);
-
     const insertedRoute = createRouteRow({
       id: UPLOADED_ROUTE_ID,
-      file_path: `${OWNER_ID}/1706000000000.gpx`,
+      file_path: `${OWNER_ID}/${UPLOADED_ROUTE_ID}.gpx`,
       total_distance: 1000,
       total_ascent: 40,
       total_descent: 35,
@@ -458,7 +468,7 @@ describe("routesRouter", () => {
     expect(mockRouteParser.validateRoute).toHaveBeenCalled();
     expect(mockCore.calculateRouteStats).toHaveBeenCalled();
     expect(mockStorage.upload).toHaveBeenCalledWith(
-      `${OWNER_ID}/1706000000000.gpx`,
+      `${OWNER_ID}/${UPLOADED_ROUTE_ID}.gpx`,
       "<gpx>upload</gpx>",
       {
         contentType: "application/gpx+xml",
@@ -473,11 +483,9 @@ describe("routesRouter", () => {
   });
 
   it("uploads TCX routes through the TCX parser and stores TCX content type", async () => {
-    vi.spyOn(Date, "now").mockReturnValue(1_706_000_000_000);
-
     const insertedRoute = createRouteRow({
       id: UPLOADED_ROUTE_ID,
-      file_path: `${OWNER_ID}/1706000000000.tcx`,
+      file_path: `${OWNER_ID}/${UPLOADED_ROUTE_ID}.tcx`,
     });
 
     const db = {
@@ -496,15 +504,189 @@ describe("routesRouter", () => {
       fileName: "new-route.tcx",
     });
 
-    expect(mockRouteParser.parseRoute).toHaveBeenCalledWith("<TrainingCenterDatabase />", "tcx");
+    expect(mockRouteParser.parseRouteWithFormat).toHaveBeenCalledWith(
+      "<TrainingCenterDatabase />",
+      "tcx",
+    );
     expect(mockStorage.upload).toHaveBeenCalledWith(
-      `${OWNER_ID}/1706000000000.tcx`,
+      `${OWNER_ID}/${UPLOADED_ROUTE_ID}.tcx`,
       "<TrainingCenterDatabase />",
       {
         contentType: "application/vnd.garmin.tcx+xml",
         upsert: false,
       },
     );
+  });
+
+  it("canonicalizes XML uploads from their sniffed route format", async () => {
+    const insertedRoute = createRouteRow({
+      id: UPLOADED_ROUTE_ID,
+      file_path: `${OWNER_ID}/${UPLOADED_ROUTE_ID}.tcx`,
+    });
+    const values = vi.fn(() => ({ returning: vi.fn().mockResolvedValue([insertedRoute]) }));
+    const db = {
+      insert: vi.fn(() => ({
+        values,
+      })),
+    };
+    const content = "<TrainingCenterDatabase />";
+
+    await createCaller(db).upload({
+      name: "XML route",
+      description: "   ",
+      fileContent: content,
+      fileName: "route.xml",
+    });
+
+    expect(mockStorage.upload).toHaveBeenCalledWith(
+      `${OWNER_ID}/${UPLOADED_ROUTE_ID}.tcx`,
+      content,
+      {
+        contentType: "application/vnd.garmin.tcx+xml",
+        upsert: false,
+      },
+    );
+    expect(values).toHaveBeenCalledWith(expect.objectContaining({ description: null }));
+  });
+
+  it("rejects oversize UTF-8 content before parsing or storage", async () => {
+    const caller = createCaller({ insert: vi.fn() });
+    const oversize = `é${"a".repeat(10_485_759)}`;
+
+    await expect(
+      caller.upload({ name: "Too large", fileContent: oversize, fileName: "route.gpx" }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(mockRouteParser.parseRouteWithFormat).not.toHaveBeenCalled();
+    expect(mockStorage.upload).not.toHaveBeenCalled();
+  });
+
+  it("accepts exactly 10 MiB before invoking the parser", async () => {
+    mockRouteParser.parseRouteWithFormat.mockImplementationOnce(() => {
+      throw new Error("parse marker");
+    });
+    const caller = createCaller({ insert: vi.fn() });
+
+    await expect(
+      caller.upload({
+        name: "Exact size",
+        fileContent: `<gpx>${"a".repeat(10_485_749)}</gpx>`,
+        fileName: "route.gpx",
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(mockRouteParser.parseRouteWithFormat).toHaveBeenCalledOnce();
+    expect(mockStorage.upload).not.toHaveBeenCalled();
+  });
+
+  it("rejects unsafe filenames at the input boundary", async () => {
+    const caller = createCaller({ insert: vi.fn() });
+
+    await expect(
+      caller.upload({ name: "Unsafe", fileContent: "<gpx />", fileName: "../route.gpx" }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    expect(mockRouteParser.parseRouteWithFormat).not.toHaveBeenCalled();
+    expect(mockStorage.upload).not.toHaveBeenCalled();
+  });
+
+  it("does not upload when route parsing fails", async () => {
+    mockRouteParser.parseRouteWithFormat.mockImplementationOnce(() => {
+      throw new Error("private parser detail");
+    });
+
+    await expect(
+      createCaller({ insert: vi.fn() }).upload({
+        name: "Broken",
+        fileContent: "<gpx />",
+        fileName: "route.gpx",
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST", message: "Invalid route file" });
+    expect(mockStorage.upload).not.toHaveBeenCalled();
+  });
+
+  it("removes the uploaded file and hides database details when persistence fails", async () => {
+    const db = {
+      insert: vi.fn(() => ({
+        values: vi.fn(() => ({
+          returning: vi.fn().mockRejectedValue(new Error("secret db detail")),
+        })),
+      })),
+    };
+
+    await expect(
+      createCaller(db).upload({
+        name: "Cleanup",
+        fileContent: "<gpx />",
+        fileName: "route.gpx",
+      }),
+    ).rejects.toMatchObject({ code: "INTERNAL_SERVER_ERROR", message: "Failed to save route" });
+    expect(mockStorage.remove).toHaveBeenCalledOnce();
+  });
+
+  it("uses the route UUID for distinct storage paths and database IDs", async () => {
+    mockRandomUUID.mockReturnValueOnce(ROUTE_ID_2).mockReturnValueOnce(UPDATED_ROUTE_ID);
+    const values = vi.fn((_row: { id: string }) => ({
+      returning: vi.fn().mockResolvedValue([createRouteRow({ id: UPLOADED_ROUTE_ID })]),
+    }));
+    const db = { insert: vi.fn(() => ({ values })) };
+    const input = { name: "Same clock", fileContent: "<gpx />", fileName: "route.gpx" };
+
+    await createCaller(db).upload(input);
+    await createCaller(db).upload(input);
+
+    expect(mockStorage.upload.mock.calls.map(([path]) => path)).toEqual([
+      `${OWNER_ID}/${ROUTE_ID_2}.gpx`,
+      `${OWNER_ID}/${UPDATED_ROUTE_ID}.gpx`,
+    ]);
+    expect(values.mock.calls.map(([row]) => row.id)).toEqual([ROUTE_ID_2, UPDATED_ROUTE_ID]);
+  });
+
+  it("logs a public-safe event when cleanup returns a storage error", async () => {
+    mockStorage.remove.mockResolvedValue({ error: { message: "raw provider detail" } });
+    const db = {
+      insert: vi.fn(() => ({
+        values: vi.fn(() => ({ returning: vi.fn().mockRejectedValue(new Error("db detail")) })),
+      })),
+    };
+
+    await expect(
+      createCaller(db).upload({
+        name: "Cleanup",
+        fileContent: "<gpx />",
+        fileName: "route.gpx",
+      }),
+    ).rejects.toMatchObject({ code: "INTERNAL_SERVER_ERROR", message: "Failed to save route" });
+    expect(mockLogger.error).toHaveBeenCalledWith("Route upload cleanup failed", {
+      event: "route_upload_cleanup_failed",
+      bucket: "gpx-routes",
+      path: `${OWNER_ID}/${UPLOADED_ROUTE_ID}.gpx`,
+      correlationId: `route-upload:${UPLOADED_ROUTE_ID}`,
+      routeId: UPLOADED_ROUTE_ID,
+      failureKind: "storage_error_result",
+    });
+  });
+
+  it("logs a public-safe event when cleanup throws", async () => {
+    mockStorage.remove.mockRejectedValue(new Error("raw provider detail"));
+    const db = {
+      insert: vi.fn(() => ({
+        values: vi.fn(() => ({ returning: vi.fn().mockRejectedValue(new Error("db detail")) })),
+      })),
+    };
+
+    await expect(
+      createCaller(db).upload({
+        name: "Cleanup",
+        fileContent: "<gpx />",
+        fileName: "route.gpx",
+      }),
+    ).rejects.toMatchObject({ code: "INTERNAL_SERVER_ERROR", message: "Failed to save route" });
+    expect(mockLogger.error).toHaveBeenCalledWith("Route upload cleanup failed", {
+      event: "route_upload_cleanup_failed",
+      bucket: "gpx-routes",
+      path: `${OWNER_ID}/${UPLOADED_ROUTE_ID}.gpx`,
+      correlationId: `route-upload:${UPLOADED_ROUTE_ID}`,
+      routeId: UPLOADED_ROUTE_ID,
+      failureKind: "storage_exception",
+    });
   });
 
   it("deletes an unused route and removes its stored file", async () => {

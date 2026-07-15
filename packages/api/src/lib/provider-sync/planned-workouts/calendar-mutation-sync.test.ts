@@ -1,35 +1,47 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { enqueuePlannedWorkoutSyncAfterCalendarMutation } from "./calendar-mutation-sync";
+import {
+  enqueuePlannedWorkoutSyncAfterCalendarMutation,
+  getEventPlannedWorkoutProviderStatuses,
+} from "./calendar-mutation-sync";
 
 const {
   drainDueWahooPlannedWorkoutJobs,
   enqueueJob,
+  findCredentialsByProfileIdAndProvider,
   findWahooIntegrationByProfileId,
   getPlannedEventForSync,
   integrationsListByProfileId,
+  listEventResourceLinks,
+  listJobs,
   touchSyncState,
 } = vi.hoisted(() => ({
   drainDueWahooPlannedWorkoutJobs: vi.fn(),
   enqueueJob: vi.fn(),
+  findCredentialsByProfileIdAndProvider: vi.fn(),
   findWahooIntegrationByProfileId: vi.fn(),
   getPlannedEventForSync: vi.fn(),
   integrationsListByProfileId: vi.fn(),
+  listEventResourceLinks: vi.fn(),
+  listJobs: vi.fn(),
   touchSyncState: vi.fn(),
 }));
 
 vi.mock("../../../infrastructure/repositories", () => ({
   createIntegrationsRepositories: vi.fn(() => ({
     integrations: {
+      findCredentialsByProfileIdAndProvider,
       listByProfileId: integrationsListByProfileId,
     },
   })),
   createProviderSyncRepository: vi.fn(() => ({
     enqueueJob,
+    listJobs,
     touchSyncState,
   })),
   createWahooRepository: vi.fn(() => ({
     findWahooIntegrationByProfileId,
     getPlannedEventForSync,
+    listEventResourceLinks,
   })),
 }));
 
@@ -154,5 +166,147 @@ describe("enqueuePlannedWorkoutSyncAfterCalendarMutation", () => {
 
     expect(enqueueJob).toHaveBeenCalled();
     expect(drainDueWahooPlannedWorkoutJobs).not.toHaveBeenCalled();
+  });
+});
+
+describe("getEventPlannedWorkoutProviderStatuses", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    integrationsListByProfileId.mockResolvedValue([{ id: "integration-1", provider: "wahoo" }]);
+    findCredentialsByProfileIdAndProvider.mockResolvedValue(null);
+    listEventResourceLinks.mockResolvedValue([]);
+    listJobs.mockResolvedValue([]);
+  });
+
+  it.each([
+    "queued",
+    "running",
+  ] as const)("prefers a newer %s intent over an old dead-lettered job", async (status) => {
+    listJobs.mockResolvedValue([
+      {
+        id: "job-old-dead-letter",
+        internalResourceId: "event-1",
+        lastError: "old failure",
+        provider: "wahoo",
+        queueSequence: 41,
+        runAt: "2026-04-01T12:00:00.000Z",
+        status: "dead_lettered",
+        supersedesJobId: null,
+        updatedAt: "2026-04-01T09:00:00.000Z",
+      },
+      {
+        id: "job-new-intent",
+        internalResourceId: "event-1",
+        lastError: null,
+        provider: "wahoo",
+        queueSequence: 42,
+        runAt: "2026-04-01T11:00:00.000Z",
+        status,
+        supersedesJobId: null,
+        updatedAt: "2026-04-01T11:00:00.000Z",
+      },
+    ]);
+
+    await expect(
+      getEventPlannedWorkoutProviderStatuses({
+        db: {} as never,
+        eventId: "event-1",
+        profileId: "athlete-profile-id",
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        jobId: "job-new-intent",
+        lastError: null,
+        provider: "wahoo",
+        status: "queued",
+      }),
+    ]);
+    expect(listJobs).toHaveBeenCalledWith({
+      internalResourceId: "event-1",
+      limit: 100,
+      order: "newest_authority",
+      profileId: "athlete-profile-id",
+      provider: "wahoo",
+      statuses: ["queued", "running", "failed", "dead_lettered"],
+    });
+  });
+
+  it("prefers a newer successful resource link over an old failed job", async () => {
+    listJobs.mockResolvedValue([
+      {
+        id: "job-old-failure",
+        internalResourceId: "event-1",
+        lastError: "old failure",
+        provider: "wahoo",
+        runAt: "2026-04-01T12:00:00.000Z",
+        status: "failed",
+        supersedesJobId: null,
+        updatedAt: "2026-04-01T09:00:00.000Z",
+      },
+    ]);
+    listEventResourceLinks.mockResolvedValue([
+      {
+        externalId: "wahoo-plan-1",
+        id: "link-1",
+        provider: "wahoo",
+        syncedAt: "2026-04-01T10:00:00.000Z",
+        updatedAt: "2026-04-01T10:00:00.000Z",
+      },
+    ]);
+
+    await expect(
+      getEventPlannedWorkoutProviderStatuses({
+        db: {} as never,
+        eventId: "event-1",
+        profileId: "athlete-profile-id",
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        externalId: "wahoo-plan-1",
+        jobId: null,
+        provider: "wahoo",
+        status: "synced",
+      }),
+    ]);
+  });
+
+  it("does not hide a failure that is newer than the successful resource link", async () => {
+    listJobs.mockResolvedValue([
+      {
+        id: "job-new-failure",
+        internalResourceId: "event-1",
+        lastError: "new failure",
+        provider: "wahoo",
+        runAt: "2026-04-01T09:00:00.000Z",
+        status: "failed",
+        supersedesJobId: null,
+        updatedAt: "2026-04-01T11:00:00.000Z",
+      },
+    ]);
+    listEventResourceLinks.mockResolvedValue([
+      {
+        externalId: "wahoo-plan-1",
+        id: "link-1",
+        provider: "wahoo",
+        syncedAt: "2026-04-01T10:00:00.000Z",
+        updatedAt: "2026-04-01T10:00:00.000Z",
+      },
+    ]);
+
+    await expect(
+      getEventPlannedWorkoutProviderStatuses({
+        db: {} as never,
+        eventId: "event-1",
+        profileId: "athlete-profile-id",
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        externalId: null,
+        jobId: "job-new-failure",
+        lastError: "new failure",
+        provider: "wahoo",
+        status: "failed",
+      }),
+    ]);
   });
 });

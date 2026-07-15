@@ -1,6 +1,6 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@repo/ui/components/avatar";
 import { Button } from "@repo/ui/components/button";
-import { Input } from "@repo/ui/components/input";
+import { SearchField } from "@repo/ui/components/search-field";
 import { Text } from "@repo/ui/components/text";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { useState } from "react";
@@ -266,10 +266,14 @@ export default function GroupRequestsScreen() {
         title="Invite"
       >
         <View className="gap-3">
-          <Input
-            autoCapitalize="none"
-            onChangeText={setProfileSearch}
+          <SearchField
+            accessibilityLabel="Search athletes to invite"
+            clearTestId="group-requests-invite-search-clear"
+            loading={profileSearchQuery.isFetching}
+            loadingLabel="Searching athletes"
+            onValueChange={setProfileSearch}
             placeholder="Search by username"
+            testId="group-requests-invite-search-input"
             value={profileSearch}
           />
           {selectedProfiles.length > 0 ? (

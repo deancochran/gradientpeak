@@ -56,6 +56,14 @@ function TimeInput({
   const selectedTime = useMemo(() => parseTimeValue(value), [value]);
   const usesModalPresentation = pickerPresentation === "modal";
   const formattedValue = value ? format(selectedTime, is24Hour ? "HH:mm" : "h:mm a") : placeholder;
+  const fieldHint = [
+    required ? "Required" : undefined,
+    accessibilityHint ?? "Opens time picker. Format hh:mm",
+    helperText,
+    error ? `Error: ${error}` : undefined,
+  ]
+    .filter(Boolean)
+    .join(". ");
   const { role: _unusedRole, ...nativeTestProps } = getNativeTestProps({
     accessibilityLabel: label,
     id,
@@ -115,9 +123,11 @@ function TimeInput({
       </Label>
       <View className="flex-row items-center gap-2">
         <Pressable
-          accessibilityHint={accessibilityHint ?? "Opens time picker. Format hh:mm"}
+          accessibilityHint={fieldHint}
+          aria-invalid={!!error}
           accessibilityRole="button"
           accessibilityState={{ disabled }}
+          aria-required={required}
           className={`flex-1 rounded-md border px-3 py-3 ${error ? "border-destructive bg-destructive/5" : "border-input bg-background"}`}
           disabled={disabled}
           onPress={handleOpenPicker}
@@ -128,6 +138,7 @@ function TimeInput({
         {clearable && value ? (
           <Button
             accessibilityLabel="Clear time"
+            disabled={disabled}
             variant="ghost"
             size="sm"
             onPress={() => onChange(undefined)}

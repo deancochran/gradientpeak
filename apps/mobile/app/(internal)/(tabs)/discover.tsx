@@ -1,12 +1,12 @@
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { Icon } from "@repo/ui/components/icon";
-import { Input } from "@repo/ui/components/input";
 import { InlineLoadingStatus } from "@repo/ui/components/loading";
+import { SearchField } from "@repo/ui/components/search-field";
 import { Text } from "@repo/ui/components/text";
 import { keepPreviousData } from "@tanstack/react-query";
 import type { Href } from "expo-router";
 import { useLocalSearchParams } from "expo-router";
-import { ChevronRight, Search, SlidersHorizontal, X } from "lucide-react-native";
+import { ChevronRight, Search, SlidersHorizontal } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ScrollView, TouchableOpacity, View } from "react-native";
 import { DiscoverFilterSheet } from "@/components/discover/DiscoverFilterSheet";
@@ -547,41 +547,28 @@ export default function DiscoverPage() {
 
   const renderSearchInput = () => {
     const showFilterButton = activeScope !== "groups";
-    const clearButtonRight = showFilterButton ? 52 : 16;
 
     return (
       <View className="border-b border-border bg-background px-4 pb-3 pt-4">
-        <View className="relative rounded-2xl border border-border bg-card">
-          <View className="absolute left-3 top-1/2 -translate-y-1/2">
-            <Icon as={Search} size={18} className="text-muted-foreground" />
+        <View className="flex-row items-center gap-2">
+          <View className="flex-1">
+            <SearchField
+              accessibilityLabel={`Search ${getScopeNoun(activeScope)}`}
+              clearTestId="discover-search-clear"
+              loading={activeQuery.isFetching && !activeQuery.isFetchingNextPage}
+              loadingLabel={`Searching ${getScopeNoun(activeScope)}`}
+              maxLength={SEARCH_QUERY_MAX_LENGTH}
+              onValueChange={(value) => setSearchQuery(sanitizeSearchInput(value))}
+              placeholder={getSearchPlaceholder(activeScope)}
+              testId="discover-search-input"
+              value={searchQuery}
+              className="h-12 rounded-2xl bg-card"
+            />
           </View>
-          <Input
-            placeholder={getSearchPlaceholder(activeScope)}
-            value={searchQuery}
-            onChangeText={(value) => setSearchQuery(sanitizeSearchInput(value))}
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="search"
-            maxLength={SEARCH_QUERY_MAX_LENGTH}
-            className="h-12 border-0 bg-transparent pl-10 pr-24"
-            testID="discover-search-input"
-          />
-
-          {searchQuery.length > 0 ? (
-            <TouchableOpacity
-              className="absolute top-1/2 -translate-y-1/2"
-              style={{ right: clearButtonRight }}
-              onPress={() => setSearchQuery("")}
-              activeOpacity={0.8}
-              testID="discover-search-clear"
-            >
-              <Icon as={X} size={18} className="text-muted-foreground" />
-            </TouchableOpacity>
-          ) : null}
 
           {showFilterButton ? (
             <TouchableOpacity
-              className={`absolute right-2 top-1/2 h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border ${
+              className={`h-9 w-9 items-center justify-center rounded-full border ${
                 hasAnyFilters ? "border-primary bg-primary" : "border-border bg-background"
               }`}
               onPress={handleOpenFilterSheet}

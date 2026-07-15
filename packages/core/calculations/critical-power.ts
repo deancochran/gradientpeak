@@ -1,4 +1,7 @@
-import { classifyActivityEffortPlausibility } from "../athlete-inputs/activity-effort-policy";
+import {
+  classifyActivityEffortPlausibility,
+  getActivityEffortObservationStatus,
+} from "../athlete-inputs/activity-effort-policy";
 import type { CanonicalSport } from "../schemas";
 import type { BestEffort } from "../schemas/activity_efforts";
 
@@ -6,10 +9,88 @@ export interface CriticalPowerResult {
   source: "observed-curve-fit";
   cp: number;
   wPrime: number;
+  rSquared: number;
+  /** @deprecated Use rSquared. Retained as a compatibility alias. */
   error: number;
+  rmseWatts: number;
+  maxAbsoluteResidualWatts: number;
   fitMinDurationSeconds: number;
   fitMaxDurationSeconds: number;
   pointCount: number;
+  activityCount: number;
+  residuals: CriticalPowerResidual[];
+  stability: CriticalPowerStabilityDiagnostics;
+}
+
+export interface CriticalPowerResidual {
+  pointId: string;
+  durationSeconds: number;
+  observedWatts: number;
+  predictedWatts: number;
+  residualWatts: number;
+}
+
+export interface CriticalPowerStabilityDiagnostics {
+  maxCpChangeRatio: number;
+  maxWPrimeChangeRatio: number;
+  maxPredictionChangeRatio: number;
+}
+
+export interface CriticalPowerFitOptions {
+  minRSquared?: number;
+  minCpWatts?: number;
+  maxCpWatts?: number;
+  minWPrimeJoules?: number;
+  maxWPrimeJoules?: number;
+  maxCpChangeRatio?: number;
+  maxWPrimeChangeRatio?: number;
+  maxPredictionChangeRatio?: number;
+}
+
+export type CriticalPowerAbstentionReason =
+  | "unsupported-effort"
+  | "untrusted-effort"
+  | "insufficient-points"
+  | "insufficient-independent-activities"
+  | "duplicate-duration"
+  | "implausible-effort"
+  | "non-monotonic-curve"
+  | "missing-short-coverage"
+  | "missing-long-coverage"
+  | "degenerate-fit"
+  | "implausible-parameters"
+  | "poor-fit"
+  | "unstable-fit"
+  | "dominant-point";
+
+export type CriticalPowerEvaluation =
+  | { status: "accepted"; model: CriticalPowerResult }
+  | { status: "abstained"; reason: CriticalPowerAbstentionReason };
+
+export type ObservedCriticalPowerEffort = BestEffort & {
+  activity_id: string | null;
+  source: Parameters<typeof getActivityEffortObservationStatus>[0]["source"];
+  method: string | null;
+  provenance: unknown;
+};
+
+const DEFAULT_FIT_OPTIONS: Required<CriticalPowerFitOptions> = {
+  minRSquared: 0.95,
+  minCpWatts: 50,
+  maxCpWatts: 1_000,
+  minWPrimeJoules: 1_000,
+  maxWPrimeJoules: 100_000,
+  maxCpChangeRatio: 0.15,
+  maxWPrimeChangeRatio: 0.3,
+  maxPredictionChangeRatio: 0.1,
+};
+
+interface LinearFit {
+  cp: number;
+  wPrime: number;
+  rSquared: number;
+  rmseWatts: number;
+  residuals: number[];
 }
 
 /**
@@ -19,15 +100,15 @@ export interface CriticalPowerResult {
  * @param options - Optional filters for the calculation.
  * @returns A list of BestEffort objects, one for each duration, representing the best power output found.
  */
-export function calculateSeasonBestCurve(
-  efforts: BestEffort[],
+export function calculateSeasonBestCurve<T extends BestEffort>(
+  efforts: T[],
   options: {
     days?: number;
     now?: Date;
     activity_category?: CanonicalSport;
     effort_type?: "power" | "speed";
   } = {},
-): BestEffort[] {
+): T[] {
   const {
     days = 90,
     now = new Date(),
@@ -51,7 +132,7 @@ export function calculateSeasonBestCurve(
   });
 
   // 2. Group by duration and find max value
-  const bestByDuration = new Map<number, BestEffort>();
+  const bestByDuration = new Map<number, T>();
 
   for (const effort of filteredEfforts) {
     const currentBest = bestByDuration.get(effort.duration_seconds);
@@ -82,24 +163,54 @@ export function calculateSeasonBestCurve(
  * @param seasonBestCurve - An observed season-best power curve.
  * @returns The calculated CP and W', or null if insufficient data.
  */
-export function calculateCriticalPower(seasonBestCurve: BestEffort[]): CriticalPowerResult | null {
+export function evaluateCriticalPower(
+  seasonBestCurve: ObservedCriticalPowerEffort[],
+  options: CriticalPowerFitOptions = {},
+): CriticalPowerEvaluation {
+  const config = { ...DEFAULT_FIT_OPTIONS, ...options };
   if (
     seasonBestCurve.some(
       (effort) => effort.activity_category !== "bike" || effort.effort_type !== "power",
     )
   ) {
-    return null;
+    return { status: "abstained", reason: "unsupported-effort" };
   }
   const fitEfforts = seasonBestCurve.filter(
     (e) => e.duration_seconds >= 180 && e.duration_seconds <= 1800,
   );
   if (fitEfforts.length < 3) {
-    return null;
+    return { status: "abstained", reason: "insufficient-points" };
   }
 
   const validEfforts = [...fitEfforts].sort(
     (left, right) => left.duration_seconds - right.duration_seconds,
   );
+  if (
+    validEfforts.some(
+      (effort) =>
+        getActivityEffortObservationStatus({
+          activityCategory: effort.activity_category,
+          effortType: effort.effort_type,
+          durationSeconds: effort.duration_seconds,
+          value: effort.value,
+          unit: effort.unit,
+          activityId: effort.activity_id,
+          source: effort.source,
+          method: effort.method,
+          provenance: effort.provenance,
+        }) !== "observed",
+    )
+  ) {
+    return { status: "abstained", reason: "untrusted-effort" };
+  }
+  const activityIds = new Set(
+    validEfforts
+      .map((effort) => effort.activity_id)
+      .filter((activityId): activityId is string => typeof activityId === "string"),
+  );
+  if (activityIds.size < 2) {
+    return { status: "abstained", reason: "insufficient-independent-activities" };
+  }
   if (
     validEfforts.some(
       (effort) =>
@@ -111,15 +222,18 @@ export function calculateCriticalPower(seasonBestCurve: BestEffort[]): CriticalP
         }).classification !== "plausible",
     )
   ) {
-    return null;
+    return { status: "abstained", reason: "implausible-effort" };
   }
 
   for (let index = 1; index < validEfforts.length; index += 1) {
     const previous = validEfforts[index - 1];
     const current = validEfforts[index];
-    if (!previous || !current) return null;
-    if (current.duration_seconds === previous.duration_seconds || current.value > previous.value) {
-      return null;
+    if (!previous || !current) return { status: "abstained", reason: "degenerate-fit" };
+    if (current.duration_seconds === previous.duration_seconds) {
+      return { status: "abstained", reason: "duplicate-duration" };
+    }
+    if (current.value > previous.value) {
+      return { status: "abstained", reason: "non-monotonic-curve" };
     }
   }
 
@@ -129,83 +243,134 @@ export function calculateCriticalPower(seasonBestCurve: BestEffort[]): CriticalP
   const hasLongCoverage = validEfforts.some(
     (effort) => effort.duration_seconds >= 900 && effort.duration_seconds <= 1_800,
   );
-  if (!hasShortCoverage || !hasLongCoverage) return null;
+  if (!hasShortCoverage) return { status: "abstained", reason: "missing-short-coverage" };
+  if (!hasLongCoverage) return { status: "abstained", reason: "missing-long-coverage" };
 
-  // Prepare data points for regression
-  const n = validEfforts.length;
+  const fit = fitLinearModel(validEfforts);
+  if (!fit) return { status: "abstained", reason: "degenerate-fit" };
+  if (
+    fit.cp < config.minCpWatts ||
+    fit.cp > config.maxCpWatts ||
+    fit.wPrime < config.minWPrimeJoules ||
+    fit.wPrime > config.maxWPrimeJoules
+  ) {
+    return { status: "abstained", reason: "implausible-parameters" };
+  }
+  if (fit.rSquared < config.minRSquared) {
+    return { status: "abstained", reason: "poor-fit" };
+  }
+
+  const stability = calculateRemovalStability(validEfforts, fit);
+  if (!stability) return { status: "abstained", reason: "unstable-fit" };
+  if (
+    stability.maxCpChangeRatio > config.maxCpChangeRatio ||
+    stability.maxWPrimeChangeRatio > config.maxWPrimeChangeRatio
+  ) {
+    return { status: "abstained", reason: "unstable-fit" };
+  }
+  if (stability.maxPredictionChangeRatio > config.maxPredictionChangeRatio) {
+    return { status: "abstained", reason: "dominant-point" };
+  }
+
+  const roundedCp = Math.round(fit.cp);
+  const roundedWPrime = Math.round(fit.wPrime);
+  const firstEffort = validEfforts[0];
+  const lastEffort = validEfforts.at(-1);
+  if (!firstEffort || !lastEffort) return { status: "abstained", reason: "degenerate-fit" };
+
+  return {
+    status: "accepted",
+    model: {
+      source: "observed-curve-fit",
+      cp: roundedCp,
+      wPrime: roundedWPrime,
+      rSquared: fit.rSquared,
+      error: fit.rSquared,
+      rmseWatts: fit.rmseWatts,
+      maxAbsoluteResidualWatts: Math.max(...fit.residuals.map(Math.abs)),
+      fitMinDurationSeconds: firstEffort.duration_seconds,
+      fitMaxDurationSeconds: lastEffort.duration_seconds,
+      pointCount: validEfforts.length,
+      activityCount: activityIds.size,
+      residuals: validEfforts.map((effort, index) => ({
+        pointId: `point-${index + 1}`,
+        durationSeconds: effort.duration_seconds,
+        observedWatts: effort.value,
+        predictedWatts: fit.cp + fit.wPrime / effort.duration_seconds,
+        residualWatts: fit.residuals[index] ?? 0,
+      })),
+      stability,
+    },
+  };
+}
+
+/** Compatibility wrapper for callers that use null as the abstention signal. */
+export function calculateCriticalPower(
+  seasonBestCurve: ObservedCriticalPowerEffort[],
+  options: CriticalPowerFitOptions = {},
+): CriticalPowerResult | null {
+  const evaluation = evaluateCriticalPower(seasonBestCurve, options);
+  return evaluation.status === "accepted" ? evaluation.model : null;
+}
+
+function fitLinearModel(efforts: ObservedCriticalPowerEffort[]): LinearFit | null {
+  const n = efforts.length;
   let sumX = 0;
   let sumY = 0;
   let sumXY = 0;
   let sumXX = 0;
-
-  for (const effort of validEfforts) {
-    const t = effort.duration_seconds;
-    const p = effort.value;
-
-    const x = 1 / t;
-    const y = p;
-
+  for (const effort of efforts) {
+    const x = 1 / effort.duration_seconds;
     sumX += x;
-    sumY += y;
-    sumXY += x * y;
+    sumY += effort.value;
+    sumXY += x * effort.value;
     sumXX += x * x;
   }
-
-  // Linear Regression Calculation
-  // Slope (m) = (n*sumXY - sumX*sumY) / (n*sumXX - sumX*sumX)
-  // Intercept (c) = (sumY - m*sumX) / n
-
   const denominator = n * sumXX - sumX * sumX;
-  if (!Number.isFinite(denominator) || denominator === 0) return null;
+  if (!Number.isFinite(denominator) || Math.abs(denominator) < Number.EPSILON) return null;
+  const wPrime = (n * sumXY - sumX * sumY) / denominator;
+  const cp = (sumY - wPrime * sumX) / n;
+  if (!Number.isFinite(cp) || !Number.isFinite(wPrime)) return null;
 
-  const slope = (n * sumXY - sumX * sumY) / denominator;
-  const intercept = (sumY - slope * sumX) / n;
-
-  // Map back to CP model
-  // Intercept = CP
-  // Slope = W'
-
-  const cp = intercept;
-  const wPrime = slope;
-  if (!Number.isFinite(cp) || !Number.isFinite(wPrime) || cp <= 0 || wPrime <= 0) return null;
-
-  // Calculate R-squared (Coefficient of Determination)
-  // SST = sum((y - meanY)^2)
-  // SSR = sum((yPred - meanY)^2)
-  // R2 = SSR / SST
   const meanY = sumY / n;
-  let ssTotal = 0;
-  let ssRes = 0;
+  const residuals = efforts.map((effort) => effort.value - (cp + wPrime / effort.duration_seconds));
+  const ssTotal = efforts.reduce((sum, effort) => sum + (effort.value - meanY) ** 2, 0);
+  const ssResidual = residuals.reduce((sum, residual) => sum + residual ** 2, 0);
+  if (!Number.isFinite(ssTotal) || ssTotal <= 0) return null;
+  const rSquared = 1 - ssResidual / ssTotal;
+  const rmseWatts = Math.sqrt(ssResidual / n);
+  if (!Number.isFinite(rSquared) || !Number.isFinite(rmseWatts)) return null;
+  return { cp, wPrime, rSquared, rmseWatts, residuals };
+}
 
-  for (const effort of validEfforts) {
-    const t = effort.duration_seconds;
-    const p = effort.value;
-    const x = 1 / t;
-    const y = p;
+function calculateRemovalStability(
+  efforts: ObservedCriticalPowerEffort[],
+  fit: LinearFit,
+): CriticalPowerStabilityDiagnostics | null {
+  let maxCpChangeRatio = 0;
+  let maxWPrimeChangeRatio = 0;
+  let maxPredictionChangeRatio = 0;
+  const observedRange =
+    Math.max(...efforts.map((effort) => effort.value)) -
+    Math.min(...efforts.map((effort) => effort.value));
+  if (observedRange <= 0) return null;
 
-    const yPred = slope * x + intercept;
-
-    ssTotal += (y - meanY) ** 2;
-    ssRes += (y - yPred) ** 2;
+  for (let removedIndex = 0; removedIndex < efforts.length; removedIndex += 1) {
+    const reducedFit = fitLinearModel(efforts.filter((_, index) => index !== removedIndex));
+    if (!reducedFit || reducedFit.cp <= 0 || reducedFit.wPrime <= 0) return null;
+    maxCpChangeRatio = Math.max(maxCpChangeRatio, Math.abs(reducedFit.cp - fit.cp) / fit.cp);
+    maxWPrimeChangeRatio = Math.max(
+      maxWPrimeChangeRatio,
+      Math.abs(reducedFit.wPrime - fit.wPrime) / fit.wPrime,
+    );
+    for (const effort of efforts) {
+      const prediction = fit.cp + fit.wPrime / effort.duration_seconds;
+      const reducedPrediction = reducedFit.cp + reducedFit.wPrime / effort.duration_seconds;
+      maxPredictionChangeRatio = Math.max(
+        maxPredictionChangeRatio,
+        Math.abs(reducedPrediction - prediction) / observedRange,
+      );
+    }
   }
-
-  const rSquared = 1 - ssRes / ssTotal;
-  if (!Number.isFinite(rSquared)) return null;
-
-  const roundedCp = Math.round(cp);
-  const roundedWPrime = Math.round(wPrime);
-  if (roundedCp <= 0 || roundedWPrime <= 0) return null;
-  const firstEffort = validEfforts[0];
-  const lastEffort = validEfforts.at(-1);
-  if (!firstEffort || !lastEffort) return null;
-
-  return {
-    source: "observed-curve-fit",
-    cp: roundedCp,
-    wPrime: roundedWPrime,
-    error: rSquared,
-    fitMinDurationSeconds: firstEffort.duration_seconds,
-    fitMaxDurationSeconds: lastEffort.duration_seconds,
-    pointCount: n,
-  };
+  return { maxCpChangeRatio, maxWPrimeChangeRatio, maxPredictionChangeRatio };
 }

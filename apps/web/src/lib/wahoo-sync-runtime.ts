@@ -4,8 +4,9 @@ import {
   createWahooImportActivityFileStorage,
   createWahooRepository,
   createWahooRouteStorage,
+  enrichImportedActivityArtifact,
   getProcessProviderSyncLimiter,
-  submitActivity,
+  submitImportedActivityArtifact,
   WahooActivityHistoryJobService,
   WahooSyncJobService,
   WahooSyncService,
@@ -32,6 +33,32 @@ export function getWahooDrainConfig() {
   };
 }
 
+type RouteStorageClient = {
+  from(bucket: string): {
+    download(filePath: string): Promise<{ data: Blob | null; error: unknown }>;
+  };
+};
+
+function isDefiniteStorageNotFound(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "status" in error && error.status === 404;
+}
+
+export function createSupabaseWahooRouteStorage(storage: RouteStorageClient) {
+  return createWahooRouteStorage({
+    async downloadRouteGpx(filePath) {
+      const { data, error } = await storage.from("routes").download(filePath);
+      if (error) {
+        if (isDefiniteStorageNotFound(error)) return null;
+        throw error;
+      }
+      if (!data) {
+        throw new Error("Route storage download returned no data");
+      }
+      return data.text();
+    },
+  });
+}
+
 export function createWahooSyncRuntime() {
   const config = getWahooDrainConfig();
   const executionLimiter = getProcessProviderSyncLimiter(config.concurrency);
@@ -44,39 +71,21 @@ export function createWahooSyncRuntime() {
   const wahooRepository = createWahooRepository({ db });
   const providerSyncRepository = createProviderSyncRepository({ db });
   const importer = createActivityImporter({
+    allowedActivityFileHosts: process.env.WAHOO_ACTIVITY_FILE_ALLOWED_HOSTS?.split(",")
+      .map((host) => host.trim())
+      .filter(Boolean),
     repository: wahooRepository,
-    submitActivity: (input) =>
-      submitActivity(db, {
-        ...input,
-        notes: null,
-        activityType: input.type,
-        isPrivate: false,
-        startedAt: new Date(input.startedAt),
-        finishedAt: new Date(input.finishedAt),
-        importSource: null,
-        importFileType: "fit",
-        importOriginalFileName: null,
-        maxHeartRate: null,
-        maxPower: null,
-        maxCadence: null,
-        maxSpeedMps: null,
-        normalizedSpeedMps: null,
-        normalizedGradedSpeedMps: null,
-        efficiencyFactor: null,
-        aerobicDecoupling: null,
-        avgTemperature: null,
-        deviceManufacturer: null,
-        deviceProduct: null,
-        laps: null,
-        mapBounds: null,
-        providerProvenance: {
-          provider: input.provider,
-          externalId: input.externalId,
-          integrationId: input.integrationId,
-          providerUpdatedAt: input.providerUpdatedAt,
-        },
-      }),
+    submitActivity: (activity, parsedActivity) =>
+      submitImportedActivityArtifact(db, { activity, parsedActivity }),
+    enrichActivity: (activityId, activity, parsedActivity) =>
+      enrichImportedActivityArtifact(db, { activityId, activity, parsedActivity }),
     activityFileStorage: createWahooImportActivityFileStorage({
+      async readActivityFile(path) {
+        const { data, error } = await supabase.storage.from("activity-files").download(path);
+        if (error || !data) return null;
+        const bytes = new Uint8Array(await data.arrayBuffer());
+        return { bytes, size: bytes.byteLength };
+      },
       async uploadActivityFile(input) {
         const { error: bucketError } = await supabase.storage.createBucket("activity-files", {
           public: false,
@@ -103,13 +112,7 @@ export function createWahooSyncRuntime() {
 
   const syncService = new WahooSyncService({
     repository: wahooRepository,
-    storage: createWahooRouteStorage({
-      async downloadRouteGpx(filePath) {
-        const { data, error } = await supabase.storage.from("routes").download(filePath);
-        if (error || !data) return null;
-        return data.text();
-      },
-    }),
+    storage: createSupabaseWahooRouteStorage(supabase.storage),
   });
 
   return {

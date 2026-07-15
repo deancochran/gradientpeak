@@ -137,7 +137,16 @@ export {
   parsePace,
   speedToPace,
 } from "./calculations/speed-curve";
+export type {
+  CssTestProtocolInput,
+  CssTestProtocolResult,
+  CssTestTimesInput,
+} from "./calculations/swim-pace-curve";
 export {
+  CSS_TEST_PROTOCOL,
+  calculateCssFrom400m200mTest,
+  cssTestProtocolSchema,
+  cssTestTimesSchema,
   deriveSwimPaceCurveFromCSS,
   estimateCSSFromSwimTests,
   pacePerHundredMetersToSpeed,
@@ -238,6 +247,8 @@ export {
   calculateRecordingMetrics,
   createRecordingMetricsAccumulator,
 } from "./recording-metrics"; // Live/replay recording metrics accumulator
+export * from "./recurrence"; // Supported recurrence semantics and deterministic serialization
+export * from "./route-files"; // Route upload formats, limits, schemas, and filename helpers
 export * from "./samples"; // Sample data for testing and development
 export * from "./schemas"; // Zod schemas and types (includes formatDuration for DurationV2)
 export * from "./social"; // Social engagement entity taxonomy

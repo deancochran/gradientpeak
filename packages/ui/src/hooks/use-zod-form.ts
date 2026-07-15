@@ -1,4 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useCallback, useRef } from "react";
 import {
   type DefaultValues,
   type FieldValues,
@@ -8,6 +9,7 @@ import {
   useForm,
 } from "react-hook-form";
 import type { ZodTypeAny, z } from "zod";
+import { discardPendingFormDrafts } from "./pending-form-drafts";
 
 type InferredUseZodFormOptions<TSchema extends ZodTypeAny, TContext> = Omit<
   UseFormProps<z.input<TSchema> & FieldValues, TContext, z.output<TSchema> & FieldValues>,
@@ -48,7 +50,7 @@ export function useZodForm<
   reValidateMode = "onChange",
   ...options
 }: UseZodFormOptions<TFieldValues, TContext, TTransformedValues>) {
-  return useForm<TFieldValues, TContext, TTransformedValues>({
+  const form = useForm<TFieldValues, TContext, TTransformedValues>({
     ...options,
     mode,
     reValidateMode,
@@ -58,4 +60,16 @@ export function useZodForm<
       TTransformedValues
     >,
   });
+  const reset = useRef(form.reset).current;
+  const resetWithDraftDiscard = useCallback(
+    (...args: Parameters<typeof reset>) => {
+      discardPendingFormDrafts(form.control);
+      return reset(...args);
+    },
+    [form.control, reset],
+  );
+
+  form.reset = resetWithDraftDiscard;
+
+  return form;
 }

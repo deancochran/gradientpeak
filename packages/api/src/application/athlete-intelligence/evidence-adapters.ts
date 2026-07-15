@@ -96,6 +96,8 @@ export function parseScheduleRecurrence(rule: string | null, startsAt: Date) {
 
 export const metricUnits = {
   ftp: "watts",
+  threshold_pace_seconds_per_km: "seconds_per_km",
+  css_seconds_per_100m: "seconds_per_100m",
   lthr: "beats_per_minute",
   max_hr: "beats_per_minute",
   resting_hr: "beats_per_minute",
@@ -117,6 +119,8 @@ export function canonicalMetricValue(
   const normalized = unit.trim().toLowerCase().replaceAll(" ", "");
   const aliases: Record<keyof typeof metricUnits, readonly string[]> = {
     ftp: ["w", "watt", "watts"],
+    threshold_pace_seconds_per_km: ["s/km", "sec/km", "seconds_per_km", "secondsperkm"],
+    css_seconds_per_100m: ["s/100m", "sec/100m", "seconds_per_100m", "secondsper100m"],
     lthr: ["bpm", "beatperminute", "beatsperminute"],
     max_hr: ["bpm", "beatperminute", "beatsperminute"],
     resting_hr: ["bpm", "beatperminute", "beatsperminute"],

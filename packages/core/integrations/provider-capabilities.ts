@@ -33,10 +33,13 @@ export type ProviderConfigurableAction = z.infer<typeof providerConfigurableActi
 export const providerSyncModeSchema = z.enum(["automatic", "manual", "unsupported"]);
 export type ProviderSyncMode = z.infer<typeof providerSyncModeSchema>;
 
+export type ProviderRuntimeStatus = "enabled" | "scaffold";
+
 export type ProviderCapabilityDefinition = {
   capabilities: readonly ProviderCapability[];
   id: IntegrationProviderId;
   label: string;
+  runtimeStatus: ProviderRuntimeStatus;
   syncModes: Partial<Record<ProviderCapability, Exclude<ProviderSyncMode, "unsupported">>>;
 };
 
@@ -50,6 +53,7 @@ const providerCapabilityMap = {
   wahoo: {
     id: "wahoo",
     label: "Wahoo",
+    runtimeStatus: "enabled",
     capabilities: [
       "profile_enrichment_read",
       "activity_history_read",
@@ -72,6 +76,7 @@ const providerCapabilityMap = {
   strava: {
     id: "strava",
     label: "Strava",
+    runtimeStatus: "scaffold",
     capabilities: ["activity_history_read", "completed_activity_push", "webhook_activity_updates"],
     syncModes: {
       activity_history_read: "manual",
@@ -82,14 +87,14 @@ const providerCapabilityMap = {
   trainingpeaks: {
     id: "trainingpeaks",
     label: "TrainingPeaks",
-    capabilities: ["planned_activity_push"],
-    syncModes: {
-      planned_activity_push: "automatic",
-    },
+    runtimeStatus: "scaffold",
+    capabilities: [],
+    syncModes: {},
   },
   garmin: {
     id: "garmin",
     label: "Garmin",
+    runtimeStatus: "scaffold",
     capabilities: ["activity_history_read"],
     syncModes: {
       activity_history_read: "manual",
@@ -98,6 +103,7 @@ const providerCapabilityMap = {
   zwift: {
     id: "zwift",
     label: "Zwift",
+    runtimeStatus: "scaffold",
     capabilities: [],
     syncModes: {},
   },
@@ -111,6 +117,10 @@ export function getProviderCapabilityDefinition(
   provider: IntegrationProviderId,
 ): ProviderCapabilityDefinition {
   return providerCapabilityMap[provider];
+}
+
+export function isProviderRuntimeEnabled(provider: IntegrationProviderId): boolean {
+  return getProviderCapabilityDefinition(provider).runtimeStatus === "enabled";
 }
 
 export function providerHasCapability(

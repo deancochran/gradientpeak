@@ -1,8 +1,12 @@
 import { Text } from "@repo/ui/components/text";
 import { Bike, Footprints, Users } from "lucide-react-native";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
+import { ROUTES } from "@/lib/constants/routes";
+import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 export function FeedEmptyState() {
+  const navigateTo = useAppNavigate();
+
   return (
     <View className="flex-1 items-center justify-center p-8 mt-20">
       <View className="bg-muted rounded-full p-6 mb-4">
@@ -14,14 +18,28 @@ export function FeedEmptyState() {
         started!
       </Text>
       <View className="flex-row gap-4">
-        <View className="items-center">
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Record an activity"
+          accessibilityHint="Opens activity recording"
+          className="items-center rounded-xl p-3"
+          onPress={() => navigateTo(ROUTES.RECORD)}
+          testID="feed-empty-record"
+        >
           <Footprints size={24} className="text-muted-foreground mb-2" />
           <Text className="text-xs text-muted-foreground">Record Activities</Text>
-        </View>
-        <View className="items-center">
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Find athletes to follow"
+          accessibilityHint="Opens athlete search"
+          className="items-center rounded-xl p-3"
+          onPress={() => navigateTo(ROUTES.DISCOVER)}
+          testID="feed-empty-find-athletes"
+        >
           <Bike size={24} className="text-muted-foreground mb-2" />
           <Text className="text-xs text-muted-foreground">Follow Athletes</Text>
-        </View>
+        </Pressable>
       </View>
     </View>
   );

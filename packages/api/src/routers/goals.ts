@@ -13,6 +13,7 @@ import {
   getProfileGoalById,
   type ProfileGoalRecord,
 } from "../application/goals/getProfileGoalById";
+import { profileGoalWriteDataSchema } from "../application/goals/profile-goal-write";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { buildIndexPageInfo, indexCursorSchema, parseIndexCursor } from "../utils/index-cursor";
@@ -59,16 +60,7 @@ const goalsListInputSchema = z
   })
   .strict();
 
-const profileGoalWriteSchema = z
-  .object({
-    profile_id: z.string().uuid(),
-    target_date: goalDateSchema,
-    title: z.string().trim().min(1).max(100),
-    priority: z.number().int().min(0).max(10),
-    activity_category: canonicalGoalActivityCategorySchema,
-    target_payload: canonicalGoalObjectiveSchema,
-  })
-  .strict();
+const profileGoalWriteSchema = profileGoalWriteDataSchema.extend({ profile_id: z.string().uuid() });
 const profileGoalUpdateDataSchema = z
   .object({
     target_date: goalDateSchema,

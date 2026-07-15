@@ -17,7 +17,11 @@ import { useProfileSettings } from "@/lib/hooks/useProfileSettings";
 import { useTrainingPlanSnapshot } from "@/lib/hooks/useTrainingPlanSnapshot";
 import { refreshPlanTabData } from "@/lib/scheduling/refreshScheduleViews";
 import { useAuthStore } from "@/lib/stores/auth-store";
-import { buildDailyTrainingAdjustmentPointsFromTimelineWindow } from "@/lib/training-path/trainingTimelineAdapters";
+import {
+  buildDailyTrainingAdjustmentPointsFromTimelineWindow,
+  buildEffectiveCompletedObservationsByDate,
+  mergeCompletedTssObservations,
+} from "@/lib/training-path/trainingTimelineAdapters";
 import {
   buildTrainingPreferencesLoadTimeline,
   buildTrainingPreferencesProjectionPreview,
@@ -34,7 +38,7 @@ import type {
   TrainingPathScheduledItem,
   TrainingPathSelectedGoal,
 } from "./trainingPathTypes";
-import { buildScheduledFitnessTrend, getWeekStartDateKey } from "./trainingPathUtils";
+import { addDays, buildScheduledFitnessTrend, getWeekStartDateKey } from "./trainingPathUtils";
 import { useScrollableTrainingPathWindow } from "./useScrollableTrainingPathWindow";
 import { useTrainingPathViewModel } from "./useTrainingPathViewModel";
 
@@ -196,6 +200,26 @@ export function usePlanTrainingPathData() {
   });
   const scheduledWindowStart = trainingPathWindow.resolvedWeekWindow.start;
   const scheduledWindowEnd = trainingPathWindow.resolvedWeekWindow.end;
+  const deviceTimezone = useMemo(
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone?.trim() || "UTC",
+    [],
+  );
+  const observationWindowEnd = scheduledWindowEnd < todayKey ? scheduledWindowEnd : todayKey;
+  const earliestObservationDate = addDays(observationWindowEnd, -364);
+  const observationWindowStart =
+    scheduledWindowStart > earliestObservationDate ? scheduledWindowStart : earliestObservationDate;
+  const dailyTssObservationsQuery = api.activities.dailyTssObservations.useQuery(
+    {
+      start_date: observationWindowStart,
+      end_date: observationWindowEnd,
+      timezone: deviceTimezone,
+    },
+    {
+      ...scheduleAwareReadQueryOptions,
+      enabled: eventsQueryEnabled,
+      placeholderData: (previousData) => previousData,
+    },
+  );
   const localProjectionPreview = useMemo(
     () =>
       buildTrainingPreferencesProjectionPreview({
@@ -205,7 +229,7 @@ export function usePlanTrainingPathData() {
       }),
     [dashboard.fitnessHistory, profileSettings.settings, snapshot],
   );
-  const loadTimelinePoints = useMemo(
+  const projectedLoadTimelinePoints = useMemo(
     () =>
       buildTrainingPreferencesLoadTimeline({
         projectionChart: localProjectionPreview.projectionChart,
@@ -228,6 +252,61 @@ export function usePlanTrainingPathData() {
       upcomingPlannedEventsQuery.data?.items,
     ],
   );
+  const targetLoadDates = useMemo(
+    () =>
+      new Set([
+        ...(localProjectionPreview.projectionChart?.daily_load_points ?? []).map(
+          (point) => point.date,
+        ),
+        ...(localProjectionPreview.projectionChart?.display_points ?? []).map(
+          (point) => point.date,
+        ),
+      ]),
+    [localProjectionPreview.projectionChart],
+  );
+  const completedObservationMerge = useMemo(
+    () =>
+      mergeCompletedTssObservations({
+        requestedRange: {
+          start_date: observationWindowStart,
+          end_date: observationWindowEnd,
+        },
+        response: dailyTssObservationsQuery.data,
+        timeline: projectedLoadTimelinePoints,
+      }),
+    [
+      dailyTssObservationsQuery.data,
+      observationWindowEnd,
+      observationWindowStart,
+      projectedLoadTimelinePoints,
+    ],
+  );
+  const effectiveCompletedObservationsByDate = useMemo(
+    () =>
+      buildEffectiveCompletedObservationsByDate({
+        completedObservationsByDate: completedObservationMerge.completedObservationsByDate,
+        endDate: scheduledWindowEnd,
+        todayKey,
+      }),
+    [completedObservationMerge.completedObservationsByDate, scheduledWindowEnd, todayKey],
+  );
+  const loadTimelinePoints = useMemo(
+    () =>
+      completedObservationMerge.timeline.map((point) => {
+        const completedObservation = effectiveCompletedObservationsByDate.get(point.date);
+        const hasTargetLoad = targetLoadDates.has(point.date);
+        return {
+          ...point,
+          completed_observation_state: completedObservation?.state,
+          completed_tss_identity: completedObservation?.identity ?? null,
+          has_unavailable_completed_activity:
+            completedObservation?.hasUnavailableCompletedActivity === true,
+          ideal_tss: hasTargetLoad ? point.ideal_tss : null,
+          recommended_load_tss: hasTargetLoad ? point.recommended_load_tss : null,
+        };
+      }),
+    [completedObservationMerge.timeline, effectiveCompletedObservationsByDate, targetLoadDates],
+  );
   const idealFitnessCurve = useMemo(
     () =>
       localProjectionPreview.previewIdealCurve.length > 0
@@ -249,27 +328,13 @@ export function usePlanTrainingPathData() {
     () =>
       buildTrainingTimelineWindowFromLoadTimeline({
         today: todayKey,
-        startDate: loadTimelinePoints[0]?.date ?? scheduledWindowStart,
-        endDate: loadTimelinePoints[loadTimelinePoints.length - 1]?.date ?? scheduledWindowEnd,
-        timeline: loadTimelinePoints,
+        startDate: completedObservationMerge.timeline[0]?.date ?? scheduledWindowStart,
+        endDate:
+          completedObservationMerge.timeline[completedObservationMerge.timeline.length - 1]?.date ??
+          scheduledWindowEnd,
+        timeline: completedObservationMerge.timeline,
       }),
-    [loadTimelinePoints, scheduledWindowEnd, scheduledWindowStart, todayKey],
-  );
-  const completedActivityDatesWithoutLoad = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          completedActivities
-            .map((activity) => toTrainingPathCompletedActivity(activity, null))
-            .filter(
-              (activity): activity is TrainingPathCompletedActivity =>
-                activity !== null &&
-                (typeof activity.load !== "number" || !Number.isFinite(activity.load)),
-            )
-            .map((activity) => activity.date),
-        ),
-      ),
-    [completedActivities],
+    [completedObservationMerge.timeline, scheduledWindowEnd, scheduledWindowStart, todayKey],
   );
   const trainingPath = useTrainingPathViewModel({
     timeline: loadTimelinePoints,
@@ -285,7 +350,8 @@ export function usePlanTrainingPathData() {
   const dailyTrainingPathPoints = useMemo(
     () =>
       buildDailyTrainingAdjustmentPointsFromTimelineWindow({
-        completedActivityDatesWithoutLoad,
+        completedObservationsByDate: effectiveCompletedObservationsByDate,
+        targetLoadDates,
         timelineWindow: canonicalTimelineWindow,
         fitnessHistory: dashboard.fitnessHistory,
         idealFitnessCurve,
@@ -293,10 +359,11 @@ export function usePlanTrainingPathData() {
       }),
     [
       canonicalTimelineWindow,
-      completedActivityDatesWithoutLoad,
       dashboard.fitnessHistory,
+      effectiveCompletedObservationsByDate,
       idealFitnessCurve,
       scheduledFitnessTrend,
+      targetLoadDates,
     ],
   );
 
@@ -381,7 +448,30 @@ export function usePlanTrainingPathData() {
     activePlanQuery.isLoading ||
     upcomingPlannedEventsQuery.isLoading ||
     recentPlannedEventsQuery.isLoading ||
+    dailyTssObservationsQuery.isLoading ||
     profileSettings.isLoading;
+  const queryFailureCount = [
+    activePlanQuery.isError,
+    upcomingPlannedEventsQuery.isError,
+    recentPlannedEventsQuery.isError,
+    groupCalendarEventsQuery.isError,
+    selectedGroupActivityPlansQuery.isError,
+    completedActivitiesQuery.isError,
+    dailyTssObservationsQuery.isError,
+    goals.isError,
+    profileSettings.isError,
+    snapshot.hasAnyError,
+  ].filter(Boolean).length;
+  const hasUsableData = Boolean(
+    activePlan ||
+      upcomingPlannedEventsQuery.data?.items?.length ||
+      recentPlannedEventsQuery.data?.items?.length ||
+      groupCalendarEvents.length ||
+      completedActivities.length ||
+      dailyTssObservationsQuery.data?.observations.length ||
+      goals.goals.length ||
+      dailyTrainingPathPoints.length,
+  );
 
   const resetTrainingPathChart = useCallback(() => {
     trainingPathWindow.resetWindow();
@@ -425,6 +515,7 @@ export function usePlanTrainingPathData() {
       String(groupCalendarEventsQuery.dataUpdatedAt ?? 0),
       String(selectedGroupActivityPlansQuery.dataUpdatedAt ?? 0),
       String(completedActivitiesQuery.dataUpdatedAt ?? 0),
+      String(dailyTssObservationsQuery.dataUpdatedAt ?? 0),
       String(goals.dataUpdatedAt ?? 0),
     ].join(":");
 
@@ -450,6 +541,7 @@ export function usePlanTrainingPathData() {
   }, [
     activePlan?.id,
     completedActivitiesQuery.dataUpdatedAt,
+    dailyTssObservationsQuery.dataUpdatedAt,
     goals.dataUpdatedAt,
     groupCalendarEventsQuery.dataUpdatedAt,
     recentPlannedEventsQuery.dataUpdatedAt,
@@ -476,12 +568,15 @@ export function usePlanTrainingPathData() {
           ? selectedGroupActivityPlansQuery.refetch()
           : Promise.resolve(null),
         completedActivitiesQuery.refetch(),
+        dailyTssObservationsQuery.refetch(),
+        profileSettings.refetch(),
       ]);
     } finally {
       setRefreshing(false);
     }
   }, [
     completedActivitiesQuery.refetch,
+    dailyTssObservationsQuery.refetch,
     goals.refetch,
     groupCalendarEventsQuery.refetch,
     recentPlannedEventsQuery.refetch,
@@ -491,6 +586,7 @@ export function usePlanTrainingPathData() {
     selectedGroupActivityPlansQuery.refetch,
     snapshot.refetchAll,
     upcomingPlannedEventsQuery.refetch,
+    profileSettings.refetch,
   ]);
 
   return {
@@ -510,5 +606,7 @@ export function usePlanTrainingPathData() {
     handleSelectedWeekChange,
     handleSelectedDateChange,
     handleWeekScrollStart,
+    hasUsableData,
+    queryFailureCount,
   };
 }

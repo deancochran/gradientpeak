@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { buildEffectiveCompletedObservationsByDate } from "@/lib/training-path/trainingTimelineAdapters";
 import {
   buildTrainingPathGoalMarkers,
   buildTrainingPathViewModel,
@@ -6,6 +7,18 @@ import {
 } from "./trainingPathUtils";
 
 const goalMarkers = [{ id: "goal-1", label: "A race", targetDate: "2026-08-16" }];
+const observedCompletedLoad = {
+  completed_observation_state: "observed" as const,
+  completed_tss_identity: {
+    sport: "bike" as const,
+    method: "power_threshold" as const,
+    source: "activity_analysis" as const,
+    version: "1" as const,
+    calibration: { type: "ftp_watts" as const, value: 250 },
+  },
+};
+const zeroTargetDates = (dates: string[]) =>
+  dates.map((date) => ({ date, recommended_load_tss: 0 }));
 
 describe("trainingPathUtils", () => {
   it("aggregates daily load into normalized weeks", () => {
@@ -13,16 +26,19 @@ describe("trainingPathUtils", () => {
       timeline: [
         {
           date: "2026-05-18",
+          ...observedCompletedLoad,
           completed_load_tss: 50,
           scheduled_load_tss: 80,
           recommended_load_tss: 100,
         },
         {
           date: "2026-05-19",
+          ...observedCompletedLoad,
           completed_load_tss: 25,
           scheduled_load_tss: 40,
           recommended_load_tss: 50,
         },
+        ...zeroTargetDates(["2026-05-20", "2026-05-21", "2026-05-22", "2026-05-23", "2026-05-24"]),
       ],
       fitnessHistory: [{ date: "2026-05-18", ctl: 42, tsb: -4 }],
       projectedFitness: [],
@@ -39,6 +55,68 @@ describe("trainingPathUtils", () => {
       fitness: 40,
       targetFitness: 45,
     });
+  });
+
+  it("keeps weekly target and delta null at a partial projection boundary", () => {
+    const model = buildTrainingPathViewModel({
+      timeline: Array.from({ length: 6 }, (_, index) => ({
+        date: `2026-05-${String(18 + index).padStart(2, "0")}`,
+        completed_observation_state: "known_zero" as const,
+        recommended_load_tss: 10,
+      })),
+      goalMarkers,
+      range: "all",
+      todayKey: "2026-05-20",
+    });
+
+    expect(model.weeks.find((week) => week.weekStart === "2026-05-18")?.targetLoad).toBeNull();
+    expect(model.selectedWeekSummary).toMatchObject({ targetLoad: null, loadDelta: null });
+  });
+
+  it("treats seven explicitly covered zero targets as an available zero weekly target", () => {
+    const model = buildTrainingPathViewModel({
+      timeline: Array.from({ length: 7 }, (_, index) => ({
+        date: `2026-05-${String(18 + index).padStart(2, "0")}`,
+        completed_observation_state: "known_zero" as const,
+        recommended_load_tss: 0,
+      })),
+      goalMarkers,
+      range: "all",
+      todayKey: "2026-05-20",
+    });
+
+    expect(model.weeks.find((week) => week.weekStart === "2026-05-18")?.targetLoad).toBe(0);
+    expect(model.selectedWeekSummary).toMatchObject({ targetLoad: 0, loadDelta: 0 });
+  });
+
+  it("computes a future planned-vs-target delta without completed API coverage", () => {
+    const effectiveCompleted = buildEffectiveCompletedObservationsByDate({
+      completedObservationsByDate: new Map(),
+      endDate: "2026-06-07",
+      todayKey: "2026-05-20",
+    });
+    const model = buildTrainingPathViewModel({
+      timeline: Array.from({ length: 7 }, (_, index) => {
+        const date = `2026-06-0${index + 1}`;
+        return {
+          date,
+          completed_observation_state: effectiveCompleted.get(date)?.state,
+          recommended_load_tss: 10,
+          scheduled_load_tss: index === 0 ? 40 : 0,
+        };
+      }),
+      goalMarkers,
+      range: "all",
+      selectedWeekStart: "2026-06-01",
+      todayKey: "2026-05-20",
+    });
+
+    expect(model.weeks.find((week) => week.weekStart === "2026-06-01")).toMatchObject({
+      completedLoad: 0,
+      plannedLoad: 40,
+      targetLoad: 70,
+    });
+    expect(model.selectedWeekSummary).toMatchObject({ targetLoad: 70, loadDelta: -30 });
   });
 
   it("filters weeks by range around today", () => {
@@ -63,7 +141,22 @@ describe("trainingPathUtils", () => {
 
   it("falls back selected summary to the current week", () => {
     const model = buildTrainingPathViewModel({
-      timeline: [{ date: "2026-05-18", scheduled_load_tss: 160, recommended_load_tss: 200 }],
+      timeline: [
+        {
+          date: "2026-05-18",
+          scheduled_load_tss: 160,
+          recommended_load_tss: 200,
+          completed_observation_state: "known_zero",
+        },
+        ...zeroTargetDates([
+          "2026-05-19",
+          "2026-05-20",
+          "2026-05-21",
+          "2026-05-22",
+          "2026-05-23",
+          "2026-05-24",
+        ]),
+      ],
       fitnessHistory: [{ date: "2026-05-18", ctl: 42 }],
       projectedFitness: [],
       idealFitnessCurve: [],
@@ -81,7 +174,7 @@ describe("trainingPathUtils", () => {
   it("does not flatline actual fitness into future weeks without projected fitness", () => {
     const model = buildTrainingPathViewModel({
       timeline: [
-        { date: "2026-05-18", completed_load_tss: 100 },
+        { date: "2026-05-18", completed_load_tss: 100, ...observedCompletedLoad },
         { date: "2026-05-25", scheduled_load_tss: 150 },
       ],
       fitnessHistory: [{ date: "2026-05-18", ctl: 42 }],
@@ -99,8 +192,14 @@ describe("trainingPathUtils", () => {
   it("shows a path with recommended and completed load even without scheduled workouts", () => {
     const model = buildTrainingPathViewModel({
       timeline: [
-        { date: "2026-05-18", completed_load_tss: 80, recommended_load_tss: 120 },
+        {
+          date: "2026-05-18",
+          completed_load_tss: 80,
+          recommended_load_tss: 120,
+          ...observedCompletedLoad,
+        },
         { date: "2026-05-19", recommended_load_tss: 100 },
+        ...zeroTargetDates(["2026-05-20", "2026-05-21", "2026-05-22", "2026-05-23", "2026-05-24"]),
       ],
       fitnessHistory: [{ date: "2026-05-18", ctl: 42 }],
       projectedFitness: [],
@@ -121,7 +220,7 @@ describe("trainingPathUtils", () => {
   it("does not require a goal to show completed or planned load", () => {
     const model = buildTrainingPathViewModel({
       timeline: [
-        { date: "2026-05-18", completed_load_tss: 80 },
+        { date: "2026-05-18", completed_load_tss: 80, ...observedCompletedLoad },
         { date: "2026-05-19", scheduled_load_tss: 45 },
       ],
       fitnessHistory: [{ date: "2026-05-18", ctl: 42 }],
@@ -136,13 +235,34 @@ describe("trainingPathUtils", () => {
     expect(model.weeks.find((week) => week.weekStart === "2026-05-18")).toMatchObject({
       completedLoad: 80,
       plannedLoad: 45,
-      targetLoad: 0,
+      targetLoad: null,
+    });
+    expect(model.selectedWeekSummary).toMatchObject({
+      targetLoad: null,
+      loadDelta: null,
+      headline: null,
+      body: null,
     });
   });
 
   it("does not require completed activity history to show planned or recommended load", () => {
     const model = buildTrainingPathViewModel({
-      timeline: [{ date: "2026-05-18", scheduled_load_tss: 75, recommended_load_tss: 120 }],
+      timeline: [
+        {
+          date: "2026-05-18",
+          scheduled_load_tss: 75,
+          recommended_load_tss: 120,
+          completed_observation_state: "known_zero",
+        },
+        ...zeroTargetDates([
+          "2026-05-19",
+          "2026-05-20",
+          "2026-05-21",
+          "2026-05-22",
+          "2026-05-23",
+          "2026-05-24",
+        ]),
+      ],
       fitnessHistory: [],
       projectedFitness: [],
       idealFitnessCurve: [{ date: "2026-05-18", ctl: 45 }],
@@ -163,7 +283,7 @@ describe("trainingPathUtils", () => {
   it("uses projected fitness for scheduled fitness trend weeks", () => {
     const model = buildTrainingPathViewModel({
       timeline: [
-        { date: "2026-05-18", completed_load_tss: 100 },
+        { date: "2026-05-18", completed_load_tss: 100, ...observedCompletedLoad },
         { date: "2026-05-25", scheduled_load_tss: 150 },
       ],
       fitnessHistory: [{ date: "2026-05-18", ctl: 42 }],
@@ -194,6 +314,57 @@ describe("trainingPathUtils", () => {
     const currentWeek = model.weeks.find((week) => week.weekStart === "2026-05-18");
     expect(currentWeek?.fitness).toBe(40);
     expect(currentWeek?.scheduledFitness).toBe(40);
+  });
+
+  it.each([
+    {
+      label: "incompatible identities",
+      secondPoint: {
+        completed_load_tss: 25,
+        completed_observation_state: "observed" as const,
+        completed_tss_identity: {
+          sport: "run" as const,
+          method: "run_pace_threshold" as const,
+          source: "activity_analysis" as const,
+          version: "1" as const,
+          calibration: { type: "threshold_speed_mps" as const, value: 4 },
+        },
+      },
+    },
+    {
+      label: "an unavailable completed activity",
+      secondPoint: {
+        completed_load_tss: 0,
+        completed_observation_state: "unavailable" as const,
+        completed_tss_identity: null,
+        has_unavailable_completed_activity: true,
+      },
+    },
+  ])("keeps weekly completed load null for $label", ({ secondPoint }) => {
+    const model = buildTrainingPathViewModel({
+      timeline: [
+        {
+          date: "2026-05-18",
+          completed_load_tss: 50,
+          recommended_load_tss: 100,
+          ...observedCompletedLoad,
+        },
+        { date: "2026-05-19", recommended_load_tss: 50, ...secondPoint },
+      ],
+      goalMarkers,
+      range: "all",
+      todayKey: "2026-05-20",
+    });
+
+    expect(model.weeks.find((week) => week.weekStart === "2026-05-18")).toMatchObject({
+      completedLoad: null,
+      completedLoadUnavailable: true,
+    });
+    expect(model.selectedWeekSummary).toMatchObject({
+      completedLoad: null,
+      loadDelta: null,
+      body: "Completed load is unavailable for this week.",
+    });
   });
 
   it("places goal markers on their target week", () => {

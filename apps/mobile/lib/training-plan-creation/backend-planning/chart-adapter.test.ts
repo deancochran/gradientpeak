@@ -163,4 +163,50 @@ describe("deriveTrainingPathChartFromActiveProjection", () => {
 
     expect(result).toEqual({ chart: localChart, source: "local" });
   });
+
+  it("does not expose backend CTL, ATL, or TSB when local history is unavailable", () => {
+    const localChart = { ...buildLocalChart(), emptyState: "noActivityHistory" as const };
+    const result = deriveTrainingPathChartFromActiveProjection({
+      activeProjection: {
+        source: "backend",
+        isAvailable: true,
+        readinessScore: null,
+        readinessConfidence: null,
+        feasibilityState: null,
+        feasibilityReasons: [],
+        conflicts: { isBlocking: false, items: [] },
+        planPreview: null,
+        projectionChart: {
+          display_points: [
+            {
+              date: "2026-01-05",
+              predicted_load_tss: 300,
+              predicted_fitness_ctl: 40,
+              predicted_fatigue_atl: 45,
+              predicted_form_tsb: -5,
+            },
+          ],
+          daily_load_points: [{ date: "2026-01-05", recommended_load_tss: 72 }],
+        },
+        previewSnapshotToken: null,
+      } satisfies ActiveTrainingPlanProjection,
+      localChart,
+    });
+
+    expect(result.source).toBe("backend");
+    expect(result.chart.emptyState).toBe("noActivityHistory");
+    expect(result.chart.dailyPoints[0]).toMatchObject({
+      scheduledFitnessCtl: null,
+      targetFitnessCtl: null,
+      fatigueAtl: null,
+      formTsb: null,
+    });
+    expect(result.chart.weeks[0]).toMatchObject({
+      fitness: null,
+      scheduledFitness: null,
+      targetFitness: null,
+      fatigue: null,
+      form: null,
+    });
+  });
 });

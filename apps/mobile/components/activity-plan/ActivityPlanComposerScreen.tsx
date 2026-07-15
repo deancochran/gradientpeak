@@ -1,29 +1,30 @@
 import BottomSheet, { BottomSheetBackdrop } from "@gorhom/bottom-sheet";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
+  type ActivityPlanTargetAnchors,
+  type ActivityTargetCategory,
   calculateActivityStatsV2,
-  type IntensityTargetV2,
+  getActivityPlanDefaultTarget,
+  getActivityPlanProviderReadiness,
   type IntervalStepV2,
   type IntervalV2,
 } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
-import { useZodForm } from "@repo/ui/hooks";
 import { randomUUID } from "expo-crypto";
 import { useNavigation, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, View } from "react-native";
 import { NestableScrollContainer } from "react-native-draggable-flatlist";
-import { z } from "zod";
-import {
-  type ActivityPlanBasicsFormData,
-  ActivityPlanBasicsSection,
-} from "@/components/activity-plan/ActivityPlanBasicsSection";
+import { ActivityPlanBasicsSection } from "@/components/activity-plan/ActivityPlanBasicsSection";
 import { StructureBuilderCard } from "@/components/activity-plan/structure/StructureBuilderCard";
 import { StructureIntervalSheet } from "@/components/activity-plan/structure/StructureIntervalSheet";
+import { useActivityPlanBasicsForm } from "@/components/activity-plan/useActivityPlanBasicsForm";
 import { useActivityPlanComposerProcess } from "@/components/activity-plan/useActivityPlanComposerProcess";
 import { StepEditorDialog } from "@/components/activity-plan/workout/StepEditorDialog";
 import { AppBottomSheetContent } from "@/components/shared/AppBottomSheet";
+import { api } from "@/lib/api";
 import { useActivityPlanForm } from "@/lib/hooks/forms/useActivityPlanForm";
+import { useAuth } from "@/lib/hooks/useAuth";
 import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation";
 
 export type ActivityPlanComposerModeContract =
@@ -36,41 +37,35 @@ export type ActivityPlanComposerModeContract =
       planId: string;
     };
 
-type ActivityCategory = "run" | "bike" | "swim" | "strength" | "other";
+type ActivityCategory = ActivityTargetCategory;
 const STRUCTURE_CHART_HINT_KEY = "activity-plan-structure-chart-hint-seen-v1";
-const activityPlanBasicsSchema = z.object({
-  name: z.string().trim().min(1, "Plan name is required."),
-  description: z.string(),
-});
 
-const createDefaultTarget = (category: ActivityCategory): IntensityTargetV2 => {
-  if (category === "bike") {
-    return { type: "%FTP", intensity: 75 };
-  }
-  if (category === "run") {
-    return { type: "%MaxHR", intensity: 75 };
-  }
-  return { type: "RPE", intensity: 5 };
-};
-
-const createDefaultStep = (category: ActivityCategory): IntervalStepV2 => ({
+const createDefaultStep = (
+  category: ActivityCategory,
+  anchors: ActivityPlanTargetAnchors,
+): IntervalStepV2 => ({
   id: randomUUID(),
   name: "New Step",
   duration: { type: "time", seconds: 300 },
-  targets: [createDefaultTarget(category)],
+  targets: [getActivityPlanDefaultTarget({ activityCategory: category, anchors })],
 });
 
-const createDefaultInterval = (category: ActivityCategory, index: number): IntervalV2 => ({
+const createDefaultInterval = (
+  category: ActivityCategory,
+  index: number,
+  anchors: ActivityPlanTargetAnchors,
+): IntervalV2 => ({
   id: randomUUID(),
   name: `Interval ${index + 1}`,
   repetitions: 1,
-  steps: [createDefaultStep(category)],
+  steps: [createDefaultStep(category, anchors)],
 });
 
 export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContract) {
   const isEditMode = props.mode === "edit";
   const router = useRouter();
   const navigation = useNavigation();
+  const { profile } = useAuth();
   const allowNavigationRef = useRef(false);
   const structureStepSheetRef = useRef<BottomSheet>(null);
 
@@ -142,46 +137,13 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     },
   });
 
-  const basicsForm = useZodForm<ActivityPlanBasicsFormData>({
-    schema: activityPlanBasicsSchema,
-    defaultValues: {
-      name: form.name,
-      description: form.description,
-    },
-    mode: "onChange",
+  const basicsForm = useActivityPlanBasicsForm({
+    description: form.description,
+    name: form.name,
+    nameError: validation.errors.name,
+    onDescriptionChange: setDescription,
+    onNameChange: setName,
   });
-  const basicsName = basicsForm.watch("name");
-  const basicsDescription = basicsForm.watch("description");
-
-  useEffect(() => {
-    if (basicsName !== form.name) {
-      setName(basicsName);
-    }
-  }, [basicsName, form.name, setName]);
-
-  useEffect(() => {
-    if (basicsDescription !== form.description) {
-      setDescription(basicsDescription);
-    }
-  }, [basicsDescription, form.description, setDescription]);
-
-  useEffect(() => {
-    if (form.name !== basicsForm.getValues("name")) {
-      basicsForm.setValue("name", form.name);
-    }
-    if (form.description !== basicsForm.getValues("description")) {
-      basicsForm.setValue("description", form.description);
-    }
-  }, [basicsForm, form.description, form.name]);
-
-  useEffect(() => {
-    const nameError = validation.errors.name;
-    if (nameError) {
-      basicsForm.setError("name", { message: nameError });
-      return;
-    }
-    basicsForm.clearErrors("name");
-  }, [basicsForm, validation.errors.name]);
 
   const showUndoToast = (message: string, onUndo: () => void) => {
     if (undoTimeoutRef.current) {
@@ -211,6 +173,29 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
   };
 
   const intervals = form.structure.intervals || [];
+  const maxHrMetrics = api.profileMetrics.list.useQuery({ metric_type: "max_hr", limit: 1 });
+  const maxHeartRateBpm = useMemo(
+    () => maxHrMetrics.data?.items.find((metric) => metric.metric_type === "max_hr")?.value,
+    [maxHrMetrics.data?.items],
+  );
+  const targetAnchors = useMemo<ActivityPlanTargetAnchors>(
+    () => ({
+      ftpWatts: profile?.ftp,
+      maxHeartRateBpm,
+      thresholdHeartRateBpm: profile?.threshold_hr,
+    }),
+    [maxHeartRateBpm, profile?.ftp, profile?.threshold_hr],
+  );
+  const wahooReadiness = useMemo(
+    () =>
+      getActivityPlanProviderReadiness({
+        activityCategory: form.activityCategory,
+        anchors: targetAnchors,
+        provider: "wahoo",
+        structure: form.structure,
+      }),
+    [form.activityCategory, form.structure, targetAnchors],
+  );
 
   const stepBeingEdited = useMemo(() => {
     if (!editingIntervalId || !editingStepId) {
@@ -310,7 +295,7 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
   };
 
   const handleAddInterval = () => {
-    addInterval(createDefaultInterval(form.activityCategory, intervals.length));
+    addInterval(createDefaultInterval(form.activityCategory, intervals.length, targetAnchors));
   };
 
   const handleRemoveInterval = (intervalId: string) => {
@@ -445,6 +430,15 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
             }
           />
 
+          {wahooReadiness.status !== "ready" ? (
+            <View className="rounded-lg border border-border bg-muted/30 p-3">
+              <Text className="text-sm font-semibold text-foreground">Wahoo preflight</Text>
+              <Text className="mt-1 text-xs text-muted-foreground">
+                {wahooReadiness.issues[0]?.message ?? "This plan is not ready for Wahoo sync."}
+              </Text>
+            </View>
+          ) : null}
+
           <StructureBuilderCard
             structure={form.structure}
             intervals={intervals}
@@ -465,6 +459,7 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
         step={stepBeingEdited}
         onSave={handleSaveStep}
         activityType={form.activityCategory}
+        targetAnchors={targetAnchors}
       />
 
       <BottomSheet

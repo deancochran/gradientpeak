@@ -383,6 +383,12 @@ export default function StandardLayout() {
         }}
       />
       <Stack.Screen
+        name="profile-css-test"
+        options={{
+          title: "CSS Test",
+        }}
+      />
+      <Stack.Screen
         name="training-preferences"
         options={{
           title: "Training Preferences",

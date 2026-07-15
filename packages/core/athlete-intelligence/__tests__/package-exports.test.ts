@@ -3,6 +3,9 @@ import { resolve } from "node:path";
 import {
   assembleAthleteState,
   athleteStateVectorSchema,
+  calculateCriticalPowerCapability,
+  effortCurveUnitSchema,
+  metricCatalog,
   requestScopedAthletePlanningContextSchema,
 } from "@repo/core/athlete-intelligence";
 import { describe, expect, it } from "vitest";
@@ -26,5 +29,12 @@ describe("athlete intelligence package exports", () => {
     expect(requestScopedAthletePlanningContextSchema).toBeDefined();
     expect(athleteStateVectorSchema).toBeDefined();
     expect(assembleAthleteState).toBeTypeOf("function");
+  });
+
+  it("exports canonical threshold, swim pace, and CP/W′ capability vocabulary", () => {
+    expect(metricCatalog.threshold_pace_seconds_per_km.canonicalUnit).toBe("seconds_per_km");
+    expect(metricCatalog.css_seconds_per_100m.canonicalUnit).toBe("seconds_per_100m");
+    expect(effortCurveUnitSchema.options).toContain("seconds_per_100m");
+    expect(calculateCriticalPowerCapability).toBeTypeOf("function");
   });
 });

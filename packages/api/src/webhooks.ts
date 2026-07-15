@@ -3,7 +3,8 @@
  * Exposes clean interfaces for webhook handlers without exposing internal implementation
  */
 
-export { submitActivity } from "./application/activities/submit-activity";
+export { enrichImportedActivityArtifact } from "./application/activity-file-ingestion/enrich-imported-activity-artifact";
+export { submitImportedActivityArtifact } from "./application/activity-file-ingestion/submit-imported-activity-artifact";
 export { createProviderSyncRepository, createWahooRepository } from "./infrastructure/repositories";
 export {
   createActivityImporter,

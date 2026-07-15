@@ -18,6 +18,7 @@ function serializeCreatedEvent(row: {
   profile_id: string;
   recurrence_rule: string | null;
   recurrence_timezone: string | null;
+  route_id: string | null;
   series_id: string | null;
   source_provider: string | null;
   starts_at: Date;
@@ -58,6 +59,7 @@ function serializeSplitEventRow(row: {
   profile_id: string;
   recurrence_rule: string | null;
   recurrence_timezone: string | null;
+  route_id: string | null;
   series_id: string | null;
   source_provider: string | null;
   starts_at: Date;
@@ -112,6 +114,7 @@ const splitEventReturningColumns = {
   starts_at: schema.events.starts_at,
   ends_at: schema.events.ends_at,
   activity_plan_id: schema.events.activity_plan_id,
+  route_id: schema.events.route_id,
   training_plan_id: schema.events.training_plan_id,
   linked_activity_id: schema.events.linked_activity_id,
   recurrence_rule: schema.events.recurrence_rule,
@@ -121,6 +124,8 @@ const splitEventReturningColumns = {
   original_starts_at: schema.events.original_starts_at,
   source_provider: schema.events.source_provider,
 };
+
+type EventTransaction = Parameters<Parameters<DrizzleDbClient["transaction"]>[0]>[0];
 
 async function loadSplitEvent(db: any, eventId: string, profileId: string) {
   const [row] = await db
@@ -136,6 +141,46 @@ async function loadSplitEvent(db: any, eventId: string, profileId: string) {
   return serializeSplitEventRow(row);
 }
 
+async function insertOwnedEvent(
+  db: EventTransaction,
+  input: Parameters<EventWriteRepository["createOwnedEvent"]>[0],
+) {
+  const eventId = randomUUID();
+  const now = new Date();
+  const [eventRow] = await db
+    .insert(schema.events)
+    .values({
+      id: eventId,
+      created_at: now,
+      updated_at: now,
+      profile_id: input.profileId,
+      event_type: input.eventType,
+      title: input.title,
+      all_day: input.allDay,
+      timezone: input.timezone,
+      starts_at: new Date(input.startsAt),
+      ends_at: input.endsAt ? new Date(input.endsAt) : null,
+      status: input.status,
+      notes: input.notes,
+      description: input.description,
+      activity_plan_id: input.activityPlanId,
+      route_id: input.routeId,
+      training_plan_id: input.trainingPlanId,
+      recurrence_rule: input.recurrenceRule,
+      recurrence_timezone: input.recurrenceTimezone,
+      series_id: input.seriesId ?? null,
+      occurrence_key: input.occurrenceKey ?? "",
+      original_starts_at: input.originalStartsAt ? new Date(input.originalStartsAt) : null,
+    })
+    .returning({ id: schema.events.id });
+
+  if (!eventRow) {
+    throw new Error("Failed to create event");
+  }
+
+  return loadSplitEvent(db, eventId, input.profileId);
+}
+
 export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepository {
   return {
     async getAccessibleActivityPlan({ activityPlanId, profileId }) {
@@ -148,6 +193,25 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
             or(
               eq(schema.activityPlans.profile_id, profileId),
               eq(schema.activityPlans.is_system_template, true),
+            ),
+          ),
+        )
+        .limit(1);
+
+      return row ?? null;
+    },
+
+    async getAccessibleActivityRoute({ profileId, routeId }) {
+      const [row] = await db
+        .select({ id: schema.activityRoutes.id })
+        .from(schema.activityRoutes)
+        .where(
+          and(
+            eq(schema.activityRoutes.id, routeId),
+            or(
+              eq(schema.activityRoutes.profile_id, profileId),
+              eq(schema.activityRoutes.is_public, true),
+              eq(schema.activityRoutes.is_system_template, true),
             ),
           ),
         )
@@ -172,50 +236,25 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
     },
 
     async createOwnedEvent(input) {
-      const eventId = randomUUID();
-      const now = new Date();
+      return db.transaction((tx) => insertOwnedEvent(tx, input));
+    },
 
-      const [row] = await db.transaction(async (tx) => {
-        const [eventRow] = await tx
-          .insert(schema.events)
-          .values({
-            id: eventId,
-            created_at: now,
-            updated_at: now,
-            profile_id: input.profileId,
-            event_type: input.eventType,
-            title: input.title,
-            all_day: input.allDay,
-            timezone: input.timezone,
-            starts_at: new Date(input.startsAt),
-            ends_at: input.endsAt ? new Date(input.endsAt) : null,
-            status: input.status,
-            notes: input.notes,
-            description: input.description,
-            activity_plan_id: input.activityPlanId,
-            training_plan_id: input.trainingPlanId,
-            recurrence_rule: input.recurrenceRule,
-            recurrence_timezone: input.recurrenceTimezone,
-            series_id: input.seriesId ?? null,
-            occurrence_key: input.occurrenceKey ?? "",
-            original_starts_at: input.originalStartsAt ? new Date(input.originalStartsAt) : null,
-          })
-          .returning({ id: schema.events.id });
+    async createOwnedEvents({ anchor, occurrences }) {
+      return db.transaction(async (tx) => {
+        const anchorEvent = await insertOwnedEvent(tx, anchor);
+        const createdEvents = [anchorEvent];
 
-        if (!eventRow) return [];
+        for (const occurrence of occurrences) {
+          createdEvents.push(
+            await insertOwnedEvent(tx, {
+              ...occurrence,
+              seriesId: anchorEvent.id,
+            }),
+          );
+        }
 
-        return tx
-          .select(splitEventReturningColumns)
-          .from(schema.events)
-          .where(and(eq(schema.events.id, eventId), eq(schema.events.profile_id, input.profileId)))
-          .limit(1);
+        return createdEvents;
       });
-
-      if (!row) {
-        throw new Error("Failed to create event");
-      }
-
-      return serializeSplitEventRow(row);
     },
 
     async listOwnedEventsForSeries({ anchorEvent, profileId }) {
@@ -245,6 +284,7 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
       const startsAt = eventUpdates["starts_at"];
       const endsAt = eventUpdates["ends_at"];
       const activityPlanId = eventUpdates["activity_plan_id"] as string | null | undefined;
+      const routeId = eventUpdates["route_id"] as string | null | undefined;
       const trainingPlanId = eventUpdates["training_plan_id"] as string | null | undefined;
       const linkedActivityId = eventUpdates["linked_activity_id"] as string | null | undefined;
       const recurrenceRule = eventUpdates["recurrence_rule"] as string | null | undefined;
@@ -264,6 +304,7 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
         ...(startsAt ? { starts_at: new Date(startsAt as string) } : {}),
         ...(endsAt !== undefined ? { ends_at: endsAt ? new Date(endsAt as string) : null } : {}),
         ...(activityPlanId !== undefined ? { activity_plan_id: activityPlanId } : {}),
+        ...(routeId !== undefined ? { route_id: routeId } : {}),
         ...(trainingPlanId !== undefined ? { training_plan_id: trainingPlanId } : {}),
         ...(linkedActivityId !== undefined ? { linked_activity_id: linkedActivityId } : {}),
         ...(recurrenceRule !== undefined ? { recurrence_rule: recurrenceRule } : {}),

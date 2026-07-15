@@ -1,4 +1,5 @@
 export * from "./activity-plan-planning-estimate";
+export * from "./activityPlanProviderReadiness";
 export * from "./adjustments";
 export * from "./athletePlanningContext";
 export * from "./availabilityUtils";
@@ -24,6 +25,8 @@ export * from "./materializePlanToEvents";
 export * from "./normalizeCreationConfig";
 export * from "./normalizeGoalInput";
 export * from "./periodization";
+export * from "./plannedWorkoutExportCompatibility";
+export * from "./plannedWorkoutExportDocument";
 export * from "./planningBackendPreview";
 export * from "./planningCanonicalStructure";
 export * from "./planningContext";

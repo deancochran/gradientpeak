@@ -62,7 +62,9 @@ async function persistJobProgress(
   return nextJob;
 }
 
-export async function runActivitySubmissionQueueJob(
+const activeJobs = new Map<string, Promise<ActivitySubmissionQueueJob>>();
+
+async function runActivitySubmissionQueueJobOnce(
   initialJob: ActivitySubmissionQueueJob,
   deps: ActivitySubmissionQueueRunnerDeps,
 ): Promise<ActivitySubmissionQueueJob> {
@@ -86,11 +88,10 @@ export async function runActivitySubmissionQueueJob(
         throw new Error("Activity file ingestion was not returned");
       }
 
-      job = {
-        ...job,
+      job = await persistJobProgress(job, "creating_activity", now, deps, {
         activityId: created.id,
         ingestionId: created.ingestion.id,
-      };
+      });
     }
 
     if (!job.remoteFilePath) {
@@ -108,10 +109,9 @@ export async function runActivitySubmissionQueueJob(
         throw new Error(uploadResult.error || "Failed to upload activity file");
       }
 
-      job = {
-        ...job,
+      job = await persistJobProgress(job, "uploading", now, deps, {
         remoteFilePath: signedUrl.filePath,
-      };
+      });
     }
 
     const activityId = job.activityId;
@@ -142,4 +142,18 @@ export async function runActivitySubmissionQueueJob(
       lastError: getErrorMessage(error),
     });
   }
+}
+
+export function runActivitySubmissionQueueJob(
+  initialJob: ActivitySubmissionQueueJob,
+  deps: ActivitySubmissionQueueRunnerDeps,
+): Promise<ActivitySubmissionQueueJob> {
+  const activeJob = activeJobs.get(initialJob.id);
+  if (activeJob) return activeJob;
+
+  const execution = runActivitySubmissionQueueJobOnce(initialJob, deps).finally(() => {
+    if (activeJobs.get(initialJob.id) === execution) activeJobs.delete(initialJob.id);
+  });
+  activeJobs.set(initialJob.id, execution);
+  return execution;
 }

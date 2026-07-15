@@ -4,6 +4,7 @@ import {
   buildLoadSeries,
   evaluateLoadSeries,
   loadDayObservationSchema,
+  loadSeriesIdentityForActivityTss,
   loadSeriesIdentitySchema,
   sameLoadSeriesIdentity,
 } from "../load-series";
@@ -17,6 +18,32 @@ const tssIdentity = {
 };
 
 describe("load-series contracts", () => {
+  it("keeps threshold calibration out of stable TSS series identity", () => {
+    const first = loadSeriesIdentityForActivityTss({
+      sport: "bike",
+      method: "power_threshold",
+      source: "activity_analysis",
+      version: "1",
+      calibration: { type: "ftp_watts", value: 250 },
+    });
+    const recalibrated = loadSeriesIdentityForActivityTss({
+      sport: "bike",
+      method: "power_threshold",
+      source: "activity_analysis",
+      version: "1",
+      calibration: { type: "ftp_watts", value: 275 },
+    });
+
+    expect(first).toEqual({
+      sport: "bike",
+      family: "tss",
+      method: "power_threshold",
+      sourceDefinition: "activity_analysis",
+      version: "1",
+    });
+    expect(sameLoadSeriesIdentity(first, recalibrated)).toBe(true);
+  });
+
   it("parses a complete exact identity", () => {
     expect(loadSeriesIdentitySchema.parse(tssIdentity)).toEqual(tssIdentity);
     expect(loadSeriesIdentitySchema.safeParse({ ...tssIdentity, version: "" }).success).toBe(false);

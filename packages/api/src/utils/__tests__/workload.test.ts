@@ -98,7 +98,7 @@ describe("workload utils", () => {
     });
   });
 
-  it("returns unavailable when the threshold calibration changes", () => {
+  it("keeps a continuous workload series when threshold calibration changes", () => {
     const activities = allDates.map((date, index) => ({
       started_at: `${date}T06:00:00.000Z`,
       tss: 40 + index,
@@ -108,9 +108,14 @@ describe("workload utils", () => {
       },
     }));
 
-    expect(buildWorkloadEnvelopes(activities, start, end).acwr).toMatchObject({
-      value: null,
-      reasonCode: "mixed_identities",
+    const workload = buildWorkloadEnvelopes(activities, start, end);
+    expect(workload.acwr.value).toBeTypeOf("number");
+    expect(workload.acwr.identity).toMatchObject({
+      sport: "bike",
+      family: "tss",
+      method: "power_threshold",
+      sourceDefinition: "activity_analysis",
+      version: "1",
     });
   });
 
@@ -135,7 +140,7 @@ describe("workload utils", () => {
       family: "tss",
       method: "power_threshold",
       version: "1",
-      sourceDefinition: 'activity_analysis:{"type":"ftp_watts","value":250}',
+      sourceDefinition: "activity_analysis",
     });
   });
 

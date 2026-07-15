@@ -4,6 +4,7 @@
 
 import type { CanonicalSport } from "@repo/core";
 import {
+  getActivityEffortThresholdEvidence,
   resolveCanonicalThresholds,
   type ThresholdActivityEffortObservation,
 } from "@repo/core/athlete-inputs";
@@ -367,6 +368,18 @@ function resolveEstimationThresholds(
             durationSeconds: 1200,
             observedAt: now,
             observationKind: "actual" as const,
+            evidence:
+              getActivityEffortThresholdEvidence({
+                activityCategory: effort.activity_category,
+                activityId: effort.activity_id,
+                durationSeconds: effort.duration_seconds,
+                effortType: effort.effort_type,
+                method: effort.method,
+                provenance: effort.provenance,
+                source: effort.source,
+                unit: effort.unit,
+                value: effort.value,
+              }) ?? undefined,
           },
         ];
       }
@@ -382,6 +395,18 @@ function resolveEstimationThresholds(
             durationSeconds: 1200,
             observedAt: now,
             observationKind: "actual" as const,
+            evidence:
+              getActivityEffortThresholdEvidence({
+                activityCategory: effort.activity_category,
+                activityId: effort.activity_id,
+                durationSeconds: effort.duration_seconds,
+                effortType: effort.effort_type,
+                method: effort.method,
+                provenance: effort.provenance,
+                source: effort.source,
+                unit: effort.unit,
+                value: effort.value,
+              }) ?? undefined,
           },
         ];
       }

@@ -4,9 +4,20 @@ import {
   encodePolyline,
   simplifyCoordinates,
 } from "@repo/core";
+import {
+  getRouteFileExtension,
+  MAX_ROUTE_FILE_SIZE_BYTES,
+  MAX_ROUTE_POINT_COUNT,
+  ROUTE_FILE_MIME_TYPES,
+} from "@repo/core/route-files";
 import { z } from "zod";
 
-import { type ParsedRoute, parseRoute, validateRoute } from "./route-parser";
+import {
+  type ParsedRoute,
+  parseRouteWithFormat,
+  type RouteContentFormat,
+  validateRoute,
+} from "./route-parser";
 
 export const ROUTES_BUCKET = "gpx-routes";
 
@@ -21,7 +32,7 @@ export const routeCoordinateSchema = z
 export const parsedRouteSchema = z
   .object({
     name: z.string().optional(),
-    coordinates: z.array(routeCoordinateSchema),
+    coordinates: z.array(routeCoordinateSchema).max(MAX_ROUTE_POINT_COUNT),
     metadata: z
       .object({
         author: z.string().optional(),
@@ -48,11 +59,52 @@ export interface RouteFileArtifacts {
   totalAscent: number;
   totalDescent: number;
   totalDistance: number;
+  format: RouteContentFormat;
+}
+
+export interface RouteStorageFormat {
+  extension: RouteContentFormat;
+  mimeType: (typeof ROUTE_FILE_MIME_TYPES)[RouteContentFormat];
+}
+
+export function getRouteContentSizeBytes(fileContent: string): number {
+  return new TextEncoder().encode(fileContent).byteLength;
+}
+
+export function assertRouteContentSize(fileContent: string): void {
+  if (getRouteContentSizeBytes(fileContent) > MAX_ROUTE_FILE_SIZE_BYTES) {
+    throw new Error("Route file exceeds the 10 MiB limit");
+  }
+}
+
+export function resolveRouteContentFormat(
+  fileName: string,
+  fileContent: string,
+): RouteContentFormat {
+  const extension = getRouteFileExtension(fileName);
+  if (!extension) {
+    throw new Error("Unsupported route file extension");
+  }
+
+  return parseRouteWithFormat(fileContent, extension).format;
+}
+
+export function getCanonicalRouteStorageFormat(format: RouteContentFormat): RouteStorageFormat {
+  return { extension: format, mimeType: ROUTE_FILE_MIME_TYPES[format] };
 }
 
 export function parseStoredRouteFile(fileContent: string, fileName?: string): ParsedRoute {
-  const parsed = parsedRouteSchema.safeParse(parseRoute(fileContent, inferRouteFileType(fileName)));
+  assertRouteContentSize(fileContent);
+  const extension = fileName ? getRouteFileExtension(fileName) : undefined;
+  if (extension === null) throw new Error("Unsupported route file extension");
+  const parsedResult = parseRouteWithFormat(fileContent, extension);
+  const parsed = parsedRouteSchema.safeParse(parsedResult.route);
   if (!parsed.success) {
+    throw new Error("Stored route file contained invalid route data");
+  }
+
+  const validation = validateRoute(parsed.data);
+  if (!validation.valid) {
     throw new Error("Stored route file contained invalid route data");
   }
 
@@ -63,7 +115,11 @@ export function buildRouteFileArtifacts(
   fileContent: string,
   fileName?: string,
 ): RouteFileArtifacts {
-  const parsed = parsedRouteSchema.safeParse(parseRoute(fileContent, inferRouteFileType(fileName)));
+  assertRouteContentSize(fileContent);
+  const extension = fileName ? getRouteFileExtension(fileName) : undefined;
+  if (extension === null) throw new Error("Unsupported route file extension");
+  const parsedResult = parseRouteWithFormat(fileContent, extension);
+  const parsed = parsedRouteSchema.safeParse(parsedResult.route);
   if (!parsed.success) {
     throw new Error("Failed to process route file");
   }
@@ -85,6 +141,7 @@ export function buildRouteFileArtifacts(
 
   return {
     elevationPolyline,
+    format: parsedResult.format,
     parsed: parsed.data,
     polyline,
     totalAscent: stats.totalAscent,
@@ -104,20 +161,15 @@ export function inferRouteContentType(fileName: string): string {
     return "application/vnd.garmin.tcx+xml";
   }
 
+  if (lowerName.endsWith(".xml")) {
+    return ROUTE_FILE_MIME_TYPES.xml;
+  }
+
   return "application/octet-stream";
 }
 
 export function inferRouteFileExtension(fileName: string): string {
-  const extension = fileName.split(".").pop()?.trim().toLowerCase();
-  return extension && extension.length > 0 ? extension : "gpx";
-}
-
-function inferRouteFileType(fileName?: string): string | undefined {
-  if (!fileName) return undefined;
-
-  const extension = fileName.split(".").pop()?.trim().toLowerCase();
-  if (extension === "xml") return undefined;
-  return extension && extension.length > 0 ? extension : undefined;
+  return getRouteFileExtension(fileName) ?? "gpx";
 }
 
 function calculateSimplificationTolerance(pointCount: number): number {

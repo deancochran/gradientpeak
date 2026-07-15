@@ -1,7 +1,17 @@
 import { randomUUID } from "node:crypto";
-import type { ThresholdMetricSource } from "@repo/core/athlete-inputs";
+import {
+  getActivityEffortThresholdEvidence,
+  type ThresholdMetricSource,
+} from "@repo/core/athlete-inputs";
 import { schema } from "@repo/db";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import {
+  decryptNullableProviderToken,
+  decryptProviderToken,
+  encryptProviderToken,
+  hasProviderTokenEncryptionKey,
+  isEncryptedProviderToken,
+} from "../../lib/provider-token-crypto";
 import type {
   CreateWahooRepositoryOptions,
   WahooEventResourceProviderMetadata,
@@ -26,9 +36,18 @@ function toWahooEventResourceProviderMetadata(
   if (!wahoo || typeof wahoo !== "object") return null;
 
   const wahooValue = wahoo as Record<string, unknown>;
-  const metadata: NonNullable<WahooEventResourceProviderMetadata["wahoo"]> = {};
+  const metadata: NonNullable<WahooEventResourceProviderMetadata["wahoo"]> & {
+    sourcePlanId?: string;
+    sourceRouteId?: string | null;
+  } = {};
   if (typeof wahooValue["planId"] === "number") metadata.planId = wahooValue["planId"];
   if (typeof wahooValue["routeId"] === "number") metadata.routeId = wahooValue["routeId"];
+  if (typeof wahooValue["sourcePlanId"] === "string") {
+    metadata.sourcePlanId = wahooValue["sourcePlanId"];
+  }
+  if (typeof wahooValue["sourceRouteId"] === "string" || wahooValue["sourceRouteId"] === null) {
+    metadata.sourceRouteId = wahooValue["sourceRouteId"];
+  }
 
   return Object.keys(metadata).length > 0 ? { wahoo: metadata } : null;
 }
@@ -87,7 +106,39 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         )
         .limit(1);
 
-      return row ? { ...row, expiresAt: toIsoString(row.expiresAt) } : null;
+      if (!row) return null;
+
+      const accessToken = decryptProviderToken(row.accessToken);
+      const refreshToken = decryptNullableProviderToken(row.refreshToken);
+      const hasLegacyCredential =
+        !isEncryptedProviderToken(row.accessToken) ||
+        (row.refreshToken !== null && !isEncryptedProviderToken(row.refreshToken));
+
+      if (hasLegacyCredential && hasProviderTokenEncryptionKey()) {
+        await db
+          .update(schema.integrationCredentials)
+          .set({
+            access_token: encryptProviderToken(accessToken),
+            refresh_token: refreshToken === null ? null : encryptProviderToken(refreshToken),
+            updated_at: new Date(),
+          })
+          .where(
+            and(
+              eq(schema.integrationCredentials.integration_id, row.id),
+              eq(schema.integrationCredentials.access_token, row.accessToken),
+              row.refreshToken === null
+                ? isNull(schema.integrationCredentials.refresh_token)
+                : eq(schema.integrationCredentials.refresh_token, row.refreshToken),
+            ),
+          );
+      }
+
+      return {
+        ...row,
+        accessToken,
+        refreshToken,
+        expiresAt: toIsoString(row.expiresAt),
+      };
     },
 
     async findWahooIntegrationByExternalId(externalId) {
@@ -113,8 +164,21 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         .select({
           activityId: schema.integrationResourceLinks.internal_resource_id,
           linkId: schema.integrationResourceLinks.id,
+          profileId: schema.activities.profile_id,
+          activityFilePath: schema.activities.activity_file_path,
+          activityFileSize: schema.activities.activity_file_size,
+          analysisReady: sql<boolean>`exists (
+            select 1 from ${schema.activityFileIngestions}
+            where ${schema.activityFileIngestions.activity_id} = ${schema.integrationResourceLinks.internal_resource_id}
+              and ${schema.activityFileIngestions.source} = 'provider_sync'
+              and ${schema.activityFileIngestions.status} = 'ready'
+          )`,
         })
         .from(schema.integrationResourceLinks)
+        .innerJoin(
+          schema.activities,
+          eq(schema.activities.id, schema.integrationResourceLinks.internal_resource_id),
+        )
         .where(
           and(
             eq(schema.integrationResourceLinks.integration_id, integrationId),
@@ -132,6 +196,14 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         .select({
           activityId: schema.activities.id,
           profileId: schema.activities.profile_id,
+          activityFilePath: schema.activities.activity_file_path,
+          activityFileSize: schema.activities.activity_file_size,
+          analysisReady: sql<boolean>`exists (
+            select 1 from ${schema.activityFileIngestions}
+            where ${schema.activityFileIngestions.activity_id} = ${schema.activities.id}
+              and ${schema.activityFileIngestions.source} = 'provider_sync'
+              and ${schema.activityFileIngestions.status} = 'ready'
+          )`,
         })
         .from(schema.activities)
         .where(
@@ -283,6 +355,7 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         db
           .select({
             id: schema.profileMetrics.id,
+            referenceActivityId: schema.profileMetrics.reference_activity_id,
             recordedAt: schema.profileMetrics.recorded_at,
             source: schema.profileMetrics.source,
             type: schema.profileMetrics.metric_type,
@@ -321,7 +394,30 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
           .orderBy(desc(schema.activityEfforts.recorded_at), desc(schema.activityEfforts.id)),
       ]);
 
-      const resolvedMetrics = resolveLatestObservationsByKey(metricRows, (row) => row.type);
+      const linkedLthrActivityIds = metricRows.flatMap((metric) =>
+        metric.type === "lthr" && metric.source !== "manual" && metric.referenceActivityId
+          ? [metric.referenceActivityId]
+          : [],
+      );
+      const linkedLthrActivities =
+        linkedLthrActivityIds.length === 0
+          ? []
+          : await db
+              .select({ id: schema.activities.id, type: schema.activities.type })
+              .from(schema.activities)
+              .where(inArray(schema.activities.id, linkedLthrActivityIds));
+      const linkedLthrSport = new Map(
+        linkedLthrActivities.map((activity) => [activity.id, activity.type]),
+      );
+
+      const resolvedMetrics = resolveLatestObservationsByKey(metricRows, (row) => {
+        if (row.type !== "lthr") return row.type;
+        if (row.source === "manual" || !row.referenceActivityId) return "lthr:generic";
+        const sport = linkedLthrSport.get(row.referenceActivityId);
+        return sport === "bike" || sport === "run" || sport === "swim"
+          ? `lthr:${sport}`
+          : `lthr:unclassified:${row.referenceActivityId}`;
+      });
       const latest = new Map<string, number>();
       for (const [type, row] of resolvedMetrics) if (row) latest.set(type, row.value);
       const currentMetricRows = [...resolvedMetrics.values()].filter((row) => row !== null);
@@ -351,6 +447,18 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
                 : "derived",
             observedAt: effort.observedAt.toISOString(),
             value: effort.value,
+            evidence:
+              getActivityEffortThresholdEvidence({
+                activityCategory: "bike",
+                activityId: effort.activityId,
+                durationSeconds: 1200,
+                effortType: "power",
+                method: effort.method,
+                provenance: effort.provenance,
+                source: effort.source,
+                unit: effort.unit,
+                value: effort.value,
+              }) ?? undefined,
           })),
         ftpMetrics: [
           ...currentMetricRows
@@ -371,7 +479,12 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
             : []),
         ],
         maxHr: latest.get("max_hr") ?? null,
-        thresholdHr: latest.get("lthr") ?? null,
+        thresholdHr: latest.get("lthr:generic") ?? null,
+        thresholdHrBySport: {
+          bike: latest.get("lthr:bike"),
+          run: latest.get("lthr:run"),
+          swim: latest.get("lthr:swim"),
+        },
       };
     },
 
@@ -390,7 +503,11 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         .where(
           and(
             eq(schema.activityRoutes.id, routeId),
-            eq(schema.activityRoutes.profile_id, profileId),
+            or(
+              eq(schema.activityRoutes.profile_id, profileId),
+              eq(schema.activityRoutes.is_public, true),
+              eq(schema.activityRoutes.is_system_template, true),
+            ),
           ),
         )
         .limit(1);
@@ -446,18 +563,18 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
       await db
         .insert(schema.integrationCredentials)
         .values({
-          access_token: accessToken,
+          access_token: encryptProviderToken(accessToken),
           expires_at: expiresAt ? new Date(expiresAt) : null,
           integration_id: id,
-          refresh_token: refreshToken,
+          refresh_token: refreshToken === null ? null : encryptProviderToken(refreshToken),
           updated_at: new Date(),
         })
         .onConflictDoUpdate({
           target: schema.integrationCredentials.integration_id,
           set: {
-            access_token: accessToken,
+            access_token: encryptProviderToken(accessToken),
             expires_at: expiresAt ? new Date(expiresAt) : null,
-            refresh_token: refreshToken,
+            refresh_token: refreshToken === null ? null : encryptProviderToken(refreshToken),
             updated_at: new Date(),
           },
         });

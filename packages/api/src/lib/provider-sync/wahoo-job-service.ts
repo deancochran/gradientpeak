@@ -17,6 +17,16 @@ type WahooJobPayload = {
   operation: "publish" | "unsync";
 };
 
+class WahooSyncResultError extends Error {
+  constructor(
+    message: string,
+    readonly retryable: boolean,
+  ) {
+    super(message);
+    this.name = "WahooSyncResultError";
+  }
+}
+
 function addMinutes(isoString: string, minutes: number): string {
   const date = new Date(isoString);
   date.setUTCMinutes(date.getUTCMinutes() + minutes);
@@ -134,7 +144,12 @@ export class WahooSyncJobService {
                 job.payload.eventId,
                 job.profileId,
               );
-              if (!result.success) throw new Error(result.error ?? "Wahoo publish job failed");
+              if (!result.success) {
+                throw new WahooSyncResultError(
+                  result.error ?? "Wahoo publish job failed",
+                  result.retryable !== false,
+                );
+              }
             } else if (job.jobType === WAHOO_UNSYNC_EVENT_JOB) {
               const result = await this.deps.syncService.unsyncEvent(
                 job.payload.eventId,
@@ -151,7 +166,12 @@ export class WahooSyncJobService {
                 );
                 return finalized === false ? "failed" : "completed";
               }
-              if (!result.success) throw new Error(result.error ?? "Wahoo unsync job failed");
+              if (!result.success) {
+                throw new WahooSyncResultError(
+                  result.error ?? "Wahoo unsync job failed",
+                  result.retryable !== false,
+                );
+              }
             } else {
               throw new Error(`Unsupported Wahoo job type: ${job.jobType}`);
             }
@@ -170,7 +190,9 @@ export class WahooSyncJobService {
             return "completed";
           } catch (error) {
             const lastError = error instanceof Error ? error.message : "Unknown Wahoo job failure";
-            const shouldDeadLetter = job.attempt >= job.maxAttempts;
+            const shouldDeadLetter =
+              (error instanceof WahooSyncResultError && !error.retryable) ||
+              job.attempt >= job.maxAttempts;
             const nextRunAt = shouldDeadLetter
               ? undefined
               : addMinutes(now, Math.min(job.attempt * 5, 60));

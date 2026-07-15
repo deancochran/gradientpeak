@@ -4,6 +4,14 @@ import type { RecordingSessionArtifact } from "./types";
 
 const PENDING_FINALIZED_ARTIFACT_KEY = "activity-recorder:pending-finalized-artifact";
 
+export function finalizedArtifactReferencesLocalFiles(
+  artifact: RecordingSessionArtifact | null,
+): boolean {
+  return Boolean(
+    artifact && (artifact.activityFilePath || (artifact.streamArtifactPaths?.length ?? 0) > 0),
+  );
+}
+
 export async function persistPendingFinalizedArtifact(
   artifact: RecordingSessionArtifact,
 ): Promise<void> {
@@ -21,8 +29,7 @@ export async function loadPendingFinalizedArtifact(): Promise<RecordingSessionAr
     return JSON.parse(raw) as RecordingSessionArtifact;
   } catch (error) {
     console.warn("[finalizedArtifactStorage] Failed to parse pending artifact", error);
-    await AsyncStorage.removeItem(PENDING_FINALIZED_ARTIFACT_KEY);
-    return null;
+    throw new Error("Stored finalized activity artifact is unreadable", { cause: error });
   }
 }
 

@@ -13,6 +13,7 @@ import type { ReactNode } from "react";
 import { useCallback, useMemo, useRef } from "react";
 import type { StyleProp, ViewStyle } from "react-native";
 import { View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTheme } from "@/lib/stores/theme-store";
 import { getNativeBottomSheetVisualTokens } from "@/lib/theme/native-bottom-sheet";
 
@@ -62,6 +63,8 @@ export function AppBottomSheetContent({
   paddingTop = 16,
   showsVerticalScrollIndicator = true,
 }: AppBottomSheetContentProps) {
+  const { bottom: bottomSafeAreaInset } = useSafeAreaInsets();
+
   return (
     <BottomSheetScrollView
       key={contentKey}
@@ -71,7 +74,7 @@ export function AppBottomSheetContent({
         {
           paddingHorizontal,
           paddingTop,
-          paddingBottom,
+          paddingBottom: paddingBottom + bottomSafeAreaInset,
           flexGrow: 1,
         },
         contentContainerStyle,
@@ -104,6 +107,7 @@ export function AppBottomSheet({
   visible,
 }: AppBottomSheetProps) {
   const bottomSheetRef = useRef<BottomSheet>(null);
+  const { bottom: bottomSafeAreaInset } = useSafeAreaInsets();
   const defaultSnapPoints = useMemo(() => ["82%", "96%"], []);
   const snapPoints = snapPointProp ?? defaultSnapPoints;
   const resolvedInitialSnapIndex = Math.min(
@@ -127,12 +131,12 @@ export function AppBottomSheet({
     (props: BottomSheetFooterProps) => {
       if (!footer) return null;
       return (
-        <BottomSheetFooter {...props} bottomInset={0}>
+        <BottomSheetFooter {...props} bottomInset={bottomSafeAreaInset}>
           <View className="border-t border-border bg-background px-4 py-4">{footer}</View>
         </BottomSheetFooter>
       );
     },
-    [footer],
+    [bottomSafeAreaInset, footer],
   );
 
   if (!visible) {

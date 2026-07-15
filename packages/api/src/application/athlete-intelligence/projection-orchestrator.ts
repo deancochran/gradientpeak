@@ -8,6 +8,7 @@ import {
   athleteStateVectorSchema,
   type CanonicalSport,
   calculateActivityReadinessV1,
+  calculateCriticalPowerCapability,
   calculateDurationAwareEffortCurve,
   calculateGoalDemandV1,
   calculateTrainingFeasibility,
@@ -70,7 +71,7 @@ function goalRelevantEffortCurve(input: {
   model: AthleteIntelligenceModelInput;
   durationSeconds: number;
   modality: "pace" | "power";
-  unit: "seconds_per_kilometer" | "watts";
+  unit: "seconds_per_kilometer" | "seconds_per_100m" | "watts";
   sport: CanonicalSport;
 }): DurationAwareEffortCurve {
   const target = {
@@ -204,7 +205,8 @@ export async function projectAthleteIntelligence(input: {
   const durationSeconds = goalDurationSeconds(demand);
   const sport = goalSport(selectedGoal);
   const modality = sport === "bike" ? "power" : "pace";
-  const unit = modality === "power" ? "watts" : "seconds_per_kilometer";
+  const unit =
+    sport === "bike" ? "watts" : sport === "swim" ? "seconds_per_100m" : "seconds_per_kilometer";
   const effortCurve =
     sport !== null && durationSeconds && durationSeconds > 0
       ? goalRelevantEffortCurve({
@@ -322,11 +324,13 @@ export async function projectAthleteIntelligence(input: {
         ) as typeof calculatedCalendarFeasibility.constraints,
       };
 
-  const physiology = evaluatePhysiologyMetrics(model);
+  const physiology = evaluatePhysiologyMetrics(model, sport);
+  const criticalPower = calculateCriticalPowerCapability({ model });
   const assembledProjection = athleteIntelligenceProjectionSchema.parse(
     assembleWholeAthleteProjectionV1({
       model: selectedModel,
       physiology,
+      criticalPower,
       effortCurves: [
         { goalSourceId: selectedGoal.sourceId, demand, ...(effortCurve ? { effortCurve } : {}) },
       ],
@@ -386,6 +390,7 @@ export async function projectAthleteIntelligence(input: {
   });
   const policyVersions = [
     { policy: "physiology", version: physiology.policyVersion },
+    { policy: "criticalPower", version: criticalPower.policyVersion },
     { policy: "goalDemand", version: demand.policyVersion },
     { policy: "activityReadiness", version: activityReadiness.policyVersion },
     ...(effortCurve ? [{ policy: "effortCurves", version: effortCurve.policyVersion }] : []),

@@ -1,4 +1,10 @@
 import { randomUUID } from "node:crypto";
+import {
+  MAX_ROUTE_FILE_SIZE_BYTES,
+  routeDescriptionSchema,
+  routeNameSchema,
+  safeRouteFileNameSchema,
+} from "@repo/core/route-files";
 import { type ActivityRouteRow, activityRoutes, events, groupEvents } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, asc, count, desc, eq, gt, gte, ilike, lt, lte, or, sql } from "drizzle-orm";
@@ -8,10 +14,11 @@ import {
   serializedActivityRouteSchema,
 } from "../application/routes/serializeActivityRouteRow";
 import { getRequiredDb } from "../db";
+import { logger } from "../lib/logger";
 import {
   buildRouteFileArtifacts,
-  inferRouteContentType,
-  inferRouteFileExtension,
+  getCanonicalRouteStorageFormat,
+  getRouteContentSizeBytes,
   parseStoredRouteFile,
   ROUTES_BUCKET,
   routeCoordinateSchema,
@@ -171,10 +178,16 @@ async function requireRouteGeometryForRow(input: {
 
 const uploadRouteSchema = z
   .object({
-    name: z.string().min(1).max(100),
-    description: z.string().max(1000).optional(),
-    fileContent: z.string().min(1),
-    fileName: z.string().min(1),
+    name: routeNameSchema,
+    description: routeDescriptionSchema,
+    fileContent: z
+      .string()
+      .min(1)
+      .refine(
+        (content) => getRouteContentSizeBytes(content) <= MAX_ROUTE_FILE_SIZE_BYTES,
+        "Route file exceeds the 10 MiB limit",
+      ),
+    fileName: safeRouteFileNameSchema,
   })
   .strict();
 
@@ -414,17 +427,14 @@ export const routesRouter = createTRPCRouter({
 
       // Parse GPX file
       const fileContent = await fileData.text();
-      let parsed;
+      let parsed: ReturnType<typeof parseStoredRouteFile>;
 
       try {
         parsed = parseStoredRouteFile(fileContent, routeData.file_path);
-      } catch (error) {
+      } catch {
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error
-              ? error.message
-              : "Stored route file contained invalid route data",
+          message: "Stored route file contained invalid route data",
         });
       }
 
@@ -450,21 +460,22 @@ export const routesRouter = createTRPCRouter({
         const artifacts = buildRouteFileArtifacts(input.fileContent, input.fileName);
 
         // Generate unique file path
-        const fileExtension = inferRouteFileExtension(input.fileName);
-        const timestamp = Date.now();
-        const filePath = `${ctx.session.user.id}/${timestamp}.${fileExtension}`;
+        const storageFormat = getCanonicalRouteStorageFormat(artifacts.format);
+        const routeId = randomUUID();
+        const correlationId = `route-upload:${routeId}`;
+        const filePath = `${ctx.session.user.id}/${routeId}.${storageFormat.extension}`;
 
         const { error: uploadError } = await storageService.storage
           .from(ROUTES_BUCKET)
           .upload(filePath, input.fileContent, {
-            contentType: inferRouteContentType(input.fileName),
+            contentType: storageFormat.mimeType,
             upsert: false,
           });
 
         if (uploadError) {
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
-            message: `Failed to upload route file: ${uploadError.message}`,
+            message: "Failed to upload route file",
           });
         }
 
@@ -472,7 +483,7 @@ export const routesRouter = createTRPCRouter({
           const [routeData] = await db
             .insert(activityRoutes)
             .values({
-              id: randomUUID(),
+              id: routeId,
               created_at: new Date(),
               updated_at: new Date(),
               profile_id: ctx.session.user.id,
@@ -496,13 +507,36 @@ export const routesRouter = createTRPCRouter({
           }
 
           return serializeActivityRouteRow(routeData);
-        } catch (dbError) {
+        } catch {
           // Cleanup: delete uploaded file if database insert fails
-          await storageService.storage.from(ROUTES_BUCKET).remove([filePath]);
+          try {
+            const { error: cleanupError } = await storageService.storage
+              .from(ROUTES_BUCKET)
+              .remove([filePath]);
+            if (cleanupError) {
+              logger.error("Route upload cleanup failed", {
+                event: "route_upload_cleanup_failed",
+                bucket: ROUTES_BUCKET,
+                path: filePath,
+                correlationId,
+                routeId,
+                failureKind: "storage_error_result",
+              });
+            }
+          } catch {
+            logger.error("Route upload cleanup failed", {
+              event: "route_upload_cleanup_failed",
+              bucket: ROUTES_BUCKET,
+              path: filePath,
+              correlationId,
+              routeId,
+              failureKind: "storage_exception",
+            });
+          }
 
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
-            message: `Failed to save route: ${dbError instanceof Error ? dbError.message : "Unknown database error"}`,
+            message: "Failed to save route",
           });
         }
       } catch (error) {
@@ -512,7 +546,7 @@ export const routesRouter = createTRPCRouter({
 
         throw new TRPCError({
           code: "BAD_REQUEST",
-          message: error instanceof Error ? error.message : "Failed to process route file",
+          message: "Invalid route file",
         });
       }
     }),

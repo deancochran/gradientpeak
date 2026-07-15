@@ -28,6 +28,8 @@ function BoundedNumberInput({
   value,
 }: BoundedNumberInputProps) {
   const [draftValue, setDraftValue] = useState(value);
+  const descriptionId = `${id}-description`;
+  const errorId = `${id}-error`;
 
   useEffect(() => {
     setDraftValue(value);
@@ -68,6 +70,13 @@ function BoundedNumberInput({
       <div className="flex items-center gap-2">
         <Input
           accessibilityLabel={label}
+          aria-describedby={
+            [helperText ? descriptionId : undefined, error ? errorId : undefined]
+              .filter(Boolean)
+              .join(" ") || undefined
+          }
+          aria-invalid={!!error}
+          aria-required={required}
           aria-description={accessibilityHint}
           className={error ? "border-destructive bg-destructive/5" : undefined}
           disabled={disabled}
@@ -93,6 +102,7 @@ function BoundedNumberInput({
             );
           }}
           placeholder={placeholder}
+          required={required}
           testId={testID ?? testId}
           type="text"
           value={draftValue}
@@ -115,8 +125,16 @@ function BoundedNumberInput({
           ))}
         </div>
       ) : null}
-      {helperText ? <p className="text-xs text-muted-foreground">{helperText}</p> : null}
-      {error ? <p className="text-xs text-destructive">Adjust this field: {error}</p> : null}
+      {helperText ? (
+        <p id={descriptionId} className="text-xs text-muted-foreground">
+          {helperText}
+        </p>
+      ) : null}
+      {error ? (
+        <p id={errorId} className="text-xs text-destructive">
+          Adjust this field: {error}
+        </p>
+      ) : null}
     </div>
   );
 }

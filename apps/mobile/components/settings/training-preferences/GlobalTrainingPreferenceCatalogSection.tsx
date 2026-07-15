@@ -18,7 +18,7 @@ import type { SportOverrideKey } from "@/components/settings/training-preference
 import { SportDoseOverridesSection } from "@/components/settings/training-preferences/sections/ScheduleSection";
 import { TrainingPreferenceFieldRenderer } from "@/components/settings/training-preferences/TrainingPreferenceFieldRenderer";
 
-type ScheduleValidation = {
+export type ScheduleValidation = {
   issues: string[];
   maxSessionsError?: string;
   maxSingleSessionError?: string;
@@ -26,13 +26,15 @@ type ScheduleValidation = {
   minSessionsError?: string;
 };
 
-type GlobalTrainingPreferenceCatalogSectionProps = {
+export type GlobalTrainingPreferenceCatalogSectionProps = {
   activeTab: TrainingPreferenceTab;
   availability: AthleteTrainingSettingsFormInput["availability"];
   baselineFitness: AthleteTrainingSettingsFormInput["baseline_fitness"];
   control: Control<AthleteTrainingSettingsFormInput>;
   doseLimits: AthleteTrainingSettingsFormInput["dose_limits"];
   manualBaselineCtlWarning: string | null;
+  onAddAvailabilityWindow: (day: WeekdayKey) => string | null;
+  onRemoveAvailabilityWindow: (day: WeekdayKey, windowIndex: number) => void;
   onToggleAdvancedBaselineControls: () => void;
   onToggleAvailabilityDay: (day: WeekdayKey) => void;
   onToggleHardRestDay: (day: WeekdayKey) => void;
@@ -142,6 +144,8 @@ export function GlobalTrainingPreferenceCatalogSection({
   control,
   doseLimits,
   manualBaselineCtlWarning,
+  onAddAvailabilityWindow,
+  onRemoveAvailabilityWindow,
   onToggleAdvancedBaselineControls,
   onToggleAvailabilityDay,
   onToggleHardRestDay,
@@ -171,6 +175,8 @@ export function GlobalTrainingPreferenceCatalogSection({
               availability={availability}
               control={control}
               mode="global-edit"
+              onAddAvailabilityWindow={onAddAvailabilityWindow}
+              onRemoveAvailabilityWindow={onRemoveAvailabilityWindow}
               onToggleAvailabilityDay={onToggleAvailabilityDay}
               onToggleHardRestDay={onToggleHardRestDay}
             />

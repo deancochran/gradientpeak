@@ -245,6 +245,8 @@ describe("ProfileTabScreen", () => {
     expect(screen.queryByText("Analytics & Trends")).toBeNull();
     expect(screen.getByTestId("profile-tab-profile-metrics")).toBeTruthy();
     expect(screen.getByTestId("profile-tab-activity-efforts")).toBeTruthy();
+    fireEvent.press(screen.getByTestId("profile-tab-trends"));
+    expect(navigateToMock).toHaveBeenCalledWith("/(internal)/(tabs)/trends");
   });
 
   it("routes content library entry points from the profile hub", () => {

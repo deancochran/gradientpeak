@@ -19,6 +19,7 @@ export type ProfileFields = Partial<
     | "bio"
     | "cover_url"
     | "dob"
+    | "full_name"
     | "is_public"
     | "language"
     | "preferred_units"

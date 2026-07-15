@@ -77,7 +77,7 @@ type QueryMap = Record<string, QueryResult | QueryResult[]>;
 
 type QueryCall = {
   table: string;
-  operation: "insert" | "update" | "delete" | "filter";
+  operation: "batch" | "insert" | "update" | "delete" | "filter";
   payload?: unknown;
 };
 
@@ -100,6 +100,7 @@ function createEventRow(overrides: Record<string, unknown> = {}) {
     all_day: true,
     timezone: "UTC",
     activity_plan_id: null,
+    route_id: null,
     training_plan_id: null,
     recurrence_rule: null,
     recurrence_timezone: null,
@@ -225,35 +226,62 @@ function createWriteRepository(params: {
   nextResult: (table: string) => QueryResult;
   callLog: QueryCall[];
 }) {
+  const createEvent = (input: Record<string, unknown>) => ({
+    table: "events",
+    operation: "insert" as const,
+    payload: {
+      event_type: input.eventType,
+      title: input.title,
+      all_day: input.allDay,
+      timezone: input.timezone,
+      starts_at: input.startsAt,
+      ends_at: input.endsAt,
+      status: input.status,
+      activity_plan_id: input.activityPlanId,
+      route_id: input.routeId,
+      training_plan_id: input.trainingPlanId,
+      notes: input.notes,
+      description: input.description,
+      recurrence_rule: input.recurrenceRule,
+      recurrence_timezone: input.recurrenceTimezone,
+      series_id: input.seriesId,
+      occurrence_key: input.occurrenceKey,
+      original_starts_at: input.originalStartsAt,
+      source_provider: input.sourceProvider,
+    },
+  });
+
   return {
     async createOwnedEvent(input: Record<string, unknown>) {
-      params.callLog.push({
-        table: "events",
-        operation: "insert",
-        payload: {
-          event_type: input.eventType,
-          title: input.title,
-          all_day: input.allDay,
-          timezone: input.timezone,
-          starts_at: input.startsAt,
-          ends_at: input.endsAt,
-          status: input.status,
-          activity_plan_id: input.activityPlanId,
-          training_plan_id: input.trainingPlanId,
-          notes: input.notes,
-          description: input.description,
-          recurrence_rule: input.recurrenceRule,
-          recurrence_timezone: input.recurrenceTimezone,
-          series_id: input.seriesId,
-          occurrence_key: input.occurrenceKey,
-          original_starts_at: input.originalStartsAt,
-          source_provider: input.sourceProvider,
-        },
-      });
+      params.callLog.push(createEvent(input));
       return params.nextResult("events").data;
+    },
+    async createOwnedEvents(input: {
+      anchor: Record<string, unknown>;
+      occurrences: Record<string, unknown>[];
+    }) {
+      params.callLog.push({ table: "events", operation: "batch" });
+      const stagedCalls: QueryCall[] = [];
+      const createdEvents: Record<string, unknown>[] = [];
+
+      for (const [index, eventInput] of [input.anchor, ...input.occurrences].entries()) {
+        const result = params.nextResult("events");
+        if (result.error) throw new Error(result.error.message);
+
+        const resolvedInput =
+          index === 0 ? eventInput : { ...eventInput, seriesId: createdEvents[0]?.id };
+        stagedCalls.push(createEvent(resolvedInput));
+        createdEvents.push(result.data);
+      }
+
+      params.callLog.push(...stagedCalls);
+      return createdEvents;
     },
     async getAccessibleActivityPlan() {
       return params.nextResult("activity_plans").data ?? null;
+    },
+    async getAccessibleActivityRoute() {
+      return params.nextResult("activity_routes").data ?? null;
     },
     async getOwnedTrainingPlan() {
       return params.nextResult("training_plans").data ?? null;
@@ -345,6 +373,25 @@ describe("eventsRouter generalization", () => {
       "race_target",
       "imported",
     ]);
+  });
+
+  it("list accepts tRPC infinite-query direction metadata", async () => {
+    const { caller } = createCaller({
+      events: { data: [], error: null },
+      activities: { data: [], error: null },
+    });
+
+    await expect(
+      caller.list({ limit: 20, include_adhoc: true, direction: "forward" }),
+    ).resolves.toMatchObject({ items: [] });
+  });
+
+  it("list rejects unexpected input keys", async () => {
+    const { caller } = createCaller({});
+
+    await expect(caller.list({ limit: 20, unexpected: true } as never)).rejects.toThrow(
+      "Unrecognized key",
+    );
   });
 
   it("getById returns non-planned events", async () => {
@@ -575,6 +622,8 @@ describe("eventsRouter generalization", () => {
 
     const insertCall = callLog.find((call) => call.operation === "insert");
     expect(insertCall?.table).toBe("events");
+    expect(callLog.filter((call) => call.operation === "batch")).toHaveLength(1);
+    expect(callLog.filter((call) => call.operation === "insert")).toHaveLength(1);
     expect((insertCall?.payload as any).event_type).toBe("planned");
     expect(result.event_type).toBe("planned");
     expect(result.legacy_event_type).toBe("planned");
@@ -625,13 +674,62 @@ describe("eventsRouter generalization", () => {
     expect(result.scheduled_date).toBe("2026-03-12");
   });
 
+  it("create persists an accessible event-owned route", async () => {
+    const activityPlanId = "11111111-1111-4111-8111-111111111111";
+    const routeId = "22222222-2222-4222-8222-222222222222";
+    const { caller, callLog } = createCaller({
+      activity_plans: { data: { id: activityPlanId }, error: null },
+      activity_routes: { data: { id: routeId }, error: null },
+      events: {
+        data: createEventRow({ activity_plan_id: activityPlanId, route_id: routeId }),
+        error: null,
+      },
+    });
+
+    await caller.create({
+      event_type: "planned",
+      title: "Route workout",
+      scheduled_date: "2026-03-12",
+      activity_plan_id: activityPlanId,
+      route_id: routeId,
+    });
+
+    const insertCall = callLog.find((call) => call.operation === "insert");
+    expect(insertCall?.payload).toMatchObject({
+      activity_plan_id: activityPlanId,
+      route_id: routeId,
+    });
+  });
+
+  it("create rejects an inaccessible route before writing the event", async () => {
+    const activityPlanId = "11111111-1111-4111-8111-111111111111";
+    const { caller, callLog } = createCaller({
+      activity_plans: { data: { id: activityPlanId }, error: null },
+      activity_routes: { data: null, error: null },
+    });
+
+    await expect(
+      caller.create({
+        event_type: "planned",
+        title: "Private route workout",
+        scheduled_date: "2026-03-12",
+        activity_plan_id: activityPlanId,
+        route_id: "22222222-2222-4222-8222-222222222222",
+      }),
+    ).rejects.toThrow("Route not found or not accessible");
+
+    expect(callLog.some((call) => call.operation === "insert")).toBe(false);
+  });
+
   it("create accepts planned event recurrence and materializes occurrences", async () => {
+    const routeId = "22222222-2222-4222-8222-222222222222";
     const { caller, callLog } = createCaller({
       events: [
         {
           data: createEventRow({
             id: "00000000-0000-4000-8000-000000000020",
             activity_plan_id: "11111111-1111-4111-8111-111111111111",
+            route_id: routeId,
             starts_at: "2026-03-12T00:00:00.000Z",
             ends_at: "2026-03-13T00:00:00.000Z",
             recurrence_rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=2;BYDAY=TH",
@@ -642,6 +740,7 @@ describe("eventsRouter generalization", () => {
           data: createEventRow({
             id: "00000000-0000-4000-8000-000000000021",
             activity_plan_id: "11111111-1111-4111-8111-111111111111",
+            route_id: routeId,
             starts_at: "2026-03-19T00:00:00.000Z",
             ends_at: "2026-03-20T00:00:00.000Z",
             series_id: "00000000-0000-4000-8000-000000000020",
@@ -654,6 +753,7 @@ describe("eventsRouter generalization", () => {
         data: { id: "11111111-1111-4111-8111-111111111111" },
         error: null,
       },
+      activity_routes: { data: { id: routeId }, error: null },
       integrations: {
         data: null,
         error: null,
@@ -667,6 +767,7 @@ describe("eventsRouter generalization", () => {
       all_day: true,
       timezone: "UTC",
       activity_plan_id: "11111111-1111-4111-8111-111111111111",
+      route_id: routeId,
       recurrence: {
         rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=2;BYDAY=TH",
         timezone: "UTC",
@@ -676,9 +777,41 @@ describe("eventsRouter generalization", () => {
     });
 
     const insertCalls = callLog.filter((call) => call.operation === "insert");
+    expect(callLog.filter((call) => call.operation === "batch")).toHaveLength(1);
     expect(insertCalls).toHaveLength(2);
+    expect(insertCalls.map((call) => (call.payload as any).route_id)).toEqual([routeId, routeId]);
     expect((insertCalls[1]?.payload as any).starts_at).toBe("2026-03-19T00:00:00.000Z");
     expect((insertCalls[1]?.payload as any).series_id).toBe("00000000-0000-4000-8000-000000000020");
+  });
+
+  it("create returns no partial recurring series when the batch fails in the middle", async () => {
+    const { caller, callLog } = createCaller({
+      events: [
+        {
+          data: createEventRow({ id: "00000000-0000-4000-8000-000000000030" }),
+          error: null,
+        },
+        { data: null, error: { message: "middle occurrence failed" } },
+      ],
+      activity_plans: {
+        data: { id: "11111111-1111-4111-8111-111111111111" },
+        error: null,
+      },
+    });
+
+    await expect(
+      caller.create({
+        activity_plan_id: "11111111-1111-4111-8111-111111111111",
+        scheduled_date: "2026-03-12",
+        recurrence: {
+          rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=3;BYDAY=TH",
+          timezone: "UTC",
+        },
+      }),
+    ).rejects.toThrow("middle occurrence failed");
+
+    expect(callLog.filter((call) => call.operation === "batch")).toHaveLength(1);
+    expect(callLog.filter((call) => call.operation === "insert")).toHaveLength(0);
   });
 
   it("create rejects weekly recurrence when BYDAY does not match the start date", async () => {
@@ -863,6 +996,68 @@ describe("eventsRouter generalization", () => {
       "00000000-0000-4000-8000-000000000020",
       "00000000-0000-4000-8000-000000000021",
     ]);
+  });
+
+  it("update persists an accessible event-owned route", async () => {
+    const eventId = "00000000-0000-4000-8000-000000000027";
+    const routeId = "22222222-2222-4222-8222-222222222222";
+    const { caller, callLog } = createCaller({
+      activity_routes: { data: { id: routeId }, error: null },
+      events: [
+        { data: createEventRow({ id: eventId, event_type: "custom" }), error: null },
+        {
+          data: [createEventRow({ id: eventId, event_type: "custom", route_id: routeId })],
+          error: null,
+        },
+      ],
+    });
+
+    await caller.update({ id: eventId, patch: { route_id: routeId } });
+
+    const updateCall = callLog.find((call) => call.operation === "update");
+    expect(updateCall?.payload).toMatchObject({ route_id: routeId });
+  });
+
+  it("update rejects an inaccessible route before mutating the event", async () => {
+    const eventId = "00000000-0000-4000-8000-000000000029";
+    const { caller, callLog } = createCaller({
+      activity_routes: { data: null, error: null },
+      events: {
+        data: createEventRow({ id: eventId, event_type: "custom" }),
+        error: null,
+      },
+    });
+
+    await expect(
+      caller.update({
+        id: eventId,
+        patch: { route_id: "22222222-2222-4222-8222-222222222222" },
+      }),
+    ).rejects.toThrow("Route not found or not accessible");
+
+    expect(callLog.some((call) => call.operation === "update")).toBe(false);
+  });
+
+  it("update clears an event-owned route without requiring route access", async () => {
+    const eventId = "00000000-0000-4000-8000-000000000028";
+    const routeId = "22222222-2222-4222-8222-222222222222";
+    const { caller, callLog } = createCaller({
+      events: [
+        {
+          data: createEventRow({ id: eventId, event_type: "custom", route_id: routeId }),
+          error: null,
+        },
+        {
+          data: [createEventRow({ id: eventId, event_type: "custom", route_id: null })],
+          error: null,
+        },
+      ],
+    });
+
+    await caller.update({ id: eventId, patch: { route_id: null } });
+
+    const updateCall = callLog.find((call) => call.operation === "update");
+    expect(updateCall?.payload).toMatchObject({ route_id: null });
   });
 
   it("update rejects recurrence changes with single scope", async () => {

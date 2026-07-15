@@ -1,8 +1,16 @@
 import { type DrizzleDbClient, schema } from "@repo/db";
-import { and, desc, inArray, lte } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, or } from "drizzle-orm";
 import type { ActivityAnalysisContextSnapshot, ActivityAnalysisStore } from "../../repositories";
 
-const metricTypes = ["weight_kg", "ftp", "resting_hr", "max_hr", "lthr"] as const;
+const metricTypes = [
+  "weight_kg",
+  "ftp",
+  "resting_hr",
+  "max_hr",
+  "lthr",
+  "threshold_pace_seconds_per_km",
+  "css_seconds_per_100m",
+] as const;
 const effortTypes = ["power", "speed"] as const;
 
 function toNumber(value: string | number | null): number {
@@ -13,12 +21,41 @@ function toNumber(value: string | number | null): number {
 export function createActivityAnalysisStore(db: DrizzleDbClient): ActivityAnalysisStore {
   const loadContextEvidence: NonNullable<ActivityAnalysisStore["loadContextEvidence"]> = async ({
     requests,
+    evidenceScope,
   }) => {
     if (requests.length === 0) return new Map();
 
     const profileIds = [...new Set(requests.map((request) => request.profileId))];
     // One fixed upper bound keeps every in-memory as-of resolution on the same evidence window.
     const fixedAsOf = new Date(Math.max(...requests.map((request) => request.asOf.getTime())));
+    const earliestAsOf = Math.min(...requests.map((request) => request.asOf.getTime()));
+    const effortCutoff = new Date(earliestAsOf - 90 * 24 * 60 * 60 * 1000);
+    const profileMetricBaseQuery = db
+      .select({
+        id: schema.profileMetrics.id,
+        profile_id: schema.profileMetrics.profile_id,
+        metric_type: schema.profileMetrics.metric_type,
+        recorded_at: schema.profileMetrics.recorded_at,
+        unit: schema.profileMetrics.unit,
+        value: schema.profileMetrics.value,
+        source: schema.profileMetrics.source,
+        method: schema.profileMetrics.method,
+        calculation_version: schema.profileMetrics.calculation_version,
+        provenance: schema.profileMetrics.provenance,
+        reference_activity_id: schema.profileMetrics.reference_activity_id,
+        reference_activity_category: schema.activities.type,
+      })
+      .from(schema.profileMetrics);
+    const profileMetricQuery =
+      typeof profileMetricBaseQuery.leftJoin === "function"
+        ? profileMetricBaseQuery.leftJoin(
+            schema.activities,
+            and(
+              eq(schema.activities.id, schema.profileMetrics.reference_activity_id),
+              eq(schema.activities.profile_id, schema.profileMetrics.profile_id),
+            ),
+          )
+        : profileMetricBaseQuery;
     const [profiles, profileMetrics, recentEfforts] = await Promise.all([
       db
         .select({
@@ -28,23 +65,22 @@ export function createActivityAnalysisStore(db: DrizzleDbClient): ActivityAnalys
         })
         .from(schema.profiles)
         .where(inArray(schema.profiles.id, profileIds)),
-      db
-        .select({
-          id: schema.profileMetrics.id,
-          profile_id: schema.profileMetrics.profile_id,
-          metric_type: schema.profileMetrics.metric_type,
-          recorded_at: schema.profileMetrics.recorded_at,
-          unit: schema.profileMetrics.unit,
-          value: schema.profileMetrics.value,
-          method: schema.profileMetrics.method,
-          provenance: schema.profileMetrics.provenance,
-        })
-        .from(schema.profileMetrics)
+      profileMetricQuery
         .where(
           and(
             inArray(schema.profileMetrics.profile_id, profileIds),
             lte(schema.profileMetrics.recorded_at, fixedAsOf),
-            inArray(schema.profileMetrics.metric_type, metricTypes),
+            inArray(
+              schema.profileMetrics.metric_type,
+              evidenceScope === "thresholds"
+                ? ([
+                    "ftp",
+                    "lthr",
+                    "threshold_pace_seconds_per_km",
+                    "css_seconds_per_100m",
+                  ] as const)
+                : metricTypes,
+            ),
           ),
         )
         .orderBy(desc(schema.profileMetrics.recorded_at), desc(schema.profileMetrics.id)),
@@ -69,6 +105,11 @@ export function createActivityAnalysisStore(db: DrizzleDbClient): ActivityAnalys
             inArray(schema.activityEfforts.profile_id, profileIds),
             lte(schema.activityEfforts.recorded_at, fixedAsOf),
             inArray(schema.activityEfforts.effort_type, effortTypes),
+            eq(schema.activityEfforts.duration_seconds, 1200),
+            or(
+              gte(schema.activityEfforts.recorded_at, effortCutoff),
+              eq(schema.activityEfforts.source, "manual"),
+            ),
           ),
         )
         .orderBy(desc(schema.activityEfforts.recorded_at), desc(schema.activityEfforts.id)),
@@ -96,12 +137,18 @@ export function createActivityAnalysisStore(db: DrizzleDbClient): ActivityAnalys
               | "ftp"
               | "resting_hr"
               | "max_hr"
-              | "lthr",
+              | "lthr"
+              | "threshold_pace_seconds_per_km"
+              | "css_seconds_per_100m",
             recorded_at: metric.recorded_at,
             unit: metric.unit,
             value: toNumber(metric.value),
+            source: metric.source,
             method: metric.method,
+            calculation_version: metric.calculation_version,
             provenance: metric.provenance,
+            reference_activity_id: metric.reference_activity_id,
+            reference_activity_category: metric.reference_activity_category,
           })),
         recentEfforts: recentEfforts
           .filter((effort) => effort.profile_id === profileId)
@@ -125,8 +172,11 @@ export function createActivityAnalysisStore(db: DrizzleDbClient): ActivityAnalys
 
   return {
     loadContextEvidence,
-    async getContextSnapshot({ asOf, profileId }) {
-      const evidence = await loadContextEvidence({ requests: [{ asOf, profileId }] });
+    async getContextSnapshot({ asOf, profileId, evidenceScope }) {
+      const evidence = await loadContextEvidence({
+        requests: [{ asOf, profileId }],
+        evidenceScope,
+      });
       return (
         evidence.get(profileId) ?? {
           profile: { dob: null, gender: null },

@@ -1,9 +1,4 @@
-import {
-  type ActivityLapRecord,
-  type ActivityStreamRecord,
-  parseActivityLapRecords,
-  parseActivityStreamRecords,
-} from "@repo/core/schemas";
+import { type ActivityLapRecord, parseActivityLapRecords } from "@repo/core/schemas";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Skeleton } from "@repo/ui/components/skeleton";
@@ -32,17 +27,21 @@ import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { ActivityCard } from "@/components/shared/ActivityCard";
 import { DetailDeleteConfirmModal, DetailOverflowMenu } from "@/components/shared/detail";
 import { EntityCommentsSection } from "@/components/social/EntityCommentsSection";
+import {
+  formatCalibrationQuality,
+  getActivityLoadLabels,
+  getThresholdNextAction,
+} from "@/lib/activity-load-presentation";
+import {
+  getStreamArtifactMessage,
+  presentActivityStreamAnalysis,
+} from "@/lib/activity-stream-presentation";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { formatEstimatedIntensityFactor, formatEstimatedTss } from "@/lib/estimatedMetrics";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useEntityCommentsController } from "@/lib/hooks/useEntityCommentsController";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
-
-type ThresholdProfile = {
-  lthr?: number | null;
-  threshold_hr?: number | null;
-};
 
 function formatDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
@@ -135,12 +134,6 @@ function getIngestionMessage(
   return { state: "loading", message: "Activity file is still processing." };
 }
 
-type ZoneDisplayEntry = {
-  zone: number;
-  time: number;
-  label: string;
-};
-
 type LapDisplayEntry = {
   distance: number;
   duration: number;
@@ -149,93 +142,6 @@ type LapDisplayEntry = {
   performance: number;
   widthPercent: number;
 };
-
-const HR_ZONE_LABELS = [
-  "Zone 1 (Recovery)",
-  "Zone 2 (Endurance)",
-  "Zone 3 (Tempo)",
-  "Zone 4 (Threshold)",
-  "Zone 5 (VO2 Max)",
-] as const;
-
-function getHrZoneIndexFromThresholdPercent(thresholdPercent: number): number {
-  if (thresholdPercent < 81) return 0;
-  if (thresholdPercent < 90) return 1;
-  if (thresholdPercent < 94) return 2;
-  if (thresholdPercent < 100) return 3;
-  return 4;
-}
-
-function readRecordHeartRate(record: ActivityStreamRecord): number | null {
-  const value = record?.heartRate ?? record?.heart_rate ?? record?.heart_rate_bpm;
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
-}
-
-function readRecordTimestampSeconds(record: ActivityStreamRecord): number | null {
-  const value = record?.timestamp ?? record?.time ?? record?.startTime;
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value > 1_000_000 ? value / 1000 : value;
-  }
-
-  if (typeof value === "string") {
-    const parsed = new Date(value).getTime();
-    return Number.isFinite(parsed) ? parsed / 1000 : null;
-  }
-
-  return null;
-}
-
-function buildHeartRateZonesFromRecords(input: {
-  records?: unknown;
-  thresholdHr?: number | null;
-  maxHeartRate?: number | null;
-}): ZoneDisplayEntry[] {
-  const samples = parseActivityStreamRecords(input.records)
-    .map((record, index) => ({
-      heartRate: readRecordHeartRate(record),
-      timestampSeconds: readRecordTimestampSeconds(record) ?? index,
-    }))
-    .filter(
-      (sample): sample is { heartRate: number; timestampSeconds: number } =>
-        sample.heartRate !== null,
-    );
-
-  if (samples.length === 0) {
-    return [];
-  }
-
-  const maxObservedHeartRate = samples.reduce(
-    (max, sample) => Math.max(max, sample.heartRate),
-    input.maxHeartRate ?? 0,
-  );
-  const thresholdHr =
-    input.thresholdHr ?? (maxObservedHeartRate > 0 ? maxObservedHeartRate * 0.85 : null);
-
-  if (!thresholdHr || thresholdHr <= 0) {
-    return [];
-  }
-
-  const zoneSeconds = [0, 0, 0, 0, 0];
-
-  samples.forEach((sample, index) => {
-    const nextTimestamp = samples[index + 1]?.timestampSeconds;
-    const previousTimestamp = samples[index - 1]?.timestampSeconds;
-    const sampleSeconds =
-      typeof nextTimestamp === "number" && nextTimestamp > sample.timestampSeconds
-        ? nextTimestamp - sample.timestampSeconds
-        : typeof previousTimestamp === "number" && sample.timestampSeconds > previousTimestamp
-          ? sample.timestampSeconds - previousTimestamp
-          : 1;
-    const zoneIndex = getHrZoneIndexFromThresholdPercent((sample.heartRate / thresholdHr) * 100);
-    zoneSeconds[zoneIndex] += sampleSeconds;
-  });
-
-  return HR_ZONE_LABELS.map((label, index) => ({
-    zone: index + 1,
-    time: Math.max(0, Math.round(zoneSeconds[index] ?? 0)),
-    label,
-  })).filter((zone) => zone.time > 0);
-}
 
 function readLapDistance(lap: ActivityLapRecord): number {
   const value = lap?.totalDistance ?? lap?.distance ?? lap?.distanceMeters ?? lap?.distance_meters;
@@ -395,9 +301,23 @@ function ActivityDetailScreen() {
 
   const activity = activityData?.activity;
   const derived = activityData?.derived;
+  const loadMethod = derived?.stress.method;
+  const loadLabels = getActivityLoadLabels(loadMethod);
+  const loadUnavailableText =
+    derived?.stress.unavailable_reason === "private_data"
+      ? "Training load is private."
+      : derived?.stress.unavailable_reason === "threshold_missing"
+        ? getThresholdNextAction(activity?.type)
+        : derived?.stress.unavailable_reason === "invalid_data"
+          ? "The available activity or threshold data is invalid."
+          : "Compatible activity data is missing.";
+  const calibrationText = formatCalibrationQuality(
+    derived?.stress.calibration_quality,
+    activity?.started_at,
+  );
 
   // Get current user to check ownership
-  const { profile: authProfile, user } = useAuth();
+  const { user } = useAuth();
   const isOwner = user?.id === activity?.profile_id;
 
   // Fetch profile for header
@@ -506,45 +426,15 @@ function ActivityDetailScreen() {
     "Detailed streams are private to the activity owner. Summary metrics are still visible.";
   const shouldShowPrivateStreamMessage = !!activityFilePath && !isOwner;
 
-  // Memoize zone data
-  const { hrZones, powerZones, hrColors, powerColors } = useMemo(() => {
-    const derivedHrZones = (derived?.zones?.hr ?? []).map((zone) => ({
-      zone: zone.zone,
-      time: zone.seconds,
-      label: zone.label,
-    }));
-    const streamHrZones = buildHeartRateZonesFromRecords({
-      records: streamsData?.records,
-      thresholdHr:
-        (authProfile as ThresholdProfile | null)?.lthr ??
-        (authProfile as ThresholdProfile | null)?.threshold_hr ??
-        null,
-      maxHeartRate: activity?.max_heart_rate ?? null,
-    });
-
-    return {
-      hrZones: derivedHrZones.length > 0 ? derivedHrZones : streamHrZones,
-      powerZones: (derived?.zones?.power ?? []).map((zone) => ({
-        zone: zone.zone,
-        time: zone.seconds,
-        label: zone.label,
-      })),
-      hrColors: ["bg-blue-400", "bg-green-400", "bg-yellow-400", "bg-orange-400", "bg-red-400"],
-      powerColors: [
-        "bg-gray-400",
-        "bg-blue-400",
-        "bg-green-400",
-        "bg-yellow-400",
-        "bg-orange-400",
-        "bg-red-400",
-        "bg-purple-400",
-      ],
-    };
-  }, [activity?.max_heart_rate, authProfile, derived, streamsData?.records]);
+  const streamPresentation = streamsData?.analysis
+    ? presentActivityStreamAnalysis(streamsData.analysis)
+    : null;
 
   // Get laps
   const laps = parseActivityLapRecords(streamsData?.laps ?? activity?.laps);
-  const ingestionMessage = getIngestionMessage((activity as { ingestion?: unknown }).ingestion);
+  const ingestionMessage = getIngestionMessage(
+    (activity as { ingestion?: unknown } | undefined)?.ingestion,
+  );
 
   // Loading skeleton
   if (isLoadingActivity || !activity) {
@@ -699,8 +589,14 @@ function ActivityDetailScreen() {
               activityPlan={activity.activity_plans}
               actualMetrics={{
                 duration: activity.duration_seconds,
-                tss: derived?.stress.tss ?? undefined,
-                intensity_factor: derived?.stress.intensity_factor ?? undefined,
+                tss:
+                  derived?.stress.method === "power_threshold"
+                    ? (derived.stress.tss ?? undefined)
+                    : undefined,
+                intensity_factor:
+                  derived?.stress.method === "power_threshold"
+                    ? (derived.stress.intensity_factor ?? undefined)
+                    : undefined,
                 adherence_score: undefined,
               }}
               onPress={() => {
@@ -740,63 +636,148 @@ function ActivityDetailScreen() {
           )}
 
           {/* Training Load */}
-          {(derived?.stress.tss != null || derived?.stress.intensity_factor != null) && (
+          {derived?.stress && (
             <Card>
               <CardHeader>
                 <CardTitle>Training Load</CardTitle>
               </CardHeader>
               <CardContent>
-                <View className="flex-row gap-4">
-                  <View className="flex-1">
-                    <View className="flex-row items-center gap-2 mb-1">
-                      <Icon as={TrendingUp} size={16} className="text-muted-foreground" />
-                      <Text className="text-xs text-muted-foreground uppercase">TSS</Text>
-                    </View>
-                    <Text className="text-3xl font-bold">
-                      {formatEstimatedTss(derived?.stress.tss, { includeUnit: false }) ?? "--"}
-                    </Text>
-                  </View>
-
-                  {derived?.stress.intensity_factor != null && (
+                {derived.stress.tss == null ? (
+                  <Text className="text-sm text-muted-foreground">{loadUnavailableText}</Text>
+                ) : (
+                  <View className="flex-row gap-4">
                     <View className="flex-1">
-                      <Text className="text-xs text-muted-foreground uppercase mb-1">
-                        Intensity Factor
-                      </Text>
+                      <View className="flex-row items-center gap-2 mb-1">
+                        <Icon as={TrendingUp} size={16} className="text-muted-foreground" />
+                        <Text className="text-xs text-muted-foreground uppercase">
+                          {loadLabels.load}
+                        </Text>
+                      </View>
                       <Text className="text-3xl font-bold">
-                        {formatEstimatedIntensityFactor(derived?.stress.intensity_factor) ?? "--"}
+                        {formatEstimatedTss(derived?.stress.tss, { includeUnit: false }) ?? "--"}
                       </Text>
                     </View>
-                  )}
-                </View>
+
+                    {derived?.stress.intensity_factor != null && (
+                      <View className="flex-1">
+                        <Text className="text-xs text-muted-foreground uppercase mb-1">
+                          {loadLabels.intensity}
+                        </Text>
+                        <Text className="text-3xl font-bold">
+                          {formatEstimatedIntensityFactor(derived?.stress.intensity_factor) ?? "--"}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+                {calibrationText ? (
+                  <Text className="mt-3 text-xs text-muted-foreground">{calibrationText}</Text>
+                ) : null}
+                {loadMethod === "heart_rate_threshold" ? (
+                  <Text className="mt-2 text-xs text-muted-foreground">
+                    Estimated HR Load uses summary average heart rate and LTHR; it is separate from
+                    Stream HR Load.
+                  </Text>
+                ) : null}
               </CardContent>
             </Card>
           )}
 
           {/* Zones */}
-          {hrZones.length > 0 ? (
-            <ZoneDistributionCard
-              title="Heart Rate Zones"
-              zones={hrZones}
-              colors={hrColors}
-              showToggle={true}
+          {ingestionMessage ? (
+            <VisualStateCard
+              title="Stream Analysis"
+              state={ingestionMessage.state}
+              message={
+                ingestionMessage.state === "error"
+                  ? ingestionMessage.message
+                  : getStreamArtifactMessage("processing")
+              }
             />
+          ) : isDetailedContentLoading ? (
+            <VisualStateCard
+              title="Stream Analysis"
+              state="loading"
+              message={getStreamArtifactMessage("loading")}
+            />
+          ) : streamsError ? (
+            <VisualStateCard
+              title="Stream Analysis"
+              state="error"
+              message={getStreamArtifactMessage("error", streamsError.message)}
+            />
+          ) : shouldShowPrivateStreamMessage ? (
+            <VisualStateCard
+              title="Stream Analysis"
+              state="private"
+              message={getStreamArtifactMessage("private")}
+            />
+          ) : !activityFilePath ? (
+            <VisualStateCard
+              title="Stream Analysis"
+              message={getStreamArtifactMessage("missing")}
+            />
+          ) : streamPresentation ? (
+            <>
+              <Card testID="activity-stream-hr-load-card">
+                <CardHeader>
+                  <CardTitle>Stream HR Load</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Text className="text-3xl font-bold">
+                    {streamPresentation.heartRateLoad.value}
+                  </Text>
+                  <Text className="mt-2 text-xs text-muted-foreground">
+                    {streamPresentation.heartRateLoad.copy} This diagnostic does not replace summary
+                    training load.
+                  </Text>
+                </CardContent>
+              </Card>
+              {streamPresentation.distributions.map((distribution) =>
+                distribution.zones.length > 0 ? (
+                  <View className="gap-2" key={distribution.key}>
+                    <ZoneDistributionCard
+                      title={distribution.title}
+                      zones={distribution.zones}
+                      colors={
+                        distribution.key === "power"
+                          ? [
+                              "bg-gray-400",
+                              "bg-blue-400",
+                              "bg-green-400",
+                              "bg-yellow-400",
+                              "bg-orange-400",
+                              "bg-red-400",
+                              "bg-purple-400",
+                            ]
+                          : [
+                              "bg-blue-400",
+                              "bg-green-400",
+                              "bg-yellow-400",
+                              "bg-orange-400",
+                              "bg-red-400",
+                            ]
+                      }
+                      showToggle={true}
+                    />
+                    <Text className="px-1 text-xs text-muted-foreground">
+                      {distribution.qualityCopy}
+                    </Text>
+                  </View>
+                ) : (
+                  <VisualStateCard
+                    key={distribution.key}
+                    title={distribution.title}
+                    message={distribution.qualityCopy}
+                  />
+                ),
+              )}
+            </>
           ) : (
             <VisualStateCard
-              title="Heart Rate Zones"
-              message="No heart rate zone data is available for this activity."
-            />
-          )}
-          {powerZones.length > 0 ? (
-            <ZoneDistributionCard
-              title="Power Zones"
-              zones={powerZones}
-              colors={powerColors}
-              showToggle={true}
-            />
-          ) : (
-            <VisualStateCard
-              title="Power Zones"
-              message="No power zone data is available for this activity."
+              title="Stream Analysis"
+              state="error"
+              message={getStreamArtifactMessage("error")}
             />
           )}
 

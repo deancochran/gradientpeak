@@ -1,4 +1,9 @@
 import {
+  type ActivityEffortType,
+  activityEffortDefinitions,
+  getActivityEffortDefinitionId,
+} from "@repo/core/athlete-inputs";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -32,15 +37,22 @@ import {
   TableHeader,
   TableRow,
 } from "@repo/ui/components/table";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { BarChart3, Loader2, Plus, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { SimpleTrendChart } from "../../../components/charts/simple-trend-chart";
 import {
   ActivityEffortForm,
   toDateTimeLocalValue,
 } from "../../../components/protected/activity-effort-form";
 import { DetailPageIntro } from "../../../components/protected/activity-route-primitives";
+import {
+  buildObservedDurationCurve,
+  formatActivityEffortDisplayValue,
+  getEffortHistoryForDuration,
+  getEffortStatus,
+} from "../../../lib/activity-effort-presentation";
 import type { ActivityEffortFormValues } from "../../../lib/activity-route-form-schemas";
 import { formatDateTime, formatDuration } from "../../../lib/activity-route-helpers";
 import { api } from "../../../lib/api/client";
@@ -48,32 +60,24 @@ import { api } from "../../../lib/api/client";
 type ActivityEffortRow = {
   id: string;
   activity_category: ActivityEffortFormValues["activity_category"];
+  activity_id?: string | null;
   duration_seconds: number;
-  effort_type: ActivityEffortFormValues["effort_type"];
+  effort_type: ActivityEffortType;
+  method?: string | null;
+  provenance?: unknown;
   recorded_at: Date | string;
+  source?: string | null;
   start_offset?: number | null;
   unit: string;
   value: number;
 };
 
-type EffortMeasurementKey =
-  `${ActivityEffortFormValues["activity_category"]}:${ActivityEffortFormValues["effort_type"]}:${number}`;
-
-function getEffortKey(
-  effort: Pick<ActivityEffortRow, "activity_category" | "effort_type" | "duration_seconds">,
-): EffortMeasurementKey {
-  return `${effort.activity_category}:${effort.effort_type}:${effort.duration_seconds}`;
-}
-
-function formatEffortLabel(key: EffortMeasurementKey) {
-  const [category, type, duration] = key.split(":");
-  return `${category} ${duration}s ${type}`;
-}
-
 function getEffortSummary(rows: ActivityEffortRow[]) {
   if (rows.length === 0) return "No records yet";
-  const best = Math.max(...rows.map((row) => row.value));
-  return `Best ${best.toFixed(1)} ${rows[0]?.unit ?? ""}`;
+  const observed = rows.filter((row) => getEffortStatus(row) === "observed");
+  if (observed.length === 0) return "No observed efforts";
+  const best = observed.reduce((current, row) => (row.value > current.value ? row : current));
+  return `Best ${formatActivityEffortDisplayValue(best)}`;
 }
 
 export const Route = createFileRoute("/_protected/activity-efforts/")({
@@ -85,22 +89,38 @@ function ActivityEffortsPage() {
   const utils = api.useUtils();
   const effortsQuery = api.activityEfforts.getForProfile.useQuery();
   const efforts = (effortsQuery.data ?? []) as unknown as ActivityEffortRow[];
-  const [selectedKey, setSelectedKey] = useState<EffortMeasurementKey | null>(null);
+  const [selectedDefinitionId, setSelectedDefinitionId] = useState<
+    (typeof activityEffortDefinitions)[number]["id"]
+  >(activityEffortDefinitions[0].id);
+  const [selectedDuration, setSelectedDuration] = useState<number | null>(null);
   const [editingEffort, setEditingEffort] = useState<ActivityEffortRow | null>(null);
   const [deleteEffort, setDeleteEffort] = useState<ActivityEffortRow | null>(null);
 
   const groupedEfforts = useMemo(() => {
-    const map = new Map<EffortMeasurementKey, ActivityEffortRow[]>();
+    const map = new Map<string, ActivityEffortRow[]>();
+    for (const definition of activityEffortDefinitions) map.set(definition.id, []);
     for (const effort of efforts) {
-      const key = getEffortKey(effort);
-      map.set(key, [...(map.get(key) ?? []), effort]);
+      const definitionId = getActivityEffortDefinitionId(effort);
+      if (!definitionId) continue;
+      map.set(definitionId, [...(map.get(definitionId) ?? []), effort]);
     }
     return map;
   }, [efforts]);
 
-  const measurementKeys = [...groupedEfforts.keys()];
-  const activeKey = selectedKey ?? measurementKeys[0] ?? null;
-  const selectedRows = activeKey ? (groupedEfforts.get(activeKey) ?? []) : [];
+  const activeDefinition =
+    activityEffortDefinitions.find((definition) => definition.id === selectedDefinitionId) ??
+    activityEffortDefinitions[0];
+  const definitionRows = groupedEfforts.get(activeDefinition.id) ?? [];
+  const durationOptions = [...new Set(definitionRows.map((row) => row.duration_seconds))].sort(
+    (left, right) => left - right,
+  );
+  const activeDuration =
+    selectedDuration != null && durationOptions.includes(selectedDuration)
+      ? selectedDuration
+      : (durationOptions[0] ?? activeDefinition.defaultDurationSeconds);
+  const selectedRows = getEffortHistoryForDuration(definitionRows, activeDuration);
+  const observedHistory = selectedRows.filter((row) => getEffortStatus(row) === "observed");
+  const durationCurve = buildObservedDurationCurve(definitionRows);
 
   const updateMutation = api.activityEfforts.update.useMutation({
     onSuccess: async () => {
@@ -135,33 +155,28 @@ function ActivityEffortsPage() {
         <div className="flex min-h-[300px] items-center justify-center rounded-2xl border">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
-      ) : measurementKeys.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            Create an effort to track reference segments and best-power or best-speed efforts.
-          </CardContent>
-        </Card>
       ) : (
         <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-            {measurementKeys.map((key) => {
-              const rows = groupedEfforts.get(key) ?? [];
+            {activityEffortDefinitions.map((definition) => {
+              const rows = groupedEfforts.get(definition.id) ?? [];
               const latest = rows[0];
-              const selected = key === activeKey;
+              const selected = definition.id === activeDefinition.id;
               return (
                 <button
                   className={`rounded-2xl border p-4 text-left transition-colors ${selected ? "border-primary bg-primary/5" : "bg-card hover:border-primary/30"}`}
-                  key={key}
-                  onClick={() => setSelectedKey(key)}
+                  key={definition.id}
+                  onClick={() => {
+                    setSelectedDefinitionId(definition.id);
+                    setSelectedDuration(null);
+                  }}
                   type="button"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-semibold capitalize text-foreground">
-                        {formatEffortLabel(key)}
-                      </p>
+                      <p className="font-semibold text-foreground">{definition.label}</p>
                       <p className="mt-1 text-sm text-muted-foreground">
-                        Grouped by activity, duration, and measurement type.
+                        Performance across durations with dated history.
                       </p>
                     </div>
                     <Badge variant={rows.length ? "default" : "secondary"}>{rows.length}</Badge>
@@ -170,7 +185,7 @@ function ActivityEffortsPage() {
                     <div className="rounded-xl bg-muted/40 px-3 py-2">
                       <p className="text-xs uppercase text-muted-foreground">Latest</p>
                       <p className="font-medium">
-                        {latest ? `${latest.value} ${latest.unit}` : "-"}
+                        {latest ? formatActivityEffortDisplayValue(latest) : "-"}
                       </p>
                     </div>
                     <div className="rounded-xl bg-muted/40 px-3 py-2">
@@ -183,25 +198,81 @@ function ActivityEffortsPage() {
             })}
           </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 capitalize">
-                <BarChart3 className="h-5 w-5" />
-                {activeKey ? formatEffortLabel(activeKey) : "Effort measurement"}
-              </CardTitle>
-              <CardDescription>
-                Charted by recorded date with editable records underneath.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <EffortTrendChart rows={selectedRows} />
-              <EffortRowsTable
-                rows={selectedRows}
-                onEdit={setEditingEffort}
-                onDelete={setDeleteEffort}
-              />
-            </CardContent>
-          </Card>
+          <div className="space-y-6">
+            <SimpleTrendChart
+              description="Observed best performance by duration. X: duration · Y: performance. Modeled and review data are excluded."
+              emptyMessage="No eligible observed efforts are available for this curve."
+              formatValue={(value) =>
+                formatActivityEffortDisplayValue({
+                  activity_category: activeDefinition.activityCategory,
+                  effort_type: activeDefinition.effortType,
+                  unit: activeDefinition.unit,
+                  value,
+                })
+              }
+              points={durationCurve.map((point) => ({
+                id: point.id,
+                label: point.label,
+                value: point.value,
+                x: point.durationSeconds,
+              }))}
+              title={`${activeDefinition.label} observed duration curve`}
+            />
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5" />
+                  Selected-duration history
+                </CardTitle>
+                <CardDescription>
+                  Compare observed values over date. Modeled and review records stay labeled in the
+                  table and do not enter the chart.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <fieldset className="flex flex-wrap gap-2">
+                  <legend className="sr-only">History duration</legend>
+                  {(durationOptions.length > 0 ? durationOptions : [activeDuration]).map(
+                    (duration) => (
+                      <Button
+                        key={duration}
+                        onClick={() => setSelectedDuration(duration)}
+                        size="sm"
+                        type="button"
+                        variant={duration === activeDuration ? "default" : "outline"}
+                      >
+                        {formatDuration(duration)}
+                      </Button>
+                    ),
+                  )}
+                </fieldset>
+                <SimpleTrendChart
+                  description={`Observed ${formatDuration(activeDuration)} efforts by recorded date.`}
+                  emptyMessage="No observed history at this duration. Review and modeled rows may still appear below."
+                  formatValue={(value) =>
+                    formatActivityEffortDisplayValue({
+                      activity_category: activeDefinition.activityCategory,
+                      effort_type: activeDefinition.effortType,
+                      unit: activeDefinition.unit,
+                      value,
+                    })
+                  }
+                  points={[...observedHistory].reverse().map((row) => ({
+                    id: row.id,
+                    label: formatDateTime(row.recorded_at),
+                    value: row.value,
+                    x: new Date(row.recorded_at).getTime(),
+                  }))}
+                  title={`${formatDuration(activeDuration)} history over date`}
+                />
+                <EffortRowsTable
+                  rows={selectedRows}
+                  onEdit={setEditingEffort}
+                  onDelete={setDeleteEffort}
+                />
+              </CardContent>
+            </Card>
+          </div>
         </div>
       )}
 
@@ -247,60 +318,6 @@ function ActivityEffortsPage() {
   );
 }
 
-function EffortTrendChart({ rows }: { rows: ActivityEffortRow[] }) {
-  const points = [...rows].reverse();
-  const values = points.map((row) => row.value);
-  const min = Math.min(...values, 0);
-  const max = Math.max(...values, 1);
-  const range = max - min || 1;
-  const coordinates = points
-    .map((row, index) => {
-      const x = points.length === 1 ? 50 : (index / (points.length - 1)) * 100;
-      const y = 90 - ((row.value - min) / range) * 70;
-      return `${x},${y}`;
-    })
-    .join(" ");
-
-  return (
-    <div className="rounded-2xl border bg-muted/20 p-4">
-      <div className="mb-3 flex items-center justify-between text-sm text-muted-foreground">
-        <span>Performance chart</span>
-        <span>{rows.length} records</span>
-      </div>
-      <svg
-        className="h-56 w-full overflow-visible"
-        preserveAspectRatio="none"
-        viewBox="0 0 100 100"
-        role="img"
-        aria-label="Activity effort trend"
-      >
-        <polyline
-          fill="none"
-          points={coordinates}
-          stroke="currentColor"
-          strokeWidth="3"
-          vectorEffect="non-scaling-stroke"
-          className="text-primary"
-        />
-        {points.map((row, index) => {
-          const x = points.length === 1 ? 50 : (index / (points.length - 1)) * 100;
-          const y = 90 - ((row.value - min) / range) * 70;
-          return (
-            <circle
-              className="fill-background stroke-primary"
-              cx={x}
-              cy={y}
-              key={row.id}
-              r="2.5"
-              vectorEffect="non-scaling-stroke"
-            />
-          );
-        })}
-      </svg>
-    </div>
-  );
-}
-
 function EffortRowsTable({
   rows,
   onEdit,
@@ -310,6 +327,14 @@ function EffortRowsTable({
   onEdit: (row: ActivityEffortRow) => void;
   onDelete: (row: ActivityEffortRow) => void;
 }) {
+  if (rows.length === 0) {
+    return (
+      <div className="rounded-2xl border border-dashed px-6 py-10 text-center text-muted-foreground">
+        No efforts recorded at this duration.
+      </div>
+    );
+  }
+
   return (
     <div className="overflow-hidden rounded-2xl border">
       <Table>
@@ -318,33 +343,73 @@ function EffortRowsTable({
             <TableHead>Recorded</TableHead>
             <TableHead>Value</TableHead>
             <TableHead>Duration</TableHead>
+            <TableHead>Source / status</TableHead>
+            <TableHead>Activity</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((row) => (
-            <TableRow className="cursor-pointer" key={row.id} onClick={() => onEdit(row)}>
-              <TableCell>{formatDateTime(row.recorded_at)}</TableCell>
-              <TableCell className="font-medium">
-                {row.value} {row.unit}
-              </TableCell>
-              <TableCell>{formatDuration(row.duration_seconds)}</TableCell>
-              <TableCell className="text-right">
-                <Button
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onDelete(row);
-                  }}
-                  size="sm"
-                  type="button"
-                  variant="ghost"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  <span className="sr-only">Delete</span>
-                </Button>
-              </TableCell>
-            </TableRow>
-          ))}
+          {rows.map((row) => {
+            const status = getEffortStatus(row);
+            const isManual = row.source === "manual";
+            return (
+              <TableRow className="cursor-pointer" key={row.id} onClick={() => onEdit(row)}>
+                <TableCell>{formatDateTime(row.recorded_at)}</TableCell>
+                <TableCell className="whitespace-nowrap font-medium">
+                  {formatActivityEffortDisplayValue(row)}
+                </TableCell>
+                <TableCell>{formatDuration(row.duration_seconds)}</TableCell>
+                <TableCell>
+                  <div className="flex flex-wrap gap-1">
+                    <Badge variant="secondary">{row.source ?? "legacy"}</Badge>
+                    <Badge variant={status === "observed" ? "default" : "outline"}>{status}</Badge>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  {row.activity_id ? (
+                    <Link
+                      className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+                      onClick={(event) => event.stopPropagation()}
+                      params={{ activityId: row.activity_id }}
+                      to="/activities/$activityId"
+                    >
+                      View activity
+                    </Link>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </TableCell>
+                <TableCell className="text-right">
+                  {isManual ? (
+                    <Button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onDelete(row);
+                      }}
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span className="sr-only">Delete</span>
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onEdit(row);
+                      }}
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      Add override
+                    </Button>
+                  )}
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </div>
@@ -364,13 +429,16 @@ function EffortEditDialog({
   onSubmitError: (error: unknown) => Promise<void> | void;
   pending: boolean;
 }) {
+  const isManual = effort?.source === "manual";
   return (
     <Dialog open={!!effort} onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Edit effort</DialogTitle>
+          <DialogTitle>{isManual ? "Edit effort" : "Add manual override"}</DialogTitle>
           <DialogDescription>
-            Clicked rows open here so you can modify the selected effort record.
+            {isManual
+              ? "Update this manual effort record."
+              : "The original evidence remains unchanged. Saving creates a separate manual effort."}
           </DialogDescription>
         </DialogHeader>
         <ActivityEffortForm
@@ -379,7 +447,7 @@ function EffortEditDialog({
           onSubmit={onSubmit}
           onSubmitError={onSubmitError}
           pending={pending}
-          submitLabel="Save"
+          submitLabel={isManual ? "Save" : "Create override"}
           submittingLabel="Saving..."
           values={
             effort

@@ -1,5 +1,6 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { FieldErrors, FieldValues, UseFormReturn } from "react-hook-form";
+import { flushPendingFormDrafts } from "./pending-form-drafts";
 
 type UseZodFormSubmitParams<TFieldValues extends FieldValues> = {
   form: UseFormReturn<any>;
@@ -84,8 +85,8 @@ function useMemoizedHandle<TFieldValues extends FieldValues>({
   setIsSubmitting: (value: boolean) => void;
   setSubmitError: (value: Error | null) => void;
 }) {
-  return useCallback(
-    form.handleSubmit(
+  return useMemo(() => {
+    const submit = form.handleSubmit(
       async (values) => {
         setSubmitError(null);
         setIsSubmitting(true);
@@ -105,7 +106,11 @@ function useMemoizedHandle<TFieldValues extends FieldValues>({
         setSubmitError(null);
         onValidationError?.(errors);
       },
-    ),
-    [],
-  );
+    );
+
+    return (event?: Parameters<typeof submit>[0]) => {
+      flushPendingFormDrafts(form.control);
+      return submit(event);
+    };
+  }, [form, onError, onSubmit, onValidationError, setIsSubmitting, setSubmitError, shouldRethrow]);
 }

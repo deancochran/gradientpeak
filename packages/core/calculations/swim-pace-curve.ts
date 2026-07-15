@@ -9,8 +9,94 @@
  *
  */
 
+import { z } from "zod";
+import { classifyActivityEffortPlausibility } from "../athlete-inputs/activity-effort-policy";
 import { PROFILE_PERFORMANCE_THRESHOLD_BOUNDS } from "../athlete-inputs/profile-metrics";
 import type { DerivedEffort } from "./power-curve";
+
+export const CSS_TEST_PROTOCOL = "css_400m_200m" as const;
+
+export const cssTestTimesSchema = z
+  .object({
+    time400Seconds: z.number().int().positive().max(14_400),
+    time200Seconds: z.number().int().positive().max(14_400),
+  })
+  .superRefine((input, ctx) => {
+    if (input.time400Seconds <= 2 * input.time200Seconds) {
+      ctx.addIssue({
+        code: "custom",
+        message: "400m time must be greater than twice the 200m time",
+        path: ["time400Seconds"],
+      });
+      return;
+    }
+
+    const efforts = [
+      { distanceMeters: 400, durationSeconds: input.time400Seconds },
+      { distanceMeters: 200, durationSeconds: input.time200Seconds },
+    ] as const;
+    for (const effort of efforts) {
+      const plausibility = classifyActivityEffortPlausibility({
+        activityCategory: "swim",
+        effortType: "speed",
+        durationSeconds: effort.durationSeconds,
+        value: effort.distanceMeters / effort.durationSeconds,
+      });
+      if (plausibility.classification !== "plausible") {
+        ctx.addIssue({
+          code: "custom",
+          message: `${effort.distanceMeters}m effort is outside accepted plausibility bounds`,
+          path: [effort.distanceMeters === 400 ? "time400Seconds" : "time200Seconds"],
+        });
+      }
+    }
+
+    const cssSecondsPer100m = (input.time400Seconds - input.time200Seconds) / 2;
+    const bounds = PROFILE_PERFORMANCE_THRESHOLD_BOUNDS.swimCssSecondsPerHundredMeters;
+    if (cssSecondsPer100m < bounds.min || cssSecondsPer100m > bounds.max) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Calculated CSS is outside accepted profile bounds",
+        path: ["time400Seconds"],
+      });
+    }
+  });
+
+export const cssTestProtocolSchema = z.intersection(
+  cssTestTimesSchema,
+  z.object({ operationId: z.string().uuid() }),
+);
+
+export type CssTestTimesInput = z.infer<typeof cssTestTimesSchema>;
+export type CssTestProtocolInput = z.infer<typeof cssTestProtocolSchema>;
+
+export interface CssTestProtocolResult {
+  cssSecondsPer100m: number;
+  efforts: readonly [
+    { distanceMeters: 400; durationSeconds: number; speedMetersPerSecond: number },
+    { distanceMeters: 200; durationSeconds: number; speedMetersPerSecond: number },
+  ];
+}
+
+/** Validates and calculates the standard 400m/200m CSS test as one protocol result. */
+export function calculateCssFrom400m200mTest(input: CssTestTimesInput): CssTestProtocolResult {
+  const parsed = cssTestTimesSchema.parse(input);
+  return {
+    cssSecondsPer100m: (parsed.time400Seconds - parsed.time200Seconds) / 2,
+    efforts: [
+      {
+        distanceMeters: 400,
+        durationSeconds: parsed.time400Seconds,
+        speedMetersPerSecond: 400 / parsed.time400Seconds,
+      },
+      {
+        distanceMeters: 200,
+        durationSeconds: parsed.time200Seconds,
+        speedMetersPerSecond: 200 / parsed.time200Seconds,
+      },
+    ],
+  };
+}
 
 /**
  * Standard durations for swimming pace efforts in seconds.
@@ -223,20 +309,8 @@ export function estimateSwimSpeedForDuration(
  * // Returns: ~90 seconds/100m (1:30/100m)
  */
 export function estimateCSSFromSwimTests(time400m: number, time200m: number): number {
-  if (time400m <= 0 || time200m <= 0) {
-    throw new Error("Times must be greater than 0");
-  }
-
-  if (time400m <= time200m) {
-    throw new Error("400m time should be longer than 200m time");
-  }
-
-  // CSS formula: (400 - 200) / (time400 - time200)
-  // This gives speed in m/s
-  const cssSpeedMps = (400 - 200) / (time400m - time200m);
-
-  // Convert to seconds per 100m
-  const cssSecondsPerHundredMeters = speedToPacePerHundredMeters(cssSpeedMps);
-
-  return cssSecondsPerHundredMeters;
+  return calculateCssFrom400m200mTest({
+    time400Seconds: time400m,
+    time200Seconds: time200m,
+  }).cssSecondsPer100m;
 }

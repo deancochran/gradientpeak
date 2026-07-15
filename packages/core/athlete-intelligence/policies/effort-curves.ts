@@ -41,7 +41,7 @@ export const EFFORT_CURVE_DECISION_UNCERTAINTY_POLICY = Object.freeze({
 });
 
 export const effortCurveModalitySchema = z.enum(["power", "pace"]);
-export const effortCurveUnitSchema = z.enum(["watts", "seconds_per_kilometer"]);
+export const effortCurveUnitSchema = z.enum(["watts", "seconds_per_kilometer", "seconds_per_100m"]);
 
 export type EffortCurveModality = z.infer<typeof effortCurveModalitySchema>;
 export type EffortCurveUnit = z.infer<typeof effortCurveUnitSchema>;
@@ -101,13 +101,18 @@ function compatibilityReason(target: EffortCurveTarget): string | null {
     if (target.unit !== "watts") return "unsupported_effort_curve_unit";
     return target.sport === "bike" ? null : "unsupported_effort_curve_sport";
   }
-  if (target.unit !== "seconds_per_kilometer") return "unsupported_effort_curve_unit";
-  return target.sport === "run" ? null : "unsupported_effort_curve_sport";
+  if (target.sport === "run")
+    return target.unit === "seconds_per_kilometer" ? null : "unsupported_effort_curve_unit";
+  if (target.sport === "swim")
+    return target.unit === "seconds_per_100m" ? null : "unsupported_effort_curve_unit";
+  return "unsupported_effort_curve_sport";
 }
 
-function pointValue(effort: EffortObservationInput, modality: EffortCurveModality): number | null {
-  if (modality === "power") return effort.kind === "power" ? effort.powerWatts : null;
-  return effort.kind === "speed" ? 1_000 / effort.speedMetersPerSecond : null;
+function pointValue(effort: EffortObservationInput, target: EffortCurveTarget): number | null {
+  if (target.modality === "power") return effort.kind === "power" ? effort.powerWatts : null;
+  if (effort.kind !== "speed") return null;
+  const distanceMeters = target.unit === "seconds_per_100m" ? 100 : 1_000;
+  return distanceMeters / effort.speedMetersPerSecond;
 }
 
 function matchingEvidenceSources(input: {
@@ -292,7 +297,7 @@ function calculateTarget(
       assessmentAsOf,
     });
     if (!evidenceSources) continue;
-    const value = pointValue(effort, target.modality);
+    const value = pointValue(effort, target);
     if (value !== null) {
       points.push({
         durationSeconds: effort.durationSeconds,

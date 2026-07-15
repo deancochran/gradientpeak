@@ -380,6 +380,13 @@ function ProfileEditScreen() {
                   <View className="min-w-0 flex-1 gap-3">
                     <FormTextField
                       control={form.control}
+                      label="Full Name *"
+                      name="full_name"
+                      placeholder="Enter full name"
+                      testId="profile-edit-full-name"
+                    />
+                    <FormTextField
+                      control={form.control}
                       label="Username"
                       name="username"
                       parseValue={(value) => value || null}

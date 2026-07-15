@@ -27,6 +27,16 @@ describe("profilePatchInputSchema", () => {
     });
   });
 
+  it("accepts and trims a valid full name using onboarding validation", () => {
+    expect(profilePatchInputSchema.parse({ full_name: "  Athlete Example  " })).toEqual({
+      full_name: "Athlete Example",
+    });
+  });
+
+  it("rejects blank full names", () => {
+    expect(profilePatchInputSchema.safeParse({ full_name: "   " }).success).toBe(false);
+  });
+
   it("keeps the existing username whitespace behavior", () => {
     expect(profilePatchInputSchema.parse({ username: "" }).username).toBeNull();
     expect(profilePatchInputSchema.parse({ username: "   " }).username).toBeNull();

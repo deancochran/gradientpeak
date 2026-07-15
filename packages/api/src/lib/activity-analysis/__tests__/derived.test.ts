@@ -1,21 +1,37 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildActivityDerivedSummaryMap } from "../derived";
+import { buildActivityDerivedSummaryMap, buildDynamicStressSeries } from "../derived";
 
 function createStoreMock() {
   const efforts = [
     {
+      activity_id: "january-bike",
       recorded_at: "2025-01-01T00:00:00.000Z",
       effort_type: "power",
       duration_seconds: 1200,
       value: 200,
+      unit: "watts",
       activity_category: "bike",
+      source: "imported",
+      method: "activity_file_best_effort",
+      provenance: {
+        activity_id: "january-bike",
+        derived_from: "activity_file_stream",
+      },
     },
     {
+      activity_id: "march-bike",
       recorded_at: "2025-03-01T00:00:00.000Z",
       effort_type: "power",
       duration_seconds: 1200,
       value: 300,
+      unit: "watts",
       activity_category: "bike",
+      source: "imported",
+      method: "activity_file_best_effort",
+      provenance: {
+        activity_id: "march-bike",
+        derived_from: "activity_file_stream",
+      },
     },
   ];
 
@@ -62,6 +78,21 @@ function buildBikeActivity(id: string, finishedAt: string, profileId?: string) {
 }
 
 describe("buildActivityDerivedSummaryMap", () => {
+  it("keeps a stable series when the threshold calibration changes", async () => {
+    const result = await buildDynamicStressSeries({
+      store: createStoreMock() as any,
+      profileId: "profile-1",
+      activities: [
+        buildBikeActivity("older-activity", "2025-02-01T10:00:00.000Z"),
+        buildBikeActivity("later-activity", "2025-04-01T10:00:00.000Z"),
+      ],
+    });
+
+    expect(result.complete).toBe(true);
+    expect(result.seriesIdentity).toMatchObject({ sport: "bike", method: "power_threshold" });
+    expect(result.byDate.size).toBe(2);
+  });
+
   it("uses only as-of efforts for each activity", async () => {
     const derivedMap = await buildActivityDerivedSummaryMap({
       store: createStoreMock() as any,
@@ -108,14 +139,76 @@ describe("buildActivityDerivedSummaryMap", () => {
 
     expect(derivedMap.get("older-activity")).toMatchObject({
       intensity_factor: 1.32,
-      tss: 174,
-      computed_as_of: "2025-02-01T10:00:00.000Z",
+      tss: 173,
+      method: "power_threshold",
+      unavailable_reason: null,
+      computed_as_of: "2025-02-01T09:00:00.000Z",
       tss_identity: { sport: "bike", method: "power_threshold" },
     });
     expect(derivedMap.get("later-activity")).toMatchObject({
       intensity_factor: 0.88,
       tss: 77,
-      computed_as_of: "2025-04-01T10:00:00.000Z",
+      computed_as_of: "2025-04-01T09:00:00.000Z",
+    });
+  });
+
+  it("uses activity start as the evidence cutoff so an activity cannot calibrate itself", async () => {
+    const store = {
+      loadContextEvidence: vi.fn(
+        async () =>
+          new Map([
+            [
+              "profile-1",
+              {
+                profile: { dob: null, gender: null },
+                profileMetrics: [],
+                recentEfforts: [
+                  {
+                    activity_id: "activity-under-analysis",
+                    activity_category: "bike",
+                    duration_seconds: 1200,
+                    effort_type: "power",
+                    recorded_at: new Date("2025-04-01T09:00:00.000Z"),
+                    unit: "watts",
+                    value: 300,
+                    source: "imported",
+                    method: "activity_file_best_effort",
+                    provenance: {
+                      activity_id: "activity-under-analysis",
+                      derived_from: "activity_file_stream",
+                    },
+                  },
+                ],
+              },
+            ],
+          ]),
+      ),
+    };
+
+    const result = await buildActivityDerivedSummaryMap({
+      store: store as any,
+      profileId: "profile-1",
+      activities: [
+        {
+          ...buildBikeActivity("activity-under-analysis", "2025-04-01T10:00:00.000Z"),
+          started_at: new Date("2025-04-01T09:00:00.000Z"),
+        },
+      ],
+    });
+
+    expect(store.loadContextEvidence).toHaveBeenCalledWith({
+      requests: [
+        {
+          profileId: "profile-1",
+          asOf: new Date("2025-04-01T09:00:00.000Z"),
+        },
+      ],
+    });
+    expect(result.get("activity-under-analysis")).toMatchObject({
+      intensity_factor: null,
+      tss: null,
+      method: null,
+      unavailable_reason: "threshold_missing",
     });
   });
 
@@ -252,13 +345,13 @@ describe("buildActivityDerivedSummaryMap", () => {
 
     expect(derivedMap.get("historical-import")).toMatchObject({
       intensity_factor: 1.32,
-      tss: 174,
-      computed_as_of: "2025-02-01T10:00:00.000Z",
+      tss: 173,
+      computed_as_of: "2025-02-01T09:00:00.000Z",
     });
     expect(derivedMap.get("existing-later-activity")).toMatchObject({
       intensity_factor: 0.88,
       tss: 77,
-      computed_as_of: "2025-04-01T10:00:00.000Z",
+      computed_as_of: "2025-04-01T09:00:00.000Z",
     });
   });
 });

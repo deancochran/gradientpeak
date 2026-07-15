@@ -33,9 +33,33 @@ function mapBackendProjectionChartToTrainingPathChart(
   const validPoints = points.filter(isBackendProjectionPoint);
   if (validPoints.length === 0) return null;
 
-  const weeks = aggregateBackendPointsToWeeks(validPoints, localChart);
-  if (weeks.length === 0) return null;
-  const dailyPoints = mapBackendDailyLoadPoints(chart.daily_load_points, validPoints, localChart);
+  const backendWeeks = aggregateBackendPointsToWeeks(validPoints, localChart);
+  if (backendWeeks.length === 0) return null;
+  const backendDailyPoints = mapBackendDailyLoadPoints(
+    chart.daily_load_points,
+    validPoints,
+    localChart,
+  );
+  const hasFitnessBaseline = localChart.emptyState !== "noActivityHistory";
+  const weeks = hasFitnessBaseline
+    ? backendWeeks
+    : backendWeeks.map((week) => ({
+        ...week,
+        fatigue: null,
+        fitness: null,
+        form: null,
+        scheduledFitness: null,
+        targetFitness: null,
+      }));
+  const dailyPoints = hasFitnessBaseline
+    ? backendDailyPoints
+    : backendDailyPoints.map((point) => ({
+        ...point,
+        fatigueAtl: null,
+        formTsb: null,
+        scheduledFitnessCtl: null,
+        targetFitnessCtl: null,
+      }));
 
   const loadMax = Math.max(
     1,

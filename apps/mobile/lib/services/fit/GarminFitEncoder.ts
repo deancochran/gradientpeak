@@ -27,6 +27,7 @@ import { Buffer } from "buffer";
 import { Directory, File, Paths } from "expo-file-system";
 import { Platform } from "react-native";
 import type { ConnectedSensor } from "../ActivityRecorder/sensors";
+import { fitTimerSeconds } from "./fit-time";
 
 // ==================== Types ====================
 
@@ -89,6 +90,7 @@ export interface FitRecord {
 
 export interface FitSessionData {
   startTime: number;
+  endedAt?: number;
   totalTime: number;
   distance: number;
   avgSpeed: number;
@@ -141,6 +143,7 @@ export class GarminFitEncoder {
   private startTime: number = 0;
   private isInitialized: boolean = false;
   private isFinalized: boolean = false;
+  private finalizedBytes?: Uint8Array;
 
   constructor(recordingId: string, userId: string, config?: Partial<EncoderConfig>) {
     this.recordingId = recordingId;
@@ -512,9 +515,15 @@ export class GarminFitEncoder {
     }
 
     try {
+      if (this.finalizedBytes) {
+        await this.writeFinalizedFile(this.finalizedBytes);
+        this.isFinalized = true;
+        return;
+      }
+
       console.log(`[GarminFitEncoder] Finalizing with ${laps.length} laps...`);
 
-      const endTime = new Date();
+      const endTime = new Date(sessionData.endedAt ?? Date.now());
       const fitEndTime = Utils.convertDateToDateTime(endTime);
 
       // 1. EVENT Message (Timer Stop)
@@ -550,7 +559,7 @@ export class GarminFitEncoder {
           timestamp: fitEndTime,
           startTime: fitStartTime,
           totalElapsedTime: fitEndTime - fitStartTime,
-          totalTimerTime: fitEndTime - fitStartTime,
+          totalTimerTime: fitTimerSeconds(sessionData.totalTime),
           totalDistance: Math.round(sessionData.distance * 100) / 100, // Round to 2 decimals
         };
 
@@ -599,7 +608,7 @@ export class GarminFitEncoder {
         timestamp: fitEndTime,
         startTime: fitStartTime,
         totalElapsedTime: fitEndTime - fitStartTime, // Duration in seconds (FIT timestamp difference)
-        totalTimerTime: fitEndTime - fitStartTime, // Duration in seconds (FIT timestamp difference)
+        totalTimerTime: fitTimerSeconds(sessionData.totalTime),
         totalDistance: Math.round(sessionData.distance * 100) / 100, // Round to 2 decimals
         sport: this.mapSport(sessionData.sport),
         subSport: this.mapSubSport(sessionData.subSport),
@@ -659,7 +668,7 @@ export class GarminFitEncoder {
       // event enum: 26 = activity (Stop at end of activity)
       // eventType enum: 1 = stop
       const localTimestampOffset = endTime.getTimezoneOffset() * -60;
-      const activityTotalTimerTime = fitEndTime - fitStartTime; // Duration in seconds
+      const activityTotalTimerTime = fitTimerSeconds(sessionData.totalTime);
 
       this.encoder.writeMesg({
         mesgNum: Profile.MesgNum.ACTIVITY,
@@ -674,29 +683,31 @@ export class GarminFitEncoder {
 
       // Close encoder and get final data
       const uint8Array = this.encoder.close();
+      this.finalizedBytes = uint8Array;
       console.log(`[GarminFitEncoder] Encoder closed, buffer size: ${uint8Array.length} bytes`);
 
-      const file = new File(this.outputFilePath);
-      if (!file.exists) {
-        file.create({ intermediates: true, overwrite: true });
-      }
-      // Ensure write completes before proceeding
-      await file.write(uint8Array);
-
-      console.log(`[GarminFitEncoder] Wrote ${file.size ?? 0} bytes to ${this.outputFilePath}`);
-
-      // CRITICAL: iOS needs time to sync file to disk before reads
-      if (Platform.OS === "ios") {
-        console.log("[GarminFitEncoder] Applying iOS sync delay (1000ms)...");
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        console.log("[GarminFitEncoder] iOS sync delay complete");
-      }
+      await this.writeFinalizedFile(uint8Array);
 
       this.isFinalized = true;
       console.log(`[GarminFitEncoder] Finalized, ${this.recordCount} records written`);
     } catch (error) {
       console.error(`[GarminFitEncoder] Finalize failed:`, error);
       throw error;
+    }
+  }
+
+  private async writeFinalizedFile(bytes: Uint8Array): Promise<void> {
+    const file = new File(this.outputFilePath);
+    if (!file.exists) {
+      file.create({ intermediates: true, overwrite: true });
+    }
+    await file.write(bytes);
+    console.log(`[GarminFitEncoder] Wrote ${file.size ?? 0} bytes to ${this.outputFilePath}`);
+
+    if (Platform.OS === "ios") {
+      console.log("[GarminFitEncoder] Applying iOS sync delay (1000ms)...");
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      console.log("[GarminFitEncoder] iOS sync delay complete");
     }
   }
 

@@ -23,6 +23,7 @@ export type ProviderSyncJobRecord = {
   status: ProviderSyncJobStatus;
   supersedesJobId: string | null;
   syncLaneKey: string | null;
+  updatedAt?: string;
 };
 
 export type ProviderSyncStateRecord = {
@@ -125,7 +126,9 @@ export interface ProviderSyncRepository {
   setWebhookReceiptJob(input: { id: string; jobId: string }): Promise<void>;
   getWebhookReceipt(id: string): Promise<ProviderWebhookReceiptRecord | null>;
   listJobs(input: {
+    internalResourceId?: string;
     limit: number;
+    order?: "newest_authority" | "oldest_run_at";
     profileId?: string;
     provider?: "wahoo" | "garmin";
     statuses?: ProviderSyncJobStatus[];

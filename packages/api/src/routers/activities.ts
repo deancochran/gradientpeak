@@ -2,9 +2,12 @@ import {
   ActivityUploadSchema,
   activityDerivedMetricsSchema,
   activityListDerivedSummarySchema,
+  activityTssIdentitySchema,
+  ianaTimezoneSchema,
 } from "@repo/core";
 import {
   activities,
+  activityFileIngestions,
   events,
   publicActivitiesRowSchema,
   publicActivityCategorySchema,
@@ -21,7 +24,14 @@ import {
   getActivityByIdForViewer,
   listActivitiesForProfile,
 } from "../application/activities/activity-reads";
-import { submitActivity } from "../application/activities/submit-activity";
+import {
+  DailyTssActivityLimitExceededError,
+  getDailyTssObservations,
+} from "../application/activities/daily-tss-observations";
+import {
+  recordingSessionActivityId,
+  submitActivity,
+} from "../application/activities/submit-activity";
 import { createActivityFileIngestion } from "../application/activity-file-ingestion/ingestion-state";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
@@ -95,6 +105,65 @@ const listPaginatedInputSchema = z
   })
   .strict();
 
+const dailyTssObservationsInputSchema = z
+  .object({
+    start_date: z.iso.date(),
+    end_date: z.iso.date(),
+    timezone: ianaTimezoneSchema,
+  })
+  .strict()
+  .superRefine((input, context) => {
+    const start = Date.parse(`${input.start_date}T00:00:00.000Z`);
+    const end = Date.parse(`${input.end_date}T00:00:00.000Z`);
+    if (end < start) {
+      context.addIssue({
+        code: "custom",
+        message: "end_date must be on or after start_date",
+        path: ["end_date"],
+      });
+    } else if ((end - start) / 86_400_000 + 1 > 365) {
+      context.addIssue({
+        code: "custom",
+        message: "Date range must not exceed 365 inclusive days",
+        path: ["end_date"],
+      });
+    }
+  });
+
+const dailyTssObservationBaseSchema = z.object({
+  date: z.iso.date(),
+  activity_count: z.number().int().positive(),
+  unavailable_activity_count: z.number().int().nonnegative(),
+});
+
+const dailyTssObservationsOutputSchema = z
+  .object({
+    start_date: z.iso.date(),
+    end_date: z.iso.date(),
+    timezone: ianaTimezoneSchema,
+    day_policy: z.literal("activity_started_at_in_requested_timezone"),
+    observations: z.array(
+      z.discriminatedUnion("state", [
+        dailyTssObservationBaseSchema
+          .extend({
+            state: z.literal("calculated"),
+            value: z.number().finite().nonnegative(),
+            tss_identity: activityTssIdentitySchema,
+          })
+          .strict(),
+        dailyTssObservationBaseSchema
+          .extend({
+            state: z.literal("unavailable"),
+            value: z.null(),
+            tss_identity: z.null(),
+            reason: z.enum(["tss_unavailable", "mixed_tss_identities"]),
+          })
+          .strict(),
+      ]),
+    ),
+  })
+  .strict();
+
 const createInputSchema = ActivityUploadSchema.extend({
   profile_id: z.string().uuid(),
   eventId: z.string().uuid().optional().nullable(),
@@ -110,6 +179,7 @@ const createInputSchema = ActivityUploadSchema.extend({
 const createFromRecordingSummaryInputSchema = z
   .object({
     profileId: z.string().uuid(),
+    recordingSessionId: z.string().trim().min(1).max(200).optional(),
     name: z.string().trim().min(1),
     notes: z.string().nullable().optional(),
     is_private: z.boolean().optional(),
@@ -164,6 +234,24 @@ function _parseActivityRows(value: unknown[]) {
 }
 
 export const activitiesRouter = createTRPCRouter({
+  dailyTssObservations: protectedProcedure
+    .input(dailyTssObservationsInputSchema)
+    .output(dailyTssObservationsOutputSchema)
+    .query(async ({ ctx, input }) => {
+      try {
+        return await getDailyTssObservations({
+          db: getRequiredDb(ctx),
+          profileId: ctx.session.user.id,
+          range: input,
+        });
+      } catch (error) {
+        if (error instanceof DailyTssActivityLimitExceededError) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+        }
+        throw error;
+      }
+    }),
+
   // Paginated list of activities with filters
   listPaginated: protectedProcedure
     .input(listPaginatedInputSchema)
@@ -292,52 +380,117 @@ export const activitiesRouter = createTRPCRouter({
         });
       }
 
-      const created = await submitActivity(db, {
-        profileId: input.profileId,
-        activityPlanId: input.activityPlanId ?? null,
-        name: input.name,
-        notes: input.notes ?? null,
-        activityType: input.activityType,
-        isPrivate: input.is_private ?? true,
-        startedAt: new Date(input.startedAt),
-        finishedAt: new Date(input.finishedAt),
-        durationSeconds: input.durationSeconds,
-        movingSeconds: input.movingSeconds,
-        distanceMeters: input.distanceMeters,
-        calories: input.calories ?? null,
-        elevationGainMeters: null,
-        avgHeartRate: null,
-        maxHeartRate: null,
-        avgPower: null,
-        maxPower: null,
-        normalizedPower: null,
-        avgCadence: null,
-        maxCadence: null,
-        avgSpeedMps: null,
-        maxSpeedMps: null,
-        normalizedSpeedMps: null,
-        normalizedGradedSpeedMps: null,
-        efficiencyFactor: null,
-        aerobicDecoupling: null,
-        avgTemperature: null,
-        deviceManufacturer: null,
-        deviceProduct: null,
-        laps: null,
-        mapBounds: null,
-        polyline: null,
-        composition: {
-          persist: async (tx, { activityId, now }) =>
-            createActivityFileIngestion(tx, {
-              activityId,
-              profileId: input.profileId,
-              source: input.source,
-              filePath: null,
-              fileSize: input.localFileMetadata?.fileSize ?? null,
-              fileType: input.localFileMetadata?.fileType ?? null,
-              now,
-            }),
-        },
-      });
+      if (input.recordingSessionId) {
+        const activityId = recordingSessionActivityId(input.profileId, input.recordingSessionId);
+        const existingActivity = await db.query.activities.findFirst({
+          where: and(eq(activities.id, activityId), eq(activities.profile_id, input.profileId)),
+        });
+        if (existingActivity) {
+          const existingIngestion = await db.query.activityFileIngestions.findFirst({
+            where: and(
+              eq(activityFileIngestions.activity_id, existingActivity.id),
+              eq(activityFileIngestions.profile_id, input.profileId),
+            ),
+          });
+          if (!existingIngestion) {
+            throw new TRPCError({
+              code: "INTERNAL_SERVER_ERROR",
+              message: "Recording activity is missing its file ingestion",
+            });
+          }
+          return {
+            ...parseActivityRow(existingActivity),
+            ingestion: {
+              id: existingIngestion.id,
+              status: existingIngestion.status,
+              source: existingIngestion.source,
+            },
+          };
+        }
+      }
+
+      let created: Awaited<ReturnType<typeof submitActivity>>;
+      try {
+        created = await submitActivity(db, {
+          ...(input.recordingSessionId
+            ? {
+                requestedActivityId: recordingSessionActivityId(
+                  input.profileId,
+                  input.recordingSessionId,
+                ),
+              }
+            : {}),
+          profileId: input.profileId,
+          activityPlanId: input.activityPlanId ?? null,
+          name: input.name,
+          notes: input.notes ?? null,
+          activityType: input.activityType,
+          isPrivate: input.is_private ?? true,
+          startedAt: new Date(input.startedAt),
+          finishedAt: new Date(input.finishedAt),
+          durationSeconds: input.durationSeconds,
+          movingSeconds: input.movingSeconds,
+          distanceMeters: input.distanceMeters,
+          calories: input.calories ?? null,
+          elevationGainMeters: null,
+          avgHeartRate: null,
+          maxHeartRate: null,
+          avgPower: null,
+          maxPower: null,
+          normalizedPower: null,
+          avgCadence: null,
+          maxCadence: null,
+          avgSpeedMps: null,
+          maxSpeedMps: null,
+          normalizedSpeedMps: null,
+          normalizedGradedSpeedMps: null,
+          efficiencyFactor: null,
+          aerobicDecoupling: null,
+          avgTemperature: null,
+          deviceManufacturer: null,
+          deviceProduct: null,
+          laps: null,
+          mapBounds: null,
+          polyline: null,
+          composition: {
+            persist: async (tx, { activityId, now }) =>
+              createActivityFileIngestion(tx, {
+                activityId,
+                profileId: input.profileId,
+                source: input.source,
+                filePath: null,
+                fileSize: input.localFileMetadata?.fileSize ?? null,
+                fileType: input.localFileMetadata?.fileType ?? null,
+                now,
+              }),
+          },
+        });
+      } catch (error) {
+        if (!input.recordingSessionId) throw error;
+
+        const activityId = recordingSessionActivityId(input.profileId, input.recordingSessionId);
+        const [existingActivity, existingIngestion] = await Promise.all([
+          db.query.activities.findFirst({
+            where: and(eq(activities.id, activityId), eq(activities.profile_id, input.profileId)),
+          }),
+          db.query.activityFileIngestions.findFirst({
+            where: and(
+              eq(activityFileIngestions.activity_id, activityId),
+              eq(activityFileIngestions.profile_id, input.profileId),
+            ),
+          }),
+        ]);
+        if (!existingActivity || !existingIngestion) throw error;
+
+        return {
+          ...parseActivityRow(existingActivity),
+          ingestion: {
+            id: existingIngestion.id,
+            status: existingIngestion.status,
+            source: existingIngestion.source,
+          },
+        };
+      }
 
       const activity = await db.query.activities.findFirst({
         where: eq(activities.id, created.id),

@@ -34,6 +34,8 @@ export type {
   PlanStepV2,
 } from "./activity_plan_v2";
 export {
+  activityPlanSpeedKphToMetersPerSecond,
+  activityPlanSpeedMetersPerSecondToKph,
   activityPlanStructureSchemaV2,
   durationSchemaV2,
   formatIntensityTarget,

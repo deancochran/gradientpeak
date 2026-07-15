@@ -19,6 +19,10 @@ const projection = () => ({
   athleteId: "athlete-1",
   capability: {
     ftp: unavailable,
+    runningThresholdPace: unavailable,
+    swimmingCss: unavailable,
+    criticalPowerWatts: unavailable,
+    wPrimeJoules: unavailable,
     wattsPerKilogram: unavailable,
     heartRateReserve: unavailable,
     effortCurves: [],

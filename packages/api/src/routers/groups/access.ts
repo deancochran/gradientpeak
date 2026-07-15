@@ -17,7 +17,7 @@ import {
 } from "@repo/core/groups";
 import { groupInvitations, groupJoinRequests, groupMemberships, profiles } from "@repo/db";
 import { TRPCError } from "@trpc/server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, gt, isNull, or } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 
 export type GroupsDbClient = Pick<ReturnType<typeof getRequiredDb>, "select">;
@@ -123,6 +123,7 @@ export async function buildGroupViewerStateForProfile(
           eq(groupInvitations.group_id, input.groupId),
           eq(groupInvitations.invited_profile_id, input.profileId),
           eq(groupInvitations.status, GROUP_INVITATION_STATUS_PENDING),
+          or(isNull(groupInvitations.expires_at), gt(groupInvitations.expires_at, new Date())),
         ),
       )
       .limit(1),

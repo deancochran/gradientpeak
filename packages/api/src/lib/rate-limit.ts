@@ -31,51 +31,45 @@ const unlimitedResult: ApiRateLimitResult = {
   retryAfterSeconds: 0,
 };
 
-const buckets = new Map<string, RateLimitBucket>();
-
 export interface ApiRateLimitStore {
   increment(identity: RateLimitIdentity, now: number): RateLimitBucket;
 }
 
-function sweepExpiredBuckets(now: number) {
-  for (const [key, bucket] of buckets) {
-    if (bucket.resetAt <= now) {
-      buckets.delete(key);
-    }
-  }
-}
-
 function getForwardedIp(headers: Headers) {
-  const directIp = headers.get("cf-connecting-ip") ?? headers.get("x-real-ip");
-
-  if (directIp) {
-    return directIp.trim();
+  const trustedHeaders = new Set(
+    (process.env.TRUSTED_PROXY_IP_HEADERS ?? "")
+      .split(",")
+      .map((name) => name.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  for (const name of ["cf-connecting-ip", "x-real-ip", "x-forwarded-for", "forwarded"]) {
+    if (!trustedHeaders.has(name)) continue;
+    const value = headers.get(name);
+    if (!value) continue;
+    if (name === "forwarded") {
+      return value.match(/for=(?:"?)([^;,"]+)/i)?.[1]?.trim() || "unknown";
+    }
+    return value.split(",")[0]?.trim() || "unknown";
   }
-
-  const forwardedFor = headers.get("x-forwarded-for");
-
-  if (forwardedFor) {
-    return forwardedFor.split(",")[0]?.trim() || "unknown";
-  }
-
-  const forwarded = headers.get("forwarded");
-  const forwardedForMatch = forwarded?.match(/for=(?:"?)([^;,"]+)/i);
-
-  return forwardedForMatch?.[1]?.trim() || "unknown";
+  return "unknown";
 }
 
-class InMemoryApiRateLimitStore implements ApiRateLimitStore {
+export class InMemoryApiRateLimitStore implements ApiRateLimitStore {
+  private readonly buckets = new Map<string, RateLimitBucket>();
+
   increment(identity: RateLimitIdentity, now: number): RateLimitBucket {
-    if (buckets.size > MAX_BUCKETS_BEFORE_SWEEP) {
-      sweepExpiredBuckets(now);
+    if (this.buckets.size > MAX_BUCKETS_BEFORE_SWEEP) {
+      for (const [key, bucket] of this.buckets) {
+        if (bucket.resetAt <= now) this.buckets.delete(key);
+      }
     }
 
-    const existing = buckets.get(identity.key);
+    const existing = this.buckets.get(identity.key);
     const bucket =
       existing && existing.resetAt > now ? existing : { count: 0, resetAt: now + WINDOW_MS };
 
     bucket.count += 1;
-    buckets.set(identity.key, bucket);
+    this.buckets.set(identity.key, bucket);
 
     return bucket;
   }

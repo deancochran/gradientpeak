@@ -1,15 +1,20 @@
 import { randomUUID } from "node:crypto";
 import { db, pool } from "@repo/db/client";
 import {
+  integrationCredentials,
   integrations,
+  oauthStates,
   profiles,
   providerSyncJobs,
   providerWebhookReceipts,
   users,
 } from "@repo/db/schema";
 import { eq } from "drizzle-orm";
-import { afterAll, afterEach, describe, expect, it } from "vitest";
-import { createProviderSyncRepository } from "../../infrastructure/repositories";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import {
+  createIntegrationsRepositories,
+  createProviderSyncRepository,
+} from "../../infrastructure/repositories";
 
 const userIds: string[] = [];
 
@@ -47,6 +52,7 @@ async function seedOwner() {
 }
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   const userId = userIds.pop();
   if (userId) await db.delete(users).where(eq(users.id, userId));
 });
@@ -56,6 +62,331 @@ afterAll(async () => {
 });
 
 describe("provider sync PostgreSQL claims", () => {
+  it("consumes one OAuth state with one atomic credential write", async () => {
+    const owner = await seedOwner();
+    await db.delete(integrations).where(eq(integrations.id, owner.integrationId));
+    const state = randomUUID();
+    await db.insert(oauthStates).values({
+      created_at: new Date(),
+      expires_at: new Date(Date.now() + 60_000),
+      id: randomUUID(),
+      mobile_redirect_uri: "gradientpeak://integrations",
+      profile_id: owner.profileId,
+      provider: "wahoo",
+      state,
+    });
+    const repository = createIntegrationsRepositories(db).integrations;
+    const input = {
+      accessToken: "access-token",
+      expiresAt: new Date(Date.now() + 3_600_000),
+      externalId: "wahoo-account",
+      now: new Date(),
+      profileId: owner.profileId,
+      provider: "wahoo" as const,
+      refreshToken: "refresh-token",
+      scope: "workouts_read",
+      state,
+    };
+
+    const results = await Promise.all([
+      repository.upsertFromOAuthState(input),
+      repository.upsertFromOAuthState(input),
+    ]);
+
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(await db.select().from(oauthStates).where(eq(oauthStates.state, state))).toHaveLength(0);
+    const storedIntegrations = await db
+      .select()
+      .from(integrations)
+      .where(eq(integrations.profile_id, owner.profileId));
+    expect(storedIntegrations).toHaveLength(1);
+    const storedIntegration = storedIntegrations[0];
+    if (!storedIntegration) throw new Error("Expected stored integration");
+    expect(
+      await db
+        .select()
+        .from(integrationCredentials)
+        .where(eq(integrationCredentials.integration_id, storedIntegration.id)),
+    ).toHaveLength(1);
+  });
+
+  it("rolls OAuth state consumption back when credential protection fails", async () => {
+    const owner = await seedOwner();
+    await db.delete(integrations).where(eq(integrations.id, owner.integrationId));
+    const state = randomUUID();
+    await db.insert(oauthStates).values({
+      created_at: new Date(),
+      expires_at: new Date(Date.now() + 60_000),
+      id: randomUUID(),
+      mobile_redirect_uri: "gradientpeak://integrations",
+      profile_id: owner.profileId,
+      provider: "wahoo",
+      state,
+    });
+    const repository = createIntegrationsRepositories(db).integrations;
+    vi.stubEnv("PROVIDER_TOKEN_ENCRYPTION_KEY", "invalid");
+
+    await expect(
+      repository.upsertFromOAuthState({
+        accessToken: "access-token",
+        expiresAt: null,
+        externalId: "wahoo-account",
+        now: new Date(),
+        profileId: owner.profileId,
+        provider: "wahoo",
+        refreshToken: "refresh-token",
+        scope: null,
+        state,
+      }),
+    ).rejects.toThrow("PROVIDER_TOKEN_ENCRYPTION_KEY");
+    expect(await db.select().from(oauthStates).where(eq(oauthStates.state, state))).toHaveLength(1);
+    expect(
+      await db.select().from(integrations).where(eq(integrations.profile_id, owner.profileId)),
+    ).toHaveLength(0);
+  });
+
+  it("coalesces concurrent enqueues with the same dedupe key into one active job", async () => {
+    const owner = await seedOwner();
+    const repository = createProviderSyncRepository({ db });
+    const dedupeKey = `concurrent-${randomUUID()}`;
+    const input = {
+      dedupeKey,
+      integrationId: owner.integrationId,
+      jobType: "wahoo.publish_event",
+      payload: { eventId: randomUUID() },
+      profileId: owner.profileId,
+      provider: "wahoo" as const,
+      runAt: new Date(futureBase(0)).toISOString(),
+    };
+
+    const enqueued = await Promise.all(
+      Array.from({ length: 8 }, () => repository.enqueueJob(input)),
+    );
+
+    expect(new Set(enqueued.map((job) => job.id)).size).toBe(1);
+    const active = await pool.query<{ id: string }>(
+      `select id from public.provider_sync_jobs
+       where dedupe_key = $1 and status in ('queued', 'running')`,
+      [dedupeKey],
+    );
+    expect(active.rows).toEqual([{ id: enqueued[0]?.id }]);
+  });
+
+  it("maps queue sequence and filters listJobs to the requested event and provider", async () => {
+    const owner = await seedOwner();
+    const repository = createProviderSyncRepository({ db });
+    const eventId = randomUUID();
+    const unrelatedEventId = randomUUID();
+    const first = await repository.enqueueJob({
+      dedupeKey: `first-${eventId}`,
+      integrationId: owner.integrationId,
+      internalResourceId: eventId,
+      jobType: "wahoo.publish_event",
+      payload: { eventId },
+      profileId: owner.profileId,
+      provider: "wahoo",
+      runAt: new Date(futureBase(120_000)).toISOString(),
+    });
+    const newest = await repository.enqueueJob({
+      dedupeKey: `newest-${eventId}`,
+      integrationId: owner.integrationId,
+      internalResourceId: eventId,
+      jobType: "wahoo.publish_event",
+      payload: { eventId },
+      profileId: owner.profileId,
+      provider: "wahoo",
+      runAt: new Date(futureBase(60_000)).toISOString(),
+    });
+    await repository.enqueueJob({
+      dedupeKey: `unrelated-${unrelatedEventId}`,
+      integrationId: owner.integrationId,
+      internalResourceId: unrelatedEventId,
+      jobType: "wahoo.publish_event",
+      payload: { eventId: unrelatedEventId },
+      profileId: owner.profileId,
+      provider: "wahoo",
+      runAt: new Date(futureBase(180_000)).toISOString(),
+    });
+
+    const jobs = await repository.listJobs({
+      internalResourceId: eventId,
+      limit: 2,
+      order: "newest_authority",
+      profileId: owner.profileId,
+      provider: "wahoo",
+    });
+
+    expect(jobs.map((job) => job.id)).toEqual([newest.id, first.id]);
+    expect(jobs.every((job) => job.internalResourceId === eventId)).toBe(true);
+    expect(jobs.every((job) => job.provider === "wahoo")).toBe(true);
+    expect(jobs.map((job) => job.queueSequence)).toEqual([expect.any(Number), expect.any(Number)]);
+    expect(jobs[0]?.queueSequence).toBeGreaterThan(jobs[1]?.queueSequence ?? Number.MAX_VALUE);
+  });
+
+  it("coalesces an unchanged running intent and queues one successor for concurrent payload changes", async () => {
+    const owner = await seedOwner();
+    const repository = createProviderSyncRepository({ db });
+    const eventId = randomUUID();
+    const lane = `event-${eventId}`;
+    const workerId = `worker-${randomUUID()}`;
+    const runAt = new Date().toISOString();
+    const initialInput = {
+      dedupeKey: `publish-${eventId}`,
+      integrationId: owner.integrationId,
+      jobType: "wahoo.publish_event",
+      operation: "publish",
+      payload: { eventId, operation: "publish" },
+      payloadHash: "publish-v1",
+      profileId: owner.profileId,
+      provider: "wahoo" as const,
+      runAt,
+      syncLaneKey: lane,
+    };
+    const running = await repository.enqueueJob(initialInput);
+    await repository.claimDueJobs({
+      limit: 1,
+      lockExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+      now: new Date().toISOString(),
+      provider: "wahoo",
+      workerId,
+    });
+
+    await expect(repository.enqueueJob(initialInput)).resolves.toEqual({
+      id: running.id,
+      status: "running",
+    });
+
+    const changedInput = { ...initialInput, payloadHash: "publish-v2" };
+    const successors = await Promise.all(
+      Array.from({ length: 8 }, () => repository.enqueueJob(changedInput)),
+    );
+    expect(new Set(successors.map((job) => job.id)).size).toBe(1);
+    expect(successors.every((job) => job.status === "queued")).toBe(true);
+    expect(successors[0]?.id).not.toBe(running.id);
+
+    const active = await pool.query<{ id: string; payload_hash: string; status: string }>(
+      `select id, payload_hash, status from public.provider_sync_jobs
+       where sync_lane_key = $1 and status in ('queued', 'running') order by queue_sequence`,
+      [lane],
+    );
+    expect(active.rows).toEqual([
+      { id: running.id, payload_hash: "publish-v1", status: "running" },
+      { id: successors[0]?.id, payload_hash: "publish-v2", status: "queued" },
+    ]);
+  });
+
+  it("keeps one latest-intent successor for publish-unsync-publish while publish is running", async () => {
+    const owner = await seedOwner();
+    const repository = createProviderSyncRepository({ db });
+    const eventId = randomUUID();
+    const lane = `event-${eventId}`;
+    const publishDedupe = `publish-${eventId}`;
+    const runAt = new Date().toISOString();
+    const workerId = `worker-${randomUUID()}`;
+    const runningPublish = await repository.enqueueJob({
+      dedupeKey: publishDedupe,
+      integrationId: owner.integrationId,
+      jobType: "wahoo.publish_event",
+      operation: "publish",
+      payload: { eventId, operation: "publish" },
+      payloadHash: "publish-v1",
+      profileId: owner.profileId,
+      provider: "wahoo",
+      runAt,
+      syncLaneKey: lane,
+    });
+    const claimed = await repository.claimDueJobs({
+      jobTypes: ["wahoo.publish_event"],
+      limit: 1,
+      lockExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+      now: new Date().toISOString(),
+      provider: "wahoo",
+      workerId,
+    });
+    expect(claimed.map((job) => job.id)).toEqual([runningPublish.id]);
+
+    const unsyncSuccessor = await repository.enqueueJob({
+      dedupeKey: `unsync-${eventId}`,
+      integrationId: owner.integrationId,
+      jobType: "wahoo.unsync_event",
+      operation: "unsync",
+      payload: { eventId, operation: "unsync" },
+      payloadHash: "unsync-v1",
+      profileId: owner.profileId,
+      provider: "wahoo",
+      runAt,
+      syncLaneKey: lane,
+    });
+    const latestPublish = await repository.enqueueJob({
+      dedupeKey: publishDedupe,
+      integrationId: owner.integrationId,
+      jobType: "wahoo.publish_event",
+      operation: "publish",
+      payload: { eventId, operation: "publish" },
+      payloadHash: "publish-v2",
+      profileId: owner.profileId,
+      provider: "wahoo",
+      runAt,
+      syncLaneKey: lane,
+    });
+
+    expect(latestPublish).toEqual({ id: unsyncSuccessor.id, status: "queued" });
+    const active = await pool.query<{
+      dedupe_key: string;
+      id: string;
+      operation: string;
+      payload_hash: string;
+      status: string;
+    }>(
+      `select id, dedupe_key, operation, payload_hash, status
+       from public.provider_sync_jobs
+       where sync_lane_key = $1 and status in ('queued', 'running') order by queue_sequence`,
+      [lane],
+    );
+    expect(active.rows).toEqual([
+      {
+        dedupe_key: publishDedupe,
+        id: runningPublish.id,
+        operation: "publish",
+        payload_hash: "publish-v1",
+        status: "running",
+      },
+      {
+        dedupe_key: publishDedupe,
+        id: unsyncSuccessor.id,
+        operation: "publish",
+        payload_hash: "publish-v2",
+        status: "queued",
+      },
+    ]);
+
+    expect(
+      await repository.claimDueJobs({
+        limit: 1,
+        lockExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+        now: new Date().toISOString(),
+        provider: "wahoo",
+        workerId: `blocked-${randomUUID()}`,
+      }),
+    ).toEqual([]);
+    expect(await repository.markJobSucceeded(runningPublish.id, workerId)).toBe(true);
+    const successorClaim = await repository.claimDueJobs({
+      limit: 1,
+      lockExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+      now: new Date().toISOString(),
+      provider: "wahoo",
+      workerId: `successor-${randomUUID()}`,
+    });
+    expect(successorClaim).toMatchObject([
+      {
+        id: unsyncSuccessor.id,
+        operation: "publish",
+        payloadHash: "publish-v2",
+        status: "running",
+      },
+    ]);
+  });
+
   it("keeps mixed-version concurrent inserts in identical idx and queue_sequence order", async () => {
     const owner = await seedOwner();
     const repository = createProviderSyncRepository({ db });

@@ -10,6 +10,7 @@ export type ActivitySubmissionQueueJobStatus =
   | "failed";
 
 export type ActivitySubmissionQueueDraft = {
+  recordingSessionId?: string;
   profileId: string;
   startedAt: string;
   finishedAt: string;

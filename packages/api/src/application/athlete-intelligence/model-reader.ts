@@ -6,6 +6,7 @@ import {
   canonicalGoalObjectiveSchema,
   resolveCanonicalThresholds,
 } from "@repo/core";
+import { getActivityEffortObservationStatus } from "@repo/core/athlete-inputs";
 import type { PreferredUnitSystem } from "@repo/core/units";
 import {
   activities,
@@ -27,6 +28,7 @@ import {
   parseProfileTrainingSettings,
   readParsedProfileTrainingSettings,
 } from "../profile-settings/profileTrainingSettings";
+import { adaptActivityTrainingLoads } from "./adapters/activities/activity-training-load-adapter";
 import {
   addEvidence,
   canonicalEffortValue,
@@ -63,6 +65,7 @@ export interface AthleteIntelligenceRows {
     profileId: string;
     id: string;
     referenceActivityId: string | null;
+    referenceActivityType?: string | null;
     type: string;
     value: number;
     unit: string;
@@ -348,6 +351,7 @@ export function createDrizzleAthleteIntelligenceDataSource(
             profileId: profileMetrics.profile_id,
             id: profileMetrics.id,
             referenceActivityId: profileMetrics.reference_activity_id,
+            referenceActivityType: activities.type,
             type: profileMetrics.metric_type,
             value: profileMetrics.value,
             unit: profileMetrics.unit,
@@ -359,6 +363,13 @@ export function createDrizzleAthleteIntelligenceDataSource(
             provenance: profileMetrics.provenance,
           })
           .from(profileMetrics)
+          .leftJoin(
+            activities,
+            and(
+              eq(activities.id, profileMetrics.reference_activity_id),
+              eq(activities.profile_id, profileMetrics.profile_id),
+            ),
+          )
           .where(
             and(
               eq(profileMetrics.profile_id, p),
@@ -688,6 +699,13 @@ export async function materializeAthleteIntelligenceModelInput(input: {
     .filter((r) => r.recordedAt <= asOf && r.createdAt <= asOf && r.updatedAt <= asOf)
     .sort((a, b) => b.recordedAt.getTime() - a.recordedAt.getTime() || b.id.localeCompare(a.id))
     .slice(0, modelReaderBounds.metrics);
+  const metricSport = (row: AthleteIntelligenceRows["metrics"][number]) => {
+    if (row.type === "threshold_pace_seconds_per_km") return "run" as const;
+    if (row.type === "css_seconds_per_100m") return "swim" as const;
+    return row.type === "lthr" && row.source !== "manual" && row.referenceActivityType
+      ? normalizeSport(row.referenceActivityType)
+      : null;
+  };
   for (const row of boundedMetrics) {
     if (isClearedProfileOverride(row)) continue;
     const supportedType = metricTypes.includes(row.type as AthleteMetricType);
@@ -702,7 +720,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
       row.value,
       row.unit,
       "profile_metric",
-      null,
+      metricSport(row),
       row.id,
       row.referenceActivityId ? lineageId("activity", row.referenceActivityId) : undefined,
       row.value,
@@ -711,11 +729,15 @@ export async function materializeAthleteIntelligenceModelInput(input: {
       !supportedType ? "unsupported" : canonical === null ? "incompatible_unit" : "compatible",
     );
   }
-  const resolvedLatestMetrics = resolveLatestObservationsByKey(boundedMetrics, (row) => row.type);
+  const resolvedLatestMetrics = resolveLatestObservationsByKey(boundedMetrics, (row) =>
+    row.type === "lthr" ? `lthr:${metricSport(row) ?? "generic"}` : row.type,
+  );
   const latest = new Map<AthleteMetricType, AthleteIntelligenceRows["metrics"][number]>();
-  for (const [type, row] of resolvedLatestMetrics) {
-    if (row && metricTypes.includes(type as AthleteMetricType))
-      latest.set(type as AthleteMetricType, row);
+  const currentLthrRows: AthleteIntelligenceRows["metrics"] = [];
+  for (const row of resolvedLatestMetrics.values()) {
+    if (!row || !metricTypes.includes(row.type as AthleteMetricType)) continue;
+    if (row.type === "lthr") currentLthrRows.push(row);
+    else latest.set(row.type as AthleteMetricType, row);
   }
   const currentMetricRows = [...resolvedLatestMetrics.values()].filter((row) => row !== null);
   const currentOverrideEfforts = filterSupersededProfileOverrides(
@@ -792,7 +814,9 @@ export async function materializeAthleteIntelligenceModelInput(input: {
     );
     if (selectedFtp) latest.set("ftp", selectedFtp);
   }
-  const metricEvidence = [...latest.entries()].flatMap(([type, row]) => {
+  const metricEvidenceRows = [...latest.values(), ...currentLthrRows];
+  const metricEvidence = metricEvidenceRows.flatMap((row) => {
+    const type = row.type as AthleteMetricType;
     const value = canonicalMetricValue(type, row.value, row.unit);
     const metricLineage = row.referenceActivityId
       ? lineageId("activity", row.referenceActivityId)
@@ -813,7 +837,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
                 value,
                 metricUnits[type],
                 "profile_metric",
-                null,
+                metricSport(row),
                 row.id,
                 metricLineage,
               ),
@@ -935,7 +959,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
       evidenceSourceIds: [profileEvidence],
     },
   };
-  const activitiesOut = [...rows.activities]
+  const boundedActivityRows = [...rows.activities]
     .filter(
       (r) =>
         r.startedAt >= from &&
@@ -945,74 +969,119 @@ export async function materializeAthleteIntelligenceModelInput(input: {
         r.updatedAt <= asOf,
     )
     .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime() || b.id.localeCompare(a.id))
-    .slice(0, modelReaderBounds.activities)
-    .map((row) => {
-      const sport = normalizeSport(row.type);
-      const record = evidence(
-        "activity",
-        row.id,
-        "record",
-        row.startedAt,
-        null,
-        null,
-        "activity",
-        sport,
-      );
-      const m = (field: string, value: number | null, unit: string) =>
-        measured("activity", row.id, field, row.finishedAt, value, unit, "activity", sport);
-      return {
-        sourceId: record,
-        athleteId: input.profileId,
-        lineageGroupId: lineageId("activity", row.id),
-        startedAt: row.startedAt.toISOString(),
-        endedAt: row.finishedAt.toISOString(),
-        sport,
-        metrics: {
-          elapsedDurationSeconds: m("elapsed", row.durationSeconds, "seconds"),
-          movingDurationSeconds: m("moving", row.movingSeconds, "seconds"),
-          distanceMeters: m("distance", row.distanceMeters, "meters"),
-          ascentMeters: m("ascent", row.ascentMeters, "meters"),
-          descentMeters: m("descent", row.descentMeters, "meters"),
-          workKilojoules: m("work", null, "kilojoules"),
-          caloriesKilocalories: m("calories", row.calories, "kilocalories"),
-          averagePowerWatts: m("average-power", row.averagePower, "watts"),
-          maximumPowerWatts: m("maximum-power", row.maximumPower, "watts"),
-          normalizedPowerWatts: m("normalized-power", row.normalizedPower, "watts"),
-          averageSpeedMetersPerSecond: m("average-speed", row.averageSpeed, "meters_per_second"),
-          maximumSpeedMetersPerSecond: m("maximum-speed", row.maximumSpeed, "meters_per_second"),
-          averageHeartRateBpm: m("average-heart-rate", row.averageHeartRate, "beats_per_minute"),
-          maximumHeartRateBpm: m("maximum-heart-rate", row.maximumHeartRate, "beats_per_minute"),
-          averageCadenceRpm: m("average-cadence", row.averageCadence, "revolutions_per_minute"),
-          maximumCadenceRpm: m("maximum-cadence", row.maximumCadence, "revolutions_per_minute"),
-          trainingLoad: { ...m("training-load", null, "score"), identity: null },
-          aerobicTrainingEffect: m("aerobic-effect", null, "score"),
-          anaerobicTrainingEffect: m("anaerobic-effect", null, "score"),
-        },
-        zonesAndCurves: [],
-        // Relational lap payloads are intentionally omitted until their untyped JSON can be
-        // validated into the frozen lap metric contract without guessing field semantics.
-        laps: [],
-      };
-    });
-  const includedActivities = new Set(activitiesOut.map((a) => a.sourceId));
-  const boundedEfforts = [...rows.efforts]
+    .slice(0, modelReaderBounds.activities);
+  const boundedLoadEfforts = [...rows.efforts]
     .filter(
-      (r) =>
-        r.recordedAt <= asOf &&
-        r.createdAt <= asOf &&
-        (r.updatedAt === null || r.updatedAt <= asOf) &&
-        (!r.activityId || includedActivities.has(sourceId("activity", r.activityId, "record"))),
+      (row) =>
+        row.recordedAt <= asOf &&
+        row.createdAt <= asOf &&
+        (row.updatedAt === null || row.updatedAt <= asOf),
     )
     .sort((a, b) => b.recordedAt.getTime() - a.recordedAt.getTime() || b.id.localeCompare(a.id))
     .slice(0, modelReaderBounds.efforts);
+  const trainingLoads = adaptActivityTrainingLoads({
+    profileDob: rows.profile.dob,
+    activities: boundedActivityRows,
+    metrics: boundedMetrics,
+    efforts: boundedLoadEfforts,
+  });
+  const activitiesOut = boundedActivityRows.map((row) => {
+    const sport = normalizeSport(row.type);
+    const trainingLoad = trainingLoads.get(row.id) ?? null;
+    const record = evidence(
+      "activity",
+      row.id,
+      "record",
+      row.startedAt,
+      null,
+      null,
+      "activity",
+      sport,
+    );
+    const m = (field: string, value: number | null, unit: string) =>
+      measured("activity", row.id, field, row.finishedAt, value, unit, "activity", sport);
+    return {
+      sourceId: record,
+      athleteId: input.profileId,
+      lineageGroupId: lineageId("activity", row.id),
+      startedAt: row.startedAt.toISOString(),
+      endedAt: row.finishedAt.toISOString(),
+      sport,
+      metrics: {
+        elapsedDurationSeconds: m("elapsed", row.durationSeconds, "seconds"),
+        movingDurationSeconds: m("moving", row.movingSeconds, "seconds"),
+        distanceMeters: m("distance", row.distanceMeters, "meters"),
+        ascentMeters: m("ascent", row.ascentMeters, "meters"),
+        descentMeters: m("descent", row.descentMeters, "meters"),
+        workKilojoules: m("work", null, "kilojoules"),
+        caloriesKilocalories: m("calories", row.calories, "kilocalories"),
+        averagePowerWatts: m("average-power", row.averagePower, "watts"),
+        maximumPowerWatts: m("maximum-power", row.maximumPower, "watts"),
+        normalizedPowerWatts: m("normalized-power", row.normalizedPower, "watts"),
+        averageSpeedMetersPerSecond: m("average-speed", row.averageSpeed, "meters_per_second"),
+        maximumSpeedMetersPerSecond: m("maximum-speed", row.maximumSpeed, "meters_per_second"),
+        averageHeartRateBpm: m("average-heart-rate", row.averageHeartRate, "beats_per_minute"),
+        maximumHeartRateBpm: m("maximum-heart-rate", row.maximumHeartRate, "beats_per_minute"),
+        averageCadenceRpm: m("average-cadence", row.averageCadence, "revolutions_per_minute"),
+        maximumCadenceRpm: m("maximum-cadence", row.maximumCadence, "revolutions_per_minute"),
+        trainingLoad: {
+          ...m("training-load", trainingLoad?.value ?? null, "score"),
+          identity: trainingLoad?.identity ?? null,
+        },
+        aerobicTrainingEffect: m("aerobic-effect", null, "score"),
+        anaerobicTrainingEffect: m("anaerobic-effect", null, "score"),
+      },
+      zonesAndCurves: [],
+      // Relational lap payloads are intentionally omitted until their untyped JSON can be
+      // validated into the frozen lap metric contract without guessing field semantics.
+      laps: [],
+    };
+  });
+  const includedActivities = new Set(activitiesOut.map((a) => a.sourceId));
+  const boundedEfforts = boundedLoadEfforts.filter(
+    (r) => !r.activityId || includedActivities.has(sourceId("activity", r.activityId, "record")),
+  );
   const efforts = filterSupersededProfileOverrides(
     boundedEfforts,
     (row) => `${row.sport}:${row.kind}:${row.durationSeconds}:${row.unit}`,
   ).flatMap((row) => {
     if (isManualFtpEffort(row)) return [];
-    const canonical = canonicalEffortValue(row.kind, row.value, row.unit);
     const sport = normalizeSport(row.sport);
     const effortLineage = row.activityId ?? `effort-${row.id}`;
+    const canonical = canonicalEffortValue(row.kind, row.value, row.unit);
+    const observationStatus =
+      sport === "bike" || sport === "run" || sport === "swim"
+        ? getActivityEffortObservationStatus({
+            activityCategory: sport,
+            effortType: row.kind,
+            durationSeconds: row.durationSeconds,
+            value: row.value,
+            unit: row.unit,
+            activityId: row.activityId,
+            source: row.source,
+            method: row.method,
+            provenance: row.provenance,
+          })
+        : ("invalid" as const);
+    if (sport === "other" || sport === "strength" || observationStatus !== "observed") {
+      evidence(
+        "effort",
+        row.id,
+        canonical === null ? "value-raw" : `value-${observationStatus}`,
+        row.recordedAt,
+        row.value,
+        row.unit,
+        "activity_effort",
+        sport,
+        effortLineage,
+        undefined,
+        row.value,
+        row.unit,
+        observationStatus === "modeled" ? "unknown" : "invalid",
+        canonical === null ? "incompatible_unit" : "compatible",
+      );
+      return [];
+    }
     evidence(
       "effort",
       row.id,
@@ -1181,7 +1250,6 @@ export async function materializeAthleteIntelligenceModelInput(input: {
       day.max_sessions === undefined ? maximum : Math.max(maximum ?? 0, day.max_sessions),
     null,
   );
-  const baselineEnabled = settings?.baseline_fitness?.is_enabled === true;
   const trainingContext = {
     sourceId: contextId,
     athleteId: input.profileId,

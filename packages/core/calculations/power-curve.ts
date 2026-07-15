@@ -61,6 +61,9 @@ export function derivePowerCurveFromFTP(ftp: number): DerivedEffort[] {
 /**
  * Estimates W' (anaerobic work capacity) based on athlete profile.
  *
+ * @deprecated Demographic estimates are not observed evidence and must not be
+ * used for recommendations or CP/W' models. Retained only for API compatibility.
+ *
  * W' represents the finite amount of work that can be performed above CP (Critical Power).
  * It varies based on athlete characteristics and training status.
  *

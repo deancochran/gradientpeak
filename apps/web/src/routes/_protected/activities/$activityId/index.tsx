@@ -21,8 +21,14 @@ import {
   EntityMapCard,
   LikeToggleButton,
 } from "../../../../components/protected/activity-route-primitives";
+import { ActivityStreamAnalysisCard } from "../../../../components/protected/activity-stream-analysis-card";
 import { EntityCommentsCard } from "../../../../components/protected/entity-comments-card";
 import { useAuth } from "../../../../components/providers/auth-provider";
+import {
+  formatCalibrationQuality,
+  getActivityLoadLabels,
+  getThresholdNextAction,
+} from "../../../../lib/activity-load-presentation";
 import {
   formatDateTime,
   formatDistance,
@@ -51,7 +57,37 @@ function ActivityDetailPage() {
   const activityQuery = api.activities.getById.useQuery({ id: activityId });
   const activity = activityQuery.data?.activity;
   const derived = activityQuery.data?.derived;
+  const loadMethod = derived?.stress.method;
+  const loadLabels = getActivityLoadLabels(loadMethod);
+  const unavailableValue =
+    derived?.stress.unavailable_reason === "private_data"
+      ? "Private"
+      : derived?.stress.unavailable_reason === "threshold_missing"
+        ? "No prior threshold"
+        : derived?.stress.unavailable_reason === "invalid_data"
+          ? "Invalid data"
+          : "Missing activity data";
+  const calibrationText = formatCalibrationQuality(
+    derived?.stress.calibration_quality,
+    activity?.started_at,
+  );
+  const thresholdAction =
+    derived?.stress.unavailable_reason === "threshold_missing"
+      ? getThresholdNextAction(activity?.type)
+      : null;
   const isOwner = user?.id === activity?.profile_id;
+  const ingestion = (
+    activity as
+      | { ingestion?: { last_error_message?: string | null; status?: string | null } | null }
+      | undefined
+  )?.ingestion;
+  const ingestionStatus = ingestion?.status ?? null;
+  const isStreamProcessing = Boolean(
+    ingestionStatus && ingestionStatus !== "ready" && ingestionStatus !== "failed",
+  );
+  const canLoadStreamAnalysis = Boolean(
+    activity?.activity_file_path && isOwner && !isStreamProcessing && ingestionStatus !== "failed",
+  );
   const profileQuery = api.profiles.getPublicById.useQuery(
     { id: activity?.profile_id ?? "00000000-0000-0000-0000-000000000000" },
     { enabled: Boolean(activity?.profile_id) },
@@ -61,10 +97,23 @@ function ActivityDetailPage() {
       activityId,
     },
     {
-      enabled: Boolean(activity?.activity_file_path),
+      enabled: canLoadStreamAnalysis,
       staleTime: 5 * 60 * 1000,
     },
   );
+  const streamArtifactState = !activity?.activity_file_path
+    ? isStreamProcessing
+      ? "processing"
+      : "missing"
+    : isStreamProcessing
+      ? "processing"
+      : !isOwner
+        ? "private"
+        : ingestionStatus === "failed" || streamsQuery.isError
+          ? "error"
+          : streamsQuery.isLoading
+            ? "loading"
+            : "ready";
   const toggleLikeMutation = api.social.toggleLike.useMutation({
     onError: () => {
       setLiked(activityQuery.data?.has_liked ?? false);
@@ -92,15 +141,11 @@ function ActivityDetailPage() {
   }, [activity?.likes_count, activityQuery.data?.has_liked]);
 
   const coordinates = useMemo(
-    () =>
-      getActivityCoordinates(
-        activity?.polyline,
-        (streamsQuery.data?.records as any[] | undefined) ?? undefined,
-      ),
+    () => getActivityCoordinates(activity?.polyline, streamsQuery.data?.records),
     [activity?.polyline, streamsQuery.data?.records],
   );
   const streamHighlights = useMemo(
-    () => summarizeActivityStreams((streamsQuery.data?.records as any[] | undefined) ?? undefined),
+    () => summarizeActivityStreams(streamsQuery.data?.records),
     [streamsQuery.data?.records],
   );
 
@@ -136,14 +181,20 @@ function ActivityDetailPage() {
                 const nextLiked = !liked;
                 setLiked(nextLiked);
                 setLikesCount((current) => (nextLiked ? current + 1 : Math.max(0, current - 1)));
-                toggleLikeMutation.mutate({ entity_id: activity.id, entity_type: "activity" });
+                toggleLikeMutation.mutate({
+                  entity_id: activity.id,
+                  entity_type: "activity",
+                });
               }}
               pending={toggleLikeMutation.isPending}
             />
             {isOwner ? (
               <Button
                 onClick={() =>
-                  updateMutation.mutate({ id: activity.id, is_private: !activity.is_private })
+                  updateMutation.mutate({
+                    id: activity.id,
+                    is_private: !activity.is_private,
+                  })
                 }
                 type="button"
                 variant="outline"
@@ -190,10 +241,19 @@ function ActivityDetailPage() {
 
       <DetailMetricGrid
         items={[
-          { label: "Distance", value: formatDistance(activity.distance_meters) },
-          { label: "Duration", value: formatDuration(activity.duration_seconds) },
+          {
+            label: "Distance",
+            value: formatDistance(activity.distance_meters),
+          },
+          {
+            label: "Duration",
+            value: formatDuration(activity.duration_seconds),
+          },
           { label: "Avg power", value: formatPower(activity.avg_power) },
-          { label: "Avg heart rate", value: formatHeartRate(activity.avg_heart_rate) },
+          {
+            label: "Avg heart rate",
+            value: formatHeartRate(activity.avg_heart_rate),
+          },
           {
             label: activity.type === "run" ? "Avg pace" : "Avg speed",
             value:
@@ -202,13 +262,33 @@ function ActivityDetailPage() {
                 : formatSpeed(activity.avg_speed_mps),
           },
           {
-            label: "TSS",
-            value: derived?.stress.tss != null ? `${Math.round(derived.stress.tss)}` : "-",
+            label: loadLabels.load,
+            value:
+              derived?.stress.tss != null ? `${Math.round(derived.stress.tss)}` : unavailableValue,
           },
-          { label: "Normalized power", value: formatPower(activity.normalized_power) },
+          {
+            label: loadLabels.intensity,
+            value:
+              derived?.stress.intensity_factor != null
+                ? derived.stress.intensity_factor.toFixed(2)
+                : "-",
+          },
+          {
+            label: "Normalized power",
+            value: formatPower(activity.normalized_power),
+          },
           { label: "Started", value: formatDateTime(activity.started_at) },
         ]}
       />
+      {calibrationText || thresholdAction ? (
+        <p className="text-sm text-muted-foreground">{calibrationText ?? thresholdAction}</p>
+      ) : null}
+      {loadMethod === "heart_rate_threshold" ? (
+        <p className="text-xs text-muted-foreground">
+          Estimated HR Load uses summary average heart rate and LTHR; it is separate from Stream HR
+          Load.
+        </p>
+      ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[1.4fr_0.8fr]">
         <EntityMapCard
@@ -259,6 +339,16 @@ function ActivityDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      <ActivityStreamAnalysisCard
+        analysis={streamsQuery.data?.analysis}
+        artifactState={streamArtifactState}
+        errorMessage={
+          ingestionStatus === "failed"
+            ? (ingestion?.last_error_message ?? "Activity file processing failed.")
+            : streamsQuery.error?.message
+        }
+      />
 
       <Card>
         <CardHeader>

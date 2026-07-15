@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { WahooSyncJobService } from "./wahoo-job-service";
 
 function createDeps() {
@@ -25,6 +25,10 @@ function createDeps() {
 }
 
 describe("WahooSyncJobService", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("schedules publish jobs when an event is outside the Wahoo display horizon", async () => {
     const deps = createDeps();
     deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue({ id: "integration-1" });
@@ -120,6 +124,101 @@ describe("WahooSyncJobService", () => {
         succeeded: true,
       }),
     );
+  });
+
+  it.each([
+    ["missing_metric", "A positive FTP is required before this workout can sync."],
+    ["unsupported_target", "RPE targets are not supported by Wahoo."],
+  ])("dead-letters a first-attempt non-retryable %s publish result", async (failureCode, error) => {
+    const deps = createDeps();
+    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
+      {
+        attempt: 1,
+        dedupeKey: "wahoo:publish:event:event-1",
+        id: "job-1",
+        integrationId: "integration-1",
+        internalResourceId: "event-1",
+        jobType: "wahoo.publish_event",
+        maxAttempts: 8,
+        payload: { eventId: "event-1", operation: "publish" },
+        profileId: "profile-1",
+        provider: "wahoo",
+        resourceKind: "event",
+        runAt: "2026-04-01T12:00:00.000Z",
+        status: "running",
+      },
+    ]);
+    deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue({ id: "integration-1" });
+    deps.syncService.syncEvent.mockResolvedValue({
+      success: false,
+      action: "no_change",
+      error,
+      failureCode,
+      failureCategory: "eligibility",
+      retryable: false,
+    });
+
+    const service = new WahooSyncJobService(deps as never);
+
+    await expect(service.processDueJobs({ limit: 1, workerId: "worker-1" })).resolves.toEqual({
+      completed: 0,
+      failed: 1,
+      processed: 1,
+    });
+    expect(deps.providerSyncRepository.markJobFailed).toHaveBeenCalledWith({
+      id: "job-1",
+      lastError: error,
+      nextRunAt: undefined,
+      status: "dead_lettered",
+      workerId: expect.stringMatching(/^worker-1:/),
+    });
+  });
+
+  it("keeps a first-attempt transient provider failure retryable with backoff", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-01T12:00:00.000Z"));
+    const deps = createDeps();
+    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
+      {
+        attempt: 1,
+        dedupeKey: "wahoo:publish:event:event-1",
+        id: "job-1",
+        integrationId: "integration-1",
+        internalResourceId: "event-1",
+        jobType: "wahoo.publish_event",
+        maxAttempts: 8,
+        payload: { eventId: "event-1", operation: "publish" },
+        profileId: "profile-1",
+        provider: "wahoo",
+        resourceKind: "event",
+        runAt: "2026-04-01T12:00:00.000Z",
+        status: "running",
+      },
+    ]);
+    deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue({ id: "integration-1" });
+    deps.syncService.syncEvent.mockResolvedValue({
+      success: false,
+      action: "no_change",
+      error: "Wahoo is temporarily unavailable.",
+      failureCode: "provider_failure",
+      failureCategory: "provider",
+      retryable: true,
+    });
+
+    const service = new WahooSyncJobService(deps as never);
+
+    await expect(service.processDueJobs({ limit: 1, workerId: "worker-1" })).resolves.toEqual({
+      completed: 0,
+      failed: 1,
+      processed: 1,
+    });
+    expect(deps.providerSyncRepository.markJobFailed).toHaveBeenCalledWith({
+      id: "job-1",
+      lastError: "Wahoo is temporarily unavailable.",
+      nextRunAt: "2026-04-01T12:05:00.000Z",
+      status: "failed",
+      workerId: expect.stringMatching(/^worker-1:/),
+    });
   });
 
   it("completes due jobs without syncing when the integration was disconnected", async () => {

@@ -2,6 +2,9 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("node:crypto", () => ({
+  createHash: () => ({
+    update: () => ({ digest: () => "1".repeat(64) }),
+  }),
   randomUUID: () => "33333333-3333-4333-8333-333333333333",
 }));
 
@@ -55,6 +58,20 @@ const ACTIVITY_ID_2 = "44444444-4444-4444-8444-444444444444";
 const ACTIVITY_ID_3 = "55555555-5555-4555-8555-555555555555";
 const EVENT_ID = "66666666-6666-4666-8666-666666666666";
 const PLAN_ID = "77777777-7777-4777-8777-777777777777";
+const RUN_TSS_IDENTITY = {
+  sport: "run",
+  method: "run_pace_threshold",
+  source: "activity_analysis",
+  version: "1",
+  calibration: { type: "threshold_speed_mps", value: 4.2 },
+} as const;
+const BIKE_TSS_IDENTITY = {
+  sport: "bike",
+  method: "power_threshold",
+  source: "activity_analysis",
+  version: "1",
+  calibration: { type: "ftp_watts", value: 250 },
+} as const;
 
 function buildActivityRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -280,6 +297,7 @@ function createDbMock(options: {
   activityGeometryRows?: any[];
   activityLapRows?: any[];
   queryActivitiesFindFirst?: any[];
+  queryActivityFileIngestionsFindFirst?: any[];
   queryActivityGeometryFindFirst?: any[];
   queryActivityImportsFindFirst?: any[];
   queryActivitySummariesFindFirst?: any[];
@@ -288,6 +306,7 @@ function createDbMock(options: {
   executeRows?: Array<{ id: string }>;
   insertedRowsByTable?: Record<string, unknown[]>;
   updatedRows?: any[];
+  transactionError?: Error;
   onTssScanBatch?: (batchNumber: number) => void;
 }) {
   const insertValues = vi.fn();
@@ -430,6 +449,7 @@ function createDbMock(options: {
     })),
     transaction: vi.fn(
       async (callback: (tx: unknown) => unknown, _config?: Record<string, unknown>) => {
+        if (options.transactionError) throw options.transactionError;
         transactionActivityRows = [...(options.activityRows ?? [])];
         tssScanIndex = 0;
         tssScanBatchNumber = 0;
@@ -453,6 +473,9 @@ function createDbMock(options: {
     query: {
       activities: {
         findFirst: createSequencedFn(options.queryActivitiesFindFirst ?? []),
+      },
+      activityFileIngestions: {
+        findFirst: createSequencedFn(options.queryActivityFileIngestionsFindFirst ?? []),
       },
       activityGeometry: {
         findFirst: createSequencedFn(options.queryActivityGeometryFindFirst ?? []),
@@ -491,7 +514,10 @@ beforeEach(() => {
   mockActivityAnalysis.analyzeActivityDerivedMetrics.mockReturnValue({
     stress: {
       tss: 50,
+      tss_identity: RUN_TSS_IDENTITY,
       intensity_factor: 0.8,
+      method: "run_pace_threshold",
+      unavailable_reason: null,
       trimp: null,
     },
     zones: { hr: [], power: [] },
@@ -500,11 +526,110 @@ beforeEach(() => {
 });
 
 describe("activitiesRouter", () => {
+  it("returns user-scoped sparse daily TSS observations", async () => {
+    const rows = [
+      buildActivityRow({
+        id: ACTIVITY_ID,
+        started_at: new Date("2026-03-08T05:30:00.000Z"),
+      }),
+      buildActivityRow({
+        id: ACTIVITY_ID_2,
+        started_at: new Date("2026-03-08T15:30:00.000Z"),
+      }),
+    ];
+    const tssIdentity = {
+      sport: "run",
+      method: "run_pace_threshold",
+      source: "activity_analysis",
+      version: "1",
+      calibration: { type: "threshold_speed_mps", value: 4.2 },
+    } as const;
+    mockActivityAnalysis.buildActivityDerivedSummaryMap.mockResolvedValue(
+      new Map([
+        [ACTIVITY_ID, { tss: 35, tss_identity: tssIdentity }],
+        [ACTIVITY_ID_2, { tss: 45, tss_identity: tssIdentity }],
+      ]),
+    );
+    const db = createDbMock({ activityRows: rows });
+
+    const result = await createCaller(db).dailyTssObservations({
+      start_date: "2026-03-08",
+      end_date: "2026-03-09",
+      timezone: "America/New_York",
+    });
+
+    expect(result).toEqual({
+      start_date: "2026-03-08",
+      end_date: "2026-03-09",
+      timezone: "America/New_York",
+      day_policy: "activity_started_at_in_requested_timezone",
+      observations: [
+        {
+          date: "2026-03-08",
+          state: "calculated",
+          value: 80,
+          tss_identity: tssIdentity,
+          activity_count: 2,
+          unavailable_activity_count: 0,
+        },
+      ],
+    });
+    expect(mockActivityAnalysis.buildActivityDerivedSummaryMap).toHaveBeenCalledWith({
+      store: { kind: "activity-analysis-store" },
+      profileId: OWNER_ID,
+      activities: expect.arrayContaining(rows),
+    });
+  });
+
+  it("validates daily TSS ranges and requires authentication", async () => {
+    const caller = createCaller(createDbMock({}));
+
+    await expect(
+      caller.dailyTssObservations({
+        start_date: "2026-03-10",
+        end_date: "2026-03-09",
+        timezone: "UTC",
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(
+      caller.dailyTssObservations({
+        start_date: "2026-01-01",
+        end_date: "2027-01-01",
+        timezone: "UTC",
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(
+      caller.dailyTssObservations({
+        start_date: "2026-03-08",
+        end_date: "2026-03-09",
+        timezone: "EST",
+      }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+    const unauthenticatedCaller = activitiesRouter.createCaller({
+      db: createDbMock({}),
+      session: null,
+      headers: new Headers(),
+      clientType: "test",
+      trpcSource: "vitest",
+    } as any);
+    await expect(
+      unauthenticatedCaller.dailyTssObservations({
+        start_date: "2026-03-08",
+        end_date: "2026-03-09",
+        timezone: "UTC",
+      }),
+    ).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+  });
+
   it("lists paginated owned activities with like and derived summaries", async () => {
     const rows = [buildActivityRow()];
     const derived = {
       tss: 72,
+      tss_identity: RUN_TSS_IDENTITY,
       intensity_factor: 0.81,
+      method: "run_pace_threshold" as const,
+      unavailable_reason: null,
       computed_as_of: "2026-01-10T09:00:00.000Z",
     };
     const db = createDbMock({
@@ -639,12 +764,25 @@ describe("activitiesRouter", () => {
 
     mockActivityAnalysis.buildActivityDerivedSummaryMap.mockResolvedValue(
       new Map([
-        [ACTIVITY_ID, { tss: 20 }],
+        [
+          ACTIVITY_ID,
+          {
+            tss: 20,
+            tss_identity: RUN_TSS_IDENTITY,
+            intensity_factor: 0.65,
+            method: "run_pace_threshold",
+            unavailable_reason: null,
+            computed_as_of: "2026-01-12T09:00:00.000Z",
+          },
+        ],
         [
           ACTIVITY_ID_2,
           {
             tss: 95,
+            tss_identity: BIKE_TSS_IDENTITY,
             intensity_factor: 0.92,
+            method: "power_threshold",
+            unavailable_reason: null,
             computed_as_of: "2026-01-11T10:00:00.000Z",
           },
         ],
@@ -652,7 +790,10 @@ describe("activitiesRouter", () => {
           ACTIVITY_ID_3,
           {
             tss: 60,
+            tss_identity: RUN_TSS_IDENTITY,
             intensity_factor: 0.78,
+            method: "run_pace_threshold",
+            unavailable_reason: null,
             computed_as_of: "2026-01-10T09:00:00.000Z",
           },
         ],
@@ -660,7 +801,10 @@ describe("activitiesRouter", () => {
           ACTIVITY_ID,
           {
             tss: 20,
+            tss_identity: RUN_TSS_IDENTITY,
             intensity_factor: 0.65,
+            method: "run_pace_threshold",
+            unavailable_reason: null,
             computed_as_of: "2026-01-12T09:00:00.000Z",
           },
         ],
@@ -705,7 +849,10 @@ describe("activitiesRouter", () => {
             activity.id,
             {
               tss: tssById.get(activity.id) ?? null,
-              intensity_factor: null,
+              tss_identity: tssById.get(activity.id) == null ? null : RUN_TSS_IDENTITY,
+              intensity_factor: tssById.get(activity.id) == null ? null : 0.8,
+              method: tssById.get(activity.id) == null ? null : "run_pace_threshold",
+              unavailable_reason: tssById.get(activity.id) == null ? "threshold_missing" : null,
               computed_as_of: "2026-01-01T00:00:00.000Z",
             },
           ]),
@@ -798,7 +945,10 @@ describe("activitiesRouter", () => {
             activity.id,
             {
               tss: index,
+              tss_identity: RUN_TSS_IDENTITY,
               intensity_factor: 0.8,
+              method: "run_pace_threshold",
+              unavailable_reason: null,
               computed_as_of: "2026-01-01T00:00:00.000Z",
             },
           ]),
@@ -981,6 +1131,69 @@ describe("activitiesRouter", () => {
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
+  it("returns the existing activity for a repeated recording session", async () => {
+    const createdActivity = buildActivityRow({ id: ACTIVITY_ID, profile_id: OWNER_ID });
+    const ingestion = buildActivityFileIngestionRow({
+      activity_id: ACTIVITY_ID,
+      profile_id: OWNER_ID,
+    });
+    const db = createDbMock({
+      queryActivitiesFindFirst: [createdActivity],
+      queryActivityFileIngestionsFindFirst: [ingestion],
+    });
+    const caller = createCaller(db);
+
+    const result = await caller.createFromRecordingSummary({
+      recordingSessionId: ACTIVITY_ID,
+      profileId: OWNER_ID,
+      name: "Recorder Run",
+      activityType: "run",
+      startedAt: "2026-01-15T09:00:00.000Z",
+      finishedAt: "2026-01-15T10:00:00.000Z",
+      durationSeconds: 3600,
+      movingSeconds: 3500,
+      distanceMeters: 10000,
+    });
+
+    expect(result).toMatchObject({
+      id: ACTIVITY_ID,
+      ingestion: { id: ingestion.id, source: ingestion.source, status: ingestion.status },
+    });
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it("returns the committed activity when concurrent creation loses the insert race", async () => {
+    const createdActivity = buildActivityRow({ id: ACTIVITY_ID, profile_id: OWNER_ID });
+    const ingestion = buildActivityFileIngestionRow({
+      activity_id: ACTIVITY_ID,
+      profile_id: OWNER_ID,
+    });
+    const db = createDbMock({
+      queryActivitiesFindFirst: [undefined, createdActivity],
+      queryActivityFileIngestionsFindFirst: [ingestion],
+      transactionError: new Error("duplicate key"),
+    });
+    const caller = createCaller(db);
+
+    const result = await caller.createFromRecordingSummary({
+      recordingSessionId: "profile-activity-session",
+      profileId: OWNER_ID,
+      name: "Recorder Run",
+      activityType: "run",
+      startedAt: "2026-01-15T09:00:00.000Z",
+      finishedAt: "2026-01-15T10:00:00.000Z",
+      durationSeconds: 3600,
+      movingSeconds: 3500,
+      distanceMeters: 10000,
+    });
+
+    expect(result).toMatchObject({
+      id: ACTIVITY_ID,
+      ingestion: { id: ingestion.id },
+    });
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects recording summary creation with invalid duration", async () => {
     const caller = createCaller(createDbMock({}));
 
@@ -1011,7 +1224,7 @@ describe("activitiesRouter", () => {
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 
-  it("returns a derived activity response for an accessible activity", async () => {
+  it("redacts derived load for an accessible activity owned by another athlete", async () => {
     const finishedAt = new Date("2026-01-09T08:45:00.000Z");
     const activity = buildActivityRow({
       id: ACTIVITY_ID,
@@ -1024,10 +1237,19 @@ describe("activitiesRouter", () => {
       max_heart_rate: 175,
     });
     const activityPlan = buildActivityPlanRow();
-    const derived = {
-      stress: { tss: 88, intensity_factor: 0.91, trimp: null },
+    const privateDerived = {
+      stress: {
+        tss: null,
+        tss_identity: null,
+        intensity_factor: null,
+        method: null,
+        unavailable_reason: "private_data" as const,
+        trimp: null,
+        trimp_source: null,
+        training_effect: null,
+      },
       zones: { hr: [], power: [] },
-      computed_as_of: "2026-01-10T09:00:00.000Z",
+      computed_as_of: activity.started_at.toISOString(),
     };
     const db = createDbMock({
       queryActivitiesFindFirst: [
@@ -1043,8 +1265,6 @@ describe("activitiesRouter", () => {
     mockActivityAnalysis.resolveActivityContextAsOf.mockResolvedValue({
       baseline: "context",
     });
-    mockActivityAnalysis.analyzeActivityDerivedMetrics.mockReturnValue(derived);
-
     const caller = createCaller(db, OWNER_ID);
     const result = await caller.getById({ id: ACTIVITY_ID });
 
@@ -1053,22 +1273,14 @@ describe("activitiesRouter", () => {
         ...activity,
         laps: [],
         likes_count: 5,
-        activity_plans: {
-          ...activityPlan,
-          created_at: "2026-01-01T00:00:00.000Z",
-          updated_at: "2026-01-02T00:00:00.000Z",
-        },
+        activity_plans: null,
         ingestion: null,
       },
       has_liked: true,
-      derived,
+      derived: privateDerived,
     });
-    expect(mockActivityAnalysis.resolveActivityContextAsOf).toHaveBeenCalledWith(
-      expect.objectContaining({
-        profileId: OTHER_ID,
-        activityTimestamp: finishedAt,
-      }),
-    );
+    expect(mockActivityAnalysis.resolveActivityContextAsOf).not.toHaveBeenCalled();
+    expect(mockActivityAnalysis.analyzeActivityDerivedMetrics).not.toHaveBeenCalled();
   });
 
   it("uses canonical parent detail values and preserves lap order", async () => {

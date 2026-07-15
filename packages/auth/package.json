@@ -17,6 +17,7 @@
   },
   "scripts": {
     "check-types": "tsc --noEmit",
+    "test": "vitest run",
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
     "format": "biome format --write .",

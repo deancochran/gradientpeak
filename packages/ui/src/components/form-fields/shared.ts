@@ -10,6 +10,7 @@ import type { TextInputProps } from "../../lib/react-native";
 import type { BoundedNumberInputProps } from "../bounded-number-input/shared";
 import type { DateInputProps } from "../date-input/shared";
 import type { DurationInputProps } from "../duration-input/shared";
+import type { FileInputProps } from "../file-input/shared";
 import type { IntegerStepperProps } from "../integer-stepper/shared";
 import type { PaceInputProps } from "../pace-input/shared";
 import type { PercentSliderInputProps } from "../percent-slider-input/shared";
@@ -182,6 +183,30 @@ export type FormDurationFieldProps<
     | "required"
     | "value"
   >;
+
+export type FormFileFieldProps<
+  TFieldValues extends FieldValues,
+  TName extends FieldPath<TFieldValues>,
+> = ControlledFieldProps<TFieldValues, TName> &
+  Omit<
+    FileInputProps,
+    | "disabled"
+    | "error"
+    | "files"
+    | "helperText"
+    | "hideLabel"
+    | "id"
+    | "label"
+    | "name"
+    | "onBlur"
+    | "onFilesChange"
+    | "required"
+    | "testId"
+    | "testID"
+  > & {
+    /** Override the default cleared value (`[]`) for nullable schemas. */
+    emptyValue?: FieldPathValue<TFieldValues, TName>;
+  };
 
 export type FormPaceFieldProps<
   TFieldValues extends FieldValues,

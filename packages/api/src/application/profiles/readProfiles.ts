@@ -1,4 +1,8 @@
-import { resolveCanonicalThresholds, type ThresholdMetricSource } from "@repo/core/athlete-inputs";
+import {
+  getActivityEffortThresholdEvidence,
+  resolveCanonicalThresholds,
+  type ThresholdMetricSource,
+} from "@repo/core/athlete-inputs";
 import { preferredUnitSystemSchema } from "@repo/core/units";
 import { activityEfforts, type PublicProfilesRow, profileMetrics, profiles } from "@repo/db";
 import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
@@ -316,6 +320,18 @@ export async function getProfilePerformanceSnapshot(db: DbClient, profileId: str
                 effort.source !== "estimated"
                   ? ("actual" as const)
                   : ("derived" as const),
+              evidence:
+                getActivityEffortThresholdEvidence({
+                  activityCategory: "bike",
+                  activityId: effort.activity_id,
+                  durationSeconds: 1200,
+                  effortType: "power",
+                  method: effort.method,
+                  provenance: effort.provenance,
+                  source: effort.source,
+                  unit: effort.unit,
+                  value: Number(effort.value),
+                }) ?? undefined,
             },
           ],
     ),

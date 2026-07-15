@@ -40,17 +40,22 @@ export async function getFeedForViewer({
     buildActivityDerivedSummaryMap({
       store: createActivityAnalysisStore(db),
       profileId: viewerId,
-      activities: activities.map((activity) => ({
-        ...activity,
-        max_power: activity.max_power ?? null,
-        avg_speed_mps: activity.avg_speed_mps ?? null,
-        max_speed_mps: activity.max_speed_mps ?? null,
-        normalized_power: activity.normalized_power ?? null,
-        normalized_speed_mps: activity.normalized_speed_mps ?? null,
-        normalized_graded_speed_mps: activity.normalized_graded_speed_mps ?? null,
-      })),
+      activities: activities
+        .filter((activity) => activity.profile_id === viewerId)
+        .map((activity) => ({
+          ...activity,
+          max_power: activity.max_power ?? null,
+          avg_speed_mps: activity.avg_speed_mps ?? null,
+          max_speed_mps: activity.max_speed_mps ?? null,
+          normalized_power: activity.normalized_power ?? null,
+          normalized_speed_mps: activity.normalized_speed_mps ?? null,
+          normalized_graded_speed_mps: activity.normalized_graded_speed_mps ?? null,
+        })),
     }),
   ]);
+  for (const activity of activities) {
+    if (activity.profile_id !== viewerId) derivedMap.delete(activity.id);
+  }
   return feedResponseSchema.parse(
     buildFeedPage({
       rows: activities,

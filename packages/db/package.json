@@ -26,7 +26,7 @@
     "check-types": "tsc --noEmit && pnpm check-types:supabase",
     "check-types:supabase": "tsx scripts/check-supabase-types.ts",
     "dev": "tsc",
-    "test": "tsx scripts/verify-core-enum-parity.ts && tsx scripts/verify-edge-function-safety.test.ts && tsx scripts/verify-edge-function-safety.ts",
+    "test": "tsx scripts/verify-core-enum-parity.ts && tsx scripts/verify-edge-function-safety.test.ts && tsx scripts/verify-edge-function-safety.ts && tsx scripts/storage-assets-contract.test.ts",
     "dev:setup": "tsx scripts/local-db-command.ts start",
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",

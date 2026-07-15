@@ -138,7 +138,7 @@ export const activityEffortDefinitions = [
     decimals: 2,
     defaultValue: 1.2,
     defaultDurationSeconds: 300,
-    durationPresets: [30, 60, 120, 300, 1800],
+    durationPresets: [30, 60, 120, 300, 1200, 1800],
   },
 ] as const satisfies readonly ActivityEffortDefinition[];
 
@@ -327,12 +327,14 @@ export function normalizeActivityEffortUpdate(
   patch: z.output<typeof updateActivityEffortInputSchema>,
 ) {
   const effective = {
-    activity_id: patch.activity_id ?? existing.activity_id ?? null,
+    activity_id:
+      patch.activity_id === undefined ? (existing.activity_id ?? null) : patch.activity_id,
     activity_category: patch.activity_category ?? existing.activity_category,
     duration_seconds: patch.duration_seconds ?? existing.duration_seconds,
     effort_type: patch.effort_type ?? existing.effort_type,
     value: patch.value ?? existing.value,
-    start_offset: patch.start_offset ?? existing.start_offset ?? null,
+    start_offset:
+      patch.start_offset === undefined ? (existing.start_offset ?? null) : patch.start_offset,
     recorded_at:
       patch.recorded_at ??
       (existing.recorded_at instanceof Date

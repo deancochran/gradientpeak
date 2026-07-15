@@ -1,11 +1,13 @@
 import { Avatar, AvatarFallback } from "@repo/ui/components/avatar";
 import { Input } from "@repo/ui/components/input";
+import { SearchField } from "@repo/ui/components/search-field";
 import { Text } from "@repo/ui/components/text";
 import { Stack } from "expo-router";
 import { useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { EmptyState, LoadingState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
+import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 function getInitials(name: string) {
@@ -24,9 +26,9 @@ export default function NewMessageScreen() {
   const [selectedRecipients, setSelectedRecipients] = useState<
     Array<{ id: string; username: string | null; is_public: boolean | null }>
   >([]);
-  const trimmedQuery = query.trim();
+  const trimmedQuery = useDebouncedValue(query.trim(), 300);
 
-  const { data, isLoading, hasNextPage, isFetchingNextPage, fetchNextPage } =
+  const { data, isLoading, isFetching, hasNextPage, isFetchingNextPage, fetchNextPage } =
     api.social.searchUsers.useInfiniteQuery(
       {
         query: trimmedQuery || undefined,
@@ -140,11 +142,15 @@ export default function NewMessageScreen() {
                   </View>
                 ) : null}
 
-                <Input
+                <SearchField
+                  accessibilityLabel="Search recipients"
+                  clearTestId="messages-new-search-clear"
+                  loading={isFetching && !isFetchingNextPage}
+                  loadingLabel="Loading people"
                   value={query}
-                  onChangeText={setQuery}
+                  onValueChange={setQuery}
                   placeholder="Type a name"
-                  className="border-0 bg-transparent px-0 py-0 text-base"
+                  className="border-0 bg-transparent py-0 text-base"
                   testId="messages-new-search-input"
                 />
               </View>

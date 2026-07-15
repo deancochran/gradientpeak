@@ -13,6 +13,7 @@ import {
 } from "../components/accordion/index.web";
 import * as AlertDialog from "../components/alert-dialog/index.web";
 import { Button } from "../components/button/index.web";
+import { ChartCard, ChartEmptyState } from "../components/chart/index.web";
 import {
   Command,
   CommandEmpty,
@@ -96,6 +97,24 @@ export const AccordionStory: Story = {
           </AccordionContent>
         </AccordionItem>
       </Accordion>
+    </WebFrame>
+  ),
+};
+
+export const ChartStory: Story = {
+  name: "Chart",
+  render: () => (
+    <WebFrame>
+      <ChartCard
+        legend={[{ color: "var(--primary)", id: "load", label: "Training load" }]}
+        summary={[
+          { label: "Latest", value: "412" },
+          { label: "Trend", value: "Up 6%" },
+        ]}
+        title="Training load trend"
+      >
+        <ChartEmptyState message="Renderer preview area" />
+      </ChartCard>
     </WebFrame>
   ),
 };

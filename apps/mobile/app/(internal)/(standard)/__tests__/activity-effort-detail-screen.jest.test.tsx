@@ -33,6 +33,25 @@ jest.mock("react-native", () => ({
   Alert: { alert: jest.fn() },
 }));
 
+jest.mock("@/components/shared/AppFormModal", () => ({
+  __esModule: true,
+  AppConfirmModal: ({
+    primaryAction,
+    testID,
+  }: {
+    primaryAction: { onPress: () => void; testID?: string };
+    testID?: string;
+  }) =>
+    React.createElement(
+      "View",
+      { testID },
+      React.createElement("Pressable", {
+        onPress: primaryAction.onPress,
+        testID: primaryAction.testID,
+      }),
+    ),
+}));
+
 jest.mock("@repo/ui/components/card", () => ({
   __esModule: true,
   Card: createHost("Card"),
@@ -88,6 +107,7 @@ jest.mock("@/lib/api", () => ({
             start_offset: 120,
             value: 400,
             unit: "W",
+            source: "manual",
           },
           isLoading: false,
         }),
@@ -157,6 +177,7 @@ describe("activity effort detail screen", () => {
 
     expect(screen.getByText("run power")).toBeTruthy();
     expect(screen.getByText("Value: 400 W")).toBeTruthy();
+    expect(screen.getByText("Source: manual")).toBeTruthy();
     expect(screen.getByText("Hill Repeats")).toBeTruthy();
     expect(screen.queryByText("Segment duration")).toBeNull();
     expect(

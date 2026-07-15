@@ -1,4 +1,6 @@
+import type { ActivityTssIdentity } from "@repo/core";
 import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core";
+import { sameTssIdentity } from "@/lib/training-path/completedTssObservation";
 import type {
   TrainingPathEmptyState,
   TrainingPathFitnessPoint,
@@ -26,10 +28,14 @@ type BuildTrainingPathInput = {
 };
 
 type WeekBucket = {
+  completedAggregateUnavailable: boolean;
+  completedIdentity: ActivityTssIdentity | null;
   completedLoad: number;
+  hasCompletedObservation: boolean;
   plannedLoad: number;
   tentativePlannedLoad: number;
-  targetLoad: number;
+  targetLoad: number | null;
+  targetLoadDates: Set<string>;
 };
 
 type NormalizedTrainingPathInput = {
@@ -137,15 +143,44 @@ function aggregateLoadByWeek(timeline: TrainingPathLoadPoint[]) {
     if (!point.date) continue;
     const weekStart = getWeekStartDateKey(point.date);
     const bucket = buckets.get(weekStart) ?? {
+      completedAggregateUnavailable: false,
+      completedIdentity: null,
       completedLoad: 0,
+      hasCompletedObservation: false,
       plannedLoad: 0,
       tentativePlannedLoad: 0,
-      targetLoad: 0,
+      targetLoad: null,
+      targetLoadDates: new Set<string>(),
     };
-    bucket.completedLoad += getNumericLoad(point.completed_load_tss ?? point.actual_tss);
+    const completedLoad = point.completed_load_tss ?? point.actual_tss;
+    const completedState = point.completed_observation_state;
+    if (completedState === "observed") {
+      bucket.hasCompletedObservation = true;
+      if (
+        point.has_unavailable_completed_activity ||
+        !point.completed_tss_identity ||
+        (bucket.completedIdentity &&
+          !sameTssIdentity(bucket.completedIdentity, point.completed_tss_identity))
+      ) {
+        bucket.completedAggregateUnavailable = true;
+      } else {
+        bucket.completedIdentity ??= point.completed_tss_identity;
+        bucket.completedLoad += getNumericLoad(completedLoad);
+      }
+    } else if (completedState === "known_zero") {
+      bucket.hasCompletedObservation = true;
+    } else if (completedState === "unavailable" || completedState === "uncovered") {
+      bucket.completedAggregateUnavailable = true;
+    } else if (getNumericLoad(completedLoad) > 0) {
+      bucket.completedAggregateUnavailable = true;
+    }
     bucket.plannedLoad += getNumericLoad(point.scheduled_load_tss ?? point.scheduled_tss);
     bucket.tentativePlannedLoad += getNumericLoad(point.tentative_scheduled_load_tss);
-    bucket.targetLoad += getNumericLoad(point.recommended_load_tss ?? point.ideal_tss);
+    const targetLoad = point.recommended_load_tss ?? point.ideal_tss;
+    if (typeof targetLoad === "number" && Number.isFinite(targetLoad)) {
+      bucket.targetLoad = (bucket.targetLoad ?? 0) + targetLoad;
+      bucket.targetLoadDates.add(point.date);
+    }
     buckets.set(weekStart, bucket);
   }
   return buckets;
@@ -320,28 +355,38 @@ export function buildTrainingPathWeekSummary(input: {
   projectedFitnessByWeek: Map<string, TrainingPathFitnessPoint>;
   targetFitnessByWeek: Map<string, TrainingPathFitnessPoint>;
 }): TrainingPathWeekSummary {
-  const completedLoad = Math.round(input.week.completedLoad ?? 0);
+  const completedLoad =
+    typeof input.week.completedLoad === "number" ? Math.round(input.week.completedLoad) : null;
   const plannedLoad = Math.round(input.week.plannedLoad ?? 0);
   const tentativePlannedLoad = Math.round(input.week.tentativePlannedLoad ?? 0);
-  const targetLoad = Math.round(input.week.targetLoad ?? 0);
-  const loadDelta = Math.round(completedLoad + plannedLoad + tentativePlannedLoad - targetLoad);
+  const targetLoad =
+    typeof input.week.targetLoad === "number" ? Math.round(input.week.targetLoad) : null;
+  const loadDelta =
+    targetLoad == null || completedLoad == null
+      ? null
+      : Math.round(completedLoad + plannedLoad + tentativePlannedLoad - targetLoad);
   const fitnessGapToIdeal =
     typeof input.week.fitness === "number" && typeof input.week.targetFitness === "number"
       ? Math.round(input.week.fitness - input.week.targetFitness)
       : null;
-  const absDelta = Math.abs(loadDelta);
+  const absDelta = loadDelta == null ? null : Math.abs(loadDelta);
   const headline =
-    absDelta < 10
-      ? "On target"
-      : loadDelta < 0
-        ? `${absDelta} TSS below target`
-        : `${absDelta} TSS above target`;
-  const body =
-    absDelta < 10
-      ? "This week is aligned with the target path."
-      : loadDelta < 0
-        ? ""
-        : "This week is above the target path, so watch freshness before adding more load.";
+    absDelta == null || loadDelta == null
+      ? null
+      : absDelta < 10
+        ? "On target"
+        : loadDelta < 0
+          ? `${absDelta} TSS below target`
+          : `${absDelta} TSS above target`;
+  const body = input.week.completedLoadUnavailable
+    ? "Completed load is unavailable for this week."
+    : absDelta == null || loadDelta == null
+      ? null
+      : absDelta < 10
+        ? "This week is aligned with the target path."
+        : loadDelta < 0
+          ? ""
+          : "This week is above the target path, so watch freshness before adding more load.";
   const nextGoal = input.goalMarkers.find((goal) => goal.weekStart >= input.week.weekStart);
   const projectedFitnessAtGoal = nextGoal
     ? (input.projectedFitnessByWeek.get(nextGoal.weekStart)?.ctl ?? null)
@@ -358,6 +403,7 @@ export function buildTrainingPathWeekSummary(input: {
     headline,
     body,
     completedLoad,
+    completedLoadUnavailable: input.week.completedLoadUnavailable,
     plannedLoad,
     tentativePlannedLoad,
     targetLoad,
@@ -399,6 +445,7 @@ function resolveEmptyState(
   if (weeks.length === 0) return "noProjection";
   const hasRenderablePathData = weeks.some(
     (week) =>
+      week.completedLoadUnavailable === true ||
       (week.completedLoad ?? 0) > 0 ||
       (week.plannedLoad ?? 0) > 0 ||
       (week.tentativePlannedLoad ?? 0) > 0 ||
@@ -501,15 +548,25 @@ function buildWeeks(input: NormalizedTrainingPathInput, sources: TrainingPathSou
     const scheduledFitnessPoint = sources.scheduledFitnessByWeek.get(weekStart);
     const idealFitnessPoint = sources.idealFitnessByWeek.get(weekStart);
     const weekEnd = addDays(weekStart, 6);
+    const hasCompleteTargetCoverage = Array.from({ length: 7 }, (_, index) =>
+      load?.targetLoadDates.has(addDays(weekStart, index)),
+    ).every(Boolean);
     const form = fitnessPoint?.tsb ?? null;
     return {
       weekStart,
       weekEnd,
       label: compactDateLabel(weekStart),
-      completedLoad: load ? Math.round(load.completedLoad) : null,
+      completedLoad:
+        load?.hasCompletedObservation && !load.completedAggregateUnavailable
+          ? Math.round(load.completedLoad)
+          : null,
+      completedLoadUnavailable: load?.completedAggregateUnavailable === true,
       plannedLoad: load ? Math.round(load.plannedLoad) : null,
       tentativePlannedLoad: load ? Math.round(load.tentativePlannedLoad) : null,
-      targetLoad: load ? Math.round(load.targetLoad) : null,
+      targetLoad:
+        hasCompleteTargetCoverage && typeof load?.targetLoad === "number"
+          ? Math.round(load.targetLoad)
+          : null,
       fitness: typeof fitnessPoint?.ctl === "number" ? Math.round(fitnessPoint.ctl) : null,
       scheduledFitness:
         typeof scheduledFitnessPoint?.ctl === "number"

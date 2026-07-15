@@ -1,8 +1,10 @@
-import type { ActivityPlanRow, TrainingPlanRow } from "@repo/db";
+import type { ActivityPlanRow, ActivityRouteRow, TrainingPlanRow } from "@repo/db";
 import type { EventCompletionEventRecord, EventDeleteScope } from "./event-completion-repository";
 
 type OwnedActivityPlanRef = Pick<ActivityPlanRow, "id">;
+type AccessibleActivityRouteRef = Pick<ActivityRouteRow, "id">;
 type OwnedTrainingPlanRef = Pick<TrainingPlanRow, "id">;
+type EventWriteEventRecord = EventCompletionEventRecord & { route_id: string | null };
 
 export interface CreateOwnedEventInput {
   activityPlanId: string | null;
@@ -16,6 +18,7 @@ export interface CreateOwnedEventInput {
   originalStartsAt?: string | null;
   recurrenceRule: string | null;
   recurrenceTimezone: string | null;
+  routeId: string | null;
   seriesId?: string | null;
   sourceProvider: string | null;
   startsAt: string;
@@ -26,11 +29,19 @@ export interface CreateOwnedEventInput {
 }
 
 export interface EventWriteRepository {
-  createOwnedEvent(input: CreateOwnedEventInput): Promise<EventCompletionEventRecord>;
+  createOwnedEvent(input: CreateOwnedEventInput): Promise<EventWriteEventRecord>;
+  createOwnedEvents(input: {
+    anchor: CreateOwnedEventInput;
+    occurrences: Omit<CreateOwnedEventInput, "seriesId">[];
+  }): Promise<EventWriteEventRecord[]>;
   getAccessibleActivityPlan(input: {
     activityPlanId: string;
     profileId: string;
   }): Promise<OwnedActivityPlanRef | null>;
+  getAccessibleActivityRoute(input: {
+    profileId: string;
+    routeId: string;
+  }): Promise<AccessibleActivityRouteRef | null>;
   getOwnedTrainingPlan(input: {
     profileId: string;
     trainingPlanId: string;
@@ -38,11 +49,11 @@ export interface EventWriteRepository {
   listOwnedEventsForSeries(input: {
     anchorEvent: Pick<EventCompletionEventRecord, "id" | "series_id">;
     profileId: string;
-  }): Promise<EventCompletionEventRecord[]>;
+  }): Promise<EventWriteEventRecord[]>;
   updateOwnedEventsForScope(input: {
     anchorEvent: Pick<EventCompletionEventRecord, "id" | "series_id" | "starts_at">;
     eventUpdates: Record<string, unknown>;
     profileId: string;
     scope: EventDeleteScope;
-  }): Promise<EventCompletionEventRecord[]>;
+  }): Promise<EventWriteEventRecord[]>;
 }

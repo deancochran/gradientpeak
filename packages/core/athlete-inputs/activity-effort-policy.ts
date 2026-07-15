@@ -67,6 +67,11 @@ export type ActivityEffortPlausibilityClassification =
 
 export type ActivityEffortObservationStatus = "observed" | "modeled" | "review" | "invalid";
 
+export type ActivityEffortThresholdEvidence =
+  | "trusted_manual"
+  | "imported_activity_stream"
+  | "trusted_provider";
+
 export interface ActivityEffortObservationInput extends ActivityEffortPlausibilityInput {
   activityId?: string | null;
   unit?: string | null;
@@ -155,6 +160,20 @@ export function getActivityEffortObservationStatus(
       : "review";
   }
   return "review";
+}
+
+/** Returns the provenance evidence required before a 20-minute effort may calibrate a threshold. */
+export function getActivityEffortThresholdEvidence(
+  input: ActivityEffortObservationInput,
+): ActivityEffortThresholdEvidence | null {
+  if (input.durationSeconds !== 1200 || getActivityEffortObservationStatus(input) !== "observed") {
+    return null;
+  }
+
+  if (input.source === "manual") return "trusted_manual";
+  if (input.source === "imported") return "imported_activity_stream";
+  if (input.source === "provider") return "trusted_provider";
+  return null;
 }
 
 function bandForDuration<T extends PlausibilityBand>(

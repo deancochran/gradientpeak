@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { WahooClient } from "./client";
+import { refreshWahooAccessToken, WahooClient } from "./client";
+import { WAHOO_RECONNECT_REQUIRED_MESSAGE } from "./credentials";
 
 describe("WahooClient", () => {
   const fetchMock = vi.fn();
@@ -264,14 +265,17 @@ describe("WahooClient", () => {
         perPage: 25,
         startDate: "2025-04-03T12:00:00.000Z",
       }),
-    ).resolves.toMatchObject([
-      {
-        id: 123,
-        started_at: "2026-04-03T10:00:00.000Z",
-        workout_id: 456,
-        workout: { id: 456, name: "Friday ride", workout_type_id: 0 },
-      },
-    ]);
+    ).resolves.toMatchObject({
+      sourceCount: 1,
+      summaries: [
+        {
+          id: 123,
+          started_at: "2026-04-03T10:00:00.000Z",
+          workout_id: 456,
+          workout: { id: 456, name: "Friday ride", workout_type_id: 0 },
+        },
+      ],
+    });
 
     const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("https://api.wahooligan.com/v1/workouts?page=2&per_page=25");
@@ -279,7 +283,7 @@ describe("WahooClient", () => {
     expect(options.headers).toMatchObject({ Authorization: "Bearer access-token" });
   });
 
-  it("surfaces structured API errors with status and provider code", async () => {
+  it("surfaces safe API errors with status and provider code", async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
@@ -293,9 +297,55 @@ describe("WahooClient", () => {
     const client = new WahooClient({ accessToken: "access-token" });
 
     await expect(client.getWorkout("workout-1")).rejects.toMatchObject({
-      message: "invalid_request: plan_id is required",
+      message: "Wahoo API error: 400 Bad Request",
       status: 400,
       code: "WAHOO_4001",
+    });
+  });
+
+  it("normalizes API 401 responses to reconnect-required", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "invalid_token", token: "must-not-leak" }), {
+        status: 401,
+        statusText: "Unauthorized",
+      }),
+    );
+    const client = new WahooClient({ accessToken: "access-token" });
+
+    await expect(client.getUserProfile()).rejects.toMatchObject({
+      code: "WAHOO_RECONNECT_REQUIRED",
+      message: WAHOO_RECONNECT_REQUIRED_MESSAGE,
+      status: 401,
+    });
+  });
+
+  it("preserves retryable token refresh status without response details", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "temporarily_unavailable", token: "must-not-leak" }), {
+        status: 503,
+        statusText: "Service Unavailable",
+      }),
+    );
+
+    await expect(refreshWahooAccessToken("refresh-token")).rejects.toMatchObject({
+      code: "temporarily_unavailable",
+      message: "Wahoo token refresh failed: 503 Service Unavailable",
+      status: 503,
+    });
+  });
+
+  it("normalizes invalid-grant token refresh responses to reconnect-required", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "invalid_grant" }), {
+        status: 400,
+        statusText: "Bad Request",
+      }),
+    );
+
+    await expect(refreshWahooAccessToken("refresh-token")).rejects.toMatchObject({
+      code: "WAHOO_RECONNECT_REQUIRED",
+      message: WAHOO_RECONNECT_REQUIRED_MESSAGE,
+      status: 401,
     });
   });
 

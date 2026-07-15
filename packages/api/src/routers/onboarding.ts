@@ -9,27 +9,27 @@
  * - Skip: Minimal setup
  */
 
-// Import calculation functions directly - they're exported from core package
-import { calculateAgeFromDOB, getBaselineProfile } from "@repo/core";
-import type { DerivedEffort } from "@repo/core/calculations";
 import { completeOnboardingSchema } from "@repo/core/schemas/onboarding";
-import { publicIntegrationProviderSchema } from "@repo/db";
+import { publicIntegrationProviderSchema, schema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
+import { and, ne, sql } from "drizzle-orm";
 import { z } from "zod";
+import { profileGoalWriteDataSchema } from "../application/goals/profile-goal-write";
 import {
-  OnboardingProfileNotFoundError,
-  persistOnboardingProfile,
-} from "../application/onboarding/persist-onboarding-profile";
+  completeLifecycleSetup,
+  lifecycleSettingsPatchSchema,
+} from "../application/onboarding/complete-lifecycle-setup";
+import {
+  completeRequiredOnboarding,
+  OnboardingProviderPreconditionError,
+  OnboardingRequiredWriteError,
+} from "../application/onboarding/complete-onboarding";
+import { OnboardingProfileNotFoundError } from "../application/onboarding/persist-onboarding-profile";
 import { OnboardingProviderEnrichmentService } from "../application/onboarding-provider-enrichment";
 import type { Context } from "../context";
 import { getRequiredDb } from "../db";
+import { OnboardingProfileNotFoundForLockError } from "../repositories/onboarding-lifecycle-repository";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
-import {
-  batchInsertActivityEfforts,
-  batchInsertProfileMetrics,
-  deriveEffortsForSport,
-  prepareProfileMetrics,
-} from "../utils/onboarding-helpers";
 
 const completeOnboardingOutputSchema = z
   .object({
@@ -45,6 +45,48 @@ const completeOnboardingOutputSchema = z
     warnings: z.array(z.string()),
   })
   .strict();
+
+const lifecycleSectionFailureCodeSchema = z.enum(["content_conflict", "temporarily_unavailable"]);
+const lifecycleGoalStatusSchema = z
+  .object({
+    status: z.enum(["saved", "skipped", "failed"]),
+    retryable: z.boolean(),
+    failure_code: lifecycleSectionFailureCodeSchema.optional(),
+  })
+  .strict();
+const lifecycleSettingsStatusSchema = z
+  .object({
+    status: z.enum(["saved", "unchanged", "skipped", "failed"]),
+    retryable: z.boolean(),
+    failure_code: lifecycleSectionFailureCodeSchema.optional(),
+  })
+  .strict();
+const completeLifecycleSetupInputSchema = z
+  .object({
+    profile: completeOnboardingSchema,
+    goal: profileGoalWriteDataSchema.optional(),
+    settings_patch: lifecycleSettingsPatchSchema.optional(),
+  })
+  .strict();
+const completeLifecycleSetupOutputSchema = z
+  .object({
+    status: z.enum(["completed", "already_completed"]),
+    goal: lifecycleGoalStatusSchema,
+    settings: lifecycleSettingsStatusSchema,
+    retryable: z.boolean(),
+    cache_tags: z.tuple([
+      // biome-ignore lint/security/noSecrets: Public tRPC cache tag, not a credential.
+      z.literal("onboarding.getImportedOnboardingValues"),
+      z.literal("goals.list"),
+      z.literal("profileSettings.getForProfile"),
+    ]),
+  })
+  .strict();
+
+const checkUsernameAvailabilityInputSchema = z
+  .object({ username: completeOnboardingSchema.shape.username })
+  .strict();
+const checkUsernameAvailabilityOutputSchema = z.object({ available: z.boolean() }).strict();
 
 const providerEnrichmentOverallStatusSchema = z.enum([
   "idle",
@@ -161,7 +203,70 @@ function getOnboardingProviderEnrichmentService(ctx: Context) {
   return new OnboardingProviderEnrichmentService({ db: getRequiredDb(ctx) });
 }
 
+function isUsernameConflict(error: unknown): boolean {
+  let candidate = error;
+  const visited = new Set<unknown>();
+
+  while (candidate && typeof candidate === "object" && !visited.has(candidate)) {
+    visited.add(candidate);
+    const record = candidate as { code?: unknown; constraint?: unknown; cause?: unknown };
+    if (record.code === "23505" && record.constraint === "profiles_username_unique_idx") {
+      return true;
+    }
+    candidate = record.cause;
+  }
+
+  return false;
+}
+
+function throwCompletionError(error: unknown): never {
+  if (
+    error instanceof OnboardingProfileNotFoundError ||
+    error instanceof OnboardingProfileNotFoundForLockError
+  ) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Profile not found" });
+  }
+  if (error instanceof OnboardingProviderPreconditionError) {
+    throw new TRPCError({ code: "PRECONDITION_FAILED", message: error.message });
+  }
+  if (isUsernameConflict(error)) {
+    throw new TRPCError({ code: "CONFLICT", message: "That username is already taken" });
+  }
+  if (error instanceof OnboardingRequiredWriteError) {
+    const message =
+      error.stage === "profile"
+        ? "Failed to update profile during onboarding"
+        : error.stage === "metrics"
+          ? "Failed to insert onboarding metrics"
+          : "Failed to insert onboarding efforts";
+    throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message, cause: error });
+  }
+  throw new TRPCError({
+    code: "INTERNAL_SERVER_ERROR",
+    message: "Failed to complete onboarding",
+    cause: error,
+  });
+}
+
 export const onboardingRouter = createTRPCRouter({
+  checkUsernameAvailability: protectedProcedure
+    .input(checkUsernameAvailabilityInputSchema)
+    .output(checkUsernameAvailabilityOutputSchema)
+    .query(async ({ ctx, input }) => {
+      const [conflict] = await getRequiredDb(ctx)
+        .select({ id: schema.profiles.id })
+        .from(schema.profiles)
+        .where(
+          and(
+            sql`lower(${schema.profiles.username}) = ${input.username.toLowerCase()}`,
+            ne(schema.profiles.id, ctx.session.user.id),
+          ),
+        )
+        .limit(1);
+
+      return { available: !conflict };
+    }),
+
   startProviderEnrichment: protectedProcedure
     .input(providerEnrichmentStartInputSchema)
     .output(providerEnrichmentStatusOutputSchema)
@@ -190,6 +295,21 @@ export const onboardingRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const service = getOnboardingProviderEnrichmentService(ctx);
       return service.clearProviderRequirement(ctx.session.user.id, input.provider);
+    }),
+
+  completeLifecycleSetup: protectedProcedure
+    .input(completeLifecycleSetupInputSchema)
+    .output(completeLifecycleSetupOutputSchema)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await completeLifecycleSetup({
+          db: getRequiredDb(ctx),
+          profileId: ctx.session.user.id,
+          ...input,
+        });
+      } catch (error) {
+        throwCompletionError(error);
+      }
     }),
 
   /**
@@ -228,135 +348,15 @@ export const onboardingRouter = createTRPCRouter({
     .input(completeOnboardingSchema)
     .output(completeOnboardingOutputSchema)
     .mutation(async ({ ctx, input }) => {
-      const db = getRequiredDb(ctx);
-      const userId = ctx.session.user.id;
-      const providerEnrichment = new OnboardingProviderEnrichmentService({ db });
-
       try {
-        await providerEnrichment.assertCanComplete(userId);
-      } catch (error) {
-        throw new TRPCError({
-          code: "PRECONDITION_FAILED",
-          message: error instanceof Error ? error.message : "Provider enrichment is still required",
+        const { status: _status, ...legacyResult } = await completeRequiredOnboarding({
+          db: getRequiredDb(ctx),
+          profileId: ctx.session.user.id,
+          data: input,
         });
-      }
-
-      const importedOnboardingValues = await providerEnrichment.getImportedOnboardingValues(userId);
-      const importedProviderFtp =
-        importedOnboardingValues.sources.ftp &&
-        typeof importedOnboardingValues.values.ftp === "number"
-          ? importedOnboardingValues.values.ftp
-          : undefined;
-      const usesUnchangedProviderFtp =
-        importedProviderFtp !== undefined &&
-        (input.ftp === undefined || input.ftp === importedProviderFtp);
-
-      // Calculate age from DOB (default to 30 if missing for calculations ONLY)
-      // DO NOT use this default for saving to the profile.
-      const ageForBaseline = input.dob ? calculateAgeFromDOB(input.dob) : 30;
-
-      // Determine if we have enough info for a baseline profile
-      // We need at least gender and weight for most calculations
-      // If the user skipped these, we cannot generate a reliable baseline
-      const canGenerateBaseline =
-        input.experience_level !== "skip" &&
-        input.experience_level !== "advanced" &&
-        input.weight_kg !== undefined &&
-        input.gender !== undefined;
-
-      const baseline = canGenerateBaseline
-        ? getBaselineProfile(
-            input.experience_level,
-            input.weight_kg!, // asserted by canGenerateBaseline
-            input.gender!, // asserted by canGenerateBaseline
-            ageForBaseline,
-            "other",
-          )
-        : null;
-
-      // Prepare every row before opening the all-or-nothing write transaction.
-      const metrics = prepareProfileMetrics(
-        {
-          weight_kg: input.weight_kg, // Pass undefined if missing, helper handles it
-          max_hr: input.max_hr,
-          resting_hr: input.resting_hr,
-          lthr: input.lthr,
-          vo2max: input.vo2max,
-          ftp: usesUnchangedProviderFtp ? undefined : input.ftp,
-          threshold_pace_seconds_per_km: input.threshold_pace_seconds_per_km,
-          css_seconds_per_hundred_meters: input.css_seconds_per_hundred_meters,
-        },
-        baseline,
-      );
-
-      const allEfforts: DerivedEffort[] = [];
-      const providerFtpEfforts: DerivedEffort[] = [];
-      const otherEfforts: DerivedEffort[] = [];
-      const warnings: string[] = [];
-
-      // Merge user input with baseline for performance metrics
-      const finalFtp = input.ftp ?? importedProviderFtp ?? baseline?.ftp;
-      const finalThresholdPace =
-        input.threshold_pace_seconds_per_km ?? baseline?.threshold_pace_seconds_per_km;
-      const finalCss =
-        input.css_seconds_per_hundred_meters ?? baseline?.css_seconds_per_hundred_meters;
-
-      // Cycling/Triathlon: Derive power curve from FTP
-      if (finalFtp) {
-        const ftpEfforts = deriveEffortsForSport("cycling", finalFtp);
-        allEfforts.push(...ftpEfforts);
-        (usesUnchangedProviderFtp ? providerFtpEfforts : otherEfforts).push(...ftpEfforts);
-      }
-
-      // Running/Triathlon: Derive speed curve from threshold pace
-      if (finalThresholdPace) {
-        const runningEfforts = deriveEffortsForSport("running", finalThresholdPace);
-        allEfforts.push(...runningEfforts);
-        otherEfforts.push(...runningEfforts);
-      }
-
-      // Swimming/Triathlon: Derive swim pace curve from CSS
-      if (finalCss) {
-        const swimmingEfforts = deriveEffortsForSport("swimming", finalCss);
-        allEfforts.push(...swimmingEfforts);
-        otherEfforts.push(...swimmingEfforts);
-      }
-
-      let writeStage: "profile" | "metrics" | "efforts" = "profile";
-      try {
-        await db.transaction(async (tx) => {
-          await persistOnboardingProfile({ tx, profileId: userId, input });
-
-          writeStage = "metrics";
-          await batchInsertProfileMetrics(tx, userId, metrics);
-
-          writeStage = "efforts";
-          await batchInsertActivityEfforts(tx, userId, otherEfforts, input.experience_level);
-          await batchInsertActivityEfforts(tx, userId, providerFtpEfforts, "provider_wahoo_ftp");
-        });
+        return legacyResult;
       } catch (error) {
-        if (error instanceof OnboardingProfileNotFoundError) {
-          throw new TRPCError({ code: "NOT_FOUND", message: error.message });
-        }
-
-        const message =
-          writeStage === "profile"
-            ? "Failed to update profile during onboarding"
-            : writeStage === "metrics"
-              ? "Failed to insert onboarding metrics"
-              : "Failed to insert onboarding efforts";
-        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message, cause: error });
+        throwCompletionError(error);
       }
-
-      return {
-        success: true,
-        created: {
-          profile_metrics: metrics.length,
-          activity_efforts: warnings.length > 0 ? 0 : allEfforts.length,
-        },
-        baseline_used: !!baseline,
-        confidence: baseline?.confidence || "high",
-        warnings,
-      };
     }),
 });

@@ -51,15 +51,6 @@ function createTrustedOrigins(appUrl: string, mobileScheme: string, trustedOrigi
   );
 }
 
-function createDeleteCleanupHook() {
-  return async (user: { id: string; email: string }) => {
-    console.warn("[auth] delete-user cleanup hook not configured", {
-      userId: user.id,
-      email: user.email,
-    });
-  };
-}
-
 function createAdapterSchema() {
   return schema as any;
 }
@@ -114,8 +105,8 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
     } catch (error) {
       console.error("[auth-email] failed", {
         kind: input.kind,
-        to: input.to,
-        error: error instanceof Error ? error.message : String(error),
+        // Recipient addresses and provider error bodies can contain PII.
+        errorType: error instanceof Error ? error.name : "UnknownError",
       });
       throw error;
     }
@@ -180,8 +171,9 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
         },
       },
       deleteUser: {
-        enabled: true,
-        afterDelete: createDeleteCleanupHook(),
+        // Remain fail-closed until product data and object storage can be removed
+        // atomically with the auth identity.
+        enabled: false,
       },
     },
     trustedOrigins: createTrustedOrigins(env.appUrl, env.mobileScheme, options.trustedOrigins),

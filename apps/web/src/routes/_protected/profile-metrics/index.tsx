@@ -1,4 +1,4 @@
-import { PROFILE_METRIC_UNITS, type ProfileMetricType } from "@repo/core/schemas/profile-metrics";
+import type { ProfileMetricType } from "@repo/core/schemas/profile-metrics";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,9 +35,11 @@ import {
 } from "@repo/ui/components/table";
 import { createFileRoute } from "@tanstack/react-router";
 import { Activity, Loader2, Plus, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { SimpleTrendChart } from "../../../components/charts/simple-trend-chart";
 import { DetailPageIntro } from "../../../components/protected/activity-route-primitives";
+import { CssTestForm, type CssTestFormValues } from "../../../components/protected/css-test-form";
 import {
   getProfileMetricFormValues,
   ProfileMetricForm,
@@ -46,35 +48,14 @@ import {
 import { useAuth } from "../../../components/providers/auth-provider";
 import { formatDate, formatDateTime } from "../../../lib/activity-route-helpers";
 import { api } from "../../../lib/api/client";
+import {
+  formatObservationSource,
+  formatProfileMetricDisplayValue,
+  isManualProfileMetric,
+  profileMetricGroups,
+  profileMetricOptions,
+} from "../../../lib/profile-metric-presentation";
 
-const metricOptions = [
-  {
-    type: "weight_kg",
-    label: "Weight",
-    description: "Body mass trend for load and power-to-weight context.",
-  },
-  {
-    type: "resting_hr",
-    label: "Resting HR",
-    description: "Baseline cardiovascular recovery signal.",
-  },
-  { type: "hrv_rmssd", label: "HRV", description: "Morning readiness and autonomic stress trend." },
-  { type: "sleep_hours", label: "Sleep", description: "Sleep duration for recovery context." },
-  { type: "vo2_max", label: "VO2 Max", description: "Aerobic capacity estimates over time." },
-  { type: "body_fat_percentage", label: "Body Fat", description: "Body composition trend." },
-  { type: "hydration_level", label: "Hydration", description: "Subjective hydration score." },
-  { type: "stress_score", label: "Stress", description: "Subjective stress score." },
-  { type: "soreness_level", label: "Soreness", description: "Subjective soreness score." },
-  { type: "wellness_score", label: "Wellness", description: "Overall wellness check-in." },
-  { type: "max_hr", label: "Max HR", description: "Maximum heart-rate reference." },
-  { type: "lthr", label: "LTHR", description: "Lactate-threshold heart-rate reference." },
-] as const satisfies ReadonlyArray<{
-  type: ProfileMetricType;
-  label: string;
-  description: string;
-}>;
-
-type MetricOption = (typeof metricOptions)[number];
 type ProfileMetricRow = {
   id: string;
   metric_type: ProfileMetricType;
@@ -82,18 +63,27 @@ type ProfileMetricRow = {
   value: number;
   unit: string;
   notes?: string | null;
+  reference_activity_id?: string | null;
+  source?: string | null;
 };
 
+type MetricEditorTarget =
+  | { mode: "create"; metric: Pick<ProfileMetricRow, "metric_type"> }
+  | { mode: "edit" | "override"; metric: ProfileMetricRow };
+
 function formatMetricType(type: ProfileMetricType) {
-  return metricOptions.find((option) => option.type === type)?.label ?? type.replaceAll("_", " ");
+  return (
+    profileMetricOptions.find((option) => option.type === type)?.label ?? type.replaceAll("_", " ")
+  );
 }
 
 function buildTrendSummary(rows: ProfileMetricRow[]) {
   if (rows.length === 0) return "No records yet";
   if (rows.length === 1) return "One record saved";
 
-  const oldest = rows[rows.length - 1]!;
-  const newest = rows[0]!;
+  const oldest = rows.at(-1);
+  const newest = rows[0];
+  if (!oldest || !newest) return "No records yet";
   const delta = newest.value - oldest.value;
   const direction = delta > 0 ? "up" : delta < 0 ? "down" : "flat";
   return `${direction} ${Math.abs(delta).toFixed(1)} ${newest.unit}`;
@@ -106,15 +96,25 @@ export const Route = createFileRoute("/_protected/profile-metrics/")({
 function ProfileMetricsPage() {
   const { user } = useAuth();
   const utils = api.useUtils();
-  const [selectedMetricType, setSelectedMetricType] = useState<ProfileMetricType>("weight_kg");
-  const [editingMetric, setEditingMetric] = useState<ProfileMetricRow | null>(null);
+  const [selectedMetricType, setSelectedMetricType] = useState<ProfileMetricType>("ftp");
+  const [editorTarget, setEditorTarget] = useState<MetricEditorTarget | null>(null);
   const [deleteMetric, setDeleteMetric] = useState<ProfileMetricRow | null>(null);
-  const metricsQuery = api.profileMetrics.list.useQuery({ limit: 50 });
-  const metrics = (metricsQuery.data?.items ?? []) as ProfileMetricRow[];
+  const [cssTestOpen, setCssTestOpen] = useState(false);
+  const metricsQuery = api.profileMetrics.list.useInfiniteQuery(
+    { limit: 50 },
+    { getNextPageParam: (lastPage) => lastPage.nextCursor },
+  );
+  useEffect(() => {
+    if (metricsQuery.hasNextPage && !metricsQuery.isFetchingNextPage) {
+      void metricsQuery.fetchNextPage();
+    }
+  }, [metricsQuery.fetchNextPage, metricsQuery.hasNextPage, metricsQuery.isFetchingNextPage]);
+  const metrics = (metricsQuery.data?.pages.flatMap((page) => page.items) ??
+    []) as ProfileMetricRow[];
 
   const groupedMetrics = useMemo(() => {
     const map = new Map<ProfileMetricType, ProfileMetricRow[]>();
-    for (const option of metricOptions) map.set(option.type, []);
+    for (const option of profileMetricOptions) map.set(option.type, []);
     for (const metric of metrics) {
       const rows = map.get(metric.metric_type) ?? [];
       rows.push(metric);
@@ -124,7 +124,8 @@ function ProfileMetricsPage() {
   }, [metrics]);
 
   const selectedOption =
-    metricOptions.find((option) => option.type === selectedMetricType) ?? metricOptions[0];
+    profileMetricOptions.find((option) => option.type === selectedMetricType) ??
+    profileMetricGroups[0].metrics[0];
   const selectedRows = groupedMetrics.get(selectedOption.type) ?? [];
   const latestMetric = selectedRows[0];
 
@@ -132,14 +133,14 @@ function ProfileMetricsPage() {
     onSuccess: async () => {
       await utils.profileMetrics.invalidate();
       toast.success("Metric saved");
-      setEditingMetric(null);
+      setEditorTarget(null);
     },
   });
   const updateMutation = api.profileMetrics.update.useMutation({
     onSuccess: async () => {
       await utils.profileMetrics.invalidate();
       toast.success("Metric updated");
-      setEditingMetric(null);
+      setEditorTarget(null);
     },
   });
   const deleteMutation = api.profileMetrics.delete.useMutation({
@@ -149,6 +150,28 @@ function ProfileMetricsPage() {
       setDeleteMetric(null);
     },
   });
+  const cssTestMutation = api.profileMetrics.recordCssTest.useMutation({
+    onSuccess: async (result) => {
+      await utils.profileMetrics.invalidate();
+      toast.success(
+        `CSS test recorded: ${formatProfileMetricDisplayValue({
+          metric_type: "css_seconds_per_100m",
+          unit: "seconds_per_100m",
+          value: result.css_seconds_per_100m,
+        })}`,
+      );
+      setCssTestOpen(false);
+    },
+  });
+
+  const recordCssTest = async (values: CssTestFormValues) => {
+    await cssTestMutation.mutateAsync({
+      operation_id: values.operationId,
+      recorded_at: values.recordedAt,
+      time_200_seconds: values.time200Seconds,
+      time_400_seconds: values.time400Seconds,
+    });
+  };
 
   return (
     <div className="container mx-auto max-w-6xl space-y-6 py-4">
@@ -156,7 +179,7 @@ function ProfileMetricsPage() {
         actions={
           <Button
             onClick={() =>
-              setEditingMetric({ metric_type: selectedMetricType } as ProfileMetricRow)
+              setEditorTarget({ mode: "create", metric: { metric_type: selectedMetricType } })
             }
             type="button"
           >
@@ -169,91 +192,131 @@ function ProfileMetricsPage() {
         title="Profile metrics"
       />
 
-      {metricsQuery.isLoading ? (
+      {metricsQuery.isError ? (
+        <div className="rounded-2xl border border-destructive/40 bg-destructive/5 px-6 py-8 text-sm text-destructive">
+          Unable to load profile metrics: {metricsQuery.error.message}
+        </div>
+      ) : metricsQuery.isLoading ? (
         <div className="flex min-h-[300px] items-center justify-center rounded-2xl border">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       ) : (
         <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-            {metricOptions.map((option) => {
-              const rows = groupedMetrics.get(option.type) ?? [];
-              const latest = rows[0];
-              const selected = option.type === selectedOption.type;
-              return (
-                <button
-                  className={`rounded-2xl border p-4 text-left transition-colors ${
-                    selected ? "border-primary bg-primary/5" : "bg-card hover:border-primary/30"
-                  }`}
-                  key={option.type}
-                  onClick={() => setSelectedMetricType(option.type)}
-                  type="button"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-foreground">{option.label}</p>
-                      <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-                        {option.description}
-                      </p>
-                    </div>
-                    <Badge variant={rows.length ? "default" : "secondary"}>{rows.length}</Badge>
-                  </div>
-                  <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-                    <div className="rounded-xl bg-muted/40 px-3 py-2">
-                      <p className="text-xs uppercase text-muted-foreground">Latest</p>
-                      <p className="font-medium">
-                        {latest ? `${latest.value} ${latest.unit}` : "-"}
-                      </p>
-                    </div>
-                    <div className="rounded-xl bg-muted/40 px-3 py-2">
-                      <p className="text-xs uppercase text-muted-foreground">Trend</p>
-                      <p className="font-medium">{buildTrendSummary(rows)}</p>
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
+          <div className="space-y-6">
+            {profileMetricGroups.map((group) => (
+              <section className="space-y-3" key={group.label}>
+                <div>
+                  <h2 className="font-semibold">{group.label}</h2>
+                  <p className="text-sm text-muted-foreground">{group.description}</p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                  {group.metrics.map((option) => {
+                    const rows = groupedMetrics.get(option.type) ?? [];
+                    const latest = rows[0];
+                    const selected = option.type === selectedOption.type;
+                    return (
+                      <button
+                        className={`rounded-2xl border p-4 text-left transition-colors ${
+                          selected
+                            ? "border-primary bg-primary/5"
+                            : "bg-card hover:border-primary/30"
+                        }`}
+                        key={option.type}
+                        onClick={() => setSelectedMetricType(option.type)}
+                        type="button"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-foreground">{option.label}</p>
+                            <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+                              {option.description}
+                            </p>
+                          </div>
+                          <Badge variant={rows.length ? "default" : "secondary"}>
+                            {rows.length}
+                          </Badge>
+                        </div>
+                        <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
+                          <div className="rounded-xl bg-muted/40 px-3 py-2">
+                            <p className="text-xs uppercase text-muted-foreground">Latest</p>
+                            <p className="font-medium">
+                              {latest ? formatProfileMetricDisplayValue(latest) : "-"}
+                            </p>
+                          </div>
+                          <div className="rounded-xl bg-muted/40 px-3 py-2">
+                            <p className="text-xs uppercase text-muted-foreground">Trend</p>
+                            <p className="font-medium">{buildTrendSummary(rows)}</p>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
           </div>
 
-          <Card>
-            <CardHeader>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <Activity className="h-5 w-5" />
-                    {selectedOption.label}
-                  </CardTitle>
-                  <CardDescription>{selectedOption.description}</CardDescription>
+          <div className="space-y-6">
+            <SimpleTrendChart
+              description={selectedOption.description}
+              emptyMessage="Add measurements to build this trend."
+              formatValue={(value) =>
+                formatProfileMetricDisplayValue({ metric_type: selectedOption.type, value })
+              }
+              points={[...selectedRows].reverse().map((row) => ({
+                id: row.id,
+                label: formatDate(row.recorded_at),
+                value: row.value,
+                x: new Date(row.recorded_at).getTime(),
+              }))}
+              title={`${selectedOption.label} trend`}
+            />
+            <Card>
+              <CardHeader>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Activity className="h-5 w-5" />
+                      Measurements
+                    </CardTitle>
+                    <CardDescription>Edit or delete the records behind this trend.</CardDescription>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {selectedOption.type === "css_seconds_per_100m" ? (
+                      <Button onClick={() => setCssTestOpen(true)} size="sm" type="button">
+                        Record 400m / 200m test
+                      </Button>
+                    ) : null}
+                    {latestMetric ? (
+                      <Badge variant="secondary">
+                        Latest {formatDate(latestMetric.recorded_at)}
+                      </Badge>
+                    ) : null}
+                  </div>
                 </div>
-                {latestMetric ? (
-                  <Badge variant="secondary">Latest {formatDate(latestMetric.recorded_at)}</Badge>
-                ) : null}
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <MetricTrendChart
-                rows={selectedRows}
-                unit={PROFILE_METRIC_UNITS[selectedOption.type]}
-              />
-              <MetricRowsTable
-                emptyMessage={`No ${selectedOption.label.toLowerCase()} measurements yet.`}
-                onDelete={setDeleteMetric}
-                onEdit={setEditingMetric}
-                rows={selectedRows}
-              />
-            </CardContent>
-          </Card>
+              </CardHeader>
+              <CardContent>
+                <MetricRowsTable
+                  emptyMessage={`No ${selectedOption.label.toLowerCase()} measurements yet.`}
+                  onDelete={setDeleteMetric}
+                  onEdit={(metric) => setEditorTarget({ metric, mode: "edit" })}
+                  onOverride={(metric) => setEditorTarget({ metric, mode: "override" })}
+                  rows={selectedRows}
+                />
+              </CardContent>
+            </Card>
+          </div>
         </div>
       )}
 
       <MetricEditDialog
-        metric={editingMetric}
+        target={editorTarget}
         metricType={selectedMetricType}
-        onClose={() => setEditingMetric(null)}
+        onClose={() => setEditorTarget(null)}
         onSubmit={(values) => {
-          if (editingMetric?.id) {
+          if (editorTarget?.mode === "edit") {
             updateMutation.mutate({
-              id: editingMetric.id,
+              id: editorTarget.metric.id,
               notes: values.notes?.trim() || null,
               recorded_at: new Date(values.recorded_at).toISOString(),
               value: values.value,
@@ -263,7 +326,7 @@ function ProfileMetricsPage() {
 
           if (!user?.id) return;
           createMutation.mutate({
-            metric_type: selectedMetricType,
+            metric_type: editorTarget?.metric.metric_type ?? selectedMetricType,
             notes: values.notes?.trim() || null,
             profile_id: user.id,
             recorded_at: new Date(values.recorded_at).toISOString(),
@@ -273,6 +336,23 @@ function ProfileMetricsPage() {
         }}
         pending={createMutation.isPending || updateMutation.isPending}
       />
+
+      <Dialog open={cssTestOpen} onOpenChange={setCssTestOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>400m / 200m CSS test</DialogTitle>
+            <DialogDescription>
+              Enter both all-out swim times. They are validated and saved together as one CSS test,
+              not as editable effort entries.
+            </DialogDescription>
+          </DialogHeader>
+          <CssTestForm
+            onCancel={() => setCssTestOpen(false)}
+            onSubmit={recordCssTest}
+            pending={cssTestMutation.isPending}
+          />
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={!!deleteMetric} onOpenChange={(open) => !open && setDeleteMetric(null)}>
         <AlertDialogContent>
@@ -298,75 +378,17 @@ function ProfileMetricsPage() {
   );
 }
 
-function MetricTrendChart({ rows, unit }: { rows: ProfileMetricRow[]; unit: string }) {
-  const points = [...rows].reverse();
-  const values = points.map((row) => row.value);
-  const min = Math.min(...values, 0);
-  const max = Math.max(...values, 1);
-  const range = max - min || 1;
-  const coordinates = points
-    .map((row, index) => {
-      const x = points.length === 1 ? 50 : (index / (points.length - 1)) * 100;
-      const y = 90 - ((row.value - min) / range) * 70;
-      return `${x},${y}`;
-    })
-    .join(" ");
-
-  return (
-    <div className="rounded-2xl border bg-muted/20 p-4">
-      <div className="mb-3 flex items-center justify-between text-sm text-muted-foreground">
-        <span>Trend chart</span>
-        <span>{rows.length} records</span>
-      </div>
-      {rows.length === 0 ? (
-        <div className="flex h-56 items-center justify-center rounded-xl border border-dashed text-muted-foreground">
-          Add measurements to build this trend.
-        </div>
-      ) : (
-        <svg
-          className="h-56 w-full overflow-visible"
-          preserveAspectRatio="none"
-          viewBox="0 0 100 100"
-          role="img"
-          aria-label={`Metric trend in ${unit}`}
-        >
-          <polyline
-            fill="none"
-            points={coordinates}
-            stroke="currentColor"
-            strokeWidth="3"
-            vectorEffect="non-scaling-stroke"
-            className="text-primary"
-          />
-          {points.map((row, index) => {
-            const x = points.length === 1 ? 50 : (index / (points.length - 1)) * 100;
-            const y = 90 - ((row.value - min) / range) * 70;
-            return (
-              <circle
-                className="fill-background stroke-primary"
-                cx={x}
-                cy={y}
-                key={row.id}
-                r="2.5"
-                vectorEffect="non-scaling-stroke"
-              />
-            );
-          })}
-        </svg>
-      )}
-    </div>
-  );
-}
-
 function MetricRowsTable({
   emptyMessage,
   onDelete,
   onEdit,
+  onOverride,
   rows,
 }: {
   emptyMessage: string;
   onDelete: (row: ProfileMetricRow) => void;
   onEdit: (row: ProfileMetricRow) => void;
+  onOverride: (row: ProfileMetricRow) => void;
   rows: ProfileMetricRow[];
 }) {
   if (rows.length === 0) {
@@ -384,36 +406,60 @@ function MetricRowsTable({
           <TableRow>
             <TableHead>Recorded</TableHead>
             <TableHead>Value</TableHead>
+            <TableHead>Source</TableHead>
             <TableHead>Notes</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((row) => (
-            <TableRow className="cursor-pointer" key={row.id} onClick={() => onEdit(row)}>
-              <TableCell>{formatDateTime(row.recorded_at)}</TableCell>
-              <TableCell className="font-medium">
-                {row.value} {row.unit}
-              </TableCell>
-              <TableCell className="max-w-[280px] truncate text-muted-foreground">
-                {row.notes || "-"}
-              </TableCell>
-              <TableCell className="text-right">
-                <Button
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onDelete(row);
-                  }}
-                  size="sm"
-                  type="button"
-                  variant="ghost"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  <span className="sr-only">Delete</span>
-                </Button>
-              </TableCell>
-            </TableRow>
-          ))}
+          {rows.map((row) => {
+            const manual = isManualProfileMetric(row.source);
+            return (
+              <TableRow
+                className={manual ? "cursor-pointer" : undefined}
+                key={row.id}
+                onClick={() => manual && onEdit(row)}
+              >
+                <TableCell>{formatDateTime(row.recorded_at)}</TableCell>
+                <TableCell className="whitespace-nowrap font-medium">
+                  {formatProfileMetricDisplayValue(row)}
+                </TableCell>
+                <TableCell>
+                  <Badge variant={manual ? "secondary" : "outline"}>
+                    {formatObservationSource(row.source)}
+                  </Badge>
+                </TableCell>
+                <TableCell className="max-w-[280px] truncate text-muted-foreground">
+                  {row.notes || "-"}
+                </TableCell>
+                <TableCell className="text-right">
+                  {manual ? (
+                    <Button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onDelete(row);
+                      }}
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span className="sr-only">Delete</span>
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={() => onOverride(row)}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      Manual override
+                    </Button>
+                  )}
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </div>
@@ -421,29 +467,33 @@ function MetricRowsTable({
 }
 
 function MetricEditDialog({
-  metric,
   metricType,
   onClose,
   onSubmit,
   pending,
+  target,
 }: {
-  metric: ProfileMetricRow | null;
   metricType: ProfileMetricType;
   onClose: () => void;
   onSubmit: (values: ProfileMetricFormValues) => Promise<unknown> | unknown;
   pending: boolean;
+  target: MetricEditorTarget | null;
 }) {
-  const activeType = metric?.metric_type ?? metricType;
+  const activeType = target?.metric.metric_type ?? metricType;
+  const titlePrefix =
+    target?.mode === "edit" ? "Edit" : target?.mode === "override" ? "Override" : "Add";
 
   return (
-    <Dialog open={!!metric} onOpenChange={(open) => !open && onClose()}>
+    <Dialog open={!!target} onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {metric?.id ? "Edit" : "Add"} {formatMetricType(activeType)}
+            {titlePrefix} {formatMetricType(activeType)}
           </DialogTitle>
           <DialogDescription>
-            Clicked rows open here so you can modify or delete individual measurements.
+            {target?.mode === "override"
+              ? "The sourced observation stays read-only. Save a separate manual value to override it."
+              : "Save a dated manual measurement for this metric."}
           </DialogDescription>
         </DialogHeader>
         <ProfileMetricForm
@@ -451,7 +501,10 @@ function MetricEditDialog({
           onCancel={onClose}
           onSubmit={onSubmit}
           pending={pending}
-          values={getProfileMetricFormValues(activeType, metric)}
+          values={getProfileMetricFormValues(
+            activeType,
+            target?.mode === "edit" || target?.mode === "override" ? target.metric : undefined,
+          )}
         />
       </DialogContent>
     </Dialog>

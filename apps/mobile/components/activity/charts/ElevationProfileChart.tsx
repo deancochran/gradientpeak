@@ -1,11 +1,10 @@
-import { downsampleStream, removeNullValues } from "@repo/core";
-import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
-import { Text } from "@repo/ui/components/text";
+import { ChartCard, ChartEmptyState } from "@repo/ui/components/chart";
 import { LinearGradient, useFont, vec } from "@shopify/react-native-skia";
 import { useMemo } from "react";
 import { View } from "react-native";
 import { Area, CartesianChart, useChartPressState, useChartTransformState } from "victory-native";
 import { InteractiveChartValueTray } from "@/components/charts/InteractiveChartValueTray";
+import { buildElevationProfilePoints } from "@/lib/charts/elevationProfile";
 import { useTheme } from "@/lib/stores/theme-store";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 
@@ -34,46 +33,10 @@ export function ElevationProfileChart({
 
   // Prepare chart data
   const { chartData, stats } = useMemo(() => {
-    const { values: elevationValues, timestamps } = removeNullValues(
-      elevationStream.values as number[],
-      elevationStream.timestamps,
+    const elevationValues = (elevationStream.values as unknown[]).filter(
+      (value): value is number => typeof value === "number" && Number.isFinite(value),
     );
-
-    // Downsample for performance
-    const { values: sampledElevation, timestamps: sampledTimestamps } = downsampleStream(
-      elevationValues,
-      timestamps,
-      500,
-      "avg",
-    );
-
-    // Calculate distance if not provided
-    let xValues: number[];
-    if (distanceStream) {
-      const { values: distanceValues, timestamps: distanceTimestamps } = removeNullValues(
-        distanceStream.values as number[],
-        distanceStream.timestamps,
-      );
-      const { values: sampledDistance } = downsampleStream(
-        distanceValues,
-        distanceTimestamps,
-        500,
-        "max",
-      );
-      // Convert to km
-      xValues = sampledDistance.map((d) => d / 1000);
-    } else {
-      // Use time-based x-axis (seconds from start)
-      const startTime = sampledTimestamps[0] || 0;
-      xValues = sampledTimestamps.map((t) => (t - startTime) / 1000);
-    }
-
-    // Ensure x and elevation arrays are same length
-    const minLength = Math.min(xValues.length, sampledElevation.length);
-    const data = Array.from({ length: minLength }, (_, i) => ({
-      x: xValues[i],
-      elevation: sampledElevation[i],
-    }));
+    const data = buildElevationProfilePoints(elevationStream, distanceStream);
 
     // Calculate stats
     const totalAscent = elevationValues.reduce((sum, val, i) => {
@@ -88,8 +51,8 @@ export function ElevationProfileChart({
       return sum + (diff < 0 ? Math.abs(diff) : 0);
     }, 0);
 
-    const minElevation = Math.min(...elevationValues);
-    const maxElevation = Math.max(...elevationValues);
+    const minElevation = elevationValues.length > 0 ? Math.min(...elevationValues) : 0;
+    const maxElevation = elevationValues.length > 0 ? Math.max(...elevationValues) : 0;
 
     return {
       chartData: data,
@@ -102,106 +65,95 @@ export function ElevationProfileChart({
     };
   }, [elevationStream, distanceStream]);
 
+  const summary = [
+    { label: "Ascent", value: `${stats.totalAscent}m ↗` },
+    { label: "Descent", value: `${stats.totalDescent}m ↘` },
+    { label: "Range", value: `${stats.minElevation} - ${stats.maxElevation}m` },
+  ];
+  const accessibilityLabel = `${title}. Ascent ${stats.totalAscent} meters. Descent ${
+    stats.totalDescent
+  } meters. Elevation range ${stats.minElevation} to ${stats.maxElevation} meters.`;
+
   if (chartData.length === 0) {
-    return (
-      <Card>
-        {showHeader ? (
-          <CardHeader>
-            <CardTitle>{title}</CardTitle>
-          </CardHeader>
-        ) : null}
-        <CardContent>
-          <View style={{ height }} className="items-center justify-center bg-muted rounded-lg">
-            <Text className="text-muted-foreground">No elevation data available</Text>
-          </View>
-        </CardContent>
-      </Card>
+    const emptyState = (
+      <View style={{ height }}>
+        <ChartEmptyState message="No elevation data available" />
+      </View>
     );
+    return showHeader ? <ChartCard title={title}>{emptyState}</ChartCard> : emptyState;
   }
 
-  return (
-    <Card>
-      {showHeader ? (
-        <CardHeader>
-          <CardTitle>{title}</CardTitle>
-          {showStats && (
-            <View className="flex-row gap-4 mt-2">
-              <View>
-                <Text className="text-xs text-muted-foreground">Ascent</Text>
-                <Text className="text-sm font-semibold">{stats.totalAscent}m ↗</Text>
-              </View>
-              <View>
-                <Text className="text-xs text-muted-foreground">Descent</Text>
-                <Text className="text-sm font-semibold">{stats.totalDescent}m ↘</Text>
-              </View>
-              <View>
-                <Text className="text-xs text-muted-foreground">Range</Text>
-                <Text className="text-sm font-semibold">
-                  {stats.minElevation} - {stats.maxElevation}m
-                </Text>
-              </View>
-            </View>
-          )}
-        </CardHeader>
-      ) : null}
-      <CardContent>
-        <View style={{ height }}>
-          {font && (
-            <CartesianChart
-              data={chartData}
-              xKey="x"
-              yKeys={["elevation"]}
-              axisOptions={{
-                font,
-                labelColor: isDark ? "#a3a3a3" : "#525252",
-                lineColor: isDark ? "rgba(64,64,64,0.7)" : "rgba(212,212,212,0.85)",
-                lineWidth: 1,
-                formatXLabel: (value) =>
-                  distanceStream ? `${value.toFixed(1)}km` : `${Math.floor(value / 60)}m`,
-                formatYLabel: (value) => `${value.toFixed(0)}m`,
-              }}
-              chartPressState={state}
-              transformState={transformState}
-            >
-              {({ points, chartBounds }) => (
-                <Area
-                  points={points.elevation}
-                  y0={chartBounds.bottom}
-                  animate={{ type: "timing", duration: 300 }}
-                  curveType="natural"
-                >
-                  <LinearGradient
-                    start={vec(0, chartBounds.top)}
-                    end={vec(0, chartBounds.bottom)}
-                    colors={["#10b981", "#10b98160", "#10b98110"]}
-                  />
-                </Area>
-              )}
-            </CartesianChart>
-          )}
-        </View>
+  const chartContent = (
+    <>
+      <View
+        style={{ height }}
+        accessible
+        accessibilityRole="image"
+        accessibilityLabel={accessibilityLabel}
+      >
+        {font && (
+          <CartesianChart
+            data={chartData}
+            xKey="x"
+            yKeys={["elevation"]}
+            axisOptions={{
+              font,
+              labelColor: isDark ? "#a3a3a3" : "#525252",
+              lineColor: isDark ? "rgba(64,64,64,0.7)" : "rgba(212,212,212,0.85)",
+              lineWidth: 1,
+              formatXLabel: (value) =>
+                distanceStream ? `${value.toFixed(1)}km` : `${Math.floor(value / 60)}m`,
+              formatYLabel: (value) => `${value.toFixed(0)}m`,
+            }}
+            chartPressState={state}
+            transformState={transformState}
+          >
+            {({ points, chartBounds }) => (
+              <Area
+                points={points.elevation}
+                y0={chartBounds.bottom}
+                animate={{ type: "timing", duration: 300 }}
+                curveType="natural"
+              >
+                <LinearGradient
+                  start={vec(0, chartBounds.top)}
+                  end={vec(0, chartBounds.bottom)}
+                  colors={["#10b981", "#10b98160", "#10b98110"]}
+                />
+              </Area>
+            )}
+          </CartesianChart>
+        )}
+      </View>
 
-        {isActive ? (
-          <InteractiveChartValueTray
-            testID="elevation-profile-active-values"
-            items={[
-              {
-                key: "x",
-                label: distanceStream ? "Distance" : "Time",
-                value: distanceStream
-                  ? `${state.x.value.value.toFixed(2)} km`
-                  : `${Math.floor(state.x.value.value / 60)}m ${Math.floor(state.x.value.value % 60)}s`,
-              },
-              {
-                key: "elevation",
-                label: "Elevation",
-                value: `${state.y.elevation.value.value.toFixed(0)} m`,
-                color: "#10b981",
-              },
-            ]}
-          />
-        ) : null}
-      </CardContent>
-    </Card>
+      {isActive ? (
+        <InteractiveChartValueTray
+          testID="elevation-profile-active-values"
+          items={[
+            {
+              key: "x",
+              label: distanceStream ? "Distance" : "Time",
+              value: distanceStream
+                ? `${state.x.value.value.toFixed(2)} km`
+                : `${Math.floor(state.x.value.value / 60)}m ${Math.floor(state.x.value.value % 60)}s`,
+            },
+            {
+              key: "elevation",
+              label: "Elevation",
+              value: `${state.y.elevation.value.value.toFixed(0)} m`,
+              color: "#10b981",
+            },
+          ]}
+        />
+      ) : null}
+    </>
+  );
+
+  return showHeader ? (
+    <ChartCard title={title} summary={showStats ? summary : undefined}>
+      {chartContent}
+    </ChartCard>
+  ) : (
+    chartContent
   );
 }

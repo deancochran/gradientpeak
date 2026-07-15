@@ -13,6 +13,7 @@ import {
   type WahooApiError,
   type WahooUser,
 } from "../lib/integrations/wahoo/client";
+import { decryptNullableProviderToken, decryptProviderToken } from "../lib/provider-token-crypto";
 import { batchInsertActivityEfforts, deriveEffortsForSport } from "../utils/onboarding-helpers";
 import { isClearedProfileOverride } from "../utils/profile-override-observations";
 
@@ -331,8 +332,8 @@ export class OnboardingProviderEnrichmentService {
     }
 
     const client = createWahooClient({
-      accessToken: credentials.access_token,
-      refreshToken: credentials.refresh_token ?? undefined,
+      accessToken: decryptProviderToken(credentials.access_token),
+      refreshToken: decryptNullableProviderToken(credentials.refresh_token) ?? undefined,
     });
     const fieldsFilled: ImportedOnboardingField[] = [];
     const fieldsKept: ImportedOnboardingField[] = [];
@@ -454,8 +455,8 @@ export class OnboardingProviderEnrichmentService {
 
     const fieldsImported: ImportedOnboardingField[] = [];
     const client = createWahooClient({
-      accessToken: credentials.access_token,
-      refreshToken: credentials.refresh_token ?? undefined,
+      accessToken: decryptProviderToken(credentials.access_token),
+      refreshToken: decryptNullableProviderToken(credentials.refresh_token) ?? undefined,
     });
 
     try {

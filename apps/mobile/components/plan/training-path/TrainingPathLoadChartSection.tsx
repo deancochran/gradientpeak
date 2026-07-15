@@ -8,20 +8,16 @@ import { AppFormModal } from "@/components/shared/AppFormModal";
 import { DailyTrainingAdjustmentChart } from "./DailyTrainingAdjustmentChart";
 import { TrainingPathChart } from "./TrainingPathChart";
 import { TrainingPathLegend } from "./TrainingPathLegend";
+import {
+  buildSelectedWeekBucket,
+  type TrainingPathSelectedWeekBucket,
+} from "./trainingPathSelectedWeekBucket";
 import type { TrainingPathViewModel } from "./trainingPathTypes";
 
 type ChartEmptyTone = "empty" | "loading" | "unavailable";
 type TrainingPathSelectionMode = "day" | "week";
 type DailyPoint = ComponentProps<typeof DailyTrainingAdjustmentChart>["points"][number];
-type SelectedWeekBucket = {
-  actualOrScheduledLoadTss: number;
-  completedLoadTss: number;
-  plannedLoadTss: number;
-  points: DailyPoint[];
-  targetLoadTss: number;
-  weekEndDate: string;
-  weekStartDate: string;
-};
+type SelectedWeekBucket = TrainingPathSelectedWeekBucket<DailyPoint>;
 
 export type TrainingPathChartSectionContext = {
   mode: TrainingPathSelectionMode;
@@ -31,33 +27,6 @@ export type TrainingPathChartSectionContext = {
   selectedWeekBucket: SelectedWeekBucket | null;
   selectedWeekStart: string | null;
 };
-
-function numberValue(value: number | null | undefined) {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
-}
-
-function buildSelectedWeekBucket(input: {
-  points: DailyPoint[];
-  weekEnd: string;
-  weekStart: string;
-}): SelectedWeekBucket | null {
-  const points = input.points.filter(
-    (point) => point.date >= input.weekStart && point.date <= input.weekEnd,
-  );
-  if (points.length === 0) return null;
-  const sum = (selector: (point: DailyPoint) => number | null | undefined) =>
-    points.reduce((total, point) => total + numberValue(selector(point)), 0);
-  return {
-    actualOrScheduledLoadTss: sum((point) => point.actualOrScheduledLoadTss),
-    completedLoadTss: sum((point) => point.completedLoadTss),
-    plannedLoadTss:
-      sum((point) => point.plannedLoadTss) + sum((point) => point.tentativePlannedLoadTss),
-    points,
-    targetLoadTss: sum((point) => point.targetLoadTss),
-    weekEndDate: input.weekEnd,
-    weekStartDate: input.weekStart,
-  };
-}
 
 type TrainingPathLoadChartSectionProps = {
   chartHeight?: number;

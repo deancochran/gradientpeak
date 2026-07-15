@@ -161,6 +161,26 @@ describe("DailyTrainingAdjustmentChart", () => {
     expect(screen.getByText("+15 TSS")).toBeTruthy();
   });
 
+  it("omits recommendation and target-comparison copy when target load is unavailable", () => {
+    render(
+      <DailyTrainingAdjustmentChart
+        selectedDate="2026-06-02"
+        points={[
+          {
+            actualOrScheduledLoadTss: 35,
+            date: "2026-06-02",
+            hasTargetLoad: false,
+            plannedLoadTss: 35,
+            targetLoadTss: 0,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.queryByText("Recommended")).toBeNull();
+    expect(screen.queryByText("On target")).toBeNull();
+  });
+
   it("centers the initial controlled date only after viewport and content readiness", () => {
     render(
       <DailyTrainingAdjustmentChart

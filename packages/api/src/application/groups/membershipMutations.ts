@@ -1,6 +1,6 @@
 import { GROUP_MEMBERSHIP_ROLES, GROUP_MEMBERSHIP_STATUSES } from "@repo/core/groups";
 import { groupMemberships } from "@repo/db";
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 
 type MembershipRow = typeof groupMemberships.$inferSelect;
@@ -36,32 +36,6 @@ export async function setGroupMembershipActive(
   const role = input.role ?? GROUP_MEMBERSHIP_ROLE_MEMBER;
   const now = new Date();
   const [membership] = await db
-    .select()
-    .from(groupMemberships)
-    .where(
-      and(
-        eq(groupMemberships.group_id, input.groupId),
-        eq(groupMemberships.profile_id, input.profileId),
-      ),
-    )
-    .limit(1);
-
-  if (membership) {
-    const [updated] = await db
-      .update(groupMemberships)
-      .set({ role, status: GROUP_MEMBERSHIP_STATUS_ACTIVE, updated_at: now })
-      .where(
-        and(
-          eq(groupMemberships.group_id, input.groupId),
-          eq(groupMemberships.profile_id, input.profileId),
-        ),
-      )
-      .returning();
-
-    return updated as MembershipRow;
-  }
-
-  const [created] = await db
     .insert(groupMemberships)
     .values({
       group_id: input.groupId,
@@ -69,7 +43,15 @@ export async function setGroupMembershipActive(
       role,
       status: GROUP_MEMBERSHIP_STATUS_ACTIVE,
     })
+    .onConflictDoUpdate({
+      target: [groupMemberships.group_id, groupMemberships.profile_id],
+      set: {
+        role: sql`case when ${groupMemberships.role} in ('owner', 'admin') then ${groupMemberships.role} else ${role} end`,
+        status: sql`case when ${groupMemberships.status} = 'removed' then ${groupMemberships.status} else ${GROUP_MEMBERSHIP_STATUS_ACTIVE} end`,
+        updated_at: now,
+      },
+    })
     .returning();
 
-  return created as MembershipRow;
+  return membership as MembershipRow;
 }

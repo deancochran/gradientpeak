@@ -48,4 +48,74 @@ describe("onboarding schema composition", () => {
       ]),
     );
   });
+
+  it("keeps legacy payloads compatible and accepts strict baseline field sources", () => {
+    expect(
+      completeOnboardingSchema.parse({
+        full_name: "Legacy Athlete",
+        username: "legacy-athlete",
+      }).baseline_field_sources,
+    ).toBeUndefined();
+
+    expect(
+      completeOnboardingSchema.parse({
+        full_name: "Metadata Athlete",
+        username: "metadata-athlete",
+        baseline_field_sources: {
+          dob: "cleared",
+          gender: "imported",
+          weight_kg: "manual",
+          max_hr: "estimated",
+          resting_hr: "manual",
+          ftp: "imported",
+          threshold_pace_seconds_per_km: "cleared",
+          css_seconds_per_hundred_meters: "estimated",
+        },
+      }).baseline_field_sources,
+    ).toEqual({
+      dob: "cleared",
+      gender: "imported",
+      weight_kg: "manual",
+      max_hr: "estimated",
+      resting_hr: "manual",
+      ftp: "imported",
+      threshold_pace_seconds_per_km: "cleared",
+      css_seconds_per_hundred_meters: "estimated",
+    });
+
+    expect(
+      completeOnboardingSchema.safeParse({
+        full_name: "Metadata Athlete",
+        username: "metadata-athlete",
+        baseline_field_sources: { ftp: "guessed" },
+      }).success,
+    ).toBe(false);
+    expect(
+      completeOnboardingSchema.safeParse({
+        full_name: "Metadata Athlete",
+        username: "metadata-athlete",
+        baseline_field_sources: { vo2max: "manual" },
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each([30, 300])("accepts canonical weight boundary %skg", (weight_kg) => {
+    expect(
+      completeOnboardingSchema.safeParse({
+        full_name: "Weighted Athlete",
+        username: "weighted-athlete",
+        weight_kg,
+      }).success,
+    ).toBe(true);
+  });
+
+  it.each([29.99, 300.01])("rejects weight outside canonical bounds: %skg", (weight_kg) => {
+    expect(
+      completeOnboardingSchema.safeParse({
+        full_name: "Weighted Athlete",
+        username: "weighted-athlete",
+        weight_kg,
+      }).success,
+    ).toBe(false);
+  });
 });

@@ -143,12 +143,24 @@ jest.mock("react-native", () => ({
 
 jest.mock("@gorhom/bottom-sheet", () => ({
   __esModule: true,
-  default: ({ children, ...props }: any) => React.createElement("BottomSheet", props, children),
+  default: ({ children, footerComponent, ...props }: any) =>
+    React.createElement(
+      "BottomSheet",
+      props,
+      children,
+      footerComponent?.({ animatedFooterPosition: { value: 0 } }),
+    ),
   BottomSheetBackdrop: (props: any) => React.createElement("BottomSheetBackdrop", props),
+  BottomSheetFooter: createHost("BottomSheetFooter"),
   BottomSheetScrollView: ({ children, ...props }: any) =>
     React.createElement("BottomSheetScrollView", props, children),
   BottomSheetView: ({ children, ...props }: any) =>
     React.createElement("BottomSheetView", props, children),
+}));
+
+jest.mock("react-native-safe-area-context", () => ({
+  __esModule: true,
+  useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
 }));
 
 jest.mock("expo-router", () => ({
@@ -431,6 +443,27 @@ describe("discover screen", () => {
         expect.objectContaining({ enabled: false, getNextPageParam: expect.any(Function) }),
       );
     });
+  });
+
+  it("keeps the shared search selectors, accessibility, sanitization, and clear debounce", () => {
+    renderNative(<DiscoverScreen />);
+
+    const searchInput = screen.getByTestId("discover-search-input");
+    expect(screen.getByLabelText("Search activity plans")).toBe(searchInput);
+    expect(screen.getByTestId("discover-filter-button")).toBeTruthy();
+
+    act(() => {
+      fireEvent.changeText(searchInput, `  ${"r".repeat(100)}`);
+    });
+    expect(searchInput.props.value).toHaveLength(80);
+    expect(screen.getByTestId("discover-search-clear")).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId("discover-search-clear"));
+    expect(screen.getByTestId("discover-search-input").props.value).toBe("");
+    expect(activityPlansUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ search: undefined }),
+      expect.anything(),
+    );
   });
 
   it("keeps only activity-plan sort and filters inside the bottom sheet by default", async () => {

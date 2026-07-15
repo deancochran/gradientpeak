@@ -194,12 +194,14 @@ function rows(): AthleteIntelligenceRows {
         id: "effort-1",
         activityId: "activity-1",
         recordedAt: new Date("2026-05-31T10:10:00.000Z"),
-        sport: "cycling",
+        sport: "bike",
         kind: "power",
         durationSeconds: 300,
         startOffsetSeconds: 600,
         unit: "watts",
         value: 350,
+        source: "provider",
+        provenance: { observation_type: "observed", trusted: true },
         createdAt: new Date("2026-05-31T10:10:00.000Z"),
         updatedAt: new Date("2026-05-31T10:10:00.000Z"),
       },
@@ -515,6 +517,16 @@ describe("materializeAthleteIntelligenceModelInput", () => {
       temperature: "fahrenheit",
     });
     expect(result.activities[0]).toMatchObject({ athleteId: profileId, sport: "bike" });
+    expect(result.activities[0]?.metrics.trainingLoad).toMatchObject({
+      value: 225,
+      identity: {
+        sport: "bike",
+        family: "tss",
+        method: "power_threshold",
+        version: "1",
+        sourceDefinition: "activity_analysis",
+      },
+    });
     expect(result.efforts[0]).toMatchObject({
       kind: "power",
       powerWatts: 350,
@@ -545,6 +557,132 @@ describe("materializeAthleteIntelligenceModelInput", () => {
         (item) => item.athleteId === profileId && Date.parse(item.observedAt) <= asOf.getTime(),
       ),
     ).toBe(true);
+  });
+
+  it("materializes canonical running threshold pace and swimming CSS metrics with sport scope", async () => {
+    const sourceRows = rows();
+    sourceRows.metrics.push(
+      {
+        profileId,
+        id: "metric-run-threshold",
+        referenceActivityId: null,
+        type: "threshold_pace_seconds_per_km",
+        value: 270,
+        unit: "s/km",
+        recordedAt: new Date("2026-05-31T00:00:00.000Z"),
+        createdAt: new Date("2026-05-31T00:00:00.000Z"),
+        updatedAt: new Date("2026-05-31T00:00:00.000Z"),
+      },
+      {
+        profileId,
+        id: "metric-swim-css",
+        referenceActivityId: null,
+        type: "css_seconds_per_100m",
+        value: 95,
+        unit: "s/100m",
+        recordedAt: new Date("2026-05-31T00:00:00.000Z"),
+        createdAt: new Date("2026-05-31T00:00:00.000Z"),
+        updatedAt: new Date("2026-05-31T00:00:00.000Z"),
+      },
+    );
+    const dataSource: AthleteIntelligenceDataSource = { read: async () => sourceRows };
+
+    const result = await materializeAthleteIntelligenceModelInput({ dataSource, profileId, asOf });
+    const run = result.metricEvidence.find(
+      (metric) => metric.metricType === "threshold_pace_seconds_per_km",
+    );
+    const swim = result.metricEvidence.find(
+      (metric) => metric.metricType === "css_seconds_per_100m",
+    );
+
+    expect(run?.value).toMatchObject({ value: 270, unit: "seconds_per_km" });
+    expect(swim?.value).toMatchObject({ value: 95, unit: "seconds_per_100m" });
+    expect(result.evidenceRegistry[run?.value.evidenceSourceIds[0] ?? ""]?.sport).toBe("run");
+    expect(result.evidenceRegistry[swim?.value.evidenceSourceIds[0] ?? ""]?.sport).toBe("swim");
+  });
+
+  it("keeps activity training load unknown when no compatible dynamic method is available", async () => {
+    const value = rows();
+    value.metrics = value.metrics.filter(
+      (metric) => metric.type !== "ftp" && metric.type !== "lthr",
+    );
+    const result = await materializeAthleteIntelligenceModelInput({
+      dataSource: readRows(value),
+      profileId,
+      asOf,
+    });
+
+    expect(result.activities[0]?.metrics.trainingLoad).toMatchObject({
+      value: null,
+      identity: null,
+    });
+  });
+
+  it("excludes modeled onboarding curves from observed efforts", async () => {
+    const value = rows();
+    value.efforts = [
+      {
+        ...first(value.efforts),
+        id: "modeled-effort",
+        source: "estimated",
+        method: "onboarding_modeled_curve",
+        provenance: { observation_type: "modeled" },
+      },
+    ];
+    const result = await materializeAthleteIntelligenceModelInput({
+      dataSource: readRows(value),
+      profileId,
+      asOf,
+    });
+
+    expect(result.efforts).toEqual([]);
+    expect(result.evidenceRegistry["effort:modeled-effort:value-modeled"]).toMatchObject({
+      validityState: "unknown",
+      rawObservation: { value: 350, unit: "watts" },
+    });
+  });
+
+  it("preserves reference-activity sport across current LTHR observations", async () => {
+    const value = rows();
+    const genericLthr = value.metrics.find((metric) => metric.type === "lthr");
+    if (!genericLthr) throw new Error("fixture LTHR missing");
+    value.metrics.push(
+      {
+        ...genericLthr,
+        id: "run-lthr",
+        value: 168,
+        referenceActivityId: "run-reference",
+        referenceActivityType: "run",
+        recordedAt: new Date("2026-05-28T00:00:00.000Z"),
+      },
+      {
+        ...genericLthr,
+        id: "bike-lthr",
+        value: 178,
+        referenceActivityId: "bike-reference",
+        referenceActivityType: "bike",
+        recordedAt: new Date("2026-05-29T00:00:00.000Z"),
+      },
+    );
+    const result = await materializeAthleteIntelligenceModelInput({
+      dataSource: readRows(value),
+      profileId,
+      asOf,
+    });
+    const lthrEvidence = result.metricEvidence.filter((metric) => metric.metricType === "lthr");
+
+    expect(lthrEvidence).toHaveLength(3);
+    expect(
+      lthrEvidence.map((metric) => {
+        const evidenceId = first(metric.value.evidenceSourceIds);
+        return [metric.value.value, result.evidenceRegistry[evidenceId]?.sport];
+      }),
+    ).toEqual(
+      expect.arrayContaining([
+        [168, "run"],
+        [178, "bike"],
+      ]),
+    );
   });
 
   it("rejects a data source that leaks another profile", async () => {
@@ -663,7 +801,15 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     const effort = first(value.efforts);
     value.efforts = [
       { ...effort, id: "kw", value: 0.4, unit: "kW" },
-      { ...effort, id: "mph", activityId: null, kind: "speed", value: 10, unit: "mph" },
+      {
+        ...effort,
+        id: "mph",
+        activityId: null,
+        sport: "run",
+        kind: "speed",
+        value: 10,
+        unit: "mph",
+      },
       { ...effort, id: "unsupported", activityId: null, value: 10, unit: "horsepower" },
     ];
     const result = await materializeAthleteIntelligenceModelInput({
@@ -683,7 +829,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     expect(result.evidenceRegistry["effort:unsupported:value-raw"]).toMatchObject({
       lineageGroupId: "activity:effort-unsupported",
       rawObservation: { value: 10, unit: "horsepower" },
-      validityState: "valid",
+      validityState: "invalid",
       compatibilityState: "incompatible_unit",
     });
   });

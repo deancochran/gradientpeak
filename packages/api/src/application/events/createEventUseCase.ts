@@ -28,6 +28,7 @@ type NormalizedCreateInput = {
     exdates?: string[];
     exceptions?: unknown[];
   } | null;
+  routeId: string | null;
   sourceProvider: string | null;
   startsAt: string;
   status: PublicEventStatus;
@@ -144,6 +145,28 @@ export async function createEventUseCase<
     }
   }
 
+  if (normalizedCreate.routeId) {
+    if (permissions) {
+      await permissions.requireRead(
+        ctx.session.user.id,
+        { type: "activity_route", id: normalizedCreate.routeId },
+        "Route not found or not accessible",
+      );
+    } else {
+      const route = await eventWriteRepository.getAccessibleActivityRoute({
+        profileId: ctx.session.user.id,
+        routeId: normalizedCreate.routeId,
+      });
+
+      if (!route) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Route not found or not accessible",
+        });
+      }
+    }
+  }
+
   const trainingPlanId = normalizedCreate.trainingPlanId;
 
   if (trainingPlanId) {
@@ -168,7 +191,7 @@ export async function createEventUseCase<
     }
   }
 
-  let data;
+  let data: CreatedEventRecord | undefined;
   let createdEvents: CreatedEventRecord[] = [];
   try {
     const occurrences = recurrence
@@ -185,7 +208,7 @@ export async function createEventUseCase<
           },
         ];
 
-    data = await eventWriteRepository.createOwnedEvent({
+    const sharedEventInput = {
       profileId: ctx.session.user.id,
       eventType: dependencies.toDbEventType(normalizedEventType),
       title: normalizedCreate.title,
@@ -200,35 +223,29 @@ export async function createEventUseCase<
       description: normalizedCreate.description,
       recurrenceRule: recurrence?.rule ?? null,
       recurrenceTimezone: recurrence?.timezone ?? null,
-      seriesId: null,
-      occurrenceKey: recurrence ? (occurrences[0]?.occurrenceKey ?? null) : null,
-      originalStartsAt: recurrence ? (occurrences[0]?.startsAt ?? null) : null,
+      routeId: normalizedCreate.routeId,
       sourceProvider: normalizedCreate.sourceProvider,
-    });
-    createdEvents = [data as CreatedEventRecord];
+    };
 
-    for (const occurrence of occurrences.slice(1)) {
-      const occurrenceData = await eventWriteRepository.createOwnedEvent({
-        profileId: ctx.session.user.id,
-        eventType: dependencies.toDbEventType(normalizedEventType),
-        title: normalizedCreate.title,
-        allDay: normalizedCreate.allDay,
-        timezone: normalizedCreate.timezone,
+    createdEvents = (await eventWriteRepository.createOwnedEvents({
+      anchor: {
+        ...sharedEventInput,
+        seriesId: null,
+        occurrenceKey: recurrence ? (occurrences[0]?.occurrenceKey ?? null) : null,
+        originalStartsAt: recurrence ? (occurrences[0]?.startsAt ?? null) : null,
+      },
+      occurrences: occurrences.slice(1).map((occurrence) => ({
+        ...sharedEventInput,
         startsAt: occurrence.startsAt,
         endsAt: occurrence.endsAt,
-        status: normalizedCreate.status,
-        activityPlanId: normalizedCreate.activityPlanId,
-        trainingPlanId,
-        notes: normalizedCreate.notes,
-        description: normalizedCreate.description,
-        recurrenceRule: recurrence?.rule ?? null,
-        recurrenceTimezone: recurrence?.timezone ?? null,
-        seriesId: data.id,
         occurrenceKey: occurrence.occurrenceKey,
         originalStartsAt: occurrence.startsAt,
-        sourceProvider: normalizedCreate.sourceProvider,
-      });
-      createdEvents.push(occurrenceData as CreatedEventRecord);
+      })),
+    })) as CreatedEventRecord[];
+    data = createdEvents[0];
+
+    if (!data) {
+      throw new Error("Failed to create event");
     }
   } catch (error) {
     throw new TRPCError({

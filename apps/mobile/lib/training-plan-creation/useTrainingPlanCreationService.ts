@@ -331,8 +331,15 @@ export function useTrainingPlanCreationService({
     );
   }, [planId, previewLifecycle, state, updatePlanMutation]);
 
-  const savePlan = useMemo(
-    () => ({
+  const savePlan = useMemo(() => {
+    const readiness = deriveTrainingPlanReadinessPresentation({
+      canSave: localProjection.saveReadiness.canSave,
+      localBlockerCount: localProjection.saveReadiness.blockers.length,
+      mode,
+      previewLifecycle,
+      saveLifecycle: activeSaveLifecycle,
+    });
+    return {
       mode,
       label: mode === "edit" ? "Save" : "Create",
       canSave: localProjection.saveReadiness.canSave,
@@ -340,29 +347,25 @@ export function useTrainingPlanCreationService({
       degradedReason: null,
       isPending: createPlanMutation.isPending || updatePlanMutation.isPending,
       previewLifecycle,
-      readiness: deriveTrainingPlanReadinessPresentation({
-        canSave: localProjection.saveReadiness.canSave,
-        localBlockerCount: localProjection.saveReadiness.blockers.length,
-        mode,
-        previewLifecycle,
-        saveLifecycle: activeSaveLifecycle,
-      }),
+      readiness: {
+        ...readiness,
+        detail: `Save readiness: ${readiness.detail}`,
+      },
       route: "canonical" as const,
       saveLifecycle: activeSaveLifecycle,
       execute: mode === "edit" ? updatePlan : createPlan,
-    }),
-    [
-      activeSaveLifecycle,
-      createPlan,
-      createPlanMutation.isPending,
-      localProjection.saveReadiness.blockers,
-      localProjection.saveReadiness.canSave,
-      mode,
-      previewLifecycle,
-      updatePlan,
-      updatePlanMutation.isPending,
-    ],
-  );
+    };
+  }, [
+    activeSaveLifecycle,
+    createPlan,
+    createPlanMutation.isPending,
+    localProjection.saveReadiness.blockers,
+    localProjection.saveReadiness.canSave,
+    mode,
+    previewLifecycle,
+    updatePlan,
+    updatePlanMutation.isPending,
+  ]);
   const viewModel = useMemo(
     () => ({
       strategy: {

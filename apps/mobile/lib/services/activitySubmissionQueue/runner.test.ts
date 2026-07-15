@@ -66,6 +66,28 @@ describe("activity submission queue runner", () => {
     vi.clearAllMocks();
   });
 
+  it("coalesces concurrent execution for the same queue job", async () => {
+    let releaseCreate!: () => void;
+    const createGate = new Promise<void>((resolve) => {
+      releaseCreate = resolve;
+    });
+    const createFromRecordingSummary = vi.fn(async () => {
+      await createGate;
+      return { id: "activity-1", ingestion: { id: "ingestion-1" } };
+    });
+    const deps = createDeps({ createFromRecordingSummary });
+
+    const first = runActivitySubmissionQueueJob(baseJob, deps);
+    const second = runActivitySubmissionQueueJob(baseJob, deps);
+    releaseCreate();
+
+    await expect(Promise.all([first, second])).resolves.toMatchObject([
+      { status: "complete" },
+      { status: "complete" },
+    ]);
+    expect(createFromRecordingSummary).toHaveBeenCalledTimes(1);
+  });
+
   it("creates, uploads, processes, and persists progress after each step", async () => {
     const deps = createDeps();
 
@@ -98,10 +120,19 @@ describe("activity submission queue runner", () => {
     });
     expect(persistedHistory.map((job) => job.status)).toEqual([
       "creating_activity",
+      "creating_activity",
+      "uploading",
       "uploading",
       "processing",
       "complete",
     ]);
+    expect(persistedHistory[1]).toMatchObject({
+      activityId: "activity-1",
+      ingestionId: "ingestion-1",
+    });
+    expect(persistedHistory[3]).toMatchObject({
+      remoteFilePath: "activities/profile-1/uploads/activity.fit",
+    });
   });
 
   it("preserves a failed job and increments attempts on error", async () => {
@@ -136,6 +167,7 @@ describe("activity submission queue runner", () => {
     const result = await runActivitySubmissionQueueJob(retryJob, deps);
 
     expect(result.status).toBe("complete");
+    expect(result.attempts).toBe(1);
     expect(deps.createFromRecordingSummary).not.toHaveBeenCalled();
     expect(deps.getSignedUploadUrl).not.toHaveBeenCalled();
     expect(deps.uploadToSignedUrl).not.toHaveBeenCalled();

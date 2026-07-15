@@ -168,6 +168,8 @@ describe("athlete metric roles", () => {
   it("maps every approved metric to its exact approved role", () => {
     expect(athleteMetricRoleByType).toEqual({
       ftp: "direct_threshold_evidence",
+      threshold_pace_seconds_per_km: "direct_threshold_evidence",
+      css_seconds_per_100m: "direct_threshold_evidence",
       lthr: "threshold_intensity_context",
       max_hr: "heart_rate_normalization",
       resting_hr: "recovery_baseline_context",

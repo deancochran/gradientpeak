@@ -192,27 +192,18 @@ describe("feedRouter", () => {
         avatar_url: "https://example.com/owner.png",
       },
       has_liked: true,
-      derived: {
-        tss: 82,
-        intensity_factor: 0.91,
-        computed_as_of: "2026-04-03T11:00:00.000Z",
-      },
+      derived: null,
       ingestion: null,
     });
     expect(analysisMocks.buildActivityDerivedSummaryMap).toHaveBeenCalledWith(
       expect.objectContaining({
         profileId: VIEWER_ID,
-        activities: expect.arrayContaining([
-          expect.objectContaining({
-            id: ACTIVITY_ID,
-            profile_id: OWNER_ID,
-            elevation_gain_meters: 450.25,
-          }),
+        activities: [
           expect.objectContaining({
             id: ACTIVITY_ID_2,
             profile_id: VIEWER_ID,
           }),
-        ]),
+        ],
       }),
     );
     expect(db.execute).toHaveBeenCalledTimes(2);
@@ -330,7 +321,7 @@ describe("feedRouter", () => {
         [
           {
             id: ACTIVITY_ID,
-            profile_id: OWNER_ID,
+            profile_id: VIEWER_ID,
             name: "Morning Ride",
             type: "ride",
             started_at: new Date("2026-04-03T10:00:00.000Z"),
@@ -349,7 +340,7 @@ describe("feedRouter", () => {
             likes_count: 4,
             is_private: false,
             created_at: new Date("2026-04-03T11:05:00.000Z"),
-            profile_username: "owner",
+            profile_username: "viewer",
             profile_avatar_url: "https://example.com/owner.png",
           },
         ],

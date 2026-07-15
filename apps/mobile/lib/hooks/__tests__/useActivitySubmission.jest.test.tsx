@@ -1,6 +1,8 @@
 import { act, renderHook, waitFor } from "@testing-library/react-native";
+import type { ActivitySubmissionQueueJob } from "@/lib/services/activitySubmissionQueue";
 
 const upsertJobMock = jest.fn(async () => undefined);
+const loadJobMock = jest.fn(async (): Promise<ActivitySubmissionQueueJob | null> => null);
 const createFromRecordingSummaryMock = jest.fn(async () => ({
   id: "activity-1",
   ingestion: { id: "ingestion-1", status: "pending_upload", source: "mobile_recording" },
@@ -48,6 +50,8 @@ jest.mock("@/lib/services/activitySubmissionQueue", () => {
   return {
     __esModule: true,
     ...actual,
+    loadActivitySubmissionQueueJobByArtifactId: (...args: unknown[]) =>
+      (loadJobMock as jest.Mock)(...args),
     upsertActivitySubmissionQueueJob: (...args: unknown[]) => (upsertJobMock as jest.Mock)(...args),
   };
 });
@@ -129,6 +133,7 @@ const { useActivitySubmission } = require("../useActivitySubmission");
 describe("useActivitySubmission", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    loadJobMock.mockResolvedValue(null);
   });
 
   it("queues a finalized artifact, creates the backend activity, and continues upload processing", async () => {
@@ -165,5 +170,94 @@ describe("useActivitySubmission", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(clearPendingFinalizedArtifactMock).toHaveBeenCalledTimes(1);
     expect(deleteFinalizedArtifactFilesMock).toHaveBeenCalledWith(artifact);
+  });
+
+  it("continues a persisted failed job without rebuilding completed progress", async () => {
+    loadJobMock.mockResolvedValue({
+      id: "session-1",
+      artifactId: "session-1",
+      sessionId: "session-1",
+      localActivityFilePath: "file:///activity.fit",
+      localActivityFileSize: 1234,
+      streamArtifactPaths: ["file:///streams.json"],
+      draft: {
+        profileId: "profile-1",
+        startedAt: "2026-01-01T10:00:00.000Z",
+        finishedAt: "2026-01-01T11:00:00.000Z",
+        name: "Persisted ride",
+        activityType: "bike",
+        durationSeconds: 3600,
+        movingSeconds: 3500,
+        distanceMeters: 25000,
+      },
+      activityId: "activity-existing",
+      ingestionId: "ingestion-existing",
+      remoteFilePath: "activities/profile-1/existing.fit",
+      status: "failed",
+      attempts: 3,
+      lastError: "app restarted",
+      createdAt: "2026-01-01T11:00:00.000Z",
+      updatedAt: "2026-01-01T11:05:00.000Z",
+    });
+
+    const { result } = renderHook(() => useActivitySubmission(service as any));
+    await waitFor(() => expect(result.current.isReady).toBe(true));
+
+    await act(async () => {
+      await expect(result.current.submit()).resolves.toBe(true);
+    });
+
+    expect(loadJobMock).toHaveBeenCalledWith("session-1");
+    expect(createFromRecordingSummaryMock).not.toHaveBeenCalled();
+    expect(getSignedUploadUrlMock).not.toHaveBeenCalled();
+    expect(uploadToSignedUrlMock).not.toHaveBeenCalled();
+    expect(markUploadedAndProcessMock).toHaveBeenCalledWith({
+      activityId: "activity-existing",
+      ingestionId: "ingestion-existing",
+      activityFilePath: "activities/profile-1/existing.fit",
+      fileSize: 1234,
+      fileType: "fit",
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+  });
+
+  it("keeps finalized artifact files when continuation fails", async () => {
+    loadJobMock.mockResolvedValue({
+      id: "session-1",
+      artifactId: "session-1",
+      sessionId: "session-1",
+      localActivityFilePath: "file:///activity.fit",
+      localActivityFileSize: 1234,
+      streamArtifactPaths: ["file:///streams.json"],
+      draft: {
+        profileId: "profile-1",
+        startedAt: "2026-01-01T10:00:00.000Z",
+        finishedAt: "2026-01-01T11:00:00.000Z",
+        name: "Persisted ride",
+        activityType: "bike",
+        durationSeconds: 3600,
+        movingSeconds: 3500,
+        distanceMeters: 25000,
+      },
+      activityId: "activity-existing",
+      ingestionId: "ingestion-existing",
+      remoteFilePath: "activities/profile-1/existing.fit",
+      status: "failed",
+      attempts: 1,
+      createdAt: "2026-01-01T11:00:00.000Z",
+      updatedAt: "2026-01-01T11:05:00.000Z",
+    });
+    markUploadedAndProcessMock.mockResolvedValueOnce({ success: false });
+
+    const { result } = renderHook(() => useActivitySubmission(service as any));
+    await waitFor(() => expect(result.current.isReady).toBe(true));
+
+    await act(async () => {
+      await result.current.submit();
+    });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(deleteFinalizedArtifactFilesMock).not.toHaveBeenCalled();
+    expect(clearPendingFinalizedArtifactMock).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,5 @@
 import type { CompleteOnboarding } from "@repo/core";
-import type { OnboardingData } from "@/components/onboarding/types";
+import type { OnboardingData, OnboardingFieldSources } from "@/components/onboarding/types";
 
 type BuildCompleteOnboardingInputResult =
   | { ok: true; input: CompleteOnboarding; profile: { full_name: string; username: string } }
@@ -7,6 +7,7 @@ type BuildCompleteOnboardingInputResult =
 
 export function buildCompleteOnboardingInput(
   data: OnboardingData,
+  fieldSources: OnboardingFieldSources = {},
 ): BuildCompleteOnboardingInputResult {
   const fullName = data.full_name.trim();
   const username = data.username.trim();
@@ -19,6 +20,23 @@ export function buildCompleteOnboardingInput(
 
   if (dobDate && Number.isNaN(dobDate.getTime())) {
     return { ok: false, error: "Please enter a valid date of birth." };
+  }
+
+  const baselineFieldSources: NonNullable<CompleteOnboarding["baseline_field_sources"]> = {};
+  const sourceMappings = [
+    ["dob", "dob"],
+    ["gender", "gender"],
+    ["weight_kg", "weight_kg"],
+    ["max_hr", "max_hr"],
+    ["resting_hr", "resting_hr"],
+    ["ftp", "ftp"],
+    ["threshold_pace", "threshold_pace_seconds_per_km"],
+    ["css", "css_seconds_per_hundred_meters"],
+  ] as const;
+
+  for (const [mobileField, transportField] of sourceMappings) {
+    const source = fieldSources[mobileField]?.kind;
+    if (source) baselineFieldSources[transportField] = source;
   }
 
   return {
@@ -38,6 +56,9 @@ export function buildCompleteOnboardingInput(
       username,
       vo2max: data.vo2max ?? undefined,
       weight_kg: data.weight_kg ?? undefined,
+      ...(Object.keys(baselineFieldSources).length > 0
+        ? { baseline_field_sources: baselineFieldSources }
+        : null),
     },
     profile: { full_name: fullName, username },
   };

@@ -25,7 +25,15 @@ function resultLabel(result: CalculationResult) {
   return "Unknown";
 }
 
-function ResultContext({ label, result }: { label: string; result: CalculationResult }) {
+function ResultContext({
+  label,
+  result,
+  showEvidence = false,
+}: {
+  label: string;
+  result: CalculationResult;
+  showEvidence?: boolean;
+}) {
   const uncertainty =
     typeof result.uncertainty === "number" ? Math.round(result.uncertainty * 100) : null;
   const sourceCount = result.contributingSourceIds?.length ?? 0;
@@ -33,16 +41,19 @@ function ResultContext({ label, result }: { label: string; result: CalculationRe
     <View className="gap-1">
       <Text className="text-xs font-medium text-foreground">{label}</Text>
       <Text className="text-xs leading-5 text-muted-foreground">{resultLabel(result)}</Text>
-      {result.reasonCodes.map((reason) => (
-        <Text className="text-xs leading-5 text-muted-foreground" key={reason}>
-          Reason: {formatReason(reason)}
+      {showEvidence &&
+        result.reasonCodes.map((reason) => (
+          <Text className="text-xs leading-5 text-muted-foreground" key={reason}>
+            Reason: {formatReason(reason)}
+          </Text>
+        ))}
+      {showEvidence ? (
+        <Text className="text-xs leading-5 text-muted-foreground">
+          Evidence uncertainty: {uncertainty === null ? "unknown" : `${uncertainty}%`} ·{" "}
+          {sourceCount} source
+          {sourceCount === 1 ? "" : "s"}
         </Text>
-      ))}
-      <Text className="text-xs leading-5 text-muted-foreground">
-        Evidence uncertainty: {uncertainty === null ? "unknown" : `${uncertainty}%`} · {sourceCount}{" "}
-        source
-        {sourceCount === 1 ? "" : "s"}
-      </Text>
+      ) : null}
     </View>
   );
 }
@@ -60,7 +71,7 @@ export function GoalIntelligenceCard({
     return (
       <Card className="rounded-3xl border border-border bg-card" testID="goal-intelligence-card">
         <CardContent className="gap-3 p-4">
-          <Text className="text-sm font-semibold text-foreground">Goal guidance</Text>
+          <Text className="text-sm font-semibold text-foreground">Your next move</Text>
           <Text className="text-sm leading-5 text-muted-foreground">
             Calendar context is unavailable because this device timezone cannot be used.
           </Text>
@@ -80,7 +91,7 @@ export function GoalIntelligenceCard({
     return (
       <Card className="rounded-3xl border border-border bg-card" testID="goal-intelligence-card">
         <CardContent className="gap-3 p-4">
-          <Text className="text-sm font-semibold text-foreground">Goal guidance</Text>
+          <Text className="text-sm font-semibold text-foreground">Your next move</Text>
           <Text className="text-sm leading-5 text-muted-foreground">{status}</Text>
           {!planningTimezone ? (
             <Button
@@ -117,22 +128,17 @@ export function GoalIntelligenceCard({
     <Card className="rounded-3xl border border-border bg-card" testID="goal-intelligence-card">
       <CardContent className="gap-4 p-4">
         <View className="gap-1">
-          <Text className="text-sm font-semibold text-foreground">Goal guidance</Text>
-          <Text className="text-sm leading-5 text-muted-foreground">
+          <Text className="text-sm font-semibold text-foreground">Your next move</Text>
+          <Text className="text-lg font-semibold text-foreground">
             {intelligence.decisionGuidance.state === "proceed"
-              ? "Proceed"
+              ? "Keep moving toward this goal"
               : intelligence.decisionGuidance.state === "adjust"
-                ? "Adjust"
-                : "Unknown"}
+                ? "Adjust your plan before pushing ahead"
+                : "More information is needed"}
           </Text>
           {(intelligence.decisionGuidance.recommendedActions ?? []).map((action) => (
-            <Text className="text-xs leading-5 text-muted-foreground" key={action}>
+            <Text className="text-sm leading-5 text-foreground" key={action}>
               {action}
-            </Text>
-          ))}
-          {(intelligence.decisionGuidance.reasonCodes ?? []).map((reason) => (
-            <Text className="text-xs leading-5 text-muted-foreground" key={reason}>
-              Reason: {formatReason(reason)}
             </Text>
           ))}
         </View>
@@ -156,9 +162,7 @@ export function GoalIntelligenceCard({
 
         {dimensions.length ? (
           <View className="gap-2 rounded-2xl border border-border px-3 py-3">
-            <Text className="text-xs font-medium text-foreground">
-              Outcome requirement and coverage
-            </Text>
+            <Text className="text-xs font-medium text-foreground">What this goal asks of you</Text>
             {dimensions.map((dimension) => (
               <View className="gap-1" key={dimension.dimension}>
                 <ResultContext
@@ -186,24 +190,12 @@ export function GoalIntelligenceCard({
           </View>
         ) : null}
 
-        <View className="gap-3 rounded-2xl border border-border px-3 py-3">
-          <ResultContext
-            label="Capability context"
-            result={intelligence.capability.sportSpecificity}
-          />
-          <ResultContext label="Readiness context" result={intelligence.readiness.volumeTrend} />
-          <ResultContext label="Calendar feasibility" result={feasibility} />
-          <Text className="text-xs leading-5 text-muted-foreground">
-            Calendar interpretation is limited to the confirmed device timezone: {planningTimezone}.
-          </Text>
-        </View>
-
         {(intelligence.opportunities.evidence ?? []).map((evidence) => (
           <View
             className="gap-1"
             key={`${evidence.goalSourceId}:${evidence.dimension ?? "unknown"}`}
           >
-            <Text className="text-xs font-medium text-foreground">Evidence opportunity</Text>
+            <Text className="text-xs font-medium text-foreground">Improve this guidance</Text>
             <Text className="text-xs leading-5 text-muted-foreground">
               {evidence.dimension ? `${evidence.dimension} evidence` : "Additional goal evidence"}
             </Text>
@@ -216,7 +208,7 @@ export function GoalIntelligenceCard({
         ))}
         {(intelligence.opportunities.training ?? []).map((opportunity) => (
           <View className="gap-1" key={`${opportunity.goalSourceId}:${opportunity.dimension}`}>
-            <Text className="text-xs font-medium text-foreground">Training opportunity</Text>
+            <Text className="text-xs font-medium text-foreground">Training focus</Text>
             <Text className="text-xs leading-5 text-muted-foreground">
               {opportunity.dimension} · {resultLabel(opportunity.physicalGap)}
             </Text>
@@ -227,6 +219,29 @@ export function GoalIntelligenceCard({
             ))}
           </View>
         ))}
+
+        <View className="gap-3 border-t border-border pt-3">
+          <Text className="text-xs font-medium text-muted-foreground">Why this guidance</Text>
+          {(intelligence.decisionGuidance.reasonCodes ?? []).map((reason) => (
+            <Text className="text-xs leading-5 text-muted-foreground" key={reason}>
+              Reason: {formatReason(reason)}
+            </Text>
+          ))}
+          <ResultContext
+            label="Sport-specific capability"
+            result={intelligence.capability.sportSpecificity}
+            showEvidence
+          />
+          <ResultContext
+            label="Recent training readiness"
+            result={intelligence.readiness.volumeTrend}
+            showEvidence
+          />
+          <ResultContext label="Calendar fit" result={feasibility} showEvidence />
+          <Text className="text-xs leading-5 text-muted-foreground">
+            Calendar interpretation uses your confirmed timezone: {planningTimezone}.
+          </Text>
+        </View>
       </CardContent>
     </Card>
   );

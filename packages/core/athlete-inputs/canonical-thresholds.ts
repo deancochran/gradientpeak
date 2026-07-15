@@ -1,3 +1,5 @@
+import type { ActivityEffortThresholdEvidence } from "./activity-effort-policy";
+
 export const canonicalThresholdTypes = [
   "cycling_ftp",
   "running_threshold_pace",
@@ -5,7 +7,12 @@ export const canonicalThresholdTypes = [
 ] as const;
 
 export type CanonicalThresholdType = (typeof canonicalThresholdTypes)[number];
-export type ThresholdMetricSource = "manual" | "provider" | "modeled" | "estimated";
+export type ThresholdMetricSource =
+  | "manual"
+  | "validated_test"
+  | "provider"
+  | "modeled"
+  | "estimated";
 export type ActivityEffortObservationKind = "actual" | "modeled" | "derived";
 export type ThresholdConfidence = "high" | "medium" | "low" | "unknown";
 export type ThresholdEligibilityReason =
@@ -22,6 +29,7 @@ export interface DirectThresholdMetricObservation {
   value: number;
   observedAt: string;
   source: ThresholdMetricSource;
+  calculationVersion?: string | null;
   locked?: boolean;
 }
 
@@ -33,17 +41,29 @@ export interface ThresholdActivityEffortObservation {
   durationSeconds: number;
   observedAt: string;
   observationKind: ActivityEffortObservationKind;
+  /** Verified origin; an `actual` flag alone is not enough to establish eligibility. */
+  evidence?: ActivityEffortThresholdEvidence;
 }
 
 export interface ResolvedCanonicalThreshold {
   threshold: CanonicalThresholdType;
   value: number | null;
   unit: "W" | "s/1000m" | "s/100m";
-  source: "manual" | "observed_effort" | "provider" | "modeled" | "estimated" | "unknown";
+  source:
+    | "manual"
+    | "validated_test"
+    | "observed_effort"
+    | "provider"
+    | "modeled"
+    | "estimated"
+    | "unknown";
   observedAt: string | null;
   confidence: ThresholdConfidence;
   stale: boolean;
   eligibilityReason: ThresholdEligibilityReason;
+  /** True when the value is inferred rather than a directly supplied threshold measurement. */
+  estimate: boolean;
+  calculationVersion: string | null;
 }
 
 export interface ResolveCanonicalThresholdsInput {
@@ -72,8 +92,11 @@ function isFresh(observedAt: string, now: number, freshnessWindowMs: number): bo
 function latest<T extends { observedAt: string }>(items: readonly T[]): T | null {
   return (
     items.reduce<T | null>((selected, item) => {
-      if (timestamp(item.observedAt) === null) return selected;
-      if (!selected || timestamp(item.observedAt)! > timestamp(selected.observedAt)!) return item;
+      const itemTimestamp = timestamp(item.observedAt);
+      if (itemTimestamp === null) return selected;
+      if (!selected) return item;
+      const selectedTimestamp = timestamp(selected.observedAt);
+      if (selectedTimestamp === null || itemTimestamp > selectedTimestamp) return item;
       return selected;
     }, null) ?? null
   );
@@ -97,13 +120,15 @@ function unknown(threshold: CanonicalThresholdType): ResolvedCanonicalThreshold 
     confidence: "unknown",
     stale: false,
     eligibilityReason: "unknown",
+    estimate: false,
+    calculationVersion: null,
   };
 }
 
 /**
  * Resolves a threshold without persistence or runtime dependencies.
  *
- * Precedence is a fresh locked manual metric, a fresh actual 20-minute effort,
+ * Precedence is a fresh locked manual metric, a fresh provenance-backed 20-minute effort,
  * then direct manual, provider, modeled, and estimated values. Derived or
  * modeled efforts are intentionally never considered observed efforts.
  */
@@ -151,6 +176,7 @@ export function resolveCanonicalThresholds(
             candidate.metric === definition.metric &&
             candidate.durationSeconds === 1200 &&
             candidate.observationKind === "actual" &&
+            candidate.evidence !== undefined &&
             Number.isFinite(candidate.value) &&
             candidate.value > 0 &&
             isFresh(candidate.observedAt, now, input.freshnessWindowMs),
@@ -165,14 +191,24 @@ export function resolveCanonicalThresholds(
             unit: definition.unit,
             source: "observed_effort",
             observedAt: effort.observedAt,
-            confidence: "high",
+            confidence: "medium",
             stale: false,
             eligibilityReason: "eligible",
+            estimate: true,
+            calculationVersion: "twenty_minute_effort_v1",
           },
         ];
       }
 
-      for (const source of ["manual", "provider", "modeled", "estimated"] as const) {
+      // Keep direct-source precedence explicit: validated tests are athlete-entered
+      // protocol evidence, not provider data, but do not supersede observed efforts.
+      for (const source of [
+        "manual",
+        "validated_test",
+        "provider",
+        "modeled",
+        "estimated",
+      ] as const) {
         const metric = latest(metrics.filter((candidate) => candidate.source === source));
         if (metric) {
           const stale = !isFresh(metric.observedAt, now, input.freshnessWindowMs);
@@ -183,12 +219,15 @@ export function resolveCanonicalThresholds(
               metric,
               stale,
               stale ? "stale" : "eligible",
-              source === "manual" ? "high" : source === "provider" ? "medium" : "low",
+              source === "manual" || source === "validated_test"
+                ? "high"
+                : source === "provider"
+                  ? "medium"
+                  : "low",
             ),
           ];
         }
       }
-
       return [threshold, unknown(threshold)];
     }),
   ) as Record<CanonicalThresholdType, ResolvedCanonicalThreshold>;
@@ -210,5 +249,7 @@ function directResult(
     confidence,
     stale,
     eligibilityReason,
+    estimate: metric.source === "modeled" || metric.source === "estimated",
+    calculationVersion: metric.calculationVersion ?? null,
   };
 }

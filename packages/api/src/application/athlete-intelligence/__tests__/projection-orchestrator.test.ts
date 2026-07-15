@@ -437,6 +437,94 @@ describe("projectAthleteIntelligence", () => {
     });
   });
 
+  it("projects swim pace capability in seconds per 100m rather than run seconds per kilometer", async () => {
+    const swim = canonicalModel();
+    const goal = first(swim.goals, "Goal");
+    swim.goals[0] = {
+      ...goal,
+      goalSport: "swim",
+      objective: {
+        type: "threshold",
+        metric: "pace",
+        activity_category: "swim",
+        value: 100 / 95,
+        test_duration_s: 600,
+      },
+    };
+    const goalEvidence = swim.evidenceRegistry[goal.sourceId];
+    if (goalEvidence) swim.evidenceRegistry[goal.sourceId] = { ...goalEvidence, sport: "swim" };
+    swim.efforts = [
+      { duration: 300, pace: 90, id: "short" },
+      { duration: 1_200, pace: 105, id: "long" },
+    ].map(({ duration, pace, id }) => {
+      const lineageGroupId = `activity:swim-${id}`;
+      const recordId = `effort:swim-${id}:record`;
+      const durationId = `effort:swim-${id}:duration`;
+      const valueId = `effort:swim-${id}:value`;
+      swim.evidenceRegistry[recordId] = {
+        athleteId: profileId,
+        sourceId: recordId,
+        lineageGroupId,
+        observedAt: "2026-07-08T09:00:00.000Z",
+        rawObservation: { value: null, unit: null },
+        sport: "swim",
+        modality: "record",
+        sourceType: "activity_effort",
+        qualityState: "known",
+        validityState: "valid",
+        compatibilityState: "compatible",
+      };
+      swim.evidenceRegistry[durationId] = {
+        athleteId: profileId,
+        sourceId: durationId,
+        lineageGroupId,
+        observedAt: "2026-07-08T09:00:00.000Z",
+        rawObservation: { value: duration, unit: "seconds" },
+        sport: "swim",
+        modality: "duration",
+        sourceType: "activity_effort",
+        qualityState: "known",
+        validityState: "valid",
+        compatibilityState: "compatible",
+      };
+      swim.evidenceRegistry[valueId] = {
+        athleteId: profileId,
+        sourceId: valueId,
+        lineageGroupId,
+        observedAt: "2026-07-08T09:00:00.000Z",
+        rawObservation: { value: 100 / pace, unit: "meters_per_second" },
+        sport: "swim",
+        modality: "value",
+        sourceType: "activity_effort",
+        qualityState: "known",
+        validityState: "valid",
+        compatibilityState: "compatible",
+      };
+      return {
+        sourceId: recordId,
+        athleteId: profileId,
+        lineageGroupId,
+        activitySourceId: null,
+        observedAt: "2026-07-08T09:00:00.000Z",
+        sport: "swim" as const,
+        startOffsetSeconds: null,
+        endOffsetSeconds: null,
+        durationSeconds: duration,
+        evidenceSourceIds: [durationId, valueId],
+        kind: "speed" as const,
+        speedMetersPerSecond: 100 / pace,
+      };
+    });
+
+    const projection = await project(athleteIntelligenceModelInputSchema.parse(swim));
+
+    expect(projection.capability.effortCurves[0]?.threshold).toMatchObject({
+      state: "estimated",
+      unit: "seconds_per_100m",
+    });
+    expect(projection.capability.effortCurves[0]?.threshold.estimate).toBeCloseTo(97.5);
+  });
+
   it("reports missing and incompatible evidence explicitly", async () => {
     const missing = canonicalModel();
     missing.efforts = [];

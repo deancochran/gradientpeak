@@ -128,6 +128,50 @@ const BALANCED_BEHAVIOR_CONTROLS = {
   starting_fitness_confidence: 0.6,
 } as const;
 
+function buildLoadActivity(id: string, startedAt: Date, normalizedPower: number | null = 200) {
+  return {
+    id,
+    type: "bike",
+    started_at: startedAt,
+    finished_at: new Date(startedAt.getTime() + 3_600_000),
+    duration_seconds: 3600,
+    moving_seconds: 3600,
+    distance_meters: 30_000,
+    avg_heart_rate: null,
+    max_heart_rate: null,
+    avg_power: normalizedPower,
+    max_power: normalizedPower,
+    avg_speed_mps: null,
+    max_speed_mps: null,
+    normalized_power: normalizedPower,
+    normalized_speed_mps: null,
+    normalized_graded_speed_mps: null,
+  };
+}
+
+const loadEvidenceResults = {
+  profiles: { data: [{ profile_id: "profile-123", dob: null, gender: null }], error: null },
+  profile_metrics: {
+    data: [
+      {
+        id: "ftp-1",
+        profile_id: "profile-123",
+        metric_type: "ftp",
+        recorded_at: new Date("2025-01-01T00:00:00.000Z"),
+        unit: "W",
+        value: 250,
+        source: "manual",
+        method: null,
+        provenance: null,
+        reference_activity_id: null,
+        reference_activity_category: null,
+      },
+    ],
+    error: null,
+  },
+  activity_efforts: { data: [], error: null },
+} satisfies QueryMap;
+
 const AGGRESSIVE_BEHAVIOR_CONTROLS = {
   aggressiveness: 0.85,
   variability: 0.8,
@@ -2723,22 +2767,50 @@ describe("trainingPlansRouter plan_start_date support", () => {
 describe("trainingPlansRouter analytics endpoints", () => {
   const planId = "11111111-1111-4111-8111-111111111111";
 
-  it("returns current status even when no plan exists", async () => {
+  it("returns unavailable current status when there is no load evidence", async () => {
     const caller = createTrainingPlansCaller({
       training_plans: { data: null, error: null },
     });
 
     const result = await caller.getCurrentStatus();
-    expect(result).toMatchObject({
-      ctl: 0,
-      atl: 0,
-      tsb: 0,
-      weekProgress: {
-        completedTSS: 0,
-        plannedTSS: 0,
-        targetTSS: 0,
-      },
-    });
+    expect(result).toBeNull();
+  });
+
+  it("returns unavailable current status for unknown or partial load history", async () => {
+    const recent = new Date();
+    recent.setUTCDate(recent.getUTCDate() - 1);
+    const known = buildLoadActivity("known", recent);
+    const unknown = buildLoadActivity("unknown", recent, null);
+
+    const unknownResult = await createTrainingPlansCaller({
+      ...loadEvidenceResults,
+      activities: { data: [unknown], error: null },
+      training_plans: { data: null, error: null },
+    }).getCurrentStatus();
+    const partialResult = await createTrainingPlansCaller({
+      ...loadEvidenceResults,
+      activities: { data: [known, unknown], error: null },
+      training_plans: { data: null, error: null },
+    }).getCurrentStatus();
+
+    expect(unknownResult).toBeNull();
+    expect(partialResult).toBeNull();
+  });
+
+  it("returns current load after adequate history", async () => {
+    const recent = new Date();
+    recent.setUTCDate(recent.getUTCDate() - 7);
+    const activity = buildLoadActivity("known", recent);
+    const result = await createTrainingPlansCaller({
+      ...loadEvidenceResults,
+      activities: { data: [activity], error: null },
+      events: { data: [], error: null },
+      training_plans: { data: null, error: null },
+    }).getCurrentStatus();
+
+    expect(result).toMatchObject({ ctl: expect.any(Number), atl: expect.any(Number) });
+    expect(result?.ctl).toBeGreaterThan(0);
+    expect(result?.atl).toBeGreaterThan(0);
   });
 
   it("returns ideal curve projection payload shape", async () => {
@@ -2775,7 +2847,7 @@ describe("trainingPlansRouter analytics endpoints", () => {
     });
   });
 
-  it("returns actual curve data points", async () => {
+  it("abstains from an actual curve when history is empty", async () => {
     const caller = createTrainingPlansCaller({
       activities: { data: [], error: null },
     });
@@ -2785,9 +2857,42 @@ describe("trainingPlansRouter analytics endpoints", () => {
       end_date: "2026-01-07T00:00:00.000Z",
     });
 
-    expect(result).toMatchObject({
-      dataPoints: expect.any(Array),
+    expect(result).toEqual({ dataPoints: [] });
+  });
+
+  it("abstains from an actual curve when any historical load is unavailable", async () => {
+    const unknown = buildLoadActivity("unknown", new Date("2026-01-03T09:00:00.000Z"), null);
+    const result = await createTrainingPlansCaller({
+      ...loadEvidenceResults,
+      activities: [
+        { data: [], error: null },
+        { data: [unknown], error: null },
+      ],
+    }).getActualCurve({
+      start_date: "2026-01-01T00:00:00.000Z",
+      end_date: "2026-01-07T00:00:00.000Z",
     });
+
+    expect(result).toEqual({ dataPoints: [] });
+  });
+
+  it("emits an actual curve with known zero rest days after adequate load history", async () => {
+    const activity = buildLoadActivity("known", new Date("2026-01-03T09:00:00.000Z"));
+    const result = await createTrainingPlansCaller({
+      ...loadEvidenceResults,
+      activities: [
+        { data: [], error: null },
+        { data: [activity], error: null },
+      ],
+    }).getActualCurve({
+      start_date: "2026-01-01T00:00:00.000Z",
+      end_date: "2026-01-07T00:00:00.000Z",
+    });
+
+    expect(result.dataPoints).toHaveLength(7);
+    expect(result.dataPoints[2]?.ctl).toBeGreaterThan(0);
+    expect(result.dataPoints[6]?.ctl).toBeGreaterThan(0);
+    expect(result.dataPoints[6]?.atl).toBeLessThan(result.dataPoints[2]?.atl ?? 0);
   });
 
   it("returns weekly summary rows", async () => {

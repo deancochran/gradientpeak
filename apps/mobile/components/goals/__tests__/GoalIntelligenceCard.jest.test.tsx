@@ -105,15 +105,17 @@ describe("GoalIntelligenceCard", () => {
       />,
     );
 
-    expect(screen.getByText("Adjust")).toBeTruthy();
-    expect(screen.getByText("Outcome requirement and coverage")).toBeTruthy();
+    expect(screen.getByText("Adjust your plan before pushing ahead")).toBeTruthy();
+    expect(screen.getByText("Add calendar availability.")).toBeTruthy();
+    expect(screen.getByText("What this goal asks of you")).toBeTruthy();
     expect(screen.getByText("duration requirement")).toBeTruthy();
     expect(screen.getByText("duration coverage")).toBeTruthy();
     expect(screen.getByText("speed requirement")).toBeTruthy();
-    expect(screen.getByText("Capability context")).toBeTruthy();
-    expect(screen.getByText("Readiness context")).toBeTruthy();
-    expect(screen.getByText("Calendar feasibility")).toBeTruthy();
-    expect(screen.getByText("Evidence opportunity")).toBeTruthy();
+    expect(screen.getByText("Why this guidance")).toBeTruthy();
+    expect(screen.getByText("Sport-specific capability")).toBeTruthy();
+    expect(screen.getByText("Recent training readiness")).toBeTruthy();
+    expect(screen.getByText("Calendar fit")).toBeTruthy();
+    expect(screen.getByText("Improve this guidance")).toBeTruthy();
     expect(screen.getAllByText(/Reason: required training minutes missing/).length).toBeGreaterThan(
       0,
     );
@@ -141,7 +143,7 @@ describe("GoalIntelligenceCard", () => {
       />,
     );
 
-    expect(screen.getByText("Adjust")).toBeTruthy();
+    expect(screen.getByText("Adjust your plan before pushing ahead")).toBeTruthy();
     expect(screen.getByText(/Goal guidance may be stale/)).toBeTruthy();
 
     fireEvent.press(screen.getByTestId("goal-intelligence-retry"));

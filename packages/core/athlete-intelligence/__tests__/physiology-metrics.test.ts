@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import type { CanonicalSport } from "../../schemas/sport";
 import { type AthleteMetricType, athleteMetricRoleByType } from "../evidence-contracts";
 import type { AthleteIntelligenceModelInput } from "../model-input-contracts";
 import {
@@ -11,6 +12,8 @@ import {
 const AS_OF = "2026-07-10T12:00:00.000Z";
 const units: Record<AthleteMetricType, string> = {
   ftp: "watts",
+  threshold_pace_seconds_per_km: "seconds_per_km",
+  css_seconds_per_100m: "seconds_per_100m",
   lthr: "beats_per_minute",
   max_hr: "beats_per_minute",
   resting_hr: "beats_per_minute",
@@ -30,6 +33,7 @@ type Observation = {
   sourceType?: "profile_metric" | "activity_effort";
   valid?: boolean;
   lineageGroupId?: string;
+  sport?: CanonicalSport | null;
 };
 
 function model(
@@ -44,6 +48,7 @@ function model(
     daysAgo = 1,
     valid = true,
     lineageGroupId?: string,
+    sport: CanonicalSport | null = null,
   ) => {
     const sourceId = `manual:physiology-${id++}`;
     evidenceRegistry[sourceId] = {
@@ -54,7 +59,7 @@ function model(
         : `manual-test:physiology-${id}`,
       observedAt: new Date(Date.parse(AS_OF) - daysAgo * 86_400_000).toISOString(),
       rawObservation: { value, unit },
-      sport: null,
+      sport,
       modality: "manual",
       sourceType,
       qualityState: "known",
@@ -84,6 +89,7 @@ function model(
             item.daysAgo,
             item.valid,
             item.lineageGroupId,
+            item.sport,
           ),
         ],
       },
@@ -162,6 +168,8 @@ const ratioMetricCases = [
 
 const expectedDownstreamEffects: Record<AthleteMetricType, readonly string[]> = {
   ftp: ["wattsPerKilogram"],
+  threshold_pace_seconds_per_km: [],
+  css_seconds_per_100m: [],
   lthr: [],
   max_hr: ["heartRateReserve"],
   resting_hr: ["heartRateReserve"],
@@ -198,6 +206,24 @@ const downstreamKeys = [
 ] satisfies readonly (keyof ReturnType<typeof downstreamEstimates>)[];
 
 describe("physiology metric policy", () => {
+  it("publishes canonical running threshold pace and swimming CSS policy outputs", () => {
+    const result = evaluatePhysiologyMetrics(
+      model({
+        threshold_pace_seconds_per_km: [{ value: 270, sport: "run" }],
+        css_seconds_per_100m: [{ value: 95, sport: "swim" }],
+      }),
+    );
+
+    expect(result.metrics.threshold_pace_seconds_per_km.result).toMatchObject({
+      estimate: 270,
+      unit: "seconds_per_km",
+    });
+    expect(result.metrics.css_seconds_per_100m.result).toMatchObject({
+      estimate: 95,
+      unit: "seconds_per_100m",
+    });
+  });
+
   it("is versioned and keeps every metric in its frozen individualized role", () => {
     const result = evaluatePhysiologyMetrics(model({ age_years: [{ value: 42 }] }));
     expect(result.policyVersion).toBe(PHYSIOLOGY_METRICS_POLICY_VERSION);
@@ -262,6 +288,8 @@ describe("physiology metric policy", () => {
   )("changes only intended downstream calculations for %s", (metricType) => {
     const observations: Record<AthleteMetricType, Observation[]> = {
       ftp: [{ value: 250 }],
+      threshold_pace_seconds_per_km: [{ value: 270 }],
+      css_seconds_per_100m: [{ value: 95 }],
       lthr: [{ value: 170 }],
       max_hr: [{ value: 190 }],
       resting_hr: [{ value: 50 }],
@@ -386,6 +414,18 @@ describe("physiology metric policy", () => {
     expect(old.result.estimate).toBe(172);
     expect(fresh.influence).toBeGreaterThan(old.influence);
     expect(fresh.result.uncertainty).toBeLessThan(old.result.uncertainty);
+  });
+
+  it("selects the LTHR observation matching the requested sport before a newer other-sport value", () => {
+    const input = model({
+      lthr: [
+        { value: 168, daysAgo: 10, sport: "run" },
+        { value: 178, daysAgo: 1, sport: "bike" },
+      ],
+    });
+
+    expect(evaluatePhysiologyMetrics(input, "run").metrics.lthr.result.estimate).toBe(168);
+    expect(evaluatePhysiologyMetrics(input, "bike").metrics.lthr.result.estimate).toBe(178);
   });
 
   it("prioritizes recent observed performance over a newer profile threshold", () => {

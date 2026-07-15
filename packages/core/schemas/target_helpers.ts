@@ -1,4 +1,8 @@
-import type { IntensityTargetV2, PlanStepV2 } from "./activity_plan_v2";
+import {
+  activityPlanSpeedKphToMetersPerSecond,
+  type IntensityTargetV2,
+  type PlanStepV2,
+} from "./activity_plan_v2";
 
 // ==============================
 // TARGET HELPER UTILITIES V2
@@ -82,6 +86,8 @@ export function getTargetByType(
  * Tolerances adapt to actual performance, handling GPS drift, pace changes, and pauses.
  */
 export function isInTargetRange(value: number, target: IntensityTargetV2): boolean {
+  const runtimeIntensity = getRuntimeTargetIntensity(target);
+
   // Default tolerance: ±5% for percentage-based, ±5 absolute for others
   let tolerance: number;
 
@@ -92,13 +98,13 @@ export function isInTargetRange(value: number, target: IntensityTargetV2): boole
       tolerance = 5; // ±5% points (e.g., 90% ±5 = 85-95%)
       break;
     case "watts":
-      tolerance = target.intensity * 0.05; // ±5% of watts
+      tolerance = runtimeIntensity * 0.05; // ±5% of watts
       break;
     case "bpm":
       tolerance = 5; // ±5 bpm
       break;
     case "speed":
-      tolerance = target.intensity * 0.05; // ±5% of speed
+      tolerance = runtimeIntensity * 0.05; // ±5% of speed in m/s
       break;
     case "cadence":
       tolerance = 5; // ±5 rpm
@@ -108,7 +114,7 @@ export function isInTargetRange(value: number, target: IntensityTargetV2): boole
       break;
   }
 
-  return value >= target.intensity - tolerance && value <= target.intensity + tolerance;
+  return value >= runtimeIntensity - tolerance && value <= runtimeIntensity + tolerance;
 }
 
 /**
@@ -116,6 +122,7 @@ export function isInTargetRange(value: number, target: IntensityTargetV2): boole
  * Returns [min, max] values based on dynamic tolerance
  */
 export function getTargetRange(target: IntensityTargetV2): [number, number] {
+  const runtimeIntensity = getRuntimeTargetIntensity(target);
   let tolerance: number;
 
   switch (target.type) {
@@ -125,13 +132,13 @@ export function getTargetRange(target: IntensityTargetV2): [number, number] {
       tolerance = 5;
       break;
     case "watts":
-      tolerance = target.intensity * 0.05;
+      tolerance = runtimeIntensity * 0.05;
       break;
     case "bpm":
       tolerance = 5;
       break;
     case "speed":
-      tolerance = target.intensity * 0.05;
+      tolerance = runtimeIntensity * 0.05;
       break;
     case "cadence":
       tolerance = 5;
@@ -141,7 +148,14 @@ export function getTargetRange(target: IntensityTargetV2): [number, number] {
       break;
   }
 
-  return [target.intensity - tolerance, target.intensity + tolerance];
+  return [runtimeIntensity - tolerance, runtimeIntensity + tolerance];
+}
+
+/** Returns a target intensity in the units used by live metrics and exports. */
+export function getRuntimeTargetIntensity(target: IntensityTargetV2): number {
+  return target.type === "speed"
+    ? activityPlanSpeedKphToMetersPerSecond(target.intensity)
+    : target.intensity;
 }
 
 /**
@@ -204,7 +218,7 @@ export function formatTargetValue(target: IntensityTargetV2): string {
     case "bpm":
       return `${Math.round(target.intensity)} bpm`;
     case "speed":
-      return `${target.intensity.toFixed(1)} m/s`;
+      return `${target.intensity.toFixed(1)} km/h`;
     case "cadence":
       return `${Math.round(target.intensity)} rpm`;
     case "RPE":
@@ -223,6 +237,7 @@ export function getTargetGuidance(
   message: string;
 } {
   const inRange = isInTargetRange(current, target);
+  const runtimeIntensity = getRuntimeTargetIntensity(target);
 
   if (inRange) {
     return {
@@ -231,15 +246,15 @@ export function getTargetGuidance(
     };
   }
 
-  if (current < target.intensity) {
-    const difference = Math.abs(target.intensity - current);
+  if (current < runtimeIntensity) {
+    const difference = Math.abs(runtimeIntensity - current);
     return {
       status: "below",
       message: `Increase by ${Math.round(difference)}${getTargetUnit(target)}`,
     };
   }
 
-  const difference = Math.abs(current - target.intensity);
+  const difference = Math.abs(current - runtimeIntensity);
   return {
     status: "above",
     message: `Decrease by ${Math.round(difference)}${getTargetUnit(target)}`,
@@ -273,6 +288,13 @@ export function convertTargetToAbsolute(
         };
       }
       return null;
+
+    case "speed":
+      return {
+        intensity: getRuntimeTargetIntensity(target),
+        unit: "m/s",
+        label: "Speed",
+      };
 
     default:
       // Already absolute

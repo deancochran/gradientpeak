@@ -1,12 +1,46 @@
 import { renderHook } from "@testing-library/react-native";
 import { toLocalDayEndIso, toLocalDayStartIso } from "@/lib/calendar/dateMath";
 
+const mockTssIdentity = {
+  sport: "bike" as const,
+  method: "power_threshold" as const,
+  source: "activity_analysis" as const,
+  version: "1" as const,
+  calibration: { type: "ftp_watts" as const, value: 250 },
+};
+
 const queryResult = {
   data: { items: [] },
   dataUpdatedAt: 0,
+  isError: false,
   isLoading: false,
   refetch: jest.fn(async () => undefined),
 };
+
+let mockDailyTssObservations: Array<
+  | {
+      date: string;
+      state: "calculated";
+      tss_identity: typeof mockTssIdentity;
+      unavailable_activity_count: number;
+      value: number;
+    }
+  | {
+      date: string;
+      state: "unavailable";
+      tss_identity: null;
+      unavailable_activity_count: number;
+      value: null;
+    }
+> = [];
+const mockDailyTssUseQuery = jest.fn((_input?: unknown, _options?: unknown) => ({
+  ...queryResult,
+  data: {
+    start_date: "2026-03-30",
+    end_date: "2026-04-12",
+    observations: mockDailyTssObservations,
+  },
+}));
 
 const snapshot = {
   actualCurveData: {
@@ -30,6 +64,9 @@ jest.mock("@/lib/api", () => ({
     },
     activityPlans: { getManyByIds: { useQuery: () => queryResult } },
     activities: {
+      dailyTssObservations: {
+        useQuery: (input: unknown, options: unknown) => mockDailyTssUseQuery(input, options),
+      },
       listPaginated: {
         useInfiniteQuery: () => ({
           ...queryResult,
@@ -50,10 +87,15 @@ jest.mock("@/lib/stores/auth-store", () => ({
     selector({ ready: true, session: {} }),
 }));
 jest.mock("@/lib/hooks/useProfileGoals", () => ({
-  useProfileGoals: () => ({ goals: [], dataUpdatedAt: 0, refetch: jest.fn() }),
+  useProfileGoals: () => ({ goals: [], dataUpdatedAt: 0, isError: false, refetch: jest.fn() }),
 }));
 jest.mock("@/lib/hooks/useProfileSettings", () => ({
-  useProfileSettings: () => ({ settings: {}, isLoading: false }),
+  useProfileSettings: () => ({
+    settings: {},
+    isError: false,
+    isLoading: false,
+    refetch: jest.fn(),
+  }),
 }));
 jest.mock("@/lib/hooks/useTrainingPlanSnapshot", () => ({
   useTrainingPlanSnapshot: jest.fn(),
@@ -63,10 +105,7 @@ jest.mock("../usePlanDashboardViewModel", () => ({
 }));
 jest.mock("@/lib/training-plan-form/projectionPreview", () => ({
   buildTrainingPreferencesLoadTimeline: jest.fn(),
-  buildTrainingPreferencesProjectionPreview: () => ({
-    previewIdealCurve: [],
-    projectionChart: { dataPoints: [] },
-  }),
+  buildTrainingPreferencesProjectionPreview: jest.fn(),
 }));
 jest.mock("./useScrollableTrainingPathWindow", () => ({
   useScrollableTrainingPathWindow: () => ({
@@ -80,14 +119,49 @@ jest.mock("./useTrainingPathViewModel", () => ({
   useTrainingPathViewModel: (input: unknown) => ({ selectedWeekSummary: null, input }),
 }));
 jest.mock("./trainingPathUtils", () => ({
+  addDays: (date: string, days: number) => {
+    const value = new Date(`${date}T12:00:00.000Z`);
+    value.setUTCDate(value.getUTCDate() + days);
+    return value.toISOString().slice(0, 10);
+  },
   buildScheduledFitnessTrend: () => [],
   getWeekStartDateKey: (date: string) => date,
 }));
 jest.mock("@/lib/training-path/trainingTimelineAdapters", () => ({
-  buildDailyTrainingAdjustmentPointsFromTimelineWindow: () => [],
+  ...jest.requireActual("@/lib/training-path/trainingTimelineAdapters"),
 }));
 jest.mock("@repo/core/training-timeline", () => ({
-  buildTrainingTimelineWindowFromLoadTimeline: () => ({ days: [] }),
+  buildTrainingTimelineWindowFromLoadTimeline: ({
+    endDate,
+    startDate,
+    timeline,
+  }: {
+    endDate: string;
+    startDate: string;
+    timeline: Array<{
+      completed_load_tss: number;
+      date: string;
+      recommended_load_tss: number;
+      scheduled_load_tss: number;
+      tentative_scheduled_load_tss?: number;
+    }>;
+  }) => ({
+    startDate,
+    endDate,
+    days: timeline.map((point) => ({
+      date: point.date,
+      load: {
+        completedTss: point.completed_load_tss,
+        plannedTss: point.scheduled_load_tss,
+        recommendedTss: point.recommended_load_tss,
+        remainingTss: point.scheduled_load_tss,
+        scheduledTss: point.scheduled_load_tss,
+        tentativeScheduledTss: point.tentative_scheduled_load_tss ?? 0,
+      },
+    })),
+  }),
+  normalizeDailyTrainingLoadAdjustments: jest.requireActual("@repo/core/training-timeline")
+    .normalizeDailyTrainingLoadAdjustments,
 }));
 
 import { usePlanTrainingPathData } from "./usePlanTrainingPathData";
@@ -100,6 +174,8 @@ const { usePlanDashboardViewModel: mockUsePlanDashboardViewModel } = jest.requir
 );
 const { buildTrainingPreferencesLoadTimeline: mockBuildTrainingPreferencesLoadTimeline } =
   jest.requireMock("@/lib/training-plan-form/projectionPreview");
+const { buildTrainingPreferencesProjectionPreview: mockBuildTrainingPreferencesProjectionPreview } =
+  jest.requireMock("@/lib/training-plan-form/projectionPreview");
 
 describe("usePlanTrainingPathData", () => {
   it("uses device-local calendar boundaries for dated activity queries", () => {
@@ -108,20 +184,35 @@ describe("usePlanTrainingPathData", () => {
   });
 
   beforeEach(() => {
+    mockDailyTssObservations = [];
+    mockDailyTssUseQuery.mockClear();
     mockUseTrainingPlanSnapshot.mockClear();
     mockUsePlanDashboardViewModel.mockClear();
     mockBuildTrainingPreferencesLoadTimeline.mockClear();
+    mockBuildTrainingPreferencesProjectionPreview.mockReset();
     mockUseTrainingPlanSnapshot.mockReturnValue(snapshot);
     mockUsePlanDashboardViewModel.mockImplementation(
       ({ snapshot: dashboardSnapshot }: { snapshot: typeof snapshot }) => ({
         fitnessHistory: dashboardSnapshot.actualCurveData.dataPoints,
-        goalMarkers: [],
+        goalMarkers: [{ id: "goal-1", label: "Goal", targetDate: "2026-08-01" }],
         idealFitnessCurve: dashboardSnapshot.idealCurveData.dataPoints,
       }),
     );
     mockBuildTrainingPreferencesLoadTimeline.mockReturnValue([
-      { date: "2026-04-01", actualLoad: 50, plannedLoad: 60 },
+      {
+        date: "2026-04-01",
+        completed_load_tss: 0,
+        recommended_load_tss: 70,
+        scheduled_load_tss: 60,
+      },
     ]);
+    mockBuildTrainingPreferencesProjectionPreview.mockReturnValue({
+      previewIdealCurve: [],
+      projectionChart: {
+        daily_load_points: [{ date: "2026-04-01", recommended_load_tss: 70 }],
+        display_points: [{ date: "2026-04-01" }],
+      },
+    });
   });
 
   it("disables insight timelines while retaining actual and ideal curve chart inputs", () => {
@@ -139,5 +230,111 @@ describe("usePlanTrainingPathData", () => {
     expect(mockBuildTrainingPreferencesLoadTimeline).toHaveBeenCalledWith(
       expect.objectContaining({ snapshot }),
     );
+  });
+
+  it("queries daily TSS with the device timezone and maps known completed load", () => {
+    mockDailyTssObservations = [
+      {
+        date: "2026-04-01",
+        state: "calculated",
+        tss_identity: mockTssIdentity,
+        unavailable_activity_count: 0,
+        value: 35,
+      },
+    ];
+
+    const { result } = renderHook(() => usePlanTrainingPathData());
+
+    expect(mockDailyTssUseQuery).toHaveBeenCalledWith(
+      {
+        start_date: "2026-03-30",
+        end_date: "2026-04-12",
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      },
+      expect.objectContaining({ enabled: true, placeholderData: expect.any(Function) }),
+    );
+    expect(result.current.dailyTrainingPathPoints).toEqual([
+      expect.objectContaining({ date: "2026-04-01", completedLoadTss: 35 }),
+    ]);
+  });
+
+  it("maps unavailable and mixed observations to explicit markers", () => {
+    mockDailyTssObservations = [
+      {
+        date: "2026-04-01",
+        state: "calculated",
+        tss_identity: mockTssIdentity,
+        value: 35,
+        unavailable_activity_count: 1,
+      },
+      {
+        date: "2026-04-02",
+        state: "unavailable",
+        tss_identity: null,
+        unavailable_activity_count: 1,
+        value: null,
+      },
+    ];
+
+    const { result } = renderHook(() => usePlanTrainingPathData());
+
+    expect(result.current.dailyTrainingPathPoints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          date: "2026-04-01",
+          completedLoadTss: 35,
+          hasCompletedActivityWithoutLoad: true,
+        }),
+        expect.objectContaining({
+          date: "2026-04-02",
+          completedLoadTss: 0,
+          hasCompletedActivityWithoutLoad: true,
+        }),
+      ]),
+    );
+  });
+
+  it("includes completed-only dates in the chart timeline", () => {
+    mockDailyTssObservations = [
+      {
+        date: "2026-04-03",
+        state: "calculated",
+        tss_identity: mockTssIdentity,
+        unavailable_activity_count: 0,
+        value: 42,
+      },
+    ];
+
+    const { result } = renderHook(() => usePlanTrainingPathData());
+
+    expect(result.current.dailyTrainingPathPoints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          date: "2026-04-03",
+          completedLoadTss: 42,
+          completedObservationState: "observed",
+          completedTssIdentity: mockTssIdentity,
+          hasTargetLoad: false,
+        }),
+      ]),
+    );
+  });
+
+  it("suppresses normalized recommendation values when there is no eligible goal", () => {
+    mockUsePlanDashboardViewModel.mockReturnValue({
+      fitnessHistory: snapshot.actualCurveData.dataPoints,
+      goalMarkers: [],
+      idealFitnessCurve: snapshot.idealCurveData.dataPoints,
+    });
+    mockBuildTrainingPreferencesProjectionPreview.mockReturnValue({
+      previewIdealCurve: [],
+      projectionChart: null,
+    });
+
+    const { result } = renderHook(() => usePlanTrainingPathData());
+
+    expect(result.current.dailyTrainingPathPoints[0]).toMatchObject({
+      hasTargetLoad: false,
+    });
   });
 });

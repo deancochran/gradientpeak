@@ -42,6 +42,11 @@ jest.mock("@repo/ui/components/card", () => ({
   Card: createHost("Card"),
   CardContent: createHost("CardContent"),
 }));
+jest.mock("@repo/ui/components/button", () => ({
+  __esModule: true,
+  Button: ({ testId, ...props }: { testId?: string; [key: string]: unknown }) =>
+    React.createElement("Button", { ...props, testID: testId }),
+}));
 jest.mock("@repo/ui/components/icon", () => ({ __esModule: true, Icon: createHost("Icon") }));
 jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHost("Text") }));
 
@@ -147,14 +152,26 @@ describe("profile metrics list screen", () => {
     expect(pushMock).toHaveBeenCalledWith("/profile-metric-detail?id=metric-1");
   });
 
-  it("orders populated metric types before empty common metrics", () => {
+  it("groups every metric under its semantic section", () => {
     renderNative(<ProfileMetricsListScreen />);
 
-    const { CompactInsightCard } = require("@/components/shared");
-    const cards = screen.UNSAFE_getAllByType(CompactInsightCard);
-    expect(cards[0].props.testID).toBe("profile-metric-type-weight_kg");
-    expect(cards[1].props.testID).toBe("profile-metric-type-lthr");
-    expect(cards[2].props.testID).toBe("profile-metric-type-ftp");
+    expect(screen.getByTestId("profile-metric-section-load_calibration")).toBeTruthy();
+    expect(screen.getByTestId("profile-metric-section-supporting_physiology")).toBeTruthy();
+    expect(screen.getByTestId("profile-metric-section-recovery")).toBeTruthy();
+    expect(screen.getByTestId("profile-metric-section-body_aerobic")).toBeTruthy();
+    expect(screen.getByTestId("profile-metric-type-ftp")).toBeTruthy();
+    expect(screen.getByTestId("profile-metric-type-threshold_pace_seconds_per_km")).toBeTruthy();
+    expect(screen.getByTestId("profile-metric-type-css_seconds_per_100m")).toBeTruthy();
+    expect(screen.getByTestId("profile-metric-type-lthr")).toBeTruthy();
+  });
+
+  it("opens the dedicated test from the Load Calibration CSS detail", () => {
+    renderNative(<ProfileMetricsListScreen />);
+
+    fireEvent.press(screen.getByTestId("profile-metric-type-css_seconds_per_100m"));
+    fireEvent.press(screen.getByTestId("profile-metric-css-test"));
+
+    expect(pushMock).toHaveBeenCalledWith("/profile-css-test");
   });
 
   it("shows the latest value from the selected date range", () => {

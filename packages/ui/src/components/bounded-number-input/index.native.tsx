@@ -33,6 +33,14 @@ function BoundedNumberInput({
   value,
 }: BoundedNumberInputProps) {
   const [draftValue, setDraftValue] = useState(value);
+  const fieldHint = [
+    required ? "Required" : undefined,
+    accessibilityHint ?? `Enter a number between ${min} and ${max}`,
+    helperText,
+    error ? `Error: ${error}` : undefined,
+  ]
+    .filter(Boolean)
+    .join(". ");
 
   useEffect(() => {
     setDraftValue(value);
@@ -75,10 +83,12 @@ function BoundedNumberInput({
       <View className="flex-row items-center gap-2">
         <Input
           accessibilityLabel={label}
-          accessibilityHint={accessibilityHint ?? `Enter a number between ${min} and ${max}`}
+          accessibilityHint={fieldHint}
           className={error ? "flex-1 border-destructive bg-destructive/5" : "flex-1"}
           editable={!disabled}
           accessibilityState={{ disabled }}
+          aria-invalid={!!error}
+          aria-required={required}
           value={draftValue}
           onBlur={() => {
             commitValue(draftValue);

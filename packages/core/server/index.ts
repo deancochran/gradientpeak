@@ -9,3 +9,4 @@
 export * from "../activity-files/activity-file-parser";
 export * from "../lib/fit-sdk-parser";
 export * from "../utils/streamDecompression";
+export * from "./garmin-workout-fit";

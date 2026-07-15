@@ -1,6 +1,8 @@
 type TrainingPathLoadMetricPoint = {
   completedLoadTss?: number | null;
+  completedLoadUnavailable?: boolean;
   hasCompletedActivityWithoutLoad?: boolean;
+  hasTargetLoad?: boolean;
   plannedLoadTss?: number | null;
   targetLoadTss?: number | null;
   tentativePlannedLoadTss?: number | null;
@@ -23,21 +25,33 @@ export function buildTrainingPathLoadMetrics(
   point: TrainingPathLoadMetricPoint | null | undefined,
   options: { includeCompleted?: boolean } = {},
 ): TrainingPathLoadMetric[] {
-  const metrics: TrainingPathLoadMetric[] = [
-    { label: "Recommended", value: formatTss(finiteValue(point?.targetLoadTss)) },
-    { label: "Planned", value: formatTss(finiteValue(point?.plannedLoadTss)) },
-  ];
+  const metrics: TrainingPathLoadMetric[] = [];
+  if (
+    point?.hasTargetLoad !== false &&
+    typeof point?.targetLoadTss === "number" &&
+    Number.isFinite(point.targetLoadTss)
+  ) {
+    metrics.push({ label: "Recommended", value: formatTss(point.targetLoadTss) });
+  }
+  metrics.push({ label: "Planned", value: formatTss(finiteValue(point?.plannedLoadTss)) });
   const tentative = finiteValue(point?.tentativePlannedLoadTss);
   if (tentative > 0) metrics.push({ label: "Tentative", value: formatTss(tentative) });
 
   if (options.includeCompleted !== false) {
     const completed = finiteValue(point?.completedLoadTss);
-    if (completed > 0 || point?.hasCompletedActivityWithoutLoad) {
+    if (
+      completed > 0 ||
+      point?.hasCompletedActivityWithoutLoad ||
+      point?.completedLoadUnavailable
+    ) {
       metrics.push({
         label: "Completed",
-        value:
-          point?.hasCompletedActivityWithoutLoad && completed <= 0
-            ? "Unavailable"
+        value: point?.completedLoadUnavailable
+          ? "Unavailable"
+          : point?.hasCompletedActivityWithoutLoad
+            ? completed > 0
+              ? `${formatTss(completed)} + unavailable`
+              : "Unavailable"
             : formatTss(completed),
       });
     }

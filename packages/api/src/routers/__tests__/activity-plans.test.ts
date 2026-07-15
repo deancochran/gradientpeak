@@ -1,8 +1,8 @@
-import { activityPlans, contentAccessGrants, likes, profiles } from "@repo/db";
+import { activityPlans, contentAccessGrants, events, likes, profiles } from "@repo/db";
 import type { TRPCError } from "@trpc/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { estimationState } = vi.hoisted(() => ({
+const { estimationState, plannedWorkoutSyncState } = vi.hoisted(() => ({
   estimationState: {
     getActivityPlanDerivedMetrics: vi.fn(async (plan: any) => ({
       ...plan,
@@ -43,6 +43,13 @@ const { estimationState } = vi.hoisted(() => ({
     })),
     createEventReadRepository: vi.fn(() => ({ kind: "event-read-repository" })),
   },
+  plannedWorkoutSyncState: {
+    enqueueProviderPlannedActivityJobs: vi.fn(),
+  },
+}));
+
+vi.mock("../../application/events", () => ({
+  enqueueProviderPlannedActivityJobs: plannedWorkoutSyncState.enqueueProviderPlannedActivityJobs,
 }));
 
 vi.mock("../../utils/estimation-helpers", async (importOriginal) => {
@@ -70,12 +77,15 @@ vi.mock("../../infrastructure/repositories", () => ({
 
 import { activityPlansRouter } from "../activity-plans";
 
-type MockTableName = "activity_plans" | "content_access_grants" | "likes" | "profiles";
+type MockTableName = "activity_plans" | "content_access_grants" | "events" | "likes" | "profiles";
 type MockOperation = "select" | "insert" | "update" | "delete";
 
-type MockDbState = Partial<Record<`${MockOperation}:${MockTableName}`, unknown[][]>>;
+type MockRows = unknown[];
+type MockResult = MockRows | ((payload?: unknown) => MockRows);
+type MockDbState = Partial<Record<`${MockOperation}:${MockTableName}`, MockResult[]>>;
 
 type DbCall = {
+  conflict?: unknown;
   operation: MockOperation;
   table: MockTableName;
   payload?: unknown;
@@ -132,6 +142,10 @@ function resolveTableName(table: unknown): MockTableName {
     return "likes";
   }
 
+  if (table === events) {
+    return "events";
+  }
+
   if (table === contentAccessGrants) {
     return "content_access_grants";
   }
@@ -147,12 +161,13 @@ function createDbMock(state: MockDbState = {}) {
   const callLog: DbCall[] = [];
   const counters = new Map<string, number>();
 
-  const nextRows = (operation: MockOperation, table: MockTableName) => {
+  const nextRows = (operation: MockOperation, table: MockTableName, payload?: unknown) => {
     const key = `${operation}:${table}` as const;
     const entries = state[key] ?? [];
     const index = counters.get(key) ?? 0;
     counters.set(key, index + 1);
-    return entries[index] ?? entries[entries.length - 1] ?? [];
+    const result = entries[index] ?? entries[entries.length - 1] ?? [];
+    return typeof result === "function" ? result(payload) : result;
   };
 
   const createSelectBuilder = (table: MockTableName) => {
@@ -181,10 +196,20 @@ function createDbMock(state: MockDbState = {}) {
         const tableName = resolveTableName(table);
         return {
           values: (payload: unknown) => {
-            callLog.push({ operation: "insert", table: tableName, payload });
-            return {
-              returning: async () => nextRows("insert", tableName),
+            const call: DbCall = { operation: "insert", table: tableName, payload };
+            callLog.push(call);
+            type InsertBuilder = {
+              onConflictDoUpdate: (conflict: unknown) => InsertBuilder;
+              returning: () => Promise<MockRows>;
             };
+            const builder: InsertBuilder = {
+              onConflictDoUpdate: (conflict: unknown) => {
+                call.conflict = conflict;
+                return builder;
+              },
+              returning: async () => nextRows("insert", tableName, payload),
+            };
+            return builder;
           },
         };
       },
@@ -244,6 +269,7 @@ function createProfileRow(overrides: Record<string, unknown> = {}) {
 describe("activityPlansRouter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    plannedWorkoutSyncState.enqueueProviderPlannedActivityJobs.mockResolvedValue(null);
   });
 
   it("list returns estimated items, liked state, and a next cursor", async () => {
@@ -484,6 +510,22 @@ describe("activityPlansRouter", () => {
     });
   });
 
+  it("create rejects provider import provenance", async () => {
+    const { caller, callLog } = createCaller();
+
+    await expect(
+      caller.create({
+        name: "Spoofed import",
+        activity_category: "bike",
+        structure: sampleStructure,
+        import_provider: "fit",
+        import_external_id: "spoofed-fit-id",
+      } as never),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
+
+    expect(callLog).toHaveLength(0);
+  });
+
   it("update persists visibility and recomputed metrics for an owned plan", async () => {
     const existingRow = createActivityPlanRow({
       id: "66666666-6666-4666-8666-666666666666",
@@ -516,6 +558,65 @@ describe("activityPlansRouter", () => {
     expect(result).toMatchObject({ id: existingRow.id, visibility: "public" });
   });
 
+  it("update republishes every owned future planned event after a material plan change", async () => {
+    const existingRow = createActivityPlanRow({ name: "Before Update" });
+    const updatedRow = createActivityPlanRow({ name: "After Update" });
+    const futureEvents = [{ id: "event-1" }, { id: "event-2" }];
+    plannedWorkoutSyncState.enqueueProviderPlannedActivityJobs.mockResolvedValue({
+      affectedCount: 2,
+      operation: "publish",
+      queued: true,
+      success: true,
+    });
+    const { caller } = createCaller({
+      state: {
+        "select:activity_plans": [[existingRow]],
+        "select:events": [futureEvents],
+        "update:activity_plans": [[updatedRow]],
+      },
+    });
+
+    const result = await caller.update({ id: existingRow.id, name: "After Update" });
+
+    expect(plannedWorkoutSyncState.enqueueProviderPlannedActivityJobs).toHaveBeenCalledOnce();
+    expect(plannedWorkoutSyncState.enqueueProviderPlannedActivityJobs).toHaveBeenCalledWith(
+      expect.anything(),
+      { eventIds: ["event-1", "event-2"], operation: "publish" },
+    );
+    expect(result.plannedWorkoutSync).toMatchObject({ operation: "publish", success: true });
+  });
+
+  it("update does not republish for a nonmaterial or unchanged material update", async () => {
+    const existingRow = createActivityPlanRow();
+    const updatedRow = createActivityPlanRow({ notes: "Updated notes" });
+    const { caller, callLog } = createCaller({
+      state: {
+        "select:activity_plans": [[existingRow], [updatedRow]],
+        "update:activity_plans": [[updatedRow], [updatedRow]],
+      },
+    });
+
+    await caller.update({ id: existingRow.id, notes: "Updated notes" });
+    await caller.update({ id: existingRow.id, name: existingRow.name });
+
+    expect(plannedWorkoutSyncState.enqueueProviderPlannedActivityJobs).not.toHaveBeenCalled();
+    expect(callLog.filter((call) => call.table === "events")).toHaveLength(0);
+  });
+
+  it("rejects a category-only update when the existing targets are incompatible", async () => {
+    const existingRow = createActivityPlanRow();
+    const { caller, callLog } = createCaller({
+      state: {
+        "select:activity_plans": [[existingRow]],
+      },
+    });
+
+    await expect(
+      caller.update({ id: existingRow.id, activity_category: "run" }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
+    expect(callLog.some((call) => call.operation === "update")).toBe(false);
+  });
+
   it("update rejects id-only no-op payloads before hitting the database", async () => {
     const { caller, callLog } = createCaller();
 
@@ -526,9 +627,25 @@ describe("activityPlansRouter", () => {
     expect(callLog).toHaveLength(0);
   });
 
+  it("update rejects provider import provenance", async () => {
+    const { caller, callLog } = createCaller();
+
+    await expect(
+      caller.update({
+        id: "66666666-6666-4666-8666-666666666666",
+        import_provider: "zwo",
+        import_external_id: "spoofed-zwo-id",
+      } as never),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
+
+    expect(callLog).toHaveLength(0);
+  });
+
   it("delete removes an owned plan", async () => {
+    const ownedPlan = createActivityPlanRow({ id: "77777777-7777-4777-8777-777777777777" });
     const { caller, callLog } = createCaller({
       state: {
+        "select:activity_plans": [[ownedPlan]],
         "delete:activity_plans": [[{ id: "77777777-7777-4777-8777-777777777777" }]],
       },
     });
@@ -536,7 +653,98 @@ describe("activityPlansRouter", () => {
     const result = await caller.delete({ id: "77777777-7777-4777-8777-777777777777" });
 
     expect(callLog.some((call) => call.operation === "delete")).toBe(true);
-    expect(result).toEqual({ success: true });
+    expect(result).toEqual({ success: true, plannedWorkoutSync: null, wahooSync: null });
+  });
+
+  it("delete enqueues unsync for linked future planned events before allowing FK set-null", async () => {
+    const ownedPlan = createActivityPlanRow({ id: "77777777-7777-4777-8777-777777777777" });
+    const eventRows = [{ id: "event-1" }, { id: "event-2" }];
+    plannedWorkoutSyncState.enqueueProviderPlannedActivityJobs.mockResolvedValue({
+      affectedCount: 2,
+      operation: "unsync",
+      queued: true,
+      success: true,
+    });
+    const { caller, callLog } = createCaller({
+      state: {
+        "select:activity_plans": [[ownedPlan]],
+        "select:events": [eventRows],
+        "delete:activity_plans": [[{ id: "77777777-7777-4777-8777-777777777777" }]],
+      },
+    });
+
+    const result = await caller.delete({ id: "77777777-7777-4777-8777-777777777777" });
+
+    expect(plannedWorkoutSyncState.enqueueProviderPlannedActivityJobs).toHaveBeenCalledWith(
+      expect.anything(),
+      { eventIds: ["event-1", "event-2"], operation: "unsync" },
+    );
+    expect(callLog.some((call) => call.operation === "delete")).toBe(true);
+    expect(result.plannedWorkoutSync).toMatchObject({ operation: "unsync", success: true });
+  });
+
+  it("delete rejects an unowned plan without querying events or enqueueing unsync", async () => {
+    const { caller, callLog } = createCaller({
+      state: {
+        "select:activity_plans": [[]],
+      },
+    });
+
+    await expect(
+      caller.delete({ id: "77777777-7777-4777-8777-777777777777" }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" } as Partial<TRPCError>);
+
+    expect(callLog.filter((call) => call.table === "events")).toHaveLength(0);
+    expect(callLog.filter((call) => call.operation === "delete")).toHaveLength(0);
+    expect(plannedWorkoutSyncState.enqueueProviderPlannedActivityJobs).not.toHaveBeenCalled();
+  });
+
+  it("delete keeps the plan when unsync enqueue reports failure", async () => {
+    const ownedPlan = createActivityPlanRow({ id: "77777777-7777-4777-8777-777777777777" });
+    plannedWorkoutSyncState.enqueueProviderPlannedActivityJobs.mockResolvedValue({
+      affectedCount: 1,
+      error: "provider queue unavailable",
+      operation: "unsync",
+      queued: false,
+      success: false,
+    });
+    const { caller, callLog } = createCaller({
+      state: {
+        "select:activity_plans": [[ownedPlan]],
+        "select:events": [[{ id: "event-1" }]],
+      },
+    });
+
+    await expect(
+      caller.delete({ id: "77777777-7777-4777-8777-777777777777" }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "Activity plan cannot be deleted until linked device workouts can be unsynced",
+    } as Partial<TRPCError>);
+
+    expect(callLog.filter((call) => call.operation === "delete")).toHaveLength(0);
+  });
+
+  it("delete keeps the plan when unsync enqueue throws", async () => {
+    const ownedPlan = createActivityPlanRow({ id: "77777777-7777-4777-8777-777777777777" });
+    plannedWorkoutSyncState.enqueueProviderPlannedActivityJobs.mockRejectedValue(
+      new Error("provider queue unavailable"),
+    );
+    const { caller, callLog } = createCaller({
+      state: {
+        "select:activity_plans": [[ownedPlan]],
+        "select:events": [[{ id: "event-1" }]],
+      },
+    });
+
+    await expect(
+      caller.delete({ id: "77777777-7777-4777-8777-777777777777" }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: "Activity plan cannot be deleted until linked device workouts can be unsynced",
+    } as Partial<TRPCError>);
+
+    expect(callLog.filter((call) => call.operation === "delete")).toHaveLength(0);
   });
 
   it("delete rejects unexpected input fields", async () => {
@@ -608,8 +816,7 @@ describe("activityPlansRouter", () => {
     });
     const { caller, callLog } = createCaller({
       state: {
-        "select:activity_plans": [[existingRow]],
-        "update:activity_plans": [[updatedRow]],
+        "insert:activity_plans": [[updatedRow]],
       },
     });
 
@@ -620,13 +827,28 @@ describe("activityPlansRouter", () => {
       structure: sampleStructure,
     });
 
-    const updateCall = callLog.find((call) => call.operation === "update");
-    expect(updateCall?.payload).toMatchObject({
+    const upsertCall = callLog.find((call) => call.operation === "insert");
+    expect(upsertCall?.payload).toMatchObject({
       name: "Updated FIT",
       import_provider: "fit",
       import_external_id: "fit-template-1",
       template_visibility: "private",
     });
+    expect(upsertCall?.conflict).toMatchObject({
+      target: [
+        activityPlans.profile_id,
+        activityPlans.import_provider,
+        activityPlans.import_external_id,
+      ],
+      targetWhere: expect.anything(),
+      set: {
+        name: "Updated FIT",
+        import_provider: "fit",
+        import_external_id: "fit-template-1",
+      },
+    });
+    expect(callLog.filter((call) => call.operation === "select")).toHaveLength(0);
+    expect(callLog.filter((call) => call.operation === "update")).toHaveLength(0);
     expect(result).toMatchObject({
       action: "updated",
       item: { id: existingRow.id, content_type: "activity_plan" },
@@ -634,16 +856,18 @@ describe("activityPlansRouter", () => {
   });
 
   it("importFromZwoTemplate creates a new imported plan when none exists", async () => {
-    const createdRow = createActivityPlanRow({
-      id: "13131313-1313-4313-8313-131313131313",
-      name: "Created ZWO",
-      import_provider: "zwo",
-      import_external_id: "zwo-template-1",
-    });
     const { caller, callLog } = createCaller({
       state: {
-        "select:activity_plans": [[]],
-        "insert:activity_plans": [[createdRow]],
+        "insert:activity_plans": [
+          (payload) => [
+            createActivityPlanRow({
+              ...(payload as Record<string, unknown>),
+              name: "Created ZWO",
+              import_provider: "zwo",
+              import_external_id: "zwo-template-1",
+            }),
+          ],
+        ],
       },
     });
 
@@ -664,7 +888,7 @@ describe("activityPlansRouter", () => {
     });
     expect(result).toMatchObject({
       action: "created",
-      item: { id: createdRow.id, content_type: "activity_plan" },
+      item: { content_type: "activity_plan" },
     });
   });
 });

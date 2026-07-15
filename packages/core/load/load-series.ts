@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ActivityTssIdentity } from "../activity-analysis/contracts";
 
 export const loadFamilySchema = z.enum([
   "tss",
@@ -24,6 +25,19 @@ export const loadSeriesIdentitySchema = z.object({
 });
 
 export type LoadSeriesIdentity = z.infer<typeof loadSeriesIdentitySchema>;
+
+/** Maps activity-level TSS evidence to its stable load-series identity. */
+export function loadSeriesIdentityForActivityTss(
+  identity: ActivityTssIdentity,
+): LoadSeriesIdentity {
+  return loadSeriesIdentitySchema.parse({
+    sport: identity.sport,
+    family: "tss",
+    method: identity.method,
+    version: identity.version,
+    sourceDefinition: identity.source,
+  });
+}
 
 const datedObservationSchema = z.object({ date: z.iso.date() });
 

@@ -9,6 +9,7 @@ vi.mock("@repo/db", () => ({
     name: "activities.name",
     type: "activities.type",
     started_at: "activities.started_at",
+    finished_at: "activities.finished_at",
     activity_file_path: "activities.activity_file_path",
   },
   activityGeometry: { table: "activity_geometry", activity_id: "activity_geometry.activity_id" },
@@ -51,6 +52,8 @@ const mocks = vi.hoisted(() => ({
   calculateNormalizedSpeed: vi.fn(),
   detectLTHR: vi.fn(),
   estimateVO2Max: vi.fn(),
+  createActivityAnalysisStore: vi.fn(),
+  resolveActivityContextAsOf: vi.fn(),
   fetchActivityTemperature: vi.fn(),
   storage: {
     createBucket: vi.fn(),
@@ -66,7 +69,8 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@repo/core", () => ({
+vi.mock("@repo/core", async () => ({
+  ...(await vi.importActual<typeof import("@repo/core")>("@repo/core")),
   calculateBounds: mocks.calculateBounds,
   encodePolyline: mocks.encodePolyline,
   inferActivityFileType: mocks.inferActivityFileType,
@@ -117,6 +121,14 @@ vi.mock("../../storage-service", () => ({
 
 vi.mock("../../db", () => ({
   getRequiredDb: () => mocks.db.current,
+}));
+
+vi.mock("../../infrastructure/repositories/drizzle-activity-analysis-repository", () => ({
+  createActivityAnalysisStore: mocks.createActivityAnalysisStore,
+}));
+
+vi.mock("../../lib/activity-analysis/context", () => ({
+  resolveActivityContextAsOf: mocks.resolveActivityContextAsOf,
 }));
 
 import { activityFilesRouter } from "../activity-files";
@@ -268,9 +280,35 @@ beforeEach(() => {
   mocks.detectLTHR.mockReturnValue(175);
   mocks.estimateVO2Max.mockReturnValue(52);
   mocks.fetchActivityTemperature.mockResolvedValue(null);
+  mocks.createActivityAnalysisStore.mockImplementation((db) => ({ db }));
+  mocks.resolveActivityContextAsOf.mockResolvedValue({
+    profileMetrics: {
+      ftp: 300,
+      lthr: null,
+      lthr_by_sport: { bike: 180 },
+      threshold_speed_mps: null,
+      swim_threshold_speed_mps: null,
+    },
+    recentEfforts: [],
+    profile: {},
+    calibrationQuality: {
+      ftp: {
+        source: "manual",
+        observed_at: "2026-02-20T00:00:00.000Z",
+        confidence: "high",
+        stale: false,
+        estimate: false,
+        calculation_version: null,
+      },
+    },
+  });
 });
 
 describe("activityFilesRouter", () => {
+  it("does not expose evidence maintenance as an end-user procedure", () => {
+    expect(activityFilesRouter._def.procedures).not.toHaveProperty("recalculateOwnedEvidence");
+  });
+
   it("creates signed upload URLs for activity uploads", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-03T12:00:00.000Z"));
@@ -329,7 +367,7 @@ describe("activityFilesRouter", () => {
       updated_at: finishedAt,
     };
     const { db, callLog } = createDbMock({
-      selectResults: [[{ value: "168" }], [{ value: "188" }], [{ value: "52" }]],
+      selectResults: [[{ value: "168" }], [{ value: "188" }], [{ value: "52" }], []],
       findFirstResults: [createdActivity],
       executeResults: [{ rows: [] }],
     });
@@ -386,12 +424,28 @@ describe("activityFilesRouter", () => {
         finished_at: finishedAt.toISOString(),
       },
     });
+    const activityInsert = callLog.insertCalls.find(
+      (call) =>
+        !Array.isArray(call.values) &&
+        typeof call.values === "object" &&
+        call.values !== null &&
+        "name" in call.values,
+    );
+    const effortInsert = callLog.insertCalls.find(
+      (call) =>
+        Array.isArray(call.values) && call.values.some((value) => value.effort_type === "power"),
+    );
+    const persistedActivityId = (activityInsert?.values as { id?: string } | undefined)?.id;
+    expect(persistedActivityId).toEqual(expect.any(String));
+    expect(
+      (effortInsert?.values as Array<{ activity_id?: string }> | undefined)?.[0]?.activity_id,
+    ).toBe(persistedActivityId);
     expect(callLog.insertCalls).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           values: expect.arrayContaining([
             expect.objectContaining({
-              activity_id: createdActivity.id,
+              activity_id: expect.any(String),
               effort_type: "power",
               profile_id: "11111111-1111-4111-8111-111111111111",
               recorded_at: finishedAt,
@@ -463,6 +517,8 @@ describe("activityFilesRouter", () => {
         [{ value: "168" }],
         [{ value: "52" }],
         [activity],
+        [],
+        [],
         [processingIngestion],
         [readyIngestion],
       ],
@@ -656,13 +712,17 @@ describe("activityFilesRouter", () => {
             "activities/11111111-1111-4111-8111-111111111111/uploads/authorized.fit",
           profile_id: "11111111-1111-4111-8111-111111111111",
           is_private: true,
+          type: "bike",
         },
       ],
     });
 
     mocks.parseActivityFile.mockReturnValue({
       metadata: { type: "cycling", startTime: new Date("2026-03-01T10:00:00.000Z") },
-      records: [{ timestamp: new Date("2026-03-01T10:00:00.000Z"), power: 240 }],
+      records: [
+        { timestamp: new Date("2026-03-01T10:00:00.000Z"), power: 240, heartRate: 160 },
+        { timestamp: new Date("2026-03-01T10:00:10.000Z"), power: 300, heartRate: 180 },
+      ],
       laps: [{ startTime: new Date("2026-03-01T10:00:00.000Z") }],
       lengths: [],
       summary: { totalTime: 1800, totalDistance: 20000 },
@@ -676,11 +736,52 @@ describe("activityFilesRouter", () => {
     expect(mocks.storage.download).toHaveBeenCalledWith(
       "activities/11111111-1111-4111-8111-111111111111/uploads/authorized.fit",
     );
-    expect(result).toEqual({
-      records: [{ timestamp: new Date("2026-03-01T10:00:00.000Z"), power: 240 }],
+    expect(result).toMatchObject({
+      records: [
+        { timestamp: new Date("2026-03-01T10:00:00.000Z"), power: 240, heartRate: 160 },
+        { timestamp: new Date("2026-03-01T10:00:10.000Z"), power: 300, heartRate: 180 },
+      ],
       laps: [{ startTime: new Date("2026-03-01T10:00:00.000Z") }],
       lengths: [],
       summary: { totalTime: 1800, totalDistance: 20000 },
+      analysis: {
+        version: "2",
+        sport: "bike",
+        distributions: {
+          heart_rate: {
+            threshold: 180,
+            time_weighted_average: 160,
+            quality: { status: "sufficient", integrated_seconds: 10, coverage_ratio: 1 },
+          },
+          power: {
+            threshold: 300,
+            threshold_identity: {
+              source: "manual",
+              observed_at: "2026-02-20T00:00:00.000Z",
+              confidence: "high",
+              stale: false,
+              estimate: false,
+              calculation_version: null,
+            },
+            time_weighted_average: 240,
+            quality: { status: "sufficient", integrated_seconds: 10, coverage_ratio: 1 },
+          },
+        },
+        heart_rate_load: {
+          value: 0.219,
+          reason: null,
+          lthr_bpm: 180,
+          calculation_version: "lthr_normalized_squared_v1",
+          max_heart_rate_bpm: 250,
+        },
+      },
+    });
+    expect(mocks.resolveActivityContextAsOf).toHaveBeenCalledWith({
+      store: { db },
+      profileId: "11111111-1111-4111-8111-111111111111",
+      activityTimestamp: new Date("2026-03-01T10:00:00.000Z"),
+      activityId,
+      evidenceScope: "thresholds",
     });
   });
 
@@ -692,6 +793,7 @@ describe("activityFilesRouter", () => {
           activity_file_path: null,
           profile_id: "11111111-1111-4111-8111-111111111111",
           is_private: true,
+          type: "bike",
         },
       ],
     });
@@ -713,6 +815,7 @@ describe("activityFilesRouter", () => {
           activity_file_path: "activities/22222222-2222-4222-8222-222222222222/uploads/public.fit",
           profile_id: "22222222-2222-4222-8222-222222222222",
           is_private: false,
+          type: "bike",
         },
       ],
     });

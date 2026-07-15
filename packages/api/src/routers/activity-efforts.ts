@@ -142,6 +142,37 @@ export const activityEffortsRouter = createTRPCRouter({
       );
       const resetsTrustedProvenance = changesObservation && existing.source !== "manual";
 
+      if (resetsTrustedProvenance) {
+        const manualOverride = createActivityEffortInputSchema.parse({
+          activity_id: input.activity_id === undefined ? existing.activity_id : input.activity_id,
+          activity_category: input.activity_category ?? existing.activity_category,
+          duration_seconds: input.duration_seconds ?? existing.duration_seconds,
+          effort_type: input.effort_type ?? existing.effort_type,
+          recorded_at:
+            input.recorded_at ??
+            (existing.recorded_at instanceof Date
+              ? existing.recorded_at.toISOString()
+              : new Date(existing.recorded_at).toISOString()),
+          start_offset:
+            input.start_offset === undefined ? existing.start_offset : input.start_offset,
+          value: input.value ?? existing.value,
+        });
+        const [manualRow] = await db
+          .insert(activityEfforts)
+          .values({
+            id: randomUUID(),
+            ...manualOverride,
+            created_at: new Date(),
+            profile_id: ctx.session.user.id,
+            recorded_at: new Date(manualOverride.recorded_at),
+            source: "manual",
+            method: MANUAL_ACTIVITY_EFFORT_METHOD,
+            provenance: MANUAL_ACTIVITY_EFFORT_PROVENANCE,
+          })
+          .returning();
+        return manualRow ? activityEffortRowSchema.parse(manualRow) : null;
+      }
+
       const [data] = await db
         .update(activityEfforts)
         .set({
@@ -150,13 +181,6 @@ export const activityEffortsRouter = createTRPCRouter({
           recorded_at: normalizedPatch.recorded_at
             ? new Date(normalizedPatch.recorded_at)
             : undefined,
-          ...(resetsTrustedProvenance
-            ? {
-                source: "manual" as const,
-                method: MANUAL_ACTIVITY_EFFORT_METHOD,
-                provenance: MANUAL_ACTIVITY_EFFORT_PROVENANCE,
-              }
-            : {}),
           updated_at: new Date(),
         })
         .where(and(eq(activityEfforts.id, id), eq(activityEfforts.profile_id, ctx.session.user.id)))
@@ -170,6 +194,22 @@ export const activityEffortsRouter = createTRPCRouter({
     .output(deleteActivityEffortOutputSchema)
     .mutation(async ({ input, ctx }) => {
       const db = getRequiredDb(ctx);
+      const [existing] = await db
+        .select({ source: activityEfforts.source })
+        .from(activityEfforts)
+        .where(
+          and(
+            eq(activityEfforts.id, input.id),
+            eq(activityEfforts.profile_id, ctx.session.user.id),
+          ),
+        )
+        .limit(1);
+      if (existing && existing.source !== "manual") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Imported and calculated effort evidence cannot be deleted",
+        });
+      }
       await db
         .delete(activityEfforts)
         .where(

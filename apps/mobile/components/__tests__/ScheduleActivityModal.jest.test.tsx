@@ -240,7 +240,7 @@ describe("ScheduleActivityModal", () => {
       />,
     );
 
-    fireEvent.press(screen.getByTestId("schedule-repeat-weekly-toggle"));
+    fireEvent(screen.getByLabelText("Repeat weekly"), "onCheckedChange", true);
     fireEvent.press(screen.getByTestId("schedule-submit-button"));
 
     expect(createMutateMock).toHaveBeenCalledWith(
@@ -265,10 +265,10 @@ describe("ScheduleActivityModal", () => {
       />,
     );
 
-    fireEvent.press(screen.getByTestId("schedule-repeat-weekly-toggle"));
+    fireEvent(screen.getByLabelText("Repeat weekly"), "onCheckedChange", true);
 
     for (let index = 0; index < 60; index++) {
-      fireEvent.press(screen.getByTestId("schedule-repeat-count-increment"));
+      fireEvent.press(screen.getByLabelText("Increase occurrence count"));
     }
 
     fireEvent.press(screen.getByTestId("schedule-submit-button"));
@@ -285,7 +285,7 @@ describe("ScheduleActivityModal", () => {
     createMutateMock.mockClear();
 
     for (let index = 0; index < 60; index++) {
-      fireEvent.press(screen.getByTestId("schedule-repeat-count-decrement"));
+      fireEvent.press(screen.getByLabelText("Decrease occurrence count"));
     }
 
     fireEvent.press(screen.getByTestId("schedule-submit-button"));
@@ -297,6 +297,23 @@ describe("ScheduleActivityModal", () => {
           timezone: "UTC",
         },
       }),
+    );
+  });
+
+  it("omits recurrence when weekly repeat is disabled", () => {
+    renderNative(
+      <ScheduleActivityModal
+        visible
+        onClose={jest.fn()}
+        activityPlanId="plan-1"
+        preselectedDate="2026-06-02"
+      />,
+    );
+
+    fireEvent.press(screen.getByTestId("schedule-submit-button"));
+
+    expect(createMutateMock).toHaveBeenCalledWith(
+      expect.objectContaining({ recurrence: undefined }),
     );
   });
 

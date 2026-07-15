@@ -1,5 +1,22 @@
-import type { IntegrationProviderId, OnboardingIntent } from "@repo/core";
+import type {
+  AthleteTrainingSettings,
+  GoalEditorDraft,
+  IntegrationProviderId,
+  OnboardingIntent,
+} from "@repo/core";
 import type { ComponentType } from "react";
+import type { AthleteBaselineFieldSource } from "@/components/athlete-baseline";
+import type { CompactTrainingPreferencesValue } from "@/components/settings/training-preferences/compactTrainingPreferences";
+
+export type TrainingPreferencesHydrationStatus = "loading" | "ready" | "error";
+
+export type OnboardingSocialActionStatus = "pending" | "saved" | "failed" | "abandoned";
+
+export type OnboardingGroupAction = {
+  action: "join" | "request";
+  action_key: string;
+  group_id: string;
+};
 
 export interface OnboardingData {
   full_name: string;
@@ -21,13 +38,43 @@ export interface OnboardingData {
   training_frequency: "1-2" | "3-4" | "5-6" | "7+" | null;
   equipment: string[];
   goals: string[];
+  training_settings: AthleteTrainingSettings;
+  compact_training_preferences: CompactTrainingPreferencesValue;
+  training_preferences_patch: Partial<CompactTrainingPreferencesValue>;
+  training_preferences_error: string | null;
+  training_preferences_hydration_status: TrainingPreferencesHydrationStatus;
+  should_save_training_preferences: boolean;
+  goal_draft: GoalEditorDraft | null;
+  should_create_goal: boolean;
+  selected_invitation_ids: string[];
+  selected_group_ids: string[];
+  selected_group_actions: OnboardingGroupAction[];
+  selected_follow_profile_ids: string[];
+  social_action_statuses: Record<string, OnboardingSocialActionStatus>;
 }
 
-export type StepId = "profile" | "connect_import" | "training_baseline" | "summary";
+export type StepId =
+  | "profile"
+  | "connect_import"
+  | "training_baseline"
+  | "goals_preferences"
+  | "groups_people"
+  | "summary";
+
+export type OnboardingStatusModal = {
+  title: string;
+  description: string;
+  primaryLabel?: string;
+  onPrimary?: () => void | Promise<void>;
+  secondaryLabel?: string;
+  onSecondary?: () => void | Promise<void>;
+};
 
 export type IntegrationProvider = IntegrationProviderId;
 
-export type OnboardingFieldSources = Partial<Record<keyof OnboardingData, string>>;
+export type OnboardingFieldSources = Partial<
+  Record<keyof OnboardingData, AthleteBaselineFieldSource>
+>;
 
 export interface ProviderSyncStatus {
   status: "idle" | "queued" | "running" | "succeeded" | "partial" | "failed" | "timed_out";
@@ -53,7 +100,10 @@ export interface StepProps {
   data: OnboardingData;
   updateData: (
     updates: Partial<OnboardingData>,
-    options?: { source?: "estimated" | "imported" | "user" },
+    options?: {
+      source?: "estimated" | "imported" | "user";
+      sourceLabels?: Partial<Record<keyof OnboardingData, string>>;
+    },
   ) => void;
   fieldSources?: OnboardingFieldSources;
   providerSyncStatus?: ProviderSyncStatus;
@@ -62,6 +112,7 @@ export interface StepProps {
   onClearProviderRequirement?: (provider: IntegrationProvider) => void;
   usernameAvailability?: {
     available?: boolean;
+    isError: boolean;
     isChecking: boolean;
   };
 }

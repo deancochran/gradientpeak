@@ -5,3 +5,4 @@ const TEST_SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key";
 process.env.DATABASE_URL ??= TEST_DATABASE_URL;
 process.env.NEXT_PRIVATE_SUPABASE_URL ??= TEST_SUPABASE_URL;
 process.env.NEXT_PRIVATE_SUPABASE_SECRET_KEY ??= TEST_SUPABASE_SERVICE_ROLE_KEY;
+process.env.PROVIDER_TOKEN_ENCRYPTION_KEY ??= Buffer.alloc(32, 7).toString("base64");

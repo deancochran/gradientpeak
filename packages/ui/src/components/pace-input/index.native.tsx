@@ -8,16 +8,20 @@ import type { PaceInputProps } from "./shared";
 
 function PaceInput({
   accessibilityHint,
+  disabled = false,
   error,
   helperText = "Use mm:ss per kilometer",
   id,
   label,
+  name: _name,
+  onBlur,
   onChange,
   onPaceSecondsChange,
   placeholder = "e.g., 4:15",
   required = false,
   unitLabel = "/km",
   value,
+  testId,
 }: PaceInputProps) {
   const [draftValue, setDraftValue] = useState(value);
 
@@ -36,27 +40,42 @@ function PaceInput({
       <View className="flex-row items-center gap-2">
         <Input
           accessibilityLabel={label}
-          accessibilityHint={accessibilityHint ?? "Enter pace in mm:ss format, for example 4:15"}
+          accessibilityHint={[
+            required ? "Required" : undefined,
+            accessibilityHint ?? "Enter pace in mm:ss format, for example 4:15",
+            helperText,
+            error ? `Error: ${error}` : undefined,
+          ]
+            .filter(Boolean)
+            .join(". ")}
+          accessibilityState={{ disabled }}
+          aria-invalid={!!error}
+          aria-required={required}
           className={error ? "flex-1 border-destructive bg-destructive/5" : "flex-1"}
+          editable={!disabled}
           value={draftValue}
           onBlur={() => {
-            const normalized = normalizePaceInput(draftValue);
-            if (!normalized) {
-              return;
+            if (!disabled) {
+              const normalized = normalizePaceInput(draftValue);
+              if (normalized) {
+                if (normalized !== draftValue) {
+                  setDraftValue(normalized);
+                  onChange(normalized);
+                }
+                onPaceSecondsChange?.(parseMmSsToSeconds(normalized));
+              }
             }
-            if (normalized !== draftValue) {
-              setDraftValue(normalized);
-              onChange(normalized);
-            }
-            onPaceSecondsChange?.(parseMmSsToSeconds(normalized));
+            onBlur?.();
           }}
           onChangeText={(nextValue) => {
+            if (disabled) return;
             setDraftValue(nextValue);
             onChange(nextValue);
             onPaceSecondsChange?.(parseMmSsToSeconds(nextValue));
           }}
           keyboardType="numbers-and-punctuation"
           placeholder={placeholder}
+          testId={testId}
         />
         <Text className="text-xs text-muted-foreground">{unitLabel}</Text>
       </View>

@@ -1,5 +1,5 @@
 import { schema } from "@repo/db";
-import { and, asc, eq, gt, inArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, or, sql } from "drizzle-orm";
 import type {
   CreateProviderSyncRepositoryOptions,
   ProviderSyncJobRecord,
@@ -32,9 +32,10 @@ type ProviderSyncJobSqlRow = {
   resourceKind: ProviderSyncJobRecord["resourceKind"];
   runAt: Date | string;
   staleLockRecovered?: boolean;
-  status: ProviderSyncJobRecord["status"];
+  status: string;
   supersedesJobId: string | null;
   syncLaneKey: string | null;
+  updatedAt?: Date | string;
 };
 
 function mapProviderSyncJobRow(row: ProviderSyncJobSqlRow): ProviderSyncJobRecord {
@@ -42,6 +43,7 @@ function mapProviderSyncJobRow(row: ProviderSyncJobSqlRow): ProviderSyncJobRecor
     ...row,
     runAt: row.runAt instanceof Date ? row.runAt.toISOString() : row.runAt,
     status: row.status as ProviderSyncJobRecord["status"],
+    updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : row.updatedAt,
   };
 }
 
@@ -90,117 +92,137 @@ export function createProviderSyncRepository({
       };
     },
     async enqueueJob(input) {
-      if (input.syncLaneKey) {
-        const [existingLaneJob] = await db
-          .select({ id: schema.providerSyncJobs.id, status: schema.providerSyncJobs.status })
-          .from(schema.providerSyncJobs)
-          .where(
-            and(
-              eq(schema.providerSyncJobs.sync_lane_key, input.syncLaneKey),
-              eq(schema.providerSyncJobs.status, "queued"),
-            ),
-          )
-          .orderBy(asc(schema.providerSyncJobs.run_at))
-          .limit(1);
+      return db.transaction(async (tx) => {
+        const lockIdentities = [
+          input.syncLaneKey ? JSON.stringify(["provider-sync", "lane", input.syncLaneKey]) : null,
+          input.dedupeKey ? JSON.stringify(["provider-sync", "dedupe", input.dedupeKey]) : null,
+        ]
+          .filter((identity): identity is string => identity !== null)
+          .sort();
 
-        if (existingLaneJob) {
-          await db
-            .update(schema.providerSyncJobs)
-            .set({
-              dedupe_key: input.dedupeKey,
-              integration_id: input.integrationId,
-              internal_resource_id: input.internalResourceId,
-              job_type: input.jobType,
-              max_attempts: input.maxAttempts,
-              operation: input.operation,
-              payload: input.payload,
-              payload_hash: input.payloadHash,
-              profile_id: input.profileId,
-              resource_kind: input.resourceKind,
-              run_at: new Date(input.runAt),
-              supersedes_job_id: input.supersedesJobId,
-              updated_at: new Date(),
-            })
-            .where(eq(schema.providerSyncJobs.id, existingLaneJob.id));
-
-          return {
-            id: existingLaneJob.id,
-            status: existingLaneJob.status as ProviderSyncJobRecord["status"],
-          };
+        for (const identity of lockIdentities) {
+          await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${identity}, 0))`);
         }
-      }
 
-      if (input.dedupeKey) {
-        const [existing] = await db
-          .select({ id: schema.providerSyncJobs.id, status: schema.providerSyncJobs.status })
-          .from(schema.providerSyncJobs)
-          .where(
-            and(
-              eq(schema.providerSyncJobs.dedupe_key, input.dedupeKey),
-              or(
-                eq(schema.providerSyncJobs.status, "queued"),
-                eq(schema.providerSyncJobs.status, "running"),
-              ),
-            ),
-          )
-          .limit(1);
-
-        if (existing) {
-          if (existing.status === "queued") {
-            await db
-              .update(schema.providerSyncJobs)
-              .set({
-                integration_id: input.integrationId,
-                internal_resource_id: input.internalResourceId,
-                operation: input.operation,
-                payload: input.payload,
-                payload_hash: input.payloadHash,
-                profile_id: input.profileId,
-                resource_kind: input.resourceKind,
-                run_at: new Date(input.runAt),
-                supersedes_job_id: input.supersedesJobId,
-                sync_lane_key: input.syncLaneKey,
-                updated_at: new Date(),
-              })
-              .where(eq(schema.providerSyncJobs.id, existing.id));
-          }
-
-          return {
-            id: existing.id,
-            status: existing.status as ProviderSyncJobRecord["status"],
-          };
-        }
-      }
-
-      const [created] = await db
-        .insert(schema.providerSyncJobs)
-        .values({
-          dedupe_key: input.dedupeKey,
+        const desiredQueuedValues = {
+          dedupe_key: input.dedupeKey ?? null,
           integration_id: input.integrationId,
-          internal_resource_id: input.internalResourceId,
+          internal_resource_id: input.internalResourceId ?? null,
           job_type: input.jobType,
-          max_attempts: input.maxAttempts,
-          operation: input.operation,
+          max_attempts: input.maxAttempts ?? 8,
+          operation: input.operation ?? null,
           payload: input.payload,
-          payload_hash: input.payloadHash,
+          payload_hash: input.payloadHash ?? null,
           profile_id: input.profileId,
           provider: input.provider,
-          resource_kind: input.resourceKind,
+          resource_kind: input.resourceKind ?? null,
           run_at: new Date(input.runAt),
-          status: "queued",
-          supersedes_job_id: input.supersedesJobId,
-          sync_lane_key: input.syncLaneKey,
-        })
-        .returning({ id: schema.providerSyncJobs.id, status: schema.providerSyncJobs.status });
+          supersedes_job_id: input.supersedesJobId ?? null,
+          sync_lane_key: input.syncLaneKey ?? null,
+          updated_at: new Date(),
+        };
 
-      if (!created) {
-        throw new Error("Failed to enqueue provider sync job");
-      }
+        let shouldCheckDedupe = !input.syncLaneKey;
+        if (input.syncLaneKey) {
+          const activeLaneJobs = await tx
+            .select({
+              id: schema.providerSyncJobs.id,
+              jobType: schema.providerSyncJobs.job_type,
+              operation: schema.providerSyncJobs.operation,
+              payloadHash: schema.providerSyncJobs.payload_hash,
+              payloadMatches: sql<boolean>`${schema.providerSyncJobs.payload} = ${JSON.stringify(input.payload)}::jsonb`,
+              status: schema.providerSyncJobs.status,
+            })
+            .from(schema.providerSyncJobs)
+            .where(
+              and(
+                eq(schema.providerSyncJobs.sync_lane_key, input.syncLaneKey),
+                or(
+                  eq(schema.providerSyncJobs.status, "queued"),
+                  eq(schema.providerSyncJobs.status, "running"),
+                ),
+              ),
+            )
+            .orderBy(asc(schema.providerSyncJobs.queue_sequence))
+            .for("update");
+          const queuedJobs = activeLaneJobs.filter((job) => job.status === "queued");
+          const queuedJob = queuedJobs[0];
 
-      return {
-        id: created.id,
-        status: created.status as ProviderSyncJobRecord["status"],
-      };
+          if (queuedJob) {
+            await tx
+              .update(schema.providerSyncJobs)
+              .set(desiredQueuedValues)
+              .where(eq(schema.providerSyncJobs.id, queuedJob.id));
+
+            const redundantQueuedJobIds = queuedJobs.slice(1).map((job) => job.id);
+            if (redundantQueuedJobIds.length > 0) {
+              await tx
+                .delete(schema.providerSyncJobs)
+                .where(inArray(schema.providerSyncJobs.id, redundantQueuedJobIds));
+            }
+
+            return { id: queuedJob.id, status: "queued" };
+          }
+
+          const runningJob = activeLaneJobs.find((job) => job.status === "running");
+          if (
+            runningJob &&
+            runningJob.jobType === input.jobType &&
+            runningJob.operation === (input.operation ?? null) &&
+            runningJob.payloadHash === (input.payloadHash ?? null) &&
+            runningJob.payloadMatches
+          ) {
+            return { id: runningJob.id, status: "running" };
+          }
+
+          shouldCheckDedupe = !runningJob;
+        }
+
+        if (shouldCheckDedupe && input.dedupeKey) {
+          const [existing] = await tx
+            .select({ id: schema.providerSyncJobs.id, status: schema.providerSyncJobs.status })
+            .from(schema.providerSyncJobs)
+            .where(
+              and(
+                eq(schema.providerSyncJobs.dedupe_key, input.dedupeKey),
+                or(
+                  eq(schema.providerSyncJobs.status, "queued"),
+                  eq(schema.providerSyncJobs.status, "running"),
+                ),
+              ),
+            )
+            .limit(1)
+            .for("update");
+
+          if (existing) {
+            if (existing.status === "queued") {
+              await tx
+                .update(schema.providerSyncJobs)
+                .set(desiredQueuedValues)
+                .where(eq(schema.providerSyncJobs.id, existing.id));
+            }
+
+            return {
+              id: existing.id,
+              status: existing.status as ProviderSyncJobRecord["status"],
+            };
+          }
+        }
+
+        const [created] = await tx
+          .insert(schema.providerSyncJobs)
+          .values({ ...desiredQueuedValues, status: "queued" })
+          .returning({ id: schema.providerSyncJobs.id, status: schema.providerSyncJobs.status });
+
+        if (!created) {
+          throw new Error("Failed to enqueue provider sync job");
+        }
+
+        return {
+          id: created.id,
+          status: created.status as ProviderSyncJobRecord["status"],
+        };
+      });
     },
 
     async claimDueJobs({ jobTypes, limit, now, workerId, lockExpiresAt, provider }) {
@@ -456,7 +478,14 @@ export function createProviderSyncRepository({
         : null;
     },
 
-    async listJobs({ limit, profileId, provider, statuses }) {
+    async listJobs({
+      internalResourceId,
+      limit,
+      order = "oldest_run_at",
+      profileId,
+      provider,
+      statuses,
+    }) {
       const rows = await db
         .select({
           attempt: schema.providerSyncJobs.attempt,
@@ -472,28 +501,33 @@ export function createProviderSyncRepository({
           payloadHash: schema.providerSyncJobs.payload_hash,
           profileId: schema.providerSyncJobs.profile_id,
           provider: schema.providerSyncJobs.provider,
+          queueSequence: schema.providerSyncJobs.queue_sequence,
           resourceKind: schema.providerSyncJobs.resource_kind,
           runAt: schema.providerSyncJobs.run_at,
           status: schema.providerSyncJobs.status,
           supersedesJobId: schema.providerSyncJobs.supersedes_job_id,
           syncLaneKey: schema.providerSyncJobs.sync_lane_key,
+          updatedAt: schema.providerSyncJobs.updated_at,
         })
         .from(schema.providerSyncJobs)
         .where(
           and(
+            internalResourceId
+              ? eq(schema.providerSyncJobs.internal_resource_id, internalResourceId)
+              : undefined,
             provider ? eq(schema.providerSyncJobs.provider, provider) : undefined,
             profileId ? eq(schema.providerSyncJobs.profile_id, profileId) : undefined,
             statuses?.length ? inArray(schema.providerSyncJobs.status, statuses) : undefined,
           ),
         )
-        .orderBy(asc(schema.providerSyncJobs.run_at))
+        .orderBy(
+          ...(order === "newest_authority"
+            ? [desc(schema.providerSyncJobs.queue_sequence), desc(schema.providerSyncJobs.run_at)]
+            : [asc(schema.providerSyncJobs.run_at)]),
+        )
         .limit(limit);
 
-      return rows.map((row) => ({
-        ...row,
-        runAt: row.runAt.toISOString(),
-        status: row.status as ProviderSyncJobRecord["status"],
-      }));
+      return rows.map(mapProviderSyncJobRow);
     },
 
     async listSyncStateByIntegrationIds(integrationIds) {

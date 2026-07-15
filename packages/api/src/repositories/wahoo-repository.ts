@@ -1,4 +1,7 @@
-import type { ThresholdMetricSource } from "@repo/core/athlete-inputs";
+import type {
+  ActivityEffortThresholdEvidence,
+  ThresholdMetricSource,
+} from "@repo/core/athlete-inputs";
 import type { DrizzleDbClient } from "@repo/db";
 
 export type WahooIntegrationRecord = {
@@ -43,11 +46,24 @@ export interface WahooRepository {
   findImportedActivityLinkByExternalId(input: {
     externalId: string;
     integrationId: string;
-  }): Promise<{ activityId: string; linkId: string } | null>;
+  }): Promise<{
+    activityId: string;
+    linkId: string;
+    profileId: string;
+    activityFilePath: string | null;
+    activityFileSize: number | null;
+    analysisReady: boolean;
+  } | null>;
   findImportedActivityByProviderExternalId(input: {
     externalId: string;
     provider: "wahoo";
-  }): Promise<{ activityId: string; profileId: string } | null>;
+  }): Promise<{
+    activityId: string;
+    profileId: string;
+    activityFilePath: string | null;
+    activityFileSize: number | null;
+    analysisReady: boolean;
+  } | null>;
   createImportedActivityResourceLink(input: {
     activityId: string;
     externalId: string;
@@ -84,6 +100,7 @@ export interface WahooRepository {
       observationKind: "actual" | "derived";
       observedAt: string;
       value: number;
+      evidence?: ActivityEffortThresholdEvidence;
     }>;
     ftpMetrics: Array<{
       observedAt: string;
@@ -92,6 +109,7 @@ export interface WahooRepository {
     }>;
     maxHr: number | null;
     thresholdHr: number | null;
+    thresholdHrBySport?: Partial<Record<"bike" | "run" | "swim", number>>;
   } | null>;
   getRouteForSync(input: { profileId: string; routeId: string }): Promise<{
     description: string | null;

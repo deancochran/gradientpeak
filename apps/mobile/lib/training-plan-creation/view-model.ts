@@ -106,7 +106,7 @@ export interface BuilderDailyTrainingPathChartViewModel {
     load: [number, number];
     fitness: [number, number];
   };
-  emptyState: null;
+  emptyState: "noActivityHistory" | null;
 }
 
 export interface BuilderRecommendedLoadViewModel {
@@ -390,18 +390,23 @@ function deriveDailyTrainingPathChart({
     endDate,
     tssByDate: targetTssByDate,
   });
-  const initialCTL = state.athleteContext.physiology.currentFitnessCtl.value ?? 0;
-  const initialATL = state.athleteContext.physiology.currentFatigueAtl.value ?? 0;
-  const plannedFitness = replayTrainingLoadByDate({
-    dailyTss: plannedSeries,
-    initialATL,
-    initialCTL,
-  });
-  const idealFitness = replayTrainingLoadByDate({
-    dailyTss: targetSeries,
-    initialATL,
-    initialCTL,
-  });
+  const initialCTL = state.athleteContext.physiology.currentFitnessCtl.value;
+  const initialATL = state.athleteContext.physiology.currentFatigueAtl.value;
+  const hasFitnessBaseline = initialCTL !== null && initialATL !== null;
+  const plannedFitness = hasFitnessBaseline
+    ? replayTrainingLoadByDate({
+        dailyTss: plannedSeries,
+        initialATL,
+        initialCTL,
+      })
+    : [];
+  const idealFitness = hasFitnessBaseline
+    ? replayTrainingLoadByDate({
+        dailyTss: targetSeries,
+        initialATL,
+        initialCTL,
+      })
+    : [];
   const fitnessValues = [...plannedFitness, ...idealFitness].map((point) => point.ctl);
   const maxLoad = Math.max(
     50,
@@ -476,7 +481,7 @@ function deriveDailyTrainingPathChart({
       load: [0, Math.ceil(maxLoad * 1.2)],
       fitness: [0, Math.ceil(maxFitness * 1.2)],
     },
-    emptyState: null,
+    emptyState: hasFitnessBaseline ? null : "noActivityHistory",
   };
 }
 
@@ -964,8 +969,9 @@ function deriveCurrentBaseline(state: TrainingPlanBuilderState): BuilderCurrentB
       atl,
       tsb,
       sourceLabel,
-      summaryLabel: "No fitness baseline",
-      detail: "Add current fitness to start projections from your actual training load.",
+      summaryLabel: "Fitness calibration needed",
+      detail:
+        "Complete activities with calculated load or add current fitness before using CTL, ATL, and TSB projections.",
       target: { type: "athleteContext" },
     };
   }

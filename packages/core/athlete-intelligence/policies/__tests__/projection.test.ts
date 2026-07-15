@@ -34,6 +34,14 @@ function physiology(ftp = 300, weight = 75): PhysiologyMetricsPolicyResult {
     policyVersion: "physiology_metrics_v1",
     metrics: {
       ftp: effect(result(ftp, "watts", "metric:ftp"), athleteMetricRoleByType.ftp),
+      threshold_pace_seconds_per_km: effect(
+        result(270, "seconds_per_km"),
+        athleteMetricRoleByType.threshold_pace_seconds_per_km,
+      ),
+      css_seconds_per_100m: effect(
+        result(95, "seconds_per_100m"),
+        athleteMetricRoleByType.css_seconds_per_100m,
+      ),
       lthr: effect(result(170, "beats_per_minute", "metric:lthr"), athleteMetricRoleByType.lthr),
       max_hr: effect(result(190, "beats_per_minute"), athleteMetricRoleByType.max_hr),
       resting_hr: effect(result(50, "beats_per_minute"), athleteMetricRoleByType.resting_hr),
@@ -731,6 +739,14 @@ describe("whole athlete projection v1", () => {
       physiology: physiology(320, 80),
     });
     expect(ftp.capability.ftp.estimate).toBe(320);
+    expect(ftp.capability.runningThresholdPace).toMatchObject({
+      estimate: 270,
+      unit: "seconds_per_km",
+    });
+    expect(ftp.capability.swimmingCss).toMatchObject({
+      estimate: 95,
+      unit: "seconds_per_100m",
+    });
     expect(ftp.capability.wattsPerKilogram.estimate).toBe(4);
     expect(ftp.readiness).toEqual(base.readiness);
     expect(ftp.feasibility).toEqual(base.feasibility);

@@ -1,9 +1,10 @@
 import type { getRequiredDb } from "../../db";
-import { submitActivity } from "../activities/submit-activity";
+import { type ActivitySubmission, submitActivity } from "../activities/submit-activity";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 
 export interface PersistNewActivityFileImportInput {
+  requestedActivityId?: string;
   profileId: string;
   name: string;
   notes: string | null;
@@ -40,6 +41,7 @@ export interface PersistNewActivityFileImportInput {
   laps: unknown[] | null;
   mapBounds: { minLat: number; maxLat: number; minLng: number; maxLng: number } | null;
   polyline: string | null;
+  analysis?: ActivitySubmission["analysis"];
 }
 
 export async function persistNewActivityFileImport(

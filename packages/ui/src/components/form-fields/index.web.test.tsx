@@ -1,7 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { cleanup } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { useZodForm } from "../../hooks/use-zod-form";
+import { useZodFormSubmit } from "../../hooks/use-zod-form-submit";
 import { fireEvent, renderWeb, screen } from "../../test/render-web";
 import { Form, FormItem, FormLabel } from "../form/index.web";
 import {
@@ -10,9 +12,11 @@ import {
   FormDateTimeField,
   FormDurationField,
   FormIntegerStepperField,
+  FormNumberField,
   FormPaceField,
   FormPercentSliderField,
   FormSegmentedSelectField,
+  FormSelectField,
   FormSwitchField,
   FormTextareaField,
   FormTextField,
@@ -38,6 +42,7 @@ const profileSchema = z.object({
   max_sessions: z.number(),
   pace: z.string(),
   recovery_priority: z.number(),
+  target_power: z.number(),
   wake_time: z.string().nullable(),
   is_public: z.boolean(),
   weight_kg: z.number().nullable(),
@@ -58,6 +63,7 @@ function FormFieldsHarness() {
       is_public: false,
       pace: "4:30",
       recovery_priority: 0.5,
+      target_power: 180,
       wake_time: null,
       weight_kg: 70,
       username: "Avery",
@@ -103,6 +109,7 @@ function FormFieldsHarness() {
           testId="profile-visibility-switch"
         />
         <FormBoundedNumberField control={methods.control} decimals={0} label="FTP" name="ftp" />
+        <FormNumberField control={methods.control} label="Target Power" name="target_power" />
         <FormPaceField control={methods.control} label="Pace" name="pace" />
         <FormPercentSliderField
           control={methods.control}
@@ -135,6 +142,7 @@ function DetachedFormLabelHarness() {
       is_public: false,
       pace: "4:30",
       recovery_priority: 0.5,
+      target_power: 180,
       wake_time: null,
       weight_kg: 70,
       username: "Avery",
@@ -150,7 +158,74 @@ function DetachedFormLabelHarness() {
   );
 }
 
+function AccessibilityHarness() {
+  const methods = useZodForm({
+    schema: z.object({
+      activity: z.string(),
+      dob: z.string().nullable(),
+      recovery: z.number(),
+    }),
+    defaultValues: { activity: "run", dob: null, recovery: 50 },
+  });
+
+  return (
+    <Form {...methods}>
+      <FormDateInputField
+        control={methods.control}
+        description="Used to calculate age"
+        label="Birth date"
+        name="dob"
+        required
+      />
+      <FormSelectField
+        control={methods.control}
+        description="Choose one activity"
+        label="Activity"
+        name="activity"
+        options={[{ label: "Run", value: "run" }]}
+        required
+        testId="activity-trigger"
+      />
+      <FormPercentSliderField
+        control={methods.control}
+        disabled
+        label="Recovery"
+        name="recovery"
+        required
+      />
+      <button
+        type="button"
+        onClick={() => methods.setError("dob", { message: "Birth date is invalid" })}
+      >
+        Set error
+      </button>
+    </Form>
+  );
+}
+
+function DraftSubmitHarness({ onSubmit }: { onSubmit: (values: { amount: number }) => void }) {
+  const methods = useZodForm({
+    schema: z.object({ amount: z.number() }),
+    defaultValues: { amount: 10 },
+  });
+  const submit = useZodFormSubmit({ form: methods, onSubmit });
+
+  return (
+    <Form {...methods}>
+      <form onSubmit={submit.handleSubmit}>
+        <FormNumberField control={methods.control} label="Amount" name="amount" />
+        <button type="button" onClick={() => methods.reset()}>
+          Reset amount
+        </button>
+        <button type="submit">Submit amount</button>
+      </form>
+    </Form>
+  );
+}
+
 describe("Form fields web", () => {
+  afterEach(cleanup);
+
   it("binds shared controlled wrappers to react-hook-form", () => {
     renderWeb(<FormFieldsHarness />);
 
@@ -207,6 +282,60 @@ describe("Form fields web", () => {
     expect(screen.getByTestId("values").textContent).toContain('"pace":"4:05"');
     expect(screen.getByTestId("values").textContent).toContain('"recovery_priority":0.75');
     expect(screen.getByTestId("values").textContent).toContain('"weight_kg":72.5');
+  });
+
+  it("keeps partial number drafts stable and commits a normalized value on blur", () => {
+    renderWeb(<FormFieldsHarness />);
+    const input = screen.getByLabelText("Target Power");
+
+    fireEvent.change(input, { target: { value: "-" } });
+    expect(input).toHaveValue("-");
+    expect(screen.getByTestId("values").textContent).toContain('"target_power":180');
+
+    fireEvent.change(input, { target: { value: "12." } });
+    expect(input).toHaveValue("12.");
+    fireEvent.blur(input);
+
+    expect(input).toHaveValue("12");
+    expect(screen.getByTestId("values").textContent).toContain('"target_power":12');
+  });
+
+  it("discards a focused number draft when reset restores the same value", async () => {
+    const onSubmit = vi.fn();
+    renderWeb(<DraftSubmitHarness onSubmit={onSubmit} />);
+    const input = screen.getByLabelText("Amount");
+
+    fireEvent.change(input, { target: { value: "12." } });
+    fireEvent.click(screen.getByRole("button", { name: "Reset amount" }));
+
+    expect(input).toHaveValue("10");
+
+    fireEvent.click(screen.getByRole("button", { name: "Submit amount" }));
+
+    await vi.waitFor(() => expect(onSubmit).toHaveBeenCalledWith({ amount: 10 }));
+    expect(input).toHaveValue("10");
+  });
+
+  it("connects specialized field labels, descriptions, errors, required, and disabled state", () => {
+    renderWeb(<AccessibilityHarness />);
+    const date = screen.getByLabelText("Birth date");
+    const select = screen.getByRole("combobox", { name: "Activity" });
+
+    expect(date).toBeRequired();
+    expect(date).toHaveAccessibleDescription("Used to calculate age");
+    expect(select).toHaveAttribute("data-slot", "form-control");
+    expect(select).toHaveAttribute("data-testid", "activity-trigger");
+    expect(select).toHaveAttribute("aria-required", "true");
+    expect(select).toHaveAccessibleDescription("Choose one activity");
+    expect(screen.getByLabelText("Recovery")).toBeDisabled();
+    expect(screen.getByLabelText("Recovery slider")).toHaveAttribute("aria-disabled", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Set error" }));
+
+    expect(date).toHaveAttribute("aria-invalid", "true");
+    expect(date).toHaveAccessibleDescription(
+      "Used to calculate age Adjust this field: Birth date is invalid",
+    );
   });
 
   it("throws a clear error when form subcomponents render outside FormField", () => {

@@ -1,13 +1,66 @@
-import { profileMetricTypes } from "@repo/core/athlete-inputs";
+import { type ProfileMetricType, profileMetricTypes } from "@repo/core/athlete-inputs";
 import type { DateRange } from "@/components/shared";
 
 export type ProfileMetricTrendRow = {
   id: string;
   metric_type: string;
   recorded_at: string | Date;
+  source?: string | null;
   unit: string;
   value: number;
 };
+
+export type ProfileMetricSection = {
+  id: "load_calibration" | "supporting_physiology" | "recovery" | "body_aerobic";
+  title: string;
+  description: string;
+  metricTypes: readonly ProfileMetricType[];
+};
+
+export const profileMetricSections: readonly ProfileMetricSection[] = [
+  {
+    id: "load_calibration",
+    title: "Load Calibration",
+    description: "Thresholds used to calculate sport-specific load and intensity.",
+    metricTypes: ["ftp", "threshold_pace_seconds_per_km", "css_seconds_per_100m", "lthr"],
+  },
+  {
+    id: "supporting_physiology",
+    title: "Supporting Physiology",
+    description: "Heart-rate context, zones, and body-mass trends.",
+    metricTypes: ["max_hr", "resting_hr", "weight_kg"],
+  },
+  {
+    id: "recovery",
+    title: "Recovery",
+    description: "Recovery signals and daily check-ins.",
+    metricTypes: [
+      "hrv_rmssd",
+      "sleep_hours",
+      "stress_score",
+      "soreness_level",
+      "wellness_score",
+      "hydration_level",
+    ],
+  },
+  {
+    id: "body_aerobic",
+    title: "Body & Aerobic",
+    description: "Longer-term aerobic and body-composition trends.",
+    metricTypes: ["vo2_max", "body_fat_percentage"],
+  },
+] as const;
+
+export function getProfileMetricSectionGroups(groups: ProfileMetricTrendGroup[]) {
+  const byType = new Map(groups.map((group) => [group.id, group]));
+  return profileMetricSections.map((section) => ({
+    ...section,
+    groups: section.metricTypes.flatMap((metricType) => {
+      const group = byType.get(metricType);
+      return group ? [group] : [];
+    }),
+  }));
+}
 
 export type ProfileMetricTrendPoint = {
   label: string;

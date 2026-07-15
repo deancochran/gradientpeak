@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import {
   allProductJourneyIds,
@@ -13,6 +13,18 @@ const mobileRoot = path.resolve(__dirname, "..");
 
 function formatList(title: string, items: string[]) {
   return `${title}\n${items.map((item) => `- ${item}`).join("\n")}`;
+}
+
+function readSourceTree(directory: string): string {
+  return readdirSync(directory, { withFileTypes: true })
+    .flatMap((entry) => {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) return readSourceTree(entryPath);
+      return /\.(ts|tsx)$/.test(entry.name) && !entry.name.includes(".test.")
+        ? [readFileSync(entryPath, "utf8")]
+        : [];
+    })
+    .join("\n");
 }
 
 describe("mobile authoritative journey coverage", () => {
@@ -69,6 +81,26 @@ describe("mobile authoritative journey coverage", () => {
       missingEvidenceFiles,
       formatList("Missing mobile journey evidence files", missingEvidenceFiles),
     ).toEqual([]);
+  });
+
+  it("keeps record and import selectors anchored in current runtime source", () => {
+    const runtimeSource = ["app", "components"]
+      .map((directory) => readSourceTree(path.join(mobileRoot, directory)))
+      .join("\n");
+    const staleSelectors = (["record.quick_start", "activity.import_fit"] as const).flatMap(
+      (journeyId) =>
+        Object.values(mobileJourneyCoverageManifest[journeyId].selectors)
+          .filter(
+            (selector) =>
+              !runtimeSource.includes(`testID="${selector}"`) &&
+              !runtimeSource.includes(`testId="${selector}"`),
+          )
+          .map((selector) => `${journeyId} -> ${selector}`),
+    );
+
+    expect(staleSelectors, formatList("Stale mobile runtime selectors", staleSelectors)).toEqual(
+      [],
+    );
   });
 
   it("does not mark a journey validated unless at least one runtime or route evidence is validated", () => {

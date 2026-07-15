@@ -46,4 +46,31 @@ export const safeSecureStore = {
       warnSecureStoreFailure("deleteItemAsync", key, error);
     }
   },
+
+  async getItemAsyncOrThrow(key: string): Promise<string | null> {
+    try {
+      return await SecureStore.getItemAsync(key);
+    } catch (error) {
+      warnSecureStoreFailure("getItemAsync", key, error);
+      throw error;
+    }
+  },
+
+  async setItemAsyncOrThrow(key: string, value: string): Promise<void> {
+    try {
+      await SecureStore.setItemAsync(key, value);
+    } catch (error) {
+      warnSecureStoreFailure("setItemAsync", key, error);
+      throw error;
+    }
+  },
+
+  async deleteItemAsyncOrThrow(key: string): Promise<void> {
+    try {
+      await SecureStore.deleteItemAsync(key);
+    } catch (error) {
+      warnSecureStoreFailure("deleteItemAsync", key, error);
+      throw error;
+    }
+  },
 };

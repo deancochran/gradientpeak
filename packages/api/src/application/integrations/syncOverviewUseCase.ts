@@ -1,6 +1,7 @@
 import {
   getConfigurableProviderActions,
   getProviderCapabilityDefinition,
+  isProviderRuntimeEnabled,
   providerCapabilityRegistry,
   providerHasCapability,
 } from "@repo/core";
@@ -110,6 +111,7 @@ function looksLikeReconnectError(error: string | null | undefined): boolean {
   if (!error) return false;
   const normalized = error.toLowerCase();
   return (
+    normalized.includes("reconnect required") ||
     normalized.includes("unauthorized") ||
     normalized.includes("401") ||
     normalized.includes("invalid token") ||
@@ -210,7 +212,10 @@ export async function getProviderSyncOverview(input: { db: DrizzleDbClient; prof
   );
 
   return providerCapabilityRegistry
-    .filter((definition) => isProviderOAuthConfigured(definition.id))
+    .filter(
+      (definition) =>
+        isProviderRuntimeEnabled(definition.id) && isProviderOAuthConfigured(definition.id),
+    )
     .map((definition) => {
       const integration = integrationsByProvider.get(definition.id);
       const activityState = integration

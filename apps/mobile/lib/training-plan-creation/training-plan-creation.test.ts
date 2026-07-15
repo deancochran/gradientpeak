@@ -125,6 +125,13 @@ describe("training plan creation domain", () => {
           value: 285,
           unit: "W",
           recorded_at: "2026-05-10T00:00:00.000Z",
+          activity_id: "00000000-0000-4000-8000-000000000102",
+          source: "imported",
+          method: "activity_file_best_effort",
+          provenance: {
+            activity_id: "00000000-0000-4000-8000-000000000102",
+            derived_from: "activity_file_stream",
+          },
         },
       ],
       currentFitness: {
@@ -1291,9 +1298,9 @@ describe("training plan creation domain", () => {
       weekStart: "2026-01-05",
       weekEnd: "2026-01-11",
       plannedLoad: 90,
-      scheduledFitness: 43,
-      fatigue: 51,
-      form: -8,
+      scheduledFitness: null,
+      fatigue: null,
+      form: null,
     });
     expect(result.chart.domains.load[1]).toBeGreaterThan(90);
   });
@@ -2445,6 +2452,38 @@ describe("training plan creation domain", () => {
     ]);
     expect(viewModel.dailyTrainingPathChart.weeks[0]?.scheduledFitness ?? 0).toBeGreaterThan(30);
     expect(viewModel.dailyTrainingPathChart.weeks[0]?.targetFitness ?? 0).toBeGreaterThan(30);
+  });
+
+  it("shows calibration guidance and abstains from fitness curves without load history", () => {
+    const fixtures = createTrainingPlanBuilderFixtures();
+    const viewModel = deriveBuilderPlanCreationViewModel({ state: fixtures.readyState });
+
+    expect(viewModel.currentBaseline).toMatchObject({
+      ctl: null,
+      atl: null,
+      tsb: null,
+      summaryLabel: "Fitness calibration needed",
+    });
+    expect(viewModel.currentBaseline.detail).toContain("calculated load");
+    expect(viewModel.dailyTrainingPathChart.emptyState).toBe("noActivityHistory");
+    expect(
+      viewModel.dailyTrainingPathChart.dailyPoints.every(
+        (point) =>
+          point.scheduledFitnessCtl === null &&
+          point.targetFitnessCtl === null &&
+          point.fatigueAtl === null &&
+          point.formTsb === null,
+      ),
+    ).toBe(true);
+    expect(
+      viewModel.dailyTrainingPathChart.weeks.every(
+        (week) =>
+          week.scheduledFitness === null &&
+          week.targetFitness === null &&
+          week.fatigue === null &&
+          week.form === null,
+      ),
+    ).toBe(true);
   });
 
   it("does not populate mobile schedule targets when every goal is missing a sport", () => {

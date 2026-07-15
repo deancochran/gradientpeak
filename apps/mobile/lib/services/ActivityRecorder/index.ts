@@ -442,6 +442,11 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private lastSessionUpdateAt = 0;
   private fitRecordingUpdateInFlight = false;
   private fitRecordingUpdatePending = false;
+  private lifecycleTransition: Promise<void> = Promise.resolve();
+  private recordingEndTime?: number;
+  private liveMetricsFinalized = false;
+  private fitFinalized = false;
+  private finalizationFailed = false;
 
   // === Lap Tracking ===
   private laps: number[] = []; // Array of lap times (moving time in seconds)
@@ -2413,26 +2418,37 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return this.getRecordingConfiguration().session;
   }
 
-  async startRecording() {
+  async startRecording(): Promise<void> {
+    return this.runLifecycleTransition(() => this.startRecordingTransition());
+  }
+
+  private runLifecycleTransition<T>(transition: () => Promise<T>): Promise<T> {
+    const result = this.lifecycleTransition.then(transition);
+    this.lifecycleTransition = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
+  private async startRecordingTransition(): Promise<void> {
     console.log("[Service] Starting recording");
 
-    // Prevent concurrent recordings
     if (this.state === "recording") {
-      const error = "Cannot start recording: A recording is already in progress";
-      console.error(`[Service] ${error}`);
-      throw new Error(error);
+      throw new Error("Cannot start recording: A recording is already in progress");
     }
-
     if (this.state === "paused") {
-      const error = "Cannot start recording: Please resume the paused recording first";
-      console.error(`[Service] ${error}`);
-      throw new Error(error);
+      throw new Error("Cannot start recording: Please resume the paused recording first");
+    }
+    if (this.state === "finishing") {
+      throw new Error("Cannot start recording while finalization is pending");
+    }
+    if (this.state === "finished") {
+      throw new Error("Cannot start recording before cleaning up the finished recording");
     }
 
-    // Check all necessary permissions
     const allGranted = await areRecordingPermissionsGranted(this._gpsRecordingEnabled);
     if (!allGranted) {
-      console.error("[Service] Cannot start recording - missing permissions");
       throw new Error(
         this._gpsRecordingEnabled
           ? "Bluetooth, Location, and Background Location permissions are required to start GPS recording"
@@ -2440,236 +2456,289 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       );
     }
 
-    const startedAt = new Date().toISOString();
-    this.finalizedArtifact = null;
-    const sessionSnapshot = this.buildSessionSnapshot(startedAt);
-    this.sessionController.resetForNewSession(sessionSnapshot);
-    this.publishSnapshotUpdate();
+    const previousState = this.state;
+    const wasForegroundTracking = this.locationManager.isTrackingForeground();
+    const wasBackgroundTracking = await this.locationManager.isTrackingBackground();
+    const previousGpsAvailable = this._gpsAvailable;
+    let liveMetricsStarted = false;
+    let gpsSetupAttempted = false;
+    let attemptEncoder: GarminFitEncoder | undefined;
 
-    // Create recording metadata (in-memory)
-    this.recordingMetadata = {
-      startedAt,
-      activityCategory: sessionSnapshot.activity.category,
-      gpsRecordingEnabled: sessionSnapshot.activity.gpsMode === "on",
-      profileId: this.profile.id,
-      profile: this.profile,
-      eventId: sessionSnapshot.activity.eventId ?? undefined,
-      activityPlan: this._plan,
-    };
-
-    this.state = "recording";
-    this.sessionController.setLifecycle(this.state);
-    this.sensorsManager.setAutoReconnectEnabled(true);
-    void this.sensorsManager.reconnectAll();
-
-    // Configure LiveMetricsManager before starting
-    this.liveMetricsManager.setGpsRecordingEnabled(this._gpsRecordingEnabled);
-    this.liveMetricsManager.setActivityCategory(this.selectedActivityCategory);
-
-    // Start LiveMetricsManager (initializes StreamBuffer)
-    await this.liveMetricsManager.startRecording();
-
-    // Initialize timing
-    this.startTime = Date.now();
-    this.pausedTime = 0;
-    this.lastPauseTime = undefined;
-
-    this.planExecution.resetForRecordingStart(0);
-
-    // If we have a plan, emit the initial step info now that recording has started
-    if (this.hasPlan && this.currentStep) {
-      console.log("[Service] Recording started with plan, step:", this.currentStep.name);
-      this.emit("stepChanged", this.getStepInfo());
-    }
-
-    this.syncAutomaticTrainerControl("step_change").catch(console.error);
-
-    this.startElapsedTimeUpdates();
-
-    if (this._gpsRecordingEnabled) {
-      await this.locationManager.startForegroundTracking();
-      await this.locationManager.startBackgroundTracking();
-      await this.locationManager.startHeadingTracking();
-      this._gpsAvailable = true;
-    } else {
-      this._gpsAvailable = false;
-    }
-
-    // Start foreground service notification
-    const activityName =
-      this._plan?.name ||
-      `${this.selectedActivityCategory} (${this._gpsRecordingEnabled ? "GPS ON" : "GPS OFF"})`;
-    this.notificationsManager = new NotificationsManager(activityName);
-    await this.notificationsManager.startForegroundService();
-
-    // Initialize FIT Encoder
     try {
-      const encoder = new GarminFitEncoder(`${Date.now()}`, this.profile.id);
-      await encoder.initialize(this.sensorsManager.getConnectedSensors());
-      this.fitEncoder = encoder;
-      console.log("[Service] FIT encoder initialized");
+      const startedAt = new Date().toISOString();
+      this.finalizedArtifact = null;
+      this.liveMetricsFinalized = false;
+      this.fitFinalized = false;
+      this.finalizationFailed = false;
+      this.recordingEndTime = undefined;
 
-      // Write initial FIT record immediately to ensure file has data
-      // This prevents "No data recorded" errors for very short recordings
-      await this.updateFitRecording();
-      console.log("[Service] Initial FIT record written");
-    } catch (error) {
-      console.error("[Service] Failed to initialize FIT encoder:", error);
-      // Don't fail the whole recording if FIT encoding fails
-    }
+      const sessionSnapshot = this.buildSessionSnapshot(startedAt);
+      this.sessionController.resetForNewSession(sessionSnapshot);
+      this.publishSnapshotUpdate();
+      this.recordingMetadata = {
+        startedAt,
+        activityCategory: sessionSnapshot.activity.category,
+        gpsRecordingEnabled: sessionSnapshot.activity.gpsMode === "on",
+        profileId: this.profile.id,
+        profile: this.profile,
+        eventId: sessionSnapshot.activity.eventId ?? undefined,
+        activityPlan: this._plan,
+      };
 
-    // Emit initial sensor state
-    this.emit("sensorsChanged", this.sensorsManager.getConnectedSensors());
-    this.emit("stateChanged", this.state);
-    this.publishSessionUpdate();
-    console.log("[Service] Recording started successfully");
-  }
+      // Some recording subsystems inspect the active state while initializing. Do not publish
+      // this state until every required subsystem, including FIT, has started successfully.
+      this.state = "recording";
+      this.sessionController.setLifecycle(this.state);
+      this.sensorsManager.setAutoReconnectEnabled(true);
+      void this.sensorsManager.reconnectAll();
 
-  async pauseRecording() {
-    if (this.state !== "recording") {
-      throw new Error("Cannot pause - not recording");
-    }
+      this.liveMetricsManager.setGpsRecordingEnabled(this._gpsRecordingEnabled);
+      this.liveMetricsManager.setActivityCategory(this.selectedActivityCategory);
+      await this.liveMetricsManager.startRecording();
+      liveMetricsStarted = true;
 
-    console.log("[Service] Pausing recording");
-
-    const pauseTimestamp = Date.now();
-    this.state = "paused";
-    this.sessionController.setLifecycle(this.state);
-    this.sensorsManager.setAutoReconnectEnabled(true);
-    this.lastPauseTime = pauseTimestamp;
-
-    // Pause LiveMetricsManager
-    this.liveMetricsManager.pauseRecording();
-
-    // Pause FIT encoder timer
-    if (this.fitEncoder) {
-      await this.fitEncoder.pause();
-    }
-
-    this.stopElapsedTimeUpdates();
-
-    this.emit("stateChanged", this.state);
-    this.publishSessionUpdate();
-  }
-
-  async resumeRecording() {
-    if (this.state !== "paused") {
-      throw new Error("Cannot resume - not paused");
-    }
-
-    console.log("[Service] Resuming recording");
-
-    const resumeTimestamp = Date.now();
-    this.state = "recording";
-    this.sessionController.setLifecycle(this.state);
-    this.sensorsManager.setAutoReconnectEnabled(true);
-
-    // Resume LiveMetricsManager
-    this.liveMetricsManager.resumeRecording();
-
-    // Update paused time accumulator
-    if (this.lastPauseTime) {
-      const pauseDuration = resumeTimestamp - this.lastPauseTime;
-      this.pausedTime += pauseDuration;
+      this.startTime = Date.now();
+      this.pausedTime = 0;
       this.lastPauseTime = undefined;
+      this.planExecution.resetForRecordingStart(0);
+      this.startElapsedTimeUpdates();
+
+      if (this._gpsRecordingEnabled) {
+        gpsSetupAttempted = true;
+        await this.locationManager.startForegroundTracking();
+        await this.locationManager.startBackgroundTracking();
+        await this.locationManager.startHeadingTracking();
+        this._gpsAvailable = true;
+      } else {
+        this._gpsAvailable = false;
+      }
+
+      const activityName =
+        this._plan?.name ||
+        `${this.selectedActivityCategory} (${this._gpsRecordingEnabled ? "GPS ON" : "GPS OFF"})`;
+      const notificationsManager = new NotificationsManager(activityName);
+      this.notificationsManager = notificationsManager;
+      await notificationsManager.startForegroundService();
+
+      attemptEncoder = new GarminFitEncoder(`${Date.now()}`, this.profile.id);
+      await attemptEncoder.initialize(this.sensorsManager.getConnectedSensors());
+      this.fitEncoder = attemptEncoder;
+      await this.updateFitRecording();
+
+      if (this.hasPlan && this.currentStep) {
+        this.emit("stepChanged", this.getStepInfo());
+      }
+      this.syncAutomaticTrainerControl("step_change").catch(console.error);
+      this.emit("sensorsChanged", this.sensorsManager.getConnectedSensors());
+      this.emit("stateChanged", this.state);
+      this.publishSessionUpdate();
+      console.log("[Service] Recording started successfully");
+    } catch (error) {
+      console.error("[Service] Failed to start recording:", error);
+      this.stopElapsedTimeUpdates();
+      this.sensorsManager.setAutoReconnectEnabled(false);
+
+      const rollbackTasks: Promise<unknown>[] = [];
+      if (this.notificationsManager) {
+        rollbackTasks.push(this.notificationsManager.stopForegroundService());
+      }
+      if (gpsSetupAttempted) {
+        rollbackTasks.push(this.locationManager.stopHeadingTracking());
+      }
+      if (!wasBackgroundTracking) {
+        rollbackTasks.push(this.locationManager.stopBackgroundTracking());
+      }
+      if (!wasForegroundTracking) {
+        rollbackTasks.push(this.locationManager.stopForegroundTracking());
+      }
+      if (liveMetricsStarted) {
+        rollbackTasks.push(this.liveMetricsManager.finishRecording());
+      }
+      if (attemptEncoder) {
+        rollbackTasks.push(attemptEncoder.cleanup());
+      }
+      await Promise.allSettled(rollbackTasks);
+
+      this.notificationsManager = undefined;
+      this.fitEncoder = undefined;
+      this.recordingMetadata = undefined;
+      this.startTime = undefined;
+      this.recordingEndTime = undefined;
+      this.pausedTime = 0;
+      this.lastPauseTime = undefined;
+      this._gpsAvailable = previousGpsAvailable;
+      this.state = previousState;
+      this.sessionController.resetAll();
+      this.publishSnapshotUpdate();
+      this.emit("stateChanged", this.state);
+      this.publishSessionUpdate();
+      throw error;
     }
-
-    // Resume FIT encoder timer
-    if (this.fitEncoder) {
-      await this.fitEncoder.resume();
-    }
-
-    this.startElapsedTimeUpdates();
-
-    this.emit("stateChanged", this.state);
-    this.publishSessionUpdate();
   }
 
-  async finishRecording() {
+  async pauseRecording(): Promise<void> {
+    return this.runLifecycleTransition(async () => {
+      if (this.state !== "recording") {
+        throw new Error("Cannot pause - not recording");
+      }
+
+      console.log("[Service] Pausing recording");
+      const pauseTimestamp = Date.now();
+
+      this.liveMetricsManager.pauseRecording();
+      if (this.fitEncoder) {
+        await this.fitEncoder.pause();
+      }
+
+      this.state = "paused";
+      this.sessionController.setLifecycle(this.state);
+      this.sensorsManager.setAutoReconnectEnabled(true);
+      this.lastPauseTime = pauseTimestamp;
+      this.stopElapsedTimeUpdates();
+      this.emit("stateChanged", this.state);
+      this.publishSessionUpdate();
+    });
+  }
+
+  async resumeRecording(): Promise<void> {
+    return this.runLifecycleTransition(async () => {
+      if (this.state !== "paused") {
+        throw new Error("Cannot resume - not paused");
+      }
+
+      console.log("[Service] Resuming recording");
+      const resumeTimestamp = Date.now();
+
+      this.liveMetricsManager.resumeRecording();
+      if (this.fitEncoder) {
+        await this.fitEncoder.resume();
+      }
+
+      if (this.lastPauseTime) {
+        this.pausedTime += resumeTimestamp - this.lastPauseTime;
+        this.lastPauseTime = undefined;
+      }
+      this.state = "recording";
+      this.sessionController.setLifecycle(this.state);
+      this.sensorsManager.setAutoReconnectEnabled(true);
+      this.startElapsedTimeUpdates();
+      this.emit("stateChanged", this.state);
+      this.publishSessionUpdate();
+    });
+  }
+
+  async finishRecording(): Promise<void> {
+    return this.runLifecycleTransition(() => this.finishRecordingTransition());
+  }
+
+  private async stopActiveRecordingResources(): Promise<void> {
+    this.stopElapsedTimeUpdates();
+    this.sensorsManager.setAutoReconnectEnabled(false);
+
+    const teardownResults = await Promise.allSettled([
+      this.locationManager.stopAllTracking(),
+      this.notificationsManager?.stopForegroundService() ?? Promise.resolve(),
+    ]);
+    this._gpsAvailable = false;
+
+    const failure = teardownResults.find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    if (failure) {
+      throw failure.reason;
+    }
+  }
+
+  private async finishRecordingTransition(): Promise<void> {
     if (!this.recordingMetadata) {
       throw new Error("No active recording to finish");
     }
 
-    if (this.state === "finishing") {
+    const isRetry = this.state === "finishing" && this.finalizationFailed;
+    if (this.state === "finishing" && !isRetry) {
       throw new Error("Recording finalization is already in progress");
     }
+    if (this.state !== "recording" && this.state !== "paused" && !isRetry) {
+      throw new Error("No active recording to finish");
+    }
 
-    console.log("[Service] Finishing recording");
+    console.log(
+      isRetry ? "[Service] Retrying recording finalization" : "[Service] Finishing recording",
+    );
 
-    const previousState = this.state;
+    if (!isRetry) {
+      const finishTimestamp = Date.now();
+      this.recordingEndTime = finishTimestamp;
+      if (this.state === "paused" && this.lastPauseTime) {
+        this.pausedTime += finishTimestamp - this.lastPauseTime;
+        this.lastPauseTime = undefined;
+      }
+    }
+
+    this.finalizationFailed = false;
     this.state = "finishing";
     this.sessionController.setLifecycle(this.state);
     this.emit("stateChanged", this.state);
     this.publishSessionUpdate();
 
     try {
-      // Finish LiveMetricsManager (flushes final data to files)
-      await this.liveMetricsManager.finishRecording();
-      await this.waitForFitRecordingWritesToDrain();
+      await this.stopActiveRecordingResources();
 
-      // Check StreamBuffer status before finalizing
-      const bufferStatus = this.liveMetricsManager.streamBuffer.getBufferStatus();
-      console.log("[Service] StreamBuffer status:", bufferStatus);
-
-      // Finalize FIT file
-      if (this.fitEncoder) {
-        try {
-          const stats = this.getSessionStats();
-
-          // VALIDATION: Ensure we have some data
-          const status = this.fitEncoder.getStatus();
-          if (status.recordCount === 0) {
-            throw new Error(
-              "No data recorded. FIT file would be invalid without any records. Please ensure sensors are connected and recording for at least a few seconds.",
-            );
-          }
-
-          console.log(
-            `[Service] Finalizing FIT file with ${status.recordCount} records, ${stats.duration}s duration`,
-          );
-
-          const { sport, subSport } = this.getFitSport(
-            this.selectedActivityCategory,
-            this._gpsRecordingEnabled,
-          );
-          await this.fitEncoder.finalize({
-            startTime: this.startTime || Date.now(),
-            totalTime: stats.duration * 1000, // Convert to milliseconds
-            distance: stats.distance,
-            avgSpeed: stats.avgSpeed,
-            maxSpeed: stats.maxSpeed,
-            avgPower: stats.avgPower,
-            maxPower: stats.maxPower,
-            avgHeartRate: stats.avgHeartRate,
-            maxHeartRate: stats.maxHeartRate,
-            avgCadence: stats.avgCadence,
-            totalAscent: stats.ascent,
-            totalDescent: stats.descent,
-            calories: stats.calories,
-            sport,
-            subSport,
-          });
-
-          // Add file path to metadata
-          this.recordingMetadata.activityFilePath = this.fitEncoder.getFilePath();
-          console.log(
-            "[Service] Activity file finalized:",
-            this.recordingMetadata.activityFilePath,
-          );
-        } catch (error) {
-          console.error("[Service] Failed to finalize FIT file:", error);
-          // Re-throw so UI can show proper error
-          throw new Error(
-            `FIT file creation failed: ${error instanceof Error ? error.message : "Unknown error"}`,
-          );
-        }
+      if (!this.liveMetricsFinalized) {
+        await this.liveMetricsManager.finishRecording();
+        await this.waitForFitRecordingWritesToDrain();
+        this.liveMetricsFinalized = true;
       }
 
-      // Update recording metadata with end time
-      this.recordingMetadata.endedAt = new Date().toISOString();
+      if (!this.fitEncoder) {
+        throw new Error("FIT encoder is unavailable; recording cannot be finalized");
+      }
 
-      const sessionSnapshot = this.getSessionSnapshot();
-      if (sessionSnapshot) {
+      if (!this.fitFinalized) {
+        const stats = this.getSessionStats();
+        const status = this.fitEncoder.getStatus();
+        if (status.recordCount === 0) {
+          throw new Error(
+            "No data recorded. FIT file would be invalid without any records. Please ensure sensors are connected and recording for at least a few seconds.",
+          );
+        }
+
+        const { sport, subSport } = this.getFitSport(
+          this.selectedActivityCategory,
+          this._gpsRecordingEnabled,
+        );
+        await this.fitEncoder.finalize({
+          startTime: this.startTime || Date.now(),
+          endedAt: this.recordingEndTime,
+          totalTime: stats.movingTime * 1000,
+          distance: stats.distance,
+          avgSpeed: stats.avgSpeed,
+          maxSpeed: stats.maxSpeed,
+          avgPower: stats.avgPower,
+          maxPower: stats.maxPower,
+          avgHeartRate: stats.avgHeartRate,
+          maxHeartRate: stats.maxHeartRate,
+          avgCadence: stats.avgCadence,
+          totalAscent: stats.ascent,
+          totalDescent: stats.descent,
+          calories: stats.calories,
+          sport,
+          subSport,
+        });
+        this.recordingMetadata.activityFilePath = this.fitEncoder.getFilePath();
+        this.fitFinalized = true;
+      }
+
+      this.recordingMetadata.endedAt ??= new Date(
+        this.recordingEndTime ?? Date.now(),
+      ).toISOString();
+
+      if (!this.finalizedArtifact) {
+        const sessionSnapshot = this.getSessionSnapshot();
+        if (!sessionSnapshot) {
+          throw new Error("Recording session snapshot is unavailable");
+        }
+
         this.finalizedArtifact = {
           sessionId: sessionSnapshot.identity.sessionId,
           snapshot: sessionSnapshot,
@@ -2686,34 +2755,33 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
           runtimeSourceState: this.getRuntimeSourceState(),
         };
 
-        await persistPendingFinalizedArtifact(this.finalizedArtifact);
+        try {
+          await persistPendingFinalizedArtifact(this.finalizedArtifact);
+        } catch (error) {
+          this.finalizedArtifact = null;
+          throw error;
+        }
         this.emit("artifactReady", this.finalizedArtifact);
       }
 
-      // Update state
       this.state = "finished";
       this.sessionController.setLifecycle(this.state);
-      this.sensorsManager.setAutoReconnectEnabled(false);
+      this.notificationsManager = undefined;
       this.emit("stateChanged", this.state);
       this.publishSessionUpdate();
-
-      // Emit completion event to signal data is ready for processing
       this.emit("recordingComplete");
-
-      // Clean up resources
-      if (this.notificationsManager) {
-        await this.notificationsManager.stopForegroundService();
-      }
-
       console.log("[Service] Recording finished successfully");
-    } catch (err) {
-      console.error("[Service] Failed to finish recording:", err);
-      this.state = previousState;
+    } catch (error) {
+      console.error("[Service] Failed to finish recording:", error);
+      this.finalizationFailed = true;
+      // Finalization has stopped active resources and may have finalized files. Never return to
+      // recording/paused; keeping `finishing` makes the non-active error state explicit and retryable.
+      this.state = "finishing";
       this.sessionController.setLifecycle(this.state);
       this.emit("stateChanged", this.state);
       this.publishSessionUpdate();
       this.emit("error", "Failed to save recording data.");
-      throw err;
+      throw error;
     }
   }
 
@@ -2780,6 +2848,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       if (payload.plan) {
         // Template or planned activity with structure
         const plan: RecordingServiceActivityPlan = {
+          id: payload.plan.id,
           name: payload.plan.name,
           description: payload.plan.description || "",
           activity_category: payload.plan.activity_category || payload.category,
@@ -3059,7 +3128,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       if (readings.position) {
         record.latitude = readings.position.lat;
         record.longitude = readings.position.lng;
-        record.altitude = readings.position.alt;
+        record.altitude = readings.position.altitude;
       }
 
       if (this.state !== "recording") return;
@@ -3102,6 +3171,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
    */
   getElapsedTime(): number {
     if (!this.startTime) return 0;
+    if (this.recordingEndTime) {
+      return this.recordingEndTime - this.startTime;
+    }
     if (this.state === "paused" && this.lastPauseTime) {
       return this.lastPauseTime - this.startTime;
     }
@@ -3152,26 +3224,96 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   /**
    * Clean up all resources
    */
-  cleanup() {
+  async cleanup(options: { dispose?: boolean } = {}): Promise<void> {
+    return this.runLifecycleTransition(() => this.cleanupTransition(options));
+  }
+
+  private async cleanupTransition({ dispose = false }: { dispose?: boolean }): Promise<void> {
     console.log("[Service] Cleaning up...");
 
-    const preserveFinalizedArtifact = this.finalizedArtifact !== null;
+    if (this.finalizationFailed) {
+      await this.stopActiveRecordingResources();
+      throw new Error("Recording finalization must be retried before cleanup");
+    }
 
+    const preserveFinalizedFiles = this.finalizedArtifact !== null || this.fitFinalized;
     this.stopElapsedTimeUpdates();
-    this.liveMetricsManager.cleanup().catch(console.error);
-    this.locationManager.cleanup();
-    this.sensorsManager.cleanup();
-    if (this.notificationsManager) {
-      this.notificationsManager.stopForegroundService().catch(console.error);
+    this.sensorsManager.setAutoReconnectEnabled(false);
+
+    const teardownResults = await Promise.allSettled([
+      this.locationManager.stopAllTracking(),
+      this.sensorsManager.disconnectAll({ suppressAutoReconnect: true }),
+      this.notificationsManager?.stopForegroundService() ?? Promise.resolve(),
+    ]);
+
+    if (
+      !this.liveMetricsFinalized &&
+      (this.state === "recording" || this.state === "paused" || this.state === "finishing")
+    ) {
+      try {
+        await this.liveMetricsManager.finishRecording();
+        await this.waitForFitRecordingWritesToDrain();
+      } catch (reason) {
+        teardownResults.push({ status: "rejected", reason });
+      }
     }
-    if (this.fitEncoder && !preserveFinalizedArtifact) {
-      this.fitEncoder.cleanup().catch(console.error);
-    }
-    if (this.appStateSubscription) {
-      this.appStateSubscription.remove();
+    if (this.fitEncoder && !preserveFinalizedFiles) {
+      try {
+        await this.fitEncoder.cleanup();
+      } catch (reason) {
+        teardownResults.push({ status: "rejected", reason });
+      }
     }
 
+    this.state = "pending";
+    this.recordingMetadata = undefined;
+    this.finalizedArtifact = null;
+    this.notificationsManager = undefined;
+    this.fitEncoder = undefined;
+    this.startTime = undefined;
+    this.recordingEndTime = undefined;
+    this.pausedTime = 0;
+    this.lastPauseTime = undefined;
+    this.liveMetricsFinalized = false;
+    this.fitFinalized = false;
+    this.finalizationFailed = false;
+    this.fitRecordingUpdateInFlight = false;
+    this.fitRecordingUpdatePending = false;
+    this.laps = [];
+    this.lastLapTime = 0;
+    this._gpsAvailable = false;
+    this.hasConfiguredSetup = false;
+    this.currentLaunchSource = "manual";
+    this.selectedActivityCategory = "run";
+    this._gpsRecordingEnabled = true;
+    this._plan = undefined;
+    this._eventId = undefined;
+    this.planExecution.clear();
+    this.clearCurrentRouteState();
+    this.lastHandledLocationKey = null;
     this.sessionController.resetAll();
     this.publishSnapshotUpdate();
+    this.emit("stateChanged", this.state);
+    this.publishSessionUpdate();
+
+    if (dispose) {
+      const disposalResults = await Promise.allSettled([
+        this.liveMetricsManager.cleanup(),
+        this.locationManager.cleanup(),
+        this.sensorsManager.cleanup(),
+      ]);
+      teardownResults.push(...disposalResults);
+      if (this.appStateSubscription) {
+        this.appStateSubscription.remove();
+        this.appStateSubscription = undefined;
+      }
+    }
+
+    const failure = teardownResults.find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    if (failure) {
+      throw failure.reason;
+    }
   }
 }

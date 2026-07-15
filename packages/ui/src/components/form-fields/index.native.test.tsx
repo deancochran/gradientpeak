@@ -1,8 +1,10 @@
-import type { ReactTestInstance } from "react-test-renderer";
+import { act, type ReactTestInstance } from "react-test-renderer";
 import { z } from "zod";
 
 import { useZodForm } from "../../hooks/use-zod-form";
+import { useZodFormSubmit } from "../../hooks/use-zod-form-submit";
 import { fireEvent, renderNative } from "../../test/render-native";
+import { Button } from "../button/index.native";
 import { Form, FormItem, FormLabel } from "../form/index.native";
 import { Text } from "../text/index.native";
 import {
@@ -11,6 +13,7 @@ import {
   FormDateTimeField,
   FormDurationField,
   FormIntegerStepperField,
+  FormNumberField,
   FormPaceField,
   FormPercentSliderField,
   FormSegmentedSelectField,
@@ -30,6 +33,7 @@ const profileSchema = z.object({
   pace: z.string(),
   recorded_at: z.string(),
   recovery_priority: z.number(),
+  target_power: z.number(),
   wake_time: z.string().nullable(),
   weight_kg: z.number().nullable(),
   username: z.string(),
@@ -68,6 +72,7 @@ function FormFieldsHarness() {
       pace: "4:30",
       recorded_at: "2026-03-23T06:30",
       recovery_priority: 0.5,
+      target_power: 180,
       wake_time: "06:30",
       weight_kg: 70,
       username: "Avery",
@@ -87,8 +92,10 @@ function FormFieldsHarness() {
       <FormDateInputField
         control={methods.control}
         disabled
+        description="Used to calculate age"
         label="Date of Birth"
         name="dob"
+        required
         testId="date-of-birth"
       />
       <FormDurationField control={methods.control} label="Duration" name="duration" />
@@ -125,6 +132,7 @@ function FormFieldsHarness() {
         testId="wake-time-field"
       />
       <FormBoundedNumberField control={methods.control} decimals={0} label="FTP" name="ftp" />
+      <FormNumberField control={methods.control} label="Target Power" name="target_power" />
       <FormPaceField control={methods.control} label="Pace" name="pace" />
       <FormPercentSliderField
         control={methods.control}
@@ -137,6 +145,12 @@ function FormFieldsHarness() {
         valueMode="fraction"
       />
       <FormWeightInputField control={methods.control} label="Weight" name="weight_kg" unit="kg" />
+      <Button
+        testId="set-date-error"
+        onPress={() => methods.setError("dob", { message: "Birth date is invalid" })}
+      >
+        <Text>Set date error</Text>
+      </Button>
       <Text>{JSON.stringify(methods.watch())}</Text>
       <Text>{JSON.stringify(methods.formState.touchedFields)}</Text>
     </Form>
@@ -156,6 +170,7 @@ function DetachedFormLabelHarness() {
       pace: "4:30",
       recorded_at: "2026-03-23T06:30",
       recovery_priority: 0.5,
+      target_power: 180,
       wake_time: "06:30",
       weight_kg: 70,
       username: "Avery",
@@ -167,6 +182,47 @@ function DetachedFormLabelHarness() {
       <FormItem>
         <FormLabel>Detached label</FormLabel>
       </FormItem>
+    </Form>
+  );
+}
+
+function DisabledPercentHarness() {
+  const methods = useZodForm({
+    schema: z.object({ recovery: z.number() }),
+    defaultValues: { recovery: 50 },
+  });
+
+  return (
+    <Form {...methods}>
+      <FormPercentSliderField
+        control={methods.control}
+        description="Choose recovery priority"
+        disabled
+        label="Recovery Priority"
+        name="recovery"
+        required
+        testId="recovery-priority"
+      />
+    </Form>
+  );
+}
+
+function DraftSubmitHarness({ onSubmit }: { onSubmit: (values: { amount: number }) => void }) {
+  const methods = useZodForm({
+    schema: z.object({ amount: z.number() }),
+    defaultValues: { amount: 10 },
+  });
+  const submit = useZodFormSubmit({ form: methods, onSubmit });
+
+  return (
+    <Form {...methods}>
+      <FormNumberField control={methods.control} label="Amount" name="amount" />
+      <Button testId="reset-amount" onPress={() => methods.reset()}>
+        <Text>Reset amount</Text>
+      </Button>
+      <Button testId="submit-amount" onPress={submit.handleSubmit}>
+        <Text>Submit amount</Text>
+      </Button>
     </Form>
   );
 }
@@ -236,5 +292,81 @@ describe("Form fields native", () => {
 
     expect(getByText(/"ftp":true/)).toBeTruthy();
     expect(getByTestId("date-of-birth").props.disabled).toBe(true);
+  });
+
+  it("keeps partial number drafts stable and commits a normalized value on blur", () => {
+    const { getByLabelText, getByText } = renderNative(<FormFieldsHarness />);
+    const input = getByLabelText("Target Power");
+
+    fireEvent(input, "changeText", "-");
+    expect(input.props.value).toBe("-");
+    expect(getByText(/"target_power":180/)).toBeTruthy();
+
+    fireEvent(input, "changeText", "12.");
+    expect(input.props.value).toBe("12.");
+    fireEvent(input, "blur");
+
+    expect(input.props.value).toBe("12");
+    expect(getByText(/"target_power":12/)).toBeTruthy();
+  });
+
+  it("flushes a focused number draft before constructing the submit payload", async () => {
+    const onSubmit = jest.fn();
+    const { getByLabelText, getByTestId } = renderNative(
+      <DraftSubmitHarness onSubmit={onSubmit} />,
+    );
+
+    fireEvent(getByLabelText("Amount"), "changeText", "12.");
+    await act(async () => {
+      fireEvent.press(getByTestId("submit-amount"));
+    });
+
+    expect(onSubmit).toHaveBeenCalledWith({ amount: 12 });
+  });
+
+  it("discards a focused number draft when reset restores the same value", async () => {
+    const onSubmit = jest.fn();
+    const { getByLabelText, getByTestId } = renderNative(
+      <DraftSubmitHarness onSubmit={onSubmit} />,
+    );
+    const input = getByLabelText("Amount");
+
+    fireEvent(input, "changeText", "12.");
+    fireEvent.press(getByTestId("reset-amount"));
+
+    expect(input.props.value).toBe("10");
+
+    await act(async () => {
+      fireEvent.press(getByTestId("submit-amount"));
+    });
+
+    expect(onSubmit).toHaveBeenCalledWith({ amount: 10 });
+    expect(input.props.value).toBe("10");
+  });
+
+  it("exposes native hints, invalid state, required state, and disabled state", () => {
+    const { getByLabelText, getByTestId, unmount } = renderNative(<FormFieldsHarness />);
+    const date = getByLabelText("Date of Birth");
+
+    expect(date.props.accessibilityHint).toContain("Required");
+    expect(date.props.accessibilityHint).toContain("Used to calculate age");
+    expect(date.props.accessibilityState).toEqual({ disabled: true });
+    expect(date.props["aria-required"]).toBe(true);
+
+    fireEvent.press(getByTestId("set-date-error"));
+
+    expect(getByLabelText("Date of Birth").props["aria-invalid"]).toBe(true);
+    expect(getByLabelText("Date of Birth").props.accessibilityHint).toContain(
+      "Error: Birth date is invalid",
+    );
+
+    unmount();
+    const disabledPercent = renderNative(<DisabledPercentHarness />).getByTestId(
+      "recovery-priority",
+    );
+    expect(disabledPercent.props.editable).toBe(false);
+    expect(disabledPercent.props.accessibilityState).toEqual({ disabled: true });
+    expect(disabledPercent.props.accessibilityHint).toContain("Required");
+    expect(disabledPercent.props.accessibilityHint).toContain("Choose recovery priority");
   });
 });

@@ -3,6 +3,7 @@ import {
   getProfileMetricDefinition,
   isProfileMetricType,
 } from "@repo/core/athlete-inputs";
+import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
 import { type Href, Stack } from "expo-router";
@@ -21,6 +22,7 @@ import {
   buildProfileMetricTrendPoints,
   filterProfileMetricRecordsByRange,
   formatProfileMetricTrendDate,
+  getProfileMetricSectionGroups,
   type ProfileMetricTrendGroup,
   type ProfileMetricTrendPoint,
   type ProfileMetricTrendRow,
@@ -93,6 +95,14 @@ function formatMetricValue(metric?: ProfileMetricRow) {
     value: Number(metric.value),
     unit: metric.unit,
   });
+}
+
+function formatMetricSource(source?: string | null) {
+  if (!source) return "Unknown source";
+  return source
+    .split("_")
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
 }
 
 function formatAxisValue(value: number) {
@@ -339,7 +349,7 @@ function ProfileMetricRecords({
                 {formatMetricValue(record)}
               </Text>
               <Text className="text-xs text-muted-foreground">
-                {formatDate(record.recorded_at)}
+                {formatDate(record.recorded_at)} • {formatMetricSource(record.source)}
               </Text>
             </View>
             <Text className="text-xs font-medium text-primary">Open</Text>
@@ -359,6 +369,10 @@ export default function ProfileMetricsListScreen() {
     );
   const metrics = (data?.pages.flatMap((page) => page.items) ?? []) as ProfileMetricRow[];
   const metricGroups = React.useMemo(() => buildProfileMetricTrendGroups(metrics), [metrics]);
+  const metricSections = React.useMemo(
+    () => getProfileMetricSectionGroups(metricGroups),
+    [metricGroups],
+  );
   const [selectedMetricType, setSelectedMetricType] = React.useState<string | null>(null);
   const selectedGroup = metricGroups.find((group) => group.id === selectedMetricType) ?? null;
   const openRecord = React.useCallback(
@@ -422,36 +436,45 @@ export default function ProfileMetricsListScreen() {
           </Text>
         </View>
 
-        <View className="flex-row flex-wrap gap-4">
-          {metricGroups.map((group) => {
-            const MetricIcon = getMetricIcon(group.id);
-            const policy = getMetricVisualPolicy(group.id);
-            const delta =
-              group.latest && group.previous ? group.latest.value - group.previous.value : null;
-            return (
-              <CompactInsightCard
-                key={group.id}
-                title={getMetricLabel(group.id)}
-                value={formatMetricValue(group.latest)}
-                icon={MetricIcon}
-                hasData={Boolean(group.latest)}
-                layout={policy.compactLayout}
-                summary={
-                  delta === null
-                    ? group.records.length === 0
-                      ? "No records yet"
-                      : `${group.records.length} records`
-                    : `${delta > 0 ? "+" : ""}${delta.toFixed(1)} since last`
-                }
-                visualPolicy={{ source: policy.source, visualType: policy.visualType }}
-                onPress={() => setSelectedMetricType(group.id)}
-                testID={`profile-metric-type-${group.id}`}
-              >
-                <MiniTrendVisual points={group.points} />
-              </CompactInsightCard>
-            );
-          })}
-        </View>
+        {metricSections.map((section) => (
+          <View className="gap-3" key={section.id} testID={`profile-metric-section-${section.id}`}>
+            <View className="gap-1">
+              <Text className="text-base font-semibold text-foreground">{section.title}</Text>
+              <Text className="text-sm text-muted-foreground">{section.description}</Text>
+            </View>
+            <View className="flex-row flex-wrap gap-4">
+              {section.groups.map((group) => {
+                const MetricIcon = getMetricIcon(group.id);
+                const policy = getMetricVisualPolicy(group.id);
+                const delta =
+                  group.latest && group.previous ? group.latest.value - group.previous.value : null;
+                const summary = group.latest
+                  ? section.id === "load_calibration"
+                    ? `${formatMetricSource(group.latest.source)} • ${formatDate(group.latest.recorded_at)}`
+                    : delta === null
+                      ? `${group.records.length} records`
+                      : `${delta > 0 ? "+" : ""}${delta.toFixed(1)} since last`
+                  : "No records yet";
+                return (
+                  <CompactInsightCard
+                    key={group.id}
+                    title={getMetricLabel(group.id)}
+                    value={formatMetricValue(group.latest)}
+                    icon={MetricIcon}
+                    hasData={Boolean(group.latest)}
+                    layout={policy.compactLayout}
+                    summary={summary}
+                    visualPolicy={{ source: policy.source, visualType: policy.visualType }}
+                    onPress={() => setSelectedMetricType(group.id)}
+                    testID={`profile-metric-type-${group.id}`}
+                  >
+                    <MiniTrendVisual points={group.points} />
+                  </CompactInsightCard>
+                );
+              })}
+            </View>
+          </View>
+        ))}
 
         <DetailChartModal
           visible={!!selectedGroup}
@@ -468,6 +491,17 @@ export default function ProfileMetricsListScreen() {
             return (
               <View className="gap-4">
                 <DetailTrendChart group={selectedGroup} records={rangeRecords} />
+                {selectedGroup.id === "css_seconds_per_100m" ? (
+                  <Button
+                    onPress={() => {
+                      setSelectedMetricType(null);
+                      navigateTo(ROUTES.PROFILE_METRICS.CSS_TEST as Href);
+                    }}
+                    testId="profile-metric-css-test"
+                  >
+                    <Text>Record 400m / 200m CSS test</Text>
+                  </Button>
+                ) : null}
                 <ProfileMetricRecords records={rangeRecords} onOpenRecord={openRecord} />
               </View>
             );

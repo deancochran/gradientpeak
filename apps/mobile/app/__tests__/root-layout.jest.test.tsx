@@ -1,8 +1,25 @@
+import { waitFor } from "@testing-library/react-native";
 import React from "react";
 import { createHost } from "../../test/mock-components";
 import { renderNative, screen } from "../../test/render-native";
 
 const replaceMock = jest.fn();
+const cleanupStreamRecordingsMock = jest.fn(async () => undefined);
+const cleanupFitRecordingsMock = jest.fn(async () => undefined);
+const cleanupLocationTrackingMock = jest.fn(async () => undefined);
+type LocalFileReference = {
+  activityFilePath?: string | null;
+  streamArtifactPaths?: string[];
+};
+type QueueFileReference = {
+  localActivityFilePath?: string | null;
+  streamArtifactPaths?: string[];
+  status: string;
+};
+const loadPendingFinalizedArtifactMock = jest.fn(
+  async (): Promise<LocalFileReference | null> => null,
+);
+const loadActivitySubmissionQueueJobsMock = jest.fn(async (): Promise<QueueFileReference[]> => []);
 
 const authState = {
   authState: "authenticated-verified",
@@ -116,12 +133,32 @@ jest.mock("@/lib/server-config", () => ({
 
 jest.mock("@/lib/services/ActivityRecorder/StreamBuffer", () => ({
   __esModule: true,
-  StreamBuffer: { cleanupOrphanedRecordings: jest.fn(async () => undefined) },
+  StreamBuffer: { cleanupOrphanedRecordings: cleanupStreamRecordingsMock },
+}));
+
+jest.mock("@/lib/services/ActivityRecorder/location", () => ({
+  __esModule: true,
+  LocationManager: { cleanupOrphanedBackgroundTracking: cleanupLocationTrackingMock },
+}));
+
+jest.mock("@/lib/services/ActivityRecorder/finalizedArtifactStorage", () => ({
+  __esModule: true,
+  loadPendingFinalizedArtifact: loadPendingFinalizedArtifactMock,
+  finalizedArtifactReferencesLocalFiles: (artifact: LocalFileReference | null) =>
+    Boolean(artifact?.activityFilePath || artifact?.streamArtifactPaths?.length),
+}));
+
+jest.mock("@/lib/services/activitySubmissionQueue", () => ({
+  __esModule: true,
+  loadActivitySubmissionQueueJobs: loadActivitySubmissionQueueJobsMock,
+  incompleteQueueJobReferencesLocalFiles: (job: QueueFileReference) =>
+    job.status !== "complete" &&
+    Boolean(job.localActivityFilePath || job.streamArtifactPaths?.length),
 }));
 
 jest.mock("@/lib/services/fit/GarminFitEncoder", () => ({
   __esModule: true,
-  GarminFitEncoder: { cleanupOrphanedRecordings: jest.fn(async () => undefined) },
+  GarminFitEncoder: { cleanupOrphanedRecordings: cleanupFitRecordingsMock },
 }));
 
 jest.mock("@/lib/services/sentry", () => ({
@@ -150,6 +187,8 @@ const RootLayout = require("../_layout").default;
 describe("root layout auth guard", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    loadPendingFinalizedArtifactMock.mockResolvedValue(null);
+    loadActivitySubmissionQueueJobsMock.mockResolvedValue([]);
     Object.assign(authState, {
       authState: "authenticated-verified",
       userStatus: "verified",
@@ -195,18 +234,65 @@ describe("root layout auth guard", () => {
     expect(screen.getByTestId("redirect-target").props.children).toContain("athlete@example.com");
   });
 
-  it("redirects verified users without onboarding to onboarding", () => {
+  it("redirects verified users without onboarding to onboarding", async () => {
     authState.onboardingStatus = false;
     segmentsValue = ["(internal)", "(tabs)"];
 
     renderNative(<RootLayout />);
 
-    expect(screen.getByTestId("redirect-target").props.children).toContain("onboarding");
+    await waitFor(() =>
+      expect(screen.getByTestId("redirect-target").props.children).toContain("onboarding"),
+    );
   });
 
-  it("renders the internal app slot for fully eligible users", () => {
+  it("renders the internal app slot for fully eligible users", async () => {
     renderNative(<RootLayout />);
 
-    expect(screen.getByText("Internal app content")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("Internal app content")).toBeTruthy());
+  });
+
+  it("preserves finalized files when a pending artifact references them", async () => {
+    loadPendingFinalizedArtifactMock.mockResolvedValue({
+      activityFilePath: "file:///pending.fit",
+      streamArtifactPaths: ["file:///pending-streams"],
+    });
+
+    renderNative(<RootLayout />);
+
+    await waitFor(() => expect(loadPendingFinalizedArtifactMock).toHaveBeenCalledTimes(1));
+    expect(cleanupStreamRecordingsMock).not.toHaveBeenCalled();
+    expect(cleanupFitRecordingsMock).not.toHaveBeenCalled();
+    expect(cleanupLocationTrackingMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves finalized files when an incomplete queue job references them", async () => {
+    loadActivitySubmissionQueueJobsMock.mockResolvedValue([
+      {
+        status: "failed",
+        localActivityFilePath: "file:///retry.fit",
+        streamArtifactPaths: [],
+      },
+    ]);
+
+    renderNative(<RootLayout />);
+
+    await waitFor(() => expect(loadActivitySubmissionQueueJobsMock).toHaveBeenCalledTimes(1));
+    expect(cleanupStreamRecordingsMock).not.toHaveBeenCalled();
+    expect(cleanupFitRecordingsMock).not.toHaveBeenCalled();
+  });
+
+  it("allows orphan cleanup when only completed queue jobs reference local files", async () => {
+    loadActivitySubmissionQueueJobsMock.mockResolvedValue([
+      {
+        status: "complete",
+        localActivityFilePath: "file:///completed.fit",
+        streamArtifactPaths: ["file:///completed-streams"],
+      },
+    ]);
+
+    renderNative(<RootLayout />);
+
+    await waitFor(() => expect(cleanupStreamRecordingsMock).toHaveBeenCalledTimes(1));
+    expect(cleanupFitRecordingsMock).toHaveBeenCalledTimes(1);
   });
 });

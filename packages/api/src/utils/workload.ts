@@ -1,23 +1,16 @@
 import {
+  type ActivityTssIdentity as CoreActivityTssIdentity,
   computeAcwr,
   computeMonotony,
   type LoadDayObservation,
   type LoadSeries,
   type LoadSeriesIdentity,
+  loadSeriesIdentityForActivityTss,
 } from "@repo/core";
 
 export type LoadSource = "trimp" | "tss" | "mixed" | "none";
 
-export interface ActivityTssIdentity {
-  sport: "run" | "bike" | "swim" | "strength" | "other";
-  method: "power_threshold" | "run_pace_threshold" | "heart_rate_reserve";
-  source: "activity_analysis";
-  version: "1";
-  calibration:
-    | { type: "ftp_watts"; value: number }
-    | { type: "threshold_speed_mps"; value: number }
-    | { type: "heart_rate_reserve_bpm"; resting: number; maximum: number };
-}
+export type ActivityTssIdentity = CoreActivityTssIdentity;
 
 export interface CanonicalLoadActivity {
   started_at?: string | null;
@@ -72,13 +65,7 @@ function identityFor(
   family: "trimp" | "tss",
 ): LoadSeriesIdentity | null {
   if (family === "tss" && activity.tss_identity) {
-    return {
-      sport: activity.tss_identity.sport,
-      family,
-      method: activity.tss_identity.method,
-      version: activity.tss_identity.version,
-      sourceDefinition: `${activity.tss_identity.source}:${JSON.stringify(activity.tss_identity.calibration)}`,
-    };
+    return loadSeriesIdentityForActivityTss(activity.tss_identity);
   }
   const sport = activity.sport?.trim();
   const method = activity.load_method?.trim();

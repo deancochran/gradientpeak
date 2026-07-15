@@ -113,7 +113,14 @@ describe("ActivityCard", () => {
           avg_speed_mps: 2.78,
           avg_power: 240,
           avg_heart_rate: 148,
-          derived: { stress: { tss: 72, intensity_factor: 0.82 } },
+          derived: {
+            stress: {
+              tss: 72,
+              intensity_factor: 0.82,
+              method: "power_threshold",
+              unavailable_reason: null,
+            },
+          },
         }}
         variant="list"
       />,
@@ -147,9 +154,82 @@ describe("ActivityCard", () => {
       />,
     );
 
-    expect(screen.getByText("TSS")).toBeTruthy();
-    expect(screen.getByText("IF")).toBeTruthy();
+    expect(screen.getByText("Load")).toBeTruthy();
+    expect(screen.getByText("Intensity")).toBeTruthy();
     expect(screen.getAllByText("--")).toHaveLength(2);
+  });
+
+  it("labels heart-rate load and explains a missing threshold", () => {
+    const { rerender } = renderNative(
+      <ActivityCard
+        activity={{
+          id: "activity-1",
+          name: "Strength Session",
+          type: "strength",
+          duration_seconds: 1800,
+          derived: {
+            tss: 32,
+            intensity_factor: 0.8,
+            method: "heart_rate_threshold",
+            unavailable_reason: null,
+          },
+        }}
+        variant="list"
+      />,
+    );
+
+    expect(screen.getByText("Estimated HR Load")).toBeTruthy();
+    expect(screen.getByText("HR IF")).toBeTruthy();
+
+    rerender(
+      <ActivityCard
+        activity={{
+          id: "activity-1",
+          name: "Strength Session",
+          type: "strength",
+          duration_seconds: 1800,
+          derived: {
+            tss: null,
+            intensity_factor: null,
+            method: null,
+            unavailable_reason: "threshold_missing",
+          },
+        }}
+        variant="list"
+      />,
+    );
+
+    expect(screen.getByText("No prior threshold")).toBeTruthy();
+    expect(screen.getByText("Establish a sport-specific LTHR.")).toBeTruthy();
+  });
+
+  it("shows stale threshold source and age without claiming a tested threshold", () => {
+    renderNative(
+      <ActivityCard
+        activity={{
+          id: "activity-1",
+          name: "Morning Ride",
+          type: "bike",
+          started_at: "2026-04-11T00:00:00.000Z",
+          duration_seconds: 3600,
+          derived: {
+            tss: 72,
+            intensity_factor: 0.82,
+            method: "power_threshold",
+            unavailable_reason: null,
+            calibration_quality: {
+              source: "observed_effort",
+              observed_at: "2026-01-01T00:00:00.000Z",
+              stale: true,
+              estimate: true,
+            },
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("20-minute effort estimate · 100d old · stale")).toBeTruthy();
+    expect(screen.queryByText(/tested/i)).toBeNull();
   });
 
   it("toggles likes using the activity entity type", () => {

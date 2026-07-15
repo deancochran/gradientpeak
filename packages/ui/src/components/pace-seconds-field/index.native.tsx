@@ -1,37 +1,36 @@
-import { useEffect, useState } from "react";
-import { formatSecondsToMmSs } from "../../lib/fitness-inputs";
 import { PaceInput } from "../pace-input/index.native";
 import type { PaceSecondsFieldProps } from "./shared";
+import { usePaceSecondsField } from "./use-pace-seconds-field";
 
 function PaceSecondsField({
+  error,
+  formControl,
   helperText,
   id,
   label,
+  onBlur,
   onChangeSeconds,
   placeholder,
   required = false,
+  testId,
   unitLabel,
   valueSeconds,
 }: PaceSecondsFieldProps) {
-  const [draftValue, setDraftValue] = useState(
-    valueSeconds == null ? "" : formatSecondsToMmSs(valueSeconds),
-  );
-
-  useEffect(() => {
-    setDraftValue(valueSeconds == null ? "" : formatSecondsToMmSs(valueSeconds));
-  }, [valueSeconds]);
+  const draft = usePaceSecondsField({ formControl, onBlur, onChangeSeconds, valueSeconds });
 
   return (
     <PaceInput
+      error={error}
       helperText={helperText}
       id={id}
       label={label}
-      onChange={setDraftValue}
-      onPaceSecondsChange={(nextValue) => onChangeSeconds(nextValue ?? null)}
+      onBlur={draft.onBlur}
+      onChange={draft.onChange}
       placeholder={placeholder}
       required={required}
+      testId={testId}
       unitLabel={unitLabel}
-      value={draftValue}
+      value={draft.draftValue}
     />
   );
 }

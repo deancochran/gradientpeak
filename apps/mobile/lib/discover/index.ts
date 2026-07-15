@@ -119,6 +119,7 @@ export type DiscoverUserItem = {
   username?: string | null;
   full_name?: string | null;
   avatar_url?: string | null;
+  follow_status: "pending" | "accepted" | null;
   is_public?: boolean | null;
   created_at?: string | Date | null;
   updated_at?: string | Date | null;

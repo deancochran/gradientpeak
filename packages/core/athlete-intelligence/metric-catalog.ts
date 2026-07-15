@@ -8,6 +8,8 @@ import type { CalculationPolicyId } from "./policy-descriptors";
 
 export type CanonicalMetricUnit =
   | "watts"
+  | "seconds_per_km"
+  | "seconds_per_100m"
   | "beats_per_minute"
   | "milliliters_per_kilogram_per_minute"
   | "kilograms"
@@ -33,6 +35,18 @@ export const metricCatalog = Object.freeze({
     role: athleteMetricRoleByType.ftp,
     supportedPolicies: ["physiology-metrics"],
     supportedSports: ["bike"],
+  },
+  threshold_pace_seconds_per_km: {
+    canonicalUnit: "seconds_per_km",
+    role: athleteMetricRoleByType.threshold_pace_seconds_per_km,
+    supportedPolicies: ["physiology-metrics"],
+    supportedSports: ["run"],
+  },
+  css_seconds_per_100m: {
+    canonicalUnit: "seconds_per_100m",
+    role: athleteMetricRoleByType.css_seconds_per_100m,
+    supportedPolicies: ["physiology-metrics"],
+    supportedSports: ["swim"],
   },
   lthr: {
     canonicalUnit: "beats_per_minute",

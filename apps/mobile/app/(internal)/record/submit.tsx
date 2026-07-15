@@ -12,7 +12,7 @@ import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useRouter } from "expo-router";
 import { Save, Trash2 } from "lucide-react-native";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
 import { ErrorBoundary, ScreenErrorFallback } from "@/components/ErrorBoundary";
 import { useActivitySubmission } from "@/lib/hooks/useActivitySubmission";
@@ -22,7 +22,7 @@ import {
   deleteFinalizedArtifactFiles,
 } from "@/lib/services/ActivityRecorder/finalizedArtifactStorage";
 
-function SubmitScreen() {
+function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
   const router = useRouter();
 
   const service = useSharedActivityRecorder();
@@ -205,12 +205,26 @@ function SubmitScreen() {
             </View>
           </Form>
         ) : (
-          <View className="px-6 pt-10">
+          <View className="gap-4 px-6 pt-10" testID="activity-submit-load-recovery">
             <Text className="text-base text-muted-foreground">
               {submission.isLoading
                 ? "Loading finalized activity..."
                 : submission.error || "No finalized activity found."}
             </Text>
+            {!submission.isLoading ? (
+              <>
+                <Button onPress={onRetryLoad} variant="outline" testID="activity-submit-retry-load">
+                  <Text>Retry loading</Text>
+                </Button>
+                <Button
+                  onPress={handleDiscard}
+                  variant="destructive"
+                  testID="activity-submit-discard-exit"
+                >
+                  <Text className="text-destructive-foreground">Discard and exit</Text>
+                </Button>
+              </>
+            ) : null}
           </View>
         )}
       </ScrollView>
@@ -235,6 +249,11 @@ function SubmitScreen() {
       </View>
     </KeyboardAvoidingView>
   );
+}
+
+function SubmitScreen() {
+  const [retryKey, setRetryKey] = useState(0);
+  return <SubmissionContent key={retryKey} onRetryLoad={() => setRetryKey((value) => value + 1)} />;
 }
 
 export default function SubmitScreenWithErrorBoundary() {

@@ -1,4 +1,10 @@
-import type { IntensityTargetV2, IntervalStepV2 } from "@repo/core/schemas/activity_plan_v2";
+import {
+  type ActivityPlanTargetAnchors,
+  type ActivityTargetCategory,
+  getActivityPlanDefaultTarget,
+  type IntensityTargetV2,
+  type IntervalStepV2,
+} from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import {
   Form,
@@ -23,7 +29,8 @@ interface StepEditorDialogProps {
   onOpenChange: (open: boolean) => void;
   step?: IntervalStepV2;
   onSave: (step: IntervalStepV2) => void;
-  activityType?: string;
+  activityType?: ActivityTargetCategory;
+  targetAnchors?: ActivityPlanTargetAnchors;
   defaultSegmentName?: string;
 }
 
@@ -68,12 +75,21 @@ const INTENSITY_TYPES = [
   { value: "RPE", label: "RPE (1-10)" },
 ];
 
+export function toStepEditorTargets(targets: IntensityTargetV2[]): IntensityTargetV2[] {
+  return targets.map((target) => ({ ...target }));
+}
+
+export function fromStepEditorTargets(targets: IntensityTargetV2[]): IntensityTargetV2[] {
+  return targets.map((target) => ({ ...target }));
+}
+
 export function StepEditorDialog({
   open,
   onOpenChange,
   step,
   onSave,
   activityType,
+  targetAnchors,
 }: StepEditorDialogProps) {
   const isMountedRef = useRef(true);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -110,7 +126,7 @@ export function StepEditorDialog({
         description: step.description || "",
         duration:
           step.duration.type === "untilFinished" ? { type: "time", seconds: 300 } : step.duration,
-        targets: step.targets || [],
+        targets: toStepEditorTargets(step.targets || []),
         notes: step.notes || "",
       });
       setSaveError(null);
@@ -146,7 +162,7 @@ export function StepEditorDialog({
       name: result.data.name,
       description: result.data.description,
       duration: result.data.duration, // Already in V2 format
-      targets: result.data.targets as IntensityTargetV2[],
+      targets: fromStepEditorTargets(result.data.targets as IntensityTargetV2[]),
       notes: result.data.notes,
     };
 
@@ -159,11 +175,10 @@ export function StepEditorDialog({
     if (!isMountedRef.current) return;
     if (targets.length >= 3) return;
 
-    const defaultTarget: IntensityTargetV2 = activityType?.includes("bike")
-      ? { type: "%FTP", intensity: 75 }
-      : activityType?.includes("run")
-        ? { type: "%MaxHR", intensity: 75 }
-        : { type: "RPE", intensity: 5 };
+    const defaultTarget = getActivityPlanDefaultTarget({
+      activityCategory: activityType ?? "other",
+      anchors: targetAnchors,
+    });
 
     form.setValue("targets", [...targets, defaultTarget]);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

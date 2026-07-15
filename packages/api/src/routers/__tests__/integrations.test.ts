@@ -10,6 +10,7 @@ const STATE_ID = "55555555-5555-4555-8555-555555555555";
 const SYNC_ID = "66666666-6666-4666-8666-666666666666";
 
 const mocks = vi.hoisted(() => {
+  const routeDownload = vi.fn();
   const repositories = {
     integrations: {
       listByProfileId: vi.fn(),
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => {
       updateTokensByProfileIdAndProvider: vi.fn(),
       deleteByProfileIdAndProvider: vi.fn(),
       upsertByProfileIdAndProvider: vi.fn(),
+      upsertFromOAuthState: vi.fn(),
     },
     oauthStates: {
       deleteExpired: vi.fn(),
@@ -41,10 +43,11 @@ const mocks = vi.hoisted(() => {
     createProviderSyncRepository: vi.fn(() => providerSyncRepository),
     createWahooRepository: vi.fn((input) => ({ kind: "wahoo-repository", input })),
     createWahooRouteStorage: vi.fn((storage) => storage),
+    routeDownload,
     getApiStorageService: vi.fn(() => ({
       storage: {
         from: vi.fn(() => ({
-          download: vi.fn(),
+          download: routeDownload,
         })),
       },
     })),
@@ -366,16 +369,9 @@ describe("integrationsRouter", () => {
           label: "Wahoo",
           provider: "wahoo",
         }),
-        expect.objectContaining({
-          actions: [],
-          activityHistory: expect.objectContaining({ status: "unsupported" }),
-          plannedWorkouts: expect.objectContaining({ status: "unsupported" }),
-          setupData: expect.objectContaining({ status: "unsupported" }),
-          connected: false,
-          provider: "strava",
-        }),
       ]),
     );
+    expect(result).toHaveLength(1);
     expect(mocks.providerSyncRepository.listSyncStateByIntegrationIds).toHaveBeenCalledWith([
       "77777777-7777-4777-8777-777777777777",
     ]);
@@ -432,7 +428,7 @@ describe("integrationsRouter", () => {
     const result = await caller.getSyncOverview();
 
     expect(result.some((provider) => provider.provider === "wahoo")).toBe(false);
-    expect(result.some((provider) => provider.provider === "strava")).toBe(true);
+    expect(result).toEqual([]);
   });
 
   it("getAuthUrl rejects unconfigured providers before storing OAuth state", async () => {
@@ -722,31 +718,41 @@ describe("integrationsRouter", () => {
     } satisfies Partial<TRPCError>);
   });
 
-  it("getAuthUrl stores oauth state and builds the provider auth url", async () => {
+  it("getAuthUrl stores oauth state and builds the enabled provider auth url", async () => {
     const caller = createCaller();
     vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(STATE_ID);
     mocks.repositories.oauthStates.deleteExpired.mockResolvedValue(0);
     mocks.repositories.oauthStates.create.mockResolvedValue(undefined);
 
-    const result = await caller.getAuthUrl({ provider: "strava" });
+    const result = await caller.getAuthUrl({ provider: "wahoo" });
     const url = new URL(result.url);
 
     expect(result.state).toBe(STATE_ID);
-    expect(`${url.origin}${url.pathname}`).toBe("https://www.strava.com/oauth/authorize");
-    expect(url.searchParams.get("client_id")).toBe("strava-client-id");
+    expect(`${url.origin}${url.pathname}`).toBe("https://api.wahooligan.com/oauth/authorize");
+    expect(url.searchParams.get("client_id")).toBe("wahoo-client-id");
     expect(url.searchParams.get("redirect_uri")).toBe(
-      "https://app.example.com/api/integrations/callback/strava",
+      "https://app.example.com/api/integrations/callback/wahoo",
     );
-    expect(url.searchParams.get("scope")).toBe("activity:read_all");
+    expect(url.searchParams.get("scope")).toContain("workouts_read");
     expect(url.searchParams.get("state")).toBe(STATE_ID);
     expect(mocks.repositories.oauthStates.create).toHaveBeenCalledWith({
       state: STATE_ID,
       profileId: SESSION_USER_ID,
-      provider: "strava",
+      provider: "wahoo",
       mobileRedirectUri: "gradientpeak://integrations",
       createdAt: expect.any(Date),
       expiresAt: expect.any(Date),
     });
+  });
+
+  it("getAuthUrl rejects scaffold providers even when credentials are configured", async () => {
+    const caller = createCaller();
+
+    await expect(caller.getAuthUrl({ provider: "strava" })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Integration is not configured on this server",
+    } satisfies Partial<TRPCError>);
+    expect(mocks.repositories.oauthStates.create).not.toHaveBeenCalled();
   });
 
   it("getAuthUrl rejects unexpected input keys", async () => {
@@ -759,6 +765,18 @@ describe("integrationsRouter", () => {
         extra: true,
       } as any),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" } satisfies Partial<TRPCError>);
+  });
+
+  it("getAuthUrl rejects an open redirect target", async () => {
+    const caller = createCaller();
+
+    await expect(
+      caller.getAuthUrl({ provider: "wahoo", redirectUri: "https://attacker.example/callback" }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "OAuth redirect URI is not allowed",
+    } satisfies Partial<TRPCError>);
+    expect(mocks.repositories.oauthStates.create).not.toHaveBeenCalled();
   });
 
   it("disconnect deletes the integration for the current user", async () => {
@@ -936,7 +954,7 @@ describe("integrationsRouter", () => {
     } satisfies Partial<TRPCError>);
   });
 
-  it("storeIntegration upserts the integration and deletes the consumed state", async () => {
+  it("storeIntegration atomically consumes matching state with the integration write", async () => {
     const caller = createCaller();
     mocks.repositories.oauthStates.deleteExpired.mockResolvedValue(0);
     mocks.repositories.oauthStates.findValidByState.mockResolvedValue({
@@ -945,7 +963,7 @@ describe("integrationsRouter", () => {
       mobile_redirect_uri: "gradientpeak://callback",
       created_at: new Date("2026-04-01T12:00:00.000Z"),
     });
-    mocks.repositories.integrations.upsertByProfileIdAndProvider.mockResolvedValue({
+    mocks.repositories.integrations.upsertFromOAuthState.mockResolvedValue({
       id: "77777777-7777-4777-8777-777777777777",
       profile_id: OTHER_USER_ID,
       provider: "trainingpeaks",
@@ -957,7 +975,6 @@ describe("integrationsRouter", () => {
       created_at: new Date("2026-04-01T10:00:00.000Z"),
       updated_at: new Date("2026-04-01T10:00:00.000Z"),
     });
-    mocks.repositories.oauthStates.deleteByState.mockResolvedValue(undefined);
 
     await expect(
       caller.storeIntegration({
@@ -979,7 +996,9 @@ describe("integrationsRouter", () => {
       state: STATE_ID,
       now: expect.any(Date),
     });
-    expect(mocks.repositories.integrations.upsertByProfileIdAndProvider).toHaveBeenCalledWith({
+    expect(mocks.repositories.integrations.upsertFromOAuthState).toHaveBeenCalledWith({
+      state: STATE_ID,
+      now: expect.any(Date),
       profileId: OTHER_USER_ID,
       provider: "trainingpeaks",
       externalId: "ext-42",
@@ -989,7 +1008,7 @@ describe("integrationsRouter", () => {
       scope: "activities:read",
     });
     expect(mocks.providerSyncRepository.enqueueJob).not.toHaveBeenCalled();
-    expect(mocks.repositories.oauthStates.deleteByState).toHaveBeenCalledWith(STATE_ID);
+    expect(mocks.repositories.oauthStates.deleteByState).not.toHaveBeenCalled();
   });
 
   it("storeIntegration rejects missing or expired oauth state before writing tokens", async () => {
@@ -1013,7 +1032,7 @@ describe("integrationsRouter", () => {
       message: "Invalid or expired OAuth state",
     } satisfies Partial<TRPCError>);
 
-    expect(mocks.repositories.integrations.upsertByProfileIdAndProvider).not.toHaveBeenCalled();
+    expect(mocks.repositories.integrations.upsertFromOAuthState).not.toHaveBeenCalled();
     expect(mocks.repositories.oauthStates.deleteByState).not.toHaveBeenCalled();
   });
 
@@ -1043,7 +1062,7 @@ describe("integrationsRouter", () => {
       message: "OAuth state does not match integration request",
     } satisfies Partial<TRPCError>);
 
-    expect(mocks.repositories.integrations.upsertByProfileIdAndProvider).not.toHaveBeenCalled();
+    expect(mocks.repositories.integrations.upsertFromOAuthState).not.toHaveBeenCalled();
     expect(mocks.repositories.oauthStates.deleteByState).not.toHaveBeenCalled();
   });
 
@@ -1073,7 +1092,7 @@ describe("integrationsRouter", () => {
       message: "OAuth state does not match integration request",
     } satisfies Partial<TRPCError>);
 
-    expect(mocks.repositories.integrations.upsertByProfileIdAndProvider).not.toHaveBeenCalled();
+    expect(mocks.repositories.integrations.upsertFromOAuthState).not.toHaveBeenCalled();
     expect(mocks.repositories.oauthStates.deleteByState).not.toHaveBeenCalled();
   });
 
@@ -1088,7 +1107,7 @@ describe("integrationsRouter", () => {
       mobile_redirect_uri: "gradientpeak://callback",
       created_at: new Date("2026-04-01T12:00:00.000Z"),
     });
-    mocks.repositories.integrations.upsertByProfileIdAndProvider.mockResolvedValue({
+    mocks.repositories.integrations.upsertFromOAuthState.mockResolvedValue({
       id: "77777777-7777-4777-8777-777777777777",
       profile_id: OTHER_USER_ID,
       provider: "wahoo",
@@ -1129,7 +1148,7 @@ describe("integrationsRouter", () => {
       resourceKind: "activity",
       runAt: "2026-04-02T09:30:00.000Z",
     });
-    expect(mocks.repositories.oauthStates.deleteByState).toHaveBeenCalledWith(STATE_ID);
+    expect(mocks.repositories.oauthStates.deleteByState).not.toHaveBeenCalled();
   });
 
   it("deleteOAuthState deletes the supplied state token", async () => {
@@ -1312,5 +1331,94 @@ describe("integrationsRouter", () => {
     });
 
     vi.useRealTimers();
+  });
+
+  it("wahoo.testSync preserves actionable non-retryable failure details", async () => {
+    const caller = createCaller();
+    mocks.wahoo.syncEvent.mockResolvedValue({
+      success: false,
+      action: "no_change",
+      error: "%FTP targets require an FTP value before device sync",
+      failureCode: "missing_metric",
+      failureCategory: "eligibility",
+      retryable: false,
+    });
+
+    await expect(caller.wahoo.testSync({ eventId: EVENT_ID })).resolves.toMatchObject({
+      success: false,
+      action: "no_change",
+      error: "%FTP targets require an FTP value before device sync",
+      failureCode: "missing_metric",
+      failureCategory: "eligibility",
+      retryable: false,
+    });
+  });
+
+  it("Wahoo route storage returns null for a definite missing artifact", async () => {
+    const caller = createCaller();
+    mocks.wahoo.syncEvent.mockResolvedValue({ success: true, action: "no_change" });
+    mocks.routeDownload.mockResolvedValue({
+      data: null,
+      error: { message: "Object not found", status: 404, statusCode: "404" },
+    });
+
+    await caller.wahoo.testSync({ eventId: EVENT_ID });
+    const instance = (
+      mocks.wahoo.instances as Array<{
+        deps: { storage: { downloadRouteGpx(filePath: string): Promise<string | null> } };
+      }>
+    )[0];
+
+    expect(instance).toBeDefined();
+    await expect(instance!.deps.storage.downloadRouteGpx("routes/missing.gpx")).resolves.toBeNull();
+  });
+
+  it("Wahoo route storage throws transient download failures", async () => {
+    const caller = createCaller();
+    const transientError = { message: "Storage unavailable", status: 503, statusCode: "503" };
+    mocks.wahoo.syncEvent.mockResolvedValue({ success: true, action: "no_change" });
+    mocks.routeDownload.mockResolvedValue({ data: null, error: transientError });
+
+    await caller.wahoo.testSync({ eventId: EVENT_ID });
+    const instance = (
+      mocks.wahoo.instances as Array<{
+        deps: { storage: { downloadRouteGpx(filePath: string): Promise<string | null> } };
+      }>
+    )[0];
+
+    expect(instance).toBeDefined();
+    await expect(instance!.deps.storage.downloadRouteGpx("routes/retry.gpx")).rejects.toBe(
+      transientError,
+    );
+  });
+
+  it("wahoo.testSync rejects failure results without typed failure metadata", async () => {
+    const caller = createCaller();
+    mocks.wahoo.syncEvent.mockResolvedValue({
+      success: false,
+      action: "no_change",
+      error: "Missing FTP",
+    });
+
+    await expect(caller.wahoo.testSync({ eventId: EVENT_ID })).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Wahoo sync service returned invalid test-sync data",
+    } satisfies Partial<TRPCError>);
+  });
+
+  it("wahoo.testSync rejects success results carrying failure metadata", async () => {
+    const caller = createCaller();
+    mocks.wahoo.syncEvent.mockResolvedValue({
+      success: true,
+      action: "created",
+      failureCode: "provider_failure",
+      failureCategory: "provider",
+      retryable: true,
+    });
+
+    await expect(caller.wahoo.testSync({ eventId: EVENT_ID })).rejects.toMatchObject({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Wahoo sync service returned invalid test-sync data",
+    } satisfies Partial<TRPCError>);
   });
 });

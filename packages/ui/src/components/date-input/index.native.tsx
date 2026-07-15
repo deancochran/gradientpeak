@@ -41,6 +41,14 @@ function DateInput({
   const selectedDate = useMemo(() => parseDateOnlyToDate(value), [value]);
   const usesModalPresentation = pickerPresentation === "modal";
   const formattedValue = value ? format(selectedDate, "EEE, MMM d, yyyy") : placeholder;
+  const fieldHint = [
+    required ? "Required" : undefined,
+    accessibilityHint ?? "Opens date picker. Format yyyy-mm-dd",
+    helperText,
+    error ? `Error: ${error}` : undefined,
+  ]
+    .filter(Boolean)
+    .join(". ");
   const { role: _unusedRole, ...nativeTestProps } = getNativeTestProps({
     accessibilityLabel: label,
     id,
@@ -105,9 +113,11 @@ function DateInput({
       </Label>
       <View className="flex-row items-center gap-2">
         <Pressable
-          accessibilityHint={accessibilityHint ?? "Opens date picker. Format yyyy-mm-dd"}
+          accessibilityHint={fieldHint}
+          aria-invalid={!!error}
           accessibilityRole="button"
           accessibilityState={{ disabled }}
+          aria-required={required}
           className={`flex-1 rounded-md border px-3 py-3 ${disabled ? "opacity-50" : ""} ${error ? "border-destructive bg-destructive/5" : "border-input bg-background"}`}
           disabled={disabled}
           onPress={handleOpenPicker}

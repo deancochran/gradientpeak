@@ -15,11 +15,17 @@ import {
   profileMetricTypeSchema,
   updateProfileMetricInputSchema,
 } from "@repo/core/athlete-inputs";
+import { cssTestProtocolSchema } from "@repo/core/calculations";
 import { profileMetrics, publicProfileMetricsRowSchema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, lte } from "drizzle-orm";
 import { z } from "zod";
 import { listProfileMetricHistory } from "../application/profile-metrics/listProfileMetricHistory";
+import {
+  CSS_TEST_CALCULATION_VERSION,
+  CssTestOperationConflictError,
+  persistCssTest,
+} from "../application/profile-metrics/persist-css-test";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { indexCursorSchema } from "../utils/index-cursor";
@@ -72,6 +78,63 @@ const profileMetricListOutputSchema = z
   .strict();
 const deleteProfileMetricOutputSchema = z.object({ success: z.literal(true) }).strict();
 
+const recordCssTestInputSchema = z
+  .object({
+    time_400_seconds: z.number(),
+    time_200_seconds: z.number(),
+    recorded_at: z.date(),
+    operation_id: z.string().uuid(),
+  })
+  .strict()
+  .superRefine((input, ctx) => {
+    const result = cssTestProtocolSchema.safeParse({
+      time400Seconds: input.time_400_seconds,
+      time200Seconds: input.time_200_seconds,
+      operationId: input.operation_id,
+    });
+    if (result.success) return;
+    for (const issue of result.error.issues) {
+      const field = issue.path[0];
+      ctx.addIssue({
+        code: "custom",
+        message: issue.message,
+        path: [
+          field === "operationId"
+            ? "operation_id"
+            : field === "time200Seconds"
+              ? "time_200_seconds"
+              : "time_400_seconds",
+        ],
+      });
+    }
+  });
+
+const recordCssTestOutputSchema = z
+  .object({
+    test_id: z.string().uuid(),
+    css_seconds_per_100m: z.number().positive(),
+    recorded_at: z.date(),
+    source: z.literal("validated_test"),
+    calculation_version: z.literal(CSS_TEST_CALCULATION_VERSION),
+    efforts: z
+      .object({
+        distance_meters: z.union([z.literal(400), z.literal(200)]),
+        time_seconds: z.number().positive(),
+        speed_meters_per_second: z.number().positive(),
+      })
+      .strict()
+      .array()
+      .length(2),
+  })
+  .strict();
+
+const MANUAL_PROFILE_METRIC_METHOD = "manual_entry";
+const MANUAL_PROFILE_METRIC_PROVENANCE = {
+  observation_type: "observed",
+  trusted: true,
+  entered_by: "athlete",
+} as const;
+
 function parseProfileMetricRow(row: unknown) {
   return publicProfileMetricsRowSchema.parse(row);
 }
@@ -81,6 +144,43 @@ function parseNullableProfileMetricRow(row: unknown) {
 }
 
 export const profileMetricsRouter = createTRPCRouter({
+  recordCssTest: protectedProcedure
+    .input(recordCssTestInputSchema)
+    .output(recordCssTestOutputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const result = await persistCssTest(getRequiredDb(ctx), {
+        profileId: ctx.session.user.id,
+        operationId: input.operation_id,
+        recordedAt: input.recorded_at,
+        time400Seconds: input.time_400_seconds,
+        time200Seconds: input.time_200_seconds,
+      }).catch((error: unknown) => {
+        if (error instanceof CssTestOperationConflictError) {
+          throw new TRPCError({ code: "CONFLICT", message: error.message });
+        }
+        throw error;
+      });
+      return {
+        test_id: result.testId,
+        css_seconds_per_100m: result.cssSecondsPer100m,
+        recorded_at: result.recordedAt,
+        source: "validated_test" as const,
+        calculation_version: CSS_TEST_CALCULATION_VERSION,
+        efforts: [
+          {
+            distance_meters: 400 as const,
+            time_seconds: result.efforts[0].durationSeconds,
+            speed_meters_per_second: result.efforts[0].speedMetersPerSecond,
+          },
+          {
+            distance_meters: 200 as const,
+            time_seconds: result.efforts[1].durationSeconds,
+            speed_meters_per_second: result.efforts[1].speedMetersPerSecond,
+          },
+        ],
+      };
+    }),
+
   /**
    * List all profile metric logs for current user.
    * Supports filtering by metric type and date range.
@@ -171,6 +271,9 @@ export const profileMetricsRouter = createTRPCRouter({
           unit: normalizedMetric.unit,
           reference_activity_id: normalizedMetric.reference_activity_id || null,
           notes: normalizedMetric.notes || null,
+          source: "manual",
+          method: MANUAL_PROFILE_METRIC_METHOD,
+          provenance: MANUAL_PROFILE_METRIC_PROVENANCE,
           created_at: new Date(),
           updated_at: new Date(),
           recorded_at: new Date(normalizedMetric.recorded_at || new Date().toISOString()),
@@ -194,7 +297,10 @@ export const profileMetricsRouter = createTRPCRouter({
       const [existing] = await db
         .select({
           metric_type: profileMetrics.metric_type,
+          value: profileMetrics.value,
+          notes: profileMetrics.notes,
           recorded_at: profileMetrics.recorded_at,
+          source: profileMetrics.source,
         })
         .from(profileMetrics)
         .where(
@@ -217,16 +323,46 @@ export const profileMetricsRouter = createTRPCRouter({
         }
       })();
 
+      const now = new Date();
+      if (existing.source !== "manual") {
+        const [data] = await db
+          .insert(profileMetrics)
+          .values({
+            id: randomUUID(),
+            profile_id: ctx.session.user.id,
+            metric_type: existing.metric_type,
+            value: normalizedPatch.value ?? existing.value,
+            unit: normalizedPatch.unit,
+            notes: normalizedPatch.notes === undefined ? existing.notes : normalizedPatch.notes,
+            recorded_at: normalizedPatch.recorded_at
+              ? new Date(normalizedPatch.recorded_at)
+              : existing.recorded_at,
+            reference_activity_id: null,
+            source: "manual",
+            method: MANUAL_PROFILE_METRIC_METHOD,
+            provenance: MANUAL_PROFILE_METRIC_PROVENANCE,
+            created_at: now,
+            updated_at: now,
+          })
+          .returning();
+
+        if (!data) throw new Error("Failed to create manual profile metric override");
+        return parseProfileMetricRow(data);
+      }
+
       const [data] = await db
         .update(profileMetrics)
         .set({
           value: normalizedPatch.value,
           unit: normalizedPatch.unit,
           notes: normalizedPatch.notes,
+          source: "manual",
+          method: MANUAL_PROFILE_METRIC_METHOD,
+          provenance: MANUAL_PROFILE_METRIC_PROVENANCE,
           recorded_at: normalizedPatch.recorded_at
             ? new Date(normalizedPatch.recorded_at)
             : undefined,
-          updated_at: new Date(),
+          updated_at: now,
         })
         .where(
           and(eq(profileMetrics.id, input.id), eq(profileMetrics.profile_id, ctx.session.user.id)),
@@ -243,6 +379,23 @@ export const profileMetricsRouter = createTRPCRouter({
     .input(deleteProfileMetricInputSchema)
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
+      const [existing] = await db
+        .select({ source: profileMetrics.source })
+        .from(profileMetrics)
+        .where(
+          and(eq(profileMetrics.id, input.id), eq(profileMetrics.profile_id, ctx.session.user.id)),
+        )
+        .limit(1);
+
+      if (existing && existing.source !== "manual") {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Only manual profile metric observations can be deleted",
+        });
+      }
+
+      if (!existing) return deleteProfileMetricOutputSchema.parse({ success: true });
+
       await db
         .delete(profileMetrics)
         .where(

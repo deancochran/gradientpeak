@@ -268,6 +268,7 @@ describe("socialRouter", () => {
           {
             id: FOLLOWER_ID,
             username: "follower-one",
+            full_name: "Follower One",
             avatar_url: "https://example.com/one.png",
             is_public: true,
             created_at: "2026-04-01T12:00:00.000Z",
@@ -276,6 +277,7 @@ describe("socialRouter", () => {
           {
             id: FOLLOWER_TWO_ID,
             username: "follower-two",
+            full_name: null,
             avatar_url: null,
             is_public: false,
             created_at: "2026-03-31T12:00:00.000Z",
@@ -294,6 +296,7 @@ describe("socialRouter", () => {
         {
           id: FOLLOWER_ID,
           username: "follower-one",
+          full_name: "Follower One",
           avatar_url: "https://example.com/one.png",
           is_public: true,
           created_at: "2026-04-01T12:00:00.000Z",
@@ -303,6 +306,7 @@ describe("socialRouter", () => {
         {
           id: FOLLOWER_TWO_ID,
           username: "follower-two",
+          full_name: null,
           avatar_url: null,
           is_public: false,
           created_at: "2026-03-31T12:00:00.000Z",
@@ -326,6 +330,7 @@ describe("socialRouter", () => {
           {
             id: FOLLOWER_ID,
             username: "follower-one",
+            full_name: "Follower One",
             avatar_url: null,
             is_public: true,
             created_at: "2026-04-01T12:00:00.000Z",
@@ -352,6 +357,7 @@ describe("socialRouter", () => {
           {
             id: FOLLOWING_ID,
             username: "following-one",
+            full_name: "Following One",
             avatar_url: "https://example.com/following.png",
             is_public: true,
             created_at: "2026-04-02T12:00:00.000Z",
@@ -360,6 +366,7 @@ describe("socialRouter", () => {
           {
             id: FOLLOWING_TWO_ID,
             username: "following-two",
+            full_name: null,
             avatar_url: null,
             is_public: true,
             created_at: "2026-04-01T12:00:00.000Z",
@@ -378,6 +385,7 @@ describe("socialRouter", () => {
         {
           id: FOLLOWING_ID,
           username: "following-one",
+          full_name: "Following One",
           avatar_url: "https://example.com/following.png",
           is_public: true,
           created_at: "2026-04-02T12:00:00.000Z",
@@ -387,6 +395,7 @@ describe("socialRouter", () => {
         {
           id: FOLLOWING_TWO_ID,
           username: "following-two",
+          full_name: null,
           avatar_url: null,
           is_public: true,
           created_at: "2026-04-01T12:00:00.000Z",
@@ -426,8 +435,10 @@ describe("socialRouter", () => {
           {
             id: TARGET_USER_ID,
             username: "target-runner",
+            full_name: "Target Athlete",
             avatar_url: null,
             is_public: true,
+            follow_status: "pending",
             created_at: "2026-04-03T12:00:00.000Z",
             updated_at: "2026-04-03T12:00:00.000Z",
           },
@@ -443,8 +454,10 @@ describe("socialRouter", () => {
         {
           id: TARGET_USER_ID,
           username: "target-runner",
+          full_name: "Target Athlete",
           avatar_url: null,
           is_public: true,
+          follow_status: "pending",
           created_at: "2026-04-03T12:00:00.000Z",
           updated_at: "2026-04-03T12:00:00.000Z",
         },
@@ -453,6 +466,32 @@ describe("socialRouter", () => {
       hasMore: false,
       nextCursor: undefined,
     });
+  });
+
+  it("searchUsers supports full-name matches and bounded empty-query suggestions", async () => {
+    const publicSuggestion = {
+      id: TARGET_USER_ID,
+      username: "public-runner",
+      full_name: "Public Athlete",
+      avatar_url: null,
+      is_public: true,
+      follow_status: null,
+      created_at: "2026-04-03T12:00:00.000Z",
+      updated_at: "2026-04-03T12:00:00.000Z",
+    };
+    const { caller, calls } = createCaller({
+      execute: [[publicSuggestion], [{ value: 1 }], [publicSuggestion], [{ value: 1 }]],
+    });
+
+    await expect(
+      caller.searchUsers({ query: "Public Athlete", limit: 10, offset: 0 }),
+    ).resolves.toMatchObject({ users: [publicSuggestion], total: 1 });
+    await expect(caller.searchUsers({ query: "", limit: 5, offset: 0 })).resolves.toMatchObject({
+      users: [publicSuggestion],
+      total: 1,
+      hasMore: false,
+    });
+    expect(calls.executes).toHaveLength(4);
   });
 
   it("searchUsers rejects unexpected input keys", async () => {

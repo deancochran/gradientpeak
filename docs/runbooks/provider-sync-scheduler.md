@@ -12,8 +12,11 @@ Set these server-side variables (never include their values in logs):
 - `WAHOO_PROVIDER_SYNC_LEASE_MS`: lease duration; default 10 minutes, maximum 30 minutes. Keep this above the expected p99 job duration.
 - `WAHOO_PROVIDER_SYNC_REQUEST_TIMEOUT_MS`: scheduler HTTP timeout; default 8 seconds, maximum 9 seconds so it remains below the existing `pg_net` 10-second timeout.
 - `WAHOO_PROVIDER_SYNC_DRAIN_INTERVAL_MS`: local scheduler interval; default 60 seconds.
+- `WAHOO_ACTIVITY_FILE_ALLOWED_HOSTS`: optional comma-separated exact hosts or `*.domain` patterns added to the default `*.wahooligan.com` activity-file allowlist.
 
 The database scheduler calls `POST /api/internal/provider-sync/wahoo/drain` every minute. The process rejects overlapping drain requests with `202 already_running`, caps total claims to currently allocated process capacity, and renews leases while long provider operations remain active. An HTTP timeout does not cancel server execution. Do not immediately retry manually: leases prevent concurrent reclaims, and expired leases provide stale-lock recovery.
+
+Job enqueue deduplication uses transaction-scoped advisory locks. Deploy queue-writer changes without mixed application versions: pause the scheduler, replace all writers, then resume it. Older writers do not participate in the lock protocol.
 
 ## Monitoring and response
 

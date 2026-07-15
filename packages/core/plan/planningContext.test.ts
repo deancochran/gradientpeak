@@ -74,7 +74,13 @@ describe("planningContext", () => {
           value: 4,
           unit: "m/s",
           recorded_at: "2026-05-30T00:00:00.000Z",
+          activity_id: "00000000-0000-4000-8000-000000000101",
           source: "imported",
+          method: "activity_file_best_effort",
+          provenance: {
+            activity_id: "00000000-0000-4000-8000-000000000101",
+            derived_from: "activity_file_stream",
+          },
         },
       ],
     });

@@ -152,7 +152,7 @@ export const mobileJourneyCoverageManifest = {
     selectors: {
       activeSession: "record-screen-ready",
       activityScreen: "record-activity-screen",
-      finishButton: "record-finish-button",
+      finishButton: "recording-finish-button",
       launcher: "tab-button-record",
     },
     status: "partial",
@@ -172,10 +172,10 @@ export const mobileJourneyCoverageManifest = {
     ],
     selectors: {
       screen: "activity-import-screen",
-      selectFileButton: "activity-import-select-file-button",
-      status: "activity-import-status",
+      selectFileButton: "activity-import-file-input",
+      status: "activity-import-summary",
     },
-    status: "scaffold",
+    status: "partial",
   },
   "profile.settings": {
     evidence: [

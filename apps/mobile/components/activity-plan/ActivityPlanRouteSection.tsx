@@ -109,7 +109,7 @@ export function ActivityPlanRouteSection({
           scope="routes"
           selectedId={routeId}
           title="Attach Route"
-          description="Choose an accessible route, or upload a GPX file and attach it directly."
+          description="Choose an accessible route, or upload a route file and attach it directly."
           onClose={() => setIsPickerOpen(false)}
           onSelect={(item) => {
             onSelectRoute(item.id);
@@ -124,7 +124,7 @@ export function ActivityPlanRouteSection({
             >
               <Icon as={Upload} size={16} className="text-foreground" />
               <Text className="text-sm font-semibold text-foreground">
-                {isUploadingRoute ? "Uploading route..." : "Upload New GPX Route"}
+                {isUploadingRoute ? "Uploading route..." : "Upload New Route"}
               </Text>
             </Pressable>
           }

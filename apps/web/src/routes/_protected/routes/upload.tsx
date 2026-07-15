@@ -2,7 +2,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/ca
 import { createFileRoute } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { RouteUploadForm } from "../../../components/protected/route-upload-form";
-import { readTextFile } from "../../../lib/activity-route-upload";
 import { api } from "../../../lib/api/client";
 
 export const Route = createFileRoute("/_protected/routes/upload")({
@@ -12,13 +11,7 @@ export const Route = createFileRoute("/_protected/routes/upload")({
 function RouteUploadPage() {
   const navigate = Route.useNavigate();
   const utils = api.useUtils();
-  const uploadMutation = api.routes.upload.useMutation({
-    onSuccess: async (route) => {
-      await utils.routes.invalidate();
-      toast.success("Route uploaded");
-      void navigate({ to: "/routes/$routeId", params: { routeId: route.id } });
-    },
-  });
+  const uploadMutation = api.routes.upload.useMutation();
 
   return (
     <div className="container mx-auto max-w-3xl space-y-6 py-4">
@@ -37,21 +30,20 @@ function RouteUploadPage() {
         <CardContent>
           <RouteUploadForm
             onCancel={() => void navigate({ to: "/routes" })}
-            onSubmit={async (values, selectedFile) => {
-              if (!selectedFile.file) {
-                throw new Error("Choose a GPX or TCX file to upload.");
-              }
-
-              const fileContent = await readTextFile(selectedFile.file);
-              await uploadMutation.mutateAsync({
-                description: values.description.trim() || undefined,
-                fileContent,
-                fileName: selectedFile.name,
-                name: values.name.trim(),
-              });
+            onSubmit={(values) =>
+              uploadMutation.mutateAsync({
+                description: values.description ?? undefined,
+                fileContent: values.fileContent,
+                fileName: values.file.name,
+                name: values.name,
+              })
+            }
+            onSuccess={async (route) => {
+              await utils.routes.invalidate();
+              toast.success("Route uploaded");
+              void navigate({ to: "/routes/$routeId", params: { routeId: route.id } });
             }}
             onSubmitError={() => toast.error("Route upload failed")}
-            pending={uploadMutation.isPending}
           />
         </CardContent>
       </Card>

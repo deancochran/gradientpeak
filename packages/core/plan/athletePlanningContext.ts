@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { getActivityEffortThresholdEvidence } from "../athlete-inputs/activity-effort-policy";
 import {
   resolveCanonicalThresholds,
   type ThresholdMetricSource,
@@ -71,6 +72,7 @@ export const athleteContextProfileMetricSourceSchema = z
       .enum(["manual", "test", "imported", "provider", "estimated", "derived"])
       .nullable()
       .optional(),
+    method: z.string().nullable().optional(),
     provenance: z.record(z.string(), z.unknown()).nullable().optional(),
   })
   .strict();
@@ -88,6 +90,8 @@ export const athleteContextActivityEffortSourceSchema = z
       .enum(["manual", "test", "imported", "provider", "estimated", "derived"])
       .nullable()
       .optional(),
+    method: z.string().nullable().optional(),
+    provenance: z.record(z.string(), z.unknown()).nullable().optional(),
   })
   .strict();
 
@@ -589,6 +593,18 @@ function resolvedThresholdEvidenceValue(input: {
         observedAt: toIsoDateTime(effort.recorded_at),
         observationKind:
           effort.source === "derived" || effort.source === "estimated" ? "derived" : "actual",
+        evidence:
+          getActivityEffortThresholdEvidence({
+            activityCategory: effort.activity_category,
+            activityId: effort.activity_id,
+            durationSeconds: effort.duration_seconds,
+            effortType: effort.effort_type,
+            method: effort.method,
+            provenance: effort.provenance,
+            source: effort.source,
+            unit: effort.unit,
+            value: effort.value,
+          }) ?? undefined,
       })),
   })[input.threshold];
   return {

@@ -117,8 +117,16 @@ values (
   'gpx-routes',
   false,  -- keep private by default
   10485760,  -- 10MB limit
-  array['application/gpx+xml', 'application/xml']::text[]
-) on conflict (id) do nothing;
+  array[
+    'application/gpx+xml',
+    'application/vnd.garmin.tcx+xml',
+    'application/xml'
+  ]::text[]
+) on conflict (id) do update set
+  name = excluded.name,
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
 
 -- Drop existing policies if any
 drop policy if exists "Users can manage their own routes" on storage.objects;

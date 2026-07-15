@@ -1,3 +1,4 @@
+import type { CanonicalSport } from "../../schemas/sport";
 import {
   type CalculationResult,
   estimatedResult,
@@ -33,6 +34,8 @@ export const PHYSIOLOGY_METRICS_POLICY_CONSTANTS = Object.freeze({
 
 const expectedUnits: Record<AthleteMetricType, string> = {
   ftp: "watts",
+  threshold_pace_seconds_per_km: "seconds_per_km",
+  css_seconds_per_100m: "seconds_per_100m",
   lthr: "beats_per_minute",
   max_hr: "beats_per_minute",
   resting_hr: "beats_per_minute",
@@ -48,6 +51,8 @@ const expectedUnits: Record<AthleteMetricType, string> = {
 
 export const PHYSIOLOGY_METRIC_TYPES = [
   "ftp",
+  "threshold_pace_seconds_per_km",
+  "css_seconds_per_100m",
   "lthr",
   "max_hr",
   "resting_hr",
@@ -101,6 +106,7 @@ function freshnessInfluence(observedAt: string, asOf: string): number {
 function candidatesFor(
   input: AthleteIntelligenceModelInput,
   metricType: AthleteMetricType,
+  targetSport?: CanonicalSport | null,
 ): Candidate[] {
   return input.metricEvidence
     .filter((metric) => metric.metricType === metricType)
@@ -109,6 +115,10 @@ function candidatesFor(
         const source = input.evidenceRegistry[sourceId];
         if (
           !source ||
+          (metricType === "lthr" &&
+            targetSport != null &&
+            source.sport !== null &&
+            source.sport !== targetSport) ||
           metric.value.value === null ||
           metric.value.unit !== expectedUnits[metricType]
         )
@@ -134,14 +144,20 @@ function candidatesFor(
     );
 }
 
-function preferredCandidate(candidates: readonly Candidate[]): Candidate | undefined {
+function preferredCandidate(
+  candidates: readonly Candidate[],
+  preferredSport?: CanonicalSport | null,
+): Candidate | undefined {
   return [...candidates].sort((left, right) => {
+    const sportPriority = (candidate: Candidate) =>
+      preferredSport != null && candidate.evidence.sport === preferredSport ? 1 : 0;
     const performancePriority = (candidate: Candidate) =>
       candidate.evidence.sourceType === "activity_effort" ||
       candidate.evidence.sourceType === "activity"
         ? 1
         : 0;
     return (
+      sportPriority(right) - sportPriority(left) ||
       performancePriority(right) - performancePriority(left) ||
       Date.parse(right.evidence.observedAt) - Date.parse(left.evidence.observedAt) ||
       right.evidence.sourceId.localeCompare(left.evidence.sourceId)
@@ -175,8 +191,12 @@ function median(values: readonly number[]): number {
 function directEffect(
   input: AthleteIntelligenceModelInput,
   metricType: AthleteMetricType,
+  targetSport?: CanonicalSport | null,
 ): PhysiologyMetricEffect {
-  const candidate = preferredCandidate(independentCandidates(candidatesFor(input, metricType)));
+  const candidate = preferredCandidate(
+    independentCandidates(candidatesFor(input, metricType, targetSport)),
+    targetSport,
+  );
   if (!candidate) {
     const referenced = input.metricEvidence
       .filter((metric) => metric.metricType === metricType)
@@ -254,6 +274,7 @@ function derivedRatio(
 /** Applies role-bounded, continuous physiology policies without producing an athlete score. */
 export function evaluatePhysiologyMetrics(
   rawInput: AthleteIntelligenceModelInput,
+  targetSport?: CanonicalSport | null,
 ): PhysiologyMetricsPolicyResult {
   const assessmentTime = Date.parse(rawInput.assessmentAsOf);
   const evidenceRegistry = Object.fromEntries(
@@ -275,7 +296,9 @@ export function evaluatePhysiologyMetrics(
   });
   const metrics: Record<AthleteMetricType, PhysiologyMetricEffect> = {
     ftp: directEffect(input, "ftp"),
-    lthr: directEffect(input, "lthr"),
+    threshold_pace_seconds_per_km: directEffect(input, "threshold_pace_seconds_per_km", "run"),
+    css_seconds_per_100m: directEffect(input, "css_seconds_per_100m", "swim"),
+    lthr: directEffect(input, "lthr", targetSport),
     max_hr: directEffect(input, "max_hr"),
     resting_hr: directEffect(input, "resting_hr"),
     vo2_max: directEffect(input, "vo2_max"),

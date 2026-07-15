@@ -18,7 +18,7 @@ const activityData = {
     likes_count: 0,
     is_private: false,
     notes: "Steady through the middle block.",
-    activity_file_path: null,
+    activity_file_path: "profile-1/activity.fit" as string | null,
     activity_plan_id: "plan-1",
     activity_plans: {
       id: "plan-1",
@@ -32,6 +32,8 @@ const activityData = {
     stress: {
       tss: 84,
       intensity_factor: 0.88,
+      method: "run_pace_threshold" as const,
+      unavailable_reason: null,
     },
     zones: {
       hr: [],
@@ -44,6 +46,10 @@ const activityData = {
 const toggleLikeMutateMock = jest.fn();
 const deleteMutateMock = jest.fn();
 const authState = { profile: { threshold_hr: 170 }, user: { id: "profile-1" } };
+let activityQueryState: { data: typeof activityData | undefined; isLoading: boolean } = {
+  data: activityData,
+  isLoading: false,
+};
 const streamsData = {
   records: [
     { timestamp: "2026-03-23T09:00:00.000Z", heartRate: 142 },
@@ -51,6 +57,91 @@ const streamsData = {
     { timestamp: "2026-03-23T09:02:00.000Z", heartRate: 171 },
   ],
   laps: [] as Array<{ totalDistance: number; totalTimerTime: number }>,
+  analysis: {
+    version: "2" as const,
+    sport: "run" as const,
+    policy: { max_accepted_gap_seconds: 30, minimum_coverage_ratio: 0.7 },
+    distributions: {
+      heart_rate: {
+        quality: {
+          status: "sufficient" as const,
+          reason: null,
+          sample_count: 3,
+          observed_span_seconds: 120,
+          integrated_seconds: 120,
+          coverage_ratio: 1,
+          accepted_interval_count: 2,
+          rejected_gap_count: 0,
+          rejected_gap_seconds: 0,
+        },
+        threshold: 170,
+        threshold_identity: null,
+        time_weighted_average: 157,
+        zones: [
+          { zone: 2, seconds: 60, percentage: 50 },
+          { zone: 4, seconds: 60, percentage: 50 },
+        ],
+      },
+      power: {
+        quality: {
+          status: "insufficient" as const,
+          reason: "sport_mismatch" as const,
+          sample_count: 0,
+          observed_span_seconds: 120,
+          integrated_seconds: 0,
+          coverage_ratio: 0,
+          accepted_interval_count: 0,
+          rejected_gap_count: 0,
+          rejected_gap_seconds: 0,
+        },
+        threshold: null,
+        threshold_identity: null,
+        time_weighted_average: null,
+        zones: [],
+      },
+      run_pace: {
+        quality: {
+          status: "sufficient" as const,
+          reason: null,
+          sample_count: 3,
+          observed_span_seconds: 120,
+          integrated_seconds: 120,
+          coverage_ratio: 1,
+          accepted_interval_count: 2,
+          rejected_gap_count: 0,
+          rejected_gap_seconds: 0,
+        },
+        threshold: 3.8,
+        threshold_identity: null,
+        time_weighted_average: 3.33,
+        zones: [{ zone: 3, seconds: 120, percentage: 100 }],
+      },
+      swim_pace: {
+        quality: {
+          status: "insufficient" as const,
+          reason: "sport_mismatch" as const,
+          sample_count: 0,
+          observed_span_seconds: 120,
+          integrated_seconds: 0,
+          coverage_ratio: 0,
+          accepted_interval_count: 0,
+          rejected_gap_count: 0,
+          rejected_gap_seconds: 0,
+        },
+        threshold: null,
+        threshold_identity: null,
+        time_weighted_average: null,
+        zones: [],
+      },
+    },
+    heart_rate_load: {
+      value: 62.4,
+      reason: null,
+      lthr_bpm: 170,
+      calculation_version: "lthr_normalized_squared_v1" as const,
+      max_heart_rate_bpm: 250 as const,
+    },
+  },
 };
 
 type StackScreenProps = {
@@ -96,6 +187,44 @@ jest.mock("react-native", () => ({
   __esModule: true,
   ...jest.requireActual("@repo/ui/test/react-native"),
   Alert: { alert: jest.fn() },
+}));
+
+jest.mock("@/components/shared/detail", () => ({
+  __esModule: true,
+  DetailOverflowMenu: ({
+    actions,
+    testID,
+  }: {
+    actions: Array<{ disabled?: boolean; onPress: () => void; testID: string }>;
+    testID: string;
+  }) =>
+    React.createElement(
+      "View",
+      { testID },
+      actions.map((action) =>
+        React.createElement("Pressable", {
+          disabled: action.disabled,
+          key: action.testID,
+          onPress: action.onPress,
+          testID: action.testID,
+        }),
+      ),
+    ),
+  DetailDeleteConfirmModal: ({
+    onConfirm,
+    testIDPrefix,
+  }: {
+    onConfirm: () => void;
+    testIDPrefix: string;
+  }) =>
+    React.createElement(
+      "View",
+      { testID: `${testIDPrefix}-delete-modal` },
+      React.createElement("Pressable", {
+        onPress: onConfirm,
+        testID: `${testIDPrefix}-delete-confirm`,
+      }),
+    ),
 }));
 
 jest.mock("react-native-maps", () => ({
@@ -175,7 +304,7 @@ jest.mock("@/lib/api", () => ({
     }),
     activities: {
       getById: {
-        useQuery: () => ({ data: activityData, isLoading: false }),
+        useQuery: () => activityQueryState,
       },
       delete: {
         useMutation: () => ({ mutate: deleteMutateMock, isPending: false }),
@@ -257,7 +386,17 @@ describe("activity detail screen", () => {
     toggleLikeMutateMock.mockReset();
     authState.user.id = "profile-1";
     activityData.activity.ingestion = null;
+    activityData.activity.activity_file_path = "profile-1/activity.fit";
+    activityQueryState = { data: activityData, isLoading: false };
     streamsData.laps = [];
+  });
+
+  it("renders the loading state before activity data is available", () => {
+    activityQueryState = { data: undefined, isLoading: true };
+
+    renderNative(<ActivityDetailScreen />);
+
+    expect(screen.getByTestId("activity-detail-loading")).toBeTruthy();
   });
 
   it("shows the new identity-first activity layout", () => {
@@ -270,17 +409,19 @@ describe("activity detail screen", () => {
     expect(screen.getAllByText("10.40 km").length).toBeGreaterThan(0);
     expect(screen.getByText("Duration")).toBeTruthy();
     expect(screen.getAllByText("52:00").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("TSS").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("rTSS").length).toBeGreaterThan(0);
     expect(screen.getAllByText("~84").length).toBeGreaterThan(0);
-    expect(screen.getByText("IF")).toBeTruthy();
+    expect(screen.getAllByText("Run IF").length).toBeGreaterThan(0);
     expect(screen.getAllByText("~0.88").length).toBeGreaterThan(0);
     expect(unsafeRendered.UNSAFE_getAllByType("ZoneDistributionCard")[0]?.props.zones).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ label: "Zone 2 (Endurance)" }),
-        expect.objectContaining({ label: "Zone 3 (Tempo)" }),
-        expect.objectContaining({ label: "Zone 5 (VO2 Max)" }),
+        expect.objectContaining({ label: "Zone 2", time: 60 }),
+        expect.objectContaining({ label: "Zone 4", time: 60 }),
       ]),
     );
+    expect(screen.getByTestId("activity-stream-hr-load-card")).toBeTruthy();
+    expect(screen.getByText("62")).toBeTruthy();
+    expect(screen.getByText(/does not replace summary training load/)).toBeTruthy();
     expect(unsafeRendered.UNSAFE_getByType("ActivityPlanComparison").props.onPress).toEqual(
       expect.any(Function),
     );

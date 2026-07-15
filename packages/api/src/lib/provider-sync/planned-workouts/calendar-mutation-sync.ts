@@ -5,6 +5,7 @@ import {
   createProviderSyncRepository,
   createWahooRepository,
 } from "../../../infrastructure/repositories";
+import type { ProviderSyncJobRecord } from "../../../repositories/provider-sync-repository";
 import { drainDueWahooPlannedWorkoutJobs } from "../wahoo-planned-workout-drain";
 import { PlannedWorkoutSyncService } from "./planned-workout-sync-service";
 import type { PlannedWorkoutQueueResult, PlannedWorkoutSyncOperation } from "./types";
@@ -39,6 +40,86 @@ export function createPlannedWorkoutSyncServiceForDb(db: DrizzleDbClient) {
 }
 
 const supportedPlannedWorkoutProviders = ["wahoo"] as const;
+
+type EventResourceLink = {
+  externalId: string;
+  id: string;
+  provider: string;
+  syncedAt: string | null;
+  updatedAt: string | null;
+};
+
+function parseTimestamp(value: string | null): number | null {
+  if (!value) return null;
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? null : timestamp;
+}
+
+function supersedes(
+  candidate: ProviderSyncJobRecord,
+  otherId: string,
+  jobsById: ReadonlyMap<string, ProviderSyncJobRecord>,
+): boolean {
+  const visited = new Set<string>();
+  let supersededId = candidate.supersedesJobId;
+
+  while (supersededId && !visited.has(supersededId)) {
+    if (supersededId === otherId) return true;
+    visited.add(supersededId);
+    supersededId = jobsById.get(supersededId)?.supersedesJobId ?? null;
+  }
+
+  return false;
+}
+
+function compareJobAuthority(
+  left: ProviderSyncJobRecord,
+  right: ProviderSyncJobRecord,
+  jobsById: ReadonlyMap<string, ProviderSyncJobRecord>,
+): number {
+  if (supersedes(left, right.id, jobsById)) return 1;
+  if (supersedes(right, left.id, jobsById)) return -1;
+
+  if (
+    left.queueSequence !== undefined &&
+    right.queueSequence !== undefined &&
+    left.queueSequence !== right.queueSequence
+  ) {
+    return left.queueSequence - right.queueSequence;
+  }
+
+  const leftRunAt = parseTimestamp(left.runAt);
+  const rightRunAt = parseTimestamp(right.runAt);
+  if (leftRunAt !== null && rightRunAt !== null && leftRunAt !== rightRunAt) {
+    return leftRunAt - rightRunAt;
+  }
+  if (leftRunAt !== null && rightRunAt === null) return 1;
+  if (leftRunAt === null && rightRunAt !== null) return -1;
+
+  return left.id.localeCompare(right.id);
+}
+
+function selectLatestJob(jobs: ProviderSyncJobRecord[]): ProviderSyncJobRecord | undefined {
+  const jobsById = new Map(jobs.map((job) => [job.id, job]));
+  return jobs.reduce<ProviderSyncJobRecord | undefined>(
+    (latest, job) => (!latest || compareJobAuthority(job, latest, jobsById) > 0 ? job : latest),
+    undefined,
+  );
+}
+
+function selectLatestLink(links: EventResourceLink[]): EventResourceLink | undefined {
+  return links.reduce<EventResourceLink | undefined>((latest, link) => {
+    if (!latest) return link;
+    const linkTimestamp = parseTimestamp(link.syncedAt ?? link.updatedAt);
+    const latestTimestamp = parseTimestamp(latest.syncedAt ?? latest.updatedAt);
+    if (linkTimestamp !== latestTimestamp) {
+      if (linkTimestamp === null) return latest;
+      if (latestTimestamp === null || linkTimestamp > latestTimestamp) return link;
+      return latest;
+    }
+    return link.id.localeCompare(latest.id) > 0 ? link : latest;
+  }, undefined);
+}
 
 export async function enqueuePlannedWorkoutSyncAfterCalendarMutation(
   input: CalendarMutationPlannedWorkoutSyncInput,
@@ -88,8 +169,11 @@ export async function getEventPlannedWorkoutProviderStatuses(input: {
     "planned_activity_push",
   );
   const jobs = await providerSyncRepository.listJobs({
+    internalResourceId: input.eventId,
     limit: 100,
+    order: "newest_authority",
     profileId: input.profileId,
+    provider: "wahoo",
     statuses: ["queued", "running", "failed", "dead_lettered"],
   });
   const links = await wahooRepository.listEventResourceLinks({
@@ -142,9 +226,25 @@ export async function getEventPlannedWorkoutProviderStatuses(input: {
       };
     }
 
-    const latestJob = jobs.find(
-      (job) => job.provider === provider && job.internalResourceId === input.eventId,
+    const latestJob = selectLatestJob(
+      jobs.filter((job) => job.provider === provider && job.internalResourceId === input.eventId),
     );
+    const link = selectLatestLink(links.filter((candidate) => candidate.provider === provider));
+    const linkTimestamp = link ? parseTimestamp(link.syncedAt ?? link.updatedAt) : null;
+    const jobTimestamp = latestJob ? parseTimestamp(latestJob.updatedAt ?? latestJob.runAt) : null;
+
+    if (link && linkTimestamp !== null && jobTimestamp !== null && linkTimestamp > jobTimestamp) {
+      return {
+        provider,
+        status: "synced" satisfies EventPlannedWorkoutSyncStatus,
+        jobId: null,
+        runAt: null,
+        lastError: null,
+        externalId: link.externalId,
+        syncedAt: link.syncedAt,
+      };
+    }
+
     if (latestJob?.status === "failed" || latestJob?.status === "dead_lettered") {
       return {
         provider,
@@ -171,7 +271,6 @@ export async function getEventPlannedWorkoutProviderStatuses(input: {
       };
     }
 
-    const link = links.find((candidate) => candidate.provider === provider);
     if (link) {
       return {
         provider,

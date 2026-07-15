@@ -1,4 +1,4 @@
-import React from "react";
+import React, { act } from "react";
 
 import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen, waitFor } from "../../../../test/render-native";
@@ -6,6 +6,7 @@ import { fireEvent, renderNative, screen, waitFor } from "../../../../test/rende
 const pushMock = jest.fn();
 const createDMMutateMock = jest.fn();
 const createConversationMutateMock = jest.fn();
+const searchUsersUseInfiniteQueryMock = jest.fn();
 
 jest.mock("expo-router", () => ({
   __esModule: true,
@@ -56,25 +57,8 @@ jest.mock("@/lib/api", () => ({
   api: {
     social: {
       searchUsers: {
-        useInfiniteQuery: () => ({
-          data: {
-            pages: [
-              {
-                users: [
-                  { id: "user-1", username: "coach", avatar_url: null, is_public: true },
-                  { id: "user-2", username: "teammate", avatar_url: null, is_public: true },
-                ],
-                total: 2,
-                hasMore: false,
-                nextCursor: undefined,
-              },
-            ],
-          },
-          isLoading: false,
-          hasNextPage: false,
-          isFetchingNextPage: false,
-          fetchNextPage: jest.fn(),
-        }),
+        useInfiniteQuery: (input: unknown, options: unknown) =>
+          searchUsersUseInfiniteQueryMock(input, options),
       },
     },
     messaging: {
@@ -112,6 +96,93 @@ describe("new message screen", () => {
     pushMock.mockReset();
     createDMMutateMock.mockReset();
     createConversationMutateMock.mockReset();
+    searchUsersUseInfiniteQueryMock.mockReset();
+    searchUsersUseInfiniteQueryMock.mockReturnValue({
+      data: {
+        pages: [
+          {
+            users: [
+              { id: "user-1", username: "coach", avatar_url: null, is_public: true },
+              { id: "user-2", username: "teammate", avatar_url: null, is_public: true },
+            ],
+            total: 2,
+            hasMore: false,
+            nextCursor: undefined,
+          },
+        ],
+      },
+      isLoading: false,
+      isFetching: false,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: jest.fn(),
+    });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it("debounces rapid recipient typing, clears immediately, and returns to empty suggestions", () => {
+    jest.useFakeTimers();
+    searchUsersUseInfiniteQueryMock.mockImplementation((input: { query?: string }) => ({
+      data: {
+        pages: [
+          {
+            users:
+              input.query === undefined
+                ? [{ id: "user-1", username: "coach", avatar_url: null, is_public: true }]
+                : [],
+            nextCursor: undefined,
+          },
+        ],
+      },
+      isLoading: false,
+      isFetching: input.query === "coach",
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: jest.fn(),
+    }));
+    const view = renderNative(<NewMessageScreen />);
+
+    expect(searchUsersUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+      { query: undefined, limit: 20 },
+      expect.objectContaining({ getNextPageParam: expect.any(Function) }),
+    );
+    expect(screen.getByTestId("messages-new-user-user-1")).toBeTruthy();
+
+    const searchInput = screen.getByLabelText("Search recipients");
+    fireEvent.changeText(searchInput, "c");
+    fireEvent.changeText(searchInput, "co");
+    fireEvent.changeText(searchInput, "  coach  ");
+    expect(screen.getByTestId("messages-new-search-input").props.value).toBe("  coach  ");
+    expect(
+      searchUsersUseInfiniteQueryMock.mock.calls.filter(([input]) => input.query === "coach"),
+    ).toHaveLength(0);
+
+    act(() => jest.advanceTimersByTime(300));
+    expect(searchUsersUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+      { query: "coach", limit: 20 },
+      expect.objectContaining({ getNextPageParam: expect.any(Function) }),
+    );
+    expect(
+      searchUsersUseInfiniteQueryMock.mock.calls.filter(([input]) => input.query === "coach"),
+    ).toHaveLength(1);
+    expect(screen.getByTestId("messages-new-search-input").props.accessibilityState).toEqual({
+      busy: true,
+      disabled: false,
+    });
+
+    fireEvent.press(screen.getByTestId("messages-new-search-clear"));
+    expect(screen.getByTestId("messages-new-search-input").props.value).toBe("");
+    act(() => jest.advanceTimersByTime(300));
+    expect(searchUsersUseInfiniteQueryMock).toHaveBeenLastCalledWith(
+      { query: undefined, limit: 20 },
+      expect.objectContaining({ getNextPageParam: expect.any(Function) }),
+    );
+    expect(screen.getByTestId("messages-new-user-user-1")).toBeTruthy();
+
+    view.unmount();
   });
 
   it("creates or opens a DM when starting a single-recipient conversation", async () => {

@@ -1,9 +1,17 @@
 import { invalidatePostActivityIngestionQueries } from "@repo/api/client";
-import { type CanonicalSport, canonicalSportSchema } from "@repo/core";
+import {
+  buildManualActivityImportProvenance,
+  type CanonicalSport,
+  deriveActivityNameFromFileName,
+  getSupportedActivityFileExtension,
+  type ManualActivityImportOutput,
+  manualActivityImportFormSchema,
+} from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import {
   Form,
+  FormFileField,
   FormSegmentedSelectField,
   FormTextareaField,
   FormTextField,
@@ -13,12 +21,10 @@ import { LoadingButton } from "@repo/ui/components/loading";
 import { Text } from "@repo/ui/components/text";
 import { useZodForm, useZodFormSubmit } from "@repo/ui/hooks";
 import { useQueryClient } from "@tanstack/react-query";
-import * as DocumentPicker from "expo-document-picker";
-import { File } from "expo-file-system";
-import { CheckCircle, FileText, History, Upload } from "lucide-react-native";
-import { useState } from "react";
+import type { Href } from "expo-router";
+import { History } from "lucide-react-native";
+import { useEffect, useRef, useState } from "react";
 import { Alert, ScrollView, View } from "react-native";
-import { z } from "zod";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
@@ -32,11 +38,22 @@ const ACTIVITY_TYPES = [
   { value: "other", label: "Other" },
 ] as const satisfies readonly { value: CanonicalSport; label: string }[];
 
-const activityImportSchema = z.object({
-  historicalName: z.string().trim().min(1, "Enter a name for this imported activity."),
-  historicalNotes: z.string(),
-  historicalActivityType: canonicalSportSchema,
-});
+const ACTIVITY_FILE_MIME_TYPES = [
+  "application/vnd.ant.fit",
+  "application/gpx+xml",
+  "application/vnd.garmin.tcx+xml",
+  "application/xml",
+  "text/xml",
+  "application/octet-stream",
+] as const;
+
+type ImportPhase = "idle" | "signing" | "uploading" | "processing";
+
+const IMPORT_PHASE_COPY: Record<Exclude<ImportPhase, "idle">, string> = {
+  signing: "Step 1 of 3: Preparing upload…",
+  uploading: "Step 2 of 3: Uploading activity file…",
+  processing: "Step 3 of 3: Processing activity…",
+};
 
 function isActivityParseFailureMessage(message: string) {
   const normalized = message.toLowerCase();
@@ -59,27 +76,13 @@ const createOption = (value: string, label?: string) => ({
   label: label || value,
 });
 
-function getActivityImportFileType(fileName: string): "fit" | "gpx" | "tcx" | null {
-  const extension = fileName.split(".").pop()?.trim().toLowerCase();
-  return extension === "fit" || extension === "gpx" || extension === "tcx" ? extension : null;
-}
-
-const buildManualHistoricalImportProvenance = (fileName: string) => ({
-  import_source: "manual_historical" as const,
-  import_file_type: getActivityImportFileType(fileName) ?? "fit",
-  import_original_file_name: fileName.trim(),
-});
-
 export default function ActivityImportScreen() {
   const navigateTo = useAppNavigate();
   const queryClient = useQueryClient();
   const utils = api.useUtils();
-  const [selectedActivityFile, setSelectedActivityFile] = useState<{
-    name: string;
-    uri: string;
-    size: number;
-  } | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+  const [importPhase, setImportPhase] = useState<ImportPhase>("idle");
+  const [navigationError, setNavigationError] = useState<string | null>(null);
   const [importSummary, setImportSummary] = useState<{
     activityId: string;
     name: string;
@@ -88,79 +91,106 @@ export default function ActivityImportScreen() {
 
   const getSignedUrlMutation = api.activityFiles.getSignedUploadUrl.useMutation();
   const processActivityFileMutation = api.activityFiles.processActivityFile.useMutation();
-  const isImporting = getSignedUrlMutation.isPending || processActivityFileMutation.isPending;
   const form = useZodForm({
-    schema: activityImportSchema,
+    schema: manualActivityImportFormSchema,
     defaultValues: {
-      historicalActivityType: "bike",
-      historicalName: "",
-      historicalNotes: "",
+      files: [],
+      sport: "bike",
+      name: "",
+      notes: null,
     },
   });
+  const files = form.watch("files");
+  const importInFlightRef = useRef(false);
+  const terminalSuccessRef = useRef(false);
+  const previousFileKeyRef = useRef<string | null>(null);
+  const previousAutoNameRef = useRef<string | null>(null);
+  const selectedActivityFile = files[0] ?? null;
+  const isImporting =
+    importPhase !== "idle" ||
+    getSignedUrlMutation.isPending ||
+    processActivityFileMutation.isPending;
+  const isFormDisabled = isImporting || importSummary !== null;
 
-  const handlePickActivityFile = async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ["*/*"],
-        copyToCacheDirectory: true,
-      });
+  useEffect(() => {
+    const fileKey = selectedActivityFile
+      ? `${selectedActivityFile.name}:${selectedActivityFile.size}:${String(selectedActivityFile.uri)}`
+      : null;
 
-      if (result.canceled || !result.assets[0]) {
-        return;
-      }
-
-      const asset = result.assets[0];
-
-      if (!getActivityImportFileType(asset.name)) {
-        Alert.alert("Unsupported file", "Choose a FIT, GPX, or TCX file.");
-        return;
-      }
-
-      const file = new File(asset.uri);
-      const fileSize = asset.size ?? file.size ?? 0;
-
-      if (fileSize <= 0) {
-        Alert.alert("Unreadable file", "The selected activity file appears to be empty.");
-        return;
-      }
-
-      setSelectedActivityFile({
-        name: asset.name,
-        uri: asset.uri,
-        size: fileSize,
-      });
-      setImportError(null);
-
-      if (!(form.getValues("historicalName") || "").trim()) {
-        form.setValue("historicalName", asset.name.replace(/\.(fit|gpx|tcx)$/i, ""), {
-          shouldDirty: true,
-        });
-      }
-    } catch (error) {
-      console.error("Failed to pick activity file", error);
-      Alert.alert("File selection failed", "Could not open the activity file picker.");
-    }
-  };
-
-  const handleHistoricalImport = async (data: z.infer<typeof activityImportSchema>) => {
-    const trimmedName = data.historicalName.trim();
-
-    if (!selectedActivityFile) {
-      setImportError("Choose a FIT, GPX, or TCX file to import.");
+    if (fileKey === previousFileKeyRef.current) {
       return;
     }
+
+    const currentName = form.getValues("name");
+    const previousAutoName = previousAutoNameRef.current;
+
+    if (!selectedActivityFile) {
+      if (previousAutoName !== null && currentName === previousAutoName) {
+        form.setValue("name", "", { shouldDirty: true, shouldValidate: true });
+      }
+      previousFileKeyRef.current = null;
+      previousAutoNameRef.current = null;
+      return;
+    }
+
+    const nextAutoName = deriveActivityNameFromFileName(selectedActivityFile.name);
+    if (!currentName.trim() || currentName === previousAutoName) {
+      form.setValue("name", nextAutoName, { shouldDirty: true, shouldValidate: true });
+    }
+
+    previousFileKeyRef.current = fileKey;
+    previousAutoNameRef.current = nextAutoName;
+
+    if (getSupportedActivityFileExtension(selectedActivityFile.name) === null) {
+      form.setError("files", {
+        type: "unsupported-extension",
+        message: "Choose a FIT, GPX, or TCX file.",
+      });
+    } else if (form.getFieldState("files").error?.type === "unsupported-extension") {
+      form.clearErrors("files");
+    }
+  }, [form, selectedActivityFile]);
+
+  useEffect(() => {
+    const subscription = form.watch(() => setImportError(null));
+    return () => subscription.unsubscribe();
+  }, [form]);
+
+  const handleHistoricalImport = async (data: ManualActivityImportOutput) => {
+    const selectedFile = data.files[0];
+    const extension = getSupportedActivityFileExtension(selectedFile.name);
+
+    if (extension === null) {
+      form.setError("files", {
+        type: "unsupported-extension",
+        message: "Choose a FIT, GPX, or TCX file.",
+      });
+      return;
+    }
+
+    if (typeof selectedFile.uri !== "string") {
+      setImportError("The selected activity file is unavailable. Choose it again and retry.");
+      return;
+    }
+
+    if (importInFlightRef.current || terminalSuccessRef.current) {
+      return;
+    }
+    importInFlightRef.current = true;
 
     setImportError(null);
 
     try {
+      setImportPhase("signing");
       const signedUrlData = await getSignedUrlMutation.mutateAsync({
-        fileName: selectedActivityFile.name,
-        fileSize: selectedActivityFile.size,
+        fileName: selectedFile.name,
+        fileSize: selectedFile.size,
       });
 
+      setImportPhase("uploading");
       const uploader = new ActivityFileUploader(undefined, undefined, "activity-files");
       const uploadResult = await uploader.uploadToSignedUrl(
-        selectedActivityFile.uri,
+        selectedFile.uri,
         signedUrlData.signedUrl,
       );
 
@@ -168,36 +198,40 @@ export default function ActivityImportScreen() {
         throw new Error(uploadResult.error || "Failed to upload activity file");
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
+      setImportPhase("processing");
       const result = await processActivityFileMutation.mutateAsync({
         activityFilePath: signedUrlData.filePath,
-        name: trimmedName,
-        notes: data.historicalNotes.trim() || undefined,
-        activityType: data.historicalActivityType,
-        importProvenance: buildManualHistoricalImportProvenance(selectedActivityFile.name),
+        name: data.name,
+        notes: data.notes ?? undefined,
+        activityType: data.sport,
+        importProvenance: buildManualActivityImportProvenance(selectedFile.name),
       });
 
-      await invalidatePostActivityIngestionQueries(queryClient);
-      await utils.activities.invalidate();
-
+      terminalSuccessRef.current = true;
       setImportSummary({
         activityId: result.activity.id,
         name: result.activity.name,
-        fileName: selectedActivityFile.name,
+        fileName: selectedFile.name,
       });
-      setSelectedActivityFile(null);
+      setImportPhase("idle");
       form.reset({
-        historicalActivityType: "bike",
-        historicalName: "",
-        historicalNotes: "",
+        files: [],
+        sport: "bike",
+        name: "",
+        notes: null,
       });
+
+      await Promise.allSettled([
+        Promise.resolve().then(() => invalidatePostActivityIngestionQueries(queryClient)),
+        Promise.resolve().then(() => utils.activities.invalidate()),
+      ]);
     } catch (error) {
       console.error("Historical activity import failed", error);
       const message = error instanceof Error ? error.message : "Unknown error";
 
       if (message.includes("File type must be one of")) {
         Alert.alert("Unsupported file", "Only FIT, GPX, and TCX files are supported right now.");
+        setImportError("The selected file type is not supported. Choose another file and retry.");
         return;
       }
 
@@ -206,14 +240,34 @@ export default function ActivityImportScreen() {
           "Import failed",
           "We could not read that activity file. Try a different export or recording.",
         );
+        setImportError("The activity file could not be read. Choose another export and retry.");
         return;
       }
 
       setImportError("The activity file could not be imported right now. Please try again.");
+    } finally {
+      if (!terminalSuccessRef.current) {
+        importInFlightRef.current = false;
+      }
+      setImportPhase("idle");
     }
   };
 
-  const submitForm = useZodFormSubmit<z.infer<typeof activityImportSchema>>({
+  const handleViewImportedActivity = () => {
+    if (!importSummary) {
+      return;
+    }
+
+    setNavigationError(null);
+    try {
+      navigateTo(ROUTES.ACTIVITIES.DETAIL(importSummary.activityId) as Href);
+    } catch (error) {
+      console.error("Failed to open imported activity", error);
+      setNavigationError("Could not open the activity. Tap View Activity to try again.");
+    }
+  };
+
+  const submitForm = useZodFormSubmit<ManualActivityImportOutput>({
     form,
     onSubmit: handleHistoricalImport,
   });
@@ -243,56 +297,37 @@ export default function ActivityImportScreen() {
               </View>
             </View>
 
-            {!selectedActivityFile ? (
-              <Button
-                onPress={handlePickActivityFile}
-                variant="outline"
-                className="justify-start gap-2"
-                disabled={isImporting}
-                testID="activity-import-pick-fit-file-button"
-              >
-                <Icon as={Upload} className="text-foreground" size={18} />
-                <Text>Choose Activity File</Text>
-              </Button>
-            ) : (
-              <View className="gap-2 rounded-xl border border-border bg-muted/40 p-3">
-                <View className="flex-row items-center gap-2">
-                  <Icon as={FileText} className="text-foreground" size={18} />
-                  <Text className="flex-1 text-sm text-foreground" numberOfLines={1}>
-                    {selectedActivityFile.name}
-                  </Text>
-                  <Icon as={CheckCircle} className="text-green-600" size={18} />
-                </View>
-                <Text className="text-xs text-muted-foreground">
-                  {(selectedActivityFile.size / (1024 * 1024)).toFixed(2)} MB
-                </Text>
-                <Button
-                  onPress={handlePickActivityFile}
-                  variant="ghost"
-                  className="self-start px-0"
-                  disabled={isImporting}
-                >
-                  <Text className="text-sm font-medium text-primary">Choose a different file</Text>
-                </Button>
-              </View>
-            )}
-
             <Form {...form}>
               <View className="gap-4">
+                <FormFileField
+                  accept=".fit,.gpx,.tcx"
+                  buttonLabel={selectedActivityFile ? "Replace file" : "Choose Activity File"}
+                  clearLabel="Remove file"
+                  control={form.control}
+                  description="One FIT, GPX, or TCX file, up to 50 MiB."
+                  disabled={isFormDisabled}
+                  label="Completed activity file"
+                  name="files"
+                  nativeMimeTypes={[...ACTIVITY_FILE_MIME_TYPES]}
+                  required
+                  testId="activity-import-file-input"
+                />
+
                 <FormTextField
                   autoCapitalize="sentences"
                   control={form.control}
-                  disabled={isImporting}
+                  disabled={isFormDisabled}
                   label="Activity name"
-                  name="historicalName"
+                  name="name"
                   placeholder="Activity name"
                   testId="activity-import-name-input"
                 />
 
                 <FormSegmentedSelectField
                   control={form.control}
+                  disabled={isFormDisabled}
                   label="Activity type"
-                  name="historicalActivityType"
+                  name="sport"
                   options={ACTIVITY_TYPES.map((activityType) =>
                     createOption(activityType.value, activityType.label),
                   )}
@@ -301,9 +336,11 @@ export default function ActivityImportScreen() {
 
                 <FormTextareaField
                   control={form.control}
-                  disabled={isImporting}
+                  disabled={isFormDisabled}
                   label="Notes"
-                  name="historicalNotes"
+                  name="notes"
+                  formatValue={(value) => value ?? ""}
+                  parseValue={(value) => value}
                   placeholder="Optional notes"
                   className="min-h-[88px]"
                   testId="activity-import-notes-input"
@@ -317,11 +354,23 @@ export default function ActivityImportScreen() {
               </View>
             ) : null}
 
+            {importPhase !== "idle" ? (
+              <Text
+                accessibilityLiveRegion="polite"
+                className="text-sm text-muted-foreground"
+                testID="activity-import-phase"
+              >
+                {IMPORT_PHASE_COPY[importPhase]}
+              </Text>
+            ) : null}
+
             <LoadingButton
               onPress={submitForm.handleSubmit}
-              disabled={isImporting || !selectedActivityFile}
+              disabled={isFormDisabled}
               loading={isImporting}
-              loadingLabel="Importing Activity..."
+              loadingLabel={
+                importPhase === "idle" ? "Importing Activity…" : IMPORT_PHASE_COPY[importPhase]
+              }
               testID="activity-import-submit-button"
             >
               <Text className="font-semibold text-primary-foreground">Import Activity</Text>
@@ -340,8 +389,16 @@ export default function ActivityImportScreen() {
             <Text className="mt-1 text-xs text-muted-foreground">
               {importSummary.name} was created from {importSummary.fileName}.
             </Text>
+            {navigationError ? (
+              <Text
+                className="mt-2 text-xs text-destructive"
+                testID="activity-import-navigation-error"
+              >
+                {navigationError}
+              </Text>
+            ) : null}
             <Button
-              onPress={() => navigateTo(ROUTES.ACTIVITIES.DETAIL(importSummary.activityId) as any)}
+              onPress={handleViewImportedActivity}
               variant="outline"
               className="mt-3"
               testID="activity-import-view-activity-button"

@@ -16,11 +16,24 @@ interface WahooRepository {
   findImportedActivityLinkByExternalId(input: {
     externalId: string;
     integrationId: string;
-  }): Promise<{ activityId: string; linkId: string } | null>;
+  }): Promise<{
+    activityId: string;
+    linkId: string;
+    profileId: string;
+    activityFilePath: string | null;
+    activityFileSize: number | null;
+    analysisReady: boolean;
+  } | null>;
   findImportedActivityByProviderExternalId(input: {
     externalId: string;
     provider: "wahoo";
-  }): Promise<{ activityId: string; profileId: string } | null>;
+  }): Promise<{
+    activityId: string;
+    profileId: string;
+    activityFilePath: string | null;
+    activityFileSize: number | null;
+    analysisReady: boolean;
+  } | null>;
   createImportedActivityResourceLink(input: {
     activityId: string;
     externalId: string;
@@ -43,6 +56,82 @@ const EXPECTED_PROVIDER_UNIQUE_CONSTRAINTS = new Set([
   "idx_activities_provider_external_unique",
   "integration_resource_links_external_unique",
 ]);
+
+const MAX_ACTIVITY_FILE_BYTES = 50 * 1024 * 1024;
+const ACTIVITY_FILE_DOWNLOAD_TIMEOUT_MS = 15_000;
+const DEFAULT_ACTIVITY_FILE_HOSTS = ["*.wahooligan.com"];
+
+function isAllowedActivityFileHost(hostname: string, allowedHosts: readonly string[]): boolean {
+  const normalizedHostname = hostname.toLowerCase();
+  return allowedHosts.some((configuredHost) => {
+    const normalizedHost = configuredHost.trim().toLowerCase().replace(/\.$/, "");
+    if (normalizedHost.startsWith("*.")) {
+      const suffix = normalizedHost.slice(1);
+      return normalizedHostname.endsWith(suffix) && normalizedHostname.length > suffix.length;
+    }
+    return normalizedHostname === normalizedHost;
+  });
+}
+
+function validateActivityFileUrl(url: string, allowedHosts: readonly string[]): URL | null {
+  try {
+    const parsed = new URL(url);
+    if (
+      parsed.protocol !== "https:" ||
+      parsed.username ||
+      parsed.password ||
+      (parsed.port && parsed.port !== "443") ||
+      !isAllowedActivityFileHost(parsed.hostname, allowedHosts)
+    ) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function parseContentLength(response: Response): number | null {
+  const value = response.headers.get("content-length");
+  if (value === null) return null;
+  if (!/^\d+$/.test(value)) throw new Error("Invalid Wahoo activity file Content-Length");
+  const size = Number(value);
+  if (!Number.isSafeInteger(size) || size > MAX_ACTIVITY_FILE_BYTES) {
+    throw new Error("Wahoo activity file exceeds the 50 MiB limit");
+  }
+  return size;
+}
+
+async function readBoundedBody(response: Response): Promise<Uint8Array> {
+  parseContentLength(response);
+  if (!response.body) throw new Error("Wahoo activity file response has no body");
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_ACTIVITY_FILE_BYTES) {
+        throw new Error("Wahoo activity file exceeds the 50 MiB limit");
+      }
+      chunks.push(value);
+    }
+  } catch (error) {
+    await reader.cancel(error).catch(() => undefined);
+    throw error;
+  }
+
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
 
 function isExpectedProviderUniqueViolation(error: unknown): boolean {
   let candidate: unknown = error;
@@ -80,6 +169,7 @@ export interface WahooActivityImportFileStorage {
     contentType: string;
     path: string;
   }): Promise<void>;
+  readActivityFile?(path: string): Promise<{ bytes: Uint8Array; size: number } | null>;
 }
 
 export type WahooActivityFileParser = (input: {
@@ -92,8 +182,17 @@ export class WahooActivityImporter {
     private readonly deps: {
       activityFileStorage: WahooActivityImportFileStorage;
       activityFileParser?: WahooActivityFileParser;
+      allowedActivityFileHosts?: readonly string[];
       repository: WahooRepository;
-      submitActivity(input: ImportedActivityCreateInput): Promise<{ id: string }>;
+      submitActivity(
+        input: ImportedActivityCreateInput,
+        parsedActivity: StandardActivity,
+      ): Promise<{ id: string }>;
+      enrichActivity?(
+        activityId: string,
+        input: ImportedActivityCreateInput,
+        parsedActivity: StandardActivity,
+      ): Promise<{ id: string }>;
     },
   ) {}
 
@@ -128,7 +227,7 @@ export class WahooActivityImporter {
         integrationId: integration.integrationId,
       });
 
-      if (existing) {
+      if (existing?.analysisReady) {
         console.log(`Activity ${summary.id} already imported, skipping`);
         return {
           success: true,
@@ -151,22 +250,42 @@ export class WahooActivityImporter {
           };
         }
 
-        options.signal?.throwIfAborted();
-        await this.deps.repository.createImportedActivityResourceLink({
-          activityId: existingImport.activityId,
-          externalId: summary.id.toString(),
-          integrationId: integration.integrationId,
-          profileId: integration.profileId,
-          provider: "wahoo",
-          providerUpdatedAt: summary.updated_at ?? summary.created_at ?? null,
-        });
+        if (existingImport.analysisReady) {
+          options.signal?.throwIfAborted();
+          await this.deps.repository.createImportedActivityResourceLink({
+            activityId: existingImport.activityId,
+            externalId: summary.id.toString(),
+            integrationId: integration.integrationId,
+            profileId: integration.profileId,
+            provider: "wahoo",
+            providerUpdatedAt: summary.updated_at ?? summary.created_at ?? null,
+          });
 
-        console.log(`Activity ${summary.id} already imported, skipping`);
+          console.log(`Activity ${summary.id} already imported, skipping`);
+          return {
+            success: true,
+            skipped: true,
+            reason: "Activity already imported",
+            activityId: existingImport.activityId,
+          };
+        }
+      }
+
+      const repairCandidate =
+        existingImport ??
+        (existing
+          ? {
+              activityId: existing.activityId,
+              profileId: existing.profileId,
+              activityFilePath: existing.activityFilePath,
+              activityFileSize: existing.activityFileSize,
+              analysisReady: existing.analysisReady,
+            }
+          : null);
+      if (repairCandidate && repairCandidate.profileId !== integration.profileId) {
         return {
-          success: true,
-          skipped: true,
-          reason: "Activity already imported",
-          activityId: existingImport.activityId,
+          success: false,
+          error: "Provider activity identity is owned by another profile",
         };
       }
 
@@ -182,12 +301,22 @@ export class WahooActivityImporter {
         : null;
 
       options.signal?.throwIfAborted();
-      const activityFile = await this.downloadAndStoreActivityFile(
-        summary.file?.url,
-        integration.profileId,
-        summary.id,
-        options.signal,
-      );
+      const storedActivityFile =
+        repairCandidate?.activityFilePath && this.deps.activityFileStorage.readActivityFile
+          ? await this.deps.activityFileStorage.readActivityFile(repairCandidate.activityFilePath)
+          : null;
+      const activityFile = storedActivityFile
+        ? {
+            bytes: storedActivityFile.bytes,
+            path: repairCandidate?.activityFilePath ?? "",
+            size: storedActivityFile.size,
+          }
+        : await this.downloadAndStoreActivityFile(
+            summary.file?.url,
+            integration.profileId,
+            summary.id,
+            options.signal,
+          );
 
       if (!activityFile) {
         return {
@@ -246,7 +375,26 @@ export class WahooActivityImporter {
       let newActivity: { id: string };
       try {
         options.signal?.throwIfAborted();
-        newActivity = await this.deps.submitActivity(activity);
+        if (repairCandidate) {
+          if (!this.deps.enrichActivity) {
+            throw new Error("Provider activity analysis repair is not configured");
+          }
+          newActivity = await this.deps.enrichActivity(
+            repairCandidate.activityId,
+            activity,
+            parsedActivity,
+          );
+          await this.deps.repository.createImportedActivityResourceLink({
+            activityId: repairCandidate.activityId,
+            externalId: summary.id.toString(),
+            integrationId: integration.integrationId,
+            profileId: integration.profileId,
+            provider: "wahoo",
+            providerUpdatedAt: summary.updated_at ?? summary.created_at ?? null,
+          });
+        } else {
+          newActivity = await this.deps.submitActivity(activity, parsedActivity);
+        }
       } catch (insertError) {
         if (!isExpectedProviderUniqueViolation(insertError)) {
           console.error("Failed to import Wahoo activity:", insertError);
@@ -263,6 +411,25 @@ export class WahooActivityImporter {
             provider: "wahoo",
           });
         if (concurrentImport?.profileId === integration.profileId) {
+          if (!concurrentImport.analysisReady) {
+            if (!this.deps.enrichActivity) {
+              throw new Error("Provider activity analysis repair is not configured");
+            }
+            const repaired = await this.deps.enrichActivity(
+              concurrentImport.activityId,
+              activity,
+              parsedActivity,
+            );
+            await this.deps.repository.createImportedActivityResourceLink({
+              activityId: concurrentImport.activityId,
+              externalId: summary.id.toString(),
+              integrationId: integration.integrationId,
+              profileId: integration.profileId,
+              provider: "wahoo",
+              providerUpdatedAt: summary.updated_at ?? summary.created_at ?? null,
+            });
+            return { success: true, activityId: repaired.id };
+          }
           options.signal?.throwIfAborted();
           await this.deps.repository.createImportedActivityResourceLink({
             activityId: concurrentImport.activityId,
@@ -330,16 +497,14 @@ export class WahooActivityImporter {
     bytes: Uint8Array,
     path: string,
     workoutSummaryId: number,
-  ): StandardActivity | null {
+  ): StandardActivity {
+    const parser = this.deps.activityFileParser ?? defaultActivityFileParser;
     try {
-      const parser = this.deps.activityFileParser ?? defaultActivityFileParser;
       return parser({ bytes, fileName: path });
     } catch (error) {
-      console.warn(
-        `Failed to parse Wahoo FIT file for summary ${workoutSummaryId}; falling back to summary metadata`,
-        error,
-      );
-      return null;
+      throw new Error(`Failed to parse Wahoo FIT file for summary ${workoutSummaryId}`, {
+        cause: error,
+      });
     }
   }
 
@@ -369,16 +534,43 @@ export class WahooActivityImporter {
 
     try {
       signal?.throwIfAborted();
-      const response = await fetch(url, { signal });
-      if (!response.ok) {
-        console.warn(
-          `Failed to download Wahoo activity file for summary ${workoutSummaryId}: ${response.status}`,
-        );
+      const activityFileUrl = validateActivityFileUrl(url, [
+        ...DEFAULT_ACTIVITY_FILE_HOSTS,
+        ...(this.deps.allowedActivityFileHosts ?? []),
+      ]);
+      if (!activityFileUrl) {
+        console.warn(`Rejected unsafe Wahoo activity file URL for summary ${workoutSummaryId}`);
         return null;
       }
 
-      const arrayBuffer = await response.arrayBuffer();
-      const bytes = new Uint8Array(arrayBuffer);
+      const controller = new AbortController();
+      const abortFromCaller = () => controller.abort(signal?.reason);
+      signal?.addEventListener("abort", abortFromCaller, { once: true });
+      const timeout = setTimeout(
+        () => controller.abort(new Error("Download timed out")),
+        ACTIVITY_FILE_DOWNLOAD_TIMEOUT_MS,
+      );
+      let bytes: Uint8Array;
+      try {
+        const response = await fetch(activityFileUrl, {
+          redirect: "manual",
+          signal: controller.signal,
+        });
+        if (response.status >= 300 && response.status < 400) {
+          console.warn(`Rejected redirected Wahoo activity file for summary ${workoutSummaryId}`);
+          return null;
+        }
+        if (!response.ok) {
+          console.warn(
+            `Failed to download Wahoo activity file for summary ${workoutSummaryId}: ${response.status}`,
+          );
+          return null;
+        }
+        bytes = await readBoundedBody(response);
+      } finally {
+        clearTimeout(timeout);
+        signal?.removeEventListener("abort", abortFromCaller);
+      }
       const activityFilePath = `activities/${profileId}/providers/wahoo/${workoutSummaryId}.fit`;
 
       try {
@@ -423,7 +615,8 @@ export class WahooActivityImporter {
 }
 
 export function createWahooImportActivityFileStorage(
-  storageClient: Pick<WahooActivityImportFileStorage, "uploadActivityFile">,
+  storageClient: Pick<WahooActivityImportFileStorage, "uploadActivityFile"> &
+    Partial<Pick<WahooActivityImportFileStorage, "readActivityFile">>,
 ): WahooActivityImportFileStorage {
   return storageClient;
 }
@@ -443,8 +636,17 @@ function defaultActivityFileParser(input: {
 export function createActivityImporter(deps: {
   activityFileStorage: WahooActivityImportFileStorage;
   activityFileParser?: WahooActivityFileParser;
+  allowedActivityFileHosts?: readonly string[];
   repository: WahooRepository;
-  submitActivity(input: ImportedActivityCreateInput): Promise<{ id: string }>;
+  submitActivity(
+    input: ImportedActivityCreateInput,
+    parsedActivity: StandardActivity,
+  ): Promise<{ id: string }>;
+  enrichActivity?(
+    activityId: string,
+    input: ImportedActivityCreateInput,
+    parsedActivity: StandardActivity,
+  ): Promise<{ id: string }>;
 }) {
   return new WahooActivityImporter(deps);
 }

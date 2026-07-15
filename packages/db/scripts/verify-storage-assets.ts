@@ -2,6 +2,7 @@
 
 import { Pool } from "pg";
 import { prepareDbEnv } from "./_helpers";
+import { assertRouteBucketContract } from "./storage-assets-contract";
 
 const expectedBuckets = [
   ["activity-files", false, "52428800"],
@@ -23,8 +24,9 @@ async function main() {
       id: string;
       public: boolean;
       file_size_limit: string;
+      allowed_mime_types: string[] | null;
     }>(`
-      select id, public, file_size_limit::text
+      select id, public, file_size_limit::text, allowed_mime_types
       from storage.buckets
       where id in ('activity-files', 'gpx-routes', 'profile-avatars')
       order by id
@@ -33,6 +35,7 @@ async function main() {
     if (JSON.stringify(actualBuckets) !== JSON.stringify(expectedBuckets)) {
       throw new Error(`storage bucket convergence failed: ${JSON.stringify(actualBuckets)}`);
     }
+    assertRouteBucketContract(buckets.rows.find((row) => row.id === "gpx-routes"));
     const policies = await pool.query<{ policyname: string }>(
       `
       select policyname from pg_policies

@@ -1,4 +1,8 @@
-import { type ActivityListDerivedSummary, analyzeActivityDerivedMetrics } from "@repo/core";
+import {
+  type ActivityListDerivedSummary,
+  analyzeActivityDerivedMetrics,
+  loadSeriesIdentityForActivityTss,
+} from "@repo/core";
 import type { ActivityRow } from "@repo/db";
 import type { ActivityAnalysisStore } from "../../repositories";
 import { resolveActivityContextFromEvidence } from "./context";
@@ -43,8 +47,7 @@ export async function buildActivityDerivedSummaryMap(input: {
   if (activities.length === 0) return new Map();
 
   const requests = activities.map((activity) => ({
-    asOf:
-      activity.finished_at instanceof Date ? activity.finished_at : new Date(activity.finished_at),
+    asOf: activity.started_at instanceof Date ? activity.started_at : new Date(activity.started_at),
     profileId: activity.profile_id ?? profileId,
   }));
   let evidenceByProfileId = new Map<
@@ -77,12 +80,15 @@ export async function buildActivityDerivedSummaryMap(input: {
   // synchronous avoids enqueueing hundreds of promises for full-history TSS scans.
   for (const activity of activities) {
     const activityAsOf =
-      activity.finished_at instanceof Date ? activity.finished_at : new Date(activity.finished_at);
+      activity.started_at instanceof Date ? activity.started_at : new Date(activity.started_at);
     const activityProfileId = activity.profile_id ?? profileId;
     const evidence = (store.loadContextEvidence
       ? evidenceByProfileId.get(activityProfileId)
       : legacyEvidenceByRequest.get(
-          contextRequestKey({ asOf: activityAsOf, profileId: activityProfileId }),
+          contextRequestKey({
+            asOf: activityAsOf,
+            profileId: activityProfileId,
+          }),
         )) ?? {
       profile: { dob: null, gender: null },
       profileMetrics: [],
@@ -91,6 +97,7 @@ export async function buildActivityDerivedSummaryMap(input: {
     const context = resolveActivityContextFromEvidence({
       evidence,
       activityTimestamp: activityAsOf,
+      activityId: activity.id,
     });
 
     const derived = analyzeActivityDerivedMetrics({
@@ -121,6 +128,9 @@ export async function buildActivityDerivedSummaryMap(input: {
         tss: derived.stress.tss,
         tss_identity: derived.stress.tss_identity,
         intensity_factor: derived.stress.intensity_factor,
+        method: derived.stress.method,
+        unavailable_reason: derived.stress.unavailable_reason,
+        calibration_quality: derived.stress.calibration_quality,
         computed_as_of: derived.computed_as_of,
       } satisfies ActivityListDerivedSummary,
     ] as const);
@@ -156,12 +166,17 @@ export async function buildDynamicStressSeries(input: {
       complete = false;
       continue;
     }
-    const identityKey = JSON.stringify(summary.tss_identity);
+    const identityKey = JSON.stringify(loadSeriesIdentityForActivityTss(summary.tss_identity));
     identities.set(identityKey, summary.tss_identity);
     const tss = summary.tss;
     byDate.set(dateKey, (byDate.get(dateKey) ?? 0) + tss);
   }
 
   const seriesIdentity = identities.size === 1 ? [...identities.values()][0]! : null;
-  return { byActivityId, byDate, seriesIdentity, complete: complete && seriesIdentity !== null };
+  return {
+    byActivityId,
+    byDate,
+    seriesIdentity,
+    complete: complete && seriesIdentity !== null,
+  };
 }

@@ -154,7 +154,9 @@ export function useActivityRecorder(
     return () => {
       if (service) {
         console.log("[useActivityRecorder] Cleaning up service on unmount");
-        service.cleanup();
+        void service.cleanup({ dispose: true }).catch((error) => {
+          console.error("[useActivityRecorder] Failed to dispose recorder service", error);
+        });
       }
     };
   }, [service]);

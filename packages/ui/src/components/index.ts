@@ -30,6 +30,7 @@ export * from "./pace-input/index.web";
 export * from "./pace-seconds-field/index.web";
 export * from "./percent-slider-input/index.web";
 export * from "./radio-group/index.web";
+export * from "./recurrence-fields/index.web";
 export * from "./resizable/index.web";
 export * from "./scroll-area/index.web";
 export * from "./select/index.web";

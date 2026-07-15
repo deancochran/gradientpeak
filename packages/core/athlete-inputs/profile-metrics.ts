@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { formatSecondsToMmSs } from "../utils/fitness-inputs";
 
 export const PROFILE_PERFORMANCE_THRESHOLD_BOUNDS = {
   ftpWatts: { min: 20, max: 700 },
@@ -220,6 +221,15 @@ export function formatProfileMetricValue(input: {
   value: number;
   unit?: string | null;
 }): string {
+  if (Number.isFinite(input.value)) {
+    if (input.metric_type === "threshold_pace_seconds_per_km") {
+      return `${formatSecondsToMmSs(Math.round(input.value))} /km`;
+    }
+    if (input.metric_type === "css_seconds_per_100m") {
+      return `${formatSecondsToMmSs(Math.round(input.value))} /100m`;
+    }
+  }
+
   const unit = isProfileMetricType(input.metric_type)
     ? getProfileMetricDefinition(input.metric_type).unit
     : input.unit;
@@ -302,15 +312,20 @@ export const profileMetricCreatePayloadSchema = z
   })
   .strict();
 
-function addProfileMetricValueRangeIssue(
-  data: z.output<typeof profileMetricCreatePayloadSchema>,
+export function addProfileMetricValueRangeIssue(
+  data: { metric_type: ProfileMetricType; value: number },
   ctx: z.RefinementCtx,
 ) {
   if (isProfileMetricValueWithinRange(data.metric_type, data.value)) return;
   const definition = getProfileMetricDefinition(data.metric_type);
   ctx.addIssue({
     code: z.ZodIssueCode.custom,
-    message: `${definition.label} must be between ${definition.min} and ${definition.max} ${definition.unit}`,
+    message:
+      data.metric_type === "threshold_pace_seconds_per_km"
+        ? `${definition.label} must be between ${formatSecondsToMmSs(definition.min)} and ${formatSecondsToMmSs(definition.max)} /km`
+        : data.metric_type === "css_seconds_per_100m"
+          ? `${definition.label} must be between ${formatSecondsToMmSs(definition.min)} and ${formatSecondsToMmSs(definition.max)} /100m`
+          : `${definition.label} must be between ${definition.min} and ${definition.max} ${definition.unit}`,
     path: ["value"],
   });
 }

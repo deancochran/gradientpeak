@@ -46,6 +46,7 @@ import { useAuth } from "@/lib/hooks/useAuth";
 import {
   type ActivitySubmissionQueueJob,
   type ActivitySubmissionQueueJobStatus,
+  loadActivitySubmissionQueueJobByArtifactId,
   runActivitySubmissionQueueJob,
   upsertActivitySubmissionQueueJob,
 } from "@/lib/services/activitySubmissionQueue";
@@ -206,7 +207,10 @@ function buildQueueJob(args: {
     localActivityFilePath: args.artifact.activityFilePath ?? "",
     localActivityFileSize: args.fileSize,
     streamArtifactPaths: args.artifact.streamArtifactPaths,
-    draft: toQueueDraft(args.activity),
+    draft: {
+      ...toQueueDraft(args.activity),
+      recordingSessionId: args.artifact.sessionId,
+    },
     status: "queued",
     attempts: 0,
     createdAt: args.now,
@@ -323,31 +327,55 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
       try {
         console.log(`[useActivitySubmission] Queueing activity file:`, artifact.activityFilePath);
 
-        // Simple file verification
-        const { File } = await import("expo-file-system");
-        if (!artifact.activityFilePath) {
-          throw new Error("Activity file does not exist");
+        const existingJob = await loadActivitySubmissionQueueJobByArtifactId(artifact.sessionId);
+
+        if (existingJob?.status === "complete") {
+          if (!existingJob.activityId) {
+            throw new Error("Completed activity submission is missing its activity id");
+          }
+
+          await clearPendingFinalizedArtifact();
+          await deleteFinalizedArtifactFiles(artifact);
+          await invalidatePostActivityIngestionQueries(queryClient);
+          dispatch({ type: "SUCCESS", activityId: existingJob.activityId });
+          return existingJob.activityId;
         }
 
-        const file = new File(artifact.activityFilePath);
+        let fileSize = existingJob?.localActivityFileSize ?? null;
 
-        if (!file.exists) {
-          throw new Error("Activity file does not exist");
+        if (!existingJob?.remoteFilePath) {
+          // A local file is only required until upload progress has been persisted.
+          const { File } = await import("expo-file-system");
+          const localActivityFilePath =
+            existingJob?.localActivityFilePath || artifact.activityFilePath;
+          if (!localActivityFilePath) {
+            throw new Error("Activity file does not exist");
+          }
+
+          const file = new File(localActivityFilePath);
+
+          if (!file.exists) {
+            throw new Error("Activity file does not exist");
+          }
+
+          fileSize = file.size ?? 0;
+
+          if (fileSize === 0) {
+            throw new Error("Activity file is empty");
+          }
         }
 
-        const fileSize = file.size ?? 0;
-
-        if (fileSize === 0) {
-          throw new Error("Activity file is empty");
+        const queuedJob =
+          existingJob ??
+          buildQueueJob({
+            artifact,
+            activity,
+            fileSize,
+            now: new Date().toISOString(),
+          });
+        if (!existingJob) {
+          await upsertActivitySubmissionQueueJob(queuedJob);
         }
-
-        const queuedJob = buildQueueJob({
-          artifact,
-          activity,
-          fileSize,
-          now: new Date().toISOString(),
-        });
-        await upsertActivitySubmissionQueueJob(queuedJob);
         dispatch({ type: "QUEUE_STATUS", status: "queued" });
 
         let resolveActivityCreated!: (activityId: string) => void;

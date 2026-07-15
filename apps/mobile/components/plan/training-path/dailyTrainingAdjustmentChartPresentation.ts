@@ -95,7 +95,7 @@ export function useDailyTrainingAdjustmentChartPresentation({
           completedLoad: valueOrNull(point.completedLoadTss),
           plannedLoad: planned > 0 ? planned : null,
           plannedLoadWithTentative: planned + tentative > 0 ? planned + tentative : null,
-          targetLoad: valueOrNull(point.targetLoadTss),
+          targetLoad: point.hasTargetLoad === false ? null : valueOrNull(point.targetLoadTss),
           actualFitness: valueOrNull(point.fitnessCtl),
           projectedFitness: valueOrNull(point.scheduledFitnessCtl),
           recommendedFitness: valueOrNull(point.targetFitnessCtl),

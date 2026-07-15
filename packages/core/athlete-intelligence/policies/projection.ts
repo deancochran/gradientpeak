@@ -13,6 +13,7 @@ import {
   athleteIntelligenceProjectionSchema,
 } from "../projection-contracts";
 import type { ActivityReadinessResults } from "./activity-readiness";
+import type { CriticalPowerCapability } from "./critical-power-capability";
 import type { DurationAwareEffortCurve } from "./effort-curves";
 import { GOAL_DEMAND_POLICY_VERSION, type GoalDemandPolicyV1Result } from "./goal-demand";
 import type { PhysiologyMetricsPolicyResult } from "./physiology-metrics";
@@ -39,6 +40,7 @@ export interface GoalProjectionInputs {
 export interface WholeAthleteProjectionInput {
   model: AthleteIntelligenceModelInput;
   physiology: PhysiologyMetricsPolicyResult;
+  criticalPower?: CriticalPowerCapability;
   effortCurves: readonly GoalProjectionInputs[];
   activityReadiness: ActivityReadinessResults;
   calendarFeasibility: TrainingFeasibilityResults;
@@ -224,7 +226,13 @@ function speedCapability(curve: DurationAwareEffortCurve | undefined): Calculati
   const result = curve?.threshold;
   if (!result || result.estimate === null) return insufficient("compatible_speed_curve_missing");
   if (result.unit === "m/s") return result;
-  if (result.unit !== "seconds_per_kilometer")
+  const distanceMeters =
+    result.unit === "seconds_per_kilometer"
+      ? 1_000
+      : result.unit === "seconds_per_100m"
+        ? 100
+        : null;
+  if (distanceMeters === null)
     return unavailableResult({
       state: "unsupported",
       missingDataState: "incompatible_data",
@@ -233,7 +241,7 @@ function speedCapability(curve: DurationAwareEffortCurve | undefined): Calculati
       contributingSourceIds: result.contributingSourceIds,
     });
   return estimatedResult({
-    estimate: 1000 / result.estimate,
+    estimate: distanceMeters / result.estimate,
     unit: "m/s",
     uncertainty: result.uncertainty,
     reasonCodes: ["pace_curve_converted_to_speed"],
@@ -258,7 +266,13 @@ function normalizedUnit(result: CalculationResult, unit: string): CalculationRes
 
 function normalizedSpeed(result: CalculationResult): CalculationResult {
   if (result.estimate === null || result.unit === "m/s") return result;
-  if (result.unit !== "seconds_per_kilometer" || result.estimate <= 0)
+  const distanceMeters =
+    result.unit === "seconds_per_kilometer"
+      ? 1_000
+      : result.unit === "seconds_per_100m"
+        ? 100
+        : null;
+  if (distanceMeters === null || result.estimate <= 0)
     return unavailableResult({
       state: "unsupported",
       missingDataState: "incompatible_data",
@@ -267,7 +281,7 @@ function normalizedSpeed(result: CalculationResult): CalculationResult {
       contributingSourceIds: result.contributingSourceIds,
     });
   return estimatedResult({
-    estimate: 1000 / result.estimate,
+    estimate: distanceMeters / result.estimate,
     unit: "m/s",
     uncertainty: result.uncertainty,
     reasonCodes: ["pace_converted_to_speed"],
@@ -350,7 +364,9 @@ function dimensionsForGoal(input: {
             reasonCodes: ["goal_sport_missing"],
           })
         : (requirement.metric === "power" && input.goalSport !== "bike") ||
-            (requirement.metric === "pace" && input.goalSport !== "run")
+            (requirement.metric === "pace" &&
+              input.goalSport !== "run" &&
+              input.goalSport !== "swim")
           ? unavailableResult({
               state: "unsupported",
               missingDataState: "incompatible_data",
@@ -574,6 +590,12 @@ export function assembleWholeAthleteProjectionV1(
     athleteId: input.model.athleteId,
     capability: {
       ftp: input.physiology.metrics.ftp.result,
+      runningThresholdPace: input.physiology.metrics.threshold_pace_seconds_per_km.result,
+      swimmingCss: input.physiology.metrics.css_seconds_per_100m.result,
+      criticalPowerWatts:
+        input.criticalPower?.criticalPowerWatts ?? insufficient("critical_power_evidence_missing"),
+      wPrimeJoules:
+        input.criticalPower?.wPrimeJoules ?? insufficient("critical_power_evidence_missing"),
       wattsPerKilogram: input.physiology.wattsPerKilogram,
       heartRateReserve: input.physiology.heartRateReserve,
       effortCurves: input.effortCurves.flatMap((entry) =>

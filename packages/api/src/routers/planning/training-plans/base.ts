@@ -73,7 +73,10 @@ import {
   trainingPlanUpdateInputSchema,
   validatePlanFeasibility,
 } from "@repo/core";
-import { resolveCanonicalThresholds } from "@repo/core/athlete-inputs";
+import {
+  getActivityEffortThresholdEvidence,
+  resolveCanonicalThresholds,
+} from "@repo/core/athlete-inputs";
 import { type ProfileGoalRow, schema, type TrainingPlanRow } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
@@ -318,6 +321,22 @@ function todayStartIsoUtc(): string {
 
 function _todayDateOnlyUtc(): string {
   return formatDateOnlyUtc(new Date());
+}
+
+function getScheduledDateKey(value: string, timezone: string): string | null {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: timezone,
+    year: "numeric",
+  }).formatToParts(date);
+  const fields = new Map(parts.map((part) => [part.type, part.value]));
+  const year = fields.get("year");
+  const month = fields.get("month");
+  const day = fields.get("day");
+  return year && month && day ? `${year}-${month}-${day}` : null;
 }
 
 const applicationScopedScheduleInputSchema = z
@@ -3015,6 +3034,18 @@ export async function deriveProfileAwareCreationContext(input: {
                 effort.source !== "estimated"
                   ? ("actual" as const)
                   : ("derived" as const),
+              evidence:
+                getActivityEffortThresholdEvidence({
+                  activityCategory: effort.activity_category,
+                  activityId: effort.activity_id,
+                  durationSeconds: effort.duration_seconds,
+                  effortType: effort.effort_type,
+                  method: effort.method,
+                  provenance: effort.provenance,
+                  source: effort.source,
+                  unit: effort.unit,
+                  value: Number(effort.value),
+                }) ?? undefined,
             },
           ]
         : [],
@@ -4395,21 +4426,30 @@ const trainingPlansProcedures = {
       )
       .orderBy(asc(schema.activities.started_at));
 
-    const derivedActivityMap = await buildActivityDerivedSummaryMap({
+    const stressSeries = await buildDynamicStressSeries({
       store: createActivityAnalysisStore(db),
       profileId: ctx.session.user.id,
       activities,
     });
 
-    const tssData = activities.map(
-      (activity: { id: string }) => derivedActivityMap.get(activity.id)?.tss || 0,
+    // No activities is not evidence of zero fitness, and a partial/incompatible
+    // stress series cannot produce a trustworthy current load state.
+    if (activities.length === 0 || !stressSeries.complete) {
+      return null;
+    }
+
+    const loadSeries = calculateTrainingLoadSeries(
+      buildDateRange(formatDateOnlyUtc(fortyTwoDaysAgo), formatDateOnlyUtc(today)).map(
+        (date) => stressSeries.byDate.get(date) ?? 0,
+      ),
+      0,
+      0,
     );
-    const loadSeries = calculateTrainingLoadSeries(tssData, 0, 0);
     const latestLoadState = loadSeries[loadSeries.length - 1];
-    const ctl = latestLoadState?.ctl ?? 0;
-    const atl = latestLoadState?.atl ?? 0;
-    const tsb = latestLoadState?.tsb ?? 0;
+    if (!latestLoadState) return null;
+    const { ctl, atl, tsb } = latestLoadState;
     const form = getFormStatus(tsb);
+    const derivedActivityMap = stressSeries.byActivityId;
 
     // Get this week's progress
     const startOfWeek = new Date(today);
@@ -4440,7 +4480,7 @@ const trainingPlansProcedures = {
     const completedWeeklyTSS =
       weekActivities.reduce(
         (sum: number, act: { id: string }) =>
-          sum + (weekActivitiesDerivedMap.get(act.id)?.tss || 0),
+          sum + (weekActivitiesDerivedMap.get(act.id)?.tss ?? 0),
         0,
       ) || 0;
 
@@ -4449,7 +4489,11 @@ const trainingPlansProcedures = {
     const weekEndDate = endOfWeek.toISOString().split("T")[0] || "";
 
     const plannedActivitiesEvents = await db
-      .select({ starts_at: schema.events.starts_at, activity_plan: schema.activityPlans })
+      .select({
+        starts_at: schema.events.starts_at,
+        scheduled_date: schema.events.scheduled_date,
+        activity_plan: schema.activityPlans,
+      })
       .from(schema.events)
 
       .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
@@ -4465,7 +4509,8 @@ const trainingPlansProcedures = {
     const plannedActivities = plannedActivitiesEvents.map((item: any) => ({
       ...item,
       starts_at: item.starts_at.toISOString(),
-      scheduled_date: item.starts_at.toISOString().split("T")[0] ?? "",
+      scheduled_date:
+        item.scheduled_date ?? getScheduledDateKey(item.starts_at.toISOString(), "UTC"),
     }));
 
     // Extract activity plans and add estimations
@@ -4524,7 +4569,8 @@ const trainingPlansProcedures = {
     const upcomingActivitiesRaw = upcomingActivitiesEventsRaw.map((item: any) => ({
       ...item,
       starts_at: item.starts_at.toISOString(),
-      scheduled_date: item.starts_at.toISOString().split("T")[0] ?? "",
+      scheduled_date:
+        item.scheduled_date ?? getScheduledDateKey(item.starts_at.toISOString(), "UTC"),
     }));
 
     // Add estimations to upcoming activity plans
@@ -4782,31 +4828,10 @@ const trainingPlansProcedures = {
         )
         .orderBy(asc(schema.activities.started_at));
 
-      let initialCTL = 0;
-      let initialATL = 0;
-
-      if (baselineActivities && baselineActivities.length > 0) {
-        const baselineDerivedMap = await buildActivityDerivedSummaryMap({
-          store: createActivityAnalysisStore(db),
-          profileId: ctx.session.user.id,
-          activities: baselineActivities,
-        });
-        const baselineTSS = baselineActivities.map(
-          (a: any) => baselineDerivedMap.get(a.id)?.tss || 0,
-        );
-        const baselineSeries = calculateTrainingLoadSeries(baselineTSS, 0, 0);
-        const last = baselineSeries[baselineSeries.length - 1];
-        if (last) {
-          initialCTL = last.ctl;
-          initialATL = last.atl;
-        }
-      }
-
       // Get activities in range
       const activities = await db
         .select(activitySummaryColumns)
         .from(schema.activities)
-
         .where(
           and(
             eq(schema.activities.profile_id, ctx.session.user.id),
@@ -4816,54 +4841,43 @@ const trainingPlansProcedures = {
         )
         .orderBy(asc(schema.activities.started_at));
 
-      const { byActivityId: actualDerivedMap, byDate: activitiesByDate } =
-        await buildDynamicStressSeries({
-          store: createActivityAnalysisStore(db),
-          profileId: ctx.session.user.id,
-          activities,
-        });
+      const historyActivities = [...baselineActivities, ...activities];
+      const stressSeries = await buildDynamicStressSeries({
+        store: createActivityAnalysisStore(db),
+        profileId: ctx.session.user.id,
+        activities: historyActivities,
+      });
 
-      const tssData: { date: string; tss: number }[] = [];
-
-      // Create daily TSS array for the requested range
-      const daysDiff = Math.floor(
-        (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24),
-      );
-
-      for (let i = 0; i <= daysDiff; i++) {
-        const date = new Date(startDate.getTime());
-        date.setDate(startDate.getDate() + i);
-        const dateStr = date.toISOString().split("T")[0];
-        if (dateStr) {
-          const tss = activitiesByDate.get(dateStr) || 0;
-          tssData.push({ date: dateStr, tss });
-        }
+      // Abstain rather than drawing a zero curve when there is no load evidence,
+      // any activity has unavailable load, or the history mixes incompatible series.
+      if (historyActivities.length === 0 || !stressSeries.complete) {
+        return { dataPoints: [] };
       }
 
-      // ✅ FIX: Use baseline CTL/ATL
+      const historyDates = buildDateRange(
+        formatDateOnlyUtc(extendedStart),
+        formatDateOnlyUtc(endDate),
+      );
       const series = calculateTrainingLoadSeries(
-        tssData.map((d) => d.tss),
-        initialCTL,
-        initialATL,
+        historyDates.map((date) => stressSeries.byDate.get(date) ?? 0),
+        0,
+        0,
       );
-
-      // Filter to requested date range and create data points
-      const dataPoints = [];
-      for (let i = 0; i < tssData.length; i++) {
-        const tssItem = tssData[i];
-        const seriesItem = series[i];
-        if (!tssItem || !seriesItem) continue;
-
-        const date = new Date(tssItem.date);
-        if (date >= startDate && date <= endDate) {
-          dataPoints.push({
-            date: tssItem.date,
-            ctl: Math.round(seriesItem.ctl * 10) / 10,
-            atl: Math.round(seriesItem.atl * 10) / 10,
-            tsb: Math.round(seriesItem.tsb * 10) / 10,
-          });
-        }
-      }
+      const requestedStartKey = formatDateOnlyUtc(startDate);
+      const requestedEndKey = formatDateOnlyUtc(endDate);
+      const dataPoints = historyDates.flatMap((date, index) => {
+        if (date < requestedStartKey || date > requestedEndKey) return [];
+        const point = series[index];
+        if (!point) return [];
+        return [
+          {
+            date,
+            ctl: Math.round(point.ctl * 10) / 10,
+            atl: Math.round(point.atl * 10) / 10,
+            tsb: Math.round(point.tsb * 10) / 10,
+          },
+        ];
+      });
 
       return { dataPoints };
     }),
@@ -4923,7 +4937,11 @@ const trainingPlansProcedures = {
       const todayDateOnly = today.toISOString().split("T")[0] || "";
 
       const plannedActivitiesEventsRaw = await db
-        .select({ starts_at: schema.events.starts_at, activity_plan: schema.activityPlans })
+        .select({
+          starts_at: schema.events.starts_at,
+          scheduled_date: schema.events.scheduled_date,
+          activity_plan: schema.activityPlans,
+        })
         .from(schema.events)
 
         .leftJoin(schema.activityPlans, eq(schema.events.activity_plan_id, schema.activityPlans.id))
@@ -4940,7 +4958,8 @@ const trainingPlansProcedures = {
       const plannedActivitiesRaw = plannedActivitiesEventsRaw.map((item: any) => ({
         ...item,
         starts_at: item.starts_at.toISOString(),
-        scheduled_date: item.starts_at.toISOString().split("T")[0] ?? "",
+        scheduled_date:
+          item.scheduled_date ?? getScheduledDateKey(item.starts_at.toISOString(), "UTC"),
       }));
 
       // Extract activity plans and add estimations

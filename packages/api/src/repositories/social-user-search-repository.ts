@@ -9,17 +9,24 @@ type DbClient = ReturnType<typeof getRequiredDb>;
 const uuidSchema = z.string().uuid();
 const nullableAvatarUrlSchema = z.string().nullable();
 const nullableUsernameSchema = z.string().nullable();
+const nullableFullNameSchema = z.string().nullable();
+const nullableFollowStatusSchema = z.enum(["pending", "accepted"]).nullable();
 
 export const socialProfileListItemSchema = z
   .object({
     id: uuidSchema,
     username: nullableUsernameSchema,
+    full_name: nullableFullNameSchema,
     avatar_url: nullableAvatarUrlSchema,
     is_public: z.boolean().nullable(),
     created_at: z.union([z.date(), z.string()]),
     updated_at: z.union([z.date(), z.string()]),
   })
   .strict();
+
+const socialUserSearchResultSchema = socialProfileListItemSchema.extend({
+  follow_status: nullableFollowStatusSchema,
+});
 
 export type SearchSocialUsersInput = {
   query?: string;
@@ -52,31 +59,52 @@ export async function searchSocialUsers({
 
   const usersResult = trimmedQuery
     ? await db.execute(sql`
-        select p.id, p.username, p.avatar_url, p.is_public, p.created_at, p.updated_at
+        select p.id, p.username,
+          case when p.is_public is true or f.status = 'accepted' then p.full_name else null end as full_name,
+          p.avatar_url, p.is_public,
+          f.status as follow_status, p.created_at, p.updated_at
         from profiles p
+        left join follows f
+          on f.following_id = p.id
+          and f.follower_id = ${viewerId}::uuid
         where p.id != ${viewerId}::uuid
-          and p.username ilike ${searchPattern}
+          and (
+            p.username ilike ${searchPattern}
+            or ((p.is_public is true or f.status = 'accepted') and p.full_name ilike ${searchPattern})
+          )
         order by ${profileSortClause}
         limit ${input.limit}
         offset ${offset}
       `)
     : await db.execute(sql`
-        select p.id, p.username, p.avatar_url, p.is_public, p.created_at, p.updated_at
+        select p.id, p.username,
+          case when p.is_public is true or f.status = 'accepted' then p.full_name else null end as full_name,
+          p.avatar_url, p.is_public,
+          f.status as follow_status, p.created_at, p.updated_at
         from profiles p
+        left join follows f
+          on f.following_id = p.id
+          and f.follower_id = ${viewerId}::uuid
         where p.id != ${viewerId}::uuid
         order by ${profileSortClause}
         limit ${input.limit}
         offset ${offset}
       `);
 
-  const users = z.array(socialProfileListItemSchema).parse(usersResult.rows);
+  const users = z.array(socialUserSearchResultSchema).parse(usersResult.rows);
   const total = await getSqlCount(
     trimmedQuery
       ? db.execute(sql`
           select count(*)::int as value
           from profiles p
+          left join follows f
+            on f.following_id = p.id
+            and f.follower_id = ${viewerId}::uuid
           where p.id != ${viewerId}::uuid
-            and p.username ilike ${searchPattern}
+            and (
+              p.username ilike ${searchPattern}
+              or ((p.is_public is true or f.status = 'accepted') and p.full_name ilike ${searchPattern})
+            )
         `)
       : db.execute(sql`
           select count(*)::int as value

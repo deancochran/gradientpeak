@@ -1,4 +1,5 @@
 import {
+  type ActivityDerivedMetrics,
   type ActivityListDerivedSummary,
   analyzeActivityDerivedMetrics,
   parseActivityLapRecords,
@@ -136,7 +137,10 @@ export async function listActivitiesForProfile({
           );
           const lastActivity = normalizedBatch.at(-1);
           if (!lastActivity || batch.length < tssSortBatchSize) break;
-          scanCursor = { id: lastActivity.id, started_at: lastActivity.started_at };
+          scanCursor = {
+            id: lastActivity.id,
+            started_at: lastActivity.started_at,
+          };
         }
 
         const derivedByActivityId = await buildActivityDerivedSummaryMap({
@@ -219,7 +223,10 @@ export async function listActivitiesForProfile({
   });
   const items = data.map((activity) =>
     mapActivityToListDerivedResponse({
-      activity: { ...activity, likes_count: getLikeStats(likeStats, activity.id).likes_count },
+      activity: {
+        ...activity,
+        likes_count: getLikeStats(likeStats, activity.id).likes_count,
+      },
       has_liked: getLikeStats(likeStats, activity.id).has_liked,
       derived: derived.get(activity.id) ?? null,
     }),
@@ -262,7 +269,12 @@ export async function getActivityByIdForViewer({
       viewerProfileId: viewerId,
     }),
     db.query.activityFileIngestions?.findFirst({
-      columns: { id: true, status: true, source: true, last_error_message: true },
+      columns: {
+        id: true,
+        status: true,
+        source: true,
+        last_error_message: true,
+      },
       where: and(
         eq(activityFileIngestions.activity_id, activityId),
         eq(activityFileIngestions.profile_id, viewerId),
@@ -273,53 +285,73 @@ export async function getActivityByIdForViewer({
   const row = record[0];
   if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
   const activity = normalizeActivityLaps(row.activity);
-  const context = await resolveActivityContextAsOf({
-    store: createActivityAnalysisStore(db),
-    profileId: activity.profile_id,
-    activityTimestamp: activity.finished_at,
-  });
   const values = activity as typeof activity & Record<string, number | null>;
-  const derived = analyzeActivityDerivedMetrics({
-    activity: {
-      id: activity.id,
-      type: activity.type,
-      started_at: activity.started_at.toISOString(),
-      finished_at: activity.finished_at.toISOString(),
-      duration_seconds: values.duration_seconds ?? 0,
-      moving_seconds: values.moving_seconds ?? 0,
-      distance_meters: values.distance_meters ?? 0,
-      avg_heart_rate: values.avg_heart_rate,
-      max_heart_rate: values.max_heart_rate,
-      avg_power: values.avg_power,
-      max_power: values.max_power,
-      avg_speed_mps: values.avg_speed_mps,
-      max_speed_mps: values.max_speed_mps,
-      normalized_power: values.normalized_power,
-      normalized_speed_mps: values.normalized_speed_mps,
-      normalized_graded_speed_mps: values.normalized_graded_speed_mps,
-    },
-    context,
-  });
+  const derived: ActivityDerivedMetrics =
+    activity.profile_id === viewerId
+      ? analyzeActivityDerivedMetrics({
+          activity: {
+            id: activity.id,
+            type: activity.type,
+            started_at: activity.started_at.toISOString(),
+            finished_at: activity.finished_at.toISOString(),
+            duration_seconds: values.duration_seconds ?? 0,
+            moving_seconds: values.moving_seconds ?? 0,
+            distance_meters: values.distance_meters ?? 0,
+            avg_heart_rate: values.avg_heart_rate,
+            max_heart_rate: values.max_heart_rate,
+            avg_power: values.avg_power,
+            max_power: values.max_power,
+            avg_speed_mps: values.avg_speed_mps,
+            max_speed_mps: values.max_speed_mps,
+            normalized_power: values.normalized_power,
+            normalized_speed_mps: values.normalized_speed_mps,
+            normalized_graded_speed_mps: values.normalized_graded_speed_mps,
+          },
+          context: await resolveActivityContextAsOf({
+            store: createActivityAnalysisStore(db),
+            profileId: activity.profile_id,
+            activityTimestamp: activity.started_at,
+            activityId: activity.id,
+          }),
+        })
+      : {
+          stress: {
+            tss: null,
+            tss_identity: null,
+            intensity_factor: null,
+            method: null,
+            unavailable_reason: "private_data",
+            trimp: null,
+            trimp_source: null,
+            training_effect: null,
+          },
+          zones: { hr: [], power: [] },
+          computed_as_of: activity.started_at.toISOString(),
+        };
   const response = mapActivityToDerivedResponse({
     activity: {
       ...activity,
       likes_count: getLikeStats(likeStats, activityId).likes_count,
-      activity_plans: row.activityPlan
-        ? {
-            ...row.activityPlan,
-            created_at:
-              row.activityPlan.created_at instanceof Date
-                ? row.activityPlan.created_at.toISOString()
-                : row.activityPlan.created_at,
-            updated_at:
-              row.activityPlan.updated_at instanceof Date
-                ? row.activityPlan.updated_at.toISOString()
-                : row.activityPlan.updated_at,
-          }
-        : null,
+      activity_plans:
+        activity.profile_id === viewerId && row.activityPlan
+          ? {
+              ...row.activityPlan,
+              created_at:
+                row.activityPlan.created_at instanceof Date
+                  ? row.activityPlan.created_at.toISOString()
+                  : row.activityPlan.created_at,
+              updated_at:
+                row.activityPlan.updated_at instanceof Date
+                  ? row.activityPlan.updated_at.toISOString()
+                  : row.activityPlan.updated_at,
+            }
+          : null,
     },
     has_liked: getLikeStats(likeStats, activityId).has_liked,
     derived,
   });
-  return { ...response, activity: { ...response.activity, ingestion: ingestion ?? null } };
+  return {
+    ...response,
+    activity: { ...response.activity, ingestion: ingestion ?? null },
+  };
 }

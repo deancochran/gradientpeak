@@ -11,6 +11,7 @@ import { Button } from "@repo/ui/components/button";
 import { Form, FormControl, FormField, FormItem, FormMessage } from "@repo/ui/components/form";
 import { Input } from "@repo/ui/components/input";
 import { ScrollArea } from "@repo/ui/components/scroll-area";
+import { SearchField } from "@repo/ui/components/search-field";
 import { Separator } from "@repo/ui/components/separator";
 import { cn } from "@repo/ui/lib/cn";
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -145,6 +146,7 @@ function MessagesPage() {
   const [selectedRecipients, setSelectedRecipients] =
     useState<ComposeRecipient[]>(composeRecipients);
   const [groupName, setGroupName] = useState(composeGroup ?? "");
+  const [composeSearchValue, setComposeSearchValue] = useState(composeQuery ?? "");
   const [composeError, setComposeError] = useState<string | null>(null);
   const lastMarkedConversationRef = useRef<string | null>(null);
   const form = useForm<MessageComposerValues>({
@@ -189,6 +191,10 @@ function MessagesPage() {
   useEffect(() => {
     setGroupName(composeGroup ?? "");
   }, [composeGroup]);
+
+  useEffect(() => {
+    setComposeSearchValue(composeQuery ?? "");
+  }, [composeQuery]);
 
   const handleSend = form.handleSubmit(async (values) => {
     if (!selectedId) {
@@ -496,11 +502,19 @@ function MessagesPage() {
                       name="composeRecipients"
                       value={serializeComposeRecipients(selectedRecipients) ?? ""}
                     />
-                    <Input
-                      name="composeQuery"
-                      defaultValue={composeQuery ?? ""}
-                      placeholder="Search by username"
-                    />
+                    <div className="flex-1">
+                      <SearchField
+                        accessibilityLabel="Search message recipients"
+                        clearTestId="messages-compose-search-clear"
+                        loading={searchUsersLoading}
+                        loadingLabel="Searching people"
+                        name="composeQuery"
+                        onValueChange={setComposeSearchValue}
+                        placeholder="Search by username"
+                        testId="messages-compose-search-input"
+                        value={composeSearchValue}
+                      />
+                    </div>
                     <Button type="submit">
                       <Search className="mr-2 h-4 w-4" />
                       Search

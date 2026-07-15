@@ -97,6 +97,7 @@ type NormalizedEventCreateInput = {
   eventType: CoreEventType;
   notes: string | null;
   recurrence: LegacyPlannedCreateInput["recurrence"] | null;
+  routeId: string | null;
   sourceProvider: string | null;
   startsAt: string;
   status: PublicEventStatus;
@@ -361,6 +362,7 @@ const eventListSchema = z
     date_to: z.string().optional(),
     limit: z.number().min(1).max(500).default(20),
     cursor: z.string().optional(),
+    direction: z.enum(["forward", "backward"]).optional(),
   })
   .strict();
 
@@ -823,6 +825,7 @@ function normalizeEventCreateInput(input: EventCreateMutationInput): NormalizedE
       eventType,
       notes: input.notes ?? null,
       recurrence: input.recurrence ?? null,
+      routeId: input.route_id ?? null,
       sourceProvider: "source" in input ? (input.source?.provider ?? null) : null,
       startsAt: toDayStartIso(input.scheduled_date),
       status,
@@ -841,6 +844,7 @@ function normalizeEventCreateInput(input: EventCreateMutationInput): NormalizedE
       eventType: input.event_type,
       notes: input.notes ?? null,
       recurrence: input.recurrence ?? null,
+      routeId: input.route_id ?? null,
       sourceProvider: null,
       startsAt: toDayStartIso(input.scheduled_date),
       status,
@@ -858,6 +862,7 @@ function normalizeEventCreateInput(input: EventCreateMutationInput): NormalizedE
     eventType: input.event_type,
     notes: input.notes ?? null,
     recurrence: input.recurrence ?? null,
+    routeId: null,
     sourceProvider: null,
     startsAt: toCanonicalInstantIso(input.starts_at),
     status,

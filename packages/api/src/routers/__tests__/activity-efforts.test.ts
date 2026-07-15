@@ -171,7 +171,13 @@ describe("activityEffortsRouter", () => {
       updated_at: new Date("2026-03-03T01:02:03.000Z"),
     });
     const { caller, spies } = createCaller({
-      selectOneResult: [buildEffortRow({ recorded_at: oldRecordedAt })],
+      selectOneResult: [
+        buildEffortRow({
+          recorded_at: oldRecordedAt,
+          source: "manual",
+          method: "manual_activity_effort_entry",
+        }),
+      ],
       updateResult: [updatedRow],
     });
 
@@ -197,7 +203,7 @@ describe("activityEffortsRouter", () => {
     expect(updatePayload.updated_at).toBeInstanceOf(Date);
   });
 
-  it("resets trusted imported provenance when observation fields are edited", async () => {
+  it("creates a manual override instead of mutating imported evidence", async () => {
     const activityId = "33333333-3333-4333-8333-333333333333";
     const imported = buildEffortRow({
       activity_id: activityId,
@@ -210,28 +216,30 @@ describe("activityEffortsRouter", () => {
       method: "activity_file_best_effort",
       provenance: { activity_id: activityId, derived_from: "activity_file_stream" },
     });
-    const { caller, spies } = createCaller({
-      selectOneResult: [imported],
-      updateResult: [
-        buildEffortRow({
-          ...imported,
-          value: 330,
-          source: "manual",
-          method: "manual_activity_effort_entry",
-          provenance: { trusted: true, observation_type: "observed", entered_by: "athlete" },
-        }),
-      ],
-    });
-
-    await caller.update({ id: imported.id, value: 330 });
-
-    const updatePayload = (spies.set.mock.calls as any[][])[0]?.[0];
-    expect(updatePayload).toMatchObject({
+    const manualOverride = buildEffortRow({
+      ...imported,
+      id: randomUuidState.next,
       value: 330,
       source: "manual",
       method: "manual_activity_effort_entry",
       provenance: { trusted: true, observation_type: "observed", entered_by: "athlete" },
     });
+    const { caller, spies } = createCaller({
+      selectOneResult: [imported],
+      insertResult: [manualOverride],
+    });
+
+    const result = await caller.update({ id: imported.id, value: 330 });
+
+    expect(result).toEqual(manualOverride);
+    const insertPayload = (spies.values.mock.calls as any[][])[0]?.[0];
+    expect(insertPayload).toMatchObject({
+      value: 330,
+      source: "manual",
+      method: "manual_activity_effort_entry",
+      provenance: { trusted: true, observation_type: "observed", entered_by: "athlete" },
+    });
+    expect(spies.update).not.toHaveBeenCalled();
   });
 
   it("returns null for update when the effort is not owned or not found", async () => {
@@ -253,7 +261,7 @@ describe("activityEffortsRouter", () => {
   });
 
   it("returns a success payload after deleting an owned effort", async () => {
-    const existing = buildEffortRow();
+    const existing = buildEffortRow({ source: "manual" });
     const { caller, spies } = createCaller({ selectOneResult: [existing] });
     const id = "22222222-2222-4222-8222-222222222222";
 
@@ -262,6 +270,14 @@ describe("activityEffortsRouter", () => {
     expect(result).toEqual({ success: true, deletedId: id });
     expect(spies.delete).toHaveBeenCalledOnce();
     expect(spies.whereForDelete).toHaveBeenCalledOnce();
+  });
+
+  it("rejects deletion of imported effort evidence", async () => {
+    const imported = buildEffortRow({ source: "imported" });
+    const { caller, spies } = createCaller({ selectOneResult: [imported] });
+
+    await expect(caller.delete({ id: imported.id })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(spies.delete).not.toHaveBeenCalled();
   });
 
   it("returns idempotent success for delete when the effort is not owned or not found", async () => {

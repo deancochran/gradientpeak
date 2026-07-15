@@ -17,6 +17,10 @@ type IntegrationUpsertFields = {
   refreshToken: IntegrationCredentialInsert["refresh_token"];
   scope: IntegrationCredentialInsert["scope"];
 };
+type OAuthIntegrationUpsertFields = IntegrationUpsertFields & {
+  now: Date;
+  state: OAuthStateInsert["state"];
+};
 type IntegrationTokenUpdateFields = {
   accessToken: IntegrationCredentialInsert["access_token"];
   expiresAt: IntegrationCredentialInsert["expires_at"];
@@ -44,6 +48,7 @@ export interface IntegrationsRepository {
     provider: PublicIntegrationProvider;
   }): Promise<IntegrationCredentialRow | null>;
   upsertByProfileIdAndProvider(input: IntegrationUpsertFields): Promise<IntegrationRow>;
+  upsertFromOAuthState(input: OAuthIntegrationUpsertFields): Promise<IntegrationRow | null>;
   updateTokensByProfileIdAndProvider(input: IntegrationTokenUpdateFields): Promise<void>;
   deleteByProfileIdAndProvider(input: {
     profileId: string;

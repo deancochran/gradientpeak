@@ -50,6 +50,14 @@ function createStoreReader(routeFixtures: Record<string, Record<string, unknown>
           duration_seconds: 1200,
           value: 250,
           unit: "watts",
+          recorded_at: "2026-07-01T00:00:00.000Z",
+          activity_id: "00000000-0000-4000-8000-000000000103",
+          source: "imported",
+          method: "activity_file_best_effort",
+          provenance: {
+            activity_id: "00000000-0000-4000-8000-000000000103",
+            derived_from: "activity_file_stream",
+          },
         },
         {
           effort_type: "speed" as const,
@@ -57,6 +65,14 @@ function createStoreReader(routeFixtures: Record<string, Record<string, unknown>
           duration_seconds: 1200,
           value: 15,
           unit: "km_per_hour",
+          recorded_at: "2026-07-01T00:00:00.000Z",
+          activity_id: "00000000-0000-4000-8000-000000000104",
+          source: "imported",
+          method: "activity_file_best_effort",
+          provenance: {
+            activity_id: "00000000-0000-4000-8000-000000000104",
+            derived_from: "activity_file_stream",
+          },
         },
       ],
       metrics: [
@@ -173,7 +189,6 @@ describe("estimation-helpers", () => {
     expect(vi.mocked(estimationCore.estimateActivity).mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({
         ftp: 238,
-        thresholdPaceSecondsPerKm: 240,
       }),
     );
     expect(result).toEqual(
