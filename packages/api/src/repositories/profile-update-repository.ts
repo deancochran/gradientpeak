@@ -22,6 +22,7 @@ export type ProfileFields = Partial<
     | "full_name"
     | "is_public"
     | "language"
+    | "planning_timezone"
     | "preferred_units"
     | "username"
   >

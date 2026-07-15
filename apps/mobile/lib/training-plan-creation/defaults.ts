@@ -1,11 +1,12 @@
 import { createAthletePlanningContextFromSnapshot } from "@repo/core";
+import { toDateKey } from "@/lib/calendar/dateMath";
 import { trainingPlanBuilderStateSchema } from "./schemas";
 import type { TrainingPlanBuilderState } from "./types";
 
 export const DEFAULT_TRAINING_PLAN_NAME = "";
 
 function getDefaultAnchorDate() {
-  return new Date().toISOString().slice(0, 10);
+  return toDateKey(new Date());
 }
 
 export function createDefaultTrainingPlanBuilderState(): TrainingPlanBuilderState {

@@ -28,6 +28,7 @@ const profile: AuthProfile = {
   is_public: false,
   username: null,
   preferred_units: null,
+  planning_timezone: null,
   language: null,
   ftp: null,
   threshold_hr: null,

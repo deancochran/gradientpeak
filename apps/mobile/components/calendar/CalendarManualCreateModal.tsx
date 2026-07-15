@@ -21,6 +21,7 @@ import { useEffect, useState } from "react";
 import { Modal, ScrollView, TouchableOpacity, View } from "react-native";
 import { z } from "zod";
 import { InlineNotice } from "@/components/shared/LayoutPrimitives";
+import { dateKeyToLocalDate, getDeviceTimeZone } from "@/lib/calendar/eventSchedule";
 
 export type ManualEventCreateType = "race_target" | "custom";
 
@@ -54,8 +55,10 @@ type CalendarManualCreateModalProps = {
     createType: ManualEventCreateType;
     title: string;
     notes: string;
+    scheduledDate: string;
     startsAt: Date;
     allDay: boolean;
+    timezone: string;
     recurrence?: { rule: string; timezone: string };
   }) => void;
 };
@@ -64,7 +67,7 @@ function buildInitialValues(
   activeDate: string,
   _createType: ManualEventCreateType,
 ): CalendarManualCreateFormValues {
-  const startsAt = new Date(`${activeDate}T09:00:00.000Z`);
+  const startsAt = dateKeyToLocalDate(activeDate, 9);
 
   return {
     title: "",
@@ -156,8 +159,10 @@ export function CalendarManualCreateModal({
         createType,
         title: data.title,
         notes: data.notes ?? "",
+        scheduledDate: data.scheduled_date,
         startsAt,
         allDay: data.all_day,
+        timezone: getDeviceTimeZone(),
         recurrence: serializeWeeklyCountRecurrence({
           recurrence,
           startInstant: startsAt,

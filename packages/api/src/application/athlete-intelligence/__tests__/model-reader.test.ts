@@ -122,6 +122,7 @@ function rows(): AthleteIntelligenceRows {
     profile: {
       id: profileId,
       dob: new Date("1990-06-01T00:00:00.000Z"),
+      planningTimezone: "America/New_York",
       preferredUnits: "imperial",
       updatedAt: new Date("2026-05-01T00:00:00.000Z"),
     },
@@ -1364,6 +1365,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     value.schedule[0] = {
       ...first(value.schedule),
       recurrenceRule: "RRULE:FREQ=WEEKLY;INTERVAL=2;UNTIL=20260901T000000Z",
+      recurrenceTimezone: "America/Los_Angeles",
     };
     const result = await materializeAthleteIntelligenceModelInput({
       dataSource: readRows(value),
@@ -1374,6 +1376,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
       frequency: "weekly",
       interval: 2,
       until: "2026-09-01T00:00:00.000Z",
+      timezone: "America/Los_Angeles",
     });
     expect(first(result.activities).laps).toEqual([]);
   });
@@ -1395,6 +1398,25 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     });
 
     expect(first(result.plannedSchedule).startAt).toBe("2028-01-15T20:00:00.000Z");
+  });
+
+  it("uses the persisted planning timezone for the goal target-day cutoff", async () => {
+    const value = rows();
+    value.schedule[0] = {
+      ...first(value.schedule),
+      // 23:30 on the goal date in the profile's America/New_York planning timezone.
+      startsAt: new Date("2026-09-02T03:30:00.000Z"),
+      endsAt: new Date("2026-09-02T04:30:00.000Z"),
+    };
+
+    const result = await materializeAthleteIntelligenceModelInput({
+      dataSource: readRows(value),
+      profileId,
+      goalId: "goal-1",
+      asOf,
+    });
+
+    expect(first(result.plannedSchedule).startAt).toBe("2026-09-02T03:30:00.000Z");
   });
 
   it("retains schedule entries that overlap the assessment window", async () => {

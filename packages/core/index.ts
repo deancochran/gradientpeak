@@ -17,6 +17,7 @@ export * from "./ftms";
 // FTMS (Fitness Machine Service) Types
 // ============================================================================
 export * from "./ftms-types";
+export * from "./profile/date-of-birth";
 
 // ============================================================================
 // Calculations Module

@@ -62,7 +62,7 @@ describe("getBaselineProfile", () => {
 
 describe("calculateAge", () => {
   it("should calculate age from date of birth", () => {
-    const dob = "1990-01-01T00:00:00Z";
+    const dob = "1990-01-01";
     const age = calculateAge(dob);
     expect(age).toBeGreaterThanOrEqual(34); // As of 2024+
   });

@@ -19,6 +19,7 @@ function serializeCreatedEvent(row: {
   recurrence_rule: string | null;
   recurrence_timezone: string | null;
   route_id: string | null;
+  scheduled_date: string | null;
   series_id: string | null;
   source_provider: string | null;
   starts_at: Date;
@@ -60,6 +61,7 @@ function serializeSplitEventRow(row: {
   recurrence_rule: string | null;
   recurrence_timezone: string | null;
   route_id: string | null;
+  scheduled_date: string | null;
   series_id: string | null;
   source_provider: string | null;
   starts_at: Date;
@@ -119,6 +121,7 @@ const splitEventReturningColumns = {
   linked_activity_id: schema.events.linked_activity_id,
   recurrence_rule: schema.events.recurrence_rule,
   recurrence_timezone: schema.events.recurrence_timezone,
+  scheduled_date: schema.events.scheduled_date,
   series_id: schema.events.series_id,
   occurrence_key: schema.events.occurrence_key,
   original_starts_at: schema.events.original_starts_at,
@@ -166,6 +169,7 @@ async function insertOwnedEvent(
       activity_plan_id: input.activityPlanId,
       route_id: input.routeId,
       training_plan_id: input.trainingPlanId,
+      scheduled_date: input.scheduledDate,
       recurrence_rule: input.recurrenceRule,
       recurrence_timezone: input.recurrenceTimezone,
       series_id: input.seriesId ?? null,
@@ -283,6 +287,7 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
       const timezone = eventUpdates["timezone"];
       const startsAt = eventUpdates["starts_at"];
       const endsAt = eventUpdates["ends_at"];
+      const scheduledDate = eventUpdates["scheduled_date"];
       const activityPlanId = eventUpdates["activity_plan_id"] as string | null | undefined;
       const routeId = eventUpdates["route_id"] as string | null | undefined;
       const trainingPlanId = eventUpdates["training_plan_id"] as string | null | undefined;
@@ -302,6 +307,7 @@ export function createEventWriteRepository(db: DrizzleDbClient): EventWriteRepos
         ...(allDay !== undefined ? { all_day: allDay as boolean } : {}),
         ...(timezone !== undefined ? { timezone: timezone as string } : {}),
         ...(startsAt ? { starts_at: new Date(startsAt as string) } : {}),
+        ...(scheduledDate !== undefined ? { scheduled_date: scheduledDate as string } : {}),
         ...(endsAt !== undefined ? { ends_at: endsAt ? new Date(endsAt as string) : null } : {}),
         ...(activityPlanId !== undefined ? { activity_plan_id: activityPlanId } : {}),
         ...(routeId !== undefined ? { route_id: routeId } : {}),

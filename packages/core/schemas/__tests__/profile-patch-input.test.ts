@@ -15,6 +15,7 @@ describe("profilePatchInputSchema", () => {
         cover_url: null,
         dob: null,
         language: null,
+        planning_timezone: null,
         preferred_units: null,
       }),
     ).toMatchObject({
@@ -23,6 +24,7 @@ describe("profilePatchInputSchema", () => {
       cover_url: null,
       dob: null,
       language: null,
+      planning_timezone: null,
       preferred_units: null,
     });
   });
@@ -54,13 +56,24 @@ describe("profilePatchInputSchema", () => {
     });
   });
 
-  it("keeps current raw API acceptance for bio, DOB, and language", () => {
+  it("requires DOB patches to use the date-only contract", () => {
     expect(
       profilePatchInputSchema.parse({
         bio: "  untrimmed bio  ",
-        dob: "not-a-date",
+        dob: "1990-02-03",
         language: "  en  ",
       }),
-    ).toEqual({ bio: "  untrimmed bio  ", dob: "not-a-date", language: "  en  " });
+    ).toEqual({ bio: "  untrimmed bio  ", dob: "1990-02-03", language: "  en  " });
+    expect(profilePatchInputSchema.safeParse({ dob: "1990-02-03T00:00:00.000Z" }).success).toBe(
+      false,
+    );
+    expect(profilePatchInputSchema.safeParse({ dob: "1990-02-31" }).success).toBe(false);
+  });
+
+  it("accepts only valid nullable IANA planning timezones", () => {
+    expect(profilePatchInputSchema.parse({ planning_timezone: "America/Los_Angeles" })).toEqual({
+      planning_timezone: "America/Los_Angeles",
+    });
+    expect(profilePatchInputSchema.safeParse({ planning_timezone: "PST" }).success).toBe(false);
   });
 });

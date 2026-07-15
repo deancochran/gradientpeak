@@ -231,6 +231,38 @@ describe("planned activity event domain schemas", () => {
     expect(parsed.success).toBe(true);
   });
 
+  it("accepts strict date anchors for custom and race events", () => {
+    const custom = customEventCreateSchema.safeParse({
+      event_type: "custom",
+      title: "Team meeting",
+      starts_at: "2026-03-12T16:30:00.000Z",
+      scheduled_date: "2026-03-12",
+    });
+    const race = customEventCreateSchema.safeParse({
+      event_type: "race_target",
+      title: "Spring race",
+      starts_at: "2026-03-12T16:30:00.000Z",
+      scheduled_date: "2026-02-29",
+    });
+
+    expect(custom.success).toBe(true);
+    expect(race.success).toBe(false);
+  });
+
+  it("accepts scheduled_date-only schedule patches and rejects invalid dates", () => {
+    const valid = eventUpdateSchema.safeParse({
+      id: "e4e9d401-49dc-4f14-b8ab-2da517f7db1b",
+      patch: { scheduled_date: "2026-03-12" },
+    });
+    const invalid = eventUpdateSchema.safeParse({
+      id: "e4e9d401-49dc-4f14-b8ab-2da517f7db1b",
+      patch: { scheduled_date: "2026-13-01" },
+    });
+
+    expect(valid.success).toBe(true);
+    expect(invalid.success).toBe(false);
+  });
+
   it("requires activity plan linkage for planned event creation", () => {
     const parsed = eventCreateSchema.safeParse({
       event_type: "planned",

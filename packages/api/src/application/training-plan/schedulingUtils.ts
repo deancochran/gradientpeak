@@ -27,6 +27,7 @@ function maxDateOnlyUtc(left: string, right: string): string {
 
 export function materializeAppliedTrainingPlan(input: {
   applicationMode: TrainingPlanApplicationMode;
+  planningTimezone: string;
   startDate?: string;
   targetDate?: string;
   structure: Record<string, unknown>;
@@ -36,7 +37,11 @@ export function materializeAppliedTrainingPlan(input: {
 
   if (!appliedPlanStartDate && input.targetDate) {
     const dummyStart = "2000-01-01";
-    const dummySessions = materializePlanToEvents(input.structure, dummyStart);
+    const dummySessions = materializePlanToEvents(
+      input.structure,
+      dummyStart,
+      input.planningTimezone,
+    );
     let maxOffsetDays = 0;
     for (const session of dummySessions) {
       const offset = diffDateOnlyUtcDays(dummyStart, session.scheduled_date);
@@ -58,6 +63,7 @@ export function materializeAppliedTrainingPlan(input: {
   const allMaterializedSessions = materializePlanToEvents(
     materializationStructure,
     appliedPlanStartDate,
+    input.planningTimezone,
   );
   const includedFromDate =
     input.applicationMode === "remaining"

@@ -3809,6 +3809,16 @@
       "generated": ""
     },
     {
+      "name": "planning_timezone",
+      "type": "text",
+      "table": "profiles",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 17,
+      "generated": ""
+    },
+    {
       "name": "id",
       "type": "uuid",
       "table": "provider_sync_jobs",

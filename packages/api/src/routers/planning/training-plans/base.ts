@@ -77,6 +77,7 @@ import {
   getActivityEffortThresholdEvidence,
   resolveCanonicalThresholds,
 } from "@repo/core/athlete-inputs";
+import { getScheduledDateKey } from "@repo/core/utils/schedule-date";
 import { type ProfileGoalRow, schema, type TrainingPlanRow } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, asc, desc, eq, gte, inArray, lt, lte, sql } from "drizzle-orm";
@@ -321,22 +322,6 @@ function todayStartIsoUtc(): string {
 
 function _todayDateOnlyUtc(): string {
   return formatDateOnlyUtc(new Date());
-}
-
-function getScheduledDateKey(value: string, timezone: string): string | null {
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return null;
-  const parts = new Intl.DateTimeFormat("en-US", {
-    day: "2-digit",
-    month: "2-digit",
-    timeZone: timezone,
-    year: "numeric",
-  }).formatToParts(date);
-  const fields = new Map(parts.map((part) => [part.type, part.value]));
-  const year = fields.get("year");
-  const month = fields.get("month");
-  const day = fields.get("day");
-  return year && month && day ? `${year}-${month}-${day}` : null;
 }
 
 const applicationScopedScheduleInputSchema = z
@@ -1253,6 +1238,7 @@ function estimateWeeklyTssFromDailyMap(dailyTss: Map<string, number>): number | 
 
 async function estimateWeeklyTssFromStructuredActivities(input: {
   db?: DbClient;
+  planningTimezone: string;
   supabase?: LegacyPlanningReader;
   profileId: string;
   structure: Record<string, unknown> | null | undefined;
@@ -1265,9 +1251,11 @@ async function estimateWeeklyTssFromStructuredActivities(input: {
     return { weeklyTss: null, latestScheduledDate: null };
   }
 
-  const materializedEvents = materializePlanToEvents(input.structure, input.startDate).filter(
-    (event) => event.event_type === "planned" && typeof event.activity_plan_id === "string",
-  );
+  const materializedEvents = materializePlanToEvents(
+    input.structure,
+    input.startDate,
+    input.planningTimezone,
+  ).filter((event) => event.event_type === "planned" && typeof event.activity_plan_id === "string");
 
   const latestScheduledDate =
     materializedEvents
@@ -3592,7 +3580,9 @@ export async function getPlanTabProjectionService({
     : await (async () => {
         let plannedActivitiesQuery: any = fallbackSupabase
           ?.from("events")
-          .select("id, starts_at, training_plan_id, activity_plan:activity_plans (*)")
+          .select(
+            "id, starts_at, scheduled_date, training_plan_id, activity_plan:activity_plans (*)",
+          )
           .eq("profile_id", profileId)
           .eq("event_type", plannedEventType)
           .gte("starts_at", toDayStartIso(input.start_date))
@@ -3610,12 +3600,15 @@ export async function getPlanTabProjectionService({
         return (
           (data || []) as Array<{
             starts_at?: string | null;
+            scheduled_date?: string | null;
             training_plan_id?: string | null;
             activity_plan?: unknown;
           }>
         ).map((item: any) => ({
           ...item,
-          scheduled_date: item.starts_at?.split("T")[0] ?? "",
+          scheduled_date:
+            item.scheduled_date ??
+            (item.starts_at ? getScheduledDateKey(item.starts_at, "UTC") : ""),
           activity_plan: item.activity_plan as any,
         }));
       })();
@@ -4550,6 +4543,7 @@ const trainingPlansProcedures = {
       .select({
         id: schema.events.id,
         starts_at: schema.events.starts_at,
+        scheduled_date: schema.events.scheduled_date,
         activity_plan: schema.activityPlans,
       })
       .from(schema.events)
@@ -4668,9 +4662,15 @@ const trainingPlansProcedures = {
       }
 
       const structure = (plan.structure as Record<string, unknown> | null) ?? {};
+      const [profile] = await db
+        .select({ planningTimezone: schema.profiles.planning_timezone })
+        .from(schema.profiles)
+        .where(eq(schema.profiles.id, ctx.session.user.id))
+        .limit(1);
 
       const structuredWeeklyTss = await estimateWeeklyTssFromStructuredActivities({
         db,
+        planningTimezone: profile?.planningTimezone ?? "UTC",
         profileId: ctx.session.user.id,
         structure,
         startDate: input.start_date,

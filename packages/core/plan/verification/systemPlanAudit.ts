@@ -113,7 +113,7 @@ export function buildSystemTrainingPlanAudit(
   templateIndex: ReadonlyMap<string, SystemTemplate> = buildSystemTemplateIndex(),
 ): SystemTrainingPlanAudit {
   const startDate = getPlanStartDate(plan);
-  const materializedEvents = materializePlanToEvents(plan.structure, startDate);
+  const materializedEvents = materializePlanToEvents(plan.structure, startDate, "UTC");
   const linkedTemplateIds = Array.from(
     new Set(
       materializedEvents

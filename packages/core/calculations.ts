@@ -5,6 +5,7 @@
  * `zones/`, `duration/`, and `estimators/`. Keep this file stable while
  * callers migrate to narrower imports.
  */
+
 import { calculateNormalizedPower as calculateNormalizedPowerFromStream } from "./calculations/normalized-power";
 import type { TrainingQualityProfile } from "./calculations/training-quality";
 import {
@@ -31,6 +32,7 @@ import {
   getTrainingIntensityZone as getTrainingIntensityZoneFromLoad,
 } from "./load/tss";
 import type { ProfileWithDob } from "./profile";
+import { calculateDateOfBirthAge } from "./profile/date-of-birth";
 import { calculateHRZoneDistribution } from "./zones/hr";
 import { calculatePowerZoneDistribution } from "./zones/power";
 
@@ -288,14 +290,7 @@ export function calculateCalories(
 
 export function calculateAge(dob: string | null): number | undefined {
   if (!dob) return undefined;
-  const birthDate = new Date(dob);
-  const today = new Date();
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const m = today.getMonth() - birthDate.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
-    age--;
-  }
-  return age;
+  return calculateDateOfBirthAge(dob) ?? undefined;
 }
 
 // ================================

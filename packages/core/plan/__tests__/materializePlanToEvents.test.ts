@@ -23,6 +23,7 @@ describe("materializePlanToEvents", () => {
         ],
       },
       "2026-04-06",
+      "UTC",
     );
 
     expect(events).toEqual([
@@ -43,7 +44,7 @@ describe("materializePlanToEvents", () => {
     ]);
   });
 
-  it("keeps canonical date-only offsets and UTC wall times stable across a DST boundary", () => {
+  it("materializes local timed and all-day instants across a DST boundary", () => {
     const events = materializePlanToEvents(
       {
         version: 1,
@@ -59,12 +60,13 @@ describe("materializePlanToEvents", () => {
             event_overrides: { start_time: "07:30" },
           },
           {
-            offset_days: 3,
+            offset_days: 1,
             activity_plan_id: activityPlanIdB,
           },
         ],
       },
       "2026-03-07",
+      "America/Los_Angeles",
     );
 
     expect(
@@ -78,24 +80,24 @@ describe("materializePlanToEvents", () => {
     ).toEqual([
       {
         scheduled_date: "2026-03-08",
-        starts_at: "2026-03-08T07:30:00.000Z",
+        starts_at: "2026-03-08T08:00:00.000Z",
+        ends_at: "2026-03-09T07:00:00.000Z",
+        all_day: true,
+        timezone: "America/Los_Angeles",
+      },
+      {
+        scheduled_date: "2026-03-08",
+        starts_at: "2026-03-08T14:30:00.000Z",
         ends_at: null,
         all_day: false,
-        timezone: "UTC",
+        timezone: "America/Los_Angeles",
       },
       {
         scheduled_date: "2026-03-09",
-        starts_at: "2026-03-09T07:30:00.000Z",
+        starts_at: "2026-03-09T14:30:00.000Z",
         ends_at: null,
         all_day: false,
-        timezone: "UTC",
-      },
-      {
-        scheduled_date: "2026-03-10",
-        starts_at: "2026-03-10T00:00:00.000Z",
-        ends_at: "2026-03-11T00:00:00.000Z",
-        all_day: true,
-        timezone: "UTC",
+        timezone: "America/Los_Angeles",
       },
     ]);
   });
@@ -109,6 +111,7 @@ describe("materializePlanToEvents", () => {
         sessions: [{ offset_days: 4, activity_plan_id: activityPlanIdA }],
       },
       "2026-04-06",
+      "UTC",
     );
 
     expect(events[0]).toMatchObject({
@@ -148,6 +151,7 @@ describe("materializePlanToEvents", () => {
         ],
       },
       "2026-04-06",
+      "UTC",
     );
 
     expect(events).toEqual([
@@ -184,6 +188,7 @@ describe("materializePlanToEvents", () => {
         ],
       },
       "2026-04-06",
+      "UTC",
     );
 
     expect(events).toEqual([
@@ -230,6 +235,7 @@ describe("materializePlanToEvents", () => {
         ],
       },
       "2026-04-06",
+      "UTC",
     );
 
     expect(events).toHaveLength(2);
@@ -257,6 +263,7 @@ describe("materializePlanToEvents", () => {
         ],
       },
       "2026-04-06",
+      "UTC",
     );
 
     expect(events).toHaveLength(2);
@@ -295,6 +302,7 @@ describe("materializePlanToEvents", () => {
         ],
       },
       "2026-04-06",
+      "UTC",
     );
 
     expect(events).toEqual([
@@ -321,6 +329,7 @@ describe("materializePlanToEvents", () => {
         ],
       },
       "2026-04-06",
+      "UTC",
     );
 
     expect(events).toEqual([
@@ -345,6 +354,7 @@ describe("materializePlanToEvents", () => {
         ],
       },
       "2026-04-06",
+      "UTC",
     );
 
     expect(events).toEqual([

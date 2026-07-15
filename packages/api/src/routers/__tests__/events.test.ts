@@ -115,6 +115,7 @@ function createEventRow(overrides: Record<string, unknown> = {}) {
     updated_at: "2026-03-01T00:00:00.000Z",
     starts_at: "2026-03-02T00:00:00.000Z",
     ends_at: "2026-03-03T00:00:00.000Z",
+    scheduled_date: "2026-03-02",
     activity_plan: null,
     ...overrides,
   };
@@ -235,6 +236,7 @@ function createWriteRepository(params: {
       all_day: input.allDay,
       timezone: input.timezone,
       starts_at: input.startsAt,
+      scheduled_date: input.scheduledDate,
       ends_at: input.endsAt,
       status: input.status,
       activity_plan_id: input.activityPlanId,
@@ -643,6 +645,7 @@ describe("eventsRouter generalization", () => {
         data: createEventRow({
           starts_at: "2026-03-12T00:00:00.000Z",
           ends_at: "2026-03-13T00:00:00.000Z",
+          scheduled_date: "2026-03-12",
           event_type: "planned",
           activity_plan_id: "11111111-1111-4111-8111-111111111111",
         }),
@@ -670,6 +673,7 @@ describe("eventsRouter generalization", () => {
     expect((insertCall?.payload as any).all_day).toBe(true);
     expect((insertCall?.payload as any).starts_at).toBe("2026-03-12T00:00:00.000Z");
     expect((insertCall?.payload as any).ends_at).toBe("2026-03-13T00:00:00.000Z");
+    expect((insertCall?.payload as any).scheduled_date).toBe("2026-03-12");
     expect((insertCall?.payload as any).recurrence_rule).toBeNull();
     expect(result.scheduled_date).toBe("2026-03-12");
   });
@@ -719,6 +723,48 @@ describe("eventsRouter generalization", () => {
     ).rejects.toThrow("Route not found or not accessible");
 
     expect(callLog.some((call) => call.operation === "insert")).toBe(false);
+  });
+
+  it("derives a non-UTC custom event schedule date and preserves persisted dates on reads", async () => {
+    const { caller, callLog } = createCaller({
+      events: [
+        {
+          data: createEventRow({
+            event_type: "custom",
+            timezone: "America/Los_Angeles",
+            starts_at: "2026-03-12T01:30:00.000Z",
+            scheduled_date: "2026-03-11",
+          }),
+          error: null,
+        },
+        {
+          data: createEventRow({
+            event_type: "custom",
+            timezone: "America/Los_Angeles",
+            starts_at: "2026-03-12T01:30:00.000Z",
+            scheduled_date: "2026-03-11",
+          }),
+          error: null,
+        },
+      ],
+      integrations: { data: null, error: null },
+    });
+
+    await caller.create({
+      event_type: "custom",
+      title: "Local evening event",
+      starts_at: "2026-03-12T01:30:00.000Z",
+      all_day: false,
+      timezone: "America/Los_Angeles",
+      lifecycle: { status: "scheduled" },
+      read_only: false,
+    });
+    const event = await caller.getById({ id: "00000000-0000-4000-8000-000000000001" });
+
+    expect(
+      (callLog.find((call) => call.operation === "insert")?.payload as any).scheduled_date,
+    ).toBe("2026-03-11");
+    expect(event.scheduled_date).toBe("2026-03-11");
   });
 
   it("create accepts planned event recurrence and materializes occurrences", async () => {
@@ -1615,6 +1661,7 @@ describe("eventsRouter generalization", () => {
             event_type: "planned",
             activity_plan_id: "22222222-2222-4222-8222-222222222222",
             starts_at: "2026-03-10T00:00:00.000Z",
+            scheduled_date: "2026-03-10",
           }),
         ],
         error: null,

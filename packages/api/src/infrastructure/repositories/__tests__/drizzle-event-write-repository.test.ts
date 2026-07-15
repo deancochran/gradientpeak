@@ -16,6 +16,7 @@ function eventInput(overrides: Partial<CreateOwnedEventInput> = {}): CreateOwned
     recurrenceTimezone: null,
     routeId: null,
     sourceProvider: "trainingpeaks",
+    scheduledDate: "2026-07-13",
     startsAt: "2026-07-13T10:00:00.000Z",
     status: "scheduled",
     timezone: "UTC",

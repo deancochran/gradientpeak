@@ -30,6 +30,7 @@ function createEventRow(overrides: Record<string, unknown> = {}) {
     updated_at: new Date("2026-04-02T11:00:00.000Z"),
     starts_at: new Date("2026-04-15T07:00:00.000Z"),
     ends_at: new Date("2026-04-15T08:15:00.000Z"),
+    scheduled_date: "2026-04-15",
     ...overrides,
   } as const;
 }
@@ -532,6 +533,36 @@ describe("drizzle-event-read-repository", () => {
     });
   });
 
+  it("preserves persisted schedule dates and derives legacy null dates in the event timezone", async () => {
+    const repository = createEventReadRepository(
+      createQueryMapDbMock({
+        events: {
+          data: [
+            createEventRow({
+              timezone: "America/Los_Angeles",
+              starts_at: new Date("2026-04-15T01:00:00.000Z"),
+              scheduled_date: "2026-04-20",
+            }),
+            createEventRow({
+              id: "event-legacy",
+              timezone: "America/Los_Angeles",
+              starts_at: new Date("2026-04-15T01:00:00.000Z"),
+              scheduled_date: null,
+            }),
+          ],
+          error: null,
+        },
+      }).db,
+    );
+
+    await expect(
+      repository.listOwnedEvents({ profileId: "profile-1", limit: 10, includeAdhoc: true }),
+    ).resolves.toMatchObject([
+      { id: "event-1", scheduled_date: "2026-04-20" },
+      { id: "event-legacy", scheduled_date: "2026-04-14" },
+    ]);
+  });
+
   it("reads consolidated schedule-link values from the event", async () => {
     const repository = createEventReadRepository(
       createQueryMapDbMock({
@@ -597,10 +628,13 @@ describe("drizzle-event-read-repository", () => {
     expect(whereSql).toContain('"events"."event_type" in ($2, $3)');
     expect(whereSql).toContain('"events"."training_plan_id" is not null');
     expect(whereSql).toContain('"events"."activity_plan_id" = $4');
-    expect(whereSql).toContain('"events"."starts_at" >= $5');
-    expect(whereSql).toContain('"events"."starts_at" < $6');
-    expect(whereSql).toContain('"events"."starts_at" > $7');
-    expect(whereSql).toContain('"events"."starts_at" = $8 and "events"."id" > $9');
-    expect(whereSql).toContain('"activity_plans"."activity_category" = $10');
+    expect(whereSql).toContain('"events"."scheduled_date" >=');
+    expect(whereSql).toContain('"events"."scheduled_date" <');
+    expect(whereSql).toContain('"events"."scheduled_date" is not null');
+    expect(whereSql).toContain('"events"."starts_at" >=');
+    expect(whereSql).toContain('"events"."starts_at" <');
+    expect(whereSql).toContain('"events"."starts_at" >');
+    expect(whereSql).toContain('"events"."id" >');
+    expect(whereSql).toContain('"activity_plans"."activity_category" =');
   });
 });

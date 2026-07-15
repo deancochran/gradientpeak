@@ -35,6 +35,7 @@ import {
   View,
 } from "react-native";
 import { z } from "zod";
+import { toDateKey } from "@/lib/calendar/dateMath";
 import { AvailabilityConfigSection } from "./AvailabilityConfigSection";
 import { BehaviorControlsConfigSection } from "./BehaviorControlsConfigSection";
 import { ConstraintsConfigSection } from "./ConstraintsConfigSection";
@@ -190,7 +191,7 @@ const createTargetByType = (targetType: GoalTargetType): GoalTargetFormData => {
 const createEmptyGoal = (targetDate?: string): GoalFormData => ({
   id: createLocalId(),
   name: "",
-  targetDate: targetDate ?? new Date().toISOString().split("T")[0] ?? "",
+  targetDate: targetDate ?? toDateKey(new Date()),
   priority: 5,
   targets: [createEmptyTarget()],
 });
@@ -618,8 +619,7 @@ export function SinglePageForm({
   };
 
   const addGoal = () => {
-    const referenceTargetDate =
-      formData.goals[0]?.targetDate ?? new Date().toISOString().split("T")[0] ?? "";
+    const referenceTargetDate = formData.goals[0]?.targetDate ?? toDateKey(new Date());
 
     const newGoalIndex = formData.goals.length + 1;
     const newGoal = {

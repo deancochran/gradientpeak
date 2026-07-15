@@ -1,4 +1,5 @@
 import type { ProfileWithDob } from "../profile";
+import { calculateDateOfBirthAge } from "../profile/date-of-birth";
 import type { CanonicalSport } from "../schemas/sport";
 import { getSportTypicalSpeed } from "../sports";
 import { estimatePowerZoneDistribution, getHrZoneIndexFromThresholdPercent } from "../zones";
@@ -242,16 +243,7 @@ export function estimateZoneDistribution(
  * Calculate age from date of birth string
  */
 export function calculateAgeFromDOB(dob: string, asOf: Date): number {
-  const birthDate = new Date(dob);
-  const today = asOf;
-  let age = today.getUTCFullYear() - birthDate.getUTCFullYear();
-  const monthDiff = today.getUTCMonth() - birthDate.getUTCMonth();
-
-  if (monthDiff < 0 || (monthDiff === 0 && today.getUTCDate() < birthDate.getUTCDate())) {
-    age--;
-  }
-
-  return age;
+  return calculateDateOfBirthAge(dob, asOf) ?? Number.NaN;
 }
 
 /**

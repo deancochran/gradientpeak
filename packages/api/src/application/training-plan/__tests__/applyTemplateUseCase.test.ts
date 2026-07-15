@@ -46,6 +46,11 @@ describe("applyTrainingPlanTemplateUseCase", () => {
       return result;
     });
     const db = {
+      select: vi.fn(() => ({
+        from: () => ({
+          where: () => ({ limit: async () => [{ planningTimezone: "America/New_York" }] }),
+        }),
+      })),
       execute: vi.fn(async () => ({
         rows: [
           {

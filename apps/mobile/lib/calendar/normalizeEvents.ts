@@ -38,6 +38,7 @@ export interface CalendarEvent {
   description?: string | null;
   notes?: string | null;
   scheduled_date?: string | null;
+  timezone?: string | null;
   starts_at?: string | null;
   ends_at?: string | null;
   all_day?: boolean | null;

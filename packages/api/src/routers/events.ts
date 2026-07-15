@@ -5,6 +5,8 @@ import {
   eventMutationScopeSchema,
   type eventTypeInputSchema,
   eventUpdateSchema,
+  getScheduledDateKey,
+  materializeRecurrenceOccurrences,
   plannedActivityCreateSchema,
   plannedActivityUpdateSchema,
 } from "@repo/core";
@@ -99,6 +101,7 @@ type NormalizedEventCreateInput = {
   recurrence: LegacyPlannedCreateInput["recurrence"] | null;
   routeId: string | null;
   sourceProvider: string | null;
+  scheduledDate: string;
   startsAt: string;
   status: PublicEventStatus;
   timezone: string;
@@ -146,6 +149,7 @@ const _plannedEventSelect = `
   updated_at,
   starts_at,
   ends_at,
+  scheduled_date,
   activity_plan:activity_plans (*)
 `;
 
@@ -174,6 +178,7 @@ type PlannedEventRecord = Omit<
     | "updated_at"
     | "starts_at"
     | "ends_at"
+    | "scheduled_date"
   >,
   "created_at" | "updated_at" | "starts_at" | "ends_at" | "original_starts_at"
 > & {
@@ -294,6 +299,7 @@ type NormalizedEventUpdatePatch = {
   timezone?: string;
   starts_at?: string;
   ends_at?: string | null;
+  scheduled_date?: string;
 };
 
 function normalizeEventUpdatePatch(input: EventUpdateMutationInput): {
@@ -315,7 +321,7 @@ function normalizeEventUpdatePatch(input: EventUpdateMutationInput): {
 
   return {
     patch: input.patch as NormalizedEventUpdatePatch,
-    scheduledDate: undefined,
+    scheduledDate: "scheduled_date" in input.patch ? input.patch.scheduled_date : undefined,
   };
 }
 
@@ -469,10 +475,12 @@ function buildMaterializedRecurrenceOccurrences(input: {
     throw new TRPCError({ code: "BAD_REQUEST", message: "Recurrence interval must be positive" });
   }
 
-  const start = new Date(input.startsAt);
-  const end = input.endsAt ? new Date(input.endsAt) : null;
-  const durationMs = end ? end.getTime() - start.getTime() : null;
-  const startDay = weekdayToRRuleDay[start.getUTCDay()];
+  const startDay =
+    weekdayToRRuleDay[
+      new Date(
+        `${getScheduledDateKey(input.startsAt, input.recurrence.timezone)}T00:00:00.000Z`,
+      ).getUTCDay()
+    ];
   const byDay = tokens.get("BYDAY") ?? startDay;
   if (byDay !== startDay) {
     throw new TRPCError({
@@ -491,21 +499,15 @@ function buildMaterializedRecurrenceOccurrences(input: {
   }
 
   const untilDateKey = untilToken ? parseRRuleUntilDateKey(untilToken) : null;
-  const occurrences: MaterializedRecurrenceOccurrence[] = [];
-
-  for (let index = 0; index < count; index++) {
-    const occurrenceStart = new Date(start);
-    occurrenceStart.setUTCDate(start.getUTCDate() + index * interval * 7);
-    const occurrenceKey = occurrenceStart.toISOString().slice(0, 10);
-    if (untilDateKey && occurrenceKey > untilDateKey) break;
-
-    occurrences.push({
-      startsAt: occurrenceStart.toISOString(),
-      endsAt:
-        durationMs === null ? null : new Date(occurrenceStart.getTime() + durationMs).toISOString(),
-      occurrenceKey,
-    });
-  }
+  const occurrences = materializeRecurrenceOccurrences({
+    startsAt: input.startsAt,
+    endsAt: input.endsAt,
+    frequency,
+    interval,
+    count,
+    untilDateKey,
+    recurrenceTimeZone: input.recurrence.timezone,
+  });
 
   if (occurrences.length === 0) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "Recurrence creates no occurrences" });
@@ -545,7 +547,7 @@ function mapEvent<T extends PlannedEventRecord>(event: T): MappedEvent<T> {
     activity_plan: activityPlan,
     event_type: toCoreEventType(legacyEventType),
     legacy_event_type: legacyEventType,
-    scheduled_date: toDateKey(event.starts_at),
+    scheduled_date: event.scheduled_date ?? getScheduledDateKey(event.starts_at, event.timezone),
   };
 }
 
@@ -827,6 +829,7 @@ function normalizeEventCreateInput(input: EventCreateMutationInput): NormalizedE
       recurrence: input.recurrence ?? null,
       routeId: input.route_id ?? null,
       sourceProvider: "source" in input ? (input.source?.provider ?? null) : null,
+      scheduledDate: input.scheduled_date,
       startsAt: toDayStartIso(input.scheduled_date),
       status,
       timezone: "UTC",
@@ -846,6 +849,7 @@ function normalizeEventCreateInput(input: EventCreateMutationInput): NormalizedE
       recurrence: input.recurrence ?? null,
       routeId: input.route_id ?? null,
       sourceProvider: null,
+      scheduledDate: input.scheduled_date,
       startsAt: toDayStartIso(input.scheduled_date),
       status,
       timezone: input.timezone,
@@ -864,6 +868,7 @@ function normalizeEventCreateInput(input: EventCreateMutationInput): NormalizedE
     recurrence: input.recurrence ?? null,
     routeId: null,
     sourceProvider: null,
+    scheduledDate: input.scheduled_date ?? getScheduledDateKey(input.starts_at, input.timezone),
     startsAt: toCanonicalInstantIso(input.starts_at),
     status,
     timezone: input.timezone,

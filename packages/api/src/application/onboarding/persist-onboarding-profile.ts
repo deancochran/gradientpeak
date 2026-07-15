@@ -35,6 +35,7 @@ export async function persistOnboardingProfile({
       full_name: input.full_name,
       gender: input.baseline_field_sources?.gender === "cleared" ? null : input.gender,
       onboarded: true,
+      planning_timezone: input.planning_timezone,
       username: input.username,
       updated_at: new Date(),
     })

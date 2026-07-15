@@ -1,4 +1,4 @@
-import type { EventLifecycle, EventRecurrence } from "@repo/core";
+import { type EventLifecycle, type EventRecurrence, getScheduledDateKey } from "@repo/core";
 import type { PublicEventStatus } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import type { Context } from "../../context";
@@ -33,6 +33,7 @@ type NormalizedEventUpdatePatch = {
   timezone?: string;
   starts_at?: string;
   ends_at?: string | null;
+  scheduled_date?: string;
 };
 
 type MaterializedOccurrence = {
@@ -56,6 +57,7 @@ type EventRecord = {
   route_id?: string | null;
   series_id: string | null;
   source_provider: string | null;
+  scheduled_date: string | null;
   starts_at: string;
   status: PublicEventStatus;
   title: string;
@@ -163,7 +165,8 @@ export async function updateEventUseCase<
 
   const hasScheduledDateMove =
     scheduledDate !== undefined &&
-    dependencies.toDateKey(scheduledDate) !== dependencies.toDateKey(existingEvent.starts_at);
+    scheduledDate !==
+      (existingEvent.scheduled_date ?? dependencies.toDateKey(existingEvent.starts_at));
   const hasStartsAtMove = dependencies.hasInstantChanged(patch.starts_at, existingEvent.starts_at);
   const hasEndsAtMove = dependencies.hasInstantChanged(patch.ends_at, existingEvent.ends_at);
   const isMoveRescheduleUpdate = hasScheduledDateMove || hasStartsAtMove || hasEndsAtMove;
@@ -276,6 +279,13 @@ export async function updateEventUseCase<
     }
   }
 
+  const nextAllDay = patch.all_day !== undefined ? Boolean(patch.all_day) : existingEvent.all_day;
+  if (scheduledDate !== undefined && !nextAllDay && patch.starts_at === undefined) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Timed event schedule updates must include starts_at",
+    });
+  }
   const eventUpdates: Record<string, unknown> = {
     ...(patch.event_type !== undefined
       ? { event_type: dependencies.toDbEventType(patch.event_type) }
@@ -293,6 +303,12 @@ export async function updateEventUseCase<
     ...(patch.training_plan_id !== undefined ? { training_plan_id: patch.training_plan_id } : {}),
     ...(patch.starts_at !== undefined ? { starts_at: patch.starts_at } : {}),
     ...(patch.ends_at !== undefined ? { ends_at: patch.ends_at } : {}),
+    scheduled_date:
+      scheduledDate ??
+      getScheduledDateKey(
+        patch.starts_at ?? existingEvent.starts_at,
+        patch.timezone ?? existingEvent.timezone,
+      ),
     ...(patch.recurrence !== undefined
       ? {
           recurrence_rule: patch.recurrence?.rule ?? null,
@@ -301,12 +317,11 @@ export async function updateEventUseCase<
       : {}),
   };
 
-  if (scheduledDate !== undefined) {
+  if (scheduledDate !== undefined && nextAllDay) {
     eventUpdates.starts_at = dependencies.toDayStartIso(scheduledDate);
     eventUpdates.ends_at = dependencies.toNextDayStartIso(scheduledDate);
+    eventUpdates.scheduled_date = scheduledDate;
   }
-
-  const nextAllDay = patch.all_day !== undefined ? Boolean(patch.all_day) : existingEvent.all_day;
 
   if (
     nextAllDay &&
@@ -376,6 +391,10 @@ export async function updateEventUseCase<
             title: representative.title,
             allDay: representative.all_day,
             timezone: representative.timezone,
+            scheduledDate:
+              representative.event_type === "planned"
+                ? occurrence.startsAt.slice(0, 10)
+                : getScheduledDateKey(occurrence.startsAt, representative.timezone),
             startsAt: occurrence.startsAt,
             endsAt: occurrence.endsAt,
             status: representative.status,

@@ -12,6 +12,8 @@
 
 import { z } from "zod";
 import { PROFILE_PERFORMANCE_THRESHOLD_BOUNDS } from "../athlete-inputs/profile-metrics";
+import { ianaTimezoneSchema } from "../athlete-intelligence/planning-context";
+import { isValidDateOfBirth } from "../profile/date-of-birth";
 
 /**
  * Experience level for onboarding.
@@ -105,18 +107,14 @@ export const onboardingStep1Schema = z.object({
   experience_level: experienceLevelSchema.default("skip"),
 
   // Basic profile data
-  dob: z
-    .string()
-    .datetime({
-      message: "Date of birth must be a valid ISO 8601 datetime string",
-    })
-    .optional(),
+  dob: z.string().refine(isValidDateOfBirth, "Date of birth must use YYYY-MM-DD").optional(),
   weight_kg: z
     .number()
     .min(30, { message: "Weight must be at least 30kg" })
     .max(300, { message: "Weight must be at most 300kg" })
     .optional(),
   gender: z.enum(["male", "female", "other"]).optional(),
+  planning_timezone: ianaTimezoneSchema.nullable().optional(),
 });
 
 export type OnboardingStep1 = z.infer<typeof onboardingStep1Schema>;

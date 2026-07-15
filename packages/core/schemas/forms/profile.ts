@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { ianaTimezoneSchema } from "../../athlete-intelligence/planning-context";
+import { calculateDateOfBirthAge, isValidDateOfBirth } from "../../profile/date-of-birth";
 import { preferredUnitSystemSchema } from "../../units";
 import { onboardingStep1Schema } from "../onboarding";
 import {
@@ -202,16 +204,14 @@ export const optionalGenderSchema = z.preprocess(emptyStringToNull, genderSchema
  */
 export const dobSchema = z
   .string()
-  .refine((val) => !Number.isNaN(Date.parse(val)), "Invalid date of birth")
+  .refine(isValidDateOfBirth, "Invalid date of birth")
   .refine((val) => {
-    const dob = new Date(val);
-    const age = Math.floor((Date.now() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
-    return age >= 13;
+    const age = calculateDateOfBirthAge(val);
+    return age !== null && age >= 13;
   }, "You must be at least 13 years old")
   .refine((val) => {
-    const dob = new Date(val);
-    const age = Math.floor((Date.now() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
-    return age <= 120;
+    const age = calculateDateOfBirthAge(val);
+    return age !== null && age <= 120;
   }, "Invalid date of birth");
 
 /**
@@ -296,8 +296,9 @@ export const profilePatchInputSchema = z
     avatar_url: z.string().nullable().optional(),
     cover_url: z.string().nullable().optional(),
     bio: z.string().max(500).nullable().optional(),
-    dob: z.string().nullable().optional(),
+    dob: z.string().refine(isValidDateOfBirth, "Invalid date of birth").nullable().optional(),
     preferred_units: preferredUnitSystemSchema.nullable().optional(),
+    planning_timezone: ianaTimezoneSchema.nullable().optional(),
     language: z.string().max(10).nullable().optional(),
     is_public: z.boolean().optional(),
   })

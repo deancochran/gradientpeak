@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getActivityEffortObservationStatus } from "@repo/core/athlete-inputs";
+import { formatDateOfBirth, isValidDateOfBirth, parseDateOfBirth } from "@repo/core/profile";
 import type {
   DrizzleDbClient,
   IntegrationCredentialRow,
@@ -526,7 +527,8 @@ export class OnboardingProviderEnrichmentService {
 
     for (const item of imports) {
       if (item.field === "dob" && typeof item.value === "string") {
-        profileUpdate.dob = new Date(`${item.value}T00:00:00.000Z`);
+        const dob = parseDateOfBirth(item.value);
+        if (dob) profileUpdate.dob = dob;
       }
       if (
         item.field === "gender" &&
@@ -604,7 +606,8 @@ export class OnboardingProviderEnrichmentService {
 
     for (const item of imports) {
       if (item.field === "dob" && typeof item.value === "string") {
-        const importedDob = new Date(`${item.value}T00:00:00.000Z`);
+        const importedDob = parseDateOfBirth(item.value);
+        if (!importedDob) continue;
         if (!profile?.dob) {
           profileUpdate.dob = importedDob;
           fieldsFilled.push("dob");
@@ -990,9 +993,7 @@ function normalizeFtp(ftp: number | null | undefined) {
 }
 
 function isDateOnlyString(value: unknown) {
-  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const date = new Date(`${value}T00:00:00.000Z`);
-  return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
+  return typeof value === "string" && isValidDateOfBirth(value);
 }
 
 function parseSyncMetadata(value: unknown): SyncMetadata {
@@ -1054,5 +1055,5 @@ function isTimeoutError(error: unknown) {
 }
 
 function toDateOnlyString(date: Date) {
-  return date.toISOString().slice(0, 10);
+  return formatDateOfBirth(date);
 }

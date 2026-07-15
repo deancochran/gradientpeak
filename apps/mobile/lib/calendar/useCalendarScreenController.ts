@@ -4,6 +4,7 @@ import { Alert } from "react-native";
 import { getMonthAnchor } from "@/lib/calendar/dateMath";
 import { isRecurringEvent } from "@/lib/calendar/eventPresentation";
 import { buildEditEventRoute, buildOpenEventRoute } from "@/lib/calendar/eventRouting";
+import { buildScheduledInstant } from "@/lib/calendar/eventSchedule";
 import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
 import {
   buildCalendarQueryWindow,
@@ -24,8 +25,10 @@ type CreateManualEventInput = {
   createType: ManualEventCreateType;
   title: string;
   notes: string;
+  scheduledDate: string;
   startsAt: Date;
   allDay: boolean;
+  timezone: string;
   recurrence?: { rule: string; timezone: string };
 };
 
@@ -54,6 +57,7 @@ type UseCalendarScreenControllerParams = {
     title: string;
     starts_at: string;
     all_day: boolean;
+    scheduled_date: string;
     timezone: string;
     notes?: string;
     recurrence?: { rule: string; timezone: string };
@@ -301,21 +305,42 @@ export function useCalendarScreenController({
   );
 
   const submitManualCreate = useCallback(
-    ({ createType, title, notes, startsAt, allDay, recurrence }: CreateManualEventInput) => {
+    ({
+      createType,
+      title,
+      notes,
+      scheduledDate,
+      startsAt,
+      allDay,
+      timezone,
+      recurrence,
+    }: CreateManualEventInput) => {
       const trimmedTitle = title.trim();
       const fallbackTitle = createType === "race_target" ? "Race target" : "Custom event";
 
-      createEvent({
-        event_type: createType,
-        title: trimmedTitle || fallbackTitle,
-        starts_at: startsAt.toISOString(),
-        all_day: allDay,
-        timezone: "UTC",
-        notes: notes.trim() || undefined,
-        recurrence,
-        lifecycle: { status: "scheduled" },
-        read_only: false,
-      });
+      try {
+        createEvent({
+          event_type: createType,
+          title: trimmedTitle || fallbackTitle,
+          starts_at: allDay
+            ? `${scheduledDate}T00:00:00.000Z`
+            : buildScheduledInstant(scheduledDate, startsAt, timezone),
+          all_day: allDay,
+          scheduled_date: scheduledDate,
+          timezone,
+          notes: notes.trim() || undefined,
+          recurrence,
+          lifecycle: { status: "scheduled" },
+          read_only: false,
+        });
+      } catch (error) {
+        Alert.alert(
+          "Choose another time",
+          error instanceof Error
+            ? error.message
+            : "This time cannot be scheduled in the event time zone.",
+        );
+      }
     },
     [createEvent],
   );

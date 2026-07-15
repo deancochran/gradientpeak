@@ -53,6 +53,7 @@ function createProfileRow(overrides: Partial<Record<string, unknown>> = {}) {
     is_public: true,
     username: "athlete",
     preferred_units: "metric",
+    planning_timezone: "America/Los_Angeles",
     language: "en",
     ...overrides,
   };
@@ -193,6 +194,7 @@ describe("profilesRouter", () => {
     expect(result.threshold_hr).toBe(176);
     expect(result.ftp).toBe(285);
     expect(result.created_at).toBe("2026-04-01T10:00:00.000Z");
+    expect(result.planning_timezone).toBe("America/Los_Angeles");
   });
 
   it("uses the canonical FTP source precedence for direct profile metrics", async () => {
@@ -297,10 +299,11 @@ describe("profilesRouter", () => {
       avatar_url: null,
       cover_url: "https://example.com/updated-cover.png",
       is_public: false,
-      dob: "1991-02-03T00:00:00.000Z",
+      dob: "1991-02-03",
       full_name: "Updated Athlete",
       username: "updated_athlete",
       language: "fr",
+      planning_timezone: "Pacific/Auckland",
       preferred_units: "imperial",
       weight_kg: 68.2,
       threshold_hr: 182,
@@ -321,10 +324,11 @@ describe("profilesRouter", () => {
         is_public: false,
         username: "updated_athlete",
         language: "fr",
+        planning_timezone: "Pacific/Auckland",
         preferred_units: "imperial",
       },
     });
-    expect(calls.updates[0]?.values.dob).toBeInstanceOf(Date);
+    expect(calls.updates[0]?.values.dob).toEqual(new Date("1991-02-03T00:00:00.000Z"));
     expect(calls.inserts.map((entry) => entry.table)).toEqual([
       "profileMetrics",
       "profileMetrics",
@@ -338,6 +342,15 @@ describe("profilesRouter", () => {
     const { caller, calls } = createCaller();
 
     await expect(caller.update({ preferred_units: "customary" } as never)).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+    expect(calls.updates).toHaveLength(0);
+  });
+
+  it("rejects invalid planning timezones before persistence", async () => {
+    const { caller, calls } = createCaller();
+
+    await expect(caller.update({ planning_timezone: "PST" } as never)).rejects.toMatchObject({
       code: "BAD_REQUEST",
     });
     expect(calls.updates).toHaveLength(0);

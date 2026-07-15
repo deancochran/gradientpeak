@@ -105,9 +105,11 @@ describe("CalendarManualCreateModal", () => {
       expect.objectContaining({
         createType: "custom",
         title: "Tuesday mobility",
+        scheduledDate: "2026-06-02",
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
         recurrence: {
           rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=4;BYDAY=TU",
-          timezone: "UTC",
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
         },
       }),
     );
