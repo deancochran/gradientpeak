@@ -3,6 +3,7 @@
 import { Text } from "@repo/ui/components/text";
 import { ToggleGroup, ToggleGroupItem } from "@repo/ui/components/toggle-group";
 import { View } from "react-native";
+import { toDateKey } from "@/lib/calendar/dateMath";
 
 export type TimeRange = "1M" | "3M" | "6M" | "12M" | "ALL";
 
@@ -91,7 +92,7 @@ export function getDateRangeFromTimeRange(range: TimeRange): {
   end_date: string;
 } {
   const today = new Date();
-  const endDate = today.toISOString().split("T")[0];
+  const endDate = toDateKey(today);
 
   let startDate: Date;
 
@@ -106,7 +107,7 @@ export function getDateRangeFromTimeRange(range: TimeRange): {
   }
 
   return {
-    start_date: startDate.toISOString().split("T")[0],
+    start_date: toDateKey(startDate),
     end_date: endDate,
   };
 }

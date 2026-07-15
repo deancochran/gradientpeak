@@ -251,7 +251,7 @@ export function materializeSystemPlanScenario(scenario: SystemPlanContractScenar
       ? ((plan.structure as { start_date: string }).start_date ?? scenario.startDate)
       : scenario.startDate;
 
-  const materializedSessions = materializePlanToEvents(plan.structure, startDate)
+  const materializedSessions = materializePlanToEvents(plan.structure, startDate, "UTC")
     .filter((event) => event.event_type === "planned")
     .map((event) => {
       const template = event.activity_plan_id

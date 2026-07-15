@@ -311,7 +311,6 @@ async function project(model: AthleteIntelligenceModelInput) {
     profileId,
     goalId,
     asOf,
-    planningTimezone: "UTC",
   });
 }
 
@@ -688,10 +687,10 @@ describe("projectAthleteIntelligence", () => {
     expect(projection.feasibility.requiredSessionCoverage.estimate).toBeGreaterThan(0);
   });
 
-  it("requires request planning timezone without an event-zone or materialized-model fallback", async () => {
-    const noPlanningZone = canonicalModel();
-    const event = first(noPlanningZone.plannedSchedule, "Planned event");
-    noPlanningZone.plannedSchedule[0] = {
+  it("uses the persisted planning timezone rather than an event timezone", async () => {
+    const modelWithRecurringEvent = canonicalModel();
+    const event = first(modelWithRecurringEvent.plannedSchedule, "Planned event");
+    modelWithRecurringEvent.plannedSchedule[0] = {
       ...event,
       recurrence: {
         frequency: "weekly",
@@ -701,19 +700,17 @@ describe("projectAthleteIntelligence", () => {
       },
     };
 
-    const parsed = athleteIntelligenceModelInputSchema.parse(noPlanningZone);
+    const parsed = athleteIntelligenceModelInputSchema.parse(modelWithRecurringEvent);
     const projection = await projectAthleteIntelligence({
       modelReader: readerFor(parsed),
       profileId,
       goalId,
       asOf,
     });
-    expect(projection.feasibility.compatibleScheduledMinutes).toMatchObject({
-      state: "unsupported",
-      missingDataState: "unsupported_input",
-      reasonCodes: expect.arrayContaining(["planning_timezone_required"]),
-    });
-    expect(projection.runtimeContext.stateVector.limitations).toContain(
+    expect(projection.feasibility.compatibleScheduledMinutes.reasonCodes).not.toContain(
+      "planning_timezone_required",
+    );
+    expect(projection.runtimeContext.stateVector.limitations).not.toContain(
       "planning_timezone_required",
     );
     expect(parsed.planningTimezone).toBe("UTC");
@@ -732,7 +729,7 @@ describe("projectAthleteIntelligence", () => {
         },
       ],
     ],
-  ])("keeps date-sensitive calendar results unsupported without request timezone: %s", async (_name, plannedSchedule) => {
+  ])("uses persisted timezone for date-sensitive calendar results: %s", async (_name, plannedSchedule) => {
     const model = athleteIntelligenceModelInputSchema.parse({
       ...canonicalModel(),
       planningTimezone: "Asia/Tokyo",
@@ -750,24 +747,17 @@ describe("projectAthleteIntelligence", () => {
       projection.feasibility.compatibleScheduledMinutes,
       projection.feasibility.scheduleCoverage,
     ]) {
-      expect(value).toMatchObject({
-        state: "unsupported",
-        reasonCodes: ["planning_timezone_required"],
-      });
+      expect(value.reasonCodes).not.toContain("planning_timezone_required");
     }
-    expect(projection.runtimeContext.stateVector.calendarContext.coverage.state).not.toBe(
-      "complete",
-    );
   });
 
-  it("uses a valid request timezone as the sole planning override", async () => {
+  it("does not accept a caller planning-timezone override", async () => {
     const model = canonicalModel();
     const projection = await projectAthleteIntelligence({
       modelReader: readerFor(model),
       profileId,
       goalId,
       asOf,
-      planningTimezone: "America/New_York",
     });
     expect(projection.feasibility.compatibleScheduledMinutes.reasonCodes).not.toContain(
       "planning_timezone_required",

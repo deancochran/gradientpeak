@@ -13,12 +13,13 @@ import {
 } from "@/components/shared";
 import { HeaderTextAction } from "@/components/shared/HeaderAction";
 import { EmptyState, ErrorState, LoadingState } from "@/components/shared/ScreenState";
+import { toDateKey } from "@/lib/calendar/dateMath";
 import { ROUTES } from "@/lib/constants/routes";
 import { useProfileGoals } from "@/lib/hooks/useProfileGoals";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 function getDateKey(value: Date) {
-  return value.toISOString().split("T")[0] ?? "";
+  return toDateKey(value);
 }
 
 function sortGoalsByNextDate<T extends { target_date?: string | null }>(

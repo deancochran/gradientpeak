@@ -2,6 +2,7 @@ import {
   type CanonicalTrainingPlanStructure,
   canonicalTrainingPlanStructureSchema,
 } from "../schemas/training_plan_structure";
+import { scheduledDateTimeToIsoInstant } from "../utils/schedule-date";
 import { addDaysDateOnlyUtc } from "./dateOnlyUtc";
 
 type SessionSource = Record<string, unknown>;
@@ -16,7 +17,7 @@ export interface MaterializedPlanEvent {
   scheduled_date: string;
   starts_at: string;
   ends_at: string | null;
-  timezone: "UTC";
+  timezone: string;
   title: string;
   description: string | null;
   event_title_override: string | null;
@@ -73,26 +74,40 @@ function getLegacySessionTitle(session: SessionSource): string | null {
   return null;
 }
 
-function toDayStartIso(dateOnly: string): string {
-  return `${dateOnly}T00:00:00.000Z`;
+function toDayStartIso(dateOnly: string, planningTimeZone: string): string {
+  try {
+    return scheduledDateTimeToIsoInstant({
+      scheduledDate: dateOnly,
+      time: "00:00",
+      timeZone: planningTimeZone,
+    });
+  } catch (error) {
+    if (!(error instanceof RangeError)) throw error;
+    // Date-only events remain anchored by scheduled_date when local midnight is a DST gap/fold.
+    return `${dateOnly}T00:00:00.000Z`;
+  }
 }
 
-function toNextDayStartIso(dateOnly: string): string {
-  return `${addDaysDateOnlyUtc(dateOnly, 1)}T00:00:00.000Z`;
+function toNextDayStartIso(dateOnly: string, planningTimeZone: string): string {
+  return toDayStartIso(addDaysDateOnlyUtc(dateOnly, 1), planningTimeZone);
 }
 
-function getEventTiming(scheduledDate: string, startTime?: string) {
+function getEventTiming(scheduledDate: string, planningTimeZone: string, startTime?: string) {
   if (startTime) {
     return {
-      starts_at: `${scheduledDate}T${startTime}:00.000Z`,
+      starts_at: scheduledDateTimeToIsoInstant({
+        scheduledDate,
+        time: startTime,
+        timeZone: planningTimeZone,
+      }),
       ends_at: null,
       all_day: false,
     } as const;
   }
 
   return {
-    starts_at: toDayStartIso(scheduledDate),
-    ends_at: toNextDayStartIso(scheduledDate),
+    starts_at: toDayStartIso(scheduledDate, planningTimeZone),
+    ends_at: toNextDayStartIso(scheduledDate, planningTimeZone),
     all_day: true,
   } as const;
 }
@@ -100,18 +115,19 @@ function getEventTiming(scheduledDate: string, startTime?: string) {
 function materializeCanonicalPlan(
   structure: CanonicalTrainingPlanStructure,
   startDate: string,
+  planningTimeZone: string,
 ): MaterializedPlanEvent[] {
   return structure.sessions
     .map((session, index) => {
       const scheduledDate = addDaysDateOnlyUtc(startDate, session.offset_days);
       const overrides = session.event_overrides;
       const eventTitleOverride = overrides?.title ?? null;
-      const timing = getEventTiming(scheduledDate, overrides?.start_time);
+      const timing = getEventTiming(scheduledDate, planningTimeZone, overrides?.start_time);
 
       return {
         scheduled_date: scheduledDate,
         ...timing,
-        timezone: "UTC" as const,
+        timezone: planningTimeZone,
         title: eventTitleOverride ?? "Planned Session",
         description: overrides?.description ?? null,
         event_title_override: eventTitleOverride,
@@ -205,14 +221,15 @@ function shouldMaterializeSession(session: SessionSource): boolean {
  * - Canonical version-1 relative sessions, anchored exclusively to `startDate`
  * - Legacy root or nested sessions with inherited offsets, explicit dates, or `start_date`
  *
- * Canonical `start_time` values are interpreted as UTC wall-clock times because the
- * canonical contract has no timezone field. Date-only arithmetic also uses UTC, so
- * materialization is independent of the runtime timezone and daylight-saving changes.
- * The function is pure and performs no I/O.
+ * Canonical `start_time` values are interpreted in the required IANA planning timezone.
+ * Date-only arithmetic stays timezone-independent while all-day events span local midnight
+ * to the following local midnight, including across daylight-saving changes. The function is
+ * pure and performs no I/O.
  */
 export function materializePlanToEvents(
   planStructure: unknown,
   startDate: string,
+  planningTimeZone: string,
 ): MaterializedPlanEvent[] {
   if (!isDateOnlyString(startDate)) {
     return [];
@@ -224,7 +241,7 @@ export function materializePlanToEvents(
 
   const canonicalStructure = getCanonicalStructure(planStructure);
   if (canonicalStructure) {
-    return materializeCanonicalPlan(canonicalStructure, startDate);
+    return materializeCanonicalPlan(canonicalStructure, startDate, planningTimeZone);
   }
 
   // Everything below is the quarantined compatibility path for pre-canonical structures.
@@ -253,7 +270,7 @@ export function materializePlanToEvents(
     const eventTitleOverride = getSessionTitleOverride(session);
     const title = eventTitleOverride ?? getLegacySessionTitle(session) ?? fallbackTitle;
 
-    const timing = getEventTiming(scheduledDate);
+    const timing = getEventTiming(scheduledDate, planningTimeZone);
     const key = `${timing.starts_at}|planned|${activityPlanId ?? "none"}|${title}`;
     if (dedupe.has(key)) {
       return;
@@ -263,7 +280,7 @@ export function materializePlanToEvents(
     materialized.push({
       scheduled_date: scheduledDate,
       ...timing,
-      timezone: "UTC",
+      timezone: planningTimeZone,
       title,
       description: null,
       event_title_override: eventTitleOverride,

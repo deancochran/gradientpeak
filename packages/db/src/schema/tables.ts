@@ -62,6 +62,7 @@ export const profiles = pgTable(
     dob: timestamp("dob", { withTimezone: true, mode: "date" }),
     gender: genderEnum("gender"),
     language: text("language"),
+    planning_timezone: text("planning_timezone"),
     preferred_units: text("preferred_units", { enum: preferredUnitSystemDbValues }),
     onboarded: boolean("onboarded"),
     is_public: boolean("is_public").default(false).notNull(),

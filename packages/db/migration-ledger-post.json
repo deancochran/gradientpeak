@@ -37,6 +37,10 @@
     {
       "version": "20260713165000",
       "name": "event_route_plan_hard_cut"
+    },
+    {
+      "version": "20260715124838",
+      "name": "add_profile_planning_timezone"
     }
   ]
 }

@@ -2,6 +2,13 @@ import { z } from "zod";
 import type { profileQuickUpdateSchema } from "../schemas";
 import { preferredUnitSystemSchema } from "../units";
 
+export {
+  calculateDateOfBirthAge,
+  formatDateOfBirth,
+  isValidDateOfBirth,
+  parseDateOfBirth,
+} from "./date-of-birth";
+
 export interface ProfileWithDob {
   dob: string | null;
 }

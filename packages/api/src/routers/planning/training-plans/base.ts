@@ -1235,6 +1235,7 @@ function estimateWeeklyTssFromDailyMap(dailyTss: Map<string, number>): number | 
 
 async function estimateWeeklyTssFromStructuredActivities(input: {
   db?: DbClient;
+  planningTimezone: string;
   supabase?: LegacyPlanningReader;
   profileId: string;
   structure: Record<string, unknown> | null | undefined;
@@ -1247,9 +1248,11 @@ async function estimateWeeklyTssFromStructuredActivities(input: {
     return { weeklyTss: null, latestScheduledDate: null };
   }
 
-  const materializedEvents = materializePlanToEvents(input.structure, input.startDate).filter(
-    (event) => event.event_type === "planned" && typeof event.activity_plan_id === "string",
-  );
+  const materializedEvents = materializePlanToEvents(
+    input.structure,
+    input.startDate,
+    input.planningTimezone,
+  ).filter((event) => event.event_type === "planned" && typeof event.activity_plan_id === "string");
 
   const latestScheduledDate =
     materializedEvents
@@ -4635,9 +4638,15 @@ const trainingPlansProcedures = {
       }
 
       const structure = (plan.structure as Record<string, unknown> | null) ?? {};
+      const [profile] = await db
+        .select({ planningTimezone: schema.profiles.planning_timezone })
+        .from(schema.profiles)
+        .where(eq(schema.profiles.id, ctx.session.user.id))
+        .limit(1);
 
       const structuredWeeklyTss = await estimateWeeklyTssFromStructuredActivities({
         db,
+        planningTimezone: profile?.planningTimezone ?? "UTC",
         profileId: ctx.session.user.id,
         structure,
         startDate: input.start_date,

@@ -138,7 +138,11 @@ function estimateTemplateLoad(
 export function materializeSystemPlanLoad(
   input: MaterializeSystemPlanLoadInput,
 ): MaterializeSystemPlanLoadResult {
-  const materializedEvents = materializePlanToEvents(input.systemPlan.structure, input.startDate);
+  const materializedEvents = materializePlanToEvents(
+    input.systemPlan.structure,
+    input.startDate,
+    "UTC",
+  );
   const templateLookup = buildTemplateLookup(input.activityTemplates ?? SYSTEM_TEMPLATES);
   const unresolvedActivityPlanIds = new Set<string>();
 

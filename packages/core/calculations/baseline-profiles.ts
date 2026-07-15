@@ -13,8 +13,8 @@
  * Creates complete profiles including heart rate metrics, sport-specific
  * performance metrics, and confidence levels.
  */
-
 import type { ExperienceLevel } from "../estimators/types";
+import { calculateDateOfBirthAge, formatDateOfBirth } from "../profile/date-of-birth";
 import { calculateVO2MaxFromHR, estimateLTHR, estimateMaxHRFromAge } from "./heart-rate";
 import {
   estimateCSSFromGender,
@@ -312,16 +312,7 @@ export function mergeWithBaseline(
  * // Returns: 36 (as of 2026)
  */
 export function calculateAge(dob: string | Date): number {
-  const birthDate = typeof dob === "string" ? new Date(dob) : dob;
-  const today = new Date();
-
-  let age = today.getFullYear() - birthDate.getFullYear();
-  const monthDiff = today.getMonth() - birthDate.getMonth();
-
-  // Adjust if birthday hasn't occurred yet this year
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-    age--;
-  }
-
-  return age;
+  return (
+    calculateDateOfBirthAge(typeof dob === "string" ? dob : formatDateOfBirth(dob)) ?? Number.NaN
+  );
 }

@@ -1,4 +1,4 @@
-import { profilePatchInputSchema } from "@repo/core";
+import { parseDateOfBirth, profilePatchInputSchema } from "@repo/core";
 import {
   resolveCanonicalThresholds,
   type ThresholdActivityEffortObservation,
@@ -124,10 +124,16 @@ export const profilesRouter = createTRPCRouter({
         avatar_url: input.avatar_url,
         cover_url: input.cover_url,
         bio: input.bio,
-        dob: input.dob === undefined ? undefined : input.dob === null ? null : new Date(input.dob),
+        dob:
+          input.dob === undefined
+            ? undefined
+            : input.dob === null
+              ? null
+              : parseDateOfBirth(input.dob),
         is_public: input.is_public,
         username: input.username,
         language: input.language,
+        planning_timezone: input.planning_timezone,
         preferred_units: input.preferred_units,
         weight_kg: input.weight_kg,
         threshold_hr: input.threshold_hr,

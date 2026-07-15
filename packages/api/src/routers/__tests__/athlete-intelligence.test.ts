@@ -133,9 +133,6 @@ describe("athleteIntelligenceRouter.evaluate", () => {
     await expect(api.evaluate(inputWithUnknownKey)).rejects.toMatchObject({
       code: "BAD_REQUEST",
     } satisfies Partial<TRPCError>);
-    await expect(
-      api.evaluate({ goalId: GOAL_ID, planningTimezone: "Not/AZone" }),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" } satisfies Partial<TRPCError>);
     expect(evaluate).not.toHaveBeenCalled();
   });
 
@@ -149,17 +146,12 @@ describe("athleteIntelligenceRouter.evaluate", () => {
     expect(athleteIntelligenceRuntimeProjectionSchema.parse(result)).toEqual(result);
   });
 
-  it("accepts a valid IANA planning timezone and preserves absent transport input", async () => {
+  it("rejects a client-supplied planning timezone", async () => {
     const { caller: api, evaluate } = caller();
-    await api.evaluate({ goalId: GOAL_ID, planningTimezone: "America/New_York" });
-    expect(evaluate).toHaveBeenLastCalledWith(
-      expect.objectContaining({ planningTimezone: "America/New_York" }),
-    );
-
-    await api.evaluate({ goalId: GOAL_ID });
-    expect(evaluate).toHaveBeenLastCalledWith(
-      expect.objectContaining({ planningTimezone: undefined }),
-    );
+    await expect(
+      api.evaluate({ goalId: GOAL_ID, planningTimezone: "America/New_York" } as never),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } satisfies Partial<TRPCError>);
+    expect(evaluate).not.toHaveBeenCalled();
   });
 
   it("preserves goal-not-found errors", async () => {
@@ -191,6 +183,7 @@ describe("athleteIntelligenceRouter.evaluate", () => {
       profile: {
         id: OWNER_ID,
         dob: new Date("1990-01-01T00:00:00.000Z"),
+        planningTimezone: "America/New_York",
         preferredUnits: "metric",
         updatedAt: observedAt,
       },

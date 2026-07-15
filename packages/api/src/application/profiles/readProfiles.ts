@@ -1,4 +1,5 @@
 import { resolveCanonicalThresholds, type ThresholdMetricSource } from "@repo/core/athlete-inputs";
+import { formatDateOfBirth } from "@repo/core/profile";
 import { preferredUnitSystemSchema } from "@repo/core/units";
 import { activityEfforts, type PublicProfilesRow, profileMetrics, profiles } from "@repo/db";
 import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
@@ -76,6 +77,7 @@ const profileBaseSelect = {
   is_public: profiles.is_public,
   username: profiles.username,
   preferred_units: profiles.preferred_units,
+  planning_timezone: profiles.planning_timezone,
   language: profiles.language,
 } as const;
 
@@ -102,6 +104,7 @@ type ProfileBaseRow = Pick<
   | "is_public"
   | "username"
   | "preferred_units"
+  | "planning_timezone"
   | "language"
 >;
 
@@ -144,7 +147,7 @@ function serializeProfile(
     ...profile,
     created_at: profile.created_at.toISOString(),
     updated_at: profile.updated_at.toISOString(),
-    dob: profile.dob?.toISOString() ?? null,
+    dob: profile.dob ? formatDateOfBirth(profile.dob) : null,
     ftp: performance?.ftp ?? null,
     threshold_hr: performance?.threshold_hr ?? null,
     weight_kg: performance?.weight_kg ?? null,
@@ -370,6 +373,7 @@ export async function ensureProfileExists(db: DbClient, user: SessionUser) {
     gender: null,
     language: null,
     preferred_units: null,
+    planning_timezone: null,
     onboarded: false,
     is_public: true,
   });

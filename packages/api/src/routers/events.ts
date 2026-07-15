@@ -6,6 +6,7 @@ import {
   type eventTypeInputSchema,
   eventUpdateSchema,
   getScheduledDateKey,
+  materializeRecurrenceOccurrences,
   plannedActivityCreateSchema,
   plannedActivityUpdateSchema,
 } from "@repo/core";
@@ -472,10 +473,12 @@ function buildMaterializedRecurrenceOccurrences(input: {
     throw new TRPCError({ code: "BAD_REQUEST", message: "Recurrence interval must be positive" });
   }
 
-  const start = new Date(input.startsAt);
-  const end = input.endsAt ? new Date(input.endsAt) : null;
-  const durationMs = end ? end.getTime() - start.getTime() : null;
-  const startDay = weekdayToRRuleDay[start.getUTCDay()];
+  const startDay =
+    weekdayToRRuleDay[
+      new Date(
+        `${getScheduledDateKey(input.startsAt, input.recurrence.timezone)}T00:00:00.000Z`,
+      ).getUTCDay()
+    ];
   const byDay = tokens.get("BYDAY") ?? startDay;
   if (byDay !== startDay) {
     throw new TRPCError({
@@ -494,21 +497,15 @@ function buildMaterializedRecurrenceOccurrences(input: {
   }
 
   const untilDateKey = untilToken ? parseRRuleUntilDateKey(untilToken) : null;
-  const occurrences: MaterializedRecurrenceOccurrence[] = [];
-
-  for (let index = 0; index < count; index++) {
-    const occurrenceStart = new Date(start);
-    occurrenceStart.setUTCDate(start.getUTCDate() + index * interval * 7);
-    const occurrenceKey = occurrenceStart.toISOString().slice(0, 10);
-    if (untilDateKey && occurrenceKey > untilDateKey) break;
-
-    occurrences.push({
-      startsAt: occurrenceStart.toISOString(),
-      endsAt:
-        durationMs === null ? null : new Date(occurrenceStart.getTime() + durationMs).toISOString(),
-      occurrenceKey,
-    });
-  }
+  const occurrences = materializeRecurrenceOccurrences({
+    startsAt: input.startsAt,
+    endsAt: input.endsAt,
+    frequency,
+    interval,
+    count,
+    untilDateKey,
+    recurrenceTimeZone: input.recurrence.timezone,
+  });
 
   if (occurrences.length === 0) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "Recurrence creates no occurrences" });

@@ -14,7 +14,6 @@ export async function evaluateAthleteIntelligence(input: {
   profileId: string;
   goalId: string;
   now?: Date;
-  planningTimezone?: string;
   dataSource?: AthleteIntelligenceDataSource;
 }) {
   const asOf = input.now ?? new Date();
@@ -23,7 +22,6 @@ export async function evaluateAthleteIntelligence(input: {
     profileId: input.profileId,
     goalId: input.goalId,
     asOf,
-    planningTimezone: input.planningTimezone,
     modelReader: {
       read: ({ profileId, goalId, asOf: snapshotAt }) =>
         materializeAthleteIntelligenceModelInput({

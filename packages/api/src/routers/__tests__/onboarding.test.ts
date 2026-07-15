@@ -219,7 +219,7 @@ describe("onboardingRouter", () => {
       full_name: "Test Athlete",
       username: "test-athlete",
       experience_level: "beginner",
-      dob: "1990-01-01T00:00:00.000Z",
+      dob: "1990-01-01",
       weight_kg: 70,
       gender: "male",
       primary_sport: "cycling",
@@ -278,6 +278,23 @@ describe("onboardingRouter", () => {
         }),
       ]),
     );
+  });
+
+  it("persists the onboarding planning timezone", async () => {
+    const { caller, updateCalls } = createCaller();
+
+    await caller.completeOnboarding({
+      full_name: "Test Athlete",
+      username: "test-athlete",
+      planning_timezone: "Pacific/Auckland",
+    });
+
+    expect(updateCalls).toEqual([
+      expect.objectContaining({
+        table: profiles,
+        values: expect.objectContaining({ planning_timezone: "Pacific/Auckland" }),
+      }),
+    ]);
   });
 
   it("returns imported onboarding values from canonical profile data and sync metadata", async () => {
@@ -703,7 +720,7 @@ describe("onboardingRouter", () => {
         full_name: "Test Athlete",
         username: "testathlete",
         experience_level: "beginner",
-        dob: "1990-01-01T00:00:00.000Z",
+        dob: "1990-01-01",
         weight_kg: 70,
         gender: "male",
       }),
@@ -730,7 +747,7 @@ describe("onboardingRouter", () => {
         full_name: "Test Athlete",
         username: "testathlete",
         experience_level: "beginner",
-        dob: "1990-01-01T00:00:00.000Z",
+        dob: "1990-01-01",
         weight_kg: 70,
         gender: "male",
       }),

@@ -25,6 +25,37 @@ describe("onboarding schema composition", () => {
     ).toEqual(["train_event", "track_activities"]);
 
     expect(
+      completeOnboardingSchema.parse({
+        full_name: "Athlete Example",
+        username: "athlete",
+        planning_timezone: "Pacific/Auckland",
+      }).planning_timezone,
+    ).toBe("Pacific/Auckland");
+
+    expect(
+      completeOnboardingSchema.safeParse({
+        full_name: "Athlete Example",
+        username: "athlete",
+        planning_timezone: "PST",
+      }).success,
+    ).toBe(false);
+
+    expect(
+      completeOnboardingSchema.parse({
+        full_name: "Athlete Example",
+        username: "athlete",
+        dob: "1990-02-03",
+      }).dob,
+    ).toBe("1990-02-03");
+    expect(
+      completeOnboardingSchema.safeParse({
+        full_name: "Athlete Example",
+        username: "athlete",
+        dob: "1990-02-03T00:00:00.000Z",
+      }).success,
+    ).toBe(false);
+
+    expect(
       completeOnboardingSchema.safeParse({
         full_name: "Athlete Example",
         username: "athlete",

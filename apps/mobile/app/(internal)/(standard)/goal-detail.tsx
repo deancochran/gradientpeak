@@ -21,6 +21,7 @@ import {
 } from "@/components/shared/detail";
 import { ErrorState } from "@/components/shared/ScreenState";
 import { api } from "@/lib/api";
+import { toDateKey } from "@/lib/calendar/dateMath";
 import { ROUTES } from "@/lib/constants/routes";
 
 function SectionCard({ children, testID }: { children: React.ReactNode; testID?: string }) {
@@ -50,7 +51,7 @@ function getActivityCategoryIcon(value: string | null | undefined) {
 }
 
 function todayDateKey() {
-  return new Date().toISOString().split("T")[0] ?? "";
+  return toDateKey(new Date());
 }
 
 function formatDateShort(value: string | null) {
@@ -110,8 +111,8 @@ export default function GoalDetailScreen() {
   const goalQuery = api.goals.getById.useQuery({ id: goalId }, { enabled: !!goalId });
   const { data: goal, isLoading } = goalQuery;
   const intelligenceQuery = api.athleteIntelligence.evaluate.useQuery(
-    { goalId, planningTimezone: planningTimezone ?? undefined },
-    { enabled: !!goalId && !!planningTimezone },
+    { goalId },
+    { enabled: !!goalId },
   );
   const todayKey = useMemo(() => todayDateKey(), []);
   const goalRecord = useMemo(() => {

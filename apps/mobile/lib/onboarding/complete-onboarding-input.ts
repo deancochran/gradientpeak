@@ -15,9 +15,9 @@ export function buildCompleteOnboardingInput(
     return { ok: false, error: "Full name and username are required." };
   }
 
-  const dobDate = data.dob ? new Date(data.dob) : undefined;
+  const dob = data.dob?.trim() || undefined;
 
-  if (dobDate && Number.isNaN(dobDate.getTime())) {
+  if (dob && !/^\d{4}-\d{2}-\d{2}$/.test(dob)) {
     return { ok: false, error: "Please enter a valid date of birth." };
   }
 
@@ -25,12 +25,13 @@ export function buildCompleteOnboardingInput(
     ok: true,
     input: {
       css_seconds_per_hundred_meters: data.css ?? undefined,
-      dob: dobDate?.toISOString(),
+      dob,
       experience_level: data.experience_level ?? "skip",
       ftp: data.ftp ?? undefined,
       full_name: fullName,
       gender: data.gender ?? undefined,
       intents: data.intent,
+      planning_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
       lthr: data.lthr ?? undefined,
       max_hr: data.max_hr ?? undefined,
       resting_hr: data.resting_hr ?? undefined,

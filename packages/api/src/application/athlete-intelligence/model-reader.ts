@@ -1,12 +1,14 @@
 import {
   type AthleteIntelligenceModelInput,
   type AthleteMetricType,
+  addDaysDateOnlyUtc,
   athleteIntelligenceModelInputSchema,
   athleteMetricRoleByType,
   canonicalGoalObjectiveSchema,
   resolveCanonicalThresholds,
 } from "@repo/core";
 import type { PreferredUnitSystem } from "@repo/core/units";
+import { scheduledDateTimeToIsoInstant } from "@repo/core/utils/schedule-date";
 import {
   activities,
   activityEfforts,
@@ -56,6 +58,7 @@ export interface AthleteIntelligenceRows {
   profile: {
     id: string;
     dob: Date | null;
+    planningTimezone: string | null;
     preferredUnits: PreferredUnitSystem | null;
     updatedAt: Date;
   } | null;
@@ -144,6 +147,7 @@ export interface AthleteIntelligenceRows {
     updatedAt: Date;
     payload: unknown;
     recurrenceRule: string | null;
+    recurrenceTimezone?: string | null;
   }>;
   /** True when the recurring-event scan hit its explicit safety bound before source exhaustion. */
   scheduleTruncated?: boolean;
@@ -298,11 +302,30 @@ export function createDrizzleAthleteIntelligenceDataSource(
         )
         .limit(1);
       const selectedGoal = goalRows[0];
-      // A goal target is date-only. Until a typed planning timezone exists, this is
-      // merely a conservative source scan boundary, not an authoritative local-day end.
-      const targetEnd = selectedGoal?.targetDate
-        ? new Date(`${selectedGoal.targetDate}T23:59:59.999Z`)
-        : input.asOf;
+      const profile = await db
+        .select({
+          id: profiles.id,
+          dob: profiles.dob,
+          planningTimezone: profiles.planning_timezone,
+          preferredUnits: profiles.preferred_units,
+          updatedAt: profiles.updated_at,
+        })
+        .from(profiles)
+        .where(and(eq(profiles.id, p), lte(profiles.updated_at, input.asOf)))
+        .limit(1);
+      const planningTimezone = profile[0]?.planningTimezone ?? null;
+      const targetEnd =
+        selectedGoal?.targetDate && planningTimezone
+          ? new Date(
+              new Date(
+                scheduledDateTimeToIsoInstant({
+                  scheduledDate: addDaysDateOnlyUtc(selectedGoal.targetDate, 1),
+                  time: "00:00",
+                  timeZone: planningTimezone,
+                }),
+              ).getTime() - 1,
+            )
+          : input.asOf;
       const scheduleThrough = targetEnd > input.asOf ? targetEnd : input.asOf;
       const temporalSummary = <T>(summaryValue: SQLWrapper, legacyValue: SQLWrapper) =>
         sql<T>`case when ${activities.updated_at} <= ${input.asOf} then coalesce(${summaryValue}, ${legacyValue}) else ${legacyValue} end`;
@@ -323,9 +346,9 @@ export function createDrizzleAthleteIntelligenceDataSource(
         updatedAt: events.updated_at,
         payload: events.payload,
         recurrenceRule: events.recurrence_rule,
+        recurrenceTimezone: events.recurrence_timezone,
       };
       const [
-        profile,
         metricRows,
         activityRows,
         effortRows,
@@ -333,16 +356,6 @@ export function createDrizzleAthleteIntelligenceDataSource(
         currentEventRows,
         recurringEvents,
       ] = await Promise.all([
-        db
-          .select({
-            id: profiles.id,
-            dob: profiles.dob,
-            preferredUnits: profiles.preferred_units,
-            updatedAt: profiles.updated_at,
-          })
-          .from(profiles)
-          .where(and(eq(profiles.id, p), lte(profiles.updated_at, input.asOf)))
-          .limit(1),
         db
           .select({
             profileId: profileMetrics.profile_id,
@@ -1243,9 +1256,18 @@ export async function materializeAthleteIntelligenceModelInput(input: {
   };
   let recurrenceReadIncomplete = false;
   const selectedGoalTarget = rows.goals.find((goal) => goal.id === goalId)?.targetDate;
-  const scheduleThrough = selectedGoalTarget
-    ? new Date(`${selectedGoalTarget}T23:59:59.999Z`)
-    : asOf;
+  const scheduleThrough =
+    selectedGoalTarget && rows.profile.planningTimezone
+      ? new Date(
+          new Date(
+            scheduledDateTimeToIsoInstant({
+              scheduledDate: addDaysDateOnlyUtc(selectedGoalTarget, 1),
+              time: "00:00",
+              timeZone: rows.profile.planningTimezone,
+            }),
+          ).getTime() - 1,
+        )
+      : asOf;
   const plannedSchedule = [...rows.schedule]
     .filter((r) => {
       if (r.createdAt > asOf || r.updatedAt > asOf || r.startsAt > scheduleThrough) return false;
@@ -1334,7 +1356,9 @@ export async function materializeAthleteIntelligenceModelInput(input: {
               recurrenceReadIncomplete = true;
               return null;
             }
-            return parsed.state === "supported" ? parsed.recurrence : null;
+            return parsed.state === "supported"
+              ? { ...parsed.recurrence, timezone: row.recurrenceTimezone ?? undefined }
+              : null;
           })(),
           completionActivitySourceId: null,
           planSourceId,
@@ -1363,6 +1387,7 @@ export async function materializeAthleteIntelligenceModelInput(input: {
     contractVersion: "phase-1",
     assessmentAsOf: asOf.toISOString(),
     athleteId: input.profileId,
+    planningTimezone: rows.profile.planningTimezone,
     evidenceRegistry: registry,
     physiology,
     metricEvidence,

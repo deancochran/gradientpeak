@@ -9,6 +9,7 @@ import { Text } from "@repo/ui/components/text";
 import { AlertCircle, CheckCircle, Lock, TrendingUp } from "lucide-react-native";
 import React from "react";
 import { View } from "react-native";
+import { parseDateKey, toDateKey } from "@/lib/calendar/dateMath";
 
 interface PeriodizationTemplate {
   starting_ctl: number;
@@ -41,7 +42,7 @@ export function PeriodizationForm({
   );
   const [targetDate, setTargetDate] = React.useState<Date>(
     data?.target_date
-      ? new Date(data.target_date)
+      ? parseDateKey(data.target_date)
       : new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
   );
 
@@ -83,7 +84,7 @@ export function PeriodizationForm({
         starting_ctl: startingCtl,
         target_ctl: parseInt(targetCtlText, 10) || 85,
         ramp_rate: (parseInt(rampRateText, 10) || 5) / 100,
-        target_date: targetDate.toISOString().split("T")[0] || "",
+        target_date: toDateKey(targetDate),
       });
     }
   };
@@ -96,7 +97,7 @@ export function PeriodizationForm({
         starting_ctl: startingCtl,
         target_ctl: value,
         ramp_rate: (parseInt(rampRateText, 10) || 5) / 100,
-        target_date: targetDate.toISOString().split("T")[0] || "",
+        target_date: toDateKey(targetDate),
       });
     }
   };
@@ -109,7 +110,7 @@ export function PeriodizationForm({
         starting_ctl: startingCtl,
         target_ctl: parseInt(targetCtlText, 10) || 85,
         ramp_rate: value / 100,
-        target_date: targetDate.toISOString().split("T")[0] || "",
+        target_date: toDateKey(targetDate),
       });
     }
   };
@@ -222,7 +223,7 @@ export function PeriodizationForm({
                   return;
                 }
 
-                const selectedDate = new Date(`${value}T12:00:00.000Z`);
+                const selectedDate = parseDateKey(value);
                 setTargetDate(selectedDate);
                 if (isEnabled) {
                   onChange({
@@ -234,7 +235,7 @@ export function PeriodizationForm({
                 }
               }}
               pickerPresentation="modal"
-              value={targetDate.toISOString().split("T")[0] || ""}
+              value={toDateKey(targetDate)}
             />
             {errors.target_date && (
               <Text className="text-destructive text-xs">{errors.target_date}</Text>

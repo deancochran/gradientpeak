@@ -80,6 +80,13 @@ export async function applyTrainingPlanTemplateUseCase(input: {
   }
 
   const { db, profileId, repository } = input;
+  const [profile] = await db
+    .select({ planningTimezone: schema.profiles.planning_timezone })
+    .from(schema.profiles)
+    .where(eq(schema.profiles.id, profileId))
+    .limit(1);
+  // Existing profiles created before planning_timezone remain explicitly on the UTC legacy path.
+  const planningTimezone = profile?.planningTimezone ?? "UTC";
   const preliminaryActivePlanLookup = await repository.getActivePlanFromFutureEvents(profileId);
   if (preliminaryActivePlanLookup && !input.values.replace_existing) {
     throw new TRPCError({
@@ -108,6 +115,7 @@ export async function applyTrainingPlanTemplateUseCase(input: {
 
   const materializedApplication = materializeAppliedTrainingPlan({
     applicationMode: input.values.application_mode,
+    planningTimezone,
     startDate: input.values.start_date,
     targetDate: input.values.target_date,
     structure,

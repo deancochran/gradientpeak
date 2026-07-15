@@ -180,7 +180,6 @@ export async function projectAthleteIntelligence(input: {
   profileId: string;
   goalId: string;
   asOf: Date;
-  planningTimezone?: string;
 }): Promise<AthleteIntelligenceRuntimeProjection> {
   const materializedModel = await input.modelReader.read({
     profileId: input.profileId,
@@ -197,8 +196,7 @@ export async function projectAthleteIntelligence(input: {
     throw new TRPCError({ code: "NOT_FOUND", message: "Goal not found" });
   }
 
-  // Planning authority is request-scoped. Never mutate or fall back to the materialized model.
-  const model = { ...materializedModel, planningTimezone: input.planningTimezone ?? null };
+  const model = materializedModel;
   const selectedModel = { ...model, goals: [selectedGoal] };
   const demand = demandForGoal(selectedGoal);
   const durationSeconds = goalDurationSeconds(demand);
@@ -306,7 +304,7 @@ export async function projectAthleteIntelligence(input: {
       uncertainty: 1,
       reasonCodes: ["planning_timezone_required"],
     });
-  const calendarFeasibility = input.planningTimezone
+  const calendarFeasibility = model.planningTimezone
     ? calculatedCalendarFeasibility
     : {
         ...calculatedCalendarFeasibility,
@@ -392,7 +390,7 @@ export async function projectAthleteIntelligence(input: {
     { policy: "trainingFeasibility", version: calendarFeasibility.policyVersion },
   ];
   const limitations = [
-    ...(input.planningTimezone ? [] : ["planning_timezone_required"]),
+    ...(model.planningTimezone ? [] : ["planning_timezone_required"]),
     "internal_response_policy_not_available",
     "mechanical_exposure_policy_not_available",
     "strength_exposure_policy_not_available",
@@ -468,7 +466,7 @@ export async function projectAthleteIntelligence(input: {
       "schedules",
       { policy: "trainingFeasibility", version: calendarFeasibility.policyVersion },
       {
-        planningTimezone: input.planningTimezone ?? null,
+        planningTimezone: model.planningTimezone ?? null,
         trainingContext: model.trainingContext,
         plannedSchedule: model.plannedSchedule,
       },

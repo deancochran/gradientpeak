@@ -21,6 +21,7 @@ export type ProfileFields = Partial<
     | "dob"
     | "is_public"
     | "language"
+    | "planning_timezone"
     | "preferred_units"
     | "username"
   >

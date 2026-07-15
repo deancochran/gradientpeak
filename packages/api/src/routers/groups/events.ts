@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { materializeRecurrenceOccurrences } from "@repo/core";
 import {
   createOneOffGroupEventInputSchema,
   createRecurringEventSeriesInputSchema,
@@ -96,28 +97,12 @@ function parseRRuleUntilDateKey(value: string): string {
   throw new TRPCError({ code: "BAD_REQUEST", message: "Invalid recurrence end date" });
 }
 
-function addOccurrenceInterval(date: Date, frequency: string, interval: number, index: number) {
-  const next = new Date(date);
-  if (frequency === "DAILY") {
-    next.setUTCDate(date.getUTCDate() + index * interval);
-    return next;
-  }
-  if (frequency === "WEEKLY") {
-    next.setUTCDate(date.getUTCDate() + index * interval * 7);
-    return next;
-  }
-  if (frequency === "MONTHLY") {
-    next.setUTCMonth(date.getUTCMonth() + index * interval);
-    return next;
-  }
-
-  throw new TRPCError({ code: "BAD_REQUEST", message: "Unsupported recurrence frequency" });
-}
-
 function buildMaterializedGroupEventOccurrences(input: {
   endsAt: string | null;
   recurrenceRule: string;
+  recurrenceTimezone?: string | null;
   startsAt: string;
+  timezone?: string | null;
 }): MaterializedGroupEventOccurrence[] {
   const tokens = parseRRule(input.recurrenceRule);
   const frequency = tokens.get("FREQ");
@@ -136,9 +121,6 @@ function buildMaterializedGroupEventOccurrences(input: {
     throw new TRPCError({ code: "BAD_REQUEST", message: "Recurrence interval must be positive" });
   }
 
-  const start = new Date(input.startsAt);
-  const end = input.endsAt ? new Date(input.endsAt) : null;
-  const durationMs = end ? end.getTime() - start.getTime() : null;
   const maxOccurrences = 366;
   const count = countToken ? Number(countToken) : maxOccurrences;
   if (!Number.isInteger(count) || count < 1 || count > maxOccurrences) {
@@ -149,20 +131,16 @@ function buildMaterializedGroupEventOccurrences(input: {
   }
 
   const untilDateKey = untilToken ? parseRRuleUntilDateKey(untilToken) : null;
-  const occurrences: MaterializedGroupEventOccurrence[] = [];
-
-  for (let index = 0; index < count; index++) {
-    const occurrenceStart = addOccurrenceInterval(start, frequency, interval, index);
-    const occurrenceKey = occurrenceStart.toISOString().slice(0, 10);
-    if (untilDateKey && occurrenceKey > untilDateKey) break;
-
-    occurrences.push({
-      startsAt: occurrenceStart.toISOString(),
-      endsAt:
-        durationMs === null ? null : new Date(occurrenceStart.getTime() + durationMs).toISOString(),
-      occurrenceKey,
-    });
-  }
+  const occurrences = materializeRecurrenceOccurrences({
+    startsAt: input.startsAt,
+    endsAt: input.endsAt,
+    frequency: frequency as "DAILY" | "WEEKLY" | "MONTHLY",
+    interval,
+    count,
+    untilDateKey,
+    recurrenceTimeZone: input.recurrenceTimezone,
+    eventTimeZone: input.timezone,
+  });
 
   if (occurrences.length === 0) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "Recurrence creates no occurrences" });
@@ -568,6 +546,8 @@ export const groupEventsRouter = createTRPCRouter({
           startsAt: input.startsAt,
           endsAt: input.endsAt ?? null,
           recurrenceRule: input.recurrenceRule,
+          recurrenceTimezone: input.recurrenceTimezone,
+          timezone: input.timezone,
         });
 
         if (occurrences.length > 0) {
