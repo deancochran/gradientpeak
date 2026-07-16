@@ -251,10 +251,83 @@ export const ENDURANCE_SWIM: RecordingServiceActivityPlan = {
     .build(),
 };
 
+/**
+ * Option 1 (My favorite – 4,400 m) - Indoor Pool
+ * Total distance: 4400m
+ */
+export const OPTION_1_FAVORITE_SWIM: RecordingServiceActivityPlan = {
+  id: "8d5e1b64-9b22-4f74-a5e2-5cf05d85cc50",
+  version: "2.0",
+  name: "Option 1 (My favorite – 4,400 m)",
+  description: "A 4,400 m swim with Zone 3 endurance work and alternating threshold efforts.",
+  activity_category: "swim",
+  gps_recording_enabled: false,
+  structure: createPlan()
+    .step({
+      name: "Easy Warm-up",
+      duration: Duration.meters(400),
+      targets: [Target.thresholdHR(60)],
+      notes: "400 m easy swimming to settle into the session.",
+    })
+    .interval({
+      repeat: 8,
+      steps: [
+        {
+          name: "Drill/Swim",
+          duration: Duration.meters(50),
+          targets: [Target.thresholdHR(65)],
+          notes: "Alternate drill and swim repetitions for 400 m total.",
+        },
+      ],
+    })
+    .interval({
+      repeat: 6,
+      steps: [
+        {
+          name: "Zone 3",
+          duration: Duration.meters(400),
+          targets: [Target.thresholdHR(75)],
+          notes: "Controlled Zone 3 swimming.",
+        },
+        {
+          name: "Rest",
+          duration: Duration.seconds(30),
+          targets: [Target.thresholdHR(55)],
+          notes: "30 seconds rest.",
+        },
+      ],
+    })
+    .interval({
+      repeat: 4,
+      steps: [
+        {
+          name: "Threshold",
+          duration: Duration.meters(100),
+          targets: [Target.thresholdHR(85)],
+          notes: "Threshold effort.",
+        },
+        {
+          name: "Easy",
+          duration: Duration.meters(100),
+          targets: [Target.thresholdHR(60)],
+          notes: "Easy swimming recovery.",
+        },
+      ],
+    })
+    .step({
+      name: "Easy Cool-down",
+      duration: Duration.meters(400),
+      targets: [Target.thresholdHR(55)],
+      notes: "400 m easy swimming to finish.",
+    })
+    .build(),
+};
+
 export const SAMPLE_INDOOR_SWIM_ACTIVITIES: Array<RecordingServiceActivityPlan> = [
   EASY_SWIM,
   SPRINT_INTERVALS_SWIM,
   THRESHOLD_SWIM,
   TECHNIQUE_SWIM,
   ENDURANCE_SWIM,
+  OPTION_1_FAVORITE_SWIM,
 ];

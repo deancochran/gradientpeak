@@ -1,4 +1,9 @@
 import {
+  formatDisplayUnitValue,
+  type PreferredUnitSystem,
+  toDisplayUnitValue,
+} from "@repo/core/units";
+import {
   differenceInHours,
   format,
   formatDistanceToNow,
@@ -8,6 +13,12 @@ import {
 } from "date-fns";
 
 export type DateLike = Date | string | null | undefined;
+
+/** Explicit display preference for formatters that adapt canonical SI values. */
+export type PreferredUnitDisplayOptions = {
+  fallback?: string;
+  preferredUnitSystem: PreferredUnitSystem;
+};
 
 function toValidDate(value: DateLike): Date | null {
   if (!value) return null;
@@ -56,11 +67,30 @@ export function formatTimestamp(value: DateLike, prefix = "Updated"): string | n
 
 export function formatDistanceMeters(
   meters: number | null | undefined,
-  options: { fallback?: string; minimumKilometers?: number; maximumFractionDigits?: number } = {},
+  options: {
+    fallback?: string;
+    minimumKilometers?: number;
+    maximumFractionDigits?: number;
+    preferredUnitSystem?: PreferredUnitSystem;
+  } = {},
 ): string {
-  const { fallback = "--", maximumFractionDigits = 2, minimumKilometers = 1000 } = options;
+  const {
+    fallback = "--",
+    maximumFractionDigits = 2,
+    minimumKilometers = 1000,
+    preferredUnitSystem,
+  } = options;
 
   if (typeof meters !== "number" || !Number.isFinite(meters)) return fallback;
+
+  if (preferredUnitSystem) {
+    return formatDisplayUnitValue(
+      toDisplayUnitValue(
+        { dimension: "distance", value: meters, unit: "meters" },
+        preferredUnitSystem,
+      ),
+    );
+  }
 
   if (Math.abs(meters) < minimumKilometers) {
     return `${Math.round(meters)} m`;
@@ -69,9 +99,41 @@ export function formatDistanceMeters(
   return `${(meters / 1000).toFixed(maximumFractionDigits)} km`;
 }
 
-export function formatElevationMeters(meters: number | null | undefined, fallback = "--"): string {
+export function formatElevationMeters(
+  meters: number | null | undefined,
+  fallbackOrOptions: string | PreferredUnitDisplayOptions = "--",
+): string {
+  const options: { fallback?: string; preferredUnitSystem?: PreferredUnitSystem } =
+    typeof fallbackOrOptions === "string" ? { fallback: fallbackOrOptions } : fallbackOrOptions;
+  const { fallback = "--", preferredUnitSystem } = options;
+
   if (typeof meters !== "number" || !Number.isFinite(meters) || meters <= 0) return fallback;
+
+  if (preferredUnitSystem) {
+    return formatDisplayUnitValue(
+      toDisplayUnitValue(
+        { dimension: "elevation", value: meters, unit: "meters" },
+        preferredUnitSystem,
+      ),
+    );
+  }
+
   return `${Math.round(meters)} m`;
+}
+
+/** Formats a canonical meters-per-second speed in an explicitly selected display system. */
+export function formatSpeedMetersPerSecond(
+  metersPerSecond: number | null | undefined,
+  { fallback = "--", preferredUnitSystem }: PreferredUnitDisplayOptions,
+): string {
+  if (typeof metersPerSecond !== "number" || !Number.isFinite(metersPerSecond)) return fallback;
+
+  return formatDisplayUnitValue(
+    toDisplayUnitValue(
+      { dimension: "speed", value: metersPerSecond, unit: "meters_per_second" },
+      preferredUnitSystem,
+    ),
+  );
 }
 
 export function formatDurationSeconds(
@@ -100,14 +162,27 @@ export function formatDurationSeconds(
 
 export function formatPaceSecondsPerKilometer(
   secondsPerKilometer: number | null | undefined,
-  fallback = "--",
+  fallbackOrOptions: string | PreferredUnitDisplayOptions = "--",
 ): string {
+  const options: { fallback?: string; preferredUnitSystem?: PreferredUnitSystem } =
+    typeof fallbackOrOptions === "string" ? { fallback: fallbackOrOptions } : fallbackOrOptions;
+  const { fallback = "--", preferredUnitSystem } = options;
+
   if (
     typeof secondsPerKilometer !== "number" ||
     !Number.isFinite(secondsPerKilometer) ||
     secondsPerKilometer <= 0
   ) {
     return fallback;
+  }
+
+  if (preferredUnitSystem) {
+    return formatDisplayUnitValue(
+      toDisplayUnitValue(
+        { dimension: "running_pace", value: secondsPerKilometer, unit: "seconds_per_kilometer" },
+        preferredUnitSystem,
+      ),
+    );
   }
 
   const minutes = Math.floor(secondsPerKilometer / 60);

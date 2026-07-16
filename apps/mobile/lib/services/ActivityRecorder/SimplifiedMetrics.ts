@@ -71,7 +71,6 @@ export interface SimplifiedMetrics {
     heartRate: number;
     speed: number; // m/s
     cadence: number;
-    temperature: number;
   };
 
   /** Zone time distributions (in seconds) */
@@ -319,7 +318,6 @@ export function convertToSimplifiedMetrics(
       heartRate: state.maxHeartRate,
       speed: state.maxSpeed,
       cadence: state.maxCadence,
-      temperature: state.maxTemperature || 0,
     },
     zones: {
       hr: [

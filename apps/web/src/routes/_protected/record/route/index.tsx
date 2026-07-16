@@ -11,7 +11,7 @@ import { SearchField } from "@repo/ui/components/search-field";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Check, Loader2, Route as RouteIcon } from "lucide-react";
 import { useMemo, useState } from "react";
-
+import { useViewingUserPreferredUnitSystem } from "../../../../hooks/use-viewing-user-preferred-unit-system";
 import { api } from "../../../../lib/api/client";
 import { formatDistance, validateRecordingSearch } from "../../../../lib/recording-web";
 
@@ -23,6 +23,7 @@ export const Route = createFileRoute("/_protected/record/route/")({
 export function RecordRoutePage() {
   const navigate = Route.useNavigate();
   const launcher = Route.useSearch();
+  const { unitSystem } = useViewingUserPreferredUnitSystem();
   const [searchText, setSearchText] = useState("");
   const routesQuery = api.routes.list.useInfiniteQuery(
     { limit: 50 },
@@ -148,7 +149,9 @@ export function RecordRoutePage() {
                     </CardDescription>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Badge variant="outline">{formatDistance(route.total_distance)}</Badge>
+                    <Badge variant="outline">
+                      {formatDistance(route.total_distance, unitSystem)}
+                    </Badge>
                     {isSelected ? <Badge>Attached</Badge> : null}
                   </div>
                 </div>

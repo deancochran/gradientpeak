@@ -1,4 +1,5 @@
 import { formatGoalTypeLabel, getGoalObjectiveSummary, type ProfileGoal } from "@repo/core";
+import type { PreferredUnitSystem } from "@repo/core/units";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { differenceInCalendarDays, format } from "date-fns";
@@ -9,11 +10,13 @@ import { parseDateKey } from "@/lib/calendar/dateMath";
 import type { CalendarGroupEvent } from "@/lib/calendar/groupEventPlans";
 import type { CalendarEvent } from "@/lib/calendar/normalizeEvents";
 import { getActivityCategoryConfig } from "@/lib/constants/activities";
+import { formatDistanceMeters } from "@/lib/display/formatters";
 import {
   formatEstimatedDurationSeconds,
   formatEstimatedIntensityFactor,
   formatEstimatedTss,
 } from "@/lib/estimatedMetrics";
+import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import type { CalendarActivity, CalendarScheduleObject, DayRow } from "./CalendarTimelineModel";
 
 type DayHeaderRowProps = {
@@ -88,24 +91,18 @@ function formatDuration(seconds: number | null) {
   return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
 }
 
-function formatDistanceMeters(meters: number | null | undefined) {
-  if (!meters || meters <= 0) {
-    return null;
-  }
-
-  if (meters < 1000) {
-    return `${Math.round(meters)} m`;
-  }
-
-  return `${(meters / 1000).toFixed(1)} km`;
-}
-
 function getActivityDerivedMetric(activity: CalendarActivity, key: "tss" | "intensity_factor") {
   return activity.derived?.[key] ?? activity.derived?.stress?.[key] ?? null;
 }
 
-function getCompletedActivityMetricLabels(activity: CalendarActivity) {
-  const distance = formatDistanceMeters(activity.distance_meters);
+function getCompletedActivityMetricLabels(
+  activity: CalendarActivity,
+  preferredUnitSystem: PreferredUnitSystem,
+) {
+  const distance = formatDistanceMeters(activity.distance_meters, {
+    fallback: "",
+    preferredUnitSystem,
+  });
   const duration = formatDuration(activity.duration_seconds ?? null);
   const tss = getActivityDerivedMetric(activity, "tss");
   const intensityFactor = getActivityDerivedMetric(activity, "intensity_factor");
@@ -382,9 +379,15 @@ export const CalendarScheduleObjectCard = memo(function CalendarScheduleObjectCa
   onPressGoal,
   testIDPrefix = "calendar",
 }: CalendarScheduleObjectCardProps) {
+  const preferredUnitSystem = usePreferredUnitSystem();
   if (object.type === "activity") {
     const activityConfig = getActivityCategoryConfig(object.activity.type || "other");
-    const metrics = getCompletedActivityMetricLabels(object.activity);
+    const metrics = getCompletedActivityMetricLabels(object.activity, preferredUnitSystem);
+    const accessibilityLabel = [
+      "Completed activity",
+      object.activity.name ?? "Untitled activity",
+      ...metrics,
+    ].join(", ");
 
     return (
       <TouchableOpacity
@@ -394,7 +397,7 @@ export const CalendarScheduleObjectCard = memo(function CalendarScheduleObjectCa
         disabled={!onPressActivity}
         testID={`${testIDPrefix}-activity-row-${object.activity.id}`}
         accessible
-        accessibilityLabel={`Completed activity, ${object.activity.name ?? "Untitled activity"}`}
+        accessibilityLabel={accessibilityLabel}
       >
         <Icon as={activityConfig.icon} size={13} className="text-muted-foreground" />
         <View className="min-w-0 flex-1">

@@ -13,6 +13,7 @@ import {
 import { getActivityCategoryConfig } from "@/lib/constants/activities";
 import { formatDistanceMeters } from "@/lib/display/formatters";
 import { formatEstimatedIntensityFactor, formatEstimatedTss } from "@/lib/estimatedMetrics";
+import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
 import {
   ResourceCardHeader,
@@ -178,13 +179,17 @@ function ActivityMetricsRow({
   activity: ActivityCardActivity;
   compact: boolean;
 }) {
+  const preferredUnitSystem = usePreferredUnitSystem();
   const tss = getDerivedValue(activity, "tss");
   const intensityFactor = getDerivedValue(activity, "intensity_factor");
   const loadPresentation = getLoadPresentation(activity);
   const metrics: ResourceMetric[] = [];
 
   if (typeof activity.distance_meters === "number" && activity.distance_meters > 0) {
-    metrics.push({ label: "Distance", value: formatDistanceMeters(activity.distance_meters) });
+    metrics.push({
+      label: "Distance",
+      value: formatDistanceMeters(activity.distance_meters, { preferredUnitSystem }),
+    });
   }
 
   if (typeof activity.duration_seconds === "number" && activity.duration_seconds > 0) {

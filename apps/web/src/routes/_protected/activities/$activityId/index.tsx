@@ -24,6 +24,7 @@ import {
 import { ActivityStreamAnalysisCard } from "../../../../components/protected/activity-stream-analysis-card";
 import { EntityCommentsCard } from "../../../../components/protected/entity-comments-card";
 import { useAuth } from "../../../../components/providers/auth-provider";
+import { useViewingUserPreferredUnitSystem } from "../../../../hooks/use-viewing-user-preferred-unit-system";
 import {
   formatCalibrationQuality,
   getActivityLoadLabels,
@@ -49,6 +50,7 @@ export const Route = createFileRoute("/_protected/activities/$activityId/")({
 
 function ActivityDetailPage() {
   const { user } = useAuth();
+  const { unitSystem } = useViewingUserPreferredUnitSystem();
   const utils = api.useUtils();
   const navigate = Route.useNavigate();
   const { activityId } = Route.useParams();
@@ -145,8 +147,8 @@ function ActivityDetailPage() {
     [activity?.polyline, streamsQuery.data?.records],
   );
   const streamHighlights = useMemo(
-    () => summarizeActivityStreams(streamsQuery.data?.records),
-    [streamsQuery.data?.records],
+    () => summarizeActivityStreams(streamsQuery.data?.records, unitSystem),
+    [streamsQuery.data?.records, unitSystem],
   );
 
   if (activityQuery.isLoading) {
@@ -243,7 +245,7 @@ function ActivityDetailPage() {
         items={[
           {
             label: "Distance",
-            value: formatDistance(activity.distance_meters),
+            value: formatDistance(activity.distance_meters, unitSystem),
           },
           {
             label: "Duration",
@@ -258,8 +260,8 @@ function ActivityDetailPage() {
             label: activity.type === "run" ? "Avg pace" : "Avg speed",
             value:
               activity.type === "run"
-                ? formatPace(activity.avg_speed_mps)
-                : formatSpeed(activity.avg_speed_mps),
+                ? formatPace(activity.avg_speed_mps, unitSystem)
+                : formatSpeed(activity.avg_speed_mps, unitSystem),
           },
           {
             label: loadLabels.load,

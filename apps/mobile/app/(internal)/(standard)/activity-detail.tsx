@@ -1,4 +1,9 @@
 import { type ActivityLapRecord, parseActivityLapRecords } from "@repo/core/schemas";
+import {
+  formatDisplayUnitValue,
+  type PreferredUnitSystem,
+  toDisplayUnitValue,
+} from "@repo/core/units";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Skeleton } from "@repo/ui/components/skeleton";
@@ -38,9 +43,14 @@ import {
 } from "@/lib/activity-stream-presentation";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
+import {
+  formatPaceSecondsPerKilometer,
+  formatSpeedMetersPerSecond,
+} from "@/lib/display/formatters";
 import { formatEstimatedIntensityFactor, formatEstimatedTss } from "@/lib/estimatedMetrics";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useEntityCommentsController } from "@/lib/hooks/useEntityCommentsController";
+import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
 
 function formatDuration(seconds: number): string {
@@ -53,25 +63,27 @@ function formatDuration(seconds: number): string {
   return `${minutes}:${secs.toString().padStart(2, "0")}`;
 }
 
-function formatPace(metersPerSecond: number): string {
+function formatPace(metersPerSecond: number, preferredUnitSystem: PreferredUnitSystem): string {
   if (metersPerSecond === 0) return "0:00";
-  const secondsPerKm = 1000 / metersPerSecond;
-  const minutes = Math.floor(secondsPerKm / 60);
-  const seconds = Math.floor(secondsPerKm % 60);
-  return `${minutes}:${seconds.toString().padStart(2, "0")} /km`;
+  return formatPaceSecondsPerKilometer(1000 / metersPerSecond, { preferredUnitSystem });
 }
 
-function formatSpeed(metersPerSecond: number): string {
-  const kmh = (metersPerSecond * 3.6).toFixed(1);
-  return `${kmh} km/h`;
+function formatSpeed(metersPerSecond: number, preferredUnitSystem: PreferredUnitSystem): string {
+  return formatSpeedMetersPerSecond(metersPerSecond, { preferredUnitSystem });
 }
 
-function formatSwimPace(metersPerSecond: number): string {
+function formatSwimPace(metersPerSecond: number, preferredUnitSystem: PreferredUnitSystem): string {
   if (metersPerSecond === 0) return "0:00";
-  const secondsPer100m = 100 / metersPerSecond;
-  const minutes = Math.floor(secondsPer100m / 60);
-  const seconds = Math.floor(secondsPer100m % 60);
-  return `${minutes}:${seconds.toString().padStart(2, "0")} /100m`;
+  return formatDisplayUnitValue(
+    toDisplayUnitValue(
+      {
+        dimension: "swimming_pace",
+        value: 100 / metersPerSecond,
+        unit: "seconds_per_100_meters",
+      },
+      preferredUnitSystem,
+    ),
+  );
 }
 
 function VisualStateCard({
@@ -167,29 +179,39 @@ function readLapSpeed(lap: ActivityLapRecord, distance: number, duration: number
   return distance > 0 && duration > 0 ? distance / duration : 0;
 }
 
-function formatLapMetric(activityType: string | null | undefined, metersPerSecond: number): string {
+function formatLapMetric(
+  activityType: string | null | undefined,
+  metersPerSecond: number,
+  preferredUnitSystem: PreferredUnitSystem,
+): string {
   if (metersPerSecond <= 0) return "--";
-  if (activityType === "run") return formatPace(metersPerSecond);
-  if (activityType === "swim") return formatSwimPace(metersPerSecond);
-  return formatSpeed(metersPerSecond);
+  if (activityType === "run") return formatPace(metersPerSecond, preferredUnitSystem);
+  if (activityType === "swim") return formatSwimPace(metersPerSecond, preferredUnitSystem);
+  return formatSpeed(metersPerSecond, preferredUnitSystem);
 }
 
 function formatLapMetricValue(
   activityType: string | null | undefined,
   metersPerSecond: number,
+  preferredUnitSystem: PreferredUnitSystem,
 ): string {
-  return formatLapMetric(activityType, metersPerSecond).split(" ")[0] ?? "--";
+  return (
+    formatLapMetric(activityType, metersPerSecond, preferredUnitSystem).split(/[\s/]/)[0] ?? "--"
+  );
 }
 
 function getLapIndexLabel(
   activityType: string | null | undefined,
   laps: LapDisplayEntry[],
+  preferredUnitSystem: PreferredUnitSystem,
 ): string {
-  if (activityType === "run" || activityType === "walk" || activityType === "hike") return "Km";
+  if (activityType === "run" || activityType === "walk" || activityType === "hike") {
+    return preferredUnitSystem === "imperial" ? "Mi" : "Km";
+  }
   if (activityType === "swim") return "Len";
 
   const hasDistanceSplits = laps.some((lap) => lap.distance > 0);
-  return hasDistanceSplits ? "Km" : "Lap";
+  return hasDistanceSplits ? (preferredUnitSystem === "imperial" ? "Mi" : "Km") : "Lap";
 }
 
 function getLapMetricLabel(activityType: string | null | undefined): string {
@@ -208,6 +230,7 @@ function getLapMetricLabel(activityType: string | null | undefined): string {
 function buildLapDisplayEntries(
   laps: ActivityLapRecord[],
   activityType: string | null | undefined,
+  preferredUnitSystem: PreferredUnitSystem,
 ): LapDisplayEntry[] {
   const baseEntries = laps
     .map((lap, index) => {
@@ -219,7 +242,7 @@ function buildLapDisplayEntries(
         distance,
         duration,
         index,
-        metricLabel: formatLapMetricValue(activityType, speed),
+        metricLabel: formatLapMetricValue(activityType, speed, preferredUnitSystem),
         performance: speed > 0 ? speed : duration > 0 ? 1 / duration : 0,
       };
     })
@@ -236,20 +259,22 @@ function buildLapDisplayEntries(
 function LapVisualizationCard({
   activityType,
   laps,
+  preferredUnitSystem,
 }: {
   activityType?: string | null;
   laps: ActivityLapRecord[];
+  preferredUnitSystem: PreferredUnitSystem;
 }) {
   const displayLaps = useMemo(
-    () => buildLapDisplayEntries(laps, activityType),
-    [activityType, laps],
+    () => buildLapDisplayEntries(laps, activityType, preferredUnitSystem),
+    [activityType, laps, preferredUnitSystem],
   );
 
   if (displayLaps.length === 0) {
     return <VisualStateCard title="Laps" message="No lap data is available for this activity." />;
   }
 
-  const lapIndexLabel = getLapIndexLabel(activityType, displayLaps);
+  const lapIndexLabel = getLapIndexLabel(activityType, displayLaps, preferredUnitSystem);
   const lapMetricLabel = getLapMetricLabel(activityType);
 
   return (
@@ -290,6 +315,7 @@ function LapVisualizationCard({
 function ActivityDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const preferredUnitSystem = usePreferredUnitSystem();
   const { Stack } = require("expo-router") as typeof import("expo-router");
   const queryClient = api.useUtils();
 
@@ -553,7 +579,11 @@ function ActivityDetailScreen() {
           ) : shouldShowPrivateStreamMessage ? (
             <VisualStateCard title="Laps" state="private" message={detailedContentPrivateMessage} />
           ) : laps.length > 0 ? (
-            <LapVisualizationCard activityType={activity.type} laps={laps} />
+            <LapVisualizationCard
+              activityType={activity.type}
+              laps={laps}
+              preferredUnitSystem={preferredUnitSystem}
+            />
           ) : (
             <VisualStateCard title="Laps" message="No lap data is available for this activity." />
           )}
@@ -562,6 +592,7 @@ function ActivityDetailScreen() {
             <ElevationProfileChart
               elevationStream={elevationStream}
               distanceStream={distanceStream || undefined}
+              preferredUnitSystem={preferredUnitSystem}
               title="Elevation Profile"
               height={200}
             />
@@ -619,8 +650,21 @@ function ActivityDetailScreen() {
               <CardContent>
                 <View className="flex-row justify-between">
                   <View className="items-center">
-                    <Text className="text-2xl font-bold">{activity.pool_length ?? "--"}</Text>
-                    <Text className="text-xs text-muted-foreground uppercase">Pool (m)</Text>
+                    <Text className="text-2xl font-bold">
+                      {typeof activity.pool_length === "number"
+                        ? formatDisplayUnitValue(
+                            toDisplayUnitValue(
+                              {
+                                dimension: "pool_length",
+                                value: activity.pool_length,
+                                unit: "meters",
+                              },
+                              preferredUnitSystem,
+                            ),
+                          )
+                        : "--"}
+                    </Text>
+                    <Text className="text-xs text-muted-foreground uppercase">Pool</Text>
                   </View>
                   <View className="items-center">
                     <Text className="text-2xl font-bold">{activity.total_strokes ?? "--"}</Text>

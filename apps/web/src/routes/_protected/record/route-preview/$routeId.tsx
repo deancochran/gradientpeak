@@ -10,6 +10,7 @@ import {
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Loader2, MapPin, Route as RouteIcon } from "lucide-react";
 import { RoutePreviewMap } from "../../../../components/recording/route-preview-map";
+import { useViewingUserPreferredUnitSystem } from "../../../../hooks/use-viewing-user-preferred-unit-system";
 import { api } from "../../../../lib/api/client";
 import { formatDistance, validateRecordingSearch } from "../../../../lib/recording-web";
 
@@ -18,10 +19,11 @@ export const Route = createFileRoute("/_protected/record/route-preview/$routeId"
   component: RecordRoutePreviewPage,
 });
 
-function RecordRoutePreviewPage() {
+export function RecordRoutePreviewPage() {
   const navigate = Route.useNavigate();
   const launcher = Route.useSearch();
   const { routeId } = Route.useParams();
+  const { unitSystem } = useViewingUserPreferredUnitSystem();
   const routeQuery = api.routes.get.useQuery({ id: routeId });
   const fullRouteQuery = api.routes.loadFull.useQuery({ id: routeId });
 
@@ -99,7 +101,7 @@ function RecordRoutePreviewPage() {
               </CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Badge variant="outline">{formatDistance(route.total_distance)}</Badge>
+              <Badge variant="outline">{formatDistance(route.total_distance, unitSystem)}</Badge>
               {isAttached ? <Badge>Currently attached</Badge> : null}
             </div>
           </div>
@@ -111,7 +113,9 @@ function RecordRoutePreviewPage() {
                 <MapPin className="h-4 w-4 text-muted-foreground" />
                 Distance
               </div>
-              <p className="mt-1 text-muted-foreground">{formatDistance(route.total_distance)}</p>
+              <p className="mt-1 text-muted-foreground">
+                {formatDistance(route.total_distance, unitSystem)}
+              </p>
             </div>
             <div className="rounded-lg border border-border p-3">
               <div className="flex items-center gap-2 font-medium text-foreground">

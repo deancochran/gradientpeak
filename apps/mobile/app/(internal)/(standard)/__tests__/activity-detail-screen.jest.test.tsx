@@ -1,4 +1,5 @@
 import React from "react";
+import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 
@@ -293,6 +294,13 @@ jest.mock("@/lib/hooks/useAuth", () => ({
   useAuth: () => authState,
 }));
 
+jest.mock("@/lib/hooks/usePreferredUnitSystem", () => ({
+  __esModule: true,
+  usePreferredUnitSystem: jest.fn(() => "metric"),
+}));
+
+const mockUsePreferredUnitSystem = jest.mocked(usePreferredUnitSystem);
+
 jest.mock("@/lib/api", () => ({
   __esModule: true,
   api: {
@@ -389,6 +397,7 @@ describe("activity detail screen", () => {
     activityData.activity.activity_file_path = "profile-1/activity.fit";
     activityQueryState = { data: activityData, isLoading: false };
     streamsData.laps = [];
+    mockUsePreferredUnitSystem.mockReturnValue("metric");
   });
 
   it("renders the loading state before activity data is available", () => {
@@ -406,7 +415,7 @@ describe("activity detail screen", () => {
     expect(screen.getByTestId("activity-detail-options-delete")).toBeTruthy();
     expect(screen.getByTestId("activity-detail-like-button")).toBeTruthy();
     expect(screen.getByText("Distance")).toBeTruthy();
-    expect(screen.getAllByText("10.40 km").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("10.4 km").length).toBeGreaterThan(0);
     expect(screen.getByText("Duration")).toBeTruthy();
     expect(screen.getAllByText("52:00").length).toBeGreaterThan(0);
     expect(screen.getAllByText("rTSS").length).toBeGreaterThan(0);
@@ -454,6 +463,16 @@ describe("activity detail screen", () => {
     expect(screen.queryByText("1.00 km")).toBeNull();
     expect(screen.getByText("Pace")).toBeTruthy();
     expect(screen.getAllByText("4:55").length).toBeGreaterThan(0);
+  });
+
+  it("uses imperial pace and split labels for imperial viewers", () => {
+    streamsData.laps = [{ totalDistance: 1000, totalTimerTime: 295 }];
+    mockUsePreferredUnitSystem.mockReturnValue("imperial");
+
+    renderNative(<ActivityDetailScreen />);
+
+    expect(screen.getByText("Mi")).toBeTruthy();
+    expect(screen.getByText("7:55")).toBeTruthy();
   });
 
   it("hides owner-only overflow actions for non-owners", () => {

@@ -13,6 +13,7 @@ import {
 import { StaticRouteMapPreview } from "@/components/shared/StaticRouteMapPreview";
 import { getActivityCategoryConfig } from "@/lib/constants/activities";
 import { formatDistanceMeters, formatElevationMeters } from "@/lib/display/formatters";
+import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { useResourceLike } from "@/lib/hooks/useResourceLike";
 
 type RouteCoordinate = {
@@ -72,6 +73,7 @@ export function RouteCard({
   showLike,
   variant = "default",
 }: RouteCardProps) {
+  const preferredUnitSystem = usePreferredUnitSystem();
   const activityConfig = getActivityCategoryConfig(route.activity_category || "other");
   const isCompact = variant === "compact";
   const isDetail = variant === "detail";
@@ -170,14 +172,17 @@ export function RouteCard({
       <ResourceMetricsRow
         compact={isDense}
         metrics={[
-          { label: "Distance", value: formatDistanceMeters(route.total_distance ?? 0) },
+          {
+            label: "Distance",
+            value: formatDistanceMeters(route.total_distance ?? 0, { preferredUnitSystem }),
+          },
           {
             label: "Climb",
-            value: formatElevationMeters(route.total_ascent),
+            value: formatElevationMeters(route.total_ascent, { preferredUnitSystem }),
           },
           {
             label: "Descent",
-            value: formatElevationMeters(route.total_descent),
+            value: formatElevationMeters(route.total_descent, { preferredUnitSystem }),
           },
         ]}
       />

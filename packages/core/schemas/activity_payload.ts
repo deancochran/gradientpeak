@@ -89,9 +89,8 @@ export const ActivityMetricsSchema = z.object({
   avg_grade: z.number().optional(),
   elevation_gain_per_km: z.number().optional(),
 
-  // Environmental metrics
+  // Environmental metrics. Temperatures are canonical Celsius values.
   avg_temperature: z.number().optional(),
-  max_temperature: z.number().optional(),
   weather_condition: z.string().optional(),
 
   // Analysis metrics
@@ -106,11 +105,12 @@ export const ActivityMetricsSchema = z.object({
   aerobic_decoupling: z.number().optional(),
   training_effect: z.enum(["recovery", "base", "tempo", "threshold", "vo2max"]).optional(),
 
-  // Swim metrics
+  // Swim metrics. Pool lengths are canonical metres; provider aliases must be normalized upstream.
   total_strokes: z.number().optional(),
   avg_swolf: z.number().optional(),
   pool_length: z.number().optional(),
-  pool_length_unit: z.string().optional(),
+  // Optional for existing canonical payloads; when supplied it must be explicit metres.
+  pool_length_unit: z.literal("meters").optional(),
 });
 
 export type ActivityMetrics = z.infer<typeof ActivityMetricsSchema>;

@@ -1,3 +1,4 @@
+import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { createHost } from "../../../../test/mock-components";
 import { fireEvent, renderNative, screen } from "../../../../test/render-native";
 import {
@@ -49,8 +50,18 @@ jest.mock("@/lib/estimatedMetrics", () => ({
   formatEstimatedDurationSeconds: jest.fn(),
   formatEstimatedTss: jest.fn(),
 }));
+jest.mock("@/lib/hooks/usePreferredUnitSystem", () => ({
+  __esModule: true,
+  usePreferredUnitSystem: jest.fn(() => "metric"),
+}));
+
+const mockUsePreferredUnitSystem = jest.mocked(usePreferredUnitSystem);
 
 describe("ResourcePickerResultRow", () => {
+  beforeEach(() => {
+    mockUsePreferredUnitSystem.mockReturnValue("metric");
+  });
+
   it("renders an activity plan through the dense canonical card while preserving selection", () => {
     const onPress = jest.fn();
 
@@ -112,9 +123,33 @@ describe("ResourcePickerResultRow", () => {
 
     const result = screen.getByTestId("resource-picker-result-legacy-route");
     expect(result.props.disabled).toBe(true);
-    expect(result.props.accessibilityLabel).toBe("Select Imported route");
+    expect(result.props.accessibilityLabel).toBe("Select, Imported route, Private or shared");
     expect(result.props.className).toContain("min-h-11");
     expect(screen.queryByTestId("resource-picker-route-card")).toBeNull();
+  });
+
+  it("formats external route metadata in the viewer's preferred units", () => {
+    mockUsePreferredUnitSystem.mockReturnValue("imperial");
+
+    renderNative(
+      <ResourcePickerResultRow
+        isSelected={false}
+        item={{
+          id: "legacy-route",
+          name: "Imported route",
+          presentation: "external",
+          totalAscent: 100,
+          totalDistance: 5000,
+        }}
+        onPress={jest.fn()}
+        scope="routes"
+      />,
+    );
+
+    expect(screen.getByText("Private or shared · 3.1 mi · 328.1 ft climb")).toBeTruthy();
+    expect(screen.getByTestId("resource-picker-result-legacy-route").props.accessibilityLabel).toBe(
+      "Select, Imported route, Private or shared, 3.1 mi, 328.1 ft climb",
+    );
   });
 
   it("maps every current query result to its canonical card presentation", () => {

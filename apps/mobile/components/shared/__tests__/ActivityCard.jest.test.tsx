@@ -1,5 +1,6 @@
 import { decodePolyline } from "@repo/core";
 import { fireEvent } from "@testing-library/react-native";
+import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { createHost as mockCreateHost } from "../../../test/mock-components";
 import { renderNative, screen } from "../../../test/render-native";
 import { ActivityCard } from "../ActivityCard";
@@ -76,10 +77,18 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
   useAppNavigate: () => jest.fn(),
 }));
 
+jest.mock("@/lib/hooks/usePreferredUnitSystem", () => ({
+  __esModule: true,
+  usePreferredUnitSystem: jest.fn(() => "metric"),
+}));
+
+const mockUsePreferredUnitSystem = jest.mocked(usePreferredUnitSystem);
+
 describe("ActivityCard", () => {
   beforeEach(() => {
     toggleLikeMutateMock.mockReset();
     jest.mocked(decodePolyline).mockReturnValue([]);
+    mockUsePreferredUnitSystem.mockReturnValue("metric");
   });
 
   it("shows a like action by default in list mode", () => {
@@ -127,7 +136,7 @@ describe("ActivityCard", () => {
     );
 
     expect(screen.getByText("Distance")).toBeTruthy();
-    expect(screen.getByText("10.00 km")).toBeTruthy();
+    expect(screen.getByText("10.0 km")).toBeTruthy();
     expect(screen.getByText("Duration")).toBeTruthy();
     expect(screen.getByText("60 min")).toBeTruthy();
     expect(screen.getByText("TSS")).toBeTruthy();
@@ -137,6 +146,24 @@ describe("ActivityCard", () => {
     expect(screen.queryByText("Avg Pace")).toBeNull();
     expect(screen.queryByText("Avg Power")).toBeNull();
     expect(screen.queryByText("Avg HR")).toBeNull();
+  });
+
+  it("formats activity distance in the viewer's imperial units", () => {
+    mockUsePreferredUnitSystem.mockReturnValue("imperial");
+
+    renderNative(
+      <ActivityCard
+        activity={{
+          id: "activity-1",
+          name: "Morning Run",
+          type: "run",
+          distance_meters: 5000,
+        }}
+        variant="list"
+      />,
+    );
+
+    expect(screen.getByText("3.1 mi")).toBeTruthy();
   });
 
   it("keeps load metric slots visible when derived values are unavailable", () => {

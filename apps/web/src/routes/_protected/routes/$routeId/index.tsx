@@ -25,6 +25,7 @@ import {
 } from "../../../../components/protected/activity-route-primitives";
 import { EntityCommentsCard } from "../../../../components/protected/entity-comments-card";
 import { useAuth } from "../../../../components/providers/auth-provider";
+import { useViewingUserPreferredUnitSystem } from "../../../../hooks/use-viewing-user-preferred-unit-system";
 import {
   formatDate,
   formatDistance,
@@ -38,6 +39,7 @@ export const Route = createFileRoute("/_protected/routes/$routeId/")({
 
 function RouteDetailPage() {
   const { user } = useAuth();
+  const { unitSystem } = useViewingUserPreferredUnitSystem();
   const utils = api.useUtils();
   const navigate = Route.useNavigate();
   const { routeId } = Route.useParams();
@@ -142,9 +144,9 @@ function RouteDetailPage() {
 
       <DetailMetricGrid
         items={[
-          { label: "Distance", value: formatDistance(route.total_distance) },
-          { label: "Ascent", value: formatElevation(route.total_ascent) },
-          { label: "Descent", value: formatElevation(route.total_descent) },
+          { label: "Distance", value: formatDistance(route.total_distance, unitSystem) },
+          { label: "Ascent", value: formatElevation(route.total_ascent, unitSystem) },
+          { label: "Descent", value: formatElevation(route.total_descent, unitSystem) },
           { label: "Visibility", value: route.is_public ? "Public" : "Private" },
         ]}
       />

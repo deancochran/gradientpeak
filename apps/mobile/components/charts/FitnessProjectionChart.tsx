@@ -1,5 +1,5 @@
 import type { FitnessProgression, TrainingBlock } from "@repo/core";
-import { calculateCTLProjection } from "@repo/core";
+import { addDaysDateOnlyUtc, calculateCTLProjection, diffDateOnlyUtcDays } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import { useMemo } from "react";
 import { View } from "react-native";
@@ -52,26 +52,23 @@ export function FitnessProjectionChart(props: FitnessProjectionChartProps) {
       }
 
       // Generate CTL projection from blocks
-      const startDate = new Date(blocks[0]?.start_date);
-      const endDate = new Date(blocks[blocks.length - 1]?.end_date);
-      const totalDays = Math.ceil(
-        (endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000),
-      );
+      const startDate = blocks[0]?.start_date;
+      const endDate = blocks[blocks.length - 1]?.end_date;
+      if (!startDate || !endDate) return [];
+      const totalDays = diffDateOnlyUtcDays(startDate, endDate);
 
       let currentCTL = fitnessProgression.starting_ctl;
       const projection: Array<{ date: string; ctl: number }> = [];
 
       // Add starting point
       projection.push({
-        date: startDate.toISOString().split("T")[0] || "",
+        date: startDate,
         ctl: currentCTL,
       });
 
       // Calculate CTL for each week
       for (let day = 7; day <= totalDays; day += 7) {
-        const currentDate = new Date(startDate);
-        currentDate.setDate(currentDate.getDate() + day);
-        const dateStr = currentDate.toISOString().split("T")[0] || "";
+        const dateStr = addDaysDateOnlyUtc(startDate, day);
 
         // Find which block this date falls in
         const block = blocks.find((b) => dateStr >= b.start_date && dateStr <= b.end_date);
@@ -149,7 +146,7 @@ export function FitnessProjectionChart(props: FitnessProjectionChartProps) {
     : {
         targetCTL: props.targetCTL,
         targetDate: props.targetDate,
-        description: `${props.targetCTL} CTL by ${new Date(props.targetDate).toLocaleDateString()}`,
+        description: `${props.targetCTL} CTL by ${props.targetDate}`,
       };
 
   // Render chart with projection

@@ -15,6 +15,8 @@ import { MapPin, TrendingUp, Upload, X } from "lucide-react-native";
 import { View } from "react-native";
 import MapView, { Polyline } from "react-native-maps";
 import { api } from "@/lib/api";
+import { formatDistanceMeters, formatElevationMeters } from "@/lib/display/formatters";
+import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { useAppNavigate } from "@/lib/navigation/useAppNavigate";
 
 interface RouteSelectorProps {
@@ -25,6 +27,7 @@ interface RouteSelectorProps {
 
 export function RouteSelector({ selectedRouteId, onSelectRoute }: RouteSelectorProps) {
   const navigateTo = useAppNavigate();
+  const preferredUnitSystem = usePreferredUnitSystem();
 
   const { data } = api.routes.list.useInfiniteQuery(
     {
@@ -49,11 +52,6 @@ export function RouteSelector({ selectedRouteId, onSelectRoute }: RouteSelectorP
 
   const handleUploadRoute = () => {
     navigateTo("/route-upload" as any);
-  };
-
-  const formatDistance = (meters: number) => {
-    const km = meters / 1000;
-    return `${km.toFixed(1)} km`;
   };
 
   return (
@@ -150,13 +148,19 @@ export function RouteSelector({ selectedRouteId, onSelectRoute }: RouteSelectorP
                     <View className="flex-row items-center gap-1">
                       <MapPin size={14} className="text-muted-foreground" />
                       <Text className="text-xs">
-                        {formatDistance(selectedRoute.total_distance ?? 0)}
+                        {formatDistanceMeters(selectedRoute.total_distance ?? 0, {
+                          preferredUnitSystem,
+                        })}
                       </Text>
                     </View>
                     {selectedRoute.total_ascent != null && selectedRoute.total_ascent > 0 && (
                       <View className="flex-row items-center gap-1">
                         <TrendingUp size={14} className="text-green-600" />
-                        <Text className="text-xs">{selectedRoute.total_ascent}m</Text>
+                        <Text className="text-xs">
+                          {formatElevationMeters(selectedRoute.total_ascent, {
+                            preferredUnitSystem,
+                          })}
+                        </Text>
                       </View>
                     )}
                   </View>

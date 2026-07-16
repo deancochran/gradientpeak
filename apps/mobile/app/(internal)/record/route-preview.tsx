@@ -8,17 +8,15 @@ import { useMemo } from "react";
 import { Alert, View } from "react-native";
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from "react-native-maps";
 import { api } from "@/lib/api";
+import { formatDistanceMeters } from "@/lib/display/formatters";
+import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { useRecordingConfiguration } from "@/lib/hooks/useRecordingConfiguration";
 import { useSharedActivityRecorder } from "@/lib/providers/ActivityRecorderProvider";
-
-function formatDistance(meters: number | null | undefined) {
-  if (!meters) return "-";
-  return `${(meters / 1000).toFixed(2)} km`;
-}
 
 export default function RoutePreviewScreen() {
   const { routeId } = useLocalSearchParams<{ routeId?: string }>();
   const router = useRouter();
+  const preferredUnitSystem = usePreferredUnitSystem();
   const service = useSharedActivityRecorder();
   const { attachRoute, attachedRouteId, sessionContract } = useRecordingConfiguration(service);
   const canEditRoute = sessionContract?.editing.canEditRoute ?? true;
@@ -133,7 +131,9 @@ export default function RoutePreviewScreen() {
 
             <View className="flex-row items-center gap-2">
               <MapPin size={16} className="text-muted-foreground" />
-              <Text>{formatDistance(route.total_distance)}</Text>
+              <Text>
+                {formatDistanceMeters(route.total_distance, { fallback: "-", preferredUnitSystem })}
+              </Text>
             </View>
           </CardContent>
         </Card>

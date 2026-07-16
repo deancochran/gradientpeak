@@ -1023,6 +1023,42 @@ describe("activitiesRouter", () => {
     expect(db.transaction).toHaveBeenCalledTimes(1);
   });
 
+  it("persists canonical temperature and pool-length metrics when creating an activity", async () => {
+    const createdActivity = buildActivityRow({
+      id: ACTIVITY_ID,
+      profile_id: OWNER_ID,
+      type: "swim",
+      avg_temperature: 21.5,
+      pool_length: 25,
+    });
+    const db = createDbMock({
+      executeRows: [{ id: ACTIVITY_ID }],
+      queryActivitiesFindFirst: [createdActivity],
+    });
+
+    await createCaller(db).create({
+      profile_id: OWNER_ID,
+      name: "Pool session",
+      notes: null,
+      type: "swim",
+      startedAt: "2026-01-15T09:00:00.000Z",
+      finishedAt: "2026-01-15T10:00:00.000Z",
+      durationSeconds: 3600,
+      movingSeconds: 3500,
+      distanceMeters: 2000,
+      metrics: {
+        avg_temperature: 21.5,
+        pool_length: 25,
+        pool_length_unit: "meters",
+      },
+    });
+
+    expect(findInsertedValue(db, "activities")).toMatchObject({
+      avg_temperature: 21.5,
+      pool_length: 25,
+    });
+  });
+
   it("creates an activity from a mobile recording summary with pending ingestion", async () => {
     const createdActivity = buildActivityRow({
       id: ACTIVITY_ID,

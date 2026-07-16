@@ -1,4 +1,11 @@
 import { decodePolyline } from "@repo/core";
+import {
+  formatDistance as formatPreferredDistance,
+  formatElevation as formatPreferredElevation,
+  formatSpeed as formatPreferredSpeed,
+  formatRunningPace,
+  type PreferredUnitSystem,
+} from "./units/presentation";
 
 export type RouteCoordinate = {
   latitude: number;
@@ -31,20 +38,22 @@ export function formatDate(value: string | Date) {
   }).format(typeof value === "string" ? new Date(value) : value);
 }
 
-export function formatDistance(meters: number | null | undefined) {
-  if (!meters || meters <= 0) {
-    return "0.00 km";
-  }
-
-  return `${(meters / 1000).toFixed(2)} km`;
+export function formatDistance(
+  meters: number | null | undefined,
+  unitSystem: PreferredUnitSystem = "metric",
+) {
+  return formatPreferredDistance(meters && meters > 0 ? meters : 0, unitSystem);
 }
 
-export function formatElevation(meters: number | null | undefined) {
+export function formatElevation(
+  meters: number | null | undefined,
+  unitSystem: PreferredUnitSystem = "metric",
+) {
   if (meters == null) {
     return "-";
   }
 
-  return `${Math.round(meters)} m`;
+  return formatPreferredElevation(meters, unitSystem);
 }
 
 export function formatDuration(seconds: number | null | undefined) {
@@ -99,23 +108,26 @@ export function formatHeartRate(value: number | null | undefined) {
   return `${Math.round(value)} bpm`;
 }
 
-export function formatSpeed(value: number | null | undefined) {
+export function formatSpeed(
+  value: number | null | undefined,
+  unitSystem: PreferredUnitSystem = "metric",
+) {
   if (value == null) {
     return "-";
   }
 
-  return `${(value * 3.6).toFixed(1)} km/h`;
+  return formatPreferredSpeed(value, unitSystem);
 }
 
-export function formatPace(value: number | null | undefined) {
+export function formatPace(
+  value: number | null | undefined,
+  unitSystem: PreferredUnitSystem = "metric",
+) {
   if (!value || value <= 0) {
     return "-";
   }
 
-  const secondsPerKm = 1000 / value;
-  const minutes = Math.floor(secondsPerKm / 60);
-  const seconds = Math.floor(secondsPerKm % 60);
-  return `${minutes}:${seconds.toString().padStart(2, "0")} /km`;
+  return formatRunningPace(1000 / value, unitSystem);
 }
 
 export function getActivityBadgeLabel(activityType: string) {
@@ -268,7 +280,10 @@ export function buildElevationPolylinePoints(coordinates: RouteCoordinate[]) {
     .join(" ");
 }
 
-export function summarizeActivityStreams(records: ActivityLikeRecord[] | null | undefined) {
+export function summarizeActivityStreams(
+  records: ActivityLikeRecord[] | null | undefined,
+  unitSystem: PreferredUnitSystem = "metric",
+) {
   if (!records?.length) {
     return [] as Array<{ label: string; value: string }>;
   }
@@ -304,14 +319,17 @@ export function summarizeActivityStreams(records: ActivityLikeRecord[] | null | 
   if (numeric.Speed.length > 0) {
     summaries.push({
       label: "Speed peak",
-      value: `${(Math.max(...numeric.Speed) * 3.6).toFixed(1)} km/h`,
+      value: formatSpeed(Math.max(...numeric.Speed), unitSystem),
     });
   }
 
   if (numeric.Elevation.length > 0) {
     summaries.push({
       label: "Elevation range",
-      value: `${Math.round(Math.min(...numeric.Elevation))}-${Math.round(Math.max(...numeric.Elevation))} m`,
+      value: `${formatElevation(Math.min(...numeric.Elevation), unitSystem)}–${formatElevation(
+        Math.max(...numeric.Elevation),
+        unitSystem,
+      )}`,
     });
   }
 

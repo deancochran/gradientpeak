@@ -166,11 +166,11 @@ describe("route detail screen", () => {
     expect(screen.getByText("River Loop")).toBeTruthy();
     expect(screen.getByText("Flat start, climb home.")).toBeTruthy();
     expect(screen.getByText("Distance")).toBeTruthy();
-    expect(screen.getByText("10.20 km")).toBeTruthy();
+    expect(screen.getByText("10.2 km")).toBeTruthy();
     expect(screen.getByText("Climb")).toBeTruthy();
-    expect(screen.getByText("180 m")).toBeTruthy();
+    expect(screen.getByText("180.0 m")).toBeTruthy();
     expect(screen.getByText("Descent")).toBeTruthy();
-    expect(screen.getByText("175 m")).toBeTruthy();
+    expect(screen.getByText("175.0 m")).toBeTruthy();
     expect(screen.getByText("4")).toBeTruthy();
   });
 

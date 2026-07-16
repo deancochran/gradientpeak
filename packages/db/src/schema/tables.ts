@@ -769,10 +769,12 @@ export const activities = pgTable(
       scale: 2,
       mode: "number",
     }),
+    // Canonical temperature is Celsius. Provider-unit conversion happens before persistence.
     avg_temperature: numeric("avg_temperature", { mode: "number" }),
     avg_swolf: numeric("avg_swolf", { mode: "number" }),
     efficiency_factor: numeric("efficiency_factor", { mode: "number" }),
     aerobic_decoupling: numeric("aerobic_decoupling", { mode: "number" }),
+    // Canonical pool length is metres. This retained column name avoids a compatibility migration.
     pool_length: numeric("pool_length", { mode: "number" }),
     total_strokes: integer("total_strokes"),
     device_manufacturer: text("device_manufacturer"),

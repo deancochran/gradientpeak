@@ -1,4 +1,8 @@
 import type { RecordingActivityCategory } from "@repo/core";
+import {
+  formatDistance as formatPreferredDistance,
+  type PreferredUnitSystem,
+} from "./units/presentation";
 
 export type RecordingGpsMode = "on" | "off";
 
@@ -94,12 +98,15 @@ export function getBrowserRecordingCapabilities() {
   };
 }
 
-export function formatDistance(meters: number | null | undefined) {
+export function formatDistance(
+  meters: number | null | undefined,
+  unitSystem: PreferredUnitSystem = "metric",
+) {
   if (!meters || meters <= 0) {
     return "-";
   }
 
-  return `${(meters / 1000).toFixed(1)} km`;
+  return formatPreferredDistance(meters, unitSystem);
 }
 
 export function formatScheduledTime(dateLike: string | Date | null | undefined) {

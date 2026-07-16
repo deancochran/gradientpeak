@@ -42,7 +42,7 @@ export const SAMPLE_ACTIVITIES = [
   // Indoor strength training (5 activities)
   ...SAMPLE_INDOOR_STRENGTH_ACTIVITIES,
 
-  // Indoor swimming (5 activities)
+  // Indoor swimming (6 activities)
   ...SAMPLE_INDOOR_SWIM_ACTIVITIES,
 
   // Other activities (5 activities)
@@ -90,7 +90,7 @@ export function getSampleActivitiesByCategory(
   return [];
 }
 
-// Total count of sample activities: 36 activities across 7 activity types
+// Total count of sample activities: 37 activities across 7 activity types
 export const TOTAL_SAMPLE_ACTIVITIES = SAMPLE_ACTIVITIES.length;
 
 // ============================================================================

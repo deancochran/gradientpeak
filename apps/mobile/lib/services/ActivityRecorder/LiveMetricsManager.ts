@@ -91,7 +91,6 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   private maxPower = 0;
   private maxHeartRate = 0;
   private maxCadence = 0;
-  private maxTemperature = 0;
 
   // === Virtual Distance (for indoor activities) ===
   private lastPowerUpdate?: number; // Timestamp of last power reading
@@ -1011,7 +1010,6 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
 
     if (tempValues.length > 0) {
       this.metrics.avgTemperature = Math.round(this.buffer.getAverage("temperature") * 10) / 10;
-      this.metrics.maxTemperature = Math.round(this.maxTemperature * 10) / 10;
     }
   }
 
@@ -1281,7 +1279,6 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     this.maxPower = 0;
     this.maxHeartRate = 0;
     this.maxCadence = 0;
-    this.maxTemperature = 0;
     this.lastPowerUpdate = undefined;
     this.lastPowerValue = 0;
     this.zoneStartTime = undefined;
@@ -1420,9 +1417,6 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
         break;
       case "cadence":
         this.maxCadence = Math.max(this.maxCadence, value);
-        break;
-      case "temperature":
-        this.maxTemperature = Math.max(this.maxTemperature, value);
         break;
     }
   }
@@ -1647,7 +1641,6 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
       avgCadence: 0,
       maxCadence: 0,
       avgTemperature: 0,
-      maxTemperature: 0,
       calories: 0,
       normalizedPowerEst: 0,
       intensityFactorEst: 0,

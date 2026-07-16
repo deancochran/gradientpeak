@@ -58,6 +58,7 @@ export interface ActivitySubmission {
   efficiencyFactor: number | null;
   aerobicDecoupling: number | null;
   avgTemperature: number | null;
+  poolLength?: number | null;
   deviceManufacturer: unknown;
   deviceProduct: unknown;
   laps: unknown[] | null;
@@ -289,6 +290,7 @@ export async function submitActivity(
       efficiency_factor: input.efficiencyFactor,
       aerobic_decoupling: input.aerobicDecoupling,
       avg_temperature: input.avgTemperature,
+      pool_length: input.poolLength ?? null,
       provider: provenance?.provider,
       external_id: provenance?.externalId,
       activity_file_path: input.activityFilePath,

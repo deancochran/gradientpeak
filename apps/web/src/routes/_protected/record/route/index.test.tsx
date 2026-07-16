@@ -4,7 +4,11 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RecordRoutePage } from "./index";
 
-const mocks = vi.hoisted(() => ({ list: vi.fn(), navigate: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  list: vi.fn(),
+  navigate: vi.fn(),
+  unitSystem: "metric" as "metric" | "imperial",
+}));
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: object) => ({
@@ -19,9 +23,14 @@ vi.mock("../../../../lib/api/client", () => ({
   api: { routes: { list: { useInfiniteQuery: () => mocks.list() } } },
 }));
 
+vi.mock("../../../../hooks/use-viewing-user-preferred-unit-system", () => ({
+  useViewingUserPreferredUnitSystem: () => ({ isLoading: false, unitSystem: mocks.unitSystem }),
+}));
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  mocks.unitSystem = "metric";
 });
 
 describe("RecordRoutePage search", () => {
@@ -62,11 +71,42 @@ describe("RecordRoutePage search", () => {
     expect(search.getAttribute("name")).toBe("routeSearch");
     fireEvent.change(search, { target: { value: "mountain" } });
     expect(screen.getByText("Mountain loop")).toBeTruthy();
+    expect(screen.getByText("12.0 km")).toBeTruthy();
     expect(screen.queryByText("River path")).toBeNull();
 
     fireEvent.click(screen.getByTestId("record-route-search-clear"));
     expect(screen.getByText("River path")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Load more routes" }));
     expect(fetchNextPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders route distances in the viewing user's preferred units", () => {
+    mocks.unitSystem = "imperial";
+    mocks.list.mockReturnValue({
+      data: {
+        pages: [
+          {
+            items: [
+              {
+                description: "Rocky climb",
+                id: "route-1",
+                name: "Mountain loop",
+                total_distance: 12000,
+              },
+            ],
+          },
+        ],
+      },
+      error: null,
+      fetchNextPage: vi.fn(),
+      hasNextPage: false,
+      isFetching: false,
+      isFetchingNextPage: false,
+      isLoading: false,
+    });
+
+    render(<RecordRoutePage />);
+
+    expect(screen.getByText("7.5 mi")).toBeTruthy();
   });
 });

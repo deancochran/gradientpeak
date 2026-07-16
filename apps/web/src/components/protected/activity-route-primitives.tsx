@@ -11,6 +11,7 @@ import {
 import { cn } from "@repo/ui/lib/cn";
 import { Heart, MapPin } from "lucide-react";
 import type { ReactNode } from "react";
+import { useViewingUserPreferredUnitSystem } from "../../hooks/use-viewing-user-preferred-unit-system";
 import {
   formatCalibrationQuality,
   getActivityLoadLabels,
@@ -196,6 +197,7 @@ export function LikeToggleButton({
 }
 
 export function ActivityListCard({ activity, onOpen }: { activity: any; onOpen: () => void }) {
+  const { unitSystem } = useViewingUserPreferredUnitSystem();
   const loadMethod = activity.derived?.method;
   const loadLabels = getActivityLoadLabels(loadMethod);
   const unavailableValue =
@@ -236,7 +238,10 @@ export function ActivityListCard({ activity, onOpen }: { activity: any; onOpen: 
           </Button>
         </div>
         <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2 xl:grid-cols-4">
-          <MetricPill label="Distance" value={formatDistance(activity.distance_meters)} />
+          <MetricPill
+            label="Distance"
+            value={formatDistance(activity.distance_meters, unitSystem)}
+          />
           <MetricPill label="Duration" value={formatDuration(activity.duration_seconds)} />
           <MetricPill
             label={loadLabels.load}
@@ -264,6 +269,8 @@ export function ActivityListCard({ activity, onOpen }: { activity: any; onOpen: 
 }
 
 export function RouteListCard({ onOpen, route }: { onOpen: () => void; route: any }) {
+  const { unitSystem } = useViewingUserPreferredUnitSystem();
+
   return (
     <Card className="transition-colors hover:border-primary/30">
       <CardContent className="space-y-4 p-4">
@@ -285,9 +292,9 @@ export function RouteListCard({ onOpen, route }: { onOpen: () => void; route: an
           </Button>
         </div>
         <div className="grid gap-2 text-sm text-muted-foreground sm:grid-cols-2 xl:grid-cols-4">
-          <MetricPill label="Distance" value={formatDistance(route.total_distance)} />
-          <MetricPill label="Ascent" value={formatElevation(route.total_ascent)} />
-          <MetricPill label="Descent" value={formatElevation(route.total_descent)} />
+          <MetricPill label="Distance" value={formatDistance(route.total_distance, unitSystem)} />
+          <MetricPill label="Ascent" value={formatElevation(route.total_ascent, unitSystem)} />
+          <MetricPill label="Descent" value={formatElevation(route.total_descent, unitSystem)} />
           <MetricPill label="Visibility" value={route.is_public ? "Public" : "Private"} />
         </div>
       </CardContent>

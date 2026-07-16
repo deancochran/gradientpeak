@@ -1,3 +1,9 @@
+import {
+  defaultPreferredUnitSystem,
+  displayUnitLabel,
+  type PreferredUnitSystem,
+  toDisplayUnitValue,
+} from "@repo/core/units";
 import { ChartCard, ChartEmptyState } from "@repo/ui/components/chart";
 import { LinearGradient, useFont, vec } from "@shopify/react-native-skia";
 import { useMemo } from "react";
@@ -8,6 +14,34 @@ import { buildElevationProfilePoints } from "@/lib/charts/elevationProfile";
 import { useTheme } from "@/lib/stores/theme-store";
 import type { DecompressedStream } from "@/lib/utils/streamDecompression";
 
+function displayElevation(meters: number, preferredUnitSystem: PreferredUnitSystem) {
+  const displayValue = toDisplayUnitValue(
+    { dimension: "elevation", value: meters, unit: "meters" },
+    preferredUnitSystem,
+  );
+
+  return `${displayValue.value.toFixed(0)} ${displayUnitLabel(displayValue.unit)}`;
+}
+
+function accessibleElevation(meters: number, preferredUnitSystem: PreferredUnitSystem) {
+  const displayValue = toDisplayUnitValue(
+    { dimension: "elevation", value: meters, unit: "meters" },
+    preferredUnitSystem,
+  );
+  const unit = displayValue.unit === "feet" ? "feet" : "meters";
+
+  return `${displayValue.value.toFixed(0)} ${unit}`;
+}
+
+function displayDistance(kilometers: number, preferredUnitSystem: PreferredUnitSystem) {
+  const displayValue = toDisplayUnitValue(
+    { dimension: "distance", value: kilometers * 1_000, unit: "meters" },
+    preferredUnitSystem,
+  );
+
+  return `${displayValue.value.toFixed(1)} ${displayUnitLabel(displayValue.unit)}`;
+}
+
 interface ElevationProfileChartProps {
   elevationStream: DecompressedStream;
   distanceStream?: DecompressedStream;
@@ -15,6 +49,7 @@ interface ElevationProfileChartProps {
   height?: number;
   showStats?: boolean;
   showHeader?: boolean;
+  preferredUnitSystem?: PreferredUnitSystem;
 }
 
 export function ElevationProfileChart({
@@ -24,6 +59,7 @@ export function ElevationProfileChart({
   height = 200,
   showStats = true,
   showHeader = true,
+  preferredUnitSystem = defaultPreferredUnitSystem,
 }: ElevationProfileChartProps) {
   const font = useFont(require("@/assets/fonts/SpaceMono-Regular.ttf"), 12);
   const { state, isActive } = useChartPressState({ x: 0, y: { elevation: 0 } });
@@ -66,13 +102,23 @@ export function ElevationProfileChart({
   }, [elevationStream, distanceStream]);
 
   const summary = [
-    { label: "Ascent", value: `${stats.totalAscent}m ↗` },
-    { label: "Descent", value: `${stats.totalDescent}m ↘` },
-    { label: "Range", value: `${stats.minElevation} - ${stats.maxElevation}m` },
+    { label: "Ascent", value: `${displayElevation(stats.totalAscent, preferredUnitSystem)} ↗` },
+    { label: "Descent", value: `${displayElevation(stats.totalDescent, preferredUnitSystem)} ↘` },
+    {
+      label: "Range",
+      value: `${displayElevation(stats.minElevation, preferredUnitSystem)} - ${displayElevation(
+        stats.maxElevation,
+        preferredUnitSystem,
+      )}`,
+    },
   ];
-  const accessibilityLabel = `${title}. Ascent ${stats.totalAscent} meters. Descent ${
-    stats.totalDescent
-  } meters. Elevation range ${stats.minElevation} to ${stats.maxElevation} meters.`;
+  const accessibilityLabel = `${title}. Ascent ${accessibleElevation(
+    stats.totalAscent,
+    preferredUnitSystem,
+  )}. Descent ${accessibleElevation(stats.totalDescent, preferredUnitSystem)}. Elevation range ${accessibleElevation(
+    stats.minElevation,
+    preferredUnitSystem,
+  )} to ${accessibleElevation(stats.maxElevation, preferredUnitSystem)}.`;
 
   if (chartData.length === 0) {
     const emptyState = (
@@ -102,8 +148,10 @@ export function ElevationProfileChart({
               lineColor: isDark ? "rgba(64,64,64,0.7)" : "rgba(212,212,212,0.85)",
               lineWidth: 1,
               formatXLabel: (value) =>
-                distanceStream ? `${value.toFixed(1)}km` : `${Math.floor(value / 60)}m`,
-              formatYLabel: (value) => `${value.toFixed(0)}m`,
+                distanceStream
+                  ? displayDistance(value, preferredUnitSystem)
+                  : `${Math.floor(value / 60)}m`,
+              formatYLabel: (value) => displayElevation(value, preferredUnitSystem),
             }}
             chartPressState={state}
             transformState={transformState}
@@ -134,13 +182,13 @@ export function ElevationProfileChart({
               key: "x",
               label: distanceStream ? "Distance" : "Time",
               value: distanceStream
-                ? `${state.x.value.value.toFixed(2)} km`
+                ? displayDistance(state.x.value.value, preferredUnitSystem)
                 : `${Math.floor(state.x.value.value / 60)}m ${Math.floor(state.x.value.value % 60)}s`,
             },
             {
               key: "elevation",
               label: "Elevation",
-              value: `${state.y.elevation.value.value.toFixed(0)} m`,
+              value: displayElevation(state.y.elevation.value.value, preferredUnitSystem),
               color: "#10b981",
             },
           ]}

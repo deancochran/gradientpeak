@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { projectRoutePreview, validateRecordingSearch } from "./recording-web";
+import { formatDistance, projectRoutePreview, validateRecordingSearch } from "./recording-web";
+
+describe("recording route unit presentation", () => {
+  it("formats canonical route distance in metric and imperial", () => {
+    expect(formatDistance(5_000, "metric")).toBe("5.0 km");
+    expect(formatDistance(5_000, "imperial")).toBe("3.1 mi");
+  });
+});
 
 describe("validateRecordingSearch", () => {
   it("defaults to a run launcher state", () => {

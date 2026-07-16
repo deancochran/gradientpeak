@@ -1,3 +1,4 @@
+import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import { createHost as mockCreateHost } from "../../../test/mock-components";
 import { renderNative, screen } from "../../../test/render-native";
 import { RouteCard } from "../RouteCard";
@@ -62,7 +63,18 @@ jest.mock("@/lib/navigation/useAppNavigate", () => ({
   useAppNavigate: () => jest.fn(),
 }));
 
+jest.mock("@/lib/hooks/usePreferredUnitSystem", () => ({
+  __esModule: true,
+  usePreferredUnitSystem: jest.fn(() => "metric"),
+}));
+
+const mockUsePreferredUnitSystem = jest.mocked(usePreferredUnitSystem);
+
 describe("RouteCard", () => {
+  beforeEach(() => {
+    mockUsePreferredUnitSystem.mockReturnValue("metric");
+  });
+
   it("shows owner and last updated metadata in the footer", () => {
     renderNative(
       <RouteCard
@@ -114,11 +126,34 @@ describe("RouteCard", () => {
     expect(screen.getByText("Distance")).toBeTruthy();
     expect(screen.getByText("Climb")).toBeTruthy();
     expect(screen.getByText("Descent")).toBeTruthy();
+    expect(screen.getByText("42.0 km")).toBeTruthy();
+    expect(screen.getAllByText("850.0 m")).toHaveLength(2);
     expect(screen.queryByText("A scenic route")).toBeNull();
     expect(screen.queryByText("Coach Lee")).toBeNull();
     expect(screen.queryByText("12")).toBeNull();
     expect(screen.queryByTestId("route-card-like-button-route-2")).toBeNull();
     expect(screen.queryByTestId("route-card-map-preview-route-2")).toBeNull();
+  });
+
+  it("formats route distance and elevation in the viewer's imperial units", () => {
+    mockUsePreferredUnitSystem.mockReturnValue("imperial");
+
+    renderNative(
+      <RouteCard
+        route={{
+          id: "route-2",
+          name: "Lunch Climb",
+          activity_category: "outdoor_ride",
+          total_distance: 5000,
+          total_ascent: 100,
+          total_descent: 100,
+        }}
+        variant="list"
+      />,
+    );
+
+    expect(screen.getByText("3.1 mi")).toBeTruthy();
+    expect(screen.getAllByText("328.1 ft")).toHaveLength(2);
   });
 
   it("allows list attribution and likes when explicitly requested", () => {

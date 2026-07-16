@@ -6,7 +6,9 @@ import { ActivityPlanCard } from "@/components/shared/ActivityPlanCard";
 import { RouteCard } from "@/components/shared/RouteCard";
 import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
 import { getActivityCategoryConfig } from "@/lib/constants/activities";
+import { formatDistanceMeters, formatElevationMeters } from "@/lib/display/formatters";
 import { formatEstimatedDurationSeconds, formatEstimatedTss } from "@/lib/estimatedMetrics";
+import { usePreferredUnitSystem } from "@/lib/hooks/usePreferredUnitSystem";
 import type { ResourcePickerItem, ResourcePickerScope } from "./resourcePickerTypes";
 
 type ActivityPlanPickerSource = NonNullable<
@@ -38,11 +40,6 @@ type RoutePickerSource = {
   total_distance?: number | null;
 };
 
-function formatDistance(meters?: number | null) {
-  if (!meters || meters <= 0) return null;
-  return `${(meters / 1000).toFixed(1)} km`;
-}
-
 function getVisibilityLabel(item: ResourcePickerItem) {
   if (item.isSystem) return "System";
   if (item.isPublic) return "Public";
@@ -64,6 +61,7 @@ export function ResourcePickerResultRow({
   onPress,
   scope,
 }: ResourcePickerResultRowProps) {
+  const preferredUnitSystem = usePreferredUnitSystem();
   const isActivityPlan = scope === "activityPlans";
   const card =
     item.presentation === "canonical" && isActivityPlan && "activityPlanCardData" in item ? (
@@ -125,18 +123,23 @@ export function ResourcePickerResultRow({
     scope === "routes"
       ? [
           getVisibilityLabel(item),
-          formatDistance(item.totalDistance),
-          item.totalAscent ? `${item.totalAscent}m climb` : null,
+          formatDistanceMeters(item.totalDistance, { fallback: "", preferredUnitSystem }),
+          item.totalAscent
+            ? `${formatElevationMeters(item.totalAscent, { preferredUnitSystem })} climb`
+            : null,
         ]
       : [
           activityConfig.name,
           formatEstimatedDurationSeconds(item.estimatedDuration),
           formatEstimatedTss(item.estimatedTss),
         ];
+  const accessibilityLabel = ["Select", item.name || "resource", ...metadata]
+    .filter(Boolean)
+    .join(", ");
 
   return (
     <Pressable
-      accessibilityLabel={`Select ${item.name || "resource"}`}
+      accessibilityLabel={accessibilityLabel}
       accessibilityRole="button"
       accessibilityState={{ disabled, selected: isSelected }}
       className={`min-h-11 rounded-2xl border p-3 ${

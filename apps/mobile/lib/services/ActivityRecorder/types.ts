@@ -118,7 +118,6 @@ export interface LiveMetricsState {
 
   // === Environmental ===
   avgTemperature?: number; // celsius
-  maxTemperature?: number; // celsius
 
   // === Calories ===
   calories: number; // kcal
@@ -272,7 +271,6 @@ export interface CadenceMetrics {
 
 export interface EnvironmentalMetrics {
   avgTemperature?: number;
-  maxTemperature?: number;
   currentTemperature?: number;
 }
 
