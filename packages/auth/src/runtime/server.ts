@@ -4,9 +4,11 @@ import { resolveDatabaseUrl } from "@repo/db/client";
 import { relationalSchema, schema } from "@repo/db/schema";
 import { compare, hash } from "bcryptjs";
 import { betterAuth } from "better-auth";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
+import { isStrongPassword } from "../contracts/forms";
 import {
   type AuthSession,
   type AuthSessionLookupInput,
@@ -30,6 +32,27 @@ export interface CreateGradientPeakAuthOptions {
 let poolSingleton: Pool | null = null;
 let authSingleton: ReturnType<typeof createGradientPeakAuth> | null = null;
 let authSecretWarningLogged = false;
+
+const enforcePasswordPolicy = createAuthMiddleware(async (ctx) => {
+  const passwordField =
+    ctx.path === "/sign-up/email"
+      ? "password"
+      : ctx.path === "/reset-password" || ctx.path === "/change-password"
+        ? "newPassword"
+        : undefined;
+
+  if (!passwordField) {
+    return;
+  }
+
+  const password = (ctx.body as Record<string, unknown> | undefined)?.[passwordField];
+  if (typeof password !== "string" || !isStrongPassword(password)) {
+    throw new APIError("BAD_REQUEST", {
+      message:
+        "Password must be at least 8 characters and include an uppercase letter and a number.",
+    });
+  }
+});
 
 function getPool(databaseUrl: string) {
   if (!poolSingleton) {
@@ -134,6 +157,7 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: true,
+      minPasswordLength: 8,
       password: {
         hash: async (password) => hash(password, 10),
         verify: async ({ hash: passwordHash, password }) => compare(password, passwordHash),
@@ -175,6 +199,25 @@ export function createGradientPeakAuth(options: CreateGradientPeakAuthOptions) {
         // atomically with the auth identity.
         enabled: false,
       },
+    },
+    hooks: {
+      before: enforcePasswordPolicy,
+    },
+    rateLimit: {
+      enabled: true,
+      window: 60,
+      max: 10,
+      storage: "database",
+      customRules: {
+        "/sign-up/email": { window: 60, max: 5 },
+        "/request-password-reset": { window: 60, max: 3 },
+        "/reset-password": { window: 60, max: 5 },
+        "/send-verification-email": { window: 60, max: 3 },
+      },
+    },
+    session: {
+      expiresIn: 60 * 60 * 24 * 30,
+      updateAge: 60 * 60 * 24,
     },
     trustedOrigins: createTrustedOrigins(env.appUrl, env.mobileScheme, options.trustedOrigins),
     plugins: [expo(), ...(options.plugins ?? []), tanstackStartCookies()],

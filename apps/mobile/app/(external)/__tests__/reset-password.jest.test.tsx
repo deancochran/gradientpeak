@@ -152,4 +152,11 @@ describe("reset-password screen", () => {
 
     expect(screen.getByTestId("update-password-button").props.disabled).toBe(true);
   });
+
+  it("marks new password fields for credential-manager generation", () => {
+    renderNative(<ResetPasswordScreen />);
+
+    expect(screen.getByTestId("password-input").props.autoComplete).toBe("new-password");
+    expect(screen.getByTestId("confirm-password-input").props.autoComplete).toBe("new-password");
+  });
 });

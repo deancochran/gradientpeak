@@ -1,0 +1,4 @@
+appId: com.deancochran.gradientpeak.dev
+---
+- runFlow:
+    file: ../journeys/record/quick_start_pause_resume_finish.yaml

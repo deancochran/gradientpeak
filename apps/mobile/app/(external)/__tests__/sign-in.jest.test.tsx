@@ -168,6 +168,12 @@ describe("sign-in screen", () => {
     });
   });
 
+  it("marks the password field for credential-manager autofill", () => {
+    renderNative(<SignInScreen />);
+
+    expect(screen.getByTestId("password-input").props.autoComplete).toBe("current-password");
+  });
+
   it("maps invalid credentials to the root form error", async () => {
     signInMock.mockResolvedValue({ error: { message: "Invalid login credentials" } });
 

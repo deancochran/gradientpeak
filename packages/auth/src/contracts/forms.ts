@@ -14,6 +14,10 @@ export const authPasswordSchema = z
   .string({ message: "Password is required" })
   .min(8, "Password must be at least 8 characters");
 
+export function isStrongPassword(password: string): boolean {
+  return password.length >= 8 && /[A-Z]/.test(password) && /[0-9]/.test(password);
+}
+
 export const authStrongPasswordSchema = authPasswordSchema
   .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
   .regex(/[0-9]/, "Password must contain at least one number");

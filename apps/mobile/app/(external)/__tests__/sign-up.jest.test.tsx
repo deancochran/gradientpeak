@@ -131,17 +131,20 @@ jest.mock("@repo/ui/components/form", () => ({
     name,
     placeholder,
     testId,
+    autoComplete,
   }: {
     control: FormControl;
     name: string;
     placeholder?: string;
     testId?: string;
+    autoComplete?: string;
   }) =>
     React.createElement(
       React.Fragment,
       null,
       React.createElement("TextInput", {
         placeholder,
+        autoComplete,
         testID: testId ?? name,
         value: control.values[name] ?? "",
         onChangeText: (nextValue: string) => control.setValue(name, nextValue),
@@ -229,6 +232,13 @@ describe("sign-up screen", () => {
         params: { email: "athlete@example.com", source: "sign-up" },
       });
     });
+  });
+
+  it("marks new password fields for credential-manager generation", () => {
+    renderNative(<SignUpScreen />);
+
+    expect(screen.getByTestId("password-input").props.autoComplete).toBe("new-password");
+    expect(screen.getByTestId("repeat-password-input").props.autoComplete).toBe("new-password");
   });
 
   it("routes verified sessions into the app after sign up success", async () => {

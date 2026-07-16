@@ -45,6 +45,10 @@
     {
       "version": "20260715124838",
       "name": "add_profile_planning_timezone"
+    },
+    {
+      "version": "20260715195947",
+      "name": "add_auth_rate_limits"
     }
   ]
 }

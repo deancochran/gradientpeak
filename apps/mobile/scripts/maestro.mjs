@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -9,7 +9,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const appId = process.env.MAESTRO_APP_ID || "com.deancochran.gradientpeak.dev";
 const defaultServerLabel = process.env.MAESTRO_EXPO_DEV_SERVER_LABEL || "http://10.0.2.2:8081";
 const artifactDir = process.env.MAESTRO_ARTIFACT_DIR || ".maestro/artifacts";
-const defaultFlows = [".maestro/flows/main"];
+const defaultFlows = [".maestro/flows/smoke"];
 const forwardedPorts = [8081, 3000, 3100, 54321];
 const loadedEnvKeys = new Set();
 
@@ -110,6 +110,35 @@ function clean() {
   rmSync(resolve(root, artifactDir), { force: true, recursive: true });
 }
 
+function collectFlowFiles(path) {
+  const absolutePath = resolve(root, path);
+  if (!existsSync(absolutePath)) {
+    throw new Error(`Maestro flow path does not exist: ${path}`);
+  }
+
+  if (statSync(absolutePath).isFile()) {
+    return [path];
+  }
+
+  return readdirSync(absolutePath, { withFileTypes: true })
+    .flatMap((entry) =>
+      entry.isDirectory()
+        ? collectFlowFiles(`${path}/${entry.name}`)
+        : entry.name.endsWith(".yaml") || entry.name.endsWith(".yml")
+          ? [`${path}/${entry.name}`]
+          : [],
+    )
+    .sort();
+}
+
+function checkSyntax(flowArgs) {
+  const paths = flowArgs.length > 0 ? flowArgs : defaultFlows;
+  const flows = paths.flatMap(collectFlowFiles);
+  for (const flow of flows) {
+    run(process.env.MAESTRO_BIN || "maestro", ["check-syntax", flow]);
+  }
+}
+
 function buildMaestroArgs(flowArgs) {
   const flows = flowArgs.length > 0 ? flowArgs : defaultFlows;
   const debugOutput = process.env.MAESTRO_DEBUG_OUTPUT || `${artifactDir}/debug`;
@@ -188,6 +217,9 @@ switch (command) {
     break;
   case "clean":
     clean();
+    break;
+  case "check":
+    checkSyntax(args);
     break;
   case "test":
     prepare();

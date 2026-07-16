@@ -30,6 +30,20 @@ env:
     id: "recording-resume-button"
 - extendedWaitUntil:
     visible:
+      id: "recording-pause-button"
+    timeout: 10000
+- assertNotVisible:
+    id: "recording-resume-button"
+- tapOn:
+    id: "recording-pause-button"
+- extendedWaitUntil:
+    visible:
+      id: "recording-resume-button"
+    timeout: 10000
+- tapOn:
+    id: "recording-resume-button"
+- extendedWaitUntil:
+    visible:
       id: "recording-finish-button"
     timeout: 10000
 - tapOn:
@@ -37,4 +51,5 @@ env:
 - extendedWaitUntil:
     visible: "Save Activity"
     timeout: 15000
-- assertVisible: "Activity Name"
+- assertVisible:
+    id: "activity-name-input"

@@ -115,6 +115,7 @@ export default function ResetPasswordScreen() {
             <Form {...form}>
               <View className="gap-4" testID="reset-password-form">
                 <FormTextField
+                  autoComplete="new-password"
                   control={form.control}
                   label="New Password"
                   name="password"
@@ -139,6 +140,7 @@ export default function ResetPasswordScreen() {
                 </View>
 
                 <FormTextField
+                  autoComplete="new-password"
                   control={form.control}
                   label="Confirm Password"
                   name="confirmPassword"

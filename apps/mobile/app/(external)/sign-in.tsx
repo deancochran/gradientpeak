@@ -145,6 +145,7 @@ export default function SignInScreen() {
                 />
 
                 <FormTextField
+                  autoComplete="current-password"
                   control={form.control}
                   label="Password"
                   name="password"

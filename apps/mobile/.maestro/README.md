@@ -17,10 +17,10 @@ To reuse your normal development server instead, leave that server running and s
 EXPO_DEV_SERVER_LABEL="http://192.168.1.20:8081" pnpm --filter mobile test:e2e
 ```
 
-Run one flow:
+Run one smoke flow:
 
 ```bash
-pnpm --filter mobile test:e2e:flow -- .maestro/flows/main/auth_navigation.yaml
+pnpm --filter mobile test:e2e:flow -- .maestro/flows/smoke/auth_navigation.yaml
 ```
 
 Run performance budgets:
@@ -39,22 +39,33 @@ Performance flows read app-side `perf-metric-*` beacons that are enabled only wh
 - Maestro prepares the emulator, reverses local ports, and then runs against the existing dev client session.
 - The default server row is `http://10.0.2.2:8081` on Android emulators. Override it with `EXPO_DEV_SERVER_LABEL` or `MAESTRO_EXPO_DEV_SERVER_LABEL` when reusing a LAN dev server.
 
+## Smoke suite
+
+`pnpm --filter mobile test:e2e` and `pnpm --filter mobile maestro:check` run only:
+
+- `smoke/auth_navigation.yaml`: launch into signed-out authentication navigation.
+- `smoke/plan_available.yaml`: authenticate with the standard fixture and open Plan.
+- `smoke/record_lifecycle.yaml`: authenticate with the standard fixture, then start, pause,
+  resume, and finish a recording.
+
+The smoke suite does not capture or require video evidence. It needs an already-running dev client
+and the standard authenticated fixture for the Plan and recorder flows.
+
 ## Fixtures
 
 Set the vars your flow needs before running Maestro:
 
-- `STANDARD_USER_EMAIL` / `STANDARD_USER_PASS`
-- `ONBOARDING_USER_EMAIL` / `ONBOARDING_USER_PASS`
-- `SIGNUP_EMAIL` / `SIGNUP_PASSWORD`
-- `TARGET_USERNAME`
+- `STANDARD_USER_EMAIL` / `STANDARD_USER_PASS` for the authenticated smoke flows.
 
-Use `apps/mobile/.maestro/fixtures.env.example` as the template.
+Copy `apps/mobile/.maestro/fixtures.env.example` to
+`apps/mobile/.maestro/fixtures.env` and supply the stable standard account.
 
-## Flow catalog
+## Manual and experimental flows
 
-- `apps/mobile/.maestro/FLOW_CATALOG.md` maps `apps/mobile/docs/INTERACTION_INVENTORY.md` to Maestro flow files.
-- `apps/mobile/.maestro/COVERAGE_MATRIX.md` tracks inventory area -> flow ownership -> validation status.
-- Some newer journey files are intentionally unvalidated scaffolds so coverage can be expanded before running the full suite.
+Flows outside `flows/smoke/` are retained only for manual or experimental investigation. They are
+not part of the supported suite: many mutate data, depend on provider or seeded-resource fixtures,
+or assert unstable presentation details. Run one explicitly with `test:e2e:flow`; do not treat its
+result as smoke-suite coverage.
 
 ## Notes
 
@@ -63,6 +74,7 @@ Use `apps/mobile/.maestro/fixtures.env.example` as the template.
 - `apps/mobile/.maestro/flows/reusable/expo_dev_client_setup.yaml` is the single Expo-specific setup flow; it dismisses transient Dev Client UI before app assertions run.
 - `apps/mobile/.maestro/flows/reusable/reset_to_home.yaml` gives flows a neutral authenticated start by returning the app to `Home` before tab-specific navigation.
 - `pnpm --filter mobile maestro -- <flow>` is the underlying local Maestro runner. It keeps output under `apps/mobile/.maestro/`.
+- `pnpm --filter mobile maestro:check` checks only smoke-flow syntax without a connected device.
 - `flows/reusable/login.yaml` signs in only when the sign-in screen is actually visible.
 
 ## Clean artifacts

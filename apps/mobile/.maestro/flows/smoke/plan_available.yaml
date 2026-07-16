@@ -1,0 +1,8 @@
+appId: com.deancochran.gradientpeak.dev
+---
+- runFlow:
+    file: ../reusable/authenticated_home.yaml
+- runFlow:
+    file: ../reusable/open_plan_tab.yaml
+- assertVisible:
+    id: "training-path-section"

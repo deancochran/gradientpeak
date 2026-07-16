@@ -21,7 +21,7 @@ export type MockFormTextFieldProps<TValues extends Record<string, string>> = {
   name: keyof TValues & string;
   placeholder?: string;
   testId?: string;
-};
+} & Record<string, unknown>;
 
 export type ZodFormSubmitProps<TValues extends Record<string, string>> = {
   form: {
@@ -95,11 +95,13 @@ export function createFormTextField<TValues extends Record<string, string>>() {
     name,
     placeholder,
     testId,
+    ...inputProps
   }: MockFormTextFieldProps<TValues>) {
     return React.createElement(
       React.Fragment,
       null,
       React.createElement("TextInput", {
+        ...inputProps,
         onChangeText: (nextValue: string) => control.setValue(name, nextValue),
         placeholder,
         testID: testId ?? name,

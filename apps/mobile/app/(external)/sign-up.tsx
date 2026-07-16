@@ -145,6 +145,7 @@ export default function SignUpScreen() {
                 />
 
                 <FormTextField
+                  autoComplete="new-password"
                   control={form.control}
                   label="Password"
                   name="password"
@@ -169,6 +170,7 @@ export default function SignUpScreen() {
                 </View>
 
                 <FormTextField
+                  autoComplete="new-password"
                   control={form.control}
                   label="Repeat Password"
                   name="repeatPassword"
