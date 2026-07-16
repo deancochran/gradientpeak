@@ -158,7 +158,10 @@ function createSupabaseMock(results: QueryMap) {
 }
 
 function createTrainingPlansCaller(results: QueryMap = {}) {
-  const { db } = createQueryMapDbMock(results);
+  const { db } = createQueryMapDbMock({
+    profiles: { data: { planningTimezone: "UTC" }, error: null },
+    ...results,
+  });
 
   return trainingPlansRouter.createCaller({
     db: db as any,
@@ -826,7 +829,7 @@ describe("training plan projection fallbacks", () => {
         error: null,
       },
       activities: { data: [], error: null },
-      profiles: { data: { id: "profile-123", dob: null }, error: null },
+      profiles: { data: { id: "profile-123", dob: null, planningTimezone: "UTC" }, error: null },
       activity_efforts: { data: [], error: null },
       profile_metrics: { data: [], error: null },
     });

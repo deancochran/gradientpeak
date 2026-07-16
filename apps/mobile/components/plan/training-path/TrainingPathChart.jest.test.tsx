@@ -1,6 +1,7 @@
 import React from "react";
 import { fireEvent, renderNative, screen } from "../../../test/render-native";
 import { TrainingPathChart } from "./TrainingPathChart";
+import { TrainingPathLegend } from "./TrainingPathLegend";
 import type { TrainingPathViewModel } from "./trainingPathTypes";
 
 const interactionOrder: string[] = [];
@@ -231,6 +232,33 @@ describe("TrainingPathChart interactions", () => {
 
     expect(dots.length).toBeGreaterThan(1);
     expect(strokedBars).toHaveLength(0);
+  });
+
+  it("renders actual and planned CTL solid while keeping ideal CTL dotted in the fallback chart and legend", () => {
+    renderNative(
+      <>
+        <TrainingPathChart model={model} range="season" />
+        <TrainingPathLegend range="season" />
+      </>,
+    );
+
+    const lines = (screen as any).UNSAFE_getAllByType("Line");
+    const plannedCtlLine = lines.find(
+      (line: any) => line.props.color === "rgba(37, 99, 235, 0.95)",
+    );
+    const idealCtlLine = lines.find((line: any) => line.props.color === "rgba(15, 23, 42, 0.42)");
+    const legendDottedSwatch = (screen as any)
+      .UNSAFE_getAllByType("View")
+      .find((view: any) => view.props.style?.borderStyle === "dotted");
+
+    expect(plannedCtlLine.props.children).toBeUndefined();
+    expect(idealCtlLine.props.children.type).toEqual(expect.any(Function));
+    expect(idealCtlLine.props.children.props.intervals).toEqual([4, 4]);
+    expect(screen.getByText("Actual CTL")).toBeTruthy();
+    expect(screen.getByText("Planned CTL")).toBeTruthy();
+    expect(legendDottedSwatch?.props.style).toEqual(
+      expect.objectContaining({ borderStyle: "dotted" }),
+    );
   });
 
   it("renders planned and recommended bars independently when completed load is absent", () => {

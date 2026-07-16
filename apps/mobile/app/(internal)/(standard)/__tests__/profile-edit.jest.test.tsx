@@ -94,7 +94,11 @@ it("renders the loaded required full name above username", () => {
   renderNative(<ProfileEdit />);
 
   const fields = screen.UNSAFE_getAllByType("FormTextField" as never);
-  expect(fields.map((field) => field.props.name)).toEqual(["full_name", "username"]);
+  expect(fields.map((field) => field.props.name)).toEqual([
+    "full_name",
+    "username",
+    "planning_timezone",
+  ]);
   expect(fields[0]?.props).toEqual(
     expect.objectContaining({ label: "Full Name *", testId: "profile-edit-full-name" }),
   );

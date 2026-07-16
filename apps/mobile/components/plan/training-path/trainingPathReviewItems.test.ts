@@ -5,8 +5,28 @@ import {
 } from "./trainingPathReviewItems";
 
 describe("buildTrainingPathEventReviewItems", () => {
+  it("buckets timed events in the planning zone while retaining their event timezone", () => {
+    const items = buildTrainingPathEventReviewItems({
+      planningTimezone: "America/Los_Angeles",
+      events: [
+        {
+          id: "event-1",
+          title: "Tokyo call",
+          starts_at: "2026-04-06T06:30:00.000Z",
+          timezone: "Asia/Tokyo",
+        },
+      ],
+    });
+
+    expect(items[0]).toMatchObject({
+      date: "2026-04-05",
+      event: { timezone: "Asia/Tokyo" },
+    });
+  });
+
   it("deduplicates events returned by overlapping recent and upcoming queries", () => {
     const items = buildTrainingPathEventReviewItems({
+      planningTimezone: "America/Los_Angeles",
       events: [
         {
           id: "event-1",
@@ -26,11 +46,21 @@ describe("buildTrainingPathEventReviewItems", () => {
     expect(items).toHaveLength(1);
     expect(items[0]?.id).toBe("event-1");
   });
+
+  it("abstains rather than assigning timed events to a fallback timezone", () => {
+    expect(
+      buildTrainingPathEventReviewItems({
+        planningTimezone: null,
+        events: [{ id: "event-1", starts_at: "2026-04-06T06:30:00.000Z" }],
+      }),
+    ).toEqual([]);
+  });
 });
 
 describe("buildTrainingPathScheduledReviewItems", () => {
   it("includes a scheduled activity plan when the same source contributes tentative planned load", () => {
     const input = {
+      planningTimezone: "America/Los_Angeles",
       plannedEvents: [],
       groupEvents: [
         {
@@ -73,6 +103,7 @@ describe("buildTrainingPathScheduledReviewItems", () => {
 
   it("keeps regular events, group event shells, and group activity-plan selections for the same week", () => {
     const input = {
+      planningTimezone: "America/Los_Angeles",
       plannedEvents: [
         {
           id: "calendar-event-1",

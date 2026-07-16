@@ -1,4 +1,9 @@
-import { createEmptyGoalDraft, type WizardGoalInput } from "@repo/core";
+import {
+  createEmptyGoalDraft,
+  diffDateOnlyUtcDays,
+  parseDateOnlyUtc,
+  type WizardGoalInput,
+} from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
@@ -32,7 +37,7 @@ export function GoalSelectionStep({
     }
 
     return Math.ceil(
-      (new Date(goal.target_date).getTime() - Date.now()) / (7 * 24 * 60 * 60 * 1000),
+      diffDateOnlyUtcDays(new Date().toISOString().slice(0, 10), goal.target_date) / 7,
     );
   }, [goal.target_date]);
 
@@ -61,7 +66,7 @@ export function GoalSelectionStep({
               <Text className="text-xs text-muted-foreground uppercase">Target date</Text>
               <Text className="text-sm text-foreground">
                 {goal.target_date
-                  ? new Date(`${goal.target_date}T12:00:00.000Z`).toLocaleDateString("en-US", {
+                  ? parseDateOnlyUtc(goal.target_date).toLocaleDateString("en-US", {
                       weekday: "short",
                       year: "numeric",
                       month: "short",

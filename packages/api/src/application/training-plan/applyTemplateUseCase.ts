@@ -1,4 +1,9 @@
-import type { templateApplyInputSchema } from "@repo/core";
+import {
+  formatDateOnlyInTimeZone,
+  ianaTimezoneSchema,
+  scheduledDateTimeToIsoInstant,
+  type templateApplyInputSchema,
+} from "@repo/core";
 import { type EventInsert, schema } from "@repo/db";
 import type { DrizzleDbClient } from "@repo/db/client";
 import { TRPCError } from "@trpc/server";
@@ -48,19 +53,14 @@ function getSqlRows<T>(result: unknown) {
   return ((result as { rows?: T[] }).rows ?? []) as T[];
 }
 
-function toDayStartIso(dateOnly: string): string {
-  return `${dateOnly}T00:00:00.000Z`;
-}
+function getRequiredPlanningTimezone(value: string | null | undefined): string {
+  const parsed = ianaTimezoneSchema.safeParse(value);
+  if (parsed.success) return parsed.data;
 
-function todayDateOnlyUtc(): string {
-  const now = new Date();
-  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-${String(
-    now.getUTCDate(),
-  ).padStart(2, "0")}`;
-}
-
-function todayStartIsoUtc(): string {
-  return toDayStartIso(todayDateOnlyUtc());
+  throw new TRPCError({
+    code: "BAD_REQUEST",
+    message: "A valid planning timezone is required before applying a training plan.",
+  });
 }
 
 export async function applyTrainingPlanTemplateUseCase(input: {
@@ -85,8 +85,13 @@ export async function applyTrainingPlanTemplateUseCase(input: {
     .from(schema.profiles)
     .where(eq(schema.profiles.id, profileId))
     .limit(1);
-  // Existing profiles created before planning_timezone remain explicitly on the UTC legacy path.
-  const planningTimezone = profile?.planningTimezone ?? "UTC";
+  const planningTimezone = getRequiredPlanningTimezone(profile?.planningTimezone);
+  const todayDate = formatDateOnlyInTimeZone(new Date(), planningTimezone);
+  const todayStart = scheduledDateTimeToIsoInstant({
+    scheduledDate: todayDate,
+    time: "00:00",
+    timeZone: planningTimezone,
+  });
   const preliminaryActivePlanLookup = await repository.getActivePlanFromFutureEvents(profileId);
   if (preliminaryActivePlanLookup && !input.values.replace_existing) {
     throw new TRPCError({
@@ -119,7 +124,7 @@ export async function applyTrainingPlanTemplateUseCase(input: {
     startDate: input.values.start_date,
     targetDate: input.values.target_date,
     structure,
-    todayDate: todayDateOnlyUtc(),
+    todayDate,
   });
 
   const appliedPlanId = templatePlan.id as string;
@@ -303,7 +308,7 @@ export async function applyTrainingPlanTemplateUseCase(input: {
               and(
                 eq(schema.events.profile_id, profileId),
                 eq(schema.events.event_type, plannedEventType),
-                gte(schema.events.starts_at, new Date(todayStartIsoUtc())),
+                gte(schema.events.starts_at, new Date(todayStart)),
                 ne(schema.events.status, "completed"),
                 activePlanLookup.scheduleBatchId
                   ? eq(schema.events.schedule_batch_id, activePlanLookup.scheduleBatchId)

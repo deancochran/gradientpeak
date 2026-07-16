@@ -1,14 +1,19 @@
 import {
+  addDaysDateOnlyUtc,
   type EventLifecycle,
   type EventRecurrence,
   eventCreateSchema,
   eventMutationScopeSchema,
   type eventTypeInputSchema,
   eventUpdateSchema,
+  formatDateOnlyInTimeZone,
   getScheduledDateKey,
+  ianaTimezoneSchema,
   materializeRecurrenceOccurrences,
+  parseDateOnlyUtc,
   plannedActivityCreateSchema,
   plannedActivityUpdateSchema,
+  scheduledDateTimeToIsoInstant,
 } from "@repo/core";
 import type {
   ActivityRow,
@@ -17,7 +22,9 @@ import type {
   PublicEventStatus,
   PublicEventType,
 } from "@repo/db";
+import { schema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import {
   createEventUseCase,
@@ -402,26 +409,47 @@ function toCanonicalInstantIso(value: string): string {
   return parsed.toISOString();
 }
 
-function toDayStartIso(dateValue: string): string {
-  return `${toDateKey(dateValue)}T00:00:00.000Z`;
+function toDayStartIso(dateValue: string, planningTimezone = "UTC"): string {
+  return scheduledDateTimeToIsoInstant({
+    scheduledDate: toDateKey(dateValue),
+    time: "00:00",
+    timeZone: planningTimezone,
+  });
 }
 
-function toRangeStartIso(dateValue: string): string {
+function toRangeStartIso(dateValue: string, planningTimezone?: string): string {
   return dateOnlyPattern.test(dateValue.trim())
-    ? toDayStartIso(dateValue)
+    ? toDayStartIso(dateValue, planningTimezone)
     : toCanonicalInstantIso(dateValue);
 }
 
-function toNextDayStartIso(dateValue: string): string {
-  const day = new Date(toDayStartIso(dateValue));
-  day.setUTCDate(day.getUTCDate() + 1);
-  return day.toISOString();
+function toNextDayStartIso(dateValue: string, planningTimezone = "UTC"): string {
+  return toDayStartIso(addDaysDateOnlyUtc(toDateKey(dateValue), 1), planningTimezone);
 }
 
-function toRangeEndIso(dateValue: string): string {
+function toRangeEndIso(dateValue: string, planningTimezone?: string): string {
   return dateOnlyPattern.test(dateValue.trim())
-    ? toNextDayStartIso(dateValue)
+    ? toNextDayStartIso(dateValue, planningTimezone)
     : toCanonicalInstantIso(dateValue);
+}
+
+async function getRequiredProfilePlanningTimezone(
+  ctx: Context,
+  profileId: string,
+): Promise<string> {
+  const db = getRequiredDb(ctx);
+  const [profile] = await db
+    .select({ planningTimezone: schema.profiles.planning_timezone })
+    .from(schema.profiles)
+    .where(eq(schema.profiles.id, profileId))
+    .limit(1);
+  const parsed = ianaTimezoneSchema.safeParse(profile?.planningTimezone);
+  if (parsed.success) return parsed.data;
+
+  throw new TRPCError({
+    code: "BAD_REQUEST",
+    message: "A valid planning timezone is required for calendar-day queries.",
+  });
 }
 
 function parseRRule(rule: string): Map<string, string> {
@@ -1008,13 +1036,14 @@ export const eventsRouter = createTRPCRouter({
 
   getToday: protectedProcedure.query(async ({ ctx }) => {
     const eventReadRepository = getEventReadRepository(ctx);
-    const today = toDateKey(new Date().toISOString());
-    const tomorrow = toDateKey(new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString());
+    const planningTimezone = await getRequiredProfilePlanningTimezone(ctx, ctx.session.user.id);
+    const today = formatDateOnlyInTimeZone(new Date(), planningTimezone);
+    const tomorrow = addDaysDateOnlyUtc(today, 1);
 
     const data = await eventReadRepository.listOwnedEvents({
       profileId: ctx.session.user.id,
-      dateFrom: toDayStartIso(today),
-      dateTo: toDayStartIso(tomorrow),
+      dateFrom: toDayStartIso(today, planningTimezone),
+      dateTo: toDayStartIso(tomorrow, planningTimezone),
       includeAdhoc: true,
       limit: 500,
     });
@@ -1048,20 +1077,15 @@ export const eventsRouter = createTRPCRouter({
 
   getWeekCount: protectedProcedure.query(async ({ ctx }) => {
     const eventReadRepository = getEventReadRepository(ctx);
-    const now = new Date();
-    const utcDay = now.getUTCDay();
-    const startOfWeekUtc = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-    );
-    startOfWeekUtc.setUTCDate(startOfWeekUtc.getUTCDate() - utcDay);
-
-    const endOfWeekUtc = new Date(startOfWeekUtc);
-    endOfWeekUtc.setUTCDate(startOfWeekUtc.getUTCDate() + 7);
+    const planningTimezone = await getRequiredProfilePlanningTimezone(ctx, ctx.session.user.id);
+    const today = formatDateOnlyInTimeZone(new Date(), planningTimezone);
+    const startOfWeek = addDaysDateOnlyUtc(today, -parseDateOnlyUtc(today).getUTCDay());
+    const endOfWeek = addDaysDateOnlyUtc(startOfWeek, 7);
 
     return countVisibleOwnedEventsInRange(eventReadRepository, {
       profileId: ctx.session.user.id,
-      dateFrom: startOfWeekUtc.toISOString(),
-      dateTo: endOfWeekUtc.toISOString(),
+      dateFrom: toDayStartIso(startOfWeek, planningTimezone),
+      dateTo: toDayStartIso(endOfWeek, planningTimezone),
     });
   }),
 
@@ -1453,6 +1477,11 @@ export const eventsRouter = createTRPCRouter({
     const eventReadRepository = getEventReadRepository(ctx);
     const limit = input.limit;
     const [cursorDate, cursorId] = input.cursor ? input.cursor.split("_") : [];
+    const planningTimezone =
+      (input.date_from && dateOnlyPattern.test(input.date_from.trim())) ||
+      (input.date_to && dateOnlyPattern.test(input.date_to.trim()))
+        ? await getRequiredProfilePlanningTimezone(ctx, ctx.session.user.id)
+        : undefined;
 
     const { rows, hasMore } = await listVisibleOwnedEvents({
       repository: eventReadRepository,
@@ -1469,8 +1498,8 @@ export const eventsRouter = createTRPCRouter({
           | "strength"
           | "other"
           | undefined,
-        dateFrom: input.date_from ? toRangeStartIso(input.date_from) : undefined,
-        dateTo: input.date_to ? toRangeEndIso(input.date_to) : undefined,
+        dateFrom: input.date_from ? toRangeStartIso(input.date_from, planningTimezone) : undefined,
+        dateTo: input.date_to ? toRangeEndIso(input.date_to, planningTimezone) : undefined,
         eventTypes:
           input.event_types && input.event_types.length > 0
             ? [...new Set(input.event_types.map((eventType) => toDbEventType(eventType)))]

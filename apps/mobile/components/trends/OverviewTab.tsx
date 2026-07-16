@@ -1,3 +1,4 @@
+import { parseDateOnlyUtc } from "@repo/core";
 import { EmptyStateCard } from "@repo/ui/components/empty-state-card";
 import { TrendsOverviewSkeleton } from "@repo/ui/components/loading-skeletons";
 import { Progress } from "@repo/ui/components/progress";
@@ -171,7 +172,7 @@ export function OverviewTab({
           {idealCurve ? (
             <Text className="text-xs text-muted-foreground">
               Target CTL {idealCurve.targetCTL}. Starting at {idealCurve.startCTL} and aiming for{" "}
-              {new Date(idealCurve.targetDate).toLocaleDateString()}.
+              {parseDateOnlyUtc(idealCurve.targetDate).toLocaleDateString()}.
             </Text>
           ) : null}
         </View>

@@ -35,6 +35,7 @@ import {
   getFormStatus,
   getTrainingIntensityZone,
   type InferredStateSnapshot,
+  ianaTimezoneSchema,
   inferredStateSnapshotSchema,
   type LoadBootstrapState,
   legacyStructuredTrainingPlanSchema,
@@ -4670,7 +4671,14 @@ const trainingPlansProcedures = {
 
       const structuredWeeklyTss = await estimateWeeklyTssFromStructuredActivities({
         db,
-        planningTimezone: profile?.planningTimezone ?? "UTC",
+        planningTimezone: (() => {
+          const parsed = ianaTimezoneSchema.safeParse(profile?.planningTimezone);
+          if (parsed.success) return parsed.data;
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "A valid planning timezone is required for training plan projections.",
+          });
+        })(),
         profileId: ctx.session.user.id,
         structure,
         startDate: input.start_date,

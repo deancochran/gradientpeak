@@ -1,4 +1,4 @@
-import { onboardingStep1Schema, type ProfilePatchInput } from "@repo/core";
+import { ianaTimezoneSchema, onboardingStep1Schema, type ProfilePatchInput } from "@repo/core";
 import {
   defaultPreferredUnitSystem,
   type PreferredUnitSystem,
@@ -14,6 +14,7 @@ export type ProfileEditFormDefaults = {
   preferred_units: PreferredUnitSystem;
   language: string | null;
   is_public: boolean | null;
+  planning_timezone: string | null;
 };
 
 export const profileEditFormSchema = z.object({
@@ -24,6 +25,7 @@ export const profileEditFormSchema = z.object({
   preferred_units: z.enum(["metric", "imperial"]).nullable(),
   language: z.string().nullable(),
   is_public: z.boolean().nullable(),
+  planning_timezone: ianaTimezoneSchema.nullable(),
 });
 
 export type ProfileEditForm = z.infer<typeof profileEditFormSchema>;
@@ -40,6 +42,7 @@ export function toProfilePatchInput(
     preferred_units: values.preferred_units || null,
     language: values.language || null,
     is_public: values.is_public ?? undefined,
+    planning_timezone: values.planning_timezone || null,
   };
 }
 
@@ -51,6 +54,7 @@ export function getProfileEditFormDefaults(profile?: {
   preferred_units?: unknown;
   language?: string | null;
   is_public?: boolean | null;
+  planning_timezone?: string | null;
 }): ProfileEditFormDefaults {
   return {
     full_name: profile?.full_name || "",
@@ -62,5 +66,6 @@ export function getProfileEditFormDefaults(profile?: {
       : defaultPreferredUnitSystem,
     language: profile?.language || "en",
     is_public: profile?.is_public ?? true,
+    planning_timezone: profile?.planning_timezone ?? null,
   };
 }

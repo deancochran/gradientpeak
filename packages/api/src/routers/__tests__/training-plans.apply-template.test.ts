@@ -3,7 +3,10 @@ import { createQueryMapDbMock, type QueryMap } from "../../test/mock-query-db";
 import { trainingPlansRouter } from "../planning/training-plans";
 
 function createCaller(queryMap: QueryMap) {
-  const { db, callLog } = createQueryMapDbMock(queryMap);
+  const { db, callLog } = createQueryMapDbMock({
+    profiles: { data: { planningTimezone: "UTC" }, error: null },
+    ...queryMap,
+  });
 
   const caller = trainingPlansRouter.createCaller({
     db: db as any,

@@ -1002,9 +1002,7 @@ export function TrainingPathChart({
                 color={chartColors.scheduledFitness}
                 strokeWidth={3}
                 curveType="natural"
-              >
-                <DashPathEffect intervals={[2, 5]} />
-              </Line>
+              />
             ) : null}
             <Line
               points={points.fitness.filter((point) => point.yValue != null)}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildEffectiveCompletedObservationsByDate } from "@/lib/training-path/trainingTimelineAdapters";
 import {
+  buildScheduledFitnessTrend,
   buildTrainingPathGoalMarkers,
   buildTrainingPathViewModel,
   resolveTrainingPathRiskZone,
@@ -314,6 +315,18 @@ describe("trainingPathUtils", () => {
     const currentWeek = model.weeks.find((week) => week.weekStart === "2026-05-18");
     expect(currentWeek?.fitness).toBe(40);
     expect(currentWeek?.scheduledFitness).toBe(40);
+  });
+
+  it("replays planned CTL through the requested chart window when ideal data ends sooner", () => {
+    const trend = buildScheduledFitnessTrend({
+      endDate: "2026-06-03",
+      fitnessHistory: [{ date: "2026-05-31", ctl: 42, atl: 42 }],
+      idealFitnessCurve: [{ date: "2026-06-01", ctl: 45 }],
+      timeline: [{ date: "2026-06-03", scheduled_load_tss: 100 }],
+      todayKey: "2026-06-01",
+    });
+
+    expect(trend.map((point) => point.date)).toEqual(["2026-06-01", "2026-06-02", "2026-06-03"]);
   });
 
   it.each([

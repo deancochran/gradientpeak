@@ -18,7 +18,14 @@ export function useScrollableTrainingPathWindow({
   );
 
   useEffect(() => {
-    setWeekWindow((current) => current ?? initialWeekWindow);
+    setWeekWindow((current) => {
+      if (!current) return initialWeekWindow;
+
+      return {
+        start: current.start < initialWeekWindow.start ? current.start : initialWeekWindow.start,
+        end: current.end > initialWeekWindow.end ? current.end : initialWeekWindow.end,
+      };
+    });
   }, [initialWeekWindow]);
 
   const resolvedWeekWindow = weekWindow ?? initialWeekWindow;

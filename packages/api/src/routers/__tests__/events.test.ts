@@ -87,6 +87,11 @@ type MockDb = {
   counters: Map<string, number>;
   queryMap: QueryMap;
   readRepository: ReturnType<typeof createReadRepository>;
+  select: () => {
+    from: () => {
+      where: () => { limit: () => Promise<Array<{ planningTimezone: string | null }>> };
+    };
+  };
   writeRepository: ReturnType<typeof createWriteRepository>;
 };
 
@@ -150,6 +155,11 @@ function createMockDb(queryMap: QueryMap): MockDb {
     readRepository,
     writeRepository,
     completionRepository,
+    select: () => ({
+      from: () => ({
+        where: () => ({ limit: async () => [{ planningTimezone: "America/New_York" }] }),
+      }),
+    }),
   };
 }
 
@@ -514,7 +524,7 @@ describe("eventsRouter generalization", () => {
     });
   });
 
-  it("getToday returns normalized events for the current UTC day", async () => {
+  it("getToday returns normalized events for the current planning-zone day", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-12T15:00:00.000Z"));
 
@@ -541,7 +551,7 @@ describe("eventsRouter generalization", () => {
       payload: {
         type: "gte",
         column: "starts_at",
-        value: "2026-03-12T00:00:00.000Z",
+        value: "2026-03-12T04:00:00.000Z",
       },
     });
     expect(callLog).toContainEqual({
@@ -550,12 +560,12 @@ describe("eventsRouter generalization", () => {
       payload: {
         type: "lt",
         column: "starts_at",
-        value: "2026-03-13T00:00:00.000Z",
+        value: "2026-03-13T04:00:00.000Z",
       },
     });
   });
 
-  it("getWeekCount counts canonical event rows in the current UTC week", async () => {
+  it("getWeekCount counts canonical event rows in the current planning-zone week", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-11T15:00:00.000Z"));
 
@@ -579,7 +589,7 @@ describe("eventsRouter generalization", () => {
       payload: {
         type: "gte",
         column: "starts_at",
-        value: "2026-03-08T00:00:00.000Z",
+        value: "2026-03-08T05:00:00.000Z",
       },
     });
     expect(callLog).toContainEqual({
@@ -588,7 +598,7 @@ describe("eventsRouter generalization", () => {
       payload: {
         type: "lt",
         column: "starts_at",
-        value: "2026-03-15T00:00:00.000Z",
+        value: "2026-03-15T04:00:00.000Z",
       },
     });
   });
@@ -1754,12 +1764,12 @@ describe("eventsRouter generalization", () => {
     expect(rangeFilters).toContainEqual({
       type: "gte",
       column: "starts_at",
-      value: "2026-03-10T00:00:00.000Z",
+      value: "2026-03-10T04:00:00.000Z",
     });
     expect(rangeFilters).toContainEqual({
       type: "lt",
       column: "starts_at",
-      value: "2026-03-13T00:00:00.000Z",
+      value: "2026-03-13T04:00:00.000Z",
     });
   });
 

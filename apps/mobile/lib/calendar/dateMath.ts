@@ -1,9 +1,14 @@
+import { formatDateOnlyInTimeZone, scheduledDateTimeToIsoInstant } from "@repo/core";
 import { addDays, addMonths, endOfMonth, format, startOfMonth } from "date-fns";
 
 const MINUTE_MS = 60_000;
 
 export function toDateKey(date: Date): string {
   return format(date, "yyyy-MM-dd");
+}
+
+export function toDateKeyInTimeZone(date: Date, timeZone: string): string {
+  return formatDateOnlyInTimeZone(date, timeZone);
 }
 
 export function parseDateKey(dateKey: string): Date {
@@ -19,6 +24,14 @@ export function toLocalDayStartIso(dateKey: string): string {
 export function toLocalDayEndIso(dateKey: string): string {
   const [year, month, day] = dateKey.split("-").map(Number);
   return new Date(year ?? 1970, (month ?? 1) - 1, day ?? 1, 23, 59, 59, 999).toISOString();
+}
+
+/**
+ * Converts a date-only calendar key to its planning-zone midnight instant.
+ * Invalid zones and midnight DST gaps/folds intentionally remain unsupported.
+ */
+export function toPlanningDayStartIso(dateKey: string, timeZone: string): string {
+  return scheduledDateTimeToIsoInstant({ scheduledDate: dateKey, time: "00:00", timeZone });
 }
 
 export function millisecondsUntilNextLocalDay(now: Date): number {

@@ -110,4 +110,30 @@ describe("applyTrainingPlanTemplateUseCase", () => {
     expect(permissions.revokeEventGrants).not.toHaveBeenCalled();
     expect(permissions.grantEventContentAccess).not.toHaveBeenCalled();
   });
+
+  it("rejects template application when the profile has no planning timezone", async () => {
+    const db = {
+      select: vi.fn(() => ({
+        from: () => ({ where: () => ({ limit: async () => [{ planningTimezone: null }] }) }),
+      })),
+    };
+
+    await expect(
+      applyTrainingPlanTemplateUseCase({
+        db: db as unknown as DrizzleDbClient,
+        permissions: { grantEventContentAccess: vi.fn(), revokeEventGrants: vi.fn() },
+        profileId: "44444444-4444-4444-8444-444444444444",
+        repository: {} as TrainingPlanRepository,
+        values: {
+          template_type: "training_plan",
+          template_id: "11111111-1111-4111-8111-111111111111",
+          start_date: "2026-08-01",
+          replace_existing: false,
+          application_mode: "full",
+        },
+      }),
+    ).rejects.toMatchObject({
+      message: "A valid planning timezone is required before applying a training plan.",
+    });
+  });
 });

@@ -446,6 +446,16 @@ function ProfileEditScreen() {
                   ]}
                 />
 
+                <FormTextField
+                  control={form.control}
+                  description="Used to interpret calendar days and scheduled training."
+                  label="Planning Timezone"
+                  name="planning_timezone"
+                  parseValue={(value) => value.trim() || null}
+                  placeholder="America/Los_Angeles"
+                  testId="profile-edit-planning-timezone"
+                />
+
                 <FormSwitchField
                   control={form.control}
                   description="Allow anyone to view your profile and activities"

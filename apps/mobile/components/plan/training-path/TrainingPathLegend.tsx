@@ -9,9 +9,9 @@ const loadItems = [
 ];
 
 const pathItems = [
-  { label: "Fitness Trend", color: "rgba(22, 163, 74, 0.95)", shape: "line" },
-  { label: "Scheduled Fitness", color: "rgba(37, 99, 235, 0.95)", shape: "line" },
-  { label: "Ideal Fitness", color: "rgba(15, 23, 42, 0.42)", shape: "line" },
+  { label: "Actual CTL", color: "rgba(22, 163, 74, 0.95)", shape: "line" },
+  { label: "Planned CTL", color: "rgba(37, 99, 235, 0.95)", shape: "line" },
+  { label: "Ideal CTL (dotted)", color: "rgba(15, 23, 42, 0.42)", shape: "dotted" },
   { label: "Today", color: "#020617", shape: "line" },
   { label: "Goal", color: "#020617", shape: "line" },
   { label: "Selected week", color: "rgba(15, 23, 42, 0.08)", shape: "fill" },
@@ -25,10 +25,18 @@ export function TrainingPathLegend({ range }: { range: TrainingPathRange }) {
       {items.map((item) => (
         <View key={item.label} className="flex-row items-center gap-1.5">
           <View
-            className={item.shape === "line" ? "h-0.5 w-4" : "h-2.5 w-2.5 rounded-sm"}
+            className={
+              item.shape === "line"
+                ? "h-0.5 w-4"
+                : item.shape === "dotted"
+                  ? "h-0 w-4 border-t-2"
+                  : "h-2.5 w-2.5 rounded-sm"
+            }
             style={{
-              backgroundColor: item.shape === "outline" ? "transparent" : item.color,
+              backgroundColor:
+                item.shape === "outline" || item.shape === "dotted" ? "transparent" : item.color,
               borderColor: item.color,
+              borderStyle: item.shape === "dotted" ? "dotted" : "solid",
               borderWidth: item.shape === "outline" ? 1 : 0,
             }}
           />

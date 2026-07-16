@@ -38,6 +38,7 @@ type CalendarStoreState = {
 };
 
 type AuthStoreState = {
+  profile: { planning_timezone: string };
   ready: boolean;
   session: { user: { id: string } };
 };
@@ -109,7 +110,11 @@ jest.mock("@/lib/stores/calendar-store", () => ({
 jest.mock("@/lib/stores/auth-store", () => ({
   __esModule: true,
   useAuthStore: <T,>(selector: (state: AuthStoreState) => T) =>
-    selector({ ready: true, session: { user: { id: "profile-1" } } }),
+    selector({
+      profile: { planning_timezone: "America/New_York" },
+      ready: true,
+      session: { user: { id: "profile-1" } },
+    }),
 }));
 
 jest.mock("@/lib/auth/auth-headers", () => ({

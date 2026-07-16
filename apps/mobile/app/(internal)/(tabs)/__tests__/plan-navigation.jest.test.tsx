@@ -115,7 +115,12 @@ jest.mock("@/lib/hooks/useAuth", () => ({
   __esModule: true,
   useAuth: () => ({
     loading: false,
-    profile: { avatar_url: null, id: "profile-1", username: "Runner" },
+    profile: {
+      avatar_url: null,
+      id: "profile-1",
+      planning_timezone: "America/Los_Angeles",
+      username: "Runner",
+    },
     ready: true,
     session: { user: { id: "profile-1" } },
     user: { email: "runner@example.com", id: "profile-1" },
@@ -744,25 +749,24 @@ jest.mock("@/lib/api", () => ({
     },
     events: {
       list: {
-        useQuery: (input: any, options: any) => {
+        useInfiniteQuery: (input: any, options: any) => {
           eventQueryOptionsRef.current.push(options);
+          const items =
+            input?.date_from && input?.date_to
+              ? [
+                  {
+                    id: "event-1",
+                    training_plan_id: "active-1",
+                    starts_at: "2026-04-05T00:00:00.000Z",
+                  },
+                ]
+              : [];
           return {
-            data:
-              input?.date_from && input?.date_to
-                ? {
-                    items: [
-                      {
-                        id: "event-1",
-                        training_plan_id: "active-1",
-                        starts_at: "2026-04-05T00:00:00.000Z",
-                      },
-                    ],
-                  }
-                : { items: [] },
-            dataUpdatedAt:
-              input?.date_from === "2026-02-15"
-                ? recentEventsUpdatedAtRef.current
-                : upcomingEventsUpdatedAtRef.current,
+            data: { pages: [{ items, nextCursor: null }] },
+            dataUpdatedAt: recentEventsUpdatedAtRef.current + upcomingEventsUpdatedAtRef.current,
+            fetchNextPage: jest.fn(async () => undefined),
+            hasNextPage: false,
+            isFetchingNextPage: false,
             refetch: jest.fn(async () => undefined),
           };
         },
@@ -773,16 +777,28 @@ jest.mock("@/lib/api", () => ({
     groups: {
       events: {
         myUpcomingGroupEvents: {
-          useQuery: () => ({
-            data: { items: [] },
+          useInfiniteQuery: () => ({
+            data: { pages: [{ items: [], nextCursor: null }] },
             dataUpdatedAt: 1,
+            fetchNextPage: jest.fn(async () => undefined),
+            hasNextPage: false,
             isFetching: false,
+            isFetchingNextPage: false,
             refetch: jest.fn(async () => undefined),
           }),
         },
       },
     },
     activities: {
+      dailyTssObservations: {
+        useQuery: () => ({
+          data: { observations: [] },
+          dataUpdatedAt: 1,
+          isError: false,
+          isLoading: false,
+          refetch: jest.fn(async () => undefined),
+        }),
+      },
       listPaginated: {
         useInfiniteQuery: () => ({
           data: { pages: [{ items: [] }] },
@@ -847,6 +863,10 @@ describe("plan dashboard navigation", () => {
   it("refreshes the projection snapshot when planned events change", async () => {
     const view = renderNative(<PlanScreenWithErrorBoundary />);
 
+    await React.act(async () => undefined);
+    refetchActivePlanMock.mockClear();
+    refetchSnapshotMock.mockClear();
+
     expect(refetchActivePlanMock).not.toHaveBeenCalled();
     expect(refetchSnapshotMock).not.toHaveBeenCalled();
 
@@ -862,6 +882,10 @@ describe("plan dashboard navigation", () => {
 
   it("refreshes the projection snapshot when goals change", async () => {
     const view = renderNative(<PlanScreenWithErrorBoundary />);
+
+    await React.act(async () => undefined);
+    refetchActivePlanMock.mockClear();
+    refetchSnapshotMock.mockClear();
 
     expect(refetchSnapshotMock).not.toHaveBeenCalled();
 
@@ -894,7 +918,7 @@ describe("plan dashboard navigation", () => {
     );
   });
 
-  it("derives selected-week goals from loaded goals without readiness data", () => {
+  it("waits for the chart to resolve a selected week before showing goal review items", () => {
     jest.useFakeTimers();
     jest.setSystemTime(fixedNow);
     try {
@@ -902,21 +926,7 @@ describe("plan dashboard navigation", () => {
 
       renderNative(<PlanScreenWithErrorBoundary />);
 
-      expect(mockTrainingPathSectionProps.mock.calls.at(-1)?.[0].selectedWeekGoals).toEqual([
-        expect.objectContaining({
-          id: "goal-1",
-          label: "Race A",
-          targetDate: "2026-04-05",
-          activityCategory: "run",
-          status: "Goal due",
-        }),
-      ]);
-      expect(
-        mockTrainingPathSectionProps.mock.calls.at(-1)?.[0].selectedWeekGoals[0],
-      ).not.toHaveProperty("readinessPercent");
-      expect(
-        mockTrainingPathSectionProps.mock.calls.at(-1)?.[0].selectedWeekGoals[0],
-      ).not.toHaveProperty("readinessTarget");
+      expect(mockTrainingPathSectionProps.mock.calls.at(-1)?.[0].selectedWeekGoals).toEqual([]);
     } finally {
       jest.useRealTimers();
     }

@@ -54,7 +54,10 @@ function createSupabaseMock(results: QueryMap) {
 }
 
 function createTrainingPlansCaller(results: QueryMap = {}) {
-  const { db } = createQueryMapDbMock(results);
+  const { db } = createQueryMapDbMock({
+    profiles: { data: { planningTimezone: "UTC" }, error: null },
+    ...results,
+  });
 
   return trainingPlansRouter.createCaller({
     db: db as any,

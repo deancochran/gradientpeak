@@ -1,4 +1,8 @@
-import { formatDateOnlyUtc } from "@repo/core";
+import {
+  formatDateOnlyInTimeZone,
+  ianaTimezoneSchema,
+  scheduledDateTimeToIsoInstant,
+} from "@repo/core";
 import { schema } from "@repo/db";
 import type { DrizzleDbClient } from "@repo/db/client";
 import { TRPCError } from "@trpc/server";
@@ -13,16 +17,14 @@ type ContentPermissions = {
   revokeEventGrants(eventId: string): Promise<unknown>;
 };
 
-function toDayStartIso(dateOnly: string): string {
-  return `${dateOnly}T00:00:00.000Z`;
-}
+function getRequiredPlanningTimezone(value: string | null | undefined): string {
+  const parsed = ianaTimezoneSchema.safeParse(value);
+  if (parsed.success) return parsed.data;
 
-function todayDateOnlyUtc(): string {
-  return formatDateOnlyUtc(new Date());
-}
-
-function todayStartIsoUtc(): string {
-  return toDayStartIso(todayDateOnlyUtc());
+  throw new TRPCError({
+    code: "BAD_REQUEST",
+    message: "A valid planning timezone is required before removing a training schedule.",
+  });
 }
 
 async function enqueuePlannedWorkoutSyncForCalendarWrite(input: {
@@ -46,6 +48,17 @@ export async function removeAppliedScheduleUseCase(input: {
   profileId: string;
   scheduleBatchId: string;
 }) {
+  const [profile] = await input.db
+    .select({ planningTimezone: schema.profiles.planning_timezone })
+    .from(schema.profiles)
+    .where(eq(schema.profiles.id, input.profileId))
+    .limit(1);
+  const planningTimezone = getRequiredPlanningTimezone(profile?.planningTimezone);
+  const todayStart = scheduledDateTimeToIsoInstant({
+    scheduledDate: formatDateOnlyInTimeZone(new Date(), planningTimezone),
+    time: "00:00",
+    timeZone: planningTimezone,
+  });
   const deletedEvents = await input.db
     .delete(schema.events)
     .where(
@@ -53,7 +66,7 @@ export async function removeAppliedScheduleUseCase(input: {
         eq(schema.events.profile_id, input.profileId),
         eq(schema.events.event_type, plannedEventType),
         eq(schema.events.schedule_batch_id, input.scheduleBatchId),
-        gte(schema.events.starts_at, new Date(todayStartIsoUtc())),
+        gte(schema.events.starts_at, new Date(todayStart)),
         ne(schema.events.status, "completed"),
       ),
     )

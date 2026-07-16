@@ -257,6 +257,7 @@ function resolveTodayFitnessState(points: TrainingPathFitnessPoint[], todayKey: 
 }
 
 export function buildScheduledFitnessTrend(input: {
+  endDate?: string;
   fitnessHistory?: TrainingPathFitnessPoint[] | null;
   idealFitnessCurve?: TrainingPathFitnessPoint[] | null;
   timeline?: TrainingPathLoadPoint[] | null;
@@ -268,7 +269,13 @@ export function buildScheduledFitnessTrend(input: {
     .filter(Boolean)
     .sort((left, right) => right.localeCompare(left))[0];
 
-  if (!currentFitness || !idealEndDate || idealEndDate < input.todayKey) return [];
+  const timelineEndDate = (input.timeline ?? [])
+    .map((point) => point.date)
+    .filter(Boolean)
+    .sort((left, right) => right.localeCompare(left))[0];
+  const projectionEndDate = input.endDate ?? timelineEndDate ?? idealEndDate;
+
+  if (!currentFitness || !projectionEndDate || projectionEndDate < input.todayKey) return [];
 
   const scheduledTssByDate = new Map<string, number>();
   for (const point of input.timeline ?? []) {
@@ -282,11 +289,11 @@ export function buildScheduledFitnessTrend(input: {
 
   const tomorrow = addDays(input.todayKey, 1);
   const replayed =
-    tomorrow <= idealEndDate
+    tomorrow <= projectionEndDate
       ? replayTrainingLoadByDate({
           dailyTss: buildDailyTssByDateSeries({
             startDate: tomorrow,
-            endDate: idealEndDate,
+            endDate: projectionEndDate,
             tssByDate: scheduledTssByDate,
           }),
           initialATL: currentFitness.atl ?? currentFitness.ctl,

@@ -1,3 +1,4 @@
+import { getTrainingPathDateKey } from "./trainingPathPlanningTime";
 import type { TrainingPathCompletedActivity, TrainingPathScheduledItem } from "./trainingPathTypes";
 
 export type ScheduledWeekEvent = {
@@ -18,6 +19,7 @@ export type ScheduledWeekEvent = {
   training_plan_id?: string | null;
   completed?: boolean | null;
   status?: string | null;
+  timezone?: string | null;
   activity_plan?: {
     id?: string | null;
     name?: string | null;
@@ -57,8 +59,13 @@ export type ActivityOwner = {
 
 export type TrainingPathGroupReviewEvent = NonNullable<TrainingPathScheduledItem["groupEvent"]>;
 
-function getScheduledEventDate(event: ScheduledWeekEvent) {
-  return event.scheduled_date ?? event.starts_at?.split("T")[0] ?? null;
+function getScheduledEventDate(
+  event: ScheduledWeekEvent,
+  planningTimezone: string | null | undefined,
+) {
+  if (!planningTimezone?.trim()) return null;
+  if (event.all_day || !event.starts_at) return event.scheduled_date ?? null;
+  return getTrainingPathDateKey(event.starts_at, planningTimezone) ?? event.scheduled_date ?? null;
 }
 
 function getScheduledEventTitle(event: ScheduledWeekEvent) {
@@ -82,8 +89,9 @@ function getScheduledEventLoad(event: ScheduledWeekEvent) {
 export function toTrainingPathScheduledItem(
   event: ScheduledWeekEvent,
   index: number,
+  planningTimezone: string | null | undefined,
 ): TrainingPathScheduledItem | null {
-  const date = getScheduledEventDate(event);
+  const date = getScheduledEventDate(event, planningTimezone);
   if (!date) return null;
   return {
     id: event.id ?? `${date}-${index}`,
@@ -100,6 +108,7 @@ export function toTrainingPathScheduledItem(
       scheduled_date: event.scheduled_date,
       starts_at: event.starts_at,
       ends_at: event.ends_at,
+      timezone: event.timezone,
       all_day: event.all_day,
       recurrence_rule: event.recurrence_rule,
       recurrence: event.recurrence,
@@ -143,12 +152,14 @@ export function buildTrainingPathScheduledReviewItems(input: {
   plannedEvents?: ScheduledWeekEvent[] | null;
   groupScheduledActivityPlanEvents?: ScheduledWeekEvent[] | null;
   groupEvents?: TrainingPathGroupReviewEvent[] | null;
+  planningTimezone: string | null | undefined;
 }) {
+  if (!input.planningTimezone?.trim()) return [];
   const scheduledEvents = [
     ...(input.plannedEvents ?? []),
     ...(input.groupScheduledActivityPlanEvents ?? []),
   ]
-    .map(toTrainingPathScheduledItem)
+    .map((event, index) => toTrainingPathScheduledItem(event, index, input.planningTimezone))
     .filter((item): item is TrainingPathScheduledItem => item != null);
   const groupEvents = (input.groupEvents ?? [])
     .filter(
@@ -156,7 +167,7 @@ export function buildTrainingPathScheduledReviewItems(input: {
         event.viewerRsvp?.status !== "declined" && event.viewerSeriesRsvp?.status !== "declined",
     )
     .map<TrainingPathScheduledItem | null>((event, index) => {
-      const date = event.starts_at.split("T")[0] ?? null;
+      const date = getTrainingPathDateKey(event.starts_at, input.planningTimezone);
       if (!date) return null;
       return {
         id: event.id ?? `${date}-group-${index}`,
@@ -175,7 +186,9 @@ export function buildTrainingPathScheduledReviewItems(input: {
 export function buildTrainingPathEventReviewItems(input: {
   events?: ScheduledWeekEvent[] | null;
   owner?: ActivityOwner | null;
+  planningTimezone: string | null | undefined;
 }) {
+  if (!input.planningTimezone?.trim()) return [];
   const seenEventIds = new Set<string>();
 
   return (input.events ?? [])
@@ -187,7 +200,11 @@ export function buildTrainingPathEventReviewItems(input: {
       return true;
     })
     .map((event, index) =>
-      toTrainingPathScheduledItem({ ...event, owner: event.owner ?? input.owner }, index),
+      toTrainingPathScheduledItem(
+        { ...event, owner: event.owner ?? input.owner },
+        index,
+        input.planningTimezone,
+      ),
     )
     .filter((item): item is TrainingPathScheduledItem => item != null)
     .sort((left, right) => left.date.localeCompare(right.date));
@@ -195,14 +212,16 @@ export function buildTrainingPathEventReviewItems(input: {
 
 export function buildTrainingPathGroupEventReviewItems(input: {
   groupEvents?: TrainingPathGroupReviewEvent[] | null;
+  planningTimezone: string | null | undefined;
 }) {
+  if (!input.planningTimezone?.trim()) return [];
   return (input.groupEvents ?? [])
     .filter(
       (event) =>
         event.viewerRsvp?.status !== "declined" && event.viewerSeriesRsvp?.status !== "declined",
     )
     .map<TrainingPathScheduledItem | null>((event, index) => {
-      const date = event.starts_at.split("T")[0] ?? null;
+      const date = getTrainingPathDateKey(event.starts_at, input.planningTimezone);
       if (!date) return null;
       return {
         id: event.id ?? `${date}-group-${index}`,
@@ -215,18 +234,19 @@ export function buildTrainingPathGroupEventReviewItems(input: {
     .sort((left, right) => left.date.localeCompare(right.date));
 }
 
-function getCompletedActivityDate(activity: CompletedWeekActivity) {
-  if (!activity.started_at) return null;
-  const value =
-    activity.started_at instanceof Date ? activity.started_at.toISOString() : activity.started_at;
-  return value.split("T")[0] ?? null;
+function getCompletedActivityDate(
+  activity: CompletedWeekActivity,
+  planningTimezone: string | null | undefined,
+) {
+  return getTrainingPathDateKey(activity.started_at, planningTimezone);
 }
 
 export function toTrainingPathCompletedActivity(
   activity: CompletedWeekActivity,
   owner: ActivityOwner | null,
+  planningTimezone: string | null | undefined,
 ): TrainingPathCompletedActivity | null {
-  const date = getCompletedActivityDate(activity);
+  const date = getCompletedActivityDate(activity, planningTimezone);
   if (!date) return null;
   return {
     id: activity.id,

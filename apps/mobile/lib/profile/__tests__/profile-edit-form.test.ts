@@ -36,6 +36,7 @@ describe("profile edit form defaults", () => {
         preferred_units: null,
         language: "",
         is_public: null,
+        planning_timezone: null,
       }),
     ).toEqual({
       full_name: "Riley Chen",
@@ -45,6 +46,7 @@ describe("profile edit form defaults", () => {
       preferred_units: null,
       language: null,
       is_public: undefined,
+      planning_timezone: null,
     });
   });
 });

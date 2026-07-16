@@ -13,7 +13,12 @@ import { GroupEventCard } from "@/components/groups/GroupEventCards";
 import { api } from "@/lib/api";
 import { scheduleAwareReadQueryOptions } from "@/lib/api/scheduleQueryOptions";
 import { hasSessionAuthCredentials } from "@/lib/auth/auth-headers";
-import { parseDateKey, toDateKey } from "@/lib/calendar/dateMath";
+import {
+  addDaysToDateKey,
+  parseDateKey,
+  toDateKeyInTimeZone,
+  toPlanningDayStartIso,
+} from "@/lib/calendar/dateMath";
 import { buildOpenEventRoute } from "@/lib/calendar/eventRouting";
 import {
   attachSelectedGroupEventActivityPlans,
@@ -110,8 +115,27 @@ export default function CalendarDayScreen() {
     planSuggestionDescription?: string;
   }>();
   const navigateTo = useAppNavigate();
-  const todayKey = useMemo(() => toDateKey(new Date()), []);
+  const planningTimezone = useAuthStore((state) => state.profile?.planning_timezone ?? null);
+  const todayKey = useMemo(() => {
+    if (!planningTimezone) return null;
+    try {
+      return toDateKeyInTimeZone(new Date(), planningTimezone);
+    } catch {
+      return null;
+    }
+  }, [planningTimezone]);
   const dateKey = typeof params.date === "string" ? params.date : todayKey;
+  const planningDayRange = useMemo(() => {
+    if (!dateKey || !planningTimezone) return null;
+    try {
+      return {
+        startsAfter: toPlanningDayStartIso(dateKey, planningTimezone),
+        startsBefore: toPlanningDayStartIso(addDaysToDateKey(dateKey, 1), planningTimezone),
+      };
+    } catch {
+      return null;
+    }
+  }, [dateKey, planningTimezone]);
   const planSuggestion = useMemo(
     () =>
       formatPlanSuggestion({
@@ -127,19 +151,19 @@ export default function CalendarDayScreen() {
   );
 
   useEffect(() => {
-    setActiveDate(dateKey);
+    if (dateKey) setActiveDate(dateKey);
   }, [dateKey, setActiveDate]);
 
   const { data, isLoading, error, refetch } = api.events.list.useQuery(
     {
-      date_from: dateKey,
-      date_to: dateKey,
+      date_from: dateKey ?? "",
+      date_to: dateKey ?? "",
       include_adhoc: true,
       limit: CALENDAR_DAY_QUERY_LIMIT,
     },
     {
       ...scheduleAwareReadQueryOptions,
-      enabled: eventsQueryEnabled,
+      enabled: eventsQueryEnabled && Boolean(planningDayRange),
       placeholderData: keepPreviousData,
     },
   );
@@ -148,13 +172,13 @@ export default function CalendarDayScreen() {
   const groupEventsQuery = api.groups.events.myCalendarGroupEvents.useQuery(
     {
       includeCancelled: false,
-      startsAfter: `${dateKey}T00:00:00.000Z`,
-      startsBefore: `${dateKey}T23:59:59.999Z`,
+      startsAfter: planningDayRange?.startsAfter ?? "",
+      startsBefore: planningDayRange?.startsBefore ?? "",
       limit: CALENDAR_DAY_QUERY_LIMIT,
     },
     {
       ...scheduleAwareReadQueryOptions,
-      enabled: eventsQueryEnabled,
+      enabled: eventsQueryEnabled && Boolean(planningDayRange),
       placeholderData: keepPreviousData,
     },
   );
@@ -182,7 +206,12 @@ export default function CalendarDayScreen() {
   const eventsByDate = useMemo(() => buildEventsByDate(events), [events]);
   const profileGoals = useProfileGoals();
   const timelineEvents = useMemo(
-    () => buildTimelineEvents({ calendarEvents: events, goals: profileGoals.goals, todayKey }),
+    () =>
+      buildTimelineEvents({
+        calendarEvents: events,
+        goals: profileGoals.goals,
+        todayKey: todayKey ?? "",
+      }),
     [events, profileGoals.goals, todayKey],
   );
   const timelineEventsByDate = useMemo(
@@ -190,11 +219,17 @@ export default function CalendarDayScreen() {
     [timelineEvents],
   );
   const visibleEvents = useMemo(
-    () => (eventsByDate.get(dateKey) ?? []).filter((event) => event.event_type !== "rest_day"),
+    () =>
+      (dateKey ? (eventsByDate.get(dateKey) ?? []) : []).filter(
+        (event) => event.event_type !== "rest_day",
+      ),
     [dateKey, eventsByDate],
   );
   const visibleTimelineEvents = useMemo(
-    () => (timelineEventsByDate.get(dateKey) ?? []).filter((event) => event.type !== "rest_day"),
+    () =>
+      (dateKey ? (timelineEventsByDate.get(dateKey) ?? []) : []).filter(
+        (event) => event.type !== "rest_day",
+      ),
     [dateKey, timelineEventsByDate],
   );
   const _plannedEventsOnDate = useMemo(
@@ -214,7 +249,10 @@ export default function CalendarDayScreen() {
         event.type === "goal" ||
         event.type === "race",
     );
-  const title = useMemo(() => formatCalendarDayTitle(dateKey, todayKey), [dateKey, todayKey]);
+  const title = useMemo(
+    () => (dateKey && todayKey ? formatCalendarDayTitle(dateKey, todayKey) : "Calendar"),
+    [dateKey, todayKey],
+  );
 
   const handleOpenEvent = (event: CalendarEvent) => {
     const route = buildOpenEventRoute({
@@ -282,7 +320,13 @@ export default function CalendarDayScreen() {
         }}
       />
 
-      {(isLoading || groupEventsQuery.isLoading) && !data && !groupEventsQuery.data ? (
+      {!planningDayRange ? (
+        <View className="flex-1 items-center justify-center px-6">
+          <Text className="text-center text-sm text-muted-foreground">
+            Set a valid planning timezone in your profile to view calendar days.
+          </Text>
+        </View>
+      ) : (isLoading || groupEventsQuery.isLoading) && !data && !groupEventsQuery.data ? (
         <View className="flex-1 items-center justify-center px-6">
           <Text className="text-sm text-muted-foreground">Loading day agenda...</Text>
         </View>
