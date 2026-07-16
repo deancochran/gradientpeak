@@ -621,6 +621,40 @@ describe("projectAthleteIntelligence", () => {
     );
   });
 
+  it("curates owner-scoped evidence, limits, coverage, and collection destinations", async () => {
+    const model = canonicalModel();
+    model.metricEvidence = model.metricEvidence.filter((metric) => metric.metricType !== "ftp");
+    const projection = await project(athleteIntelligenceModelInputSchema.parse(model));
+
+    expect(projection.explainability.assessment).toEqual({
+      at: asOf.toISOString(),
+      state: expect.any(String),
+      uncertainty: expect.any(String),
+    });
+    expect(projection.explainability.coverage).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ label: "Profile metrics", state: "complete" }),
+      ]),
+    );
+    expect(projection.explainability.collectionPrompts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ destination: "profile_metrics" }),
+        expect.objectContaining({ destination: "activity_import" }),
+      ]),
+    );
+    expect(projection.explainability.limits).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: "Some assessment details limit this result",
+          reasons: ["Some assessment details limit this result"],
+        }),
+      ]),
+    );
+    expect(JSON.stringify(projection.explainability)).not.toMatch(
+      /rawObservation|sourceId|lineageGroupId|capability_evidence_missing/,
+    );
+  });
+
   it("preserves recurrence for core expansion and marks truncated schedule reads partial", async () => {
     const recurring = canonicalModel();
     const event = first(recurring.plannedSchedule, "Planned event");
@@ -756,6 +790,14 @@ describe("projectAthleteIntelligence", () => {
       missingDataState: "unsupported_input",
       reasonCodes: ["target_goal_sport_required_for_session_coverage"],
     });
+    expect(projection.explainability.limits).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: "Evidence is not sufficient for this assessment",
+          reasons: ["Evidence is not sufficient for this assessment"],
+        }),
+      ]),
+    );
   });
 
   it("credits matching sessions for a header-only consistency goal", async () => {

@@ -281,22 +281,10 @@ describe("goal detail persistence", () => {
     expect(navigateMock).toHaveBeenCalledWith("/goal-edit?id=goal-1");
   });
 
-  it("does not query intelligence until the device timezone is confirmed", async () => {
-    expect(Intl.DateTimeFormat().resolvedOptions().timeZone).toBe("America/Los_Angeles");
+  it("queries intelligence using the server-owned planning timezone", async () => {
     renderNative(<GoalDetailScreen />);
 
-    expect(evaluateUseQueryMock).toHaveBeenLastCalledWith(
-      { goalId: "goal-1", planningTimezone: undefined },
-      { enabled: false },
-    );
-    expect(screen.getByText("Use device timezone")).toBeTruthy();
-
-    fireEvent.press(screen.getByTestId("goal-intelligence-use-device-timezone"));
-
-    expect(evaluateUseQueryMock).toHaveBeenLastCalledWith(
-      { goalId: "goal-1", planningTimezone: "America/Los_Angeles" },
-      { enabled: true },
-    );
+    expect(evaluateUseQueryMock).toHaveBeenLastCalledWith({ goalId: "goal-1" }, { enabled: true });
   });
 
   it("does not render legacy readiness or outcome forecast claims", async () => {

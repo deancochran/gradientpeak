@@ -98,6 +98,22 @@ function projection() {
   };
   return athleteIntelligenceRuntimeProjectionSchema.parse({
     ...base,
+    explainability: {
+      assessment: {
+        at: generatedAt,
+        state: "unknown",
+        uncertainty: "unknown",
+      },
+      evidence: [],
+      limits: [],
+      coverage: [
+        { label: "Profile metrics", state: "complete" },
+        { label: "Recorded activities", state: "complete" },
+        { label: "Activity efforts", state: "complete" },
+        { label: "Availability data", state: "complete" },
+      ],
+      collectionPrompts: [],
+    },
     runtimeContext: {
       stateVector,
     },
@@ -144,6 +160,18 @@ describe("athleteIntelligenceRouter.evaluate", () => {
       expect.objectContaining({ profileId: OWNER_ID, goalId: GOAL_ID }),
     );
     expect(athleteIntelligenceRuntimeProjectionSchema.parse(result)).toEqual(result);
+  });
+
+  it("returns only curated explainability evidence without source identifiers or raw observations", async () => {
+    const result = await caller().caller.evaluate({ goalId: GOAL_ID });
+
+    expect(result.explainability).toEqual(
+      expect.objectContaining({
+        assessment: expect.objectContaining({ at: expect.any(String), state: "unknown" }),
+        evidence: [],
+      }),
+    );
+    expect(JSON.stringify(result.explainability)).not.toMatch(/activity:|metric:|rawObservation/);
   });
 
   it("rejects a client-supplied planning timezone", async () => {

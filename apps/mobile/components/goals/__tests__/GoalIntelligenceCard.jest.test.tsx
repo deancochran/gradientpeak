@@ -20,134 +20,107 @@ jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: mockCreat
 
 const GoalIntelligenceCard = require("../GoalIntelligenceCard").GoalIntelligenceCard;
 
-const available = {
-  state: "estimated",
-  uncertainty: 0.2,
-  contributingSourceIds: ["activity:one"],
-  reasonCodes: ["source_data_available", "recent_history_missing"],
-};
-const unavailable = {
-  state: "unsupported",
-  uncertainty: 1,
-  contributingSourceIds: [],
-  reasonCodes: ["timezone_missing_or_unsupported", "required_training_minutes_missing"],
-};
-
 function intelligence() {
   return {
-    goalCoverage: [
-      {
-        dimensions: [
-          {
-            dimension: "duration",
-            requirement: available,
-            capability: available,
-            coverage: available,
-            physicalGap: unavailable,
-          },
-          {
-            dimension: "speed",
-            requirement: unavailable,
-            capability: unavailable,
-            coverage: unavailable,
-            physicalGap: unavailable,
-          },
-        ],
-      },
-    ],
-    capability: { sportSpecificity: available },
-    readiness: {
-      volumeTrend: {
+    explainability: {
+      assessment: {
+        at: "2026-07-15T12:00:00.000Z",
         state: "insufficient_evidence",
-        uncertainty: 1,
-        contributingSourceIds: [],
-        reasonCodes: ["recent_history_missing"],
+        uncertainty: "high",
       },
-    },
-    feasibility: { scheduleCoverage: unavailable },
-    opportunities: {
       evidence: [
         {
-          dimension: "duration",
-          reasonCodes: ["required_training_minutes_missing", "recent_history_missing"],
+          label: "Activity record",
+          type: "activity",
+          observedAt: "2026-07-14T12:00:00.000Z",
         },
       ],
-    },
-    decisionGuidance: {
-      state: "adjust",
-      recommendedActions: ["Add calendar availability."],
-      reasonCodes: ["required_training_minutes_missing"],
+      limits: [
+        {
+          id: "limit-1",
+          label: "Some activity history could not be read",
+          state: "insufficient_evidence",
+          reasons: ["Some activity history could not be read"],
+        },
+        {
+          id: "limit-2",
+          label: "Some activity history could not be read",
+          state: "insufficient_evidence",
+          reasons: ["Some activity history could not be read"],
+        },
+      ],
+      coverage: [
+        { label: "Recorded activities", state: "complete" },
+        { label: "Availability data", state: "truncated" },
+      ],
+      collectionPrompts: [
+        { label: "Add a profile metric", destination: "profile_metrics" },
+        { label: "Import activities", destination: "activity_import" },
+      ],
     },
   };
 }
 
 describe("GoalIntelligenceCard", () => {
-  it("explains unavailable calendar context without a timezone", () => {
+  it("renders assessment state, curated evidence, duplicate limits, and explicit coverage", () => {
+    const consoleError = jest.spyOn(console, "error").mockImplementation();
     renderNative(
-      <GoalIntelligenceCard
-        deviceTimezone={null}
-        onUseDeviceTimezone={jest.fn()}
-        planningTimezone={null}
-      />,
+      <GoalIntelligenceCard intelligence={intelligence()} onCollectionPrompt={jest.fn()} />,
     );
 
-    expect(screen.getByText(/Calendar context is unavailable/)).toBeTruthy();
-    expect(screen.queryByText("Use device timezone")).toBeNull();
+    expect(consoleError).not.toHaveBeenCalledWith(expect.stringContaining("same key"));
+    consoleError.mockRestore();
+    expect(screen.getByText("Evidence & limits")).toBeTruthy();
+    expect(screen.getByText("Assessed: 2026-07-15T12:00:00.000Z")).toBeTruthy();
+    expect(screen.getByText("Result state: insufficient evidence")).toBeTruthy();
+    expect(screen.getByText("Decision uncertainty: high")).toBeTruthy();
+    expect(screen.getByText(/Activity record · activity · 2026-07-14/)).toBeTruthy();
+    expect(
+      screen.getAllByText(/Some activity history could not be read · insufficient evidence/),
+    ).toHaveLength(2);
+    expect(screen.getByText("Recorded activities: complete")).toBeTruthy();
+    expect(screen.getByText("Availability data: truncated")).toBeTruthy();
   });
 
-  it("renders canonical guidance without legacy prediction content", () => {
+  it("uses only collection prompts with existing destination callbacks", () => {
+    const onCollectionPrompt = jest.fn();
     renderNative(
       <GoalIntelligenceCard
-        deviceTimezone="America/Los_Angeles"
         intelligence={intelligence()}
-        onUseDeviceTimezone={jest.fn()}
-        planningTimezone="America/Los_Angeles"
+        onCollectionPrompt={onCollectionPrompt}
       />,
     );
 
-    expect(screen.getByText("Adjust your plan before pushing ahead")).toBeTruthy();
-    expect(screen.getByText("Add calendar availability.")).toBeTruthy();
-    expect(screen.getByText("What this goal asks of you")).toBeTruthy();
-    expect(screen.getByText("duration requirement")).toBeTruthy();
-    expect(screen.getByText("duration coverage")).toBeTruthy();
-    expect(screen.getByText("speed requirement")).toBeTruthy();
-    expect(screen.getByText("Why this guidance")).toBeTruthy();
-    expect(screen.getByText("Sport-specific capability")).toBeTruthy();
-    expect(screen.getByText("Recent training readiness")).toBeTruthy();
-    expect(screen.getByText("Calendar fit")).toBeTruthy();
-    expect(screen.getByText("Improve this guidance")).toBeTruthy();
-    expect(screen.getAllByText(/Reason: required training minutes missing/).length).toBeGreaterThan(
-      0,
+    fireEvent.press(screen.getByTestId("goal-intelligence-collect-profile_metrics"));
+    fireEvent.press(screen.getByTestId("goal-intelligence-collect-activity_import"));
+
+    expect(onCollectionPrompt).toHaveBeenNthCalledWith(1, "profile_metrics");
+    expect(onCollectionPrompt).toHaveBeenNthCalledWith(2, "activity_import");
+  });
+
+  it("does not render forbidden action language", () => {
+    renderNative(
+      <GoalIntelligenceCard intelligence={intelligence()} onCollectionPrompt={jest.fn()} />,
     );
-    expect(screen.getAllByText(/Reason: source data available/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Reason: recent history missing/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Reason: timezone missing or unsupported/).length).toBeGreaterThan(
-      0,
-    );
-    expect(screen.getAllByText(/Evidence uncertainty: 20% · 1 source/).length).toBeGreaterThan(0);
+
     expect(
-      screen.queryByText(/score|percent|forecast|prediction|likelihood|medical|risk/i),
+      screen.queryByText(/recommend|training|schedule|prediction|forecast|medical|risk/i),
     ).toBeNull();
   });
 
-  it("keeps cached guidance visible and offers retry when the latest request fails", () => {
+  it("keeps cached assessment visible and offers retry when the latest request fails", () => {
     const onRetry = jest.fn();
     renderNative(
       <GoalIntelligenceCard
-        deviceTimezone="America/Los_Angeles"
         intelligence={intelligence()}
         isError
+        onCollectionPrompt={jest.fn()}
         onRetry={onRetry}
-        onUseDeviceTimezone={jest.fn()}
-        planningTimezone="America/Los_Angeles"
       />,
     );
 
-    expect(screen.getByText("Adjust your plan before pushing ahead")).toBeTruthy();
-    expect(screen.getByText(/Goal guidance may be stale/)).toBeTruthy();
-
+    expect(screen.getByText(/displayed assessment may be stale/)).toBeTruthy();
     fireEvent.press(screen.getByTestId("goal-intelligence-retry"));
-
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 });

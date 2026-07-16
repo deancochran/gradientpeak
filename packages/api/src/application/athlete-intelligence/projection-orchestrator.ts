@@ -6,6 +6,7 @@ import {
   assembleWholeAthleteProjectionV1,
   athleteIntelligenceProjectionSchema,
   athleteStateVectorSchema,
+  type CalculationResult,
   type CanonicalSport,
   calculateActivityReadinessV1,
   calculateCriticalPowerCapability,
@@ -13,6 +14,7 @@ import {
   calculateGoalDemandV1,
   calculateTrainingFeasibility,
   type DurationAwareEffortCurve,
+  type EvidenceItem,
   evaluatePhysiologyMetrics,
   type GoalDemandPolicyV1Result,
   unavailableResult,
@@ -28,8 +30,99 @@ const athleteRuntimeContextSchema = z
   })
   .strict();
 
+const explainabilityResultStateSchema = z.enum([
+  "observed",
+  "estimated",
+  "unknown",
+  "insufficient_evidence",
+  "unsupported",
+]);
+
+const explainabilityReasonLabels: Readonly<Record<string, string>> = {
+  activities_read_truncated: "Some activity history could not be read",
+  calendar_feasibility_below_requirement: "Calendar availability is below the goal requirement",
+  capability_evidence_missing: "More compatible activity evidence is needed",
+  distinct_high_intensity_requirement_missing: "A higher-intensity requirement is unavailable",
+  goal_demand_incomplete: "Some goal details are incomplete",
+  goal_sport_incompatible_with_direct_capability:
+    "The selected activity type does not match available evidence",
+  goal_sport_missing: "The goal activity type is missing",
+  incompatible_physical_evidence_cannot_be_compared: "Some measurements cannot be compared",
+  insufficient_evidence_for_guidance: "Evidence is not sufficient for this assessment",
+  invalid_or_incompatible_metric_evidence: "A profile metric could not be used",
+  no_compatible_efforts: "Compatible activity efforts are unavailable",
+  physical_goal_gap_present: "Available physical evidence is below the goal requirement",
+  recent_history_missing: "Recent activity history is unavailable",
+  recovery_context_below_baseline: "Recent activity context is below the usual baseline",
+  required_goal_data_missing: "Some goal details are missing",
+  schedule_read_truncated: "Some calendar availability could not be read",
+  target_goal_sport_required_for_session_coverage: "The goal activity type is required",
+};
+
+function explainabilityReasonLabel(reasonCode: string) {
+  return explainabilityReasonLabels[reasonCode] ?? "Some assessment details limit this result";
+}
+
+const athleteIntelligenceExplainabilitySchema = z
+  .object({
+    assessment: z
+      .object({
+        at: z.string().datetime(),
+        state: explainabilityResultStateSchema,
+        uncertainty: z.enum(["low", "moderate", "high", "unknown"]),
+      })
+      .strict(),
+    evidence: z
+      .array(
+        z
+          .object({
+            label: z.string(),
+            type: z.enum(["activity", "activity_effort", "profile_metric", "manual", "goal"]),
+            observedAt: z.string().datetime(),
+          })
+          .strict(),
+      )
+      .readonly(),
+    limits: z
+      .array(
+        z
+          .object({
+            id: z.string(),
+            label: z.string(),
+            state: explainabilityResultStateSchema,
+            reasons: z.array(z.string()).readonly(),
+          })
+          .strict(),
+      )
+      .readonly(),
+    coverage: z
+      .array(
+        z
+          .object({
+            label: z.string(),
+            state: z.enum(["complete", "truncated"]),
+          })
+          .strict(),
+      )
+      .readonly(),
+    collectionPrompts: z
+      .array(
+        z
+          .object({
+            label: z.string(),
+            destination: z.enum(["profile_metrics", "activity_import"]),
+          })
+          .strict(),
+      )
+      .readonly(),
+  })
+  .strict();
+
 export const athleteIntelligenceRuntimeProjectionSchema = athleteIntelligenceProjectionSchema
-  .extend({ runtimeContext: athleteRuntimeContextSchema })
+  .extend({
+    runtimeContext: athleteRuntimeContextSchema,
+    explainability: athleteIntelligenceExplainabilitySchema,
+  })
   .strict();
 
 export type AthleteIntelligenceRuntimeProjection = z.infer<
@@ -173,6 +266,119 @@ function readinessContext(model: AthleteIntelligenceModelInput) {
       },
     ];
   });
+}
+
+function uncertaintyLabel(results: readonly CalculationResult[]) {
+  if (results.some((result) => result.state === "unknown")) return "unknown" as const;
+  const uncertainty = Math.max(...results.map((result) => result.uncertainty));
+  if (uncertainty >= 0.67) return "high" as const;
+  if (uncertainty >= 0.34) return "moderate" as const;
+  return "low" as const;
+}
+
+function aggregateState(results: readonly CalculationResult[]) {
+  const states = new Set(results.map((result) => result.state));
+  if (states.has("unsupported")) return "unsupported" as const;
+  if (states.has("insufficient_evidence")) return "insufficient_evidence" as const;
+  if (states.has("unknown")) return "unknown" as const;
+  if (states.has("estimated")) return "estimated" as const;
+  return "observed" as const;
+}
+
+function evidenceLabel(evidence: EvidenceItem) {
+  switch (evidence.sourceType) {
+    case "activity":
+      return { label: "Activity record", type: "activity" as const };
+    case "activity_effort":
+      return { label: "Activity effort", type: "activity_effort" as const };
+    case "profile_metric":
+      return { label: "Profile metric", type: "profile_metric" as const };
+    case "goal":
+      return { label: "Goal details", type: "goal" as const };
+    case "manual_observation":
+      return { label: "Manual entry", type: "manual" as const };
+  }
+}
+
+function curatedExplainability(input: {
+  model: AthleteIntelligenceModelInput;
+  projection: AthleteIntelligenceProjection;
+}) {
+  const goalDimensions = input.projection.goalCoverage.flatMap((goal) =>
+    goal.dimensions.flatMap((dimension) => [
+      dimension.requirement,
+      dimension.coverage,
+      ...(dimension.capability ? [dimension.capability] : []),
+      ...(dimension.physicalGap ? [dimension.physicalGap] : []),
+    ]),
+  );
+  const results = [
+    input.projection.capability.sportSpecificity,
+    input.projection.readiness.volumeTrend,
+    input.projection.feasibility.scheduleCoverage,
+    ...goalDimensions,
+  ];
+  const referencedEvidence = [...new Set(results.flatMap((result) => result.contributingSourceIds))]
+    .map((sourceId) => input.model.evidenceRegistry[sourceId])
+    .filter((evidence): evidence is EvidenceItem => evidence?.athleteId === input.model.athleteId)
+    .map((evidence) => ({ ...evidenceLabel(evidence), observedAt: evidence.observedAt }))
+    .sort(
+      (left, right) =>
+        left.observedAt.localeCompare(right.observedAt) || left.label.localeCompare(right.label),
+    );
+  const limitedResults = results.filter(
+    (result) =>
+      result.state === "unknown" ||
+      result.state === "insufficient_evidence" ||
+      result.state === "unsupported",
+  );
+  const limits = [
+    ...limitedResults.flatMap((result) =>
+      result.reasonCodes.map((reasonCode) => ({
+        label: explainabilityReasonLabel(reasonCode),
+        state: result.state,
+        reasons: [explainabilityReasonLabel(reasonCode)],
+      })),
+    ),
+    ...input.projection.decisionGuidance.reasonCodes.map((reasonCode) => ({
+      label: explainabilityReasonLabel(reasonCode),
+      state: aggregateState(results),
+      reasons: [explainabilityReasonLabel(reasonCode)],
+    })),
+  ].map((limit, index) => ({ ...limit, id: `limit-${index + 1}` }));
+  const collectionPrompts = [
+    ...(input.projection.capability.ftp.state === "unknown" ||
+    input.projection.capability.ftp.state === "insufficient_evidence"
+      ? [{ label: "Add a profile metric", destination: "profile_metrics" as const }]
+      : []),
+    ...(input.projection.readiness.volumeTrend.state === "unknown" ||
+    input.projection.readiness.volumeTrend.state === "insufficient_evidence"
+      ? [{ label: "Import activities", destination: "activity_import" as const }]
+      : []),
+  ];
+  return {
+    assessment: {
+      at: input.model.assessmentAsOf,
+      state: aggregateState(results),
+      uncertainty: uncertaintyLabel(results),
+    },
+    evidence: referencedEvidence,
+    limits,
+    coverage: Object.entries(input.model.readCoverage ?? {}).map(([domain, coverage]) => ({
+      label:
+        domain === "metrics"
+          ? "Profile metrics"
+          : domain === "activities"
+            ? "Recorded activities"
+            : domain === "efforts"
+              ? "Activity efforts"
+              : "Availability data",
+      state: coverage.state,
+    })),
+    collectionPrompts: [
+      ...new Map(collectionPrompts.map((prompt) => [prompt.destination, prompt])).values(),
+    ],
+  };
 }
 
 /** Runs the approved pure policies over one canonical, profile-scoped model snapshot. */
@@ -483,6 +689,7 @@ export async function projectAthleteIntelligence(input: {
   const withRuntimeContext = (value: AthleteIntelligenceProjection) =>
     athleteIntelligenceRuntimeProjectionSchema.parse({
       ...value,
+      explainability: curatedExplainability({ model, projection: value }),
       runtimeContext: {
         stateVector,
       },

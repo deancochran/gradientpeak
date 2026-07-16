@@ -1,109 +1,57 @@
-import type { AthleteIntelligenceProjection, CalculationResult } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Text } from "@repo/ui/components/text";
 import { View } from "react-native";
 
-type GoalIntelligenceCardProps = {
-  intelligence?: AthleteIntelligenceProjection;
-  isError?: boolean;
-  isLoading?: boolean;
-  deviceTimezone?: string | null;
-  onRetry?: () => void;
-  onUseDeviceTimezone: () => void;
-  planningTimezone?: string | null;
+type Explainability = {
+  assessment: {
+    at: string;
+    state: "observed" | "estimated" | "unknown" | "insufficient_evidence" | "unsupported";
+    uncertainty: "low" | "moderate" | "high" | "unknown";
+  };
+  evidence: readonly { label: string; type: string; observedAt: string }[];
+  limits: readonly {
+    id: string;
+    label: string;
+    state: "observed" | "estimated" | "unknown" | "insufficient_evidence" | "unsupported";
+    reasons: readonly string[];
+  }[];
+  coverage: readonly { label: string; state: "complete" | "truncated" }[];
+  collectionPrompts: readonly {
+    label: string;
+    destination: "profile_metrics" | "activity_import";
+  }[];
 };
 
-function formatReason(reason: string) {
-  return reason.replaceAll("_", " ");
-}
+type GoalIntelligenceCardProps = {
+  intelligence?: { explainability: Explainability };
+  isError?: boolean;
+  isLoading?: boolean;
+  onCollectionPrompt: (
+    destination: Explainability["collectionPrompts"][number]["destination"],
+  ) => void;
+  onRetry?: () => void;
+};
 
-function resultLabel(result: CalculationResult) {
-  if (result.state === "observed" || result.state === "estimated") return "Available";
-  if (result.state === "unsupported") return "Unavailable for this goal";
-  if (result.state === "insufficient_evidence") return "More evidence needed";
-  return "Unknown";
-}
-
-function ResultContext({
-  label,
-  result,
-  showEvidence = false,
-}: {
-  label: string;
-  result: CalculationResult;
-  showEvidence?: boolean;
-}) {
-  const uncertainty =
-    typeof result.uncertainty === "number" ? Math.round(result.uncertainty * 100) : null;
-  const sourceCount = result.contributingSourceIds?.length ?? 0;
-  return (
-    <View className="gap-1">
-      <Text className="text-xs font-medium text-foreground">{label}</Text>
-      <Text className="text-xs leading-5 text-muted-foreground">{resultLabel(result)}</Text>
-      {showEvidence &&
-        result.reasonCodes.map((reason) => (
-          <Text className="text-xs leading-5 text-muted-foreground" key={reason}>
-            Reason: {formatReason(reason)}
-          </Text>
-        ))}
-      {showEvidence ? (
-        <Text className="text-xs leading-5 text-muted-foreground">
-          Evidence uncertainty: {uncertainty === null ? "unknown" : `${uncertainty}%`} ·{" "}
-          {sourceCount} source
-          {sourceCount === 1 ? "" : "s"}
-        </Text>
-      ) : null}
-    </View>
-  );
+function formatLabel(value: string) {
+  return value.replaceAll("_", " ");
 }
 
 export function GoalIntelligenceCard({
   intelligence,
   isError = false,
   isLoading = false,
-  deviceTimezone,
+  onCollectionPrompt,
   onRetry = () => undefined,
-  onUseDeviceTimezone,
-  planningTimezone,
 }: GoalIntelligenceCardProps) {
-  if (!deviceTimezone) {
+  if (!intelligence) {
     return (
       <Card className="rounded-3xl border border-border bg-card" testID="goal-intelligence-card">
         <CardContent className="gap-3 p-4">
-          <Text className="text-sm font-semibold text-foreground">Your next move</Text>
+          <Text className="text-sm font-semibold text-foreground">Evidence & limits</Text>
           <Text className="text-sm leading-5 text-muted-foreground">
-            Calendar context is unavailable because this device timezone cannot be used.
+            {isLoading ? "Loading assessment details." : "Assessment details are unavailable."}
           </Text>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (!planningTimezone || !intelligence) {
-    const status = !planningTimezone
-      ? "Use your device timezone to review calendar-aware goal guidance."
-      : isLoading
-        ? "Loading evidence-aware goal guidance."
-        : isError
-          ? "Goal guidance could not be loaded. Try again."
-          : "Goal guidance is unavailable right now.";
-    return (
-      <Card className="rounded-3xl border border-border bg-card" testID="goal-intelligence-card">
-        <CardContent className="gap-3 p-4">
-          <Text className="text-sm font-semibold text-foreground">Your next move</Text>
-          <Text className="text-sm leading-5 text-muted-foreground">{status}</Text>
-          {!planningTimezone ? (
-            <Button
-              className="self-start"
-              onPress={onUseDeviceTimezone}
-              size="sm"
-              testID="goal-intelligence-use-device-timezone"
-              variant="outline"
-            >
-              <Text>Use device timezone</Text>
-            </Button>
-          ) : null}
           {isError ? (
             <Button
               className="self-start"
@@ -120,33 +68,27 @@ export function GoalIntelligenceCard({
     );
   }
 
-  const coverage = intelligence.goalCoverage[0];
-  const dimensions = coverage?.dimensions ?? [];
-  const feasibility = intelligence.feasibility.scheduleCoverage;
-
+  const { explainability } = intelligence;
   return (
     <Card className="rounded-3xl border border-border bg-card" testID="goal-intelligence-card">
       <CardContent className="gap-4 p-4">
         <View className="gap-1">
-          <Text className="text-sm font-semibold text-foreground">Your next move</Text>
-          <Text className="text-lg font-semibold text-foreground">
-            {intelligence.decisionGuidance.state === "proceed"
-              ? "Keep moving toward this goal"
-              : intelligence.decisionGuidance.state === "adjust"
-                ? "Adjust your plan before pushing ahead"
-                : "More information is needed"}
+          <Text className="text-sm font-semibold text-foreground">Evidence & limits</Text>
+          <Text className="text-sm leading-5 text-muted-foreground">
+            Assessed: {explainability.assessment.at}
           </Text>
-          {(intelligence.decisionGuidance.recommendedActions ?? []).map((action) => (
-            <Text className="text-sm leading-5 text-foreground" key={action}>
-              {action}
-            </Text>
-          ))}
+          <Text className="text-sm leading-5 text-muted-foreground">
+            Result state: {formatLabel(explainability.assessment.state)}
+          </Text>
+          <Text className="text-sm leading-5 text-muted-foreground">
+            Decision uncertainty: {explainability.assessment.uncertainty}
+          </Text>
         </View>
 
         {isError ? (
           <View className="gap-2 rounded-2xl border border-border px-3 py-3">
             <Text className="text-xs leading-5 text-muted-foreground">
-              Goal guidance may be stale because the latest evidence could not be loaded.
+              The displayed assessment may be stale because the latest details could not be loaded.
             </Text>
             <Button
               className="self-start"
@@ -160,88 +102,73 @@ export function GoalIntelligenceCard({
           </View>
         ) : null}
 
-        {dimensions.length ? (
-          <View className="gap-2 rounded-2xl border border-border px-3 py-3">
-            <Text className="text-xs font-medium text-foreground">What this goal asks of you</Text>
-            {dimensions.map((dimension) => (
-              <View className="gap-1" key={dimension.dimension}>
-                <ResultContext
-                  label={`${dimension.dimension} requirement`}
-                  result={dimension.requirement}
-                />
-                <ResultContext
-                  label={`${dimension.dimension} coverage`}
-                  result={dimension.coverage}
-                />
-                {dimension.capability ? (
-                  <ResultContext
-                    label={`${dimension.dimension} capability`}
-                    result={dimension.capability}
-                  />
-                ) : null}
-                {dimension.physicalGap ? (
-                  <ResultContext
-                    label={`${dimension.dimension} physical gap`}
-                    result={dimension.physicalGap}
-                  />
-                ) : null}
+        <View className="gap-2 rounded-2xl border border-border px-3 py-3">
+          <Text className="text-xs font-medium text-foreground">Evidence used</Text>
+          {explainability.evidence.length ? (
+            explainability.evidence.map((evidence) => (
+              <Text
+                className="text-xs leading-5 text-muted-foreground"
+                key={`${evidence.label}:${evidence.type}:${evidence.observedAt}`}
+              >
+                {evidence.label} · {formatLabel(evidence.type)} · {evidence.observedAt}
+              </Text>
+            ))
+          ) : (
+            <Text className="text-xs leading-5 text-muted-foreground">No evidence was used.</Text>
+          )}
+        </View>
+
+        <View className="gap-2">
+          <Text className="text-xs font-medium text-foreground">Limits and reasons</Text>
+          {explainability.limits.length ? (
+            explainability.limits.map((limit) => (
+              <View className="gap-1" key={limit.id}>
+                <Text className="text-xs leading-5 text-muted-foreground">
+                  {limit.label} · {formatLabel(limit.state)}
+                </Text>
+                {limit.reasons.map((reason) => (
+                  <Text
+                    className="text-xs leading-5 text-muted-foreground"
+                    key={`${limit.id}:${reason}`}
+                  >
+                    Reason: {reason}
+                  </Text>
+                ))}
               </View>
+            ))
+          ) : (
+            <Text className="text-xs leading-5 text-muted-foreground">
+              No additional limits were reported.
+            </Text>
+          )}
+        </View>
+
+        <View className="gap-2 border-t border-border pt-3">
+          <Text className="text-xs font-medium text-foreground">Coverage</Text>
+          {explainability.coverage.map((coverage) => (
+            <Text className="text-xs leading-5 text-muted-foreground" key={coverage.label}>
+              {coverage.label}: {coverage.state}
+            </Text>
+          ))}
+        </View>
+
+        {explainability.collectionPrompts.length ? (
+          <View className="gap-2">
+            <Text className="text-xs font-medium text-foreground">Add evidence</Text>
+            {explainability.collectionPrompts.map((prompt) => (
+              <Button
+                className="self-start"
+                key={prompt.destination}
+                onPress={() => onCollectionPrompt(prompt.destination)}
+                size="sm"
+                testID={`goal-intelligence-collect-${prompt.destination}`}
+                variant="outline"
+              >
+                <Text>{prompt.label}</Text>
+              </Button>
             ))}
           </View>
         ) : null}
-
-        {(intelligence.opportunities.evidence ?? []).map((evidence) => (
-          <View
-            className="gap-1"
-            key={`${evidence.goalSourceId}:${evidence.dimension ?? "unknown"}`}
-          >
-            <Text className="text-xs font-medium text-foreground">Improve this guidance</Text>
-            <Text className="text-xs leading-5 text-muted-foreground">
-              {evidence.dimension ? `${evidence.dimension} evidence` : "Additional goal evidence"}
-            </Text>
-            {evidence.reasonCodes.map((reason) => (
-              <Text className="text-xs leading-5 text-muted-foreground" key={reason}>
-                Reason: {formatReason(reason)}
-              </Text>
-            ))}
-          </View>
-        ))}
-        {(intelligence.opportunities.training ?? []).map((opportunity) => (
-          <View className="gap-1" key={`${opportunity.goalSourceId}:${opportunity.dimension}`}>
-            <Text className="text-xs font-medium text-foreground">Training focus</Text>
-            <Text className="text-xs leading-5 text-muted-foreground">
-              {opportunity.dimension} · {resultLabel(opportunity.physicalGap)}
-            </Text>
-            {opportunity.physicalGap.reasonCodes.map((reason) => (
-              <Text className="text-xs leading-5 text-muted-foreground" key={reason}>
-                Reason: {formatReason(reason)}
-              </Text>
-            ))}
-          </View>
-        ))}
-
-        <View className="gap-3 border-t border-border pt-3">
-          <Text className="text-xs font-medium text-muted-foreground">Why this guidance</Text>
-          {(intelligence.decisionGuidance.reasonCodes ?? []).map((reason) => (
-            <Text className="text-xs leading-5 text-muted-foreground" key={reason}>
-              Reason: {formatReason(reason)}
-            </Text>
-          ))}
-          <ResultContext
-            label="Sport-specific capability"
-            result={intelligence.capability.sportSpecificity}
-            showEvidence
-          />
-          <ResultContext
-            label="Recent training readiness"
-            result={intelligence.readiness.volumeTrend}
-            showEvidence
-          />
-          <ResultContext label="Calendar fit" result={feasibility} showEvidence />
-          <Text className="text-xs leading-5 text-muted-foreground">
-            Calendar interpretation uses your confirmed timezone: {planningTimezone}.
-          </Text>
-        </View>
       </CardContent>
     </Card>
   );

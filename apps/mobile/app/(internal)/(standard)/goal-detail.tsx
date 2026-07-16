@@ -88,25 +88,12 @@ function formatDaysUntilGoal(targetDate: string | null, today: string) {
   return `${dayCount} day${dayCount === 1 ? "" : "s"} out`;
 }
 
-function resolveDeviceTimezone() {
-  try {
-    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone?.trim();
-    if (!timezone) return null;
-    new Intl.DateTimeFormat(undefined, { timeZone: timezone }).format();
-    return timezone;
-  } catch {
-    return null;
-  }
-}
-
 export default function GoalDetailScreen() {
   const router = useRouter();
   const utils = api.useUtils();
   const { id } = useLocalSearchParams<{ id?: string }>();
   const goalId = typeof id === "string" ? id : "";
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const deviceTimezone = useMemo(() => resolveDeviceTimezone(), []);
-  const [planningTimezone, setPlanningTimezone] = useState<string | null>(null);
 
   const goalQuery = api.goals.getById.useQuery({ id: goalId }, { enabled: !!goalId });
   const { data: goal, isLoading } = goalQuery;
@@ -251,13 +238,17 @@ export default function GoalDetailScreen() {
       </SectionCard>
 
       <GoalIntelligenceCard
-        deviceTimezone={deviceTimezone}
         intelligence={intelligenceQuery.data}
         isError={intelligenceQuery.isError}
         isLoading={intelligenceQuery.isLoading}
+        onCollectionPrompt={(destination) =>
+          router.navigate(
+            (destination === "profile_metrics"
+              ? ROUTES.PROFILE_METRICS.CREATE
+              : ROUTES.ACTIVITIES.IMPORT) as never,
+          )
+        }
         onRetry={() => void intelligenceQuery.refetch()}
-        onUseDeviceTimezone={() => setPlanningTimezone(deviceTimezone)}
-        planningTimezone={planningTimezone}
       />
     </DetailScaffold>
   );
