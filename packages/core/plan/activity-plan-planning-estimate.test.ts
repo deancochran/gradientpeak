@@ -1,55 +1,137 @@
 import { describe, expect, it } from "vitest";
-import type { ActivityPlanStructureV2 } from "../schemas/activity_plan_v2";
+import { activityPlanStructureSchemaV3 } from "../activity-plan";
 import { estimateActivityPlanForTrainingContext } from "./activity-plan-planning-estimate";
 
-describe("estimateActivityPlanForTrainingContext", () => {
-  it("estimates time, IF, TSS, and distance from distance structure plus athlete pace", () => {
-    const structure: ActivityPlanStructureV2 = {
-      version: 2,
+const id = (value: number) => `20000000-0000-4000-8000-${String(value).padStart(12, "0")}`;
+const singleBike = activityPlanStructureSchemaV3.parse({
+  version: 3,
+  segments: [
+    {
+      role: "activity",
+      id: id(1),
+      name: "Bike",
+      category: "bike",
       intervals: [
         {
-          id: "11111111-1111-4111-8111-111111111111",
-          name: "Tempo block",
+          id: id(2),
+          name: "Main",
           repetitions: 1,
           steps: [
             {
-              id: "22222222-2222-4222-8222-222222222222",
-              name: "Tempo 5K",
-              duration: { type: "distance", meters: 5000 },
+              id: id(3),
+              name: "Steady",
+              duration: { type: "time", seconds: 3600 },
               targets: [{ type: "%FTP", intensity: 80 }],
             },
           ],
         },
       ],
-    };
+    },
+  ],
+});
 
-    const estimate = estimateActivityPlanForTrainingContext({
-      activityCategory: "run",
-      structure,
-      athleteContext: { thresholdPaceSecondsPerKm: 300 },
-    });
-
-    expect(estimate).toMatchObject({
-      durationSeconds: 1500,
-      distanceMeters: 5000,
+describe("estimateActivityPlanForTrainingContext", () => {
+  it("preserves the exact single-segment cycling calculation as a golden", () => {
+    expect(estimateActivityPlanForTrainingContext({ structure: singleBike })).toMatchObject({
+      durationSeconds: 3600,
+      activeSeconds: 3600,
+      restSeconds: 0,
+      transitionSeconds: 0,
       intensityFactor: 0.8,
+      tss: 64,
+      categoryDoses: [
+        { category: "bike", intensityFactor: 0.8, tss: 64, evidence: "cycling_power" },
+      ],
       confidence: "high",
     });
-    expect(estimate.tss).toBeCloseTo(26.7, 1);
   });
 
-  it("falls back to saved metrics with lower confidence when structure is unavailable", () => {
-    const estimate = estimateActivityPlanForTrainingContext({
-      activityCategory: "bike",
-      authoritativeMetrics: {
-        estimatedDurationSeconds: 3600,
-        estimatedTss: 55,
-      },
+  it("keeps multisport dose separate and abstains where evidence is unsupported", () => {
+    const structure = activityPlanStructureSchemaV3.parse({
+      version: 3,
+      segments: [
+        ...singleBike.segments,
+        { role: "transition", id: id(4), name: "T1", duration: { type: "time", seconds: 120 } },
+        {
+          role: "activity",
+          id: id(5),
+          name: "Run",
+          category: "run",
+          intervals: [
+            {
+              id: id(6),
+              name: "Run",
+              repetitions: 1,
+              steps: [
+                {
+                  id: id(7),
+                  name: "5k",
+                  duration: { type: "distance", meters: 5000 },
+                  targets: [{ type: "speed", intensity: 12 }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const estimate = estimateActivityPlanForTrainingContext({ structure });
+    expect(estimate.durationSeconds).toBeNull();
+    expect(estimate.transitionSeconds).toBe(120);
+    expect(estimate.tss).toBeNull();
+    expect(estimate.categoryDoses).toEqual([
+      expect.objectContaining({ category: "bike", tss: 64 }),
+      expect.objectContaining({ category: "run", tss: null, evidence: "unsupported" }),
+    ]);
+  });
+
+  it("does not report complete high-confidence load from partial cycling-power evidence", () => {
+    const structure = activityPlanStructureSchemaV3.parse({
+      version: 3,
+      segments: [
+        {
+          role: "activity",
+          id: id(20),
+          name: "Bike",
+          category: "bike",
+          intervals: [
+            {
+              id: id(21),
+              name: "Main",
+              repetitions: 1,
+              steps: [
+                {
+                  id: id(22),
+                  name: "Power",
+                  duration: { type: "time", seconds: 1800 },
+                  targets: [{ type: "%FTP", intensity: 80 }],
+                },
+                {
+                  id: id(23),
+                  name: "RPE",
+                  duration: { type: "time", seconds: 1800 },
+                  targets: [{ type: "RPE", intensity: 5 }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
     });
 
-    expect(estimate.durationSeconds).toBe(3600);
-    expect(estimate.tss).toBeCloseTo(49, 1);
-    expect(estimate.confidence).toBe("medium");
-    expect(estimate.warnings).toContain("Using category-level intensity fallback.");
+    expect(estimateActivityPlanForTrainingContext({ structure })).toMatchObject({
+      tss: null,
+      intensityFactor: null,
+      confidence: "medium",
+      categoryDoses: [
+        {
+          category: "bike",
+          evidence: "partial_cycling_power",
+          evidenceCoverage: 0.5,
+          tss: null,
+          intensityFactor: null,
+        },
+      ],
+    });
   });
 });

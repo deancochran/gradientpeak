@@ -1,37 +1,54 @@
-import type { DurationV2 } from "../schemas/activity_plan_v2";
-import type { CanonicalSport } from "../schemas/sport";
-import {
-  getSportDistancePaceSecondsPerKm,
-  getSportSecondsPerRep,
-  getSportUntilFinishedSeconds,
-} from "../sports";
+import type { ActivityPlanDuration } from "../activity-plan/v3-schema";
 
-export interface DurationEstimateOptions {
-  activityCategory?: CanonicalSport;
-  paceSecondsPerKm?: number;
-  secondsPerRep?: number;
-  untilFinishedSeconds?: number;
-}
+export type ActivityPlanDurationSemantics = {
+  exactElapsedSeconds: number | null;
+  timedSeconds: number;
+  distanceMeters: number;
+  repetitionCount: number;
+  open: boolean;
+};
 
-export function getDurationSeconds(
-  duration: DurationV2,
-  options?: DurationEstimateOptions,
-): number {
-  const activityCategory = options?.activityCategory ?? "other";
-
+/** Describes the authored completion policy without inventing elapsed time. */
+export function describeActivityPlanDuration(
+  duration: ActivityPlanDuration,
+): ActivityPlanDurationSemantics {
   switch (duration.type) {
     case "time":
-      return duration.seconds;
-    case "distance": {
-      const paceSecondsPerKm =
-        options?.paceSecondsPerKm ?? getSportDistancePaceSecondsPerKm(activityCategory);
-      return Math.round((duration.meters / 1000) * paceSecondsPerKm);
-    }
-    case "repetitions": {
-      const secondsPerRep = options?.secondsPerRep ?? getSportSecondsPerRep(activityCategory);
-      return duration.count * secondsPerRep;
-    }
+      return {
+        exactElapsedSeconds: duration.seconds,
+        timedSeconds: duration.seconds,
+        distanceMeters: 0,
+        repetitionCount: 0,
+        open: false,
+      };
+    case "distance":
+      return {
+        exactElapsedSeconds: null,
+        timedSeconds: 0,
+        distanceMeters: duration.meters,
+        repetitionCount: 0,
+        open: false,
+      };
+    case "repetitions":
+      return {
+        exactElapsedSeconds: null,
+        timedSeconds: 0,
+        distanceMeters: 0,
+        repetitionCount: duration.count,
+        open: false,
+      };
     case "untilFinished":
-      return options?.untilFinishedSeconds ?? getSportUntilFinishedSeconds(activityCategory);
+      return {
+        exactElapsedSeconds: null,
+        timedSeconds: 0,
+        distanceMeters: 0,
+        repetitionCount: 0,
+        open: true,
+      };
   }
+}
+
+/** Returns elapsed time only when it is explicitly authored. */
+export function getExactDurationSeconds(duration: ActivityPlanDuration): number | null {
+  return duration.type === "time" ? duration.seconds : null;
 }

@@ -1,4 +1,4 @@
-import type { PlanStepV2 } from "@repo/core";
+import type { ActivityPlanIntervalStep } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import * as Haptics from "expo-haptics";
@@ -8,7 +8,7 @@ import { TouchableOpacity, View } from "react-native";
 
 interface RepeatSegment {
   segmentName: string;
-  steps: PlanStepV2[];
+  steps: Array<ActivityPlanIntervalStep & { originalRepetitionCount?: number }>;
   segmentIndex: number;
 }
 
@@ -26,7 +26,7 @@ interface RepeatCardProps {
 /**
  * Calculate duration for a V2 step in milliseconds
  */
-function getStepDurationMs(step: PlanStepV2): number {
+function getStepDurationMs(step: ActivityPlanIntervalStep): number {
   switch (step.duration.type) {
     case "time":
       return step.duration.seconds * 1000;

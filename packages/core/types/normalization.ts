@@ -1,4 +1,8 @@
+import type { ActivityArtifactSemantics, DecodedActivityArtifact } from "../activity-artifacts";
+
 export interface ActivityLap {
+  messageIndex?: number;
+  sessionMessageIndex?: number;
   startTime: Date;
   totalTime: number;
   totalDistance: number;
@@ -8,6 +12,9 @@ export interface ActivityLap {
   avgPower?: number;
 }
 export interface ActivityLength {
+  messageIndex?: number;
+  sessionMessageIndex?: number;
+  lapMessageIndex?: number;
   startTime?: Date;
   totalElapsedTime?: number;
   totalTimerTime?: number;
@@ -19,6 +26,9 @@ export interface ActivityLength {
   eventType?: string;
 }
 export interface ActivityRecord {
+  messageIndex?: number;
+  sessionMessageIndex?: number;
+  lapMessageIndex?: number;
   timestamp: Date;
   positionLat?: number; // degrees
   positionLong?: number; // degrees
@@ -29,6 +39,30 @@ export interface ActivityRecord {
   cadence?: number; // rpm
   power?: number; // watts
   temperature?: number; // celsius
+}
+
+export interface ActivitySession {
+  messageIndex: number;
+  rawSport?: string | number;
+  rawSubSport?: string | number;
+  startTime: Date;
+  endTime: Date;
+  totalElapsedTime: number;
+  totalTimerTime?: number;
+  totalMovingTime?: number;
+  totalDistance?: number;
+  laps: ActivityLap[];
+  records: ActivityRecord[];
+}
+
+export interface ActivitySegment {
+  sessionMessageIndex: number;
+  role: "activity" | "transition" | "rest" | "unknown";
+  category?: "run" | "bike" | "swim" | "strength" | "other";
+  rawSport?: string | number;
+  rawSubSport?: string | number;
+  startTime: Date;
+  endTime: Date;
 }
 export interface StandardActivity {
   metadata: {
@@ -63,5 +97,13 @@ export interface StandardActivity {
   };
   laps?: ActivityLap[];
   lengths?: ActivityLength[];
+  /** Ordered FIT sessions. Present for FIT input, including ordinary one-session files. */
+  sessions?: ActivitySession[];
+  /** Ordered segment projection of FIT sessions. */
+  segments?: ActivitySegment[];
+  /** Standards-first decoded evidence used for loss-aware ingestion and round-trip checks. */
+  decodedArtifact?: DecodedActivityArtifact;
+  /** Canonical semantic projection compared with explicit FIT quantization tolerances. */
+  semantics?: ActivityArtifactSemantics;
   records: ActivityRecord[];
 }

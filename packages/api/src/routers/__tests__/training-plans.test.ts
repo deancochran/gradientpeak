@@ -1,7 +1,19 @@
+import { buildSystemActivityTemplateCatalog, SYSTEM_TEMPLATES } from "@repo/core";
 import { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
 import { createQueryMapDbMock, type QueryMap, type QueryResult } from "../../test/mock-query-db";
 import { deriveProfileAwareCreationContext, trainingPlansRouter } from "../planning/training-plans";
+
+const systemActivityPlanId = buildSystemActivityTemplateCatalog()[0]?.template_id;
+if (!systemActivityPlanId) throw new Error("Expected seeded system activity templates");
+const systemTemplateRows = SYSTEM_TEMPLATES.map((template) => ({
+  activity_category: template.activity_category,
+  gps_recording_enabled: template.gps_recording_enabled,
+  id: template.id,
+  is_system_template: true,
+  structure: template.structure,
+  version: "3.0",
+}));
 
 function createSupabaseMock(results: QueryMap) {
   const counters = new Map<string, number>();
@@ -56,6 +68,10 @@ function createSupabaseMock(results: QueryMap) {
 function createTrainingPlansCaller(results: QueryMap = {}) {
   const { db } = createQueryMapDbMock({
     profiles: { data: { planningTimezone: "UTC" }, error: null },
+    activity_plans: {
+      data: systemTemplateRows,
+      error: null,
+    },
     ...results,
   });
 
@@ -73,8 +89,12 @@ function createTrainingPlansCaller(results: QueryMap = {}) {
   } as any);
 }
 
-function _createTrainingPlansCreateHarness() {
+function createTrainingPlansCreateHarness() {
   const { db, callLog } = createQueryMapDbMock({
+    activity_plans: {
+      data: systemTemplateRows,
+      error: null,
+    },
     training_plans: {
       data: {
         id: "22222222-2222-4222-8222-222222222222",
@@ -635,6 +655,49 @@ describe("trainingPlansRouter plan_start_date support", () => {
       },
     ],
   };
+
+  it("creates a strict canonical plan from the normal minimal-goal projection", async () => {
+    const { caller, getInsertedPayload } = createTrainingPlansCreateHarness();
+    await caller.createFromMinimalGoal({
+      plan_start_date: "2026-01-05",
+      goals: [minimalGoal],
+    });
+
+    const structure = getInsertedPayload()?.structure;
+    expect(structure).toMatchObject({ version: 1, sessions: expect.any(Array) });
+    expect((structure as { sessions: unknown[] }).sessions.length).toBeGreaterThan(0);
+  });
+
+  it("does not persist a minimal-goal plan when template row versions become stale at lock time", async () => {
+    const { db, callLog } = createQueryMapDbMock({
+      profiles: { data: { planningTimezone: "UTC" }, error: null },
+      activity_plans: [
+        { data: systemTemplateRows, error: null },
+        { data: systemTemplateRows, error: null },
+        {
+          data: systemTemplateRows.map((row) => ({ ...row, version: "2.0" })),
+          error: null,
+        },
+      ],
+    });
+    const caller = trainingPlansRouter.createCaller({
+      db: db as any,
+      session: { user: { id: "profile-123" } },
+      headers: new Headers(),
+      clientType: "test",
+      trpcSource: "vitest",
+    } as any);
+
+    await expect(
+      caller.createFromMinimalGoal({
+        plan_start_date: "2026-01-05",
+        goals: [minimalGoal],
+      }),
+    ).rejects.toThrow("changed activity plans");
+    expect(
+      callLog.some((call) => call.table === "training_plans" && call.operation === "insert"),
+    ).toBe(false);
+  });
 
   const nonBlockingGoal = {
     name: "Threshold check",
@@ -2079,8 +2142,8 @@ describe("trainingPlansRouter plan_start_date support", () => {
 
     expect(result.plan_preview.start_date).toBe("2026-01-05");
     expect(result.projection_chart.start_date).toBe("2026-01-05");
-    expect(result.plan_preview.end_date).toBe("2026-03-15");
-    expect(result.projection_chart.end_date).toBe("2026-03-15");
+    expect(result.plan_preview.end_date).toBe("2026-03-21");
+    expect(result.projection_chart.end_date).toBe("2026-03-21");
   });
 
   it("keeps projected load and fitness above zero near event week", async () => {
@@ -2822,13 +2885,22 @@ describe("trainingPlansRouter analytics endpoints", () => {
         data: {
           id: planId,
           structure: {
-            periodization_template: {
-              starting_ctl: 42,
-              target_ctl: 60,
-              target_date: "2026-03-31",
+            id: planId,
+            version: 1,
+            sport: ["run"],
+            goal_blueprints: [{ title: "Spring goal", priority: 8, target_offset_days: 120 }],
+            builder_planning_snapshot: {
+              version: 1,
+              plan_preferences: {
+                duration_weeks: 18,
+                weekly_session_count: 4,
+                target_weekly_hours: 8,
+                rest_days_per_week: 2,
+              },
+              scheduling: { start_date: "2026-01-01", preferred_weekdays: [1, 3, 5, 6] },
+              goal_context: { selected_goals: [] },
             },
-            blocks: [],
-            target_weekly_tss: 280,
+            sessions: [{ offset_days: 0, activity_plan_id: systemActivityPlanId }],
           },
         },
         error: null,
@@ -2846,8 +2918,15 @@ describe("trainingPlansRouter analytics endpoints", () => {
       dataPoints: expect.any(Array),
       startCTL: expect.any(Number),
       targetCTL: expect.any(Number),
-      targetDate: expect.any(String),
+      targetDate: "2026-05-01",
     });
+    await expect(
+      caller.getIdealCurve({
+        id: planId,
+        start_date: "2026-02-01",
+        end_date: "2026-04-15",
+      }),
+    ).resolves.toMatchObject({ targetDate: "2026-05-01" });
   });
 
   it("abstains from an actual curve when history is empty", async () => {
@@ -2904,8 +2983,9 @@ describe("trainingPlansRouter analytics endpoints", () => {
         data: {
           id: planId,
           structure: {
-            blocks: [],
-            constraints: { available_days_per_week: ["monday", "wednesday"] },
+            id: planId,
+            version: 1,
+            sessions: [{ offset_days: 0, activity_plan_id: systemActivityPlanId }],
           },
         },
         error: null,
@@ -2939,8 +3019,9 @@ describe("trainingPlansRouter analytics endpoints", () => {
           is_system_template: false,
           template_visibility: "public",
           structure: {
-            blocks: [],
-            constraints: { available_days_per_week: ["monday"] },
+            id: planId,
+            version: 1,
+            sessions: [{ offset_days: 0, activity_plan_id: systemActivityPlanId }],
           },
         },
         error: null,
@@ -2964,28 +3045,11 @@ describe("trainingPlansRouter analytics endpoints", () => {
         data: {
           id: planId,
           structure: {
-            goals: [
-              {
-                id: "goal-1",
-                name: "Spring A race",
-                target_date: "2026-03-20",
-                priority: 8,
-              },
-            ],
-            blocks: [
-              {
-                start_date: "2026-01-01",
-                end_date: "2026-01-31",
-                target_weekly_tss_range: { min: 280, max: 350 },
-              },
-            ],
-            fitness_progression: {
-              target_ctl_at_peak: 64,
-            },
-            activity_distribution: {
-              run: 0.7,
-              bike: 0.3,
-            },
+            id: planId,
+            version: 1,
+            sport: ["run", "bike"],
+            goal_blueprints: [{ title: "Spring A race", priority: 8, target_offset_days: 78 }],
+            sessions: [{ offset_days: 0, activity_plan_id: systemActivityPlanId }],
           },
         },
         error: null,

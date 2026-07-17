@@ -4,7 +4,7 @@
  * Shows live session metrics, emphasizing active plan targets when available.
  */
 
-import type { IntensityTargetV2 } from "@repo/core";
+import type { ActivityTarget } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import React from "react";
 import { View } from "react-native";
@@ -34,11 +34,17 @@ type MetricType =
   | "Cadence"
   | "Calories";
 
+function readProfileNumber(profile: unknown, key: string): number | undefined {
+  if (!profile || typeof profile !== "object") return undefined;
+  const value = (profile as Record<string, unknown>)[key];
+  return typeof value === "number" ? value : undefined;
+}
+
 /**
  * Get metric priority based on plan step targets
  * Returns array of metric names ordered by priority (targeted metrics first)
  */
-function getMetricPriority(targets?: IntensityTargetV2[]): MetricType[] {
+function getMetricPriority(targets?: ActivityTarget[]): MetricType[] {
   const defaultOrder: MetricType[] = [
     "Time",
     "Lap Time",
@@ -135,8 +141,8 @@ function formatPace(minPerKm: number): string {
  */
 function getMetricTarget(
   metric: MetricType,
-  targets?: IntensityTargetV2[],
-  profile?: any,
+  targets?: ActivityTarget[],
+  profile?: unknown,
 ): string | null {
   if (!targets || targets.length === 0) return null;
 
@@ -144,7 +150,7 @@ function getMetricTarget(
     switch (metric) {
       case "Power":
         if (target.type === "%FTP") {
-          const ftp = profile?.ftp || 200;
+          const ftp = readProfileNumber(profile, "ftp") || 200;
           return `${Math.round((target.intensity / 100) * ftp)}W`;
         }
         if (target.type === "watts") {
@@ -153,11 +159,11 @@ function getMetricTarget(
         break;
       case "Heart Rate":
         if (target.type === "%MaxHR") {
-          const maxHR = profile?.max_heart_rate || 180;
+          const maxHR = readProfileNumber(profile, "max_heart_rate") || 180;
           return `${Math.round((target.intensity / 100) * maxHR)} bpm`;
         }
         if (target.type === "%ThresholdHR") {
-          const thresholdHR = profile?.threshold_heart_rate || 160;
+          const thresholdHR = readProfileNumber(profile, "threshold_heart_rate") || 160;
           return `${Math.round((target.intensity / 100) * thresholdHR)} bpm`;
         }
         if (target.type === "bpm") {

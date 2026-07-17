@@ -42,14 +42,15 @@ describe("GPS cutover schemas", () => {
     ).toBe(false);
   });
 
-  it("requires structured intervals and rejects activity_location in activityPlanCreateSchema", () => {
-    expect(
-      activityPlanCreateSchema.safeParse({
-        name: "Easy Run",
-        description: "",
-        activity_category: "run",
-        structure: {
-          version: 2,
+  it("requires strict V3 structure and rejects top-level location/category aliases", () => {
+    const structure = {
+      version: 3 as const,
+      segments: [
+        {
+          id: "00000000-0000-4000-8000-000000000001",
+          role: "activity" as const,
+          category: "run" as const,
+          name: "Run",
           intervals: [
             {
               id: "11111111-1111-4111-8111-111111111111",
@@ -59,39 +60,29 @@ describe("GPS cutover schemas", () => {
                 {
                   id: "22222222-2222-4222-8222-222222222222",
                   name: "Run",
-                  duration: { type: "time", seconds: 600 },
-                  targets: [{ type: "%MaxHR", intensity: 70 }],
+                  duration: { type: "time" as const, seconds: 600 },
+                  targets: [{ type: "%MaxHR" as const, intensity: 70 }],
                 },
               ],
             },
           ],
         },
+      ],
+    };
+
+    expect(
+      activityPlanCreateSchema.safeParse({
+        name: "Easy Run",
+        description: "",
+        structure,
       }).success,
     ).toBe(true);
 
     expect(
       activityPlanCreateSchema.safeParse({
-        name: "Route Only",
+        name: "Old input",
         description: "",
-        activity_category: "run",
-        structure: {
-          version: 2,
-          intervals: [
-            {
-              id: "11111111-1111-4111-8111-111111111111",
-              name: "Follow Route",
-              repetitions: 1,
-              steps: [
-                {
-                  id: "22222222-2222-4222-8222-222222222222",
-                  name: "Follow Route",
-                  duration: { type: "untilFinished" },
-                  targets: [],
-                },
-              ],
-            },
-          ],
-        },
+        structure: { version: 2, intervals: [] },
       }).success,
     ).toBe(false);
 
@@ -100,10 +91,7 @@ describe("GPS cutover schemas", () => {
         name: "Easy Run",
         description: "",
         activity_category: "run",
-        structure: {
-          version: 2,
-          intervals: [],
-        },
+        structure,
       }).success,
     ).toBe(false);
 
@@ -111,12 +99,8 @@ describe("GPS cutover schemas", () => {
       activityPlanCreateSchema.safeParse({
         name: "Easy Run",
         description: "",
-        activity_category: "run",
         activity_location: "outdoor",
-        structure: {
-          version: 2,
-          intervals: [],
-        },
+        structure,
       }).success,
     ).toBe(false);
   });

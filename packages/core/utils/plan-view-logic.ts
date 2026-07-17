@@ -1,6 +1,4 @@
-import type { ActivityPlanStructureV2 } from "../schemas/activity_plan_v2";
-
-export type ActivityType = "run" | "bike" | "swim" | "strength" | "other";
+import type { CompiledActivityPlan } from "../activity-plan";
 
 export interface RecordingViewConfig {
   showMapCard: boolean;
@@ -15,12 +13,11 @@ export interface RecordingViewConfig {
  * based on activity type, structure, and route presence
  */
 export function getRecordingViewConfig(
-  _activityType: ActivityType,
-  structure: ActivityPlanStructureV2,
+  plan: CompiledActivityPlan,
   routeId: string | null | undefined,
   gpsRecordingEnabled: boolean,
 ): RecordingViewConfig {
-  const hasSteps = !!(structure.intervals && structure.intervals.length > 0);
+  const hasSteps = plan.occurrences.some((occurrence) => occurrence.role === "activity");
   const hasRoute = !!routeId;
   const canTrackLocation = gpsRecordingEnabled;
 
@@ -37,6 +34,10 @@ export function getRecordingViewConfig(
  * Check if an activity type can have a route
  * Note: All activity types can optionally have a route attached
  */
-export function canHaveRoute(_activityType: ActivityType): boolean {
-  return true; // Routes are optional for all activity types
+export function canHaveRoute(plan: CompiledActivityPlan): boolean {
+  return plan.occurrences.some(
+    (occurrence) =>
+      occurrence.role === "activity" &&
+      (occurrence.category === "run" || occurrence.category === "bike"),
+  );
 }

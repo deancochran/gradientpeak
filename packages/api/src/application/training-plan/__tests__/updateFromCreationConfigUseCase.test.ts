@@ -40,9 +40,13 @@ function createDeps() {
     buildCreationProjectionArtifacts: vi.fn(() => ({
       expandedPlan: {
         name: "Updated Plan",
-        goals: [],
-        blocks: [],
-        metadata: {},
+        version: 1,
+        sessions: [
+          {
+            offset_days: 0,
+            activity_plan_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          },
+        ],
       },
       projectionChart: {
         constraint_summary: {
@@ -55,7 +59,17 @@ function createDeps() {
     })),
     buildCreationPreviewSnapshotToken: vi.fn(() => "preview-token"),
     deriveProjectionDrivenConflicts: vi.fn(() => []),
-    parseTrainingPlanStructure: vi.fn(),
+    resolveCanonicalTrainingPlan: vi.fn(async ({ planId }: { planId: string }) => ({
+      fingerprint: "resolution-fingerprint",
+      policy_version: 1,
+      resolution_manifest: [{ selected_activity_plan_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }],
+      structure: {
+        id: planId,
+        version: 1,
+        sessions: [{ offset_days: 0, activity_plan_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }],
+      },
+    })),
+    persistCanonicalTrainingPlanUpdate: vi.fn(async ({ values }: any) => values),
   } as any;
 }
 
@@ -86,20 +100,18 @@ describe("updateFromCreationConfigUseCase", () => {
     expect(result.id).toBe("11111111-1111-4111-8111-111111111111");
     expect(result.creation_summary.conflicts.is_blocking).toBe(false);
 
-    const updateCalls = repository.updateTrainingPlan.mock.calls;
-    const persistedUpdatePayload = updateCalls[0]?.[0] as {
-      structure?: { metadata?: Record<string, unknown> };
+    const updateCalls = deps.persistCanonicalTrainingPlanUpdate.mock.calls;
+    const persistedUpdatePayload = updateCalls[0]?.[0]?.values as {
+      structure?: Record<string, unknown>;
     };
 
     expect(persistedUpdatePayload).not.toHaveProperty("is_active");
 
-    expect(persistedUpdatePayload?.structure?.metadata?.creation_config_snapshot).toMatchObject({
-      optimization_profile: "balanced",
-      post_goal_recovery_days: 5,
-    });
-    expect(persistedUpdatePayload?.structure?.metadata?.creation_form_snapshot).toEqual({
-      plan_start_date: "2026-01-05",
-      goals: [],
+    expect(persistedUpdatePayload.structure).not.toHaveProperty("metadata");
+    expect(persistedUpdatePayload.structure).toMatchObject({
+      id: "11111111-1111-4111-8111-111111111111",
+      version: 1,
+      sessions: [{ activity_plan_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }],
     });
   });
 
@@ -185,7 +197,7 @@ describe("updateFromCreationConfigUseCase", () => {
     });
   });
 
-  it("rejects invalid generated payload with typed invalid cause", async () => {
+  it("does not update when canonical template coverage is unresolved", async () => {
     const repository = createRepositoryMock({
       id: "11111111-1111-4111-8111-111111111111",
       profile_id: "profile-123",
@@ -193,8 +205,8 @@ describe("updateFromCreationConfigUseCase", () => {
       is_active: true,
     });
     const deps = createDeps();
-    deps.parseTrainingPlanStructure = vi.fn(() => {
-      throw new Error("invalid structure");
+    deps.resolveCanonicalTrainingPlan = vi.fn(async () => {
+      throw new Error("Missing exact sport/focus template coverage");
     });
 
     await expect(
@@ -211,16 +223,37 @@ describe("updateFromCreationConfigUseCase", () => {
         },
         deps,
       }),
-    ).rejects.toMatchObject({
-      code: "BAD_REQUEST",
-      message: "Generated training plan structure is invalid",
-      cause: {
-        domain: "training_plan_commit",
-        code: "TRAINING_PLAN_COMMIT_INVALID_PAYLOAD",
-        operation: "updateFromCreationConfig",
-        recoverable: true,
-      },
+    ).rejects.toThrow("Missing exact sport/focus template coverage");
+    expect(repository.updateTrainingPlan).not.toHaveBeenCalled();
+  });
+
+  it("does not update when a selected template changes while acquiring the write lock", async () => {
+    const repository = createRepositoryMock({
+      id: "11111111-1111-4111-8111-111111111111",
+      profile_id: "profile-123",
+      is_active: true,
     });
+    const deps = createDeps();
+    deps.persistCanonicalTrainingPlanUpdate = vi.fn(async () => {
+      throw new Error("Activity templates changed before persistence");
+    });
+
+    await expect(
+      updateFromCreationConfigUseCase({
+        creationContextReader: {} as any,
+        repository: repository as any,
+        profileId: "profile-123",
+        params: {
+          plan_id: "11111111-1111-4111-8111-111111111111",
+          minimal_plan: { plan_start_date: "2026-01-05", goals: [] },
+          creation_input: {},
+          preview_snapshot_token: "preview-token",
+          is_active: true,
+        },
+        deps,
+      }),
+    ).rejects.toThrow("changed before persistence");
+    expect(repository.updateTrainingPlan).not.toHaveBeenCalled();
   });
 
   it("rejects when plan is missing or not owned by caller", async () => {

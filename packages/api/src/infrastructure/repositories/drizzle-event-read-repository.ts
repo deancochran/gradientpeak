@@ -517,32 +517,32 @@ export function createEventReadRepository(
 
       if (input.dateFrom) {
         const scheduleDateFrom = input.dateFrom.slice(0, 10);
-        conditions.push(
-          or(
-            and(isPersistedDateAnchoredEvent, gte(schema.events.scheduled_date, scheduleDateFrom)),
-            and(isTimedOrLegacyEvent, gte(schema.events.starts_at, new Date(input.dateFrom))),
-          )!,
+        const dateFromCondition = or(
+          and(isPersistedDateAnchoredEvent, gte(schema.events.scheduled_date, scheduleDateFrom)),
+          and(isTimedOrLegacyEvent, gte(schema.events.starts_at, new Date(input.dateFrom))),
         );
+        if (!dateFromCondition) throw new Error("Event date-from filter could not be constructed.");
+        conditions.push(dateFromCondition);
       }
 
       if (input.dateTo) {
         const scheduleDateTo = input.dateTo.slice(0, 10);
-        conditions.push(
-          or(
-            and(isPersistedDateAnchoredEvent, lt(schema.events.scheduled_date, scheduleDateTo)),
-            and(isTimedOrLegacyEvent, lt(schema.events.starts_at, new Date(input.dateTo))),
-          )!,
+        const dateToCondition = or(
+          and(isPersistedDateAnchoredEvent, lt(schema.events.scheduled_date, scheduleDateTo)),
+          and(isTimedOrLegacyEvent, lt(schema.events.starts_at, new Date(input.dateTo))),
         );
+        if (!dateToCondition) throw new Error("Event date-to filter could not be constructed.");
+        conditions.push(dateToCondition);
       }
 
       if (input.cursor) {
         const cursorDate = new Date(input.cursor.startsAt);
-        conditions.push(
-          or(
-            gt(schema.events.starts_at, cursorDate),
-            and(eq(schema.events.starts_at, cursorDate), gt(schema.events.id, input.cursor.id)),
-          )!,
+        const cursorCondition = or(
+          gt(schema.events.starts_at, cursorDate),
+          and(eq(schema.events.starts_at, cursorDate), gt(schema.events.id, input.cursor.id)),
         );
+        if (!cursorCondition) throw new Error("Event cursor filter could not be constructed.");
+        conditions.push(cursorCondition);
       }
 
       if (input.activityCategory) {

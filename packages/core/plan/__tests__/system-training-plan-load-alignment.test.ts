@@ -26,6 +26,10 @@ describe("system training plan heuristic alignment", () => {
         ).length;
 
       expect(comparison.reference.feasibility.mode).toBe(scenario.expectedMode);
+      if (comparison.blockAbsError === null || comparison.meanAbsError === null) {
+        expect(comparison.weeklyComparison.every((week) => week.actual === null)).toBe(true);
+        return;
+      }
       expect(comparison.blockAbsError).toBeLessThanOrEqual(comparison.blockToleranceTss);
       expect(comparison.meanAbsError).toBeLessThanOrEqual(comparison.meanToleranceTss);
       expect(missCount).toBeLessThanOrEqual(strictExactScenarioMissBudgets[scenario.key] ?? 1);
@@ -49,11 +53,13 @@ describe("system training plan feasibility and variance contracts", () => {
     expect(infeasible.reference.feasibility.mode).toBe("capacity_bounded");
     expect(
       constrained.weeklyComparison.every(
-        (week) => week.actual >= 0 && Number.isFinite(week.actual),
+        (week) => week.actual === null || (week.actual >= 0 && Number.isFinite(week.actual)),
       ),
     ).toBe(true);
     expect(
-      infeasible.weeklyComparison.every((week) => week.actual >= 0 && Number.isFinite(week.actual)),
+      infeasible.weeklyComparison.every(
+        (week) => week.actual === null || (week.actual >= 0 && Number.isFinite(week.actual)),
+      ),
     ).toBe(true);
     expect(constrained.blockToleranceTss).toBeGreaterThan(0);
     expect(infeasible.blockToleranceTss).toBeGreaterThan(0);

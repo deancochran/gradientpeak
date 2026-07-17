@@ -116,7 +116,7 @@ describe("RecordingConfigResolver", () => {
     expect(config.session.surfaces.availablePrimarySurfaces).toContain("activity");
     expect(config.session.surfaces.availablePrimarySurfaces).toContain("route");
     expect(config.session.surfaces.quickActions).toContain("sensors");
-    expect(config.session.surfaces.quickActions).not.toContain("sources" as any);
+    expect(config.session.surfaces.quickActions).not.toContain("sources");
     expect(config.session.editing.canEditActivity).toBe(false);
   });
 
@@ -451,23 +451,31 @@ describe("RecordingConfigResolver", () => {
           stepCount: 1,
           requiresManualAdvance: false,
           structure: {
-            version: 2,
-            intervals: [
+            version: 3,
+            segments: [
               {
-                id: "11111111-1111-4111-8111-111111111111",
-                name: "Main",
-                repetitions: 1,
-                steps: [
+                role: "activity",
+                id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                name: "Bike",
+                category: "bike",
+                intervals: [
                   {
-                    id: "22222222-2222-4222-8222-222222222222",
-                    name: "Tempo",
-                    duration: { type: "time", seconds: 600 },
-                    targets: [{ type: "watts", intensity: 250 }],
+                    id: "11111111-1111-4111-8111-111111111111",
+                    name: "Main",
+                    repetitions: 1,
+                    steps: [
+                      {
+                        id: "22222222-2222-4222-8222-222222222222",
+                        name: "Tempo",
+                        duration: { type: "time", seconds: 600 },
+                        targets: [{ type: "watts", intensity: 250 }],
+                      },
+                    ],
                   },
                 ],
               },
             ],
-          },
+          } as never,
         },
         devices: {
           ftmsTrainer: {
@@ -502,23 +510,31 @@ describe("RecordingConfigResolver", () => {
           stepCount: 1,
           requiresManualAdvance: false,
           structure: {
-            version: 2,
-            intervals: [
+            version: 3,
+            segments: [
               {
-                id: "33333333-3333-4333-8333-333333333333",
-                name: "Main",
-                repetitions: 1,
-                steps: [
+                role: "activity",
+                id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                name: "Bike",
+                category: "bike",
+                intervals: [
                   {
-                    id: "44444444-4444-4444-8444-444444444444",
-                    name: "Steady",
-                    duration: { type: "time", seconds: 600 },
-                    targets: [{ type: "bpm", intensity: 150 }],
+                    id: "33333333-3333-4333-8333-333333333333",
+                    name: "Main",
+                    repetitions: 1,
+                    steps: [
+                      {
+                        id: "44444444-4444-4444-8444-444444444444",
+                        name: "Steady",
+                        duration: { type: "time", seconds: 600 },
+                        targets: [{ type: "bpm", intensity: 150 }],
+                      },
+                    ],
                   },
                 ],
               },
             ],
-          },
+          } as never,
         },
         devices: {
           ftmsTrainer: {

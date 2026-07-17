@@ -1,45 +1,17 @@
 import { z } from "zod";
-import type { RecordingServiceActivityPlan } from "./index";
+import { activityPlanStructureSchemaV3 } from "../activity-plan";
 import { type CanonicalSport, canonicalSportSchema } from "./sport";
 
-export type {
-  ActivityPlanStructureV2,
-  DurationV2,
-  IntensityTargetV2,
-  PlanStepV2,
-} from "./activity_plan_v2";
-// ==============================
-// V2 EXPORTS
-// ==============================
+export { Duration } from "./duration_helpers";
 export {
-  activityPlanStructureSchemaV2,
-  durationSchemaV2,
+  activityPlanSpeedKphToMetersPerSecond,
+  activityPlanSpeedMetersPerSecondToKph,
+  convertTargetToAbsolute,
   formatIntensityTarget,
   formatStepTargets,
-  getStepIntensityColor,
-  intensityTargetSchemaV2,
-  planStepSchemaV2,
-  validateActivityPlanStructureV2,
-} from "./activity_plan_v2";
-export {
-  calculateTotalDurationV2,
-  Duration,
-  formatDuration,
-  getDurationSeconds,
-} from "./duration_helpers";
-export {
-  createEnduranceRidePlan,
-  createPlan,
-  createStrengthPlan,
-  createTempoRunPlan,
-  createThresholdPlan,
-  createVO2MaxPlan,
-  PlanBuilderV2,
-} from "./plan_builder_v2";
-export {
-  convertTargetToAbsolute,
   formatTargetValue,
   getPrimaryTarget,
+  getStepIntensityColor,
   getTargetByType,
   getTargetDisplayName,
   getTargetGuidance,
@@ -49,6 +21,32 @@ export {
   isInTargetRange,
   Target,
 } from "./target_helpers";
+
+/** Strict modern activity-plan domain input. Category authority lives in V3 segments. */
+export const activityPlanInputSchema = z
+  .object({
+    name: z.string().min(1, "Plan name is required"),
+    description: z.string().max(1000).nullable().optional(),
+    notes: z.string().max(2000).nullable().optional(),
+    route_id: z.string().uuid().nullable().optional(),
+    structure: activityPlanStructureSchemaV3,
+  })
+  .strict();
+export type ActivityPlanInput = z.infer<typeof activityPlanInputSchema>;
+
+export const activityPlanSchema = activityPlanInputSchema.safeExtend({
+  id: z.string().uuid(),
+});
+export type ActivityPlan = z.infer<typeof activityPlanSchema>;
+
+export const recordingServiceActivityPlanSchema = activityPlanInputSchema.safeExtend({
+  id: z.string().uuid().optional(),
+  gps_recording_enabled: z.boolean().optional(),
+  import_external_id: z.string().nullable().optional(),
+  import_provider: z.string().nullable().optional(),
+  is_system_template: z.boolean().optional(),
+});
+export type RecordingServiceActivityPlan = z.infer<typeof recordingServiceActivityPlanSchema>;
 
 // ==============================
 // ACTIVITY METRICS SCHEMA (for JSONB storage)
@@ -191,7 +189,7 @@ export const ActivityPayloadSchema = z
     category: canonicalSportSchema,
     gpsRecordingEnabled: z.boolean(),
     eventId: z.string().optional(),
-    plan: z.custom<RecordingServiceActivityPlan>().optional(),
+    plan: recordingServiceActivityPlanSchema.optional(),
   })
   .strict();
 

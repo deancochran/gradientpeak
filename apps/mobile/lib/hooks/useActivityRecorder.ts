@@ -14,11 +14,7 @@
  * ```
  */
 
-import type {
-  MetricFamily,
-  RecordingActivityCategory,
-  RecordingServiceActivityPlan,
-} from "@repo/core";
+import type { MetricFamily, RecordingActivityCategory } from "@repo/core";
 import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import type { Device } from "react-native-ble-plx";
 import type {
@@ -27,6 +23,7 @@ import type {
   RecordingState,
   TimeUpdate,
 } from "@/lib/services/ActivityRecorder";
+import type { RecordingActivityPlanV3Input } from "@/lib/services/ActivityRecorder/plan";
 import type { ConnectedSensor, PersistedSensor } from "@/lib/services/ActivityRecorder/sensors";
 import type {
   CurrentReadings,
@@ -391,6 +388,8 @@ export function usePlan(service: ActivityRecorderService | null) {
     hasPlan: false,
     stepIndex: 0,
     stepCount: 0,
+    currentSegment: null,
+    nextSegment: null,
     progress: null,
     isLast: false,
     isFinished: false,
@@ -410,7 +409,7 @@ function buildPlanData(
   if (!planView.hasPlan) {
     return {
       hasPlan: false as const,
-      select: (plan: RecordingServiceActivityPlan, eventId?: string) =>
+      select: (plan: RecordingActivityPlanV3Input, eventId?: string) =>
         service?.selectPlan(plan, eventId),
       clear: () => service?.clearPlan(),
     };
@@ -434,7 +433,7 @@ function buildPlanData(
     skip: () => service?.skipStep(),
     previous: () => service?.previousStep(),
     goToStep: (index: number) => service?.goToStep(index),
-    select: (plan: RecordingServiceActivityPlan, eventId?: string) =>
+    select: (plan: RecordingActivityPlanV3Input, eventId?: string) =>
       service?.selectPlan(plan, eventId),
     clear: () => service?.clearPlan(),
     planTimeRemaining: planView.planTimeRemaining,
@@ -926,6 +925,8 @@ const EMPTY_PLAN_VIEW: RecordingSessionView["plan"] = {
   hasPlan: false,
   stepIndex: 0,
   stepCount: 0,
+  currentSegment: null,
+  nextSegment: null,
   progress: null,
   isLast: false,
   isFinished: false,

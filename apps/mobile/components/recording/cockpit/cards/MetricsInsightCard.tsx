@@ -1,4 +1,4 @@
-import type { IntensityTargetV2 } from "@repo/core/schemas";
+import type { ActivityTarget } from "@repo/core/schemas";
 import React from "react";
 import { View } from "react-native";
 import { formatEstimatedIntensityFactor, formatEstimatedTss } from "@/lib/estimatedMetrics";
@@ -129,7 +129,7 @@ function buildMetricInsights({
   stats,
 }: Pick<InsightCardProps, "readings" | "service" | "sessionContract" | "stats"> & {
   includeUnavailable: boolean;
-  targets?: IntensityTargetV2[];
+  targets?: ActivityTarget[];
 }): MetricInsight[] {
   const order = getMetricOrder(targets, sessionContract?.metrics.emphasizedMetrics ?? []);
   const targetValues = getTargetValues(targets, service);
@@ -154,7 +154,7 @@ function buildMetricInsights({
     .filter((metric): metric is MetricInsight => metric !== null);
 }
 
-function getMetricOrder(targets: IntensityTargetV2[] | undefined, emphasized: MetricKey[]) {
+function getMetricOrder(targets: ActivityTarget[] | undefined, emphasized: MetricKey[]) {
   const targetMetrics = new Set<MetricKey>();
 
   for (const target of targets ?? []) {
@@ -348,7 +348,7 @@ function getMetricNumericValue(key: MetricKey, readings: InsightCardProps["readi
 }
 
 function getTargetValues(
-  targets: IntensityTargetV2[] | undefined,
+  targets: ActivityTarget[] | undefined,
   service: InsightCardProps["service"],
 ) {
   const values: Partial<Record<MetricKey, { label: string; value: number }>> = {};

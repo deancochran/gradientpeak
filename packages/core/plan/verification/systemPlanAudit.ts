@@ -1,10 +1,15 @@
 import {
+  type ActivityPlanStructureV3,
+  activityPlanStructureSchemaV3,
+  compileValidatedActivityPlanV3,
+} from "../../activity-plan";
+import { summarizeActivityPlanDuration } from "../../duration";
+import {
   ALL_SAMPLE_PLANS,
   SYSTEM_TEMPLATES,
   type SystemTemplate,
   type SystemTrainingPlanTemplate,
 } from "../../samples";
-import { getDurationSeconds } from "../../schemas/duration_helpers";
 import { type MaterializedPlanEvent, materializePlanToEvents } from "../materializePlanToEvents";
 
 const PLAN_NAME_WEEK_PATTERN = /\((\d+)\s+weeks?\)/i;
@@ -24,37 +29,20 @@ function diffDays(startDate: string, endDate: string): number {
   );
 }
 
-function getPaceSecondsPerKm(activityCategory: SystemTemplate["activity_category"]): number {
-  switch (activityCategory) {
-    case "swim":
-      return 1200;
-    case "run":
-      return 300;
-    case "bike":
-      return 180;
-    default:
-      return 300;
-  }
+/**
+ * Returns exact authored elapsed duration, or null for distance/open/repetition prescriptions.
+ */
+export function calculateSystemTemplateDurationSeconds(template: SystemTemplate): number | null {
+  return summarizeActivityPlanDuration(
+    compileValidatedActivityPlanV3(validateSystemTemplateActivityPlanV3(template)),
+  ).exactElapsedSeconds;
 }
 
-/**
- * Calculates a deterministic duration estimate for a system activity template.
- */
-export function calculateSystemTemplateDurationSeconds(template: SystemTemplate): number {
-  const paceSecondsPerKm = getPaceSecondsPerKm(template.activity_category ?? "other");
-
-  return template.structure.intervals.reduce((planTotal, interval) => {
-    const intervalDuration = interval.steps.reduce((intervalTotal, step) => {
-      return (
-        intervalTotal +
-        getDurationSeconds(step.duration, {
-          paceSecondsPerKm,
-        })
-      );
-    }, 0);
-
-    return planTotal + intervalDuration * interval.repetitions;
-  }, 0);
+/** Strictly validates an authored system-template V3 document. */
+export function validateSystemTemplateActivityPlanV3(
+  template: SystemTemplate,
+): ActivityPlanStructureV3 {
+  return activityPlanStructureSchemaV3.parse(template.structure);
 }
 
 /**
@@ -82,7 +70,8 @@ function getMaterializedWeekCount(
     return 0;
   }
 
-  const lastEvent = events[events.length - 1]!;
+  const lastEvent = events.at(-1);
+  if (!lastEvent) return 0;
   return Math.floor(diffDays(startDate, lastEvent.scheduled_date) / 7) + 1;
 }
 
@@ -100,9 +89,9 @@ export interface SystemTrainingPlanAudit {
   materializedEvents: MaterializedPlanEvent[];
   linkedTemplateIds: string[];
   missingTemplateIds: string[];
-  weeklyResolvedDurationHours: number[];
-  totalResolvedDurationHours: number;
-  meanWeeklyResolvedDurationHours: number;
+  weeklyResolvedDurationHours: Array<number | null>;
+  totalResolvedDurationHours: number | null;
+  meanWeeklyResolvedDurationHours: number | null;
 }
 
 /**
@@ -126,7 +115,7 @@ export function buildSystemTrainingPlanAudit(
     (activityPlanId) => !templateIndex.has(activityPlanId),
   );
 
-  const weeklyResolvedDurationSeconds = new Map<number, number>();
+  const weeklyResolvedDurationSeconds = new Map<number, number | null>();
 
   for (const event of materializedEvents) {
     if (event.event_type !== "planned" || event.activity_plan_id === null) {
@@ -140,25 +129,34 @@ export function buildSystemTrainingPlanAudit(
 
     const weekIndex = Math.floor(diffDays(startDate, event.scheduled_date) / 7);
     const currentSeconds = weeklyResolvedDurationSeconds.get(weekIndex) ?? 0;
+    const templateSeconds = calculateSystemTemplateDurationSeconds(template);
     weeklyResolvedDurationSeconds.set(
       weekIndex,
-      currentSeconds + calculateSystemTemplateDurationSeconds(template),
+      currentSeconds === null || templateSeconds === null ? null : currentSeconds + templateSeconds,
     );
   }
 
   const weeklyResolvedDurationHours = Array.from(
     { length: getMaterializedWeekCount(startDate, materializedEvents) },
-    (_, weekIndex) => roundHours((weeklyResolvedDurationSeconds.get(weekIndex) ?? 0) / 3600),
+    (_, weekIndex) => {
+      const seconds = weeklyResolvedDurationSeconds.get(weekIndex) ?? 0;
+      return seconds === null ? null : roundHours(seconds / 3600);
+    },
   );
 
-  const totalResolvedDurationHours = roundHours(
-    weeklyResolvedDurationHours.reduce((sum, weekHours) => sum + weekHours, 0),
-  );
-  const meanWeeklyResolvedDurationHours = roundHours(
-    weeklyResolvedDurationHours.length === 0
-      ? 0
-      : totalResolvedDurationHours / weeklyResolvedDurationHours.length,
-  );
+  const totalResolvedDurationHours = weeklyResolvedDurationHours.includes(null)
+    ? null
+    : roundHours(
+        weeklyResolvedDurationHours.reduce<number>((sum, weekHours) => sum + (weekHours ?? 0), 0),
+      );
+  const meanWeeklyResolvedDurationHours =
+    totalResolvedDurationHours === null
+      ? null
+      : roundHours(
+          weeklyResolvedDurationHours.length === 0
+            ? 0
+            : totalResolvedDurationHours / weeklyResolvedDurationHours.length,
+        );
 
   return {
     planId: plan.id,

@@ -2,12 +2,12 @@
 // Target Metrics Display
 // ================================
 
-import { getTargetRange, type IntensityTargetV2 } from "@repo/core";
+import { type ActivityPlanTarget, getTargetRange } from "@repo/core";
 import { memo } from "react";
 import { Text, View } from "react-native";
 
 interface TargetZoneIndicatorProps {
-  target: IntensityTargetV2;
+  target: ActivityPlanTarget;
   current?: number;
 }
 

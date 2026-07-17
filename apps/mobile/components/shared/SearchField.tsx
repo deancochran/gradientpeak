@@ -3,7 +3,7 @@ import {
   type SearchFieldProps as SharedSearchFieldProps,
 } from "@repo/ui/components/search-field";
 
-export type SearchFieldProps = Omit<
+export type MobileSearchFieldProps = Omit<
   SharedSearchFieldProps,
   "disabled" | "onValueChange" | "testId"
 > & {
@@ -21,7 +21,7 @@ export function SearchField({
   onClear,
   testID,
   ...props
-}: SearchFieldProps) {
+}: MobileSearchFieldProps) {
   return (
     <SharedSearchField
       {...props}

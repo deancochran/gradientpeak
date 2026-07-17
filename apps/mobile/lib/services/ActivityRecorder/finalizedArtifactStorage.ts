@@ -1,8 +1,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { recordingSessionArtifactSchema } from "@repo/core";
 import { Directory, File } from "expo-file-system";
 import type { RecordingSessionArtifact } from "./types";
 
-const PENDING_FINALIZED_ARTIFACT_KEY = "activity-recorder:pending-finalized-artifact";
+export const PENDING_FINALIZED_ARTIFACT_KEY = "activity-recorder:v3:pending-finalized-artifact";
 
 export function finalizedArtifactReferencesLocalFiles(
   artifact: RecordingSessionArtifact | null,
@@ -15,7 +16,8 @@ export function finalizedArtifactReferencesLocalFiles(
 export async function persistPendingFinalizedArtifact(
   artifact: RecordingSessionArtifact,
 ): Promise<void> {
-  await AsyncStorage.setItem(PENDING_FINALIZED_ARTIFACT_KEY, JSON.stringify(artifact));
+  const parsed = recordingSessionArtifactSchema.parse(artifact);
+  await AsyncStorage.setItem(PENDING_FINALIZED_ARTIFACT_KEY, JSON.stringify(parsed));
 }
 
 export async function loadPendingFinalizedArtifact(): Promise<RecordingSessionArtifact | null> {
@@ -26,7 +28,11 @@ export async function loadPendingFinalizedArtifact(): Promise<RecordingSessionAr
   }
 
   try {
-    return JSON.parse(raw) as RecordingSessionArtifact;
+    const stored = JSON.parse(raw) as Record<string, unknown>;
+    if (!stored.profileId && typeof stored.sessionId === "string") {
+      stored.profileId = stored.sessionId.split(":")[0] || stored.sessionId;
+    }
+    return recordingSessionArtifactSchema.parse(stored);
   } catch (error) {
     console.warn("[finalizedArtifactStorage] Failed to parse pending artifact", error);
     throw new Error("Stored finalized activity artifact is unreadable", { cause: error });

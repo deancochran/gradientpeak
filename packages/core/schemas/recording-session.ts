@@ -1,10 +1,12 @@
 import { z } from "zod";
 
+import { activityPlanStructureSchemaV3 } from "../activity-plan";
 import { recordingCapabilitiesSchema } from "./recording_config";
 import { canonicalSportSchema } from "./sport";
 
 const isoTimestampSchema = z.string().min(1);
 const nullableUuidSchema = z.string().uuid().nullable();
+const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 
 export const recordingActivityCategorySchema = canonicalSportSchema;
 
@@ -309,14 +311,162 @@ export const recordingSessionFinalStatsSchema = z
   })
   .strict();
 
+export const recordingOccurrenceResultSchema = z
+  .object({
+    occurrenceId: z.string().min(1),
+    globalOrdinal: z.number().int().nonnegative(),
+    segmentId: z.string().uuid(),
+    role: z.enum(["activity", "transition", "rest"]),
+    category: recordingActivityCategorySchema.nullable(),
+    startedAt: isoTimestampSchema,
+    completedAt: isoTimestampSchema,
+    activeSeconds: z.number().nonnegative(),
+    movingSeconds: z.number().nonnegative(),
+    distanceMeters: z.number().nonnegative(),
+  })
+  .strict();
+
+export const recordingBoundaryJournalEntrySchema = z
+  .object({
+    revision: z.number().int().positive(),
+    completedOccurrenceId: z.string().min(1).nullable(),
+    nextOccurrenceId: z.string().min(1).nullable(),
+    committedAt: isoTimestampSchema,
+  })
+  .strict();
+
+export const recordingTimerEventSchema = z
+  .object({
+    type: z.enum(["pause", "resume"]),
+    timestamp: isoTimestampSchema,
+  })
+  .strict();
+
+export const recordingCheckpointSchema = z
+  .object({
+    schemaVersion: z.literal(2),
+    compilerVersion: z.number().int().positive(),
+    sessionId: z.string().min(1),
+    profileId: z.string().min(1),
+    lifecycle: z.enum(["recording", "paused", "finishing"]),
+    planSnapshot: activityPlanStructureSchemaV3,
+    planHash: sha256Schema,
+    currentOccurrenceId: z.string().min(1).nullable(),
+    occurrenceProgress: z
+      .object({
+        startedAt: isoTimestampSchema,
+        startMovingSeconds: z.number().nonnegative(),
+        startDistanceMeters: z.number().nonnegative(),
+      })
+      .strict(),
+    completedOccurrences: z.array(recordingOccurrenceResultSchema),
+    boundaryJournal: z.array(recordingBoundaryJournalEntrySchema),
+    rewindJournal: z
+      .array(
+        z
+          .object({
+            attemptId: z.string().min(1),
+            destinationOccurrenceId: z.string().min(1),
+            sourceDistanceMeters: z.number().nonnegative().optional(),
+            destinationDistanceMeters: z.number().nonnegative().optional(),
+            supersededFrom: isoTimestampSchema,
+            rewoundAt: isoTimestampSchema,
+          })
+          .strict(),
+      )
+      .optional(),
+    eventJournal: z.array(recordingTimerEventSchema),
+    timing: z
+      .object({
+        startedAt: isoTimestampSchema,
+        updatedAt: isoTimestampSchema,
+        elapsedSeconds: z.number().nonnegative(),
+        movingSeconds: z.number().nonnegative(),
+        pausedAt: isoTimestampSchema.nullable(),
+        accumulatedPauseSeconds: z.number().nonnegative(),
+      })
+      .strict(),
+    policy: z
+      .object({
+        category: recordingActivityCategorySchema.nullable(),
+        gpsMode: recordingGpsModeSchema,
+        activityGpsMode: recordingGpsModeSchema,
+        selectedSources: z.array(metricSourceSelectionSchema),
+        trainerMode: z.enum(["auto", "manual"]),
+      })
+      .strict(),
+    streamArtifactPaths: z.array(z.string().min(1)),
+    revision: z.number().int().positive(),
+  })
+  .strict();
+
+export const recordingExecutionManifestEntrySchema = recordingOccurrenceResultSchema.extend({
+  timerEvents: z.array(recordingTimerEventSchema),
+  laps: z.array(
+    z
+      .object({
+        lapNumber: z.number().int().positive(),
+        startedAt: isoTimestampSchema,
+        endedAt: isoTimestampSchema,
+        activeSeconds: z.number().nonnegative(),
+        distanceMeters: z.number().nonnegative(),
+      })
+      .strict(),
+  ),
+});
+
+export const recordingExecutionManifestSchema = z
+  .object({
+    version: z.literal(1),
+    compilerVersion: z.number().int().positive(),
+    planHash: sha256Schema,
+    occurrences: z.array(recordingExecutionManifestEntrySchema),
+  })
+  .strict()
+  .superRefine((manifest, ctx) => {
+    manifest.occurrences.forEach((occurrence, index) => {
+      if (occurrence.globalOrdinal !== index) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Execution manifest occurrences must use contiguous global order.",
+          path: ["occurrences", index, "globalOrdinal"],
+        });
+      }
+    });
+  });
+
 export const recordingSessionArtifactSchema = z
   .object({
+    schemaVersion: z.literal(2),
     sessionId: z.string().min(1),
+    profileId: z.string().min(1),
     snapshot: recordingSessionSnapshotSchema,
     overrides: z.array(recordingSessionOverrideSchema),
     finalStats: recordingSessionFinalStatsSchema,
     activityFilePath: z.string().min(1).nullable(),
     streamArtifactPaths: z.array(z.string().min(1)),
+    executionManifest: recordingExecutionManifestSchema.nullable(),
+    runtimeSourceState: z
+      .object({
+        selectedSources: z.array(metricSourceSelectionSchema),
+        currentMetrics: z.partialRecord(metricFamilySchema, currentMetricValueSchema),
+        degradedState: z
+          .object({ isDegraded: z.boolean(), metrics: z.array(metricFamilySchema) })
+          .strict(),
+        sourceChanges: z.array(
+          z
+            .object({
+              metricFamily: metricFamilySchema,
+              previousSourceId: z.string().min(1).nullable(),
+              nextSourceId: z.string().min(1).nullable(),
+              previousProvenance: metricProvenanceSchema,
+              nextProvenance: metricProvenanceSchema,
+              recordedAt: isoTimestampSchema,
+            })
+            .strict(),
+        ),
+      })
+      .strict(),
     completedAt: isoTimestampSchema,
   })
   .strict();
@@ -346,4 +496,10 @@ export type RecordingSessionActivity = z.infer<typeof recordingSessionActivitySc
 export type RecordingSessionSnapshot = z.infer<typeof recordingSessionSnapshotSchema>;
 export type RecordingSessionOverride = z.infer<typeof recordingSessionOverrideSchema>;
 export type RecordingSessionFinalStats = z.infer<typeof recordingSessionFinalStatsSchema>;
+export type RecordingOccurrenceResult = z.infer<typeof recordingOccurrenceResultSchema>;
+export type RecordingBoundaryJournalEntry = z.infer<typeof recordingBoundaryJournalEntrySchema>;
+export type RecordingTimerEvent = z.infer<typeof recordingTimerEventSchema>;
+export type RecordingCheckpoint = z.infer<typeof recordingCheckpointSchema>;
+export type RecordingExecutionManifestEntry = z.infer<typeof recordingExecutionManifestEntrySchema>;
+export type RecordingExecutionManifest = z.infer<typeof recordingExecutionManifestSchema>;
 export type RecordingSessionArtifact = z.infer<typeof recordingSessionArtifactSchema>;

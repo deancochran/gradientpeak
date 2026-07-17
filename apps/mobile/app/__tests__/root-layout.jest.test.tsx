@@ -156,6 +156,45 @@ jest.mock("@/lib/services/activitySubmissionQueue", () => ({
     Boolean(job.localActivityFilePath || job.streamArtifactPaths?.length),
 }));
 
+jest.mock("@/lib/services/activitySubmissionQueue/migration-only-v3", () => ({
+  __esModule: true,
+  migrateSingleSportLocalStateToV3Once: jest.fn(async () => undefined),
+}));
+
+jest.mock("@/lib/services/ActivityRecorder/checkpointStorage", () => ({
+  __esModule: true,
+  loadAndClaimRecordingCheckpoint: jest.fn(async () => ({ status: "none" })),
+}));
+
+jest.mock("@/lib/hooks/useStartupActivitySubmissionRecovery", () => ({
+  __esModule: true,
+  useStartupActivitySubmissionRecovery: jest.fn(),
+}));
+
+jest.mock("@/lib/services/mobileRecordingStartup", () => ({
+  __esModule: true,
+  prepareMobileRecordingStartup: jest.fn(async () => {
+    const [pendingArtifact, queueJobs] = await Promise.all([
+      loadPendingFinalizedArtifactMock(),
+      loadActivitySubmissionQueueJobsMock(),
+    ]);
+    return {
+      checkpoint: { status: "none" },
+      hasQuarantinedEvidence: false,
+      queueJobs: pendingArtifact
+        ? [
+            ...queueJobs,
+            {
+              status: "queued",
+              localActivityFilePath: pendingArtifact.activityFilePath,
+              streamArtifactPaths: pendingArtifact.streamArtifactPaths,
+            },
+          ]
+        : queueJobs,
+    };
+  }),
+}));
+
 jest.mock("@/lib/services/fit/GarminFitEncoder", () => ({
   __esModule: true,
   GarminFitEncoder: { cleanupOrphanedRecordings: cleanupFitRecordingsMock },
@@ -174,6 +213,7 @@ jest.mock("@/lib/stores/auth-store", () => ({
       clearSession: jest.fn(async () => undefined),
       initialize: jest.fn(async () => undefined),
       ready: true,
+      profile: { id: "profile-1" },
     }),
 }));
 
@@ -262,7 +302,7 @@ describe("root layout auth guard", () => {
     await waitFor(() => expect(loadPendingFinalizedArtifactMock).toHaveBeenCalledTimes(1));
     expect(cleanupStreamRecordingsMock).not.toHaveBeenCalled();
     expect(cleanupFitRecordingsMock).not.toHaveBeenCalled();
-    expect(cleanupLocationTrackingMock).toHaveBeenCalledTimes(1);
+    expect(cleanupLocationTrackingMock).not.toHaveBeenCalled();
   });
 
   it("preserves finalized files when an incomplete queue job references them", async () => {

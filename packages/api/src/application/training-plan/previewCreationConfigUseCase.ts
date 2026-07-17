@@ -159,6 +159,7 @@ export async function previewCreationConfigUseCase<
       objective_contributions?: unknown;
     };
     no_history?: unknown;
+    daily_load_points?: unknown[];
   },
   TProjectionFeasibility extends {
     state: "feasible" | "aggressive" | "unsafe";
@@ -185,6 +186,7 @@ export async function previewCreationConfigUseCase<
     projectionConstraintSummary: ReturnType<TBuildCreationProjectionArtifacts>["projectionChart"]["constraint_summary"];
     projectionFeasibility: TProjectionFeasibility;
     noHistoryMetadata?: ReturnType<TBuildCreationProjectionArtifacts>["projectionChart"]["no_history"];
+    canonicalResolutionFingerprint: string;
   }) => string,
   TDeriveProjectionDrivenConflicts extends (input: {
     expandedPlan: TExpandedPlan;
@@ -206,6 +208,15 @@ export async function previewCreationConfigUseCase<
     buildCreationPreviewSnapshotToken: TBuildCreationPreviewSnapshotToken;
     deriveProjectionDrivenConflicts: TDeriveProjectionDrivenConflicts;
     previewSnapshotVersion: string;
+    resolveCanonicalTrainingPlan: (input: {
+      planId: string;
+      projection: TExpandedPlan;
+      dailyLoadPoints: NonNullable<TProjectionChart["daily_load_points"]>;
+    }) => Promise<{
+      fingerprint: string;
+      policy_version: number;
+      resolution_manifest: unknown[];
+    }>;
   };
 }) {
   input.deps.enforceCreationConfigFeatureEnabled();
@@ -235,6 +246,11 @@ export async function previewCreationConfigUseCase<
       contextSummary: evaluation.contextSummary,
     });
 
+  const canonicalResolution = await input.deps.resolveCanonicalTrainingPlan({
+    planId: "00000000-0000-0000-0000-000000000000",
+    projection: expandedPlan,
+    dailyLoadPoints: projectionChart.daily_load_points ?? [],
+  });
   const previewSnapshotToken = input.deps.buildCreationPreviewSnapshotToken({
     minimalPlan: input.params.minimal_plan,
     finalConfig: evaluation.finalConfig,
@@ -242,6 +258,7 @@ export async function previewCreationConfigUseCase<
     projectionConstraintSummary: projectionChart.constraint_summary,
     projectionFeasibility,
     noHistoryMetadata: projectionChart.no_history,
+    canonicalResolutionFingerprint: canonicalResolution.fingerprint,
   });
 
   const projectionConflicts = input.deps.deriveProjectionDrivenConflicts({
@@ -296,6 +313,11 @@ export async function previewCreationConfigUseCase<
     preview_snapshot: {
       version: input.deps.previewSnapshotVersion,
       token: previewSnapshotToken,
+    },
+    canonical_projection: {
+      fingerprint: canonicalResolution.fingerprint,
+      policy_version: canonicalResolution.policy_version,
+      resolution_manifest: canonicalResolution.resolution_manifest,
     },
   };
 }

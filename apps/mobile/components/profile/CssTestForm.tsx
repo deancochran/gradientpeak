@@ -1,5 +1,5 @@
 import {
-  type CssTestProtocolInput,
+  type CssTestObservationInput,
   calculateCssFrom400m200mTest,
   cssTestTimesSchema,
 } from "@repo/core";
@@ -16,12 +16,10 @@ import { View } from "react-native";
 import type { z } from "zod";
 
 type CssTestFormFields = z.infer<typeof cssTestTimesSchema>;
-export type CssTestFormValues = CssTestProtocolInput & { recordedAt: Date };
-
 type CssTestResult = { css_seconds_per_100m: number };
 
 type CssTestFormProps = {
-  onSubmit: (values: CssTestFormValues) => Promise<CssTestResult>;
+  onSubmit: (values: CssTestObservationInput) => Promise<CssTestResult>;
 };
 
 export function CssTestForm({ onSubmit }: CssTestFormProps) {

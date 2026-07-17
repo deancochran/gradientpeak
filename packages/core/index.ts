@@ -24,9 +24,8 @@ export * from "./profile/date-of-birth";
 // ============================================================================
 // Note: This module exports ALL functions from calculations.ts, including
 // formatDuration(seconds: number). There's also a formatDuration in schemas
-// that works with DurationV2 objects. Both are exported - TypeScript will
-// handle overload resolution based on the argument type.
 
+export * from "./activity-plan-calculations";
 export type {
   AggregatedStream,
   PublicActivityMetric,
@@ -139,6 +138,7 @@ export {
   speedToPace,
 } from "./calculations/speed-curve";
 export type {
+  CssTestObservationInput,
   CssTestProtocolInput,
   CssTestProtocolResult,
   CssTestTimesInput,
@@ -153,17 +153,6 @@ export {
   pacePerHundredMetersToSpeed,
   speedToPacePerHundredMeters,
 } from "./calculations/swim-pace-curve";
-export type {
-  ActivityProfilePointV2,
-  ActivityStatsV2,
-} from "./calculations_v2";
-// V2 Calculations (for ActivityPlanStructureV2)
-export {
-  calculateActivityStatsV2,
-  calculateTotalDurationSecondsV2,
-  extractActivityProfileV2,
-  getStepAtTimeV2,
-} from "./calculations_v2";
 
 // ============================================================================
 // Constants Module
@@ -233,6 +222,13 @@ export * from "./integrations"; // Provider capability registry and sync action 
  * This root export remains as a compatibility shim.
  */
 export * from "./lib/fit-sdk-parser";
+export {
+  decodeFitActivityArtifact,
+  parseFitFileWithSDK,
+  projectFitArtifactSemantics,
+  safeDecodeFitFile,
+  validateFitFileWithSDK,
+} from "./lib/fit-sdk-parser";
 export * from "./load"; // Canonical load-domain helpers
 export * from "./messaging"; // Shared messaging adapters
 export * from "./notifications"; // Shared notification normalization helpers
@@ -254,11 +250,18 @@ export {
 export * from "./recurrence"; // Supported recurrence semantics and deterministic serialization
 export * from "./route-files"; // Route upload formats, limits, schemas, and filename helpers
 export * from "./samples"; // Sample data for testing and development
-export * from "./schemas"; // Zod schemas and types (includes formatDuration for DurationV2)
+export * from "./schemas"; // Shared Zod schemas and domain types
 export * from "./social"; // Social engagement entity taxonomy
 export * from "./sports"; // Canonical sport registry and heuristics
 export * from "./training-timeline"; // Canonical training timeline read model
-export type { StandardActivity } from "./types/normalization";
+export type {
+  ActivityLap,
+  ActivityLength,
+  ActivityRecord,
+  ActivitySegment,
+  ActivitySession,
+  StandardActivity,
+} from "./types/normalization";
 export * from "./utils"; // Utility functions
 export * from "./zones"; // Canonical zones and threshold metadata
 
@@ -271,7 +274,6 @@ export * from "./zones"; // Canonical zones and threshold metadata
 export * as AthleteInputs from "./athlete-inputs";
 export * as Bluetooth from "./bluetooth";
 export * as Calculations from "./calculations";
-export * as CalculationsV2 from "./calculations_v2";
 export * as Coaching from "./coaching";
 export * as Constants from "./constants";
 export * as Duration from "./duration";

@@ -1,20 +1,25 @@
 import { randomUUID } from "node:crypto";
+import { type ActivityPlanStructureV3, compileActivityPlanV3 } from "@repo/core/activity-plan";
 import { type ActivityPlanInsert, activityPlans } from "@repo/db";
 import { sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 
 type ActivityPlansDb = ReturnType<typeof getRequiredDb>;
 
+/** Phase 3: delete with the required legacy activity_category column. */
+export function deriveLegacyActivityCategoryForRow(structure: ActivityPlanStructureV3) {
+  return compileActivityPlanV3(structure).primaryCategory;
+}
+
 type ImportedActivityPlanInput = {
   externalId: string;
   profileId: string;
   provider: string;
   template: {
-    activity_category: ActivityPlanInsert["activity_category"];
     description?: string | null;
     name: string;
     notes?: string;
-    structure: ActivityPlanInsert["structure"];
+    structure: ActivityPlanStructureV3;
   };
 };
 
@@ -28,6 +33,7 @@ export async function upsertImportedActivityPlan(
 ) {
   const id = randomUUID();
   const now = new Date();
+  const primaryCategory = deriveLegacyActivityCategoryForRow(input.template.structure);
   const payload = {
     id,
     created_at: now,
@@ -35,7 +41,7 @@ export async function upsertImportedActivityPlan(
     name: input.template.name,
     description: input.template.description?.trim() ? input.template.description.trim() : null,
     notes: input.template.notes ?? null,
-    activity_category: input.template.activity_category,
+    activity_category: primaryCategory,
     structure: input.template.structure,
     version: "1.0",
     profile_id: input.profileId,

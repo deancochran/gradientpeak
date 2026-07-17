@@ -1,7 +1,11 @@
-import { decodePolyline, type IntervalStepV2 } from "@repo/core";
+import {
+  type ActivityPlanIntervalStep,
+  activityPlanStructureSchemaV3,
+  compileActivityPlanV3,
+  decodePolyline,
+} from "@repo/core";
 import { useMemo } from "react";
 import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
-import { getDurationMs } from "@/lib/utils/durationConversion";
 
 type ActivityPlanLike = {
   activity_category: string;
@@ -44,14 +48,6 @@ interface UseActivityPlanDetailViewModelParams {
   template?: string;
 }
 
-function getIntervals(structure: unknown): Array<{ repetitions: number; steps: IntervalStepV2[] }> {
-  if (!structure || typeof structure !== "object") return [];
-  const maybeIntervals = (structure as { intervals?: unknown }).intervals;
-  return Array.isArray(maybeIntervals)
-    ? (maybeIntervals as Array<{ repetitions: number; steps: IntervalStepV2[] }>)
-    : [];
-}
-
 export function useActivityPlanDetailViewModel({
   activityPlanParam,
   fetchedPlan,
@@ -82,21 +78,24 @@ export function useActivityPlanDetailViewModel({
     return null;
   }, [activityPlanParam, fetchedPlan, plannedActivity, template]);
 
-  const steps: IntervalStepV2[] = useMemo(() => {
-    const intervals = getIntervals(activityPlan?.structure);
-    if (intervals.length === 0) return [];
-    const flatSteps: IntervalStepV2[] = [];
-    for (const interval of intervals) {
-      for (let i = 0; i < interval.repetitions; i++) {
-        for (const step of interval.steps) flatSteps.push(step);
+  const structure = useMemo(() => {
+    const parsed = activityPlanStructureSchemaV3.safeParse(activityPlan?.structure);
+    return parsed.success ? parsed.data : null;
+  }, [activityPlan?.structure]);
+  const steps: ActivityPlanIntervalStep[] = useMemo(() => {
+    const flatSteps: ActivityPlanIntervalStep[] = [];
+    for (const segment of structure?.segments ?? []) {
+      if (segment.role !== "activity") continue;
+      for (const interval of segment.intervals) {
+        for (let i = 0; i < interval.repetitions; i++) flatSteps.push(...interval.steps);
       }
     }
     return flatSteps;
-  }, [activityPlan?.structure]);
+  }, [structure]);
 
-  const totalDuration = useMemo(
-    () => steps.reduce((total, step) => total + getDurationMs(step.duration), 0),
-    [steps],
+  const compiled = useMemo(
+    () => (structure ? compileActivityPlanV3(structure) : null),
+    [structure],
   );
 
   const authoritativeMetrics = getAuthoritativeActivityPlanMetrics(activityPlan);
@@ -104,13 +103,14 @@ export function useActivityPlanDetailViewModel({
   const estimatedDurationMinutes = estimatedDurationSeconds
     ? Math.round(estimatedDurationSeconds / 60)
     : null;
-  const durationMinutes = estimatedDurationMinutes ?? Math.round(totalDuration / 60000);
+  const durationMinutes =
+    estimatedDurationMinutes ?? Math.round((compiled?.explicitTimedDurationSeconds ?? 0) / 60);
   const tss = authoritativeMetrics.estimated_tss ?? null;
   const intensityFactor = authoritativeMetrics.intensity_factor ?? null;
   const isOwnedByUser = activityPlan?.profile_id === profile?.id;
   const detailBadges = activityPlan
     ? [
-        activityPlan.activity_category,
+        compiled?.categories.join(" → ") || activityPlan.activity_category,
         isScheduled ? "Scheduled" : isOwnedByUser ? "My plan" : "Template",
       ]
     : [];

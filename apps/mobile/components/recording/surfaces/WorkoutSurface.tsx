@@ -5,19 +5,26 @@
  * context for plan-led recording sessions.
  */
 
-import { formatIntensityTarget, getStepIntensityColor, type IntervalStepV2 } from "@repo/core";
+import { type ActivityTarget, formatIntensityTarget, getStepIntensityColor } from "@repo/core";
 import { Slider } from "@repo/ui/components/slider";
 import { Text } from "@repo/ui/components/text";
 import { useEffect, useRef, useState } from "react";
 import { ScrollView, View } from "react-native";
 import { usePlan } from "@/lib/hooks/useActivityRecorder";
 import type { ActivityRecorderService } from "@/lib/services/ActivityRecorder";
+import type { RecordingPlanOccurrence } from "@/lib/services/ActivityRecorder/plan";
 import { formatDurationShort } from "@/lib/utils/durationConversion";
 import { SurfaceUnavailableCard } from "./SurfaceUnavailableCard";
 
 export interface WorkoutSurfaceProps {
   service: ActivityRecorderService | null;
   hasPlan: boolean;
+}
+
+function readProfileNumber(profile: unknown, key: string): number | undefined {
+  if (!profile || typeof profile !== "object") return undefined;
+  const value = (profile as Record<string, unknown>)[key];
+  return typeof value === "number" ? value : undefined;
 }
 
 /**
@@ -28,25 +35,25 @@ export interface WorkoutSurfaceProps {
  * @param intensityAdjustment - Optional intensity adjustment factor (0.5 to 1.5, where 1.0 is 100%)
  */
 function resolveIntensityTarget(
-  target: any,
-  profile: any,
+  target: ActivityTarget,
+  profile: unknown,
   intensityAdjustment: number = 1.0,
 ): string {
   // Resolve percentage-based targets to absolute values with units
   // Apply intensity adjustment to numeric values
   switch (target.type) {
     case "%FTP": {
-      const ftp = profile?.ftp || 200;
+      const ftp = readProfileNumber(profile, "ftp") || 200;
       const watts = Math.round((target.intensity / 100) * ftp * intensityAdjustment);
       return `${watts}W`;
     }
     case "%MaxHR": {
-      const maxHR = profile?.max_heart_rate || 180;
+      const maxHR = readProfileNumber(profile, "max_heart_rate") || 180;
       const targetHR = Math.round((target.intensity / 100) * maxHR * intensityAdjustment);
       return `${targetHR} bpm`;
     }
     case "%ThresholdHR": {
-      const thresholdHR = profile?.threshold_heart_rate || 160;
+      const thresholdHR = readProfileNumber(profile, "threshold_heart_rate") || 160;
       const targetThresholdHR = Math.round(
         (target.intensity / 100) * thresholdHR * intensityAdjustment,
       );
@@ -74,13 +81,13 @@ function resolveIntensityTarget(
  * Now with unit conversion support for percentage-based targets and intensity adjustment
  */
 function formatCompactIntervalWithProfile(
-  step: IntervalStepV2,
-  profile: any,
+  step: RecordingPlanOccurrence,
+  profile: unknown,
   intensityAdjustment: number = 1.0,
 ): string {
   const duration = formatDurationShort(step.duration); // "5m", "10km", "20x"
 
-  if (!step.targets || step.targets.length === 0) {
+  if (step.role !== "activity" || step.targets.length === 0) {
     return duration;
   }
 
@@ -94,7 +101,7 @@ function formatCompactIntervalWithProfile(
 /**
  * Calculate step duration in milliseconds for chart width
  */
-function getDurationMs(duration: IntervalStepV2["duration"]): number {
+function getDurationMs(duration: RecordingPlanOccurrence["duration"]): number {
   switch (duration.type) {
     case "time":
       return duration.seconds * 1000;
@@ -116,9 +123,8 @@ function getDurationMs(duration: IntervalStepV2["duration"]): number {
  * Shows all activity steps with color coding based on completion state
  */
 interface IntensityChartProps {
-  allSteps: IntervalStepV2[];
+  allSteps: RecordingPlanOccurrence[];
   currentStepIndex: number;
-  progress: number; // 0-1
   height: number;
   isFocused: boolean;
 }
@@ -126,7 +132,6 @@ interface IntensityChartProps {
 function ActivityIntensityChart({
   allSteps,
   currentStepIndex,
-  progress,
   height,
   isFocused,
 }: IntensityChartProps) {
@@ -190,14 +195,14 @@ function ActivityIntensityChart({
           }
 
           // Calculate height based on intensity (0-100 scale, like TimelineChart)
-          const intensity = step.targets?.[0]?.intensity || 50; // Default to 50% if no target
+          const intensity = step.role === "activity" ? (step.targets[0]?.intensity ?? 50) : 0;
           const minStepHeight = height * 0.2; // 20% of container height minimum
           const maxStepHeight = height * 0.9; // 90% of container height maximum
           const stepHeight = minStepHeight + (intensity / 100) * (maxStepHeight - minStepHeight);
 
           return (
             <View
-              key={index}
+              key={step.occurrenceId}
               style={{
                 width: width - STEP_PADDING * 2,
                 height: stepHeight,
@@ -251,7 +256,6 @@ export function WorkoutSurface({ service, hasPlan }: WorkoutSurfaceProps) {
             <ActivityIntensityChart
               allSteps={allSteps}
               currentStepIndex={plan.stepIndex}
-              progress={progress}
               height={140}
               isFocused={true}
             />
@@ -289,11 +293,14 @@ export function WorkoutSurface({ service, hasPlan }: WorkoutSurfaceProps) {
         {/* Target Values and Timer - Two Column Layout */}
         <View className="flex-row gap-4 mb-6">
           {/* Target Values */}
-          {currentStep.targets && currentStep.targets.length > 0 && (
+          {currentStep.role === "activity" && currentStep.targets.length > 0 && (
             <View className="flex-1 bg-muted/50 p-4 rounded-lg">
               <Text className="text-xs text-muted-foreground mb-2">TARGET</Text>
-              {currentStep.targets.map((target, idx) => (
-                <Text key={idx} className="text-2xl font-bold mb-1">
+              {currentStep.targets.map((target) => (
+                <Text
+                  key={`${target.type}-${target.intensity}`}
+                  className="text-2xl font-bold mb-1"
+                >
                   {resolveIntensityTarget(target, profile, intensityAdjustment)}
                 </Text>
               ))}

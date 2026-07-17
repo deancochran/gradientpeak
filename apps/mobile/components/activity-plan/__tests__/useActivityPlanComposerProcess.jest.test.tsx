@@ -2,7 +2,7 @@ import { act, renderHook } from "@testing-library/react-native";
 
 import { useActivityPlanComposerProcess } from "../useActivityPlanComposerProcess";
 
-const structure = { version: 2, intervals: [] };
+const structure = { version: 3, segments: [] };
 
 describe("useActivityPlanComposerProcess", () => {
   it("keeps header options stable while invoking the latest submit callback", () => {

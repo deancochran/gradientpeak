@@ -1,6 +1,6 @@
-import type { DurationV2 } from "../schemas/activity_plan_v2";
+import type { ActivityPlanDuration } from "../activity-plan/v3-schema";
 
-export function formatDuration(duration: DurationV2): string {
+export function formatDuration(duration: ActivityPlanDuration): string {
   switch (duration.type) {
     case "time":
       if (duration.seconds < 60) {

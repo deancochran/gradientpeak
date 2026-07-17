@@ -17,21 +17,16 @@ import {
 } from "react-native-css/components/react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AppBootstrapGate } from "@/components/auth/AppBootstrapGate";
+import { useStartupActivitySubmissionRecovery } from "@/lib/hooks/useStartupActivitySubmissionRecovery";
 import { PerformanceBeacon } from "@/lib/performance";
 import { QueryProvider } from "@/lib/providers/QueryProvider";
 import { TelemetryProvider } from "@/lib/providers/TelemetryProvider";
 import { initializeServerConfig, useServerConfig } from "@/lib/server-config";
-import {
-  finalizedArtifactReferencesLocalFiles,
-  loadPendingFinalizedArtifact,
-} from "@/lib/services/ActivityRecorder/finalizedArtifactStorage";
 import { LocationManager } from "@/lib/services/ActivityRecorder/location";
 import { StreamBuffer } from "@/lib/services/ActivityRecorder/StreamBuffer";
-import {
-  incompleteQueueJobReferencesLocalFiles,
-  loadActivitySubmissionQueueJobs,
-} from "@/lib/services/activitySubmissionQueue";
+import { incompleteQueueJobReferencesLocalFiles } from "@/lib/services/activitySubmissionQueue";
 import { GarminFitEncoder } from "@/lib/services/fit/GarminFitEncoder";
+import { prepareMobileRecordingStartup } from "@/lib/services/mobileRecordingStartup";
 import { initSentry, Sentry } from "@/lib/services/sentry";
 import { useAuthStore } from "@/lib/stores/auth-store";
 import { useTheme } from "@/lib/stores/theme-store";
@@ -82,6 +77,8 @@ export function ErrorBoundary({ error, retry }: { error: Error; retry: () => voi
 
 function AppShell() {
   const { resolvedTheme, isLoaded: isThemeLoaded } = useTheme();
+  const profileId = useAuthStore((state) => state.profile?.id);
+  useStartupActivitySubmissionRecovery(profileId ?? null);
 
   const isDark = resolvedTheme === "dark";
   const navigationTheme = React.useMemo(() => getNavigationTheme(resolvedTheme), [resolvedTheme]);
@@ -124,14 +121,17 @@ function AppShell() {
 function RootLayout() {
   const { initialized } = useServerConfig();
   const authReady = useAuthStore((state) => state.ready);
+  const profileId = useAuthStore((state) => state.profile?.id);
   const initializeAuth = useAuthStore((state) => state.initialize);
 
   // Clean up any orphaned recording files on app startup
   React.useEffect(() => {
-    void Promise.all([loadPendingFinalizedArtifact(), loadActivitySubmissionQueueJobs()])
-      .then(([pendingArtifact, queueJobs]) => {
+    if (!authReady || !profileId) return;
+    void prepareMobileRecordingStartup(profileId)
+      .then(({ checkpoint: checkpointRecovery, hasQuarantinedEvidence, queueJobs }) => {
         const hasRecoverableSubmission =
-          finalizedArtifactReferencesLocalFiles(pendingArtifact) ||
+          checkpointRecovery.status !== "none" ||
+          hasQuarantinedEvidence ||
           queueJobs.some(incompleteQueueJobReferencesLocalFiles);
 
         if (hasRecoverableSubmission) {
@@ -145,15 +145,14 @@ function RootLayout() {
         GarminFitEncoder.cleanupOrphanedRecordings().catch((error) => {
           console.warn("Failed to cleanup orphaned FIT recordings:", error);
         });
+        LocationManager.cleanupOrphanedBackgroundTracking().catch((error) => {
+          console.warn("Failed to cleanup orphaned background location tracking:", error);
+        });
       })
       .catch((error) => {
         console.warn("Failed to inspect pending activity submissions before cleanup:", error);
       });
-
-    LocationManager.cleanupOrphanedBackgroundTracking().catch((error) => {
-      console.warn("Failed to cleanup orphaned background location tracking:", error);
-    });
-  }, []);
+  }, [authReady, profileId]);
 
   React.useEffect(() => {
     installE2ERuntimeErrorCapture();

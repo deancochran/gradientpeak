@@ -29,7 +29,7 @@ import {
   getSensorModel,
   type SimplifiedMetrics,
 } from "./SimplifiedMetrics";
-import { StreamBuffer } from "./StreamBuffer";
+import { type DurableStreamReplay, StreamBuffer } from "./StreamBuffer";
 import type {
   LiveMetricsState,
   LocationReading,
@@ -212,6 +212,42 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
     console.log("[LiveMetricsManager] Started recording");
   }
 
+  /** Rehydrates durable samples while staged as paused, without rewriting replayed chunks. */
+  public async stageRecoveredRecording(input: {
+    streamBuffer: StreamBuffer;
+    replay: DurableStreamReplay;
+    startedAt: number;
+    accumulatedPauseMs: number;
+    recoveryPausedAt: number;
+    elapsedSeconds: number;
+    movingSeconds: number;
+  }): Promise<void> {
+    this.stopTimers();
+    this.streamBuffer = input.streamBuffer;
+    await this.streamBuffer.initialize();
+    this.resetLiveSessionState();
+    this.startTime = input.startedAt;
+    this.metrics.startedAt = input.startedAt;
+    this.metrics.elapsedTime = Math.floor(input.elapsedSeconds);
+    this.metrics.movingTime = Math.floor(input.movingSeconds);
+    this.totalPauseTime = input.accumulatedPauseMs;
+    this.pauseStartTime = input.recoveryPausedAt;
+    this.isActive = false;
+
+    for (const reading of input.replay.sensorReadings) this.ingestSensorData({ ...reading });
+    for (const location of input.replay.locations) {
+      this.ingestLocationData(location, { updateDistance: false });
+    }
+    const latestDistance = input.replay.sensorReadings
+      .filter((reading) => reading.metric === "distance" && typeof reading.value === "number")
+      .at(-1);
+    if (latestDistance && typeof latestDistance.value === "number") {
+      this.totalDistance = latestDistance.value;
+    }
+    this.cachedStats = undefined;
+    this.calculateAndEmitMetrics();
+  }
+
   /**
    * Pause recording - stop timers but keep data
    */
@@ -228,12 +264,12 @@ export class LiveMetricsManager extends EventEmitter<LiveMetricsEvents> {
   /**
    * Resume recording - restart timers
    */
-  public resumeRecording(): void {
+  public resumeRecording(options: { preserveHistory?: boolean } = {}): void {
     if (this.pauseStartTime) {
       this.totalPauseTime += Date.now() - this.pauseStartTime;
       this.pauseStartTime = undefined;
     }
-    this.buffer.clear();
+    if (!options.preserveHistory) this.buffer.clear();
     this.cachedStats = undefined;
     this.lastStatsEmit = 0;
     this.isActive = true;

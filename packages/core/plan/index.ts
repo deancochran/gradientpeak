@@ -5,6 +5,7 @@ export * from "./athletePlanningContext";
 export * from "./availabilityUtils";
 export * from "./buildProjectionEngineInput";
 export * from "./canonicalization";
+export * from "./canonicalTrainingPlanProjection";
 export * from "./classifyCreationFeasibility";
 export * from "./compositeCalibration";
 export * from "./computeLoadBootstrapState";

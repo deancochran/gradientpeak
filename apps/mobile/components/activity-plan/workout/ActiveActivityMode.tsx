@@ -2,7 +2,11 @@
 // Active Activity Mode
 // ================================
 
-import { type ActivityPlanStructureV2, extractActivityProfileV2 } from "@repo/core";
+import {
+  type ActivityPlanStructureV3,
+  compileActivityPlanV3,
+  extractActivityProfile,
+} from "@repo/core";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { Activity } from "lucide-react-native";
@@ -22,7 +26,7 @@ const ActiveActivityMode = memo<{
   currentMetrics: CurrentMetrics;
   onNextStep?: () => void;
   isAdvancing: boolean;
-  structure: ActivityPlanStructureV2;
+  structure: ActivityPlanStructureV3;
 }>(function ActiveActivityMode({
   planProgress,
   activityPlan,
@@ -47,7 +51,7 @@ const ActiveActivityMode = memo<{
     );
   }
 
-  const profileData = extractActivityProfileV2(structure);
+  const profileData = extractActivityProfile(compileActivityPlanV3(structure));
   const _upcomingSteps = profileData.slice(
     planProgress.currentStepIndex + 1,
     planProgress.currentStepIndex + 4,

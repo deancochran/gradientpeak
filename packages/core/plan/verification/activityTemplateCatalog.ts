@@ -8,10 +8,14 @@ import {
   type SystemActivityTemplateRecoveryCostBand,
   type SystemActivityTemplateTrainingIntent,
 } from "../../samples/system-activity-template-taxonomy";
-import type { ActivityPlanStructureV2 } from "../../schemas/activity_plan_v2";
 import { calculateSystemTemplateDurationSeconds } from "./systemPlanAudit";
 
-export type SystemActivityTemplateDurationBand = "short" | "medium" | "long" | "extra-long";
+export type SystemActivityTemplateDurationBand =
+  | "short"
+  | "medium"
+  | "long"
+  | "extra-long"
+  | "unknown";
 
 export type SystemActivityTemplateLoadBand = "low" | "moderate" | "high" | "very-high";
 
@@ -25,10 +29,11 @@ export interface NormalizedSystemActivityTemplateCatalogEntry {
   training_intent: SystemActivityTemplateTrainingIntent;
   intensity_family: SystemActivityTemplateIntensityFamily;
   progression_level: SystemActivityTemplateProgressionLevel;
-  duration_seconds: number;
+  duration_seconds: number | null;
   duration_band: SystemActivityTemplateDurationBand;
   load_band: SystemActivityTemplateLoadBand;
   recovery_cost_band: SystemActivityTemplateRecoveryCostBand;
+  category_composition: SystemTemplate["activity_category"][];
   normalized_structure: unknown;
   structure_signature: string;
   primary_work_signature: string;
@@ -57,21 +62,25 @@ function serializeDuration(duration: {
   }
 }
 
-function collectWorkSteps(structure: ActivityPlanStructureV2): Array<{
+function collectWorkSteps(structure: SystemTemplate["structure"]): Array<{
   interval_name: string;
   repetitions: number;
   step_name: string;
   duration: string;
   targets: string[];
 }> {
-  const allSteps = structure.intervals.flatMap((interval) =>
-    interval.steps.map((step) => ({
-      interval_name: interval.name.toLowerCase(),
-      repetitions: interval.repetitions,
-      step_name: step.name.toLowerCase(),
-      duration: serializeDuration(step.duration),
-      targets: (step.targets ?? []).map(mapStepTargetSignature).sort(),
-    })),
+  const allSteps = structure.segments.flatMap((segment) =>
+    segment.role === "activity"
+      ? segment.intervals.flatMap((interval) =>
+          interval.steps.map((step) => ({
+            interval_name: interval.name.toLowerCase(),
+            repetitions: interval.repetitions,
+            step_name: step.name.toLowerCase(),
+            duration: serializeDuration(step.duration),
+            targets: step.targets.map(mapStepTargetSignature).sort(),
+          })),
+        )
+      : [],
   );
   const workSteps = allSteps.filter((step) => {
     const stepName = `${step.interval_name} ${step.step_name}`;
@@ -82,7 +91,7 @@ function collectWorkSteps(structure: ActivityPlanStructureV2): Array<{
 }
 
 export function normalizeActivityTemplateStructureForAudit(
-  structure: ActivityPlanStructureV2,
+  structure: SystemTemplate["structure"],
 ): unknown {
   const rewrite = (node: unknown): unknown => {
     if (Array.isArray(node)) {
@@ -108,14 +117,15 @@ export function normalizeActivityTemplateStructureForAudit(
   return rewrite(structure);
 }
 
-function buildPrimaryWorkSignature(structure: ActivityPlanStructureV2): string {
+function buildPrimaryWorkSignature(structure: SystemTemplate["structure"]): string {
   return JSON.stringify(collectWorkSteps(structure));
 }
 
 function deriveDurationBand(
   sport: SystemTemplate["activity_category"],
-  durationSeconds: number,
+  durationSeconds: number | null,
 ): SystemActivityTemplateDurationBand {
+  if (durationSeconds === null) return "unknown";
   const mediumThreshold = sport === "bike" ? 3600 : 2700;
   const longThreshold = sport === "bike" ? 7200 : 5400;
   const extraLongThreshold = sport === "bike" ? 10800 : 7200;
@@ -201,6 +211,9 @@ export function buildSystemActivityTemplateCatalog(
           recoveryCostBand: taxonomy.recovery_cost_band,
         }),
         recovery_cost_band: taxonomy.recovery_cost_band,
+        category_composition: template.structure.segments.flatMap((segment) =>
+          segment.role === "activity" ? [segment.category] : [],
+        ),
         normalized_structure: normalizedStructure,
         structure_signature: JSON.stringify(normalizedStructure),
         primary_work_signature: buildPrimaryWorkSignature(template.structure),

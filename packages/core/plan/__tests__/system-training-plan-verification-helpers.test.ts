@@ -70,8 +70,12 @@ describe("system training plan verification helpers", () => {
     expect(first.unresolved_activity_plan_ids).toEqual([]);
     expect(first.total_planned_sessions).toBe(30);
     expect(first.total_rest_days).toBeGreaterThan(0);
-    expect(first.total_estimated_tss).toBeGreaterThan(0);
-    expect(first.sessions.every((session) => Number.isFinite(session.estimated_tss))).toBe(true);
+    expect(first.total_estimated_tss).toBeNull();
+    expect(
+      first.sessions.every(
+        (session) => session.estimated_tss === null || Number.isFinite(session.estimated_tss),
+      ),
+    ).toBe(true);
     expect(first.sessions.every((session) => session.event_type === "planned")).toBe(true);
     expect(first.sessions.some((session) => session.estimation_source === "structure")).toBe(true);
   });

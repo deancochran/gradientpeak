@@ -10,11 +10,7 @@
  */
 
 import { z } from "zod";
-import { saveableActivityPlanStructureSchemaV2 } from "./activity_plan_v2";
-import {
-  type ActivityTargetCategory,
-  addActivityTargetCompatibilityIssuesToZodContext,
-} from "./activity_target_capabilities";
+import { activityPlanStructureSchemaV3 } from "../activity-plan";
 import {
   completionTimeHmsSchema,
   dateStringSchema,
@@ -49,7 +45,6 @@ import {
   optionalRestingHrSchema,
   optionalThresholdHrSchema,
   optionalWeightKgSchema,
-  profilePatchInputSchema,
   profileQuickUpdateSchema,
   profileSettingsFormSchema,
   restingHrSchema,
@@ -141,14 +136,15 @@ const activityInsertShapeSchema = z.object({
   notes: z.string().nullable().optional(),
 });
 
-const activityPlanInsertShapeSchema = z.object({
-  activity_category: canonicalSportSchema,
-  description: z.string().nullable().optional(),
-  name: z.string(),
-  notes: z.string().nullable().optional(),
-  route_id: z.string().uuid().nullable().optional(),
-  structure: z.unknown().nullable().optional(),
-});
+const activityPlanInsertShapeSchema = z
+  .object({
+    description: z.string().nullable().optional(),
+    name: z.string(),
+    notes: z.string().nullable().optional(),
+    route_id: z.string().uuid().nullable().optional(),
+    structure: activityPlanStructureSchemaV3,
+  })
+  .strict();
 
 // ============================================================================
 // ACTIVITY SUBMISSION FORM SCHEMAS
@@ -341,9 +337,8 @@ export const activityCategorySchema = canonicalSportSchema;
  * - name: required string (enhanced: 1-100 chars)
  * - description: optional nullable string (enhanced: max 1000 chars)
  * - notes: optional nullable string (enhanced: max 2000 chars)
- * - activity_category: enum ["run", "bike", "swim", "strength", "other"]
  * - route_id: optional nullable UUID
- * - structure: required V2 structure
+ * - structure: required V3 structure
  *
  * Note: Route-backed plans are still required to carry structure.
  * The route adds geography/context, but the structure remains the
@@ -354,7 +349,6 @@ const activityPlanFormFieldsBaseSchema = activityPlanInsertShapeSchema
     name: true,
     description: true,
     notes: true,
-    activity_category: true,
     route_id: true,
     structure: true,
   })
@@ -366,40 +360,20 @@ const activityPlanFormFieldsBaseSchema = activityPlanInsertShapeSchema
       z.string().max(1000, "Description must be less than 1000 characters").nullable().optional(),
     ),
     notes: activityPlanNotesSchema,
-    structure: saveableActivityPlanStructureSchemaV2,
-  });
+    structure: activityPlanStructureSchemaV3,
+  })
+  .strict();
 
-const activityPlanFormFieldsSchema = activityPlanFormFieldsBaseSchema.superRefine((plan, ctx) => {
-  addActivityTargetCompatibilityIssuesToZodContext({
-    activityCategory: plan.activity_category as ActivityTargetCategory,
-    ctx,
-    pathPrefix: ["structure"],
-    structure: plan.structure,
-  });
-});
-
-export const activityPlanCreateFormSchema = activityPlanFormFieldsSchema;
+export const activityPlanCreateFormSchema = activityPlanFormFieldsBaseSchema;
 
 export type ActivityPlanCreateFormData = z.infer<typeof activityPlanCreateFormSchema>;
 
 /**
  * Activity Plan Update Form Schema
  */
-export const activityPlanUpdateFormSchema = activityPlanFormFieldsBaseSchema
-  .partial()
-  .safeExtend({
-    id: z.string().uuid("Invalid activity plan ID"),
-  })
-  .superRefine((plan, ctx) => {
-    if (plan.structure && plan.activity_category) {
-      addActivityTargetCompatibilityIssuesToZodContext({
-        activityCategory: plan.activity_category as ActivityTargetCategory,
-        ctx,
-        pathPrefix: ["structure"],
-        structure: plan.structure,
-      });
-    }
-  });
+export const activityPlanUpdateFormSchema = activityPlanFormFieldsBaseSchema.partial().safeExtend({
+  id: z.string().uuid("Invalid activity plan ID"),
+});
 
 export type ActivityPlanUpdateFormData = z.infer<typeof activityPlanUpdateFormSchema>;
 

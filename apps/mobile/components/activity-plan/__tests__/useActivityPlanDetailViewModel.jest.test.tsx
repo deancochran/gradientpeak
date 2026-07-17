@@ -2,7 +2,7 @@ import { renderHook } from "@testing-library/react-native";
 
 jest.mock("@repo/core", () => ({
   __esModule: true,
-  buildEstimationContext: ({ activityPlan }: any) => ({ activityPlan }),
+  ...jest.requireActual("@repo/core"),
   decodePolyline: jest.fn(() => [
     { latitude: 10, longitude: 20 },
     { latitude: 11, longitude: 21 },
@@ -41,11 +41,27 @@ describe("useActivityPlanDetailViewModel", () => {
               intensity_factor: 0.83,
             },
             structure: {
-              intervals: [
+              version: 3,
+              segments: [
                 {
-                  repetitions: 2,
-                  steps: [
-                    { id: "step-1", duration: { type: "time", seconds: 600 }, name: "Tempo" },
+                  id: "00000000-0000-4000-8000-000000000001",
+                  role: "activity",
+                  name: "Run",
+                  category: "run",
+                  intervals: [
+                    {
+                      id: "00000000-0000-4000-8000-000000000002",
+                      name: "Tempo",
+                      repetitions: 2,
+                      steps: [
+                        {
+                          id: "00000000-0000-4000-8000-000000000003",
+                          duration: { type: "time", seconds: 600 },
+                          name: "Tempo",
+                          targets: [{ type: "RPE", intensity: 6 }],
+                        },
+                      ],
+                    },
                   ],
                 },
               ],

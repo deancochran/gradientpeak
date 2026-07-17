@@ -83,9 +83,15 @@ function createDeps(): any {
     buildCreationProjectionArtifacts: vi.fn(() => ({
       expandedPlan: {
         name: "Generated Plan",
-        goals: [],
-        blocks: [],
-        metadata: {},
+        version: 1,
+        goal_blueprints: [{ title: "A race", priority: 8, target_offset_days: 42 }],
+        sessions: [
+          {
+            offset_days: 0,
+            activity_plan_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            event_overrides: { title: "Opening session", start_time: "07:30" },
+          },
+        ],
       },
       projectionChart: {
         start_date: "2026-01-05",
@@ -143,11 +149,31 @@ function createDeps(): any {
     })),
     buildCreationPreviewSnapshotToken: vi.fn(() => "preview-token"),
     deriveProjectionDrivenConflicts: vi.fn(() => []),
+    resolveCanonicalTrainingPlan: vi.fn(async ({ planId }: { planId: string }) => ({
+      fingerprint: "resolution-fingerprint",
+      policy_version: 1,
+      resolution_manifest: [{ selected_activity_plan_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }],
+      structure: {
+        id: planId,
+        version: 1,
+        goal_blueprints: [{ title: "A race", priority: 8, target_offset_days: 42 }],
+        sessions: [
+          {
+            offset_days: 0,
+            activity_plan_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            event_overrides: { title: "Opening session", start_time: "07:30" },
+          },
+        ],
+      },
+    })),
+    persistCanonicalTrainingPlan: vi.fn(async ({ values }: any) => ({
+      id: (values.structure as { id: string }).id,
+      ...values,
+    })),
     throwPathValidationError: vi.fn((message: string) => {
       throw new Error(message);
     }),
-    parseTrainingPlanStructure: vi.fn(),
-    randomUUID: vi.fn(() => "plan-uuid-1"),
+    randomUUID: vi.fn(() => "11111111-1111-4111-8111-111111111111"),
   };
 }
 
@@ -230,7 +256,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
     });
 
     expect(repository.deactivateActivePlans).not.toHaveBeenCalled();
-    expect(repository.createTrainingPlan).toHaveBeenCalledTimes(1);
+    expect(deps.persistCanonicalTrainingPlan).toHaveBeenCalledTimes(1);
   });
 
   it("does not persist override metadata in structure or create summary", async () => {
@@ -238,9 +264,15 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
     (deps as any).buildCreationProjectionArtifacts = vi.fn(() => ({
       expandedPlan: {
         name: "Generated Plan",
-        goals: [],
-        blocks: [],
-        metadata: {},
+        version: 1,
+        goal_blueprints: [{ title: "A race", priority: 8, target_offset_days: 42 }],
+        sessions: [
+          {
+            offset_days: 0,
+            activity_plan_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            event_overrides: { title: "Opening session", start_time: "07:30" },
+          },
+        ],
       },
       projectionChart: {
         start_date: "2026-01-05",
@@ -303,19 +335,22 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
     expect(result.creation_summary).not.toHaveProperty("migration_warnings");
     expect(result.creation_summary).not.toHaveProperty("active_overrides");
 
-    const persistedStructure = (repository.createTrainingPlan as any).mock.calls[0]?.[0]?.structure;
+    const persistedStructure = (deps.persistCanonicalTrainingPlan as any).mock.calls[0]?.[0]?.values
+      ?.structure;
     expect(persistedStructure).toBeDefined();
     expect(persistedStructure).not.toHaveProperty("mode");
     expect(persistedStructure).not.toHaveProperty("risk_acceptance");
     expect(persistedStructure).not.toHaveProperty("constraint_policy");
-    expect(persistedStructure?.metadata).not.toHaveProperty("creation_config_mvp");
-    expect(persistedStructure?.metadata?.creation_config_snapshot).toEqual(finalConfigFixture);
-    expect(persistedStructure?.metadata?.creation_form_snapshot).toEqual({
-      plan_start_date: "2026-01-05",
-      goals: [],
-    });
-    expect(persistedStructure?.metadata?.creation_calibration).toMatchObject({
+    expect(persistedStructure).not.toHaveProperty("metadata");
+    expect(persistedStructure).toMatchObject({
       version: 1,
+      goal_blueprints: [{ title: "A race", target_offset_days: 42 }],
+      sessions: [
+        {
+          activity_plan_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          event_overrides: { title: "Opening session", start_time: "07:30" },
+        },
+      ],
     });
 
     expect(result.creation_summary.normalized_creation_config).toEqual(finalConfigFixture);
@@ -350,7 +385,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
       deps: deps as any,
     });
 
-    const createArg = (repository.createTrainingPlan as any).mock.calls[0]?.[0] as
+    const createArg = (deps.persistCanonicalTrainingPlan as any).mock.calls[0]?.[0]?.values as
       | { structure?: Record<string, unknown> }
       | undefined;
     expect(createArg?.structure).toBeDefined();
@@ -680,7 +715,7 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
     expect(repository.persistInferredStateSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({
         profileId: "profile-123",
-        trainingPlanId: "plan-row-7",
+        trainingPlanId: "11111111-1111-4111-8111-111111111111",
         inferredStateSnapshot: expect.objectContaining({
           mean: expect.objectContaining({ ctl: 44 }),
         }),
@@ -688,10 +723,10 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
     );
   });
 
-  it("rejects create when generated structure is invalid", async () => {
+  it("does not write when canonical template coverage is unresolved", async () => {
     const deps = createDeps();
-    deps.parseTrainingPlanStructure = vi.fn(() => {
-      throw new Error("invalid structure");
+    deps.resolveCanonicalTrainingPlan = vi.fn(async () => {
+      throw new Error("Missing exact sport/focus template coverage");
     });
 
     const repository = {
@@ -721,17 +756,37 @@ describe("createFromCreationConfigUseCase phase 6 coverage", () => {
         repository: repository as any,
         deps: deps as any,
       }),
-    ).rejects.toMatchObject({
-      code: "BAD_REQUEST",
-      message: "Generated training plan structure is invalid",
-      cause: {
-        domain: "training_plan_commit",
-        code: "TRAINING_PLAN_COMMIT_INVALID_PAYLOAD",
-        operation: "createFromCreationConfig",
-        recoverable: true,
-      },
-    });
+    ).rejects.toThrow("Missing exact sport/focus template coverage");
 
     expect(repository.createTrainingPlan).not.toHaveBeenCalled();
+  });
+
+  it("does not persist when a selected template changes after preview reassertion", async () => {
+    const deps = createDeps();
+    deps.persistCanonicalTrainingPlan = vi.fn(async () => {
+      throw new Error("Activity templates changed before persistence");
+    });
+    const repository = {
+      createTrainingPlan: vi.fn(),
+      getPriorInferredStateSnapshot: vi.fn(async () => null),
+      persistInferredStateSnapshot: vi.fn(),
+    };
+
+    await expect(
+      createFromCreationConfigUseCase({
+        creationContextReader: {} as any,
+        profileId: "profile-123",
+        params: {
+          minimal_plan: { plan_start_date: "2026-01-05", goals: [] },
+          creation_input: {},
+          preview_snapshot_token: "preview-token",
+          is_active: true,
+        },
+        repository: repository as any,
+        deps,
+      }),
+    ).rejects.toThrow("changed before persistence");
+    expect(repository.createTrainingPlan).not.toHaveBeenCalled();
+    expect(repository.persistInferredStateSnapshot).not.toHaveBeenCalled();
   });
 });

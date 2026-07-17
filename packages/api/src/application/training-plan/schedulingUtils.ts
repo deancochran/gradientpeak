@@ -56,12 +56,8 @@ export function materializeAppliedTrainingPlan(input: {
     appliedPlanStartDate = input.todayDate;
   }
 
-  const materializationStructure = {
-    ...input.structure,
-    start_date: appliedPlanStartDate,
-  } satisfies Record<string, unknown>;
   const allMaterializedSessions = materializePlanToEvents(
-    materializationStructure,
+    input.structure,
     appliedPlanStartDate,
     input.planningTimezone,
   );

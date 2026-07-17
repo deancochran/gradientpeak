@@ -10,11 +10,6 @@ export type ChartCoordinate = ChartPoint & {
   y: number;
 };
 
-export type ChartDomain = {
-  max: number;
-  min: number;
-};
-
 export type ChartSummary = {
   direction: "down" | "flat" | "up";
   first: number;
@@ -36,7 +31,7 @@ type DomainOptions = {
 
 type CoordinateOptions = {
   bottom?: number;
-  domain?: ChartDomain;
+  domain?: NumericRange;
   left?: number;
   right?: number;
   top?: number;
@@ -45,7 +40,7 @@ type CoordinateOptions = {
 export function getPaddedChartDomain(
   values: readonly (number | null | undefined)[],
   options: DomainOptions = {},
-): ChartDomain {
+): NumericRange {
   const finiteValues = values.filter(
     (value): value is number => typeof value === "number" && Number.isFinite(value),
   );
@@ -175,3 +170,5 @@ function interpolateTimestampedValue(
   const ratio = (timestamp - before.timestamp) / (after.timestamp - before.timestamp);
   return before.value + (after.value - before.value) * ratio;
 }
+
+import type { NumericRange } from "@repo/core/zones";

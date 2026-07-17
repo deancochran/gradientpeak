@@ -1,4 +1,6 @@
 import { z } from "zod";
+import type { ActivityPlanDuration, ActivityPlanTarget } from "../activity-plan";
+import type { CanonicalSport } from "../schemas/sport";
 
 export const integrationProviderIdValues = [
   "wahoo",
@@ -35,10 +37,22 @@ export type ProviderSyncMode = z.infer<typeof providerSyncModeSchema>;
 
 export type ProviderRuntimeStatus = "enabled" | "scaffold";
 
+export type ProviderPlannedWorkoutMaturity = "available" | "evidence_gated";
+
+export type ProviderPlannedWorkoutCapability = {
+  maturity: ProviderPlannedWorkoutMaturity;
+  supportedDurations: readonly ActivityPlanDuration["type"][];
+  supportedSports: readonly CanonicalSport[];
+  supportedTargets: readonly ActivityPlanTarget["type"][];
+  supportsBoundaries: boolean;
+  supportsMultipleTargets: boolean;
+};
+
 export type ProviderCapabilityDefinition = {
   capabilities: readonly ProviderCapability[];
   id: IntegrationProviderId;
   label: string;
+  plannedWorkouts: ProviderPlannedWorkoutCapability;
   runtimeStatus: ProviderRuntimeStatus;
   syncModes: Partial<Record<ProviderCapability, Exclude<ProviderSyncMode, "unsupported">>>;
 };
@@ -49,10 +63,27 @@ const automaticSyncCapabilities = [
   "webhook_activity_updates",
 ] as const satisfies readonly ProviderCapability[];
 
+const evidenceGatedPlannedWorkouts = {
+  maturity: "evidence_gated",
+  supportedDurations: [],
+  supportedSports: [],
+  supportedTargets: [],
+  supportsBoundaries: false,
+  supportsMultipleTargets: false,
+} as const satisfies ProviderPlannedWorkoutCapability;
+
 const providerCapabilityMap = {
   wahoo: {
     id: "wahoo",
     label: "Wahoo",
+    plannedWorkouts: {
+      maturity: "available",
+      supportedDurations: ["time", "distance"],
+      supportedSports: ["run", "bike"],
+      supportedTargets: ["%FTP", "%MaxHR", "%ThresholdHR", "watts", "bpm", "speed", "cadence"],
+      supportsBoundaries: false,
+      supportsMultipleTargets: false,
+    },
     runtimeStatus: "enabled",
     capabilities: [
       "profile_enrichment_read",
@@ -76,6 +107,7 @@ const providerCapabilityMap = {
   strava: {
     id: "strava",
     label: "Strava",
+    plannedWorkouts: evidenceGatedPlannedWorkouts,
     runtimeStatus: "scaffold",
     capabilities: ["activity_history_read", "completed_activity_push", "webhook_activity_updates"],
     syncModes: {
@@ -87,6 +119,7 @@ const providerCapabilityMap = {
   trainingpeaks: {
     id: "trainingpeaks",
     label: "TrainingPeaks",
+    plannedWorkouts: evidenceGatedPlannedWorkouts,
     runtimeStatus: "scaffold",
     capabilities: [],
     syncModes: {},
@@ -94,6 +127,7 @@ const providerCapabilityMap = {
   garmin: {
     id: "garmin",
     label: "Garmin",
+    plannedWorkouts: evidenceGatedPlannedWorkouts,
     runtimeStatus: "scaffold",
     capabilities: ["activity_history_read"],
     syncModes: {
@@ -103,6 +137,7 @@ const providerCapabilityMap = {
   zwift: {
     id: "zwift",
     label: "Zwift",
+    plannedWorkouts: evidenceGatedPlannedWorkouts,
     runtimeStatus: "scaffold",
     capabilities: [],
     syncModes: {},
@@ -117,6 +152,12 @@ export function getProviderCapabilityDefinition(
   provider: IntegrationProviderId,
 ): ProviderCapabilityDefinition {
   return providerCapabilityMap[provider];
+}
+
+export function getProviderPlannedWorkoutCapability(
+  provider: IntegrationProviderId,
+): ProviderPlannedWorkoutCapability {
+  return getProviderCapabilityDefinition(provider).plannedWorkouts;
 }
 
 export function isProviderRuntimeEnabled(provider: IntegrationProviderId): boolean {

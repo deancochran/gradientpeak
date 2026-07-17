@@ -1,69 +1,66 @@
 import {
-  type ActivityPlanStructureV2,
-  calculateActivityStatsV2,
+  type ActivityPlanStructureV3,
+  calculateActivityPlanStats,
+  compileActivityPlanV3,
   formatDurationCompact,
 } from "@repo/core";
 import { MetricCard } from "@repo/ui/components/metric-card";
 import { Text } from "@repo/ui/components/text";
-import { Activity, Clock, TrendingUp, Zap } from "lucide-react-native";
+import { Activity, Clock, ListOrdered, Repeat } from "lucide-react-native";
 import { memo } from "react";
 import { View } from "react-native";
-import { formatEstimatedTss } from "@/lib/estimatedMetrics";
 
-interface ActivityMetricsGridProps {
-  structure: ActivityPlanStructureV2;
-}
-
-export const ActivityMetricsGrid = memo<ActivityMetricsGridProps>(function ActivityMetricsGrid({
-  structure,
-}) {
-  const stats = calculateActivityStatsV2(structure);
-
-  return (
-    <View className="gap-3 mb-4">
-      <Text className="text-sm font-medium mb-2">Activity Overview</Text>
-      <View className="flex-row gap-3 mb-3">
-        <View className="flex-1">
-          <MetricCard
-            icon={Clock}
-            label="Duration"
-            value={formatDurationCompact(stats.totalDuration)}
-            color="text-blue-500"
-          />
+export const ActivityMetricsGrid = memo<{ structure: ActivityPlanStructureV3 }>(
+  function ActivityMetricsGrid({ structure }) {
+    const compiled = compileActivityPlanV3(structure);
+    const stats = calculateActivityPlanStats(compiled);
+    const boundaries = compiled.occurrences.filter((item) => item.role !== "activity").length;
+    return (
+      <View className="mb-4 gap-3">
+        <Text className="mb-2 text-sm font-medium">Activity Overview</Text>
+        <View className="flex-row gap-3">
+          <View className="flex-1">
+            <MetricCard
+              icon={Clock}
+              label="Exact time"
+              value={
+                stats.duration.exactElapsedSeconds === null
+                  ? "Open"
+                  : formatDurationCompact(stats.duration.exactElapsedSeconds)
+              }
+              color="text-blue-500"
+            />
+          </View>
+          <View className="flex-1">
+            <MetricCard
+              icon={Activity}
+              label="Occurrences"
+              value={`${stats.occurrenceCount}`}
+              color="text-green-500"
+            />
+          </View>
         </View>
-        <View className="flex-1">
-          <MetricCard
-            icon={Activity}
-            label="Steps"
-            value={stats.totalSteps.toString()}
-            subtitle={`${stats.intervalCount} intervals`}
-            color="text-green-500"
-          />
-        </View>
-      </View>
-
-      <View className="flex-row gap-3">
-        <View className="flex-1">
-          <MetricCard
-            icon={Zap}
-            label="Avg Power"
-            value={`${Math.round(stats.avgPower)}%`}
-            subtitle="FTP target"
-            color="text-yellow-500"
-          />
-        </View>
-        <View className="flex-1">
-          <MetricCard
-            icon={TrendingUp}
-            label="Est. TSS"
-            value={formatEstimatedTss(stats.estimatedTSS, { includeUnit: false }) ?? "--"}
-            subtitle={`~${Math.round(stats.estimatedCalories)} cal`}
-            color="text-purple-500"
-          />
+        <View className="flex-row gap-3">
+          <View className="flex-1">
+            <MetricCard
+              icon={Repeat}
+              label="Categories"
+              value={`${compiled.categories.length}`}
+              subtitle={compiled.categories.join(" · ")}
+              color="text-yellow-500"
+            />
+          </View>
+          <View className="flex-1">
+            <MetricCard
+              icon={ListOrdered}
+              label="Boundaries"
+              value={`${boundaries}`}
+              color="text-purple-500"
+            />
+          </View>
         </View>
       </View>
-    </View>
-  );
-});
-
+    );
+  },
+);
 ActivityMetricsGrid.displayName = "ActivityMetricsGrid";

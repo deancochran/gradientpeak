@@ -125,7 +125,10 @@ export function findDuplicateRiskTemplateIds(
     if (group.length < 2) {
       continue;
     }
-    const durations = group.map((entry) => entry.duration_seconds);
+    const durations = group.flatMap((entry) =>
+      entry.duration_seconds === null ? [] : [entry.duration_seconds],
+    );
+    if (durations.length < 2) continue;
     const minDuration = Math.min(...durations);
     const maxDuration = Math.max(...durations);
 

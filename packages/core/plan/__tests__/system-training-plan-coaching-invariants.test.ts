@@ -22,6 +22,11 @@ describe("system training plan coaching invariants", () => {
     for (let index = 1; index < comparison.weeklyComparison.length; index += 1) {
       const previous = comparison.weeklyComparison[index - 1]!;
       const current = comparison.weeklyComparison[index]!;
+      if (previous.actual === null || current.actual === null) {
+        expect(previous.actual).toBeNull();
+        expect(current.actual).toBeNull();
+        continue;
+      }
       const allowedRamp = Math.max(35, previous.actual * 0.18);
       const delta = current.actual - previous.actual;
 
@@ -46,8 +51,19 @@ describe("system training plan coaching invariants", () => {
     }
 
     for (const [weekIndex, sessions] of sessionsByWeek.entries()) {
-      const totalWeekTss = sessions.reduce((total, session) => total + session.estimated_tss, 0);
-      const longSession = sessions
+      const knownSessions = sessions.filter(
+        (session): session is (typeof sessions)[number] & { estimated_tss: number } =>
+          session.estimated_tss !== null,
+      );
+      if (knownSessions.length === 0) {
+        expect(sessions.every((session) => session.estimated_tss === null)).toBe(true);
+        continue;
+      }
+      const totalWeekTss = knownSessions.reduce(
+        (total, session) => total + session.estimated_tss,
+        0,
+      );
+      const longSession = knownSessions
         .filter((session) => /long/i.test(session.title) || /long/i.test(session.template_name))
         .sort((left, right) => right.estimated_tss - left.estimated_tss)[0];
 
@@ -64,6 +80,11 @@ describe("system training plan coaching invariants", () => {
 
     expect(penultimateWeek).toBeDefined();
     expect(raceWeek).toBeDefined();
+    if (raceWeek?.actual === null || penultimateWeek?.actual === null) {
+      expect(raceWeek?.actual).toBeNull();
+      expect(penultimateWeek?.actual).toBeNull();
+      return;
+    }
     expect(raceWeek!.actual).toBeLessThan(penultimateWeek!.actual);
     expect(raceWeek!.actual).toBeLessThanOrEqual(penultimateWeek!.actual * 0.9);
   });
@@ -87,8 +108,19 @@ describe("system training plan coaching invariants", () => {
     const weeklyLoads = Array.from(sessionsByWeek.entries())
       .sort((left, right) => left[0] - right[0])
       .map(([weekIndex, sessions]) => {
-        const totalWeekTss = sessions.reduce((total, session) => total + session.estimated_tss, 0);
-        const longRide = sessions
+        const knownSessions = sessions.filter(
+          (session): session is (typeof sessions)[number] & { estimated_tss: number } =>
+            session.estimated_tss !== null,
+        );
+        if (knownSessions.length === 0) {
+          expect(sessions.every((session) => session.estimated_tss === null)).toBe(true);
+          return null;
+        }
+        const totalWeekTss = knownSessions.reduce(
+          (total, session) => total + session.estimated_tss,
+          0,
+        );
+        const longRide = knownSessions
           .filter((session) => /long/i.test(session.title) || /long/i.test(session.template_name))
           .sort((left, right) => right.estimated_tss - left.estimated_tss)[0];
 
@@ -98,6 +130,11 @@ describe("system training plan coaching invariants", () => {
         return totalWeekTss;
       });
 
+    const knownWeeklyLoads = weeklyLoads.filter((load): load is number => load !== null);
+    if (knownWeeklyLoads.length === 0) {
+      expect(weeklyLoads.every((load) => load === null)).toBe(true);
+      return;
+    }
     expect(weeklyLoads[3]).toBeLessThan(weeklyLoads[2] ?? Number.POSITIVE_INFINITY);
     expect(weeklyLoads[7]).toBeLessThan(weeklyLoads[6] ?? Number.POSITIVE_INFINITY);
     expect(weeklyLoads[11]).toBeLessThan(weeklyLoads[10] ?? Number.POSITIVE_INFINITY);

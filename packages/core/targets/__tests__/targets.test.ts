@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { intensityTargetSchemaV2 } from "../../schemas/activity_plan_v2";
 import {
-  activityTargetCapabilityConfig as transitionalCapabilityConfig,
-  activityTargetDomainByType as transitionalDomainByType,
+  activityTargetCapabilityConfig as schemaCapabilityConfig,
+  activityTargetDomainByType as schemaDomainByType,
 } from "../../schemas/activity_target_capabilities";
 import {
   activityTargetCapabilityConfig,
@@ -41,9 +40,8 @@ describe("modern target authority", () => {
     );
   });
 
-  it("is reused by transitional V2 schema and capability exports", () => {
-    expect(intensityTargetSchemaV2).toBe(activityTargetSchema);
-    expect(transitionalCapabilityConfig).toBe(activityTargetCapabilityConfig);
-    expect(transitionalDomainByType).toBe(activityTargetDomainByType);
+  it("is reused by schema capability exports", () => {
+    expect(schemaCapabilityConfig).toBe(activityTargetCapabilityConfig);
+    expect(schemaDomainByType).toBe(activityTargetDomainByType);
   });
 });

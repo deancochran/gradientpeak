@@ -1,14 +1,17 @@
 import BottomSheet, { BottomSheetBackdrop } from "@gorhom/bottom-sheet";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
+  type ActivityPlanInterval,
+  type ActivityPlanIntervalStep,
+  type ActivityPlanSegmentV3,
   type ActivityPlanTargetAnchors,
   type ActivityTargetCategory,
-  calculateActivityStatsV2,
+  activityPlanStructureSchemaV3,
+  calculateActivityPlanStats,
+  compileActivityPlanV3,
   getActivityPlanDefaultTarget,
-  getActivityPlanProviderReadiness,
-  type IntervalStepV2,
-  type IntervalV2,
 } from "@repo/core";
+import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import { randomUUID } from "expo-crypto";
 import { useNavigation, useRouter } from "expo-router";
@@ -16,6 +19,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, View } from "react-native";
 import { NestableScrollContainer } from "react-native-draggable-flatlist";
 import { ActivityPlanBasicsSection } from "@/components/activity-plan/ActivityPlanBasicsSection";
+import { findActivitySegmentForInterval } from "@/components/activity-plan/activityPlanSelection";
 import { StructureBuilderCard } from "@/components/activity-plan/structure/StructureBuilderCard";
 import { StructureIntervalSheet } from "@/components/activity-plan/structure/StructureIntervalSheet";
 import { useActivityPlanBasicsForm } from "@/components/activity-plan/useActivityPlanBasicsForm";
@@ -43,7 +47,7 @@ const STRUCTURE_CHART_HINT_KEY = "activity-plan-structure-chart-hint-seen-v1";
 const createDefaultStep = (
   category: ActivityCategory,
   anchors: ActivityPlanTargetAnchors,
-): IntervalStepV2 => ({
+): ActivityPlanIntervalStep => ({
   id: randomUUID(),
   name: "New Step",
   duration: { type: "time", seconds: 300 },
@@ -54,7 +58,7 @@ const createDefaultInterval = (
   category: ActivityCategory,
   index: number,
   anchors: ActivityPlanTargetAnchors,
-): IntervalV2 => ({
+): ActivityPlanInterval => ({
   id: randomUUID(),
   name: `Interval ${index + 1}`,
   repetitions: 1,
@@ -73,6 +77,7 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedIntervalId, setSelectedIntervalId] = useState<string | null>(null);
+  const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
   const [showChartCoachmark, setShowChartCoachmark] = useState(false);
   const [undoState, setUndoState] = useState<{
     message: string;
@@ -88,6 +93,10 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     removeStepFromInterval,
     updateInterval,
     copyInterval,
+    addSegment,
+    updateSegment,
+    removeSegment,
+    reorderSegments,
     setStructure,
   } = useActivityPlanCreationStore();
 
@@ -172,7 +181,10 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     AsyncStorage.setItem(STRUCTURE_CHART_HINT_KEY, "1").catch(() => null);
   };
 
-  const intervals = form.structure.intervals || [];
+  const activitySegments = form.structure.segments.filter((segment) => segment.role === "activity");
+  const selectedActivitySegment =
+    activitySegments.find((segment) => segment.id === selectedSegmentId) ?? activitySegments[0];
+  const intervals = selectedActivitySegment?.intervals ?? [];
   const maxHrMetrics = api.profileMetrics.list.useQuery({ metric_type: "max_hr", limit: 1 });
   const maxHeartRateBpm = useMemo(
     () => maxHrMetrics.data?.items.find((metric) => metric.metric_type === "max_hr")?.value,
@@ -186,17 +198,6 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     }),
     [maxHeartRateBpm, profile?.ftp, profile?.threshold_hr],
   );
-  const wahooReadiness = useMemo(
-    () =>
-      getActivityPlanProviderReadiness({
-        activityCategory: form.activityCategory,
-        anchors: targetAnchors,
-        provider: "wahoo",
-        structure: form.structure,
-      }),
-    [form.activityCategory, form.structure, targetAnchors],
-  );
-
   const stepBeingEdited = useMemo(() => {
     if (!editingIntervalId || !editingStepId) {
       return undefined;
@@ -207,35 +208,21 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
   }, [editingIntervalId, editingStepId, intervals]);
 
   const structureStats = useMemo(() => {
-    if (intervals.length === 0) {
-      return {
-        durationMs: 0,
-        stepCount: 0,
-        estimatedTSS: 0,
-        distanceMeters: 0,
-      };
+    const parsed = activityPlanStructureSchemaV3.safeParse(form.structure);
+    if (!parsed.success) {
+      return { durationMs: 0, stepCount: 0, estimatedTSS: 0, distanceMeters: 0 };
     }
-
-    const stats = calculateActivityStatsV2({ version: 2, intervals });
-    let stepCount = 0;
-    let distanceMeters = 0;
-
-    intervals.forEach((interval) => {
-      stepCount += interval.steps.length * interval.repetitions;
-      interval.steps.forEach((step) => {
-        if (step.duration.type === "distance") {
-          distanceMeters += step.duration.meters * interval.repetitions;
-        }
-      });
+    const stats = calculateActivityPlanStats(compileActivityPlanV3(parsed.data), {
+      cyclingFtpWatts: profile?.ftp ?? undefined,
     });
 
     return {
-      durationMs: Math.round(stats.totalDuration * 1000),
-      stepCount,
-      estimatedTSS: stats.estimatedTSS,
-      distanceMeters,
+      durationMs: Math.round((stats.duration.exactElapsedSeconds ?? 0) * 1000),
+      stepCount: stats.occurrenceCount,
+      estimatedTSS: 0,
+      distanceMeters: stats.duration.categories.reduce((sum, item) => sum + item.distanceMeters, 0),
     };
-  }, [intervals]);
+  }, [form.structure, profile?.ftp]);
 
   const selectedInterval = selectedIntervalId
     ? intervals.find((interval) => interval.id === selectedIntervalId)
@@ -285,9 +272,12 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
   }, [selectedInterval]);
 
   const openIntervalSheet = (intervalId: string) => {
+    const owningSegment = findActivitySegmentForInterval(activitySegments, intervalId);
+    if (!owningSegment) return;
     if (showChartCoachmark) {
       dismissChartCoachmark();
     }
+    setSelectedSegmentId(owningSegment.id);
     setSelectedIntervalId(intervalId);
     requestAnimationFrame(() => {
       structureStepSheetRef.current?.snapToIndex(1);
@@ -295,7 +285,43 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
   };
 
   const handleAddInterval = () => {
-    addInterval(createDefaultInterval(form.activityCategory, intervals.length, targetAnchors));
+    if (!selectedActivitySegment) return;
+    addInterval(
+      createDefaultInterval(selectedActivitySegment.category, intervals.length, targetAnchors),
+      selectedActivitySegment.id,
+    );
+  };
+
+  const handleAddSegment = (role: ActivityPlanSegmentV3["role"]) => {
+    const id = randomUUID();
+    const segment: ActivityPlanSegmentV3 =
+      role === "activity"
+        ? {
+            id,
+            role,
+            name: `Activity ${activitySegments.length + 1}`,
+            category: form.activityCategory,
+            intervals: [createDefaultInterval(form.activityCategory, 0, targetAnchors)],
+          }
+        : {
+            id,
+            role,
+            name: role === "transition" ? "Transition" : "Rest",
+            duration: { type: "time", seconds: role === "transition" ? 300 : 60 },
+          };
+    addSegment(segment);
+    if (role === "activity") setSelectedSegmentId(id);
+  };
+
+  const moveSegment = (index: number, offset: -1 | 1) => {
+    const target = index + offset;
+    if (target < 0 || target >= form.structure.segments.length) return;
+    const segments = [...form.structure.segments];
+    const currentSegment = segments[index];
+    const targetSegment = segments[target];
+    if (!currentSegment || !targetSegment) return;
+    [segments[index], segments[target]] = [targetSegment, currentSegment];
+    reorderSegments(segments);
   };
 
   const handleRemoveInterval = (intervalId: string) => {
@@ -326,7 +352,7 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     });
   };
 
-  const handleChangeIntervalRepetitions = (interval: IntervalV2, value: number) => {
+  const handleChangeIntervalRepetitions = (interval: ActivityPlanInterval, value: number) => {
     updateInterval(interval.id, {
       ...interval,
       repetitions: Number.isFinite(value) ? value : 0,
@@ -345,7 +371,7 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
     setEditDialogOpen(true);
   };
 
-  const handleSaveStep = (step: IntervalStepV2) => {
+  const handleSaveStep = (step: ActivityPlanIntervalStep) => {
     if (!editingIntervalId) {
       return;
     }
@@ -422,34 +448,117 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
       <NestableScrollContainer className="flex-1 p-4" showsVerticalScrollIndicator={false}>
         <View className="gap-4 pb-10">
           <ActivityPlanBasicsSection
-            activityCategory={form.activityCategory}
+            activityCategory={selectedActivitySegment?.category ?? form.activityCategory}
             activityCategoryError={validation.errors.activity_category}
             form={basicsForm}
-            onChangeActivityCategory={(category) =>
-              setActivityCategory(category as ActivityCategory)
-            }
+            onChangeActivityCategory={(category) => {
+              const nextCategory = category as ActivityCategory;
+              setActivityCategory(nextCategory);
+              if (selectedActivitySegment) {
+                updateSegment(selectedActivitySegment.id, {
+                  ...selectedActivitySegment,
+                  category: nextCategory,
+                });
+              }
+            }}
           />
 
-          {wahooReadiness.status !== "ready" ? (
-            <View className="rounded-lg border border-border bg-muted/30 p-3">
-              <Text className="text-sm font-semibold text-foreground">Wahoo preflight</Text>
-              <Text className="mt-1 text-xs text-muted-foreground">
-                {wahooReadiness.issues[0]?.message ?? "This plan is not ready for Wahoo sync."}
-              </Text>
+          <View className="gap-3 rounded-lg border border-border bg-card p-3">
+            <Text className="text-base font-semibold text-foreground">Ordered segments</Text>
+            {form.structure.segments.map((segment, index) => (
+              <Pressable
+                key={segment.id}
+                onPress={() => segment.role === "activity" && setSelectedSegmentId(segment.id)}
+                className={`rounded-lg border p-3 ${selectedActivitySegment?.id === segment.id ? "border-primary bg-primary/5" : "border-border"}`}
+              >
+                <View className="flex-row items-center justify-between gap-2">
+                  <View className="flex-1">
+                    <Text className="font-medium text-foreground">{segment.name}</Text>
+                    <Text className="text-xs text-muted-foreground">
+                      {segment.role === "activity"
+                        ? `${segment.category} · ${segment.intervals.length} interval${segment.intervals.length === 1 ? "" : "s"}`
+                        : `${segment.role} · ${Math.round(segment.duration.seconds / 60)} min`}
+                    </Text>
+                  </View>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onPress={() => moveSegment(index, -1)}
+                    disabled={index === 0}
+                  >
+                    <Text>↑</Text>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onPress={() => moveSegment(index, 1)}
+                    disabled={index === form.structure.segments.length - 1}
+                  >
+                    <Text>↓</Text>
+                  </Button>
+                  <Button variant="ghost" size="sm" onPress={() => removeSegment(segment.id)}>
+                    <Text>Remove</Text>
+                  </Button>
+                </View>
+                {segment.role !== "activity" ? (
+                  <View className="mt-2 flex-row gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onPress={() =>
+                        updateSegment(segment.id, {
+                          ...segment,
+                          duration: {
+                            type: "time",
+                            seconds: Math.max(1, segment.duration.seconds - 60),
+                          },
+                        })
+                      }
+                    >
+                      <Text>-1 min</Text>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onPress={() =>
+                        updateSegment(segment.id, {
+                          ...segment,
+                          duration: { type: "time", seconds: segment.duration.seconds + 60 },
+                        })
+                      }
+                    >
+                      <Text>+1 min</Text>
+                    </Button>
+                  </View>
+                ) : null}
+              </Pressable>
+            ))}
+            <View className="flex-row flex-wrap gap-2">
+              <Button variant="outline" size="sm" onPress={() => handleAddSegment("activity")}>
+                <Text>Add activity</Text>
+              </Button>
+              <Button variant="outline" size="sm" onPress={() => handleAddSegment("transition")}>
+                <Text>Add transition</Text>
+              </Button>
+              <Button variant="outline" size="sm" onPress={() => handleAddSegment("rest")}>
+                <Text>Add rest</Text>
+              </Button>
             </View>
-          ) : null}
+          </View>
 
-          <StructureBuilderCard
-            structure={form.structure}
-            intervals={intervals}
-            structureStats={structureStats}
-            validationErrors={validation.errors}
-            selectedIntervalId={selectedIntervalId}
-            showChartCoachmark={showChartCoachmark}
-            onAddInterval={handleAddInterval}
-            onDismissChartCoachmark={dismissChartCoachmark}
-            onTimelineIntervalPress={openIntervalSheet}
-          />
+          {selectedActivitySegment ? (
+            <StructureBuilderCard
+              structure={form.structure}
+              intervals={intervals}
+              structureStats={structureStats}
+              validationErrors={validation.errors}
+              selectedIntervalId={selectedIntervalId}
+              showChartCoachmark={showChartCoachmark}
+              onAddInterval={handleAddInterval}
+              onDismissChartCoachmark={dismissChartCoachmark}
+              onTimelineIntervalPress={openIntervalSheet}
+            />
+          ) : null}
         </View>
       </NestableScrollContainer>
 
@@ -457,8 +566,18 @@ export function ActivityPlanComposerScreen(props: ActivityPlanComposerModeContra
         open={editDialogOpen}
         onOpenChange={setEditDialogOpen}
         step={stepBeingEdited}
-        onSave={handleSaveStep}
-        activityType={form.activityCategory}
+        onSave={(step) =>
+          handleSaveStep({
+            ...step,
+            targets: step.targets ?? [
+              getActivityPlanDefaultTarget({
+                activityCategory: selectedActivitySegment?.category ?? form.activityCategory,
+                anchors: targetAnchors,
+              }),
+            ],
+          })
+        }
+        activityType={selectedActivitySegment?.category ?? form.activityCategory}
         targetAnchors={targetAnchors}
       />
 

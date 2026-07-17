@@ -1,11 +1,11 @@
 import type { z } from "zod";
+import type { ActivityPlanStructureV3 } from "../activity-plan";
 import {
   type ActivityTargetCategory,
   type ActivityTargetType,
   getPermissibleTargetTypes,
   isTargetTypePermittedForActivity,
 } from "../targets";
-import type { ActivityPlanStructureV2 } from "./activity_plan_v2";
 import { canonicalSportValues } from "./sport";
 
 export {
@@ -31,91 +31,43 @@ export type ActivityTargetCompatibilityIssue = {
 };
 
 export function getActivityTargetCompatibilityIssues(input: {
-  activityCategory: ActivityTargetCategory;
   pathPrefix?: (string | number)[];
-  structure: ActivityPlanStructureV2;
+  structure: ActivityPlanStructureV3;
 }): ActivityTargetCompatibilityIssue[] {
   const issues: ActivityTargetCompatibilityIssue[] = [];
   const pathPrefix = input.pathPrefix ?? [];
 
-  input.structure.intervals.forEach((interval, intervalIndex) => {
-    interval.steps.forEach((step, stepIndex) => {
-      step.targets?.forEach((target, targetIndex) => {
-        if (
-          isTargetTypePermittedForActivity({
-            activityCategory: input.activityCategory,
+  input.structure.segments.forEach((segment, segmentIndex) => {
+    if (segment.role !== "activity") return;
+    segment.intervals.forEach((interval, intervalIndex) => {
+      interval.steps.forEach((step, stepIndex) => {
+        step.targets.forEach((target, targetIndex) => {
+          if (
+            isTargetTypePermittedForActivity({
+              activityCategory: segment.category,
+              targetType: target.type,
+            })
+          ) {
+            return;
+          }
+
+          issues.push({
+            activityCategory: segment.category,
             targetType: target.type,
-          })
-        ) {
-          return;
-        }
-
-        issues.push({
-          activityCategory: input.activityCategory,
-          targetType: target.type,
-          path: [
-            ...pathPrefix,
-            "intervals",
-            intervalIndex,
-            "steps",
-            stepIndex,
-            "targets",
-            targetIndex,
-            "type",
-          ],
-          message: `Target type ${target.type} is not permitted for ${input.activityCategory} activity plans. Allowed targets: ${getPermissibleTargetTypes(input.activityCategory).join(", ")}.`,
-        });
-      });
-    });
-  });
-
-  return issues;
-}
-
-export function getLegacyActivityTargetCompatibilityIssues(input: {
-  activityCategory: ActivityTargetCategory;
-  pathPrefix?: (string | number)[];
-  structure: {
-    steps?: Array<{
-      steps?: Array<{ targets?: Array<{ type: ActivityTargetType }> }>;
-      targets?: Array<{ type: ActivityTargetType }>;
-      type?: string;
-    }>;
-  };
-}): ActivityTargetCompatibilityIssue[] {
-  const issues: ActivityTargetCompatibilityIssue[] = [];
-  const pathPrefix = input.pathPrefix ?? [];
-
-  input.structure.steps?.forEach((item, itemIndex) => {
-    const steps = item.type === "repetition" ? (item.steps ?? []) : [item];
-    steps.forEach((step, stepIndex) => {
-      step.targets?.forEach((target, targetIndex) => {
-        if (
-          isTargetTypePermittedForActivity({
-            activityCategory: input.activityCategory,
-            targetType: target.type,
-          })
-        ) {
-          return;
-        }
-
-        issues.push({
-          activityCategory: input.activityCategory,
-          targetType: target.type,
-          path:
-            item.type === "repetition"
-              ? [
-                  ...pathPrefix,
-                  "steps",
-                  itemIndex,
-                  "steps",
-                  stepIndex,
-                  "targets",
-                  targetIndex,
-                  "type",
-                ]
-              : [...pathPrefix, "steps", itemIndex, "targets", targetIndex, "type"],
-          message: `Target type ${target.type} is not permitted for ${input.activityCategory} activity plans. Allowed targets: ${getPermissibleTargetTypes(input.activityCategory).join(", ")}.`,
+            path: [
+              ...pathPrefix,
+              "segments",
+              segmentIndex,
+              "intervals",
+              intervalIndex,
+              "steps",
+              stepIndex,
+              "targets",
+              targetIndex,
+              "type",
+            ],
+            message: `Target type ${target.type} is not permitted for ${segment.category} activity plans. Allowed targets: ${getPermissibleTargetTypes(segment.category).join(", ")}.`,
+          });
         });
       });
     });
@@ -125,10 +77,9 @@ export function getLegacyActivityTargetCompatibilityIssues(input: {
 }
 
 export function addActivityTargetCompatibilityIssuesToZodContext(input: {
-  activityCategory: ActivityTargetCategory;
   ctx: z.RefinementCtx;
   pathPrefix?: (string | number)[];
-  structure: ActivityPlanStructureV2;
+  structure: ActivityPlanStructureV3;
 }): void {
   getActivityTargetCompatibilityIssues(input).forEach((issue) => {
     input.ctx.addIssue({

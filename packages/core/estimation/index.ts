@@ -51,6 +51,15 @@ const formatEstimationError = (error: unknown) => {
   return "Unknown estimation error";
 };
 
+export class InvalidActivityPlanStructureError extends Error {
+  override readonly cause: unknown;
+
+  constructor(cause: unknown) {
+    super(`Invalid activity-plan V3 structure: ${formatEstimationError(cause)}`);
+    this.cause = cause;
+  }
+}
+
 const withWarnings = (result: EstimationResult, warnings: string[]): EstimationResult => {
   if (warnings.length === 0) return result;
 
@@ -83,13 +92,14 @@ export function estimateActivity(
   const fallbackWarnings: string[] = [];
 
   // Strategy 1: Structure-based (preferred)
-  if (context.structure?.intervals && context.structure.intervals.length > 0) {
+  if (context.structure) {
     try {
       return estimateFromStructure(context);
     } catch (error) {
-      const message = `Structure-based estimation failed, falling back to route/template: ${formatEstimationError(error)}`;
-      fallbackWarnings.push(message);
+      const invalidStructureError = new InvalidActivityPlanStructureError(error);
+      const message = invalidStructureError.message;
       onWarning?.({ error, message });
+      throw invalidStructureError;
     }
   }
 
@@ -131,7 +141,7 @@ export function estimateActivityComplete(
 
   // Optionally predict fatigue impact
   let fatigue: FatiguePrediction | undefined;
-  if (context.scheduledDate && context.fitnessState) {
+  if (context.scheduledDate && context.fitnessState && estimation.tss !== null) {
     try {
       fatigue = predictFatigue(
         estimation.tss,
@@ -281,8 +291,9 @@ export function estimateWeeklyLoadComplete(
  * @param estimation - Estimation result
  * @returns TSS range [min, max]
  */
-export function getTSSRange(estimation: EstimationResult): [number, number] {
+export function getTSSRange(estimation: EstimationResult): [number, number] | null {
   const { tss, confidenceScore } = estimation;
+  if (tss === null) return null;
 
   // Higher confidence = narrower range
   // Low confidence (50): ±20%

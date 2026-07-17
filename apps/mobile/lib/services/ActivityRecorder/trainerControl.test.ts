@@ -150,4 +150,23 @@ describe("TrainerControl QA regressions", () => {
       { coalesceKey: "route_grade", source: "periodic_refinement" },
     );
   });
+
+  it("explicitly resets prior ERG load when entering a rest or transition boundary", async () => {
+    const sensorsManager = {
+      getControllableTrainer: vi.fn(() => createFtmsCandidate({ isControllable: true })),
+      getConnectedSensors: vi.fn(() => []),
+      getLastTrainerCommandStatus: vi.fn(() => null),
+      resetTrainerControl: vi.fn(async () => true),
+    } as never;
+    const control = new TrainerControl({
+      sensorsManager,
+      getCurrentReadings: () => ({}) as never,
+      getSessionOverrideState: () => ({ trainerMode: "auto" }) as never,
+      getSessionSnapshot: () => null,
+      onError: vi.fn(),
+    });
+
+    await expect(control.neutralizeForBoundary()).resolves.toBe(true);
+    expect((sensorsManager as any).resetTrainerControl).toHaveBeenCalledTimes(1);
+  });
 });

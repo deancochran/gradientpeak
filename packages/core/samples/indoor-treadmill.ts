@@ -1,5 +1,14 @@
-import type { RecordingServiceActivityPlan } from "../schemas";
-import { createPlan, Duration, Target } from "../schemas/activity_payload";
+import { Duration, Target } from "../schemas/activity_payload";
+import { createSystemActivityPlanBuilderFactory } from "./activity-plan-builder";
+import type { SystemActivityPlanTemplate as RecordingServiceActivityPlan } from "./types";
+
+const createPlan = createSystemActivityPlanBuilderFactory("run", [
+  "Progressive Warm-up:1:Progressive Warm-up|Interval 2:4:Threshold Interval:Active Recovery|Cool-down:1:Cool-down",
+  "Warm-up Jog:1:Warm-up Jog|Interval 2:3:Long Threshold Interval:Recovery Jog|Short Threshold Push:1:Short Threshold Push|Cool-down:1:Cool-down",
+  "Progressive Warm-up:1:Progressive Warm-up|Interval 2:6:Speed Interval:Recovery Jog|Cool-down:1:Cool-down",
+  "Easy Recovery Run:1:Easy Recovery Run",
+  "Flat Warm-up:1:Flat Warm-up|Interval 2:8:Hill Climb:Recovery Descent|Cool-down:1:Cool-down",
+]);
 
 /**
  * Threshold Run - Indoor Treadmill
@@ -8,7 +17,7 @@ import { createPlan, Duration, Target } from "../schemas/activity_payload";
  */
 export const THRESHOLD_RUN_WORKOUT_1: RecordingServiceActivityPlan = {
   id: "8e1f2a3b-4c5d-6e7f-8a9b-0c1d2e3f4a5b",
-  version: "2.0",
+  version: "3.0",
   name: "Threshold Run Development 1",
   description: "Indoor treadmill session focusing on threshold heart rate intervals",
   activity_category: "run",
@@ -53,7 +62,7 @@ export const THRESHOLD_RUN_WORKOUT_1: RecordingServiceActivityPlan = {
  */
 export const THRESHOLD_RUN_WORKOUT_2: RecordingServiceActivityPlan = {
   id: "9f2a3b4c-5d6e-7f8a-9b0c-1d2e3f4a5b6c",
-  version: "2.0",
+  version: "3.0",
   name: "Threshold Run Development 2",
   description: "Longer indoor treadmill threshold session with progressive intervals",
   activity_category: "run",
@@ -104,7 +113,7 @@ export const THRESHOLD_RUN_WORKOUT_2: RecordingServiceActivityPlan = {
  */
 export const SPEED_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
   id: "0a3b4c5d-6e7f-8a9b-0c1d-2e3f4a5b6c7d",
-  version: "2.0",
+  version: "3.0",
   name: "Speed Intervals",
   description: "High-intensity speed intervals for VO2 max development",
   activity_category: "run",
@@ -149,7 +158,7 @@ export const SPEED_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
  */
 export const EASY_RECOVERY_RUN: RecordingServiceActivityPlan = {
   id: "1b4c5d6e-7f8a-9b0c-1d2e-3f4a5b6c7d8e",
-  version: "2.0",
+  version: "3.0",
   name: "Easy Recovery Run",
   description: "Low-intensity recovery run for active recovery",
   activity_category: "run",
@@ -171,7 +180,7 @@ export const EASY_RECOVERY_RUN: RecordingServiceActivityPlan = {
  */
 export const HILL_INTERVALS_WORKOUT: RecordingServiceActivityPlan = {
   id: "2c5d6e7f-8a9b-0c1d-2e3f-4a5b6c7d8e9f",
-  version: "2.0",
+  version: "3.0",
   name: "Hill Intervals",
   description: "Incline-based intervals for strength and power development",
   activity_category: "run",

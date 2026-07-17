@@ -3,24 +3,31 @@
  * Orchestrates syncing planned activities to Wahoo
  */
 
-import { type ActivityPlanStructureV2, activityPlanStructureSchemaV2 } from "@repo/core";
+import {
+  type ActivityPlanStructureV3,
+  activityPlanStructureSchemaV3,
+  compileActivityPlanV3,
+} from "@repo/core";
 import {
   type ActivityEffortThresholdEvidence,
   resolveCanonicalThresholds,
   type ThresholdMetricSource,
 } from "@repo/core/athlete-inputs";
 import type { PublicActivityCategory } from "@repo/db";
+import { hashPlannedWorkoutPayload } from "../../provider-sync/planned-workouts/planned-workout-hash";
 import {
   isWahooSupported,
   supportsRoutes,
   toActivityType,
   toWahooWorkoutTypeId,
+  type WahooActivityType,
 } from "./activity-type-utils";
 import { createWahooClient, refreshWahooAccessToken } from "./client";
 import { resolveWahooCredentials, WahooReconnectRequiredError } from "./credentials";
 import {
   calculateWorkoutDuration,
   convertToWahooPlan,
+  getWahooProjectionSnapshot,
   validateWahooCompatibility,
 } from "./plan-converter";
 import {
@@ -38,6 +45,7 @@ const FTP_FRESHNESS_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
 type WahooEventResourceProviderMetadata = {
   wahoo?: {
     planId?: number;
+    projectionHash?: string;
     routeId?: number;
     sourcePlanId?: string;
     sourceRouteId?: string | null;
@@ -191,25 +199,7 @@ function normalizeActivityPlanRelation(
   return activityPlan;
 }
 
-function isRouteOnlyEventPlan(activityPlan: WahooActivityPlan): boolean {
-  if (
-    !activityPlan.routeId ||
-    !activityPlan.structure ||
-    typeof activityPlan.structure !== "object"
-  ) {
-    return false;
-  }
-
-  const structure = activityPlan.structure as Record<string, unknown>;
-  return (
-    Object.keys(structure).length === 2 &&
-    structure.version === 2 &&
-    Array.isArray(structure.intervals) &&
-    structure.intervals.length === 0
-  );
-}
-
-function resolveSyncMetrics(
+export function resolveWahooSyncMetrics(
   profile: WahooSyncProfileMetrics | null,
   activityCategory: WahooActivityPlan["activity_category"],
 ) {
@@ -245,6 +235,7 @@ export type SyncFailureCategory = "eligibility" | "integration" | "provider";
 export type SyncFailureCode =
   | "missing_metric"
   | "unsupported_target"
+  | "unsupported_segment"
   | "unsupported_sport"
   | "invalid_plan"
   | "missing_plan"
@@ -259,6 +250,7 @@ export type SyncResult =
       action: SyncAction;
       workoutId?: string;
       warnings?: string[];
+      terminalOutcome?: "skipped" | "superseded";
     }
   | {
       success: false;
@@ -355,7 +347,11 @@ export class WahooSyncService {
    * Sync an event to Wahoo
    * Handles both new syncs and updates to existing syncs
    */
-  async syncEvent(eventId: string, profileId: string): Promise<SyncResult> {
+  async syncEvent(
+    eventId: string,
+    profileId: string,
+    execution?: { expectedProjectionHash?: string },
+  ): Promise<SyncResult> {
     try {
       // 1. Fetch planned-activity event with all related data
       const planned = await this.repository.getPlannedEventForSync({
@@ -385,23 +381,18 @@ export class WahooSyncService {
         });
       }
 
-      const routeOnly = isRouteOnlyEventPlan(activityPlan);
-      let structure: ActivityPlanStructureV2;
-      if (routeOnly) {
-        // Route-only plans intentionally have no structured intervals.
-        structure = activityPlan.structure as ActivityPlanStructureV2;
-      } else {
-        const parsedStructure = activityPlanStructureSchemaV2.safeParse(activityPlan.structure);
-        if (!parsedStructure.success) {
-          return createSyncFailure({
-            category: "eligibility",
-            code: "invalid_plan",
-            error: "Activity plan structure is invalid.",
-            retryable: false,
-          });
-        }
-        structure = parsedStructure.data;
+      const parsedStructure = activityPlanStructureSchemaV3.safeParse(activityPlan.structure);
+      if (!parsedStructure.success) {
+        return createSyncFailure({
+          category: "eligibility",
+          code: "invalid_plan",
+          error: "A valid Activity Plan V3 structure is required for Wahoo sync.",
+          retryable: false,
+        });
       }
+      const structure = parsedStructure.data;
+      const compiled = compileActivityPlanV3(structure);
+      const routeOnly = false;
 
       const normalizedPlanned: WahooPlannedEvent = {
         id: planned.id,
@@ -410,9 +401,9 @@ export class WahooSyncService {
       };
 
       // 2. Fetch user's profile for FTP and threshold HR
-      const profile = resolveSyncMetrics(
+      const profile = resolveWahooSyncMetrics(
         await this.repository.getProfileSyncMetrics(profileId),
-        activityPlan.activity_category,
+        compiled.primaryCategory,
       );
 
       // 3. Fetch Wahoo integration
@@ -428,7 +419,7 @@ export class WahooSyncService {
       }
 
       // 4. Convert activity category to activity type
-      const activityType = toActivityType(activityPlan.activity_category);
+      const activityType = toActivityType(compiled.primaryCategory);
 
       if (!isWahooSupported(activityType)) {
         return createSyncFailure({
@@ -438,6 +429,51 @@ export class WahooSyncService {
           retryable: false,
         });
       }
+
+      // Reject unsupported compiled semantics before credentials refresh, route creation,
+      // plan deletion, or any other provider-side mutation.
+      const validation = validateWahooCompatibility(structure, {
+        activityType,
+        name: activityPlan.name,
+        ftp: profile?.ftp || undefined,
+        max_hr: profile?.maxHr || undefined,
+        threshold_hr: profile?.thresholdHr || undefined,
+      });
+      if (!validation.compatible) {
+        const issue = validation.issues[0];
+        return createSyncFailure({
+          category: "eligibility",
+          code: issue?.code ?? "invalid_plan",
+          error: issue?.message ?? "Workout structure is not compatible with Wahoo",
+          retryable: false,
+          warnings: validation.warnings,
+        });
+      }
+      const projectionHash = hashPlannedWorkoutPayload({
+        projectionSnapshot: getWahooProjectionSnapshot(structure, {
+          activityType,
+          description: activityPlan.description ?? undefined,
+          hasRoute: Boolean(activityPlan.routeId),
+          name: activityPlan.name,
+          ftp: profile?.ftp || undefined,
+          max_hr: profile?.maxHr || undefined,
+          threshold_hr: profile?.thresholdHr || undefined,
+        }),
+        sourcePlanId: activityPlan.id,
+        sourceRouteId: activityPlan.routeId,
+      });
+      if (
+        execution?.expectedProjectionHash &&
+        execution.expectedProjectionHash !== projectionHash
+      ) {
+        return {
+          success: true,
+          action: "no_change",
+          terminalOutcome: "superseded",
+          warnings: ["Queued Wahoo projection was superseded before execution."],
+        };
+      }
+      const syncWarnings = [...validation.warnings];
 
       // 4b. Fetch route data if the event links a route.
       let routeData: RouteFileData | null = null;
@@ -479,7 +515,7 @@ export class WahooSyncService {
           }
         }
 
-        if (!routeData || !gpxContent || !supportsRoutes(activityType as any)) {
+        if (!routeData || !gpxContent || !supportsRoutes(activityType)) {
           return createSyncFailure({
             category: "eligibility",
             code: "invalid_plan",
@@ -530,28 +566,7 @@ export class WahooSyncService {
         refreshToken: freshIntegration.refreshToken || undefined,
       });
 
-      // 6. Validate compatibility
-      const validation = routeOnly
-        ? { compatible: true, issues: [], warnings: [] }
-        : validateWahooCompatibility(structure, {
-            activityType: activityType as any,
-            name: activityPlan.name,
-            ftp: profile?.ftp || undefined,
-            max_hr: profile?.maxHr || undefined,
-            threshold_hr: profile?.thresholdHr || undefined,
-          });
-
-      if (!validation.compatible) {
-        const issue = validation.issues[0];
-        return createSyncFailure({
-          category: "eligibility",
-          code: issue?.code ?? "invalid_plan",
-          error: issue?.message ?? "Workout structure is not compatible with Wahoo",
-          retryable: false,
-          warnings: validation.warnings,
-        });
-      }
-      const syncWarnings = [...validation.warnings, ...routeWarnings];
+      syncWarnings.push(...routeWarnings);
 
       // 7. Determine sync action
       if (!existingSync) {
@@ -568,6 +583,7 @@ export class WahooSyncService {
           routeData,
           gpxContent,
           routeOnly,
+          projectionHash,
         );
       } else {
         // Update existing sync
@@ -583,6 +599,7 @@ export class WahooSyncService {
           routeData,
           gpxContent,
           routeOnly,
+          projectionHash,
         );
       }
     } catch (error) {
@@ -609,16 +626,17 @@ export class WahooSyncService {
    */
   private async createNewSync(
     planned: WahooPlannedEvent,
-    structure: ActivityPlanStructureV2,
+    structure: ActivityPlanStructureV3,
     profile: any,
     integration: { id: string },
     wahooClient: any,
     profileId: string,
-    activityType: string,
+    activityType: WahooActivityType,
     warnings?: string[],
     routeData?: RouteFileData | null,
     gpxContent?: string | null,
     routeOnly?: boolean,
+    projectionHash?: string,
   ): Promise<SyncResult> {
     // Sync route first if present
     const syncedRoute = await this.syncRouteForWorkout({
@@ -650,7 +668,7 @@ export class WahooSyncService {
     let wahooPlan: ReturnType<typeof convertToWahooPlan>;
     try {
       wahooPlan = convertToWahooPlan(structure, {
-        activityType: activityType as any,
+        activityType,
         hasRoute: Boolean(wahooRouteId),
         name: planned.activity_plan.name,
         description: planned.activity_plan.description ?? undefined,
@@ -671,13 +689,13 @@ export class WahooSyncService {
       structure: wahooPlan,
       name: planned.activity_plan.name,
       description: planned.activity_plan.description,
-      activityType: activityType as any,
+      activityType,
       externalId: planned.activity_plan.id,
     });
     console.log(`[Wahoo Sync] Plan created with ID: ${plan.id}`);
 
     // Get workout type ID and duration
-    const workoutTypeId = toWahooWorkoutTypeId(activityType as any, {
+    const workoutTypeId = toWahooWorkoutTypeId(activityType, {
       hasRoute: Boolean(wahooRouteId),
     });
     if (workoutTypeId === null) {
@@ -742,6 +760,7 @@ export class WahooSyncService {
       providerMetadata: {
         wahoo: {
           planId: plan.id,
+          projectionHash,
           routeId: wahooRouteId,
           sourcePlanId: planned.activity_plan.id,
           ...(wahooRouteId !== undefined ? { sourceRouteId: planned.activity_plan.routeId } : {}),
@@ -760,7 +779,7 @@ export class WahooSyncService {
   }
 
   private async syncRouteForWorkout(input: {
-    activityType: string;
+    activityType: WahooActivityType;
     gpxContent?: string | null;
     requireRoute: boolean;
     routeData?: RouteFileData | null;
@@ -768,7 +787,7 @@ export class WahooSyncService {
   }): Promise<
     { success: true; route?: SyncedWahooRoute } | { success: false; result: SyncResult }
   > {
-    if (!input.routeData || !input.gpxContent || !supportsRoutes(input.activityType as any)) {
+    if (!input.routeData || !input.gpxContent || !supportsRoutes(input.activityType)) {
       if (!input.requireRoute) return { success: true };
       return {
         success: false,
@@ -828,7 +847,7 @@ export class WahooSyncService {
   }
 
   private async createRouteOnlySync(input: {
-    activityType: string;
+    activityType: WahooActivityType;
     integration: { id: string };
     planned: WahooPlannedEvent;
     profileId: string;
@@ -845,7 +864,7 @@ export class WahooSyncService {
       });
     }
 
-    const workoutTypeId = toWahooWorkoutTypeId(input.activityType as any, {
+    const workoutTypeId = toWahooWorkoutTypeId(input.activityType, {
       hasRoute: true,
     });
     if (workoutTypeId === null) {
@@ -905,15 +924,16 @@ export class WahooSyncService {
       providerMetadata?: WahooEventResourceProviderMetadata | null;
       updatedAt: string | null;
     },
-    structure: ActivityPlanStructureV2,
+    structure: ActivityPlanStructureV3,
     profile: any,
     wahooClient: any,
     _profileId: string,
-    activityType: string,
+    activityType: WahooActivityType,
     warnings?: string[],
     routeData?: RouteFileData | null,
     gpxContent?: string | null,
     routeOnly?: boolean,
+    projectionHash?: string,
   ): Promise<SyncResult> {
     const activityPlanUpdatedAt = new Date(planned.activity_plan.updated_at).getTime();
     const syncUpdatedAt = new Date(existingSync.updatedAt ?? 0).getTime();
@@ -921,8 +941,12 @@ export class WahooSyncService {
     const sourcePlanChanged = providerMetadata?.sourcePlanId !== planned.activity_plan.id;
     const sourceRouteChanged =
       (providerMetadata?.sourceRouteId ?? null) !== planned.activity_plan.routeId;
+    const projectionChanged = providerMetadata?.projectionHash !== projectionHash;
     const requiresRecreation =
-      activityPlanUpdatedAt > syncUpdatedAt || sourcePlanChanged || sourceRouteChanged;
+      activityPlanUpdatedAt > syncUpdatedAt ||
+      sourcePlanChanged ||
+      sourceRouteChanged ||
+      projectionChanged;
 
     if (!requiresRecreation) {
       await wahooClient.updateWorkout(existingSync.externalId, {
@@ -956,7 +980,7 @@ export class WahooSyncService {
     const wahooRouteId = syncedRoute.route?.routeId;
     warnings = [...(warnings || []), ...(syncedRoute.route?.warnings ?? [])];
 
-    const workoutTypeId = toWahooWorkoutTypeId(activityType as any, {
+    const workoutTypeId = toWahooWorkoutTypeId(activityType, {
       hasRoute: Boolean(wahooRouteId),
     });
     if (workoutTypeId === null) {
@@ -975,7 +999,7 @@ export class WahooSyncService {
       let wahooPlan: ReturnType<typeof convertToWahooPlan>;
       try {
         wahooPlan = convertToWahooPlan(structure, {
-          activityType: activityType as any,
+          activityType,
           hasRoute: Boolean(wahooRouteId),
           name: planned.activity_plan.name,
           description: planned.activity_plan.description ?? undefined,
@@ -998,7 +1022,7 @@ export class WahooSyncService {
         structure: wahooPlan,
         name: planned.activity_plan.name,
         description: planned.activity_plan.description ?? undefined,
-        activityType: activityType as any,
+        activityType,
         externalId: planned.activity_plan.id,
       });
       planId = plan.id;
@@ -1033,6 +1057,7 @@ export class WahooSyncService {
       providerMetadata: {
         wahoo: {
           planId,
+          projectionHash,
           routeId: wahooRouteId,
           sourcePlanId: planned.activity_plan.id,
           ...(wahooRouteId !== undefined ? { sourceRouteId: planned.activity_plan.routeId } : {}),

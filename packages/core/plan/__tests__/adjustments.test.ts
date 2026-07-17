@@ -51,15 +51,27 @@ describe("recording validation", () => {
       {
         activity_category: "bike",
         structure: {
-          intervals: [
+          version: 3,
+          segments: [
             {
-              repetitions: 1,
-              steps: [
+              role: "activity",
+              id: "60000000-0000-4000-8000-000000000001",
+              name: "Bike",
+              category: "bike",
+              intervals: [
                 {
-                  duration: { seconds: 600, type: "time" },
-                  name: "Threshold",
-                  notes: "",
-                  targets: [{ intensity: 95, type: "%FTP" }],
+                  id: "60000000-0000-4000-8000-000000000002",
+                  name: "Main",
+                  repetitions: 1,
+                  steps: [
+                    {
+                      id: "60000000-0000-4000-8000-000000000003",
+                      duration: { seconds: 600, type: "time" },
+                      name: "Threshold",
+                      notes: "",
+                      targets: [{ intensity: 95, type: "%FTP" }],
+                    },
+                  ],
                 },
               ],
             },

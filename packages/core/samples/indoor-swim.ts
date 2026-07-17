@@ -1,5 +1,15 @@
-import type { RecordingServiceActivityPlan } from "../schemas";
-import { createPlan, Duration, Target } from "../schemas/activity_payload";
+import { Duration, Target } from "../schemas/activity_payload";
+import { createSystemActivityPlanBuilderFactory } from "./activity-plan-builder";
+import type { SystemActivityPlanTemplate as RecordingServiceActivityPlan } from "./types";
+
+const createPlan = createSystemActivityPlanBuilderFactory("swim", [
+  "Easy Warm-up:1:Easy Warm-up|Steady Swim:1:Steady Swim|Easy Cool-down:1:Easy Cool-down",
+  "Progressive Warm-up:1:Progressive Warm-up|Interval 2:8:Sprint:Recovery|Interval 3:6:Longer Sprint:Active Recovery|Cool-down:1:Cool-down",
+  "Warm-up:1:Warm-up|Interval 2:4:Threshold Interval:Recovery|Cool-down:1:Cool-down",
+  "Easy Warm-up:1:Easy Warm-up|Interval 2:3:Freestyle Drills:Build Swimming:Easy Recovery|Mixed Strokes:1:Mixed Strokes|Cool-down:1:Cool-down",
+  "Extended Warm-up:1:Extended Warm-up|Endurance Block 1:1:Endurance Block 1|Easy Recovery:1:Easy Recovery|Endurance Block 2:1:Endurance Block 2|Variable Pace:1:Variable Pace|Cool-down:1:Cool-down",
+  "Easy Warm-up:1:Easy Warm-up|Interval 2:8:Drill/Swim|Interval 3:6:Zone 3:Rest|Interval 4:4:Threshold:Easy|Easy Cool-down:1:Easy Cool-down",
+]);
 
 /**
  * Easy Swim - Indoor Pool
@@ -8,7 +18,7 @@ import { createPlan, Duration, Target } from "../schemas/activity_payload";
  */
 export const EASY_SWIM: RecordingServiceActivityPlan = {
   id: "3f6a7b8c-9d0e-1f2a-3b4c-5d6e7f8a9b0c",
-  version: "2.0",
+  version: "3.0",
   name: "Easy Swim",
   description: "Comfortable continuous swim focusing on technique and aerobic base",
   activity_category: "swim",
@@ -42,7 +52,7 @@ export const EASY_SWIM: RecordingServiceActivityPlan = {
  */
 export const SPRINT_INTERVALS_SWIM: RecordingServiceActivityPlan = {
   id: "4a7b8c9d-0e1f-2a3b-4c5d-6e7f8a9b0c1d",
-  version: "2.0",
+  version: "3.0",
   name: "Sprint Intervals",
   description: "High-intensity sprint intervals for speed development",
   activity_category: "swim",
@@ -104,7 +114,7 @@ export const SPRINT_INTERVALS_SWIM: RecordingServiceActivityPlan = {
  */
 export const THRESHOLD_SWIM: RecordingServiceActivityPlan = {
   id: "5b8c9d0e-1f2a-3b4c-5d6e-7f8a9b0c1d2e",
-  version: "2.0",
+  version: "3.0",
   name: "Threshold Set",
   description: "Sustained threshold efforts for lactate tolerance",
   activity_category: "swim",
@@ -149,7 +159,7 @@ export const THRESHOLD_SWIM: RecordingServiceActivityPlan = {
  */
 export const TECHNIQUE_SWIM: RecordingServiceActivityPlan = {
   id: "6c9d0e1f-2a3b-4c5d-6e7f-8a9b0c1d2e3f",
-  version: "2.0",
+  version: "3.0",
   name: "Technique Focus",
   description: "Technical swimming session focusing on stroke mechanics",
   activity_category: "swim",
@@ -206,7 +216,7 @@ export const TECHNIQUE_SWIM: RecordingServiceActivityPlan = {
  */
 export const ENDURANCE_SWIM: RecordingServiceActivityPlan = {
   id: "7d0e1f2a-3b4c-5d6e-7f8a-9b0c1d2e3f4a",
-  version: "2.0",
+  version: "3.0",
   name: "Endurance Set",
   description: "Long aerobic swim for endurance base building",
   activity_category: "swim",
@@ -257,7 +267,7 @@ export const ENDURANCE_SWIM: RecordingServiceActivityPlan = {
  */
 export const OPTION_1_FAVORITE_SWIM: RecordingServiceActivityPlan = {
   id: "8d5e1b64-9b22-4f74-a5e2-5cf05d85cc50",
-  version: "2.0",
+  version: "3.0",
   name: "Option 1 (My favorite – 4,400 m)",
   description: "A 4,400 m swim with Zone 3 endurance work and alternating threshold efforts.",
   activity_category: "swim",

@@ -7,6 +7,10 @@ import { SYSTEM_TEMPLATES, type SystemTemplate } from "../../samples";
 import type { SystemTrainingPlanTemplate } from "../../samples/training-plans";
 import { materializePlanToEvents } from "../materializePlanToEvents";
 import { aggregateWeeklyPlannedLoad } from "./aggregateWeeklyPlannedLoad";
+import {
+  calculateSystemTemplateDurationSeconds,
+  validateSystemTemplateActivityPlanV3,
+} from "./systemPlanAudit";
 
 export interface MaterializeSystemPlanLoadEstimationContext {
   ftp?: number | null;
@@ -30,7 +34,12 @@ export interface MaterializeSystemPlanLoadInput {
   estimationContext?: MaterializeSystemPlanLoadEstimationContext;
 }
 
-export type MaterializedSystemPlanEstimationSource = "missing" | "structure" | "route" | "template";
+export type MaterializedSystemPlanEstimationSource =
+  | "missing"
+  | "structure"
+  | "structure_partial"
+  | "route"
+  | "template";
 
 export interface MaterializedSystemPlanLoadSession {
   scheduled_date: string;
@@ -42,8 +51,8 @@ export interface MaterializedSystemPlanLoadSession {
   activity_plan_id: string | null;
   resolved_activity_template_id: string | null;
   activity_category: SystemTemplate["activity_category"] | null;
-  estimated_tss: number;
-  estimated_duration_seconds: number;
+  estimated_tss: number | null;
+  estimated_duration_seconds: number | null;
   estimation_source: MaterializedSystemPlanEstimationSource;
   estimation_confidence: "high" | "medium" | "low" | null;
 }
@@ -54,16 +63,16 @@ export interface MaterializeSystemPlanLoadResult {
   sessions_per_week_target: number;
   sessions: MaterializedSystemPlanLoadSession[];
   unresolved_activity_plan_ids: string[];
-  total_estimated_tss: number;
-  total_estimated_duration_seconds: number;
+  total_estimated_tss: number | null;
+  total_estimated_duration_seconds: number | null;
   total_planned_sessions: number;
   total_rest_days: number;
 }
 
 function hasIntervals(template: SystemTemplate): boolean {
-  return Array.isArray(template.structure?.intervals)
-    ? template.structure.intervals.length > 0
-    : false;
+  return template.structure.segments.some(
+    (segment) => segment.role === "activity" && segment.intervals.length > 0,
+  );
 }
 
 function hasRoute(template: SystemTemplate): template is SystemTemplate & {
@@ -88,8 +97,8 @@ function estimateTemplateLoad(
   template: SystemTemplate,
   input: MaterializeSystemPlanLoadInput,
 ): {
-  estimated_tss: number;
-  estimated_duration_seconds: number;
+  estimated_tss: number | null;
+  estimated_duration_seconds: number | null;
   estimation_source: Exclude<MaterializedSystemPlanEstimationSource, "missing">;
   estimation_confidence: "high" | "medium" | "low";
 } {
@@ -104,8 +113,14 @@ function estimateTemplateLoad(
     thresholdPaceSecondsPerKm: input.estimationContext?.thresholdPaceSecondsPerKm,
   };
 
-  const estimation = hasIntervals(template)
-    ? estimateFromStructure(context as Parameters<typeof estimateFromStructure>[0])
+  const structure = hasIntervals(template)
+    ? validateSystemTemplateActivityPlanV3(template)
+    : undefined;
+  const estimation = structure
+    ? estimateFromStructure({
+        ...context,
+        structure,
+      } as Parameters<typeof estimateFromStructure>[0])
     : hasRoute(template)
       ? estimateFromRoute({
           ...context,
@@ -115,12 +130,10 @@ function estimateTemplateLoad(
 
   return {
     estimated_tss: estimation.tss,
-    estimated_duration_seconds: estimation.duration,
-    estimation_source: hasIntervals(template)
-      ? "structure"
-      : hasRoute(template)
-        ? "route"
-        : "template",
+    estimated_duration_seconds: structure
+      ? calculateSystemTemplateDurationSeconds(template)
+      : estimation.duration,
+    estimation_source: structure ? "structure" : hasRoute(template) ? "route" : "template",
     estimation_confidence: estimation.confidence,
   };
 }
@@ -152,8 +165,8 @@ export function materializeSystemPlanLoad(
         ...event,
         resolved_activity_template_id: null,
         activity_category: null,
-        estimated_tss: 0,
-        estimated_duration_seconds: 0,
+        estimated_tss: null,
+        estimated_duration_seconds: null,
         estimation_source: "missing",
         estimation_confidence: null,
       };
@@ -166,8 +179,8 @@ export function materializeSystemPlanLoad(
         ...event,
         resolved_activity_template_id: null,
         activity_category: null,
-        estimated_tss: 0,
-        estimated_duration_seconds: 0,
+        estimated_tss: null,
+        estimated_duration_seconds: null,
         estimation_source: "missing",
         estimation_confidence: null,
       };
@@ -184,6 +197,8 @@ export function materializeSystemPlanLoad(
   });
 
   const aggregatedWeeks = aggregateWeeklyPlannedLoad(sessions);
+  const tssValues = sessions.map((session) => session.estimated_tss);
+  const durationValues = sessions.map((session) => session.estimated_duration_seconds);
 
   return {
     system_plan_id: input.systemPlan.id,
@@ -191,11 +206,12 @@ export function materializeSystemPlanLoad(
     sessions_per_week_target: input.systemPlan.sessions_per_week_target,
     sessions,
     unresolved_activity_plan_ids: Array.from(unresolvedActivityPlanIds).sort(),
-    total_estimated_tss: sessions.reduce((sum, session) => sum + session.estimated_tss, 0),
-    total_estimated_duration_seconds: sessions.reduce(
-      (sum, session) => sum + session.estimated_duration_seconds,
-      0,
-    ),
+    total_estimated_tss: tssValues.includes(null)
+      ? null
+      : tssValues.reduce<number>((sum, value) => sum + (value ?? 0), 0),
+    total_estimated_duration_seconds: durationValues.includes(null)
+      ? null
+      : durationValues.reduce<number>((sum, value) => sum + (value ?? 0), 0),
     total_planned_sessions: sessions.filter((session) => session.event_type === "planned").length,
     total_rest_days: aggregatedWeeks.weeks.reduce((sum, week) => sum + week.rest_day_count, 0),
   };

@@ -14,7 +14,6 @@ import type { TrainingPlanInsert } from "@repo/db";
 import type { z } from "zod";
 import {
   buildConflictCommitError,
-  buildInvalidPayloadCommitError,
   buildNotFoundCommitError,
   buildStalePreviewCommitError,
 } from "../../lib/errors/trainingPlanCommitErrors";
@@ -139,9 +138,6 @@ export async function updateFromCreationConfigUseCase<
   TExpandedPlan extends {
     name: string;
     description?: string;
-    metadata?: Record<string, unknown>;
-    goals: unknown[];
-    blocks: unknown[];
   } & Record<string, unknown>,
   TProjectionChart extends {
     constraint_summary: ProjectionConstraintSummary;
@@ -160,6 +156,7 @@ export async function updateFromCreationConfigUseCase<
       objective_contributions?: unknown;
     };
     no_history?: unknown;
+    daily_load_points?: unknown[];
   },
   TProjectionFeasibility extends {
     state: "feasible" | "aggressive" | "unsafe";
@@ -186,6 +183,7 @@ export async function updateFromCreationConfigUseCase<
     projectionConstraintSummary: ReturnType<TBuildCreationProjectionArtifacts>["projectionChart"]["constraint_summary"];
     projectionFeasibility: TProjectionFeasibility;
     noHistoryMetadata?: ReturnType<TBuildCreationProjectionArtifacts>["projectionChart"]["no_history"];
+    canonicalResolutionFingerprint: string;
   }) => string,
   TDeriveProjectionDrivenConflicts extends (input: {
     expandedPlan: TExpandedPlan;
@@ -206,7 +204,20 @@ export async function updateFromCreationConfigUseCase<
     buildCreationProjectionArtifacts: TBuildCreationProjectionArtifacts;
     buildCreationPreviewSnapshotToken: TBuildCreationPreviewSnapshotToken;
     deriveProjectionDrivenConflicts: TDeriveProjectionDrivenConflicts;
-    parseTrainingPlanStructure: (value: unknown) => void;
+    resolveCanonicalTrainingPlan: (input: {
+      planId: string;
+      projection: TExpandedPlan;
+      dailyLoadPoints: NonNullable<TProjectionChart["daily_load_points"]>;
+    }) => Promise<{
+      fingerprint: string;
+      policy_version: number;
+      resolution_manifest: unknown[];
+      structure: Record<string, unknown>;
+    }>;
+    persistCanonicalTrainingPlanUpdate: (input: {
+      activityPlanIds: string[];
+      values: Parameters<NonNullable<TrainingPlanRepository["updateTrainingPlan"]>>[0];
+    }) => ReturnType<NonNullable<TrainingPlanRepository["updateTrainingPlan"]>>;
   };
 }) {
   const repository = input.repository as TrainingPlanRepository & {
@@ -249,6 +260,11 @@ export async function updateFromCreationConfigUseCase<
       contextSummary: evaluation.contextSummary,
     });
 
+  const canonicalResolution = await input.deps.resolveCanonicalTrainingPlan({
+    planId: existingPlan.id,
+    projection: expandedPlan,
+    dailyLoadPoints: projectionChart.daily_load_points ?? [],
+  });
   const expectedPreviewSnapshotToken = input.deps.buildCreationPreviewSnapshotToken({
     minimalPlan: input.params.minimal_plan,
     finalConfig: evaluation.finalConfig,
@@ -256,6 +272,7 @@ export async function updateFromCreationConfigUseCase<
     projectionConstraintSummary: projectionChart.constraint_summary,
     projectionFeasibility,
     noHistoryMetadata: projectionChart.no_history,
+    canonicalResolutionFingerprint: canonicalResolution.fingerprint,
   });
 
   if (
@@ -290,62 +307,21 @@ export async function updateFromCreationConfigUseCase<
   const calibrationSnapshot = trainingPlanCalibrationConfigSchema.parse(
     evaluation.finalConfig.calibration ?? {},
   );
-  const creationConfigSnapshot = evaluation.finalConfig;
-  const creationFormSnapshot = input.params.minimal_plan;
-
-  const existingStructure =
-    existingPlan.structure &&
-    typeof existingPlan.structure === "object" &&
-    !Array.isArray(existingPlan.structure)
-      ? (existingPlan.structure as Record<string, unknown>)
-      : {};
-  const existingMetadata =
-    existingStructure.metadata &&
-    typeof existingStructure.metadata === "object" &&
-    !Array.isArray(existingStructure.metadata)
-      ? (existingStructure.metadata as Record<string, unknown>)
-      : {};
-
-  const structureWithId = {
-    ...expandedPlan,
-    // Invariant: edit mode must preserve existing training plan identity.
-    id: existingPlan.id,
-    metadata: {
-      ...existingMetadata,
-      creation_config_snapshot: creationConfigSnapshot,
-      creation_form_snapshot: creationFormSnapshot,
-      creation_calibration: {
-        version: calibrationSnapshot.version,
-        snapshot: calibrationSnapshot,
-      },
-    },
-  };
-
-  if (projectionChart.inferred_current_state) {
-    (structureWithId.metadata as Record<string, unknown>).inferred_state_snapshot =
-      projectionChart.inferred_current_state;
-  }
-
-  try {
-    input.deps.parseTrainingPlanStructure(structureWithId);
-  } catch (validationError) {
-    throw buildInvalidPayloadCommitError({
-      operation: "updateFromCreationConfig",
-      reason: "generated_plan_failed_schema_validation",
-      details: {
-        validation_error:
-          validationError instanceof Error ? validationError.message : "unknown_validation_error",
-      },
-    });
-  }
-
   // Invariant: edit-save only updates training_plans; it never writes activities.
-  const updatedPlan = await repository.updateTrainingPlan({
-    id: existingPlan.id,
-    profileId: input.profileId,
-    name: expandedPlan.name,
-    description: expandedPlan.description ?? null,
-    structure: structureWithId as TrainingPlanInsert["structure"] as Record<string, unknown>,
+  const updatedPlan = await input.deps.persistCanonicalTrainingPlanUpdate({
+    activityPlanIds: canonicalResolution.resolution_manifest.map(
+      (entry) => (entry as { selected_activity_plan_id: string }).selected_activity_plan_id,
+    ),
+    values: {
+      id: existingPlan.id,
+      profileId: input.profileId,
+      name: expandedPlan.name,
+      description: expandedPlan.description ?? null,
+      structure: canonicalResolution.structure as TrainingPlanInsert["structure"] as Record<
+        string,
+        unknown
+      >,
+    },
   });
 
   return {
@@ -364,6 +340,11 @@ export async function updateFromCreationConfigUseCase<
       calibration: {
         version: calibrationSnapshot.version,
         snapshot: calibrationSnapshot,
+      },
+      canonical_projection: {
+        fingerprint: canonicalResolution.fingerprint,
+        policy_version: canonicalResolution.policy_version,
+        resolution_manifest: canonicalResolution.resolution_manifest,
       },
     },
   };

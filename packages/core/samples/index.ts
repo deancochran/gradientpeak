@@ -1,29 +1,29 @@
-import type { RecordingServiceActivityPlan } from "../schemas";
-import { SAMPLE_DEV_ACTIVITIES } from "./dev";
 import { SAMPLE_INDOOR_TRAINER_ACTIVITIES } from "./indoor-bike-activity";
 import { SAMPLE_INDOOR_STRENGTH_ACTIVITIES } from "./indoor-strength";
 import { SAMPLE_INDOOR_SWIM_ACTIVITIES } from "./indoor-swim";
 import { SAMPLE_TREADMILL_ACTIVITIES } from "./indoor-treadmill";
+import { SAMPLE_MULTISPORT_ACTIVITIES } from "./multisport";
 import { SAMPLE_OTHER_ACTIVITIES } from "./other-activity";
 import { SAMPLE_OUTDOOR_BIKE_ACTIVITIES } from "./outdoor-bike";
 import { SAMPLE_OUTDOOR_RUN_ACTIVITIES } from "./outdoor-run";
 import { normalizeSystemActivityTemplateId } from "./template-ids";
 import { ALL_SAMPLE_PLANS } from "./training-plans";
+import type { SystemActivityPlanTemplate } from "./types";
 
 // Export individual activity type modules
-export * from "./dev";
 export * from "./indoor-bike-activity";
 export * from "./indoor-strength";
 export * from "./indoor-swim";
 export * from "./indoor-treadmill";
+export * from "./multisport";
 export * from "./other-activity";
 export * from "./outdoor-bike";
 export * from "./outdoor-run";
 export * from "./system-activity-template-taxonomy";
 export * from "./system-routes";
-
 // Export training plan samples
 export * from "./training-plans";
+export * from "./types";
 
 // Combined sample activities array with all activity types
 export const SAMPLE_ACTIVITIES = [
@@ -45,7 +45,7 @@ export const SAMPLE_ACTIVITIES = [
   // Indoor swimming (6 activities)
   ...SAMPLE_INDOOR_SWIM_ACTIVITIES,
 
-  // Other activities (5 activities)
+  // Other activities (7 activities)
   ...SAMPLE_OTHER_ACTIVITIES,
 ];
 
@@ -58,7 +58,6 @@ export const SAMPLE_ACTIVITIES_BY_TYPE = {
   indoor_strength: SAMPLE_INDOOR_STRENGTH_ACTIVITIES,
   indoor_swim: SAMPLE_INDOOR_SWIM_ACTIVITIES,
   other: SAMPLE_OTHER_ACTIVITIES,
-  dev: SAMPLE_DEV_ACTIVITIES,
 } as const;
 
 // Helper function to get sample activities by type (legacy)
@@ -68,7 +67,7 @@ export function getSampleActivitiesByType(activityType: keyof typeof SAMPLE_ACTI
 
 // Helper function to get sample activities by category and GPS intent
 export function getSampleActivitiesByCategory(
-  category: "run" | "bike" | "swim" | "strength" | "other" | "dev",
+  category: "run" | "bike" | "swim" | "strength" | "other",
   gpsRecordingEnabled: boolean,
 ) {
   if (category === "run") {
@@ -86,23 +85,25 @@ export function getSampleActivitiesByCategory(
   if (category === "swim") return SAMPLE_ACTIVITIES_BY_TYPE.indoor_swim;
   if (category === "strength") return SAMPLE_ACTIVITIES_BY_TYPE.indoor_strength;
   if (category === "other") return SAMPLE_ACTIVITIES_BY_TYPE.other;
-  if (category === "dev") return SAMPLE_ACTIVITIES_BY_TYPE.dev;
   return [];
 }
 
-// Total count of sample activities: 37 activities across 7 activity types
+// Total count of sample activities: 39 activities across 7 activity types
 export const TOTAL_SAMPLE_ACTIVITIES = SAMPLE_ACTIVITIES.length;
 
 // ============================================================================
 // SYSTEM TEMPLATE REGISTRY
 // ============================================================================
 
-export type SystemTemplate = RecordingServiceActivityPlan & { id: string };
+export type SystemTemplate = SystemActivityPlanTemplate & { id: string; version: "3.0" };
 
 /**
  * Helper to map raw sample plans to SystemTemplate
  */
-function mapToTemplate(plan: RecordingServiceActivityPlan): SystemTemplate {
+function mapToTemplate(plan: SystemActivityPlanTemplate): SystemTemplate {
+  if (!plan.id) {
+    throw new Error(`System activity template ${plan.name} must declare an explicit stable ID`);
+  }
   const normalizedId = normalizeSystemActivityTemplateId({
     id: plan.id,
     activityCategory: plan.activity_category ?? "other",
@@ -112,6 +113,7 @@ function mapToTemplate(plan: RecordingServiceActivityPlan): SystemTemplate {
   return {
     ...plan,
     id: normalizedId,
+    version: "3.0",
   } as SystemTemplate;
 }
 
@@ -131,6 +133,7 @@ const strengthTemplates = SAMPLE_INDOOR_STRENGTH_ACTIVITIES.map(mapToTemplate);
 const swimTemplates = SAMPLE_INDOOR_SWIM_ACTIVITIES.map(mapToTemplate);
 
 const otherTemplates = SAMPLE_OTHER_ACTIVITIES.map(mapToTemplate);
+const multisportTemplates = SAMPLE_MULTISPORT_ACTIVITIES.map(mapToTemplate);
 
 /**
  * All system templates that should be uploaded to the database.
@@ -144,6 +147,7 @@ export const SYSTEM_TEMPLATES: SystemTemplate[] = [
   ...strengthTemplates,
   ...swimTemplates,
   ...otherTemplates,
+  ...multisportTemplates,
 ];
 
 /**

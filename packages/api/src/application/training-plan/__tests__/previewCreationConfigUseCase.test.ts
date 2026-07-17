@@ -101,6 +101,11 @@ function createDeps(): any {
     })),
     buildCreationPreviewSnapshotToken: vi.fn(() => "preview-token"),
     deriveProjectionDrivenConflicts: vi.fn(() => []),
+    resolveCanonicalTrainingPlan: vi.fn(async () => ({
+      fingerprint: "resolution-fingerprint",
+      policy_version: 1,
+      resolution_manifest: [],
+    })),
     previewSnapshotVersion: "creation_preview_v2",
   };
 }

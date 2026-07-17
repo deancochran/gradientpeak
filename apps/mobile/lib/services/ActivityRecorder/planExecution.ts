@@ -1,191 +1,197 @@
-import type { IntervalStepV2, RecordingServiceActivityPlan } from "@repo/core";
-import { PlanManager } from "./plan";
+import {
+  type CompiledRecordingPlan,
+  compileRecordingPlan,
+  type RecordingActivityPlanV3Input,
+  type RecordingPlanOccurrence,
+} from "./plan";
 
 export interface PlanExecutionProgress {
   movingTime: number;
   duration: number;
   progress: number;
   requiresManualAdvance: boolean;
+  canAutoAdvance: boolean;
+  canManualAdvance: boolean;
+  /** User-facing advance eligibility; aliases canManualAdvance. */
   canAdvance: boolean;
 }
 
 export interface PlanExecutionStepInfo {
   index: number;
   total: number;
-  current: IntervalStepV2 | undefined;
+  current: RecordingPlanOccurrence | undefined;
+  next: RecordingPlanOccurrence | undefined;
   progress: PlanExecutionProgress | null;
   isLast: boolean;
   isFinished: boolean;
 }
 
 export class PlanExecution {
-  private steps: IntervalStepV2[] = [];
-  private stepIndex = 0;
-  private stepStartMovingTime = 0;
+  private compiledPlan: CompiledRecordingPlan | null = null;
+  private occurrenceIndex = 0;
+  private occurrenceStartMovingTime = 0;
+  private occurrenceStartDistanceMeters = 0;
 
-  public loadPlan(plan: RecordingServiceActivityPlan, eventId?: string): void {
-    const planManager = new PlanManager(plan, eventId);
-    this.steps = planManager.getSteps();
-    this.stepIndex = 0;
-    this.stepStartMovingTime = 0;
+  public loadPlan(plan: RecordingActivityPlanV3Input): void {
+    this.compiledPlan = compileRecordingPlan(plan);
+    this.occurrenceIndex = 0;
+    this.occurrenceStartMovingTime = 0;
+    this.occurrenceStartDistanceMeters = 0;
   }
 
   public clear(): void {
-    this.steps = [];
-    this.stepIndex = 0;
-    this.stepStartMovingTime = 0;
+    this.compiledPlan = null;
+    this.occurrenceIndex = 0;
+    this.occurrenceStartMovingTime = 0;
+    this.occurrenceStartDistanceMeters = 0;
   }
 
-  public resetForRecordingStart(currentMovingTime = 0): void {
-    this.stepStartMovingTime = currentMovingTime;
+  public resetForRecordingStart(currentMovingTime = 0, currentDistanceMeters = 0): void {
+    this.occurrenceStartMovingTime = currentMovingTime;
+    this.occurrenceStartDistanceMeters = currentDistanceMeters;
+  }
+
+  public getCompiledPlan(): CompiledRecordingPlan | null {
+    return this.compiledPlan;
   }
 
   public getStepCount(): number {
-    return this.steps.length;
+    return this.compiledPlan?.occurrences.length ?? 0;
   }
 
-  public getCurrentStep(): IntervalStepV2 | undefined {
-    return this.steps[this.stepIndex];
+  public getCurrentStep(): RecordingPlanOccurrence | undefined {
+    return this.compiledPlan?.occurrences[this.occurrenceIndex];
   }
 
-  public getNextStep(): IntervalStepV2 | undefined {
-    return this.steps[this.stepIndex + 1];
+  public getNextStep(): RecordingPlanOccurrence | undefined {
+    return this.compiledPlan?.occurrences[this.occurrenceIndex + 1];
   }
 
-  public getAllSteps(): IntervalStepV2[] {
-    return this.steps;
+  public getAllSteps(): RecordingPlanOccurrence[] {
+    return [...(this.compiledPlan?.occurrences ?? [])];
   }
 
   public getStepIndex(): number {
-    return this.stepIndex;
+    return this.occurrenceIndex;
   }
 
   public isFinished(): boolean {
-    return this.steps.length > 0 && this.stepIndex >= this.steps.length;
+    return this.getStepCount() > 0 && this.occurrenceIndex >= this.getStepCount();
   }
 
   public hasManualAdvanceSteps(): boolean {
-    return this.steps.some((step) => step.duration.type === "untilFinished");
+    return this.getAllSteps().some(
+      (occurrence) =>
+        occurrence.duration.type === "untilFinished" || occurrence.duration.type === "repetitions",
+    );
   }
 
-  public getStepProgress(currentMovingTime: number): PlanExecutionProgress | null {
-    const step = this.getCurrentStep();
-    if (!step) {
-      return null;
-    }
+  public getStepProgress(
+    currentMovingTime: number,
+    currentDistanceMeters = this.occurrenceStartDistanceMeters,
+  ): PlanExecutionProgress | null {
+    const occurrence = this.getCurrentStep();
+    if (!occurrence) return null;
 
-    const movingTime = currentMovingTime - this.stepStartMovingTime;
+    const movingTime = Math.max(0, currentMovingTime - this.occurrenceStartMovingTime);
+    const distance = Math.max(0, currentDistanceMeters - this.occurrenceStartDistanceMeters);
+    const requiresManualAdvance =
+      occurrence.duration.type === "untilFinished" || occurrence.duration.type === "repetitions";
+    const progress =
+      occurrence.duration.type === "time"
+        ? Math.min(1, movingTime / (occurrence.duration.seconds * 1000))
+        : occurrence.duration.type === "distance"
+          ? Math.min(1, distance / occurrence.duration.meters)
+          : 0;
+    const duration = occurrence.duration.type === "time" ? occurrence.duration.seconds * 1000 : 0;
 
-    let durationMs = 0;
-    let requiresManualAdvance = false;
-
-    if (step.duration.type === "untilFinished") {
-      requiresManualAdvance = true;
-    } else if (step.duration.type === "time") {
-      durationMs = step.duration.seconds * 1000;
-    } else if (step.duration.type === "distance") {
-      const estimatedSpeedMPS = 5;
-      durationMs = (step.duration.meters / estimatedSpeedMPS) * 1000;
-    } else if (step.duration.type === "repetitions") {
-      requiresManualAdvance = true;
-    }
-
-    if (requiresManualAdvance) {
-      return {
-        movingTime,
-        duration: 0,
-        progress: 0,
-        requiresManualAdvance: true,
-        canAdvance: this.stepIndex < this.steps.length - 1,
-      };
-    }
-
-    const progress = durationMs > 0 ? Math.min(1, movingTime / durationMs) : 0;
-
+    const canAutoAdvance = !requiresManualAdvance && progress >= 1;
+    const canManualAdvance = requiresManualAdvance || canAutoAdvance;
     return {
       movingTime,
-      duration: durationMs,
+      duration,
       progress,
-      requiresManualAdvance: false,
-      canAdvance: progress >= 1 && this.stepIndex < this.steps.length - 1,
+      requiresManualAdvance,
+      canAutoAdvance,
+      canManualAdvance,
+      canAdvance: canManualAdvance,
     };
   }
 
-  public getStepInfo(currentMovingTime: number): PlanExecutionStepInfo {
+  public getStepInfo(currentMovingTime: number, currentDistanceMeters = 0): PlanExecutionStepInfo {
     const current = this.getCurrentStep();
-
     return {
-      index: this.stepIndex,
-      total: this.steps.length,
+      index: this.occurrenceIndex,
+      total: this.getStepCount(),
       current,
-      progress: current ? this.getStepProgress(currentMovingTime) : null,
-      isLast: this.stepIndex >= this.steps.length - 1,
+      next: this.getNextStep(),
+      progress: current ? this.getStepProgress(currentMovingTime, currentDistanceMeters) : null,
+      isLast: this.occurrenceIndex >= this.getStepCount() - 1,
       isFinished: this.isFinished(),
     };
   }
 
-  public getPlanTimeRemaining(currentMovingTime: number): number {
-    if (this.isFinished() || !this.getCurrentStep()) {
-      return 0;
+  public getPlanTimeRemaining(currentMovingTime: number, currentDistanceMeters = 0): number {
+    if (this.isFinished() || !this.getCurrentStep()) return 0;
+    const currentProgress = this.getStepProgress(currentMovingTime, currentDistanceMeters);
+    if (!currentProgress || currentProgress.requiresManualAdvance) return 0;
+    let remaining = Math.max(0, currentProgress.duration - currentProgress.movingTime);
+    for (const occurrence of this.getAllSteps().slice(this.occurrenceIndex + 1)) {
+      if (occurrence.duration.type !== "time") return 0;
+      remaining += occurrence.duration.seconds * 1000;
     }
-
-    let totalRemainingMs = 0;
-    const currentStepProgress = this.getStepProgress(currentMovingTime);
-    if (currentStepProgress && !currentStepProgress.requiresManualAdvance) {
-      totalRemainingMs += Math.max(
-        0,
-        currentStepProgress.duration - currentStepProgress.movingTime,
-      );
-    }
-
-    for (let i = this.stepIndex + 1; i < this.steps.length; i++) {
-      const step = this.steps[i];
-      if (step.duration.type === "untilFinished" || step.duration.type === "repetitions") {
-        return 0;
-      }
-      if (step.duration.type === "time") {
-        totalRemainingMs += step.duration.seconds * 1000;
-      } else if (step.duration.type === "distance") {
-        const estimatedSpeedMPS = 5;
-        totalRemainingMs += (step.duration.meters / estimatedSpeedMPS) * 1000;
-      }
-    }
-
-    return totalRemainingMs;
+    return remaining;
   }
 
-  public advance(currentMovingTime: number): boolean {
-    const progress = this.getStepProgress(currentMovingTime);
-    if (!progress?.canAdvance) {
-      return false;
+  public advance(
+    currentMovingTime: number,
+    currentDistanceMeters = 0,
+    origin: "automatic" | "manual" = "automatic",
+  ): boolean {
+    const progress = this.getStepProgress(currentMovingTime, currentDistanceMeters);
+    const eligible = origin === "manual" ? progress?.canManualAdvance : progress?.canAutoAdvance;
+    if (!eligible) return false;
+    const nextIndex = this.occurrenceIndex + 1;
+    if (nextIndex === this.getStepCount()) {
+      this.occurrenceIndex = nextIndex;
+      this.occurrenceStartMovingTime = currentMovingTime;
+      this.occurrenceStartDistanceMeters = currentDistanceMeters;
+      return true;
     }
-
-    return this.goToStep(this.stepIndex + 1, currentMovingTime);
+    return this.goToStep(nextIndex, currentMovingTime, currentDistanceMeters);
   }
 
-  public skip(currentMovingTime: number): boolean {
-    if (this.stepIndex >= this.steps.length - 1) {
-      return false;
-    }
-
-    return this.goToStep(this.stepIndex + 1, currentMovingTime);
+  public skip(currentMovingTime: number, currentDistanceMeters = 0): boolean {
+    return this.goToStep(this.occurrenceIndex + 1, currentMovingTime, currentDistanceMeters);
   }
 
-  public previous(currentMovingTime: number): boolean {
-    if (this.stepIndex <= 0) {
-      return false;
-    }
-
-    return this.goToStep(this.stepIndex - 1, currentMovingTime);
+  public previous(currentMovingTime: number, currentDistanceMeters = 0): boolean {
+    return this.goToStep(this.occurrenceIndex - 1, currentMovingTime, currentDistanceMeters);
   }
 
-  public goToStep(index: number, currentMovingTime: number): boolean {
-    if (!Number.isInteger(index) || index < 0 || index >= this.steps.length) {
-      return false;
-    }
-
-    this.stepIndex = index;
-    this.stepStartMovingTime = currentMovingTime;
+  public goToStep(index: number, currentMovingTime: number, currentDistanceMeters = 0): boolean {
+    if (!Number.isInteger(index) || index < 0 || index >= this.getStepCount()) return false;
+    this.occurrenceIndex = index;
+    this.occurrenceStartMovingTime = currentMovingTime;
+    this.occurrenceStartDistanceMeters = currentDistanceMeters;
     return true;
+  }
+
+  public restoreOccurrence(
+    occurrenceId: string | null,
+    movingTime: number,
+    distanceMeters: number,
+  ): void {
+    if (occurrenceId === null && this.getStepCount() > 0) {
+      this.occurrenceIndex = this.getStepCount();
+      return;
+    }
+    const index = this.getAllSteps().findIndex((item) => item.occurrenceId === occurrenceId);
+    if (index < 0) throw new Error("Checkpoint occurrence does not exist in the compiled plan");
+    this.goToStep(index, movingTime, distanceMeters);
+  }
+
+  public completeForFinalization(): void {
+    if (this.getCurrentStep()) this.occurrenceIndex += 1;
   }
 }

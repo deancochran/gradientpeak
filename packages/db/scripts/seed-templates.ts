@@ -1,26 +1,24 @@
 #!/usr/bin/env tsx
 
+import { activityPlanStructureSchemaV3 } from "@repo/core/activity-plan";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-
 import { getTemplatesByCategory, SYSTEM_TEMPLATES, type SystemTemplate } from "../../core/samples";
 import { activityPlans } from "../src/schema/tables";
-import { deepEqual, prepareDbEnv, stripIds } from "./_helpers";
+import { deepEqual, prepareDbEnv } from "./_helpers";
 
 const args = process.argv.slice(2);
 const isDryRun = args.includes("--dry-run");
+const isValidateOnly = args.includes("--validate-only");
 const noDelete = args.includes("--no-delete") || args.includes("--no-clear");
 const categoryArg = args.find((arg) => arg.startsWith("--category="));
 const category = categoryArg
   ? (categoryArg.slice("--category=".length) as SystemTemplate["activity_category"])
   : undefined;
 
-const databaseUrl = prepareDbEnv();
-const pool = new Pool({ connectionString: databaseUrl });
-const db = drizzle({ client: pool, casing: "snake_case" });
-
 const templates = category ? getTemplatesByCategory(category) : SYSTEM_TEMPLATES;
+let pool: Pool | undefined;
 
 type ExistingActivityTemplate = typeof activityPlans.$inferSelect;
 
@@ -31,13 +29,23 @@ function hasChanges(local: SystemTemplate, remote: ExistingActivityTemplate): bo
   if (local.activity_category !== remote.activity_category) return true;
   if ((local.notes ?? null) !== (remote.notes ?? null)) return true;
 
-  const localStructure = stripIds(JSON.parse(JSON.stringify(local.structure)));
-  const remoteStructure = stripIds(remote.structure);
+  const localStructure = JSON.parse(JSON.stringify(local.structure));
+  const remoteStructure = remote.structure;
 
   return !deepEqual(localStructure, remoteStructure);
 }
 
 async function seedTemplates() {
+  for (const template of templates) activityPlanStructureSchemaV3.parse(template.structure);
+  if (isValidateOnly) {
+    console.log(`Validated ${templates.length} strict V3 system activity templates.`);
+    return;
+  }
+
+  const databaseUrl = prepareDbEnv();
+  pool = new Pool({ connectionString: databaseUrl });
+  const db = drizzle({ client: pool, casing: "snake_case" });
+
   console.log("🌱 Starting template sync...");
   console.log(`   Mode: ${isDryRun ? "DRY RUN" : "LIVE"}`);
   console.log(`   Filter: ${category ? `${category} only` : "all"}`);
@@ -185,5 +193,5 @@ try {
   console.error("\n💥 Sync failed:", error);
   process.exitCode = 1;
 } finally {
-  await pool.end();
+  await pool?.end();
 }

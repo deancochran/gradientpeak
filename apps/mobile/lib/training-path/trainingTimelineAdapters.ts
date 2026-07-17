@@ -10,7 +10,7 @@ import {
 
 export { sameTssIdentity } from "./completedTssObservation";
 
-export type DailyTssObservation = {
+export type TrainingTimelineDailyTssObservation = {
   activity_count?: number;
   date: string;
   unavailable_activity_count: number;
@@ -29,7 +29,7 @@ export type DailyTssObservation = {
 
 export type DailyTssObservationsResponse = {
   end_date: string;
-  observations: readonly DailyTssObservation[];
+  observations: readonly TrainingTimelineDailyTssObservation[];
   start_date: string;
 };
 

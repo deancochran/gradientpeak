@@ -50,6 +50,8 @@ const baseContract = {
 
 const mockPlanPrevious = jest.fn();
 const mockPlanSkip = jest.fn();
+const mockPlanAdvance = jest.fn();
+let mockManualAdvance = false;
 
 function buildContract(overrides: any = {}) {
   const uiOverrides = overrides.ui ?? {};
@@ -244,6 +246,18 @@ jest.mock("@/lib/hooks/useActivityRecorder", () => ({
       hasPlan: true,
       currentStep: {
         id: "00000000-0000-4000-8000-000000000002",
+        occurrenceId: "activity:segment-1:interval-1:0:step-1",
+        globalOrdinal: 1,
+        segmentId: "00000000-0000-4000-8000-000000000010",
+        segmentIndex: 0,
+        role: "activity",
+        category: "bike",
+        intervalId: "00000000-0000-4000-8000-000000000011",
+        intervalIndex: 0,
+        stepId: "00000000-0000-4000-8000-000000000002",
+        stepIndex: 1,
+        repeatIteration: 0,
+        completionPolicy: "time",
         name: "Tempo block",
         duration: { type: "time", seconds: 600 },
         targets: [{ type: "%FTP", intensity: 88 }],
@@ -254,13 +268,16 @@ jest.mock("@/lib/hooks/useActivityRecorder", () => ({
         movingTime: 120000,
         duration: 600000,
         progress: 0.2,
-        requiresManualAdvance: false,
-        canAdvance: false,
+        requiresManualAdvance: mockManualAdvance,
+        canAutoAdvance: false,
+        canManualAdvance: mockManualAdvance,
+        canAdvance: mockManualAdvance,
       },
       canGoBack: true,
-      canSkip: true,
+      canSkip: !mockManualAdvance,
       previous: mockPlanPrevious,
       skip: mockPlanSkip,
+      advance: mockPlanAdvance,
     },
     stats: {
       duration: 75,
@@ -280,6 +297,18 @@ jest.mock("@/lib/hooks/useActivityRecorder", () => ({
     hasPlan: true,
     currentStep: {
       id: "00000000-0000-4000-8000-000000000002",
+      occurrenceId: "activity:segment-1:interval-1:0:step-1",
+      globalOrdinal: 1,
+      segmentId: "00000000-0000-4000-8000-000000000010",
+      segmentIndex: 0,
+      role: "activity",
+      category: "bike",
+      intervalId: "00000000-0000-4000-8000-000000000011",
+      intervalIndex: 0,
+      stepId: "00000000-0000-4000-8000-000000000002",
+      stepIndex: 1,
+      repeatIteration: 0,
+      completionPolicy: "time",
       name: "Tempo block",
       duration: { type: "time", seconds: 600 },
       targets: [{ type: "%FTP", intensity: 88 }],
@@ -290,13 +319,16 @@ jest.mock("@/lib/hooks/useActivityRecorder", () => ({
       movingTime: 120000,
       duration: 600000,
       progress: 0.2,
-      requiresManualAdvance: false,
-      canAdvance: false,
+      requiresManualAdvance: mockManualAdvance,
+      canAutoAdvance: false,
+      canManualAdvance: mockManualAdvance,
+      canAdvance: mockManualAdvance,
     },
     canGoBack: true,
-    canSkip: true,
+    canSkip: !mockManualAdvance,
     previous: mockPlanPrevious,
     skip: mockPlanSkip,
+    advance: mockPlanAdvance,
   }),
   useSessionStats: () => ({
     duration: 75,
@@ -320,6 +352,7 @@ const { TrainerInsightCard } = require("../cards/TrainerInsightCard");
 describe("recording cockpit", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockManualAdvance = false;
     getLastKnownLocationMock.mockResolvedValue(null);
   });
 
@@ -587,6 +620,7 @@ describe("recording cockpit", () => {
     expect(screen.getByTestId("recording-card-carousel")).toBeTruthy();
     expect(screen.getAllByText("Tempo block").length).toBeGreaterThan(0);
     expect(screen.getByText("10m @ 220W")).toBeTruthy();
+    expect(screen.getByText("PWR 245W")).toBeTruthy();
     expect(screen.getByLabelText("Previous interval")).toBeTruthy();
     expect(screen.getByLabelText("Skip interval")).toBeTruthy();
     expect(screen.getByLabelText("Previous interval").props).toMatchObject({
@@ -617,6 +651,36 @@ describe("recording cockpit", () => {
 
     expect(screen.getAllByLabelText("Expand recording cards").length).toBeGreaterThan(0);
     expect(screen.queryByLabelText("Minimize recording cards")).toBeNull();
+  });
+
+  it("uses the normal advance action for a manual completion occurrence", () => {
+    mockManualAdvance = true;
+    renderNative(
+      <RecordingFloatingPanel
+        bottomObstructionHeight={80}
+        hasPlan
+        sensorCount={0}
+        service={buildService()}
+        sessionContract={buildContract({
+          guidance: { hasPlan: true, hasStructuredSteps: true },
+          ui: {
+            floatingPanel: {
+              defaultCard: "workout_interval",
+              availableCards: ["workout_interval"],
+              forcedExpanded: false,
+              canMinimize: true,
+            },
+          },
+        })}
+      />,
+    );
+
+    const advance = screen.getByLabelText("Advance interval");
+    expect(advance.props.accessibilityState).toEqual({ disabled: false });
+    expect(screen.queryByLabelText("Skip interval")).toBeNull();
+    fireEvent.press(advance);
+    expect(mockPlanAdvance).toHaveBeenCalledTimes(1);
+    expect(mockPlanSkip).not.toHaveBeenCalled();
   });
 
   it("shows every metric cell in the expanded metrics card", () => {

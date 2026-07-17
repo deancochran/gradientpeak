@@ -35,9 +35,13 @@ describe("canonical training plan structure", () => {
       canonicalStructure,
     );
     expect(trainingPlanCreateSchema.parse(canonicalStructure)).toEqual(canonicalStructure);
-    expect(persistedTrainingPlanStructureSchema.parse(canonicalStructure)).toEqual(
-      canonicalStructure,
-    );
+    expect(persistedTrainingPlanStructureSchema.safeParse(canonicalStructure).success).toBe(false);
+    expect(
+      persistedTrainingPlanStructureSchema.parse({
+        id: "33333333-3333-4333-8333-333333333333",
+        ...canonicalStructure,
+      }),
+    ).toEqual({ id: "33333333-3333-4333-8333-333333333333", ...canonicalStructure });
   });
 
   it("makes training plan create input use the canonical relative-session structure", () => {
@@ -134,5 +138,19 @@ describe("canonical training plan structure", () => {
 
     expect(periodized.success).toBe(false);
     expect(maintenance.success).toBe(false);
+    expect(
+      persistedTrainingPlanStructureSchema.safeParse({
+        id: "33333333-3333-4333-8333-333333333333",
+        plan_type: "periodized",
+        blocks: [],
+      }).success,
+    ).toBe(false);
+    expect(
+      persistedTrainingPlanStructureSchema.safeParse({
+        id: "33333333-3333-4333-8333-333333333333",
+        start_date: "2026-01-01",
+        weeks: [{ days: [{ sessions: [{ activity_plan_id: activityPlanId }] }] }],
+      }).success,
+    ).toBe(false);
   });
 });

@@ -1,3 +1,8 @@
+import {
+  activityPlanStructureSchemaV3,
+  calculateActivityPlanStats,
+  compileActivityPlanV3,
+} from "@repo/core";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
@@ -13,7 +18,7 @@ import {
 interface ActivityPlanData {
   id: string;
   name: string;
-  structure: any; // ActivityPlanStructureV2
+  structure: unknown;
 }
 
 interface ActivityMetrics {
@@ -41,26 +46,17 @@ function formatDuration(seconds: number): string {
 }
 
 // Helper function to calculate estimated duration from structure
-function calculateEstimatedDuration(structure: any): number {
-  if (!structure || !structure.intervals) return 0;
-
-  // Sum up all interval durations
-  return structure.intervals.reduce((total: number, interval: any) => {
-    return total + (interval.duration || 0);
-  }, 0);
-}
-
-// Helper function to calculate estimated TSS from structure
-function calculateEstimatedTSS(structure: any): number {
-  if (!structure || !structure.intervals) return 0;
-
-  // Basic TSS estimation: sum of (duration in hours * normalized power factor^2 * 100)
-  // This is a simplified calculation
-  return structure.intervals.reduce((total: number, interval: any) => {
-    const durationHours = (interval.duration || 0) / 3600;
-    const intensity = (interval.target_power_percent || 50) / 100; // Default to 50% FTP
-    return total + durationHours * intensity * intensity * 100;
-  }, 0);
+function getPlanComparison(structure: unknown) {
+  const parsed = activityPlanStructureSchemaV3.safeParse(structure);
+  if (!parsed.success) return { duration: 0, tss: 0, compatibleLoad: false };
+  const compiled = compileActivityPlanV3(parsed.data);
+  const stats = calculateActivityPlanStats(compiled);
+  const cycling = stats.categoryDoses[0]?.cyclingPower;
+  return {
+    duration: stats.duration.exactElapsedSeconds ?? 0,
+    tss: cycling?.complete ? cycling.estimatedTss : 0,
+    compatibleLoad: compiled.categories.length === 1 && Boolean(cycling?.complete),
+  };
 }
 
 export function ActivityPlanComparison({
@@ -70,8 +66,9 @@ export function ActivityPlanComparison({
   onPress,
 }: ActivityPlanComparisonProps) {
   // Calculate estimated values from structure
-  const estimatedDuration = calculateEstimatedDuration(activityPlan.structure);
-  const estimatedTSS = calculateEstimatedTSS(activityPlan.structure);
+  const planComparison = getPlanComparison(activityPlan.structure);
+  const estimatedDuration = planComparison.duration;
+  const estimatedTSS = planComparison.tss;
 
   const actualDuration = actualMetrics.duration;
   const actualTSS = actualMetrics.tss || 0;
@@ -131,7 +128,7 @@ export function ActivityPlanComparison({
           </View>
 
           {/* TSS */}
-          {actualTSS > 0 && (
+          {planComparison.compatibleLoad && actualTSS > 0 && (
             <View className="flex-1 p-3 bg-muted rounded-lg">
               <Text className="text-xs text-muted-foreground uppercase mb-1">TSS</Text>
               <View className="flex-row items-baseline gap-1">
@@ -156,7 +153,7 @@ export function ActivityPlanComparison({
           )}
 
           {/* Intensity Factor */}
-          {actualIF > 0 && (
+          {planComparison.compatibleLoad && actualIF > 0 && (
             <View className="flex-1 p-3 bg-muted rounded-lg">
               <Text className="text-xs text-muted-foreground uppercase mb-1">IF</Text>
               <Text className="text-lg font-bold">
@@ -167,7 +164,7 @@ export function ActivityPlanComparison({
         </View>
 
         {/* Timeline Chart */}
-        {!compact && activityPlan.structure && (
+        {!compact && Boolean(activityPlan.structure) && (
           <View>
             <Text className="text-sm font-medium mb-2">Planned Intensity</Text>
             <TimelineChart structure={activityPlan.structure} height={100} compact={true} />

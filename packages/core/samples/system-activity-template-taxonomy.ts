@@ -1,5 +1,4 @@
-import type { RecordingServiceActivityPlan } from "../schemas";
-import { getDurationSeconds } from "../schemas/duration_helpers";
+import { getExactDurationSeconds } from "../duration";
 import {
   SAMPLE_INDOOR_TRAINER_ACTIVITIES,
   SAMPLE_RECOVERY_WORKOUT,
@@ -15,7 +14,12 @@ import {
   THRESHOLD_RUN_WORKOUT_1,
   THRESHOLD_RUN_WORKOUT_2,
 } from "./indoor-treadmill";
-import { SAMPLE_OTHER_ACTIVITIES } from "./other-activity";
+import { SAMPLE_MULTISPORT_ACTIVITIES } from "./multisport";
+import {
+  OTHER_LONG_ENDURANCE_ELLIPTICAL,
+  OTHER_THRESHOLD_ROW,
+  SAMPLE_OTHER_ACTIVITIES,
+} from "./other-activity";
 import {
   GROUP_RIDE_SIMULATION,
   SAMPLE_OUTDOOR_BIKE_ACTIVITIES,
@@ -30,6 +34,7 @@ import {
   SYSTEM_MARATHON_PACE_LONG_RUN,
 } from "./outdoor-run";
 import { normalizeSystemActivityTemplateId } from "./template-ids";
+import type { SystemActivityPlanTemplate as RecordingServiceActivityPlan } from "./types";
 
 export type SystemActivityTemplateExecutionContext = "indoor" | "outdoor";
 
@@ -112,28 +117,24 @@ function toNormalizedTemplateId(template: RecordingServiceActivityPlan): string 
   });
 }
 
-function estimateTemplateDurationSeconds(template: RecordingServiceActivityPlan): number {
-  const paceSecondsPerKm =
-    template.activity_category === "bike"
-      ? 180
-      : template.activity_category === "run"
-        ? 300
-        : template.activity_category === "swim"
-          ? 1200
-          : 300;
-
-  return template.structure.intervals.reduce((planTotal, interval) => {
-    const intervalDuration = interval.steps.reduce((stepTotal, step) => {
-      return (
-        stepTotal +
-        getDurationSeconds(step.duration, {
-          paceSecondsPerKm,
-        })
-      );
-    }, 0);
-
-    return planTotal + intervalDuration * interval.repetitions;
-  }, 0);
+function estimateTemplateDurationSeconds(template: RecordingServiceActivityPlan): number | null {
+  let totalSeconds = 0;
+  for (const segment of template.structure.segments) {
+    if (segment.role !== "activity") {
+      totalSeconds += segment.duration.seconds;
+      continue;
+    }
+    for (const interval of segment.intervals) {
+      let intervalSeconds = 0;
+      for (const step of interval.steps) {
+        const stepSeconds = getExactDurationSeconds(step.duration);
+        if (stepSeconds === null) return null;
+        intervalSeconds += stepSeconds;
+      }
+      totalSeconds += intervalSeconds * interval.repetitions;
+    }
+  }
+  return totalSeconds;
 }
 
 function includesAny(value: string, patterns: readonly string[]): boolean {
@@ -216,6 +217,12 @@ function deriveOtherArchetype(
   }
   if (includesAny(name, ["mobility", "walk", "recovery"])) {
     return "mixed_support";
+  }
+  if (includesAny(name, ["threshold"])) {
+    return "threshold";
+  }
+  if (includesAny(name, ["long", "endurance"])) {
+    return "long_endurance";
   }
 
   return "general_aerobic";
@@ -304,7 +311,7 @@ function deriveTrainingIntent(
 function deriveProgressionLevel(input: {
   template: RecordingServiceActivityPlan;
   archetype: SystemActivityTemplateArchetype;
-  durationSeconds: number;
+  durationSeconds: number | null;
 }): SystemActivityTemplateProgressionLevel {
   const name = input.template.name.toLowerCase();
 
@@ -326,7 +333,7 @@ function deriveProgressionLevel(input: {
   }
   if (
     includesAny(name, ["development 1", "progressive", "long"]) ||
-    input.durationSeconds >= 7200
+    (input.durationSeconds !== null && input.durationSeconds >= 7200)
   ) {
     return "progressive";
   }
@@ -337,7 +344,7 @@ function deriveProgressionLevel(input: {
 function deriveRecoveryCostBand(input: {
   archetype: SystemActivityTemplateArchetype;
   intensityFamily: SystemActivityTemplateIntensityFamily;
-  durationSeconds: number;
+  durationSeconds: number | null;
 }): SystemActivityTemplateRecoveryCostBand {
   if (input.intensityFamily === "support" || input.intensityFamily === "recovery") {
     return "low";
@@ -346,7 +353,7 @@ function deriveRecoveryCostBand(input: {
   if (
     input.intensityFamily === "high_intensity" ||
     input.intensityFamily === "race_specific" ||
-    input.durationSeconds >= 7200
+    (input.durationSeconds !== null && input.durationSeconds >= 7200)
   ) {
     return "high";
   }
@@ -390,7 +397,20 @@ const SYSTEM_TEMPLATE_SOURCE_GROUPS = [
   {
     source_file: "other-activity.ts",
     execution_context: "outdoor" as const,
-    templates: SAMPLE_OTHER_ACTIVITIES,
+    templates: SAMPLE_OTHER_ACTIVITIES.filter(
+      (template) =>
+        template !== OTHER_THRESHOLD_ROW && template !== OTHER_LONG_ENDURANCE_ELLIPTICAL,
+    ),
+  },
+  {
+    source_file: "other-activity.ts",
+    execution_context: "indoor" as const,
+    templates: [OTHER_THRESHOLD_ROW, OTHER_LONG_ENDURANCE_ELLIPTICAL],
+  },
+  {
+    source_file: "multisport.ts",
+    execution_context: "outdoor" as const,
+    templates: SAMPLE_MULTISPORT_ACTIVITIES,
   },
 ] as const;
 

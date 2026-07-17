@@ -62,18 +62,26 @@ describe("planningProjection", () => {
           activity_category: "run",
           authoritative_metrics: { estimated_duration: 3600, estimated_tss: 100 },
           structure: {
-            version: 2,
-            intervals: [
+            version: 3,
+            segments: [
               {
                 id: "22222222-2222-4222-8222-222222222222",
-                name: "Tempo block",
-                repetitions: 1,
-                steps: [
+                name: "Run",
+                role: "activity",
+                category: "run",
+                intervals: [
                   {
                     id: "33333333-3333-4333-8333-333333333333",
-                    name: "Tempo 5K",
-                    duration: { type: "distance", meters: 5000 },
-                    targets: [{ type: "%FTP", intensity: 80 }],
+                    name: "Tempo block",
+                    repetitions: 1,
+                    steps: [
+                      {
+                        id: "44444444-4444-4444-8444-444444444444",
+                        name: "Tempo 5K",
+                        duration: { type: "distance", meters: 5000 },
+                        targets: [{ type: "speed", intensity: 14.4 }],
+                      },
+                    ],
                   },
                 ],
               },
@@ -84,14 +92,14 @@ describe("planningProjection", () => {
     });
 
     expect(projection.sessions[0]?.activityPlan).toMatchObject({
-      estimatedDurationSeconds: 1250,
-      estimatedTss: 22.2,
+      estimatedDurationSeconds: null,
+      estimatedTss: null,
     });
-    expect(projection.creationPreview.totalEstimatedTss).toBe(22.2);
+    expect(projection.creationPreview.totalEstimatedTss).toBe(0);
     expect(projection.schedulingPreview.sessions[0]).toMatchObject({
       id: "session-1",
       label: "Friday tempo",
-      estimatedTss: 22.2,
+      estimatedTss: null,
     });
     expect(projection.creationConstraints).toMatchObject({
       hard_rest_days: ["sunday", "tuesday", "thursday", "saturday"],

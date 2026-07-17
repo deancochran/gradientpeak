@@ -1,3 +1,4 @@
+import { type CompiledActivityPlan, compileActivityPlanV3 } from "../activity-plan";
 import { GLOBAL_DEFAULTS } from "../calculations/defaults";
 import type { RecordingServiceActivityPlan } from "../schemas";
 
@@ -34,27 +35,23 @@ export function validatePlanRequirements(
   plan: RecordingServiceActivityPlan,
   metrics?: PlanValidationMetrics,
 ): PlanValidationResult {
-  const structure = plan.structure as {
-    intervals?: Array<{
-      steps?: Array<{
-        targets?: Array<{ type?: string }>;
-      }>;
-    }>;
-  };
-
-  if (!structure?.intervals) {
-    return { isValid: true, missingMetrics: [], warnings: [] };
+  let compiled: CompiledActivityPlan;
+  try {
+    compiled = compileActivityPlanV3(plan.structure);
+  } catch {
+    return {
+      isValid: false,
+      missingMetrics: [],
+      warnings: ["Recording requires a valid activity-plan V3 structure."],
+    };
   }
 
   const allTargetTypes = new Set<string>();
 
-  for (const interval of structure.intervals) {
-    for (const step of interval.steps || []) {
-      for (const target of step.targets || []) {
-        if (typeof target.type === "string") {
-          allTargetTypes.add(target.type);
-        }
-      }
+  for (const occurrence of compiled.occurrences) {
+    if (occurrence.role !== "activity") continue;
+    for (const target of occurrence.targets) {
+      allTargetTypes.add(target.type);
     }
   }
 

@@ -460,89 +460,8 @@ export const trainingPlanSchema = canonicalTrainingPlanStructureSchema.safeExten
 
 export type TrainingPlan = z.infer<typeof trainingPlanSchema>;
 
-export const legacyStructuredTrainingPlanSchema = z.discriminatedUnion("plan_type", [
-  periodizedPlanSchema,
-  maintenancePlanSchema,
-]);
-
-export type LegacyStructuredTrainingPlan = z.infer<typeof legacyStructuredTrainingPlanSchema>;
-
-const legacyTemplateSessionSchema = z
-  .object({
-    scheduled_date: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/)
-      .optional(),
-    offset_days: z.number().int().optional(),
-    day_offset: z.number().int().optional(),
-    offset_weeks: z.number().int().optional(),
-    week_offset: z.number().int().optional(),
-    title: z.string().min(1).optional(),
-    name: z.string().min(1).optional(),
-    event_title_override: z.string().min(1).optional(),
-    session_type: z.string().min(1).optional(),
-    activity_plan_id: z.string().min(1).optional(),
-  })
-  .passthrough();
-
-type LegacyTrainingPlanTemplateNode = {
-  sessions?: Array<z.infer<typeof legacyTemplateSessionSchema>>;
-  blocks?: LegacyTrainingPlanTemplateNode[];
-  weeks?: LegacyTrainingPlanTemplateNode[];
-  days?: LegacyTrainingPlanTemplateNode[];
-};
-
-const legacyTrainingPlanTemplateNodeSchema: z.ZodType<LegacyTrainingPlanTemplateNode> = z.lazy(() =>
-  z
-    .object({
-      version: z.number().int().optional(),
-      start_date: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/)
-        .optional(),
-      end_date: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/)
-        .optional(),
-      scheduled_date: z
-        .string()
-        .regex(/^\d{4}-\d{2}-\d{2}$/)
-        .optional(),
-      offset_days: z.number().int().optional(),
-      day_offset: z.number().int().optional(),
-      offset_weeks: z.number().int().optional(),
-      week_offset: z.number().int().optional(),
-      target_weekly_tss: z.number().min(0).optional(),
-      target_weekly_tss_min: z.number().min(0).optional(),
-      target_weekly_tss_max: z.number().min(0).optional(),
-      target_weekly_tss_range: nonNegativeNumberRangeSchema.optional(),
-      target_activities_per_week: z.number().int().min(0).max(21).optional(),
-      max_consecutive_days: z.number().int().min(0).max(7).optional(),
-      min_rest_days_per_week: z.number().int().min(0).max(7).optional(),
-      durationWeeks: z
-        .object({
-          recommended: z.number().int().min(1).max(104),
-          minimum: z.number().int().min(1).max(104).optional(),
-          maximum: z.number().int().min(1).max(104).optional(),
-        })
-        .optional(),
-      sport: z.array(z.string().min(1)).optional(),
-      experienceLevel: z.array(z.enum(["beginner", "intermediate", "advanced"])).optional(),
-      sessions: z.array(legacyTemplateSessionSchema).optional(),
-      blocks: z.array(legacyTrainingPlanTemplateNodeSchema).optional(),
-      weeks: z.array(legacyTrainingPlanTemplateNodeSchema).optional(),
-      days: z.array(legacyTrainingPlanTemplateNodeSchema).optional(),
-    })
-    .passthrough(),
-);
-
-export const legacyTrainingPlanTemplateStructureSchema = legacyTrainingPlanTemplateNodeSchema;
-
-export const persistedTrainingPlanStructureSchema = z.union([
-  trainingPlanSchema,
-  legacyStructuredTrainingPlanSchema,
-  legacyTrainingPlanTemplateStructureSchema,
-]);
+/** The only training-plan structure accepted from persistence at runtime. */
+export const persistedTrainingPlanStructureSchema = trainingPlanSchema;
 
 export type PersistedTrainingPlanStructure = z.infer<typeof persistedTrainingPlanStructureSchema>;
 
@@ -627,10 +546,10 @@ export const wizardMaintenanceInputSchema = z.object({
 
 export type WizardMaintenanceInput = z.infer<typeof wizardMaintenanceInputSchema>;
 
-export function isPeriodizedPlan(plan: LegacyStructuredTrainingPlan): plan is PeriodizedPlan {
+export function isPeriodizedPlan(plan: PeriodizedPlan | MaintenancePlan): plan is PeriodizedPlan {
   return plan.plan_type === "periodized";
 }
 
-export function isMaintenancePlan(plan: LegacyStructuredTrainingPlan): plan is MaintenancePlan {
+export function isMaintenancePlan(plan: PeriodizedPlan | MaintenancePlan): plan is MaintenancePlan {
   return plan.plan_type === "maintenance";
 }

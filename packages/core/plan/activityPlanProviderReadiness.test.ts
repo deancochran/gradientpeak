@@ -1,34 +1,49 @@
 import { describe, expect, it } from "vitest";
 import {
+  type ActivityPlanStructureV3,
+  type ActivityPlanTarget,
+  activityPlanStructureSchemaV3,
+} from "../activity-plan";
+import {
   integrationProviderIdValues,
   isProviderRuntimeEnabled,
   providerHasCapability,
 } from "../integrations/provider-capabilities";
-import type { ActivityPlanStructureV2, IntensityTargetV2 } from "../schemas/activity_plan_v2";
 import {
   getActivityPlanDefaultTarget,
   getActivityPlanProviderReadiness,
 } from "./activityPlanProviderReadiness";
 
-function structureWithTargets(targets: IntensityTargetV2[]): ActivityPlanStructureV2 {
-  return {
-    version: 2,
-    intervals: [
+function structureWithTargets(
+  targets: ActivityPlanTarget[],
+  category: "run" | "bike" | "swim" = "run",
+): ActivityPlanStructureV3 {
+  return activityPlanStructureSchemaV3.parse({
+    version: 3,
+    segments: [
       {
         id: "11111111-1111-4111-8111-111111111111",
         name: "Work",
-        repetitions: 1,
-        steps: [
+        role: "activity",
+        category,
+        intervals: [
           {
             id: "22222222-2222-4222-8222-222222222222",
-            name: "Step",
-            duration: { type: "time", seconds: 600 },
-            targets,
+            name: "Set",
+            repetitions: 1,
+            steps: [
+              {
+                id: "33333333-3333-4333-8333-333333333333",
+                name: "Step",
+                duration: { type: "time", seconds: 600 },
+                targets,
+              },
+            ],
           },
         ],
       },
     ],
-  };
+  });
 }
 
 describe("activity plan provider readiness", () => {
@@ -52,7 +67,7 @@ describe("activity plan provider readiness", () => {
   });
 
   it("reports native defaults or a missing anchor according to policy", () => {
-    const structure = structureWithTargets([{ type: "%FTP", intensity: 75 }]);
+    const structure = structureWithTargets([{ type: "%FTP", intensity: 75 }], "bike");
 
     expect(
       getActivityPlanProviderReadiness({
@@ -93,7 +108,7 @@ describe("activity plan provider readiness", () => {
       getActivityPlanProviderReadiness({
         activityCategory: "swim",
         provider: "wahoo",
-        structure: structureWithTargets([{ type: "RPE", intensity: 5 }]),
+        structure: structureWithTargets([{ type: "RPE", intensity: 5 }], "swim"),
       }).status,
     ).toBe("unsupported_sport");
     expect(
@@ -104,7 +119,9 @@ describe("activity plan provider readiness", () => {
       }),
     ).toMatchObject({
       status: "unsupported_provider",
-      issues: [{ code: "unsupported_provider", blockedBy: "external" }],
+      issues: expect.arrayContaining([
+        expect.objectContaining({ code: "unsupported_provider", blockedBy: "external" }),
+      ]),
     });
   });
 
@@ -136,7 +153,9 @@ describe("activity plan provider readiness", () => {
       if (!isProviderRuntimeEnabled(provider)) {
         expect(result).toMatchObject({
           status: "unsupported_provider",
-          issues: [{ code: "unsupported_provider", blockedBy: "external" }],
+          issues: expect.arrayContaining([
+            expect.objectContaining({ code: "unsupported_provider", blockedBy: "external" }),
+          ]),
         });
       } else {
         expect(providerHasCapability(provider, "planned_activity_push")).toBe(true);
@@ -155,7 +174,9 @@ describe("activity plan provider readiness", () => {
     ).toMatchObject({
       provider: "trainingpeaks",
       status: "unsupported_provider",
-      issues: [{ code: "unsupported_provider", blockedBy: "external" }],
+      issues: expect.arrayContaining([
+        expect.objectContaining({ code: "unsupported_provider", blockedBy: "external" }),
+      ]),
     });
   });
 
@@ -173,8 +194,44 @@ describe("activity plan provider readiness", () => {
     expect(result.issues).toContainEqual(
       expect.objectContaining({
         targetType: "RPE",
-        path: ["intervals", 0, "steps", 0, "targets", 1, "type"],
+        path: ["structure", "segments", 0, "intervals", 0, "steps", 0, "targets", 1],
       }),
     );
+  });
+
+  it("classifies every compiled occurrence semantic exactly once", () => {
+    const structure = structureWithTargets([{ type: "speed", intensity: 5 }]);
+    const result = getActivityPlanProviderReadiness({ provider: "wahoo", structure });
+
+    expect(result.projection.disposition).toBe("compatible");
+    expect(result.projection.findings.map((finding) => finding.semantic)).toEqual([
+      "occurrence_role",
+      "activity_category",
+      "duration",
+      "target",
+    ]);
+    expect(
+      result.projection.findings.every((finding) => finding.disposition === "compatible"),
+    ).toBe(true);
+  });
+
+  it("continues exhaustive semantic inventory behind an evidence-gated provider blocker", () => {
+    const result = getActivityPlanProviderReadiness({
+      provider: "garmin",
+      structure: structureWithTargets([{ type: "speed", intensity: 5 }]),
+    });
+
+    expect(result.projection.disposition).toBe("unsupported");
+    expect(result.projection.findings.map((finding) => finding.semantic)).toEqual([
+      "provider",
+      "occurrence_role",
+      "activity_category",
+      "duration",
+      "target",
+    ]);
+    expect(result.projection.findings[0]).toMatchObject({
+      disposition: "unsupported",
+      reasonCode: "provider_delivery_evidence_missing",
+    });
   });
 });

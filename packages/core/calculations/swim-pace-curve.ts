@@ -69,6 +69,7 @@ export const cssTestProtocolSchema = z.intersection(
 
 export type CssTestTimesInput = z.infer<typeof cssTestTimesSchema>;
 export type CssTestProtocolInput = z.infer<typeof cssTestProtocolSchema>;
+export type CssTestObservationInput = CssTestProtocolInput & { recordedAt: Date };
 
 export interface CssTestProtocolResult {
   cssSecondsPer100m: number;

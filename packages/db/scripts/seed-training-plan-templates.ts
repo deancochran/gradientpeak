@@ -1,22 +1,20 @@
 #!/usr/bin/env tsx
 
+import { trainingPlanSchema } from "@repo/core/schemas";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-
 import { ALL_SAMPLE_PLANS } from "../../core/samples";
 import { trainingPlans } from "../src/schema/tables";
 import { deepEqual, prepareDbEnv } from "./_helpers";
 
 const args = process.argv.slice(2);
 const isDryRun = args.includes("--dry-run");
+const isValidateOnly = args.includes("--validate-only");
 const noDelete = args.includes("--no-delete") || args.includes("--no-clear");
 
-const databaseUrl = prepareDbEnv();
-const pool = new Pool({ connectionString: databaseUrl });
-const db = drizzle({ client: pool, casing: "snake_case" });
-
 const templates = ALL_SAMPLE_PLANS;
+let pool: Pool | undefined;
 
 type ExistingTrainingPlanTemplate = typeof trainingPlans.$inferSelect;
 
@@ -35,6 +33,16 @@ function hasChanges(
 }
 
 async function seedTrainingPlanTemplates() {
+  for (const template of templates) trainingPlanSchema.parse(template.structure);
+  if (isValidateOnly) {
+    console.log(`Validated ${templates.length} strict canonical V1 system training templates.`);
+    return;
+  }
+
+  const databaseUrl = prepareDbEnv();
+  pool = new Pool({ connectionString: databaseUrl });
+  const db = drizzle({ client: pool, casing: "snake_case" });
+
   console.log("🌱 Starting training plan template sync...");
   console.log(`   Mode: ${isDryRun ? "DRY RUN" : "LIVE"}`);
   console.log("   Filter: all");
@@ -173,5 +181,5 @@ try {
   console.error("\n💥 Sync failed:", error);
   process.exitCode = 1;
 } finally {
-  await pool.end();
+  await pool?.end();
 }

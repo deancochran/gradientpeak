@@ -1,62 +1,78 @@
 import type {
-  ActivityPlanStructureV2,
-  IntervalStepV2,
-  IntervalV2,
-} from "@repo/core/schemas/activity_plan_v2";
+  ActivityPlanActivitySegment,
+  ActivityPlanInterval,
+  ActivityPlanIntervalStep,
+  ActivityPlanSegmentV3,
+  CanonicalSport,
+} from "@repo/core";
 import { randomUUID } from "expo-crypto";
 import { create } from "zustand";
 
+export type EditableActivityPlanStructure = {
+  version: 3;
+  segments: ActivityPlanSegmentV3[];
+};
+
 interface ActivityPlanCreationState {
-  // Form data
   name: string;
   description: string;
-  activityCategory: "run" | "bike" | "swim" | "strength" | "other";
-  structure: ActivityPlanStructureV2;
+  /** Presentation default only; segment categories are authoritative. */
+  activityCategory: CanonicalSport;
+  structure: EditableActivityPlanStructure;
   routeId: string | null;
   notes: string;
-
-  // Actions
   setName: (name: string) => void;
   setDescription: (description: string) => void;
-  setActivityCategory: (category: "run" | "bike" | "swim" | "strength" | "other") => void;
-  setStructure: (structure: ActivityPlanStructureV2) => void;
+  setActivityCategory: (category: CanonicalSport) => void;
+  setStructure: (structure: EditableActivityPlanStructure) => void;
   setRouteId: (routeId: string | null) => void;
   setNotes: (notes: string) => void;
-
-  // V2 Interval management
-  addInterval: (interval: IntervalV2) => void;
-  updateInterval: (intervalId: string, interval: IntervalV2) => void;
+  addSegment: (segment: ActivityPlanSegmentV3) => void;
+  updateSegment: (segmentId: string, segment: ActivityPlanSegmentV3) => void;
+  removeSegment: (segmentId: string) => void;
+  reorderSegments: (segments: ActivityPlanSegmentV3[]) => void;
+  addInterval: (interval: ActivityPlanInterval, segmentId?: string) => void;
+  updateInterval: (intervalId: string, interval: ActivityPlanInterval) => void;
   removeInterval: (intervalId: string) => void;
-  reorderIntervals: (intervals: IntervalV2[]) => void;
+  reorderIntervals: (intervals: ActivityPlanInterval[], segmentId?: string) => void;
   copyInterval: (intervalId: string) => void;
-
-  // Step management within intervals
-  addStepToInterval: (intervalId: string, step: IntervalStepV2) => void;
-  updateStepInInterval: (intervalId: string, stepId: string, step: IntervalStepV2) => void;
+  addStepToInterval: (intervalId: string, step: ActivityPlanIntervalStep) => void;
+  updateStepInInterval: (
+    intervalId: string,
+    stepId: string,
+    step: ActivityPlanIntervalStep,
+  ) => void;
   removeStepFromInterval: (intervalId: string, stepId: string) => void;
-  reorderStepsInInterval: (intervalId: string, steps: IntervalStepV2[]) => void;
+  reorderStepsInInterval: (intervalId: string, steps: ActivityPlanIntervalStep[]) => void;
   copyStepInInterval: (intervalId: string, stepId: string) => void;
-
-  // Reset
   reset: () => void;
 }
 
 export function createMinimalActivityPlanStructure(
-  activityName: string = "Main Activity",
-): ActivityPlanStructureV2 {
+  activityName = "Main Activity",
+  category: CanonicalSport = "run",
+): EditableActivityPlanStructure {
   return {
-    version: 2,
-    intervals: [
+    version: 3,
+    segments: [
       {
         id: randomUUID(),
         name: activityName,
-        repetitions: 1,
-        steps: [
+        role: "activity",
+        category,
+        intervals: [
           {
             id: randomUUID(),
             name: activityName,
-            duration: { type: "untilFinished" },
-            targets: [],
+            repetitions: 1,
+            steps: [
+              {
+                id: randomUUID(),
+                name: activityName,
+                duration: { type: "untilFinished" },
+                targets: [{ type: "RPE", intensity: 5 }],
+              },
+            ],
           },
         ],
       },
@@ -64,16 +80,9 @@ export function createMinimalActivityPlanStructure(
   };
 }
 
-/**
- * Generate a default timestamped activity name
- */
 function generateDefaultActivityName(): string {
   const now = new Date();
-  const date = now.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  const date = now.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   const time = now.toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
@@ -82,157 +91,168 @@ function generateDefaultActivityName(): string {
   return `Activity Plan - ${date} ${time}`;
 }
 
+function mapActivitySegments(
+  structure: EditableActivityPlanStructure,
+  map: (segment: ActivityPlanActivitySegment) => ActivityPlanActivitySegment,
+): EditableActivityPlanStructure {
+  return {
+    version: 3,
+    segments: structure.segments.map((segment) =>
+      segment.role === "activity" ? map(segment) : segment,
+    ),
+  };
+}
+
 const initialState = {
   name: generateDefaultActivityName(),
   description: "",
-  activityCategory: "run" as const,
-  structure: { version: 2 as const, intervals: [] },
+  activityCategory: "run" as CanonicalSport,
+  structure: { version: 3 as const, segments: [] as ActivityPlanSegmentV3[] },
   routeId: null,
   notes: "",
 };
 
 export const useActivityPlanCreationStore = create<ActivityPlanCreationState>((set) => ({
-  // Initial state
   ...initialState,
-
-  // Actions
   setName: (name) => set({ name }),
   setDescription: (description) => set({ description }),
   setActivityCategory: (activityCategory) => set({ activityCategory }),
   setStructure: (structure) => set({ structure }),
   setRouteId: (routeId) => set({ routeId }),
   setNotes: (notes) => set({ notes }),
-
-  // V2 Interval management
-  addInterval: (interval) =>
+  addSegment: (segment) =>
+    set((state) => ({
+      structure: { version: 3, segments: [...state.structure.segments, segment] },
+    })),
+  updateSegment: (segmentId, segment) =>
     set((state) => ({
       structure: {
-        version: 2,
-        intervals: [...state.structure.intervals, interval],
+        version: 3,
+        segments: state.structure.segments.map((item) => (item.id === segmentId ? segment : item)),
       },
     })),
-
+  removeSegment: (segmentId) =>
+    set((state) => ({
+      structure: {
+        version: 3,
+        segments: state.structure.segments.filter((item) => item.id !== segmentId),
+      },
+    })),
+  reorderSegments: (segments) => set({ structure: { version: 3, segments } }),
+  addInterval: (interval, segmentId) =>
+    set((state) => ({
+      structure: mapActivitySegments(state.structure, (segment) =>
+        segment.id === segmentId ||
+        (!segmentId &&
+          segment === state.structure.segments.find((item) => item.role === "activity"))
+          ? { ...segment, intervals: [...segment.intervals, interval] }
+          : segment,
+      ),
+    })),
   updateInterval: (intervalId, interval) =>
     set((state) => ({
-      structure: {
-        version: 2,
-        intervals: state.structure.intervals.map((i) => (i.id === intervalId ? interval : i)),
-      },
+      structure: mapActivitySegments(state.structure, (segment) => ({
+        ...segment,
+        intervals: segment.intervals.map((item) => (item.id === intervalId ? interval : item)),
+      })),
     })),
-
   removeInterval: (intervalId) =>
     set((state) => ({
-      structure: {
-        version: 2,
-        intervals: state.structure.intervals.filter((i) => i.id !== intervalId),
-      },
+      structure: mapActivitySegments(state.structure, (segment) => ({
+        ...segment,
+        intervals: segment.intervals.filter((item) => item.id !== intervalId),
+      })),
     })),
-
-  reorderIntervals: (intervals) => set({ structure: { version: 2, intervals } }),
-
+  reorderIntervals: (intervals, segmentId) =>
+    set((state) => ({
+      structure: mapActivitySegments(state.structure, (segment) =>
+        segment.id === segmentId ||
+        (!segmentId &&
+          segment.intervals.some((item) => intervals.some((candidate) => candidate.id === item.id)))
+          ? { ...segment, intervals }
+          : segment,
+      ),
+    })),
   copyInterval: (intervalId) =>
-    set((state) => {
-      const interval = state.structure.intervals.find((i) => i.id === intervalId);
-      if (!interval) return state;
-
-      // Create a deep copy with new IDs
-      const copiedInterval: IntervalV2 = {
-        ...interval,
-        id: randomUUID(),
-        name: `${interval.name} (Copy)`,
-        steps: interval.steps.map((step) => ({
-          ...step,
-          id: randomUUID(),
-        })),
-      };
-
-      return {
-        structure: {
-          version: 2,
-          intervals: [...state.structure.intervals, copiedInterval],
-        },
-      };
-    }),
-
-  // Step management within intervals
+    set((state) => ({
+      structure: mapActivitySegments(state.structure, (segment) => {
+        const interval = segment.intervals.find((item) => item.id === intervalId);
+        if (!interval) return segment;
+        return {
+          ...segment,
+          intervals: [
+            ...segment.intervals,
+            {
+              ...interval,
+              id: randomUUID(),
+              name: `${interval.name} (Copy)`,
+              steps: interval.steps.map((step) => ({ ...step, id: randomUUID() })),
+            },
+          ],
+        };
+      }),
+    })),
   addStepToInterval: (intervalId, step) =>
     set((state) => ({
-      structure: {
-        version: 2,
-        intervals: state.structure.intervals.map((interval) =>
+      structure: mapActivitySegments(state.structure, (segment) => ({
+        ...segment,
+        intervals: segment.intervals.map((interval) =>
           interval.id === intervalId ? { ...interval, steps: [...interval.steps, step] } : interval,
         ),
-      },
+      })),
     })),
-
   updateStepInInterval: (intervalId, stepId, step) =>
     set((state) => ({
-      structure: {
-        version: 2,
-        intervals: state.structure.intervals.map((interval) =>
+      structure: mapActivitySegments(state.structure, (segment) => ({
+        ...segment,
+        intervals: segment.intervals.map((interval) =>
           interval.id === intervalId
             ? {
                 ...interval,
-                steps: interval.steps.map((s) => (s.id === stepId ? step : s)),
+                steps: interval.steps.map((item) => (item.id === stepId ? step : item)),
               }
             : interval,
         ),
-      },
+      })),
     })),
-
   removeStepFromInterval: (intervalId, stepId) =>
     set((state) => ({
-      structure: {
-        version: 2,
-        intervals: state.structure.intervals.map((interval) =>
+      structure: mapActivitySegments(state.structure, (segment) => ({
+        ...segment,
+        intervals: segment.intervals.map((interval) =>
           interval.id === intervalId
-            ? {
-                ...interval,
-                steps: interval.steps.filter((s) => s.id !== stepId),
-              }
+            ? { ...interval, steps: interval.steps.filter((item) => item.id !== stepId) }
             : interval,
         ),
-      },
+      })),
     })),
-
   reorderStepsInInterval: (intervalId, steps) =>
     set((state) => ({
-      structure: {
-        version: 2,
-        intervals: state.structure.intervals.map((interval) =>
+      structure: mapActivitySegments(state.structure, (segment) => ({
+        ...segment,
+        intervals: segment.intervals.map((interval) =>
           interval.id === intervalId ? { ...interval, steps } : interval,
         ),
-      },
+      })),
     })),
-
   copyStepInInterval: (intervalId, stepId) =>
-    set((state) => {
-      const interval = state.structure.intervals.find((i) => i.id === intervalId);
-      if (!interval) return state;
-
-      const step = interval.steps.find((s) => s.id === stepId);
-      if (!step) return state;
-
-      // Create a copy with new ID
-      const copiedStep: IntervalStepV2 = {
-        ...step,
-        id: randomUUID(),
-        name: `${step.name} (Copy)`,
-      };
-
-      return {
-        structure: {
-          version: 2,
-          intervals: state.structure.intervals.map((i) =>
-            i.id === intervalId ? { ...i, steps: [...i.steps, copiedStep] } : i,
-          ),
-        },
-      };
-    }),
-
-  reset: () =>
-    set({
-      ...initialState,
-      name: generateDefaultActivityName(), // Generate fresh timestamp on reset
-    }),
+    set((state) => ({
+      structure: mapActivitySegments(state.structure, (segment) => ({
+        ...segment,
+        intervals: segment.intervals.map((interval) => {
+          if (interval.id !== intervalId) return interval;
+          const step = interval.steps.find((item) => item.id === stepId);
+          return step
+            ? {
+                ...interval,
+                steps: [
+                  ...interval.steps,
+                  { ...step, id: randomUUID(), name: `${step.name} (Copy)` },
+                ],
+              }
+            : interval;
+        }),
+      })),
+    })),
+  reset: () => set({ ...initialState, name: generateDefaultActivityName() }),
 }));

@@ -10,6 +10,7 @@ const {
   findCredentialsByProfileIdAndProvider,
   findWahooIntegrationByProfileId,
   getPlannedEventForSync,
+  getProfileSyncMetrics,
   integrationsListByProfileId,
   listEventResourceLinks,
   listJobs,
@@ -20,6 +21,7 @@ const {
   findCredentialsByProfileIdAndProvider: vi.fn(),
   findWahooIntegrationByProfileId: vi.fn(),
   getPlannedEventForSync: vi.fn(),
+  getProfileSyncMetrics: vi.fn(),
   integrationsListByProfileId: vi.fn(),
   listEventResourceLinks: vi.fn(),
   listJobs: vi.fn(),
@@ -41,6 +43,7 @@ vi.mock("../../../infrastructure/repositories", () => ({
   createWahooRepository: vi.fn(() => ({
     findWahooIntegrationByProfileId,
     getPlannedEventForSync,
+    getProfileSyncMetrics,
     listEventResourceLinks,
   })),
 }));
@@ -59,9 +62,42 @@ describe("enqueuePlannedWorkoutSyncAfterCalendarMutation", () => {
       startsAt: "2026-04-10T09:00:00.000Z",
       activityPlan: {
         id: "plan-1",
+        name: "Bike",
         routeId: null,
+        structure: {
+          version: 3,
+          segments: [
+            {
+              id: "30000000-0000-4000-8000-000000000001",
+              role: "activity",
+              category: "bike",
+              name: "Bike",
+              intervals: [
+                {
+                  id: "30000000-0000-4000-8000-000000000002",
+                  name: "Set",
+                  repetitions: 1,
+                  steps: [
+                    {
+                      id: "30000000-0000-4000-8000-000000000003",
+                      name: "Work",
+                      duration: { type: "time", seconds: 600 },
+                      targets: [{ type: "watts", intensity: 200 }],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
         updatedAt: "2026-04-01T00:00:00.000Z",
       },
+    });
+    getProfileSyncMetrics.mockResolvedValue({
+      bikePowerEfforts: [],
+      ftpMetrics: [],
+      maxHr: null,
+      thresholdHr: null,
     });
     enqueueJob.mockResolvedValue({ id: "job-1", status: "queued" });
     drainDueWahooPlannedWorkoutJobs.mockResolvedValue({ completed: 1, failed: 0, processed: 1 });

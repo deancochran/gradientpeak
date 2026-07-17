@@ -1,8 +1,8 @@
 import {
-  formatDurationV2,
+  type ActivityPlanIntervalStep,
+  Duration,
   formatIntensityTarget,
   getStepIntensityColor,
-  type PlanStepV2,
 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
@@ -13,7 +13,7 @@ import { memo } from "react";
 import { View } from "react-native";
 
 interface StepCardProps {
-  step: PlanStepV2;
+  step: ActivityPlanIntervalStep;
   index?: number;
   isActive?: boolean;
   onPress?: () => void;
@@ -27,7 +27,7 @@ interface StepCardProps {
 /**
  * Format all targets for display
  */
-function formatAllTargets(targets?: PlanStepV2["targets"]): string {
+function formatAllTargets(targets?: ActivityPlanIntervalStep["targets"]): string {
   if (!targets || targets.length === 0) return "";
   return targets.map(formatIntensityTarget).join(" + ");
 }
@@ -96,7 +96,9 @@ export const StepCard = memo<StepCardProps>(function StepCard({
         <View className="flex-1">
           <View className="flex-row items-center justify-between mb-1">
             <Text className="font-semibold text-base">{step.name}</Text>
-            <Text className="text-sm text-muted-foreground">{formatDurationV2(step.duration)}</Text>
+            <Text className="text-sm text-muted-foreground">
+              {Duration.formatDuration(step.duration)}
+            </Text>
           </View>
 
           {step.targets && step.targets.length > 0 && (

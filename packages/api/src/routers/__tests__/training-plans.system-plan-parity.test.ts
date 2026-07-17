@@ -38,7 +38,6 @@ function toExpectedTemplateResponse(
   options?: { includeSocialFields?: boolean; includeTimestamps?: boolean },
 ) {
   return {
-    id: plan.id,
     name: plan.name,
     description: plan.description,
     sessions_per_week_target: plan.sessions_per_week_target,
@@ -170,16 +169,16 @@ describe("system training-plan router parity", () => {
 
     expect(result.total).toBe(1);
     expect(result.healthy_count).toBe(0);
-    expect(result.legacy_count).toBe(1);
-    expect(result.invalid_count).toBe(0);
+    expect(result.legacy_count).toBe(0);
+    expect(result.invalid_count).toBe(1);
     expect(result.metadata_gap_count).toBe(1);
     expect(result.items[0]).toMatchObject({
       isHealthy: false,
-      isPersistedCompatible: true,
+      isPersistedCompatible: false,
       isCurrentSchemaCompatible: false,
       missingMetadata: ["sport", "experienceLevel", "durationWeeks"],
       issueCodes: [
-        "legacy_structure",
+        "invalid_persisted_structure",
         "missing_sport_metadata",
         "missing_experience_level_metadata",
         "missing_duration_weeks_metadata",

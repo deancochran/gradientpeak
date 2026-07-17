@@ -1,31 +1,23 @@
 import { z } from "zod";
-import {
-  ACTIVITY_PLAN_V2_SAVEABLE_LIMITS,
-  type ActivityPlanStructureV2,
-  activityPlanSpeedKphToMetersPerSecond,
-  type DurationV2,
-  type IntensityTargetV2,
-} from "../schemas/activity_plan_v2";
-import {
-  type ActivityTargetCategory,
-  activityTargetCategorySchemaValues,
-} from "../schemas/activity_target_capabilities";
+import type {
+  ActivityPlanDuration,
+  ActivityPlanStructureV3,
+  ActivityPlanTarget,
+} from "../activity-plan/v3-schema";
+import { ACTIVITY_PLAN_V3_LIMITS } from "../activity-plan/v3-validation";
+import { type CanonicalSport, canonicalSportSchema } from "../schemas/sport";
 import type { ActivityPlanTargetAnchors } from "./activityPlanProviderReadiness";
 
 const exportDurationSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("time"),
-    value: z.number().positive().max(ACTIVITY_PLAN_V2_SAVEABLE_LIMITS.maxStepDurationSeconds),
-    unit: z.literal("seconds"),
-  }),
+  z.object({ kind: z.literal("time"), value: z.number().positive(), unit: z.literal("seconds") }),
   z.object({
     kind: z.literal("distance"),
-    value: z.number().positive().max(ACTIVITY_PLAN_V2_SAVEABLE_LIMITS.maxStepDistanceMeters),
+    value: z.number().positive(),
     unit: z.literal("meters"),
   }),
   z.object({
     kind: z.literal("repetitions"),
-    value: z.number().int().positive().max(ACTIVITY_PLAN_V2_SAVEABLE_LIMITS.maxStepRepetitionCount),
+    value: z.number().int().positive(),
     unit: z.literal("count"),
   }),
   z.object({ kind: z.literal("open") }),
@@ -40,7 +32,6 @@ const relativeExportTargetSchema = z.object({
   resolvedValue: z.number().nonnegative().optional(),
   resolvedUnit: z.enum(["watts", "beats_per_minute"]).optional(),
 });
-
 const absoluteExportTargetSchema = z.object({
   kind: z.literal("absolute"),
   metric: z.enum(["power", "heart_rate", "speed", "cadence", "perceived_effort"]),
@@ -55,7 +46,6 @@ const absoluteExportTargetSchema = z.object({
   value: z.number().nonnegative(),
   unit: z.enum(["watts", "beats_per_minute", "meters_per_second", "revolutions_per_minute", "rpe"]),
 });
-
 export const plannedWorkoutExportTargetSchema = z.discriminatedUnion("kind", [
   relativeExportTargetSchema,
   absoluteExportTargetSchema,
@@ -68,72 +58,77 @@ export const plannedWorkoutExportStepSchema = z.object({
   description: z.string().max(500).optional(),
   notes: z.string().max(1000).optional(),
   duration: exportDurationSchema,
-  targets: z.array(plannedWorkoutExportTargetSchema).max(3),
+  targets: z.array(plannedWorkoutExportTargetSchema).min(1).max(3),
 });
-
 export const plannedWorkoutExportRepeatSchema = z.object({
   kind: z.literal("repeat"),
+  sourceSegmentId: z.string().uuid().optional(),
+  category: canonicalSportSchema.optional(),
   sourceIntervalId: z.string().uuid(),
   name: z.string().min(1).max(100),
   notes: z.string().max(1000).optional(),
-  count: z.number().int().min(1).max(ACTIVITY_PLAN_V2_SAVEABLE_LIMITS.maxIntervalRepetitions),
-  steps: z.array(plannedWorkoutExportStepSchema).min(1).max(20),
+  count: z.number().int().min(1).max(ACTIVITY_PLAN_V3_LIMITS.maxIntervalRepetitions),
+  steps: z
+    .array(plannedWorkoutExportStepSchema)
+    .min(1)
+    .max(ACTIVITY_PLAN_V3_LIMITS.maxStepsPerInterval),
 });
 
-/** Provider-neutral, deterministic workout representation with explicit normalized units. */
-export const plannedWorkoutExportDocumentSchema = z
-  .object({
-    version: z.literal(1),
-    event: z.object({
-      id: z.string().min(1),
-      name: z.string().min(1).max(100),
-      description: z.string().max(1000).optional(),
-      scheduledAt: z.string().datetime().optional(),
-    }),
-    sport: z.enum(activityTargetCategorySchemaValues),
-    blocks: z.array(plannedWorkoutExportRepeatSchema).min(1).max(50),
-  })
-  .superRefine((document, context) => {
-    let expandedStepCount = 0;
-    let expandedTimeSeconds = 0;
+const exportActivitySegmentSchema = z.object({
+  kind: z.literal("activity"),
+  sourceSegmentId: z.string().uuid(),
+  name: z.string().min(1).max(100),
+  notes: z.string().max(1000).optional(),
+  category: canonicalSportSchema,
+  blocks: z.array(plannedWorkoutExportRepeatSchema).min(1),
+});
+const exportBoundarySegmentSchema = z.object({
+  kind: z.enum(["rest", "transition"]),
+  sourceSegmentId: z.string().uuid(),
+  name: z.string().min(1).max(100),
+  notes: z.string().max(1000).optional(),
+  duration: z.object({
+    kind: z.literal("time"),
+    value: z.number().positive(),
+    unit: z.literal("seconds"),
+  }),
+});
 
-    document.blocks.forEach((block) => {
-      expandedStepCount += block.steps.length * block.count;
-      block.steps.forEach((step) => {
-        if (step.duration.kind === "time") {
-          expandedTimeSeconds += step.duration.value * block.count;
-        }
-      });
-    });
-
-    if (expandedStepCount > ACTIVITY_PLAN_V2_SAVEABLE_LIMITS.maxExpandedStepCount) {
-      context.addIssue({
-        code: "custom",
-        path: ["blocks"],
-        message: `Workout cannot exceed ${ACTIVITY_PLAN_V2_SAVEABLE_LIMITS.maxExpandedStepCount} expanded steps.`,
-      });
-    }
-    if (expandedTimeSeconds > ACTIVITY_PLAN_V2_SAVEABLE_LIMITS.maxExpandedDurationSeconds) {
-      context.addIssue({
-        code: "custom",
-        path: ["blocks"],
-        message: `Workout cannot exceed ${ACTIVITY_PLAN_V2_SAVEABLE_LIMITS.maxExpandedDurationSeconds} seconds of expanded time.`,
-      });
-    }
-  });
+/** Lossless provider-neutral V3 representation, plus an explicitly labeled legacy projection. */
+export const plannedWorkoutExportDocumentSchema = z.object({
+  version: z.union([z.literal(1), z.literal(2)]),
+  event: z.object({
+    id: z.string().min(1),
+    name: z.string().min(1).max(100),
+    description: z.string().max(1000).optional(),
+    scheduledAt: z.string().datetime().optional(),
+  }),
+  sport: canonicalSportSchema,
+  blocks: z.array(plannedWorkoutExportRepeatSchema),
+  segments: z
+    .array(z.discriminatedUnion("kind", [exportActivitySegmentSchema, exportBoundarySegmentSchema]))
+    .min(1)
+    .optional(),
+  categories: z.array(canonicalSportSchema).min(1).optional(),
+  legacyProjection: z
+    .object({
+      lossless: z.boolean(),
+      sport: canonicalSportSchema,
+      blocks: z.array(plannedWorkoutExportRepeatSchema),
+    })
+    .optional(),
+});
 
 export type PlannedWorkoutExportDocument = z.infer<typeof plannedWorkoutExportDocumentSchema>;
 export type PlannedWorkoutExportTarget = z.infer<typeof plannedWorkoutExportTargetSchema>;
-
 export type PlannedWorkoutExportEventMetadata = {
   id: string;
   name: string;
   description?: string;
   scheduledAt?: string;
-  sport: ActivityTargetCategory;
 };
 
-function mapDuration(duration: DurationV2): z.infer<typeof exportDurationSchema> {
+function mapDuration(duration: ActivityPlanDuration): z.infer<typeof exportDurationSchema> {
   switch (duration.type) {
     case "time":
       return { kind: "time", value: duration.seconds, unit: "seconds" };
@@ -147,7 +142,7 @@ function mapDuration(duration: DurationV2): z.infer<typeof exportDurationSchema>
 }
 
 function mapTarget(
-  target: IntensityTargetV2,
+  target: ActivityPlanTarget,
   anchors: ActivityPlanTargetAnchors,
 ): PlannedWorkoutExportTarget {
   switch (target.type) {
@@ -158,12 +153,12 @@ function mapTarget(
         basis: "ftp",
         value: target.intensity,
         unit: "percent",
-        ...(anchors.ftpWatts != null
-          ? {
+        ...(anchors.ftpWatts == null
+          ? {}
+          : {
               resolvedValue: (target.intensity / 100) * anchors.ftpWatts,
               resolvedUnit: "watts" as const,
-            }
-          : {}),
+            }),
       };
     case "%MaxHR":
       return {
@@ -172,12 +167,12 @@ function mapTarget(
         basis: "maximum_heart_rate",
         value: target.intensity,
         unit: "percent",
-        ...(anchors.maxHeartRateBpm != null
-          ? {
+        ...(anchors.maxHeartRateBpm == null
+          ? {}
+          : {
               resolvedValue: (target.intensity / 100) * anchors.maxHeartRateBpm,
               resolvedUnit: "beats_per_minute" as const,
-            }
-          : {}),
+            }),
       };
     case "%ThresholdHR":
       return {
@@ -186,12 +181,12 @@ function mapTarget(
         basis: "threshold_heart_rate",
         value: target.intensity,
         unit: "percent",
-        ...(anchors.thresholdHeartRateBpm != null
-          ? {
+        ...(anchors.thresholdHeartRateBpm == null
+          ? {}
+          : {
               resolvedValue: (target.intensity / 100) * anchors.thresholdHeartRateBpm,
               resolvedUnit: "beats_per_minute" as const,
-            }
-          : {}),
+            }),
       };
     case "watts":
       return {
@@ -217,7 +212,7 @@ function mapTarget(
         metric: "speed",
         sourceValue: target.intensity,
         sourceUnit: "kilometers_per_hour",
-        value: activityPlanSpeedKphToMetersPerSecond(target.intensity),
+        value: target.intensity / 3.6,
         unit: "meters_per_second",
       };
     case "cadence":
@@ -241,34 +236,70 @@ function mapTarget(
   }
 }
 
-/** Maps persisted V2 data without timestamps, provider behavior, or lossy target selection. */
+/** Maps every authored segment; no boundary or secondary target is discarded. */
 export function mapActivityPlanToPlannedWorkoutExportDocument(input: {
   anchors?: ActivityPlanTargetAnchors;
   event: PlannedWorkoutExportEventMetadata;
-  structure: ActivityPlanStructureV2;
+  structure: ActivityPlanStructureV3;
 }): PlannedWorkoutExportDocument {
-  const { sport, ...event } = input.event;
   const anchors = input.anchors ?? {};
-
-  return plannedWorkoutExportDocumentSchema.parse({
-    version: 1,
-    event,
-    sport,
-    blocks: input.structure.intervals.map((interval) => ({
-      kind: "repeat",
+  const categories: CanonicalSport[] = [];
+  const blocks: z.infer<typeof plannedWorkoutExportRepeatSchema>[] = [];
+  const segments = input.structure.segments.map((segment) => {
+    if (segment.role !== "activity") {
+      return {
+        kind: segment.role,
+        sourceSegmentId: segment.id,
+        name: segment.name,
+        ...(segment.notes == null ? {} : { notes: segment.notes }),
+        duration: {
+          kind: "time" as const,
+          value: segment.duration.seconds,
+          unit: "seconds" as const,
+        },
+      };
+    }
+    if (!categories.includes(segment.category)) categories.push(segment.category);
+    const segmentBlocks = segment.intervals.map((interval) => ({
+      kind: "repeat" as const,
+      sourceSegmentId: segment.id,
+      category: segment.category,
       sourceIntervalId: interval.id,
       name: interval.name,
       ...(interval.notes == null ? {} : { notes: interval.notes }),
       count: interval.repetitions,
       steps: interval.steps.map((step) => ({
-        kind: "step",
+        kind: "step" as const,
         sourceStepId: step.id,
         name: step.name,
         ...(step.description == null ? {} : { description: step.description }),
         ...(step.notes == null ? {} : { notes: step.notes }),
         duration: mapDuration(step.duration),
-        targets: (step.targets ?? []).map((target) => mapTarget(target, anchors)),
+        targets: step.targets.map((target) => mapTarget(target, anchors)),
       })),
-    })),
+    }));
+    blocks.push(...segmentBlocks);
+    return {
+      kind: "activity" as const,
+      sourceSegmentId: segment.id,
+      name: segment.name,
+      ...(segment.notes == null ? {} : { notes: segment.notes }),
+      category: segment.category,
+      blocks: segmentBlocks,
+    };
+  });
+  const primaryCategory = categories[0];
+  if (!primaryCategory) throw new Error("Activity-plan export requires an activity segment.");
+  const lossless =
+    categories.length === 1 &&
+    input.structure.segments.every((segment) => segment.role === "activity");
+  return plannedWorkoutExportDocumentSchema.parse({
+    version: 2,
+    event: input.event,
+    sport: primaryCategory,
+    blocks,
+    segments,
+    categories,
+    legacyProjection: { lossless, sport: primaryCategory, blocks },
   });
 }

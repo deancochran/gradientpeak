@@ -1,4 +1,5 @@
 import type {
+  CompiledActivityPlanOccurrence,
   ControlMode,
   CurrentMetricValue as CoreCurrentMetricValue,
   RecordingSessionArtifact as CoreRecordingSessionArtifact,
@@ -6,7 +7,6 @@ import type {
   RecordingSessionSnapshot as CoreRecordingSessionSnapshot,
   FtmsAvailableMode,
   FtmsControlMode,
-  IntervalStepV2,
   MetricFamily,
   MetricProvenance,
   MetricSourceSelection,
@@ -16,10 +16,10 @@ import type {
   RecordingConfiguration,
   RecordingControlPolicy,
   RecordingMetricsSnapshot,
-  RecordingServiceActivityPlan,
   RecordingTrainerIntentSource,
   RecordingTrainerMachineType,
 } from "@repo/core";
+import type { RecordingActivityPlanV3Input, RecordingPlanOccurrence } from "./plan";
 
 export interface RecorderProfileRef {
   id: string;
@@ -385,7 +385,7 @@ export interface RecordingMetadata {
   profileId: string;
   profile: RecorderProfileRef;
   eventId?: string;
-  activityPlan?: RecordingServiceActivityPlan;
+  activityPlan?: RecordingActivityPlanV3Input;
   activityFilePath?: string;
 }
 
@@ -422,9 +422,7 @@ export interface RecordingRuntimeSourceState {
   sourceChanges: RecordingSourceChangeEvent[];
 }
 
-export type RecordingSessionArtifact = CoreRecordingSessionArtifact & {
-  runtimeSourceState: RecordingRuntimeSourceState;
-};
+export type RecordingSessionArtifact = CoreRecordingSessionArtifact;
 
 export interface RecordingSessionOverrideState {
   trainerMode: "auto" | "manual";
@@ -440,12 +438,25 @@ export interface RecordingPlanView {
   activityType?: RecordingActivityCategory | null;
   stepIndex: number;
   stepCount: number;
-  currentStep?: IntervalStepV2;
+  currentStep?: RecordingPlanOccurrence;
+  nextStep?: RecordingPlanOccurrence;
+  currentSegment: {
+    id: string;
+    role: CompiledActivityPlanOccurrence["role"];
+    category: RecordingActivityCategory | null;
+  } | null;
+  nextSegment: {
+    id: string;
+    role: CompiledActivityPlanOccurrence["role"];
+    category: RecordingActivityCategory | null;
+  } | null;
   progress: {
     movingTime: number;
     duration: number;
     progress: number;
     requiresManualAdvance: boolean;
+    canAutoAdvance: boolean;
+    canManualAdvance: boolean;
     canAdvance: boolean;
   } | null;
   isLast: boolean;

@@ -52,7 +52,10 @@
         ],
         "test": {
           "script": "test",
-          "patterns": ["packages/db/scripts/verify-edge-function-safety.test.ts"]
+          "patterns": [
+            "packages/db/scripts/verify-edge-function-safety.test.ts",
+            "packages/db/scripts/storage-assets-contract.test.ts"
+          ]
         }
       }
     },
@@ -65,6 +68,10 @@
           "script": "check-types",
           "tsconfig": "packages/auth/tsconfig.json",
           "patterns": ["packages/auth/**/*.ts", "packages/auth/**/*.tsx"]
+        },
+        "test": {
+          "script": "test",
+          "patterns": ["packages/auth/**/*.test.ts", "packages/auth/**/*.test.tsx"]
         }
       }
     },

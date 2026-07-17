@@ -31,6 +31,10 @@ vi.mock("./activity-type-utils", () => ({
   isWahooSupported: vi.fn(() => true),
   supportsRoutes: supportsRoutesMock,
   toActivityType: vi.fn((category) => category),
+  toWahooTypes: vi.fn((activityType, options?: { hasRoute?: boolean }) => ({
+    workout_type_family: activityType === "run" ? 1 : 0,
+    workout_type_location: options?.hasRoute ? 1 : 0,
+  })),
   toWahooWorkoutTypeId: vi.fn((activityType, options?: { hasRoute?: boolean }) => {
     if (activityType === "bike") return options?.hasRoute ? 0 : 12;
     if (activityType === "run") return options?.hasRoute ? 1 : 5;
@@ -51,32 +55,58 @@ vi.mock("./route-converter", () => ({
   validateRouteForWahoo: validateRouteForWahooMock,
 }));
 
+import { hashPlannedWorkoutPayload } from "../../provider-sync/planned-workouts/planned-workout-hash";
+import { getWahooProjectionSnapshot } from "./plan-converter";
 import { WahooSyncService } from "./sync-service";
 
 const intervalId = "00000000-0000-4000-8000-000000000001";
 const stepId = "00000000-0000-4000-8000-000000000002";
+const segmentId = "00000000-0000-4000-8000-000000000003";
 
 function createValidStructure(
   targets: Array<{ intensity: number; type: string }> = [{ type: "watts", intensity: 200 }],
 ) {
   return {
-    version: 2 as const,
-    intervals: [
+    version: 3 as const,
+    segments: [
       {
-        id: intervalId,
-        name: "Main set",
-        repetitions: 1,
-        steps: [
+        id: segmentId,
+        name: "Bike",
+        role: "activity" as const,
+        category: "bike" as const,
+        intervals: [
           {
-            id: stepId,
-            duration: { type: "time" as const, seconds: 1800 },
-            name: "Endurance",
-            targets,
+            id: intervalId,
+            name: "Main set",
+            repetitions: 1,
+            steps: [
+              {
+                id: stepId,
+                duration: { type: "time" as const, seconds: 1800 },
+                name: "Endurance",
+                targets,
+              },
+            ],
           },
         ],
       },
     ],
   };
+}
+
+function currentProjectionHash() {
+  return hashPlannedWorkoutPayload({
+    projectionSnapshot: getWahooProjectionSnapshot(createValidStructure() as never, {
+      activityType: "bike",
+      description: "Metadata-only change",
+      name: "Updated Workout Name",
+      ftp: 250,
+      max_hr: 190,
+      threshold_hr: 170,
+    }),
+    sourcePlanId: "plan-1",
+    sourceRouteId: null,
+  });
 }
 
 function createRepositoryMock() {
@@ -214,8 +244,125 @@ describe("WahooSyncService", () => {
     });
 
     expect(convertToWahooPlanMock).toHaveBeenCalledWith(
-      expect.objectContaining({ intervals: expect.any(Array) }),
+      expect.objectContaining({ segments: expect.any(Array) }),
       expect.objectContaining({ ftp: 285, max_hr: 190, threshold_hr: 170 }),
+    );
+  });
+
+  it("supersedes a stale queued projection before provider mutation", async () => {
+    const repository = createRepositoryMock();
+    const wahooClient = createClientMock();
+    createWahooClientMock.mockReturnValue(wahooClient);
+    const service = new WahooSyncService({
+      repository,
+      storage: { downloadRouteGpx: vi.fn() },
+    });
+
+    await expect(
+      service.syncEvent("event-1", "profile-1", { expectedProjectionHash: "stale-hash" }),
+    ).resolves.toMatchObject({
+      success: true,
+      action: "no_change",
+      terminalOutcome: "superseded",
+    });
+    expect(createWahooClientMock).not.toHaveBeenCalled();
+    expect(wahooClient.createPlan).not.toHaveBeenCalled();
+    expect(wahooClient.createWorkout).not.toHaveBeenCalled();
+  });
+
+  it("does not recreate an absolute-watts workout when an irrelevant max-HR anchor changes", async () => {
+    const repository = createRepositoryMock();
+    const wahooClient = createClientMock();
+    createWahooClientMock.mockReturnValue(wahooClient);
+    const service = new WahooSyncService({
+      repository,
+      storage: { downloadRouteGpx: vi.fn() },
+    });
+
+    await expect(service.syncEvent("event-1", "profile-1")).resolves.toMatchObject({
+      success: true,
+      action: "created",
+    });
+    const persistedMetadata =
+      repository.createEventResourceLink.mock.calls[0]?.[0]?.providerMetadata;
+    expect(persistedMetadata?.wahoo?.projectionHash).toEqual(expect.any(String));
+
+    repository.getEventResourceLink.mockResolvedValue({
+      externalId: "43",
+      id: "sync-1",
+      providerMetadata: persistedMetadata,
+      updatedAt: "2026-04-03T12:00:00.000Z",
+    });
+    await expect(service.syncEvent("event-1", "profile-1")).resolves.toMatchObject({
+      success: true,
+      action: "updated",
+    });
+    expect(wahooClient.createPlan).toHaveBeenCalledTimes(1);
+
+    repository.getProfileSyncMetrics.mockResolvedValue({
+      bikePowerEfforts: [],
+      ftpMetrics: [{ observedAt: "2026-03-01T12:00:00.000Z", source: "provider", value: 250 }],
+      maxHr: 191,
+      thresholdHr: 170,
+    });
+    await expect(service.syncEvent("event-1", "profile-1")).resolves.toMatchObject({
+      success: true,
+      action: "updated",
+    });
+    expect(wahooClient.createPlan).toHaveBeenCalledTimes(1);
+  });
+
+  it("recreates a relative-HR workout when its selected threshold anchor changes", async () => {
+    const repository = createRepositoryMock();
+    const planned = await repository.getPlannedEventForSync();
+    repository.getPlannedEventForSync.mockResolvedValue({
+      ...planned!,
+      activityPlan: {
+        ...planned!.activityPlan!,
+        structure: createValidStructure([{ type: "%ThresholdHR", intensity: 85 }]),
+      },
+    });
+    const wahooClient = createClientMock();
+    createWahooClientMock.mockReturnValue(wahooClient);
+    const service = new WahooSyncService({
+      repository,
+      storage: { downloadRouteGpx: vi.fn() },
+    });
+
+    await expect(service.syncEvent("event-1", "profile-1")).resolves.toMatchObject({
+      success: true,
+      action: "created",
+    });
+    const persistedMetadata =
+      repository.createEventResourceLink.mock.calls[0]?.[0]?.providerMetadata;
+    repository.getEventResourceLink.mockResolvedValue({
+      externalId: "43",
+      id: "sync-1",
+      providerMetadata: persistedMetadata,
+      updatedAt: "2026-04-03T12:00:00.000Z",
+    });
+    repository.getProfileSyncMetrics.mockResolvedValue({
+      bikePowerEfforts: [],
+      ftpMetrics: [{ observedAt: "2026-03-01T12:00:00.000Z", source: "provider", value: 250 }],
+      maxHr: 190,
+      thresholdHr: 171,
+    });
+
+    await expect(service.syncEvent("event-1", "profile-1")).resolves.toMatchObject({
+      success: true,
+      action: "recreated",
+    });
+    expect(wahooClient.createPlan).toHaveBeenCalledTimes(2);
+    expect(repository.updateEventResourceLink).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        providerMetadata: {
+          wahoo: expect.objectContaining({
+            projectionHash: expect.not.stringMatching(
+              persistedMetadata?.wahoo?.projectionHash ?? "",
+            ),
+          }),
+        },
+      }),
     );
   });
 
@@ -278,7 +425,7 @@ describe("WahooSyncService", () => {
     });
 
     expect(convertToWahooPlanMock).toHaveBeenCalledWith(
-      expect.objectContaining({ intervals: expect.any(Array) }),
+      expect.objectContaining({ segments: expect.any(Array) }),
       expect.objectContaining({ ftp: 250 }),
     );
   });
@@ -314,8 +461,7 @@ describe("WahooSyncService", () => {
     await expect(service.syncEvent("event-1", "profile-1")).resolves.toMatchObject({
       success: false,
       action: "no_change",
-      error:
-        'Step "Endurance" cannot be synced to Wahoo: %FTP targets require a finite positive FTP in the athlete profile',
+      error: "%FTP targets require an FTP anchor.",
       failureCode: "missing_metric",
       failureCategory: "eligibility",
       retryable: false,
@@ -631,6 +777,7 @@ describe("WahooSyncService", () => {
       providerMetadata: {
         wahoo: {
           planId: 42,
+          projectionHash: expect.any(String),
           routeId: 41,
           sourcePlanId: "plan-1",
           sourceRouteId: "route-1",
@@ -641,7 +788,7 @@ describe("WahooSyncService", () => {
     });
   });
 
-  it("creates a scheduled route workout without a Wahoo plan for route-only event plans", async () => {
+  it("rejects legacy route-only V2 plans before remote mutation", async () => {
     const repository = createRepositoryMock();
     repository.getRouteForSync.mockResolvedValueOnce({
       description: "Park loop",
@@ -672,54 +819,19 @@ describe("WahooSyncService", () => {
     createWahooClientMock.mockReturnValueOnce(wahooClient);
     const service = new WahooSyncService({ repository, storage });
 
-    await expect(service.syncEvent("event-1", "profile-1")).resolves.toEqual({
-      success: true,
-      action: "created",
-      workoutId: "43",
-      warnings: [],
+    await expect(service.syncEvent("event-1", "profile-1")).resolves.toMatchObject({
+      success: false,
+      action: "no_change",
+      failureCode: "invalid_plan",
+      retryable: false,
     });
 
-    expect(wahooClient.createRoute).toHaveBeenCalledWith({
-      file: "encoded-gpx",
-      filename: "Park Loop.gpx",
-      externalId: "routes/park-loop.gpx",
-      providerUpdatedAt: "2026-04-03T12:00:00.000Z",
-      name: "Park Loop",
-      description: "Park loop",
-      workoutTypeFamilyId: 0,
-      startLat: 35.1,
-      startLng: -80.8,
-      distance: 10420,
-      ascent: 120,
-      descent: 115,
-    });
+    expect(wahooClient.createRoute).not.toHaveBeenCalled();
     expect(convertToWahooPlanMock).not.toHaveBeenCalled();
     expect(wahooClient.getPlans).not.toHaveBeenCalled();
     expect(wahooClient.createPlan).not.toHaveBeenCalled();
-    expect(wahooClient.createWorkout).toHaveBeenCalledWith({
-      name: "Park Run",
-      scheduledDate: "2026-04-05T09:00:00.000Z",
-      externalId: "event-1",
-      routeId: 41,
-      workoutTypeId: 1,
-      durationMinutes: 1,
-    });
-    expect(repository.createEventResourceLink).toHaveBeenCalledWith({
-      profileId: "profile-1",
-      eventId: "event-1",
-      integrationId: "integration-1",
-      provider: "wahoo",
-      externalId: "43",
-      providerMetadata: {
-        wahoo: {
-          routeId: 41,
-          sourcePlanId: "plan-1",
-          sourceRouteId: "route-1",
-        },
-      },
-      syncedAt: "2026-04-03T12:00:00.000Z",
-      updatedAt: "2026-04-03T12:00:00.000Z",
-    });
+    expect(wahooClient.createWorkout).not.toHaveBeenCalled();
+    expect(repository.createEventResourceLink).not.toHaveBeenCalled();
   });
 
   it("updates workout metadata only when the synced structure is not older", async () => {
@@ -728,7 +840,11 @@ describe("WahooSyncService", () => {
       externalId: "workout-77",
       id: "sync-1",
       providerMetadata: {
-        wahoo: { sourcePlanId: "plan-1", sourceRouteId: null },
+        wahoo: {
+          projectionHash: currentProjectionHash(),
+          sourcePlanId: "plan-1",
+          sourceRouteId: null,
+        },
       },
       updatedAt: "2026-04-02T09:00:00.000Z",
     });
@@ -883,6 +999,7 @@ describe("WahooSyncService", () => {
       providerMetadata: {
         wahoo: {
           planId: 88,
+          projectionHash: expect.any(String),
           routeId: undefined,
           sourcePlanId: "plan-1",
         },
@@ -929,6 +1046,7 @@ describe("WahooSyncService", () => {
         providerMetadata: {
           wahoo: {
             planId: 88,
+            projectionHash: expect.any(String),
             routeId: undefined,
             sourcePlanId: "plan-2",
           },
@@ -990,6 +1108,7 @@ describe("WahooSyncService", () => {
         providerMetadata: {
           wahoo: {
             planId: 88,
+            projectionHash: expect.any(String),
             routeId: 41,
             sourcePlanId: "plan-1",
             sourceRouteId: "route-2",
@@ -1037,6 +1156,7 @@ describe("WahooSyncService", () => {
         providerMetadata: {
           wahoo: {
             planId: 88,
+            projectionHash: expect.any(String),
             routeId: undefined,
             sourcePlanId: "plan-1",
           },

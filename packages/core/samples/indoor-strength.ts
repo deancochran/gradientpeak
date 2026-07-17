@@ -1,5 +1,16 @@
-import type { RecordingServiceActivityPlan } from "../schemas";
-import { createPlan, Duration, Target } from "../schemas/activity_payload";
+import { Duration, Target } from "../schemas/activity_payload";
+import { createSystemActivityPlanBuilderFactory } from "./activity-plan-builder";
+import type { SystemActivityPlanTemplate as RecordingServiceActivityPlan } from "./types";
+
+const createPlan = createSystemActivityPlanBuilderFactory("strength", [
+  "Dynamic Warm-up:1:Dynamic Warm-up|Interval 2:3:Push-ups:Pull-ups/Rows:Shoulder Press|Cool-down Stretch:1:Cool-down Stretch",
+  "Dynamic Warm-up:1:Dynamic Warm-up|Interval 2:4:Squats:Deadlifts:Single-leg Work|Cool-down Stretch:1:Cool-down Stretch",
+  "Movement Prep:1:Movement Prep|Interval 2:5:Circuit Round:Active Recovery|Recovery Stretch:1:Recovery Stretch",
+  "Core Activation:1:Core Activation|Interval 2:3:Plank Variations:Dynamic Core:Recovery|Hip and Spine Mobility:1:Hip and Spine Mobility",
+  "Movement Preparation:1:Movement Preparation|Interval 2:4:Squat Patterns:Hinge Patterns:Push/Pull Patterns:Transition|Movement Integration:1:Movement Integration",
+  "Warmup:1:Warmup|Bench Press:3:Bench Press:Rest|Rows:3:Bent Over Rows:Rest|Overhead Press:3:Overhead Press:Rest|Cooldown:1:Cooldown",
+  "Warmup:1:Warmup|Squats:4:Back Squats:Rest|Deadlifts:3:Romanian Deadlifts:Rest|Lunges:3:Walking Lunges:Rest|Cooldown:1:Cooldown",
+]);
 
 /**
  * Upper Body Strength - Indoor
@@ -7,7 +18,7 @@ import { createPlan, Duration, Target } from "../schemas/activity_payload";
  * Estimated TSS: ~50
  */
 export const UPPER_BODY_STRENGTH: RecordingServiceActivityPlan = {
-  version: "2.0",
+  version: "3.0",
   name: "Upper Body Strength",
   description: "Comprehensive upper body strength training session",
   activity_category: "strength",
@@ -57,7 +68,7 @@ export const UPPER_BODY_STRENGTH: RecordingServiceActivityPlan = {
  * Estimated TSS: ~60
  */
 export const LOWER_BODY_STRENGTH: RecordingServiceActivityPlan = {
-  version: "2.0",
+  version: "3.0",
   name: "Lower Body Strength",
   description: "Comprehensive lower body strength and power training",
   activity_category: "strength",
@@ -108,7 +119,7 @@ export const LOWER_BODY_STRENGTH: RecordingServiceActivityPlan = {
  */
 export const FULL_BODY_CIRCUIT: RecordingServiceActivityPlan = {
   id: "aaaa1111-2222-3333-4444-555555555555",
-  version: "2.0",
+  version: "3.0",
   name: "Full Body Circuit",
   description: "High-intensity full body circuit training",
   activity_category: "strength",
@@ -153,7 +164,7 @@ export const FULL_BODY_CIRCUIT: RecordingServiceActivityPlan = {
  */
 export const CORE_STABILITY: RecordingServiceActivityPlan = {
   id: "aaaa2222-3333-4444-5555-666666666666",
-  version: "2.0",
+  version: "3.0",
   name: "Core and Stability",
   description: "Focused core strength and stability training",
   activity_category: "strength",
@@ -204,7 +215,7 @@ export const CORE_STABILITY: RecordingServiceActivityPlan = {
  */
 export const FUNCTIONAL_MOVEMENT: RecordingServiceActivityPlan = {
   id: "aaaa3333-4444-5555-6666-777777777777",
-  version: "2.0",
+  version: "3.0",
   name: "Functional Movement",
   description: "Movement patterns for daily life and sport performance",
   activity_category: "strength",
@@ -256,7 +267,7 @@ export const FUNCTIONAL_MOVEMENT: RecordingServiceActivityPlan = {
 
 export const SYSTEM_UPPER_BODY_STRENGTH: RecordingServiceActivityPlan = {
   id: "e9f5a8b7-2c6d-1e0f-5a4b-6c3d9e8f7a0b",
-  version: "2.0",
+  version: "3.0",
   name: "Upper Body Strength",
   description: "Bench press, rows, and overhead press - Complete upper body activity",
   activity_category: "strength",
@@ -326,7 +337,7 @@ export const SYSTEM_UPPER_BODY_STRENGTH: RecordingServiceActivityPlan = {
 
 export const SYSTEM_LOWER_BODY_STRENGTH: RecordingServiceActivityPlan = {
   id: "f0a6b9c8-3d7e-2f1a-6b5c-7d4e0f9a8b1c",
-  version: "2.0",
+  version: "3.0",
   name: "Lower Body Strength",
   description: "Squats, deadlifts, and lunges - Complete lower body activity",
   activity_category: "strength",

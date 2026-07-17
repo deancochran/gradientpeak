@@ -1,3 +1,4 @@
+import type { TrainingPlan } from "../schemas";
 import { normalizeLinkedActivityPlanId } from "./template-ids";
 
 export type SystemTrainingPlanTemplate = {
@@ -6,7 +7,7 @@ export type SystemTrainingPlanTemplate = {
   description: string;
   sessions_per_week_target: number;
   duration_hours: number;
-  structure: Record<string, unknown>;
+  structure: TrainingPlan;
 };
 
 type SamplePlanSession = {
@@ -64,6 +65,11 @@ const BIKE_RECOVERY_ID = "9b2c3d4e-5f6a-7b8c-9d0e-1f2a3b4c5d6e";
 const BIKE_CLIMBING_ID = "1f4a5b6c-7d8e-9f0a-1b2c-3d4e5f6a7b8c";
 const BIKE_LONG_ID = "a5f1b4c3-8e2b-7a6d-1c0f-2e9d5b4a3c1e";
 const BIKE_PROGRESSIVE_LONG_ID = "6f2a4c8e-1b3d-4f6a-8c9e-2d4b6f8a1c3e";
+const SPRINT_TRIATHLON_BRICK_ID = "73d53dd1-f8b8-4d7f-9ba7-dfa4de116101";
+const RUN_BIKE_RUN_TRANSITION_ID = "73d53dd1-f8b8-4d7f-9ba7-dfa4de116102";
+const SWIM_TECHNIQUE_ID = "6c9d0e1f-2a3b-4c5d-6e7f-8a9b0c1d2e3f";
+const SWIM_ENDURANCE_ID = "7d0e1f2a-3b4c-5d6e-7f8a-9b0c1d2e3f4a";
+const STRENGTH_CIRCUIT_ID = "aaaa1111-2222-3333-4444-555555555555";
 
 const MARATHON_FOUNDATION_WEEKS = [
   [
@@ -536,7 +542,11 @@ const CYCLING_ENDURANCE_BUILDER_WEEKS = [
   ],
 ] as const;
 
-const RAW_SAMPLE_PLANS: SystemTrainingPlanTemplate[] = [
+const RAW_SAMPLE_PLANS: Array<
+  Omit<SystemTrainingPlanTemplate, "structure"> & {
+    structure: Record<string, unknown>;
+  }
+> = [
   {
     id: "6a6f5a93-b8f3-4fca-9d4f-56a55b913001",
     name: "Marathon Foundation (12 weeks)",
@@ -642,58 +652,39 @@ const RAW_SAMPLE_PLANS: SystemTrainingPlanTemplate[] = [
       sessionsPerWeekTarget: 5,
       minRestDaysPerWeek: 1,
       maxConsecutiveDays: 3,
-      sessions: [
-        {
-          offset_days: 1,
-          activity_plan_id: "6c9d0e1f-2a3b-4c5d-6e7f-8a9b0c1d2e3f",
-          event_overrides: { title: "Swim Technique" },
-        },
-        {
-          offset_days: 2,
-          activity_plan_id: "8c1d2e3f-4a5b-6c7d-8e9f-0a1b2c3d4e5f",
-          event_overrides: { title: "Bike Endurance" },
-        },
-        {
-          offset_days: 4,
-          activity_plan_id: "0a3b4c5d-6e7f-8a9b-0c1d-2e3f4a5b6c7d",
-          event_overrides: { title: "Run Intervals" },
-        },
-        {
-          offset_days: 5,
-          activity_plan_id: "7d0e1f2a-3b4c-5d6e-7f8a-9b0c1d2e3f4a",
-          event_overrides: { title: "Swim Endurance" },
-        },
-        {
-          offset_days: 6,
-          activity_plan_id: "b6c2d5e4-9f3a-8b7c-2d1e-3f0a6b5c4d2f",
-          event_overrides: { title: "Brick Session" },
-        },
-        {
-          offset_days: 8,
-          activity_plan_id: "6c9d0e1f-2a3b-4c5d-6e7f-8a9b0c1d2e3f",
-          event_overrides: { title: "Swim Technique" },
-        },
-        {
-          offset_days: 9,
-          activity_plan_id: "0e3f4a5b-6c7d-8e9f-0a1b-2c3d4e5f6a7b",
-          event_overrides: { title: "Bike Tempo" },
-        },
-        {
-          offset_days: 11,
-          activity_plan_id: "d8e4f7a6-1b5c-0d9e-4f3a-5b2c8d7e6f4b",
-          event_overrides: { title: "Run Endurance" },
-        },
-        {
-          offset_days: 12,
-          activity_plan_id: "7d0e1f2a-3b4c-5d6e-7f8a-9b0c1d2e3f4a",
-          event_overrides: { title: "Swim Endurance" },
-        },
-        {
-          offset_days: 13,
-          activity_plan_id: "b6c2d5e4-9f3a-8b7c-2d1e-3f0a6b5c4d2f",
-          event_overrides: { title: "Brick Session" },
-        },
-      ],
+      sessions: Array.from({ length: 10 }, (_, weekIndex) => {
+        const buildWeek = weekIndex < 7;
+        return [
+          {
+            offset_days: weekIndex * 7 + 1,
+            activity_plan_id: SWIM_TECHNIQUE_ID,
+            event_overrides: { title: `Swim Technique ${weekIndex + 1}` },
+          },
+          {
+            offset_days: weekIndex * 7 + 2,
+            activity_plan_id: buildWeek ? BIKE_ENDURANCE_ID : BIKE_RECOVERY_ID,
+            event_overrides: { title: buildWeek ? "Bike Endurance" : "Bike Taper" },
+          },
+          {
+            offset_days: weekIndex * 7 + 4,
+            activity_plan_id: buildWeek ? RUN_SPEED_ID : RUN_EASY_ID,
+            event_overrides: { title: buildWeek ? "Run Quality" : "Run Taper" },
+          },
+          {
+            offset_days: weekIndex * 7 + 5,
+            activity_plan_id: SWIM_ENDURANCE_ID,
+            event_overrides: { title: "Swim Endurance" },
+          },
+          {
+            offset_days: weekIndex * 7 + 6,
+            activity_plan_id:
+              weekIndex % 2 === 0 ? SPRINT_TRIATHLON_BRICK_ID : RUN_BIKE_RUN_TRANSITION_ID,
+            event_overrides: {
+              title: buildWeek ? `Brick Progression ${weekIndex + 1}` : "Brick Race Rehearsal",
+            },
+          },
+        ];
+      }).flat(),
     }),
   },
   {
@@ -715,53 +706,23 @@ const RAW_SAMPLE_PLANS: SystemTrainingPlanTemplate[] = [
       sessionsPerWeekTarget: 3,
       minRestDaysPerWeek: 2,
       maxConsecutiveDays: 2,
-      sessions: [
+      sessions: Array.from({ length: 6 }, (_, weekIndex) => [
         {
-          offset_days: 1,
-          activity_plan_id: "7b0c1d2e-3f4a-5b6c-7d8e-9f0a1b2c3d4e",
-          event_overrides: { title: "Aerobic Session" },
+          offset_days: weekIndex * 7 + 1,
+          activity_plan_id: weekIndex % 2 === 0 ? BIKE_ENDURANCE_ID : RUN_AEROBIC_ID,
+          event_overrides: { title: "Aerobic Maintenance" },
         },
         {
-          offset_days: 3,
-          activity_plan_id: "aaaa1111-2222-3333-4444-555555555555",
-          event_overrides: { title: "Strength Session" },
+          offset_days: weekIndex * 7 + 3,
+          activity_plan_id: STRENGTH_CIRCUIT_ID,
+          event_overrides: { title: "Full Body Strength" },
         },
         {
-          offset_days: 5,
-          activity_plan_id: "d8e4f7a6-1b5c-0d9e-4f3a-5b2c8d7e6f4b",
-          event_overrides: { title: "Long Easy Session" },
+          offset_days: weekIndex * 7 + 5,
+          activity_plan_id: weekIndex < 4 ? RUN_LONG_ID : RUN_EASY_ID,
+          event_overrides: { title: weekIndex < 4 ? "Long Easy Session" : "Recovery Aerobic" },
         },
-        {
-          offset_days: 8,
-          activity_plan_id: "7b0c1d2e-3f4a-5b6c-7d8e-9f0a1b2c3d4e",
-          event_overrides: { title: "Aerobic Session" },
-        },
-        {
-          offset_days: 10,
-          activity_plan_id: "aaaa1111-2222-3333-4444-555555555555",
-          event_overrides: { title: "Strength Session" },
-        },
-        {
-          offset_days: 12,
-          activity_plan_id: "d8e4f7a6-1b5c-0d9e-4f3a-5b2c8d7e6f4b",
-          event_overrides: { title: "Long Easy Session" },
-        },
-        {
-          offset_days: 15,
-          activity_plan_id: "7b0c1d2e-3f4a-5b6c-7d8e-9f0a1b2c3d4e",
-          event_overrides: { title: "Aerobic Session" },
-        },
-        {
-          offset_days: 17,
-          activity_plan_id: "aaaa1111-2222-3333-4444-555555555555",
-          event_overrides: { title: "Strength Session" },
-        },
-        {
-          offset_days: 19,
-          activity_plan_id: "d8e4f7a6-1b5c-0d9e-4f3a-5b2c8d7e6f4b",
-          event_overrides: { title: "Long Easy Session" },
-        },
-      ],
+      ]).flat(),
     }),
   },
 ];
@@ -796,5 +757,8 @@ function normalizeStructureActivityPlanIds(value: unknown): Record<string, unkno
 
 export const ALL_SAMPLE_PLANS: SystemTrainingPlanTemplate[] = RAW_SAMPLE_PLANS.map((plan) => ({
   ...plan,
-  structure: normalizeStructureActivityPlanIds(plan.structure),
+  structure: {
+    ...normalizeStructureActivityPlanIds(plan.structure),
+    id: plan.id,
+  } as TrainingPlan,
 }));

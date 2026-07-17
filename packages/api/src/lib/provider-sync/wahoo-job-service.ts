@@ -15,6 +15,7 @@ const WAHOO_UNSYNC_EVENT_JOB = "wahoo.unsync_event";
 type WahooJobPayload = {
   eventId: string;
   operation: "publish" | "unsync";
+  projectionHash?: string;
 };
 
 class WahooSyncResultError extends Error {
@@ -40,7 +41,8 @@ function isWahooJobPayload(value: unknown): value is WahooJobPayload {
       "eventId" in value &&
       typeof value.eventId === "string" &&
       "operation" in value &&
-      (value.operation === "publish" || value.operation === "unsync"),
+      (value.operation === "publish" || value.operation === "unsync") &&
+      (!("projectionHash" in value) || typeof value.projectionHash === "string"),
   );
 }
 
@@ -143,8 +145,16 @@ export class WahooSyncJobService {
               const result = await this.deps.syncService.syncEvent(
                 job.payload.eventId,
                 job.profileId,
+                { expectedProjectionHash: job.payload.projectionHash },
               );
               if (!result.success) {
+                if (result.failureCategory === "eligibility" && result.retryable === false) {
+                  const finalized = await this.deps.providerSyncRepository.markJobSucceeded(
+                    job.id,
+                    workerId,
+                  );
+                  return finalized === false ? "failed" : "completed";
+                }
                 throw new WahooSyncResultError(
                   result.error ?? "Wahoo publish job failed",
                   result.retryable !== false,

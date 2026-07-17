@@ -876,8 +876,13 @@ describe("plan dashboard navigation", () => {
       view.rerender(<PlanScreenWithErrorBoundary />);
     });
 
-    expect(refetchActivePlanMock).toHaveBeenCalled();
-    expect(refetchSnapshotMock).toHaveBeenCalled();
+    expect(refetchActivePlanMock).toHaveBeenCalledTimes(1);
+    expect(refetchSnapshotMock).toHaveBeenCalledTimes(1);
+    await React.act(async () => {
+      view.rerender(<PlanScreenWithErrorBoundary />);
+    });
+    expect(refetchActivePlanMock).toHaveBeenCalledTimes(1);
+    expect(refetchSnapshotMock).toHaveBeenCalledTimes(1);
   });
 
   it("refreshes the projection snapshot when goals change", async () => {
@@ -894,8 +899,13 @@ describe("plan dashboard navigation", () => {
       view.rerender(<PlanScreenWithErrorBoundary />);
     });
 
-    expect(refetchActivePlanMock).toHaveBeenCalled();
-    expect(refetchSnapshotMock).toHaveBeenCalled();
+    expect(refetchActivePlanMock).toHaveBeenCalledTimes(1);
+    expect(refetchSnapshotMock).toHaveBeenCalledTimes(1);
+    await React.act(async () => {
+      view.rerender(<PlanScreenWithErrorBoundary />);
+    });
+    expect(refetchActivePlanMock).toHaveBeenCalledTimes(1);
+    expect(refetchSnapshotMock).toHaveBeenCalledTimes(1);
   });
 
   it("renders the training path section on the plan tab", () => {

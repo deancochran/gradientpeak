@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 
 const estimateActivity = vi.hoisted(() =>
   vi.fn((context: any) => {
+    if (context.structure?.version === 2) {
+      throw new Error("Invalid activity-plan V3 structure");
+    }
     if (context.structure?.fail) throw new Error("expected failure");
     const duration = context.structure?.duration ?? 1800;
     const routeDistance = context.route?.distanceMeters ?? 0;
@@ -184,7 +187,28 @@ describe("on-demand activity plan estimation", () => {
       estimation_status: "failed",
       estimate_source: "failed",
       counts_toward_aggregation: false,
-      authoritative_metrics: { estimated_tss: 0 },
+      authoritative_metrics: { estimated_tss: null },
+    });
+  });
+
+  it("returns failed no-evidence metrics for unsupported old structures", async () => {
+    const [result] = await getActivityPlansDerivedMetrics(
+      [plan({ structure: { version: 2, intervals: [] } })],
+      {} as any,
+      store() as any,
+      "profile-1",
+      { asOf },
+    );
+
+    expect(result).toMatchObject({
+      estimation_status: "failed",
+      estimate_source: "failed",
+      counts_toward_aggregation: false,
+      authoritative_metrics: {
+        estimated_tss: null,
+        estimated_duration: null,
+        intensity_factor: null,
+      },
     });
   });
 });

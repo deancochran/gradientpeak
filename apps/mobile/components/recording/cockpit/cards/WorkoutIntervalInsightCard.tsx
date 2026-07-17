@@ -1,13 +1,13 @@
 import {
+  type ActivityTarget,
   formatIntensityTarget,
   getStepIntensityColor,
-  type IntensityTargetV2,
-  type IntervalStepV2,
 } from "@repo/core/schemas";
 import { Text } from "@repo/ui/components/text";
 import { ChevronLeft, ChevronRight } from "lucide-react-native";
 import React from "react";
 import { type DimensionValue, Pressable, ScrollView, View } from "react-native";
+import type { RecordingPlanOccurrence } from "@/lib/services/ActivityRecorder/plan";
 import { formatSeconds } from "./format";
 import { MetricTile } from "./MetricTile";
 import type { InsightCardProps } from "./types";
@@ -27,6 +27,7 @@ type PlanProgressView =
       duration: number;
       progress: number;
       requiresManualAdvance: boolean;
+      canManualAdvance?: boolean;
       canAdvance: boolean;
     }
   | null
@@ -40,6 +41,12 @@ export function WorkoutIntervalInsightCard({ mode, plan, readings, service }: In
   const stepCount =
     plan.hasPlan && typeof plan.stepCount === "number" ? plan.stepCount : allSteps.length;
   const canSkip = plan.hasPlan && plan.canSkip;
+  const canManualAdvance =
+    plan.hasPlan &&
+    Boolean(
+      plan.progress?.canManualAdvance ??
+        (plan.progress?.requiresManualAdvance && plan.progress.canAdvance),
+    );
   const canGoBack = plan.hasPlan && plan.canGoBack;
   const compactStepDescription = plan.currentStep
     ? formatCompactStepDescription(plan.currentStep, service)
@@ -118,11 +125,12 @@ export function WorkoutIntervalInsightCard({ mode, plan, readings, service }: In
             onPress={() => plan.hasPlan && plan.previous()}
           />
           <PlanStepButton
-            accessibilityLabel="Skip interval"
-            disabled={!canSkip}
+            accessibilityLabel={canManualAdvance ? "Advance interval" : "Skip interval"}
+            action={canManualAdvance ? "advance" : "skip"}
+            disabled={canManualAdvance ? false : !canSkip}
             fullWidth
             icon="forward"
-            onPress={() => plan.hasPlan && plan.skip()}
+            onPress={() => plan.hasPlan && (canManualAdvance ? plan.advance() : plan.skip())}
           />
         </View>
       </View>
@@ -220,12 +228,13 @@ export function WorkoutIntervalInsightCard({ mode, plan, readings, service }: In
           onPress={() => plan.hasPlan && plan.previous()}
         />
         <PlanStepButton
-          accessibilityLabel="Skip interval"
-          disabled={!canSkip}
+          accessibilityLabel={canManualAdvance ? "Advance interval" : "Skip interval"}
+          action={canManualAdvance ? "advance" : "skip"}
+          disabled={canManualAdvance ? false : !canSkip}
           fullWidth
           icon="forward"
           large
-          onPress={() => plan.hasPlan && plan.skip()}
+          onPress={() => plan.hasPlan && (canManualAdvance ? plan.advance() : plan.skip())}
         />
       </View>
     </View>
@@ -233,7 +242,7 @@ export function WorkoutIntervalInsightCard({ mode, plan, readings, service }: In
 }
 
 function buildTargetMetricCards(
-  targets: IntensityTargetV2[] | undefined,
+  targets: ActivityTarget[] | undefined,
   readings: InsightCardProps["readings"],
   service: InsightCardProps["service"],
 ): TargetMetricCard[] {
@@ -243,7 +252,7 @@ function buildTargetMetricCards(
 }
 
 function buildTargetMetricCard(
-  target: IntensityTargetV2,
+  target: ActivityTarget,
   index: number,
   readings: InsightCardProps["readings"],
   service: InsightCardProps["service"],
@@ -327,13 +336,13 @@ function buildTargetMetricCard(
     case "speed": {
       const current = readings.speed ?? null;
       const currentKph = current ? current * 3.6 : null;
-      const targetKph = target.intensity * 3.6;
+      const targetKph = target.intensity;
 
       return {
         key: `speed-${index}`,
         label: "Speed",
         target: `${targetKph.toFixed(1)} km/h`,
-        tone: getTargetTone(current, target.intensity),
+        tone: getTargetTone(currentKph, targetKph),
         unit: "km/h",
         value: currentKph ? currentKph.toFixed(1) : "--",
       };
@@ -389,10 +398,13 @@ function getCompactTargetMetricClassName(tone: TargetMetricCard["tone"]) {
   }
 }
 
-function formatCompactStepDescription(step: IntervalStepV2, service: InsightCardProps["service"]) {
+function formatCompactStepDescription(
+  step: RecordingPlanOccurrence,
+  service: InsightCardProps["service"],
+) {
   const duration = formatDurationShort(step.duration);
 
-  if (!step.targets?.length) {
+  if (step.role !== "activity" || !step.targets.length) {
     return duration;
   }
 
@@ -401,7 +413,7 @@ function formatCompactStepDescription(step: IntervalStepV2, service: InsightCard
   return `${duration} @ ${targets}`;
 }
 
-function resolveReadableTarget(target: IntensityTargetV2, service: InsightCardProps["service"]) {
+function resolveReadableTarget(target: ActivityTarget, service: InsightCardProps["service"]) {
   switch (target.type) {
     case "%FTP": {
       const ftp = service?.getBaseFtp?.();
@@ -422,13 +434,13 @@ function resolveReadableTarget(target: IntensityTargetV2, service: InsightCardPr
     case "cadence":
       return `${Math.round(target.intensity)} rpm`;
     case "speed":
-      return `${target.intensity.toFixed(1)} m/s`;
+      return `${target.intensity.toFixed(1)} km/h`;
     case "RPE":
       return `RPE ${target.intensity}/10`;
   }
 }
 
-function formatDurationShort(duration: IntervalStepV2["duration"]) {
+function formatDurationShort(duration: RecordingPlanOccurrence["duration"]) {
   switch (duration.type) {
     case "time":
       if (duration.seconds >= 3600) return `${(duration.seconds / 3600).toFixed(1)}h`;
@@ -451,7 +463,7 @@ function ActivityPlanIntensityChart({
   fill = false,
   height,
 }: {
-  allSteps: IntervalStepV2[];
+  allSteps: RecordingPlanOccurrence[];
   currentStepIndex: number;
   fill?: boolean;
   height?: number;
@@ -477,7 +489,7 @@ function ActivityPlanIntensityChart({
       style={fill ? { columnGap } : { columnGap, height }}
     >
       {allSteps.map((step, index) => {
-        const intensity = step.targets?.[0]?.intensity ?? 50;
+        const intensity = step.role === "activity" ? (step.targets[0]?.intensity ?? 50) : 0;
         const barHeight: DimensionValue = fill
           ? (`${Math.max(10, Math.min(100, intensity))}%` as DimensionValue)
           : Math.max(minBarHeight, (availableHeight ?? 1) * Math.min(1, intensity / 100));
@@ -485,7 +497,7 @@ function ActivityPlanIntensityChart({
 
         return (
           <View
-            key={`${step.name}-${index}`}
+            key={step.occurrenceId}
             className="flex-1 justify-end"
             style={{
               flexBasis: 0,
@@ -520,6 +532,7 @@ function getStepRemainingLabel(progress: PlanProgressView) {
 }
 
 function PlanStepButton({
+  action = "back",
   accessibilityLabel,
   disabled,
   fullWidth = false,
@@ -527,6 +540,7 @@ function PlanStepButton({
   large = false,
   onPress,
 }: {
+  action?: "back" | "skip" | "advance";
   accessibilityLabel: string;
   disabled: boolean;
   fullWidth?: boolean;
@@ -550,14 +564,16 @@ function PlanStepButton({
     : icon === "back"
       ? "text-sm font-bold text-foreground"
       : "text-sm font-bold text-background";
-  const label = icon === "back" ? "Back" : "Skip";
+  const label = action === "back" ? "Back" : action === "advance" ? "Advance" : "Skip";
   const accessibilityHint = disabled
     ? icon === "back"
       ? "There is no previous interval available."
       : "There is no next interval available."
     : icon === "back"
       ? "Moves to the previous interval."
-      : "Skips the current interval and moves to the next interval.";
+      : action === "advance"
+        ? "Completes the current interval and advances the plan."
+        : "Skips the current interval and moves to the next interval.";
 
   return (
     <Pressable

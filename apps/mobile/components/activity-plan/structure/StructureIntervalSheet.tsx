@@ -1,15 +1,14 @@
 import {
-  formatDurationV2,
+  type ActivityPlanInterval,
+  type ActivityPlanTarget,
+  Duration,
   formatTargetValue,
-  type IntensityTargetV2,
-  type IntervalV2,
 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { CircleAlert, Minus, Plus, Trash2 } from "lucide-react-native";
 import { Pressable, View } from "react-native";
-import { TimelineChart } from "@/components/activity-plan/workout/TimelineChart";
 import { getDurationMs } from "@/lib/utils/durationConversion";
 
 interface IntervalIssueSummary {
@@ -19,7 +18,7 @@ interface IntervalIssueSummary {
 }
 
 interface StructureIntervalSheetProps {
-  interval: IntervalV2;
+  interval: ActivityPlanInterval;
   intervalIndex: number;
   intervalIssue?: IntervalIssueSummary;
   stepIssueCounts: Record<string, number>;
@@ -49,7 +48,7 @@ export function StructureIntervalSheet({
 
   const primaryTargets = interval.steps
     .map((step) => step.targets?.[0])
-    .filter((target): target is IntensityTargetV2 => !!target);
+    .filter((target): target is ActivityPlanTarget => !!target);
 
   const summaryTarget = (() => {
     if (primaryTargets.length === 0) {
@@ -89,23 +88,6 @@ export function StructureIntervalSheet({
             </Text>
           </View>
         ) : null}
-      </View>
-
-      <View className="rounded-md border border-border bg-background px-2 py-2">
-        <TimelineChart
-          structure={{
-            version: 2,
-            intervals: [{ ...interval, repetitions: 1 }],
-          }}
-          height={72}
-          compact
-          onStepPress={(stepIndex) => {
-            const step = interval.steps[stepIndex];
-            if (step) {
-              onEditStep(step.id);
-            }
-          }}
-        />
       </View>
 
       <View className="flex-row items-center gap-2">
@@ -162,7 +144,7 @@ export function StructureIntervalSheet({
                     </>
                   ) : (
                     <Text className="text-[11px] text-muted-foreground">
-                      {formatDurationV2(step.duration)}
+                      {Duration.formatDuration(step.duration)}
                       {step.targets?.[0] ? ` at ${formatTargetValue(step.targets[0])}` : ""}
                     </Text>
                   )}

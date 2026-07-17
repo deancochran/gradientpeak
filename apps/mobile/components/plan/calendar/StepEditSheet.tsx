@@ -1,4 +1,4 @@
-import type { DurationV2, IntensityTargetV2, PlanStepV2 } from "@repo/core";
+import type { ActivityPlanDuration, ActivityPlanIntervalStep, ActivityTarget } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import {
   Form,
@@ -19,10 +19,10 @@ import { AppConfirmModal, AppFormModal } from "@/components/shared/AppFormModal"
 
 interface StepEditSheetProps {
   isVisible: boolean;
-  step: PlanStepV2 | null;
+  step: ActivityPlanIntervalStep | null;
   stepIndex: number | null;
   onClose: () => void;
-  onSave: (updatedStep: PlanStepV2) => void;
+  onSave: (updatedStep: ActivityPlanIntervalStep) => void;
   onDelete: () => void;
   onDuplicate: () => void;
 }
@@ -173,7 +173,7 @@ export function StepEditSheet({
   }, [durationType, form]);
 
   const handleSave = (values: StepEditFormValues) => {
-    let duration: DurationV2;
+    let duration: ActivityPlanDuration;
 
     if (values.durationType === "untilFinished") {
       duration = { type: "untilFinished" };
@@ -197,25 +197,23 @@ export function StepEditSheet({
       duration = { type: "repetitions", count: Math.round(Number(values.durationValue)) };
     }
 
-    let targets: IntensityTargetV2[] | undefined;
+    let targets: ActivityTarget[] = [{ type: "RPE", intensity: 5 }];
 
     if (values.targetIntensity.trim()) {
-      const target: IntensityTargetV2 = {
-        type: values.targetType as any,
+      const target: ActivityTarget = {
+        type: values.targetType,
         intensity: Number(values.targetIntensity),
       };
       targets = [target];
     }
 
-    const updatedStep: PlanStepV2 = {
+    const updatedStep: ActivityPlanIntervalStep = {
+      id: step?.id ?? crypto.randomUUID(),
       name: values.name.trim(),
       description: values.description.trim() || undefined,
       notes: values.notes.trim() || undefined,
       duration,
       targets,
-      segmentName: step?.segmentName,
-      segmentIndex: step?.segmentIndex,
-      originalRepetitionCount: step?.originalRepetitionCount,
     };
 
     onSave(updatedStep);
@@ -225,14 +223,14 @@ export function StepEditSheet({
     setShowDeleteConfirm(true);
   };
 
-  if (!isVisible) {
-    return null;
-  }
-
   const submitForm = useZodFormSubmit<StepEditFormValues>({
     form,
     onSubmit: handleSave,
   });
+
+  if (!isVisible) {
+    return null;
+  }
 
   return (
     <>

@@ -15,7 +15,6 @@ type TrainingPlanTemplateListInput = TrainingPlanTemplateListFilters & {
 
 type TrainingPlanTemplateHealthIssueCode =
   | "invalid_persisted_structure"
-  | "legacy_structure"
   | "missing_sport_metadata"
   | "missing_experience_level_metadata"
   | "missing_duration_weeks_metadata";
@@ -27,12 +26,16 @@ function auditTrainingPlanTemplateStructureHealth(input: { structure: unknown })
   missingMetadata: Array<"sport" | "experienceLevel" | "durationWeeks">;
   issueCodes: TrainingPlanTemplateHealthIssueCode[];
 } {
-  const persistedResult = persistedTrainingPlanStructureSchema.safeParse(input.structure);
-  const currentResult = trainingPlanCreateSchema.safeParse(input.structure);
   const structure =
     input.structure && typeof input.structure === "object"
       ? (input.structure as Record<string, unknown>)
       : null;
+  const persistedResult = persistedTrainingPlanStructureSchema.safeParse(input.structure);
+  const currentResult = structure
+    ? trainingPlanCreateSchema.safeParse(
+        Object.fromEntries(Object.entries(structure).filter(([key]) => key !== "id")),
+      )
+    : trainingPlanCreateSchema.safeParse(input.structure);
 
   const missingMetadata: Array<"sport" | "experienceLevel" | "durationWeeks"> = [];
 
@@ -60,8 +63,6 @@ function auditTrainingPlanTemplateStructureHealth(input: { structure: unknown })
 
   if (!persistedResult.success) {
     issueCodes.push("invalid_persisted_structure");
-  } else if (!currentResult.success) {
-    issueCodes.push("legacy_structure");
   }
 
   if (missingMetadata.includes("sport")) {

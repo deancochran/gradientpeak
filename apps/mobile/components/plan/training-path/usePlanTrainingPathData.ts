@@ -631,7 +631,6 @@ export function usePlanTrainingPathData() {
 
   useEffect(() => {
     const refreshKey = [
-      activePlan?.id ?? "",
       String(upcomingPlannedEventsQuery.dataUpdatedAt ?? 0),
       String(recentPlannedEventsQuery.dataUpdatedAt ?? 0),
       String(groupCalendarEventsQuery.dataUpdatedAt ?? 0),
@@ -641,10 +640,6 @@ export function usePlanTrainingPathData() {
       String(goals.dataUpdatedAt ?? 0),
     ].join(":");
 
-    if (!activePlan?.id) {
-      lastProjectionRefreshKeyRef.current = refreshKey;
-      return;
-    }
     if (
       !upcomingPlannedEventsQuery.dataUpdatedAt &&
       !recentPlannedEventsQuery.dataUpdatedAt &&
@@ -661,7 +656,6 @@ export function usePlanTrainingPathData() {
     lastProjectionRefreshKeyRef.current = refreshKey;
     void Promise.all([refetchActivePlan(), snapshot.refetchAll()]);
   }, [
-    activePlan?.id,
     completedActivitiesQuery.dataUpdatedAt,
     dailyTssObservationsQuery.dataUpdatedAt,
     goals.dataUpdatedAt,

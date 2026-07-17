@@ -1,14 +1,15 @@
+import type { CssTestObservationInput } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import { Stack } from "expo-router";
 import { KeyboardAvoidingView, Platform, ScrollView, View } from "react-native";
-import { CssTestForm, type CssTestFormValues } from "@/components/profile/CssTestForm";
+import { CssTestForm } from "@/components/profile/CssTestForm";
 import { api } from "@/lib/api";
 
 export default function ProfileCssTestScreen() {
   const utils = api.useUtils();
   const mutation = api.profileMetrics.recordCssTest.useMutation();
 
-  const recordTest = async (values: CssTestFormValues) => {
+  const recordTest = async (values: CssTestObservationInput) => {
     const result = await mutation.mutateAsync({
       operation_id: values.operationId,
       recorded_at: values.recordedAt,

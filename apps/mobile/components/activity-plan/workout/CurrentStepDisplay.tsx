@@ -1,9 +1,10 @@
-import { type ActivityPlanStructureV2, formatDuration, type PlanStepV2 } from "@repo/core";
+import { type ActivityPlanStructureV3, formatDuration } from "@repo/core";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { Clock } from "lucide-react-native";
 import { memo } from "react";
 import { View } from "react-native";
+import type { RecordingPlanOccurrence } from "@/lib/services/ActivityRecorder/plan";
 import { TargetMetricsGrid } from "./TargetMetricsCard";
 
 type CurrentMetrics = {
@@ -20,10 +21,10 @@ type CurrentMetrics = {
 const CurrentStepDisplay = memo<{
   planProgress: any;
   currentMetrics: CurrentMetrics;
-  currentStep?: PlanStepV2;
+  currentStep?: RecordingPlanOccurrence;
   onNextStep?: () => void;
   isAdvancing: boolean;
-  structure: ActivityPlanStructureV2;
+  structure: ActivityPlanStructureV3;
 }>(function CurrentStepDisplay({
   planProgress,
   currentMetrics,

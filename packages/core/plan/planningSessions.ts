@@ -1,6 +1,4 @@
 import { z } from "zod";
-import type { ActivityPlanStructureV2 } from "../schemas/activity_plan_v2";
-import type { CanonicalSport } from "../schemas/sport";
 import {
   type ActivityPlanPlanningEstimate,
   type ActivityPlanPlanningEstimateInput,
@@ -95,17 +93,9 @@ export function estimatePlanningActivityPlanForAthlete({
   athleteContext: AthletePlanningContext;
 }): ActivityPlanPlanningEstimate {
   return estimateActivityPlanForTrainingContext({
-    activityCategory: normalizePlanningActivityCategory(activityPlan.activity_category),
     structure: activityPlan.structure as ActivityPlanPlanningEstimateInput["structure"],
-    authoritativeMetrics: {
-      estimatedDurationSeconds: activityPlan.authoritative_metrics?.estimated_duration ?? null,
-      estimatedTss: activityPlan.authoritative_metrics?.estimated_tss ?? null,
-      intensityFactor: activityPlan.authoritative_metrics?.intensity_factor ?? null,
-      distanceMeters: activityPlan.authoritative_metrics?.distance_meters ?? null,
-    },
     athleteContext: {
-      ftpWatts: athleteContext.physiology.ftpWatts.value,
-      thresholdPaceSecondsPerKm: deriveThresholdPaceSecondsPerKm(athleteContext),
+      cyclingFtpWatts: athleteContext.physiology.ftpWatts.value,
     },
   });
 }
@@ -174,22 +164,4 @@ export function applyEstimatedSessionActivityFacts(
       estimatedTss: estimate.tss,
     },
   };
-}
-
-function deriveThresholdPaceSecondsPerKm(athleteContext: AthletePlanningContext) {
-  const canonicalThresholdPace = athleteContext.physiology.thresholdPaceSecondsPerKm.value;
-  if (canonicalThresholdPace !== null) return canonicalThresholdPace;
-  const speedEfforts = athleteContext.efforts.filter(
-    (effort) =>
-      effort.activityCategory === "run" && effort.effortType === "speed" && effort.value > 0,
-  );
-  const latestSpeed = speedEfforts[0]?.value ?? null;
-  return latestSpeed ? 1000 / latestSpeed : null;
-}
-
-function normalizePlanningActivityCategory(category: string | null | undefined): CanonicalSport {
-  if (category === "run" || category === "bike" || category === "swim" || category === "strength") {
-    return category;
-  }
-  return "other";
 }

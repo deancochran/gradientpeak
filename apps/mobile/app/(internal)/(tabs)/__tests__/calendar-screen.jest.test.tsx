@@ -338,30 +338,38 @@ jest.mock("@/lib/api", () => ({
                         estimated_tss: 72,
                         intensity_factor: 0.82,
                         structure: {
-                          version: 2,
-                          intervals: [
+                          version: 3,
+                          segments: [
                             {
-                              id: "interval-1",
-                              name: "Main set",
-                              repetitions: 1,
-                              steps: [
+                              id: "00000000-0000-4000-8000-000000000001",
+                              role: "activity",
+                              category: "run",
+                              name: "Track activity",
+                              intervals: [
                                 {
-                                  id: "step-1",
-                                  name: "Warmup",
-                                  duration: { type: "time", seconds: 600 },
-                                  targets: [{ type: "%FTP", intensity: 55 }],
-                                },
-                                {
-                                  id: "step-2",
-                                  name: "Tempo",
-                                  duration: { type: "time", seconds: 1800 },
-                                  targets: [{ type: "%FTP", intensity: 92 }],
-                                },
-                                {
-                                  id: "step-3",
-                                  name: "Cooldown",
-                                  duration: { type: "time", seconds: 600 },
-                                  targets: [{ type: "%FTP", intensity: 45 }],
+                                  id: "00000000-0000-4000-8000-000000000002",
+                                  name: "Main set",
+                                  repetitions: 1,
+                                  steps: [
+                                    {
+                                      id: "00000000-0000-4000-8000-000000000003",
+                                      name: "Warmup",
+                                      duration: { type: "time", seconds: 600 },
+                                      targets: [{ type: "%MaxHR", intensity: 55 }],
+                                    },
+                                    {
+                                      id: "00000000-0000-4000-8000-000000000004",
+                                      name: "Tempo",
+                                      duration: { type: "time", seconds: 1800 },
+                                      targets: [{ type: "%MaxHR", intensity: 92 }],
+                                    },
+                                    {
+                                      id: "00000000-0000-4000-8000-000000000005",
+                                      name: "Cooldown",
+                                      duration: { type: "time", seconds: 600 },
+                                      targets: [{ type: "%MaxHR", intensity: 45 }],
+                                    },
+                                  ],
                                 },
                               ],
                             },

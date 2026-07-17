@@ -1,4 +1,8 @@
-import type { ActivityPlanStructureV2 } from "@repo/core";
+import {
+  type ActivityPlanStructureV3,
+  activityPlanStructureSchemaV3,
+  compileActivityPlanV3,
+} from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import type { ReactNode } from "react";
 import { View } from "react-native";
@@ -23,7 +27,7 @@ type ActivityPlanSummaryProps = {
   owner?: EntityOwner | null;
   routeName?: string | null;
   routeProvided?: boolean;
-  structure?: ActivityPlanStructureV2 | unknown;
+  structure?: ActivityPlanStructureV3 | unknown;
   subtitle?: string | null;
   testID?: string;
   title?: string | null;
@@ -43,18 +47,9 @@ export function formatActivityCategoryLabel(
     .join(" ");
 }
 
-export function countActivityPlanSteps(structure: ActivityPlanStructureV2 | unknown): number {
-  if (!structure || typeof structure !== "object") return 0;
-  const intervals = (structure as ActivityPlanStructureV2).intervals;
-  if (!Array.isArray(intervals)) return 0;
-
-  return intervals.reduce((total, interval) => {
-    const repetitions =
-      typeof interval.repetitions === "number" && interval.repetitions > 0
-        ? interval.repetitions
-        : 1;
-    return total + interval.steps.length * repetitions;
-  }, 0);
+export function countActivityPlanSteps(structure: ActivityPlanStructureV3 | unknown): number {
+  const parsed = activityPlanStructureSchemaV3.safeParse(structure);
+  return parsed.success ? compileActivityPlanV3(parsed.data).occurrences.length : 0;
 }
 
 export function formatActivityPlanDuration(params: {
@@ -89,6 +84,9 @@ export function ActivityPlanMetricsRow({
   | "structure"
 >) {
   const stepCount = countActivityPlanSteps(structure);
+  const parsedStructure = activityPlanStructureSchemaV3.safeParse(structure);
+  const hasCompatibleAggregate =
+    parsedStructure.success && compileActivityPlanV3(parsedStructure.data).categories.length === 1;
   const durationLabel = formatActivityPlanDuration({ estimatedDuration, estimatedDurationMinutes });
 
   if (
@@ -108,16 +106,20 @@ export function ActivityPlanMetricsRow({
     <ResourceMetricsRow
       metrics={[
         { label: "Duration", value: durationLabel || "--" },
-        {
-          label: "TSS",
-          value: formatEstimatedTss(estimatedTss, { includeUnit: false }) ?? "--",
-          tone: "primary",
-        },
-        {
-          label: "Intensity",
-          value: formatEstimatedIntensityFactor(intensityFactor) ?? "--",
-          tone: "primary",
-        },
+        ...(hasCompatibleAggregate
+          ? [
+              {
+                label: "TSS",
+                value: formatEstimatedTss(estimatedTss, { includeUnit: false }) ?? "--",
+                tone: "primary" as const,
+              },
+              {
+                label: "Intensity",
+                value: formatEstimatedIntensityFactor(intensityFactor) ?? "--",
+                tone: "primary" as const,
+              },
+            ]
+          : []),
         { label: "Steps", value: `${stepCount}` },
       ]}
     />

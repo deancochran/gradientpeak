@@ -647,7 +647,7 @@ describe("training plan creation domain", () => {
   it("recomputes assigned session projection metrics from current athlete context estimates", () => {
     const fixtures = createTrainingPlanBuilderFixtures();
     const assignedActivityPlan = fixtures.activityPlan({
-      id: "run-plan",
+      id: "bike-plan",
       estimatedDurationSeconds: 3600,
       estimatedTss: 100,
     });
@@ -663,24 +663,32 @@ describe("training plan creation domain", () => {
       },
     };
     const activityPlansById = {
-      "run-plan": {
-        id: "run-plan",
-        name: "5K tempo",
-        activity_category: "run",
+      "bike-plan": {
+        id: "bike-plan",
+        name: "Tempo ride",
+        activity_category: "bike",
         authoritative_metrics: { estimated_duration: 3600, estimated_tss: 100 },
         structure: {
-          version: 2,
-          intervals: [
+          version: 3,
+          segments: [
             {
-              id: "11111111-1111-4111-8111-111111111111",
-              name: "Tempo block",
-              repetitions: 1,
-              steps: [
+              id: "00000000-0000-4000-8000-000000000001",
+              role: "activity",
+              category: "bike",
+              name: "Tempo ride",
+              intervals: [
                 {
-                  id: "22222222-2222-4222-8222-222222222222",
-                  name: "Tempo 5K",
-                  duration: { type: "distance", meters: 5000 },
-                  targets: [{ type: "%FTP", intensity: 80 }],
+                  id: "11111111-1111-4111-8111-111111111111",
+                  name: "Tempo block",
+                  repetitions: 1,
+                  steps: [
+                    {
+                      id: "22222222-2222-4222-8222-222222222222",
+                      name: "Tempo hour",
+                      duration: { type: "time", seconds: 3600 },
+                      targets: [{ type: "watts", intensity: 200 }],
+                    },
+                  ],
                 },
               ],
             },
@@ -692,34 +700,30 @@ describe("training plan creation domain", () => {
       ...baseState,
       athleteContext: createAthletePlanningContextFromSnapshot({
         profile: null,
-        profileMetrics: [],
-        activityEfforts: [
+        profileMetrics: [
           {
-            activity_category: "run",
-            effort_type: "speed",
-            duration_seconds: 1200,
-            value: 4,
-            unit: "m/s",
+            metric_type: "ftp",
+            value: 250,
+            unit: "W",
             recorded_at: "2026-01-01T00:00:00.000Z",
           },
         ],
+        activityEfforts: [],
       }),
     };
     const slowState = {
       ...baseState,
       athleteContext: createAthletePlanningContextFromSnapshot({
         profile: null,
-        profileMetrics: [],
-        activityEfforts: [
+        profileMetrics: [
           {
-            activity_category: "run",
-            effort_type: "speed",
-            duration_seconds: 1200,
-            value: 2.5,
-            unit: "m/s",
+            metric_type: "ftp",
+            value: 200,
+            unit: "W",
             recorded_at: "2026-01-02T00:00:00.000Z",
           },
         ],
+        activityEfforts: [],
       }),
     };
 
@@ -730,11 +734,11 @@ describe("training plan creation domain", () => {
     expect(
       fastProjection.planningProjection.estimatedContext.sessions[0]?.activityPlan
         ?.estimatedDurationSeconds,
-    ).toBe(1250);
+    ).toBe(3600);
     expect(
       slowProjection.planningProjection.estimatedContext.sessions[0]?.activityPlan
         ?.estimatedDurationSeconds,
-    ).toBe(2000);
+    ).toBe(3600);
     expect(fastProjection.creationPreview.totalEstimatedTss).toBeLessThan(
       slowProjection.creationPreview.totalEstimatedTss,
     );

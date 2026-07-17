@@ -3,7 +3,7 @@ import { addDaysDateOnlyUtc, diffDateOnlyUtcDays, parseDateOnlyUtc } from "../da
 export interface WeeklyLoadAggregationSession {
   scheduled_date: string;
   event_type: "planned" | "rest_day";
-  estimated_tss: number;
+  estimated_tss: number | null;
   activity_plan_id?: string | null;
   title?: string;
 }
@@ -98,15 +98,17 @@ export function aggregateWeeklyPlannedLoad(
 
     if (session.event_type === "planned") {
       existing.planned_session_count += 1;
-      existing.planned_weekly_tss += session.estimated_tss;
-      existing.session_tss.push(session.estimated_tss);
+      if (session.estimated_tss !== null) {
+        existing.planned_weekly_tss += session.estimated_tss;
+        existing.session_tss.push(session.estimated_tss);
+      }
       const plannedDates = plannedDatesByWeekStartDate.get(weekStartDate) ?? new Set<string>();
       plannedDates.add(session.scheduled_date);
       plannedDatesByWeekStartDate.set(weekStartDate, plannedDates);
       if (session.title) {
         existing.session_titles.push(session.title);
       }
-      if (!session.activity_plan_id) {
+      if (!session.activity_plan_id || session.estimated_tss === null) {
         existing.unresolved_session_count += 1;
       }
     }

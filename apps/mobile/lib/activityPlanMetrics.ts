@@ -4,10 +4,10 @@ export type ActivityPlanMetricFields = {
   intensity_factor?: number | null;
   estimated_distance?: number | null;
   provenance?: {
-    estimated_duration?: "estimated" | "prescribed" | "measured" | "unknown";
-    estimated_tss?: "estimated" | "prescribed" | "measured" | "unknown";
-    intensity_factor?: "estimated" | "prescribed" | "measured" | "unknown";
-    estimated_distance?: "estimated" | "prescribed" | "measured" | "unknown";
+    estimated_duration?: "estimated" | "prescribed" | "measured" | "unknown" | null;
+    estimated_tss?: "estimated" | "prescribed" | "measured" | "unknown" | null;
+    intensity_factor?: "estimated" | "prescribed" | "measured" | "unknown" | null;
+    estimated_distance?: "estimated" | "prescribed" | "measured" | "unknown" | null;
   } | null;
 };
 

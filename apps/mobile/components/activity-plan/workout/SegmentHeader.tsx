@@ -1,4 +1,4 @@
-import type { PlanStepV2 } from "@repo/core/schemas/activity_plan_v2";
+import type { ActivityPlanIntervalStep } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Text } from "@repo/ui/components/text";
 import * as Haptics from "expo-haptics";
@@ -8,7 +8,7 @@ import { Alert, Pressable, View } from "react-native";
 
 interface SegmentHeaderProps {
   segmentName: string;
-  steps: PlanStepV2[];
+  steps: ActivityPlanIntervalStep[];
   repetitions?: number;
   isCollapsed: boolean;
   onToggleCollapse: () => void;

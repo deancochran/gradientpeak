@@ -1,5 +1,5 @@
 import {
-  type CssTestProtocolInput,
+  type CssTestObservationInput,
   calculateCssFrom400m200mTest,
   cssTestTimesSchema,
 } from "@repo/core";
@@ -14,11 +14,9 @@ import { useRef } from "react";
 import type { z } from "zod";
 
 type CssTestFormFields = z.infer<typeof cssTestTimesSchema>;
-export type CssTestFormValues = CssTestProtocolInput & { recordedAt: Date };
-
 type CssTestFormProps = {
   onCancel: () => void;
-  onSubmit: (values: CssTestFormValues) => Promise<void> | void;
+  onSubmit: (values: CssTestObservationInput) => Promise<void> | void;
   pending?: boolean;
 };
 

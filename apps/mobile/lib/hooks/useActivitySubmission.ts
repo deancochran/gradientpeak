@@ -199,14 +199,19 @@ function buildQueueJob(args: {
   now: string;
 }): ActivitySubmissionQueueJob {
   const artifactId = args.artifact.sessionId;
+  if (!args.artifact.executionManifest) {
+    throw new Error("Finalized recording is missing its ordered execution manifest");
+  }
 
   return {
+    schemaVersion: 2,
     id: artifactId,
     artifactId,
     sessionId: args.artifact.sessionId,
     localActivityFilePath: args.artifact.activityFilePath ?? "",
     localActivityFileSize: args.fileSize,
     streamArtifactPaths: args.artifact.streamArtifactPaths,
+    executionManifest: args.artifact.executionManifest,
     draft: {
       ...toQueueDraft(args.activity),
       recordingSessionId: args.artifact.sessionId,
@@ -254,10 +259,18 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         throw new Error("No finalized activity artifact found");
       }
 
-      const profileId = service?.recordingMetadata?.profileId ?? profile?.id;
-
+      const profileId = profile?.id;
       if (!profileId) {
         throw new Error("No profile found for activity submission");
+      }
+      if (
+        service?.recordingMetadata?.profileId &&
+        service.recordingMetadata.profileId !== profileId
+      ) {
+        throw new Error("Finalized activity belongs to a different profile");
+      }
+      if (artifact.profileId !== profileId) {
+        throw new Error("Finalized activity belongs to a different profile");
       }
 
       const activity = buildActivityFromArtifact({
@@ -327,7 +340,13 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
       try {
         console.log(`[useActivitySubmission] Queueing activity file:`, artifact.activityFilePath);
 
-        const existingJob = await loadActivitySubmissionQueueJobByArtifactId(artifact.sessionId);
+        if (artifact.profileId !== activity.profileId || artifact.profileId !== profile?.id) {
+          throw new Error("Activity submission belongs to a different profile");
+        }
+        const existingJob = await loadActivitySubmissionQueueJobByArtifactId(
+          artifact.sessionId,
+          artifact.profileId,
+        );
 
         if (existingJob?.status === "complete") {
           if (!existingJob.activityId) {
@@ -476,7 +495,13 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         throw err;
       }
     },
-    [createActivityMutation, getSignedUrlMutation, markUploadedAndProcessMutation, queryClient],
+    [
+      createActivityMutation,
+      getSignedUrlMutation,
+      markUploadedAndProcessMutation,
+      profile?.id,
+      queryClient,
+    ],
   );
 
   const submit = useCallback(

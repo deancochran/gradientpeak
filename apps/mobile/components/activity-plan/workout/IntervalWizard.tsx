@@ -1,8 +1,8 @@
 import type {
-  IntensityTargetV2,
-  IntervalStepV2,
-  IntervalV2,
-} from "@repo/core/schemas/activity_plan_v2";
+  ActivityPlanInterval,
+  ActivityPlanIntervalStep,
+  ActivityPlanTarget,
+} from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Form, FormNumberField, FormTextField } from "@repo/ui/components/form";
 import { Text } from "@repo/ui/components/text";
@@ -13,12 +13,12 @@ import { View } from "react-native";
 import Svg, { Rect, Text as SvgText } from "react-native-svg";
 import { z } from "zod";
 import { AppFormModal } from "@/components/shared/AppFormModal";
-import { convertUIToV2Duration } from "@/lib/utils/durationConversion";
+import { convertUIToActivityPlanDuration } from "@/lib/utils/durationConversion";
 
 interface IntervalWizardProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave: (interval: IntervalV2) => void;
+  onSave: (interval: ActivityPlanInterval) => void;
   defaultSegmentName?: string;
 }
 
@@ -106,12 +106,12 @@ export function IntervalWizard({
   };
 
   const handleSave = (nextConfig: IntervalWizardValues) => {
-    const steps: IntervalStepV2[] = [];
+    const steps: ActivityPlanIntervalStep[] = [];
 
     steps.push({
       id: require("expo-crypto").randomUUID(),
       name: nextConfig.workName,
-      duration: convertUIToV2Duration({
+      duration: convertUIToActivityPlanDuration({
         type: "time",
         value: nextConfig.workDuration,
         unit: nextConfig.workUnit,
@@ -120,14 +120,14 @@ export function IntervalWizard({
         {
           type: "%FTP",
           intensity: nextConfig.workIntensity,
-        } as IntensityTargetV2,
+        } as ActivityPlanTarget,
       ],
     });
 
     steps.push({
       id: require("expo-crypto").randomUUID(),
       name: nextConfig.restName,
-      duration: convertUIToV2Duration({
+      duration: convertUIToActivityPlanDuration({
         type: "time",
         value: nextConfig.restDuration,
         unit: nextConfig.restUnit,
@@ -136,11 +136,11 @@ export function IntervalWizard({
         {
           type: "%FTP",
           intensity: nextConfig.restIntensity,
-        } as IntensityTargetV2,
+        } as ActivityPlanTarget,
       ],
     });
 
-    const interval: IntervalV2 = {
+    const interval: ActivityPlanInterval = {
       id: require("expo-crypto").randomUUID(),
       name: nextConfig.segmentName,
       repetitions: nextConfig.repeatCount,

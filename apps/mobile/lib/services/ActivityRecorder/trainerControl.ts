@@ -1,11 +1,11 @@
 import {
   BLE_SERVICE_UUIDS,
-  type IntervalStepV2,
+  type CompiledActivityStepOccurrence,
   metersPerSecondToKph,
   type RecordingTrainerControlIntent,
   type RecordingTrainerIntentSource,
   type RecordingTrainerMachineType,
-  resolvePlanStepTrainerIntents,
+  resolveActivityOccurrenceTrainerIntents,
 } from "@repo/core";
 import { PredictiveResistanceCalculator } from "./PredictiveResistanceCalculator";
 import type { ConnectedSensor, SensorsManager } from "./sensors";
@@ -45,6 +45,17 @@ export class TrainerControl {
 
   public resetAdaptiveState(): void {
     this.predictiveCalculator.reset();
+  }
+
+  /** Clears any prior ERG/resistance load before entering a non-activity occurrence. */
+  public async neutralizeForBoundary(): Promise<boolean> {
+    this.resetAdaptiveState();
+    this.lastRouteGradePercent = null;
+    if (!this.deps.sensorsManager.getControllableTrainer()) return true;
+    const success = await this.deps.sensorsManager.resetTrainerControl();
+    this.captureControllerStatus();
+    if (!success) this.deps.onError("Failed to reset trainer control at activity boundary.");
+    return success;
   }
 
   public getRecoveryState(): RecordingTrainerRecoveryState {
@@ -142,7 +153,7 @@ export class TrainerControl {
   }
 
   public async applyStepTargets(
-    step: IntervalStepV2,
+    occurrence: CompiledActivityStepOccurrence,
     source: RecordingTrainerIntentSource,
   ): Promise<void> {
     if (source === "reconnect_recovery") {
@@ -157,8 +168,8 @@ export class TrainerControl {
       return;
     }
 
-    const resolution = resolvePlanStepTrainerIntents({
-      step,
+    const resolution = resolveActivityOccurrenceTrainerIntents({
+      occurrence,
       profileSnapshot: this.deps.getSessionSnapshot()?.profileSnapshot,
       source,
     });

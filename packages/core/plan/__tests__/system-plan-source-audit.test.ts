@@ -37,17 +37,6 @@ describe("system plan source audit", () => {
         materializedWeekCount: audit.materializedWeekCount,
       }));
 
-    expect(spanMismatches).toEqual([
-      {
-        planName: "Sprint Triathlon Base (10 weeks)",
-        advertisedWeekCount: 10,
-        materializedWeekCount: 2,
-      },
-      {
-        planName: "General Fitness Maintenance (6 weeks)",
-        advertisedWeekCount: 6,
-        materializedWeekCount: 3,
-      },
-    ]);
+    expect(spanMismatches).toEqual([]);
   });
 });

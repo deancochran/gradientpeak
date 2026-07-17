@@ -1,4 +1,4 @@
-import { getTargetRange, type IntensityTargetV2, isInTargetRange } from "@repo/core";
+import { type ActivityPlanTarget, getTargetRange, isInTargetRange } from "@repo/core";
 import { Icon } from "@repo/ui/components/icon";
 import { Text } from "@repo/ui/components/text";
 import { Heart, Target, Zap } from "lucide-react-native";
@@ -10,7 +10,7 @@ import { View } from "react-native";
 // ================================
 
 interface TargetMetricsCardProps {
-  target: IntensityTargetV2;
+  target: ActivityPlanTarget;
   current?: number;
 }
 
@@ -136,7 +136,7 @@ TargetMetricsCard.displayName = "TargetMetricsCard";
 // ================================
 
 interface TargetMetricsGridProps {
-  targets?: IntensityTargetV2[];
+  targets?: ActivityPlanTarget[];
   currentMetrics: {
     heartRate?: number;
     power?: number;

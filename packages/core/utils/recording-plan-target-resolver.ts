@@ -1,30 +1,32 @@
-import type { IntensityTargetV2, IntervalStepV2 } from "../schemas/activity_plan_v2";
+import type { CompiledActivityStepOccurrence } from "../activity-plan";
 import type {
   RecordingProfileSnapshot,
   RecordingTrainerControlIntent,
   RecordingTrainerIntentSource,
 } from "../schemas/recording-session";
+import { isTargetTypePermittedForActivity } from "../targets";
+import type { ActivityTarget } from "../targets/schema";
 
-export interface ResolvePlanStepTrainerIntentsParams {
-  step: Pick<IntervalStepV2, "targets">;
+export interface ResolveActivityOccurrenceTrainerIntentsParams {
+  occurrence: Pick<CompiledActivityStepOccurrence, "category" | "targets">;
   profileSnapshot?: Pick<RecordingProfileSnapshot, "ftp" | "thresholdHr">;
   source?: RecordingTrainerIntentSource;
 }
 
 export interface PlanStepTrainerIntentResolution {
   intents: RecordingTrainerControlIntent[];
-  informationalTargets: IntensityTargetV2[];
-  unresolvedTargets: IntensityTargetV2[];
+  informationalTargets: ActivityTarget[];
+  unresolvedTargets: ActivityTarget[];
 }
 
 function resolveTargetToIntent(
-  target: IntensityTargetV2,
-  profileSnapshot: ResolvePlanStepTrainerIntentsParams["profileSnapshot"],
+  target: ActivityTarget,
+  profileSnapshot: ResolveActivityOccurrenceTrainerIntentsParams["profileSnapshot"],
   source: RecordingTrainerIntentSource,
 ): {
   intent?: RecordingTrainerControlIntent;
-  informational?: IntensityTargetV2;
-  unresolved?: IntensityTargetV2;
+  informational?: ActivityTarget;
+  unresolved?: ActivityTarget;
 } {
   switch (target.type) {
     case "%FTP": {
@@ -53,7 +55,7 @@ function resolveTargetToIntent(
         intent: {
           type: "set_speed",
           source,
-          metersPerSecond: target.intensity,
+          metersPerSecond: target.intensity / 3.6,
         },
       };
     case "cadence":
@@ -79,13 +81,22 @@ function resolveTargetToIntent(
  * mobile device adaptation can later translate into FTMS commands based on
  * actual hardware capabilities.
  */
-export function resolvePlanStepTrainerIntents(
-  params: ResolvePlanStepTrainerIntentsParams,
+export function resolveActivityOccurrenceTrainerIntents(
+  params: ResolveActivityOccurrenceTrainerIntentsParams,
 ): PlanStepTrainerIntentResolution {
   const source = params.source ?? "step_change";
 
-  return (params.step.targets ?? []).reduce<PlanStepTrainerIntentResolution>(
+  return params.occurrence.targets.reduce<PlanStepTrainerIntentResolution>(
     (acc, target) => {
+      if (
+        !isTargetTypePermittedForActivity({
+          activityCategory: params.occurrence.category,
+          targetType: target.type,
+        })
+      ) {
+        acc.unresolvedTargets.push(target);
+        return acc;
+      }
       const resolution = resolveTargetToIntent(target, params.profileSnapshot, source);
 
       if (resolution.intent) {

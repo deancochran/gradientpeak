@@ -1,9 +1,9 @@
 import {
+  type ActivityPlanIntervalStep,
+  type ActivityPlanTarget,
   type ActivityPlanTargetAnchors,
   type ActivityTargetCategory,
   getActivityPlanDefaultTarget,
-  type IntensityTargetV2,
-  type IntervalStepV2,
 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -27,8 +27,8 @@ import { StepDurationField } from "./StepDurationField";
 interface StepEditorDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  step?: IntervalStepV2;
-  onSave: (step: IntervalStepV2) => void;
+  step?: ActivityPlanIntervalStep;
+  onSave: (step: ActivityPlanIntervalStep) => void;
   activityType?: ActivityTargetCategory;
   targetAnchors?: ActivityPlanTargetAnchors;
   defaultSegmentName?: string;
@@ -75,11 +75,11 @@ const INTENSITY_TYPES = [
   { value: "RPE", label: "RPE (1-10)" },
 ];
 
-export function toStepEditorTargets(targets: IntensityTargetV2[]): IntensityTargetV2[] {
+export function toStepEditorTargets(targets: ActivityPlanTarget[]): ActivityPlanTarget[] {
   return targets.map((target) => ({ ...target }));
 }
 
-export function fromStepEditorTargets(targets: IntensityTargetV2[]): IntensityTargetV2[] {
+export function fromStepEditorTargets(targets: ActivityPlanTarget[]): ActivityPlanTarget[] {
   return targets.map((target) => ({ ...target }));
 }
 
@@ -156,18 +156,17 @@ export function StepEditorDialog({
 
     setSaveError(null);
 
-    // Create IntervalStepV2 - duration is already in V2 format
-    const stepV2: IntervalStepV2 = {
+    const savedStep: ActivityPlanIntervalStep = {
       id: step?.id || require("expo-crypto").randomUUID(),
       name: result.data.name,
       description: result.data.description,
       duration: result.data.duration, // Already in V2 format
-      targets: fromStepEditorTargets(result.data.targets as IntensityTargetV2[]),
+      targets: fromStepEditorTargets(result.data.targets as ActivityPlanTarget[]),
       notes: result.data.notes,
     };
 
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    onSave(stepV2);
+    onSave(savedStep);
     onOpenChange(false);
   };
 

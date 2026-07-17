@@ -28,6 +28,7 @@ jest.mock("@repo/ui/components/text", () => ({ __esModule: true, Text: createHos
 
 jest.mock("@repo/core", () => ({
   __esModule: true,
+  ...jest.requireActual("@repo/core"),
   formatDurationSec: jest.fn(() => "60 min"),
 }));
 

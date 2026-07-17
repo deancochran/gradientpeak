@@ -17,41 +17,49 @@ export function estimateMetrics(
   const { profile, activityCategory, route } = context;
 
   // Estimate calories
-  const calories = estimateCalories(
-    duration,
-    intensityFactor,
-    tss,
-    profile,
-    context.ftp,
-    context.thresholdHr,
-    context.weightKg,
-    activityCategory,
-    context.asOf,
-  );
+  const calories =
+    duration !== null && intensityFactor !== null && tss !== null
+      ? estimateCalories(
+          duration,
+          intensityFactor,
+          tss,
+          profile,
+          context.ftp,
+          context.thresholdHr,
+          context.weightKg,
+          activityCategory,
+          context.asOf,
+        )
+      : undefined;
 
   // Estimate distance
-  const distance = estimateDistance(duration, intensityFactor, activityCategory, route);
+  const distance =
+    baseEstimation.estimatedDistance ??
+    (duration !== null && intensityFactor !== null
+      ? estimateDistance(duration, intensityFactor, activityCategory ?? "other", route)
+      : route?.distanceMeters);
 
   // Estimate average power
   const avgPower =
-    context.ftp && activityCategory === "bike"
+    context.ftp && activityCategory === "bike" && intensityFactor !== null
       ? Math.round(context.ftp * intensityFactor)
       : undefined;
 
   // Estimate average heart rate
-  const avgHeartRate = estimateAvgHR(intensityFactor, context.thresholdHr);
+  const avgHeartRate =
+    intensityFactor === null ? undefined : estimateAvgHR(intensityFactor, context.thresholdHr);
 
   // Estimate average speed
-  const avgSpeed = distance ? distance / duration : undefined;
+  const avgSpeed = distance && duration !== null && duration > 0 ? distance / duration : undefined;
 
   // Estimate moving time (typically 95-98% of duration for structured activities)
-  const movingTime = Math.round(duration * 0.96);
+  const movingTime = duration === null ? undefined : Math.round(duration * 0.96);
 
   // Elevation gain from route
   const elevationGain = route?.totalAscent;
 
   return {
-    calories: Math.round(calories),
+    calories: calories == null ? undefined : Math.round(calories),
     distance: distance ? Math.round(distance) : undefined,
     avgPower,
     avgHeartRate: avgHeartRate ? Math.round(avgHeartRate) : undefined,

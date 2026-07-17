@@ -10,6 +10,18 @@ vi.mock("@repo/core/estimation", async () => {
       if (context.structure?.shouldThrow) {
         throw new Error("estimation failed");
       }
+      if (context.structure?.partial) {
+        return {
+          tss: null,
+          duration: null,
+          intensityFactor: null,
+          estimatedDistance: 5000,
+          confidence: "low",
+          confidenceScore: 40,
+          factors: ["partial"],
+          warnings: ["Partial evidence"],
+        };
+      }
 
       const distanceMeters = context.route?.distanceMeters ?? 0;
 
@@ -334,9 +346,9 @@ describe("estimation-helpers", () => {
         estimation_status: "failed",
         counts_toward_aggregation: false,
         authoritative_metrics: expect.objectContaining({
-          estimated_tss: 0,
-          estimated_duration: 0,
-          intensity_factor: 0,
+          estimated_tss: null,
+          estimated_duration: null,
+          intensity_factor: null,
         }),
       }),
     );
@@ -367,6 +379,37 @@ describe("estimation-helpers", () => {
       estimated_duration_seconds: 1800,
       intensity_factor: 0.82,
       estimated_distance_meters: 0,
+    });
+  });
+
+  it("preserves unknown evidence as null and excludes partial plans from aggregation", async () => {
+    const result = await addEstimationToPlan(
+      {
+        id: "plan-partial",
+        profile_id: "profile-1",
+        name: "Distance plan",
+        description: "",
+        activity_category: "run",
+        structure: { partial: true },
+      },
+      createStoreReader({}) as any,
+      "profile-1",
+    );
+
+    expect(result).toMatchObject({
+      estimation_status: "partial",
+      counts_toward_aggregation: false,
+      authoritative_metrics: {
+        estimated_tss: null,
+        estimated_duration: null,
+        intensity_factor: null,
+        provenance: {
+          estimated_tss: null,
+          estimated_duration: null,
+          intensity_factor: null,
+          estimated_distance: "estimated",
+        },
+      },
     });
   });
 

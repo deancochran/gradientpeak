@@ -13,7 +13,6 @@ import {
 import type { z } from "zod";
 import {
   buildConflictCommitError,
-  buildInvalidPayloadCommitError,
   buildStalePreviewCommitError,
 } from "../../lib/errors/trainingPlanCommitErrors";
 import type { TrainingPlanRepository } from "../../repositories";
@@ -136,9 +135,6 @@ export async function createFromCreationConfigUseCase<
   TExpandedPlan extends {
     name: string;
     description?: string;
-    metadata?: Record<string, unknown>;
-    goals: unknown[];
-    blocks: unknown[];
   } & Record<string, unknown>,
   TProjectionChart extends {
     constraint_summary: ProjectionConstraintSummary;
@@ -157,6 +153,7 @@ export async function createFromCreationConfigUseCase<
       objective_contributions?: unknown;
     };
     no_history?: unknown;
+    daily_load_points?: unknown[];
   },
   TProjectionFeasibility extends {
     state: "feasible" | "aggressive" | "unsafe";
@@ -183,6 +180,7 @@ export async function createFromCreationConfigUseCase<
     projectionConstraintSummary: ReturnType<TBuildCreationProjectionArtifacts>["projectionChart"]["constraint_summary"];
     projectionFeasibility: TProjectionFeasibility;
     noHistoryMetadata?: ReturnType<TBuildCreationProjectionArtifacts>["projectionChart"]["no_history"];
+    canonicalResolutionFingerprint: string;
   }) => string,
   TDeriveProjectionDrivenConflicts extends (input: {
     expandedPlan: TExpandedPlan;
@@ -203,11 +201,24 @@ export async function createFromCreationConfigUseCase<
     buildCreationProjectionArtifacts: TBuildCreationProjectionArtifacts;
     buildCreationPreviewSnapshotToken: TBuildCreationPreviewSnapshotToken;
     deriveProjectionDrivenConflicts: TDeriveProjectionDrivenConflicts;
+    resolveCanonicalTrainingPlan: (input: {
+      planId: string;
+      projection: TExpandedPlan;
+      dailyLoadPoints: NonNullable<TProjectionChart["daily_load_points"]>;
+    }) => Promise<{
+      fingerprint: string;
+      policy_version: number;
+      resolution_manifest: unknown[];
+      structure: Record<string, unknown>;
+    }>;
+    persistCanonicalTrainingPlan: (input: {
+      activityPlanIds: string[];
+      values: Parameters<NonNullable<TrainingPlanRepository["createTrainingPlan"]>>[0];
+    }) => ReturnType<NonNullable<TrainingPlanRepository["createTrainingPlan"]>>;
     throwPathValidationError: (
       message: string,
       issues: Array<{ path: Array<string | number>; message: string }>,
     ) => never;
-    parseTrainingPlanStructure: (value: unknown) => void;
     randomUUID?: () => string;
   };
 }) {
@@ -238,6 +249,12 @@ export async function createFromCreationConfigUseCase<
       contextSummary: evaluation.contextSummary,
     });
 
+  const planId = input.deps.randomUUID?.() ?? crypto.randomUUID();
+  const canonicalResolution = await input.deps.resolveCanonicalTrainingPlan({
+    planId,
+    projection: expandedPlan,
+    dailyLoadPoints: projectionChart.daily_load_points ?? [],
+  });
   const expectedPreviewSnapshotToken = input.deps.buildCreationPreviewSnapshotToken({
     minimalPlan: input.params.minimal_plan,
     finalConfig: evaluation.finalConfig,
@@ -245,6 +262,7 @@ export async function createFromCreationConfigUseCase<
     projectionConstraintSummary: projectionChart.constraint_summary,
     projectionFeasibility,
     noHistoryMetadata: projectionChart.no_history,
+    canonicalResolutionFingerprint: canonicalResolution.fingerprint,
   });
 
   if (
@@ -276,47 +294,19 @@ export async function createFromCreationConfigUseCase<
     });
   }
 
-  const planId = input.deps.randomUUID?.() ?? crypto.randomUUID();
   const calibrationSnapshot = trainingPlanCalibrationConfigSchema.parse(
     evaluation.finalConfig.calibration ?? {},
   );
-  const creationConfigSnapshot = evaluation.finalConfig;
-  const creationFormSnapshot = input.params.minimal_plan;
-
-  const structureWithId = {
-    ...expandedPlan,
-    id: planId,
-    metadata: {
-      ...(typeof expandedPlan.metadata === "object" && expandedPlan.metadata
-        ? expandedPlan.metadata
-        : {}),
-      creation_config_snapshot: creationConfigSnapshot,
-      creation_form_snapshot: creationFormSnapshot,
-      creation_calibration: {
-        version: calibrationSnapshot.version,
-        snapshot: calibrationSnapshot,
-      },
+  const data = await input.deps.persistCanonicalTrainingPlan({
+    activityPlanIds: canonicalResolution.resolution_manifest.map(
+      (entry) => (entry as { selected_activity_plan_id: string }).selected_activity_plan_id,
+    ),
+    values: {
+      name: expandedPlan.name,
+      description: expandedPlan.description ?? null,
+      structure: canonicalResolution.structure,
+      profileId: input.profileId,
     },
-  };
-
-  try {
-    input.deps.parseTrainingPlanStructure(structureWithId);
-  } catch (validationError) {
-    throw buildInvalidPayloadCommitError({
-      operation: "createFromCreationConfig",
-      reason: "generated_plan_failed_schema_validation",
-      details: {
-        validation_error:
-          validationError instanceof Error ? validationError.message : "unknown_validation_error",
-      },
-    });
-  }
-
-  const data = await input.repository.createTrainingPlan({
-    name: expandedPlan.name,
-    description: expandedPlan.description ?? null,
-    structure: structureWithId,
-    profileId: input.profileId,
   });
 
   if (projectionChart.inferred_current_state) {
@@ -345,6 +335,11 @@ export async function createFromCreationConfigUseCase<
       calibration: {
         version: calibrationSnapshot.version,
         snapshot: calibrationSnapshot,
+      },
+      canonical_projection: {
+        fingerprint: canonicalResolution.fingerprint,
+        policy_version: canonicalResolution.policy_version,
+        resolution_manifest: canonicalResolution.resolution_manifest,
       },
     },
   };

@@ -1,14 +1,14 @@
 import {
-  type DurationV2,
+  type ActivityPlanDuration,
+  type ActivityPlanIntervalStep,
+  type ActivityTarget,
   getStepIntensityColor,
-  type IntensityTargetV2,
-  type PlanStepV2,
 } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import { Dimensions, ScrollView, TouchableOpacity, View } from "react-native";
 
 interface ActivityStepChartProps {
-  steps: PlanStepV2[];
+  steps: ActivityPlanIntervalStep[];
   selectedStepIndex: number | null;
   onStepPress: (index: number) => void;
   onStepLongPress: (index: number) => void;
@@ -17,8 +17,8 @@ interface ActivityStepChartProps {
 interface FlattenedChartStep {
   index: number;
   name: string;
-  duration: DurationV2;
-  targets: IntensityTargetV2[] | undefined;
+  duration: ActivityPlanDuration;
+  targets: ActivityTarget[];
   durationMs: number;
   isFromRepetition: boolean;
 }
@@ -28,9 +28,9 @@ const CHART_HEIGHT = 200;
 const STEP_PADDING = 4;
 
 /**
- * Convert DurationV2 to milliseconds for chart calculations
+ * Convert a modern activity-plan duration to milliseconds for chart calculations
  */
-function getDurationMs(duration: DurationV2): number {
+function getDurationMs(duration: ActivityPlanDuration): number {
   switch (duration.type) {
     case "time":
       return duration.seconds * 1000;
@@ -49,16 +49,16 @@ function getDurationMs(duration: DurationV2): number {
 
 /**
  * Flatten steps for chart visualization
- * V2 schema already has flat structure, just add visualization properties
+ * Steps are already flat within a compiled interval; add visualization properties.
  */
-function flattenStepsForChart(steps: PlanStepV2[]): FlattenedChartStep[] {
+function flattenStepsForChart(steps: ActivityPlanIntervalStep[]): FlattenedChartStep[] {
   return steps.map((step, index) => ({
     index,
     name: step.name,
     duration: step.duration,
     targets: step.targets,
     durationMs: getDurationMs(step.duration),
-    isFromRepetition: step.originalRepetitionCount !== undefined,
+    isFromRepetition: false,
   }));
 }
 
@@ -79,7 +79,7 @@ function calculateStepWidth(
 /**
  * Get intensity percentage for height calculation
  */
-function getIntensityPercentage(targets: IntensityTargetV2[] | undefined): number {
+function getIntensityPercentage(targets: ActivityTarget[]): number {
   if (!targets || targets.length === 0) return 0;
 
   const primaryTarget = targets[0];
@@ -99,7 +99,7 @@ function getIntensityPercentage(targets: IntensityTargetV2[] | undefined): numbe
 /**
  * Format duration for display
  */
-function formatDuration(duration: DurationV2): string {
+function formatDuration(duration: ActivityPlanDuration): string {
   switch (duration.type) {
     case "time":
       if (duration.seconds >= 60) {
@@ -123,7 +123,7 @@ function formatDuration(duration: DurationV2): string {
 /**
  * Format target for display
  */
-function formatTarget(targets: IntensityTargetV2[] | undefined): string {
+function formatTarget(targets: ActivityTarget[]): string {
   if (!targets || targets.length === 0) return "Rest";
 
   const primary = targets[0];
@@ -189,8 +189,6 @@ export function ActivityStepChart({
           // Use the helper function from core package
           const color = step.targets?.[0]
             ? getStepIntensityColor({
-                name: step.name,
-                duration: step.duration,
                 targets: step.targets,
               })
             : "#94a3b8";

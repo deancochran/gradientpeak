@@ -16,7 +16,7 @@ const STEP_IDS = [
 ] as const;
 
 function supportedDocument(): PlannedWorkoutExportDocument {
-  return {
+  const document: PlannedWorkoutExportDocument = {
     version: 1,
     event: {
       id: "event-1",
@@ -139,6 +139,18 @@ function supportedDocument(): PlannedWorkoutExportDocument {
       },
     ],
   };
+  document.categories = ["bike"];
+  document.segments = [
+    {
+      kind: "activity",
+      sourceSegmentId: "20000000-0000-4000-8000-000000000010",
+      name: "Bike",
+      category: "bike",
+      blocks: document.blocks,
+    },
+  ];
+  document.legacyProjection = { lossless: true, sport: "bike", blocks: document.blocks };
+  return document;
 }
 
 type DecodedMessages = {
@@ -230,6 +242,10 @@ describe("Garmin workout FIT diagnostic encoding", () => {
   it("returns explicit reasons instead of encoding structures FIT cannot preserve", () => {
     const document = supportedDocument();
     document.sport = "swim";
+    document.categories = ["swim"];
+    const activitySegment = document.segments?.[0];
+    if (activitySegment?.kind === "activity") activitySegment.category = "swim";
+    if (document.legacyProjection) document.legacyProjection.sport = "swim";
     document.event.description = "😀".repeat(64);
     const firstBlock = document.blocks[0];
     if (firstBlock == null) throw new Error("Expected fixture block");
@@ -274,5 +290,76 @@ describe("Garmin workout FIT diagnostic encoding", () => {
       "unsupported_target",
     ]);
     expect(encodeGarminWorkoutFitDiagnostic(document)).toEqual({ ok: false, reasons });
+  });
+
+  it("rejects multisport and boundary projections before FIT encoding", () => {
+    const document = supportedDocument();
+    document.categories = ["bike", "run"];
+    document.segments = [
+      {
+        kind: "activity",
+        sourceSegmentId: "20000000-0000-4000-8000-000000000001",
+        name: "Bike",
+        category: "bike",
+        blocks: document.blocks,
+      },
+      {
+        kind: "transition",
+        sourceSegmentId: "20000000-0000-4000-8000-000000000002",
+        name: "Transition",
+        duration: { kind: "time", value: 60, unit: "seconds" },
+      },
+    ];
+    document.legacyProjection = {
+      lossless: false,
+      sport: "bike",
+      blocks: document.blocks,
+    };
+
+    const reasons = getGarminWorkoutFitUnsupportedReasons(document);
+    expect(reasons).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "lossy_projection",
+          path: ["legacyProjection", "lossless"],
+        }),
+        expect.objectContaining({ code: "lossy_projection", path: ["categories"] }),
+        expect.objectContaining({ code: "lossy_projection", path: ["segments", 1] }),
+      ]),
+    );
+    expect(encodeGarminWorkoutFitDiagnostic(document)).toEqual({ ok: false, reasons });
+  });
+
+  it("cannot bypass V2 consistency checks by omitting optional projection evidence", () => {
+    const document = supportedDocument();
+    document.version = 2;
+    delete document.categories;
+    delete document.segments;
+    delete document.legacyProjection;
+
+    expect(getGarminWorkoutFitUnsupportedReasons(document)).toContainEqual(
+      expect.objectContaining({ code: "lossy_projection", path: ["segments"] }),
+    );
+    expect(encodeGarminWorkoutFitDiagnostic(document)).toMatchObject({ ok: false });
+  });
+
+  it("rejects segment and root block mismatches", () => {
+    const document = supportedDocument();
+    document.version = 2;
+    document.categories = ["bike"];
+    document.segments = [
+      {
+        kind: "activity",
+        sourceSegmentId: "20000000-0000-4000-8000-000000000003",
+        name: "Bike",
+        category: "bike",
+        blocks: document.blocks.slice(0, 1),
+      },
+    ];
+    document.legacyProjection = { lossless: true, sport: "bike", blocks: document.blocks };
+
+    expect(getGarminWorkoutFitUnsupportedReasons(document)).toContainEqual(
+      expect.objectContaining({ code: "lossy_projection", path: ["blocks"] }),
+    );
   });
 });

@@ -20,6 +20,8 @@ export class GarminPlannedWorkoutAdapter implements PlannedWorkoutProviderAdapte
     startsAt: string;
   }): Promise<ProviderSyncEligibility> {
     const daysUntilWorkout = diffUtcDays(new Date().toISOString(), input.startsAt);
+    const maturityReason =
+      "Garmin planned-workout delivery is evidence-gated; partner publish support is not available.";
     if (daysUntilWorkout > DEFAULT_GARMIN_PUBLISH_HORIZON_DAYS) {
       const nextEligibleAt = new Date(input.startsAt);
       nextEligibleAt.setUTCDate(nextEligibleAt.getUTCDate() - DEFAULT_GARMIN_PUBLISH_HORIZON_DAYS);
@@ -27,15 +29,13 @@ export class GarminPlannedWorkoutAdapter implements PlannedWorkoutProviderAdapte
       return {
         eligible: false,
         nextEligibleAt: nextEligibleAt.toISOString(),
-        reason: `Garmin publish horizon scaffold set to ${DEFAULT_GARMIN_PUBLISH_HORIZON_DAYS} days`,
+        reason: maturityReason,
       };
     }
 
     return {
-      eligible: true,
-      warnings: [
-        "Garmin adapter is scaffold-only. Partner-specific publish behavior still needs implementation.",
-      ],
+      eligible: false,
+      reason: maturityReason,
     };
   }
 

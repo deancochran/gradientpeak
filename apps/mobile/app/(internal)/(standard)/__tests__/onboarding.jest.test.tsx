@@ -2103,6 +2103,7 @@ describe("onboarding screen", () => {
           gender: undefined,
           intents: [],
           max_hr: undefined,
+          planning_timezone: "America/New_York",
           resting_hr: undefined,
           lthr: undefined,
           threshold_pace_seconds_per_km: undefined,
@@ -2178,7 +2179,7 @@ describe("onboarding screen", () => {
       expect(completeLifecycleSetupMutationMock).toHaveBeenCalledWith(
         expect.objectContaining({
           profile: expect.objectContaining({
-            dob: "1988-04-05T00:00:00.000Z",
+            dob: "1988-04-05",
             ftp: 260,
             gender: "female",
             weight_kg: 64,

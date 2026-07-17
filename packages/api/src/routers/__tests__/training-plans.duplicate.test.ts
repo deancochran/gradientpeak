@@ -17,25 +17,14 @@ describe("trainingPlansRouter.duplicate", () => {
             is_system_template: false,
             structure: {
               id: sourcePlanId,
-              plan_type: "periodized",
-              name: "Shared Build",
-              start_date: "2026-01-01",
-              end_date: "2026-03-01",
-              fitness_progression: { starting_ctl: 45, target_ctl_at_peak: 60 },
-              activity_distribution: { run: { target_percentage: 1 } },
-              blocks: [
+              version: 1,
+              sport: ["run"],
+              sessions: [
                 {
-                  id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-                  name: "Base",
-                  phase: "base",
-                  start_date: "2026-01-01",
-                  end_date: "2026-01-28",
-                  goal_ids: [],
-                  target_weekly_tss_range: { min: 280, max: 320 },
-                  target_sessions_per_week_range: { min: 4, max: 5 },
+                  offset_days: 0,
+                  activity_plan_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                 },
               ],
-              goals: [],
             },
           },
           error: null,
@@ -50,25 +39,14 @@ describe("trainingPlansRouter.duplicate", () => {
             is_system_template: false,
             structure: {
               id: "33333333-3333-4333-8333-333333333333",
-              plan_type: "periodized",
-              name: "Shared Build",
-              start_date: "2026-01-01",
-              end_date: "2026-03-01",
-              fitness_progression: { starting_ctl: 45, target_ctl_at_peak: 60 },
-              activity_distribution: { run: { target_percentage: 1 } },
-              blocks: [
+              version: 1,
+              sport: ["run"],
+              sessions: [
                 {
-                  id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-                  name: "Base",
-                  phase: "base",
-                  start_date: "2026-01-01",
-                  end_date: "2026-01-28",
-                  goal_ids: [],
-                  target_weekly_tss_range: { min: 280, max: 320 },
-                  target_sessions_per_week_range: { min: 4, max: 5 },
+                  offset_days: 0,
+                  activity_plan_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                 },
               ],
-              goals: [],
             },
           },
           error: null,
@@ -92,7 +70,7 @@ describe("trainingPlansRouter.duplicate", () => {
     expect(result.visibility).toBe("private");
   });
 
-  it("duplicates legacy system-template structures without requiring the modern plan_type schema", async () => {
+  it("rejects legacy system-template structures explicitly", async () => {
     const sourcePlanId = "6a6f5a93-b8f3-4fca-9d4f-56a55b913001";
     const { db, callLog } = createQueryMapDbMock({
       training_plans: [
@@ -163,10 +141,12 @@ describe("trainingPlansRouter.duplicate", () => {
       trpcSource: "vitest",
     } as any);
 
-    const result = await caller.duplicate({ id: sourcePlanId });
-
-    expect(result.id).toBe("33333333-3333-4333-8333-333333333333");
-    expect(result.visibility).toBe("private");
-    expect(callLog.some((call) => call.table === "training_plans")).toBe(true);
+    await expect(caller.duplicate({ id: sourcePlanId })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Source training plan has invalid structure",
+    });
+    expect(
+      callLog.some((call) => call.table === "training_plans" && call.operation === "insert"),
+    ).toBe(false);
   });
 });

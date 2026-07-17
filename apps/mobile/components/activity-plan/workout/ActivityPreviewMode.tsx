@@ -2,7 +2,7 @@
 // Activity Preview Mode
 // ================================
 
-import type { ActivityPlanStructureV2 } from "@repo/core";
+import type { ActivityPlanStructureV3 } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import { memo } from "react";
 import { ScrollView, View } from "react-native";
@@ -10,24 +10,25 @@ import { ActivityGraph } from "./ActivityGraph";
 import { ActivityMetricsGrid } from "./ActivityMetricsGrid";
 import StepPreviewCard from "./StepPreviewCard";
 
-const ActivityPreviewMode = memo<{ structure: ActivityPlanStructureV2 }>(
+const ActivityPreviewMode = memo<{ structure: ActivityPlanStructureV3 }>(
   function ActivityPreviewMode({ structure }) {
     // Flatten first 6 steps from intervals for preview
     const previewSteps = [];
     let count = 0;
 
-    for (const interval of structure.intervals) {
-      if (count >= 6) break;
-      for (const step of interval.steps) {
-        if (count >= 6) break;
-        // Convert IntervalStepV2 to PlanStepV2 format for display
-        previewSteps.push({
-          ...step,
-          segmentName: interval.name,
-          segmentIndex: 0,
-          originalRepetitionCount: interval.repetitions,
-        });
-        count++;
+    for (const segment of structure.segments) {
+      if (segment.role !== "activity" || count >= 6) continue;
+      for (const interval of segment.intervals) {
+        for (const step of interval.steps) {
+          if (count >= 6) break;
+          previewSteps.push({
+            ...step,
+            segmentName: segment.name,
+            segmentIndex: count,
+            originalRepetitionCount: interval.repetitions,
+          });
+          count++;
+        }
       }
     }
 

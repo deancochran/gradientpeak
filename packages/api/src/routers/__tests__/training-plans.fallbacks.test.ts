@@ -74,7 +74,7 @@ function createSupabaseMock(results: QueryMap) {
   return {
     from: (table: string) => {
       const entry = results[table];
-      const result =
+      const sourceResult =
         !entry || !Array.isArray(entry)
           ? (entry ?? { data: [], error: null })
           : (() => {
@@ -82,6 +82,54 @@ function createSupabaseMock(results: QueryMap) {
               counters.set(table, index + 1);
               return entry[index] ?? entry[entry.length - 1] ?? { data: [], error: null };
             })();
+      const canonicalizePlan = (row: unknown) => {
+        if (!row || typeof row !== "object") return row;
+        const value = row as Record<string, unknown>;
+        const structure = value.structure as Record<string, unknown> | undefined;
+        if (!structure || (structure.version === 1 && typeof structure.id === "string")) return row;
+        const legacySessions = Array.isArray(structure.sessions) ? structure.sessions : [];
+        const sessions = legacySessions
+          .map((session) => session as Record<string, unknown>)
+          .filter((session) => typeof session.activity_plan_id === "string")
+          .map((session) => ({
+            offset_days:
+              typeof session.offset_days === "number"
+                ? session.offset_days
+                : typeof session.day_offset === "number"
+                  ? session.day_offset
+                  : 0,
+            activity_plan_id: session.activity_plan_id,
+            ...(typeof session.title === "string"
+              ? { event_overrides: { title: session.title } }
+              : {}),
+          }));
+        return {
+          ...value,
+          structure: {
+            id: "11111111-1111-4111-8111-111111111111",
+            version: 1,
+            sport: ["run"],
+            sessions:
+              sessions.length > 0
+                ? sessions
+                : [
+                    {
+                      offset_days: 0,
+                      activity_plan_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    },
+                  ],
+          },
+        };
+      };
+      const result =
+        table === "training_plans"
+          ? {
+              ...sourceResult,
+              data: Array.isArray(sourceResult.data)
+                ? sourceResult.data.map(canonicalizePlan)
+                : canonicalizePlan(sourceResult.data),
+            }
+          : sourceResult;
       const filters: Array<
         | { type: "eq"; column: string; value: unknown }
         | { type: "gte"; column: string; value: unknown }
@@ -158,14 +206,60 @@ function createSupabaseMock(results: QueryMap) {
 }
 
 function createTrainingPlansCaller(results: QueryMap = {}) {
+  const trainingPlanEntry = results.training_plans;
+  const canonicalizeResult = (result: QueryResult): QueryResult => {
+    const row = result.data as { structure?: Record<string, unknown> } | null;
+    if (!row?.structure || (row.structure.version === 1 && typeof row.structure.id === "string")) {
+      return result;
+    }
+    const legacySessions = Array.isArray(row.structure.sessions) ? row.structure.sessions : [];
+    const sessions = legacySessions
+      .map((session) => session as Record<string, unknown>)
+      .filter((session) => typeof session.activity_plan_id === "string")
+      .map((session) => ({
+        offset_days: typeof session.offset_days === "number" ? session.offset_days : 0,
+        activity_plan_id: session.activity_plan_id,
+        ...(typeof session.title === "string" ? { event_overrides: { title: session.title } } : {}),
+      }));
+    return {
+      ...result,
+      data: {
+        ...row,
+        structure: {
+          id: "11111111-1111-4111-8111-111111111111",
+          version: 1,
+          sport: ["run"],
+          sessions:
+            sessions.length > 0
+              ? sessions
+              : [
+                  {
+                    offset_days: 0,
+                    activity_plan_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  },
+                ],
+        },
+      },
+    };
+  };
+  const normalizedResults: QueryMap = {
+    ...results,
+    ...(trainingPlanEntry
+      ? {
+          training_plans: Array.isArray(trainingPlanEntry)
+            ? trainingPlanEntry.map(canonicalizeResult)
+            : canonicalizeResult(trainingPlanEntry),
+        }
+      : {}),
+  };
   const { db } = createQueryMapDbMock({
     profiles: { data: { planningTimezone: "UTC" }, error: null },
-    ...results,
+    ...normalizedResults,
   });
 
   return trainingPlansRouter.createCaller({
     db: db as any,
-    supabase: createSupabaseMock(results) as any,
+    supabase: createSupabaseMock(normalizedResults) as any,
     session: {
       user: {
         id: "profile-123",
@@ -424,7 +518,7 @@ describe("training plan projection fallbacks", () => {
     });
     expect(result.projection.diagnostics).toMatchObject({
       load_provenance: {
-        source: "conservative_baseline",
+        source: "plan_structure",
       },
     });
   });
@@ -676,7 +770,7 @@ describe("training plan projection fallbacks", () => {
     expect(result.projection.diagnostics).toMatchObject({
       fallback_mode: "conservative_priors",
       load_provenance: {
-        source: "conservative_baseline",
+        source: "plan_structure",
         projection_curve_available: true,
         projection_floor_applied: true,
       },

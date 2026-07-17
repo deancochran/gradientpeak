@@ -1,3 +1,4 @@
+import type { CssTestObservationInput } from "@repo/core";
 import type { ProfileMetricType } from "@repo/core/schemas/profile-metrics";
 import {
   AlertDialog,
@@ -39,7 +40,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { SimpleTrendChart } from "../../../components/charts/simple-trend-chart";
 import { DetailPageIntro } from "../../../components/protected/activity-route-primitives";
-import { CssTestForm, type CssTestFormValues } from "../../../components/protected/css-test-form";
+import { CssTestForm } from "../../../components/protected/css-test-form";
 import {
   getProfileMetricFormValues,
   ProfileMetricForm,
@@ -164,7 +165,7 @@ function ProfileMetricsPage() {
     },
   });
 
-  const recordCssTest = async (values: CssTestFormValues) => {
+  const recordCssTest = async (values: CssTestObservationInput) => {
     await cssTestMutation.mutateAsync({
       operation_id: values.operationId,
       recorded_at: values.recordedAt,

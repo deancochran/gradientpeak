@@ -8,12 +8,13 @@
  * 4. Whether the configuration is valid
  */
 
+import type { CompiledActivityStepOccurrence } from "../activity-plan";
+import { compileActivityPlanV3 } from "../activity-plan";
 import {
   isContinuousActivity,
   isStepBasedActivity,
   shouldUseFollowAlong,
 } from "../schemas/activity_payload";
-import type { ActivityPlanStructureV2, IntensityTargetV2 } from "../schemas/activity_plan_v2";
 import type {
   RecordingBackdropMode,
   RecordingCapabilities,
@@ -70,6 +71,14 @@ export class RecordingConfigResolver {
       capabilities: fullCapabilities,
       session: RecordingConfigResolver.buildSessionContract(input, fullCapabilities),
     };
+  }
+
+  /** Resolves sport-specific recording UI and metrics for the active compiled segment. */
+  static resolveForOccurrence(
+    input: RecordingConfigInput,
+    occurrence: Pick<CompiledActivityStepOccurrence, "category">,
+  ): RecordingConfiguration {
+    return RecordingConfigResolver.resolve({ ...input, activityCategory: occurrence.category });
   }
 
   /**
@@ -283,30 +292,24 @@ export class RecordingConfigResolver {
     return "none";
   }
 
-  private static hasTrainerControllablePlanTargets(
-    structure: ActivityPlanStructureV2 | null | undefined,
-  ): boolean {
+  private static hasTrainerControllablePlanTargets(structure: unknown): boolean {
     if (!structure) return false;
-
-    return structure.intervals.some((interval) =>
-      interval.steps.some((step) =>
-        step.targets?.some((target) => RecordingConfigResolver.isTrainerControllableTarget(target)),
-      ),
-    );
-  }
-
-  private static isTrainerControllableTarget(target: IntensityTargetV2): boolean {
-    switch (target.type) {
-      case "%FTP":
-      case "watts":
-      case "speed":
-      case "cadence":
-        return true;
-      case "%MaxHR":
-      case "%ThresholdHR":
-      case "bpm":
-      case "RPE":
-        return false;
+    try {
+      return compileActivityPlanV3(structure).occurrences.some(
+        (occurrence) =>
+          occurrence.role === "activity" &&
+          occurrence.targets.some(
+            (target) =>
+              (target.type === "%FTP" ||
+                target.type === "watts" ||
+                target.type === "speed" ||
+                target.type === "cadence") &&
+              // V3 validation has already checked category/target compatibility.
+              occurrence.category !== "other",
+          ),
+      );
+    } catch {
+      return false;
     }
   }
 

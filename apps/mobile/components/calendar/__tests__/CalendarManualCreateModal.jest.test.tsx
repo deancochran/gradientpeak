@@ -109,7 +109,7 @@ describe("CalendarManualCreateModal", () => {
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
         recurrence: {
           rule: "FREQ=WEEKLY;INTERVAL=1;COUNT=4;BYDAY=TU",
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+          timezone: "UTC",
         },
       }),
     );

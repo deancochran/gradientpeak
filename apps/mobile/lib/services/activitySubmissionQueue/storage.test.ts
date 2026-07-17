@@ -12,6 +12,12 @@ import {
 import type { ActivitySubmissionQueueJob } from "./types";
 
 const storage = new Map<string, string>();
+const executionManifest = {
+  version: 1 as const,
+  compilerVersion: 1,
+  planHash: "0".repeat(64),
+  occurrences: [],
+};
 
 vi.mock("@react-native-async-storage/async-storage", () => ({
   default: {
@@ -26,11 +32,13 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
 }));
 
 const baseJob: ActivitySubmissionQueueJob = {
+  schemaVersion: 2,
   id: "job-1",
   artifactId: "artifact-1",
   sessionId: "session-1",
   localActivityFilePath: "file:///activity.fit",
   streamArtifactPaths: ["file:///streams"],
+  executionManifest,
   draft: {
     profileId: "profile-1",
     startedAt: "2026-01-01T10:00:00.000Z",
@@ -59,7 +67,7 @@ describe("activity submission queue storage", () => {
 
     await expect(loadActivitySubmissionQueueJobs()).resolves.toEqual([baseJob]);
     expect(AsyncStorage.setItem).toHaveBeenCalledWith(
-      "activity-submission-queue:jobs",
+      "activity-submission-queue:v3:jobs",
       JSON.stringify([baseJob]),
     );
   });
@@ -91,6 +99,22 @@ describe("activity submission queue storage", () => {
       baseJob,
     );
     await expect(loadActivitySubmissionQueueJobByArtifactId("session-1")).resolves.toEqual(baseJob);
+  });
+
+  it("scopes startup and artifact lookups to the authenticated profile", async () => {
+    const otherProfile = {
+      ...baseJob,
+      id: "job-2",
+      artifactId: "artifact-2",
+      sessionId: "session-2",
+      draft: { ...baseJob.draft, profileId: "profile-2" },
+    };
+    await saveActivitySubmissionQueueJobs([baseJob, otherProfile]);
+
+    await expect(loadActivitySubmissionQueueJobs("profile-1")).resolves.toEqual([baseJob]);
+    await expect(
+      loadActivitySubmissionQueueJobByArtifactId("artifact-2", "profile-1"),
+    ).resolves.toBeNull();
   });
 
   it("only treats incomplete jobs with local references as recoverable", () => {

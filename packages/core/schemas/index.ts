@@ -1,76 +1,21 @@
 import { z } from "zod";
-import {
-  type ActivityPlanStructureV2,
-  saveableActivityPlanStructureSchemaV2,
-} from "./activity_plan_v2";
-import {
-  type ActivityTargetCategory,
-  addActivityTargetCompatibilityIssuesToZodContext,
-} from "./activity_target_capabilities";
+import { activityPlanInputSchema } from "./activity_payload";
 import { profileGoalLegacySchema, profileGoalTargetSchema } from "./goals/profile_goals";
-import { canonicalSportSchema } from "./sport";
 import {
   minimalTrainingPlanCreateSchema,
   trainingPlanCreateSchema,
 } from "./training_plan_structure";
 
+export * from "../activity-plan";
+export * from "../targets";
 // Export from activity_payload (includes ActivityType)
 export * from "./activity_payload";
 export * from "./activity_streams";
 export * from "./activity_target_capabilities";
-
-// ============================================================================
-// ACTIVITY PLAN V2 SCHEMA (RECOMMENDED - Current Standard)
-// ============================================================================
-// V2 uses a flat structure where repetitions are expanded at creation time
-// This is the preferred schema for all new code
-
-export type {
-  ActivityPlanStructureV2,
-  DurationV2,
-  IntensityTargetV2,
-  IntervalStepV2,
-  IntervalV2,
-  PlanStepV2,
-} from "./activity_plan_v2";
-export {
-  activityPlanSpeedKphToMetersPerSecond,
-  activityPlanSpeedMetersPerSecondToKph,
-  activityPlanStructureSchemaV2,
-  durationSchemaV2,
-  formatIntensityTarget,
-  formatStepTargets,
-  getSaveableActivityPlanStructureIssues,
-  getStepIntensityColor,
-  intensityTargetSchemaV2,
-  intervalSchemaV2,
-  intervalStepSchemaV2,
-  planStepSchemaV2,
-  saveableActivityPlanStructureSchemaV2,
-  validateActivityPlanStructureV2,
-} from "./activity_plan_v2";
-
-// Export V2 helpers explicitly with V2 suffix to avoid conflicts
-export {
-  calculateTotalDurationV2,
-  Duration as DurationV2Helpers,
-  formatDuration as formatDurationV2,
-  getDurationSeconds as getDurationSecondsV2,
-} from "./duration_helpers";
 // Export from form-schemas
 export * from "./form-schemas";
 // Export profile goals/settings (Phase 1 additive domain schemas)
 export * from "./goals/profile_goals";
-// Export plan builder V2
-export {
-  createEnduranceRidePlan,
-  createPlan,
-  createStrengthPlan,
-  createTempoRunPlan,
-  createThresholdPlan,
-  createVO2MaxPlan,
-  PlanBuilderV2,
-} from "./plan_builder_v2";
 
 // Export from planned_activity
 export * from "./planned_activity";
@@ -84,17 +29,22 @@ export * from "./recording-session";
 export * from "./settings/profile_settings";
 export * from "./sport";
 export {
-  convertTargetToAbsolute as convertTargetToAbsoluteV2,
+  activityPlanSpeedKphToMetersPerSecond,
+  activityPlanSpeedMetersPerSecondToKph,
+  convertTargetToAbsolute,
+  formatIntensityTarget,
+  formatStepTargets,
   formatTargetValue,
   getPrimaryTarget,
+  getStepIntensityColor,
   getTargetByType,
   getTargetDisplayName,
   getTargetGuidance,
   getTargetRange,
-  getTargetUnit as getTargetUnitV2,
+  getTargetUnit,
   hasTargetType,
   isInTargetRange,
-  Target as TargetV2Helpers,
+  Target,
 } from "./target_helpers";
 // Export from training_plan_structure
 export * from "./training_plan_structure";
@@ -120,55 +70,10 @@ export * from "./template_library";
 
 // tRPC-specific Activity Plans Schemas - use different names to avoid conflicts with supabase exports
 // Note: estimated_duration and estimated_tss are calculated server-side and NOT part of the input
-const activityPlanBaseSchema = z
-  .object({
-    activity_category: canonicalSportSchema,
-    name: z.string().min(1, "Plan name is required"),
-    description: z.string().max(1000).nullable().optional(),
-    structure: saveableActivityPlanStructureSchemaV2,
-    version: z.string().default("1.0").optional(),
-    notes: z.string().max(2000).nullable().optional(),
-  })
-  .strict();
-
-export const activityPlanCreateSchema = activityPlanBaseSchema.superRefine((plan, ctx) => {
-  addActivityTargetCompatibilityIssuesToZodContext({
-    activityCategory: plan.activity_category as ActivityTargetCategory,
-    ctx,
-    pathPrefix: ["structure"],
-    structure: plan.structure,
-  });
-});
-
-export const activityPlanUpdateSchema = activityPlanBaseSchema
-  .partial()
-  .superRefine((plan, ctx) => {
-    if (plan.structure && plan.activity_category) {
-      addActivityTargetCompatibilityIssuesToZodContext({
-        activityCategory: plan.activity_category as ActivityTargetCategory,
-        ctx,
-        pathPrefix: ["structure"],
-        structure: plan.structure,
-      });
-    }
-  });
+export const activityPlanCreateSchema = activityPlanInputSchema;
+export const activityPlanUpdateSchema = activityPlanInputSchema.partial().strict();
 
 // Note: plannedActivityCreateSchema and plannedActivityUpdateSchema are now exported from ./planned_activity
-
-// Type for ActivityRecorder service (V2 only)
-export interface RecordingServiceActivityPlan {
-  activity_category: z.infer<typeof canonicalSportSchema>;
-  description?: string | null;
-  gps_recording_enabled?: boolean;
-  id?: string;
-  import_external_id?: string | null;
-  import_provider?: string | null;
-  is_system_template?: boolean;
-  name: string;
-  notes?: string | null;
-  structure: ActivityPlanStructureV2;
-  version?: string;
-}
 
 // tRPC-specific Training Plans Schemas
 export const trainingPlanCreateInputSchema = z.object({

@@ -95,18 +95,26 @@ const USER_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_USER_ID = "22222222-2222-4222-8222-222222222222";
 
 const sampleStructure: any = {
-  version: 2,
-  intervals: [
+  version: 3,
+  segments: [
     {
-      id: "33333333-3333-4333-8333-333333333333",
-      name: "Main Interval",
-      repetitions: 1,
-      steps: [
+      id: "22222222-2222-4222-8222-222222222222",
+      role: "activity",
+      category: "bike",
+      name: "Bike",
+      intervals: [
         {
-          id: "44444444-4444-4444-8444-444444444444",
-          name: "Ride",
-          duration: { type: "time", seconds: 1800 },
-          targets: [{ type: "%FTP", intensity: 75 }],
+          id: "33333333-3333-4333-8333-333333333333",
+          name: "Main Interval",
+          repetitions: 1,
+          steps: [
+            {
+              id: "44444444-4444-4444-8444-444444444444",
+              name: "Ride",
+              duration: { type: "time", seconds: 1800 },
+              targets: [{ type: "%FTP", intensity: 75 }],
+            },
+          ],
         },
       ],
     },
@@ -336,6 +344,65 @@ describe("activityPlansRouter", () => {
     });
   });
 
+  it("filters by categories contained in V3 segments instead of the storage column", async () => {
+    const runStructure = structuredClone(sampleStructure);
+    runStructure.segments[0].category = "run";
+    runStructure.segments[0].intervals[0].steps[0].targets = [{ type: "%MaxHR", intensity: 70 }];
+    const runPlan = createActivityPlanRow({
+      id: "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      activity_category: "bike",
+      structure: runStructure,
+    });
+    const bikePlan = createActivityPlanRow({ id: "22222222-bbbb-4bbb-8bbb-bbbbbbbbbbbb" });
+    const { caller } = createCaller({
+      state: {
+        "select:activity_plans": [[runPlan, bikePlan]],
+        "select:likes": [[]],
+        "select:profiles": [[createProfileRow()]],
+      },
+    });
+
+    const result = await caller.list({ activityCategories: ["run"], limit: 20 });
+
+    expect(result.items.map((item) => item.id)).toEqual([runPlan.id]);
+    expect(result.items[0]?.activity_category).toBe("run");
+  });
+
+  it("uses bounded keyset batches for category filtering across a large catalog", async () => {
+    const row = (index: number, category: "bike" | "run") => {
+      const structure = structuredClone(sampleStructure);
+      structure.segments[0].category = category;
+      structure.segments[0].intervals[0].steps[0].targets =
+        category === "run"
+          ? [{ type: "%MaxHR", intensity: 70 }]
+          : [{ type: "%FTP", intensity: 75 }];
+      return createActivityPlanRow({
+        id: `00000000-0000-4000-8000-${index.toString().padStart(12, "0")}`,
+        activity_category: "bike",
+        created_at: new Date(2026, 2, 1, 0, 0, 200 - index),
+        structure,
+      });
+    };
+    const firstBoundedBatch = Array.from({ length: 84 }, (_, index) => row(index + 1, "bike"));
+    const secondBoundedBatch = Array.from({ length: 21 }, (_, index) => row(index + 85, "run"));
+    const { caller, callLog } = createCaller({
+      state: {
+        "select:activity_plans": [firstBoundedBatch, secondBoundedBatch],
+        "select:likes": [[]],
+        "select:profiles": [[createProfileRow()]],
+      },
+    });
+
+    const result = await caller.list({ activityCategories: ["run"], limit: 20 });
+
+    expect(result.items).toHaveLength(20);
+    expect(result.items.every((item) => item.activity_category === "run")).toBe(true);
+    expect(result.nextCursor).toBeDefined();
+    expect(
+      callLog.filter((call) => call.operation === "select" && call.table === "activity_plans"),
+    ).toHaveLength(2);
+  });
+
   it("getById rejects a private plan owned by another user", async () => {
     const { caller } = createCaller({
       state: {
@@ -375,6 +442,15 @@ describe("activityPlansRouter", () => {
         extra: true,
       } as any),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
+  });
+
+  it("getById rejects stored non-V3 JSON without a read fallback", async () => {
+    const oldRow = createActivityPlanRow({ structure: { version: 2, intervals: [] } });
+    const { caller } = createCaller({
+      state: { "select:activity_plans": [[oldRow]] },
+    });
+
+    await expect(caller.getById({ id: oldRow.id })).rejects.toThrow();
   });
 
   it("getManyByIds preserves input order for accessible plans", async () => {
@@ -490,7 +566,6 @@ describe("activityPlansRouter", () => {
 
     const result = await caller.create({
       name: "Created Plan",
-      activity_category: "bike",
       notes: "Hydrate",
       structure: sampleStructure,
       template_visibility: "public",
@@ -507,6 +582,7 @@ describe("activityPlansRouter", () => {
       id: createdRow.id,
       content_type: "activity_plan",
       visibility: "public",
+      primary_category: "bike",
     });
   });
 
@@ -516,13 +592,24 @@ describe("activityPlansRouter", () => {
     await expect(
       caller.create({
         name: "Spoofed import",
-        activity_category: "bike",
         structure: sampleStructure,
         import_provider: "fit",
         import_external_id: "spoofed-fit-id",
       } as never),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
 
+    expect(callLog).toHaveLength(0);
+  });
+
+  it("create rejects unsupported old activity-plan JSON without conversion", async () => {
+    const { caller, callLog } = createCaller();
+
+    await expect(
+      caller.create({
+        name: "Unsupported old plan",
+        structure: { version: 2, intervals: [] },
+      } as never),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
     expect(callLog).toHaveLength(0);
   });
 
@@ -603,16 +690,14 @@ describe("activityPlansRouter", () => {
     expect(callLog.filter((call) => call.table === "events")).toHaveLength(0);
   });
 
-  it("rejects a category-only update when the existing targets are incompatible", async () => {
-    const existingRow = createActivityPlanRow();
-    const { caller, callLog } = createCaller({
-      state: {
-        "select:activity_plans": [[existingRow]],
-      },
-    });
+  it("rejects top-level category authority", async () => {
+    const { caller, callLog } = createCaller();
 
     await expect(
-      caller.update({ id: existingRow.id, activity_category: "run" }),
+      caller.update({
+        id: "66666666-6666-4666-8666-666666666666",
+        activity_category: "run",
+      } as never),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" } as Partial<TRPCError>);
     expect(callLog.some((call) => call.operation === "update")).toBe(false);
   });
@@ -823,7 +908,6 @@ describe("activityPlansRouter", () => {
     const result = await caller.importFromFitTemplate({
       external_id: "fit-template-1",
       name: "Updated FIT",
-      activity_category: "bike",
       structure: sampleStructure,
     });
 
@@ -874,7 +958,6 @@ describe("activityPlansRouter", () => {
     const result = await caller.importFromZwoTemplate({
       external_id: "zwo-template-1",
       name: "Created ZWO",
-      activity_category: "bike",
       structure: sampleStructure,
     });
 

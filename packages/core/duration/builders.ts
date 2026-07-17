@@ -1,20 +1,20 @@
-import type { DurationV2 } from "../schemas/activity_plan_v2";
+import type { ActivityPlanDuration } from "../activity-plan/v3-schema";
 
 export const Duration = {
-  seconds: (seconds: number): DurationV2 => ({ type: "time", seconds }),
-  minutes: (minutes: number): DurationV2 => ({
+  seconds: (seconds: number): ActivityPlanDuration => ({ type: "time", seconds }),
+  minutes: (minutes: number): ActivityPlanDuration => ({
     type: "time",
     seconds: minutes * 60,
   }),
-  hours: (hours: number): DurationV2 => ({
+  hours: (hours: number): ActivityPlanDuration => ({
     type: "time",
     seconds: hours * 3600,
   }),
-  meters: (meters: number): DurationV2 => ({ type: "distance", meters }),
-  km: (km: number): DurationV2 => ({
+  meters: (meters: number): ActivityPlanDuration => ({ type: "distance", meters }),
+  km: (km: number): ActivityPlanDuration => ({
     type: "distance",
     meters: Math.round(km * 1000),
   }),
-  reps: (count: number): DurationV2 => ({ type: "repetitions", count }),
-  untilFinished: (): DurationV2 => ({ type: "untilFinished" }),
+  reps: (count: number): ActivityPlanDuration => ({ type: "repetitions", count }),
+  untilFinished: (): ActivityPlanDuration => ({ type: "untilFinished" }),
 };

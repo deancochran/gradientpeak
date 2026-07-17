@@ -1,11 +1,44 @@
 import { describe, expect, it, vi } from "vitest";
-import { createQueryMapDbMock, type QueryMap } from "../../test/mock-query-db";
+import { createQueryMapDbMock, type QueryMap, type QueryResult } from "../../test/mock-query-db";
 import { trainingPlansRouter } from "../planning/training-plans";
 
 function createCaller(queryMap: QueryMap) {
+  const trainingPlanResults = queryMap.training_plans;
+  const canonicalizeResult = (result: QueryResult): QueryResult => {
+    const row = result.data as { id?: string; structure?: Record<string, unknown> } | null;
+    const sessions = Array.isArray(row?.structure?.sessions) ? row.structure.sessions : null;
+    if (!row?.id || !sessions || row.structure?.version === 1) return result;
+    return {
+      ...result,
+      data: {
+        ...row,
+        structure: {
+          id: row.id,
+          version: 1,
+          sessions: sessions.map((session) => {
+            const value = session as Record<string, unknown>;
+            return {
+              offset_days: value.offset_days,
+              ...(value.activity_plan_id ? { activity_plan_id: value.activity_plan_id } : {}),
+              ...(typeof value.title === "string"
+                ? { event_overrides: { title: value.title } }
+                : {}),
+            };
+          }),
+        },
+      },
+    };
+  };
   const { db, callLog } = createQueryMapDbMock({
     profiles: { data: { planningTimezone: "UTC" }, error: null },
     ...queryMap,
+    ...(trainingPlanResults
+      ? {
+          training_plans: Array.isArray(trainingPlanResults)
+            ? trainingPlanResults.map(canonicalizeResult)
+            : canonicalizeResult(trainingPlanResults),
+        }
+      : {}),
   });
 
   const caller = trainingPlansRouter.createCaller({
@@ -245,8 +278,8 @@ describe("trainingPlansRouter.applyTemplate", () => {
     expect(result.scheduled_sessions_created).toBe(2);
     expect(typeof result.schedule_batch_id).toBe("string");
     expect(insertedRows).toHaveLength(2);
-    expect(insertedRows[0]?.title).toBe("Tempo Builder");
-    expect(insertedRows[1]?.title).toBe("Endurance Builder");
+    expect(insertedRows[0]?.title).toBe("Session A");
+    expect(insertedRows[1]?.title).toBe("Session B");
     expect(insertedRows[0]?.schedule_batch_id).toBe(result.schedule_batch_id);
     expect(insertedRows[1]?.schedule_batch_id).toBe(result.schedule_batch_id);
     expect(insertedRows[0]?.training_plan_id).toBe(result.applied_plan_id);
@@ -417,7 +450,7 @@ describe("trainingPlansRouter.applyTemplate", () => {
         start_date: "2026-03-10",
       }),
     ).rejects.toThrow(
-      "This training plan cannot be scheduled because 1 planned session has no valid linked activity plan.",
+      "This training plan cannot be scheduled because its structure is not canonical version 1.",
     );
     expect(callLog.some((call) => call.table === "events" && call.operation === "insert")).toBe(
       false,

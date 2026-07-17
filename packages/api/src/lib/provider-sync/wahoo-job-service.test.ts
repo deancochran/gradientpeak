@@ -20,6 +20,13 @@ function createDeps() {
     wahooRepository: {
       findWahooIntegrationByProfileId: vi.fn(),
       getPlannedEventForSync: vi.fn(),
+      getProfileSyncMetrics: vi.fn().mockResolvedValue({
+        bikePowerEfforts: [],
+        ftpMetrics: [],
+        maxHr: null,
+        thresholdHr: null,
+      }),
+      getRouteForSync: vi.fn(),
     },
   };
 }
@@ -35,6 +42,38 @@ describe("WahooSyncJobService", () => {
     deps.wahooRepository.getPlannedEventForSync.mockResolvedValue({
       id: "event-1",
       startsAt: "2026-04-15T09:00:00.000Z",
+      activityPlan: {
+        id: "plan-1",
+        name: "Bike",
+        routeId: null,
+        updatedAt: "2026-04-01T00:00:00.000Z",
+        structure: {
+          version: 3,
+          segments: [
+            {
+              id: "10000000-0000-4000-8000-000000000001",
+              role: "activity",
+              category: "bike",
+              name: "Bike",
+              intervals: [
+                {
+                  id: "10000000-0000-4000-8000-000000000002",
+                  name: "Set",
+                  repetitions: 1,
+                  steps: [
+                    {
+                      id: "10000000-0000-4000-8000-000000000003",
+                      name: "Work",
+                      duration: { type: "time", seconds: 600 },
+                      targets: [{ type: "watts", intensity: 200 }],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
     });
     deps.providerSyncRepository.enqueueJob.mockResolvedValue({ id: "job-1", status: "queued" });
 
@@ -71,8 +110,93 @@ describe("WahooSyncJobService", () => {
         syncLaneKey: "wahoo:integration-1:planned_workout:event-1",
       }),
     );
+    const firstEnqueue = deps.providerSyncRepository.enqueueJob.mock.calls[0]?.[0];
+    expect(firstEnqueue?.payload).toMatchObject({
+      projectionHash: expect.any(String),
+      projectionSnapshot: {
+        plan: {
+          header: expect.not.objectContaining({
+            ftp: expect.anything(),
+            max_hr: expect.anything(),
+          }),
+          intervals: expect.any(Array),
+        },
+      },
+    });
+
+    deps.wahooRepository.getProfileSyncMetrics.mockResolvedValue({
+      bikePowerEfforts: [],
+      ftpMetrics: [],
+      maxHr: 190,
+      thresholdHr: null,
+    });
+    deps.providerSyncRepository.enqueueJob.mockResolvedValue({ id: "job-2", status: "queued" });
+    await service.enqueuePublishEvent({ eventId: "event-1", profileId: "profile-1" });
+    const secondEnqueue = deps.providerSyncRepository.enqueueJob.mock.calls[1]?.[0];
+    expect(secondEnqueue?.payload.projectionSnapshot.plan.header.max_hr).toBeUndefined();
+    expect(secondEnqueue?.payloadHash).toBe(firstEnqueue?.payloadHash);
+    expect(secondEnqueue?.payload.projectionHash).toBe(firstEnqueue?.payload.projectionHash);
+
+    const planned = await deps.wahooRepository.getPlannedEventForSync();
+    deps.wahooRepository.getPlannedEventForSync.mockResolvedValue({
+      ...planned,
+      activityPlan: { ...planned.activityPlan, routeId: "missing-route" },
+    });
+    deps.wahooRepository.getRouteForSync.mockResolvedValue(null);
+    await expect(
+      service.enqueuePublishEvent({ eventId: "event-1", profileId: "profile-1" }),
+    ).rejects.toThrow(/linked route is missing/);
+    expect(deps.providerSyncRepository.enqueueJob).toHaveBeenCalledTimes(2);
 
     vi.useRealTimers();
+  });
+
+  it("rejects unsupported compiled semantics before enqueue", async () => {
+    const deps = createDeps();
+    deps.wahooRepository.findWahooIntegrationByProfileId.mockResolvedValue({ id: "integration-1" });
+    deps.wahooRepository.getPlannedEventForSync.mockResolvedValue({
+      id: "event-1",
+      startsAt: "2026-04-15T09:00:00.000Z",
+      activityPlan: {
+        id: "plan-1",
+        name: "Swim",
+        routeId: null,
+        updatedAt: "2026-04-01T00:00:00.000Z",
+        structure: {
+          version: 3,
+          segments: [
+            {
+              id: "20000000-0000-4000-8000-000000000001",
+              role: "activity",
+              category: "swim",
+              name: "Swim",
+              intervals: [
+                {
+                  id: "20000000-0000-4000-8000-000000000002",
+                  name: "Set",
+                  repetitions: 1,
+                  steps: [
+                    {
+                      id: "20000000-0000-4000-8000-000000000003",
+                      name: "Work",
+                      duration: { type: "time", seconds: 600 },
+                      targets: [{ type: "RPE", intensity: 5 }],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+    const service = new WahooSyncJobService(deps as never);
+    await expect(
+      service.enqueuePublishEvent({ eventId: "event-1", profileId: "profile-1" }),
+    ).rejects.toThrow(/single-sport run or bike/);
+    expect(deps.providerSyncRepository.touchSyncState).not.toHaveBeenCalled();
+    expect(deps.providerSyncRepository.enqueueJob).not.toHaveBeenCalled();
   });
 
   it("processes due publish jobs through the existing Wahoo sync service", async () => {
@@ -86,7 +210,7 @@ describe("WahooSyncJobService", () => {
         internalResourceId: "event-1",
         jobType: "wahoo.publish_event",
         maxAttempts: 8,
-        payload: { eventId: "event-1", operation: "publish" },
+        payload: { eventId: "event-1", operation: "publish", projectionHash: "projection-1" },
         profileId: "profile-1",
         provider: "wahoo",
         resourceKind: "event",
@@ -105,7 +229,9 @@ describe("WahooSyncJobService", () => {
       processed: 1,
     });
 
-    expect(deps.syncService.syncEvent).toHaveBeenCalledWith("event-1", "profile-1");
+    expect(deps.syncService.syncEvent).toHaveBeenCalledWith("event-1", "profile-1", {
+      expectedProjectionHash: "projection-1",
+    });
     expect(deps.providerSyncRepository.claimDueJobs).toHaveBeenCalledWith(
       expect.objectContaining({
         limit: 4,
@@ -129,7 +255,8 @@ describe("WahooSyncJobService", () => {
   it.each([
     ["missing_metric", "A positive FTP is required before this workout can sync."],
     ["unsupported_target", "RPE targets are not supported by Wahoo."],
-  ])("dead-letters a first-attempt non-retryable %s publish result", async (failureCode, error) => {
+    ["invalid_plan", "Linked route no longer exists."],
+  ])("terminally skips a deterministic worker-time %s result", async (failureCode, error) => {
     const deps = createDeps();
     deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
       {
@@ -161,14 +288,43 @@ describe("WahooSyncJobService", () => {
     const service = new WahooSyncJobService(deps as never);
 
     await expect(service.processDueJobs({ limit: 1, workerId: "worker-1" })).resolves.toEqual({
+      completed: 1,
+      failed: 0,
+      processed: 1,
+    });
+    expect(deps.providerSyncRepository.markJobSucceeded).toHaveBeenCalledWith(
+      "job-1",
+      expect.stringMatching(/^worker-1:/),
+    );
+    expect(deps.providerSyncRepository.markJobFailed).not.toHaveBeenCalled();
+  });
+
+  it("keeps corrupt queue payloads in the dead-letter path", async () => {
+    const deps = createDeps();
+    deps.providerSyncRepository.claimDueJobs.mockResolvedValue([
+      {
+        attempt: 1,
+        id: "job-corrupt",
+        integrationId: "integration-1",
+        jobType: "wahoo.publish_event",
+        maxAttempts: 8,
+        payload: { corrupted: true },
+        profileId: "profile-1",
+        provider: "wahoo",
+        runAt: "2026-04-01T12:00:00.000Z",
+        status: "running",
+      },
+    ]);
+    const service = new WahooSyncJobService(deps as never);
+
+    await expect(service.processDueJobs({ limit: 1, workerId: "worker-1" })).resolves.toEqual({
       completed: 0,
       failed: 1,
       processed: 1,
     });
     expect(deps.providerSyncRepository.markJobFailed).toHaveBeenCalledWith({
-      id: "job-1",
-      lastError: error,
-      nextRunAt: undefined,
+      id: "job-corrupt",
+      lastError: "Invalid Wahoo job payload",
       status: "dead_lettered",
       workerId: expect.stringMatching(/^worker-1:/),
     });

@@ -29,7 +29,8 @@ declare module "@garmin/fitsdk" {
       ACTIVITY: number;
       [key: string]: number;
     };
-    types: {
+    messages?: Record<string, { messagesKey?: string }>;
+    types: Record<string, Record<string, string>> & {
       mesgNum: { [key: number]: string };
     };
   };

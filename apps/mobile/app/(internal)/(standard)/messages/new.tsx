@@ -35,7 +35,7 @@ export default function NewMessageScreen() {
         limit: 20,
       },
       {
-        getNextPageParam: (lastPage: any) => lastPage.nextCursor,
+        getNextPageParam: (lastPage) => lastPage.nextCursor,
       },
     );
   const getOrCreateDMMutation = api.messaging.getOrCreateDM.useMutation();
@@ -45,7 +45,7 @@ export default function NewMessageScreen() {
     },
   });
 
-  const users = data?.pages.flatMap((page: any) => page.users) ?? [];
+  const users = data?.pages.flatMap((page) => page.users) ?? [];
   const suggestedUsers = users.filter(
     (user) => !selectedRecipients.some((recipient) => recipient.id === user.id),
   );

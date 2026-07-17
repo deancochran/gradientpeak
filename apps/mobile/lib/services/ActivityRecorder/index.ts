@@ -14,23 +14,28 @@
  */
 
 import {
+  ACTIVITY_PLAN_COMPILER_VERSION,
+  activityPlanStructureSchemaV3,
   type CurrentMetricValue,
+  compileActivityPlanV3,
   type FTMSFeatures,
   type FtmsAvailableMode,
   type FtmsControlMode,
   type FtmsMachineType,
   GLOBAL_DEFAULTS,
-  type IntervalStepV2,
   type MetricFamily,
   type MetricSourceCandidate,
   type MetricSourceSelection,
   type MetricSourceType,
   type PerformanceMetrics,
   type RecordingActivityCategory,
+  type RecordingBoundaryJournalEntry,
+  type RecordingCheckpoint,
   RecordingConfigResolver,
   type RecordingConfiguration,
+  type RecordingExecutionManifest,
   type RecordingLaunchIntent,
-  type RecordingServiceActivityPlan,
+  type RecordingOccurrenceResult,
   type RecordingSessionContract,
   type RecordingTrainerIntentSource,
   type RecordingTrainerMachineType,
@@ -39,7 +44,7 @@ import {
 import { EventEmitter } from "expo";
 import type { LocationObject } from "expo-location";
 import { AppState, type AppStateStatus } from "react-native";
-import { type FitRecord, GarminFitEncoder } from "../fit/GarminFitEncoder";
+import { type FitSessionData, GarminFitEncoder } from "../fit/GarminFitEncoder";
 import {
   type AllPermissionsStatus,
   areAllPermissionsGranted,
@@ -47,11 +52,23 @@ import {
   checkAllPermissions,
 } from "../permissions-check";
 import { shouldApplyAutoFollowAuthority } from "./autoFollowRuntime";
+import {
+  clearRecordingCheckpoint,
+  hashRecordingPlan,
+  persistRecordingCheckpoint,
+  releaseRecordingCheckpointClaim,
+} from "./checkpointStorage";
 import { persistPendingFinalizedArtifact } from "./finalizedArtifactStorage";
+import {
+  appendActivityRecorderFitRecord,
+  rebaseRecordingDistance,
+  rebaseRetainedFitRecordDistances,
+} from "./fitRecordWriter";
 import { getNextGpsRecordingEnabled, shouldStartGpsTracking } from "./gpsRuntime";
 import { LiveMetricsManager } from "./LiveMetricsManager";
 import { LocationManager } from "./location";
 import { NotificationsManager } from "./notification";
+import type { RecordingActivityPlanV3Input, RecordingPlanOccurrence } from "./plan";
 import { PlanExecution } from "./planExecution";
 import { type PlanValidationResult, validatePlanRequirements } from "./planValidation";
 import {
@@ -67,6 +84,7 @@ import {
   RouteController,
 } from "./routeController";
 import type { SimplifiedMetrics } from "./SimplifiedMetrics";
+import { type DurableStreamReplay, StreamBuffer } from "./StreamBuffer";
 import { type ConnectedSensor, SensorsManager } from "./sensors";
 import { RecordingSessionController } from "./sessionController";
 import { inferTrainerMachineType, TrainerControl } from "./trainerControl";
@@ -107,13 +125,16 @@ export interface StepProgress {
   duration: number;
   progress: number;
   requiresManualAdvance: boolean;
+  canAutoAdvance: boolean;
+  canManualAdvance: boolean;
   canAdvance: boolean;
 }
 
 export interface StepInfo {
   index: number;
   total: number;
-  current: IntervalStepV2 | undefined;
+  current: RecordingPlanOccurrence | undefined;
+  next: RecordingPlanOccurrence | undefined;
   progress: StepProgress | null;
   isLast: boolean;
   isFinished: boolean;
@@ -361,7 +382,7 @@ export interface ServiceEvents {
   sensorsChanged: (sensors: ConnectedSensor[]) => void;
 
   // Plan events
-  planSelected: (data: { plan: RecordingServiceActivityPlan; eventId?: string }) => void;
+  planSelected: (data: { plan: RecordingActivityPlanV3Input; eventId?: string }) => void;
   stepChanged: (info: StepInfo) => void;
   planCleared: () => void;
   planCompleted: () => void;
@@ -408,6 +429,21 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   public readonly locationManager: LocationManager;
   public readonly sensorsManager: SensorsManager;
   private readonly planExecution = new PlanExecution();
+  private completedOccurrences: RecordingOccurrenceResult[] = [];
+  private boundaryJournal: RecordingBoundaryJournalEntry[] = [];
+  private rewindJournal: NonNullable<RecordingCheckpoint["rewindJournal"]> = [];
+  private checkpointRevision = 0;
+  private planHash: string | null = null;
+  private occurrenceStartedAt: number | null = null;
+  private occurrenceStartStats = { movingSeconds: 0, distanceMeters: 0 };
+  private timerEvents: Array<{ type: "pause" | "resume"; timestamp: number }> = [];
+  private planBoundaryTransition: Promise<void> = Promise.resolve();
+  private checkpointDirty = false;
+  private checkpointWriteInFlight: Promise<void> | null = null;
+  private checkpointWriteTimer?: ReturnType<typeof setTimeout>;
+  private lastCheckpointWriteAt = 0;
+  private recoveredCheckpoint: RecordingCheckpoint | null = null;
+  private recoveredReplay: DurableStreamReplay | null = null;
   private readonly trainerControl: TrainerControl;
   private _permissionsStatus: AllPermissionsStatus = {
     bluetooth: null,
@@ -416,7 +452,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   };
 
   // === Plan State (minimal tracking) ===
-  private _plan?: RecordingServiceActivityPlan;
+  private _plan?: RecordingActivityPlanV3Input;
   private _eventId?: string;
 
   // === GPS Availability Cache ===
@@ -442,6 +478,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   private lastSessionUpdateAt = 0;
   private fitRecordingUpdateInFlight = false;
   private fitRecordingUpdatePending = false;
+  private lastFitDistanceMeters = 0;
   private lifecycleTransition: Promise<void> = Promise.resolve();
   private recordingEndTime?: number;
   private liveMetricsFinalized = false;
@@ -615,7 +652,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       return;
     }
 
-    if (this.shouldAutoFollowPlanTargets() && this.currentStep) {
+    if (this.shouldAutoFollowPlanTargets() && this.currentStep?.role === "activity") {
       await this.trainerControl.applyStepTargets(this.currentStep, source);
       return;
     }
@@ -1294,6 +1331,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         hasPlan: false,
         stepIndex: 0,
         stepCount: 0,
+        currentSegment: null,
+        nextSegment: null,
         progress: null,
         isLast: false,
         isFinished: false,
@@ -1310,10 +1349,23 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       hasPlan: true,
       name: this._plan?.name,
       description: this._plan?.description,
-      activityType: this._plan?.activity_category,
+      activityType: this._plan
+        ? compileActivityPlanV3(this._plan.structure).primaryCategory
+        : undefined,
       stepIndex: info.index,
       stepCount: info.total,
       currentStep: info.current,
+      nextStep: info.next,
+      currentSegment: info.current
+        ? {
+            id: info.current.segmentId,
+            role: info.current.role,
+            category: info.current.category,
+          }
+        : null,
+      nextSegment: info.next
+        ? { id: info.next.segmentId, role: info.next.role, category: info.next.category }
+        : null,
       progress: info.progress,
       isLast: info.isLast,
       isFinished: info.isFinished,
@@ -1575,7 +1627,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       hasStructure: this.stepCount > 0,
       stepCount: this.stepCount,
       requiresManualAdvance: this.planExecution.hasManualAdvanceSteps(),
-      structure: this._plan?.structure ?? null,
+      structure: (this._plan?.structure ?? null) as never,
     };
   }
 
@@ -1644,7 +1696,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return this._plan !== undefined;
   }
 
-  get plan(): RecordingServiceActivityPlan | undefined {
+  get plan(): RecordingActivityPlanV3Input | undefined {
     return this._plan;
   }
 
@@ -1676,15 +1728,15 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return this.planExecution.getStepCount();
   }
 
-  get currentStep(): IntervalStepV2 | undefined {
+  get currentStep(): RecordingPlanOccurrence | undefined {
     return this.planExecution.getCurrentStep();
   }
 
-  get nextStep(): IntervalStepV2 | undefined {
+  get nextStep(): RecordingPlanOccurrence | undefined {
     return this.planExecution.getNextStep();
   }
 
-  get allSteps(): IntervalStepV2[] {
+  get allSteps(): RecordingPlanOccurrence[] {
     return this.planExecution.getAllSteps();
   }
 
@@ -1769,46 +1821,38 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
   }
 
   get stepProgress(): StepProgress {
-    const progress = this.planExecution.getStepProgress(this.getMovingTime());
+    const progress = this.planExecution.getStepProgress(
+      this.getMovingTime(),
+      this.getSessionStats().distance,
+    );
     if (!progress) throw new Error("No plan or current step");
     return progress;
   }
 
   getStepInfo(): StepInfo {
-    return this.planExecution.getStepInfo(this.getMovingTime());
+    return this.planExecution.getStepInfo(this.getMovingTime(), this.getSessionStats().distance);
   }
   get planTimeRemaining(): number {
     if (!this.hasPlan) return 0;
-    return this.planExecution.getPlanTimeRemaining(this.getMovingTime());
+    return this.planExecution.getPlanTimeRemaining(
+      this.getMovingTime(),
+      this.getSessionStats().distance,
+    );
   }
 
   // ================================
   // Plan Actions
   // ================================
 
-  selectPlan(plan: RecordingServiceActivityPlan, eventId?: string): void {
-    if (
-      this.isSessionIdentityLocked() &&
-      plan.activity_category !== this.selectedActivityCategory
-    ) {
-      const message = "Plan selection must match the active recording activity category.";
-      console.warn(`[Service] ${message}`);
-      this.emit("error", message);
-      return;
-    }
-
+  selectPlan(plan: RecordingActivityPlanV3Input, eventId?: string): void {
     console.log("[Service] Selected plan:", plan.name);
     console.log("[Service] Plan structure:", JSON.stringify(plan.structure, null, 2));
 
     this.hasConfiguredSetup = true;
     this._plan = plan;
     this._eventId = eventId;
-    if (!plan.activity_category) {
-      throw new Error("no plan category found");
-    }
-
     try {
-      this.planExecution.loadPlan(plan, eventId);
+      this.planExecution.loadPlan(plan);
 
       console.log(`[Service] Loaded ${this.planExecution.getStepCount()} steps from plan manager`);
 
@@ -1824,7 +1868,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       this.planExecution.clear();
     }
 
-    this.selectedActivityCategory = plan.activity_category;
+    this.selectedActivityCategory =
+      this.currentStep?.category ?? compileActivityPlanV3(plan.structure).primaryCategory;
     this.syncGpsTrackingForCurrentState();
 
     this.emit("planSelected", { plan, eventId });
@@ -1843,6 +1888,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this._plan = undefined;
     this._eventId = undefined;
     this.planExecution.clear();
+    this.completedOccurrences = [];
+    this.boundaryJournal = [];
+    this.rewindJournal = [];
 
     this.emit("planCleared");
     this.publishSessionUpdate();
@@ -2013,30 +2061,17 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     }
   }
 
-  /**
-   * Stop early GPS location tracking
-   */
-  private async stopEarlyLocationTracking(): Promise<void> {
-    try {
-      await this.locationManager.stopForegroundTracking();
-      this._gpsAvailable = false;
-      console.log("[Service] Early location tracking stopped");
-      this.publishSessionUpdate();
-    } catch (error) {
-      console.error("[Service] Failed to stop early location tracking:", error);
-    }
+  private async stopAllLocationTracking(): Promise<void> {
+    await this.locationManager.stopHeadingTracking();
+    await this.locationManager.stopBackgroundTracking();
+    await this.locationManager.stopForegroundTracking();
+    this._gpsAvailable = false;
+    this.publishSessionUpdate();
   }
 
   private async syncGpsTrackingForCurrentState(): Promise<void> {
     if (!this._gpsRecordingEnabled) {
-      await this.stopEarlyLocationTracking();
-      if (this._gpsAvailable) {
-        await this.locationManager.stopHeadingTracking();
-        await this.locationManager.stopForegroundTracking();
-        await this.locationManager.stopBackgroundTracking();
-        this._gpsAvailable = false;
-        this.publishSessionUpdate();
-      }
+      await this.stopAllLocationTracking();
       return;
     }
 
@@ -2065,21 +2100,18 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
    *
    * Timed steps advance automatically when their duration is reached
    */
-  advanceStep(): void {
+  advanceStep(origin: "manual" | "automatic" = "manual"): void {
     if (!this.hasPlan || !this.currentStep) {
       console.warn("[Service] Cannot advance step - no plan active");
       return;
     }
 
-    const progress = this.stepProgress;
-    if (!progress?.canAdvance) {
-      console.warn("[Service] Cannot advance step");
-      return;
-    }
-
-    console.log(`[Service] Advancing to step ${this.stepIndex + 1}`);
-
-    this.navigatePlanStep(() => this.planExecution.advance(this.getMovingTime()), "advance");
+    void this.navigatePlanStep(
+      this.stepIndex + 1,
+      "advance",
+      this.currentStep.occurrenceId,
+      origin,
+    );
   }
 
   skipStep(): void {
@@ -2088,9 +2120,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       return;
     }
 
-    if (!this.navigatePlanStep(() => this.planExecution.skip(this.getMovingTime()), "skip")) {
-      console.warn("[Service] Cannot skip step");
-    }
+    void this.navigatePlanStep(this.stepIndex + 1, "skip", this.currentStep.occurrenceId);
   }
 
   previousStep(): void {
@@ -2099,11 +2129,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       return;
     }
 
-    if (
-      !this.navigatePlanStep(() => this.planExecution.previous(this.getMovingTime()), "previous")
-    ) {
-      console.warn("[Service] Cannot go back");
-    }
+    void this.navigatePlanStep(this.stepIndex - 1, "previous", this.currentStep.occurrenceId);
   }
 
   goToStep(index: number): void {
@@ -2112,39 +2138,425 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       return;
     }
 
-    if (
-      !this.navigatePlanStep(
-        () => this.planExecution.goToStep(index, this.getMovingTime()),
-        "go_to",
-      )
-    ) {
-      console.warn(`[Service] Cannot change to step ${index}`);
+    void this.navigatePlanStep(index, "go_to", this.currentStep.occurrenceId);
+  }
+
+  private async persistCurrentCheckpoint() {
+    const snapshot = this.getSessionSnapshot();
+    const structureResult = activityPlanStructureSchemaV3.safeParse(this._plan?.structure);
+    if (!snapshot || !structureResult.success || !this.planHash) return;
+    this.checkpointRevision += 1;
+    await persistRecordingCheckpoint({
+      schemaVersion: 2,
+      compilerVersion: ACTIVITY_PLAN_COMPILER_VERSION,
+      sessionId: snapshot.identity.sessionId,
+      profileId: this.profile.id,
+      lifecycle:
+        this.state === "paused" ? "paused" : this.state === "finishing" ? "finishing" : "recording",
+      planSnapshot: structureResult.data,
+      planHash: this.planHash,
+      currentOccurrenceId: this.currentStep?.occurrenceId ?? null,
+      occurrenceProgress: {
+        startedAt: new Date(this.occurrenceStartedAt ?? this.startTime ?? Date.now()).toISOString(),
+        startMovingSeconds: this.occurrenceStartStats.movingSeconds,
+        startDistanceMeters: this.occurrenceStartStats.distanceMeters,
+      },
+      completedOccurrences: this.completedOccurrences,
+      boundaryJournal: this.boundaryJournal,
+      rewindJournal: this.rewindJournal,
+      eventJournal: this.timerEvents.map((event) => ({
+        type: event.type,
+        timestamp: new Date(event.timestamp).toISOString(),
+      })),
+      timing: {
+        startedAt: snapshot.identity.startedAt,
+        updatedAt: new Date().toISOString(),
+        elapsedSeconds: this.getElapsedTime() / 1000,
+        movingSeconds: this.getMovingTime() / 1000,
+        pausedAt: this.lastPauseTime ? new Date(this.lastPauseTime).toISOString() : null,
+        accumulatedPauseSeconds: this.pausedTime / 1000,
+      },
+      policy: {
+        category: this.currentStep?.category ?? null,
+        gpsMode: this._gpsRecordingEnabled ? "on" : "off",
+        activityGpsMode: this._plan?.gps_recording_enabled ? "on" : "off",
+        selectedSources: this.getRuntimeSourceState().selectedSources,
+        trainerMode: this.getSessionOverrideState().trainerMode,
+      },
+      streamArtifactPaths: [this.liveMetricsManager.streamBuffer.getBufferStatus().storageDir],
+      revision: this.checkpointRevision,
+    });
+  }
+
+  private clearCheckpointWriteTimer(): void {
+    if (!this.checkpointWriteTimer) return;
+    clearTimeout(this.checkpointWriteTimer);
+    this.checkpointWriteTimer = undefined;
+  }
+
+  private async writeCheckpointWithinFence(): Promise<void> {
+    this.clearCheckpointWriteTimer();
+    this.checkpointDirty = false;
+    try {
+      await this.liveMetricsManager.streamBuffer.flushToFiles();
+      await this.persistCurrentCheckpoint();
+      this.lastCheckpointWriteAt = Date.now();
+    } catch (error) {
+      this.checkpointDirty = true;
+      throw error;
     }
   }
 
+  private startCheckpointWrite(): Promise<void> {
+    if (this.checkpointWriteInFlight) return this.checkpointWriteInFlight;
+    const write = this.planBoundaryTransition.then(async () => {
+      if (!this.checkpointDirty) return;
+      await this.writeCheckpointWithinFence();
+    });
+    this.planBoundaryTransition = write.catch((error) =>
+      this.emit("error", error instanceof Error ? error.message : String(error)),
+    );
+    const tracked = write.finally(() => {
+      if (this.checkpointWriteInFlight === tracked) this.checkpointWriteInFlight = null;
+      if (this.checkpointDirty) this.scheduleRecoveryCheckpoint();
+    });
+    this.checkpointWriteInFlight = tracked;
+    return tracked;
+  }
+
+  private async forceRecoveryCheckpoint(): Promise<void> {
+    this.checkpointDirty = true;
+    this.clearCheckpointWriteTimer();
+    while (this.checkpointDirty || this.checkpointWriteInFlight) {
+      if (this.checkpointWriteInFlight) await this.checkpointWriteInFlight;
+      else await this.startCheckpointWrite();
+    }
+  }
+
+  private completeCurrentOccurrence(
+    completedAt: number,
+    occurrence = this.currentStep,
+  ): RecordingOccurrenceResult | null {
+    if (!this._plan) return null;
+    if (
+      !occurrence ||
+      this.completedOccurrences.some((item) => item.occurrenceId === occurrence.occurrenceId)
+    ) {
+      return null;
+    }
+    const stats = this.getSessionStats();
+    const occurrenceMovingSeconds = Math.max(
+      0,
+      stats.movingTime - this.occurrenceStartStats.movingSeconds,
+    );
+    const result: RecordingOccurrenceResult = {
+      occurrenceId: occurrence.occurrenceId,
+      globalOrdinal: occurrence.globalOrdinal,
+      segmentId: occurrence.segmentId,
+      role: occurrence.role,
+      category: occurrence.category,
+      startedAt: new Date(this.occurrenceStartedAt ?? this.startTime ?? completedAt).toISOString(),
+      completedAt: new Date(completedAt).toISOString(),
+      activeSeconds: occurrenceMovingSeconds,
+      movingSeconds: occurrenceMovingSeconds,
+      distanceMeters: Math.max(0, stats.distance - this.occurrenceStartStats.distanceMeters),
+    };
+    this.completedOccurrences.push(result);
+    this.occurrenceStartStats = { movingSeconds: stats.movingTime, distanceMeters: stats.distance };
+    return result;
+  }
+
+  private buildExecutionManifest(): RecordingExecutionManifest | null {
+    if (!this._plan) return null;
+    const compiled = this.planExecution.getCompiledPlan();
+    if (!compiled || !this.planHash) return null;
+    return {
+      version: 1,
+      compilerVersion: compiled.compilerVersion,
+      planHash: this.planHash,
+      occurrences: this.completedOccurrences.map((result) => ({
+        ...result,
+        timerEvents: this.timerEvents
+          .filter((event) => {
+            const timestamp = new Date(event.timestamp).toISOString();
+            return timestamp >= result.startedAt && timestamp <= result.completedAt;
+          })
+          .map((event) => ({ ...event, timestamp: new Date(event.timestamp).toISOString() })),
+        laps: [
+          {
+            lapNumber: 1,
+            startedAt: result.startedAt,
+            endedAt: result.completedAt,
+            activeSeconds: result.activeSeconds,
+            distanceMeters: result.distanceMeters,
+          },
+        ],
+      })),
+    };
+  }
+
+  private isRestEvidenceTimestamp(timestamp: number): boolean {
+    if (
+      this.completedOccurrences.some(
+        (occurrence) =>
+          occurrence.role === "rest" &&
+          timestamp >= Date.parse(occurrence.startedAt) &&
+          timestamp <= Date.parse(occurrence.completedAt),
+      )
+    ) {
+      return true;
+    }
+    return this.currentStep?.role === "rest" && timestamp >= (this.occurrenceStartedAt ?? 0);
+  }
+
+  private async prepareFitEncoderForRewind(
+    rewindJournal: NonNullable<RecordingCheckpoint["rewindJournal"]>,
+    retainsCompletedPrefix: boolean,
+  ): Promise<{ encoder: GarminFitEncoder; lastDistanceMeters: number } | undefined> {
+    if (!this.fitEncoder || !this.startTime) return undefined;
+    const { replay } = await StreamBuffer.reopenForRecovery(
+      this.liveMetricsManager.streamBuffer.getBufferStatus().storageDir,
+    );
+    const retainedRecords = rebaseRetainedFitRecordDistances(
+      replay.fitRecords.filter((record) => !this.isRestEvidenceTimestamp(record.timestamp)),
+      rewindJournal,
+    );
+    const replacement = new GarminFitEncoder(
+      `rewind-${Date.now()}-${rewindJournal.length}`,
+      this.profile.id,
+    );
+    const replacementStart = retainsCompletedPrefix
+      ? this.startTime
+      : Date.parse(rewindJournal.at(-1)?.rewoundAt ?? new Date(this.startTime).toISOString());
+    await replacement.initialize([], new Date(replacementStart));
+    if (retainedRecords.length > 0) await replacement.addRecords(retainedRecords);
+    if (this.state === "paused") await replacement.pause();
+    return {
+      encoder: replacement,
+      lastDistanceMeters: retainedRecords.at(-1)?.distance ?? 0,
+    };
+  }
+
+  private buildFitSessions(manifest: RecordingExecutionManifest): FitSessionData[] {
+    const groups: RecordingExecutionManifest["occurrences"][] = [];
+    for (const occurrence of manifest.occurrences) {
+      const current = groups.at(-1);
+      if (current?.[0]?.segmentId === occurrence.segmentId) current.push(occurrence);
+      else groups.push([occurrence]);
+    }
+
+    return groups.flatMap((occurrences) => {
+      const first = occurrences[0];
+      const last = occurrences.at(-1);
+      if (!first || !last || first.role === "rest") return [];
+      const startTime = Date.parse(first.startedAt);
+      const endedAt = Date.parse(last.completedAt);
+      const totalActiveSeconds = occurrences.reduce(
+        (total, occurrence) => total + occurrence.activeSeconds,
+        0,
+      );
+      const totalMovingSeconds = occurrences.reduce(
+        (total, occurrence) => total + occurrence.movingSeconds,
+        0,
+      );
+      const distance = occurrences.reduce(
+        (total, occurrence) => total + occurrence.distanceMeters,
+        0,
+      );
+      const sport =
+        first.role === "activity" && first.category
+          ? this.getFitSport(first.category, this._plan?.gps_recording_enabled ?? false)
+          : { sport: "transition", subSport: "generic" };
+      const timerEvents: RecordingExecutionManifest["occurrences"][number]["timerEvents"] = [];
+      for (const event of occurrences.flatMap((occurrence) => occurrence.timerEvents)) {
+        const paused = timerEvents.at(-1)?.type === "pause";
+        if ((event.type === "pause" && !paused) || (event.type === "resume" && paused)) {
+          timerEvents.push(event);
+        }
+      }
+      if (timerEvents.at(-1)?.type === "pause") timerEvents.pop();
+      let lapNumber = 0;
+      return {
+        startTime,
+        endedAt,
+        totalTime: totalActiveSeconds * 1000,
+        movingTime: totalMovingSeconds * 1000,
+        distance,
+        avgSpeed: totalMovingSeconds > 0 ? distance / totalMovingSeconds : 0,
+        maxSpeed: 0,
+        sport: sport.sport,
+        subSport: sport.subSport,
+        role: first.role,
+        timerEvents: timerEvents.map((event) => ({
+          type: event.type,
+          timestamp: Date.parse(event.timestamp),
+        })),
+        laps: occurrences.flatMap((occurrence) =>
+          occurrence.laps.map((lap) => ({
+            lapNumber: ++lapNumber,
+            startTime: Date.parse(lap.startedAt),
+            endedAt: Date.parse(lap.endedAt),
+            totalTime: lap.activeSeconds * 1000,
+            totalElapsedTime: Date.parse(lap.endedAt) - Date.parse(lap.startedAt),
+            distance: lap.distanceMeters,
+            avgSpeed: lap.activeSeconds > 0 ? lap.distanceMeters / lap.activeSeconds : 0,
+            maxSpeed: 0,
+          })),
+        ),
+      };
+    });
+  }
+
   private navigatePlanStep(
-    navigate: () => boolean,
+    targetIndex: number,
     reason: "advance" | "skip" | "previous" | "go_to",
-  ): boolean {
-    const changed = navigate();
-    if (!changed) {
-      return false;
+    expectedOccurrenceId: string,
+    advanceOrigin: "manual" | "automatic" = "manual",
+  ): Promise<boolean> {
+    const transition = this.planBoundaryTransition.then(async () => {
+      const previous = this.currentStep;
+      if (!previous || previous.occurrenceId !== expectedOccurrenceId) return false;
+      const sourceIndex = this.stepIndex;
+      const target = this.allSteps[targetIndex];
+      const completesPlan = reason === "advance" && targetIndex === this.stepCount;
+      if ((!target && !completesPlan) || targetIndex === sourceIndex) return false;
+      if (reason === "go_to" && targetIndex > sourceIndex) return false;
+
+      const movingTime = this.getMovingTime();
+      const distanceMeters = this.getSessionStats().distance;
+      const completesCurrent = reason === "advance" || reason === "skip";
+      if (
+        completesCurrent &&
+        this.completedOccurrences.some((item) => item.occurrenceId === expectedOccurrenceId)
+      ) {
+        return false;
+      }
+      if (
+        reason === "advance" &&
+        !(advanceOrigin === "manual"
+          ? this.planExecution.getStepProgress(movingTime, distanceMeters)?.canManualAdvance
+          : this.planExecution.getStepProgress(movingTime, distanceMeters)?.canAutoAdvance)
+      ) {
+        return false;
+      }
+
+      await this.liveMetricsManager.streamBuffer.flushToFiles();
+      const rewindBoundary =
+        targetIndex < sourceIndex
+          ? (() => {
+              const destinationResult = this.completedOccurrences[targetIndex];
+              if (!destinationResult) return null;
+              const rewoundAt = new Date().toISOString();
+              return {
+                attemptId: `${this.getSessionSnapshot()?.identity.sessionId ?? "recording"}:attempt:${this.rewindJournal.length + 1}`,
+                destinationOccurrenceId: destinationResult.occurrenceId,
+                sourceDistanceMeters: distanceMeters,
+                destinationDistanceMeters: this.completedOccurrences
+                  .slice(0, targetIndex)
+                  .reduce((total, occurrence) => total + occurrence.distanceMeters, 0),
+                supersededFrom: destinationResult.startedAt,
+                rewoundAt,
+              };
+            })()
+          : null;
+      if (targetIndex < sourceIndex && !rewindBoundary) return false;
+      const rewindEncoder = rewindBoundary
+        ? await this.prepareFitEncoderForRewind(
+            [...this.rewindJournal, rewindBoundary],
+            targetIndex > 0,
+          )
+        : undefined;
+      if (target && target.role !== "activity") {
+        await this.trainerControl.neutralizeForBoundary();
+      }
+      const navigated =
+        reason === "advance"
+          ? this.planExecution.advance(movingTime, distanceMeters, advanceOrigin)
+          : reason === "skip"
+            ? this.planExecution.skip(movingTime, distanceMeters)
+            : reason === "previous"
+              ? this.planExecution.previous(movingTime, distanceMeters)
+              : this.planExecution.goToStep(targetIndex, movingTime, distanceMeters);
+      if (!navigated) {
+        await rewindEncoder?.encoder.cleanup();
+        return false;
+      }
+
+      const committedAt = Date.now();
+      const completed = completesCurrent
+        ? this.completeCurrentOccurrence(committedAt, previous)
+        : null;
+      if (targetIndex < sourceIndex && rewindBoundary) {
+        this.rewindJournal.push(rewindBoundary);
+        this.completedOccurrences = this.completedOccurrences.slice(0, targetIndex);
+        const retainedIds = new Set(this.completedOccurrences.map((item) => item.occurrenceId));
+        this.boundaryJournal = this.boundaryJournal.filter(
+          (entry) =>
+            entry.completedOccurrenceId !== null && retainedIds.has(entry.completedOccurrenceId),
+        );
+        if (rewindEncoder) {
+          const supersededEncoder = this.fitEncoder;
+          this.fitEncoder = rewindEncoder.encoder;
+          this.lastFitDistanceMeters = rewindEncoder.lastDistanceMeters;
+          if (supersededEncoder) {
+            try {
+              await supersededEncoder.cleanup();
+            } catch (error) {
+              console.warn("[Service] Failed to clean superseded rewind encoder", error);
+            }
+          }
+        } else {
+          this.lastFitDistanceMeters = rewindBoundary.destinationDistanceMeters ?? 0;
+        }
+      }
+      this.occurrenceStartedAt = committedAt;
+      this.occurrenceStartStats = {
+        movingSeconds: this.getSessionStats().movingTime,
+        distanceMeters,
+      };
+      if (target && previous.segmentId !== target.segmentId) {
+        this.trainerControl.resetAdaptiveState();
+      }
+      if (target) {
+        this.selectedActivityCategory = target.category ?? this.selectedActivityCategory;
+        this._gpsRecordingEnabled =
+          target.role === "activity" && Boolean(this._plan?.gps_recording_enabled);
+      }
+      this.boundaryJournal.push({
+        revision: this.checkpointRevision + 1,
+        completedOccurrenceId: completed?.occurrenceId ?? null,
+        nextOccurrenceId: target?.occurrenceId ?? null,
+        committedAt: new Date(committedAt).toISOString(),
+      });
+      await this.writeCheckpointWithinFence();
+      await this.syncGpsTrackingForCurrentState();
+      await this.syncAutomaticTrainerControl("step_change");
+      this.emit("stepChanged", this.getStepInfo());
+      this.publishSessionUpdate();
+      if (completesPlan) this.emit("planCompleted");
+      console.log(`[Service] Plan occurrence navigation completed: ${reason}`);
+      return true;
+    });
+    this.planBoundaryTransition = transition.then(
+      () => undefined,
+      (error) => this.emit("error", error instanceof Error ? error.message : String(error)),
+    );
+    return transition;
+  }
+
+  private scheduleRecoveryCheckpoint(): void {
+    if (this.state !== "recording") return;
+    this.checkpointDirty = true;
+    if (this.checkpointWriteInFlight || this.checkpointWriteTimer) return;
+    const delay = Math.max(0, 5_000 - (Date.now() - this.lastCheckpointWriteAt));
+    if (delay === 0) {
+      void this.startCheckpointWrite().catch(() => undefined);
+      return;
     }
-
-    this.emit("stepChanged", this.getStepInfo());
-    this.publishSessionUpdate();
-
-    if (this.state === "recording") {
-      this.syncAutomaticTrainerControl("step_change").catch(console.error);
-    }
-
-    if (this.isFinished) {
-      console.log("[Service] Plan completed!");
-      this.emit("planCompleted");
-    }
-
-    console.log(`[Service] Plan step navigation completed: ${reason}`);
-    return true;
+    this.checkpointWriteTimer = setTimeout(() => {
+      this.checkpointWriteTimer = undefined;
+      void this.startCheckpointWrite().catch(() => undefined);
+    }, delay);
   }
 
   public getTrainerMachineType() {
@@ -2418,6 +2830,201 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     return this.getRecordingConfiguration().session;
   }
 
+  public get hasRecoveredCheckpoint(): boolean {
+    return this.recoveredCheckpoint !== null;
+  }
+
+  /** Revalidates and stages a claimed checkpoint without starting hardware side effects. */
+  public async stageRecoveredCheckpoint(checkpoint: RecordingCheckpoint): Promise<void> {
+    if (checkpoint.profileId !== this.profile.id) throw new Error("Checkpoint profile mismatch");
+    if (checkpoint.compilerVersion !== ACTIVITY_PLAN_COMPILER_VERSION) {
+      throw new Error("Checkpoint compiler version mismatch");
+    }
+    if ((await hashRecordingPlan(checkpoint.planSnapshot)) !== checkpoint.planHash) {
+      throw new Error("Checkpoint plan hash mismatch");
+    }
+    const compiled = compileActivityPlanV3(checkpoint.planSnapshot);
+    const compiledIds = compiled.occurrences.map((occurrence) => occurrence.occurrenceId);
+    const completedIds = checkpoint.completedOccurrences.map(
+      (occurrence) => occurrence.occurrenceId,
+    );
+    if (
+      completedIds.some((occurrenceId, index) => compiledIds[index] !== occurrenceId) ||
+      checkpoint.currentOccurrenceId !== (compiledIds[completedIds.length] ?? null)
+    ) {
+      throw new Error("Checkpoint occurrence journal mismatch");
+    }
+
+    const { streamBuffer, replay } = await StreamBuffer.reopenForRecovery(
+      checkpoint.streamArtifactPaths,
+    );
+    const plan: RecordingActivityPlanV3Input = {
+      name: "Recovered activity plan",
+      gps_recording_enabled: checkpoint.policy.activityGpsMode === "on",
+      structure: checkpoint.planSnapshot,
+    };
+    this._plan = plan;
+    this.planExecution.loadPlan(plan);
+    this.planExecution.restoreOccurrence(
+      checkpoint.currentOccurrenceId,
+      checkpoint.occurrenceProgress.startMovingSeconds * 1000,
+      checkpoint.occurrenceProgress.startDistanceMeters,
+    );
+    this.completedOccurrences = [...checkpoint.completedOccurrences];
+    this.boundaryJournal = [...checkpoint.boundaryJournal];
+    this.rewindJournal = [...(checkpoint.rewindJournal ?? [])];
+    this.timerEvents = checkpoint.eventJournal.map((event) => ({
+      type: event.type,
+      timestamp: Date.parse(event.timestamp),
+    }));
+    const recoveryPauseAt = Date.parse(checkpoint.timing.updatedAt);
+    if (this.timerEvents.at(-1)?.type !== "pause") {
+      this.timerEvents.push({ type: "pause", timestamp: recoveryPauseAt });
+    }
+    this.checkpointRevision = checkpoint.revision;
+    this.planHash = checkpoint.planHash;
+    this.selectedActivityCategory =
+      this.currentStep?.category ?? checkpoint.policy.category ?? compiled.primaryCategory;
+    this._gpsRecordingEnabled = checkpoint.policy.gpsMode === "on";
+    this.startTime = Date.parse(checkpoint.timing.startedAt);
+    this.pausedTime = checkpoint.timing.accumulatedPauseSeconds * 1000;
+    this.lastPauseTime = recoveryPauseAt;
+    this.occurrenceStartedAt = Date.parse(checkpoint.occurrenceProgress.startedAt);
+    this.occurrenceStartStats = {
+      movingSeconds: checkpoint.occurrenceProgress.startMovingSeconds,
+      distanceMeters: checkpoint.occurrenceProgress.startDistanceMeters,
+    };
+
+    const rebuiltSnapshot = this.buildSessionSnapshot(checkpoint.timing.startedAt);
+    const snapshot = deepFreeze({
+      ...rebuiltSnapshot,
+      identity: {
+        ...rebuiltSnapshot.identity,
+        sessionId: checkpoint.sessionId,
+        revision: checkpoint.revision,
+      },
+    });
+    this.sessionController.resetForNewSession(snapshot);
+    this.sessionController.updateOverrideState((state) => ({
+      ...state,
+      trainerMode: checkpoint.policy.trainerMode,
+    }));
+    this.sessionController.setRuntimeSourceState({
+      selectedSources: checkpoint.policy.selectedSources,
+      currentMetrics: {},
+      degradedState: { isDegraded: false, metrics: [] },
+      sourceChanges: [],
+    });
+    await this.liveMetricsManager.stageRecoveredRecording({
+      streamBuffer,
+      replay,
+      startedAt: this.startTime,
+      accumulatedPauseMs: this.pausedTime,
+      recoveryPausedAt: recoveryPauseAt,
+      elapsedSeconds: checkpoint.timing.elapsedSeconds,
+      movingSeconds: checkpoint.timing.movingSeconds,
+    });
+    this.recordingMetadata = {
+      startedAt: checkpoint.timing.startedAt,
+      activityCategory: snapshot.activity.category,
+      gpsRecordingEnabled: checkpoint.policy.gpsMode === "on",
+      profileId: this.profile.id,
+      profile: this.profile,
+      activityPlan: plan,
+    };
+    this.recoveredCheckpoint = checkpoint;
+    this.recoveredReplay = replay;
+    this.state = "paused";
+    this.sessionController.setLifecycle("paused");
+    this.hasConfiguredSetup = true;
+    this.emit("stateChanged", this.state);
+    this.emit("stepChanged", this.getStepInfo());
+    this.publishSnapshotUpdate();
+    this.publishSessionUpdate();
+  }
+
+  public async resumeRecoveredRecording(): Promise<void> {
+    return this.runLifecycleTransition(async () => {
+      if (!this.recoveredCheckpoint || !this.recoveredReplay || this.state !== "paused") {
+        throw new Error("No recovered recording is ready to resume");
+      }
+      const allGranted = await areRecordingPermissionsGranted(this._gpsRecordingEnabled);
+      if (!allGranted) throw new Error("Required recording permissions are unavailable");
+      const recoveredStartedAt = this.recordingMetadata?.startedAt;
+      if (!recoveredStartedAt) throw new Error("Recovered recording metadata is unavailable");
+
+      const encoder = new GarminFitEncoder(`${Date.now()}`, this.profile.id);
+      const recoveredEncoderStart =
+        this.completedOccurrences.length === 0 && this.rewindJournal.length > 0
+          ? Date.parse(this.rewindJournal.at(-1)?.rewoundAt ?? recoveredStartedAt)
+          : Date.parse(recoveredStartedAt);
+      await encoder.initialize(
+        this.sensorsManager.getConnectedSensors(),
+        new Date(recoveredEncoderStart),
+      );
+      const recoveredFitRecords = rebaseRetainedFitRecordDistances(
+        this.recoveredReplay.fitRecords.filter(
+          (record) => !this.isRestEvidenceTimestamp(record.timestamp),
+        ),
+        this.rewindJournal,
+      );
+      if (recoveredFitRecords.length > 0) {
+        await encoder.addRecords(recoveredFitRecords);
+      }
+      this.lastFitDistanceMeters = recoveredFitRecords.at(-1)?.distance ?? 0;
+      this.fitEncoder = encoder;
+      this.fitFinalized = false;
+      this.liveMetricsFinalized = false;
+      this.liveMetricsManager.resumeRecording({ preserveHistory: true });
+      if (this.lastPauseTime) {
+        this.pausedTime += Date.now() - this.lastPauseTime;
+        this.lastPauseTime = undefined;
+      }
+      this.timerEvents.push({ type: "resume", timestamp: Date.now() });
+      this.state = "recording";
+      this.sessionController.setLifecycle("recording");
+      this.sensorsManager.setAutoReconnectEnabled(true);
+      await this.sensorsManager.reconnectAll();
+      if (this._gpsRecordingEnabled) {
+        await this.disconnectTrainerSensors();
+        await this.locationManager.startForegroundTracking();
+        await this.locationManager.startBackgroundTracking();
+        await this.locationManager.startHeadingTracking();
+        this._gpsAvailable = true;
+      }
+      this.notificationsManager = new NotificationsManager(
+        this._plan?.name ?? "Recovered activity",
+      );
+      await this.notificationsManager.startForegroundService();
+      this.recoveredCheckpoint = null;
+      this.recoveredReplay = null;
+      this.startElapsedTimeUpdates();
+      await this.forceRecoveryCheckpoint();
+      await this.syncAutomaticTrainerControl("reconnect_recovery");
+      this.emit("stateChanged", this.state);
+      this.publishSessionUpdate();
+    });
+  }
+
+  public async discardRecoveredRecording(): Promise<void> {
+    const checkpoint = this.recoveredCheckpoint;
+    if (!checkpoint) throw new Error("No recovered recording is available to discard");
+    await clearRecordingCheckpoint(checkpoint.sessionId);
+    StreamBuffer.deleteDurableDirectories(checkpoint.streamArtifactPaths);
+    releaseRecordingCheckpointClaim(checkpoint.sessionId);
+    this.recoveredCheckpoint = null;
+    this.recoveredReplay = null;
+    this.recordingMetadata = undefined;
+    this.planExecution.clear();
+    this._plan = undefined;
+    this.state = "pending";
+    this.sessionController.resetAll();
+    this.hasConfiguredSetup = false;
+    this.emit("stateChanged", this.state);
+    this.publishSnapshotUpdate();
+    this.publishSessionUpdate();
+  }
+
   async startRecording(): Promise<void> {
     return this.runLifecycleTransition(() => this.startRecordingTransition());
   }
@@ -2469,8 +3076,17 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       this.finalizedArtifact = null;
       this.liveMetricsFinalized = false;
       this.fitFinalized = false;
+      this.lastFitDistanceMeters = 0;
       this.finalizationFailed = false;
       this.recordingEndTime = undefined;
+      this.completedOccurrences = [];
+      this.boundaryJournal = [];
+      this.rewindJournal = [];
+      this.checkpointRevision = 0;
+      this.planHash = this._plan ? await hashRecordingPlan(this._plan.structure) : null;
+      this.occurrenceStartedAt = Date.now();
+      this.occurrenceStartStats = { movingSeconds: 0, distanceMeters: 0 };
+      this.timerEvents = [];
 
       const sessionSnapshot = this.buildSessionSnapshot(startedAt);
       this.sessionController.resetForNewSession(sessionSnapshot);
@@ -2524,6 +3140,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       await attemptEncoder.initialize(this.sensorsManager.getConnectedSensors());
       this.fitEncoder = attemptEncoder;
       await this.updateFitRecording();
+      await this.forceRecoveryCheckpoint();
 
       if (this.hasPlan && this.currentStep) {
         this.emit("stepChanged", this.getStepInfo());
@@ -2584,6 +3201,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
       console.log("[Service] Pausing recording");
       const pauseTimestamp = Date.now();
+      this.timerEvents.push({ type: "pause", timestamp: pauseTimestamp });
 
       this.liveMetricsManager.pauseRecording();
       if (this.fitEncoder) {
@@ -2595,6 +3213,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       this.sensorsManager.setAutoReconnectEnabled(true);
       this.lastPauseTime = pauseTimestamp;
       this.stopElapsedTimeUpdates();
+      await this.forceRecoveryCheckpoint();
       this.emit("stateChanged", this.state);
       this.publishSessionUpdate();
     });
@@ -2608,6 +3227,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
       console.log("[Service] Resuming recording");
       const resumeTimestamp = Date.now();
+      this.timerEvents.push({ type: "resume", timestamp: resumeTimestamp });
 
       this.liveMetricsManager.resumeRecording();
       if (this.fitEncoder) {
@@ -2622,6 +3242,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       this.sessionController.setLifecycle(this.state);
       this.sensorsManager.setAutoReconnectEnabled(true);
       this.startElapsedTimeUpdates();
+      await this.forceRecoveryCheckpoint();
       this.emit("stateChanged", this.state);
       this.publishSessionUpdate();
     });
@@ -2682,6 +3303,18 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.publishSessionUpdate();
 
     try {
+      await this.planBoundaryTransition;
+      const finalOccurrence = this.completeCurrentOccurrence(this.recordingEndTime ?? Date.now());
+      if (finalOccurrence) {
+        this.planExecution.completeForFinalization();
+        this.boundaryJournal.push({
+          revision: this.checkpointRevision + 1,
+          completedOccurrenceId: finalOccurrence.occurrenceId,
+          nextOccurrenceId: this.currentStep?.occurrenceId ?? null,
+          committedAt: new Date().toISOString(),
+        });
+      }
+      await this.forceRecoveryCheckpoint();
       await this.stopActiveRecordingResources();
 
       if (!this.liveMetricsFinalized) {
@@ -2703,28 +3336,34 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
           );
         }
 
-        const { sport, subSport } = this.getFitSport(
+        const executionManifest = this.buildExecutionManifest();
+        const fitSessions = executionManifest ? this.buildFitSessions(executionManifest) : [];
+        const fallbackSport = this.getFitSport(
           this.selectedActivityCategory,
           this._gpsRecordingEnabled,
         );
-        await this.fitEncoder.finalize({
-          startTime: this.startTime || Date.now(),
-          endedAt: this.recordingEndTime,
-          totalTime: stats.movingTime * 1000,
-          distance: stats.distance,
-          avgSpeed: stats.avgSpeed,
-          maxSpeed: stats.maxSpeed,
-          avgPower: stats.avgPower,
-          maxPower: stats.maxPower,
-          avgHeartRate: stats.avgHeartRate,
-          maxHeartRate: stats.maxHeartRate,
-          avgCadence: stats.avgCadence,
-          totalAscent: stats.ascent,
-          totalDescent: stats.descent,
-          calories: stats.calories,
-          sport,
-          subSport,
-        });
+        await this.fitEncoder.finalize(
+          fitSessions.length > 0
+            ? fitSessions
+            : {
+                startTime: this.startTime || Date.now(),
+                endedAt: this.recordingEndTime,
+                totalTime: stats.movingTime * 1000,
+                distance: stats.distance,
+                avgSpeed: stats.avgSpeed,
+                maxSpeed: stats.maxSpeed,
+                avgPower: stats.avgPower,
+                maxPower: stats.maxPower,
+                avgHeartRate: stats.avgHeartRate,
+                maxHeartRate: stats.maxHeartRate,
+                avgCadence: stats.avgCadence,
+                totalAscent: stats.ascent,
+                totalDescent: stats.descent,
+                calories: stats.calories,
+                sport: fallbackSport.sport,
+                subSport: fallbackSport.subSport,
+              },
+        );
         this.recordingMetadata.activityFilePath = this.fitEncoder.getFilePath();
         this.fitFinalized = true;
       }
@@ -2740,7 +3379,9 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
         }
 
         this.finalizedArtifact = {
+          schemaVersion: 2,
           sessionId: sessionSnapshot.identity.sessionId,
+          profileId: this.profile.id,
           snapshot: sessionSnapshot,
           overrides: this.getSessionOverrides(),
           finalStats: {
@@ -2751,6 +3392,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
           },
           activityFilePath: this.recordingMetadata.activityFilePath ?? null,
           streamArtifactPaths: [this.liveMetricsManager.streamBuffer.getBufferStatus().storageDir],
+          executionManifest: this.buildExecutionManifest(),
           completedAt: this.recordingMetadata.endedAt,
           runtimeSourceState: this.getRuntimeSourceState(),
         };
@@ -2762,6 +3404,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
           throw error;
         }
         this.emit("artifactReady", this.finalizedArtifact);
+        await clearRecordingCheckpoint(sessionSnapshot.identity.sessionId);
       }
 
       this.state = "finished";
@@ -2847,11 +3490,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
       if (payload.plan) {
         // Template or planned activity with structure
-        const plan: RecordingServiceActivityPlan = {
+        const plan: RecordingActivityPlanV3Input = {
           id: payload.plan.id,
           name: payload.plan.name,
           description: payload.plan.description || "",
-          activity_category: payload.plan.activity_category || payload.category,
           structure: payload.plan.structure,
         };
 
@@ -3068,9 +3710,10 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       if (this.hasPlan && this.currentStep) {
         const progress = this.stepProgress;
         if (progress && !progress.requiresManualAdvance && progress.progress >= 1) {
-          this.advanceStep();
+          this.advanceStep("automatic");
         }
       }
+      this.scheduleRecoveryCheckpoint();
     }
   }
 
@@ -3105,7 +3748,6 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     try {
       const initialStatus = encoder.getStatus();
       if (!initialStatus.isInitialized || initialStatus.isFinalized) return;
-
       if (this.selectedActivityCategory === "swim") {
         // TODO: Implement swim logic
         return;
@@ -3115,25 +3757,24 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
       const readings = this.liveMetricsManager.getCurrentReadings();
       const stats = this.liveMetricsManager.getSessionStats();
 
-      const record: FitRecord = {
-        timestamp: Date.now(),
-        distance: stats.distance,
-        speed: readings.speed,
-        heartRate: readings.heartRate,
-        cadence: readings.cadence,
-        power: readings.power,
-        temperature: readings.temperature,
-      };
-
-      if (readings.position) {
-        record.latitude = readings.position.lat;
-        record.longitude = readings.position.lng;
-        record.altitude = readings.position.altitude;
-      }
-
       if (this.state !== "recording") return;
-
-      await encoder.addRecord(record);
+      const timestamp = Date.now();
+      const distance = rebaseRecordingDistance(
+        stats.distance,
+        timestamp,
+        this.rewindJournal,
+        this.lastFitDistanceMeters,
+      );
+      const emitted = await appendActivityRecorderFitRecord({
+        encoder,
+        hasPlan: this.hasPlan,
+        currentOccurrence: this.currentStep,
+        timestamp,
+        distance,
+        readings,
+      });
+      if (!emitted) return;
+      this.lastFitDistanceMeters = distance;
 
       // Log periodically (every 10 seconds) to track recording progress
       const status = encoder.getStatus();
@@ -3238,6 +3879,8 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
 
     const preserveFinalizedFiles = this.finalizedArtifact !== null || this.fitFinalized;
     this.stopElapsedTimeUpdates();
+    this.clearCheckpointWriteTimer();
+    this.checkpointDirty = false;
     this.sensorsManager.setAutoReconnectEnabled(false);
 
     const teardownResults = await Promise.allSettled([
@@ -3279,6 +3922,7 @@ export class ActivityRecorderService extends EventEmitter<ServiceEvents> {
     this.finalizationFailed = false;
     this.fitRecordingUpdateInFlight = false;
     this.fitRecordingUpdatePending = false;
+    this.lastFitDistanceMeters = 0;
     this.laps = [];
     this.lastLapTime = 0;
     this._gpsAvailable = false;

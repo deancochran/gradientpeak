@@ -1,6 +1,7 @@
 import {
   formatDateOnlyInTimeZone,
   ianaTimezoneSchema,
+  persistedTrainingPlanStructureSchema,
   scheduledDateTimeToIsoInstant,
   type templateApplyInputSchema,
 } from "@repo/core";
@@ -113,10 +114,16 @@ export async function applyTrainingPlanTemplateUseCase(input: {
     });
   }
 
-  const structure =
-    templatePlan.structure && typeof templatePlan.structure === "object"
-      ? ({ ...(templatePlan.structure as Record<string, unknown>) } as Record<string, unknown>)
-      : {};
+  const parsedStructure = persistedTrainingPlanStructureSchema.safeParse(templatePlan.structure);
+  if (!parsedStructure.success) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message:
+        "This training plan cannot be scheduled because its structure is not canonical version 1.",
+      cause: parsedStructure.error,
+    });
+  }
+  const structure = parsedStructure.data;
 
   const materializedApplication = materializeAppliedTrainingPlan({
     applicationMode: input.values.application_mode,

@@ -25,6 +25,7 @@ export type GarminWorkoutFitUnsupportedReasonCode =
   | "encoding_failed"
   | "fit_string_too_long"
   | "invalid_document"
+  | "lossy_projection"
   | "multiple_targets"
   | "target_out_of_range"
   | "unsupported_relative_target_basis"
@@ -162,6 +163,87 @@ export function getGarminWorkoutFitUnsupportedReasons(
   }
 
   const reasons: GarminWorkoutFitUnsupportedReason[] = [];
+  if (!parsed.data.segments || !parsed.data.categories || !parsed.data.legacyProjection) {
+    reasons.push({
+      code: "lossy_projection",
+      message:
+        "Garmin FIT encoding requires segments, categories, and explicit lossless projection evidence.",
+      path: ["segments"],
+    });
+  }
+  if (parsed.data.legacyProjection?.lossless === false) {
+    reasons.push({
+      code: "lossy_projection",
+      message: "Garmin FIT encoding requires a lossless legacy workout projection.",
+      path: ["legacyProjection", "lossless"],
+    });
+  }
+  const segmentActivityCategories =
+    parsed.data.segments
+      ?.filter((segment) => segment.kind === "activity")
+      .map((segment) => segment.category) ?? [];
+  const actualCategories = new Set(segmentActivityCategories);
+  if (
+    actualCategories.size > 1 ||
+    new Set(parsed.data.categories ?? [parsed.data.sport]).size > 1
+  ) {
+    reasons.push({
+      code: "lossy_projection",
+      message: "Garmin FIT workouts cannot preserve multiple activity categories.",
+      path: ["categories"],
+    });
+  }
+  parsed.data.segments?.forEach((segment, segmentIndex) => {
+    if (segment.kind !== "activity") {
+      reasons.push({
+        code: "lossy_projection",
+        message: `Garmin FIT workouts cannot preserve ${segment.kind} segments.`,
+        path: ["segments", segmentIndex],
+      });
+    }
+  });
+  if (parsed.data.segments) {
+    const segmentBlocks = parsed.data.segments.flatMap((segment) =>
+      segment.kind === "activity" ? segment.blocks : [],
+    );
+    const declaredCategories = parsed.data.categories ?? [];
+    const actualCategoryList = [...actualCategories];
+    if (
+      declaredCategories.length !== actualCategoryList.length ||
+      declaredCategories.some((category) => !actualCategories.has(category))
+    ) {
+      reasons.push({
+        code: "lossy_projection",
+        message: "Declared categories do not match activity segment categories.",
+        path: ["categories"],
+      });
+    }
+    if (actualCategoryList.length !== 1 || actualCategoryList[0] !== parsed.data.sport) {
+      reasons.push({
+        code: "lossy_projection",
+        message: "Root sport does not match the single activity segment category.",
+        path: ["sport"],
+      });
+    }
+    if (JSON.stringify(segmentBlocks) !== JSON.stringify(parsed.data.blocks)) {
+      reasons.push({
+        code: "lossy_projection",
+        message: "Root workout blocks do not match activity segment contents.",
+        path: ["blocks"],
+      });
+    }
+  }
+  if (
+    parsed.data.legacyProjection &&
+    (parsed.data.legacyProjection.sport !== parsed.data.sport ||
+      JSON.stringify(parsed.data.legacyProjection.blocks) !== JSON.stringify(parsed.data.blocks))
+  ) {
+    reasons.push({
+      code: "lossy_projection",
+      message: "Legacy projection does not match the root workout projection.",
+      path: ["legacyProjection"],
+    });
+  }
   if (parsed.data.sport !== "run" && parsed.data.sport !== "bike") {
     reasons.push({
       code: "unsupported_sport",

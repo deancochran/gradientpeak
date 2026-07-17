@@ -189,6 +189,7 @@ jest.mock("@/lib/api", () => ({
 jest.mock("@/lib/utils/durationConversion", () => ({ __esModule: true, getDurationMs: () => 0 }));
 jest.mock("@repo/core", () => ({
   __esModule: true,
+  ...jest.requireActual("@repo/core"),
   buildEstimationContext: () => ({}),
   decodePolyline: () => null,
   estimateActivity: () => null,

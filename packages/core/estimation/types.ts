@@ -1,5 +1,4 @@
 import type { ProfileWithDob } from "../profile";
-import type { ActivityPlanStructureV2 } from "../schemas/activity_plan_v2";
 import type { CanonicalSport } from "../schemas/sport";
 
 // ==============================
@@ -43,14 +42,14 @@ export interface EstimationContext {
   // Current fitness state
   fitnessState?: FitnessState;
 
-  // Activity details
-  activityCategory: CanonicalSport;
+  // Activity details used only for unstructured route/template estimation.
+  activityCategory?: CanonicalSport;
 
   // Optional route data
   route?: Route;
 
-  // Plan structure (V2)
-  structure?: ActivityPlanStructureV2;
+  // Strict modern plan structure; segment categories own structured calculations.
+  structure?: unknown;
 
   // Scheduling context
   scheduledDate?: Date;
@@ -111,9 +110,21 @@ export type ConfidenceLevel = "high" | "medium" | "low";
 
 export interface EstimationResult {
   // Primary metrics
-  tss: number;
-  duration: number; // seconds
-  intensityFactor: number; // 0.0-2.0
+  tss: number | null;
+  /** Exact elapsed seconds, or null when the prescription is distance/open/otherwise partial. */
+  duration: number | null;
+  intensityFactor: number | null;
+
+  categoryDoses?: Array<{
+    category: CanonicalSport;
+    timedActiveSeconds: number;
+    distanceMeters: number;
+    repetitionCount: number;
+    openOccurrenceCount: number;
+    tss: number | null;
+    intensityFactor: number | null;
+    cyclingPowerEvidenceCoverage: number | null;
+  }>;
 
   // Secondary metrics
   estimatedCalories?: number;
@@ -195,7 +206,7 @@ export interface FatiguePrediction {
 // ==============================
 
 export interface MetricEstimations {
-  calories: number;
+  calories?: number;
   distance?: number; // meters
   elevationGain?: number; // meters
   avgPower?: number; // watts

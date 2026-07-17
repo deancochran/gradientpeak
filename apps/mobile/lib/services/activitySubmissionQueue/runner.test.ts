@@ -5,6 +5,12 @@ import type { ActivitySubmissionQueueJob, ActivitySubmissionQueueRunnerDeps } fr
 
 const persistedJobs: ActivitySubmissionQueueJob[] = [];
 const persistedHistory: ActivitySubmissionQueueJob[] = [];
+const executionManifest = {
+  version: 1 as const,
+  compilerVersion: 1,
+  planHash: "0".repeat(64),
+  occurrences: [],
+};
 
 vi.mock("./storage", () => ({
   upsertActivitySubmissionQueueJob: vi.fn(async (job: ActivitySubmissionQueueJob) => {
@@ -20,11 +26,13 @@ vi.mock("./storage", () => ({
 }));
 
 const baseJob: ActivitySubmissionQueueJob = {
+  schemaVersion: 2,
   id: "job-1",
   artifactId: "artifact-1",
   sessionId: "session-1",
   localActivityFilePath: "file:///activity.fit",
   streamArtifactPaths: ["file:///streams"],
+  executionManifest,
   draft: {
     profileId: "profile-1",
     startedAt: "2026-01-01T10:00:00.000Z",

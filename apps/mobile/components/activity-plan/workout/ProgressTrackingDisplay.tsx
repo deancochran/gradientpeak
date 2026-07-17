@@ -2,7 +2,7 @@
 // Progress Tracking Display
 // ================================
 
-import { type ActivityPlanStructureV2, formatDuration } from "@repo/core";
+import { type ActivityPlanStructureV3, formatDuration } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import { memo } from "react";
 import { View } from "react-native";
@@ -11,7 +11,7 @@ import { ActivityProgressGraph } from "./ActivityProgress";
 
 const ProgressTrackingDisplay = memo<{
   planProgress: any;
-  structure: ActivityPlanStructureV2;
+  structure: ActivityPlanStructureV3;
   currentMetrics: CurrentReadings;
 }>(function ProgressTrackingDisplay({ planProgress, structure, currentMetrics }) {
   const overallProgress = (planProgress.completedSteps / planProgress.totalSteps) * 100;

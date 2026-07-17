@@ -11,8 +11,8 @@
 
 import { z } from "zod";
 
+import type { ActivityPlanStructureV3 } from "../activity-plan";
 import type { FTMSFeatures } from "../ftms-types";
-import type { ActivityPlanStructureV2 } from "./activity_plan_v2";
 import type { CanonicalSport } from "./sport";
 
 export const recordingPrimaryMetricSchema = z.enum(["time", "distance", "reps", "power"]);
@@ -96,7 +96,7 @@ export interface RecordingConfigInput {
     hasStructure: boolean; // Has steps to follow
     stepCount: number;
     requiresManualAdvance: boolean; // Any "untilFinished" steps
-    structure?: ActivityPlanStructureV2 | null;
+    structure?: ActivityPlanStructureV3 | null;
   };
 
   // Connected devices

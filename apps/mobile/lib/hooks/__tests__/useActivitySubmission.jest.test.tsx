@@ -46,10 +46,10 @@ jest.mock("expo-file-system", () => ({
 }));
 
 jest.mock("@/lib/services/activitySubmissionQueue", () => {
-  const actual = jest.requireActual("@/lib/services/activitySubmissionQueue");
+  const runner = jest.requireActual("@/lib/services/activitySubmissionQueue/runner");
   return {
     __esModule: true,
-    ...actual,
+    runActivitySubmissionQueueJob: runner.runActivitySubmissionQueueJob,
     loadActivitySubmissionQueueJobByArtifactId: (...args: unknown[]) =>
       (loadJobMock as jest.Mock)(...args),
     upsertActivitySubmissionQueueJob: (...args: unknown[]) => (upsertJobMock as jest.Mock)(...args),
@@ -97,8 +97,17 @@ jest.mock("@/lib/api", () => ({
   },
 }));
 
+const executionManifest = {
+  version: 1 as const,
+  compilerVersion: 1,
+  planHash: "0".repeat(64),
+  occurrences: [],
+};
+
 const artifact = {
+  schemaVersion: 2 as const,
   sessionId: "session-1",
+  profileId: "profile-1",
   snapshot: {
     identity: { startedAt: "2026-01-01T10:00:00.000Z" },
     activity: { category: "bike", gpsMode: "off", activityPlanId: null },
@@ -112,6 +121,7 @@ const artifact = {
   },
   activityFilePath: "file:///activity.fit",
   streamArtifactPaths: ["file:///streams.json"],
+  executionManifest,
   completedAt: "2026-01-01T11:00:00.000Z",
   runtimeSourceState: {
     selectedSources: [],
@@ -174,12 +184,14 @@ describe("useActivitySubmission", () => {
 
   it("continues a persisted failed job without rebuilding completed progress", async () => {
     loadJobMock.mockResolvedValue({
+      schemaVersion: 2,
       id: "session-1",
       artifactId: "session-1",
       sessionId: "session-1",
       localActivityFilePath: "file:///activity.fit",
       localActivityFileSize: 1234,
       streamArtifactPaths: ["file:///streams.json"],
+      executionManifest,
       draft: {
         profileId: "profile-1",
         startedAt: "2026-01-01T10:00:00.000Z",
@@ -207,7 +219,7 @@ describe("useActivitySubmission", () => {
       await expect(result.current.submit()).resolves.toBe(true);
     });
 
-    expect(loadJobMock).toHaveBeenCalledWith("session-1");
+    expect(loadJobMock).toHaveBeenCalledWith("session-1", "profile-1");
     expect(createFromRecordingSummaryMock).not.toHaveBeenCalled();
     expect(getSignedUploadUrlMock).not.toHaveBeenCalled();
     expect(uploadToSignedUrlMock).not.toHaveBeenCalled();
@@ -223,12 +235,14 @@ describe("useActivitySubmission", () => {
 
   it("keeps finalized artifact files when continuation fails", async () => {
     loadJobMock.mockResolvedValue({
+      schemaVersion: 2,
       id: "session-1",
       artifactId: "session-1",
       sessionId: "session-1",
       localActivityFilePath: "file:///activity.fit",
       localActivityFileSize: 1234,
       streamArtifactPaths: ["file:///streams.json"],
+      executionManifest,
       draft: {
         profileId: "profile-1",
         startedAt: "2026-01-01T10:00:00.000Z",
@@ -259,5 +273,19 @@ describe("useActivitySubmission", () => {
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(deleteFinalizedArtifactFilesMock).not.toHaveBeenCalled();
     expect(clearPendingFinalizedArtifactMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses another profile's finalized artifact after an account switch", async () => {
+    const otherProfileService = {
+      ...service,
+      recordingMetadata: { profileId: "profile-2" },
+      getFinalizedArtifact: () => ({ ...artifact, profileId: "profile-2" }),
+    };
+
+    const { result } = renderHook(() => useActivitySubmission(otherProfileService as any));
+    await waitFor(() => expect(result.current.error).toContain("different profile"));
+
+    expect(upsertJobMock).not.toHaveBeenCalled();
+    expect(createFromRecordingSummaryMock).not.toHaveBeenCalled();
   });
 });

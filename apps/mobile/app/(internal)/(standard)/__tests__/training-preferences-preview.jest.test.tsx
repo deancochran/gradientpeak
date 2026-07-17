@@ -451,12 +451,9 @@ describe("training preferences editor", () => {
     act(() => {
       screen.getByTestId("preferences-availability-toggle-monday").props.onPress();
     });
-    expect(screen.getByTestId("preferences-availability-window-monday-start").props.label).toBe(
-      "Start minute",
-    );
-    expect(screen.getByTestId("preferences-availability-window-monday-end").props.label).toBe(
-      "End minute",
-    );
+    expect(screen.getByTestId("preferences-availability-window-monday-0")).toBeTruthy();
+    expect(screen.getByTestId("preferences-availability-window-monday-0-remove")).toBeTruthy();
+    expect(screen.getByTestId("preferences-availability-window-monday-add")).toBeTruthy();
     expect(screen.getByTestId("preferences-availability-max-sessions-monday").props.label).toBe(
       "Max sessions",
     );

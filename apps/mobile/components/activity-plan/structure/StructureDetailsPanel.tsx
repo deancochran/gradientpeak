@@ -1,4 +1,4 @@
-import { formatDurationV2, type IntervalStepV2, type IntervalV2 } from "@repo/core";
+import { type ActivityPlanInterval, type ActivityPlanIntervalStep, Duration } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Form, FormTextField } from "@repo/ui/components/form";
 import { Icon } from "@repo/ui/components/icon";
@@ -11,19 +11,18 @@ import { useWatch } from "react-hook-form";
 import { Pressable, View } from "react-native";
 import { NestableDraggableFlatList, type RenderItemParams } from "react-native-draggable-flatlist";
 import { z } from "zod";
-import { TimelineChart } from "@/components/activity-plan/workout/TimelineChart";
 import { getDurationMs } from "@/lib/utils/durationConversion";
 
 interface StructureDetailsPanelProps {
-  intervals: IntervalV2[];
+  intervals: ActivityPlanInterval[];
   expandedIntervalIds: string[];
   validationErrors: Record<string, string | undefined>;
   onToggleIntervalExpanded: (intervalId: string) => void;
-  onChangeIntervalRepetitions: (interval: IntervalV2, value: number) => void;
-  onUpdateInterval: (intervalId: string, interval: IntervalV2) => void;
+  onChangeIntervalRepetitions: (interval: ActivityPlanInterval, value: number) => void;
+  onUpdateInterval: (intervalId: string, interval: ActivityPlanInterval) => void;
   onCopyInterval: (intervalId: string) => void;
   onRemoveInterval: (intervalId: string) => void;
-  onReorderStepsInInterval: (intervalId: string, steps: IntervalStepV2[]) => void;
+  onReorderStepsInInterval: (intervalId: string, steps: ActivityPlanIntervalStep[]) => void;
   onEditStep: (intervalId: string, stepId: string) => void;
   onCopyStepInInterval: (intervalId: string, stepId: string) => void;
   onDeleteStepFromInterval: (intervalId: string, stepId: string) => void;
@@ -163,20 +162,6 @@ export function StructureDetailsPanel({
                     </View>
                   </View>
 
-                  <View className="rounded-md border border-border bg-background px-2 py-2">
-                    <Text className="text-[11px] text-muted-foreground mb-1">
-                      Interval profile ({interval.repetitions}x repeats)
-                    </Text>
-                    <TimelineChart
-                      structure={{
-                        version: 2,
-                        intervals: [{ ...interval, repetitions: 1 }],
-                      }}
-                      height={72}
-                      compact
-                    />
-                  </View>
-
                   <NestableDraggableFlatList
                     data={interval.steps}
                     keyExtractor={(step) => step.id}
@@ -186,7 +171,7 @@ export function StructureDetailsPanel({
                       item: step,
                       drag: dragStep,
                       getIndex,
-                    }: RenderItemParams<IntervalStepV2>) => {
+                    }: RenderItemParams<ActivityPlanIntervalStep>) => {
                       const stepIndex = getIndex?.() ?? 0;
                       const durationError =
                         validationErrors[`step:${interval.id}:${step.id}:duration`];
@@ -203,7 +188,7 @@ export function StructureDetailsPanel({
                                 {step.name || `Step ${stepIndex + 1}`}
                               </Text>
                               <Text className="text-[11px] text-muted-foreground mt-0.5">
-                                {formatDurationV2(step.duration)}
+                                {Duration.formatDuration(step.duration)}
                                 {step.targets?.[0] ? " - " : ""}
                                 {step.targets?.[0]
                                   ? `${step.targets[0].type} ${step.targets[0].intensity}`

@@ -433,19 +433,19 @@ export type ActivityPlanWithEstimation<
   estimated_zones?: string[];
   confidence: string;
   confidence_score: number;
-  estimation_status: "estimated" | "failed";
+  estimation_status: "estimated" | "partial" | "failed";
   estimation_warnings: string[];
   counts_toward_aggregation: boolean;
   authoritative_metrics: {
-    estimated_tss: number;
-    estimated_duration: number;
-    intensity_factor: number;
-    estimated_distance?: number;
+    estimated_tss: number | null;
+    estimated_duration: number | null;
+    intensity_factor: number | null;
+    estimated_distance?: number | null;
     provenance: {
-      estimated_tss: "estimated";
-      estimated_duration: "estimated";
-      intensity_factor: "estimated";
-      estimated_distance: "estimated";
+      estimated_tss: "estimated" | null;
+      estimated_duration: "estimated" | null;
+      intensity_factor: "estimated" | null;
+      estimated_distance: "estimated" | null;
     };
   };
   route: ActivityPlanRouteSummary | null;
@@ -468,25 +468,28 @@ export function buildEstimatedPlan<TPlan extends EstimationActivityPlanInput>(
     });
   }
 
+  const complete =
+    estimation.tss !== null && estimation.duration !== null && estimation.intensityFactor !== null;
+
   return {
     ...plan,
     estimated_calories: metrics.calories,
     estimated_zones: [...new Set(zones)],
     confidence: estimation.confidence,
     confidence_score: estimation.confidenceScore,
-    estimation_status: "estimated",
+    estimation_status: complete ? "estimated" : "partial",
     estimation_warnings: estimation.warnings ?? [],
-    counts_toward_aggregation: true,
+    counts_toward_aggregation: estimation.tss !== null,
     authoritative_metrics: {
       estimated_tss: estimation.tss,
       estimated_duration: estimation.duration,
       intensity_factor: estimation.intensityFactor,
       estimated_distance: metrics.distance,
       provenance: {
-        estimated_tss: "estimated",
-        estimated_duration: "estimated",
-        intensity_factor: "estimated",
-        estimated_distance: "estimated",
+        estimated_tss: estimation.tss === null ? null : "estimated",
+        estimated_duration: estimation.duration === null ? null : "estimated",
+        intensity_factor: estimation.intensityFactor === null ? null : "estimated",
+        estimated_distance: metrics.distance == null ? null : "estimated",
       },
     },
     route: options?.route ?? null,
@@ -506,14 +509,14 @@ export function buildFailedEstimationPlan<TPlan extends EstimationActivityPlanIn
     estimation_warnings: ["Estimation failed and was excluded from scheduled load."],
     counts_toward_aggregation: false,
     authoritative_metrics: {
-      estimated_tss: 0,
-      estimated_duration: 0,
-      intensity_factor: 0,
+      estimated_tss: null,
+      estimated_duration: null,
+      intensity_factor: null,
       provenance: {
-        estimated_tss: "estimated",
-        estimated_duration: "estimated",
-        intensity_factor: "estimated",
-        estimated_distance: "estimated",
+        estimated_tss: null,
+        estimated_duration: null,
+        intensity_factor: null,
+        estimated_distance: null,
       },
     },
     route: options?.route ?? null,
@@ -564,10 +567,10 @@ export async function computePlanMetrics(
   userId: string,
   asOf = new Date(),
 ): Promise<{
-  estimated_tss: number;
-  estimated_duration_seconds: number;
-  intensity_factor: number;
-  estimated_distance_meters: number;
+  estimated_tss: number | null;
+  estimated_duration_seconds: number | null;
+  intensity_factor: number | null;
+  estimated_distance_meters: number | null;
 }> {
   const snapshot = !isLegacyEstimationReadClient(estimationReader)
     ? await loadEstimationSnapshot(estimationReader, userId, [], asOf)
@@ -599,7 +602,7 @@ export async function computePlanMetrics(
     estimated_tss: estimation.tss,
     estimated_duration_seconds: estimation.duration,
     intensity_factor: estimation.intensityFactor,
-    estimated_distance_meters: metrics.distance || 0,
+    estimated_distance_meters: metrics.distance ?? null,
   };
 }
 
@@ -687,8 +690,8 @@ export async function estimatePlannedActivity(
   userId: string,
   asOf = new Date(),
 ): Promise<{
-  estimated_tss: number;
-  estimated_duration: number;
+  estimated_tss: number | null;
+  estimated_duration: number | null;
   estimated_calories?: number;
   fatigueImpact?: any;
 }> {

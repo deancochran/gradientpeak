@@ -30,7 +30,40 @@ type QueryResult = {
 function createSupabaseMock(results: Record<string, QueryResult>) {
   return {
     from: (table: string) => {
-      const result = results[table] ?? { data: [], error: null };
+      const sourceResult = results[table] ?? { data: [], error: null };
+      const row = sourceResult.data as { structure?: Record<string, unknown> } | null;
+      const result =
+        table === "training_plans" && row?.structure && row.structure.version !== 1
+          ? {
+              ...sourceResult,
+              data: {
+                ...row,
+                structure: {
+                  id: "11111111-1111-4111-8111-111111111111",
+                  version: 1,
+                  sport: ["run"],
+                  goal_blueprints: [{ title: "Marathon", priority: 1, target_offset_days: 115 }],
+                  builder_planning_snapshot: {
+                    version: 1,
+                    plan_preferences: {
+                      duration_weeks: 16,
+                      weekly_session_count: 4,
+                      target_weekly_hours: 8,
+                      rest_days_per_week: 2,
+                    },
+                    scheduling: { start_date: "2026-01-05", preferred_weekdays: [1, 3, 5, 6] },
+                    goal_context: { selected_goals: [] },
+                  },
+                  sessions: [
+                    {
+                      offset_days: 0,
+                      activity_plan_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    },
+                  ],
+                },
+              },
+            }
+          : sourceResult;
       const builder: any = {
         select: vi.fn(() => builder),
         eq: vi.fn(() => builder),
@@ -121,7 +154,7 @@ describe("getPlanTabProjectionService", () => {
       input: {
         training_plan_id: "plan-1",
         start_date: "2026-01-01",
-        end_date: "2026-05-01",
+        end_date: "2026-01-31",
         timezone: "UTC",
       },
     });
@@ -159,6 +192,7 @@ describe("getPlanTabProjectionService", () => {
         target_date: expect.any(String),
       }),
     );
+    expect(result.goal_feasibility[0]?.target_date).toBe("2026-04-30");
     expect(result).toHaveProperty("schedule_simulation");
     expect(result.projection.diagnostics).toMatchObject({
       fallback_mode: "no_dated_goals",

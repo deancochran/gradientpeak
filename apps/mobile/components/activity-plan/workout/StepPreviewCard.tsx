@@ -3,18 +3,18 @@
 // ================================
 
 import {
+  type ActivityPlanIntervalStep,
   formatDurationCompact,
   formatTargetValue,
   getStepIntensityColor,
   getTargetDisplayName,
-  type PlanStepV2,
 } from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import { memo } from "react";
 import { View } from "react-native";
 
 interface StepPreviewCardProps {
-  step: PlanStepV2;
+  step: ActivityPlanIntervalStep;
   isUpcoming?: boolean;
   showDuration?: boolean;
 }
@@ -22,16 +22,12 @@ interface StepPreviewCardProps {
 /**
  * Calculate duration in seconds for a single step
  */
-function getStepDurationSeconds(duration: PlanStepV2["duration"]): number {
+function getStepDurationSeconds(duration: ActivityPlanIntervalStep["duration"]): number {
   switch (duration.type) {
     case "time":
       return duration.seconds;
     case "distance":
-      // Estimate: 5 min/km = 300 sec/km
-      return (duration.meters / 1000) * 300;
     case "repetitions":
-      // Estimate: 30 seconds per rep
-      return duration.count * 30;
     case "untilFinished":
       return 0;
     default:

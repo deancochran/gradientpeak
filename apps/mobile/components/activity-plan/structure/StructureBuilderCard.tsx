@@ -1,4 +1,4 @@
-import type { IntervalV2 } from "@repo/core";
+import type { ActivityPlanInterval, ActivityPlanSegmentV3 } from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent } from "@repo/ui/components/card";
 import { Icon } from "@repo/ui/components/icon";
@@ -16,8 +16,8 @@ interface StructureStats {
 }
 
 interface StructureBuilderCardProps {
-  structure: { version: 2; intervals: IntervalV2[] };
-  intervals: IntervalV2[];
+  structure: { version: 3; segments: ActivityPlanSegmentV3[] };
+  intervals: ActivityPlanInterval[];
   structureStats: StructureStats;
   validationErrors: Record<string, string | undefined>;
   selectedIntervalId: string | null;
@@ -39,7 +39,6 @@ export function StructureBuilderCard({
   onTimelineIntervalPress,
 }: StructureBuilderCardProps) {
   const durationMinutes = Math.round(structureStats.durationMs / 60000);
-  const roundedTSS = Math.round(structureStats.estimatedTSS);
   const distanceKm = structureStats.distanceMeters / 1000;
   const formattedDistance =
     distanceKm < 10 ? distanceKm.toFixed(1) : Math.round(distanceKm).toString();
@@ -61,9 +60,6 @@ export function StructureBuilderCard({
         <View className="flex-row flex-wrap items-center gap-x-4 gap-y-1">
           <Text className="text-sm text-muted-foreground">
             Duration: {markEstimated(`${durationMinutes} min`)}
-          </Text>
-          <Text className="text-sm text-muted-foreground">
-            TSS: {markEstimated(`${roundedTSS}`)}
           </Text>
           {structureStats.distanceMeters > 0 ? (
             <Text className="text-sm text-muted-foreground">Distance: {formattedDistance} km</Text>

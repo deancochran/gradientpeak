@@ -17,6 +17,10 @@ import {
   deriveFixtureBackedSystemPlanContracts,
   type FixtureBackedContractGoal,
 } from "../verification/deriveFixtureBackedSystemPlanContracts";
+import {
+  calculateSystemTemplateDurationSeconds,
+  validateSystemTemplateActivityPlanV3,
+} from "../verification/systemPlanAudit";
 
 export type ToleranceClass = "tight" | "moderate" | "flexible";
 
@@ -247,8 +251,8 @@ export function getEnabledSystemPlanContractScenarios() {
 export function materializeSystemPlanScenario(scenario: SystemPlanContractScenario) {
   const plan = getPlanOrThrow(scenario.planName);
   const startDate =
-    typeof (plan.structure as { start_date?: unknown }).start_date === "string"
-      ? ((plan.structure as { start_date: string }).start_date ?? scenario.startDate)
+    typeof (plan.structure as unknown as { start_date?: unknown }).start_date === "string"
+      ? ((plan.structure as unknown as { start_date: string }).start_date ?? scenario.startDate)
       : scenario.startDate;
 
   const materializedSessions = materializePlanToEvents(plan.structure, startDate, "UTC")
@@ -270,7 +274,7 @@ export function materializeSystemPlanScenario(scenario: SystemPlanContractScenar
         thresholdHr: estimationProfile.threshold_hr,
         thresholdPaceSecondsPerKm: estimationProfile.threshold_pace_seconds_per_km,
         activityCategory: template.activity_category as never,
-        structure: template.structure,
+        structure: validateSystemTemplateActivityPlanV3(template),
       });
 
       return {
@@ -278,7 +282,8 @@ export function materializeSystemPlanScenario(scenario: SystemPlanContractScenar
         template_name: template.name,
         activity_category: template.activity_category,
         estimated_tss: estimation.tss,
-        estimated_duration_seconds: estimation.duration,
+        estimated_duration_seconds:
+          estimation.duration ?? calculateSystemTemplateDurationSeconds(template),
       };
     });
 
@@ -291,6 +296,7 @@ export function materializeSystemPlanScenario(scenario: SystemPlanContractScenar
     })),
     startDate,
     endDate,
+    true,
   );
 
   return {
@@ -307,13 +313,29 @@ function aggregateWeeklyValues(
   entries: Array<{ date: string; value: number }>,
   startDate: string,
   endDate: string,
+  preserveUnknown?: false,
+): Array<{ weekIndex: number; weekStart: string; value: number }>;
+function aggregateWeeklyValues(
+  entries: Array<{ date: string; value: number | null }>,
+  startDate: string,
+  endDate: string,
+  preserveUnknown: true,
+): Array<{ weekIndex: number; weekStart: string; value: number | null }>;
+function aggregateWeeklyValues(
+  entries: Array<{ date: string; value: number | null }>,
+  startDate: string,
+  endDate: string,
+  preserveUnknown = false,
 ) {
   const totalWeeks = Math.max(1, Math.floor(diffDays(startDate, endDate) / 7) + 1);
-  const weeks = Array.from({ length: totalWeeks }, (_, index) => ({
-    weekIndex: index,
-    weekStart: addDaysDateOnlyUtc(startDate, index * 7),
-    value: 0,
-  }));
+  const weeks: Array<{ weekIndex: number; weekStart: string; value: number | null }> = Array.from(
+    { length: totalWeeks },
+    (_, index) => ({
+      weekIndex: index,
+      weekStart: addDaysDateOnlyUtc(startDate, index * 7),
+      value: 0,
+    }),
+  );
 
   for (const entry of entries) {
     const weekIndex = Math.min(
@@ -322,7 +344,11 @@ function aggregateWeeklyValues(
     );
     const week = weeks[weekIndex];
     if (week) {
-      week.value = round1(week.value + entry.value);
+      if (entry.value === null) {
+        if (preserveUnknown) week.value = null;
+      } else if (week.value !== null) {
+        week.value = round1(week.value + entry.value);
+      }
     }
   }
 
@@ -399,7 +425,7 @@ export function compareScenarioToReference(scenario: SystemPlanContractScenario)
   const weeklyComparison = materialized.weeklyActualLoad.map((week, index) => {
     const target = (reference.weeklyTargetLoad[index]?.value ?? 0) * targetScale;
     const actual = week.value;
-    const absError = round1(Math.abs(actual - target));
+    const absError = actual === null ? null : round1(Math.abs(actual - target));
     const toleranceTss = round1(Math.max(tolerance.weeklyFloorTss, target * tolerance.weeklyPct));
 
     return {
@@ -409,19 +435,21 @@ export function compareScenarioToReference(scenario: SystemPlanContractScenario)
       target: round1(target),
       absError,
       toleranceTss,
-      withinTolerance: absError <= toleranceTss,
+      withinTolerance: absError === null ? null : absError <= toleranceTss,
     };
   });
   const comparedWeeks = weeklyComparison.length;
-  const blockActual = round1(sum(weeklyComparison.map((week) => week.actual)));
+  const blockActual = weeklyComparison.some((week) => week.actual === null)
+    ? null
+    : round1(sum(weeklyComparison.map((week) => week.actual ?? 0)));
   const blockTarget = round1(sum(weeklyComparison.map((week) => week.target)));
-  const blockAbsError = round1(Math.abs(blockActual - blockTarget));
+  const blockAbsError = blockActual === null ? null : round1(Math.abs(blockActual - blockTarget));
   const blockToleranceTss = round1(
     Math.max(tolerance.weeklyFloorTss * comparedWeeks, blockTarget * tolerance.blockPct),
   );
-  const actualMean = round1(blockActual / comparedWeeks);
+  const actualMean = blockActual === null ? null : round1(blockActual / comparedWeeks);
   const targetMean = round1(blockTarget / comparedWeeks);
-  const meanAbsError = round1(Math.abs(actualMean - targetMean));
+  const meanAbsError = actualMean === null ? null : round1(Math.abs(actualMean - targetMean));
   const meanToleranceTss = round1(
     Math.max(tolerance.weeklyFloorTss, targetMean * tolerance.meanPct),
   );

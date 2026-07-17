@@ -1,8 +1,15 @@
-import { decodePolyline, formatDurationSec, type IntervalStepV2 } from "@repo/core";
 import type {
-  ActivityPlanStructureV2,
-  IntensityTargetV2,
-} from "@repo/core/schemas/activity_plan_v2";
+  ActivityPlanDuration,
+  ActivityPlanIntervalStep,
+  ActivityPlanStructureV3,
+  ActivityPlanTarget,
+} from "@repo/core";
+import {
+  activityPlanStructureSchemaV3,
+  compileActivityPlanV3,
+  decodePolyline,
+  formatDurationSec,
+} from "@repo/core";
 import { Text } from "@repo/ui/components/text";
 import { useMemo } from "react";
 import { Pressable, View } from "react-native";
@@ -72,51 +79,26 @@ function readMetric(value: unknown): number | null {
   return null;
 }
 
-function getIntervals(structure: unknown): Array<{ repetitions: number; steps: IntervalStepV2[] }> {
-  if (!structure || typeof structure !== "object") return [];
-  const maybeIntervals = (structure as { intervals?: unknown }).intervals;
-  return Array.isArray(maybeIntervals)
-    ? (maybeIntervals as Array<{ repetitions: number; steps: IntervalStepV2[] }>)
-    : [];
+function getStructure(structure: unknown): ActivityPlanStructureV3 | null {
+  const parsed = activityPlanStructureSchemaV3.safeParse(structure);
+  return parsed.success ? parsed.data : null;
 }
 
-function getTimelineStructure(structure: unknown): ActivityPlanStructureV2 | null {
-  if (!structure || typeof structure !== "object") {
-    return null;
-  }
-
-  const maybeIntervals = (structure as { intervals?: unknown }).intervals;
-  return Array.isArray(maybeIntervals) ? (structure as ActivityPlanStructureV2) : null;
-}
-
-function getStructure(structure: unknown): ActivityPlanStructureV2 | null {
-  if (!structure || typeof structure !== "object") {
-    return null;
-  }
-
-  const maybeIntervals = (structure as { intervals?: unknown }).intervals;
-  return Array.isArray(maybeIntervals) ? (structure as ActivityPlanStructureV2) : null;
-}
-
-function flattenSteps(structure: unknown): IntervalStepV2[] {
-  const intervals = getIntervals(structure);
-  if (intervals.length === 0) return [];
-
-  const steps: IntervalStepV2[] = [];
-  for (const interval of intervals) {
-    for (let iteration = 0; iteration < interval.repetitions; iteration += 1) {
-      for (const step of interval.steps) {
-        steps.push(step);
+function flattenSteps(structure: ActivityPlanStructureV3 | null): ActivityPlanIntervalStep[] {
+  if (!structure) return [];
+  const steps: ActivityPlanIntervalStep[] = [];
+  for (const segment of structure.segments) {
+    if (segment.role !== "activity") continue;
+    for (const interval of segment.intervals) {
+      for (let iteration = 0; iteration < interval.repetitions; iteration += 1) {
+        steps.push(...interval.steps);
       }
     }
   }
-
   return steps;
 }
 
-function formatStepDuration(duration: any): string | null {
-  if (!duration || typeof duration !== "object") return null;
-
+function formatStepDuration(duration: ActivityPlanDuration): string | null {
   if (duration.type === "time" && typeof duration.seconds === "number") {
     return formatDurationSec(duration.seconds);
   }
@@ -136,7 +118,7 @@ function formatStepDuration(duration: any): string | null {
   return null;
 }
 
-function formatTarget(target: IntensityTargetV2): string {
+function formatTarget(target: ActivityPlanTarget): string {
   return `${target.intensity}${target.type}`;
 }
 
@@ -187,7 +169,8 @@ function buildRouteStreams(
 
   elevatedCoordinates.forEach((point, index) => {
     if (index > 0) {
-      cumulativeDistance += calculateCoordinateDistance(elevatedCoordinates[index - 1]!, point);
+      const previous = elevatedCoordinates[index - 1];
+      if (previous) cumulativeDistance += calculateCoordinateDistance(previous, point);
     }
 
     distanceValues.push(cumulativeDistance);
@@ -236,8 +219,7 @@ export function ActivityPlanContentPreview({
   const routeAscentMeters = readMetric(route?.total_ascent ?? planRoute.ascent);
   const routeDescentMeters = readMetric(route?.total_descent ?? planRoute.descent);
   const structure = useMemo(() => getStructure(plan?.structure), [plan?.structure]);
-  const timelineStructure = useMemo(() => getTimelineStructure(plan?.structure), [plan?.structure]);
-  const steps = useMemo(() => flattenSteps(plan?.structure), [plan?.structure]);
+  const steps = useMemo(() => flattenSteps(structure), [structure]);
   const routeCoordinates = useMemo(
     () =>
       showRoutePreview && resolvedSize !== "small" && route?.polyline
@@ -249,7 +231,7 @@ export function ActivityPlanContentPreview({
     () => buildRouteStreams(routeFull?.coordinates),
     [routeFull?.coordinates],
   );
-  const hasTimeline = getIntervals(plan?.structure).length > 0;
+  const hasTimeline = Boolean(structure && compileActivityPlanV3(structure).occurrences.length > 0);
   const maxVisibleSteps = resolvedSize === "small" ? 2 : resolvedSize === "medium" ? 3 : 4;
   const visibleSteps = steps.slice(0, maxVisibleSteps);
   const hasMetrics =
@@ -281,9 +263,9 @@ export function ActivityPlanContentPreview({
             className="overflow-hidden rounded-xl"
             testID={testIDPrefix ? `${testIDPrefix}-timeline` : undefined}
           >
-            {timelineStructure ? (
+            {structure ? (
               <TimelineChart
-                structure={timelineStructure}
+                structure={structure}
                 height={resolvedSize === "small" ? 72 : resolvedSize === "medium" ? 92 : 104}
                 compact={resolvedSize !== "large"}
               />
@@ -364,66 +346,80 @@ export function ActivityPlanContentPreview({
             Session Flow
           </Text>
           <View className="mt-3 gap-2">
-            {structure?.intervals.slice(0, structure.intervals.length).map((interval, index) => (
+            {structure?.segments.map((segment, index) => (
               <View
-                key={interval.id || `${interval.name}-${index}`}
+                key={segment.id}
                 className="rounded-xl border border-border/60 bg-background px-3 py-3"
               >
                 <View className="flex-row items-start justify-between gap-3">
                   <View className="flex-1 gap-1">
                     <Text className="text-sm font-medium text-foreground">
-                      {interval.name || `Block ${index + 1}`}
+                      {segment.name || `Segment ${index + 1}`}
                     </Text>
-                    {interval.notes ? (
+                    <Text className="text-xs text-muted-foreground">
+                      {segment.role === "activity" ? segment.category : segment.role}
+                    </Text>
+                    {segment.notes ? (
                       <Text className="text-xs leading-4 text-muted-foreground">
-                        {interval.notes}
+                        {segment.notes}
                       </Text>
                     ) : null}
                   </View>
-                  {interval.repetitions > 1 ? (
+                  {segment.role !== "activity" ? (
                     <Text className="text-xs text-muted-foreground">
-                      Repeat {interval.repetitions}x
+                      {formatStepDuration(segment.duration)}
                     </Text>
                   ) : null}
                 </View>
-                <View className="mt-3 gap-2.5">
-                  {interval.steps.map((step, stepIndex) => {
-                    const stepDurationLabel = formatStepDuration(step.duration);
-                    const targetSummary = step.targets?.length
-                      ? step.targets.map((target) => formatTarget(target)).join(" · ")
-                      : null;
+                {segment.role === "activity"
+                  ? segment.intervals.map((interval) => (
+                      <View key={interval.id} className="mt-3 gap-2.5">
+                        <Text className="text-xs font-semibold text-muted-foreground">
+                          {interval.name}
+                          {interval.repetitions > 1 ? ` · ${interval.repetitions}x` : ""}
+                        </Text>
+                        {interval.steps.map((step, stepIndex) => {
+                          const stepDurationLabel = formatStepDuration(step.duration);
+                          const targetSummary = step.targets?.length
+                            ? step.targets.map((target) => formatTarget(target)).join(" · ")
+                            : null;
 
-                    return (
-                      <View key={step.id || `${interval.id}-${stepIndex}`} className="gap-1.5">
-                        <View className="flex-row items-start justify-between gap-3">
-                          <Text className="flex-1 text-sm font-medium text-foreground">
-                            {step.name || `Step ${stepIndex + 1}`}
-                          </Text>
-                          {stepDurationLabel ? (
-                            <Text className="text-xs text-muted-foreground">
-                              {stepDurationLabel}
-                            </Text>
-                          ) : null}
-                        </View>
-                        {targetSummary ? (
-                          <Text className="text-xs font-medium text-foreground/80">
-                            {targetSummary}
-                          </Text>
-                        ) : null}
-                        {step.description ? (
-                          <Text className="text-xs leading-4 text-muted-foreground">
-                            {step.description}
-                          </Text>
-                        ) : null}
-                        {step.notes ? (
-                          <Text className="text-xs leading-4 text-muted-foreground">
-                            {step.notes}
-                          </Text>
-                        ) : null}
+                          return (
+                            <View
+                              key={step.id || `${interval.id}-${stepIndex}`}
+                              className="gap-1.5"
+                            >
+                              <View className="flex-row items-start justify-between gap-3">
+                                <Text className="flex-1 text-sm font-medium text-foreground">
+                                  {step.name || `Step ${stepIndex + 1}`}
+                                </Text>
+                                {stepDurationLabel ? (
+                                  <Text className="text-xs text-muted-foreground">
+                                    {stepDurationLabel}
+                                  </Text>
+                                ) : null}
+                              </View>
+                              {targetSummary ? (
+                                <Text className="text-xs font-medium text-foreground/80">
+                                  {targetSummary}
+                                </Text>
+                              ) : null}
+                              {step.description ? (
+                                <Text className="text-xs leading-4 text-muted-foreground">
+                                  {step.description}
+                                </Text>
+                              ) : null}
+                              {step.notes ? (
+                                <Text className="text-xs leading-4 text-muted-foreground">
+                                  {step.notes}
+                                </Text>
+                              ) : null}
+                            </View>
+                          );
+                        })}
                       </View>
-                    );
-                  })}
-                </View>
+                    ))
+                  : null}
               </View>
             ))}
           </View>

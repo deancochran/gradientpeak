@@ -1,4 +1,6 @@
-import type { CanonicalSport, DurationV2, IntensityTargetV2 } from "../schemas";
+import type { ActivityPlanDuration } from "../activity-plan";
+import type { CanonicalSport } from "../schemas";
+import type { ActivityTarget } from "../targets";
 
 export type SportEffortLevel = "easy" | "moderate" | "hard";
 
@@ -11,12 +13,12 @@ export interface SportStepDefaults {
   warmupName: string;
   cooldownName: string;
   mainStepPrefix: string;
-  warmupDuration: DurationV2;
-  mainDuration: DurationV2;
-  cooldownDuration: DurationV2;
-  warmupTarget?: IntensityTargetV2;
-  mainTarget?: IntensityTargetV2;
-  cooldownTarget?: IntensityTargetV2;
+  warmupDuration: ActivityPlanDuration;
+  mainDuration: ActivityPlanDuration;
+  cooldownDuration: ActivityPlanDuration;
+  warmupTarget?: ActivityTarget;
+  mainTarget?: ActivityTarget;
+  cooldownTarget?: ActivityTarget;
 }
 
 export type SportStepPhase = "warmup" | "main" | "cooldown";

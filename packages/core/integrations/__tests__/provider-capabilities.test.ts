@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getConfigurableProviderActions,
+  getProviderPlannedWorkoutCapability,
   getProviderSyncMode,
   getProvidersWithCapability,
   integrationProviderIdValues,
@@ -48,6 +49,19 @@ describe("provider capability registry", () => {
     expect(
       getProvidersWithCapability(["wahoo", "strava", "trainingpeaks"], "planned_activity_push"),
     ).toEqual(["wahoo"]);
+  });
+
+  it("keeps planned-workout delivery evidence-gated except for Wahoo", () => {
+    expect(getProviderPlannedWorkoutCapability("wahoo")).toMatchObject({
+      maturity: "available",
+      supportedSports: ["run", "bike"],
+      supportsBoundaries: false,
+    });
+    expect(getProviderPlannedWorkoutCapability("garmin")).toMatchObject({
+      maturity: "evidence_gated",
+      supportedSports: [],
+      supportedTargets: [],
+    });
   });
 
   it("derives user-configurable actions instead of exposing raw capabilities", () => {

@@ -6,6 +6,11 @@ import type {
 } from "../BuilderActivityAssignmentSheetContent";
 import type { BuilderSheet } from "../BuilderSheetTypes";
 
+jest.mock("expo-router", () => ({
+  __esModule: true,
+  useRouter: () => ({ push: jest.fn() }),
+}));
+
 jest.mock("../BuilderActivityAssignmentSheetContent", () => ({
   __esModule: true,
   BuilderActivityAssignmentSheetContent: () => null,

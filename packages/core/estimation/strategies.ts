@@ -1,60 +1,12 @@
-import { getDurationSeconds as getCanonicalDurationSeconds } from "../duration";
-import type { IntervalStepV2 } from "../schemas/activity_plan_v2";
+import { compileActivityPlanV3 } from "../activity-plan";
+import { calculateActivityPlanStats } from "../activity-plan-calculations";
 import type { CanonicalSport } from "../schemas/sport";
 import {
   getSportRouteBaseSpeed,
   getSportTemplateDefaults,
   getSportThresholdToEndurancePaceMultiplier,
 } from "../sports";
-import { getHrZoneIndexFromThresholdPercent, getPowerZoneIndexFromFtpPercent } from "../zones";
 import type { EstimationContext, EstimationResult, Route } from "./types";
-
-/**
- * User settings for estimation calculations
- */
-interface UserSettings {
-  ftp?: number | null;
-  thresholdHR?: number | null;
-  restingHR?: number;
-}
-
-/**
- * Calculate Intensity Factor (IF) for a V2 step
- */
-function calculateStepIntensityFactor(step: IntervalStepV2, userSettings: UserSettings): number {
-  const target = step.targets?.[0];
-  if (!target) return 0;
-
-  switch (target.type) {
-    case "%FTP":
-      return target.intensity / 100;
-
-    case "watts": {
-      const ftp = userSettings.ftp ?? 250; // Default FTP
-      return target.intensity / ftp;
-    }
-
-    case "%MaxHR":
-      // Convert %MaxHR to rough IF equivalent
-      // 85% MaxHR ≈ threshold ≈ IF 1.0
-      return Math.max(0, (target.intensity - 50) / 35);
-
-    case "%ThresholdHR":
-      return target.intensity / 100;
-
-    case "bpm": {
-      const thresholdHR = userSettings.thresholdHR ?? 170; // Default threshold HR
-      return target.intensity / thresholdHR;
-    }
-
-    case "RPE":
-      // RPE 6-7 ≈ threshold ≈ IF 1.0
-      return Math.max(0, (target.intensity - 3) / 4);
-
-    default:
-      return 0;
-  }
-}
 
 // ==============================
 // Strategy 1: Structure-Based
@@ -66,143 +18,44 @@ function calculateStepIntensityFactor(step: IntervalStepV2, userSettings: UserSe
  * Accuracy: 90-95% for power-based, 80-85% for HR-based
  */
 export function estimateFromStructure(context: EstimationContext): EstimationResult {
-  const { structure, profile, activityCategory, ftp, thresholdHr, thresholdPaceSecondsPerKm } =
-    context;
-
-  if (!structure?.intervals || structure.intervals.length === 0) {
-    throw new Error("Structure-based estimation requires intervals");
-  }
-
-  const intervals = structure.intervals;
-  const userSettings: UserSettings = {
-    ftp: ftp ?? null,
-    thresholdHR: thresholdHr ?? null,
-    restingHR: 60, // Default resting HR - not in current schema
-  };
-
-  let totalTSS = 0;
-  let totalDuration = 0;
-  let totalWeightedIF = 0;
-
-  const hrZones = [0, 0, 0, 0, 0];
-  const powerZones = [0, 0, 0, 0, 0, 0, 0];
-
-  // Iterate through each interval and its repetitions
-  for (const interval of intervals) {
-    for (let rep = 0; rep < interval.repetitions; rep++) {
-      for (const step of interval.steps) {
-        const durationOptions = {
-          activityCategory,
-          paceSecondsPerKm:
-            activityCategory === "run" && thresholdPaceSecondsPerKm
-              ? Math.round(
-                  thresholdPaceSecondsPerKm * getSportThresholdToEndurancePaceMultiplier("run"),
-                )
-              : undefined,
-        } as const;
-        const stepDurationWithCategory = getCanonicalDurationSeconds(
-          step.duration,
-          durationOptions,
-        );
-
-        const stepIF = calculateStepIntensityFactor(step, userSettings);
-        const stepTSS = (stepDurationWithCategory / 3600) * stepIF ** 2 * 100;
-
-        totalTSS += stepTSS;
-        totalDuration += stepDurationWithCategory;
-        totalWeightedIF += stepIF * stepDurationWithCategory;
-
-        // Distribute time into zones based on targets
-        distributeStepIntoZones(step, stepDurationWithCategory, hrZones, powerZones, userSettings);
-      }
-    }
-  }
-
-  const avgIF = totalDuration > 0 ? totalWeightedIF / totalDuration : 0;
-
-  const warnings: string[] = [];
-  const factors = ["structure-based"];
-
-  if (!ftp && activityCategory === "bike") {
-    warnings.push("Missing FTP - using estimated values. Add FTP for better accuracy.");
-    factors.push("default-ftp");
-  } else if (ftp) {
-    factors.push("user-ftp");
-  }
-
-  if (!thresholdHr && (activityCategory === "run" || activityCategory === "bike")) {
-    warnings.push("Missing Threshold HR - heart rate estimates may be less accurate.");
-  } else if (thresholdHr) {
-    factors.push("user-threshold-hr");
+  if (!context.structure) throw new Error("Structure-based estimation requires a V3 structure");
+  const stats = calculateActivityPlanStats(compileActivityPlanV3(context.structure), {
+    cyclingFtpWatts: context.ftp ?? undefined,
+  });
+  const categoryDoses = stats.categoryDoses.map((dose) => ({
+    category: dose.category,
+    timedActiveSeconds: dose.timedActiveSeconds,
+    distanceMeters: dose.distanceMeters,
+    repetitionCount: dose.repetitionCount,
+    openOccurrenceCount: dose.openOccurrenceCount,
+    tss: dose.cyclingPower?.complete === true ? Math.round(dose.cyclingPower.estimatedTss) : null,
+    intensityFactor:
+      dose.cyclingPower?.complete === true
+        ? Math.round(dose.cyclingPower.averageFtpPercent) / 100
+        : null,
+    cyclingPowerEvidenceCoverage: dose.cyclingPower?.evidenceCoverage ?? null,
+  }));
+  const soleDose = categoryDoses.length === 1 ? categoryDoses[0] : undefined;
+  const warnings = categoryDoses
+    .filter((dose) => dose.tss === null)
+    .map((dose) => `No supported load evidence for ${dose.category} segments.`);
+  if (stats.duration.exactElapsedSeconds === null) {
+    warnings.push("Exact elapsed duration is unavailable for non-time prescriptions.");
   }
 
   return {
-    tss: Math.round(totalTSS),
-    duration: Math.round(totalDuration),
-    intensityFactor: Math.round(avgIF * 100) / 100,
-    estimatedHRZones: hrZones.map(Math.round),
-    estimatedPowerZones: powerZones.map(Math.round),
-    confidence: ftp || thresholdHr ? "high" : "medium",
-    confidenceScore: ftp ? 95 : thresholdHr ? 85 : 75,
-    factors,
+    tss: soleDose?.tss ?? null,
+    duration: stats.duration.exactElapsedSeconds,
+    intensityFactor: soleDose?.intensityFactor ?? null,
+    categoryDoses,
+    estimatedDistance:
+      stats.duration.distanceMeters > 0 ? stats.duration.distanceMeters : undefined,
+    confidence:
+      soleDose?.tss != null && stats.duration.exactElapsedSeconds !== null ? "high" : "low",
+    confidenceScore: soleDose?.tss != null ? 90 : 40,
+    factors: ["compiled-v3-occurrences", "sport-isolated-dose"],
     warnings: warnings.length > 0 ? warnings : undefined,
   };
-}
-
-/**
- * Distribute step duration into HR and power zones based on targets
- */
-function distributeStepIntoZones(
-  step: IntervalStepV2,
-  duration: number,
-  hrZones: number[],
-  powerZones: number[],
-  profile: UserSettings,
-): void {
-  const primaryTarget = step.targets?.[0];
-  if (!primaryTarget) return;
-
-  // Determine power zone
-  if (primaryTarget.type === "%FTP" || primaryTarget.type === "watts") {
-    let ftpPercent = primaryTarget.intensity;
-
-    if (primaryTarget.type === "watts" && profile.ftp) {
-      ftpPercent = (primaryTarget.intensity / profile.ftp) * 100;
-    }
-
-    const powerZoneIndex = getPowerZoneIndexFromFtpPercent(ftpPercent);
-    if (powerZoneIndex !== undefined && powerZones[powerZoneIndex] !== undefined) {
-      powerZones[powerZoneIndex] += duration;
-    }
-  }
-
-  // Determine HR zone
-  if (
-    primaryTarget.type === "%ThresholdHR" ||
-    primaryTarget.type === "%MaxHR" ||
-    primaryTarget.type === "bpm"
-  ) {
-    let hrPercent = 0;
-
-    if (primaryTarget.type === "%ThresholdHR") {
-      hrPercent = primaryTarget.intensity;
-    } else if (primaryTarget.type === "%MaxHR") {
-      // Convert MaxHR to ThresholdHR (approx: MaxHR * 0.9 = ThresholdHR)
-      const estimatedThresholdPercent = (primaryTarget.intensity * 0.9) / 1;
-      hrPercent = estimatedThresholdPercent;
-    } else if (
-      primaryTarget.type === "bpm" &&
-      profile.thresholdHR &&
-      profile.thresholdHR !== null
-    ) {
-      hrPercent = (primaryTarget.intensity / profile.thresholdHR) * 100;
-    }
-
-    const hrZoneIndex = getHrZoneIndexFromThresholdPercent(hrPercent);
-    if (hrZoneIndex !== undefined && hrZones[hrZoneIndex] !== undefined) {
-      hrZones[hrZoneIndex] += duration;
-    }
-  }
 }
 
 /**
@@ -221,8 +74,7 @@ function distributeStepIntoZones(
 export function estimateFromRoute(context: EstimationContext): EstimationResult {
   const {
     route,
-    profile,
-    activityCategory,
+    activityCategory = "other",
     fitnessState,
     ftp,
     weightKg,
@@ -394,7 +246,7 @@ function estimatePowerFromElevation(
  * Accuracy: 50-65%
  */
 export function estimateFromTemplate(context: EstimationContext): EstimationResult {
-  const { activityCategory, fitnessState } = context;
+  const { activityCategory = "other", fitnessState } = context;
 
   const template = getSportTemplateDefaults(activityCategory);
 

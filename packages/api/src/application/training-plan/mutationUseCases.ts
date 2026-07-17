@@ -1,5 +1,8 @@
 import {
-  persistedTrainingPlanStructureSchema,
+  activityPlanStructureSchemaV3,
+  buildSystemActivityTemplateCatalog,
+  normalizeActivityTemplateStructureForAudit,
+  SYSTEM_TEMPLATES,
   type trainingPlanCreateInputSchema,
   trainingPlanCreateSchema,
   trainingPlanSchema,
@@ -12,7 +15,12 @@ import { and, eq, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { logger } from "../../lib/logger";
 import { enqueuePlannedWorkoutSyncAfterCalendarMutation } from "../../lib/provider-sync/planned-workouts";
-import type { TrainingPlanRepository } from "../../repositories";
+import type {
+  LockedPlanningTemplateRow,
+  PlanningTemplateRepository,
+  TrainingPlanRepository,
+  TrainingPlanTransactionClient,
+} from "../../repositories";
 import { mapTrainingPlanContentIdentity } from "./trainingPlanMapping";
 
 const plannedEventType = "planned" as const;
@@ -57,23 +65,43 @@ function parseTrainingPlanCreateStructureOrThrow(input: {
   });
 }
 
-async function requirePublishedLinkedActivityPlans(input: {
-  db: DrizzleDbClient;
+function requirePublishedLinkedActivityPlans(input: {
+  rows: LockedPlanningTemplateRow[];
   structure: z.infer<typeof trainingPlanSchema>;
 }) {
   const activityPlanIds = Array.from(
     new Set(input.structure.sessions.map((session) => session.activity_plan_id)),
   );
-  const result = await input.db.execute(sql<{ id: string }>`
-    select id
-    from activity_plans
-    where id in (${sql.join(
-      activityPlanIds.map((id) => sql`${id}::uuid`),
-      sql`, `,
-    )})
-      and (template_visibility = 'public' or is_system_template = true)
-  `);
-  const publishedIds = new Set(getSqlRows<{ id: string }>(result).map((row) => row.id));
+  const catalogSignatures = new Map(
+    buildSystemActivityTemplateCatalog().flatMap((candidate) => {
+      const source = SYSTEM_TEMPLATES.find((template) => template.id === candidate.template_id);
+      const parsed = activityPlanStructureSchemaV3.safeParse(source?.structure);
+      return parsed.success
+        ? [
+            [
+              candidate.template_id,
+              JSON.stringify(normalizeActivityTemplateStructureForAudit(parsed.data)),
+            ] as const,
+          ]
+        : [];
+    }),
+  );
+  const publishedIds = new Set(
+    input.rows
+      .filter((row) => {
+        if (row.version !== "3.0") return false;
+        const parsed = activityPlanStructureSchemaV3.safeParse(row.structure);
+        if (!parsed.success) return false;
+        if (!row.isSystemTemplate) return true;
+        const expectedSignature = catalogSignatures.get(row.id);
+        return (
+          expectedSignature !== undefined &&
+          JSON.stringify(normalizeActivityTemplateStructureForAudit(parsed.data)) ===
+            expectedSignature
+        );
+      })
+      .map((row) => row.id),
+  );
   const rejectedIds = activityPlanIds.filter((id) => !publishedIds.has(id));
 
   if (rejectedIds.length > 0) {
@@ -100,7 +128,7 @@ async function enqueuePlannedWorkoutSyncForCalendarWrite(input: {
 }
 
 async function insertTrainingPlan(input: {
-  db: DrizzleDbClient;
+  db: TrainingPlanTransactionClient;
   values: {
     name: string;
     description: string | null;
@@ -138,7 +166,7 @@ async function insertTrainingPlan(input: {
 }
 
 async function updateOwnedTrainingPlanRow(input: {
-  db: DrizzleDbClient;
+  db: TrainingPlanTransactionClient;
   id: string;
   profileId: string;
   name?: string;
@@ -170,6 +198,7 @@ async function updateOwnedTrainingPlanRow(input: {
 
 export async function createTrainingPlanUseCase(input: {
   db: DrizzleDbClient;
+  planningTemplateRepository: PlanningTemplateRepository;
   profileId: string;
   values: TrainingPlanCreateInput;
 }) {
@@ -217,28 +246,32 @@ export async function createTrainingPlanUseCase(input: {
     });
   }
 
-  await requirePublishedLinkedActivityPlans({
-    db: input.db,
-    structure: parseTrainingPlanStructureOrThrow({
-      value: structureWithId,
-      message: "Invalid training plan structure",
-    }),
+  const parsedStructure = parseTrainingPlanStructureOrThrow({
+    value: structureWithId,
+    message: "Invalid training plan structure",
   });
-
-  return insertTrainingPlan({
-    db: input.db,
-    values: {
-      name: input.values.name,
-      description: input.values.description ?? null,
-      structure: structureWithId,
-      profileId: input.profileId,
-      templateVisibility: input.values.template_visibility,
+  const templateIds = parsedStructure.sessions.map((session) => session.activity_plan_id);
+  return input.planningTemplateRepository.withLockedPublishedTemplates(
+    templateIds,
+    async ({ db, rows }) => {
+      requirePublishedLinkedActivityPlans({ rows, structure: parsedStructure });
+      return insertTrainingPlan({
+        db,
+        values: {
+          name: input.values.name,
+          description: input.values.description ?? null,
+          structure: structureWithId,
+          profileId: input.profileId,
+          templateVisibility: input.values.template_visibility,
+        },
+      });
     },
-  });
+  );
 }
 
 export async function updateTrainingPlanUseCase(input: {
   db: DrizzleDbClient;
+  planningTemplateRepository: PlanningTemplateRepository;
   profileId: string;
   repository: TrainingPlanRepository;
   values: TrainingPlanUpdateInput;
@@ -270,17 +303,22 @@ export async function updateTrainingPlanUseCase(input: {
       value: existing.structure,
       message: "Existing training plan structure is invalid",
     });
-  await requirePublishedLinkedActivityPlans({ db: input.db, structure: effectiveStructure });
-
-  const data = await updateOwnedTrainingPlanRow({
-    db: input.db,
-    id,
-    profileId: input.profileId,
-    name: updates.name,
-    description: updates.description,
-    structure,
-    templateVisibility: template_visibility,
-  });
+  const templateIds = effectiveStructure.sessions.map((session) => session.activity_plan_id);
+  const data = await input.planningTemplateRepository.withLockedPublishedTemplates(
+    templateIds,
+    async ({ db, rows }) => {
+      requirePublishedLinkedActivityPlans({ rows, structure: effectiveStructure });
+      return updateOwnedTrainingPlanRow({
+        db,
+        id,
+        profileId: input.profileId,
+        name: updates.name,
+        description: updates.description,
+        structure,
+        templateVisibility: template_visibility,
+      });
+    },
+  );
 
   if (!data) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "Failed to update training plan" });
@@ -350,36 +388,20 @@ export async function duplicateTrainingPlanUseCase(input: {
     throw new TRPCError({ code: "NOT_FOUND", message: "Training plan not found" });
   }
 
-  try {
-    if (sourcePlan.structure) {
-      persistedTrainingPlanStructureSchema.parse(sourcePlan.structure);
-    }
-  } catch (validationError) {
+  const parsedSourceStructure = trainingPlanSchema.safeParse(sourcePlan.structure);
+  if (!parsedSourceStructure.success) {
     throw new TRPCError({
       code: "BAD_REQUEST",
       message: "Source training plan has invalid structure",
-      cause: validationError,
+      cause: parsedSourceStructure.error,
     });
   }
 
   const duplicatedPlanId = crypto.randomUUID();
-  const parsedCurrentSourceStructure = trainingPlanSchema.safeParse(sourcePlan.structure);
-  const duplicatedStructure = parsedCurrentSourceStructure.success
-    ? {
-        ...parsedCurrentSourceStructure.data,
-        id: duplicatedPlanId,
-      }
-    : ({ ...(sourcePlan.structure as Record<string, unknown>) } as Record<string, unknown>);
-
-  try {
-    persistedTrainingPlanStructureSchema.parse(duplicatedStructure);
-  } catch (validationError) {
-    throw new TRPCError({
-      code: "BAD_REQUEST",
-      message: "Duplicated training plan structure is invalid",
-      cause: validationError,
-    });
-  }
+  const duplicatedStructure = trainingPlanSchema.parse({
+    ...parsedSourceStructure.data,
+    id: duplicatedPlanId,
+  });
 
   const data = await insertTrainingPlan({
     db: input.db,

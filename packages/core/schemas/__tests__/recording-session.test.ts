@@ -125,7 +125,9 @@ describe("recording session schemas", () => {
     expect(recordingSessionSnapshotSchema.safeParse(snapshot).success).toBe(true);
 
     const artifact = recordingSessionArtifactSchema.safeParse({
+      schemaVersion: 2,
       sessionId: "session-1",
+      profileId: "profile-1",
       snapshot,
       overrides: [
         {
@@ -142,6 +144,18 @@ describe("recording session schemas", () => {
       },
       activityFilePath: "/tmp/session.fit",
       streamArtifactPaths: ["/tmp/power.jsonl"],
+      executionManifest: {
+        version: 1,
+        compilerVersion: 1,
+        planHash: "0".repeat(64),
+        occurrences: [],
+      },
+      runtimeSourceState: {
+        selectedSources: [],
+        currentMetrics: {},
+        degradedState: { isDegraded: false, metrics: [] },
+        sourceChanges: [],
+      },
       completedAt: "2026-03-20T11:00:00Z",
     });
 

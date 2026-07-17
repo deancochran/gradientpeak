@@ -1,8 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { z } from "zod";
+import { type ActivitySubmissionQueueJob, activitySubmissionQueueJobSchema } from "./types";
 
-import type { ActivitySubmissionQueueJob } from "./types";
-
-const ACTIVITY_SUBMISSION_QUEUE_JOBS_KEY = "activity-submission-queue:jobs";
+export const ACTIVITY_SUBMISSION_QUEUE_JOBS_KEY = "activity-submission-queue:v3:jobs";
 let queueMutation: Promise<void> = Promise.resolve();
 
 function serializeQueueMutation<T>(mutation: () => Promise<T>): Promise<T> {
@@ -14,7 +14,7 @@ function serializeQueueMutation<T>(mutation: () => Promise<T>): Promise<T> {
   return result;
 }
 
-export async function loadActivitySubmissionQueueJobs(): Promise<ActivitySubmissionQueueJob[]> {
+async function loadAllActivitySubmissionQueueJobs(): Promise<ActivitySubmissionQueueJob[]> {
   const raw = await AsyncStorage.getItem(ACTIVITY_SUBMISSION_QUEUE_JOBS_KEY);
 
   if (!raw) {
@@ -22,18 +22,25 @@ export async function loadActivitySubmissionQueueJobs(): Promise<ActivitySubmiss
   }
 
   try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as ActivitySubmissionQueueJob[]) : [];
+    return z.array(activitySubmissionQueueJobSchema).parse(JSON.parse(raw));
   } catch (error) {
-    console.warn("[activitySubmissionQueue] Failed to parse queue jobs", error);
+    console.warn("Queue parse failed", error);
     throw new Error("Stored activity submission queue is unreadable", { cause: error });
   }
 }
 
+export async function loadActivitySubmissionQueueJobs(
+  profileId?: string,
+): Promise<ActivitySubmissionQueueJob[]> {
+  const jobs = await loadAllActivitySubmissionQueueJobs();
+  return profileId ? jobs.filter((job) => job.draft.profileId === profileId) : jobs;
+}
+
 export async function loadActivitySubmissionQueueJobByArtifactId(
   artifactId: string,
+  profileId?: string,
 ): Promise<ActivitySubmissionQueueJob | null> {
-  const jobs = await loadActivitySubmissionQueueJobs();
+  const jobs = await loadActivitySubmissionQueueJobs(profileId);
   return (
     jobs.find(
       (job) =>
@@ -52,14 +59,15 @@ export function incompleteQueueJobReferencesLocalFiles(job: ActivitySubmissionQu
 export async function saveActivitySubmissionQueueJobs(
   jobs: ActivitySubmissionQueueJob[],
 ): Promise<void> {
-  await AsyncStorage.setItem(ACTIVITY_SUBMISSION_QUEUE_JOBS_KEY, JSON.stringify(jobs));
+  const parsed = z.array(activitySubmissionQueueJobSchema).parse(jobs);
+  await AsyncStorage.setItem(ACTIVITY_SUBMISSION_QUEUE_JOBS_KEY, JSON.stringify(parsed));
 }
 
 export async function upsertActivitySubmissionQueueJob(
   job: ActivitySubmissionQueueJob,
 ): Promise<void> {
   return serializeQueueMutation(async () => {
-    const jobs = await loadActivitySubmissionQueueJobs();
+    const jobs = await loadAllActivitySubmissionQueueJobs();
     const index = jobs.findIndex((candidate) => candidate.id === job.id);
 
     if (index >= 0) {
@@ -74,7 +82,7 @@ export async function upsertActivitySubmissionQueueJob(
 
 export async function removeActivitySubmissionQueueJob(id: string): Promise<void> {
   return serializeQueueMutation(async () => {
-    const jobs = await loadActivitySubmissionQueueJobs();
+    const jobs = await loadAllActivitySubmissionQueueJobs();
     await saveActivitySubmissionQueueJobs(jobs.filter((job) => job.id !== id));
   });
 }

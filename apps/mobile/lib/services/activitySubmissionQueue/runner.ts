@@ -5,6 +5,7 @@ import type {
   ActivitySubmissionQueueRunnerDeps,
   MarkUploadedAndProcessInput,
 } from "./types";
+import { activitySubmissionQueueJobSchema } from "./types";
 
 function defaultNow(): string {
   return new Date().toISOString();
@@ -39,12 +40,12 @@ async function persistJob(
   now: () => string,
   updates: Partial<ActivitySubmissionQueueJob> = {},
 ): Promise<ActivitySubmissionQueueJob> {
-  const nextJob = {
+  const nextJob = activitySubmissionQueueJobSchema.parse({
     ...job,
     ...updates,
     status,
     updatedAt: now(),
-  };
+  });
 
   await upsertActivitySubmissionQueueJob(nextJob);
   return nextJob;
@@ -69,7 +70,12 @@ async function runActivitySubmissionQueueJobOnce(
   deps: ActivitySubmissionQueueRunnerDeps,
 ): Promise<ActivitySubmissionQueueJob> {
   const now = deps.now ?? defaultNow;
-  let job: ActivitySubmissionQueueJob = { ...initialJob, lastError: null };
+  let job: ActivitySubmissionQueueJob = activitySubmissionQueueJobSchema.parse({
+    ...initialJob,
+    lastError: null,
+  });
+
+  if (job.status === "complete") return job;
 
   try {
     if (!job.activityId || !job.ingestionId) {

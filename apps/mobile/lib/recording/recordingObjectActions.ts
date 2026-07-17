@@ -1,4 +1,8 @@
-import type { RecordingActivityCategory, RecordingServiceActivityPlan } from "@repo/core";
+import {
+  compileActivityPlanV3,
+  type RecordingActivityCategory,
+  type RecordingServiceActivityPlan,
+} from "@repo/core";
 import { Alert } from "react-native";
 import type { ActivityRecorderService, RecordingLifecycle } from "@/lib/services/ActivityRecorder";
 import {
@@ -177,7 +181,7 @@ export async function handleRecordingObjectAction({
       if (!candidate.plan) return;
       const payload: RecordingLaunchPayload = {
         launchSource: "activity_plan",
-        category: candidate.plan.activity_category,
+        category: compileActivityPlanV3(candidate.plan.structure).primaryCategory,
         gpsRecordingEnabled: true,
         plan: candidate.plan,
       };

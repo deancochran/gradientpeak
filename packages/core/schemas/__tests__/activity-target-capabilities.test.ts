@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  type ActivityPlanStructureV2,
+  type ActivityPlanStructureV3,
+  type ActivityTarget,
   activityPlanCreateSchema,
+  activityPlanStructureSchemaV3,
   activityPlanUpdateSchema,
   activityTargetCapabilityConfig,
   getActivityTargetCompatibilityIssues,
@@ -10,26 +12,35 @@ import {
 } from "../index";
 
 function createStructure(
-  targets: ActivityPlanStructureV2["intervals"][number]["steps"][number]["targets"],
-): ActivityPlanStructureV2 {
-  return {
-    version: 2,
-    intervals: [
+  targets: ActivityTarget[],
+  category: "run" | "bike" | "swim" = "run",
+): ActivityPlanStructureV3 {
+  return activityPlanStructureSchemaV3.parse({
+    version: 3,
+    segments: [
       {
-        id: "11111111-1111-4111-8111-111111111111",
-        name: "Interval",
-        repetitions: 1,
-        steps: [
+        id: "00000000-0000-4000-8000-000000000001",
+        role: "activity",
+        category,
+        name: "Activity",
+        intervals: [
           {
-            id: "22222222-2222-4222-8222-222222222222",
-            name: "Step",
-            duration: { type: "time", seconds: 600 },
-            targets,
+            id: "11111111-1111-4111-8111-111111111111",
+            name: "Interval",
+            repetitions: 1,
+            steps: [
+              {
+                id: "22222222-2222-4222-8222-222222222222",
+                name: "Step",
+                duration: { type: "time", seconds: 600 },
+                targets,
+              },
+            ],
           },
         ],
       },
     ],
-  };
+  });
 }
 
 describe("activity target capabilities", () => {
@@ -47,47 +58,60 @@ describe("activity target capabilities", () => {
     expect(getPermissibleTargetTypes("strength")).toEqual(["RPE"]);
   });
 
-  it("reports contextual target compatibility issues with precise paths", () => {
+  it("accepts a strictly validated V3 structure without duplicate compatibility issues", () => {
     const issues = getActivityTargetCompatibilityIssues({
-      activityCategory: "run",
       pathPrefix: ["structure"],
-      structure: createStructure([{ type: "%FTP", intensity: 80 }]),
+      structure: createStructure([{ type: "%MaxHR", intensity: 80 }]),
     });
 
-    expect(issues).toEqual([
-      {
-        activityCategory: "run",
-        targetType: "%FTP",
-        path: ["structure", "intervals", 0, "steps", 0, "targets", 0, "type"],
-        message:
-          "Target type %FTP is not permitted for run activity plans. Allowed targets: bpm, %MaxHR, %ThresholdHR, speed, cadence, RPE.",
-      },
-    ]);
+    expect(issues).toEqual([]);
   });
 
   it("enforces activity target compatibility in activity plan create schemas", () => {
     expect(
       activityPlanCreateSchema.safeParse({
-        activity_category: "run",
         name: "Invalid Run Power",
-        structure: createStructure([{ type: "watts", intensity: 250 }]),
+        structure: {
+          version: 3,
+          segments: [
+            {
+              id: "00000000-0000-4000-8000-000000000001",
+              role: "activity",
+              category: "run",
+              name: "Run",
+              intervals: [
+                {
+                  id: "11111111-1111-4111-8111-111111111111",
+                  name: "Interval",
+                  repetitions: 1,
+                  steps: [
+                    {
+                      id: "22222222-2222-4222-8222-222222222222",
+                      name: "Step",
+                      duration: { type: "time", seconds: 600 },
+                      targets: [{ type: "watts", intensity: 250 }],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
       }).success,
     ).toBe(false);
 
     expect(
       activityPlanCreateSchema.safeParse({
-        activity_category: "bike",
         name: "Valid Bike Power",
-        structure: createStructure([{ type: "%FTP", intensity: 80 }]),
+        structure: createStructure([{ type: "%FTP", intensity: 80 }], "bike"),
       }).success,
     ).toBe(true);
 
     expect(
       activityPlanCreateSchema.safeParse({
-        activity_category: "bike",
         name: "Valid Bike Power Without Description",
         description: null,
-        structure: createStructure([{ type: "%FTP", intensity: 80 }]),
+        structure: createStructure([{ type: "%FTP", intensity: 80 }], "bike"),
       }).success,
     ).toBe(true);
 
@@ -96,15 +120,38 @@ describe("activity target capabilities", () => {
     ).toBe(false);
   });
 
-  it("validates update schemas when both activity category and structure are present", () => {
+  it("validates update schemas from segment-owned category authority", () => {
     const result = activityPlanUpdateSchema.safeParse({
-      activity_category: "swim",
-      structure: createStructure([{ type: "watts", intensity: 200 }]),
+      structure: {
+        version: 3,
+        segments: [
+          {
+            ...createStructure([{ type: "RPE", intensity: 5 }], "swim").segments[0],
+            intervals: [
+              {
+                id: "11111111-1111-4111-8111-111111111111",
+                name: "Bad",
+                repetitions: 1,
+                steps: [
+                  {
+                    id: "22222222-2222-4222-8222-222222222222",
+                    name: "Bad",
+                    duration: { type: "time", seconds: 60 },
+                    targets: [{ type: "watts", intensity: 200 }],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
     });
 
     expect(result.success).toBe(false);
     expect(result.error?.issues[0]?.path).toEqual([
       "structure",
+      "segments",
+      0,
       "intervals",
       0,
       "steps",

@@ -55,7 +55,32 @@ describe("drainDueWahooPlannedWorkoutJobs", () => {
         id: "plan-route",
         name: "Route Run",
         routeId: "route-1",
-        structure: { version: 2, intervals: [] },
+        structure: {
+          version: 3,
+          segments: [
+            {
+              id: "40000000-0000-4000-8000-000000000001",
+              role: "activity",
+              category: "run",
+              name: "Run",
+              intervals: [
+                {
+                  id: "40000000-0000-4000-8000-000000000002",
+                  name: "Set",
+                  repetitions: 1,
+                  steps: [
+                    {
+                      id: "40000000-0000-4000-8000-000000000003",
+                      name: "Run",
+                      duration: { type: "time", seconds: 600 },
+                      targets: [{ type: "bpm", intensity: 150 }],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
         updatedAt: "2026-07-13T10:00:00.000Z",
       },
     });

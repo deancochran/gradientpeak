@@ -1,93 +1,80 @@
 import { describe, expect, it } from "vitest";
-
-import { createActivityPlanSchema, updateActivityPlanSchema } from "../activity_plan_structure";
 import { activityPlanCreateFormSchema, activityPlanUpdateFormSchema } from "../form-schemas";
+import { activityPlanCreateSchema, activityPlanUpdateSchema } from "../index";
+
+const structure = {
+  version: 3 as const,
+  segments: [
+    {
+      id: "00000000-0000-4000-8000-000000000001",
+      role: "activity" as const,
+      category: "run" as const,
+      name: "Run",
+      intervals: [
+        {
+          id: "00000000-0000-4000-8000-000000000002",
+          name: "Main Set",
+          repetitions: 1,
+          steps: [
+            {
+              id: "00000000-0000-4000-8000-000000000003",
+              name: "Run",
+              duration: { type: "untilFinished" as const },
+              targets: [{ type: "RPE" as const, intensity: 5 }],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
 
 describe("activity plan schema composition", () => {
-  it("keeps create activity plans subject to plan-level refinement", () => {
-    const result = createActivityPlanSchema.safeParse({
-      name: "Tempo builder",
-      description: "",
-      activity_category: "bike",
-      structure: {},
-    });
-
-    expect(result.success).toBe(false);
-    expect(result.error?.issues).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          path: ["structure"],
-          message: "Plan must have steps, route, or both",
-        }),
-      ]),
+  it("accepts strict V3 create input without top-level category authority", () => {
+    expect(activityPlanCreateSchema.safeParse({ name: "Tempo builder", structure }).success).toBe(
+      true,
     );
+    expect(
+      activityPlanCreateSchema.safeParse({
+        name: "Old input",
+        structure: { version: 2, intervals: [] },
+      }).success,
+    ).toBe(false);
   });
 
-  it("allows partial activity plan updates without reapplying create refinement", () => {
-    expect(
-      updateActivityPlanSchema.parse({
-        id: "550e8400-e29b-41d4-a716-446655440000",
-        name: "Updated tempo builder",
-      }),
-    ).toMatchObject({
-      id: "550e8400-e29b-41d4-a716-446655440000",
+  it("allows partial activity plan updates", () => {
+    expect(activityPlanUpdateSchema.parse({ name: "Updated tempo builder" })).toEqual({
       name: "Updated tempo builder",
     });
   });
 });
 
 describe("activity plan form schema composition", () => {
-  it("requires saveable structure when creating an activity plan form", () => {
-    const result = activityPlanCreateFormSchema.safeParse({
-      name: "Evening run",
-      description: "",
-      activity_category: "run",
-      notes: null,
-      structure: {
-        version: 2,
-        intervals: [
-          {
-            id: "11111111-1111-4111-8111-111111111111",
-            name: "Main Set",
-            repetitions: 1,
-            steps: [
-              {
-                id: "22222222-2222-4222-8222-222222222222",
-                name: "Run",
-                duration: { type: "untilFinished" },
-                targets: [],
-              },
-            ],
-          },
-        ],
-      },
-    });
-
-    expect(result.success).toBe(false);
-    expect(result.error?.issues).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          path: ["structure", "intervals", 0, "steps", 0, "duration"],
-          message:
-            "Saved steps need an explicit time, distance, or repetitions duration. 'Until finished' cannot produce trustworthy IF/TSS.",
-        }),
-        expect.objectContaining({
-          path: ["structure", "intervals", 0, "steps", 0, "targets"],
-          message: "Each saved step needs an intensity target.",
-        }),
-      ]),
-    );
+  it("uses the same strict V3 structure contract", () => {
+    expect(
+      activityPlanCreateFormSchema.safeParse({
+        name: "Evening run",
+        description: "",
+        notes: null,
+        structure,
+      }).success,
+    ).toBe(true);
+    expect(
+      activityPlanCreateFormSchema.safeParse({
+        name: "Old category input",
+        activity_category: "run",
+        notes: null,
+        structure,
+      }).success,
+    ).toBe(false);
   });
 
-  it("allows partial activity plan form updates without create-only refinement", () => {
+  it("allows partial form updates", () => {
     expect(
       activityPlanUpdateFormSchema.parse({
         id: "550e8400-e29b-41d4-a716-446655440000",
         name: "Updated evening run",
       }),
-    ).toMatchObject({
-      id: "550e8400-e29b-41d4-a716-446655440000",
-      name: "Updated evening run",
-    });
+    ).toMatchObject({ name: "Updated evening run" });
   });
 });

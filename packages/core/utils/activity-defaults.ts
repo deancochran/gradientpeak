@@ -1,5 +1,7 @@
-import type { CanonicalSport, DurationV2, IntensityTargetV2, PlanStepV2 } from "../schemas";
+import type { ActivityPlanDuration, ActivityPlanIntervalStep } from "../activity-plan";
+import type { CanonicalSport } from "../schemas";
 import { getSportStepDefaults, getSportStepName } from "../sports";
+import type { ActivityTarget } from "../targets";
 
 /**
  * Context for generating smart defaults for activity steps
@@ -21,27 +23,28 @@ export function generateStepName(ctx: DefaultsContext): string {
 /**
  * Get default duration based on activity type and position
  */
-export function getDefaultDuration(ctx: DefaultsContext): DurationV2 {
+export function getDefaultDuration(ctx: DefaultsContext): ActivityPlanDuration {
   return getSportStepDefaults(ctx.activityCategory, getStepPhase(ctx)).duration;
 }
 
 /**
  * Get default intensity target based on activity type and position
  */
-export function getDefaultTarget(ctx: DefaultsContext): IntensityTargetV2 | undefined {
+export function getDefaultTarget(ctx: DefaultsContext): ActivityTarget | undefined {
   return getSportStepDefaults(ctx.activityCategory, getStepPhase(ctx)).target;
 }
 
 /**
  * Create a complete step with smart defaults based on context
  */
-export function createDefaultStep(ctx: DefaultsContext): PlanStepV2 {
+export function createDefaultStep(ctx: DefaultsContext): ActivityPlanIntervalStep {
   const target = getDefaultTarget(ctx);
 
   return {
+    id: crypto.randomUUID(),
     name: generateStepName(ctx),
     duration: getDefaultDuration(ctx),
-    targets: target ? [target] : [],
+    targets: [target ?? { type: "RPE", intensity: 5 }],
     notes: "",
   };
 }

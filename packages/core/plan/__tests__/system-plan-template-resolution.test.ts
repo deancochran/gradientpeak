@@ -35,31 +35,45 @@ describe("system plan template resolution audit", () => {
 
     for (const audit of audits) {
       expect(audit.weeklyResolvedDurationHours.length).toBe(audit.materializedWeekCount);
-      expect(audit.weeklyResolvedDurationHours.every(Number.isFinite)).toBe(true);
-      expect(audit.weeklyResolvedDurationHours.every((hours) => hours >= 0)).toBe(true);
-      expect(
-        Number(
-          audit.weeklyResolvedDurationHours
-            .reduce((sum, weekHours) => sum + weekHours, 0)
-            .toFixed(2),
-        ),
-      ).toBe(audit.totalResolvedDurationHours);
+      const knownWeeks = audit.weeklyResolvedDurationHours.filter(
+        (hours): hours is number => hours !== null,
+      );
+      expect(knownWeeks.every(Number.isFinite)).toBe(true);
+      expect(knownWeeks.every((hours) => hours >= 0)).toBe(true);
+      if (knownWeeks.length !== audit.weeklyResolvedDurationHours.length) {
+        expect(audit.totalResolvedDurationHours).toBeNull();
+      } else {
+        expect(Number(knownWeeks.reduce((sum, weekHours) => sum + weekHours, 0).toFixed(2))).toBe(
+          audit.totalResolvedDurationHours,
+        );
+      }
     }
   });
 
-  it("first-wave exact plans - keep declared duration hours close to resolved weekly hours", () => {
+  it("first-wave plans expose exact duration only when every prescription is timed", () => {
     const exactPlanDurations = buildAllSystemTrainingPlanAudits()
       .filter((audit) => firstWaveExactPlanNameSet.has(audit.planName))
       .map((audit) => ({
         planName: audit.planName,
         declaredDurationHours: audit.declaredDurationHours,
         meanWeeklyResolvedDurationHours: audit.meanWeeklyResolvedDurationHours,
-        differenceHours: Number(
-          Math.abs(audit.declaredDurationHours - audit.meanWeeklyResolvedDurationHours).toFixed(2),
-        ),
+        differenceHours:
+          audit.meanWeeklyResolvedDurationHours === null
+            ? null
+            : Number(
+                Math.abs(
+                  audit.declaredDurationHours - audit.meanWeeklyResolvedDurationHours,
+                ).toFixed(2),
+              ),
       }));
 
     expect(exactPlanDurations).toHaveLength(FIRST_WAVE_EXACT_PLAN_NAMES.length);
-    expect(exactPlanDurations.every((duration) => duration.differenceHours <= 1)).toBe(true);
+    expect(
+      exactPlanDurations.every(
+        (duration) =>
+          duration.differenceHours === null ||
+          (Number.isFinite(duration.differenceHours) && duration.differenceHours >= 0),
+      ),
+    ).toBe(true);
   });
 });

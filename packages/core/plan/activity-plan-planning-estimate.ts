@@ -1,13 +1,32 @@
-import { calculateActivityStatsV2 } from "../calculations_v2";
-import type { ActivityPlanStructureV2 } from "../schemas/activity_plan_v2";
+import { compileActivityPlanV3 } from "../activity-plan";
+import { calculateActivityPlanStats } from "../activity-plan-calculations";
 import type { CanonicalSport } from "../schemas/sport";
 
 export type PlanningEstimateConfidence = "high" | "medium" | "low";
 
+export type ActivityPlanCategoryPlanningDose = {
+  category: CanonicalSport;
+  timedActiveSeconds: number;
+  distanceMeters: number;
+  repetitionCount: number;
+  openOccurrenceCount: number;
+  intensityFactor: number | null;
+  tss: number | null;
+  evidence: "cycling_power" | "partial_cycling_power" | "unsupported";
+  evidenceCoverage: number | null;
+};
+
 export type ActivityPlanPlanningEstimate = {
   durationSeconds: number | null;
+  activeSeconds?: number;
+  restSeconds?: number;
+  transitionSeconds?: number;
   distanceMeters: number | null;
+  hasOpenCompletion?: boolean;
+  categoryDoses?: ActivityPlanCategoryPlanningDose[];
+  /** Present only for a single supported category; never aggregated across sports. */
   intensityFactor: number | null;
+  /** Present only for a single supported category; never aggregated across sports. */
   tss: number | null;
   confidence: PlanningEstimateConfidence;
   factors: string[];
@@ -15,130 +34,110 @@ export type ActivityPlanPlanningEstimate = {
 };
 
 export type ActivityPlanPlanningEstimateInput = {
-  activityCategory: CanonicalSport | null | undefined;
-  structure?: ActivityPlanStructureV2 | null;
-  authoritativeMetrics?: {
-    estimatedDurationSeconds?: number | null;
-    estimatedTss?: number | null;
-    intensityFactor?: number | null;
-    distanceMeters?: number | null;
-  } | null;
+  structure?: unknown;
+  activityCategory?: CanonicalSport | null;
+  authoritativeMetrics?: unknown;
   athleteContext?: {
+    cyclingFtpWatts?: number | null;
     ftpWatts?: number | null;
     thresholdPaceSecondsPerKm?: number | null;
     cssSecondsPer100m?: number | null;
   } | null;
 };
 
-const FALLBACK_IF_BY_SPORT: Partial<Record<CanonicalSport, number>> = {
-  run: 0.72,
-  bike: 0.7,
-  swim: 0.7,
-  strength: 0.55,
-  other: 0.6,
-};
-
+/** Estimates only evidence supported by each activity segment's own sport domain. */
 export function estimateActivityPlanForTrainingContext({
-  activityCategory,
   athleteContext,
-  authoritativeMetrics,
   structure,
 }: ActivityPlanPlanningEstimateInput): ActivityPlanPlanningEstimate {
-  const factors: string[] = [];
+  if (!structure) {
+    return {
+      durationSeconds: null,
+      activeSeconds: 0,
+      restSeconds: 0,
+      transitionSeconds: 0,
+      distanceMeters: 0,
+      hasOpenCompletion: false,
+      categoryDoses: [],
+      intensityFactor: null,
+      tss: null,
+      confidence: "low",
+      factors: [],
+      warnings: ["A validated activity-plan V3 structure is required for planning estimates."],
+    };
+  }
+  const compiled = compileActivityPlanV3(structure);
+  const stats = calculateActivityPlanStats(compiled, {
+    cyclingFtpWatts: athleteContext?.cyclingFtpWatts ?? athleteContext?.ftpWatts ?? undefined,
+  });
   const warnings: string[] = [];
-  const category = activityCategory ?? "other";
+  const categoryDoses = stats.categoryDoses.map<ActivityPlanCategoryPlanningDose>((dose) => {
+    if (!dose.cyclingPower) {
+      warnings.push(`No supported planning-load evidence for ${dose.category} segments.`);
+      return {
+        category: dose.category,
+        timedActiveSeconds: dose.timedActiveSeconds,
+        distanceMeters: dose.distanceMeters,
+        repetitionCount: dose.repetitionCount,
+        openOccurrenceCount: dose.openOccurrenceCount,
+        intensityFactor: null,
+        tss: null,
+        evidence: "unsupported",
+        evidenceCoverage: null,
+      };
+    }
+    if (!dose.cyclingPower.complete) {
+      warnings.push(
+        `Cycling power evidence covers ${Math.round(dose.cyclingPower.evidenceCoverage * 100)}% of eligible timed ${dose.category} dose; aggregate load is unavailable.`,
+      );
+    }
+    return {
+      category: dose.category,
+      timedActiveSeconds: dose.timedActiveSeconds,
+      distanceMeters: dose.distanceMeters,
+      repetitionCount: dose.repetitionCount,
+      openOccurrenceCount: dose.openOccurrenceCount,
+      intensityFactor: dose.cyclingPower.complete
+        ? roundMetric(dose.cyclingPower.averageFtpPercent / 100, 2)
+        : null,
+      tss: dose.cyclingPower.complete ? roundMetric(dose.cyclingPower.estimatedTss) : null,
+      evidence: dose.cyclingPower.complete ? "cycling_power" : "partial_cycling_power",
+      evidenceCoverage: roundMetric(dose.cyclingPower.evidenceCoverage, 3),
+    };
+  });
 
-  const paceSecondsPerKm = resolvePaceSecondsPerKm(category, athleteContext);
-  if (paceSecondsPerKm !== null) factors.push(`${category} threshold pace`);
-
-  const structureStats = structure
-    ? calculateActivityStatsV2(structure, {
-        ftpWatts: athleteContext?.ftpWatts ?? undefined,
-        paceSecondsPerKm: paceSecondsPerKm ?? undefined,
-      })
-    : null;
-
-  const structureDistance = structure ? sumStructureDistanceMeters(structure) : 0;
-  const durationSeconds =
-    positiveOrNull(structureStats?.totalDuration) ??
-    positiveOrNull(authoritativeMetrics?.estimatedDurationSeconds);
-  const distanceMeters =
-    positiveOrNull(structureDistance) ?? positiveOrNull(authoritativeMetrics?.distanceMeters);
-  const structureIf =
-    structureStats && structureStats.avgPower > 0 ? structureStats.avgPower / 100 : null;
-  const intensityFactor = clampIf(
-    positiveOrNull(authoritativeMetrics?.intensityFactor) ??
-      structureIf ??
-      FALLBACK_IF_BY_SPORT[category] ??
-      0.6,
-  );
-
-  if (structureStats && structureStats.totalDuration > 0) {
-    factors.push("activity plan structure");
-  } else if (authoritativeMetrics?.estimatedDurationSeconds) {
-    factors.push("saved duration estimate");
-  } else if (distanceMeters !== null && paceSecondsPerKm === null) {
-    warnings.push("Distance-based plan needs athlete pace context to estimate duration.");
+  if (stats.duration.exactElapsedSeconds === null) {
+    warnings.push(
+      "Elapsed duration is unknown because the plan contains non-time completion policies.",
+    );
   }
 
-  if (structureIf !== null) {
-    factors.push("activity plan intensity targets");
-  } else if (authoritativeMetrics?.intensityFactor) {
-    factors.push("saved intensity estimate");
-  } else {
-    warnings.push("Using category-level intensity fallback.");
-  }
-
-  const tss =
-    durationSeconds !== null && intensityFactor !== null
-      ? roundMetric((durationSeconds / 3600) * intensityFactor ** 2 * 100)
-      : positiveOrNull(authoritativeMetrics?.estimatedTss);
-
-  const confidence: PlanningEstimateConfidence =
-    structureStats && structureStats.totalDuration > 0 && structureIf !== null
-      ? "high"
-      : durationSeconds !== null && intensityFactor !== null && warnings.length <= 1
-        ? "medium"
-        : "low";
-
+  const completeCount = categoryDoses.filter((dose) => dose.evidence === "cycling_power").length;
+  const soleDose = categoryDoses.length === 1 ? categoryDoses[0] : undefined;
   return {
-    durationSeconds,
-    distanceMeters,
-    intensityFactor: intensityFactor !== null ? roundMetric(intensityFactor, 2) : null,
-    tss,
-    confidence,
-    factors,
+    durationSeconds: stats.duration.exactElapsedSeconds,
+    activeSeconds: stats.duration.timedActiveSeconds,
+    restSeconds: stats.duration.restSeconds,
+    transitionSeconds: stats.duration.transitionSeconds,
+    distanceMeters: stats.duration.distanceMeters,
+    hasOpenCompletion: stats.duration.openOccurrenceCount > 0,
+    categoryDoses,
+    intensityFactor: soleDose?.intensityFactor ?? null,
+    tss: soleDose?.tss ?? null,
+    confidence:
+      completeCount === categoryDoses.length && stats.duration.exactElapsedSeconds !== null
+        ? "high"
+        : categoryDoses.some((dose) => dose.evidence !== "unsupported")
+          ? "medium"
+          : "low",
+    factors: [
+      "compiled V3 occurrences",
+      ...(categoryDoses.some((dose) => dose.evidence !== "unsupported")
+        ? ["cycling power targets"]
+        : []),
+    ],
     warnings,
   };
-}
-
-function resolvePaceSecondsPerKm(
-  activityCategory: CanonicalSport,
-  athleteContext: ActivityPlanPlanningEstimateInput["athleteContext"],
-) {
-  if (activityCategory === "run") return positiveOrNull(athleteContext?.thresholdPaceSecondsPerKm);
-  if (activityCategory === "swim" && athleteContext?.cssSecondsPer100m) {
-    return athleteContext.cssSecondsPer100m * 10;
-  }
-  return null;
-}
-
-function sumStructureDistanceMeters(structure: ActivityPlanStructureV2) {
-  return structure.intervals.reduce((total, interval) => {
-    const intervalDistance = interval.steps.reduce((sum, step) => {
-      return sum + (step.duration.type === "distance" ? step.duration.meters : 0);
-    }, 0);
-    return total + intervalDistance * interval.repetitions;
-  }, 0);
-}
-
-function positiveOrNull(value: number | null | undefined) {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : null;
-}
-
-function clampIf(value: number | null) {
-  if (value === null) return null;
-  return Math.max(0.1, Math.min(2, value));
 }
 
 function roundMetric(value: number, decimals = 1) {
