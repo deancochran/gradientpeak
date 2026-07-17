@@ -1,29 +1,27 @@
 import type { z } from "zod";
-import type { ActivityPlanStructureV2, IntensityTargetV2 } from "./activity_plan_v2";
+import {
+  type ActivityTargetCategory,
+  type ActivityTargetType,
+  getPermissibleTargetTypes,
+  isTargetTypePermittedForActivity,
+} from "../targets";
+import type { ActivityPlanStructureV2 } from "./activity_plan_v2";
+import { canonicalSportValues } from "./sport";
 
-export const activityTargetCategorySchemaValues = [
-  "run",
-  "bike",
-  "swim",
-  "strength",
-  "other",
-] as const;
+export {
+  type ActivityTargetCapability,
+  type ActivityTargetCategory,
+  type ActivityTargetDomain,
+  type ActivityTargetType,
+  activityTargetCapabilityConfig,
+  activityTargetDomainByType,
+  getPermissibleTargetTypes,
+  getPreferredTargetTypes,
+  isTargetTypePermittedForActivity,
+  sortTargetsByActivityPreference,
+} from "../targets";
 
-export type ActivityTargetCategory = (typeof activityTargetCategorySchemaValues)[number];
-
-export type ActivityTargetType = IntensityTargetV2["type"];
-
-export type ActivityTargetDomain =
-  | "cadence"
-  | "heart_rate"
-  | "perceived_effort"
-  | "power"
-  | "speed";
-
-export type ActivityTargetCapability = {
-  allowed: readonly ActivityTargetType[];
-  preferred: readonly ActivityTargetType[];
-};
+export const activityTargetCategorySchemaValues = canonicalSportValues;
 
 export type ActivityTargetCompatibilityIssue = {
   activityCategory: ActivityTargetCategory;
@@ -31,68 +29,6 @@ export type ActivityTargetCompatibilityIssue = {
   path: (string | number)[];
   targetType: ActivityTargetType;
 };
-
-export const activityTargetDomainByType = {
-  "%FTP": "power",
-  watts: "power",
-  bpm: "heart_rate",
-  "%MaxHR": "heart_rate",
-  "%ThresholdHR": "heart_rate",
-  speed: "speed",
-  cadence: "cadence",
-  RPE: "perceived_effort",
-} as const satisfies Record<ActivityTargetType, ActivityTargetDomain>;
-
-export const activityTargetCapabilityConfig = {
-  run: {
-    allowed: ["bpm", "%MaxHR", "%ThresholdHR", "speed", "cadence", "RPE"],
-    preferred: ["speed", "%ThresholdHR", "bpm", "%MaxHR", "cadence", "RPE"],
-  },
-  bike: {
-    allowed: ["%FTP", "watts", "bpm", "%MaxHR", "%ThresholdHR", "cadence", "RPE"],
-    preferred: ["%FTP", "watts", "cadence", "%ThresholdHR", "bpm", "%MaxHR", "RPE"],
-  },
-  swim: {
-    allowed: ["bpm", "%MaxHR", "%ThresholdHR", "RPE"],
-    preferred: ["RPE", "%ThresholdHR", "bpm", "%MaxHR"],
-  },
-  strength: {
-    allowed: ["RPE"],
-    preferred: ["RPE"],
-  },
-  other: {
-    allowed: ["RPE", "bpm", "%MaxHR"],
-    preferred: ["RPE", "bpm", "%MaxHR"],
-  },
-} as const satisfies Record<ActivityTargetCategory, ActivityTargetCapability>;
-
-export function getPermissibleTargetTypes(
-  activityCategory: ActivityTargetCategory,
-): readonly ActivityTargetType[] {
-  return activityTargetCapabilityConfig[activityCategory].allowed;
-}
-
-export function getPreferredTargetTypes(
-  activityCategory: ActivityTargetCategory,
-): readonly ActivityTargetType[] {
-  return activityTargetCapabilityConfig[activityCategory].preferred;
-}
-
-export function isTargetTypePermittedForActivity(input: {
-  activityCategory: ActivityTargetCategory;
-  targetType: ActivityTargetType;
-}): boolean {
-  return getPermissibleTargetTypes(input.activityCategory).includes(input.targetType);
-}
-
-export function sortTargetsByActivityPreference<
-  TTarget extends { type: ActivityTargetType },
->(input: { activityCategory: ActivityTargetCategory; targets: readonly TTarget[] }): TTarget[] {
-  const preferred = getPreferredTargetTypes(input.activityCategory);
-  return [...input.targets].sort(
-    (left, right) => preferred.indexOf(left.type) - preferred.indexOf(right.type),
-  );
-}
 
 export function getActivityTargetCompatibilityIssues(input: {
   activityCategory: ActivityTargetCategory;

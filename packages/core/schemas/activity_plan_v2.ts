@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  type ActivityTarget,
+  activityTargetMaximumByType,
+  activityTargetSchema,
+} from "../targets/schema";
 
 /** Device/product integrity limits for plans that can be saved or exported. */
 export const ACTIVITY_PLAN_V2_SAVEABLE_LIMITS = {
@@ -8,16 +13,7 @@ export const ACTIVITY_PLAN_V2_SAVEABLE_LIMITS = {
   maxStepDurationSeconds: 24 * 60 * 60,
   maxStepDistanceMeters: 1_000_000,
   maxStepRepetitionCount: 10_000,
-  maxTargetIntensity: {
-    "%FTP": 300,
-    "%MaxHR": 200,
-    "%ThresholdHR": 200,
-    watts: 3_000,
-    bpm: 250,
-    speed: 100,
-    cadence: 300,
-    RPE: 10,
-  },
+  maxTargetIntensity: activityTargetMaximumByType,
 } as const;
 
 // ==============================
@@ -75,58 +71,9 @@ export type DurationV2 = z.infer<typeof durationSchemaV2>;
 // Dynamic tolerances are applied during recording (see target_helpers.ts)
 // ==============================
 
-const intensityTargetFTPSchemaV2 = z.object({
-  type: z.literal("%FTP"),
-  intensity: z.number().positive().max(500),
-});
+export const intensityTargetSchemaV2 = activityTargetSchema;
 
-const intensityTargetMaxHRSchemaV2 = z.object({
-  type: z.literal("%MaxHR"),
-  intensity: z.number().positive().max(200),
-});
-
-const intensityTargetThresholdHRSchemaV2 = z.object({
-  type: z.literal("%ThresholdHR"),
-  intensity: z.number().positive().max(200),
-});
-
-const intensityTargetWattsSchemaV2 = z.object({
-  type: z.literal("watts"),
-  intensity: z.number().nonnegative().max(5000),
-});
-
-const intensityTargetBPMSchemaV2 = z.object({
-  type: z.literal("bpm"),
-  intensity: z.number().positive().min(30).max(250),
-});
-
-const intensityTargetSpeedSchemaV2 = z.object({
-  type: z.literal("speed"),
-  intensity: z.number().nonnegative().max(100), // persisted V2 contract: km/h
-});
-
-const intensityTargetCadenceSchemaV2 = z.object({
-  type: z.literal("cadence"),
-  intensity: z.number().nonnegative().max(300),
-});
-
-const intensityTargetRPESchemaV2 = z.object({
-  type: z.literal("RPE"),
-  intensity: z.number().min(1).max(10),
-});
-
-export const intensityTargetSchemaV2 = z.discriminatedUnion("type", [
-  intensityTargetFTPSchemaV2,
-  intensityTargetMaxHRSchemaV2,
-  intensityTargetThresholdHRSchemaV2,
-  intensityTargetWattsSchemaV2,
-  intensityTargetBPMSchemaV2,
-  intensityTargetSpeedSchemaV2,
-  intensityTargetCadenceSchemaV2,
-  intensityTargetRPESchemaV2,
-]);
-
-export type IntensityTargetV2 = z.infer<typeof intensityTargetSchemaV2>;
+export type IntensityTargetV2 = ActivityTarget;
 
 /** Converts the persisted/UI V2 speed target in km/h to runtime/export m/s. */
 export function activityPlanSpeedKphToMetersPerSecond(speedKph: number): number {

@@ -177,12 +177,15 @@ export * from "./constants";
 // and will automatically pick up new files added to their directories
 
 export * from "./activity-analysis"; // Shared dynamic activity analysis contracts/helpers
+export * from "./activity-artifacts"; // Thin decoded source-artifact contracts
 export * from "./activity-files"; // Runtime-neutral activity file ingestion contracts
 /**
  * @deprecated Import server-only activity-file parsing from `@repo/core/server/activity-files`.
  * This root export remains as a compatibility shim.
  */
 export * from "./activity-files/activity-file-parser";
+export * from "./activity-plan"; // Strict V3 plan contracts and compiler
+export * from "./activity-segments"; // Completed activity segment contracts
 export {
   type ActivityEffortObservationKind,
   type CanonicalThresholdType,
