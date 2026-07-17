@@ -137,6 +137,7 @@ jest.mock("@/lib/api", () => ({
 
 jest.mock("@repo/core", () => ({
   __esModule: true,
+  ...jest.requireActual("@repo/core"),
 }));
 
 jest.mock("@/components/activity/charts/ElevationProfileChart", () => ({
