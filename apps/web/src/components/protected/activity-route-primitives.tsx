@@ -196,6 +196,11 @@ export function LikeToggleButton({
   );
 }
 
+function deriveCategoryLabel(categories: string[]) {
+  if (!categories || categories.length === 0) return null;
+  return categories.map(getActivityBadgeLabel).join(" → ");
+}
+
 export function ActivityListCard({ activity, onOpen }: { activity: any; onOpen: () => void }) {
   const { unitSystem } = useViewingUserPreferredUnitSystem();
   const loadMethod = activity.derived?.method;
@@ -212,21 +217,27 @@ export function ActivityListCard({ activity, onOpen }: { activity: any; onOpen: 
     activity.derived?.calibration_quality,
     activity.started_at,
   );
+  const categories = activity.activity_categories as string[] | undefined;
+  const firstCategory = categories?.[0] ?? null;
+  const elapsedSeconds =
+    activity.elapsed_ms != null ? Math.round(activity.elapsed_ms / 1000) : null;
   const thresholdAction =
     activity.derived?.unavailable_reason === "threshold_missing"
-      ? getThresholdNextAction(activity.type)
+      ? getThresholdNextAction(firstCategory)
       : null;
   return (
     <Card className="transition-colors hover:border-primary/30">
       <CardContent className="space-y-4 p-4">
         <div className="flex items-start gap-3">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xl">
-            {getActivityEmoji(activity.type)}
+            {getActivityEmoji(firstCategory ?? "unknown")}
           </div>
           <div className="min-w-0 flex-1 space-y-1">
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-lg font-semibold text-foreground">{activity.name}</h3>
-              <Badge variant="secondary">{getActivityBadgeLabel(activity.type)}</Badge>
+              {deriveCategoryLabel(categories ?? []) ? (
+                <Badge variant="secondary">{deriveCategoryLabel(categories ?? [])}</Badge>
+              ) : null}
             </div>
             <p className="text-sm text-muted-foreground">{formatDateTime(activity.started_at)}</p>
             {activity.notes ? (
@@ -242,7 +253,7 @@ export function ActivityListCard({ activity, onOpen }: { activity: any; onOpen: 
             label="Distance"
             value={formatDistance(activity.distance_meters, unitSystem)}
           />
-          <MetricPill label="Duration" value={formatDuration(activity.duration_seconds)} />
+          <MetricPill label="Duration" value={formatDuration(elapsedSeconds)} />
           <MetricPill
             label={loadLabels.load}
             value={

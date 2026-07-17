@@ -30,6 +30,7 @@ import { Route as ProtectedRecordRouteImport } from './routes/_protected/record'
 import { Route as ProtectedPlanRouteImport } from './routes/_protected/plan'
 import { Route as ProtectedNotificationsRouteImport } from './routes/_protected/notifications'
 import { Route as ProtectedMessagesRouteImport } from './routes/_protected/messages'
+import { Route as ProtectedIntegrationsRouteImport } from './routes/_protected/integrations'
 import { Route as ProtectedCoachingRouteImport } from './routes/_protected/coaching'
 import { Route as ProtectedCalendarRouteImport } from './routes/_protected/calendar'
 import { Route as ProtectedRoutesIndexRouteImport } from './routes/_protected/routes/index'
@@ -46,6 +47,7 @@ import { Route as ApiTrpcSplatRouteImport } from './routes/api/trpc/$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ProtectedRoutesUploadRouteImport } from './routes/_protected/routes/upload'
 import { Route as ProtectedRecordSubmitRouteImport } from './routes/_protected/record/submit'
+import { Route as ProtectedRecordSessionRouteImport } from './routes/_protected/record/session'
 import { Route as ProtectedRecordPlanRouteImport } from './routes/_protected/record/plan'
 import { Route as ProtectedActivityEffortsNewRouteImport } from './routes/_protected/activity-efforts/new'
 import { Route as ProtectedActivitiesImportRouteImport } from './routes/_protected/activities/import'
@@ -169,6 +171,11 @@ const ProtectedMessagesRoute = ProtectedMessagesRouteImport.update({
   path: '/messages',
   getParentRoute: () => ProtectedRoute,
 } as any)
+const ProtectedIntegrationsRoute = ProtectedIntegrationsRouteImport.update({
+  id: '/integrations',
+  path: '/integrations',
+  getParentRoute: () => ProtectedRoute,
+} as any)
 const ProtectedCoachingRoute = ProtectedCoachingRouteImport.update({
   id: '/coaching',
   path: '/coaching',
@@ -252,6 +259,11 @@ const ProtectedRoutesUploadRoute = ProtectedRoutesUploadRouteImport.update({
 const ProtectedRecordSubmitRoute = ProtectedRecordSubmitRouteImport.update({
   id: '/submit',
   path: '/submit',
+  getParentRoute: () => ProtectedRecordRoute,
+} as any)
+const ProtectedRecordSessionRoute = ProtectedRecordSessionRouteImport.update({
+  id: '/session',
+  path: '/session',
   getParentRoute: () => ProtectedRecordRoute,
 } as any)
 const ProtectedRecordPlanRoute = ProtectedRecordPlanRouteImport.update({
@@ -367,6 +379,7 @@ export interface FileRoutesByFullPath {
   '/about': typeof AboutRoute
   '/calendar': typeof ProtectedCalendarRouteWithChildren
   '/coaching': typeof ProtectedCoachingRoute
+  '/integrations': typeof ProtectedIntegrationsRoute
   '/messages': typeof ProtectedMessagesRoute
   '/notifications': typeof ProtectedNotificationsRoute
   '/plan': typeof ProtectedPlanRoute
@@ -388,6 +401,7 @@ export interface FileRoutesByFullPath {
   '/activities/import': typeof ProtectedActivitiesImportRoute
   '/activity-efforts/new': typeof ProtectedActivityEffortsNewRoute
   '/record/plan': typeof ProtectedRecordPlanRoute
+  '/record/session': typeof ProtectedRecordSessionRoute
   '/record/submit': typeof ProtectedRecordSubmitRoute
   '/routes/upload': typeof ProtectedRoutesUploadRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -421,6 +435,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/about': typeof AboutRoute
   '/coaching': typeof ProtectedCoachingRoute
+  '/integrations': typeof ProtectedIntegrationsRoute
   '/messages': typeof ProtectedMessagesRoute
   '/notifications': typeof ProtectedNotificationsRoute
   '/plan': typeof ProtectedPlanRoute
@@ -442,6 +457,7 @@ export interface FileRoutesByTo {
   '/activities/import': typeof ProtectedActivitiesImportRoute
   '/activity-efforts/new': typeof ProtectedActivityEffortsNewRoute
   '/record/plan': typeof ProtectedRecordPlanRoute
+  '/record/session': typeof ProtectedRecordSessionRoute
   '/record/submit': typeof ProtectedRecordSubmitRoute
   '/routes/upload': typeof ProtectedRoutesUploadRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -478,6 +494,7 @@ export interface FileRoutesById {
   '/about': typeof AboutRoute
   '/_protected/calendar': typeof ProtectedCalendarRouteWithChildren
   '/_protected/coaching': typeof ProtectedCoachingRoute
+  '/_protected/integrations': typeof ProtectedIntegrationsRoute
   '/_protected/messages': typeof ProtectedMessagesRoute
   '/_protected/notifications': typeof ProtectedNotificationsRoute
   '/_protected/plan': typeof ProtectedPlanRoute
@@ -500,6 +517,7 @@ export interface FileRoutesById {
   '/_protected/activities/import': typeof ProtectedActivitiesImportRoute
   '/_protected/activity-efforts/new': typeof ProtectedActivityEffortsNewRoute
   '/_protected/record/plan': typeof ProtectedRecordPlanRoute
+  '/_protected/record/session': typeof ProtectedRecordSessionRoute
   '/_protected/record/submit': typeof ProtectedRecordSubmitRoute
   '/_protected/routes/upload': typeof ProtectedRoutesUploadRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -537,6 +555,7 @@ export interface FileRouteTypes {
     | '/about'
     | '/calendar'
     | '/coaching'
+    | '/integrations'
     | '/messages'
     | '/notifications'
     | '/plan'
@@ -558,6 +577,7 @@ export interface FileRouteTypes {
     | '/activities/import'
     | '/activity-efforts/new'
     | '/record/plan'
+    | '/record/session'
     | '/record/submit'
     | '/routes/upload'
     | '/api/auth/$'
@@ -591,6 +611,7 @@ export interface FileRouteTypes {
   to:
     | '/about'
     | '/coaching'
+    | '/integrations'
     | '/messages'
     | '/notifications'
     | '/plan'
@@ -612,6 +633,7 @@ export interface FileRouteTypes {
     | '/activities/import'
     | '/activity-efforts/new'
     | '/record/plan'
+    | '/record/session'
     | '/record/submit'
     | '/routes/upload'
     | '/api/auth/$'
@@ -647,6 +669,7 @@ export interface FileRouteTypes {
     | '/about'
     | '/_protected/calendar'
     | '/_protected/coaching'
+    | '/_protected/integrations'
     | '/_protected/messages'
     | '/_protected/notifications'
     | '/_protected/plan'
@@ -669,6 +692,7 @@ export interface FileRouteTypes {
     | '/_protected/activities/import'
     | '/_protected/activity-efforts/new'
     | '/_protected/record/plan'
+    | '/_protected/record/session'
     | '/_protected/record/submit'
     | '/_protected/routes/upload'
     | '/api/auth/$'
@@ -876,6 +900,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedMessagesRouteImport
       parentRoute: typeof ProtectedRoute
     }
+    '/_protected/integrations': {
+      id: '/_protected/integrations'
+      path: '/integrations'
+      fullPath: '/integrations'
+      preLoaderRoute: typeof ProtectedIntegrationsRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
     '/_protected/coaching': {
       id: '/_protected/coaching'
       path: '/coaching'
@@ -986,6 +1017,13 @@ declare module '@tanstack/react-router' {
       path: '/submit'
       fullPath: '/record/submit'
       preLoaderRoute: typeof ProtectedRecordSubmitRouteImport
+      parentRoute: typeof ProtectedRecordRoute
+    }
+    '/_protected/record/session': {
+      id: '/_protected/record/session'
+      path: '/session'
+      fullPath: '/record/session'
+      preLoaderRoute: typeof ProtectedRecordSessionRouteImport
       parentRoute: typeof ProtectedRecordRoute
     }
     '/_protected/record/plan': {
@@ -1150,6 +1188,7 @@ const ProtectedCalendarRouteWithChildren =
 
 interface ProtectedRecordRouteChildren {
   ProtectedRecordPlanRoute: typeof ProtectedRecordPlanRoute
+  ProtectedRecordSessionRoute: typeof ProtectedRecordSessionRoute
   ProtectedRecordSubmitRoute: typeof ProtectedRecordSubmitRoute
   ProtectedRecordIndexRoute: typeof ProtectedRecordIndexRoute
   ProtectedRecordRoutePreviewRouteIdRoute: typeof ProtectedRecordRoutePreviewRouteIdRoute
@@ -1158,6 +1197,7 @@ interface ProtectedRecordRouteChildren {
 
 const ProtectedRecordRouteChildren: ProtectedRecordRouteChildren = {
   ProtectedRecordPlanRoute: ProtectedRecordPlanRoute,
+  ProtectedRecordSessionRoute: ProtectedRecordSessionRoute,
   ProtectedRecordSubmitRoute: ProtectedRecordSubmitRoute,
   ProtectedRecordIndexRoute: ProtectedRecordIndexRoute,
   ProtectedRecordRoutePreviewRouteIdRoute:
@@ -1172,6 +1212,7 @@ const ProtectedRecordRouteWithChildren = ProtectedRecordRoute._addFileChildren(
 interface ProtectedRouteChildren {
   ProtectedCalendarRoute: typeof ProtectedCalendarRouteWithChildren
   ProtectedCoachingRoute: typeof ProtectedCoachingRoute
+  ProtectedIntegrationsRoute: typeof ProtectedIntegrationsRoute
   ProtectedMessagesRoute: typeof ProtectedMessagesRoute
   ProtectedNotificationsRoute: typeof ProtectedNotificationsRoute
   ProtectedPlanRoute: typeof ProtectedPlanRoute
@@ -1197,6 +1238,7 @@ interface ProtectedRouteChildren {
 const ProtectedRouteChildren: ProtectedRouteChildren = {
   ProtectedCalendarRoute: ProtectedCalendarRouteWithChildren,
   ProtectedCoachingRoute: ProtectedCoachingRoute,
+  ProtectedIntegrationsRoute: ProtectedIntegrationsRoute,
   ProtectedMessagesRoute: ProtectedMessagesRoute,
   ProtectedNotificationsRoute: ProtectedNotificationsRoute,
   ProtectedPlanRoute: ProtectedPlanRoute,

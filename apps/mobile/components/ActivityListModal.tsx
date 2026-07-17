@@ -87,7 +87,9 @@ export function ActivityListModal({
   // Filter by intensity zone if specified
   const filteredActivities = intensityZone
     ? activities.filter((activity) => {
-        const if_value = getDerivedActivityMetric(activity, "intensity_factor") || 0;
+        const rawIf = getDerivedActivityMetric(activity, "intensity_factor");
+        if (rawIf == null) return false;
+        const if_value = rawIf;
         // Map intensity factor to zones
         switch (intensityZone) {
           case "recovery":

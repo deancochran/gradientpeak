@@ -14,13 +14,15 @@ import {
   Circle,
   FileUp,
   LocateFixed,
-  Map,
+  Map as MapIcon,
+  Play,
   Route as RouteIcon,
   ShieldAlert,
 } from "lucide-react";
 import { useMemo } from "react";
 
 import { api } from "../../../lib/api/client";
+import { useTimerOnlyRecording } from "../../../lib/recording/provider";
 import {
   getBrowserRecordingCapabilities,
   recordingActivityOptions,
@@ -36,6 +38,7 @@ export const Route = createFileRoute("/_protected/record/")({
 function RecordPage() {
   const navigate = Route.useNavigate();
   const launcher = Route.useSearch();
+  const recording = useTimerOnlyRecording();
   const capabilities = useMemo(() => getBrowserRecordingCapabilities(), []);
   const selectedEventQuery = api.events.getById.useQuery(
     { id: launcher.eventId ?? "" },
@@ -45,6 +48,13 @@ function RecordPage() {
     { id: launcher.routeId ?? "" },
     { enabled: Boolean(launcher.routeId) },
   );
+  const selectedActivityPlanId = selectedEventQuery.data?.activity_plan?.id;
+  const hasActiveTimerSession =
+    recording.state.reducer.lifecycle === "recording" ||
+    recording.state.reducer.lifecycle === "paused";
+  const canOpenTimerSession =
+    recording.hydrationStatus === "ready" &&
+    (hasActiveTimerSession || !launcher.eventId || Boolean(selectedActivityPlanId));
 
   const updateLauncher = (updates: Partial<typeof launcher>) => {
     void navigate({
@@ -55,6 +65,26 @@ function RecordPage() {
       },
       replace: true,
     });
+  };
+
+  const openTimerSession = () => {
+    if (!canOpenTimerSession) return;
+
+    if (!hasActiveTimerSession) {
+      const configured = recording.configure({
+        category: launcher.category,
+        eventId: launcher.eventId,
+        activityPlanId: selectedActivityPlanId,
+        routeId: launcher.routeId,
+      });
+      if (!configured) return;
+    }
+    void navigate({ to: "/record/session" });
+  };
+
+  const resumeRecoveredTimer = () => {
+    recording.resume();
+    void navigate({ to: "/record/session" });
   };
 
   return (
@@ -128,7 +158,7 @@ function RecordPage() {
                   selectedEventQuery.data?.activity_plan?.name ??
                   "Attach one of today's scheduled activities."
                 }
-                icon={Map}
+                icon={MapIcon}
                 actionLabel={launcher.eventId ? "Change plan" : "Choose plan"}
                 to="/record/plan"
                 search={launcher}
@@ -163,6 +193,37 @@ function RecordPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
+            {recording.hydrationStatus === "hydrating" ? (
+              <p className="rounded-lg border p-3 text-muted-foreground" role="status">
+                Checking this browser for a saved timer…
+              </p>
+            ) : null}
+            {recording.hydrationStatus === "error" && recording.error ? (
+              <p
+                className="rounded-lg border border-destructive/40 p-3 text-destructive"
+                role="alert"
+              >
+                {recording.error}
+              </p>
+            ) : null}
+            {recording.hasRecoveredDraft ? (
+              <div className="space-y-3 rounded-lg border border-primary/40 p-3">
+                <div>
+                  <p className="font-medium">Paused timer recovered</p>
+                  <p className="text-xs text-muted-foreground">
+                    Elapsed and moving time were restored. It will stay paused until you resume it.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Button className="flex-1" onClick={resumeRecoveredTimer}>
+                    <Play className="h-4 w-4" /> Resume
+                  </Button>
+                  <Button variant="outline" onClick={recording.discardRecoveredDraft}>
+                    Discard
+                  </Button>
+                </div>
+              </div>
+            ) : null}
             <StateRow label="Activity" value={launcher.category} />
             <StateRow
               label="GPS"
@@ -184,6 +245,21 @@ function RecordPage() {
                 </Link>
               </Button>
             ) : null}
+            <Separator />
+            <Button
+              className="w-full"
+              disabled={!canOpenTimerSession || recording.hasRecoveredDraft}
+              onClick={openTimerSession}
+            >
+              <Play className="h-4 w-4" />
+              {recording.hydrationStatus === "hydrating"
+                ? "Checking for saved timer…"
+                : hasActiveTimerSession
+                  ? "Return to timer session"
+                  : launcher.eventId && !selectedActivityPlanId
+                    ? "Loading selected plan…"
+                    : "Configure timer session"}
+            </Button>
           </CardContent>
         </Card>
       </section>

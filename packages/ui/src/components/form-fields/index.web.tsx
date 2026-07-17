@@ -146,6 +146,7 @@ function FormTextField<TFieldValues extends FieldValues, TName extends FieldPath
                     : (nextValue as FieldPathValue<TFieldValues, TName>),
                 );
               }}
+              required={required}
               testId={testId}
               value={formatValue(field.value)}
             />
@@ -316,9 +317,10 @@ function FormSwitchField<TFieldValues extends FieldValues, TName extends FieldPa
       rules={rules}
       render={({ field }) => (
         <FormItem className={cn("flex flex-row items-center justify-between gap-4", className)}>
-          <div className="space-y-0.5">
+          <div className="flex-1 space-y-0.5">
             <FormLabel>{label}</FormLabel>
             {description ? <FormDescription>{description}</FormDescription> : null}
+            <FormMessage />
           </div>
           <FormControl>
             <Switch
@@ -470,6 +472,7 @@ function FormTextareaField<
                 );
               }}
               placeholder={placeholder}
+              required={required}
               testId={testId}
               value={formatValue(field.value)}
             />

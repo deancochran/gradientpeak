@@ -1,28 +1,14 @@
 import { createFileRoute, Outlet, redirect } from "@tanstack/react-router";
-import { createMiddleware } from "@tanstack/react-start";
 
 import { ProtectedHeader } from "../components/protected/protected-header";
-import { getWebAuthSession } from "../lib/auth/client";
-
-const authSessionMiddleware = createMiddleware({ type: "request" }).server(
-  async ({ next, request }) => {
-    const { resolveAuthSessionFromHeaders } = await import("@repo/auth/server");
-    const session = await resolveAuthSessionFromHeaders(new Headers(request.headers));
-
-    return next({
-      context: {
-        session,
-      },
-    });
-  },
-);
+import { authSessionMiddleware, resolveRouteAuthSession } from "../lib/auth/route-guards";
 
 export const Route = createFileRoute("/_protected")({
   server: {
     middleware: [authSessionMiddleware],
   },
   beforeLoad: async ({ location, serverContext }) => {
-    const session = serverContext?.session ?? (await getWebAuthSession());
+    const session = await resolveRouteAuthSession(serverContext);
 
     if (!session?.user) {
       throw redirect({
@@ -30,6 +16,8 @@ export const Route = createFileRoute("/_protected")({
         search: { flash: undefined, flashType: undefined, redirect: location.href },
       });
     }
+
+    return { session, user: session.user };
   },
   component: ProtectedLayout,
 });

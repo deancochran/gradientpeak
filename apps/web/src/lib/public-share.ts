@@ -5,9 +5,7 @@ import { z } from "zod";
 
 type ShareEntity = "activity" | "workout" | "training-plan";
 
-type ShareInput = {
-  id: string;
-};
+const shareInputSchema = z.object({ id: z.string().uuid() }).strict();
 
 const serializableObjectiveSchema = z.json();
 type SerializableObjective = z.infer<typeof serializableObjectiveSchema>;
@@ -78,7 +76,7 @@ async function createPublicShareCaller() {
 }
 
 export const loadPublicActivity = createServerFn({ method: "GET" })
-  .validator((input: ShareInput) => input)
+  .validator(shareInputSchema)
   .handler(async ({ data }) => {
     const { caller, origin } = await createPublicShareCaller();
     const activity = await caller.publicShare.activity({ id: data.id });
@@ -91,7 +89,7 @@ export const loadPublicActivity = createServerFn({ method: "GET" })
   });
 
 export const loadPublicWorkout = createServerFn({ method: "GET" })
-  .validator((input: ShareInput) => input)
+  .validator(shareInputSchema)
   .handler(async ({ data }) => {
     const { caller, origin } = await createPublicShareCaller();
     const workout = await caller.publicShare.workout({ id: data.id });
@@ -104,7 +102,7 @@ export const loadPublicWorkout = createServerFn({ method: "GET" })
   });
 
 export const loadPublicTrainingPlan = createServerFn({ method: "GET" })
-  .validator((input: ShareInput) => input)
+  .validator(shareInputSchema)
   .handler(async ({ data }) => {
     const { caller, origin } = await createPublicShareCaller();
     const trainingPlan = await caller.publicShare.trainingPlan({ id: data.id });

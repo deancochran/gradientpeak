@@ -17,6 +17,7 @@ import {
   FormPaceField,
   FormPercentSliderField,
   FormSegmentedSelectField,
+  FormSwitchField,
   FormTextareaField,
   FormTextField,
   FormTimeInputField,
@@ -207,6 +208,31 @@ function DisabledPercentHarness() {
   );
 }
 
+function SwitchValidationHarness() {
+  const methods = useZodForm({
+    schema: z.object({ enabled: z.boolean() }),
+    defaultValues: { enabled: false },
+  });
+
+  return (
+    <Form {...methods}>
+      <FormSwitchField
+        control={methods.control}
+        description="Controls availability"
+        label="Enabled"
+        name="enabled"
+        testId="enabled-switch"
+      />
+      <Button
+        testId="set-switch-error"
+        onPress={() => methods.setError("enabled", { message: "Choose an availability" })}
+      >
+        <Text>Set switch error</Text>
+      </Button>
+    </Form>
+  );
+}
+
 function DraftSubmitHarness({ onSubmit }: { onSubmit: (values: { amount: number }) => void }) {
   const methods = useZodForm({
     schema: z.object({ amount: z.number() }),
@@ -282,6 +308,15 @@ describe("Form fields native", () => {
     expect(() => renderNative(<DetachedFormLabelHarness />)).toThrow(
       "useFormField should be used within <FormField>",
     );
+  });
+
+  it("renders switch validation errors and exposes invalid control state", () => {
+    const { getByTestId, getByText } = renderNative(<SwitchValidationHarness />);
+
+    fireEvent.press(getByTestId("set-switch-error"));
+
+    expect(getByText("Choose an availability")).toBeTruthy();
+    expect(getByTestId("enabled-switch").props.accessibilityInvalid).toBe(true);
   });
 
   it("forwards disabled and blur behavior for bounded number fields", () => {

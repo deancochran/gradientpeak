@@ -5764,6 +5764,11 @@
       "definition": "CREATE INDEX idx_activity_plans_profile_id ON public.activity_plans USING btree (profile_id) WHERE (profile_id IS NOT NULL)"
     },
     {
+      "name": "idx_activity_plans_structure_categories",
+      "table": "activity_plans",
+      "definition": "CREATE INDEX idx_activity_plans_structure_categories ON public.activity_plans USING gin (structure jsonb_path_ops)"
+    },
+    {
       "name": "idx_activity_plans_system_templates",
       "table": "activity_plans",
       "definition": "CREATE INDEX idx_activity_plans_system_templates ON public.activity_plans USING btree (is_system_template) WHERE (is_system_template = true)"

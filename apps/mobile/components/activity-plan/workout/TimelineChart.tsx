@@ -49,12 +49,13 @@ export function TimelineChart({
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ height }}>
       <View className="flex-row items-end gap-1 px-2 py-2">
-        {timeline.map(({ point, occurrence }) => {
+        {timeline.map(({ point, occurrence }, index) => {
           const isBoundary = point.role !== "activity";
           const selected = occurrence?.intervalId === selectedIntervalId;
           return (
             <Pressable
               key={point.occurrenceId}
+              testID={`timeline-occurrence-${index}`}
               onPress={() => occurrence?.intervalId && onIntervalPress?.(occurrence.intervalId)}
               disabled={!occurrence?.intervalId || !onIntervalPress}
               accessibilityLabel={`${point.role} segment ${point.globalOrdinal + 1}`}

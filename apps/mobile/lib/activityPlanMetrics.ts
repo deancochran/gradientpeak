@@ -29,11 +29,25 @@ type ActivityPlanMetricsLike = {
 export function getAuthoritativeActivityPlanMetrics(
   plan: ActivityPlanMetricsLike | null | undefined,
 ) {
+  const authoritative = plan?.authoritative_metrics;
+
   return {
-    estimated_duration: plan?.authoritative_metrics?.estimated_duration ?? plan?.estimated_duration,
-    estimated_tss: plan?.authoritative_metrics?.estimated_tss ?? plan?.estimated_tss,
-    intensity_factor: plan?.authoritative_metrics?.intensity_factor ?? plan?.intensity_factor,
-    estimated_distance: plan?.authoritative_metrics?.estimated_distance ?? plan?.estimated_distance,
+    estimated_duration:
+      authoritative?.estimated_duration !== undefined
+        ? authoritative.estimated_duration
+        : plan?.estimated_duration,
+    estimated_tss:
+      authoritative?.estimated_tss !== undefined
+        ? authoritative.estimated_tss
+        : plan?.estimated_tss,
+    intensity_factor:
+      authoritative?.intensity_factor !== undefined
+        ? authoritative.intensity_factor
+        : plan?.intensity_factor,
+    estimated_distance:
+      authoritative?.estimated_distance !== undefined
+        ? authoritative.estimated_distance
+        : plan?.estimated_distance,
   };
 }
 

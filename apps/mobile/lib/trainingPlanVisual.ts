@@ -233,7 +233,12 @@ function buildLegacyModel(
 
   return {
     labels: Array.from(new Set(segments.map((segment) => phaseLabel(segment.phase)))),
-    planType: readText(plan.plan_type) === "maintenance" ? "maintenance" : "legacy",
+    planType:
+      readText(plan.plan_type) === "maintenance"
+        ? "maintenance"
+        : structure && Array.isArray(structure.sessions) && structure.sessions.length > 0
+          ? "template"
+          : "legacy",
     segments,
     totalSegments,
   };

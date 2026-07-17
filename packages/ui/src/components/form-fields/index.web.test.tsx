@@ -73,13 +73,14 @@ function FormFieldsHarness() {
   return (
     <Form {...methods}>
       <form>
-        <FormTextField control={methods.control} label="Username" name="username" />
+        <FormTextField control={methods.control} label="Username" name="username" required />
         <FormTextareaField
           control={methods.control}
           formatValue={(value) => value ?? ""}
           label="Bio"
           name="bio"
           parseValue={(value) => value || null}
+          required
         />
         <FormDateInputField control={methods.control} label="Date of Birth" name="dob" />
         <FormDateTimeField control={methods.control} label="Recorded At" name="recorded_at" />
@@ -203,6 +204,30 @@ function AccessibilityHarness() {
   );
 }
 
+function SwitchValidationHarness() {
+  const methods = useZodForm({
+    schema: z.object({ enabled: z.boolean() }),
+    defaultValues: { enabled: false },
+  });
+
+  return (
+    <Form {...methods}>
+      <FormSwitchField
+        control={methods.control}
+        description="Controls availability"
+        label="Enabled"
+        name="enabled"
+      />
+      <button
+        type="button"
+        onClick={() => methods.setError("enabled", { message: "Choose an availability" })}
+      >
+        Set switch error
+      </button>
+    </Form>
+  );
+}
+
 function DraftSubmitHarness({ onSubmit }: { onSubmit: (values: { amount: number }) => void }) {
   const methods = useZodForm({
     schema: z.object({ amount: z.number() }),
@@ -282,6 +307,28 @@ describe("Form fields web", () => {
     expect(screen.getByTestId("values").textContent).toContain('"pace":"4:05"');
     expect(screen.getByTestId("values").textContent).toContain('"recovery_priority":0.75');
     expect(screen.getByTestId("values").textContent).toContain('"weight_kg":72.5');
+  });
+
+  it("forwards required semantics to text inputs while preserving required labels", () => {
+    renderWeb(<FormFieldsHarness />);
+
+    expect(screen.getByLabelText("Username")).toBeRequired();
+    expect(screen.getByLabelText("Bio")).toBeRequired();
+    expect(screen.getByText("Username *")).toBeVisible();
+    expect(screen.getByText("Bio *")).toBeVisible();
+  });
+
+  it("renders switch validation errors without disrupting its accessible control", () => {
+    renderWeb(<SwitchValidationHarness />);
+    const switchControl = screen.getByRole("switch", { name: "Enabled" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Set switch error" }));
+
+    expect(screen.getByText("Choose an availability")).toBeVisible();
+    expect(switchControl).toHaveAttribute("aria-invalid", "true");
+    expect(switchControl).toHaveAccessibleDescription(
+      "Controls availability Choose an availability",
+    );
   });
 
   it("keeps partial number drafts stable and commits a normalized value on blur", () => {

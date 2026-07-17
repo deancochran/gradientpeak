@@ -1,6 +1,20 @@
+import { Button } from "@repo/ui/components/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@repo/ui/components/card";
 import { Toaster } from "@repo/ui/components/sonner";
 import { TanStackDevtools } from "@tanstack/react-devtools";
-import { createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
+import {
+  createRootRoute,
+  type ErrorComponentProps,
+  HeadContent,
+  Link,
+  Scripts,
+} from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import type { ReactNode } from "react";
 
@@ -31,7 +45,9 @@ export const Route = createRootRoute({
     ],
   }),
   shellComponent: RootDocument,
-  notFoundComponent: NotFoundPage,
+  pendingComponent: RootPendingPage,
+  errorComponent: RootErrorPage,
+  notFoundComponent: RootNotFoundPage,
 });
 
 function RootDocument({ children }: { children: ReactNode }) {
@@ -46,17 +62,7 @@ function RootDocument({ children }: { children: ReactNode }) {
             {children}
           </div>
           <Toaster richColors position="top-right" />
-          <TanStackDevtools
-            config={{
-              position: "bottom-right",
-            }}
-            plugins={[
-              {
-                name: "TanStack Router",
-                render: <TanStackRouterDevtoolsPanel />,
-              },
-            ]}
-          />
+          <DevelopmentTools />
         </AppProviders>
         <Scripts />
       </body>
@@ -64,14 +70,93 @@ function RootDocument({ children }: { children: ReactNode }) {
   );
 }
 
-function NotFoundPage() {
+function DevelopmentTools() {
+  if (!import.meta.env.DEV) return null;
+
   return (
-    <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 text-center">
-      <p className="text-sm font-medium uppercase tracking-[0.2em] text-muted-foreground">404</p>
-      <h1 className="text-3xl font-semibold tracking-tight">Page not found</h1>
-      <p className="max-w-md text-sm text-muted-foreground sm:text-base">
-        The page you requested does not exist or may have moved.
-      </p>
+    <TanStackDevtools
+      config={{
+        position: "bottom-right",
+      }}
+      plugins={[
+        {
+          name: "TanStack Router",
+          render: <TanStackRouterDevtoolsPanel />,
+        },
+      ]}
+    />
+  );
+}
+
+export function RootPendingPage() {
+  return (
+    <div
+      className="flex min-h-[60vh] items-center justify-center py-8"
+      role="status"
+      aria-live="polite"
+    >
+      <Card className="w-full max-w-lg overflow-hidden">
+        <CardHeader>
+          <CardTitle className="text-xl">Loading GradientPeak</CardTitle>
+          <CardDescription>Preparing your training workspace.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3" aria-hidden="true">
+          <div className="h-3 w-2/3 animate-pulse rounded-full bg-muted" />
+          <div className="h-3 w-full animate-pulse rounded-full bg-muted" />
+          <div className="h-3 w-4/5 animate-pulse rounded-full bg-muted" />
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+export function RootErrorPage({ reset }: ErrorComponentProps) {
+  return (
+    <div className="flex min-h-[60vh] items-center justify-center py-8">
+      <Card className="w-full max-w-lg">
+        <CardHeader>
+          <CardTitle className="text-2xl">We could not load this page</CardTitle>
+          <CardDescription>
+            Something unexpected interrupted the request. Your account and training data are safe.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 sm:flex-row">
+          <Button type="button" onClick={reset}>
+            Try again
+          </Button>
+          <Button asChild variant="outline">
+            <Link to="/">Return to dashboard</Link>
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+export function RootNotFoundPage() {
+  return (
+    <div className="flex min-h-[60vh] items-center justify-center py-8 text-center">
+      <Card className="w-full max-w-lg">
+        <CardHeader>
+          <p className="text-sm font-medium uppercase tracking-[0.2em] text-muted-foreground">
+            404
+          </p>
+          <CardTitle className="text-3xl tracking-tight">Page not found</CardTitle>
+          <CardDescription className="text-base">
+            The page you requested does not exist or may have moved.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col justify-center gap-3 sm:flex-row">
+          <Button asChild>
+            <Link to="/">Go to dashboard</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link to="/search" search={{ q: undefined }}>
+              Search GradientPeak
+            </Link>
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   );
 }

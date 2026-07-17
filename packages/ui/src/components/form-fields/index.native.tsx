@@ -327,10 +327,11 @@ function FormSwitchField<TFieldValues extends FieldValues, TName extends FieldPa
       rules={rules}
       render={({ field }) => (
         <FormItem className={cn("flex-row items-center justify-between gap-4 py-2", className)}>
-          <FormItem className="flex-1 gap-0.5">
+          <View className="flex-1 gap-0.5">
             <FormLabel>{label}</FormLabel>
             {description ? <FormDescription>{description}</FormDescription> : null}
-          </FormItem>
+            <FormMessage />
+          </View>
           <FormControl>
             <Switch
               accessibilityLabel={switchLabel ?? label}
