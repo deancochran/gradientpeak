@@ -1,44 +1,32 @@
 import {
   deriveActivityNameFromFileName,
   getSupportedActivityFileExtension,
-  type ManualActivityImportInput,
-  type ManualActivityImportOutput,
   manualActivityImportFormSchema,
 } from "@repo/core/activity-files";
-import type { CanonicalSport } from "@repo/core/schemas/sport";
 import { Button } from "@repo/ui/components/button";
-import {
-  Form,
-  FormFileField,
-  FormSegmentedSelectField,
-  FormTextareaField,
-  FormTextField,
-} from "@repo/ui/components/form";
+import { Form, FormFileField, FormTextareaField, FormTextField } from "@repo/ui/components/form";
 import { LoadingButton } from "@repo/ui/components/loading";
 import { useZodForm } from "@repo/ui/hooks";
 import { Upload } from "lucide-react";
 import { useEffect, useRef } from "react";
+import type { z } from "zod";
 
 export type ActivityImportPhase = "idle" | "signing" | "uploading" | "processing" | "success";
 
-export type BrowserActivityImportValues = ManualActivityImportOutput & {
+const browserActivityImportFormSchema = manualActivityImportFormSchema.omit({ sport: true });
+
+type BrowserActivityImportInput = z.input<typeof browserActivityImportFormSchema>;
+type BrowserActivityImportOutput = z.output<typeof browserActivityImportFormSchema>;
+
+export type BrowserActivityImportValues = BrowserActivityImportOutput & {
   file: File;
 };
 
 type ActivityImportFormProps = {
-  initialSport?: CanonicalSport;
-  onCancel: (sport: CanonicalSport) => void;
+  onCancel: () => void;
   onSubmit: (values: BrowserActivityImportValues) => Promise<unknown> | unknown;
   phase: ActivityImportPhase;
 };
-
-const sportOptions = [
-  { label: "Run", value: "run" },
-  { label: "Ride", value: "bike" },
-  { label: "Swim", value: "swim" },
-  { label: "Strength", value: "strength" },
-  { label: "Other", value: "other" },
-] as const satisfies readonly { label: string; value: CanonicalSport }[];
 
 const phaseLabels: Record<ActivityImportPhase, string> = {
   idle: "Import activity",
@@ -56,25 +44,18 @@ function getBrowserFile(value: unknown): File | null {
   return value;
 }
 
-export function ActivityImportForm({
-  initialSport = "bike",
-  onCancel,
-  onSubmit,
-  phase,
-}: ActivityImportFormProps) {
-  const form = useZodForm<ManualActivityImportInput, undefined, ManualActivityImportOutput>({
+export function ActivityImportForm({ onCancel, onSubmit, phase }: ActivityImportFormProps) {
+  const form = useZodForm<BrowserActivityImportInput, undefined, BrowserActivityImportOutput>({
     defaultValues: {
       files: [],
       name: "",
       notes: null,
-      sport: initialSport,
     },
-    schema: manualActivityImportFormSchema,
+    schema: browserActivityImportFormSchema,
   });
   const files = form.watch("files");
   const name = form.watch("name");
   const notes = form.watch("notes");
-  const sport = form.watch("sport");
   const previousFileSelection = useRef<unknown>(null);
   const autoDerivedName = useRef<string | null>(null);
   const disabled = phase !== "idle";
@@ -114,10 +95,10 @@ export function ActivityImportForm({
     if (autoDerivedName.current !== null && name !== autoDerivedName.current) {
       autoDerivedName.current = null;
     }
-    if (notes === null || typeof notes === "string" || sport) {
+    if (notes === null || typeof notes === "string") {
       form.clearErrors("root" as never);
     }
-  }, [form, name, notes, sport]);
+  }, [form, name, notes]);
 
   const submit = form.handleSubmit(async (values) => {
     const selected = values.files[0] as (typeof values.files)[number] & { file?: unknown };
@@ -164,14 +145,6 @@ export function ActivityImportForm({
           required
           testId="activity-import-name-input"
         />
-        <FormSegmentedSelectField
-          control={form.control}
-          disabled={disabled}
-          label="Activity type"
-          name="sport"
-          options={sportOptions.map((option) => ({ ...option }))}
-          testId="activity-import-type-select"
-        />
         <FormTextareaField
           className="min-h-28"
           control={form.control}
@@ -192,12 +165,7 @@ export function ActivityImportForm({
           </p>
         ) : null}
         <div className="flex flex-wrap justify-end gap-3">
-          <Button
-            disabled={disabled}
-            onClick={() => onCancel(sport)}
-            type="button"
-            variant="outline"
-          >
+          <Button disabled={disabled} onClick={onCancel} type="button" variant="outline">
             Cancel
           </Button>
           <LoadingButton

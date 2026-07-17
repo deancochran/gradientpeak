@@ -31,7 +31,7 @@ describe("ActivityImportForm", () => {
   it("validates canonical metadata and submits the actual browser File", async () => {
     const onSubmit = vi.fn();
     const file = activityFile("morning-ride.fit");
-    const { selectFile, submit } = renderForm({ initialSport: "run", onSubmit });
+    const { selectFile, submit } = renderForm({ onSubmit });
 
     selectFile(file);
     expect((screen.getByLabelText("Activity name") as HTMLInputElement).value).toBe("morning-ride");
@@ -43,10 +43,10 @@ describe("ActivityImportForm", () => {
           file,
           name: "morning-ride",
           notes: null,
-          sport: "run",
         }),
       );
     });
+    expect(screen.queryByLabelText("Activity type")).toBeNull();
   });
 
   it("rejects file-like metadata that is not an actual browser File", async () => {

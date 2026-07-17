@@ -67,7 +67,14 @@ function sourceFiles(directory) {
   if (!existsSync(directory)) return [];
   return readdirSync(directory).flatMap((name) => {
     const path = resolve(directory, name);
-    if (name === "node_modules" || name === "migrations" || name === "migrations-archive")
+    if (
+      name === "node_modules" ||
+      name === ".output" ||
+      name === "build" ||
+      name === "dist" ||
+      name === "migrations" ||
+      name === "migrations-archive"
+    )
       return [];
     return statSync(path).isDirectory()
       ? sourceFiles(path)
@@ -86,6 +93,23 @@ for (const path of sourceFiles(resolve(root, "packages"))) {
   const content = readFileSync(path, "utf8");
   for (const [pattern, description] of broadPatterns) {
     if (pattern.test(content)) violations.push(`${path.slice(root.length + 1)}: ${description}`);
+  }
+}
+
+const removedProcessActivityTypeCaller =
+  /(?:\b\w*processActivityFile\w*\.mutateAsync|\.processActivityFile)\s*\(\s*\{[\s\S]{0,2000}?\bactivityType\s*:/;
+const executableCallerRoots = [resolve(root, "apps"), resolve(root, "packages/api")];
+for (const callerRoot of executableCallerRoots) {
+  for (const path of sourceFiles(callerRoot)) {
+    const relativePath = path.slice(root.length + 1);
+    if (relativePath.includes("/__tests__/") || /\.test\.[cm]?[jt]sx?$/.test(relativePath)) {
+      continue;
+    }
+    if (removedProcessActivityTypeCaller.test(readFileSync(path, "utf8"))) {
+      violations.push(
+        `${relativePath}: removed processActivityFile activityType transport field in caller`,
+      );
+    }
   }
 }
 

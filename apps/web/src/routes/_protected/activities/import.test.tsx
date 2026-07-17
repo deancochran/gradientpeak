@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   activitiesInvalidate: vi.fn(),
   formProps: undefined as
     | {
-        onCancel: (sport: "run" | "bike" | "swim" | "strength" | "other") => void;
+        onCancel: () => void;
         onSubmit: (values: unknown) => Promise<unknown>;
         phase: string;
       }
@@ -17,8 +17,7 @@ const mocks = vi.hoisted(() => ({
   invalidateIngestion: vi.fn(),
   navigate: vi.fn(),
   process: vi.fn(),
-  search: { activityType: "bike", from: undefined } as {
-    activityType: "run" | "bike" | "swim" | "strength" | "other";
+  search: { from: undefined } as {
     category?: "run" | "bike" | "swim" | "strength" | "other";
     eventId?: string;
     from?: "record";
@@ -80,7 +79,7 @@ vi.mock("sonner", () => ({
 
 beforeEach(() => {
   mocks.formProps = undefined;
-  mocks.search = { activityType: "bike", from: undefined };
+  mocks.search = { from: undefined };
   mocks.signedUrl.mockResolvedValue({ filePath: "user/activity.fit", signedUrl: "https://upload" });
   mocks.upload.mockResolvedValue(undefined);
   mocks.process.mockResolvedValue({ activity: { id: "activity-1", name: "Morning ride" } });
@@ -104,7 +103,6 @@ describe("ActivityImportPage", () => {
         files: [{ file, name: file.name, size: file.size, type: file.type }],
         name: "Morning ride",
         notes: "Felt good",
-        sport: "bike",
       });
     });
 
@@ -113,7 +111,6 @@ describe("ActivityImportPage", () => {
     expect(mocks.upload).toHaveBeenCalledWith(file, "https://upload");
     expect(mocks.process).toHaveBeenCalledWith({
       activityFilePath: "user/activity.fit",
-      activityType: "bike",
       importProvenance: {
         import_file_type: "fit",
         import_original_file_name: "Morning.FIT",
@@ -148,7 +145,6 @@ describe("ActivityImportPage", () => {
       files: [{ file, name: file.name, size: file.size }],
       name: "Double",
       notes: null,
-      sport: "bike",
     };
 
     let firstSubmit!: Promise<unknown>;
@@ -179,7 +175,6 @@ describe("ActivityImportPage", () => {
       files: [{ file, name: file.name, size: file.size }],
       name: "Committed",
       notes: null,
-      sport: "bike",
     };
 
     await act(async () => {
@@ -206,7 +201,6 @@ describe("ActivityImportPage", () => {
       files: [{ file, name: file.name, size: file.size }],
       name: "Recovery ride",
       notes: null,
-      sport: "bike",
     };
 
     await act(async () => {
@@ -243,7 +237,6 @@ describe("ActivityImportPage", () => {
         files: [{ file, name: file.name, size: file.size }],
         name: "Retry",
         notes: null,
-        sport: "run",
       }),
     ).rejects.toThrow("Storage unavailable");
 
@@ -256,7 +249,6 @@ describe("ActivityImportPage", () => {
       files: [{ file, name: file.name, size: file.size }],
       name: "Retry",
       notes: null,
-      sport: "run",
     });
     expect(mocks.signedUrl).toHaveBeenCalledTimes(2);
     expect(mocks.process).toHaveBeenCalledTimes(1);
@@ -266,7 +258,6 @@ describe("ActivityImportPage", () => {
     const eventId = "11111111-1111-4111-8111-111111111111";
     const routeId = "22222222-2222-4222-8222-222222222222";
     mocks.search = {
-      activityType: "run",
       category: "run",
       eventId,
       from: "record",
@@ -274,7 +265,7 @@ describe("ActivityImportPage", () => {
       routeId,
     };
     const { unmount } = render(<ActivityImportPage />);
-    mocks.formProps?.onCancel("swim");
+    mocks.formProps?.onCancel();
     expect(mocks.navigate).toHaveBeenCalledWith({
       search: { category: "run", eventId, gps: "off", routeId },
       to: "/record",
@@ -282,35 +273,29 @@ describe("ActivityImportPage", () => {
 
     unmount();
     mocks.navigate.mockClear();
-    mocks.search = { activityType: "swim", from: undefined };
+    mocks.search = { from: undefined };
     render(<ActivityImportPage />);
-    mocks.formProps?.onCancel("swim");
+    mocks.formProps?.onCancel();
     expect(mocks.navigate).toHaveBeenCalledWith({ to: "/activities" });
   });
 });
 
 describe("activity import search and deduplication", () => {
-  it("normalizes activityType/category compatibility and record provenance", () => {
+  it("keeps validated recording provenance without legacy activity type compatibility", () => {
     expect(validateActivityImportSearch({ activityType: "swim", from: "record" })).toEqual({
-      activityType: "swim",
-      category: "swim",
+      category: "run",
+      eventId: undefined,
       from: "record",
-      gps: "off",
+      gps: "on",
+      routeId: undefined,
     });
-    expect(validateActivityImportSearch({ category: "run" })).toEqual({
-      activityType: "run",
-      from: undefined,
-    });
-    expect(validateActivityImportSearch({ activityType: "invalid" })).toEqual({
-      activityType: "bike",
-      from: undefined,
-    });
+    expect(validateActivityImportSearch({ category: "run" })).toEqual({ from: undefined });
+    expect(validateActivityImportSearch({ activityType: "invalid" })).toEqual({ from: undefined });
 
     const eventId = "11111111-1111-4111-8111-111111111111";
     const routeId = "22222222-2222-4222-8222-222222222222";
     expect(
       validateActivityImportSearch({
-        activityType: "bike",
         category: "bike",
         eventId,
         from: "record",
@@ -319,7 +304,6 @@ describe("activity import search and deduplication", () => {
         routeId,
       }),
     ).toEqual({
-      activityType: "bike",
       category: "bike",
       eventId,
       from: "record",

@@ -1,6 +1,5 @@
 import { invalidatePostActivityIngestionQueries } from "@repo/api/client";
 import { buildManualActivityImportProvenance } from "@repo/core/activity-files";
-import { canonicalSportSchema } from "@repo/core/schemas/sport";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { useQueryClient } from "@tanstack/react-query";
@@ -16,32 +15,16 @@ import { uploadFileToSignedUrl } from "../../../lib/activity-route-upload";
 import { api } from "../../../lib/api/client";
 import { type RecordingLauncherSearch, validateRecordingSearch } from "../../../lib/recording-web";
 
-export type ActivityImportSearch = Partial<RecordingLauncherSearch> & {
-  activityType?: "run" | "bike" | "swim" | "strength" | "other";
-  from?: "record";
-};
+export type ActivityImportSearch = Partial<RecordingLauncherSearch> & { from?: "record" };
 
 export function validateActivityImportSearch(
   search: Record<string, unknown>,
 ): ActivityImportSearch {
-  const activityType = canonicalSportSchema.safeParse(search.activityType).success
-    ? canonicalSportSchema.parse(search.activityType)
-    : canonicalSportSchema.safeParse(search.category).success
-      ? canonicalSportSchema.parse(search.category)
-      : "bike";
-
   const from = search.from === "record" ? "record" : undefined;
-  const recordingSearch =
-    from === "record"
-      ? validateRecordingSearch({
-          ...search,
-          category: search.category ?? activityType,
-        })
-      : undefined;
+  const recordingSearch = from === "record" ? validateRecordingSearch(search) : undefined;
 
   return {
     ...recordingSearch,
-    activityType,
     from,
   };
 }
@@ -102,7 +85,6 @@ export function ActivityImportPage() {
       setPhase("processing");
       const result = await processActivityFileMutation.mutateAsync({
         activityFilePath: signedUrlData.filePath,
-        activityType: values.sport,
         importProvenance: buildManualActivityImportProvenance(values.file.name),
         name: values.name,
         notes: values.notes ?? undefined,
@@ -144,7 +126,6 @@ export function ActivityImportPage() {
         </CardHeader>
         <CardContent>
           <ActivityImportForm
-            initialSport={search.activityType ?? "bike"}
             onCancel={() => {
               if (search.from === "record") {
                 void navigate({
