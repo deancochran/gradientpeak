@@ -162,6 +162,89 @@ describe("atomic profile update against PostgreSQL", () => {
     expect(Number(ftpHistory.find(isClearedProfileOverride)?.value)).toBe(0);
   });
 
+  it("strictly bounds zero effort tombstones despite nullable evidence metadata", async () => {
+    const profileId = await seedProfile(`effort-check-${randomUUID().slice(0, 8)}`);
+    const insertEffort = (input: {
+      value: number | string;
+      source: string | null;
+      method: string | null;
+      provenance: Record<string, unknown> | null;
+    }) =>
+      pool.query(
+        `insert into public.activity_efforts (
+          id, created_at, updated_at, profile_id, recorded_at, activity_category,
+          effort_type, duration_seconds, unit, value, source, method, provenance
+        ) values ($1, now(), now(), $2, now(), 'bike', 'power', 1200, 'watts',
+          $3::real, $4, $5, $6::jsonb)`,
+        [
+          randomUUID(),
+          profileId,
+          input.value,
+          input.source,
+          input.method,
+          input.provenance === null ? null : JSON.stringify(input.provenance),
+        ],
+      );
+
+    await expect(
+      insertEffort({
+        value: 0,
+        source: "manual",
+        method: "profile_update_override",
+        provenance: { override_state: "cleared" },
+      }),
+    ).resolves.toBeDefined();
+    await expect(
+      insertEffort({ value: 250, source: null, method: null, provenance: null }),
+    ).resolves.toBeDefined();
+
+    const invalidZeroCases = [
+      {
+        value: 0,
+        source: null,
+        method: "profile_update_override",
+        provenance: { override_state: "cleared" },
+      },
+      {
+        value: 0,
+        source: "manual",
+        method: null,
+        provenance: { override_state: "cleared" },
+      },
+      { value: 0, source: "manual", method: "profile_update_override", provenance: null },
+      { value: 0, source: "manual", method: "profile_update_override", provenance: {} },
+      {
+        value: 0,
+        source: "manual",
+        method: "profile_update_override",
+        provenance: { override_state: null },
+      },
+      {
+        value: 0,
+        source: "manual",
+        method: "profile_update_override",
+        provenance: { override_state: "active" },
+      },
+      {
+        value: 0,
+        source: "manual",
+        method: "manual_activity_effort_entry",
+        provenance: { override_state: "cleared" },
+      },
+    ] as const;
+    for (const invalid of invalidZeroCases) {
+      await expect(insertEffort(invalid)).rejects.toMatchObject({
+        code: "23514",
+        constraint: "activity_efforts_value_finite_positive_check",
+      });
+    }
+    for (const value of ["NaN", "Infinity", "-Infinity"] as const) {
+      await expect(
+        insertEffort({ value, source: null, method: null, provenance: null }),
+      ).rejects.toMatchObject({ code: "23514" });
+    }
+  });
+
   it("keeps append-only override history and agrees across profile and as-of activity analysis", async () => {
     const profileId = await seedProfile(`profile-${randomUUID().slice(0, 8)}`);
     const request = {

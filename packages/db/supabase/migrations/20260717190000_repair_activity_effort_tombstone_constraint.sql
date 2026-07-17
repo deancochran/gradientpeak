@@ -3,7 +3,7 @@
 alter table public.activity_efforts
   drop constraint if exists activity_efforts_value_finite_positive_check,
   add constraint activity_efforts_value_finite_positive_check
-    check (
+    check (coalesce(
       (value > 0 and value not in ('NaN'::real, 'Infinity'::real, '-Infinity'::real))
       or (
         value = 0
@@ -13,8 +13,9 @@ alter table public.activity_efforts
         and source = 'manual'
         and method = 'profile_update_override'
         and provenance ->> 'override_state' = 'cleared'
-      )
-    ) not valid;
+      ),
+      false
+    )) not valid;
 
 alter table public.activity_efforts
   validate constraint activity_efforts_value_finite_positive_check;

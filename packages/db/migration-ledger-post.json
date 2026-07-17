@@ -61,6 +61,10 @@
     {
       "version": "20260717190000",
       "name": "repair_activity_effort_tombstone_constraint"
+    },
+    {
+      "version": "20260717200000",
+      "name": "enforce_strict_activity_effort_tombstone_constraint"
     }
   ]
 }

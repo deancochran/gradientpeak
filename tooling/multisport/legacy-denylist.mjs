@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
+import { scanProductionProcessActivityTypeCallers } from "./legacy-denylist-lib.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 const violations = [];
@@ -96,21 +97,10 @@ for (const path of sourceFiles(resolve(root, "packages"))) {
   }
 }
 
-const removedProcessActivityTypeCaller =
-  /(?:\b\w*processActivityFile\w*\.mutateAsync|\.processActivityFile)\s*\(\s*\{[\s\S]{0,2000}?\bactivityType\s*:/;
-const executableCallerRoots = [resolve(root, "apps"), resolve(root, "packages/api")];
-for (const callerRoot of executableCallerRoots) {
-  for (const path of sourceFiles(callerRoot)) {
-    const relativePath = path.slice(root.length + 1);
-    if (relativePath.includes("/__tests__/") || /\.test\.[cm]?[jt]sx?$/.test(relativePath)) {
-      continue;
-    }
-    if (removedProcessActivityTypeCaller.test(readFileSync(path, "utf8"))) {
-      violations.push(
-        `${relativePath}: removed processActivityFile activityType transport field in caller`,
-      );
-    }
-  }
+for (const violation of scanProductionProcessActivityTypeCallers(root)) {
+  violations.push(
+    `${violation.path}:${violation.line}:${violation.column}: removed processActivityFile activityType transport field in caller`,
+  );
 }
 
 if (violations.length) {

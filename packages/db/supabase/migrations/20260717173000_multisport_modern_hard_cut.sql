@@ -666,7 +666,7 @@ alter table public.activity_efforts
   add constraint activity_efforts_activity_segment_check
     check ((activity_id is null and segment_id is null) or (activity_id is not null and segment_id is not null)),
   add constraint activity_efforts_value_finite_positive_check
-    check (
+    check (coalesce(
       (value > 0 and value not in ('NaN'::real, 'Infinity'::real, '-Infinity'::real))
       or (
         value = 0
@@ -676,8 +676,9 @@ alter table public.activity_efforts
         and source = 'manual'
         and method = 'profile_update_override'
         and provenance ->> 'override_state' = 'cleared'
-      )
-    ),
+      ),
+      false
+    )),
   add constraint activity_efforts_supported_combination_check
     check ((activity_category = 'bike' and effort_type = 'power') or (activity_category in ('run', 'swim') and effort_type = 'speed')),
   add constraint activity_efforts_unit_compatibility_check

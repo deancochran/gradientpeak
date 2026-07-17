@@ -1,5 +1,5 @@
--- Repair databases where the hard cut replaced the bounded zero-tombstone
--- exception with an unconditionally positive effort-value constraint.
+-- Make the bounded cleared-override exception strictly boolean so nullable
+-- evidence metadata can never satisfy the CHECK through PostgreSQL NULL semantics.
 alter table public.activity_efforts
   drop constraint if exists activity_efforts_value_finite_positive_check,
   add constraint activity_efforts_value_finite_positive_check
