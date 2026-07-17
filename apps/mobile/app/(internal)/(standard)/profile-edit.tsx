@@ -458,9 +458,22 @@ function ProfileEditScreen() {
 
                 <FormSwitchField
                   control={form.control}
-                  description="Allow anyone to view your profile and activities"
-                  label="Public Account"
+                  description="Allow anyone to view your profile. Activities use the default below unless changed."
+                  label="Open profile"
                   name="is_public"
+                />
+
+                <FormSegmentedSelectField
+                  control={form.control}
+                  description="New activities use this unless you choose a different visibility."
+                  label="Default activity visibility"
+                  name="default_content_visibility"
+                  options={[
+                    { label: "Private", value: "private" },
+                    { label: "Followers", value: "followers" },
+                    { label: "Public", value: "public" },
+                  ]}
+                  testId="profile-edit-default-content-visibility"
                 />
               </View>
             </Form>

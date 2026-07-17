@@ -1,3 +1,4 @@
+import { type ContentVisibility, legacyPrivateFlagToContentVisibility } from "@repo/core";
 import { activities } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
@@ -12,6 +13,7 @@ export type UpdateActivityForProfileInput = {
   name?: string;
   notes?: string | null;
   is_private?: boolean;
+  content_visibility?: ContentVisibility;
 };
 
 export async function updateActivityForProfile({
@@ -24,9 +26,18 @@ export async function updateActivityForProfile({
   profileId: string;
 }) {
   const { id, ...updates } = input;
+  const fields =
+    updates.content_visibility !== undefined
+      ? { ...updates, is_private: updates.content_visibility === "private" }
+      : updates.is_private !== undefined
+        ? {
+            ...updates,
+            content_visibility: legacyPrivateFlagToContentVisibility(updates.is_private),
+          }
+        : updates;
 
   const data = await db.transaction((tx) =>
-    updateCanonicalActivityFields(tx, { activityId: id, profileId, fields: updates }),
+    updateCanonicalActivityFields(tx, { activityId: id, profileId, fields }),
   );
 
   if (!data) {

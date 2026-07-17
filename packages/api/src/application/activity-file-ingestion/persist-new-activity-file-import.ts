@@ -10,6 +10,7 @@ export interface PersistNewActivityFileImportInput {
   notes: string | null;
   activityType: string;
   isPrivate: boolean;
+  contentVisibility?: ActivitySubmission["contentVisibility"];
   startedAt: Date;
   finishedAt: Date;
   durationSeconds: number;

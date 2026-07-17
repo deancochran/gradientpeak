@@ -17,6 +17,7 @@ import { groupsRouter } from "./groups";
 import { analyticsRouter, homeRouter, trendsRouter } from "./insights";
 import { activityPlansRouter, eventsRouter, goalsRouter, trainingPlansRouter } from "./planning";
 import { integrationsRouter, storageRouter } from "./platform";
+import { publicShareRouter } from "./public-share";
 import {
   coachingRouter,
   feedRouter,
@@ -51,6 +52,7 @@ export const appRouter = createTRPCRouter({
   feed: feedRouter,
   profileSettings: profileSettingsRouter,
   groups: groupsRouter,
+  publicShare: publicShareRouter,
 });
 
 export type AppRouter = typeof appRouter;

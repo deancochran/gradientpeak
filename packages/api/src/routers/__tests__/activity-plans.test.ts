@@ -318,6 +318,7 @@ describe("activityPlansRouter", () => {
       id: "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       profile_id: OTHER_USER_ID,
       template_visibility: "public",
+      content_visibility: "public",
     });
     const { caller } = createCaller({
       state: {
@@ -383,6 +384,7 @@ describe("activityPlansRouter", () => {
       id: "22222222-2222-4222-8222-222222222222",
       profile_id: OTHER_USER_ID,
       template_visibility: "public",
+      content_visibility: "public",
     });
     const { caller } = createCaller({
       state: {

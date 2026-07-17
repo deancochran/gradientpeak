@@ -173,7 +173,7 @@ export async function applyTrainingPlanTemplateUseCase(input: {
         id,
         name,
         profile_id as "ownerProfileId",
-        template_visibility = 'public' as "isPublic",
+        content_visibility = 'public' as "isPublic",
         is_system_template as "isSystem",
         route_id as "routeId"
       from activity_plans
@@ -184,7 +184,16 @@ export async function applyTrainingPlanTemplateUseCase(input: {
         and (
           profile_id = ${profileId}::uuid
           or is_system_template = true
-          or template_visibility = 'public'
+          or content_visibility = 'public'
+          or (
+            content_visibility = 'followers'
+            and exists (
+              select 1 from follows f
+              where f.follower_id = ${profileId}::uuid
+                and f.following_id = activity_plans.profile_id
+                and f.status = 'accepted'
+            )
+          )
           or exists (
             select 1
             from content_access_grants
@@ -363,7 +372,8 @@ export async function applyTrainingPlanTemplateUseCase(input: {
         const shouldGrantTrainingPlan = needsContentGrantForRow(
           {
             ownerProfileId: templatePlan.profile_id,
-            isPublic: templatePlan.template_visibility === "public",
+            isPublic:
+              (templatePlan.content_visibility ?? templatePlan.template_visibility) === "public",
             isSystem: templatePlan.is_system_template,
           },
           profileId,

@@ -1,4 +1,5 @@
 import {
+  type ContentVisibility,
   type CreationContextSummary,
   type CreationFeasibilitySafetySummary,
   type createFromCreationConfigInputSchema,
@@ -192,6 +193,7 @@ export async function createFromCreationConfigUseCase<
 >(input: {
   creationContextReader: TCreationContextReader;
   profileId: string;
+  defaultContentVisibility?: ContentVisibility;
   params: CreateFromCreationConfigInput;
   repository: TrainingPlanRepository;
   deps: {
@@ -317,6 +319,7 @@ export async function createFromCreationConfigUseCase<
     description: expandedPlan.description ?? null,
     structure: structureWithId,
     profileId: input.profileId,
+    contentVisibility: input.defaultContentVisibility ?? "private",
   });
 
   if (projectionChart.inferred_current_state) {

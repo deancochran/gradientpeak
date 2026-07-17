@@ -21,7 +21,9 @@ function TrainingPlansListScreen() {
   const navigateTo = useAppNavigate();
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [visibilityFilter, setVisibilityFilter] = useState<"private" | "public" | null>(null);
+  const [visibilityFilter, setVisibilityFilter] = useState<
+    "private" | "followers" | "public" | null
+  >(null);
   const [draftVisibilityFilter, setDraftVisibilityFilter] = useState<typeof visibilityFilter>(null);
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
 
@@ -130,6 +132,7 @@ function TrainingPlansListScreen() {
           <View className="flex-row flex-wrap gap-2">
             {[
               { id: "private", label: "Private" },
+              { id: "followers", label: "Followers" },
               { id: "public", label: "Public" },
             ].map((option) => (
               <FilterChip

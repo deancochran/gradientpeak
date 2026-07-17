@@ -143,7 +143,7 @@ import {
 
 const feasibilityStateSchema = z.enum(["feasible", "aggressive", "unsafe"]);
 const safetyStateSchema = z.enum(["safe", "caution", "exceeded"]);
-const trainingPlanTemplateVisibilitySchema = z.enum(["private", "public"]);
+const trainingPlanTemplateVisibilitySchema = z.enum(["private", "followers", "public"]);
 const trainingPlanUpdateMutationInputSchema = trainingPlanUpdateInputSchema
   .extend({
     id: z.string().uuid(),
@@ -215,7 +215,16 @@ async function getAccessibleTrainingPlan(input: {
       and (
         profile_id = ${input.profileId}::uuid
         or is_system_template = true
-        or template_visibility = 'public'
+        or content_visibility = 'public'
+        or (
+          content_visibility = 'followers'
+          and exists (
+            select 1 from follows f
+            where f.follower_id = ${input.profileId}::uuid
+              and f.following_id = training_plans.profile_id
+              and f.status = 'accepted'
+          )
+        )
         or exists (
           select 1
           from content_access_grants
@@ -231,6 +240,16 @@ async function getAccessibleTrainingPlan(input: {
   `);
 
   return getSqlRows<TrainingPlanRow>(result)[0] ?? null;
+}
+
+async function getProfileDefaultContentVisibility(db: DbClient, profileId: string) {
+  const [profile] = await db
+    .select({ defaultContentVisibility: schema.profiles.default_content_visibility })
+    .from(schema.profiles)
+    .where(eq(schema.profiles.id, profileId))
+    .limit(1);
+
+  return profile?.defaultContentVisibility ?? "private";
 }
 
 async function _getOwnedTrainingPlan(input: {
@@ -3498,7 +3517,7 @@ export async function getPlanTabProjectionService({
           ?.from("training_plans")
           .select("*")
           .eq("id", input.training_plan_id)
-          .or(`profile_id.eq.${profileId},is_system_template.eq.true,template_visibility.eq.public`)
+          .or(`profile_id.eq.${profileId},is_system_template.eq.true,content_visibility.eq.public`)
           .single()
           .then(({ data, error }: { data: any; error: any }) => (error ? null : data));
 
@@ -3965,7 +3984,7 @@ const trainingPlansProcedures = {
           includeOwnOnly: z.boolean().default(true),
           includeSystemTemplates: z.boolean().default(false),
           ownerScope: z.enum(["own", "system", "public", "all"]).optional(),
-          visibility: z.enum(["private", "public"]).optional(),
+          visibility: trainingPlanTemplateVisibilitySchema.optional(),
           search: z.string().trim().max(80).optional(),
           limit: z.number().int().min(1).max(50).default(25),
           cursor: indexCursorSchema.optional(),
@@ -4144,7 +4163,6 @@ const trainingPlansProcedures = {
         profileId: ctx.session.user.id,
         creationInput: input.creation_input,
       });
-
       const result = await previewCreationConfigUseCase({
         profileId: ctx.session.user.id,
         creationContextReader: db,
@@ -4184,6 +4202,10 @@ const trainingPlansProcedures = {
         profileId: ctx.session.user.id,
         creationInput: input.creation_input,
       });
+      const defaultContentVisibility = await getProfileDefaultContentVisibility(
+        db,
+        ctx.session.user.id,
+      );
 
       return (await createFromCreationConfigUseCase({
         profileId: ctx.session.user.id,
@@ -4193,6 +4215,7 @@ const trainingPlansProcedures = {
           creation_input: creationInputWithProfileDefaults,
         },
         repository: createTrainingPlanRepository(db),
+        defaultContentVisibility,
         deps: {
           enforceCreationConfigFeatureEnabled,
           enforceNoAutonomousPostCreateMutation,
@@ -4284,11 +4307,17 @@ const trainingPlansProcedures = {
         });
       }
 
+      const defaultContentVisibility = await getProfileDefaultContentVisibility(
+        db,
+        ctx.session.user.id,
+      );
+
       return repository.createTrainingPlan({
         name: expandedPlan.name,
         description: expandedPlan.description ?? null,
         structure: structureWithId,
         profileId: ctx.session.user.id,
+        contentVisibility: defaultContentVisibility,
       });
     }),
 

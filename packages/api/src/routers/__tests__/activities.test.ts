@@ -1292,6 +1292,7 @@ describe("activitiesRouter", () => {
         {
           profile_id: OTHER_ID,
           is_private: false,
+          content_visibility: "public",
         },
       ],
       joinedRows: [{ activity, activityPlan }],

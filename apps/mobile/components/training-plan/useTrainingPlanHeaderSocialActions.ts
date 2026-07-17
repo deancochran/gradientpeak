@@ -1,7 +1,31 @@
 import { invalidateTrainingPlanQueries } from "@repo/api/react";
-import { Alert } from "react-native";
+import type { ContentVisibility } from "@repo/core";
+import { Alert, Share } from "react-native";
 import { api } from "@/lib/api";
 import { ROUTES } from "@/lib/constants/routes";
+
+const VISIBILITY_LABELS: Record<ContentVisibility, string> = {
+  private: "Private",
+  followers: "Followers",
+  public: "Public",
+};
+
+function resolvePlanVisibility(
+  plan: {
+    content_visibility?: string | null;
+    template_visibility?: string | null;
+  } | null,
+): ContentVisibility {
+  const visibility = plan?.content_visibility ?? plan?.template_visibility;
+  return visibility === "public" || visibility === "followers" || visibility === "private"
+    ? visibility
+    : "private";
+}
+
+function getPublicShareUrl(path: string) {
+  const origin = (process.env.EXPO_PUBLIC_API_URL ?? "https://gradientpeak.app").replace(/\/$/, "");
+  return `${origin}${path}`;
+}
 
 function isValidUuid(value: string): boolean {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -21,10 +45,12 @@ export function useTrainingPlanHeaderSocialActions({
 }: UseTrainingPlanHeaderSocialActionsParams) {
   const React = require("react") as typeof import("react");
 
-  const [isPublic, setIsPublic] = React.useState(plan?.template_visibility === "public");
+  const [contentVisibility, setContentVisibility] = React.useState<ContentVisibility>(
+    resolvePlanVisibility(plan),
+  );
   React.useEffect(() => {
-    setIsPublic(plan?.template_visibility === "public");
-  }, [plan?.template_visibility]);
+    setContentVisibility(resolvePlanVisibility(plan));
+  }, [plan?.content_visibility, plan?.template_visibility]);
 
   const [isLiked, setIsLiked] = React.useState(plan?.has_liked ?? false);
   const [likesCount, setLikesCount] = React.useState(plan?.likes_count ?? 0);
@@ -51,7 +77,7 @@ export function useTrainingPlanHeaderSocialActions({
   const updateVisibilityMutation = api.trainingPlans.update.useMutation({
     onSuccess: async () => invalidateTrainingPlanQueries(utils),
     onError: (error) => {
-      setIsPublic(plan?.template_visibility === "public");
+      setContentVisibility(resolvePlanVisibility(plan));
       Alert.alert("Update Failed", error.message || "Failed to update visibility");
     },
   });
@@ -63,14 +89,49 @@ export function useTrainingPlanHeaderSocialActions({
     },
   });
 
-  const handleTogglePrivacy = () => {
+  const handleChangeVisibility = () => {
     if (!plan) return;
-    const newVisibility = !isPublic;
-    setIsPublic(newVisibility);
-    updateVisibilityMutation.mutate({
-      id: plan.id,
-      template_visibility: newVisibility ? "public" : "private",
-    });
+    Alert.alert(
+      "Change visibility",
+      `Current visibility is ${VISIBILITY_LABELS[contentVisibility]}.`,
+      [
+        {
+          text: "Private",
+          onPress: () => {
+            setContentVisibility("private");
+            updateVisibilityMutation.mutate({ id: plan.id, template_visibility: "private" });
+          },
+        },
+        {
+          text: "Followers",
+          onPress: () => {
+            setContentVisibility("followers");
+            updateVisibilityMutation.mutate({ id: plan.id, template_visibility: "followers" });
+          },
+        },
+        {
+          text: "Public",
+          onPress: () => {
+            setContentVisibility("public");
+            updateVisibilityMutation.mutate({ id: plan.id, template_visibility: "public" });
+          },
+        },
+        { text: "Cancel", style: "cancel" },
+      ],
+    );
+  };
+
+  const handleShare = () => {
+    if (!plan?.id) return;
+    if (contentVisibility !== "public") {
+      Alert.alert(
+        "Not public",
+        "Only public training plans have a share link. Change visibility to Public first.",
+      );
+      return;
+    }
+    const url = getPublicShareUrl(`/share/training-plans/${plan.id}`);
+    void Share.share({ message: url, url });
   };
 
   const handleToggleLike = () => {
@@ -98,11 +159,12 @@ export function useTrainingPlanHeaderSocialActions({
 
   return {
     duplicatePending: duplicatePlanMutation.isPending,
+    contentVisibility,
     handleDuplicate,
+    handleChangeVisibility,
+    handleShare,
     handleToggleLike,
-    handleTogglePrivacy,
     isLiked,
-    isPublic,
     likesCount,
     visibilityPending: updateVisibilityMutation.isPending,
   };

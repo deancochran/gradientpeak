@@ -1,4 +1,10 @@
-import { ianaTimezoneSchema, onboardingStep1Schema, type ProfilePatchInput } from "@repo/core";
+import {
+  type ContentVisibility,
+  contentVisibilitySchema,
+  ianaTimezoneSchema,
+  onboardingStep1Schema,
+  type ProfilePatchInput,
+} from "@repo/core";
 import {
   defaultPreferredUnitSystem,
   type PreferredUnitSystem,
@@ -11,6 +17,7 @@ export type ProfileEditFormDefaults = {
   username: string | null;
   bio: string | null;
   dob: string | null;
+  default_content_visibility: ContentVisibility;
   preferred_units: PreferredUnitSystem;
   language: string | null;
   is_public: boolean | null;
@@ -22,6 +29,7 @@ export const profileEditFormSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters").nullable(),
   bio: z.string().max(500, "Bio must be 500 characters or less").nullable(),
   dob: z.string().nullable(),
+  default_content_visibility: contentVisibilitySchema,
   preferred_units: z.enum(["metric", "imperial"]).nullable(),
   language: z.string().nullable(),
   is_public: z.boolean().nullable(),
@@ -39,6 +47,7 @@ export function toProfilePatchInput(
     username: values.username || null,
     bio: values.bio || null,
     dob: values.dob || null,
+    default_content_visibility: values.default_content_visibility,
     preferred_units: values.preferred_units || null,
     language: values.language || null,
     is_public: values.is_public ?? undefined,
@@ -51,6 +60,7 @@ export function getProfileEditFormDefaults(profile?: {
   username?: string | null;
   bio?: string | null;
   dob?: string | null;
+  default_content_visibility?: ContentVisibility | null;
   preferred_units?: unknown;
   language?: string | null;
   is_public?: boolean | null;
@@ -61,6 +71,7 @@ export function getProfileEditFormDefaults(profile?: {
     username: profile?.username || null,
     bio: profile?.bio || null,
     dob: profile?.dob || null,
+    default_content_visibility: profile?.default_content_visibility ?? "private",
     preferred_units: profile
       ? resolvePreferredUnitSystem(profile.preferred_units)
       : defaultPreferredUnitSystem,

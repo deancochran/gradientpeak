@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import {
+  type ContentVisibility,
   type SocialCommentEntityType,
   type SocialLikeEntityType,
   socialCommentEntityTypeSchema,
 } from "@repo/core";
-import { activities, events, likes } from "@repo/db";
+import { activities, events, follows, likes } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -47,10 +48,30 @@ export async function canAccessSocialContent(
 ) {
   if (entityType === "activity") {
     const activity = await db.query.activities.findFirst({
-      columns: { profile_id: true, is_private: true },
+      columns: { profile_id: true, content_visibility: true, is_private: true },
       where: eq(activities.id, entityId),
     });
-    return Boolean(activity && (activity.profile_id === viewerId || !activity.is_private));
+    if (!activity) return false;
+    if (activity.profile_id === viewerId) return true;
+
+    const visibility = (activity.content_visibility ??
+      (activity.is_private ? "private" : "followers")) as ContentVisibility;
+    if (visibility === "public") return true;
+    if (visibility !== "followers") return false;
+
+    const [acceptedFollow] = await db
+      .select({ followerId: follows.follower_id })
+      .from(follows)
+      .where(
+        and(
+          eq(follows.follower_id, viewerId),
+          eq(follows.following_id, activity.profile_id),
+          eq(follows.status, "accepted"),
+        ),
+      )
+      .limit(1);
+
+    return Boolean(acceptedFollow);
   }
   if (entityType === "training_plan" || entityType === "activity_plan") {
     return (

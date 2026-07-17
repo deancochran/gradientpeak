@@ -24,6 +24,7 @@ import { FileInput } from "@repo/ui/components/file-input";
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -317,12 +318,38 @@ function ProfileInformationCard({
             <FormSwitchField
               className="rounded-lg border p-4"
               control={form.control}
-              description="Make your profile and activities visible to everyone."
-              label="Public Account"
+              description="Make your profile visible to everyone. Activity visibility is controlled separately below."
+              label="Open profile"
               name="is_public"
-              switchLabel="Public account"
+              switchLabel="Open profile"
             />
             <input type="hidden" name="is_public" value={isPublic ? "true" : "false"} />
+            <FormField
+              control={form.control}
+              name="default_content_visibility"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Default activity visibility</FormLabel>
+                  <FormControl>
+                    <select
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      name={field.name}
+                      value={field.value ?? "private"}
+                      onBlur={field.onBlur}
+                      onChange={field.onChange}
+                    >
+                      <option value="private">Private</option>
+                      <option value="followers">Followers</option>
+                      <option value="public">Public</option>
+                    </select>
+                  </FormControl>
+                  <FormDescription>
+                    New activities use this unless you choose a different visibility.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             <LoadingButton
               type="submit"
               disabled={form.formState.isSubmitting || !form.formState.isDirty}

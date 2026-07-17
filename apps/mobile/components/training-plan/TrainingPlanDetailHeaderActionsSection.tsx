@@ -1,6 +1,6 @@
 import { Text } from "@repo/ui/components/text";
 import { useMemo } from "react";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
 import {
   ResourceLikeButton,
   ResourceOwnerActionRow,
@@ -15,6 +15,8 @@ import { TrainingPlanSummaryHeader } from "./TrainingPlanSummaryHeader";
 
 interface TrainingPlanDetailHeaderActionsSectionProps {
   handleToggleLike: () => void;
+  handleChangeVisibility?: () => void;
+  handleShare?: () => void;
   isCurrentScheduledPlan?: boolean;
   isLiked: boolean;
   likesCount: number;
@@ -31,6 +33,8 @@ interface TrainingPlanDetailHeaderActionsSectionProps {
 
 export function TrainingPlanDetailHeaderActionsSection({
   handleToggleLike,
+  handleChangeVisibility,
+  handleShare,
   isCurrentScheduledPlan = false,
   isLiked,
   likesCount,
@@ -44,12 +48,28 @@ export function TrainingPlanDetailHeaderActionsSection({
     <View className="gap-4 rounded-3xl border border-border bg-card p-4">
       <ResourceOwnerActionRow
         actions={
-          <ResourceLikeButton
-            isLiked={isLiked}
-            likeCount={likesCount}
-            onPress={handleToggleLike}
-            testID="training-plan-like-button"
-          />
+          <>
+            {handleChangeVisibility ? (
+              <HeaderTextAction
+                label="Change visibility"
+                onPress={handleChangeVisibility}
+                testID="training-plan-change-visibility-button"
+              />
+            ) : null}
+            {handleShare ? (
+              <HeaderTextAction
+                label="Share"
+                onPress={handleShare}
+                testID="training-plan-share-button"
+              />
+            ) : null}
+            <ResourceLikeButton
+              isLiked={isLiked}
+              likeCount={likesCount}
+              onPress={handleToggleLike}
+              testID="training-plan-like-button"
+            />
+          </>
         }
         categoryLabel={isCurrentScheduledPlan ? "Current scheduled plan" : "Template"}
         fallbackLabel="GradientPeak"
@@ -117,6 +137,27 @@ export function TrainingPlanDetailHeaderActionsSection({
         </View>
       ) : null}
     </View>
+  );
+}
+
+function HeaderTextAction({
+  label,
+  onPress,
+  testID,
+}: {
+  label: string;
+  onPress: () => void;
+  testID: string;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      className="rounded-full border border-border px-2.5 py-1.5"
+      onPress={onPress}
+      testID={testID}
+    >
+      <Text className="text-xs font-semibold text-foreground">{label}</Text>
+    </Pressable>
   );
 }
 

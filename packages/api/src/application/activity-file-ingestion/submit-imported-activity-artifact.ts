@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
-import type { StandardActivity } from "@repo/core";
+import type { ContentVisibility, StandardActivity } from "@repo/core";
+import { profiles } from "@repo/db";
+import { eq } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 import type { ImportedActivityCreateInput } from "../../lib/provider-sync/imported-activity";
 import { submitActivity } from "../activities/submit-activity";
@@ -9,6 +11,23 @@ type DbClient = ReturnType<typeof getRequiredDb>;
 
 function valueOrNull(value: number | null | undefined): number | null {
   return value ?? null;
+}
+
+async function getProfileDefaultContentVisibility(
+  db: DbClient,
+  profileId: string,
+): Promise<ContentVisibility> {
+  if (!("select" in db) || typeof db.select !== "function") {
+    return "private";
+  }
+
+  const [profile] = await db
+    .select({ defaultContentVisibility: profiles.default_content_visibility })
+    .from(profiles)
+    .where(eq(profiles.id, profileId))
+    .limit(1);
+
+  return profile?.defaultContentVisibility ?? "private";
 }
 
 /** Persist an imported canonical artifact and every projection derived from it. */
@@ -27,6 +46,9 @@ export async function submitImportedActivityArtifact(
     parsedData: input.parsedActivity,
   });
   const summary = analysis.summaryValues;
+  const contentVisibility =
+    input.activity.contentVisibility ??
+    (await getProfileDefaultContentVisibility(db, input.activity.profileId));
 
   return submitActivity(db, {
     requestedActivityId: activityId,
@@ -36,6 +58,7 @@ export async function submitImportedActivityArtifact(
     notes: null,
     activityType: input.activity.type,
     isPrivate: input.activity.isPrivate,
+    contentVisibility,
     startedAt: analysis.startedAt,
     finishedAt: analysis.activityCompletedAt,
     durationSeconds: summary.duration_seconds ?? input.activity.durationSeconds,

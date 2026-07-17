@@ -1,4 +1,5 @@
-import type { ProfilePatchInput } from "@repo/core";
+import type { ContentVisibility, ProfilePatchInput } from "@repo/core";
+import { contentVisibilitySchema } from "@repo/core";
 import {
   defaultPreferredUnitSystem,
   preferredUnitSystemSchema,
@@ -8,6 +9,7 @@ import { z } from "zod";
 
 export const settingsProfileFormSchema = z.object({
   bio: z.string().trim().max(500, "Bio must be 500 characters or fewer").optional(),
+  default_content_visibility: contentVisibilitySchema.optional(),
   is_public: z
     .union([z.boolean(), z.enum(["true", "false"]).transform((value) => value === "true")])
     .optional(),
@@ -31,6 +33,7 @@ export type SettingsProfileFormValues = z.infer<typeof settingsProfileFormSchema
 export function toProfilePatchInput(values: SettingsProfileFormValues): ProfilePatchInput {
   return {
     bio: values.bio?.trim() ? values.bio.trim() : null,
+    default_content_visibility: values.default_content_visibility,
     is_public: values.is_public,
     language: values.language?.trim() ? values.language.trim() : null,
     preferred_units: values.preferred_units,
@@ -40,6 +43,7 @@ export function toProfilePatchInput(values: SettingsProfileFormValues): ProfileP
 
 export function getSettingsProfileFormDefaults(profile?: {
   bio?: string | null;
+  default_content_visibility?: ContentVisibility | null;
   is_public?: boolean | null;
   language?: string | null;
   preferred_units?: unknown;
@@ -47,6 +51,7 @@ export function getSettingsProfileFormDefaults(profile?: {
 }): SettingsProfileFormValues {
   return {
     bio: profile?.bio ?? "",
+    default_content_visibility: profile?.default_content_visibility ?? "private",
     is_public: profile?.is_public ?? false,
     language: profile?.language ?? "",
     preferred_units: profile

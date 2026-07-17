@@ -1,4 +1,4 @@
-import type { RecordingActivityCategory } from "@repo/core";
+import type { ContentVisibility, RecordingActivityCategory } from "@repo/core";
 
 export type ActivitySubmissionQueueJobStatus =
   | "draft"
@@ -21,6 +21,7 @@ export type ActivitySubmissionQueueDraft = {
   distanceMeters: number;
   calories?: number | null;
   notes?: string | null;
+  content_visibility?: ContentVisibility;
   is_private?: boolean;
   activityPlanId?: string | null;
 };

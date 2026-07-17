@@ -262,7 +262,16 @@ async function getAccessibleTrainingPlan(
       and (
         profile_id = ${input.profileId}
         or is_system_template = true
-        or template_visibility = 'public'
+        or content_visibility = 'public'
+        or (
+          content_visibility = 'followers'
+          and exists (
+            select 1 from follows f
+            where f.follower_id = ${input.profileId}
+              and f.following_id = training_plans.profile_id
+              and f.status = 'accepted'
+          )
+        )
       )
     limit 1
   `);

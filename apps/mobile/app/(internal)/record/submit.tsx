@@ -1,4 +1,8 @@
-import { type ActivitySubmissionFormData, activitySubmissionFormSchema } from "@repo/core";
+import {
+  type ActivitySubmissionFormData,
+  activitySubmissionFormSchema,
+  type ContentVisibility,
+} from "@repo/core";
 import { Button } from "@repo/ui/components/button";
 import {
   Form,
@@ -33,7 +37,7 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
     defaultValues: {
       name: submission.activity?.name || "",
       notes: submission.activity?.notes ?? null,
-      is_private: false,
+      content_visibility: undefined,
     } as ActivitySubmissionFormData,
   });
 
@@ -45,7 +49,7 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
     form.reset({
       name: submission.activity.name || "",
       notes: submission.activity.notes ?? null,
-      is_private: false,
+      content_visibility: submission.activity.content_visibility,
     });
   }, [form, submission.activity]);
 
@@ -56,12 +60,12 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
       submission.update({
         name: data.name,
         notes: data.notes ?? null,
-        is_private: data.is_private,
+        content_visibility: data.content_visibility,
       });
       const success = await submission.submit({
         name: data.name,
         notes: data.notes ?? null,
-        is_private: data.is_private,
+        content_visibility: data.content_visibility,
       });
       if (!success) {
         return;
@@ -175,16 +179,20 @@ function SubmissionContent({ onRetryLoad }: { onRetryLoad: () => void }) {
 
               <FormSegmentedSelectField
                 control={form.control}
-                description="Choose whether this activity is only visible to you or visible on your profile."
+                description="Use Default to inherit your profile setting, or choose an explicit visibility."
                 disabled={submission.isSubmitting}
-                formatValue={(value) => (value ? "private" : "public")}
+                formatValue={(value) => value ?? "default"}
                 label="Visibility"
-                name="is_private"
+                name="content_visibility"
                 options={[
-                  { label: "Visible on profile", value: "public" },
-                  { label: "Private activity", value: "private" },
+                  { label: "Default", value: "default" },
+                  { label: "Private", value: "private" },
+                  { label: "Followers", value: "followers" },
+                  { label: "Public", value: "public" },
                 ]}
-                parseValue={(value: string) => value === "private"}
+                parseValue={(value: string) =>
+                  value === "default" ? undefined : (value as ContentVisibility)
+                }
                 testId="activity-visibility-select"
               />
 
