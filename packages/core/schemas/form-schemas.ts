@@ -11,6 +11,7 @@
 
 import { z } from "zod";
 import { activityPlanStructureSchemaV3 } from "../activity-plan";
+import { contentVisibilitySchema } from "./content_visibility";
 import {
   completionTimeHmsSchema,
   dateStringSchema,
@@ -131,6 +132,7 @@ export {
 // ./forms/primitives. They are re-exported here to preserve the public module API.
 
 const activityInsertShapeSchema = z.object({
+  content_visibility: contentVisibilitySchema.optional(),
   is_private: z.boolean().optional(),
   name: z.string(),
   notes: z.string().nullable().optional(),
@@ -192,13 +194,13 @@ export const optionalActivityNotesSchema = z
  * Fields:
  * - name: required, 1-100 characters
  * - notes: optional, max 5000 characters
- * - is_private: optional boolean, defaults to false
+ * - content_visibility: optional explicit visibility; omitted inherits profile default
  */
 export const activitySubmissionFormSchema = activityInsertShapeSchema
   .pick({
     name: true,
     notes: true,
-    is_private: true,
+    content_visibility: true,
   })
   .extend({
     // Override name with stricter validation

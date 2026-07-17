@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { activityLapRecordListSchema } from "@repo/core";
+import { activityLapRecordListSchema, type ContentVisibility } from "@repo/core";
 import type { ActivityFileType } from "@repo/core/server/activity-files";
 import {
   activities,
@@ -32,6 +32,7 @@ export interface ActivitySubmission {
   activityType: string;
   activityPlanId?: string | null;
   isPrivate: boolean;
+  contentVisibility?: ContentVisibility;
   startedAt: Date;
   finishedAt: Date;
   durationSeconds: number;
@@ -108,6 +109,7 @@ export interface ExistingActivityEnrichmentSubmission {
   notes?: string | null;
   activityType?: string;
   isPrivate?: boolean;
+  contentVisibility?: ContentVisibility;
   startedAt?: Date;
   finishedAt?: Date;
   ingestion?: {
@@ -169,7 +171,10 @@ export async function updateCanonicalActivityFields(
     activityId: string;
     profileId: string;
     fields: Partial<
-      Pick<typeof activities.$inferInsert, "name" | "notes" | "is_private" | "normalized_power">
+      Pick<
+        typeof activities.$inferInsert,
+        "name" | "notes" | "is_private" | "normalized_power" | "content_visibility"
+      >
     >;
     now?: Date;
   },
@@ -208,6 +213,13 @@ export async function submitActivity(
           notes: input.notes === undefined ? existing.notes : input.notes,
           type: input.activityType ?? existing.type,
           is_private: input.isPrivate ?? existing.is_private,
+          content_visibility:
+            input.contentVisibility ??
+            (input.isPrivate === undefined
+              ? existing.content_visibility
+              : input.isPrivate
+                ? "private"
+                : "followers"),
           started_at: input.startedAt ?? existing.started_at,
           finished_at: input.finishedAt ?? existing.finished_at,
           updated_at: now,
@@ -269,6 +281,7 @@ export async function submitActivity(
       notes: input.notes,
       type: input.activityType,
       is_private: input.isPrivate,
+      content_visibility: input.contentVisibility ?? (input.isPrivate ? "private" : "followers"),
       started_at: input.startedAt,
       finished_at: input.finishedAt,
       duration_seconds: input.durationSeconds,

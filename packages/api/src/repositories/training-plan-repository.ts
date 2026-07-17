@@ -1,4 +1,4 @@
-import type { InferredStateSnapshot } from "@repo/core";
+import type { ContentVisibility, InferredStateSnapshot } from "@repo/core";
 import type { TrainingPlanInsert, TrainingPlanRow } from "@repo/db";
 
 export type TrainingPlanOwnerScope = "own" | "system" | "public" | "all";
@@ -30,6 +30,7 @@ export interface ActiveTrainingPlanLookup {
 export interface CreateTrainingPlanRecordInput
   extends Pick<TrainingPlanInsert, "description" | "name" | "structure"> {
   profileId: string;
+  contentVisibility?: ContentVisibility;
 }
 
 export interface UpdateTrainingPlanRecordInput
@@ -56,7 +57,7 @@ export interface TrainingPlanRepository {
   listTrainingPlans(input: {
     ownerScope: TrainingPlanOwnerScope;
     profileId: string;
-    visibility?: "private" | "public";
+    visibility?: "private" | "followers" | "public";
   }): Promise<TrainingPlanRow[]>;
   updateTrainingPlan(input: UpdateTrainingPlanRecordInput): Promise<TrainingPlanRow>;
   getPriorInferredStateSnapshot(profileId: string): Promise<InferredStateSnapshot | null>;

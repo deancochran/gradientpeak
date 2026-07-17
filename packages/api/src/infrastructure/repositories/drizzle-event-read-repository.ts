@@ -420,8 +420,18 @@ export function createEventReadRepository(
                 eq(schema.trainingPlans.id, trainingPlanId),
                 or(
                   eq(schema.trainingPlans.profile_id, profileId),
-                  eq(schema.trainingPlans.template_visibility, "public"),
+                  eq(schema.trainingPlans.content_visibility, "public"),
                   eq(schema.trainingPlans.is_system_template, true),
+                  and(
+                    eq(schema.trainingPlans.content_visibility, "followers"),
+                    sql`exists (
+                      select 1
+                      from ${schema.follows}
+                      where ${schema.follows.follower_id} = ${profileId}
+                        and ${schema.follows.following_id} = ${schema.trainingPlans.profile_id}
+                        and ${schema.follows.status} = 'accepted'
+                    )`,
+                  ),
                 ),
               ),
             )

@@ -66,6 +66,11 @@ export const profiles = pgTable(
     preferred_units: text("preferred_units", { enum: preferredUnitSystemDbValues }),
     onboarded: boolean("onboarded"),
     is_public: boolean("is_public").default(false).notNull(),
+    default_content_visibility: text("default_content_visibility", {
+      enum: ["private", "followers", "public"],
+    })
+      .notNull()
+      .default("private"),
   },
   (table) => [
     uniqueIndex("profiles_username_unique_idx").on(table.username),
@@ -78,6 +83,10 @@ export const profiles = pgTable(
     check(
       "profiles_preferred_units_check",
       sql`${table.preferred_units} is null or ${table.preferred_units} in ('metric', 'imperial')`,
+    ),
+    check(
+      "profiles_default_content_visibility_check",
+      sql`${table.default_content_visibility} in ('private', 'followers', 'public')`,
     ),
   ],
 );
@@ -284,7 +293,12 @@ export const activityPlans = pgTable(
     activity_category: activityCategoryEnum("activity_category").notNull(),
     structure: jsonb("structure").notNull(),
     version: text("version").notNull().default("1.0"),
-    template_visibility: text("template_visibility").notNull().default("private"),
+    template_visibility: text("template_visibility", { enum: ["private", "followers", "public"] })
+      .notNull()
+      .default("private"),
+    content_visibility: text("content_visibility", { enum: ["private", "followers", "public"] })
+      .notNull()
+      .default("private"),
     import_provider: text("import_provider"),
     import_external_id: text("import_external_id"),
     is_system_template: boolean("is_system_template").notNull().default(false),
@@ -292,7 +306,11 @@ export const activityPlans = pgTable(
   (table) => [
     check(
       "activity_plans_template_visibility_check",
-      sql`${table.template_visibility} = any(array['private'::text, 'public'::text])`,
+      sql`${table.template_visibility} = any(array['private'::text, 'followers'::text, 'public'::text])`,
+    ),
+    check(
+      "activity_plans_content_visibility_check",
+      sql`${table.content_visibility} in ('private', 'followers', 'public')`,
     ),
     check(
       "activity_plans_import_provider_non_empty_check",
@@ -304,7 +322,7 @@ export const activityPlans = pgTable(
     ),
     check(
       "activity_plans_system_templates_public_check",
-      sql`${table.is_system_template} = false or ${table.template_visibility} = 'public'`,
+      sql`${table.is_system_template} = false or (${table.template_visibility} = 'public' and ${table.content_visibility} = 'public')`,
     ),
     check(
       "activity_plans_system_template_check",
@@ -317,6 +335,7 @@ export const activityPlans = pgTable(
       .on(table.is_system_template)
       .where(sql`${table.is_system_template} = true`),
     index("idx_activity_plans_visibility").on(table.template_visibility),
+    index("idx_activity_plans_content_visibility").on(table.content_visibility),
     uniqueIndex("idx_activity_plans_import_identity")
       .on(table.profile_id, table.import_provider, table.import_external_id)
       .where(sql`${table.import_provider} is not null and ${table.import_external_id} is not null`),
@@ -496,7 +515,12 @@ export const trainingPlans = pgTable(
     name: text("name").notNull(),
     description: text("description"),
     structure: jsonb("structure").notNull(),
-    template_visibility: text("template_visibility").notNull().default("private"),
+    template_visibility: text("template_visibility", { enum: ["private", "followers", "public"] })
+      .notNull()
+      .default("private"),
+    content_visibility: text("content_visibility", { enum: ["private", "followers", "public"] })
+      .notNull()
+      .default("private"),
     is_system_template: boolean("is_system_template").notNull().default(false),
     sessions_per_week_target: integer("sessions_per_week_target"),
     duration_hours: numeric("duration_hours", { precision: 12, scale: 2, mode: "number" }),
@@ -504,11 +528,15 @@ export const trainingPlans = pgTable(
   (table) => [
     check(
       "training_plans_template_visibility_check",
-      sql`${table.template_visibility} = any(array['private'::text, 'public'::text])`,
+      sql`${table.template_visibility} = any(array['private'::text, 'followers'::text, 'public'::text])`,
+    ),
+    check(
+      "training_plans_content_visibility_check",
+      sql`${table.content_visibility} in ('private', 'followers', 'public')`,
     ),
     check(
       "training_plans_system_templates_public_check",
-      sql`${table.is_system_template} = false or ${table.template_visibility} = 'public'`,
+      sql`${table.is_system_template} = false or (${table.template_visibility} = 'public' and ${table.content_visibility} = 'public')`,
     ),
     check(
       "training_plans_template_profile_check",
@@ -522,6 +550,7 @@ export const trainingPlans = pgTable(
       .where(sql`${table.is_system_template} = true`),
     index("idx_training_plans_name").on(table.name),
     index("idx_training_plans_visibility").on(table.template_visibility),
+    index("idx_training_plans_content_visibility").on(table.content_visibility),
   ],
 );
 
@@ -734,6 +763,9 @@ export const activities = pgTable(
     finished_at: timestamp("finished_at", { withTimezone: true, mode: "date" }).notNull(),
     notes: text("notes"),
     is_private: boolean("is_private").notNull().default(true),
+    content_visibility: text("content_visibility", { enum: ["private", "followers", "public"] })
+      .notNull()
+      .default("private"),
     provider: integrationProviderEnum("provider"),
     external_id: text("external_id"),
     duration_seconds: integer("duration_seconds").notNull().default(0),
@@ -796,6 +828,11 @@ export const activities = pgTable(
     index("idx_activities_profile_started").on(table.profile_id, table.started_at),
     index("idx_activities_started").on(table.started_at),
     index("idx_activities_type").on(table.type),
+    index("idx_activities_content_visibility").on(table.content_visibility),
+    check(
+      "activities_content_visibility_check",
+      sql`${table.content_visibility} in ('private', 'followers', 'public')`,
+    ),
     check("activities_distance_meters_check", sql`${table.distance_meters} >= 0`),
     check("activities_duration_seconds_check", sql`${table.duration_seconds} >= 0`),
     check("activities_moving_seconds_check", sql`${table.moving_seconds} >= 0`),

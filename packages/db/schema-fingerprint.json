@@ -915,6 +915,16 @@
       "generated": ""
     },
     {
+      "name": "content_visibility",
+      "type": "text",
+      "table": "activities",
+      "default": "'private'::text",
+      "notNull": true,
+      "identity": "",
+      "position": 48,
+      "generated": ""
+    },
+    {
       "name": "id",
       "type": "uuid",
       "table": "activity_efforts",
@@ -1412,6 +1422,16 @@
       "notNull": true,
       "identity": "",
       "position": 16,
+      "generated": ""
+    },
+    {
+      "name": "content_visibility",
+      "type": "text",
+      "table": "activity_plans",
+      "default": "'private'::text",
+      "notNull": true,
+      "identity": "",
+      "position": 17,
       "generated": ""
     },
     {
@@ -3825,6 +3845,16 @@
       "generated": ""
     },
     {
+      "name": "default_content_visibility",
+      "type": "text",
+      "table": "profiles",
+      "default": "'private'::text",
+      "notNull": true,
+      "identity": "",
+      "position": 18,
+      "generated": ""
+    },
+    {
       "name": "id",
       "type": "uuid",
       "table": "provider_sync_jobs",
@@ -4635,6 +4665,16 @@
       "generated": ""
     },
     {
+      "name": "content_visibility",
+      "type": "text",
+      "table": "training_plans",
+      "default": "'private'::text",
+      "notNull": true,
+      "identity": "",
+      "position": 13,
+      "generated": ""
+    },
+    {
       "name": "id",
       "type": "uuid",
       "table": "users",
@@ -4797,6 +4837,11 @@
       "definition": "CREATE INDEX idx_activities_activity_plan ON public.activities USING btree (activity_plan_id) WHERE (activity_plan_id IS NOT NULL)"
     },
     {
+      "name": "idx_activities_content_visibility",
+      "table": "activities",
+      "definition": "CREATE INDEX idx_activities_content_visibility ON public.activities USING btree (content_visibility)"
+    },
+    {
       "name": "idx_activities_profile_started",
       "table": "activities",
       "definition": "CREATE INDEX idx_activities_profile_started ON public.activities USING btree (profile_id, started_at)"
@@ -4870,6 +4915,11 @@
       "name": "activity_plans_pkey",
       "table": "activity_plans",
       "definition": "CREATE UNIQUE INDEX activity_plans_pkey ON public.activity_plans USING btree (id)"
+    },
+    {
+      "name": "idx_activity_plans_content_visibility",
+      "table": "activity_plans",
+      "definition": "CREATE INDEX idx_activity_plans_content_visibility ON public.activity_plans USING btree (content_visibility)"
     },
     {
       "name": "idx_activity_plans_import_identity",
@@ -5527,6 +5577,11 @@
       "definition": "CREATE INDEX \"sessions_userId_idx\" ON public.sessions USING btree (user_id)"
     },
     {
+      "name": "idx_training_plans_content_visibility",
+      "table": "training_plans",
+      "definition": "CREATE INDEX idx_training_plans_content_visibility ON public.training_plans USING btree (content_visibility)"
+    },
+    {
       "name": "idx_training_plans_is_system_template",
       "table": "training_plans",
       "definition": "CREATE INDEX idx_training_plans_is_system_template ON public.training_plans USING btree (is_system_template) WHERE (is_system_template = true)"
@@ -5614,6 +5669,13 @@
       "table": "activities",
       "validated": true,
       "definition": "FOREIGN KEY (activity_plan_id) REFERENCES activity_plans(id) ON DELETE SET NULL"
+    },
+    {
+      "kind": "c",
+      "name": "activities_content_visibility_check",
+      "table": "activities",
+      "validated": true,
+      "definition": "CHECK (content_visibility = ANY (ARRAY['private'::text, 'followers'::text, 'public'::text]))"
     },
     {
       "kind": "c",
@@ -5848,6 +5910,13 @@
     },
     {
       "kind": "c",
+      "name": "activity_plans_content_visibility_check",
+      "table": "activity_plans",
+      "validated": true,
+      "definition": "CHECK (content_visibility = ANY (ARRAY['private'::text, 'followers'::text, 'public'::text]))"
+    },
+    {
+      "kind": "c",
       "name": "activity_plans_import_external_id_non_empty_check",
       "table": "activity_plans",
       "validated": true,
@@ -5886,14 +5955,14 @@
       "name": "activity_plans_system_templates_public_check",
       "table": "activity_plans",
       "validated": true,
-      "definition": "CHECK (is_system_template = false OR template_visibility = 'public'::text)"
+      "definition": "CHECK (is_system_template = false OR template_visibility = 'public'::text AND content_visibility = 'public'::text)"
     },
     {
       "kind": "c",
       "name": "activity_plans_template_visibility_check",
       "table": "activity_plans",
       "validated": true,
-      "definition": "CHECK (template_visibility = ANY (ARRAY['private'::text, 'public'::text]))"
+      "definition": "CHECK (template_visibility = ANY (ARRAY['private'::text, 'followers'::text, 'public'::text]))"
     },
     {
       "kind": "p",
@@ -6750,6 +6819,13 @@
       "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id)"
     },
     {
+      "kind": "c",
+      "name": "profiles_default_content_visibility_check",
+      "table": "profiles",
+      "validated": true,
+      "definition": "CHECK (default_content_visibility = ANY (ARRAY['private'::text, 'followers'::text, 'public'::text]))"
+    },
+    {
       "kind": "f",
       "name": "profiles_id_fkey",
       "table": "profiles",
@@ -6876,6 +6952,13 @@
       "definition": "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE"
     },
     {
+      "kind": "c",
+      "name": "training_plans_content_visibility_check",
+      "table": "training_plans",
+      "validated": true,
+      "definition": "CHECK (content_visibility = ANY (ARRAY['private'::text, 'followers'::text, 'public'::text]))"
+    },
+    {
       "kind": "p",
       "name": "training_plans_pkey",
       "table": "training_plans",
@@ -6894,7 +6977,7 @@
       "name": "training_plans_system_templates_public_check",
       "table": "training_plans",
       "validated": true,
-      "definition": "CHECK (is_system_template = false OR template_visibility = 'public'::text)"
+      "definition": "CHECK (is_system_template = false OR template_visibility = 'public'::text AND content_visibility = 'public'::text)"
     },
     {
       "kind": "c",
@@ -6908,7 +6991,7 @@
       "name": "training_plans_template_visibility_check",
       "table": "training_plans",
       "validated": true,
-      "definition": "CHECK (template_visibility = ANY (ARRAY['private'::text, 'public'::text]))"
+      "definition": "CHECK (template_visibility = ANY (ARRAY['private'::text, 'followers'::text, 'public'::text]))"
     },
     {
       "kind": "u",

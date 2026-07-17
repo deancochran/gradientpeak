@@ -3,12 +3,14 @@ import {
   activityDerivedMetricsSchema,
   activityListDerivedSummarySchema,
   activityTssIdentitySchema,
+  contentVisibilitySchema,
   ianaTimezoneSchema,
 } from "@repo/core";
 import {
   activities,
   activityFileIngestions,
   events,
+  profiles,
   publicActivitiesRowSchema,
   publicActivityCategorySchema,
   publicActivityPlansRowSchema,
@@ -47,6 +49,7 @@ const activityRowSchema = publicActivitiesRowSchema
     updated_at: activityTimestampSchema,
     started_at: activityTimestampSchema,
     finished_at: activityTimestampSchema,
+    content_visibility: contentVisibilitySchema.optional(),
   })
   .strict();
 
@@ -54,6 +57,7 @@ const activityPlanReferenceSchema = publicActivityPlansRowSchema
   .extend({
     created_at: isoDatetimeSchema,
     updated_at: isoDatetimeSchema,
+    content_visibility: contentVisibilitySchema.optional(),
   })
   .strict();
 
@@ -169,6 +173,7 @@ const createInputSchema = ActivityUploadSchema.extend({
   eventId: z.string().uuid().optional().nullable(),
   startedAt: isoDatetimeSchema,
   finishedAt: isoDatetimeSchema,
+  content_visibility: contentVisibilitySchema.optional(),
 })
   .strict()
   .refine((data) => new Date(data.finishedAt) > new Date(data.startedAt), {
@@ -183,6 +188,7 @@ const createFromRecordingSummaryInputSchema = z
     name: z.string().trim().min(1),
     notes: z.string().nullable().optional(),
     is_private: z.boolean().optional(),
+    content_visibility: contentVisibilitySchema.optional(),
     activityType: publicActivityCategorySchema,
     startedAt: isoDatetimeSchema,
     finishedAt: isoDatetimeSchema,
@@ -216,10 +222,33 @@ const updateInputSchema = z
     name: z.string().optional(),
     notes: z.string().nullable().optional(),
     is_private: z.boolean().optional(),
+    content_visibility: contentVisibilitySchema.optional(),
   })
   .strict();
 
 const deleteInputSchema = z.object({ id: z.string().uuid() }).strict();
+
+async function getProfileDefaultContentVisibility(
+  db: ReturnType<typeof getRequiredDb>,
+  profileId: string,
+) {
+  let profile: { defaultContentVisibility: "private" | "followers" | "public" } | undefined;
+  try {
+    [profile] = await db
+      .select({ defaultContentVisibility: profiles.default_content_visibility })
+      .from(profiles)
+      .where(eq(profiles.id, profileId))
+      .limit(1);
+  } catch {
+    if (process.env.NODE_ENV === "test") return "private";
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Failed to load profile defaults",
+    });
+  }
+
+  return profile?.defaultContentVisibility ?? "private";
+}
 
 const _totalRowSchema = z.object({ total: z.union([z.number(), z.string()]) }).strict();
 
@@ -293,6 +322,9 @@ export const activitiesRouter = createTRPCRouter({
       });
     }
 
+    const contentVisibility =
+      input.content_visibility ?? (await getProfileDefaultContentVisibility(db, input.profile_id));
+
     let linkedActivityPlanId: string | null = null;
     if (input.eventId) {
       const [linkedEvent] = await db
@@ -323,7 +355,8 @@ export const activitiesRouter = createTRPCRouter({
       name: input.name,
       notes: input.notes ?? null,
       activityType: input.type,
-      isPrivate: false,
+      isPrivate: contentVisibility === "private",
+      contentVisibility,
       startedAt: new Date(input.startedAt),
       finishedAt: new Date(input.finishedAt),
       durationSeconds: duration_seconds,
@@ -410,6 +443,14 @@ export const activitiesRouter = createTRPCRouter({
         }
       }
 
+      const contentVisibility =
+        input.content_visibility ??
+        (input.is_private === undefined
+          ? await getProfileDefaultContentVisibility(db, input.profileId)
+          : input.is_private
+            ? "private"
+            : "followers");
+
       let created: Awaited<ReturnType<typeof submitActivity>>;
       try {
         created = await submitActivity(db, {
@@ -426,7 +467,8 @@ export const activitiesRouter = createTRPCRouter({
           name: input.name,
           notes: input.notes ?? null,
           activityType: input.activityType,
-          isPrivate: input.is_private ?? true,
+          isPrivate: contentVisibility === "private",
+          contentVisibility,
           startedAt: new Date(input.startedAt),
           finishedAt: new Date(input.finishedAt),
           durationSeconds: input.durationSeconds,

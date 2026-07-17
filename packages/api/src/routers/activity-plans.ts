@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
+import type { ContentVisibility } from "@repo/core";
 import { activityPlanStructureSchemaV3, compileActivityPlanV3 } from "@repo/core/activity-plan";
 import { activityPlanCreateSchema, activityPlanUpdateSchema } from "@repo/core/schemas";
 import {
@@ -7,6 +8,7 @@ import {
   type ActivityPlanRow,
   activityPlans,
   events,
+  profiles,
   publicActivityCategorySchema,
   publicActivityPlansRowSchema,
 } from "@repo/db";
@@ -34,7 +36,7 @@ import { loadProfileIdentityMap, type profileIdentitySchema } from "../utils/pro
 
 // Input schemas for queries
 const uuidSchema = z.string().uuid();
-const templateVisibilitySchema = z.enum(["private", "public"]);
+const templateVisibilitySchema = z.enum(["private", "followers", "public"]);
 const activityCategoryFilterSchema = z.union([publicActivityCategorySchema, z.literal("all")]);
 const activityCategoryFiltersSchema = z.array(publicActivityCategorySchema).min(1).max(10);
 const activityPlanCursorSchema = z.string().superRefine((value, ctx) => {
@@ -65,7 +67,7 @@ const listActivityPlansSchema = z
     includeSystemTemplates: z.boolean().default(false),
     includeEstimation: z.boolean().default(true),
     ownerScope: z.enum(["own", "system", "public", "discoverable", "all"]).optional(),
-    visibility: z.enum(["private", "public"]).optional(),
+    visibility: templateVisibilitySchema.optional(),
     activityCategory: activityCategoryFilterSchema.optional(),
     activityCategories: activityCategoryFiltersSchema.optional(),
     search: z.string().optional(),
@@ -97,10 +99,11 @@ const activityPlanCountRowSchema = z
   .strict();
 
 const activityPlanRowSchema = publicActivityPlansRowSchema
-  .safeExtend({
+  .extend({
     created_at: z.date(),
     structure: activityPlanStructureSchemaV3,
     updated_at: z.date(),
+    content_visibility: templateVisibilitySchema.default("private"),
   })
   .strict();
 
@@ -156,6 +159,18 @@ const importedTemplateInput = z
   .strict();
 
 function serializeActivityPlanRow(row: ActivityPlanRow | unknown) {
+  if (
+    row &&
+    typeof row === "object" &&
+    !("content_visibility" in row) &&
+    "template_visibility" in row
+  ) {
+    return serializedActivityPlanSchema.parse({
+      ...row,
+      content_visibility: (row as { template_visibility?: unknown }).template_visibility,
+    });
+  }
+
   return serializedActivityPlanSchema.parse(row);
 }
 
@@ -196,7 +211,13 @@ function buildAccessiblePlanCondition(userId: string) {
   return or(
     eq(activityPlans.profile_id, userId),
     eq(activityPlans.is_system_template, true),
-    eq(activityPlans.template_visibility, "public"),
+    eq(activityPlans.content_visibility, "public"),
+    sql`(${activityPlans.content_visibility} = 'followers' and exists (
+      select 1 from follows f
+      where f.follower_id = ${userId}::uuid
+        and f.following_id = ${activityPlans.profile_id}
+        and f.status = 'accepted'
+    ))`,
     sql`exists (
       select 1
       from content_access_grants cag
@@ -212,7 +233,7 @@ function buildAccessiblePlanCondition(userId: string) {
 
 function buildDiscoverablePlanCondition() {
   return or(
-    eq(activityPlans.template_visibility, "public"),
+    eq(activityPlans.content_visibility, "public"),
     eq(activityPlans.is_system_template, true),
   );
 }
@@ -221,12 +242,36 @@ function buildOwnedPlanCondition(userId: string) {
   return eq(activityPlans.profile_id, userId);
 }
 
+function resolvePlanContentVisibility(plan: {
+  content_visibility?: string | null;
+  template_visibility?: string | null;
+}): ContentVisibility {
+  if (
+    plan.content_visibility === "public" ||
+    plan.content_visibility === "followers" ||
+    plan.content_visibility === "private"
+  ) {
+    return plan.content_visibility;
+  }
+
+  if (
+    plan.template_visibility === "public" ||
+    plan.template_visibility === "followers" ||
+    plan.template_visibility === "private"
+  ) {
+    return plan.template_visibility;
+  }
+
+  return "private";
+}
+
 function activityPlanAccessInput(plan: ActivityPlanRow) {
   return {
     resource: { type: "activity_plan" as const, id: plan.id },
     access: {
       ownerProfileId: plan.profile_id,
-      isPublic: plan.template_visibility === "public",
+      isPublic: resolvePlanContentVisibility(plan) === "public",
+      visibility: resolvePlanContentVisibility(plan),
       isSystem: plan.is_system_template,
     },
   };
@@ -247,11 +292,34 @@ async function requireActivityPlanReadForRow(input: {
   });
 }
 
+async function getProfileDefaultContentVisibility(
+  db: ReturnType<typeof getRequiredDb>,
+  profileId: string,
+) {
+  let profile: { defaultContentVisibility: "private" | "followers" | "public" } | undefined;
+  try {
+    [profile] = await db
+      .select({ defaultContentVisibility: profiles.default_content_visibility })
+      .from(profiles)
+      .where(eq(profiles.id, profileId))
+      .limit(1);
+  } catch {
+    if (process.env.NODE_ENV === "test") return "private";
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Failed to load profile defaults",
+    });
+  }
+
+  return profile?.defaultContentVisibility ?? "private";
+}
+
 function withIdentityFields<
   T extends {
     id: string;
     profile_id: string | null;
     template_visibility?: string | null;
+    content_visibility?: string | null;
   },
 >(plan: T) {
   return {
@@ -259,10 +327,7 @@ function withIdentityFields<
     content_type: "activity_plan" as const,
     content_id: plan.id,
     owner_profile_id: plan.profile_id,
-    visibility:
-      plan.template_visibility === "public" || plan.template_visibility === "private"
-        ? plan.template_visibility
-        : "private",
+    visibility: resolvePlanContentVisibility(plan),
   };
 }
 
@@ -279,10 +344,11 @@ function withOwnerIdentity<T extends { profile_id: string | null }>(
 function buildCreateValues(
   input: z.infer<typeof createActivityPlanInput>,
   profileId: string,
+  defaultContentVisibility: "private" | "followers" | "public",
   _metrics: Awaited<ReturnType<typeof computePlanMetrics>>,
 ): ActivityPlanInsert {
   const now = new Date();
-  const templateVisibility = input.template_visibility ?? "private";
+  const templateVisibility = input.template_visibility ?? defaultContentVisibility;
   const primaryCategory = deriveLegacyActivityCategoryForRow(input.structure);
 
   return {
@@ -297,6 +363,7 @@ function buildCreateValues(
     structure: input.structure,
     version: "1.0",
     template_visibility: templateVisibility,
+    content_visibility: templateVisibility,
     import_provider: null,
     import_external_id: null,
     is_system_template: false,
@@ -330,7 +397,7 @@ export const activityPlansRouter = createTRPCRouter({
     } else if (ownerScope === "system") {
       conditions.push(eq(activityPlans.is_system_template, true));
     } else if (ownerScope === "public") {
-      conditions.push(eq(activityPlans.template_visibility, "public"));
+      conditions.push(eq(activityPlans.content_visibility, "public"));
     } else if (ownerScope === "discoverable") {
       conditions.push(buildDiscoverablePlanCondition());
     } else if (ownerScope === "all") {
@@ -338,7 +405,7 @@ export const activityPlansRouter = createTRPCRouter({
     }
 
     if (input.visibility) {
-      conditions.push(eq(activityPlans.template_visibility, input.visibility));
+      conditions.push(eq(activityPlans.content_visibility, input.visibility));
     }
 
     const requestedCategories = new Set([
@@ -651,9 +718,14 @@ export const activityPlansRouter = createTRPCRouter({
       ctx.session.user.id,
     );
 
+    const defaultContentVisibility = await getProfileDefaultContentVisibility(
+      db,
+      ctx.session.user.id,
+    );
+
     const [createdRow] = await db
       .insert(activityPlans)
-      .values(buildCreateValues(input, ctx.session.user.id, metrics))
+      .values(buildCreateValues(input, ctx.session.user.id, defaultContentVisibility, metrics))
       .returning();
 
     if (!createdRow) {
@@ -734,6 +806,7 @@ export const activityPlansRouter = createTRPCRouter({
           : undefined,
         structure: updates.structure,
         template_visibility: updates.template_visibility,
+        content_visibility: updates.template_visibility,
         ...metricsUpdates,
       };
 

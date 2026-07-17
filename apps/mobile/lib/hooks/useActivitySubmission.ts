@@ -44,6 +44,7 @@ import { useCallback, useEffect, useReducer } from "react";
 import type { PreparedRecordedActivityDraft } from "@/lib/contracts/activity-submission";
 import { useAuth } from "@/lib/hooks/useAuth";
 import {
+  type ActivitySubmissionQueueDraft,
   type ActivitySubmissionQueueJob,
   type ActivitySubmissionQueueJobStatus,
   loadActivitySubmissionQueueJobByArtifactId,
@@ -85,7 +86,11 @@ type Action =
     }
   | {
       type: "UPDATE";
-      updates: { name?: string; notes?: string | null; is_private?: boolean };
+      updates: {
+        name?: string;
+        notes?: string | null;
+        content_visibility?: ActivitySubmissionQueueDraft["content_visibility"];
+      };
     }
   | { type: "QUEUE_STATUS"; status: ActivitySubmissionQueueJobStatus; activityId?: string | null }
   | { type: "SUCCESS"; activityId?: string | null }
@@ -187,7 +192,7 @@ function toQueueDraft(activity: PreparedRecordedActivityDraft) {
     distanceMeters: activity.distanceMeters,
     calories: activity.calories ?? null,
     notes: activity.notes ?? null,
-    is_private: activity.is_private,
+    content_visibility: activity.content_visibility,
     activityPlanId: activity.activityPlanId ?? null,
   };
 }
@@ -313,7 +318,11 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
   // ================================
 
   const update = useCallback(
-    (updates: { name?: string; notes?: string | null; is_private?: boolean }) => {
+    (updates: {
+      name?: string;
+      notes?: string | null;
+      content_visibility?: ActivitySubmissionQueueDraft["content_visibility"];
+    }) => {
       dispatch({ type: "UPDATE", updates });
     },
     [],
@@ -505,7 +514,11 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
   );
 
   const submit = useCallback(
-    async (updates?: { name?: string; notes?: string | null; is_private?: boolean }) => {
+    async (updates?: {
+      name?: string;
+      notes?: string | null;
+      content_visibility?: ActivitySubmissionQueueDraft["content_visibility"];
+    }) => {
       if (!state.activity || !state.artifact) {
         throw new Error("No data to submit");
       }

@@ -14,6 +14,7 @@ type ResourceRow = {
   id: string;
   ownerProfileId: string | null;
   isPublic: boolean;
+  visibility?: "private" | "followers" | "public" | null;
   isSystem: boolean;
   routeId?: string | null;
 };
@@ -21,6 +22,7 @@ type ResourceRow = {
 export type ContentAccessRow = {
   ownerProfileId?: string | null;
   isPublic?: boolean | null;
+  visibility?: "private" | "followers" | "public" | null;
   isSystem?: boolean | null;
 };
 
@@ -31,7 +33,12 @@ type ReadableRowInput<T> = {
 };
 
 export function canContentRowSatisfyRead(row: ContentAccessRow, actorProfileId: string) {
-  return row.ownerProfileId === actorProfileId || row.isPublic === true || row.isSystem === true;
+  return (
+    row.ownerProfileId === actorProfileId ||
+    row.visibility === "public" ||
+    row.isPublic === true ||
+    row.isSystem === true
+  );
 }
 
 function contentRowReadReason(row: ContentAccessRow, actorProfileId: string) {
@@ -43,7 +50,7 @@ function contentRowReadReason(row: ContentAccessRow, actorProfileId: string) {
     return "system" as const;
   }
 
-  if (row.isPublic === true) {
+  if (row.visibility === "public" || row.isPublic === true) {
     return "public" as const;
   }
 
@@ -84,7 +91,28 @@ function readGrantLevels(action: PermissionAction): AccessLevel[] {
   return [];
 }
 
-function canRowSatisfyAction(row: ResourceRow, actorProfileId: string, action: PermissionAction) {
+async function hasAcceptedFollower(db: DrizzleDbClient, followerId: string, followingId: string) {
+  const [follow] = await db
+    .select({ followerId: schema.follows.follower_id })
+    .from(schema.follows)
+    .where(
+      and(
+        eq(schema.follows.follower_id, followerId),
+        eq(schema.follows.following_id, followingId),
+        eq(schema.follows.status, "accepted"),
+      ),
+    )
+    .limit(1);
+
+  return Boolean(follow);
+}
+
+async function canRowSatisfyAction(
+  db: DrizzleDbClient,
+  row: ResourceRow,
+  actorProfileId: string,
+  action: PermissionAction,
+) {
   if (row.ownerProfileId === actorProfileId) {
     return { allowed: true, reason: "owner" as const };
   }
@@ -97,8 +125,16 @@ function canRowSatisfyAction(row: ResourceRow, actorProfileId: string, action: P
     return { allowed: true, reason: "system" as const };
   }
 
-  if (row.isPublic) {
+  if (row.visibility === "public" || row.isPublic) {
     return { allowed: true, reason: "public" as const };
+  }
+
+  if (
+    row.visibility === "followers" &&
+    row.ownerProfileId &&
+    (await hasAcceptedFollower(db, actorProfileId, row.ownerProfileId))
+  ) {
+    return { allowed: true, reason: "grant" as const };
   }
 
   return { allowed: false, reason: "denied" as const };
@@ -112,6 +148,7 @@ export function createContentAccessPermissions(db: DrizzleDbClient) {
           id: schema.activityPlans.id,
           ownerProfileId: schema.activityPlans.profile_id,
           templateVisibility: schema.activityPlans.template_visibility,
+          contentVisibility: schema.activityPlans.content_visibility,
           isSystem: schema.activityPlans.is_system_template,
         })
         .from(schema.activityPlans)
@@ -122,7 +159,8 @@ export function createContentAccessPermissions(db: DrizzleDbClient) {
         ? {
             id: row.id,
             ownerProfileId: row.ownerProfileId,
-            isPublic: row.templateVisibility === "public",
+            isPublic: row.contentVisibility === "public",
+            visibility: row.contentVisibility,
             isSystem: row.isSystem,
           }
         : null;
@@ -156,6 +194,7 @@ export function createContentAccessPermissions(db: DrizzleDbClient) {
           id: schema.trainingPlans.id,
           ownerProfileId: schema.trainingPlans.profile_id,
           templateVisibility: schema.trainingPlans.template_visibility,
+          contentVisibility: schema.trainingPlans.content_visibility,
           isSystem: schema.trainingPlans.is_system_template,
         })
         .from(schema.trainingPlans)
@@ -166,7 +205,8 @@ export function createContentAccessPermissions(db: DrizzleDbClient) {
         ? {
             id: row.id,
             ownerProfileId: row.ownerProfileId,
-            isPublic: row.templateVisibility === "public",
+            isPublic: row.contentVisibility === "public",
+            visibility: row.contentVisibility,
             isSystem: row.isSystem,
           }
         : null;
@@ -240,7 +280,7 @@ export function createContentAccessPermissions(db: DrizzleDbClient) {
       return { allowed: false, reason: "denied" };
     }
 
-    const rowDecision = canRowSatisfyAction(row, input.actorProfileId, input.action);
+    const rowDecision = await canRowSatisfyAction(db, row, input.actorProfileId, input.action);
     if (rowDecision.allowed) {
       return { allowed: true, accessLevel: input.action, reason: rowDecision.reason };
     }

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { activityPlanInputSchema } from "./activity_payload";
+import { contentVisibilitySchema } from "./content_visibility";
 import { profileGoalLegacySchema, profileGoalTargetSchema } from "./goals/profile_goals";
 import {
   minimalTrainingPlanCreateSchema,
@@ -12,6 +13,7 @@ export * from "../targets";
 export * from "./activity_payload";
 export * from "./activity_streams";
 export * from "./activity_target_capabilities";
+export * from "./content_visibility";
 // Export from form-schemas
 export * from "./form-schemas";
 // Export profile goals/settings (Phase 1 additive domain schemas)
@@ -80,7 +82,7 @@ export const trainingPlanCreateInputSchema = z.object({
   name: z.string().min(1, "Plan name is required").max(255, "Plan name is too long"),
   description: z.string().max(1000, "Description is too long").optional().nullable(),
   structure: trainingPlanCreateSchema, // Validates structure without ID requirement
-  template_visibility: z.enum(["private", "public"]).optional(),
+  template_visibility: contentVisibilitySchema.optional(),
   is_active: z.boolean().optional(),
 });
 

@@ -48,6 +48,7 @@ const feedActivityRowSchema = publicActivitiesRowSchema
     polyline: true,
     activity_file_path: true,
     is_private: true,
+    content_visibility: true,
   })
   .extend({
     started_at: timestampSchema,
@@ -64,6 +65,7 @@ const feedActivityRowSchema = publicActivitiesRowSchema
     normalized_graded_speed_mps: nullableNumericSchema.optional(),
     ingestion_status: z.string().nullable().optional(),
     ingestion_last_error_message: z.string().nullable().optional(),
+    content_visibility: z.enum(["private", "followers", "public"]).optional(),
   });
 const feedActivityDetailRowSchema = feedActivityRowSchema.extend({
   notes: publicActivitiesRowSchema.shape.notes,
@@ -108,6 +110,7 @@ export const feedActivityDtoSchema = z.object({
   likes_count: z.number(),
   comments_count: z.number().int().nonnegative(),
   is_private: z.boolean(),
+  content_visibility: z.enum(["private", "followers", "public"]).optional(),
   created_at: z.string(),
   profile: feedProfileSchema,
   has_liked: z.boolean(),
@@ -173,6 +176,9 @@ export function mapFeedActivity(
     likes_count: getLikeStats(options.likeStats, activity.id).likes_count,
     comments_count: options.commentCounts.get(activity.id) ?? 0,
     is_private: activity.is_private,
+    ...(activity.content_visibility === undefined
+      ? {}
+      : { content_visibility: activity.content_visibility }),
     created_at: toIsoString(activity.created_at),
     profile: {
       id: activity.profile_id,
@@ -208,7 +214,7 @@ export async function listFeedActivityRows(
       a.max_heart_rate, a.avg_power, a.max_power, a.avg_cadence, a.avg_speed_mps,
       a.max_speed_mps, a.normalized_power, a.normalized_speed_mps,
       a.normalized_graded_speed_mps, a.elevation_gain_meters, a.calories, a.polyline,
-      a.activity_file_path, a.is_private, a.created_at,
+      a.activity_file_path, a.is_private, a.content_visibility, a.created_at,
       p.username as profile_username, p.avatar_url as profile_avatar_url,
       afi.status as ingestion_status, afi.last_error_message as ingestion_last_error_message
     from activities a
@@ -218,8 +224,8 @@ export async function listFeedActivityRows(
       where activity_id = a.id and profile_id = a.profile_id
       order by updated_at desc limit 1
     ) afi on true
-    where a.is_private = false
-      and (a.profile_id = ${viewerId}::uuid or exists (
+    where a.content_visibility <> 'private'
+      and (a.profile_id = ${viewerId}::uuid or a.content_visibility = 'public' or exists (
         select 1 from follows f
         where f.follower_id = ${viewerId}::uuid
           and f.following_id = a.profile_id and f.status = 'accepted'
@@ -253,7 +259,7 @@ export async function loadFeedActivityDetail(db: DbClient, viewerId: string, act
       a.distance_meters, a.duration_seconds, a.moving_seconds, a.avg_heart_rate,
       a.max_heart_rate, a.avg_power, a.max_power, a.avg_cadence, a.max_cadence,
       a.normalized_power, a.elevation_gain_meters, a.elevation_loss_meters,
-      a.calories, a.polyline, a.activity_file_path, a.map_bounds, a.is_private,
+      a.calories, a.polyline, a.activity_file_path, a.map_bounds, a.is_private, a.content_visibility,
       a.created_at, p.username as profile_username, p.avatar_url as profile_avatar_url,
       exists (
         select 1 from follows f where f.follower_id = ${viewerId}::uuid
@@ -266,7 +272,12 @@ export async function loadFeedActivityDetail(db: DbClient, viewerId: string, act
   `);
   const activity = result.rows[0] ? feedActivityDetailRowSchema.parse(result.rows[0]) : null;
   if (!activity) throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
-  if (activity.is_private && activity.profile_id !== viewerId) {
+  const visibility = activity.content_visibility ?? (activity.is_private ? "private" : "followers");
+  if (
+    activity.profile_id !== viewerId &&
+    visibility !== "public" &&
+    (visibility !== "followers" || !activity.viewer_follows_owner)
+  ) {
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "You don't have permission to view this activity",

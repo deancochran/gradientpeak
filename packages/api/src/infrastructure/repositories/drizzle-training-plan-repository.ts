@@ -139,7 +139,16 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
         and (
           profile_id = ${input.profileId}::uuid
           or is_system_template = true
-          or template_visibility = 'public'
+          or content_visibility = 'public'
+          or (
+            content_visibility = 'followers'
+            and exists (
+              select 1 from follows f
+              where f.follower_id = ${input.profileId}::uuid
+                and f.following_id = training_plans.profile_id
+                and f.status = 'accepted'
+            )
+          )
           or exists (
             select 1
             from content_access_grants
@@ -189,7 +198,7 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
         profile_id
       from training_plans
       where is_system_template = true
-        and template_visibility = 'public'
+        and content_visibility = 'public'
         and (
           ${filters?.sport ?? null}::text is null
           or exists (
@@ -257,6 +266,8 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
           description: input.description,
           structure: { ...structure, id } as TrainingPlanInsert["structure"],
           profile_id: input.profileId,
+          template_visibility: input.contentVisibility,
+          content_visibility: input.contentVisibility,
         })
         .returning();
 
@@ -384,12 +395,21 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
       } else if (input.ownerScope === "system") {
         conditions.push(sql`is_system_template = true`);
       } else if (input.ownerScope === "public") {
-        conditions.push(sql`template_visibility = 'public'`);
+        conditions.push(sql`content_visibility = 'public'`);
       } else {
         conditions.push(sql`(
           profile_id = ${input.profileId}::uuid
           or is_system_template = true
-          or template_visibility = 'public'
+          or content_visibility = 'public'
+          or (
+            content_visibility = 'followers'
+            and exists (
+              select 1 from follows f
+              where f.follower_id = ${input.profileId}::uuid
+                and f.following_id = training_plans.profile_id
+                and f.status = 'accepted'
+            )
+          )
           or exists (
             select 1
             from content_access_grants
@@ -404,7 +424,7 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
       }
 
       if (input.visibility) {
-        conditions.push(sql`template_visibility = ${input.visibility}`);
+        conditions.push(sql`content_visibility = ${input.visibility}`);
       }
 
       const result = await db.execute(sql<TrainingPlanRow>`

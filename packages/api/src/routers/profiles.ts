@@ -124,6 +124,7 @@ export const profilesRouter = createTRPCRouter({
         profileId: ctx.session.user.id,
         avatar_url: input.avatar_url,
         cover_url: input.cover_url,
+        default_content_visibility: input.default_content_visibility,
         bio: input.bio,
         dob:
           input.dob === undefined

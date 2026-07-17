@@ -1,4 +1,8 @@
-import { canonicalSportSchema, recordingExecutionManifestSchema } from "@repo/core";
+import {
+  canonicalSportSchema,
+  contentVisibilitySchema,
+  recordingExecutionManifestSchema,
+} from "@repo/core";
 import { z } from "zod";
 
 export type ActivitySubmissionQueueJobStatus =
@@ -32,6 +36,7 @@ export const activitySubmissionQueueDraftSchema = z
     distanceMeters: z.number().nonnegative(),
     calories: z.number().nonnegative().nullable().optional(),
     notes: z.string().nullable().optional(),
+    content_visibility: contentVisibilitySchema.optional(),
     is_private: z.boolean().optional(),
     activityPlanId: z.string().uuid().nullable().optional(),
   })

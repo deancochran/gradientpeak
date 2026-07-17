@@ -36,9 +36,9 @@ export const Route = createFileRoute("/_protected")({
 
 function ProtectedLayout() {
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="gp-protected-shell flex min-h-screen flex-col">
       <ProtectedHeader />
-      <main className="flex-1 p-4 sm:p-6">
+      <main className="mx-auto w-full max-w-7xl flex-1 p-4 sm:p-6 lg:px-8">
         <Outlet />
       </main>
     </div>

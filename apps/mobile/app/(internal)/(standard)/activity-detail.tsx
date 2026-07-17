@@ -1,3 +1,4 @@
+import type { ContentVisibility } from "@repo/core";
 import { type ActivityLapRecord, parseActivityLapRecords } from "@repo/core/schemas";
 import {
   formatDisplayUnitValue,
@@ -18,6 +19,7 @@ import {
   InteractionManager,
   Pressable,
   ScrollView,
+  Share,
   View,
 } from "react-native";
 import { ActivityPlanComparison, ZoneDistributionCard } from "@/components/activity";
@@ -61,6 +63,31 @@ function formatDuration(seconds: number): string {
     return `${hours}:${minutes.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   }
   return `${minutes}:${secs.toString().padStart(2, "0")}`;
+}
+
+const VISIBILITY_LABELS: Record<ContentVisibility, string> = {
+  private: "Private",
+  followers: "Followers",
+  public: "Public",
+};
+
+function resolveContentVisibility(activity: {
+  content_visibility?: string | null;
+  is_private?: boolean;
+}) {
+  if (
+    activity.content_visibility === "private" ||
+    activity.content_visibility === "followers" ||
+    activity.content_visibility === "public"
+  ) {
+    return activity.content_visibility;
+  }
+  return activity.is_private ? "private" : "followers";
+}
+
+function getPublicShareUrl(path: string) {
+  const origin = (process.env.EXPO_PUBLIC_API_URL ?? "https://gradientpeak.app").replace(/\/$/, "");
+  return `${origin}${path}`;
 }
 
 function formatPace(metersPerSecond: number, preferredUnitSystem: PreferredUnitSystem): string {
@@ -432,11 +459,46 @@ function ActivityDetailScreen() {
     setShowDeleteConfirm(true);
   };
 
-  const handleToggleVisibility = () => {
+  const contentVisibility = activity ? resolveContentVisibility(activity) : "private";
+
+  const handleChangeVisibility = () => {
     if (!activity || !isOwner) return;
-    updatePrivacyMutation.mutate({
-      id: activity.id,
-      is_private: !activity.is_private,
+    Alert.alert(
+      "Change visibility",
+      `Current visibility is ${VISIBILITY_LABELS[contentVisibility]}.`,
+      [
+        {
+          text: "Private",
+          onPress: () =>
+            updatePrivacyMutation.mutate({ id: activity.id, content_visibility: "private" }),
+        },
+        {
+          text: "Followers",
+          onPress: () =>
+            updatePrivacyMutation.mutate({ id: activity.id, content_visibility: "followers" }),
+        },
+        {
+          text: "Public",
+          onPress: () =>
+            updatePrivacyMutation.mutate({ id: activity.id, content_visibility: "public" }),
+        },
+        { text: "Cancel", style: "cancel" },
+      ],
+    );
+  };
+
+  const handleShare = () => {
+    if (!activity) return;
+    if (contentVisibility !== "public") {
+      Alert.alert(
+        "Not public",
+        "Only public activities have a share link. Change visibility to Public first.",
+      );
+      return;
+    }
+    void Share.share({
+      message: getPublicShareUrl(`/share/activities/${activity.id}`),
+      url: getPublicShareUrl(`/share/activities/${activity.id}`),
     });
   };
 
@@ -488,9 +550,14 @@ function ActivityDetailScreen() {
         actions={[
           {
             disabled: updatePrivacyMutation.isPending,
-            label: activity.is_private ? "Make Public" : "Make Private",
-            onPress: handleToggleVisibility,
+            label: "Change visibility",
+            onPress: handleChangeVisibility,
             testID: "activity-detail-options-visibility",
+          },
+          {
+            label: "Share",
+            onPress: handleShare,
+            testID: "activity-detail-options-share",
           },
           {
             label: deleteMutation.isPending ? "Deleting..." : "Delete Activity",

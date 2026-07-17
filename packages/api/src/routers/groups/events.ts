@@ -165,13 +165,20 @@ function pageResult<T>(items: T[], limit: number, getCursor: (item: T) => string
 function canUseActivityPlanForGroupEvent(
   activityPlan: Pick<
     typeof activityPlans.$inferSelect,
-    "profile_id" | "template_visibility" | "is_system_template"
+    "profile_id" | "content_visibility" | "template_visibility" | "is_system_template"
   >,
   profileId: string,
 ) {
+  const visibility =
+    activityPlan.content_visibility === "public" ||
+    activityPlan.content_visibility === "followers" ||
+    activityPlan.content_visibility === "private"
+      ? activityPlan.content_visibility
+      : activityPlan.template_visibility;
+
   return (
     activityPlan.profile_id === profileId ||
-    activityPlan.template_visibility === "public" ||
+    visibility === "public" ||
     activityPlan.is_system_template
   );
 }
@@ -197,6 +204,7 @@ async function assertActivityPlansAvailableForGroupEvent(
     .select({
       id: activityPlans.id,
       profile_id: activityPlans.profile_id,
+      content_visibility: activityPlans.content_visibility,
       template_visibility: activityPlans.template_visibility,
       is_system_template: activityPlans.is_system_template,
     })

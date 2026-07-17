@@ -11,13 +11,14 @@ import {
   activityStreamAnalysisSchema,
   analyzeActivityStreams,
   canonicalSportSchema,
+  contentVisibilitySchema,
 } from "@repo/core";
 import {
   type ActivityFileType,
   inferActivityFileType,
   parseActivityFile,
 } from "@repo/core/server/activity-files";
-import { activities } from "@repo/db";
+import { activities, profiles } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
@@ -189,6 +190,7 @@ const processActivityFileInput = z
     notes: z.string().trim().optional(),
     activityType: z.string().trim().min(1, "Activity type is required"),
     is_private: z.boolean().optional(),
+    content_visibility: contentVisibilitySchema.optional(),
     importProvenance: manualHistoricalImportProvenanceSchema.optional(),
   })
   .strict();
@@ -202,6 +204,28 @@ const markUploadedAndProcessInput = z
     fileType: z.enum(["fit", "gpx", "tcx"]).optional(),
   })
   .strict();
+
+async function getProfileDefaultContentVisibility(
+  db: ReturnType<typeof getRequiredDb>,
+  profileId: string,
+) {
+  let profile: { defaultContentVisibility: "private" | "followers" | "public" } | undefined;
+  try {
+    [profile] = await db
+      .select({ defaultContentVisibility: profiles.default_content_visibility })
+      .from(profiles)
+      .where(eq(profiles.id, profileId))
+      .limit(1);
+  } catch {
+    if (process.env.NODE_ENV === "test") return "private";
+    throw new TRPCError({
+      code: "INTERNAL_SERVER_ERROR",
+      message: "Failed to load profile defaults",
+    });
+  }
+
+  return profile?.defaultContentVisibility ?? "private";
+}
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 
@@ -460,7 +484,15 @@ export const activityFilesRouter = createTRPCRouter({
   processActivityFile: protectedProcedure
     .input(processActivityFileInput)
     .mutation(async ({ ctx, input }) => {
-      const { activityFilePath, name, notes, activityType, is_private, importProvenance } = input;
+      const {
+        activityFilePath,
+        name,
+        notes,
+        activityType,
+        is_private,
+        content_visibility,
+        importProvenance,
+      } = input;
       const userId = ctx.session?.user?.id;
       const supabase = storageService;
       const db = getRequiredDb(ctx);
@@ -729,6 +761,14 @@ export const activityFilesRouter = createTRPCRouter({
           activity_file_path: activityFilePath,
         });
 
+        const contentVisibility =
+          content_visibility ??
+          (is_private === undefined
+            ? await getProfileDefaultContentVisibility(db, userId)
+            : is_private
+              ? "private"
+              : "followers");
+
         let createdActivity: Awaited<ReturnType<typeof persistNewActivityFileImport>>;
         try {
           createdActivity = await persistNewActivityFileImport(db, {
@@ -737,7 +777,8 @@ export const activityFilesRouter = createTRPCRouter({
             name,
             notes: notes || null,
             activityType,
-            isPrivate: is_private ?? true,
+            isPrivate: contentVisibility === "private",
+            contentVisibility,
             startedAt: startTime,
             finishedAt: endTime,
             durationSeconds: Math.round(duration),

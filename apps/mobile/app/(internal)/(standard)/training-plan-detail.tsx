@@ -944,6 +944,10 @@ export default function TrainingPlanOverview() {
           ) : null}
 
           <TrainingPlanDetailHeaderActionsSection
+            handleChangeVisibility={
+              isOwnedByUser ? headerActions.handleChangeVisibility : undefined
+            }
+            handleShare={headerActions.handleShare}
             handleToggleLike={headerActions.handleToggleLike}
             isCurrentScheduledPlan={isCurrentScheduledPlan}
             isLiked={headerActions.isLiked}

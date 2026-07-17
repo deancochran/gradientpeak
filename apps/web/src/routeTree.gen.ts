@@ -38,6 +38,9 @@ import { Route as ProtectedProfileMetricsIndexRouteImport } from './routes/_prot
 import { Route as ProtectedCalendarIndexRouteImport } from './routes/_protected/calendar/index'
 import { Route as ProtectedActivityEffortsIndexRouteImport } from './routes/_protected/activity-efforts/index'
 import { Route as ProtectedActivitiesIndexRouteImport } from './routes/_protected/activities/index'
+import { Route as ShareWorkoutsWorkoutIdRouteImport } from './routes/share/workouts/$workoutId'
+import { Route as ShareTrainingPlansTrainingPlanIdRouteImport } from './routes/share/training-plans/$trainingPlanId'
+import { Route as ShareActivitiesActivityIdRouteImport } from './routes/share/activities/$activityId'
 import { Route as ApiWebhooksWahooRouteImport } from './routes/api/webhooks/wahoo'
 import { Route as ApiTrpcSplatRouteImport } from './routes/api/trpc/$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -209,6 +212,23 @@ const ProtectedActivitiesIndexRoute =
     path: '/activities/',
     getParentRoute: () => ProtectedRoute,
   } as any)
+const ShareWorkoutsWorkoutIdRoute = ShareWorkoutsWorkoutIdRouteImport.update({
+  id: '/share/workouts/$workoutId',
+  path: '/share/workouts/$workoutId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ShareTrainingPlansTrainingPlanIdRoute =
+  ShareTrainingPlansTrainingPlanIdRouteImport.update({
+    id: '/share/training-plans/$trainingPlanId',
+    path: '/share/training-plans/$trainingPlanId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ShareActivitiesActivityIdRoute =
+  ShareActivitiesActivityIdRouteImport.update({
+    id: '/share/activities/$activityId',
+    path: '/share/activities/$activityId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiWebhooksWahooRoute = ApiWebhooksWahooRouteImport.update({
   id: '/api/webhooks/wahoo',
   path: '/api/webhooks/wahoo',
@@ -373,6 +393,9 @@ export interface FileRoutesByFullPath {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/api/webhooks/wahoo': typeof ApiWebhooksWahooRoute
+  '/share/activities/$activityId': typeof ShareActivitiesActivityIdRoute
+  '/share/training-plans/$trainingPlanId': typeof ShareTrainingPlansTrainingPlanIdRoute
+  '/share/workouts/$workoutId': typeof ShareWorkoutsWorkoutIdRoute
   '/activities/': typeof ProtectedActivitiesIndexRoute
   '/activity-efforts/': typeof ProtectedActivityEffortsIndexRoute
   '/calendar/': typeof ProtectedCalendarIndexRoute
@@ -424,6 +447,9 @@ export interface FileRoutesByTo {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/api/webhooks/wahoo': typeof ApiWebhooksWahooRoute
+  '/share/activities/$activityId': typeof ShareActivitiesActivityIdRoute
+  '/share/training-plans/$trainingPlanId': typeof ShareTrainingPlansTrainingPlanIdRoute
+  '/share/workouts/$workoutId': typeof ShareWorkoutsWorkoutIdRoute
   '/activities': typeof ProtectedActivitiesIndexRoute
   '/activity-efforts': typeof ProtectedActivityEffortsIndexRoute
   '/calendar': typeof ProtectedCalendarIndexRoute
@@ -479,6 +505,9 @@ export interface FileRoutesById {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/trpc/$': typeof ApiTrpcSplatRoute
   '/api/webhooks/wahoo': typeof ApiWebhooksWahooRoute
+  '/share/activities/$activityId': typeof ShareActivitiesActivityIdRoute
+  '/share/training-plans/$trainingPlanId': typeof ShareTrainingPlansTrainingPlanIdRoute
+  '/share/workouts/$workoutId': typeof ShareWorkoutsWorkoutIdRoute
   '/_protected/activities/': typeof ProtectedActivitiesIndexRoute
   '/_protected/activity-efforts/': typeof ProtectedActivityEffortsIndexRoute
   '/_protected/calendar/': typeof ProtectedCalendarIndexRoute
@@ -534,6 +563,9 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/trpc/$'
     | '/api/webhooks/wahoo'
+    | '/share/activities/$activityId'
+    | '/share/training-plans/$trainingPlanId'
+    | '/share/workouts/$workoutId'
     | '/activities/'
     | '/activity-efforts/'
     | '/calendar/'
@@ -585,6 +617,9 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/trpc/$'
     | '/api/webhooks/wahoo'
+    | '/share/activities/$activityId'
+    | '/share/training-plans/$trainingPlanId'
+    | '/share/workouts/$workoutId'
     | '/activities'
     | '/activity-efforts'
     | '/calendar'
@@ -639,6 +674,9 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/trpc/$'
     | '/api/webhooks/wahoo'
+    | '/share/activities/$activityId'
+    | '/share/training-plans/$trainingPlanId'
+    | '/share/workouts/$workoutId'
     | '/_protected/activities/'
     | '/_protected/activity-efforts/'
     | '/_protected/calendar/'
@@ -680,6 +718,9 @@ export interface RootRouteChildren {
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiTrpcSplatRoute: typeof ApiTrpcSplatRoute
   ApiWebhooksWahooRoute: typeof ApiWebhooksWahooRoute
+  ShareActivitiesActivityIdRoute: typeof ShareActivitiesActivityIdRoute
+  ShareTrainingPlansTrainingPlanIdRoute: typeof ShareTrainingPlansTrainingPlanIdRoute
+  ShareWorkoutsWorkoutIdRoute: typeof ShareWorkoutsWorkoutIdRoute
   ApiIntegrationsCallbackProviderRoute: typeof ApiIntegrationsCallbackProviderRoute
   ApiInternalProviderSyncWahooDrainRoute: typeof ApiInternalProviderSyncWahooDrainRoute
   ApiInternalProviderSyncWahooRetryRoute: typeof ApiInternalProviderSyncWahooRetryRoute
@@ -890,6 +931,27 @@ declare module '@tanstack/react-router' {
       fullPath: '/activities/'
       preLoaderRoute: typeof ProtectedActivitiesIndexRouteImport
       parentRoute: typeof ProtectedRoute
+    }
+    '/share/workouts/$workoutId': {
+      id: '/share/workouts/$workoutId'
+      path: '/share/workouts/$workoutId'
+      fullPath: '/share/workouts/$workoutId'
+      preLoaderRoute: typeof ShareWorkoutsWorkoutIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/share/training-plans/$trainingPlanId': {
+      id: '/share/training-plans/$trainingPlanId'
+      path: '/share/training-plans/$trainingPlanId'
+      fullPath: '/share/training-plans/$trainingPlanId'
+      preLoaderRoute: typeof ShareTrainingPlansTrainingPlanIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/share/activities/$activityId': {
+      id: '/share/activities/$activityId'
+      path: '/share/activities/$activityId'
+      fullPath: '/share/activities/$activityId'
+      preLoaderRoute: typeof ShareActivitiesActivityIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/webhooks/wahoo': {
       id: '/api/webhooks/wahoo'
@@ -1181,6 +1243,9 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiTrpcSplatRoute: ApiTrpcSplatRoute,
   ApiWebhooksWahooRoute: ApiWebhooksWahooRoute,
+  ShareActivitiesActivityIdRoute: ShareActivitiesActivityIdRoute,
+  ShareTrainingPlansTrainingPlanIdRoute: ShareTrainingPlansTrainingPlanIdRoute,
+  ShareWorkoutsWorkoutIdRoute: ShareWorkoutsWorkoutIdRoute,
   ApiIntegrationsCallbackProviderRoute: ApiIntegrationsCallbackProviderRoute,
   ApiInternalProviderSyncWahooDrainRoute:
     ApiInternalProviderSyncWahooDrainRoute,

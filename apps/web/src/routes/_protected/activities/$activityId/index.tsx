@@ -11,8 +11,16 @@ import {
 } from "@repo/ui/components/alert-dialog";
 import { Button } from "@repo/ui/components/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@repo/ui/components/dialog";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Loader2, Lock, Trash2 } from "lucide-react";
+import { Loader2, Lock, Share2, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -43,6 +51,33 @@ import {
   summarizeActivityStreams,
 } from "../../../../lib/activity-route-helpers";
 import { api } from "../../../../lib/api/client";
+
+type ContentVisibility = "private" | "followers" | "public";
+
+const VISIBILITY_OPTIONS: Array<{ value: ContentVisibility; label: string; description: string }> =
+  [
+    { value: "private", label: "Private", description: "Only you can access this activity." },
+    { value: "followers", label: "Followers", description: "Followers can access this activity." },
+    { value: "public", label: "Public", description: "Anyone with the public link can view it." },
+  ];
+
+function resolveContentVisibility(activity: {
+  content_visibility?: string | null;
+  is_private?: boolean;
+}) {
+  if (
+    activity.content_visibility === "private" ||
+    activity.content_visibility === "followers" ||
+    activity.content_visibility === "public"
+  ) {
+    return activity.content_visibility;
+  }
+  return activity.is_private ? "private" : "followers";
+}
+
+function getVisibilityLabel(visibility: ContentVisibility) {
+  return VISIBILITY_OPTIONS.find((option) => option.value === visibility)?.label ?? "Private";
+}
 
 export const Route = createFileRoute("/_protected/activities/$activityId/")({
   component: ActivityDetailPage,
@@ -150,6 +185,19 @@ function ActivityDetailPage() {
     () => summarizeActivityStreams(streamsQuery.data?.records, unitSystem),
     [streamsQuery.data?.records, unitSystem],
   );
+  const contentVisibility = activity ? resolveContentVisibility(activity) : "private";
+
+  const handleShare = async () => {
+    if (!activity) return;
+    if (contentVisibility !== "public") {
+      toast.info("Only public activities have a share link. Change visibility to Public first.");
+      return;
+    }
+
+    const url = new URL(`/share/activities/${activity.id}`, window.location.origin).toString();
+    await navigator.clipboard.writeText(url);
+    toast.success("Public activity link copied");
+  };
 
   if (activityQuery.isLoading) {
     return (
@@ -191,20 +239,49 @@ function ActivityDetailPage() {
               pending={toggleLikeMutation.isPending}
             />
             {isOwner ? (
-              <Button
-                onClick={() =>
-                  updateMutation.mutate({
-                    id: activity.id,
-                    is_private: !activity.is_private,
-                  })
-                }
-                type="button"
-                variant="outline"
-              >
-                <Lock className="mr-2 h-4 w-4" />
-                {activity.is_private ? "Make public" : "Make private"}
-              </Button>
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button type="button" variant="outline">
+                    <Lock className="mr-2 h-4 w-4" />
+                    Change visibility
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Change visibility</DialogTitle>
+                    <DialogDescription>
+                      Current visibility is {getVisibilityLabel(contentVisibility)}.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="grid gap-2">
+                    {VISIBILITY_OPTIONS.map((option) => (
+                      <Button
+                        key={option.value}
+                        disabled={updateMutation.isPending || option.value === contentVisibility}
+                        onClick={() =>
+                          updateMutation.mutate({
+                            id: activity.id,
+                            content_visibility: option.value,
+                          })
+                        }
+                        type="button"
+                        variant={option.value === contentVisibility ? "default" : "outline"}
+                        className="h-auto justify-start py-3 text-left"
+                      >
+                        <span>
+                          <span className="block font-medium">{option.label}</span>
+                          <span className="block text-xs opacity-80">{option.description}</span>
+                        </span>
+                      </Button>
+                    ))}
+                  </div>
+                </DialogContent>
+              </Dialog>
             ) : null}
+            <Button onClick={handleShare} type="button" variant="outline">
+              <Share2 className="mr-2 h-4 w-4" />
+              Share
+            </Button>
             {isOwner ? (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
@@ -233,7 +310,7 @@ function ActivityDetailPage() {
         }
         badges={[
           getActivityBadgeLabel(activity.type),
-          activity.is_private ? "Private" : "Public",
+          getVisibilityLabel(contentVisibility),
           formatDateTime(activity.started_at),
         ]}
         description={activity.notes || "No notes attached to this activity."}
@@ -333,9 +410,11 @@ function ActivityDetailPage() {
             <div>
               <p className="text-sm font-medium text-foreground">Visibility</p>
               <p className="text-sm text-muted-foreground">
-                {activity.is_private
-                  ? "Only approved viewers can access this activity."
-                  : "Visible to anyone who can access your public activity feed."}
+                {contentVisibility === "private"
+                  ? "Only you can access this activity."
+                  : contentVisibility === "followers"
+                    ? "Followers can access this activity."
+                    : "Anyone with the public link can view this activity."}
               </p>
             </div>
           </CardContent>

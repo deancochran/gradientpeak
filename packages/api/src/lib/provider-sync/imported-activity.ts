@@ -1,4 +1,9 @@
-import { encodePolyline, type StandardActivity, simplifyCoordinates } from "@repo/core";
+import {
+  type ContentVisibility,
+  encodePolyline,
+  type StandardActivity,
+  simplifyCoordinates,
+} from "@repo/core";
 
 export type ImportedActivityProvider = "wahoo";
 
@@ -18,6 +23,7 @@ export type ImportedActivityCreateInput = {
   finishedAt: string;
   integrationId: string;
   isPrivate: boolean;
+  contentVisibility?: ContentVisibility;
   movingSeconds: number;
   name: string;
   normalizedPower: number | null;

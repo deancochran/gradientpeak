@@ -18,6 +18,7 @@ export type ProfileFields = Partial<
     | "avatar_url"
     | "bio"
     | "cover_url"
+    | "default_content_visibility"
     | "dob"
     | "full_name"
     | "is_public"

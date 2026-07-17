@@ -37,6 +37,7 @@ import {
   type RecordingLaunchIntent,
   type RecordingOccurrenceResult,
   type RecordingSessionContract,
+  type RecordingSessionLifecycleState,
   type RecordingTrainerIntentSource,
   type RecordingTrainerMachineType,
   resolveMetricSources as resolveCoreMetricSources,
@@ -109,13 +110,7 @@ export type { SimplifiedMetrics };
 // Types
 // ================================
 
-export type RecordingState =
-  | "pending"
-  | "ready"
-  | "recording"
-  | "paused"
-  | "finishing"
-  | "finished";
+export type RecordingState = RecordingSessionLifecycleState;
 
 export type RecordingLifecycle = "idle" | "setup" | "active";
 export type { RecordingRouteAttachmentSource, RecordingRouteAttachmentView };

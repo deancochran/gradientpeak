@@ -21,7 +21,7 @@ type TrainingPlanListInput = {
   limit: number;
   ownerScope?: TrainingPlanOwnerScope;
   search?: string;
-  visibility?: "private" | "public";
+  visibility?: "private" | "followers" | "public";
 };
 
 function resolveOwnerScope(input: TrainingPlanListInput): TrainingPlanListOwnerScope {

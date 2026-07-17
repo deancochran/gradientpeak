@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ianaTimezoneSchema } from "../../athlete-intelligence/planning-context";
 import { calculateDateOfBirthAge, isValidDateOfBirth } from "../../profile/date-of-birth";
 import { preferredUnitSystemSchema } from "../../units";
+import { contentVisibilitySchema } from "../content_visibility";
 import { onboardingStep1Schema } from "../onboarding";
 import {
   emptyStringToNull,
@@ -301,6 +302,7 @@ export const profilePatchInputSchema = z
     planning_timezone: ianaTimezoneSchema.nullable().optional(),
     language: z.string().max(10).nullable().optional(),
     is_public: z.boolean().optional(),
+    default_content_visibility: contentVisibilitySchema.optional(),
   })
   .strict();
 

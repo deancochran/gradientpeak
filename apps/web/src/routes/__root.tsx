@@ -13,7 +13,21 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "GradientPeak Web Migration" },
+      { title: "GradientPeak" },
+      { name: "application-name", content: "GradientPeak" },
+      { name: "apple-mobile-web-app-title", content: "GradientPeak" },
+      { name: "apple-mobile-web-app-capable", content: "yes" },
+      { name: "mobile-web-app-capable", content: "yes" },
+      { name: "theme-color", content: "#020617" },
+      {
+        name: "description",
+        content: "GradientPeak training, activity logging, planning, and athlete intelligence.",
+      },
+    ],
+    links: [
+      { rel: "manifest", href: "/manifest.json" },
+      { rel: "icon", href: "/favicon.ico" },
+      { rel: "apple-touch-icon", href: "/logo192.png" },
     ],
   }),
   shellComponent: RootDocument,
@@ -28,7 +42,7 @@ function RootDocument({ children }: { children: ReactNode }) {
       </head>
       <body className="min-h-screen bg-background text-foreground font-sans antialiased">
         <AppProviders>
-          <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-4 pb-12 pt-8 sm:px-6 lg:px-8">
+          <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-4 pb-12 pt-8 sm:px-6 lg:px-8 has-[>.gp-protected-shell]:max-w-none has-[>.gp-protected-shell]:px-0 has-[>.gp-protected-shell]:pb-0 has-[>.gp-protected-shell]:pt-0">
             {children}
           </div>
           <Toaster richColors position="top-right" />

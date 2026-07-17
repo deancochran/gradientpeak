@@ -26,6 +26,7 @@ describe("settings profile form", () => {
   it("preserves FormData parsing and maps web blanks to the canonical patch", () => {
     const formData = new FormData();
     formData.set("bio", "  ");
+    formData.set("default_content_visibility", "followers");
     formData.set("is_public", "false");
     formData.set("language", " en ");
     formData.set("preferred_units", "imperial");
@@ -35,6 +36,7 @@ describe("settings profile form", () => {
 
     expect(toProfilePatchInput(values)).toEqual({
       bio: null,
+      default_content_visibility: "followers",
       is_public: false,
       language: "en",
       preferred_units: "imperial",

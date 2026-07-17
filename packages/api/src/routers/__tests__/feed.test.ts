@@ -390,7 +390,7 @@ describe("feedRouter", () => {
             created_at: new Date("2026-04-03T11:05:00.000Z"),
             profile_username: "owner",
             profile_avatar_url: "https://example.com/owner.png",
-            viewer_follows_owner: false,
+            viewer_follows_owner: true,
           },
         ],
         [
@@ -493,7 +493,7 @@ describe("feedRouter", () => {
             created_at: new Date("2026-04-03T11:05:00.000Z"),
             profile_username: "owner",
             profile_avatar_url: null,
-            viewer_follows_owner: false,
+            viewer_follows_owner: true,
           },
         ],
       ],
@@ -583,7 +583,7 @@ describe("feedRouter", () => {
             created_at: new Date("2026-04-03T11:05:00.000Z"),
             profile_username: "owner",
             profile_avatar_url: "https://example.com/owner.png",
-            viewer_follows_owner: false,
+            viewer_follows_owner: true,
           },
         ],
         [

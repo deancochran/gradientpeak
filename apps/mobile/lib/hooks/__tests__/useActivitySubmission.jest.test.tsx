@@ -153,7 +153,11 @@ describe("useActivitySubmission", () => {
 
     await act(async () => {
       await expect(
-        result.current.submit({ name: "Queued ride", notes: "felt good", is_private: false }),
+        result.current.submit({
+          name: "Queued ride",
+          notes: "felt good",
+          content_visibility: "followers",
+        }),
       ).resolves.toBe(true);
     });
 
@@ -165,7 +169,7 @@ describe("useActivitySubmission", () => {
         draft: expect.objectContaining({
           name: "Queued ride",
           notes: "felt good",
-          is_private: false,
+          content_visibility: "followers",
         }),
       }),
     );

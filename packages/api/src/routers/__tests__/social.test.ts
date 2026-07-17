@@ -218,7 +218,9 @@ describe("socialRouter", () => {
         likes: [[]],
       },
       query: {
-        activities: [{ profile_id: TARGET_USER_ID, is_private: false }],
+        activities: [
+          { profile_id: TARGET_USER_ID, is_private: false, content_visibility: "public" },
+        ],
       },
     });
 
@@ -240,9 +242,9 @@ describe("socialRouter", () => {
     const { caller, calls } = createCaller({
       query: {
         activities: [
-          { profile_id: TARGET_USER_ID, is_private: false },
-          { profile_id: TARGET_USER_ID, is_private: false },
-          { profile_id: TARGET_USER_ID, is_private: false },
+          { profile_id: TARGET_USER_ID, is_private: false, content_visibility: "public" },
+          { profile_id: TARGET_USER_ID, is_private: false, content_visibility: "public" },
+          { profile_id: TARGET_USER_ID, is_private: false, content_visibility: "public" },
         ],
       },
     });
@@ -518,7 +520,9 @@ describe("socialRouter", () => {
         ],
       ],
       query: {
-        activities: [{ profile_id: TARGET_USER_ID, is_private: false }],
+        activities: [
+          { profile_id: TARGET_USER_ID, is_private: false, content_visibility: "public" },
+        ],
       },
     });
 
@@ -566,7 +570,9 @@ describe("socialRouter", () => {
         [{ value: 2 }],
       ],
       query: {
-        activities: [{ profile_id: TARGET_USER_ID, is_private: false }],
+        activities: [
+          { profile_id: TARGET_USER_ID, is_private: false, content_visibility: "public" },
+        ],
       },
     });
 

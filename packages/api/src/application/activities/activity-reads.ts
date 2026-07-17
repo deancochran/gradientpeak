@@ -248,10 +248,33 @@ export async function getActivityByIdForViewer({
   viewerId: string;
 }) {
   const access = await db.query.activities.findFirst({
-    columns: { profile_id: true, is_private: true },
+    columns: { profile_id: true, is_private: true, content_visibility: true },
     where: eq(activities.id, activityId),
   });
-  if (!access || (access.profile_id !== viewerId && access.is_private))
+  if (!access) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "You don't have permission to view this activity",
+    });
+  }
+  const visibility = access
+    ? (access.content_visibility ?? (access.is_private ? "private" : "followers"))
+    : "private";
+  const followResult =
+    visibility === "followers" && access?.profile_id !== viewerId
+      ? await db.execute(sql`
+          select 1 from follows
+          where follower_id = ${viewerId}::uuid
+            and following_id = ${access.profile_id}::uuid
+            and status = 'accepted'
+          limit 1
+        `)
+      : ({ rows: [] } as { rows: unknown[] });
+  if (
+    access.profile_id !== viewerId &&
+    visibility !== "public" &&
+    (visibility !== "followers" || followResult.rows.length === 0)
+  )
     throw new TRPCError({
       code: "FORBIDDEN",
       message: "You don't have permission to view this activity",

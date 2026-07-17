@@ -28,7 +28,7 @@ const plannedEventType = "planned" as const;
 type TrainingPlanCreateInput = z.infer<typeof trainingPlanCreateInputSchema>;
 type TrainingPlanUpdateInput = z.infer<typeof trainingPlanUpdateInputSchema> & {
   id: string;
-  template_visibility?: "private" | "public";
+  template_visibility?: "private" | "followers" | "public";
 };
 
 function getSqlRows<T>(result: unknown) {
@@ -134,7 +134,7 @@ async function insertTrainingPlan(input: {
     description: string | null;
     structure: Record<string, unknown>;
     profileId: string;
-    templateVisibility?: "private" | "public";
+    templateVisibility?: "private" | "followers" | "public";
   };
 }): Promise<TrainingPlanRow> {
   const result = await input.db.execute(sql<TrainingPlanRow>`
@@ -144,7 +144,8 @@ async function insertTrainingPlan(input: {
       description,
       structure,
       profile_id,
-      template_visibility
+      template_visibility,
+      content_visibility
     )
     values (
       ${(input.values.structure as { id: string }).id}::uuid,
@@ -152,6 +153,7 @@ async function insertTrainingPlan(input: {
       ${input.values.description},
       ${JSON.stringify(input.values.structure)}::jsonb,
       ${input.values.profileId}::uuid,
+      ${input.values.templateVisibility ?? "private"},
       ${input.values.templateVisibility ?? "private"}
     )
     returning *
@@ -165,6 +167,21 @@ async function insertTrainingPlan(input: {
   return row;
 }
 
+async function getProfileDefaultContentVisibility(db: DrizzleDbClient, profileId: string) {
+  const result = await db.execute(sql<{
+    default_content_visibility: "private" | "followers" | "public";
+  }>`
+    select default_content_visibility
+    from profiles
+    where id = ${profileId}::uuid
+    limit 1
+  `);
+  return (
+    getSqlRows<{ default_content_visibility: "private" | "followers" | "public" }>(result)[0]
+      ?.default_content_visibility ?? "private"
+  );
+}
+
 async function updateOwnedTrainingPlanRow(input: {
   db: TrainingPlanTransactionClient;
   id: string;
@@ -172,7 +189,7 @@ async function updateOwnedTrainingPlanRow(input: {
   name?: string;
   description?: string | null;
   structure?: Record<string, unknown>;
-  templateVisibility?: "private" | "public";
+  templateVisibility?: "private" | "followers" | "public";
 }): Promise<TrainingPlanRow | null> {
   const updates = [sql`updated_at = now()`];
 
@@ -183,6 +200,7 @@ async function updateOwnedTrainingPlanRow(input: {
   }
   if (input.templateVisibility !== undefined) {
     updates.push(sql`template_visibility = ${input.templateVisibility}`);
+    updates.push(sql`content_visibility = ${input.templateVisibility}`);
   }
 
   const result = await input.db.execute(sql<TrainingPlanRow>`
@@ -250,6 +268,10 @@ export async function createTrainingPlanUseCase(input: {
     value: structureWithId,
     message: "Invalid training plan structure",
   });
+  const defaultContentVisibility = await getProfileDefaultContentVisibility(
+    input.db,
+    input.profileId,
+  );
   const templateIds = parsedStructure.sessions.map((session) => session.activity_plan_id);
   return input.planningTemplateRepository.withLockedPublishedTemplates(
     templateIds,
@@ -262,7 +284,7 @@ export async function createTrainingPlanUseCase(input: {
           description: input.values.description ?? null,
           structure: structureWithId,
           profileId: input.profileId,
-          templateVisibility: input.values.template_visibility,
+          templateVisibility: input.values.template_visibility ?? defaultContentVisibility,
         },
       });
     },
