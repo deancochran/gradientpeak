@@ -137,9 +137,14 @@ export async function replaceManualFtp(
     .where(overrideScope)
     .orderBy(desc(activityEfforts.recorded_at), desc(activityEfforts.created_at))
     .limit(1);
-  const effortValue = input.value === null ? 0 : Number((input.value / 0.95).toFixed(2));
-
   if (input.value === null && latest && isClearedProfileOverride(latest)) return;
+  let effortValue: number;
+  if (input.value === null) {
+    if (!latest) return;
+    effortValue = Number(latest.value);
+  } else {
+    effortValue = Number((input.value / 0.95).toFixed(2));
+  }
   if (
     input.value !== null &&
     latest &&

@@ -7039,6 +7039,13 @@
       "definition": "CHECK (activity_category = 'bike'::text AND effort_type = 'power'::effort_type AND (unit = ANY (ARRAY['watts'::text, 'W'::text])) OR (activity_category = ANY (ARRAY['run'::text, 'swim'::text])) AND effort_type = 'speed'::effort_type AND (unit = ANY (ARRAY['meters_per_second'::text, 'm/s'::text])))"
     },
     {
+      "kind": "c",
+      "name": "activity_efforts_value_finite_positive_check",
+      "table": "activity_efforts",
+      "validated": true,
+      "definition": "CHECK (value > 0::double precision AND (value <> ALL (ARRAY['NaN'::real, 'Infinity'::real, '-Infinity'::real])))"
+    },
+    {
       "kind": "f",
       "name": "activity_file_ingestions_activity_profile_fkey",
       "table": "activity_file_ingestions",

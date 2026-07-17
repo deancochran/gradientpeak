@@ -54,6 +54,7 @@ async function seedUserProfile() {
     username: `live-db-${userId.slice(0, 8)}`,
     onboarded: true,
     is_public: true,
+    planning_timezone: "UTC",
   });
 
   const seedState: SeedState = {

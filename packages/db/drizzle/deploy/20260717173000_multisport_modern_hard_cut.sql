@@ -663,6 +663,8 @@ alter table public.activity_efforts
     references public.activity_segments(id, activity_id, profile_id, category) on delete cascade,
   add constraint activity_efforts_activity_segment_check
     check ((activity_id is null and segment_id is null) or (activity_id is not null and segment_id is not null)),
+  add constraint activity_efforts_value_finite_positive_check
+    check (value > 0 and value not in ('NaN'::real, 'Infinity'::real, '-Infinity'::real)),
   add constraint activity_efforts_supported_combination_check
     check ((activity_category = 'bike' and effort_type = 'power') or (activity_category in ('run', 'swim') and effort_type = 'speed')),
   add constraint activity_efforts_unit_compatibility_check
