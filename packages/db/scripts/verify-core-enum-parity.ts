@@ -4,10 +4,10 @@ import assert from "node:assert/strict";
 import { coreEnumParityManifest } from "../src/schema/core-enum-parity";
 
 for (const [name, parity] of Object.entries(coreEnumParityManifest)) {
-  if (parity.strategy !== "exact") continue;
+  if (parity.strategy !== "exact" && parity.strategy !== "reference-table-seed") continue;
   assert.deepEqual(
     [...parity.databaseValues].sort(),
-    parity.coreValues,
+    [...parity.coreValues].sort(),
     `${name} must match Core exactly`,
   );
 }

@@ -56,12 +56,17 @@ vi.mock("../../lib/routes/route-parser", () => ({
 
 vi.mock("../../lib/logger", () => ({ logger: mockLogger }));
 
-vi.mock("@repo/core", () => ({
-  calculateRouteStats: mockCore.calculateRouteStats,
-  simplifyCoordinates: mockCore.simplifyCoordinates,
-  encodePolyline: mockCore.encodePolyline,
-  encodeElevationPolyline: mockCore.encodeElevationPolyline,
-}));
+vi.mock("@repo/core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@repo/core")>();
+
+  return {
+    ...actual,
+    calculateRouteStats: mockCore.calculateRouteStats,
+    simplifyCoordinates: mockCore.simplifyCoordinates,
+    encodePolyline: mockCore.encodePolyline,
+    encodeElevationPolyline: mockCore.encodeElevationPolyline,
+  };
+});
 
 import { routesRouter } from "../routes";
 

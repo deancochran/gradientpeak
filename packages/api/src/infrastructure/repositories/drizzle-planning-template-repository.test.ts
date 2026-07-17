@@ -1,6 +1,7 @@
 import { buildSystemActivityTemplateCatalog, SYSTEM_TEMPLATES } from "@repo/core";
 import type { DrizzleDbClient } from "@repo/db/client";
 import { describe, expect, it, vi } from "vitest";
+import { activityPlanStructureHash } from "../../application/activity-plans/structure-hash";
 import { createPlanningTemplateRepository } from "./drizzle-planning-template-repository";
 
 describe("createPlanningTemplateRepository", () => {
@@ -14,31 +15,27 @@ describe("createPlanningTemplateRepository", () => {
       rows: [
         {
           id: second.template_id,
-          activity_category: sourceById.get(second.template_id)?.activity_category,
           gps_recording_enabled: sourceById.get(second.template_id)?.gps_recording_enabled,
           structure: sourceById.get(second.template_id)?.structure,
-          version: "3.0",
+          structure_hash: activityPlanStructureHash(sourceById.get(second.template_id)?.structure),
         },
         {
           id: first.template_id,
-          activity_category: sourceById.get(first.template_id)?.activity_category,
           gps_recording_enabled: sourceById.get(first.template_id)?.gps_recording_enabled,
           structure: sourceById.get(first.template_id)?.structure,
-          version: "3.0",
+          structure_hash: activityPlanStructureHash(sourceById.get(first.template_id)?.structure),
         },
         {
           id: "33333333-3333-4333-8333-333333333333",
-          activity_category: "run",
           gps_recording_enabled: true,
           structure: { version: 2, intervals: [] },
-          version: "2.0",
+          structure_hash: activityPlanStructureHash({ version: 2, intervals: [] }),
         },
         {
           id: first.template_id,
-          activity_category: sourceById.get(first.template_id)?.activity_category,
           gps_recording_enabled: sourceById.get(first.template_id)?.gps_recording_enabled,
           structure: { version: 3, segments: [] },
-          version: "3.0",
+          structure_hash: activityPlanStructureHash({ version: 3, segments: [] }),
         },
       ],
     }));
@@ -66,10 +63,9 @@ describe("createPlanningTemplateRepository", () => {
         {
           id: candidate.template_id,
           is_system_template: true,
-          activity_category: candidate.sport,
           gps_recording_enabled: true,
           structure: { version: 3, segments: [] },
-          version: "3.0",
+          structure_hash: activityPlanStructureHash({ version: 3, segments: [] }),
         },
       ],
     }));
@@ -96,10 +92,9 @@ describe("createPlanningTemplateRepository", () => {
       rows: [
         {
           id: candidate.template_id,
-          activity_category: source.activity_category,
           gps_recording_enabled: !source.gps_recording_enabled,
           structure: source.structure,
-          version: "3.0",
+          structure_hash: activityPlanStructureHash(source.structure),
         },
       ],
     }));
@@ -108,7 +103,7 @@ describe("createPlanningTemplateRepository", () => {
     await expect(repository.listAvailablePublicSystemTemplateIds()).resolves.toEqual([]);
   });
 
-  it("marks a strict V3 structure unavailable when the persisted row version is stale", async () => {
+  it("rejects locked rows with invalid GPS persistence metadata", async () => {
     const candidate = buildSystemActivityTemplateCatalog()[0];
     const source = SYSTEM_TEMPLATES.find((template) => template.id === candidate?.template_id);
     if (!candidate || !source) throw new Error("Expected system template fixture");
@@ -116,10 +111,39 @@ describe("createPlanningTemplateRepository", () => {
       rows: [
         {
           id: candidate.template_id,
-          activity_category: source.activity_category,
+          is_system_template: false,
+          gps_recording_enabled: null,
+          structure: source.structure,
+          structure_hash: activityPlanStructureHash(source.structure),
+        },
+      ],
+    }));
+    const db = {
+      execute,
+      transaction: vi.fn(async (operation: (tx: { execute: typeof execute }) => Promise<unknown>) =>
+        operation({ execute }),
+      ),
+    } as unknown as DrizzleDbClient;
+
+    await expect(
+      createPlanningTemplateRepository(db).withLockedPublishedTemplates(
+        [candidate.template_id],
+        vi.fn(),
+      ),
+    ).rejects.toThrow("changed activity plans");
+  });
+
+  it("marks a V3 row unavailable when its canonical structure hash differs", async () => {
+    const candidate = buildSystemActivityTemplateCatalog()[0];
+    const source = SYSTEM_TEMPLATES.find((template) => template.id === candidate?.template_id);
+    if (!candidate || !source) throw new Error("Expected system template fixture");
+    const execute = vi.fn(async () => ({
+      rows: [
+        {
+          id: candidate.template_id,
           gps_recording_enabled: source.gps_recording_enabled,
           structure: source.structure,
-          version: "2.0",
+          structure_hash: activityPlanStructureHash({ version: 3, segments: [] }),
         },
       ],
     }));

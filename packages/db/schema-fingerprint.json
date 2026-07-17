@@ -1,10 +1,6 @@
 {
   "enums": [
     {
-      "name": "activity_category",
-      "values": ["run", "bike", "swim", "strength", "other"]
-    },
-    {
       "name": "activity_file_ingestion_source",
       "values": ["mobile_recording", "manual_import", "provider_sync"]
     },
@@ -97,6 +93,18 @@
     {
       "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
       "rls": true,
+      "name": "activity_artifact_links",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "name": "activity_artifacts",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
       "name": "activity_efforts",
       "forceRls": false
     },
@@ -116,6 +124,18 @@
       "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
       "rls": true,
       "name": "activity_routes",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "name": "activity_segments",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "name": "canonical_activity_categories",
       "forceRls": false
     },
     {
@@ -236,6 +256,18 @@
       "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
       "rls": true,
       "name": "messages",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "name": "multisport_cutover_audits",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "name": "multisport_cutover_template_audits",
       "forceRls": false
     },
     {
@@ -515,16 +547,6 @@
       "generated": ""
     },
     {
-      "name": "type",
-      "type": "text",
-      "table": "activities",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 8,
-      "generated": ""
-    },
-    {
       "name": "started_at",
       "type": "timestamp with time zone",
       "table": "activities",
@@ -582,26 +604,6 @@
       "notNull": false,
       "identity": "",
       "position": 14,
-      "generated": ""
-    },
-    {
-      "name": "duration_seconds",
-      "type": "integer",
-      "table": "activities",
-      "default": "0",
-      "notNull": true,
-      "identity": "",
-      "position": 15,
-      "generated": ""
-    },
-    {
-      "name": "moving_seconds",
-      "type": "integer",
-      "table": "activities",
-      "default": "0",
-      "notNull": true,
-      "identity": "",
-      "position": 16,
       "generated": ""
     },
     {
@@ -835,56 +837,6 @@
       "generated": ""
     },
     {
-      "name": "activity_file_path",
-      "type": "text",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 40,
-      "generated": ""
-    },
-    {
-      "name": "activity_file_size",
-      "type": "integer",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 41,
-      "generated": ""
-    },
-    {
-      "name": "import_source",
-      "type": "text",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 42,
-      "generated": ""
-    },
-    {
-      "name": "import_file_type",
-      "type": "text",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 43,
-      "generated": ""
-    },
-    {
-      "name": "import_original_file_name",
-      "type": "text",
-      "table": "activities",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 44,
-      "generated": ""
-    },
-    {
       "name": "polyline",
       "type": "text",
       "table": "activities",
@@ -922,6 +874,336 @@
       "notNull": true,
       "identity": "",
       "position": 48,
+      "generated": ""
+    },
+    {
+      "name": "elapsed_ms",
+      "type": "bigint",
+      "table": "activities",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 49,
+      "generated": ""
+    },
+    {
+      "name": "active_ms",
+      "type": "bigint",
+      "table": "activities",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 50,
+      "generated": ""
+    },
+    {
+      "name": "moving_ms",
+      "type": "bigint",
+      "table": "activities",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 51,
+      "generated": ""
+    },
+    {
+      "name": "timing_coverage",
+      "type": "text",
+      "table": "activities",
+      "default": "'unavailable'::text",
+      "notNull": true,
+      "identity": "",
+      "position": 52,
+      "generated": ""
+    },
+    {
+      "name": "segments_revision",
+      "type": "integer",
+      "table": "activities",
+      "default": "1",
+      "notNull": true,
+      "identity": "",
+      "position": 53,
+      "generated": ""
+    },
+    {
+      "name": "parser_version",
+      "type": "text",
+      "table": "activities",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 54,
+      "generated": ""
+    },
+    {
+      "name": "decoded_contract_version",
+      "type": "text",
+      "table": "activities",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 55,
+      "generated": ""
+    },
+    {
+      "name": "materializer_version",
+      "type": "text",
+      "table": "activities",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 56,
+      "generated": ""
+    },
+    {
+      "name": "segments_generated_at",
+      "type": "timestamp with time zone",
+      "table": "activities",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 57,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "activity_artifact_links",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "activity_id",
+      "type": "uuid",
+      "table": "activity_artifact_links",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "artifact_id",
+      "type": "uuid",
+      "table": "activity_artifact_links",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "profile_id",
+      "type": "uuid",
+      "table": "activity_artifact_links",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "role",
+      "type": "text",
+      "table": "activity_artifact_links",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "ordinal",
+      "type": "integer",
+      "table": "activity_artifact_links",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "is_current",
+      "type": "boolean",
+      "table": "activity_artifact_links",
+      "default": "false",
+      "notNull": true,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "provider_revision",
+      "type": "text",
+      "table": "activity_artifact_links",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "linked_at",
+      "type": "timestamp with time zone",
+      "table": "activity_artifact_links",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "activity_artifacts",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "profile_id",
+      "type": "uuid",
+      "table": "activity_artifacts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "digest_algorithm",
+      "type": "text",
+      "table": "activity_artifacts",
+      "default": "'sha256'::text",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "digest",
+      "type": "text",
+      "table": "activity_artifacts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "byte_size",
+      "type": "bigint",
+      "table": "activity_artifacts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "bucket",
+      "type": "text",
+      "table": "activity_artifacts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "path",
+      "type": "text",
+      "table": "activity_artifacts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "media_type",
+      "type": "text",
+      "table": "activity_artifacts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "format",
+      "type": "text",
+      "table": "activity_artifacts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "original_name",
+      "type": "text",
+      "table": "activity_artifacts",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
+      "name": "availability",
+      "type": "text",
+      "table": "activity_artifacts",
+      "default": "'accepted'::text",
+      "notNull": true,
+      "identity": "",
+      "position": 11,
+      "generated": ""
+    },
+    {
+      "name": "first_accepted_at",
+      "type": "timestamp with time zone",
+      "table": "activity_artifacts",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 12,
+      "generated": ""
+    },
+    {
+      "name": "retention_until",
+      "type": "timestamp with time zone",
+      "table": "activity_artifacts",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 13,
+      "generated": ""
+    },
+    {
+      "name": "deletion_requested_at",
+      "type": "timestamp with time zone",
+      "table": "activity_artifacts",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 14,
+      "generated": ""
+    },
+    {
+      "name": "deleted_at",
+      "type": "timestamp with time zone",
+      "table": "activity_artifacts",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 15,
       "generated": ""
     },
     {
@@ -982,16 +1264,6 @@
       "notNull": true,
       "identity": "",
       "position": 6,
-      "generated": ""
-    },
-    {
-      "name": "activity_category",
-      "type": "activity_category",
-      "table": "activity_efforts",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 7,
       "generated": ""
     },
     {
@@ -1095,6 +1367,26 @@
       "generated": ""
     },
     {
+      "name": "segment_id",
+      "type": "uuid",
+      "table": "activity_efforts",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 18,
+      "generated": ""
+    },
+    {
+      "name": "activity_category",
+      "type": "text",
+      "table": "activity_efforts",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 19,
+      "generated": ""
+    },
+    {
       "name": "id",
       "type": "uuid",
       "table": "activity_file_ingestions",
@@ -1109,7 +1401,7 @@
       "type": "uuid",
       "table": "activity_file_ingestions",
       "default": "",
-      "notNull": true,
+      "notNull": false,
       "identity": "",
       "position": 2,
       "generated": ""
@@ -1152,36 +1444,6 @@
       "notNull": false,
       "identity": "",
       "position": 6,
-      "generated": ""
-    },
-    {
-      "name": "file_path",
-      "type": "text",
-      "table": "activity_file_ingestions",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 7,
-      "generated": ""
-    },
-    {
-      "name": "file_size",
-      "type": "integer",
-      "table": "activity_file_ingestions",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 8,
-      "generated": ""
-    },
-    {
-      "name": "file_type",
-      "type": "text",
-      "table": "activity_file_ingestions",
-      "default": "",
-      "notNull": false,
-      "identity": "",
-      "position": 9,
       "generated": ""
     },
     {
@@ -1285,6 +1547,66 @@
       "generated": ""
     },
     {
+      "name": "artifact_id",
+      "type": "uuid",
+      "table": "activity_file_ingestions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 20,
+      "generated": ""
+    },
+    {
+      "name": "integration_id",
+      "type": "uuid",
+      "table": "activity_file_ingestions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 21,
+      "generated": ""
+    },
+    {
+      "name": "operation_key",
+      "type": "text",
+      "table": "activity_file_ingestions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 22,
+      "generated": ""
+    },
+    {
+      "name": "claim_token",
+      "type": "uuid",
+      "table": "activity_file_ingestions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 23,
+      "generated": ""
+    },
+    {
+      "name": "lease_expires_at",
+      "type": "timestamp with time zone",
+      "table": "activity_file_ingestions",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 24,
+      "generated": ""
+    },
+    {
+      "name": "received_at",
+      "type": "timestamp with time zone",
+      "table": "activity_file_ingestions",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 25,
+      "generated": ""
+    },
+    {
       "name": "id",
       "type": "uuid",
       "table": "activity_plans",
@@ -1355,16 +1677,6 @@
       "generated": ""
     },
     {
-      "name": "activity_category",
-      "type": "activity_category",
-      "table": "activity_plans",
-      "default": "",
-      "notNull": true,
-      "identity": "",
-      "position": 10,
-      "generated": ""
-    },
-    {
       "name": "structure",
       "type": "jsonb",
       "table": "activity_plans",
@@ -1372,16 +1684,6 @@
       "notNull": true,
       "identity": "",
       "position": 11,
-      "generated": ""
-    },
-    {
-      "name": "version",
-      "type": "text",
-      "table": "activity_plans",
-      "default": "'1.0'::text",
-      "notNull": true,
-      "identity": "",
-      "position": 12,
       "generated": ""
     },
     {
@@ -1432,6 +1734,26 @@
       "notNull": true,
       "identity": "",
       "position": 17,
+      "generated": ""
+    },
+    {
+      "name": "structure_hash",
+      "type": "text",
+      "table": "activity_plans",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 18,
+      "generated": ""
+    },
+    {
+      "name": "gps_recording_enabled",
+      "type": "boolean",
+      "table": "activity_plans",
+      "default": "true",
+      "notNull": true,
+      "identity": "",
+      "position": 19,
       "generated": ""
     },
     {
@@ -1572,6 +1894,276 @@
       "notNull": true,
       "identity": "",
       "position": 15,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "activity_segments",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "activity_id",
+      "type": "uuid",
+      "table": "activity_segments",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "profile_id",
+      "type": "uuid",
+      "table": "activity_segments",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "ordinal",
+      "type": "integer",
+      "table": "activity_segments",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "role",
+      "type": "text",
+      "table": "activity_segments",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "category",
+      "type": "text",
+      "table": "activity_segments",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "start_offset_ms",
+      "type": "bigint",
+      "table": "activity_segments",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "end_offset_ms",
+      "type": "bigint",
+      "table": "activity_segments",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "source_artifact_id",
+      "type": "uuid",
+      "table": "activity_segments",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "source_session_index",
+      "type": "integer",
+      "table": "activity_segments",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
+      "name": "source_message_index",
+      "type": "integer",
+      "table": "activity_segments",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 11,
+      "generated": ""
+    },
+    {
+      "name": "raw_type_string",
+      "type": "text",
+      "table": "activity_segments",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 12,
+      "generated": ""
+    },
+    {
+      "name": "raw_type_integer",
+      "type": "integer",
+      "table": "activity_segments",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 13,
+      "generated": ""
+    },
+    {
+      "name": "raw_sport_string",
+      "type": "text",
+      "table": "activity_segments",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 14,
+      "generated": ""
+    },
+    {
+      "name": "raw_sport_integer",
+      "type": "integer",
+      "table": "activity_segments",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 15,
+      "generated": ""
+    },
+    {
+      "name": "summary",
+      "type": "jsonb",
+      "table": "activity_segments",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 16,
+      "generated": ""
+    },
+    {
+      "name": "summary_version",
+      "type": "integer",
+      "table": "activity_segments",
+      "default": "1",
+      "notNull": true,
+      "identity": "",
+      "position": 17,
+      "generated": ""
+    },
+    {
+      "name": "timing_coverage",
+      "type": "text",
+      "table": "activity_segments",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 18,
+      "generated": ""
+    },
+    {
+      "name": "active_ms",
+      "type": "bigint",
+      "table": "activity_segments",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 19,
+      "generated": ""
+    },
+    {
+      "name": "moving_ms",
+      "type": "bigint",
+      "table": "activity_segments",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 20,
+      "generated": ""
+    },
+    {
+      "name": "segment_revision",
+      "type": "integer",
+      "table": "activity_segments",
+      "default": "1",
+      "notNull": true,
+      "identity": "",
+      "position": 21,
+      "generated": ""
+    },
+    {
+      "name": "parser_version",
+      "type": "text",
+      "table": "activity_segments",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 22,
+      "generated": ""
+    },
+    {
+      "name": "materializer_version",
+      "type": "text",
+      "table": "activity_segments",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 23,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "activity_segments",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 24,
+      "generated": ""
+    },
+    {
+      "name": "code",
+      "type": "text",
+      "table": "canonical_activity_categories",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "display_name",
+      "type": "text",
+      "table": "canonical_activity_categories",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "enabled",
+      "type": "boolean",
+      "table": "canonical_activity_categories",
+      "default": "true",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
       "generated": ""
     },
     {
@@ -3265,6 +3857,176 @@
       "generated": ""
     },
     {
+      "name": "run_id",
+      "type": "uuid",
+      "table": "multisport_cutover_audits",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "manifest_checksum",
+      "type": "text",
+      "table": "multisport_cutover_audits",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "final_manifest_checksum",
+      "type": "text",
+      "table": "multisport_cutover_audits",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "snapshot_hash",
+      "type": "text",
+      "table": "multisport_cutover_audits",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "staging_hash",
+      "type": "text",
+      "table": "multisport_cutover_audits",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "backup_hash",
+      "type": "text",
+      "table": "multisport_cutover_audits",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "storage_archive_hash",
+      "type": "text",
+      "table": "multisport_cutover_audits",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 7,
+      "generated": ""
+    },
+    {
+      "name": "storage_inventory_hash",
+      "type": "text",
+      "table": "multisport_cutover_audits",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 8,
+      "generated": ""
+    },
+    {
+      "name": "status",
+      "type": "text",
+      "table": "multisport_cutover_audits",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 9,
+      "generated": ""
+    },
+    {
+      "name": "migrated_at",
+      "type": "timestamp with time zone",
+      "table": "multisport_cutover_audits",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 10,
+      "generated": ""
+    },
+    {
+      "name": "audited_at",
+      "type": "timestamp with time zone",
+      "table": "multisport_cutover_audits",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 11,
+      "generated": ""
+    },
+    {
+      "name": "run_id",
+      "type": "uuid",
+      "table": "multisport_cutover_template_audits",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "activity_plan_id",
+      "type": "uuid",
+      "table": "multisport_cutover_template_audits",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "before_semantic_hash",
+      "type": "text",
+      "table": "multisport_cutover_template_audits",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "after_semantic_hash",
+      "type": "text",
+      "table": "multisport_cutover_template_audits",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "source_semantic_hash",
+      "type": "text",
+      "table": "multisport_cutover_template_audits",
+      "default": "",
+      "notNull": false,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "is_new_source",
+      "type": "boolean",
+      "table": "multisport_cutover_template_audits",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
       "name": "id",
       "type": "uuid",
       "table": "notifications",
@@ -4675,6 +5437,16 @@
       "generated": ""
     },
     {
+      "name": "structure_hash",
+      "type": "text",
+      "table": "training_plans",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 14,
+      "generated": ""
+    },
+    {
       "name": "id",
       "type": "uuid",
       "table": "users",
@@ -4827,11 +5599,6 @@
       "definition": "CREATE UNIQUE INDEX activities_pkey ON public.activities USING btree (id)"
     },
     {
-      "name": "idx_activities_activity_file_path",
-      "table": "activities",
-      "definition": "CREATE INDEX idx_activities_activity_file_path ON public.activities USING btree (activity_file_path) WHERE (activity_file_path IS NOT NULL)"
-    },
-    {
       "name": "idx_activities_activity_plan",
       "table": "activities",
       "definition": "CREATE INDEX idx_activities_activity_plan ON public.activities USING btree (activity_plan_id) WHERE (activity_plan_id IS NOT NULL)"
@@ -4862,9 +5629,59 @@
       "definition": "CREATE INDEX idx_activities_started ON public.activities USING btree (started_at)"
     },
     {
-      "name": "idx_activities_type",
-      "table": "activities",
-      "definition": "CREATE INDEX idx_activities_type ON public.activities USING btree (type)"
+      "name": "activity_artifact_links_activity_artifact_profile_unique",
+      "table": "activity_artifact_links",
+      "definition": "CREATE UNIQUE INDEX activity_artifact_links_activity_artifact_profile_unique ON public.activity_artifact_links USING btree (activity_id, artifact_id, profile_id)"
+    },
+    {
+      "name": "activity_artifact_links_activity_artifact_role_unique",
+      "table": "activity_artifact_links",
+      "definition": "CREATE UNIQUE INDEX activity_artifact_links_activity_artifact_role_unique ON public.activity_artifact_links USING btree (activity_id, artifact_id, role)"
+    },
+    {
+      "name": "activity_artifact_links_activity_role_ordinal_unique",
+      "table": "activity_artifact_links",
+      "definition": "CREATE UNIQUE INDEX activity_artifact_links_activity_role_ordinal_unique ON public.activity_artifact_links USING btree (activity_id, role, ordinal)"
+    },
+    {
+      "name": "activity_artifact_links_current_source_unique",
+      "table": "activity_artifact_links",
+      "definition": "CREATE UNIQUE INDEX activity_artifact_links_current_source_unique ON public.activity_artifact_links USING btree (activity_id) WHERE ((role = 'source'::text) AND is_current)"
+    },
+    {
+      "name": "activity_artifact_links_pkey",
+      "table": "activity_artifact_links",
+      "definition": "CREATE UNIQUE INDEX activity_artifact_links_pkey ON public.activity_artifact_links USING btree (id)"
+    },
+    {
+      "name": "idx_activity_artifact_links_artifact",
+      "table": "activity_artifact_links",
+      "definition": "CREATE INDEX idx_activity_artifact_links_artifact ON public.activity_artifact_links USING btree (artifact_id)"
+    },
+    {
+      "name": "activity_artifacts_bucket_path_unique",
+      "table": "activity_artifacts",
+      "definition": "CREATE UNIQUE INDEX activity_artifacts_bucket_path_unique ON public.activity_artifacts USING btree (bucket, path)"
+    },
+    {
+      "name": "activity_artifacts_id_profile_unique",
+      "table": "activity_artifacts",
+      "definition": "CREATE UNIQUE INDEX activity_artifacts_id_profile_unique ON public.activity_artifacts USING btree (id, profile_id)"
+    },
+    {
+      "name": "activity_artifacts_pkey",
+      "table": "activity_artifacts",
+      "definition": "CREATE UNIQUE INDEX activity_artifacts_pkey ON public.activity_artifacts USING btree (id)"
+    },
+    {
+      "name": "activity_artifacts_profile_digest_size_unique",
+      "table": "activity_artifacts",
+      "definition": "CREATE UNIQUE INDEX activity_artifacts_profile_digest_size_unique ON public.activity_artifacts USING btree (profile_id, digest_algorithm, digest, byte_size)"
+    },
+    {
+      "name": "idx_activity_artifacts_profile",
+      "table": "activity_artifacts",
+      "definition": "CREATE INDEX idx_activity_artifacts_profile ON public.activity_artifacts USING btree (profile_id)"
     },
     {
       "name": "activity_efforts_pkey",
@@ -4882,9 +5699,19 @@
       "definition": "CREATE INDEX idx_activity_efforts_profile_id ON public.activity_efforts USING btree (profile_id)"
     },
     {
+      "name": "idx_activity_efforts_segment_id",
+      "table": "activity_efforts",
+      "definition": "CREATE INDEX idx_activity_efforts_segment_id ON public.activity_efforts USING btree (segment_id)"
+    },
+    {
       "name": "activity_file_ingestions_pkey",
       "table": "activity_file_ingestions",
       "definition": "CREATE UNIQUE INDEX activity_file_ingestions_pkey ON public.activity_file_ingestions USING btree (id)"
+    },
+    {
+      "name": "activity_file_ingestions_profile_operation_unique",
+      "table": "activity_file_ingestions",
+      "definition": "CREATE UNIQUE INDEX activity_file_ingestions_profile_operation_unique ON public.activity_file_ingestions USING btree (profile_id, operation_key)"
     },
     {
       "name": "idx_activity_file_ingestions_activity_id",
@@ -4895,6 +5722,11 @@
       "name": "idx_activity_file_ingestions_activity_profile",
       "table": "activity_file_ingestions",
       "definition": "CREATE INDEX idx_activity_file_ingestions_activity_profile ON public.activity_file_ingestions USING btree (activity_id, profile_id)"
+    },
+    {
+      "name": "idx_activity_file_ingestions_artifact_id",
+      "table": "activity_file_ingestions",
+      "definition": "CREATE INDEX idx_activity_file_ingestions_artifact_id ON public.activity_file_ingestions USING btree (artifact_id) WHERE (artifact_id IS NOT NULL)"
     },
     {
       "name": "idx_activity_file_ingestions_profile_id",
@@ -4965,6 +5797,46 @@
       "name": "idx_routes_profile_id",
       "table": "activity_routes",
       "definition": "CREATE INDEX idx_routes_profile_id ON public.activity_routes USING btree (profile_id) WHERE (profile_id IS NOT NULL)"
+    },
+    {
+      "name": "activity_segments_activity_id_int8range_excl",
+      "table": "activity_segments",
+      "definition": "CREATE INDEX activity_segments_activity_id_int8range_excl ON public.activity_segments USING gist (activity_id, int8range(start_offset_ms, end_offset_ms, '[)'::text))"
+    },
+    {
+      "name": "activity_segments_activity_ordinal_unique",
+      "table": "activity_segments",
+      "definition": "CREATE UNIQUE INDEX activity_segments_activity_ordinal_unique ON public.activity_segments USING btree (activity_id, ordinal)"
+    },
+    {
+      "name": "activity_segments_effort_category_unique",
+      "table": "activity_segments",
+      "definition": "CREATE UNIQUE INDEX activity_segments_effort_category_unique ON public.activity_segments USING btree (id, activity_id, profile_id, category)"
+    },
+    {
+      "name": "activity_segments_id_activity_profile_unique",
+      "table": "activity_segments",
+      "definition": "CREATE UNIQUE INDEX activity_segments_id_activity_profile_unique ON public.activity_segments USING btree (id, activity_id, profile_id)"
+    },
+    {
+      "name": "activity_segments_pkey",
+      "table": "activity_segments",
+      "definition": "CREATE UNIQUE INDEX activity_segments_pkey ON public.activity_segments USING btree (id)"
+    },
+    {
+      "name": "idx_activity_segments_activity",
+      "table": "activity_segments",
+      "definition": "CREATE INDEX idx_activity_segments_activity ON public.activity_segments USING btree (activity_id, ordinal)"
+    },
+    {
+      "name": "idx_activity_segments_category",
+      "table": "activity_segments",
+      "definition": "CREATE INDEX idx_activity_segments_category ON public.activity_segments USING btree (category) WHERE (category IS NOT NULL)"
+    },
+    {
+      "name": "canonical_activity_categories_pkey",
+      "table": "canonical_activity_categories",
+      "definition": "CREATE UNIQUE INDEX canonical_activity_categories_pkey ON public.canonical_activity_categories USING btree (code)"
     },
     {
       "name": "coaches_athletes_coach_id_athlete_id_pk",
@@ -5372,6 +6244,16 @@
       "definition": "CREATE UNIQUE INDEX messages_pkey ON public.messages USING btree (id)"
     },
     {
+      "name": "multisport_cutover_audits_pkey",
+      "table": "multisport_cutover_audits",
+      "definition": "CREATE UNIQUE INDEX multisport_cutover_audits_pkey ON public.multisport_cutover_audits USING btree (run_id)"
+    },
+    {
+      "name": "multisport_cutover_template_audits_pkey",
+      "table": "multisport_cutover_template_audits",
+      "definition": "CREATE UNIQUE INDEX multisport_cutover_template_audits_pkey ON public.multisport_cutover_template_audits USING btree (run_id, activity_plan_id)"
+    },
+    {
       "name": "idx_notifications_actor_id",
       "table": "notifications",
       "definition": "CREATE INDEX idx_notifications_actor_id ON public.notifications USING btree (actor_id)"
@@ -5634,15 +6516,144 @@
       "table": "users",
       "schema": "auth",
       "definition": "CREATE TRIGGER on_auth_user_created AFTER INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION handle_new_user()"
+    },
+    {
+      "name": "activities_validate_segment_set",
+      "table": "activities",
+      "schema": "public",
+      "definition": "CREATE CONSTRAINT TRIGGER activities_validate_segment_set AFTER INSERT OR UPDATE ON activities DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION activity_parent_segment_set_constraint_trigger()"
+    },
+    {
+      "name": "activity_artifacts_block_direct_delete",
+      "table": "activity_artifacts",
+      "schema": "public",
+      "definition": "CREATE TRIGGER activity_artifacts_block_direct_delete BEFORE DELETE ON activity_artifacts FOR EACH ROW EXECUTE FUNCTION block_activity_artifact_direct_delete()"
+    },
+    {
+      "name": "activity_artifacts_immutable_before_update",
+      "table": "activity_artifacts",
+      "schema": "public",
+      "definition": "CREATE TRIGGER activity_artifacts_immutable_before_update BEFORE UPDATE ON activity_artifacts FOR EACH ROW EXECUTE FUNCTION enforce_activity_artifact_immutable()"
+    },
+    {
+      "name": "activity_efforts_validate_segment_range",
+      "table": "activity_efforts",
+      "schema": "public",
+      "definition": "CREATE TRIGGER activity_efforts_validate_segment_range BEFORE INSERT OR UPDATE ON activity_efforts FOR EACH ROW EXECUTE FUNCTION validate_activity_effort_segment_range()"
+    },
+    {
+      "name": "activity_segments_validate_set",
+      "table": "activity_segments",
+      "schema": "public",
+      "definition": "CREATE CONSTRAINT TRIGGER activity_segments_validate_set AFTER INSERT OR DELETE OR UPDATE ON activity_segments DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION activity_segment_set_constraint_trigger()"
     }
   ],
   "functions": [
+    {
+      "acl": "",
+      "config": ["search_path=\"\""],
+      "identity": "activity_artifact_content_path(uuid,text)",
+      "language": "sql",
+      "definition": "CREATE OR REPLACE FUNCTION public.activity_artifact_content_path(target_profile_id uuid, target_digest text)\n RETURNS text\n LANGUAGE sql\n IMMUTABLE STRICT\n SET search_path TO ''\nAS $function$\n  select 'artifacts/sha256/'||target_profile_id::text||'/'||target_digest\n$function$\n",
+      "volatility": "i",
+      "securityDefiner": false
+    },
+    {
+      "acl": "",
+      "config": ["search_path=\"\""],
+      "identity": "activity_parent_segment_set_constraint_trigger()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.activity_parent_segment_set_constraint_trigger()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\nbegin\n  perform public.validate_activity_segment_set(new.id);\n  return null;\nend $function$\n",
+      "volatility": "v",
+      "securityDefiner": true
+    },
+    {
+      "acl": "",
+      "config": ["search_path=\"\""],
+      "identity": "activity_segment_set_constraint_trigger()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.activity_segment_set_constraint_trigger()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\nbegin\n  perform public.validate_activity_segment_set(coalesce(new.activity_id, old.activity_id));\n  return null;\nend $function$\n",
+      "volatility": "v",
+      "securityDefiner": true
+    },
+    {
+      "acl": "",
+      "config": ["search_path=\"\""],
+      "identity": "block_activity_artifact_direct_delete()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.block_activity_artifact_direct_delete()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\nbegin\n  if old.availability<>'deleted'\n    or current_setting('gradientpeak.artifact_hard_delete_authorized',true) is distinct from 'on' then\n    raise exception 'activity artifact delete requires completed service lifecycle';\n  end if;\n  return old;\nend $function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "",
+      "config": ["search_path=\"\""],
+      "identity": "enforce_activity_artifact_immutable()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.enforce_activity_artifact_immutable()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\nbegin\n  if row(new.profile_id, new.digest_algorithm, new.digest, new.byte_size, new.bucket, new.path,\n         new.media_type, new.format, new.original_name, new.first_accepted_at)\n     is distinct from\n     row(old.profile_id, old.digest_algorithm, old.digest, old.byte_size, old.bucket, old.path,\n         old.media_type, old.format, old.original_name, old.first_accepted_at) then\n    raise exception 'accepted activity artifact byte identity is immutable';\n  end if;\n  if new.availability is distinct from old.availability then\n    if current_setting('gradientpeak.artifact_lifecycle_authorized',true) is distinct from 'on' then\n      raise exception 'activity artifact lifecycle requires authorized service workflow';\n    end if;\n    if not ((old.availability='accepted' and new.availability='deletion_pending')\n      or (old.availability='deletion_pending' and new.availability='deleted')) then\n      raise exception 'invalid activity artifact lifecycle transition';\n    end if;\n  end if;\n  return new;\nend $function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": ["search_path=\"\""],
+      "identity": "finalize_activity_artifact_deletion(uuid,boolean)",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.finalize_activity_artifact_deletion(target_id uuid, storage_deleted boolean)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\nbegin\n  if not storage_deleted then raise exception 'storage deletion proof is required'; end if;\n  perform set_config('gradientpeak.artifact_lifecycle_authorized','on',true);\n  update public.activity_artifacts set availability='deleted',deleted_at=now()\n  where id=target_id and availability='deletion_pending';\n  if not found then raise exception 'artifact is not deletion_pending or does not exist'; end if;\nend $function$\n",
+      "volatility": "v",
+      "securityDefiner": true
+    },
     {
       "acl": "{postgres=X/postgres}",
       "config": ["search_path=\"\""],
       "identity": "handle_new_user()",
       "language": "plpgsql",
       "definition": "CREATE OR REPLACE FUNCTION public.handle_new_user()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n    full_name text;\n    user_email text;\n    base_username text;\n    unique_suffix text;\n    final_username text;\nbegin\n    full_name := nullif(btrim(coalesce(\n        new.raw_user_meta_data->>'full_name',\n        new.raw_user_meta_data->>'name',\n        concat_ws(' ',\n            new.raw_user_meta_data->>'first_name',\n            new.raw_user_meta_data->>'last_name'\n        )\n    )), '');\n\n    user_email := coalesce(\n        nullif(new.email, ''),\n        nullif(new.raw_user_meta_data->>'email', ''),\n        new.id::text || '@users.local'\n    );\n\n    base_username := coalesce(\n        nullif(concat_ws('',\n            new.raw_user_meta_data->>'first_name',\n            new.raw_user_meta_data->>'last_name'\n        ), ''),\n        split_part(user_email, '@', 1),\n        'user'\n    );\n\n    unique_suffix := substring(replace(new.id::text, '-', '') from 1 for 6);\n    final_username := left(base_username || unique_suffix, 50);\n\n    insert into public.users (id, name, email, email_verified, image)\n    values (\n        new.id,\n        coalesce(full_name, split_part(user_email, '@', 1), 'User'),\n        user_email,\n        coalesce(new.email_confirmed_at is not null, false),\n        new.raw_user_meta_data->>'avatar_url'\n    )\n    on conflict (id) do update\n    set\n        name = coalesce(public.users.name, excluded.name),\n        email = coalesce(public.users.email, excluded.email),\n        image = coalesce(public.users.image, excluded.image),\n        updated_at = now();\n\n    insert into public.profiles (id, email, full_name, username, avatar_url)\n    values (\n        new.id,\n        new.email,\n        full_name,\n        final_username,\n        new.raw_user_meta_data->>'avatar_url'\n    )\n    on conflict (id) do update\n    set\n        email = coalesce(public.profiles.email, excluded.email),\n        full_name = coalesce(public.profiles.full_name, excluded.full_name),\n        username = coalesce(public.profiles.username, excluded.username),\n        avatar_url = coalesce(public.profiles.avatar_url, excluded.avatar_url),\n        updated_at = now();\n\n    return new;\nend;\n$function$\n",
+      "volatility": "v",
+      "securityDefiner": true
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": ["search_path=\"\""],
+      "identity": "purge_deleted_activity_artifact(uuid)",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.purge_deleted_activity_artifact(target_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\nbegin\n  perform set_config('gradientpeak.artifact_hard_delete_authorized','on',true);\n  delete from public.activity_artifacts where id=target_id and availability='deleted';\n  if not found then raise exception 'artifact tombstone is not deletable'; end if;\nend $function$\n",
+      "volatility": "v",
+      "securityDefiner": true
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": ["search_path=\"\""],
+      "identity": "request_activity_artifact_deletion(uuid)",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.request_activity_artifact_deletion(target_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\nbegin\n  perform 1 from public.activity_artifacts where id=target_id and availability='accepted' for update;\n  if not found then raise exception 'artifact is not accepted or does not exist'; end if;\n  update public.activity_segments set source_artifact_id=null,source_session_index=null,source_message_index=null\n    where source_artifact_id=target_id;\n  update public.activity_file_ingestions set artifact_id=null,status='failed',claim_token=null,lease_expires_at=null,\n    failed_at=coalesce(failed_at,now()),last_error_code='artifact_deletion_requested',\n    last_error_message='Accepted source artifact entered controlled deletion',updated_at=now()\n    where artifact_id=target_id;\n  delete from public.activity_artifact_links where artifact_id=target_id;\n  perform set_config('gradientpeak.artifact_lifecycle_authorized','on',true);\n  update public.activity_artifacts set availability='deletion_pending',deletion_requested_at=now()\n  where id=target_id and availability='accepted';\nend $function$\n",
+      "volatility": "v",
+      "securityDefiner": true
+    },
+    {
+      "acl": "{postgres=X/postgres,service_role=X/postgres}",
+      "config": ["search_path=\"\""],
+      "identity": "switch_activity_source_artifact(uuid,uuid,uuid,text)",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.switch_activity_source_artifact(target_activity_id uuid, target_artifact_id uuid, target_profile_id uuid, target_provider_revision text DEFAULT NULL::text)\n RETURNS activity_artifact_links\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare inserted public.activity_artifact_links;\nbegin\n  perform 1 from public.activities where id=target_activity_id and profile_id=target_profile_id for update;\n  if not found then raise exception 'activity/profile not found'; end if;\n  update public.activity_artifact_links set is_current=false\n    where activity_id=target_activity_id and role='source' and is_current;\n  insert into public.activity_artifact_links(activity_id,artifact_id,profile_id,role,ordinal,is_current,provider_revision)\n  values(target_activity_id,target_artifact_id,target_profile_id,'source',\n    coalesce((select max(ordinal)+1 from public.activity_artifact_links where activity_id=target_activity_id and role='source'),0),\n    true,target_provider_revision) returning * into inserted;\n  return inserted;\nend $function$\n",
+      "volatility": "v",
+      "securityDefiner": true
+    },
+    {
+      "acl": "",
+      "config": ["search_path=\"\""],
+      "identity": "validate_activity_effort_segment_range()",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.validate_activity_effort_segment_range()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\ndeclare segment_record record;\nbegin\n  if new.activity_id is null then return new; end if;\n  select start_offset_ms,end_offset_ms,category into segment_record from public.activity_segments\n    where id=new.segment_id and activity_id=new.activity_id and profile_id=new.profile_id;\n  if not found or segment_record.category<>new.activity_category\n    or new.start_offset is null or new.start_offset*1000<segment_record.start_offset_ms\n    or (new.start_offset+new.duration_seconds)*1000>segment_record.end_offset_ms then\n    raise exception 'activity effort must be contained by its matching-category segment';\n  end if;\n  return new;\nend $function$\n",
+      "volatility": "v",
+      "securityDefiner": false
+    },
+    {
+      "acl": "",
+      "config": ["search_path=\"\""],
+      "identity": "validate_activity_segment_set(uuid)",
+      "language": "plpgsql",
+      "definition": "CREATE OR REPLACE FUNCTION public.validate_activity_segment_set(target_activity_id uuid)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n  parent_record record;\n  segment_count integer;\n  max_ordinal integer;\n  summed_active bigint;\n  summed_moving bigint;\n  complete_count integer;\nbegin\n  select elapsed_ms, active_ms, moving_ms,timing_coverage into parent_record\n  from public.activities where id = target_activity_id;\n  if not found then return; end if;\n\n  select count(*), max(ordinal), sum(active_ms), sum(moving_ms),\n    count(*) filter(where timing_coverage='complete' and active_ms is not null and moving_ms is not null)\n    into segment_count, max_ordinal, summed_active, summed_moving,complete_count\n  from public.activity_segments where activity_id = target_activity_id;\n  if segment_count = 0 or max_ordinal <> segment_count - 1 then\n    raise exception 'activity % segment ordinals must be contiguous from zero', target_activity_id;\n  end if;\n  if exists (select 1 from public.activity_segments where activity_id = target_activity_id and end_offset_ms > parent_record.elapsed_ms) then\n    raise exception 'activity % segment exceeds parent elapsed bounds', target_activity_id;\n  end if;\n  if exists (\n    select 1 from public.activity_segments s\n    left join public.activity_segments p on p.activity_id=s.activity_id and p.ordinal=s.ordinal-1\n    left join public.activity_segments n on n.activity_id=s.activity_id and n.ordinal=s.ordinal+1\n    where s.activity_id=target_activity_id and s.role='transition'\n      and (p.role is distinct from 'activity' or n.role is distinct from 'activity')\n  ) then raise exception 'activity % transition must be between activity segments', target_activity_id; end if;\n  if exists (\n    select 1 from public.activity_segments s join public.activity_segments n\n      on n.activity_id=s.activity_id and n.ordinal=s.ordinal+1\n    where s.activity_id=target_activity_id and s.role='rest' and n.role='rest'\n  ) then raise exception 'activity % has consecutive rest segments', target_activity_id; end if;\n  if parent_record.timing_coverage='complete' then\n    if complete_count<>segment_count then\n      raise exception 'activity % complete parent requires complete timing for every segment',target_activity_id;\n    end if;\n    if parent_record.active_ms is distinct from summed_active or parent_record.moving_ms is distinct from summed_moving then\n      raise exception 'activity % complete timing does not reconcile with segments',target_activity_id;\n    end if;\n  elsif parent_record.active_ms is not null or parent_record.moving_ms is not null then\n    raise exception 'activity % partial/unavailable parent timing totals must be null',target_activity_id;\n  end if;\n  if exists (\n    select 1 from public.activity_segments s\n    where s.activity_id=target_activity_id\n       and (s.summary->>'version' is distinct from s.summary_version::text\n         or s.summary#>>'{timing,timingCoverage}' is distinct from s.timing_coverage\n         or (s.summary#>>'{timing,activeMs}')::bigint is distinct from s.active_ms\n         or (s.summary#>>'{timing,movingMs}')::bigint is distinct from s.moving_ms)\n  ) then raise exception 'activity % segment summary timing/version mismatch', target_activity_id; end if;\nend $function$\n",
       "volatility": "v",
       "securityDefiner": true
     }
@@ -5662,6 +6673,13 @@
       "table": "accounts",
       "validated": true,
       "definition": "FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "c",
+      "name": "activities_active_ms_check",
+      "table": "activities",
+      "validated": true,
+      "definition": "CHECK (active_ms IS NULL OR active_ms >= 0 AND active_ms <= elapsed_ms)"
     },
     {
       "kind": "f",
@@ -5686,10 +6704,10 @@
     },
     {
       "kind": "c",
-      "name": "activities_duration_seconds_check",
+      "name": "activities_elapsed_ms_check",
       "table": "activities",
       "validated": true,
-      "definition": "CHECK (duration_seconds >= 0)"
+      "definition": "CHECK (elapsed_ms > 0)"
     },
     {
       "kind": "u",
@@ -5697,27 +6715,6 @@
       "table": "activities",
       "validated": true,
       "definition": "UNIQUE (id, profile_id)"
-    },
-    {
-      "kind": "c",
-      "name": "activities_import_file_type_non_empty_check",
-      "table": "activities",
-      "validated": true,
-      "definition": "CHECK (import_file_type IS NULL OR btrim(import_file_type) <> ''::text)"
-    },
-    {
-      "kind": "c",
-      "name": "activities_import_original_file_name_non_empty_check",
-      "table": "activities",
-      "validated": true,
-      "definition": "CHECK (import_original_file_name IS NULL OR btrim(import_original_file_name) <> ''::text)"
-    },
-    {
-      "kind": "c",
-      "name": "activities_import_source_check",
-      "table": "activities",
-      "validated": true,
-      "definition": "CHECK (import_source IS NULL OR import_source = 'manual_historical'::text)"
     },
     {
       "kind": "c",
@@ -5742,17 +6739,17 @@
     },
     {
       "kind": "c",
-      "name": "activities_moving_seconds_check",
+      "name": "activities_moving_ms_check",
       "table": "activities",
       "validated": true,
-      "definition": "CHECK (moving_seconds >= 0)"
+      "definition": "CHECK (moving_ms IS NULL OR moving_ms >= 0 AND moving_ms <= COALESCE(active_ms, elapsed_ms))"
     },
     {
       "kind": "c",
       "name": "activities_moving_time_check",
       "table": "activities",
       "validated": true,
-      "definition": "CHECK (moving_seconds <= duration_seconds)"
+      "definition": "CHECK (moving_ms IS NULL OR active_ms IS NULL OR moving_ms <= active_ms)"
     },
     {
       "kind": "p",
@@ -5776,6 +6773,167 @@
       "definition": "CHECK ((provider IS NULL) = (external_id IS NULL))"
     },
     {
+      "kind": "c",
+      "name": "activities_segments_revision_check",
+      "table": "activities",
+      "validated": true,
+      "definition": "CHECK (segments_revision > 0)"
+    },
+    {
+      "kind": "c",
+      "name": "activities_timing_coverage_values_check",
+      "table": "activities",
+      "validated": true,
+      "definition": "CHECK (timing_coverage = 'complete'::text AND active_ms IS NOT NULL AND moving_ms IS NOT NULL OR (timing_coverage = ANY (ARRAY['partial'::text, 'unavailable'::text])) AND active_ms IS NULL AND moving_ms IS NULL)"
+    },
+    {
+      "kind": "u",
+      "name": "activity_artifact_links_activity_artifact_profile_unique",
+      "table": "activity_artifact_links",
+      "validated": true,
+      "definition": "UNIQUE (activity_id, artifact_id, profile_id)"
+    },
+    {
+      "kind": "u",
+      "name": "activity_artifact_links_activity_artifact_role_unique",
+      "table": "activity_artifact_links",
+      "validated": true,
+      "definition": "UNIQUE (activity_id, artifact_id, role)"
+    },
+    {
+      "kind": "f",
+      "name": "activity_artifact_links_activity_profile_fkey",
+      "table": "activity_artifact_links",
+      "validated": true,
+      "definition": "FOREIGN KEY (activity_id, profile_id) REFERENCES activities(id, profile_id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "u",
+      "name": "activity_artifact_links_activity_role_ordinal_unique",
+      "table": "activity_artifact_links",
+      "validated": true,
+      "definition": "UNIQUE (activity_id, role, ordinal)"
+    },
+    {
+      "kind": "f",
+      "name": "activity_artifact_links_artifact_profile_fkey",
+      "table": "activity_artifact_links",
+      "validated": true,
+      "definition": "FOREIGN KEY (artifact_id, profile_id) REFERENCES activity_artifacts(id, profile_id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "activity_artifact_links_current_source_check",
+      "table": "activity_artifact_links",
+      "validated": true,
+      "definition": "CHECK (NOT is_current OR role = 'source'::text)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_artifact_links_ordinal_check",
+      "table": "activity_artifact_links",
+      "validated": true,
+      "definition": "CHECK (ordinal >= 0)"
+    },
+    {
+      "kind": "p",
+      "name": "activity_artifact_links_pkey",
+      "table": "activity_artifact_links",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_artifact_links_role_check",
+      "table": "activity_artifact_links",
+      "validated": true,
+      "definition": "CHECK (role = ANY (ARRAY['source'::text, 'supplemental'::text, 'export'::text]))"
+    },
+    {
+      "kind": "c",
+      "name": "activity_artifacts_availability_check",
+      "table": "activity_artifacts",
+      "validated": true,
+      "definition": "CHECK (availability = ANY (ARRAY['accepted'::text, 'deletion_pending'::text, 'deleted'::text]))"
+    },
+    {
+      "kind": "u",
+      "name": "activity_artifacts_bucket_path_unique",
+      "table": "activity_artifacts",
+      "validated": true,
+      "definition": "UNIQUE (bucket, path)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_artifacts_byte_size_check",
+      "table": "activity_artifacts",
+      "validated": true,
+      "definition": "CHECK (byte_size > 0)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_artifacts_content_addressed_path_check",
+      "table": "activity_artifacts",
+      "validated": true,
+      "definition": "CHECK (path = activity_artifact_content_path(profile_id, digest))"
+    },
+    {
+      "kind": "u",
+      "name": "activity_artifacts_id_profile_unique",
+      "table": "activity_artifacts",
+      "validated": true,
+      "definition": "UNIQUE (id, profile_id)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_artifacts_lifecycle_check",
+      "table": "activity_artifacts",
+      "validated": true,
+      "definition": "CHECK (availability = 'accepted'::text AND deletion_requested_at IS NULL AND deleted_at IS NULL OR availability = 'deletion_pending'::text AND deletion_requested_at IS NOT NULL AND deleted_at IS NULL OR availability = 'deleted'::text AND deletion_requested_at IS NOT NULL AND deleted_at IS NOT NULL)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_artifacts_path_check",
+      "table": "activity_artifacts",
+      "validated": true,
+      "definition": "CHECK (btrim(bucket) <> ''::text AND btrim(path) <> ''::text)"
+    },
+    {
+      "kind": "p",
+      "name": "activity_artifacts_pkey",
+      "table": "activity_artifacts",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "u",
+      "name": "activity_artifacts_profile_digest_size_unique",
+      "table": "activity_artifacts",
+      "validated": true,
+      "definition": "UNIQUE (profile_id, digest_algorithm, digest, byte_size)"
+    },
+    {
+      "kind": "f",
+      "name": "activity_artifacts_profile_id_fkey",
+      "table": "activity_artifacts",
+      "validated": true,
+      "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "activity_artifacts_sha256_check",
+      "table": "activity_artifacts",
+      "validated": true,
+      "definition": "CHECK (digest_algorithm = 'sha256'::text AND digest ~ '^[0-9a-f]{64}$'::text)"
+    },
+    {
+      "kind": "f",
+      "name": "activity_efforts_activity_category_fkey",
+      "table": "activity_efforts",
+      "validated": true,
+      "definition": "FOREIGN KEY (activity_category) REFERENCES canonical_activity_categories(code) ON DELETE RESTRICT"
+    },
+    {
       "kind": "f",
       "name": "activity_efforts_activity_id_activities_id_fk",
       "table": "activity_efforts",
@@ -5784,10 +6942,17 @@
     },
     {
       "kind": "c",
+      "name": "activity_efforts_activity_segment_check",
+      "table": "activity_efforts",
+      "validated": true,
+      "definition": "CHECK (activity_id IS NULL AND segment_id IS NULL OR activity_id IS NOT NULL AND segment_id IS NOT NULL)"
+    },
+    {
+      "kind": "c",
       "name": "activity_efforts_bike_power_max_check",
       "table": "activity_efforts",
-      "validated": false,
-      "definition": "CHECK (activity_category <> 'bike'::activity_category OR effort_type <> 'power'::effort_type OR value <= 3000::double precision) NOT VALID"
+      "validated": true,
+      "definition": "CHECK (activity_category <> 'bike'::text OR effort_type <> 'power'::effort_type OR value <= 3000::double precision)"
     },
     {
       "kind": "c",
@@ -5842,36 +7007,36 @@
       "kind": "c",
       "name": "activity_efforts_run_speed_bounds_check",
       "table": "activity_efforts",
-      "validated": false,
-      "definition": "CHECK (activity_category <> 'run'::activity_category OR effort_type <> 'speed'::effort_type OR value >= 0.3::double precision AND value <= 13::double precision) NOT VALID"
+      "validated": true,
+      "definition": "CHECK (activity_category <> 'run'::text OR effort_type <> 'speed'::effort_type OR value >= 0.3::double precision AND value <= 13::double precision)"
+    },
+    {
+      "kind": "f",
+      "name": "activity_efforts_segment_activity_profile_category_fkey",
+      "table": "activity_efforts",
+      "validated": true,
+      "definition": "FOREIGN KEY (segment_id, activity_id, profile_id, activity_category) REFERENCES activity_segments(id, activity_id, profile_id, category) ON DELETE CASCADE"
     },
     {
       "kind": "c",
       "name": "activity_efforts_supported_combination_check",
       "table": "activity_efforts",
-      "validated": false,
-      "definition": "CHECK (activity_category = 'bike'::activity_category AND effort_type = 'power'::effort_type OR (activity_category = ANY (ARRAY['run'::activity_category, 'swim'::activity_category])) AND effort_type = 'speed'::effort_type) NOT VALID"
+      "validated": true,
+      "definition": "CHECK (activity_category = 'bike'::text AND effort_type = 'power'::effort_type OR (activity_category = ANY (ARRAY['run'::text, 'swim'::text])) AND effort_type = 'speed'::effort_type)"
     },
     {
       "kind": "c",
       "name": "activity_efforts_swim_speed_bounds_check",
       "table": "activity_efforts",
-      "validated": false,
-      "definition": "CHECK (activity_category <> 'swim'::activity_category OR effort_type <> 'speed'::effort_type OR value >= 0.1::double precision AND value <= 3::double precision) NOT VALID"
+      "validated": true,
+      "definition": "CHECK (activity_category <> 'swim'::text OR effort_type <> 'speed'::effort_type OR value >= 0.1::double precision AND value <= 3::double precision)"
     },
     {
       "kind": "c",
       "name": "activity_efforts_unit_compatibility_check",
       "table": "activity_efforts",
-      "validated": false,
-      "definition": "CHECK (activity_category = 'bike'::activity_category AND effort_type = 'power'::effort_type AND (unit = ANY (ARRAY['watts'::text, 'W'::text])) OR (activity_category = ANY (ARRAY['run'::activity_category, 'swim'::activity_category])) AND effort_type = 'speed'::effort_type AND (unit = ANY (ARRAY['meters_per_second'::text, 'm/s'::text]))) NOT VALID"
-    },
-    {
-      "kind": "c",
-      "name": "activity_efforts_value_finite_positive_check",
-      "table": "activity_efforts",
-      "validated": false,
-      "definition": "CHECK (value > 0::double precision AND (value <> ALL (ARRAY['NaN'::real, 'Infinity'::real, '-Infinity'::real])) OR value = 0::double precision AND activity_id IS NULL AND activity_category = 'bike'::activity_category AND effort_type = 'power'::effort_type AND source = 'manual'::evidence_observation_source AND method = 'profile_update_override'::text AND (provenance ->> 'override_state'::text) = 'cleared'::text) NOT VALID"
+      "validated": true,
+      "definition": "CHECK (activity_category = 'bike'::text AND effort_type = 'power'::effort_type AND (unit = ANY (ARRAY['watts'::text, 'W'::text])) OR (activity_category = ANY (ARRAY['run'::text, 'swim'::text])) AND effort_type = 'speed'::effort_type AND (unit = ANY (ARRAY['meters_per_second'::text, 'm/s'::text])))"
     },
     {
       "kind": "f",
@@ -5879,6 +7044,13 @@
       "table": "activity_file_ingestions",
       "validated": true,
       "definition": "FOREIGN KEY (activity_id, profile_id) REFERENCES activities(id, profile_id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "f",
+      "name": "activity_file_ingestions_artifact_profile_fkey",
+      "table": "activity_file_ingestions",
+      "validated": true,
+      "definition": "FOREIGN KEY (artifact_id, profile_id) REFERENCES activity_artifacts(id, profile_id) ON DELETE RESTRICT"
     },
     {
       "kind": "c",
@@ -5889,10 +7061,24 @@
     },
     {
       "kind": "c",
-      "name": "activity_file_ingestions_file_size_check",
+      "name": "activity_file_ingestions_claim_check",
       "table": "activity_file_ingestions",
       "validated": true,
-      "definition": "CHECK (file_size IS NULL OR file_size >= 0)"
+      "definition": "CHECK ((claim_token IS NULL) = (lease_expires_at IS NULL))"
+    },
+    {
+      "kind": "f",
+      "name": "activity_file_ingestions_integration_id_fkey",
+      "table": "activity_file_ingestions",
+      "validated": true,
+      "definition": "FOREIGN KEY (integration_id) REFERENCES integrations(id) ON DELETE SET NULL"
+    },
+    {
+      "kind": "c",
+      "name": "activity_file_ingestions_operation_key_check",
+      "table": "activity_file_ingestions",
+      "validated": true,
+      "definition": "CHECK (btrim(operation_key) <> ''::text)"
     },
     {
       "kind": "p",
@@ -5907,6 +7093,13 @@
       "table": "activity_file_ingestions",
       "validated": true,
       "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "c",
+      "name": "activity_file_ingestions_ready_check",
+      "table": "activity_file_ingestions",
+      "validated": true,
+      "definition": "CHECK (status <> 'ready'::activity_file_ingestion_status OR activity_id IS NOT NULL AND artifact_id IS NOT NULL)"
     },
     {
       "kind": "c",
@@ -5942,6 +7135,20 @@
       "table": "activity_plans",
       "validated": true,
       "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "c",
+      "name": "activity_plans_structure_hash_check",
+      "table": "activity_plans",
+      "validated": true,
+      "definition": "CHECK (structure_hash ~ '^v1:sha256:[0-9a-f]{64}$'::text)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_plans_structure_v3_check",
+      "table": "activity_plans",
+      "validated": true,
+      "definition": "CHECK (jsonb_typeof(structure) = 'object'::text AND (structure ->> 'version'::text) = '3'::text AND jsonb_typeof(structure -> 'segments'::text) = 'array'::text AND jsonb_array_length(structure -> 'segments'::text) >= 1 AND jsonb_array_length(structure -> 'segments'::text) <= 64 AND pg_column_size(structure) <= 1048576)"
     },
     {
       "kind": "c",
@@ -6012,6 +7219,153 @@
       "table": "activity_routes",
       "validated": true,
       "definition": "CHECK (total_distance >= 0)"
+    },
+    {
+      "kind": "x",
+      "name": "activity_segments_activity_id_int8range_excl",
+      "table": "activity_segments",
+      "validated": true,
+      "definition": "EXCLUDE USING gist (activity_id WITH =, int8range(start_offset_ms, end_offset_ms, '[)'::text) WITH &&) DEFERRABLE INITIALLY DEFERRED"
+    },
+    {
+      "kind": "u",
+      "name": "activity_segments_activity_ordinal_unique",
+      "table": "activity_segments",
+      "validated": true,
+      "definition": "UNIQUE (activity_id, ordinal)"
+    },
+    {
+      "kind": "f",
+      "name": "activity_segments_activity_profile_fkey",
+      "table": "activity_segments",
+      "validated": true,
+      "definition": "FOREIGN KEY (activity_id, profile_id) REFERENCES activities(id, profile_id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "f",
+      "name": "activity_segments_category_fkey",
+      "table": "activity_segments",
+      "validated": true,
+      "definition": "FOREIGN KEY (category) REFERENCES canonical_activity_categories(code) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "u",
+      "name": "activity_segments_effort_category_unique",
+      "table": "activity_segments",
+      "validated": true,
+      "definition": "UNIQUE (id, activity_id, profile_id, category)"
+    },
+    {
+      "kind": "u",
+      "name": "activity_segments_id_activity_profile_unique",
+      "table": "activity_segments",
+      "validated": true,
+      "definition": "UNIQUE (id, activity_id, profile_id)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_segments_moving_check",
+      "table": "activity_segments",
+      "validated": true,
+      "definition": "CHECK (moving_ms IS NULL OR moving_ms >= 0 AND moving_ms <= COALESCE(active_ms, end_offset_ms - start_offset_ms))"
+    },
+    {
+      "kind": "c",
+      "name": "activity_segments_offset_check",
+      "table": "activity_segments",
+      "validated": true,
+      "definition": "CHECK (start_offset_ms >= 0 AND end_offset_ms > start_offset_ms)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_segments_ordinal_check",
+      "table": "activity_segments",
+      "validated": true,
+      "definition": "CHECK (ordinal >= 0)"
+    },
+    {
+      "kind": "p",
+      "name": "activity_segments_pkey",
+      "table": "activity_segments",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_segments_revision_check",
+      "table": "activity_segments",
+      "validated": true,
+      "definition": "CHECK (segment_revision > 0)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_segments_role_category_check",
+      "table": "activity_segments",
+      "validated": true,
+      "definition": "CHECK (role = 'activity'::text AND category IS NOT NULL OR role <> 'activity'::text AND category IS NULL)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_segments_role_check",
+      "table": "activity_segments",
+      "validated": true,
+      "definition": "CHECK (role = ANY (ARRAY['activity'::text, 'transition'::text, 'rest'::text, 'unknown'::text]))"
+    },
+    {
+      "kind": "c",
+      "name": "activity_segments_source_indexes_check",
+      "table": "activity_segments",
+      "validated": true,
+      "definition": "CHECK (source_session_index IS NULL AND source_message_index IS NULL OR source_artifact_id IS NOT NULL)"
+    },
+    {
+      "kind": "f",
+      "name": "activity_segments_source_link_fkey",
+      "table": "activity_segments",
+      "validated": true,
+      "definition": "FOREIGN KEY (activity_id, source_artifact_id, profile_id) REFERENCES activity_artifact_links(activity_id, artifact_id, profile_id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "activity_segments_summary_check",
+      "table": "activity_segments",
+      "validated": true,
+      "definition": "CHECK (summary_version = 1 AND jsonb_typeof(summary) = 'object'::text AND pg_column_size(summary) <= 1048576)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_segments_timing_check",
+      "table": "activity_segments",
+      "validated": true,
+      "definition": "CHECK (active_ms IS NULL OR active_ms >= 0 AND active_ms <= (end_offset_ms - start_offset_ms))"
+    },
+    {
+      "kind": "c",
+      "name": "activity_segments_timing_coverage_check",
+      "table": "activity_segments",
+      "validated": true,
+      "definition": "CHECK (timing_coverage = ANY (ARRAY['complete'::text, 'partial'::text, 'unavailable'::text]))"
+    },
+    {
+      "kind": "c",
+      "name": "activity_segments_timing_coverage_values_check",
+      "table": "activity_segments",
+      "validated": true,
+      "definition": "CHECK (timing_coverage = 'complete'::text AND active_ms IS NOT NULL AND moving_ms IS NOT NULL OR timing_coverage = 'partial'::text AND num_nonnulls(active_ms, moving_ms) > 0 OR timing_coverage = 'unavailable'::text AND active_ms IS NULL AND moving_ms IS NULL)"
+    },
+    {
+      "kind": "c",
+      "name": "activity_segments_unknown_source_check",
+      "table": "activity_segments",
+      "validated": true,
+      "definition": "CHECK (role <> 'unknown'::text OR num_nonnulls(raw_type_string, raw_type_integer, raw_sport_string, raw_sport_integer) > 0)"
+    },
+    {
+      "kind": "p",
+      "name": "canonical_activity_categories_pkey",
+      "table": "canonical_activity_categories",
+      "validated": true,
+      "definition": "PRIMARY KEY (code)"
     },
     {
       "kind": "f",
@@ -6700,6 +8054,27 @@
       "definition": "FOREIGN KEY (sender_id) REFERENCES profiles(id) ON DELETE CASCADE"
     },
     {
+      "kind": "p",
+      "name": "multisport_cutover_audits_pkey",
+      "table": "multisport_cutover_audits",
+      "validated": true,
+      "definition": "PRIMARY KEY (run_id)"
+    },
+    {
+      "kind": "p",
+      "name": "multisport_cutover_template_audits_pkey",
+      "table": "multisport_cutover_template_audits",
+      "validated": true,
+      "definition": "PRIMARY KEY (run_id, activity_plan_id)"
+    },
+    {
+      "kind": "f",
+      "name": "multisport_cutover_template_audits_run_id_fkey",
+      "table": "multisport_cutover_template_audits",
+      "validated": true,
+      "definition": "FOREIGN KEY (run_id) REFERENCES multisport_cutover_audits(run_id) ON DELETE RESTRICT"
+    },
+    {
       "kind": "f",
       "name": "notifications_actor_id_profiles_id_fk",
       "table": "notifications",
@@ -6974,6 +8349,20 @@
     },
     {
       "kind": "c",
+      "name": "training_plans_structure_hash_check",
+      "table": "training_plans",
+      "validated": true,
+      "definition": "CHECK (structure_hash ~ '^v1:sha256:[0-9a-f]{64}$'::text)"
+    },
+    {
+      "kind": "c",
+      "name": "training_plans_structure_v1_check",
+      "table": "training_plans",
+      "validated": true,
+      "definition": "CHECK (jsonb_typeof(structure) = 'object'::text AND (structure ->> 'version'::text) = '1'::text AND jsonb_typeof(structure -> 'sessions'::text) = 'array'::text AND jsonb_array_length(structure -> 'sessions'::text) > 0 AND pg_column_size(structure) <= 1048576)"
+    },
+    {
+      "kind": "c",
       "name": "training_plans_system_templates_public_check",
       "table": "training_plans",
       "validated": true,
@@ -7087,6 +8476,22 @@
       "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
       "rls": true,
       "kind": "r",
+      "name": "activity_artifact_links",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "activity_artifacts",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
       "name": "activity_efforts",
       "managed": true,
       "forceRls": false
@@ -7112,6 +8517,22 @@
       "rls": true,
       "kind": "r",
       "name": "activity_routes",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "activity_segments",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "canonical_activity_categories",
       "managed": true,
       "forceRls": false
     },
@@ -7272,6 +8693,22 @@
       "rls": true,
       "kind": "r",
       "name": "messages",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "multisport_cutover_audits",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "multisport_cutover_template_audits",
       "managed": true,
       "forceRls": false
     },

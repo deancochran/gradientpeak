@@ -13,6 +13,7 @@ const pgDialect = new PgDialect();
 const mockActivityAnalysis = vi.hoisted(() => ({
   analyzeActivityDerivedMetrics: vi.fn(),
   buildActivityDerivedSummaryMap: vi.fn(),
+  buildActivitySegmentDerivedSummaries: vi.fn(),
   createActivityAnalysisStore: vi.fn(() => ({
     kind: "activity-analysis-store",
   })),
@@ -27,7 +28,19 @@ const mockActivityAnalysis = vi.hoisted(() => ({
     derived,
   })),
   resolveActivityContextAsOf: vi.fn(),
+  loadActivitySegmentsByActivityId: vi.fn(),
 }));
+const mockArtifactStorage = vi.hoisted(() => ({
+  verifyAcceptedActivityArtifact: vi.fn(),
+}));
+
+vi.mock("../../application/activity-file-ingestion/artifact-storage", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("../../application/activity-file-ingestion/artifact-storage")
+  >()),
+  verifyAcceptedActivityArtifact: mockArtifactStorage.verifyAcceptedActivityArtifact,
+}));
+vi.mock("../../storage-service", () => ({ getApiStorageService: () => ({}) }));
 
 vi.mock("@repo/core", async () => {
   const actual = await vi.importActual<typeof import("@repo/core")>("@repo/core");
@@ -42,12 +55,16 @@ vi.mock("../../infrastructure/repositories", () => ({
   createActivityAnalysisStore: mockActivityAnalysis.createActivityAnalysisStore,
 }));
 
-vi.mock("../../lib/activity-analysis", () => ({
-  buildActivityDerivedSummaryMap: mockActivityAnalysis.buildActivityDerivedSummaryMap,
-  mapActivityToDerivedResponse: mockActivityAnalysis.mapActivityToDerivedResponse,
-  mapActivityToListDerivedResponse: mockActivityAnalysis.mapActivityToListDerivedResponse,
-  resolveActivityContextAsOf: mockActivityAnalysis.resolveActivityContextAsOf,
-}));
+vi.mock("../../lib/activity-analysis", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/activity-analysis")>();
+  return {
+    ...actual,
+    buildActivityDerivedSummaryMap: mockActivityAnalysis.buildActivityDerivedSummaryMap,
+    buildActivitySegmentDerivedSummaries: mockActivityAnalysis.buildActivitySegmentDerivedSummaries,
+    loadActivitySegmentsByActivityId: mockActivityAnalysis.loadActivitySegmentsByActivityId,
+    resolveActivityContextAsOf: mockActivityAnalysis.resolveActivityContextAsOf,
+  };
+});
 
 import { activitiesRouter } from "../activities";
 
@@ -58,6 +75,77 @@ const ACTIVITY_ID_2 = "44444444-4444-4444-8444-444444444444";
 const ACTIVITY_ID_3 = "55555555-5555-4555-8555-555555555555";
 const EVENT_ID = "66666666-6666-4666-8666-666666666666";
 const PLAN_ID = "77777777-7777-4777-8777-777777777777";
+const SEGMENT_ID = "99999999-9999-4999-8999-999999999999";
+const ACCEPTED_ARTIFACT = {
+  sha256: "a".repeat(64),
+  byteSize: 123456,
+  bucket: "activity-files",
+  path: `artifacts/sha256/${OWNER_ID}/${"a".repeat(64)}`,
+  mediaType: "application/vnd.ant.fit",
+  format: "fit" as const,
+  originalName: "accepted.fit",
+};
+
+function singleSegmentSet(category: "run" | "bike" | "swim", elapsedMs = 3_600_000) {
+  return {
+    version: 1 as const,
+    elapsedMs,
+    segments: [
+      {
+        id: SEGMENT_ID,
+        ordinal: 0,
+        role: "activity" as const,
+        category,
+        startOffsetMs: 0,
+        endOffsetMs: elapsedMs,
+        summary: {
+          version: 1 as const,
+          timing: {
+            timingCoverage: "complete" as const,
+            activeMs: elapsedMs,
+            movingMs: elapsedMs - 100_000,
+          },
+        },
+      },
+    ],
+  };
+}
+
+function recordingExecutionManifest(category: "run" | "bike" | "swim" = "run") {
+  return {
+    version: 1 as const,
+    compilerVersion: 1,
+    planHash: "b".repeat(64),
+    occurrences: [
+      {
+        occurrenceId: "occurrence-1",
+        globalOrdinal: 0,
+        segmentId: SEGMENT_ID,
+        role: "activity" as const,
+        category,
+        startedAt: "2026-01-15T09:00:00.000Z",
+        completedAt: "2026-01-15T10:00:00.000Z",
+        activeSeconds: 3600,
+        movingSeconds: 3500,
+        distanceMeters: 10000,
+        timerEvents: [],
+        laps: [],
+      },
+    ],
+  };
+}
+
+function recordingCreateInput(profileId = OWNER_ID) {
+  return {
+    profileId,
+    name: "Recorder Run",
+    startedAt: "2026-01-15T09:00:00.000Z",
+    finishedAt: "2026-01-15T10:00:00.000Z",
+    executionManifest: recordingExecutionManifest(),
+    acceptedArtifact: ACCEPTED_ARTIFACT,
+    summary: { distanceMeters: 10000 },
+  };
+}
 const RUN_TSS_IDENTITY = {
   sport: "run",
   method: "run_pace_threshold",
@@ -72,22 +160,32 @@ const BIKE_TSS_IDENTITY = {
   version: "1",
   calibration: { type: "ftp_watts", value: 250 },
 } as const;
+const activityCategories = new Map<string, "bike" | "run" | "swim">();
 
 function buildActivityRow(overrides: Record<string, unknown> = {}) {
+  const { category = "run", ...rowOverrides } = overrides;
+  const id = typeof rowOverrides.id === "string" ? rowOverrides.id : ACTIVITY_ID;
+  activityCategories.set(id, category as "bike" | "run" | "swim");
   return {
-    id: ACTIVITY_ID,
+    id,
     created_at: new Date("2026-01-01T00:00:00.000Z"),
     updated_at: new Date("2026-01-01T00:00:00.000Z"),
     profile_id: OWNER_ID,
     activity_plan_id: null,
     name: "Morning Run",
-    type: "run",
     provider: null,
     external_id: null,
     started_at: new Date("2026-01-10T08:00:00.000Z"),
     finished_at: new Date("2026-01-10T08:45:00.000Z"),
-    duration_seconds: 2700,
-    moving_seconds: 2650,
+    elapsed_ms: 2_700_000,
+    active_ms: 2_700_000,
+    moving_ms: 2_650_000,
+    timing_coverage: "complete",
+    segments_revision: 1,
+    parser_version: "test-parser-v1",
+    decoded_contract_version: "test-decoded-v1",
+    materializer_version: "test-materializer-v1",
+    segments_generated_at: new Date("2026-01-10T08:45:00.000Z"),
     distance_meters: 9000,
     elevation_gain_meters: null,
     elevation_loss_meters: null,
@@ -111,17 +209,14 @@ function buildActivityRow(overrides: Record<string, unknown> = {}) {
     total_strokes: null,
     device_manufacturer: null,
     device_product: null,
-    activity_file_path: null,
-    activity_file_size: null,
-    import_source: null,
-    import_file_type: null,
-    import_original_file_name: null,
     notes: null,
     polyline: null,
     laps: null,
     map_bounds: null,
     is_private: false,
-    ...overrides,
+    ...rowOverrides,
+    content_visibility:
+      rowOverrides.content_visibility ?? (rowOverrides.is_private === true ? "private" : "public"),
   };
 }
 
@@ -296,6 +391,7 @@ function createDbMock(options: {
   activityImportRows?: any[];
   activityGeometryRows?: any[];
   activityLapRows?: any[];
+  currentArtifactRows?: any[];
   queryActivitiesFindFirst?: any[];
   queryActivityFileIngestionsFindFirst?: any[];
   queryActivityGeometryFindFirst?: any[];
@@ -358,6 +454,7 @@ function createDbMock(options: {
     if (tableName === "activity_imports") return options.activityImportRows ?? [];
     if (tableName === "activity_geometry") return options.activityGeometryRows ?? [];
     if (tableName === "activity_laps") return options.activityLapRows ?? [];
+    if (tableName === "activity_artifact_links") return options.currentArtifactRows ?? [];
     if (tableName === "events") return options.queryEventsFindFirst ?? [];
     return options.activityRows ?? [];
   }
@@ -414,6 +511,7 @@ function createDbMock(options: {
         from: vi.fn((table: unknown) => {
           const builder = {
             leftJoin: vi.fn(() => builder),
+            innerJoin: vi.fn(() => builder),
             where: vi.fn((condition: unknown) => {
               selectWhere(condition);
               const rows = rowsForTable(getTableName(table));
@@ -423,7 +521,7 @@ function createDbMock(options: {
                 orderBy:
                   getTableName(table) === "activities"
                     ? orderBy
-                    : vi.fn(() => Promise.resolve(rows)),
+                    : vi.fn(() => ({ limit: vi.fn(resolveRows) })),
                 then: (onFulfilled: (value: unknown[]) => unknown) =>
                   Promise.resolve(rows).then(onFulfilled),
               };
@@ -440,11 +538,21 @@ function createDbMock(options: {
         const tableName = getTableName(table);
         insertValues(tableName, values);
 
-        return {
+        const insertBuilder = {
+          onConflictDoUpdate: vi.fn(() => insertBuilder),
+          onConflictDoNothing: vi.fn(() => insertBuilder),
           returning: vi.fn(() =>
-            Promise.resolve(options.insertedRowsByTable?.[tableName] ?? options.executeRows ?? []),
+            Promise.resolve(
+              options.insertedRowsByTable?.[tableName] ??
+                (tableName === "activity_artifacts"
+                  ? [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }]
+                  : tableName === "activity_artifact_links"
+                    ? [{ id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" }]
+                    : (options.executeRows ?? [])),
+            ),
           ),
         };
+        return insertBuilder;
       }),
     })),
     transaction: vi.fn(
@@ -509,7 +617,51 @@ function createDbMock(options: {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockArtifactStorage.verifyAcceptedActivityArtifact.mockImplementation(
+    async (_storage: unknown, input: unknown) => input,
+  );
+  activityCategories.clear();
   mockActivityAnalysis.buildActivityDerivedSummaryMap.mockResolvedValue(new Map());
+  mockActivityAnalysis.buildActivitySegmentDerivedSummaries.mockResolvedValue([]);
+  mockActivityAnalysis.loadActivitySegmentsByActivityId.mockImplementation(
+    async (_db: unknown, activityIds: string[]) =>
+      new Map(
+        activityIds.map((activityId) => [
+          activityId,
+          [
+            {
+              id: activityId,
+              activity_id: activityId,
+              ordinal: 0,
+              role: "activity",
+              category: activityCategories.get(activityId) ?? "run",
+              profile_id: OWNER_ID,
+              start_offset_ms: 0,
+              end_offset_ms: 2_700_000,
+              source_artifact_id: null,
+              source_session_index: null,
+              source_message_index: null,
+              raw_type_string: null,
+              raw_type_integer: null,
+              raw_sport_string: null,
+              raw_sport_integer: null,
+              summary: {
+                version: 1,
+                timing: { timingCoverage: "complete", activeMs: 2_700_000, movingMs: 2_650_000 },
+              },
+              summary_version: 1,
+              timing_coverage: "complete",
+              active_ms: 2_700_000,
+              moving_ms: 2_650_000,
+              segment_revision: 1,
+              parser_version: "test-parser-v1",
+              materializer_version: "test-materializer-v1",
+              created_at: new Date("2026-01-10T08:45:00.000Z"),
+            },
+          ],
+        ]),
+      ),
+  );
   mockActivityAnalysis.resolveActivityContextAsOf.mockResolvedValue({});
   mockActivityAnalysis.analyzeActivityDerivedMetrics.mockReturnValue({
     stress: {
@@ -544,12 +696,26 @@ describe("activitiesRouter", () => {
       version: "1",
       calibration: { type: "threshold_speed_mps", value: 4.2 },
     } as const;
-    mockActivityAnalysis.buildActivityDerivedSummaryMap.mockResolvedValue(
-      new Map([
-        [ACTIVITY_ID, { tss: 35, tss_identity: tssIdentity }],
-        [ACTIVITY_ID_2, { tss: 45, tss_identity: tssIdentity }],
-      ]),
-    );
+    mockActivityAnalysis.buildActivitySegmentDerivedSummaries.mockResolvedValue([
+      {
+        activity_id: ACTIVITY_ID,
+        segment_id: ACTIVITY_ID,
+        category: "run",
+        tss: 35,
+        tss_identity: tssIdentity,
+        load_stream_key: "run-load",
+        dedupe_key: ACTIVITY_ID,
+      },
+      {
+        activity_id: ACTIVITY_ID_2,
+        segment_id: ACTIVITY_ID_2,
+        category: "run",
+        tss: 45,
+        tss_identity: tssIdentity,
+        load_stream_key: "run-load",
+        dedupe_key: ACTIVITY_ID_2,
+      },
+    ]);
     const db = createDbMock({ activityRows: rows });
 
     const result = await createCaller(db).dailyTssObservations({
@@ -574,10 +740,13 @@ describe("activitiesRouter", () => {
         },
       ],
     });
-    expect(mockActivityAnalysis.buildActivityDerivedSummaryMap).toHaveBeenCalledWith({
+    expect(mockActivityAnalysis.buildActivitySegmentDerivedSummaries).toHaveBeenCalledWith({
       store: { kind: "activity-analysis-store" },
       profileId: OWNER_ID,
-      activities: expect.arrayContaining(rows),
+      activities: expect.arrayContaining([
+        expect.objectContaining({ id: ACTIVITY_ID, segments: expect.any(Array) }),
+        expect.objectContaining({ id: ACTIVITY_ID_2, segments: expect.any(Array) }),
+      ]),
     });
   });
 
@@ -659,7 +828,7 @@ describe("activitiesRouter", () => {
     expect(mockActivityAnalysis.buildActivityDerivedSummaryMap).toHaveBeenCalledWith(
       expect.objectContaining({
         profileId: OWNER_ID,
-        activities: [{ ...rows[0], laps: [] }],
+        activities: [expect.objectContaining({ id: ACTIVITY_ID, segments: expect.any(Array) })],
       }),
     );
   });
@@ -668,7 +837,9 @@ describe("activitiesRouter", () => {
     const rows = [
       buildActivityRow({
         distance_meters: 1,
-        duration_seconds: 2,
+        elapsed_ms: 2_000,
+        active_ms: 2_000,
+        moving_ms: 1_900,
         provider: null,
         external_id: null,
         polyline: "legacy-polyline",
@@ -705,7 +876,9 @@ describe("activitiesRouter", () => {
 
     expect(result.items[0]).toMatchObject({
       distance_meters: 1,
-      duration_seconds: 2,
+      elapsed_ms: 2_000,
+      active_ms: 2_000,
+      moving_ms: 1_900,
       provider: null,
       external_id: null,
       polyline: "legacy-polyline",
@@ -713,7 +886,7 @@ describe("activitiesRouter", () => {
     });
   });
 
-  it("sorts paginated distance and duration queries by split summary values with legacy fallback", async () => {
+  it("sorts paginated distance and duration queries by canonical parent values", async () => {
     const db = createDbMock({
       activityRows: [buildActivityRow()],
       totalRows: [{ total: 1 }],
@@ -732,7 +905,9 @@ describe("activitiesRouter", () => {
 
     const orderSql = db.__spies.orderBy.mock.calls.flat().map(toSql).join("\n");
     expect(orderSql).toContain('"activities"."distance_meters"');
-    expect(orderSql).toContain('"activities"."duration_seconds" desc');
+    expect(orderSql).toContain(
+      'coalesce("activities"."active_ms", "activities"."elapsed_ms") desc',
+    );
   });
 
   it("sorts paginated results by derived tss before slicing", async () => {
@@ -746,7 +921,7 @@ describe("activitiesRouter", () => {
       buildActivityRow({
         id: ACTIVITY_ID_2,
         name: "Big Ride",
-        type: "bike",
+        category: "bike",
         started_at: new Date("2026-01-11T08:00:00.000Z"),
         finished_at: new Date("2026-01-11T10:00:00.000Z"),
       }),
@@ -995,7 +1170,7 @@ describe("activitiesRouter", () => {
       profile_id: OWNER_ID,
       activity_plan_id: PLAN_ID,
       name: "Long Ride",
-      type: "bike",
+      category: "bike",
     });
     const db = createDbMock({
       queryEventsFindFirst: [{ activity_plan_id: PLAN_ID }],
@@ -1009,13 +1184,11 @@ describe("activitiesRouter", () => {
       eventId: EVENT_ID,
       name: "Long Ride",
       notes: "Outdoor endurance",
-      type: "bike",
       startedAt: "2026-01-15T09:00:00.000Z",
       finishedAt: "2026-01-15T11:00:00.000Z",
-      durationSeconds: 7200,
-      movingSeconds: 7100,
-      distanceMeters: 50000,
-      metrics: {},
+      segmentSet: singleSegmentSet("bike", 7_200_000),
+      acceptedArtifact: ACCEPTED_ARTIFACT,
+      summary: { distanceMeters: 50000 },
     });
 
     expect(result).toEqual(createdActivity);
@@ -1023,11 +1196,33 @@ describe("activitiesRouter", () => {
     expect(db.transaction).toHaveBeenCalledTimes(1);
   });
 
+  it("rejects native submission when accepted artifact bytes cannot be verified", async () => {
+    mockArtifactStorage.verifyAcceptedActivityArtifact.mockRejectedValueOnce(
+      new Error("digest mismatch"),
+    );
+    const db = createDbMock({});
+    await expect(
+      createCaller(db).create({
+        profile_id: OWNER_ID,
+        name: "Unverified activity",
+        startedAt: "2026-01-15T09:00:00.000Z",
+        finishedAt: "2026-01-15T10:00:00.000Z",
+        segmentSet: singleSegmentSet("bike"),
+        acceptedArtifact: ACCEPTED_ARTIFACT,
+        summary: { distanceMeters: 0 },
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Accepted activity artifact could not be verified",
+    });
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
   it("persists canonical temperature and pool-length metrics when creating an activity", async () => {
     const createdActivity = buildActivityRow({
       id: ACTIVITY_ID,
       profile_id: OWNER_ID,
-      type: "swim",
+      category: "swim",
       avg_temperature: 21.5,
       pool_length: 25,
     });
@@ -1040,17 +1235,11 @@ describe("activitiesRouter", () => {
       profile_id: OWNER_ID,
       name: "Pool session",
       notes: null,
-      type: "swim",
       startedAt: "2026-01-15T09:00:00.000Z",
       finishedAt: "2026-01-15T10:00:00.000Z",
-      durationSeconds: 3600,
-      movingSeconds: 3500,
-      distanceMeters: 2000,
-      metrics: {
-        avg_temperature: 21.5,
-        pool_length: 25,
-        pool_length_unit: "meters",
-      },
+      segmentSet: singleSegmentSet("swim"),
+      acceptedArtifact: ACCEPTED_ARTIFACT,
+      summary: { distanceMeters: 2000, avgTemperature: 21.5, poolLength: 25 },
     });
 
     expect(findInsertedValue(db, "activities")).toMatchObject({
@@ -1059,24 +1248,25 @@ describe("activitiesRouter", () => {
     });
   });
 
-  it("creates an activity from a mobile recording summary with pending ingestion", async () => {
+  it("creates an activity from a mobile execution manifest with an accepted artifact", async () => {
     const createdActivity = buildActivityRow({
       id: ACTIVITY_ID,
       activity_plan_id: PLAN_ID,
       name: "Recorder Run",
       notes: "Phone GPS",
-      type: "run",
+      category: "run",
       is_private: true,
       started_at: new Date("2026-01-15T09:00:00.000Z"),
       finished_at: new Date("2026-01-15T10:00:00.000Z"),
     });
-    const ingestion = buildActivityFileIngestionRow();
+    const ingestion = buildActivityFileIngestionRow({ status: "ready" });
     const db = createDbMock({
       insertedRowsByTable: {
         activities: [createdActivity],
         activity_file_ingestions: [ingestion],
       },
       queryActivitiesFindFirst: [createdActivity],
+      queryActivityFileIngestionsFindFirst: [ingestion],
       queryActivitySummariesFindFirst: [
         buildActivitySummaryRow({
           activity_id: ACTIVITY_ID,
@@ -1094,19 +1284,12 @@ describe("activitiesRouter", () => {
       name: "Recorder Run",
       notes: "Phone GPS",
       is_private: true,
-      activityType: "run",
       activityPlanId: PLAN_ID,
       startedAt: "2026-01-15T09:00:00.000Z",
       finishedAt: "2026-01-15T10:00:00.000Z",
-      durationSeconds: 3600,
-      movingSeconds: 3500,
-      distanceMeters: 10000,
-      calories: 640,
-      localFileMetadata: {
-        fileType: "fit",
-        fileSize: 123456,
-        filePath: null,
-      },
+      executionManifest: recordingExecutionManifest(),
+      acceptedArtifact: ACCEPTED_ARTIFACT,
+      summary: { distanceMeters: 10000, calories: 640 },
     });
 
     expect(result).toMatchObject({
@@ -1116,13 +1299,14 @@ describe("activitiesRouter", () => {
       name: "Recorder Run",
       notes: "Phone GPS",
       is_private: true,
-      duration_seconds: 2700,
-      moving_seconds: 2650,
+      elapsed_ms: 2_700_000,
+      active_ms: 2_700_000,
+      moving_ms: 2_650_000,
       distance_meters: 9000,
       calories: null,
       ingestion: {
         id: ingestion.id,
-        status: "pending_upload",
+        status: "ready",
         source: "mobile_recording",
       },
     });
@@ -1132,10 +1316,11 @@ describe("activitiesRouter", () => {
       activity_plan_id: PLAN_ID,
       name: "Recorder Run",
       notes: "Phone GPS",
-      type: "run",
       is_private: true,
-      duration_seconds: 3600,
-      moving_seconds: 3500,
+      elapsed_ms: 3_600_000,
+      active_ms: 3_600_000,
+      moving_ms: 3_500_000,
+      timing_coverage: "complete",
       distance_meters: 10000,
       calories: 640,
     });
@@ -1143,11 +1328,74 @@ describe("activitiesRouter", () => {
       activity_id: ACTIVITY_ID,
       profile_id: OWNER_ID,
       source: "mobile_recording",
-      status: "pending_upload",
-      file_type: "fit",
-      file_size: 123456,
-      file_path: null,
+      status: "ready",
     });
+  });
+
+  it("persists an ordered multisport execution manifest without parent sport transport", async () => {
+    const bikeSegmentId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1";
+    const transitionId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2";
+    const runSegmentId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3";
+    const createdActivity = buildActivityRow({ id: ACTIVITY_ID, category: "bike" });
+    const ingestion = buildActivityFileIngestionRow({ status: "ready" });
+    const db = createDbMock({
+      insertedRowsByTable: {
+        activities: [createdActivity],
+        activity_file_ingestions: [ingestion],
+      },
+      queryActivitiesFindFirst: [createdActivity],
+      queryActivityFileIngestionsFindFirst: [ingestion],
+    });
+
+    await createCaller(db).createFromRecordingSummary({
+      ...recordingCreateInput(),
+      executionManifest: {
+        ...recordingExecutionManifest(),
+        occurrences: [
+          {
+            ...recordingExecutionManifest("bike").occurrences[0]!,
+            segmentId: bikeSegmentId,
+            completedAt: "2026-01-15T09:25:00.000Z",
+            activeSeconds: 1500,
+            movingSeconds: 1450,
+          },
+          {
+            ...recordingExecutionManifest().occurrences[0]!,
+            occurrenceId: "occurrence-transition",
+            globalOrdinal: 1,
+            segmentId: transitionId,
+            role: "transition",
+            category: null,
+            startedAt: "2026-01-15T09:25:00.000Z",
+            completedAt: "2026-01-15T09:30:00.000Z",
+            activeSeconds: 300,
+            movingSeconds: 300,
+            distanceMeters: 0,
+          },
+          {
+            ...recordingExecutionManifest("run").occurrences[0]!,
+            occurrenceId: "occurrence-run",
+            globalOrdinal: 2,
+            segmentId: runSegmentId,
+            startedAt: "2026-01-15T09:30:00.000Z",
+            completedAt: "2026-01-15T10:00:00.000Z",
+            activeSeconds: 1800,
+            movingSeconds: 1750,
+          },
+        ],
+      },
+    });
+
+    expect(findInsertedValue(db, "activity_segments")).toEqual([
+      expect.objectContaining({
+        id: bikeSegmentId,
+        ordinal: 0,
+        role: "activity",
+        category: "bike",
+      }),
+      expect.objectContaining({ id: transitionId, ordinal: 1, role: "transition", category: null }),
+      expect.objectContaining({ id: runSegmentId, ordinal: 2, role: "activity", category: "run" }),
+    ]);
   });
 
   it("rejects recording summary creation for another profile", async () => {
@@ -1155,14 +1403,8 @@ describe("activitiesRouter", () => {
 
     await expect(
       caller.createFromRecordingSummary({
-        profileId: OTHER_ID,
+        ...recordingCreateInput(OTHER_ID),
         name: "Other Run",
-        activityType: "run",
-        startedAt: "2026-01-15T09:00:00.000Z",
-        finishedAt: "2026-01-15T10:00:00.000Z",
-        durationSeconds: 3600,
-        movingSeconds: 3500,
-        distanceMeters: 10000,
       }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
@@ -1180,15 +1422,8 @@ describe("activitiesRouter", () => {
     const caller = createCaller(db);
 
     const result = await caller.createFromRecordingSummary({
+      ...recordingCreateInput(),
       recordingSessionId: ACTIVITY_ID,
-      profileId: OWNER_ID,
-      name: "Recorder Run",
-      activityType: "run",
-      startedAt: "2026-01-15T09:00:00.000Z",
-      finishedAt: "2026-01-15T10:00:00.000Z",
-      durationSeconds: 3600,
-      movingSeconds: 3500,
-      distanceMeters: 10000,
     });
 
     expect(result).toMatchObject({
@@ -1212,15 +1447,8 @@ describe("activitiesRouter", () => {
     const caller = createCaller(db);
 
     const result = await caller.createFromRecordingSummary({
+      ...recordingCreateInput(),
       recordingSessionId: "profile-activity-session",
-      profileId: OWNER_ID,
-      name: "Recorder Run",
-      activityType: "run",
-      startedAt: "2026-01-15T09:00:00.000Z",
-      finishedAt: "2026-01-15T10:00:00.000Z",
-      durationSeconds: 3600,
-      movingSeconds: 3500,
-      distanceMeters: 10000,
     });
 
     expect(result).toMatchObject({
@@ -1230,32 +1458,23 @@ describe("activitiesRouter", () => {
     expect(db.transaction).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects recording summary creation with invalid duration", async () => {
+  it("rejects recording manifests outside the parent time range", async () => {
     const caller = createCaller(createDbMock({}));
 
     await expect(
       caller.createFromRecordingSummary({
-        profileId: OWNER_ID,
+        ...recordingCreateInput(),
         name: "Bad Run",
-        activityType: "run",
-        startedAt: "2026-01-15T09:00:00.000Z",
-        finishedAt: "2026-01-15T10:00:00.000Z",
-        durationSeconds: 0,
-        movingSeconds: 0,
-        distanceMeters: 0,
+        executionManifest: { ...recordingExecutionManifest(), occurrences: [] },
       }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
 
     await expect(
       caller.createFromRecordingSummary({
-        profileId: OWNER_ID,
+        ...recordingCreateInput(),
         name: "Backwards Run",
-        activityType: "run",
         startedAt: "2026-01-15T10:00:00.000Z",
         finishedAt: "2026-01-15T09:00:00.000Z",
-        durationSeconds: 3600,
-        movingSeconds: 3500,
-        distanceMeters: 10000,
       }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
@@ -1311,6 +1530,8 @@ describe("activitiesRouter", () => {
         laps: [],
         likes_count: 5,
         activity_plans: null,
+        segments: expect.any(Array),
+        current_artifact: null,
         ingestion: null,
       },
       has_liked: true,
@@ -1325,7 +1546,9 @@ describe("activitiesRouter", () => {
       id: ACTIVITY_ID,
       profile_id: OWNER_ID,
       distance_meters: 1,
-      duration_seconds: 2,
+      elapsed_ms: 2_000,
+      active_ms: 2_000,
+      moving_ms: 1_900,
       provider: "wahoo",
       external_id: "legacy-external-id",
       polyline: "legacy-polyline",
@@ -1358,6 +1581,19 @@ describe("activitiesRouter", () => {
         }),
       ],
       activityLapRows: [],
+      currentArtifactRows: [
+        {
+          id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          digest_algorithm: "sha256",
+          digest: "a".repeat(64),
+          byte_size: 123456,
+          media_type: "application/vnd.ant.fit",
+          format: "fit",
+          original_name: "activity.fit",
+          availability: "accepted",
+          first_accepted_at: new Date("2026-01-10T09:00:00.000Z"),
+        },
+      ],
     });
 
     const caller = createCaller(db);
@@ -1365,11 +1601,18 @@ describe("activitiesRouter", () => {
 
     expect(result.activity).toMatchObject({
       distance_meters: 1,
-      duration_seconds: 2,
+      elapsed_ms: 2_000,
+      active_ms: 2_000,
+      moving_ms: 1_900,
       external_id: "legacy-external-id",
       polyline: "legacy-polyline",
       map_bounds: { legacy: true },
       laps: [{ legacy: true }],
+      segments: expect.any(Array),
+      current_artifact: expect.objectContaining({
+        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        availability: "accepted",
+      }),
     });
   });
 
@@ -1434,13 +1677,11 @@ describe("activitiesRouter", () => {
         eventId: null,
         name: "Long Ride",
         notes: null,
-        type: "bike",
         startedAt: "2026-01-15",
         finishedAt: "2026-01-15T11:00:00.000Z",
-        durationSeconds: 7200,
-        movingSeconds: 7100,
-        distanceMeters: 50000,
-        metrics: {},
+        segmentSet: singleSegmentSet("bike", 7_200_000),
+        acceptedArtifact: ACCEPTED_ARTIFACT,
+        summary: { distanceMeters: 50000 },
       }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });

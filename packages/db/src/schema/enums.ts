@@ -1,13 +1,5 @@
 import { pgEnum } from "drizzle-orm/pg-core";
 
-export const activityCategoryEnum = pgEnum("activity_category", [
-  "run",
-  "bike",
-  "swim",
-  "strength",
-  "other",
-]);
-
 export const activityFileIngestionSourceEnum = pgEnum("activity_file_ingestion_source", [
   "mobile_recording",
   "manual_import",

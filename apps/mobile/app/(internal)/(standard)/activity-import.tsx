@@ -203,7 +203,6 @@ export default function ActivityImportScreen() {
         activityFilePath: signedUrlData.filePath,
         name: data.name,
         notes: data.notes ?? undefined,
-        activityType: data.sport,
         importProvenance: buildManualActivityImportProvenance(selectedFile.name),
       });
 

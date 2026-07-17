@@ -2,10 +2,13 @@ import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 
 import type {
   activities,
+  activityArtifactLinks,
+  activityArtifacts,
   activityEfforts,
   activityFileIngestions,
   activityPlans,
   activityRoutes,
+  activitySegments,
   coachesAthletes,
   coachingInvitations,
   comments,
@@ -79,6 +82,15 @@ export type TrainingPlanInsert = InferInsertModel<typeof trainingPlans>;
 
 export type ActivityRow = InferSelectModel<typeof activities>;
 export type ActivityInsert = InferInsertModel<typeof activities>;
+
+export type ActivityArtifactRow = InferSelectModel<typeof activityArtifacts>;
+export type ActivityArtifactInsert = InferInsertModel<typeof activityArtifacts>;
+
+export type ActivityArtifactLinkRow = InferSelectModel<typeof activityArtifactLinks>;
+export type ActivityArtifactLinkInsert = InferInsertModel<typeof activityArtifactLinks>;
+
+export type ActivitySegmentRow = InferSelectModel<typeof activitySegments>;
+export type ActivitySegmentInsert = InferInsertModel<typeof activitySegments>;
 
 export type ActivityFileIngestionRow = InferSelectModel<typeof activityFileIngestions>;
 export type ActivityFileIngestionInsert = InferInsertModel<typeof activityFileIngestions>;

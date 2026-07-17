@@ -27,7 +27,7 @@
  * ```
  */
 
-import { invalidatePostActivityIngestionQueries, queryKeys } from "@repo/api/client";
+import { invalidatePostActivityIngestionQueries } from "@repo/api/client";
 import { useQueryClient } from "@tanstack/react-query";
 import { Alert } from "react-native";
 import { api } from "@/lib/api";
@@ -51,6 +51,7 @@ import {
   runActivitySubmissionQueueJob,
   upsertActivitySubmissionQueueJob,
 } from "@/lib/services/activitySubmissionQueue";
+import { getLocalActivityArtifactMetadata } from "@/lib/services/activitySubmissionQueue/localArtifact";
 import { ActivityFileUploader } from "@/lib/services/fit/ActivityFileUploader";
 
 // ================================
@@ -330,15 +331,6 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
 
   const createActivityMutation = api.activities.createFromRecordingSummary.useMutation();
   const getSignedUrlMutation = api.activityFiles.getSignedUploadUrl.useMutation();
-  const markUploadedAndProcessMutation = api.activityFiles.markUploadedAndProcess.useMutation({
-    onSuccess: async (data) => {
-      await invalidatePostActivityIngestionQueries(queryClient);
-
-      if (data?.activity?.id) {
-        queryClient.setQueryData(queryKeys.activities.detail(data.activity.id), data.activity);
-      }
-    },
-  });
 
   // ================================
   // Durable Queue Submission
@@ -415,12 +407,12 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
 
         const completion = runActivitySubmissionQueueJob(queuedJob, {
           createFromRecordingSummary: createActivityMutation.mutateAsync,
+          getLocalArtifactMetadata: getLocalActivityArtifactMetadata,
           getSignedUploadUrl: (input) =>
             getSignedUrlMutation.mutateAsync({
               fileName: input.fileName,
               fileSize: input.fileSize ?? 0,
             }),
-          markUploadedAndProcess: markUploadedAndProcessMutation.mutateAsync,
           uploadToSignedUrl: (localPath, signedUrl) =>
             uploader.uploadToSignedUrl(localPath, signedUrl),
           onJobUpdated: async (job) => {
@@ -463,10 +455,10 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
             throw new Error(job.lastError || "Activity creation failed");
           }),
         ]);
-        console.log("[useActivitySubmission] Activity created; upload/process continues in queue");
+        console.log("[useActivitySubmission] Activity artifact accepted for server processing");
         return activityId;
       } catch (err) {
-        console.error(`[useActivitySubmission] Upload failed:`, err);
+        console.error(`[useActivitySubmission] Submission failed:`, err);
 
         const errorMessage = err instanceof Error ? err.message : String(err);
 
@@ -504,13 +496,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
         throw err;
       }
     },
-    [
-      createActivityMutation,
-      getSignedUrlMutation,
-      markUploadedAndProcessMutation,
-      profile?.id,
-      queryClient,
-    ],
+    [createActivityMutation, getSignedUrlMutation, profile?.id, queryClient],
   );
 
   const submit = useCallback(
@@ -540,7 +526,7 @@ export function useActivitySubmission(service: ActivityRecorderService | null) {
           throw new Error("No activity file generated. Please try recording again.");
         }
       } catch (err) {
-        console.error("[useActivitySubmission] Upload failed:", err);
+        console.error("[useActivitySubmission] Submission failed:", err);
 
         // Error state is already set by submitOnce
         // Don't throw - keep the submission page available for manual retry

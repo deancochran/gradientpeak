@@ -3,6 +3,8 @@ import { activities } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
+import { createActivityArtifactRetentionService } from "../activity-file-ingestion/artifact-retention";
+import type { ActivityArtifactStorage } from "../activity-file-ingestion/artifact-storage";
 import { updateCanonicalActivityFields } from "./submit-activity";
 
 type ActivitiesDb = ReturnType<typeof getRequiredDb>;
@@ -52,10 +54,12 @@ export async function updateActivityForProfile({
 
 export async function deleteActivityForProfile({
   db,
+  artifactStorage,
   activityId,
   profileId,
 }: {
   db: ActivitiesDb;
+  artifactStorage: ActivityArtifactStorage;
   activityId: string;
   profileId: string;
 }) {
@@ -69,6 +73,12 @@ export async function deleteActivityForProfile({
       message: "Activity not found or you do not have permission to delete it.",
     });
   }
+
+  const retention = createActivityArtifactRetentionService(db, artifactStorage);
+  // A failed storage call leaves a deletion_pending tombstone. Resume those first so a retry
+  // can finish even though the lifecycle request already revoked the original activity link.
+  while ((await retention.resumeDeletionForProfile(profileId)) > 0) {}
+  await retention.deleteForActivity({ activityId, profileId });
 
   await db
     .delete(activities)

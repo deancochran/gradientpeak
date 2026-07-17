@@ -2,13 +2,19 @@ import { activities, activityEfforts, profileMetrics, profiles } from "@repo/db"
 import { describe, expect, it, vi } from "vitest";
 
 const analysisMocks = vi.hoisted(() => ({
-  buildActivityDerivedSummaryMap: vi.fn(),
+  buildActivitySegmentDerivedSummaries: vi.fn(),
   createActivityAnalysisStore: vi.fn(),
+  loadActivitySegmentsByActivityId: vi.fn(),
 }));
 
-vi.mock("../../lib/activity-analysis", () => ({
-  buildActivityDerivedSummaryMap: analysisMocks.buildActivityDerivedSummaryMap,
-}));
+vi.mock("../../lib/activity-analysis", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/activity-analysis")>();
+  return {
+    ...actual,
+    buildActivitySegmentDerivedSummaries: analysisMocks.buildActivitySegmentDerivedSummaries,
+    loadActivitySegmentsByActivityId: analysisMocks.loadActivitySegmentsByActivityId,
+  };
+});
 
 vi.mock("../../infrastructure/repositories", () => ({
   createActivityAnalysisStore: analysisMocks.createActivityAnalysisStore,
@@ -404,19 +410,32 @@ describe("profilesRouter", () => {
 
   it("getStats aggregates totals and derived TSS for the requested period", async () => {
     analysisMocks.createActivityAnalysisStore.mockReturnValue({ kind: "store" });
-    analysisMocks.buildActivityDerivedSummaryMap.mockResolvedValue(
-      new Map([
-        ["activity-1", { tss: 45 }],
-        ["activity-2", { tss: 55 }],
-      ]),
-    );
+    analysisMocks.loadActivitySegmentsByActivityId.mockResolvedValue(new Map());
+    analysisMocks.buildActivitySegmentDerivedSummaries.mockResolvedValue([
+      { activity_id: "activity-1", tss: 45 },
+      { activity_id: "activity-2", tss: 55 },
+    ]);
 
     const { caller } = createCaller({
       select: {
         activities: [
           [
-            { id: "activity-1", duration_seconds: 3600, distance_meters: 12000 },
-            { id: "activity-2", duration_seconds: 1800, distance_meters: 8000 },
+            {
+              id: "activity-1",
+              elapsed_ms: 3_600_000,
+              active_ms: 3_600_000,
+              moving_ms: 3_500_000,
+              timing_coverage: "complete",
+              distance_meters: 12000,
+            },
+            {
+              id: "activity-2",
+              elapsed_ms: 1_800_000,
+              active_ms: 1_800_000,
+              moving_ms: 1_750_000,
+              timing_coverage: "complete",
+              distance_meters: 8000,
+            },
           ],
         ],
       },
@@ -432,7 +451,7 @@ describe("profilesRouter", () => {
       avgDuration: 2700,
       period: 14,
     });
-    expect(analysisMocks.buildActivityDerivedSummaryMap).toHaveBeenCalledWith(
+    expect(analysisMocks.buildActivitySegmentDerivedSummaries).toHaveBeenCalledWith(
       expect.objectContaining({ profileId: SESSION_USER_ID, activities: expect.any(Array) }),
     );
   });
@@ -448,6 +467,7 @@ describe("profilesRouter", () => {
             {
               activity_category: "bike",
               activity_id: "bike-activity",
+              segment_id: "33333333-3333-4333-8333-333333333333",
               duration_seconds: 1200,
               effort_type: "power",
               recorded_at: new Date(),
@@ -463,6 +483,7 @@ describe("profilesRouter", () => {
             {
               activity_category: "run",
               activity_id: "run-activity",
+              segment_id: "44444444-4444-4444-8444-444444444444",
               duration_seconds: 1200,
               effort_type: "speed",
               recorded_at: new Date(),

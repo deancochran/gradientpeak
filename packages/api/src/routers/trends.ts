@@ -6,10 +6,11 @@ import {
   getLoadBalanceStatus,
 } from "@repo/core";
 import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core/load";
-import { activities, profiles, publicActivityCategorySchema } from "@repo/db";
-import { and, asc, desc, eq, gte, isNotNull, lte } from "drizzle-orm";
+import { activities, activitySegments, profiles, publicActivityCategorySchema } from "@repo/db";
+import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
+  type NormalizedTrendActivityRow,
   normalizeTrendActivityRows,
   type TrendActivityRow,
 } from "../application/trends/activityRows";
@@ -19,7 +20,11 @@ import { buildVolumeTrends } from "../application/trends/volumeTrends";
 import { buildZoneDistributionTrends } from "../application/trends/zoneDistributionTrends";
 import { getRequiredDb } from "../db";
 import { createActivityAnalysisStore } from "../infrastructure/repositories";
-import { buildActivityDerivedSummaryMap, buildDynamicStressSeries } from "../lib/activity-analysis";
+import {
+  buildActivityDerivedSummaryMap,
+  buildDynamicStressSeries,
+  loadActivitySegmentsByActivityId,
+} from "../lib/activity-analysis";
 import { featureFlags } from "../lib/features";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { buildWorkloadEnvelopes } from "../utils/workload";
@@ -126,23 +131,38 @@ const peakPerformancesSchema = z
 
 const trendActivitySelect = {
   id: activities.id,
+  profile_id: activities.profile_id,
   name: activities.name,
-  type: activities.type,
   started_at: activities.started_at,
   finished_at: activities.finished_at,
-  duration_seconds: activities.duration_seconds,
-  moving_seconds: activities.moving_seconds,
+  elapsed_ms: activities.elapsed_ms,
+  active_ms: activities.active_ms,
+  moving_ms: activities.moving_ms,
+  timing_coverage: activities.timing_coverage,
   distance_meters: activities.distance_meters,
   avg_heart_rate: activities.avg_heart_rate,
   max_heart_rate: activities.max_heart_rate,
-  avg_power: activities.avg_power,
-  max_power: activities.max_power,
-  avg_speed_mps: activities.avg_speed_mps,
-  max_speed_mps: activities.max_speed_mps,
-  normalized_power: activities.normalized_power,
-  normalized_speed_mps: activities.normalized_speed_mps,
-  normalized_graded_speed_mps: activities.normalized_graded_speed_mps,
 };
+
+function hasActivityCategory(category: (typeof publicActivityCategorySchema)["_output"]) {
+  return sql<boolean>`exists (
+    select 1 from ${activitySegments}
+    where ${activitySegments.activity_id} = ${activities.id}
+      and ${activitySegments.role} = 'activity'
+      and ${activitySegments.category} = ${category}
+  )`;
+}
+
+async function attachTrendSegments(
+  db: ReturnType<typeof getRequiredDb>,
+  rows: Array<Omit<TrendActivityRow, "segments">>,
+): Promise<TrendActivityRow[]> {
+  const segments = await loadActivitySegmentsByActivityId(
+    db,
+    rows.map((row) => row.id),
+  );
+  return rows.map((row) => ({ ...row, segments: segments.get(row.id) ?? [] }));
+}
 
 const profileTelemetryRowSchema = z
   .object({
@@ -345,15 +365,18 @@ export const trendsRouter = createTRPCRouter({
     ];
 
     if (input.type) {
-      conditions.push(eq(activities.type, input.type));
+      conditions.push(hasActivityCategory(input.type));
     }
 
     const activityRows = normalizeTrendActivityRows(
-      await db
-        .select(trendActivitySelect)
-        .from(activities)
-        .where(and(...conditions))
-        .orderBy(asc(activities.started_at)),
+      await attachTrendSegments(
+        db,
+        await db
+          .select(trendActivitySelect)
+          .from(activities)
+          .where(and(...conditions))
+          .orderBy(asc(activities.started_at)),
+      ),
     );
 
     return volumeTrendsOutputSchema.parse(buildVolumeTrends(activityRows, input.groupBy));
@@ -373,15 +396,18 @@ export const trendsRouter = createTRPCRouter({
       ];
 
       if (input.type) {
-        conditions.push(eq(activities.type, input.type));
+        conditions.push(hasActivityCategory(input.type));
       }
 
       const activityRows = normalizeTrendActivityRows(
-        await db
-          .select(trendActivitySelect)
-          .from(activities)
-          .where(and(...conditions))
-          .orderBy(asc(activities.started_at)),
+        await attachTrendSegments(
+          db,
+          await db
+            .select(trendActivitySelect)
+            .from(activities)
+            .where(and(...conditions))
+            .orderBy(asc(activities.started_at)),
+        ),
       );
 
       if (activityRows.length === 0) {
@@ -430,17 +456,20 @@ export const trendsRouter = createTRPCRouter({
     const extendedStart = new Date(startDate);
     extendedStart.setDate(startDate.getDate() - 42);
 
-    const rawActivityRows: TrendActivityRow[] = await db
-      .select(trendActivitySelect)
-      .from(activities)
-      .where(
-        and(
-          eq(activities.profile_id, ctx.session.user.id),
-          gte(activities.started_at, extendedStart),
-          lte(activities.started_at, endDate),
-        ),
-      )
-      .orderBy(asc(activities.started_at));
+    const rawActivityRows = await attachTrendSegments(
+      db,
+      await db
+        .select(trendActivitySelect)
+        .from(activities)
+        .where(
+          and(
+            eq(activities.profile_id, ctx.session.user.id),
+            gte(activities.started_at, extendedStart),
+            lte(activities.started_at, endDate),
+          ),
+        )
+        .orderBy(asc(activities.started_at)),
+    );
 
     const activityRows = normalizeTrendActivityRows(rawActivityRows);
 
@@ -544,7 +573,7 @@ export const trendsRouter = createTRPCRouter({
         activityRows.map((activity) => ({
           started_at: activity.started_at.toISOString(),
           tss: derivedActivityMap.get(activity.id)?.tss ?? null,
-          tss_identity: (derivedActivityMap.get(activity.id) as any)?.tss_identity ?? null,
+          tss_identity: derivedActivityMap.get(activity.id)?.tss_identity ?? null,
         })),
         workloadWindowStart,
         endDate,
@@ -587,17 +616,20 @@ export const trendsRouter = createTRPCRouter({
       const db = getRequiredDb(ctx);
 
       // Get activities with intensity factor and TSS
-      const rawActivityRows: TrendActivityRow[] = await db
-        .select(trendActivitySelect)
-        .from(activities)
-        .where(
-          and(
-            eq(activities.profile_id, ctx.session.user.id),
-            gte(activities.started_at, startDate),
-            lte(activities.started_at, endDate),
-          ),
-        )
-        .orderBy(asc(activities.started_at));
+      const rawActivityRows = await attachTrendSegments(
+        db,
+        await db
+          .select(trendActivitySelect)
+          .from(activities)
+          .where(
+            and(
+              eq(activities.profile_id, ctx.session.user.id),
+              gte(activities.started_at, startDate),
+              lte(activities.started_at, endDate),
+            ),
+          )
+          .orderBy(asc(activities.started_at)),
+      );
 
       const activityRows = normalizeTrendActivityRows(rawActivityRows);
 
@@ -618,17 +650,20 @@ export const trendsRouter = createTRPCRouter({
   getConsistencyMetrics: protectedProcedure.input(dateRangeSchema).query(async ({ ctx, input }) => {
     const db = getRequiredDb(ctx);
     const activityRows = normalizeTrendActivityRows(
-      await db
-        .select(trendActivitySelect)
-        .from(activities)
-        .where(
-          and(
-            eq(activities.profile_id, ctx.session.user.id),
-            gte(activities.started_at, new Date(input.start_date)),
-            lte(activities.started_at, new Date(input.end_date)),
-          ),
-        )
-        .orderBy(asc(activities.started_at)),
+      await attachTrendSegments(
+        db,
+        await db
+          .select(trendActivitySelect)
+          .from(activities)
+          .where(
+            and(
+              eq(activities.profile_id, ctx.session.user.id),
+              gte(activities.started_at, new Date(input.start_date)),
+              lte(activities.started_at, new Date(input.end_date)),
+            ),
+          )
+          .orderBy(asc(activities.started_at)),
+      ),
     );
 
     return consistencyMetricsOutputSchema.parse(
@@ -646,47 +681,32 @@ export const trendsRouter = createTRPCRouter({
       const conditions = [eq(activities.profile_id, ctx.session.user.id)];
 
       if (input.type) {
-        conditions.push(eq(activities.type, input.type));
+        conditions.push(hasActivityCategory(input.type));
       }
 
-      const baseWhere = and(...conditions);
-      const activityRows: TrendActivityRow[] =
-        input.metric === "distance"
-          ? await db
-              .select(trendActivitySelect)
-              .from(activities)
-              .where(baseWhere)
-              .orderBy(desc(activities.distance_meters))
-              .limit(input.limit)
-          : input.metric === "duration"
-            ? await db
-                .select(trendActivitySelect)
-                .from(activities)
-                .where(baseWhere)
-                .orderBy(desc(activities.moving_seconds))
-                .limit(input.limit)
-            : input.metric === "speed"
-              ? await db
-                  .select(trendActivitySelect)
-                  .from(activities)
-                  .where(and(baseWhere, isNotNull(activities.avg_speed_mps)))
-                  .orderBy(desc(activities.avg_speed_mps))
-                  .limit(input.limit * 10)
-              : input.metric === "power"
-                ? await db
-                    .select(trendActivitySelect)
-                    .from(activities)
-                    .where(and(baseWhere, isNotNull(activities.avg_power)))
-                    .orderBy(desc(activities.avg_power))
-                    .limit(input.limit * 10)
-                : await db
-                    .select(trendActivitySelect)
-                    .from(activities)
-                    .where(baseWhere)
-                    .orderBy(desc(activities.started_at))
-                    .limit(input.limit * 10);
+      const activityRows = await attachTrendSegments(
+        db,
+        await db
+          .select(trendActivitySelect)
+          .from(activities)
+          .where(and(...conditions))
+          .orderBy(desc(activities.started_at))
+          .limit(input.limit * 50),
+      );
 
-      const parsedActivityRows = normalizeTrendActivityRows(activityRows);
+      const parsedActivityRows = normalizeTrendActivityRows(activityRows).sort((left, right) => {
+        const value = (row: NormalizedTrendActivityRow) =>
+          input.metric === "distance"
+            ? row.distance_meters
+            : input.metric === "duration"
+              ? (row.moving_seconds ?? row.duration_seconds)
+              : input.metric === "speed"
+                ? row.avg_speed_mps
+                : input.metric === "power"
+                  ? row.avg_power
+                  : null;
+        return (value(right) ?? -1) - (value(left) ?? -1);
+      });
 
       if (parsedActivityRows.length === 0) {
         return peakPerformancesOutputSchema.parse({ performances: [] });

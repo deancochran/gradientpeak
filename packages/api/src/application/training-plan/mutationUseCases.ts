@@ -21,6 +21,7 @@ import type {
   TrainingPlanRepository,
   TrainingPlanTransactionClient,
 } from "../../repositories";
+import { activityPlanStructureHash } from "../activity-plans/structure-hash";
 import { mapTrainingPlanContentIdentity } from "./trainingPlanMapping";
 
 const plannedEventType = "planned" as const;
@@ -28,6 +29,7 @@ const plannedEventType = "planned" as const;
 type TrainingPlanCreateInput = z.infer<typeof trainingPlanCreateInputSchema>;
 type TrainingPlanUpdateInput = z.infer<typeof trainingPlanUpdateInputSchema> & {
   id: string;
+  expectedStructureHash: string;
   template_visibility?: "private" | "followers" | "public";
 };
 
@@ -89,9 +91,14 @@ function requirePublishedLinkedActivityPlans(input: {
   const publishedIds = new Set(
     input.rows
       .filter((row) => {
-        if (row.version !== "3.0") return false;
         const parsed = activityPlanStructureSchemaV3.safeParse(row.structure);
-        if (!parsed.success) return false;
+        if (
+          !parsed.success ||
+          typeof row.gpsRecordingEnabled !== "boolean" ||
+          activityPlanStructureHash(parsed.data) !== row.structureHash
+        ) {
+          return false;
+        }
         if (!row.isSystemTemplate) return true;
         const expectedSignature = catalogSignatures.get(row.id);
         return (
@@ -143,6 +150,7 @@ async function insertTrainingPlan(input: {
       name,
       description,
       structure,
+      structure_hash,
       profile_id,
       template_visibility,
       content_visibility
@@ -152,6 +160,7 @@ async function insertTrainingPlan(input: {
       ${input.values.name},
       ${input.values.description},
       ${JSON.stringify(input.values.structure)}::jsonb,
+      ${activityPlanStructureHash(input.values.structure)},
       ${input.values.profileId}::uuid,
       ${input.values.templateVisibility ?? "private"},
       ${input.values.templateVisibility ?? "private"}
@@ -189,6 +198,7 @@ async function updateOwnedTrainingPlanRow(input: {
   name?: string;
   description?: string | null;
   structure?: Record<string, unknown>;
+  expectedStructureHash: string;
   templateVisibility?: "private" | "followers" | "public";
 }): Promise<TrainingPlanRow | null> {
   const updates = [sql`updated_at = now()`];
@@ -197,6 +207,7 @@ async function updateOwnedTrainingPlanRow(input: {
   if (input.description !== undefined) updates.push(sql`description = ${input.description}`);
   if (input.structure !== undefined) {
     updates.push(sql`structure = ${JSON.stringify(input.structure)}::jsonb`);
+    updates.push(sql`structure_hash = ${activityPlanStructureHash(input.structure)}`);
   }
   if (input.templateVisibility !== undefined) {
     updates.push(sql`template_visibility = ${input.templateVisibility}`);
@@ -208,6 +219,7 @@ async function updateOwnedTrainingPlanRow(input: {
     set ${sql.join(updates, sql`, `)}
     where id = ${input.id}::uuid
       and profile_id = ${input.profileId}::uuid
+      and structure_hash = ${input.expectedStructureHash}
     returning *
   `);
 
@@ -298,7 +310,7 @@ export async function updateTrainingPlanUseCase(input: {
   repository: TrainingPlanRepository;
   values: TrainingPlanUpdateInput;
 }) {
-  const { id, template_visibility, ...updates } = input.values;
+  const { id, expectedStructureHash, template_visibility, ...updates } = input.values;
   const submittedStructure =
     updates.structure === undefined
       ? undefined
@@ -313,6 +325,17 @@ export async function updateTrainingPlanUseCase(input: {
     throw new TRPCError({
       code: "NOT_FOUND",
       message: "Training plan not found or you don't have permission to edit it",
+    });
+  }
+  if (existing.structure_hash !== expectedStructureHash) {
+    throw new TRPCError({
+      code: "CONFLICT",
+      message: "STALE_STRUCTURE_HASH",
+      cause: {
+        code: "STALE_STRUCTURE_HASH",
+        expectedStructureHash,
+        currentStructureHash: existing.structure_hash,
+      },
     });
   }
 
@@ -336,6 +359,7 @@ export async function updateTrainingPlanUseCase(input: {
         profileId: input.profileId,
         name: updates.name,
         description: updates.description,
+        expectedStructureHash,
         structure,
         templateVisibility: template_visibility,
       });
@@ -343,7 +367,11 @@ export async function updateTrainingPlanUseCase(input: {
   );
 
   if (!data) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Failed to update training plan" });
+    throw new TRPCError({
+      code: "CONFLICT",
+      message: "STALE_STRUCTURE_HASH",
+      cause: { code: "STALE_STRUCTURE_HASH", expectedStructureHash },
+    });
   }
 
   return data;
@@ -442,6 +470,7 @@ export async function duplicateTrainingPlanUseCase(input: {
 export async function applyQuickAdjustmentUseCase(input: {
   adjustedStructure: z.infer<typeof trainingPlanSchema>;
   db: DrizzleDbClient;
+  expectedStructureHash: string;
   id: string;
   profileId: string;
   repository: TrainingPlanRepository;
@@ -457,16 +486,20 @@ export async function applyQuickAdjustmentUseCase(input: {
       message: "Training plan not found or you don't have permission to edit it",
     });
   }
+  if (existing.structure_hash !== input.expectedStructureHash) {
+    throw new TRPCError({ code: "CONFLICT", message: "STALE_STRUCTURE_HASH" });
+  }
 
   const data = await updateOwnedTrainingPlanRow({
     db: input.db,
     id: input.id,
+    expectedStructureHash: input.expectedStructureHash,
     profileId: input.profileId,
     structure: input.adjustedStructure,
   });
 
   if (!data) {
-    throw new TRPCError({ code: "BAD_REQUEST", message: "Failed to adjust training plan" });
+    throw new TRPCError({ code: "CONFLICT", message: "STALE_STRUCTURE_HASH" });
   }
 
   return data;

@@ -10,7 +10,7 @@ vi.mock("@repo/core/estimation", async () => {
       if (context.structure?.shouldThrow) {
         throw new Error("estimation failed");
       }
-      if (context.structure?.partial) {
+      if (context.structure?.segments?.[0]?.name === "Partial") {
         return {
           tss: null,
           duration: null,
@@ -49,7 +49,43 @@ import {
   addEstimationToPlans,
   computePlanMetrics,
   getEstimationProfileInputsFromStore,
+  toEstimationActivityPlan,
 } from "../estimation-helpers";
+
+function activityPlanStructure(
+  category: "bike" | "run" = "bike",
+  metadata: Record<string, unknown> = {},
+) {
+  return {
+    version: 3,
+    segments: [
+      {
+        id: "22222222-2222-4222-8222-222222222222",
+        role: "activity",
+        category,
+        name: metadata.partial ? "Partial" : category === "bike" ? "Bike" : "Run",
+        intervals: [
+          {
+            id: "33333333-3333-4333-8333-333333333333",
+            name: "Main",
+            repetitions: 1,
+            steps: [
+              {
+                id: "44444444-4444-4444-8444-444444444444",
+                duration: { type: "time", seconds: 1800 },
+                targets:
+                  category === "bike"
+                    ? [{ type: "%FTP", intensity: 75 }]
+                    : [{ type: "%MaxHR", intensity: 70 }],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    ...(metadata.shouldThrow ? { shouldThrow: true } : {}),
+  };
+}
 
 function createStoreReader(routeFixtures: Record<string, Record<string, unknown>>) {
   return {
@@ -153,6 +189,12 @@ afterEach(() => {
 });
 
 describe("estimation-helpers", () => {
+  it("derives estimation category from authoritative V3 segments", () => {
+    expect(toEstimationActivityPlan({ structure: activityPlanStructure("run") })).toMatchObject({
+      activity_category: "run",
+    });
+  });
+
   it("uses a direct FTP profile metric when no eligible effort is available", async () => {
     const inputs = await getEstimationProfileInputsFromStore(
       {
@@ -187,8 +229,7 @@ describe("estimation-helpers", () => {
         profile_id: "profile-1",
         name: "Long ride",
         description: "",
-        activity_category: "bike",
-        structure: {},
+        structure: activityPlanStructure(),
       },
       estimationReader as any,
       "profile-1",
@@ -252,8 +293,7 @@ describe("estimation-helpers", () => {
         profile_id: "profile-1",
         name: "Tempo ride",
         description: "",
-        activity_category: "bike",
-        structure: {},
+        structure: activityPlanStructure(),
       },
       reader as any,
       "profile-1",
@@ -295,8 +335,7 @@ describe("estimation-helpers", () => {
           profile_id: "profile-1",
           name: "Route one",
           description: "",
-          activity_category: "bike",
-          structure: {},
+          structure: activityPlanStructure(),
         },
         undefined,
         {
@@ -304,16 +343,14 @@ describe("estimation-helpers", () => {
           profile_id: "profile-1",
           name: "Route one again",
           description: "",
-          activity_category: "bike",
-          structure: {},
+          structure: activityPlanStructure(),
         },
         {
           id: "plan-3",
           profile_id: "profile-1",
           name: "Broken plan",
           description: "",
-          activity_category: "bike",
-          structure: { shouldThrow: true },
+          structure: activityPlanStructure("bike", { shouldThrow: true }),
         },
       ],
       estimationReader as any,
@@ -367,8 +404,7 @@ describe("estimation-helpers", () => {
 
     const result = await computePlanMetrics(
       {
-        activity_category: "bike",
-        structure: {},
+        structure: activityPlanStructure(),
       },
       estimationReader as any,
       "profile-1",
@@ -389,8 +425,7 @@ describe("estimation-helpers", () => {
         profile_id: "profile-1",
         name: "Distance plan",
         description: "",
-        activity_category: "run",
-        structure: { partial: true },
+        structure: activityPlanStructure("run", { partial: true }),
       },
       createStoreReader({}) as any,
       "profile-1",
@@ -425,10 +460,7 @@ describe("estimation-helpers", () => {
 
     const result = await computePlanMetrics(
       {
-        activity_category: "bike",
-        structure: {
-          intervals: [{ id: "interval-1", repetitions: 1, steps: [{ id: "step-1" }] }],
-        },
+        structure: activityPlanStructure(),
       },
       estimationReader as any,
       "profile-1",
@@ -460,8 +492,7 @@ describe("estimation-helpers", () => {
 
     const result = await computePlanMetrics(
       {
-        activity_category: "bike",
-        structure: {},
+        structure: activityPlanStructure(),
       },
       reader as any,
       "profile-1",

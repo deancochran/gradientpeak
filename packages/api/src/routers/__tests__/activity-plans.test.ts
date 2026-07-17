@@ -75,6 +75,7 @@ vi.mock("../../infrastructure/repositories", () => ({
   createEventReadRepository: estimationState.createEventReadRepository,
 }));
 
+import { activityPlanStructureHash } from "../../application/activity-plans/structure-hash";
 import { activityPlansRouter } from "../activity-plans";
 
 type MockTableName = "activity_plans" | "content_access_grants" | "events" | "likes" | "profiles";
@@ -130,9 +131,9 @@ function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
     name: "Tempo Builder",
     description: "Structured activity",
     notes: "Bring bottles",
-    activity_category: "bike",
     structure: sampleStructure,
-    version: "1.0",
+    structure_hash: activityPlanStructureHash(sampleStructure),
+    gps_recording_enabled: true,
     template_visibility: "private",
     import_provider: null,
     import_external_id: null,
@@ -351,13 +352,12 @@ describe("activityPlansRouter", () => {
     runStructure.segments[0].intervals[0].steps[0].targets = [{ type: "%MaxHR", intensity: 70 }];
     const runPlan = createActivityPlanRow({
       id: "11111111-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      activity_category: "bike",
       structure: runStructure,
+      structure_hash: activityPlanStructureHash(runStructure),
     });
-    const bikePlan = createActivityPlanRow({ id: "22222222-bbbb-4bbb-8bbb-bbbbbbbbbbbb" });
     const { caller } = createCaller({
       state: {
-        "select:activity_plans": [[runPlan, bikePlan]],
+        "select:activity_plans": [[runPlan]],
         "select:likes": [[]],
         "select:profiles": [[createProfileRow()]],
       },
@@ -366,10 +366,11 @@ describe("activityPlansRouter", () => {
     const result = await caller.list({ activityCategories: ["run"], limit: 20 });
 
     expect(result.items.map((item) => item.id)).toEqual([runPlan.id]);
-    expect(result.items[0]?.activity_category).toBe("run");
+    expect(result.items[0]).toMatchObject({ categories: ["run"], primary_category: "run" });
+    expect(result.items[0]).not.toHaveProperty("activity_category");
   });
 
-  it("uses bounded keyset batches for category filtering across a large catalog", async () => {
+  it("applies category containment in one bounded database query", async () => {
     const row = (index: number, category: "bike" | "run") => {
       const structure = structuredClone(sampleStructure);
       structure.segments[0].category = category;
@@ -379,16 +380,14 @@ describe("activityPlansRouter", () => {
           : [{ type: "%FTP", intensity: 75 }];
       return createActivityPlanRow({
         id: `00000000-0000-4000-8000-${index.toString().padStart(12, "0")}`,
-        activity_category: "bike",
         created_at: new Date(2026, 2, 1, 0, 0, 200 - index),
         structure,
       });
     };
-    const firstBoundedBatch = Array.from({ length: 84 }, (_, index) => row(index + 1, "bike"));
-    const secondBoundedBatch = Array.from({ length: 21 }, (_, index) => row(index + 85, "run"));
+    const databaseFilteredPage = Array.from({ length: 21 }, (_, index) => row(index + 1, "run"));
     const { caller, callLog } = createCaller({
       state: {
-        "select:activity_plans": [firstBoundedBatch, secondBoundedBatch],
+        "select:activity_plans": [databaseFilteredPage],
         "select:likes": [[]],
         "select:profiles": [[createProfileRow()]],
       },
@@ -397,11 +396,11 @@ describe("activityPlansRouter", () => {
     const result = await caller.list({ activityCategories: ["run"], limit: 20 });
 
     expect(result.items).toHaveLength(20);
-    expect(result.items.every((item) => item.activity_category === "run")).toBe(true);
+    expect(result.items.every((item) => item.primary_category === "run")).toBe(true);
     expect(result.nextCursor).toBeDefined();
     expect(
       callLog.filter((call) => call.operation === "select" && call.table === "activity_plans"),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
   });
 
   it("getById rejects a private plan owned by another user", async () => {
@@ -460,6 +459,8 @@ describe("activityPlansRouter", () => {
       id: "22222222-2222-4222-8222-222222222222",
       profile_id: OTHER_USER_ID,
       template_visibility: "public",
+      gps_recording_enabled: true,
+      structure_hash: activityPlanStructureHash(sampleStructure),
       content_visibility: "public",
     });
     const { caller } = createCaller({
@@ -559,6 +560,7 @@ describe("activityPlansRouter", () => {
       id: "55555555-5555-4555-8555-555555555555",
       name: "Created Plan",
       template_visibility: "public",
+      structure_hash: activityPlanStructureHash(sampleStructure),
     });
     const { caller, callLog } = createCaller({
       state: {
@@ -634,6 +636,7 @@ describe("activityPlansRouter", () => {
 
     const result = await caller.update({
       id: existingRow.id,
+      expectedStructureHash: existingRow.structure_hash,
       name: "After Update",
       template_visibility: "public",
       structure: sampleStructure,
@@ -665,7 +668,11 @@ describe("activityPlansRouter", () => {
       },
     });
 
-    const result = await caller.update({ id: existingRow.id, name: "After Update" });
+    const result = await caller.update({
+      id: existingRow.id,
+      expectedStructureHash: existingRow.structure_hash,
+      name: "After Update",
+    });
 
     expect(plannedWorkoutSyncState.enqueueProviderPlannedActivityJobs).toHaveBeenCalledOnce();
     expect(plannedWorkoutSyncState.enqueueProviderPlannedActivityJobs).toHaveBeenCalledWith(
@@ -685,8 +692,16 @@ describe("activityPlansRouter", () => {
       },
     });
 
-    await caller.update({ id: existingRow.id, notes: "Updated notes" });
-    await caller.update({ id: existingRow.id, name: existingRow.name });
+    await caller.update({
+      id: existingRow.id,
+      expectedStructureHash: existingRow.structure_hash,
+      notes: "Updated notes",
+    });
+    await caller.update({
+      id: existingRow.id,
+      expectedStructureHash: existingRow.structure_hash,
+      name: existingRow.name,
+    });
 
     expect(plannedWorkoutSyncState.enqueueProviderPlannedActivityJobs).not.toHaveBeenCalled();
     expect(callLog.filter((call) => call.table === "events")).toHaveLength(0);
@@ -707,11 +722,30 @@ describe("activityPlansRouter", () => {
   it("update rejects id-only no-op payloads before hitting the database", async () => {
     const { caller, callLog } = createCaller();
 
-    await expect(caller.update({ id: "66666666-6666-4666-8666-666666666666" })).rejects.toThrow(
-      "At least one activity plan update field is required",
-    );
+    await expect(
+      caller.update({
+        id: "66666666-6666-4666-8666-666666666666",
+        expectedStructureHash: activityPlanStructureHash(sampleStructure),
+      }),
+    ).rejects.toThrow("At least one activity plan update field is required");
 
     expect(callLog).toHaveLength(0);
+  });
+
+  it("rejects a stale activity-plan structure hash without writing", async () => {
+    const existingRow = createActivityPlanRow();
+    const { caller, callLog } = createCaller({
+      state: { "select:activity_plans": [[existingRow]] },
+    });
+
+    await expect(
+      caller.update({
+        id: existingRow.id,
+        expectedStructureHash: `v1:sha256:${"f".repeat(64)}`,
+        name: "Stale write",
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT", message: "STALE_STRUCTURE_HASH" });
+    expect(callLog.some((call) => call.operation === "update")).toBe(false);
   });
 
   it("update rejects provider import provenance", async () => {

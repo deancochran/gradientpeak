@@ -1,5 +1,5 @@
 import { type DrizzleDbClient, schema } from "@repo/db";
-import { and, desc, eq, gte, inArray, lte, or } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import type { ActivityAnalysisContextSnapshot, ActivityAnalysisStore } from "../../repositories";
 
 const metricTypes = [
@@ -43,19 +43,12 @@ export function createActivityAnalysisStore(db: DrizzleDbClient): ActivityAnalys
         calculation_version: schema.profileMetrics.calculation_version,
         provenance: schema.profileMetrics.provenance,
         reference_activity_id: schema.profileMetrics.reference_activity_id,
-        reference_activity_category: schema.activities.type,
+        // A parent activity can contain several/repeated categories. Profile metrics do not yet
+        // carry a segment reference, so attributing one parent category would fabricate evidence.
+        reference_activity_category: sql<null>`null`,
       })
       .from(schema.profileMetrics);
-    const profileMetricQuery =
-      typeof profileMetricBaseQuery.leftJoin === "function"
-        ? profileMetricBaseQuery.leftJoin(
-            schema.activities,
-            and(
-              eq(schema.activities.id, schema.profileMetrics.reference_activity_id),
-              eq(schema.activities.profile_id, schema.profileMetrics.profile_id),
-            ),
-          )
-        : profileMetricBaseQuery;
+    const profileMetricQuery = profileMetricBaseQuery;
     const [profiles, profileMetrics, recentEfforts] = await Promise.all([
       db
         .select({

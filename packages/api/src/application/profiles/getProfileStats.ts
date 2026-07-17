@@ -2,7 +2,11 @@ import { activities } from "@repo/db";
 import { and, eq, gte, lte } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 import { createActivityAnalysisStore } from "../../infrastructure/repositories";
-import { buildActivityDerivedSummaryMap } from "../../lib/activity-analysis";
+import {
+  buildActivitySegmentDerivedSummaries,
+  deriveActivityDurations,
+  loadActivitySegmentsByActivityId,
+} from "../../lib/activity-analysis";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 
@@ -22,22 +26,29 @@ export async function getProfileStats(db: DbClient, input: { profileId: string; 
       ),
     );
 
-  const derivedMap = await buildActivityDerivedSummaryMap({
+  const segments = await loadActivitySegmentsByActivityId(
+    db,
+    activityRows.map((activity) => activity.id),
+  );
+  const activitiesWithSegments = activityRows.map((activity) => ({
+    ...activity,
+    segments: segments.get(activity.id) ?? [],
+  }));
+  const derivedSegments = await buildActivitySegmentDerivedSummaries({
     store: createActivityAnalysisStore(db),
     profileId: input.profileId,
-    activities: activityRows,
+    activities: activitiesWithSegments,
   });
 
   const totalActivities = activityRows.length;
   const totalDuration = activityRows.reduce((sum, activity) => {
-    return sum + (activity.duration_seconds || 0);
+    const durations = deriveActivityDurations(activity);
+    return sum + (durations.active_seconds ?? durations.elapsed_seconds);
   }, 0);
   const totalDistance = activityRows.reduce((sum, activity) => {
     return sum + (activity.distance_meters || 0);
   }, 0);
-  const totalTSS = activityRows.reduce((sum, activity) => {
-    return sum + (derivedMap.get(activity.id)?.tss || 0);
-  }, 0);
+  const totalTSS = derivedSegments.reduce((sum, segment) => sum + (segment.tss ?? 0), 0);
 
   return {
     totalActivities,

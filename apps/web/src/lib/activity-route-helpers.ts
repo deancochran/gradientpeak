@@ -145,6 +145,55 @@ export function getActivityBadgeLabel(activityType: string) {
   }
 }
 
+type ActivityDisplaySegment = {
+  category?: string | null;
+  ordinal: number;
+  role: string;
+};
+
+export function deriveActivityCategoryDisplay(segments: readonly ActivityDisplaySegment[]) {
+  const categories = segments
+    .filter(
+      (segment): segment is ActivityDisplaySegment & { category: string } =>
+        segment.role === "activity" && segment.category != null,
+    )
+    .sort((left, right) => left.ordinal - right.ordinal)
+    .map((segment) => segment.category);
+
+  return {
+    categories,
+    label:
+      categories.length === 0
+        ? "Unknown activity"
+        : categories.map(getActivityBadgeLabel).join(" → "),
+    singleCategory: categories.length === 1 ? (categories[0] ?? null) : null,
+  };
+}
+
+export function deriveActivityTimingDisplay(activity: {
+  active_ms: number | null;
+  elapsed_ms: number;
+  moving_ms: number | null;
+  timing_coverage: "complete" | "partial" | "unavailable";
+}) {
+  const hasCoveredTiming = activity.timing_coverage !== "unavailable";
+  return {
+    activeSeconds:
+      hasCoveredTiming && activity.active_ms !== null ? activity.active_ms / 1_000 : null,
+    coverage: activity.timing_coverage,
+    elapsedSeconds: activity.elapsed_ms / 1_000,
+    movingSeconds:
+      hasCoveredTiming && activity.moving_ms !== null ? activity.moving_ms / 1_000 : null,
+  };
+}
+
+export function deriveCurrentArtifactLabel(
+  artifact: { format: string; original_name: string | null } | null,
+) {
+  if (!artifact) return null;
+  return artifact.original_name?.trim() || `${artifact.format.toUpperCase()} activity file`;
+}
+
 export function getActivityEmoji(activityType: string) {
   switch (activityType) {
     case "run":

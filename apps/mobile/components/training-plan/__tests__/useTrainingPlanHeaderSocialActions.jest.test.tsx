@@ -49,6 +49,7 @@ describe("useTrainingPlanHeaderSocialActions", () => {
       useTrainingPlanHeaderSocialActions({
         plan: {
           id: "not-a-uuid",
+          structure_hash: `v1:sha256:${"0".repeat(64)}`,
           has_liked: false,
           likes_count: 0,
           template_visibility: "private",
@@ -74,6 +75,7 @@ describe("useTrainingPlanHeaderSocialActions", () => {
       useTrainingPlanHeaderSocialActions({
         plan: {
           id: "11111111-1111-1111-1111-111111111111",
+          structure_hash: `v1:sha256:${"1".repeat(64)}`,
           has_liked: false,
           likes_count: 0,
           template_visibility: "private",

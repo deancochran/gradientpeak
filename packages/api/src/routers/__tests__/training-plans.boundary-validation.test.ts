@@ -70,9 +70,12 @@ describe("trainingPlansRouter boundary validation", () => {
   it("rejects id-only no-op updates before hitting the database", async () => {
     const { caller, callLog } = createCaller();
 
-    await expect(caller.update({ id: TRAINING_PLAN_ID })).rejects.toThrow(
-      "At least one training plan update field is required",
-    );
+    await expect(
+      caller.update({
+        id: TRAINING_PLAN_ID,
+        expectedStructureHash: `v1:sha256:${"0".repeat(64)}`,
+      }),
+    ).rejects.toThrow("At least one training plan update field is required");
 
     expect(callLog).toHaveLength(0);
   });

@@ -1,6 +1,6 @@
 import { EVIDENCE_VERSION, type EvidenceCandidate } from "@repo/core";
-import { activities } from "@repo/db";
-import { and, desc, eq, gte } from "drizzle-orm";
+import { activities, activitySegments } from "@repo/db";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../../../db";
 
 const ACTIVITY_LOOKBACK_DAYS = 90;
@@ -12,9 +12,11 @@ type Db = ReturnType<typeof getRequiredDb>;
 
 type ActivityEvidenceRow = {
   id: string;
-  type: string;
+  activity_id: string;
+  category: string;
   started_at: Date;
-  duration_seconds: number;
+  start_offset_ms: number;
+  duration_seconds: number | null;
 };
 
 export const activityEvidenceReadLimits = {
@@ -114,12 +116,22 @@ export class ActivityEvidenceAdapter {
     lookbackStart.setUTCDate(lookbackStart.getUTCDate() - ACTIVITY_LOOKBACK_DAYS);
     const rows = await this.db
       .select({
-        id: activities.id,
-        type: activities.type,
+        id: activitySegments.id,
+        activity_id: activities.id,
+        category: activitySegments.category,
         started_at: activities.started_at,
-        duration_seconds: activities.duration_seconds,
+        start_offset_ms: activitySegments.start_offset_ms,
+        duration_seconds: sql<number | null>`case
+          when ${activitySegments.timing_coverage} = 'unavailable' then null
+          when ${activitySegments.active_ms} is not null then ${activitySegments.active_ms} / 1000.0
+          when ${activitySegments.moving_ms} is not null then ${activitySegments.moving_ms} / 1000.0
+          else null end`,
       })
       .from(activities)
+      .innerJoin(
+        activitySegments,
+        and(eq(activitySegments.activity_id, activities.id), eq(activitySegments.role, "activity")),
+      )
       .where(
         and(eq(activities.profile_id, input.profileId), gte(activities.started_at, lookbackStart)),
       )
@@ -127,11 +139,19 @@ export class ActivityEvidenceAdapter {
       .limit(ACTIVITY_LIMIT);
 
     const usable = (rows as ActivityEvidenceRow[])
-      .filter(
-        (row) =>
-          row.duration_seconds > 0 &&
-          Number.isFinite(row.duration_seconds) &&
-          !Number.isNaN(row.started_at.getTime()),
+      .flatMap((row) =>
+        row.duration_seconds !== null &&
+        row.duration_seconds > 0 &&
+        Number.isFinite(row.duration_seconds) &&
+        !Number.isNaN(row.started_at.getTime())
+          ? [
+              {
+                ...row,
+                duration_seconds: row.duration_seconds,
+                started_at: new Date(row.started_at.getTime() + row.start_offset_ms),
+              },
+            ]
+          : [],
       )
       .sort(
         (left, right) =>
@@ -165,7 +185,7 @@ export class ActivityEvidenceAdapter {
     }
 
     for (const row of usable) {
-      const correlationGroupId = `activity:${row.id}`;
+      const correlationGroupId = `activity:${row.activity_id}`;
       evidence.push(
         candidate({
           capabilityId: "endurance",
@@ -173,7 +193,7 @@ export class ActivityEvidenceAdapter {
           confidence: coverage * 0.7,
           observedAt: row.started_at,
           sourceId: row.id,
-          sport: row.type,
+          sport: row.category,
           correlationGroupId,
           reasons: [coverageReason, "Activity duration supports endurance evidence."],
         }),
@@ -197,8 +217,8 @@ export class ActivityEvidenceAdapter {
             confidence: coverage * 0.6,
             observedAt: row.started_at,
             sourceId: row.id,
-            sport: row.type,
-            correlationGroupId: `activity:${row.id}`,
+            sport: row.category,
+            correlationGroupId: `activity:${row.activity_id}`,
             reasons: [
               coverageReason,
               "Repeated activity distribution supports durability evidence.",
@@ -209,7 +229,7 @@ export class ActivityEvidenceAdapter {
     }
 
     const matching = input.goalActivityCategory
-      ? usable.filter((row) => row.type === input.goalActivityCategory)
+      ? usable.filter((row) => row.category === input.goalActivityCategory)
       : [];
     if (!input.goalActivityCategory || matching.length === 0) {
       evidence.push(
@@ -231,8 +251,8 @@ export class ActivityEvidenceAdapter {
             confidence: coverage * 0.6,
             observedAt: row.started_at,
             sourceId: row.id,
-            sport: row.type,
-            correlationGroupId: `activity:${row.id}`,
+            sport: row.category,
+            correlationGroupId: `activity:${row.activity_id}`,
             reasons: [
               coverageReason,
               `${matching.length} of ${usable.length} usable activities match the goal category.`,

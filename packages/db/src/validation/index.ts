@@ -1,8 +1,8 @@
+import { canonicalSportSchema } from "@repo/core";
 import { createInsertSchema, createSelectSchema, createUpdateSchema } from "drizzle-zod";
 import { z } from "zod";
 
 import {
-  activityCategoryEnum,
   activityFileIngestionSourceEnum,
   activityFileIngestionStatusEnum,
   effortTypeEnum,
@@ -18,10 +18,13 @@ import {
 } from "../schema/enums";
 import {
   activities,
+  activityArtifactLinks,
+  activityArtifacts,
   activityEfforts,
   activityFileIngestions,
   activityPlans,
   activityRoutes,
+  activitySegments,
   comments,
   conversationParticipants,
   conversations,
@@ -43,7 +46,7 @@ import {
   trainingPlans,
 } from "../schema/tables";
 
-export const publicActivityCategorySchema = z.enum(activityCategoryEnum.enumValues);
+export const publicActivityCategorySchema = canonicalSportSchema;
 export const publicActivityFileIngestionSourceSchema = z.enum(
   activityFileIngestionSourceEnum.enumValues,
 );
@@ -92,6 +95,18 @@ export const publicActivitiesCreateSchema = publicActivitiesInsertSchema.partial
   is_private: true,
   updated_at: true,
 });
+
+export const publicActivityArtifactsRowSchema = createSelectSchema(activityArtifacts);
+export const publicActivityArtifactsInsertSchema = createInsertSchema(activityArtifacts);
+export const publicActivityArtifactsUpdateSchema = createUpdateSchema(activityArtifacts);
+
+export const publicActivityArtifactLinksRowSchema = createSelectSchema(activityArtifactLinks);
+export const publicActivityArtifactLinksInsertSchema = createInsertSchema(activityArtifactLinks);
+export const publicActivityArtifactLinksUpdateSchema = createUpdateSchema(activityArtifactLinks);
+
+export const publicActivitySegmentsRowSchema = createSelectSchema(activitySegments);
+export const publicActivitySegmentsInsertSchema = createInsertSchema(activitySegments);
+export const publicActivitySegmentsUpdateSchema = createUpdateSchema(activitySegments);
 
 export const publicActivityEffortsRowSchema = createSelectSchema(activityEfforts);
 export const publicActivityEffortsInsertSchema = createInsertSchema(activityEfforts);

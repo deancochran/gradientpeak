@@ -1,11 +1,44 @@
+import type { TrainingPlan } from "@repo/core";
 import { createServerFn } from "@tanstack/react-start";
 import { getRequestHeaders } from "@tanstack/react-start/server";
+import { z } from "zod";
 
 type ShareEntity = "activity" | "workout" | "training-plan";
 
 type ShareInput = {
   id: string;
 };
+
+const serializableObjectiveSchema = z.json();
+type SerializableObjective = z.infer<typeof serializableObjectiveSchema>;
+type TrainingPlanGoalBlueprint = NonNullable<TrainingPlan["goal_blueprints"]>[number];
+type PublicTrainingPlanGoalBlueprint = Omit<TrainingPlanGoalBlueprint, "objective"> & {
+  objective?: SerializableObjective;
+};
+type PublicTrainingPlanStructure = Omit<
+  TrainingPlan,
+  "builder_planning_snapshot" | "goal_blueprints"
+> & {
+  goal_blueprints?: PublicTrainingPlanGoalBlueprint[];
+};
+
+export function projectPublicTrainingPlanStructure(
+  structure: TrainingPlan,
+): PublicTrainingPlanStructure {
+  const {
+    builder_planning_snapshot: _builderPlanningSnapshot,
+    goal_blueprints: goalBlueprints,
+    ...publicStructure
+  } = structure;
+  const projectedGoalBlueprints = goalBlueprints?.map(({ objective, ...blueprint }) => {
+    const parsedObjective = serializableObjectiveSchema.safeParse(objective);
+    return parsedObjective.success ? { ...blueprint, objective: parsedObjective.data } : blueprint;
+  });
+
+  return projectedGoalBlueprints
+    ? { ...publicStructure, goal_blueprints: projectedGoalBlueprints }
+    : publicStructure;
+}
 
 function getOriginFromHeaders(headers: Headers) {
   const forwardedHost = headers.get("x-forwarded-host");
@@ -77,7 +110,10 @@ export const loadPublicTrainingPlan = createServerFn({ method: "GET" })
     const trainingPlan = await caller.publicShare.trainingPlan({ id: data.id });
     return trainingPlan
       ? {
-          trainingPlan,
+          trainingPlan: {
+            ...trainingPlan,
+            structure: projectPublicTrainingPlanStructure(trainingPlan.structure),
+          },
           canonicalUrl: getPublicShareUrl(origin, "training-plan", trainingPlan.id),
         }
       : null;

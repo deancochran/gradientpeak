@@ -1,4 +1,5 @@
-import { publicActivitiesRowSchema, publicCommentsRowSchema } from "@repo/db";
+import { canonicalSportSchema } from "@repo/core";
+import { publicCommentsRowSchema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
@@ -30,30 +31,27 @@ const feedProfileSchema = z.object({
   avatar_url: z.string().nullable(),
 });
 
-const feedActivityRowSchema = publicActivitiesRowSchema
-  .pick({
-    id: true,
-    profile_id: true,
-    name: true,
-    type: true,
-    distance_meters: true,
-    duration_seconds: true,
-    moving_seconds: true,
-    avg_heart_rate: true,
-    max_heart_rate: true,
-    avg_power: true,
-    avg_cadence: true,
-    elevation_gain_meters: true,
-    calories: true,
-    polyline: true,
-    activity_file_path: true,
-    is_private: true,
-    content_visibility: true,
-  })
-  .extend({
-    started_at: timestampSchema,
-    finished_at: timestampSchema,
-    created_at: timestampSchema,
+const feedActivityRowSchema = z
+  .object({
+    id: z.string().uuid(),
+    profile_id: z.string().uuid(),
+    name: z.string(),
+    category_composition: z.array(canonicalSportSchema),
+    elapsed_ms: z.number().int().positive(),
+    active_ms: z.number().int().nonnegative().nullable(),
+    moving_ms: z.number().int().nonnegative().nullable(),
+    timing_coverage: z.enum(["complete", "partial", "unavailable"]),
+    distance_meters: z.number().int().nonnegative(),
+    avg_heart_rate: z.number().int().nullable(),
+    max_heart_rate: z.number().int().nullable(),
+    avg_power: z.number().int().nullable(),
+    avg_cadence: z.number().int().nullable(),
+    calories: z.number().int().nullable(),
+    polyline: z.string().nullable(),
+    is_private: z.boolean(),
+    started_at: z.date(),
+    finished_at: z.date(),
+    created_at: z.date(),
     profile_username: z.string().nullable(),
     profile_avatar_url: z.string().nullable(),
     elevation_gain_meters: nullableNumericSchema,
@@ -65,15 +63,16 @@ const feedActivityRowSchema = publicActivitiesRowSchema
     normalized_graded_speed_mps: nullableNumericSchema.optional(),
     ingestion_status: z.string().nullable().optional(),
     ingestion_last_error_message: z.string().nullable().optional(),
-    content_visibility: z.enum(["private", "followers", "public"]).optional(),
-  });
+    content_visibility: z.enum(["private", "followers", "public"]),
+  })
+  .strict();
 const feedActivityDetailRowSchema = feedActivityRowSchema.extend({
-  notes: publicActivitiesRowSchema.shape.notes,
+  notes: z.string().nullable(),
   max_power: nullableNumericSchema,
-  max_cadence: publicActivitiesRowSchema.shape.max_cadence,
+  max_cadence: z.number().int().nullable(),
   normalized_power: nullableNumericSchema,
   elevation_loss_meters: nullableNumericSchema,
-  map_bounds: publicActivitiesRowSchema.shape.map_bounds,
+  map_bounds: z.unknown().nullable(),
   viewer_follows_owner: z.boolean(),
 });
 const commentCountRowSchema = z.object({
@@ -93,12 +92,15 @@ export const feedActivityDtoSchema = z.object({
   id: z.string().uuid(),
   profile_id: z.string().uuid(),
   name: z.string(),
-  type: z.string(),
+  type: canonicalSportSchema.nullable(),
+  activity_kind: z.enum(["single", "multisport", "unknown"]),
+  activity_categories: z.array(canonicalSportSchema),
   started_at: z.string(),
   finished_at: z.string(),
   distance_meters: z.number(),
-  duration_seconds: z.number(),
-  moving_seconds: z.number(),
+  elapsed_seconds: z.number().positive(),
+  duration_seconds: z.number().nonnegative().nullable(),
+  moving_seconds: z.number().nonnegative().nullable(),
   avg_heart_rate: z.number().nullable(),
   max_heart_rate: z.number().nullable(),
   avg_power: z.number().nullable(),
@@ -106,11 +108,10 @@ export const feedActivityDtoSchema = z.object({
   elevation_gain_meters: z.number().nullable(),
   calories: z.number().nullable(),
   polyline: z.string().nullable(),
-  activity_file_path: z.string().nullable(),
   likes_count: z.number(),
   comments_count: z.number().int().nonnegative(),
   is_private: z.boolean(),
-  content_visibility: z.enum(["private", "followers", "public"]).optional(),
+  content_visibility: z.enum(["private", "followers", "public"]),
   created_at: z.string(),
   profile: feedProfileSchema,
   has_liked: z.boolean(),
@@ -134,7 +135,7 @@ export const feedActivityDetailDtoSchema = feedActivityDtoSchema.omit({ derived:
   max_cadence: z.number().nullable(),
   normalized_power: z.number().nullable(),
   elevation_loss_meters: z.number().nullable(),
-  map_bounds: publicActivitiesRowSchema.shape.map_bounds,
+  map_bounds: z.unknown().nullable(),
   comments_count: z.number().int().nonnegative(),
   comments: z.array(activityCommentDtoSchema),
 });
@@ -155,16 +156,28 @@ export function mapFeedActivity(
     likeStats: Map<string, LikeStats>;
   },
 ): FeedActivity {
+  const category =
+    activity.category_composition.length === 1 ? (activity.category_composition[0] ?? null) : null;
+  const activityKind =
+    activity.category_composition.length === 0
+      ? "unknown"
+      : activity.category_composition.length === 1
+        ? "single"
+        : "multisport";
+  const hasTiming = activity.timing_coverage !== "unavailable";
   return feedActivityDtoSchema.parse({
     id: activity.id,
     profile_id: activity.profile_id,
     name: activity.name,
-    type: activity.type,
+    type: category,
+    activity_kind: activityKind,
+    activity_categories: activity.category_composition,
     started_at: toIsoString(activity.started_at),
     finished_at: toIsoString(activity.finished_at),
     distance_meters: activity.distance_meters,
-    duration_seconds: activity.duration_seconds,
-    moving_seconds: activity.moving_seconds,
+    elapsed_seconds: activity.elapsed_ms / 1000,
+    duration_seconds: hasTiming && activity.active_ms !== null ? activity.active_ms / 1000 : null,
+    moving_seconds: hasTiming && activity.moving_ms !== null ? activity.moving_ms / 1000 : null,
     avg_heart_rate: activity.avg_heart_rate,
     max_heart_rate: activity.max_heart_rate,
     avg_power: activity.avg_power,
@@ -172,13 +185,10 @@ export function mapFeedActivity(
     elevation_gain_meters: activity.elevation_gain_meters,
     calories: activity.calories,
     polyline: activity.polyline,
-    activity_file_path: activity.activity_file_path,
     likes_count: getLikeStats(options.likeStats, activity.id).likes_count,
     comments_count: options.commentCounts.get(activity.id) ?? 0,
     is_private: activity.is_private,
-    ...(activity.content_visibility === undefined
-      ? {}
-      : { content_visibility: activity.content_visibility }),
+    content_visibility: activity.content_visibility,
     created_at: toIsoString(activity.created_at),
     profile: {
       id: activity.profile_id,
@@ -209,12 +219,18 @@ export async function listFeedActivityRows(
     : sql``;
   const result = await db.execute(sql<FeedActivityRow>`
     select
-      a.id, a.profile_id, a.name, a.type, a.started_at, a.finished_at,
-      a.distance_meters, a.duration_seconds, a.moving_seconds, a.avg_heart_rate,
+      a.id, a.profile_id, a.name, a.started_at, a.finished_at,
+      coalesce(array(
+        select s.category from activity_segments s
+        where s.activity_id = a.id and s.role = 'activity'
+        order by s.ordinal
+      ), array[]::text[]) as category_composition,
+      a.distance_meters, a.elapsed_ms, a.active_ms, a.moving_ms, a.timing_coverage,
+      a.avg_heart_rate,
       a.max_heart_rate, a.avg_power, a.max_power, a.avg_cadence, a.avg_speed_mps,
       a.max_speed_mps, a.normalized_power, a.normalized_speed_mps,
       a.normalized_graded_speed_mps, a.elevation_gain_meters, a.calories, a.polyline,
-      a.activity_file_path, a.is_private, a.content_visibility, a.created_at,
+      a.is_private, a.content_visibility, a.created_at,
       p.username as profile_username, p.avatar_url as profile_avatar_url,
       afi.status as ingestion_status, afi.last_error_message as ingestion_last_error_message
     from activities a
@@ -255,11 +271,17 @@ export async function loadFeedActivityCommentCounts(db: DbClient, activityIds: s
 export async function loadFeedActivityDetail(db: DbClient, viewerId: string, activityId: string) {
   const result = await db.execute(sql<FeedActivityDetailRow>`
     select
-      a.id, a.profile_id, a.name, a.type, a.notes, a.started_at, a.finished_at,
-      a.distance_meters, a.duration_seconds, a.moving_seconds, a.avg_heart_rate,
+      a.id, a.profile_id, a.name, a.notes, a.started_at, a.finished_at,
+      coalesce(array(
+        select s.category from activity_segments s
+        where s.activity_id = a.id and s.role = 'activity'
+        order by s.ordinal
+      ), array[]::text[]) as category_composition,
+      a.distance_meters, a.elapsed_ms, a.active_ms, a.moving_ms, a.timing_coverage,
+      a.avg_heart_rate,
       a.max_heart_rate, a.avg_power, a.max_power, a.avg_cadence, a.max_cadence,
       a.normalized_power, a.elevation_gain_meters, a.elevation_loss_meters,
-      a.calories, a.polyline, a.activity_file_path, a.map_bounds, a.is_private, a.content_visibility,
+      a.calories, a.polyline, a.map_bounds, a.is_private, a.content_visibility,
       a.created_at, p.username as profile_username, p.avatar_url as profile_avatar_url,
       exists (
         select 1 from follows f where f.follower_id = ${viewerId}::uuid
@@ -319,17 +341,29 @@ export function mapFeedActivityDetail(
   likeStats: Map<string, LikeStats>,
   comments: z.infer<typeof activityCommentDtoSchema>[],
 ) {
+  const category =
+    activity.category_composition.length === 1 ? (activity.category_composition[0] ?? null) : null;
+  const activityKind =
+    activity.category_composition.length === 0
+      ? "unknown"
+      : activity.category_composition.length === 1
+        ? "single"
+        : "multisport";
+  const hasTiming = activity.timing_coverage !== "unavailable";
   return feedActivityDetailDtoSchema.parse({
     id: activity.id,
     profile_id: activity.profile_id,
     name: activity.name,
-    type: activity.type,
+    type: category,
+    activity_kind: activityKind,
+    activity_categories: activity.category_composition,
     notes: activity.notes,
     started_at: toIsoString(activity.started_at),
     finished_at: toIsoString(activity.finished_at),
     distance_meters: activity.distance_meters,
-    duration_seconds: activity.duration_seconds,
-    moving_seconds: activity.moving_seconds,
+    elapsed_seconds: activity.elapsed_ms / 1000,
+    duration_seconds: hasTiming && activity.active_ms !== null ? activity.active_ms / 1000 : null,
+    moving_seconds: hasTiming && activity.moving_ms !== null ? activity.moving_ms / 1000 : null,
     avg_heart_rate: activity.avg_heart_rate,
     max_heart_rate: activity.max_heart_rate,
     avg_power: activity.avg_power,
@@ -341,10 +375,10 @@ export function mapFeedActivityDetail(
     elevation_loss_meters: activity.elevation_loss_meters,
     calories: activity.calories,
     polyline: activity.polyline,
-    activity_file_path: activity.activity_file_path,
     map_bounds: activity.map_bounds,
     likes_count: getLikeStats(likeStats, activity.id).likes_count,
     is_private: activity.is_private,
+    content_visibility: activity.content_visibility,
     created_at: toIsoString(activity.created_at),
     profile: {
       id: activity.profile_id,

@@ -6,6 +6,7 @@ import {
 
 const validCreateInput = {
   activity_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  segment_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
   activity_category: "bike",
   duration_seconds: 1200,
   effort_type: "power",
@@ -19,6 +20,23 @@ describe("activity effort input schemas", () => {
     const parsed = activityEffortCreateInputSchema.parse(validCreateInput);
 
     expect(parsed).toEqual({ ...validCreateInput, unit: "watts" });
+  });
+
+  it("accepts a manual effort only when activity and segment are paired null", () => {
+    const parsed = activityEffortCreateInputSchema.parse({
+      ...validCreateInput,
+      activity_id: null,
+      segment_id: null,
+      start_offset: null,
+    });
+    expect(parsed).toMatchObject({ activity_id: null, segment_id: null, start_offset: null });
+    expect(
+      activityEffortCreateInputSchema.safeParse({
+        ...validCreateInput,
+        activity_id: null,
+        start_offset: null,
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects unknown create keys", () => {

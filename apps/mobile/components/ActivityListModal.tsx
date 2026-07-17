@@ -223,7 +223,11 @@ export function ActivityListModal({
                   <View className="items-center">
                     <Text className="text-2xl font-bold text-foreground">
                       {formatDuration(
-                        filteredActivities.reduce((sum, a) => sum + (a.duration_seconds || 0), 0),
+                        filteredActivities.reduce(
+                          (sum, activity) =>
+                            sum + (activity.active_ms ?? activity.elapsed_ms) / 1000,
+                          0,
+                        ),
                       )}
                     </Text>
                     <Text className="text-xs text-muted-foreground mt-1">Total Time</Text>

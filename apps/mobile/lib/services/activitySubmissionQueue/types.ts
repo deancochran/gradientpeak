@@ -57,6 +57,10 @@ export const activitySubmissionQueueJobSchema = z
     activityId: z.string().min(1).optional(),
     ingestionId: z.string().min(1).optional(),
     remoteFilePath: z.string().min(1).optional(),
+    artifactSha256: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/)
+      .optional(),
     status: activitySubmissionQueueJobStatusSchema,
     attempts: z.number().int().nonnegative(),
     lastError: z.string().nullable().optional(),
@@ -66,12 +70,29 @@ export const activitySubmissionQueueJobSchema = z
   .strict();
 export type ActivitySubmissionQueueJob = z.infer<typeof activitySubmissionQueueJobSchema>;
 
-export type CreateFromRecordingSummaryInput = ActivitySubmissionQueueDraft & {
-  localFileMetadata?: {
-    fileType?: string | null;
-    fileSize?: number | null;
-    filePath?: string | null;
+export type CreateFromRecordingSummaryInput = Pick<
+  ActivitySubmissionQueueDraft,
+  | "recordingSessionId"
+  | "profileId"
+  | "startedAt"
+  | "finishedAt"
+  | "name"
+  | "notes"
+  | "content_visibility"
+  | "is_private"
+  | "activityPlanId"
+> & {
+  executionManifest: z.infer<typeof recordingExecutionManifestSchema>;
+  acceptedArtifact: {
+    sha256: string;
+    byteSize: number;
+    bucket: string;
+    path: string;
+    mediaType: string;
+    format: "fit" | "gpx" | "tcx";
+    originalName?: string | null;
   };
+  summary: { distanceMeters: number; calories?: number | null };
   source: "mobile_recording";
 };
 
@@ -120,9 +141,7 @@ export type ActivitySubmissionQueueRunnerDeps = {
     localPath: string,
     signedUrl: string,
   ) => Promise<UploadToSignedUrlResult | undefined>;
-  markUploadedAndProcess: (
-    input: MarkUploadedAndProcessInput,
-  ) => Promise<MarkUploadedAndProcessResult | undefined>;
+  getLocalArtifactMetadata: (localPath: string) => Promise<{ sha256: string; byteSize: number }>;
   onJobUpdated?: (job: ActivitySubmissionQueueJob) => Promise<void> | void;
   now?: () => string;
 };

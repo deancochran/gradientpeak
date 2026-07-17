@@ -39,6 +39,9 @@ import {
   getThresholdNextAction,
 } from "../../../../lib/activity-load-presentation";
 import {
+  deriveActivityCategoryDisplay,
+  deriveActivityTimingDisplay,
+  deriveCurrentArtifactLabel,
   formatDateTime,
   formatDistance,
   formatDuration,
@@ -46,7 +49,6 @@ import {
   formatPace,
   formatPower,
   formatSpeed,
-  getActivityBadgeLabel,
   getActivityCoordinates,
   summarizeActivityStreams,
 } from "../../../../lib/activity-route-helpers";
@@ -94,6 +96,12 @@ function ActivityDetailPage() {
   const activityQuery = api.activities.getById.useQuery({ id: activityId });
   const activity = activityQuery.data?.activity;
   const derived = activityQuery.data?.derived;
+  const categoryDisplay = deriveActivityCategoryDisplay(activity?.segments ?? []);
+  const timingDisplay = activity ? deriveActivityTimingDisplay(activity) : null;
+  const currentArtifactLabel = deriveCurrentArtifactLabel(activity?.current_artifact ?? null);
+  const primaryStreamSegment = activity?.segments
+    .filter((segment) => segment.role === "activity")
+    .sort((left, right) => left.ordinal - right.ordinal)[0];
   const loadMethod = derived?.stress.method;
   const loadLabels = getActivityLoadLabels(loadMethod);
   const unavailableValue =
@@ -110,7 +118,7 @@ function ActivityDetailPage() {
   );
   const thresholdAction =
     derived?.stress.unavailable_reason === "threshold_missing"
-      ? getThresholdNextAction(activity?.type)
+      ? getThresholdNextAction(categoryDisplay.singleCategory)
       : null;
   const isOwner = user?.id === activity?.profile_id;
   const ingestion = (
@@ -123,7 +131,11 @@ function ActivityDetailPage() {
     ingestionStatus && ingestionStatus !== "ready" && ingestionStatus !== "failed",
   );
   const canLoadStreamAnalysis = Boolean(
-    activity?.activity_file_path && isOwner && !isStreamProcessing && ingestionStatus !== "failed",
+    activity?.current_artifact &&
+      primaryStreamSegment &&
+      isOwner &&
+      !isStreamProcessing &&
+      ingestionStatus !== "failed",
   );
   const profileQuery = api.profiles.getPublicById.useQuery(
     { id: activity?.profile_id ?? "00000000-0000-0000-0000-000000000000" },
@@ -132,13 +144,14 @@ function ActivityDetailPage() {
   const streamsQuery = api.activityFiles.getStreams.useQuery(
     {
       activityId,
+      scope: { type: "segment", segmentId: primaryStreamSegment?.id ?? activityId },
     },
     {
       enabled: canLoadStreamAnalysis,
       staleTime: 5 * 60 * 1000,
     },
   );
-  const streamArtifactState = !activity?.activity_file_path
+  const streamArtifactState = !activity?.current_artifact
     ? isStreamProcessing
       ? "processing"
       : "missing"
@@ -309,7 +322,7 @@ function ActivityDetailPage() {
           </>
         }
         badges={[
-          getActivityBadgeLabel(activity.type),
+          categoryDisplay.label,
           getVisibilityLabel(contentVisibility),
           formatDateTime(activity.started_at),
         ]}
@@ -325,8 +338,16 @@ function ActivityDetailPage() {
             value: formatDistance(activity.distance_meters, unitSystem),
           },
           {
-            label: "Duration",
-            value: formatDuration(activity.duration_seconds),
+            label: "Elapsed",
+            value: formatDuration(timingDisplay?.elapsedSeconds),
+          },
+          {
+            label: timingDisplay?.coverage === "partial" ? "Active (partial)" : "Active",
+            value: formatDuration(timingDisplay?.activeSeconds),
+          },
+          {
+            label: timingDisplay?.coverage === "partial" ? "Moving (partial)" : "Moving",
+            value: formatDuration(timingDisplay?.movingSeconds),
           },
           { label: "Avg power", value: formatPower(activity.avg_power) },
           {
@@ -334,9 +355,9 @@ function ActivityDetailPage() {
             value: formatHeartRate(activity.avg_heart_rate),
           },
           {
-            label: activity.type === "run" ? "Avg pace" : "Avg speed",
+            label: categoryDisplay.singleCategory === "run" ? "Avg pace" : "Avg speed",
             value:
-              activity.type === "run"
+              categoryDisplay.singleCategory === "run"
                 ? formatPace(activity.avg_speed_mps, unitSystem)
                 : formatSpeed(activity.avg_speed_mps, unitSystem),
           },
@@ -373,7 +394,7 @@ function ActivityDetailPage() {
         <EntityMapCard
           coordinates={coordinates}
           emptyMessage={
-            activity.activity_file_path
+            activity.current_artifact
               ? "Location records were not available in the imported activity file."
               : "This activity has no stored route preview yet."
           }
@@ -407,6 +428,12 @@ function ActivityDetailPage() {
                 <p className="text-sm text-muted-foreground">{activity.activity_plans.name}</p>
               </div>
             ) : null}
+            <div>
+              <p className="text-sm font-medium text-foreground">Source artifact</p>
+              <p className="text-sm text-muted-foreground">
+                {currentArtifactLabel ?? "No source artifact is available."}
+              </p>
+            </div>
             <div>
               <p className="text-sm font-medium text-foreground">Visibility</p>
               <p className="text-sm text-muted-foreground">

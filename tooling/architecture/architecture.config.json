@@ -53,6 +53,7 @@
         "test": {
           "script": "test",
           "patterns": [
+            "packages/db/**/*.test.ts",
             "packages/db/scripts/verify-edge-function-safety.test.ts",
             "packages/db/scripts/storage-assets-contract.test.ts"
           ]
@@ -314,7 +315,10 @@
   "enumParity": [
     {
       "id": "activity-category",
-      "db": { "file": "packages/db/src/schema/enums.ts", "symbol": "activityCategoryEnum" },
+      "db": {
+        "file": "packages/db/src/schema/canonical-categories.ts",
+        "symbol": "canonicalActivityCategoryDbValues"
+      },
       "core": {
         "file": "packages/core/schemas/sport.ts",
         "symbol": "canonicalSportSchema"

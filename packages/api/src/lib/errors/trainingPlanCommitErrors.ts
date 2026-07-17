@@ -3,6 +3,7 @@ import { z } from "zod";
 
 export const trainingPlanCommitErrorCodeSchema = z.enum([
   "TRAINING_PLAN_COMMIT_STALE_PREVIEW",
+  "TRAINING_PLAN_COMMIT_STALE_STRUCTURE",
   "TRAINING_PLAN_COMMIT_CONFLICT",
   "TRAINING_PLAN_COMMIT_INVALID_PAYLOAD",
   "TRAINING_PLAN_COMMIT_NOT_FOUND",
@@ -50,6 +51,28 @@ export function buildStalePreviewCommitError(input: {
       user_action: "refresh_preview_and_retry",
       details: {
         provided_preview_snapshot_token: input.providedToken,
+      },
+    } satisfies TrainingPlanCommitErrorCause,
+  });
+}
+
+export function buildStaleStructureCommitError(input: {
+  operation: TrainingPlanCommitOperation;
+  expectedStructureHash: string;
+  currentStructureHash: string;
+}) {
+  return new TRPCError({
+    code: "CONFLICT",
+    message: "STALE_STRUCTURE_HASH",
+    cause: {
+      domain: "training_plan_commit",
+      code: "TRAINING_PLAN_COMMIT_STALE_STRUCTURE",
+      operation: input.operation,
+      recoverable: true,
+      user_action: "refresh_plan_and_retry",
+      details: {
+        expected_structure_hash: input.expectedStructureHash,
+        current_structure_hash: input.currentStructureHash,
       },
     } satisfies TrainingPlanCommitErrorCause,
   });

@@ -12,7 +12,9 @@ import { SearchField } from "@/components/shared/SearchField";
 export interface ActivityOption {
   id: string;
   name: string;
-  activity_category: string;
+  categories: readonly string[];
+  primary_category: string;
+  structure?: unknown;
   authoritative_metrics?: {
     estimated_duration?: number | null;
     estimated_tss?: number | null;

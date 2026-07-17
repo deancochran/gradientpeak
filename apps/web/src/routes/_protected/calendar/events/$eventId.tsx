@@ -1,3 +1,4 @@
+import { compileActivityPlanV3 } from "@repo/core/activity-plan";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -72,6 +73,10 @@ function EventDetailPage() {
   if (!scheduledDate) {
     return <p className="text-sm text-muted-foreground">Event schedule is unavailable.</p>;
   }
+
+  const compiledActivityPlan = event.activity_plan
+    ? compileActivityPlanV3(event.activity_plan.structure)
+    : null;
 
   return (
     <div className="space-y-6">
@@ -160,9 +165,9 @@ function EventDetailPage() {
             <div className="flex flex-wrap gap-2">
               <Badge variant="outline">{getEventTypeLabel(event.event_type)}</Badge>
               {event.status ? <Badge variant="secondary">{event.status}</Badge> : null}
-              {event.activity_plan?.activity_category ? (
-                <Badge>{event.activity_plan.activity_category}</Badge>
-              ) : null}
+              {compiledActivityPlan?.categories.map((category) => (
+                <Badge key={category}>{category}</Badge>
+              ))}
             </div>
             <DetailRow
               label="When"

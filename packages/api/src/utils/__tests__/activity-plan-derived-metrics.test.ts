@@ -5,8 +5,8 @@ const estimateActivity = vi.hoisted(() =>
     if (context.structure?.version === 2) {
       throw new Error("Invalid activity-plan V3 structure");
     }
-    if (context.structure?.fail) throw new Error("expected failure");
-    const duration = context.structure?.duration ?? 1800;
+    const duration =
+      context.structure?.segments?.[0]?.intervals?.[0]?.steps?.[0]?.duration?.seconds ?? 1800;
     const routeDistance = context.route?.distanceMeters ?? 0;
     const profileFactor = context.ftp ? context.ftp / 100 : 1;
     return {
@@ -16,7 +16,7 @@ const estimateActivity = vi.hoisted(() =>
       confidence: "medium",
       confidenceScore: 75,
       estimatedPowerZones: [0, 61],
-      warnings: context.structure?.warning ? ["fixture warning"] : [],
+      warnings: context.structure?.segments?.[0]?.name === "Warning" ? ["fixture warning"] : [],
     };
   }),
 );
@@ -33,20 +33,52 @@ vi.mock("@repo/core/estimation", async (importOriginal) => {
   };
 });
 
+import { activityPlanStructureHash } from "../../application/activity-plans/structure-hash";
 import { getActivityPlansDerivedMetrics } from "../activity-plan-derived-metrics";
 import { loadEstimationSnapshot } from "../estimation-helpers";
 
 const asOf = new Date("2026-07-12T12:00:00.000Z");
 
-function plan(overrides: Record<string, unknown> = {}) {
+function structure(duration = 1800, name = "Bike") {
+  return {
+    version: 3 as const,
+    segments: [
+      {
+        id: "22222222-2222-4222-8222-222222222222",
+        role: "activity" as const,
+        category: "bike" as const,
+        name,
+        intervals: [
+          {
+            id: "33333333-3333-4333-8333-333333333333",
+            name: "Main",
+            repetitions: 1,
+            steps: [
+              {
+                id: "44444444-4444-4444-8444-444444444444",
+                name: "Ride",
+                duration: { type: "time" as const, seconds: duration },
+                targets: [{ type: "%FTP" as const, intensity: 75 }],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function plan(overrides: Record<string, unknown> = {}): any {
+  const planStructure =
+    (overrides.structure as ReturnType<typeof structure> | undefined) ?? structure();
   return {
     id: "plan-1",
     profile_id: "profile-1",
     name: "Plan",
     description: null,
-    activity_category: "bike" as const,
-    structure: { duration: 1800 },
-    version: "1",
+    structure: planStructure,
+    structure_hash: activityPlanStructureHash(planStructure),
+    gps_recording_enabled: true,
     updated_at: asOf,
     ...overrides,
   };
@@ -146,7 +178,7 @@ describe("on-demand activity plan estimation", () => {
       { asOf },
     );
     const [changedPlan] = await getActivityPlansDerivedMetrics(
-      [plan({ structure: { duration: 3600 } })],
+      [plan({ structure: structure(3600) })],
       {} as any,
       store() as any,
       "profile-1",
@@ -171,7 +203,10 @@ describe("on-demand activity plan estimation", () => {
 
   it("preserves warnings and excludes failed estimates from aggregation", async () => {
     const result = await getActivityPlansDerivedMetrics(
-      [plan({ structure: { warning: true } }), plan({ id: "failed", structure: { fail: true } })],
+      [
+        plan({ structure: structure(1800, "Warning") }),
+        plan({ id: "failed", structure: { fail: true } }),
+      ],
       {} as any,
       store() as any,
       "profile-1",

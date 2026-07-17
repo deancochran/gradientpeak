@@ -39,7 +39,6 @@ async function reconcileParsedActivityFileEvidenceWithProfileLockHeld(
   const analysis = await analyzeParsedActivityFile(tx, {
     activityId: input.activityId,
     profileId: input.profileId,
-    activityType: input.activityType,
     parsedData: input.parsedData,
     refreshWeather: false,
   });

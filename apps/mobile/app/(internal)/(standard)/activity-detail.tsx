@@ -353,6 +353,8 @@ function ActivityDetailScreen() {
   );
 
   const activity = activityData?.activity;
+  const activityCategory =
+    activity?.segments?.find((segment) => segment.role === "activity")?.category ?? null;
   const derived = activityData?.derived;
   const loadMethod = derived?.stress.method;
   const loadLabels = getActivityLoadLabels(loadMethod);
@@ -360,7 +362,7 @@ function ActivityDetailScreen() {
     derived?.stress.unavailable_reason === "private_data"
       ? "Training load is private."
       : derived?.stress.unavailable_reason === "threshold_missing"
-        ? getThresholdNextAction(activity?.type)
+        ? getThresholdNextAction(activityCategory)
         : derived?.stress.unavailable_reason === "invalid_data"
           ? "The available activity or threshold data is invalid."
           : "Compatible activity data is missing.";
@@ -381,7 +383,8 @@ function ActivityDetailScreen() {
 
   // Fetch streams if an activity file exists
   const activityId = activity?.id;
-  const activityFilePath = activity?.activity_file_path;
+  const currentArtifact = activity?.current_artifact;
+  const activityFilePath = currentArtifact?.availability === "accepted" ? currentArtifact.id : null;
   const [shouldLoadDetailedStreams, setShouldLoadDetailedStreams] = useState(false);
   const canLoadDetailedStreams = !!activityFilePath && !!activityId && isOwner;
 
@@ -406,6 +409,9 @@ function ActivityDetailScreen() {
     canLoadDetailedStreams
       ? {
           activityId: activityId,
+          scope: activity?.segments?.[0]?.id
+            ? { type: "segment" as const, segmentId: activity.segments[0].id }
+            : { type: "session" as const, sessionMessageIndex: 0 },
         }
       : skipToken,
     {
@@ -647,7 +653,7 @@ function ActivityDetailScreen() {
             <VisualStateCard title="Laps" state="private" message={detailedContentPrivateMessage} />
           ) : laps.length > 0 ? (
             <LapVisualizationCard
-              activityType={activity.type}
+              activityType={activityCategory ?? "other"}
               laps={laps}
               preferredUnitSystem={preferredUnitSystem}
             />
@@ -686,7 +692,7 @@ function ActivityDetailScreen() {
             <ActivityPlanComparison
               activityPlan={activity.activity_plans}
               actualMetrics={{
-                duration: activity.duration_seconds,
+                duration: (activity.active_ms ?? activity.elapsed_ms) / 1000,
                 tss:
                   derived?.stress.method === "power_threshold"
                     ? (derived.stress.tss ?? undefined)
@@ -706,7 +712,7 @@ function ActivityDetailScreen() {
           )}
 
           {/* Swim Metrics */}
-          {activity.type === "swim" && (
+          {activityCategory === "swim" && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex-row items-center gap-2">
@@ -956,7 +962,7 @@ function ActivityDetailScreen() {
             <VisualStateCard
               title="Analysis Charts"
               message={
-                activity.activity_file_path
+                currentArtifact
                   ? "No chartable stream data is available for this activity."
                   : "No activity file is available for detailed analysis."
               }

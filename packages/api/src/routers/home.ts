@@ -1,4 +1,5 @@
 import {
+  activityPlanStructureSchemaV3,
   activityTssIdentityMethodValues,
   calculateAge,
   calculateRollingTrainingQuality,
@@ -7,9 +8,8 @@ import {
 } from "@repo/core";
 import { buildDailyTssByDateSeries, replayTrainingLoadByDate } from "@repo/core/load";
 import { schema, type TrainingPlanRow } from "@repo/db";
-import { and, asc, eq, gte, isNotNull, sql } from "drizzle-orm";
+import { and, asc, eq, gte, isNotNull, lte, sql } from "drizzle-orm";
 import { z } from "zod";
-import { listActivitySummariesInRange } from "../application/home/activitySummaries";
 import { loadPlannedActivitiesWithEstimations } from "../application/home/plannedActivities";
 import { readParsedProfileTrainingSettings } from "../application/profile-settings/profileTrainingSettings";
 import { getRequiredDb } from "../db";
@@ -17,7 +17,10 @@ import {
   createActivityAnalysisStore,
   createEventReadRepository,
 } from "../infrastructure/repositories";
-import { buildDynamicStressSeries } from "../lib/activity-analysis";
+import {
+  buildDynamicStressSeries,
+  loadActivitySegmentsByActivityId,
+} from "../lib/activity-analysis";
 import { featureFlags } from "../lib/features";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { buildWorkloadEnvelopes } from "../utils/workload";
@@ -127,7 +130,9 @@ const scheduleItemSchema = z
     isToday: z.boolean(),
     isCompleted: z.boolean(),
     activityName: z.string(),
-    activityType: z.string(),
+    activityType: canonicalSportSchema.nullable(),
+    activityKind: z.enum(["single", "multisport", "unknown"]),
+    activityCategories: z.array(canonicalSportSchema),
     estimatedDuration: z.number(),
     estimatedDistance: z.number(),
     estimatedTSS: z.number(),
@@ -250,6 +255,81 @@ const dashboardResponseSchema = z
   .strict();
 
 type DashboardTrainingPlanRow = Pick<TrainingPlanRow, "id" | "name" | "description" | "structure">;
+
+const dashboardActivitySchema = z
+  .object({
+    id: z.string(),
+    profile_id: z.string(),
+    started_at: z.date(),
+    finished_at: z.date(),
+    elapsed_ms: z.number().int().positive(),
+    active_ms: z.number().int().nonnegative().nullable(),
+    moving_ms: z.number().int().nonnegative().nullable(),
+    timing_coverage: z.enum(["complete", "partial", "unavailable"]),
+    distance_meters: z.number().int().nonnegative(),
+    avg_heart_rate: z.number().int().nullable(),
+    max_heart_rate: z.number().int().nullable(),
+    avg_power: z.number().int().nullable(),
+    max_power: z.number().int().nullable(),
+    avg_speed_mps: z.number().nullable(),
+    max_speed_mps: z.number().nullable(),
+    normalized_power: z.number().nullable(),
+    normalized_speed_mps: z.number().nullable(),
+    normalized_graded_speed_mps: z.number().nullable(),
+  })
+  .strict();
+
+async function listDashboardActivitiesInRange(
+  db: ReturnType<typeof getRequiredDb>,
+  input: { profileId: string; startedAtGte: Date; startedAtLte: Date },
+) {
+  const rows = await db
+    .select({
+      id: schema.activities.id,
+      profile_id: schema.activities.profile_id,
+      started_at: schema.activities.started_at,
+      finished_at: schema.activities.finished_at,
+      elapsed_ms: schema.activities.elapsed_ms,
+      active_ms: schema.activities.active_ms,
+      moving_ms: schema.activities.moving_ms,
+      timing_coverage: schema.activities.timing_coverage,
+      distance_meters: schema.activities.distance_meters,
+      avg_heart_rate: schema.activities.avg_heart_rate,
+      max_heart_rate: schema.activities.max_heart_rate,
+      avg_power: schema.activities.avg_power,
+      max_power: schema.activities.max_power,
+      avg_speed_mps: schema.activities.avg_speed_mps,
+      max_speed_mps: schema.activities.max_speed_mps,
+      normalized_power: schema.activities.normalized_power,
+      normalized_speed_mps: schema.activities.normalized_speed_mps,
+      normalized_graded_speed_mps: schema.activities.normalized_graded_speed_mps,
+    })
+    .from(schema.activities)
+    .where(
+      and(
+        eq(schema.activities.profile_id, input.profileId),
+        gte(schema.activities.started_at, input.startedAtGte),
+        lte(schema.activities.started_at, input.startedAtLte),
+      ),
+    )
+    .orderBy(asc(schema.activities.started_at));
+
+  const activities = dashboardActivitySchema.array().parse(rows);
+  const segmentsByActivityId = await loadActivitySegmentsByActivityId(
+    db,
+    activities.map((activity) => activity.id),
+  );
+  return activities.map((activity) => ({
+    ...activity,
+    segments: segmentsByActivityId.get(activity.id) ?? [],
+  }));
+}
+
+export function getPlanCategoryComposition(structure: unknown) {
+  return activityPlanStructureSchemaV3
+    .parse(structure)
+    .segments.flatMap((segment) => (segment.role === "activity" ? [segment.category] : []));
+}
 
 async function getAccessibleTrainingPlan(
   db: ReturnType<typeof getRequiredDb>,
@@ -384,7 +464,7 @@ export const homeRouter = createTRPCRouter({
 
       // --- 3. Fetch Activities (Actual) ---
       // Fetching enough history for trends and current week stats
-      const activities = await listActivitySummariesInRange(db, {
+      const activities = await listDashboardActivitiesInRange(db, {
         profileId: userId,
         startedAtGte: historyStart,
         startedAtLte: today,
@@ -562,7 +642,7 @@ export const homeRouter = createTRPCRouter({
         distance:
           weeklyActuals.reduce((sum, activity) => sum + (activity.distance_meters || 0), 0) / 1000,
         duration: weeklyActuals.reduce(
-          (sum, activity) => sum + (activity.duration_seconds || 0),
+          (sum, activity) => sum + (activity.active_ms ?? 0) / 1000,
           0,
         ),
         tss: Math.round(
@@ -643,17 +723,29 @@ export const homeRouter = createTRPCRouter({
           // Include today + future using stable date-only comparisons.
           return scheduledDate >= todayStr && scheduledDate < scheduleEndStr;
         })
-        .map((pa: any) => ({
-          id: pa.id,
-          date: pa.scheduled_date,
-          isToday: pa.scheduled_date?.startsWith(todayStr) || false,
-          isCompleted: completedActivityMap.get(pa.id) || false,
-          activityName: pa.activity_plan?.name || "Activity",
-          activityType: pa.activity_plan?.activity_category || "generic",
-          estimatedDuration: (pa.activity_plan as any)?.estimated_duration || 0,
-          estimatedDistance: (pa.activity_plan as any)?.estimated_distance || 0,
-          estimatedTSS: (pa.activity_plan as any)?.estimated_tss || 0,
-        }));
+        .map((pa: any) => {
+          const activityCategories = pa.activity_plan
+            ? getPlanCategoryComposition(pa.activity_plan.structure)
+            : [];
+          return {
+            id: pa.id,
+            date: pa.scheduled_date,
+            isToday: pa.scheduled_date?.startsWith(todayStr) || false,
+            isCompleted: completedActivityMap.get(pa.id) || false,
+            activityName: pa.activity_plan?.name || "Activity",
+            activityType: activityCategories.length === 1 ? (activityCategories[0] ?? null) : null,
+            activityKind:
+              activityCategories.length === 0
+                ? "unknown"
+                : activityCategories.length === 1
+                  ? "single"
+                  : "multisport",
+            activityCategories,
+            estimatedDuration: (pa.activity_plan as any)?.estimated_duration || 0,
+            estimatedDistance: (pa.activity_plan as any)?.estimated_distance || 0,
+            estimatedTSS: (pa.activity_plan as any)?.estimated_tss || 0,
+          };
+        });
 
       const todaysActivity = schedule.find((s) => s.isToday) || null;
 

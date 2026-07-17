@@ -45,6 +45,7 @@ function createActivityEffortRow(overrides: Record<string, unknown> = {}) {
     updated_at: new Date("2026-07-14T09:00:00.000Z"),
     profile_id: "11111111-1111-4111-8111-111111111111",
     activity_id: null,
+    segment_id: null,
     recorded_at: new Date("2026-07-14T09:00:00.000Z"),
     activity_category: "swim",
     effort_type: "speed",

@@ -33,7 +33,15 @@ function isValidUuid(value: string): boolean {
 }
 
 interface UseTrainingPlanHeaderSocialActionsParams {
-  plan: any;
+  plan: {
+    id: string;
+    name?: string;
+    structure_hash: string;
+    content_visibility?: string | null;
+    template_visibility?: string | null;
+    has_liked?: boolean;
+    likes_count?: number;
+  } | null;
   router: { replace: (value: any) => void };
   utils: ReturnType<typeof api.useUtils>;
 }
@@ -76,7 +84,8 @@ export function useTrainingPlanHeaderSocialActions({
 
   const updateVisibilityMutation = api.trainingPlans.update.useMutation({
     onSuccess: async () => invalidateTrainingPlanQueries(utils),
-    onError: (error) => {
+    onError: async (error) => {
+      if (error.data?.code === "CONFLICT") await invalidateTrainingPlanQueries(utils);
       setContentVisibility(resolvePlanVisibility(plan));
       Alert.alert("Update Failed", error.message || "Failed to update visibility");
     },
@@ -99,21 +108,33 @@ export function useTrainingPlanHeaderSocialActions({
           text: "Private",
           onPress: () => {
             setContentVisibility("private");
-            updateVisibilityMutation.mutate({ id: plan.id, template_visibility: "private" });
+            updateVisibilityMutation.mutate({
+              id: plan.id,
+              expectedStructureHash: plan.structure_hash,
+              template_visibility: "private",
+            });
           },
         },
         {
           text: "Followers",
           onPress: () => {
             setContentVisibility("followers");
-            updateVisibilityMutation.mutate({ id: plan.id, template_visibility: "followers" });
+            updateVisibilityMutation.mutate({
+              id: plan.id,
+              expectedStructureHash: plan.structure_hash,
+              template_visibility: "followers",
+            });
           },
         },
         {
           text: "Public",
           onPress: () => {
             setContentVisibility("public");
-            updateVisibilityMutation.mutate({ id: plan.id, template_visibility: "public" });
+            updateVisibilityMutation.mutate({
+              id: plan.id,
+              expectedStructureHash: plan.structure_hash,
+              template_visibility: "public",
+            });
           },
         },
         { text: "Cancel", style: "cancel" },

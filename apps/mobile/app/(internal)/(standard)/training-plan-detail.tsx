@@ -388,7 +388,8 @@ export default function TrainingPlanOverview() {
         onClose: () => router.navigate(ROUTES.PLAN.INDEX),
       });
     },
-    onError: (error) => {
+    onError: async (error) => {
+      if (error.data?.code === "CONFLICT") await snapshot.refetchAll();
       setStatusModal({
         title: "Delete Failed",
         description: error.message || "Failed to delete plan.",
@@ -758,12 +759,14 @@ export default function TrainingPlanOverview() {
       }
       delete targetSession.week_offset;
 
+      if (!plan.structure_hash) throw new Error("Refresh the training plan before editing it.");
       await updatePlanStructureMutation.mutateAsync({
         id: plan.id,
+        expectedStructureHash: plan.structure_hash,
         structure: nextStructure as any,
       });
     },
-    [plan?.id, plan?.structure, updatePlanStructureMutation],
+    [plan?.id, plan?.structure, plan?.structure_hash, updatePlanStructureMutation],
   );
 
   const handleOpenActivityPickerForSession = useCallback((sessionRow: StructureSessionRow) => {

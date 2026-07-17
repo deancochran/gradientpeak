@@ -1,5 +1,10 @@
+import { segmentSummarySchemaV1 } from "@repo/core";
 import { type ActivityRow, publicActivityCategorySchema } from "@repo/db";
 import { z } from "zod";
+import {
+  type ActivitySegmentReadRow,
+  orderedActivitySegments,
+} from "../../lib/activity-analysis/derived";
 
 const activityTimestampSchema = z.coerce.date();
 
@@ -21,39 +26,52 @@ const trendActivityRowSchema = z
 export type TrendActivityRow = Pick<
   ActivityRow,
   | "id"
+  | "profile_id"
   | "name"
-  | "type"
   | "started_at"
   | "finished_at"
-  | "duration_seconds"
-  | "moving_seconds"
+  | "elapsed_ms"
+  | "active_ms"
+  | "moving_ms"
+  | "timing_coverage"
   | "distance_meters"
   | "avg_heart_rate"
   | "max_heart_rate"
-  | "avg_power"
-  | "max_power"
-  | "avg_speed_mps"
-  | "max_speed_mps"
-  | "normalized_power"
-  | "normalized_speed_mps"
-  | "normalized_graded_speed_mps"
->;
+> & { segments: ActivitySegmentReadRow[] };
 
 export type NormalizedTrendActivityRow = z.infer<typeof trendActivityRowSchema>;
 
+/** One category-safe trend row per ordered activity segment. */
 export function normalizeTrendActivityRows(rows: TrendActivityRow[]): NormalizedTrendActivityRow[] {
   return trendActivityRowSchema.array().parse(
-    rows.map((activity) => ({
-      id: activity.id,
-      name: activity.name,
-      type: activity.type,
-      started_at: activity.started_at,
-      distance_meters: activity.distance_meters,
-      moving_seconds: activity.moving_seconds,
-      duration_seconds: activity.duration_seconds,
-      avg_speed_mps: activity.avg_speed_mps,
-      avg_power: activity.avg_power,
-      avg_heart_rate: activity.avg_heart_rate,
-    })),
+    rows.flatMap((activity) =>
+      orderedActivitySegments(activity.segments).map((segment) => {
+        const summary = segmentSummarySchemaV1.parse(segment.summary);
+        const timing = summary.timing;
+        const activeMs =
+          timing.timingCoverage === "unavailable" || !("activeMs" in timing)
+            ? null
+            : (timing.activeMs ?? null);
+        const movingMs =
+          timing.timingCoverage === "unavailable" || !("movingMs" in timing)
+            ? null
+            : (timing.movingMs ?? null);
+        return {
+          id: segment.id,
+          name: activity.name,
+          type: segment.category,
+          started_at: new Date(activity.started_at.getTime() + segment.start_offset_ms),
+          distance_meters: summary.distanceMeters ?? null,
+          moving_seconds: movingMs === null ? null : movingMs / 1_000,
+          duration_seconds:
+            activeMs === null
+              ? (segment.end_offset_ms - segment.start_offset_ms) / 1_000
+              : activeMs / 1_000,
+          avg_speed_mps: summary.averageSpeedMetersPerSecond ?? null,
+          avg_power: summary.averagePowerWatts ?? null,
+          avg_heart_rate: summary.averageHeartRateBpm ?? null,
+        };
+      }),
+    ),
   );
 }

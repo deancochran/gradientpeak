@@ -1,11 +1,16 @@
-import { randomUUID } from "node:crypto";
 import type { ContentVisibility, StandardActivity } from "@repo/core";
-import { profiles } from "@repo/db";
-import { eq } from "drizzle-orm";
+import { activities, profiles } from "@repo/db";
+import { and, eq } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 import type { ImportedActivityCreateInput } from "../../lib/provider-sync/imported-activity";
-import { submitActivity } from "../activities/submit-activity";
+import { getApiStorageService } from "../../storage-service";
+import {
+  activityArtifactId,
+  providerActivityId,
+  submitActivity,
+} from "../activities/submit-activity";
 import { analyzeParsedActivityFile } from "./analyze-parsed-activity-file";
+import { cleanupActivityArtifactStaging, promoteActivityArtifact } from "./artifact-storage";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 
@@ -36,33 +41,74 @@ export async function submitImportedActivityArtifact(
   input: {
     activity: ImportedActivityCreateInput;
     parsedActivity: StandardActivity;
+    artifactSha256?: string;
   },
 ) {
-  const activityId = randomUUID();
+  const [existingActivity] = await db
+    .select({ id: activities.id })
+    .from(activities)
+    .where(
+      and(
+        eq(activities.profile_id, input.activity.profileId),
+        eq(activities.provider, input.activity.provider),
+        eq(activities.external_id, input.activity.externalId),
+      ),
+    )
+    .limit(1);
+  const activityId =
+    existingActivity?.id ??
+    providerActivityId(
+      input.activity.profileId,
+      input.activity.provider,
+      input.activity.externalId,
+    );
+  const storage = getApiStorageService();
+  const { data, error } = await storage.storage
+    .from("activity-files")
+    .download(input.activity.activityFilePath);
+  if (error || !data) {
+    throw new Error(`Failed to load staged provider artifact: ${error?.message ?? "not found"}`);
+  }
+  const bytes = new Uint8Array(await data.arrayBuffer());
+  const promoted = await promoteActivityArtifact(storage, {
+    profileId: input.activity.profileId,
+    bucket: "activity-files",
+    stagingPath: input.activity.activityFilePath,
+    bytes,
+    format: "fit",
+    mediaType: "application/octet-stream",
+  });
+  if (input.artifactSha256 && input.artifactSha256 !== promoted.sha256) {
+    throw new Error("Provider artifact digest does not match staged bytes");
+  }
+  const artifactSha256 = promoted.sha256;
+  const artifactByteSize = promoted.byteSize;
+  const artifactId = activityArtifactId(input.activity.profileId, artifactSha256, artifactByteSize);
   const analysis = await analyzeParsedActivityFile(db, {
     activityId,
     profileId: input.activity.profileId,
-    activityType: input.activity.type,
     parsedData: input.parsedActivity,
+    artifactId,
   });
   const summary = analysis.summaryValues;
   const contentVisibility =
     input.activity.contentVisibility ??
     (await getProfileDefaultContentVisibility(db, input.activity.profileId));
 
-  return submitActivity(db, {
+  const submitted = await submitActivity(db, {
     requestedActivityId: activityId,
     profileId: input.activity.profileId,
     activityPlanId: input.activity.activityPlanId,
     name: input.activity.name,
     notes: null,
-    activityType: input.activity.type,
     isPrivate: input.activity.isPrivate,
     contentVisibility,
     startedAt: analysis.startedAt,
     finishedAt: analysis.activityCompletedAt,
-    durationSeconds: summary.duration_seconds ?? input.activity.durationSeconds,
-    movingSeconds: summary.moving_seconds ?? input.activity.movingSeconds,
+    elapsedMs: summary.elapsed_ms,
+    activeMs: summary.active_ms,
+    movingMs: summary.moving_ms,
+    timingCoverage: summary.timing_coverage,
     distanceMeters: summary.distance_meters ?? input.activity.distanceMeters,
     calories: valueOrNull(summary.calories),
     elevationGainMeters: valueOrNull(summary.elevation_gain_meters),
@@ -80,11 +126,6 @@ export async function submitImportedActivityArtifact(
     efficiencyFactor: valueOrNull(summary.efficiency_factor),
     aerobicDecoupling: valueOrNull(summary.aerobic_decoupling),
     avgTemperature: valueOrNull(summary.avg_temperature),
-    activityFilePath: input.activity.activityFilePath,
-    activityFileSize: input.activity.activityFileSize,
-    importSource: input.activity.provider,
-    importFileType: "fit",
-    importOriginalFileName: null,
     deviceManufacturer: input.parsedActivity.metadata.manufacturer,
     deviceProduct: input.parsedActivity.metadata.product,
     laps: input.parsedActivity.laps ?? null,
@@ -104,8 +145,20 @@ export async function submitImportedActivityArtifact(
         source: "provider_sync",
         provider: input.activity.provider,
         externalId: input.activity.externalId,
-        fileType: "fit",
+        operationKey: `provider_sync:${input.activity.provider}:${input.activity.externalId}:${artifactSha256}`,
+        artifact: {
+          sha256: artifactSha256,
+          byteSize: artifactByteSize,
+          bucket: promoted.bucket,
+          path: promoted.path,
+          mediaType: promoted.mediaType,
+          format: "fit",
+          originalName: input.activity.activityFilePath.split("/").at(-1) ?? null,
+        },
       },
     },
+    segmentSet: analysis.segmentSet,
   });
+  await cleanupActivityArtifactStaging(storage, promoted);
+  return submitted;
 }

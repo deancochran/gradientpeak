@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { compileActivityPlanV3 } from "@repo/core";
 import {
   getActivityEffortThresholdEvidence,
   type ThresholdMetricSource,
@@ -165,8 +166,8 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
           activityId: schema.integrationResourceLinks.internal_resource_id,
           linkId: schema.integrationResourceLinks.id,
           profileId: schema.activities.profile_id,
-          activityFilePath: schema.activities.activity_file_path,
-          activityFileSize: schema.activities.activity_file_size,
+          activityFilePath: schema.activityArtifacts.path,
+          activityFileSize: schema.activityArtifacts.byte_size,
           analysisReady: sql<boolean>`exists (
             select 1 from ${schema.activityFileIngestions}
             where ${schema.activityFileIngestions.activity_id} = ${schema.integrationResourceLinks.internal_resource_id}
@@ -178,6 +179,23 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         .innerJoin(
           schema.activities,
           eq(schema.activities.id, schema.integrationResourceLinks.internal_resource_id),
+        )
+        .leftJoin(
+          schema.activityArtifactLinks,
+          and(
+            eq(schema.activityArtifactLinks.activity_id, schema.activities.id),
+            eq(schema.activityArtifactLinks.profile_id, schema.activities.profile_id),
+            eq(schema.activityArtifactLinks.role, "source"),
+            eq(schema.activityArtifactLinks.is_current, true),
+          ),
+        )
+        .leftJoin(
+          schema.activityArtifacts,
+          and(
+            eq(schema.activityArtifacts.id, schema.activityArtifactLinks.artifact_id),
+            eq(schema.activityArtifacts.profile_id, schema.activities.profile_id),
+            eq(schema.activityArtifacts.availability, "accepted"),
+          ),
         )
         .where(
           and(
@@ -196,8 +214,8 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         .select({
           activityId: schema.activities.id,
           profileId: schema.activities.profile_id,
-          activityFilePath: schema.activities.activity_file_path,
-          activityFileSize: schema.activities.activity_file_size,
+          activityFilePath: schema.activityArtifacts.path,
+          activityFileSize: schema.activityArtifacts.byte_size,
           analysisReady: sql<boolean>`exists (
             select 1 from ${schema.activityFileIngestions}
             where ${schema.activityFileIngestions.activity_id} = ${schema.activities.id}
@@ -206,6 +224,23 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
           )`,
         })
         .from(schema.activities)
+        .leftJoin(
+          schema.activityArtifactLinks,
+          and(
+            eq(schema.activityArtifactLinks.activity_id, schema.activities.id),
+            eq(schema.activityArtifactLinks.profile_id, schema.activities.profile_id),
+            eq(schema.activityArtifactLinks.role, "source"),
+            eq(schema.activityArtifactLinks.is_current, true),
+          ),
+        )
+        .leftJoin(
+          schema.activityArtifacts,
+          and(
+            eq(schema.activityArtifacts.id, schema.activityArtifactLinks.artifact_id),
+            eq(schema.activityArtifacts.profile_id, schema.activities.profile_id),
+            eq(schema.activityArtifacts.availability, "accepted"),
+          ),
+        )
         .where(
           and(
             eq(schema.activities.provider, provider),
@@ -313,7 +348,6 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
             id: schema.activityPlans.id,
             name: schema.activityPlans.name,
             description: schema.activityPlans.description,
-            activityCategory: schema.activityPlans.activity_category,
             structure: schema.activityPlans.structure,
             updatedAt: schema.activityPlans.updated_at,
           },
@@ -333,20 +367,22 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
 
       if (!row) return null;
 
+      const activityPlan = row.activityPlan?.id
+        ? {
+            activityCategory: compileActivityPlanV3(row.activityPlan.structure).primaryCategory,
+            description: row.activityPlan.description,
+            id: row.activityPlan.id,
+            name: row.activityPlan.name,
+            routeId: row.routeId,
+            structure: row.activityPlan.structure,
+            updatedAt: row.activityPlan.updatedAt.toISOString(),
+          }
+        : null;
+
       return {
         id: row.id,
         startsAt: row.startsAt.toISOString(),
-        activityPlan: row.activityPlan?.id
-          ? {
-              activityCategory: row.activityPlan.activityCategory,
-              description: row.activityPlan.description,
-              id: row.activityPlan.id,
-              name: row.activityPlan.name,
-              routeId: row.routeId,
-              structure: row.activityPlan.structure,
-              updatedAt: row.activityPlan.updatedAt.toISOString(),
-            }
-          : null,
+        activityPlan,
       };
     },
 
@@ -403,12 +439,30 @@ export function createWahooRepository({ db }: CreateWahooRepositoryOptions): Wah
         linkedLthrActivityIds.length === 0
           ? []
           : await db
-              .select({ id: schema.activities.id, type: schema.activities.type })
-              .from(schema.activities)
-              .where(inArray(schema.activities.id, linkedLthrActivityIds));
-      const linkedLthrSport = new Map(
-        linkedLthrActivities.map((activity) => [activity.id, activity.type]),
-      );
+              .select({
+                id: schema.activitySegments.activity_id,
+                category: schema.activitySegments.category,
+              })
+              .from(schema.activitySegments)
+              .where(
+                and(
+                  inArray(schema.activitySegments.activity_id, linkedLthrActivityIds),
+                  eq(schema.activitySegments.role, "activity"),
+                ),
+              );
+      const linkedLthrCategories = new Map<string, Set<string>>();
+      for (const segment of linkedLthrActivities) {
+        if (!segment.category) continue;
+        const categories = linkedLthrCategories.get(segment.id) ?? new Set<string>();
+        categories.add(segment.category);
+        linkedLthrCategories.set(segment.id, categories);
+      }
+      const linkedLthrSport = new Map<string, string>();
+      for (const [activityId, categories] of linkedLthrCategories) {
+        if (categories.size !== 1) continue;
+        const category = categories.values().next().value;
+        if (category) linkedLthrSport.set(activityId, category);
+      }
 
       const resolvedMetrics = resolveLatestObservationsByKey(metricRows, (row) => {
         if (row.type !== "lthr") return row.type;

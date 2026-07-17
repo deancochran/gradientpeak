@@ -4,6 +4,11 @@ import { createFileRoute, notFound } from "@tanstack/react-router";
 import { Activity, Clock, Heart, RouteIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
+import {
+  deriveActivityCategoryDisplay,
+  deriveActivityTimingDisplay,
+  deriveCurrentArtifactLabel,
+} from "../../../lib/activity-route-helpers";
 import { loadPublicActivity } from "../../../lib/public-share";
 
 export const Route = createFileRoute("/share/activities/$activityId")({
@@ -17,7 +22,7 @@ export const Route = createFileRoute("/share/activities/$activityId")({
       ? `${loaderData.activity.name} | GradientPeak`
       : "Activity | GradientPeak";
     const description = loaderData
-      ? `${loaderData.activity.type} activity shared on GradientPeak.`
+      ? `${deriveActivityCategoryDisplay(loaderData.activity.segments).label} shared on GradientPeak.`
       : "Public GradientPeak activity.";
     return {
       meta: [
@@ -53,12 +58,15 @@ function PublicActivityPage() {
   const { activity } = Route.useLoaderData();
   const startedAt = new Date(activity.started_at);
   const ownerName = activity.owner.name ?? activity.owner.username ?? "GradientPeak athlete";
+  const categoryDisplay = deriveActivityCategoryDisplay(activity.segments);
+  const timingDisplay = deriveActivityTimingDisplay(activity);
+  const artifactLabel = deriveCurrentArtifactLabel(activity.current_artifact);
 
   return (
     <main className="mx-auto w-full max-w-4xl space-y-6 py-8">
       <header className="space-y-4">
-        <Badge variant="outline" className="w-fit capitalize">
-          {activity.type}
+        <Badge variant="outline" className="w-fit">
+          {categoryDisplay.label}
         </Badge>
         <div>
           <h1 className="text-4xl font-semibold tracking-tight">{activity.name}</h1>
@@ -74,8 +82,8 @@ function PublicActivityPage() {
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4" aria-label="Activity summary">
         <MetricCard
           icon={<Clock className="h-5 w-5" />}
-          label="Duration"
-          value={formatDuration(activity.duration_seconds)}
+          label="Elapsed"
+          value={formatDuration(timingDisplay.elapsedSeconds)}
         />
         <MetricCard
           icon={<RouteIcon className="h-5 w-5" />}
@@ -84,8 +92,12 @@ function PublicActivityPage() {
         />
         <MetricCard
           icon={<Activity className="h-5 w-5" />}
-          label="Moving time"
-          value={formatDuration(activity.moving_seconds)}
+          label={timingDisplay.coverage === "partial" ? "Moving (partial)" : "Moving time"}
+          value={
+            timingDisplay.movingSeconds === null
+              ? "Not available"
+              : formatDuration(timingDisplay.movingSeconds)
+          }
         />
         <MetricCard
           icon={<Heart className="h-5 w-5" />}
@@ -125,6 +137,7 @@ function PublicActivityPage() {
               activity.elevation_gain_meters ? `${activity.elevation_gain_meters} m` : "Not shared"
             }
           />
+          <Detail label="Source artifact" value={artifactLabel ?? "Not shared"} />
         </CardContent>
       </Card>
     </main>

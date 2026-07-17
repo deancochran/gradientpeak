@@ -6,7 +6,7 @@ export type LockedPlanningTemplateRow = {
   id: string;
   isSystemTemplate: boolean;
   structure: unknown;
-  version: string;
+  structureHash: string;
 };
 
 export type TrainingPlanTransactionClient = Pick<

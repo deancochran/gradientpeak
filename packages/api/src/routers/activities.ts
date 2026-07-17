@@ -1,10 +1,11 @@
 import {
-  ActivityUploadSchema,
   activityDerivedMetricsSchema,
   activityListDerivedSummarySchema,
   activityTssIdentitySchema,
+  completedActivitySegmentSetSchemaV1,
   contentVisibilitySchema,
   ianaTimezoneSchema,
+  recordingExecutionManifestSchema,
 } from "@repo/core";
 import {
   activities,
@@ -14,6 +15,7 @@ import {
   publicActivitiesRowSchema,
   publicActivityCategorySchema,
   publicActivityPlansRowSchema,
+  publicActivitySegmentsRowSchema,
 } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
@@ -34,8 +36,9 @@ import {
   recordingSessionActivityId,
   submitActivity,
 } from "../application/activities/submit-activity";
-import { createActivityFileIngestion } from "../application/activity-file-ingestion/ingestion-state";
+import { verifyAcceptedActivityArtifact } from "../application/activity-file-ingestion/artifact-storage";
 import { getRequiredDb } from "../db";
+import { getApiStorageService } from "../storage-service";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
 import { indexCursorSchema } from "../utils/index-cursor";
 
@@ -84,6 +87,24 @@ const activityWithPlanSchema = activityRowSchema
     likes_count: z.number().int().nonnegative(),
     activity_plans: activityPlanReferenceSchema.nullable(),
     ingestion: activityIngestionStatusSchema.nullable().optional(),
+    segments: publicActivitySegmentsRowSchema
+      .extend({ created_at: activityTimestampSchema })
+      .strict()
+      .array(),
+    current_artifact: z
+      .object({
+        id: z.string().uuid(),
+        digest_algorithm: z.literal("sha256"),
+        digest: z.string().regex(/^[0-9a-f]{64}$/),
+        byte_size: z.number().int().positive(),
+        media_type: z.string(),
+        format: z.string(),
+        original_name: z.string().nullable(),
+        availability: z.literal("accepted"),
+        first_accepted_at: activityTimestampSchema,
+      })
+      .strict()
+      .nullable(),
   })
   .strict();
 
@@ -168,17 +189,77 @@ const dailyTssObservationsOutputSchema = z
   })
   .strict();
 
-const createInputSchema = ActivityUploadSchema.extend({
-  profile_id: z.string().uuid(),
-  eventId: z.string().uuid().optional().nullable(),
-  startedAt: isoDatetimeSchema,
-  finishedAt: isoDatetimeSchema,
-  content_visibility: contentVisibilitySchema.optional(),
-})
+const acceptedArtifactSchema = z
+  .object({
+    sha256: z.string().regex(/^[0-9a-f]{64}$/),
+    byteSize: z.number().int().positive(),
+    bucket: z.string().trim().min(1),
+    path: z.string().trim().min(1),
+    mediaType: z.string().trim().min(1),
+    format: z.enum(["fit", "gpx", "tcx"]),
+    originalName: z.string().trim().min(1).nullable().optional(),
+  })
+  .strict();
+
+async function resolveAcceptedArtifact(
+  profileId: string,
+  artifact: z.infer<typeof acceptedArtifactSchema>,
+) {
+  try {
+    return await verifyAcceptedActivityArtifact(getApiStorageService(), {
+      profileId,
+      ...artifact,
+    });
+  } catch (cause) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Accepted activity artifact could not be verified",
+      cause,
+    });
+  }
+}
+
+const activityParentSummarySchema = z
+  .object({
+    distanceMeters: z.number().int().nonnegative().default(0),
+    calories: z.number().int().nonnegative().nullable().optional(),
+    elevationGainMeters: z.number().nonnegative().nullable().optional(),
+    normalizedPower: z.number().finite().nullable().optional(),
+    avgTemperature: z.number().finite().nullable().optional(),
+    poolLength: z.number().positive().nullable().optional(),
+  })
   .strict()
-  .refine((data) => new Date(data.finishedAt) > new Date(data.startedAt), {
-    message: "finishedAt must be after startedAt",
-    path: ["finishedAt"],
+  .default({ distanceMeters: 0 });
+
+const createInputSchema = z
+  .object({
+    profile_id: z.string().uuid(),
+    eventId: z.string().uuid().optional().nullable(),
+    name: z.string().trim().min(1),
+    notes: z.string().nullable().optional(),
+    startedAt: isoDatetimeSchema,
+    finishedAt: isoDatetimeSchema,
+    content_visibility: contentVisibilitySchema.optional(),
+    segmentSet: completedActivitySegmentSetSchemaV1,
+    acceptedArtifact: acceptedArtifactSchema,
+    summary: activityParentSummarySchema,
+  })
+  .strict()
+  .superRefine((data, context) => {
+    const elapsedMs = new Date(data.finishedAt).getTime() - new Date(data.startedAt).getTime();
+    if (elapsedMs <= 0) {
+      context.addIssue({
+        code: "custom",
+        message: "finishedAt must be after startedAt",
+        path: ["finishedAt"],
+      });
+    } else if (data.segmentSet.elapsedMs !== elapsedMs) {
+      context.addIssue({
+        code: "custom",
+        message: "segmentSet elapsedMs must match the parent activity time range",
+        path: ["segmentSet", "elapsedMs"],
+      });
+    }
   });
 
 const createFromRecordingSummaryInputSchema = z
@@ -189,22 +270,12 @@ const createFromRecordingSummaryInputSchema = z
     notes: z.string().nullable().optional(),
     is_private: z.boolean().optional(),
     content_visibility: contentVisibilitySchema.optional(),
-    activityType: publicActivityCategorySchema,
     startedAt: isoDatetimeSchema,
     finishedAt: isoDatetimeSchema,
-    durationSeconds: z.number().int().positive(),
-    movingSeconds: z.number().int().nonnegative(),
-    distanceMeters: z.number().int().nonnegative(),
-    calories: z.number().int().nonnegative().nullable().optional(),
     activityPlanId: z.string().uuid().nullable().optional(),
-    localFileMetadata: z
-      .object({
-        fileType: z.string().trim().min(1).nullable().optional(),
-        fileSize: z.number().int().nonnegative().nullable().optional(),
-        filePath: z.string().trim().min(1).nullable().optional(),
-      })
-      .strict()
-      .optional(),
+    executionManifest: recordingExecutionManifestSchema,
+    acceptedArtifact: acceptedArtifactSchema,
+    summary: activityParentSummarySchema,
     source: z.literal("mobile_recording").default("mobile_recording"),
   })
   .strict()
@@ -227,6 +298,72 @@ const updateInputSchema = z
   .strict();
 
 const deleteInputSchema = z.object({ id: z.string().uuid() }).strict();
+
+function aggregateSegmentTiming(segmentSet: z.infer<typeof completedActivitySegmentSetSchemaV1>) {
+  const timings = segmentSet.segments.map((segment) => segment.summary.timing);
+  const complete = timings.every((timing) => timing.timingCoverage === "complete");
+  return {
+    activeMs: complete
+      ? timings.reduce(
+          (sum, timing) => sum + ("activeMs" in timing ? (timing.activeMs ?? 0) : 0),
+          0,
+        )
+      : null,
+    movingMs: complete
+      ? timings.reduce(
+          (sum, timing) => sum + ("movingMs" in timing ? (timing.movingMs ?? 0) : 0),
+          0,
+        )
+      : null,
+    timingCoverage: complete ? ("complete" as const) : ("partial" as const),
+  };
+}
+
+function segmentSetFromExecutionManifest(input: {
+  startedAt: string;
+  finishedAt: string;
+  executionManifest: z.infer<typeof recordingExecutionManifestSchema>;
+}) {
+  const parentStartMs = new Date(input.startedAt).getTime();
+  const elapsedMs = new Date(input.finishedAt).getTime() - parentStartMs;
+  const grouped = new Map<string, (typeof input.executionManifest.occurrences)[number][]>();
+  for (const occurrence of input.executionManifest.occurrences) {
+    const entries = grouped.get(occurrence.segmentId) ?? [];
+    entries.push(occurrence);
+    grouped.set(occurrence.segmentId, entries);
+  }
+  const segments = [...grouped.values()].map((occurrences, ordinal) => {
+    const first = occurrences[0];
+    const last = occurrences.at(-1);
+    if (!first || !last) {
+      throw new Error("Execution manifest segment group must not be empty");
+    }
+    const base = {
+      id: first.segmentId,
+      ordinal,
+      role: first.role,
+      startOffsetMs: new Date(first.startedAt).getTime() - parentStartMs,
+      endOffsetMs: new Date(last.completedAt).getTime() - parentStartMs,
+      summary: {
+        version: 1 as const,
+        timing: {
+          timingCoverage: "complete" as const,
+          activeMs: Math.round(
+            occurrences.reduce((sum, item) => sum + item.activeSeconds, 0) * 1_000,
+          ),
+          movingMs: Math.round(
+            occurrences.reduce((sum, item) => sum + item.movingSeconds, 0) * 1_000,
+          ),
+        },
+        distanceMeters: occurrences.reduce((sum, item) => sum + item.distanceMeters, 0),
+      },
+    };
+    if (first.role === "activity")
+      return { ...base, role: "activity" as const, category: first.category };
+    return { ...base, role: first.role };
+  });
+  return completedActivitySegmentSetSchemaV1.parse({ version: 1, elapsedMs, segments });
+}
 
 async function getProfileDefaultContentVisibility(
   db: ReturnType<typeof getRequiredDb>,
@@ -305,15 +442,6 @@ export const activitiesRouter = createTRPCRouter({
   // Simplified: Just create the activity first
   create: protectedProcedure.input(createInputSchema).mutation(async ({ input, ctx }) => {
     const db = getRequiredDb(ctx);
-    const duration_seconds =
-      (new Date(input.finishedAt).getTime() - new Date(input.startedAt).getTime()) / 1000;
-
-    if (duration_seconds <= 0) {
-      throw new TRPCError({
-        code: "BAD_REQUEST",
-        message: "Activity duration must be positive.",
-      });
-    }
 
     if (input.profile_id !== ctx.session.user.id) {
       throw new TRPCError({
@@ -349,26 +477,40 @@ export const activitiesRouter = createTRPCRouter({
       linkedActivityPlanId = linkedEvent.activity_plan_id;
     }
 
+    const activitySegment = input.segmentSet.segments.find(
+      (segment) => segment.role === "activity",
+    );
+    if (!activitySegment) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "An activity segment is required" });
+    }
+    const timing = aggregateSegmentTiming(input.segmentSet);
+    const acceptedArtifact = await resolveAcceptedArtifact(
+      input.profile_id,
+      input.acceptedArtifact,
+    );
+
     const { id: createdActivityId } = await submitActivity(db, {
       profileId: input.profile_id,
       activityPlanId: linkedActivityPlanId,
       name: input.name,
       notes: input.notes ?? null,
-      activityType: input.type,
       isPrivate: contentVisibility === "private",
       contentVisibility,
       startedAt: new Date(input.startedAt),
       finishedAt: new Date(input.finishedAt),
-      durationSeconds: duration_seconds,
-      movingSeconds: input.movingSeconds,
-      distanceMeters: input.distanceMeters,
-      calories: null,
-      elevationGainMeters: null,
+      elapsedMs: input.segmentSet.elapsedMs,
+      activeMs: timing.activeMs,
+      movingMs: timing.movingMs,
+      timingCoverage: timing.timingCoverage,
+      segmentSet: input.segmentSet,
+      distanceMeters: input.summary.distanceMeters,
+      calories: input.summary.calories ?? null,
+      elevationGainMeters: input.summary.elevationGainMeters ?? null,
       avgHeartRate: null,
       maxHeartRate: null,
       avgPower: null,
       maxPower: null,
-      normalizedPower: input.metrics.normalized_power ?? null,
+      normalizedPower: input.summary.normalizedPower ?? null,
       avgCadence: null,
       maxCadence: null,
       avgSpeedMps: null,
@@ -377,13 +519,24 @@ export const activitiesRouter = createTRPCRouter({
       normalizedGradedSpeedMps: null,
       efficiencyFactor: null,
       aerobicDecoupling: null,
-      avgTemperature: input.metrics.avg_temperature ?? null,
-      poolLength: input.metrics.pool_length ?? null,
+      avgTemperature: input.summary.avgTemperature ?? null,
+      poolLength: input.summary.poolLength ?? null,
       deviceManufacturer: null,
       deviceProduct: null,
       laps: null,
       mapBounds: null,
       polyline: null,
+      analysis: {
+        efforts: [],
+        detectedLTHR: null,
+        activityCompletedAt: new Date(input.finishedAt),
+        ingestion: {
+          source: "manual_import",
+          operationKey: `activity-create:${acceptedArtifact.sha256}`,
+          artifact: acceptedArtifact,
+          fileType: acceptedArtifact.format,
+        },
+      },
     });
 
     const createdActivity = await db.query.activities.findFirst({
@@ -451,6 +604,26 @@ export const activitiesRouter = createTRPCRouter({
             ? "private"
             : "followers");
 
+      let segmentSet: z.infer<typeof completedActivitySegmentSetSchemaV1>;
+      try {
+        segmentSet = segmentSetFromExecutionManifest(input);
+      } catch (error) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "Invalid recording execution manifest",
+          cause: error,
+        });
+      }
+      const activitySegment = segmentSet.segments.find((segment) => segment.role === "activity");
+      if (!activitySegment) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "An activity segment is required" });
+      }
+      const timing = aggregateSegmentTiming(segmentSet);
+      const acceptedArtifact = await resolveAcceptedArtifact(
+        input.profileId,
+        input.acceptedArtifact,
+      );
+
       let created: Awaited<ReturnType<typeof submitActivity>>;
       try {
         created = await submitActivity(db, {
@@ -466,21 +639,23 @@ export const activitiesRouter = createTRPCRouter({
           activityPlanId: input.activityPlanId ?? null,
           name: input.name,
           notes: input.notes ?? null,
-          activityType: input.activityType,
           isPrivate: contentVisibility === "private",
           contentVisibility,
           startedAt: new Date(input.startedAt),
           finishedAt: new Date(input.finishedAt),
-          durationSeconds: input.durationSeconds,
-          movingSeconds: input.movingSeconds,
-          distanceMeters: input.distanceMeters,
-          calories: input.calories ?? null,
-          elevationGainMeters: null,
+          elapsedMs: segmentSet.elapsedMs,
+          activeMs: timing.activeMs,
+          movingMs: timing.movingMs,
+          timingCoverage: timing.timingCoverage,
+          segmentSet,
+          distanceMeters: input.summary.distanceMeters,
+          calories: input.summary.calories ?? null,
+          elevationGainMeters: input.summary.elevationGainMeters ?? null,
           avgHeartRate: null,
           maxHeartRate: null,
           avgPower: null,
           maxPower: null,
-          normalizedPower: null,
+          normalizedPower: input.summary.normalizedPower ?? null,
           avgCadence: null,
           maxCadence: null,
           avgSpeedMps: null,
@@ -489,23 +664,25 @@ export const activitiesRouter = createTRPCRouter({
           normalizedGradedSpeedMps: null,
           efficiencyFactor: null,
           aerobicDecoupling: null,
-          avgTemperature: null,
+          avgTemperature: input.summary.avgTemperature ?? null,
+          poolLength: input.summary.poolLength ?? null,
           deviceManufacturer: null,
           deviceProduct: null,
           laps: null,
           mapBounds: null,
           polyline: null,
-          composition: {
-            persist: async (tx, { activityId, now }) =>
-              createActivityFileIngestion(tx, {
-                activityId,
-                profileId: input.profileId,
-                source: input.source,
-                filePath: null,
-                fileSize: input.localFileMetadata?.fileSize ?? null,
-                fileType: input.localFileMetadata?.fileType ?? null,
-                now,
-              }),
+          analysis: {
+            efforts: [],
+            detectedLTHR: null,
+            activityCompletedAt: new Date(input.finishedAt),
+            ingestion: {
+              source: input.source,
+              operationKey: input.recordingSessionId
+                ? `mobile-recording:${input.recordingSessionId}`
+                : `mobile-recording:${acceptedArtifact.sha256}`,
+              artifact: acceptedArtifact,
+              fileType: acceptedArtifact.format,
+            },
           },
         });
       } catch (error) {
@@ -538,14 +715,23 @@ export const activitiesRouter = createTRPCRouter({
       const activity = await db.query.activities.findFirst({
         where: eq(activities.id, created.id),
       });
-      if (!activity || !created.compositionResult)
+      if (!activity)
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: "Failed to load created activity",
         });
-      const ingestion = created.compositionResult as Awaited<
-        ReturnType<typeof createActivityFileIngestion>
-      >;
+      const ingestion = await db.query.activityFileIngestions.findFirst({
+        where: and(
+          eq(activityFileIngestions.activity_id, created.id),
+          eq(activityFileIngestions.profile_id, input.profileId),
+        ),
+      });
+      if (!ingestion) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to load accepted activity artifact ingestion",
+        });
+      }
 
       const data = parseActivityRow(activity);
 
@@ -587,6 +773,7 @@ export const activitiesRouter = createTRPCRouter({
     const db = getRequiredDb(ctx);
     return deleteActivityForProfile({
       db,
+      artifactStorage: getApiStorageService(),
       activityId: input.id,
       profileId: ctx.session.user.id,
     });

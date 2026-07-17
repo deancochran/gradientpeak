@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createPlanningTemplateRepository } from "../../../infrastructure";
 import type { TrainingPlanRepository } from "../../../repositories";
 import { createQueryMapDbMock } from "../../../test/mock-query-db";
+import { activityPlanStructureHash } from "../../activity-plans/structure-hash";
 import { createTrainingPlanUseCase, updateTrainingPlanUseCase } from "../mutationUseCases";
 
 describe("canonical training plan mutations", () => {
@@ -17,8 +18,9 @@ describe("canonical training plan mutations", () => {
           {
             id: publishedId,
             is_system_template: false,
+            gps_recording_enabled: true,
             structure: strictV3Structure,
-            version: "3.0",
+            structure_hash: activityPlanStructureHash(strictV3Structure),
           },
         ],
         error: null,
@@ -56,15 +58,17 @@ describe("canonical training plan mutations", () => {
     const { db, callLog } = createQueryMapDbMock({
       activity_plans: { data: [], error: null },
     });
+    const existingStructure = {
+      id: "22222222-2222-4222-8222-222222222222",
+      version: 1 as const,
+      sessions: [{ offset_days: 0, activity_plan_id: unavailableId }],
+    };
     const repository = {
       getOwnedTrainingPlan: async () => ({
         id: "22222222-2222-4222-8222-222222222222",
         profile_id: "11111111-1111-4111-8111-111111111111",
-        structure: {
-          id: "22222222-2222-4222-8222-222222222222",
-          version: 1,
-          sessions: [{ offset_days: 0, activity_plan_id: unavailableId }],
-        },
+        structure: existingStructure,
+        structure_hash: activityPlanStructureHash(existingStructure),
       }),
     };
 
@@ -78,6 +82,7 @@ describe("canonical training plan mutations", () => {
         repository: repository as unknown as TrainingPlanRepository,
         values: {
           id: "22222222-2222-4222-8222-222222222222",
+          expectedStructureHash: activityPlanStructureHash(existingStructure),
           name: "Should not save",
         },
       }),
@@ -88,6 +93,40 @@ describe("canonical training plan mutations", () => {
     expect(callLog.some((call) => call.table === "training_plans")).toBe(false);
   });
 
+  it("rejects a stale training-plan structure hash before locking templates or writing", async () => {
+    const planId = "22222222-2222-4222-8222-222222222222";
+    const structure = {
+      id: planId,
+      version: 1 as const,
+      sessions: [{ offset_days: 0, activity_plan_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }],
+    };
+    const { db, callLog } = createQueryMapDbMock();
+
+    await expect(
+      updateTrainingPlanUseCase({
+        db: db as unknown as DrizzleDbClient,
+        planningTemplateRepository: createPlanningTemplateRepository(
+          db as unknown as DrizzleDbClient,
+        ),
+        profileId: "11111111-1111-4111-8111-111111111111",
+        repository: {
+          getOwnedTrainingPlan: async () => ({
+            id: planId,
+            structure,
+            structure_hash: activityPlanStructureHash(structure),
+          }),
+        } as unknown as TrainingPlanRepository,
+        values: {
+          id: planId,
+          expectedStructureHash: `v1:sha256:${"f".repeat(64)}`,
+          name: "Stale update",
+        },
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT", message: "STALE_STRUCTURE_HASH" });
+
+    expect(callLog).toHaveLength(0);
+  });
+
   it("rejects an ID-only published activity plan whose stored structure is not strict V3", async () => {
     const linkedId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const { db, callLog } = createQueryMapDbMock({
@@ -96,8 +135,9 @@ describe("canonical training plan mutations", () => {
           {
             id: linkedId,
             is_system_template: false,
+            gps_recording_enabled: true,
             structure: { version: 2, intervals: [] },
-            version: "2.0",
+            structure_hash: activityPlanStructureHash({ version: 2, intervals: [] }),
           },
         ],
         error: null,
@@ -136,8 +176,9 @@ describe("canonical training plan mutations", () => {
           {
             id: expected.id,
             is_system_template: true,
+            gps_recording_enabled: mismatched.gps_recording_enabled,
             structure: mismatched.structure,
-            version: "3.0",
+            structure_hash: activityPlanStructureHash(mismatched.structure),
           },
         ],
         error: null,
@@ -166,7 +207,7 @@ describe("canonical training plan mutations", () => {
     expect(callLog.some((call) => call.table === "training_plans")).toBe(false);
   });
 
-  it("rejects a strict V3 linked plan when the persisted row version is stale", async () => {
+  it("rejects a strict V3 linked plan when its persisted structure hash is stale", async () => {
     const linkedId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     const { db, callLog } = createQueryMapDbMock({
       activity_plans: {
@@ -174,8 +215,9 @@ describe("canonical training plan mutations", () => {
           {
             id: linkedId,
             is_system_template: false,
+            gps_recording_enabled: true,
             structure: strictV3Structure,
-            version: "2.0",
+            structure_hash: activityPlanStructureHash({ version: 3, segments: [] }),
           },
         ],
         error: null,
@@ -190,7 +232,7 @@ describe("canonical training plan mutations", () => {
         ),
         profileId: "11111111-1111-4111-8111-111111111111",
         values: {
-          name: "Reject stale row version",
+          name: "Reject stale structure hash",
           description: null,
           structure: {
             version: 1,
@@ -208,7 +250,13 @@ describe("canonical training plan mutations", () => {
     const { db } = createQueryMapDbMock({
       activity_plans: {
         data: [
-          { id: linkedId, is_system_template: false, structure: strictV3Structure, version: "3.0" },
+          {
+            id: linkedId,
+            is_system_template: false,
+            gps_recording_enabled: true,
+            structure: strictV3Structure,
+            structure_hash: activityPlanStructureHash(strictV3Structure),
+          },
         ],
         error: null,
       },
@@ -225,6 +273,11 @@ describe("canonical training plan mutations", () => {
           version: 1,
           sessions: [{ offset_days: 0, activity_plan_id: linkedId }],
         },
+        structure_hash: activityPlanStructureHash({
+          id: planId,
+          version: 1,
+          sessions: [{ offset_days: 0, activity_plan_id: linkedId }],
+        }),
       }),
     };
 
@@ -238,6 +291,11 @@ describe("canonical training plan mutations", () => {
         repository: repository as unknown as TrainingPlanRepository,
         values: {
           id: planId,
+          expectedStructureHash: activityPlanStructureHash({
+            id: planId,
+            version: 1,
+            sessions: [{ offset_days: 0, activity_plan_id: linkedId }],
+          }),
           structure: { version: 1, sessions: [{ offset_days: 1, activity_plan_id: linkedId }] },
         },
       }),

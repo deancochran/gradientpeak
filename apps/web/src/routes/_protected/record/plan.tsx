@@ -1,3 +1,4 @@
+import { compileActivityPlanV3 } from "@repo/core/activity-plan";
 import { Badge } from "@repo/ui/components/badge";
 import { Button } from "@repo/ui/components/button";
 import {
@@ -36,7 +37,10 @@ export function RecordPlanPage() {
 
     return events.filter((event) => {
       const plan = event.activity_plan;
-      const category = normalizeRecordingActivityCategory(plan?.activity_category, "other");
+      const category = normalizeRecordingActivityCategory(
+        plan ? compileActivityPlanV3(plan.structure).primaryCategory : null,
+        "other",
+      );
       const matchesCategory = categoryFilter === "all" || category === categoryFilter;
       const matchesQuery =
         query.length === 0 ||
@@ -49,8 +53,9 @@ export function RecordPlanPage() {
 
   const attachPlan = (eventId: string) => {
     const event = events.find((candidate) => candidate.id === eventId);
+    const plan = event?.activity_plan;
     const category = normalizeRecordingActivityCategory(
-      event?.activity_plan?.activity_category,
+      plan ? compileActivityPlanV3(plan.structure).primaryCategory : null,
       launcher.category,
     );
 
@@ -169,7 +174,7 @@ export function RecordPlanPage() {
           }
 
           const isSelected = launcher.eventId === event.id;
-          const category = normalizeRecordingActivityCategory(plan.activity_category, "other");
+          const compiledPlan = compileActivityPlanV3(plan.structure);
 
           return (
             <Card key={event.id} className={isSelected ? "border-primary" : undefined}>
@@ -183,7 +188,11 @@ export function RecordPlanPage() {
                     </CardDescription>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Badge variant="outline">{category}</Badge>
+                    {compiledPlan.categories.map((planCategory) => (
+                      <Badge key={planCategory} variant="outline">
+                        {planCategory}
+                      </Badge>
+                    ))}
                     <Badge variant="outline">{formatScheduledTime(event.scheduled_date)}</Badge>
                   </div>
                 </div>

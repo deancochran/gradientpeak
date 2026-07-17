@@ -1,6 +1,6 @@
 import { defaultAthletePreferenceProfile } from "@repo/core";
 import { schema } from "@repo/db";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const homeMocks = vi.hoisted(() => ({
   buildDailyTssByDateSeries: vi.fn(),
@@ -12,6 +12,7 @@ const homeMocks = vi.hoisted(() => ({
   createEventReadRepository: vi.fn(),
   getActivityPlansDerivedMetrics: vi.fn(),
   getLoadBalanceStatus: vi.fn(),
+  loadActivitySegmentsByActivityId: vi.fn(),
   replayTrainingLoadByDate: vi.fn(),
 }));
 
@@ -37,6 +38,7 @@ vi.mock("../../infrastructure/repositories", () => ({
 
 vi.mock("../../lib/activity-analysis", () => ({
   buildDynamicStressSeries: homeMocks.buildDynamicStressSeries,
+  loadActivitySegmentsByActivityId: homeMocks.loadActivitySegmentsByActivityId,
 }));
 
 vi.mock("../../lib/features", () => ({
@@ -133,7 +135,54 @@ function createCaller(plan: DbPlan = {}) {
   };
 }
 
+function buildActivityPlan(id: string, name: string, category: "bike" | "run") {
+  return {
+    id,
+    name,
+    structure_hash: `v1:sha256:${"0".repeat(64)}`,
+    gps_recording_enabled: true,
+    structure: {
+      version: 3 as const,
+      segments: [
+        {
+          id: "10000000-0000-4000-8000-000000000001",
+          name,
+          role: "activity" as const,
+          category,
+          intervals: [
+            {
+              id: "20000000-0000-4000-8000-000000000001",
+              name,
+              repetitions: 1,
+              steps: [
+                {
+                  id: "30000000-0000-4000-8000-000000000001",
+                  name,
+                  duration: { type: "time" as const, seconds: 600 },
+                  targets: [{ type: "RPE" as const, intensity: 5 }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  };
+}
+
 describe("homeRouter", () => {
+  beforeEach(() => {
+    homeMocks.loadActivitySegmentsByActivityId.mockImplementation(
+      async (_db: unknown, activityIds: string[]) =>
+        new Map(
+          activityIds.map((activityId) => [
+            activityId,
+            [{ id: `${activityId}-segment`, role: "activity", category: "bike", ordinal: 0 }],
+          ]),
+        ),
+    );
+  });
+
   afterEach(() => {
     vi.clearAllMocks();
     vi.useRealTimers();
@@ -205,14 +254,14 @@ describe("homeRouter", () => {
               starts_at: new Date("2026-04-03T08:00:00.000Z"),
               notes: null,
               scheduled_date: "2026-04-03",
-              activity_plan: { id: "plan-1", name: "Threshold Ride", activity_category: "bike" },
+              activity_plan: buildActivityPlan("plan-1", "Threshold Ride", "bike"),
             },
             {
               id: "planned-tomorrow",
               starts_at: new Date("2026-04-04T08:00:00.000Z"),
               notes: null,
               scheduled_date: "2026-04-04",
-              activity_plan: { id: "plan-2", name: "Recovery Run", activity_category: "run" },
+              activity_plan: buildActivityPlan("plan-2", "Recovery Run", "run"),
             },
           ],
           [
@@ -221,14 +270,14 @@ describe("homeRouter", () => {
               starts_at: new Date("2026-04-03T08:00:00.000Z"),
               notes: null,
               scheduled_date: "2026-04-03",
-              activity_plan: { id: "plan-1", name: "Threshold Ride", activity_category: "bike" },
+              activity_plan: buildActivityPlan("plan-1", "Threshold Ride", "bike"),
             },
             {
               id: "planned-tomorrow",
               starts_at: new Date("2026-04-04T08:00:00.000Z"),
               notes: null,
               scheduled_date: "2026-04-04",
-              activity_plan: { id: "plan-2", name: "Recovery Run", activity_category: "run" },
+              activity_plan: buildActivityPlan("plan-2", "Recovery Run", "run"),
             },
           ],
         ],
@@ -236,11 +285,13 @@ describe("homeRouter", () => {
           [
             {
               id: "activity-yesterday",
-              type: "ride",
+              profile_id: "11111111-1111-4111-8111-111111111111",
               started_at: new Date("2026-04-02T07:00:00.000Z"),
               finished_at: new Date("2026-04-02T08:00:00.000Z"),
-              duration_seconds: 1800,
-              moving_seconds: 1700,
+              elapsed_ms: 3_600_000,
+              active_ms: 1_800_000,
+              moving_ms: 1_700_000,
+              timing_coverage: "complete",
               distance_meters: 10000,
               avg_heart_rate: 140,
               max_heart_rate: 165,
@@ -254,11 +305,13 @@ describe("homeRouter", () => {
             },
             {
               id: "activity-today",
-              type: "ride",
+              profile_id: "11111111-1111-4111-8111-111111111111",
               started_at: new Date("2026-04-03T07:00:00.000Z"),
               finished_at: new Date("2026-04-03T08:00:00.000Z"),
-              duration_seconds: 3600,
-              moving_seconds: 3500,
+              elapsed_ms: 3_600_000,
+              active_ms: 3_600_000,
+              moving_ms: 3_500_000,
+              timing_coverage: "complete",
               distance_meters: 15000,
               avg_heart_rate: 145,
               max_heart_rate: 170,
@@ -347,6 +400,8 @@ describe("homeRouter", () => {
         isCompleted: true,
         activityName: "Threshold Ride",
         activityType: "bike",
+        activityKind: "single",
+        activityCategories: ["bike"],
         estimatedDuration: 3600,
         estimatedDistance: 20000,
         estimatedTSS: 90,
@@ -358,6 +413,8 @@ describe("homeRouter", () => {
         isCompleted: false,
         activityName: "Recovery Run",
         activityType: "run",
+        activityKind: "single",
+        activityCategories: ["run"],
         estimatedDuration: 2400,
         estimatedDistance: 12000,
         estimatedTSS: 60,
@@ -370,6 +427,8 @@ describe("homeRouter", () => {
       isCompleted: true,
       activityName: "Threshold Ride",
       activityType: "bike",
+      activityKind: "single",
+      activityCategories: ["bike"],
       estimatedDuration: 3600,
       estimatedDistance: 20000,
       estimatedTSS: 90,
@@ -487,7 +546,7 @@ describe("homeRouter", () => {
               starts_at: new Date("2026-04-03T08:00:00.000Z"),
               notes: null,
               scheduled_date: "2026-04-03",
-              activity_plan: { id: "plan-1", name: "Threshold Ride", activity_category: "bike" },
+              activity_plan: buildActivityPlan("plan-1", "Threshold Ride", "bike"),
             },
           ],
           [
@@ -496,7 +555,7 @@ describe("homeRouter", () => {
               starts_at: new Date("2026-04-03T08:00:00.000Z"),
               notes: null,
               scheduled_date: "2026-04-03",
-              activity_plan: { id: "plan-1", name: "Threshold Ride", activity_category: "bike" },
+              activity_plan: buildActivityPlan("plan-1", "Threshold Ride", "bike"),
             },
           ],
         ],
@@ -504,11 +563,13 @@ describe("homeRouter", () => {
           [
             {
               id: "activity-today",
-              type: "ride",
+              profile_id: "11111111-1111-4111-8111-111111111111",
               started_at: new Date("2026-04-03T07:00:00.000Z"),
               finished_at: new Date("2026-04-03T08:00:00.000Z"),
-              duration_seconds: 3600,
-              moving_seconds: 3500,
+              elapsed_ms: 3_600_000,
+              active_ms: 3_600_000,
+              moving_ms: 3_500_000,
+              timing_coverage: "complete",
               distance_meters: 15000,
               avg_heart_rate: 145,
               max_heart_rate: 170,

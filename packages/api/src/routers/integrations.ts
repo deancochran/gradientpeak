@@ -565,6 +565,8 @@ export const integrationsRouter = createTRPCRouter({
   disconnect: protectedProcedure.input(disconnectInputSchema).mutation(async ({ ctx, input }) => {
     const repositories = getIntegrationsRepositories(ctx);
 
+    // Integration-owned links/jobs cascade with this row. Imported activities and their retained
+    // artifacts deliberately remain historical product data and are not storage-deletion targets.
     await repositories.integrations.deleteByProfileIdAndProvider({
       profileId: ctx.session.user.id,
       provider: input.provider,

@@ -534,7 +534,6 @@ describe("activity import screen", () => {
         activityFilePath: "activities/user/uploads/123_morning-ride.fit",
         name: "Morning Ride",
         notes: "From archive",
-        activityType: "bike",
         importProvenance: {
           import_source: "manual_historical",
           import_file_type: "fit",

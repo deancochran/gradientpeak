@@ -1,3 +1,4 @@
+import { compileActivityPlanV3 } from "@repo/core/activity-plan";
 import { Badge } from "@repo/ui/components/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@repo/ui/components/card";
 import { createFileRoute, notFound } from "@tanstack/react-router";
@@ -37,13 +38,18 @@ export const Route = createFileRoute("/share/workouts/$workoutId")({
 function PublicWorkoutPage() {
   const { workout } = Route.useLoaderData();
   const ownerName = workout.owner.name ?? workout.owner.username ?? "GradientPeak athlete";
+  const compiledWorkout = compileActivityPlanV3(workout.structure);
 
   return (
     <main className="mx-auto w-full max-w-3xl space-y-6 py-8">
       <header className="space-y-4">
-        <Badge variant="outline" className="w-fit capitalize">
-          {workout.activity_category}
-        </Badge>
+        <div className="flex flex-wrap gap-2">
+          {compiledWorkout.categories.map((category) => (
+            <Badge key={category} variant="outline" className="capitalize">
+              {category}
+            </Badge>
+          ))}
+        </div>
         <div>
           <h1 className="text-4xl font-semibold tracking-tight">{workout.name}</h1>
           <p className="mt-2 text-muted-foreground">
@@ -63,9 +69,9 @@ function PublicWorkoutPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
-            <Detail label="Category" value={workout.activity_category} />
+            <Detail label="Categories" value={compiledWorkout.categories.join(" → ")} />
             <Detail label="Structure" value={describeStructure(workout.structure)} />
-            <Detail label="Version" value={workout.version} />
+            <Detail label="Version" value={`V${compiledWorkout.structureVersion}`} />
             <Detail label="Template" value={workout.is_system_template ? "System" : "Athlete"} />
           </div>
           {workout.notes ? (

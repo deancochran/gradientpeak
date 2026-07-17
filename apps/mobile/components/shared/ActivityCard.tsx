@@ -32,11 +32,16 @@ const COMPACT_ROUTE_PREVIEW_HEIGHT = 128;
 export type ActivityCardActivity = {
   id: string;
   name?: string | null;
-  type?: string | null;
+  activity_kind?: "single" | "multisport" | "unknown";
+  activity_categories?: readonly string[];
+  segments?: Array<{ role?: string; category?: string | null }>;
   started_at?: string | Date | null;
   distance_meters?: number | null;
-  duration_seconds?: number | null;
-  moving_seconds?: number | null;
+  elapsed_ms?: number | null;
+  elapsed_seconds?: number | null;
+  active_ms?: number | null;
+  moving_ms?: number | null;
+  timing_coverage?: "complete" | "partial" | "unavailable";
   avg_heart_rate?: number | null;
   avg_power?: number | null;
   avg_speed_mps?: number | null;
@@ -44,7 +49,7 @@ export type ActivityCardActivity = {
   device_product?: string | null;
   notes?: string | null;
   polyline?: string | null;
-  activity_file_path?: string | null;
+  current_artifact?: { id: string; availability?: string | null } | null;
   likes_count?: number | null;
   comments_count?: number | null;
   has_liked?: boolean | null;
@@ -136,6 +141,14 @@ function getDerivedValue(activity: ActivityCardActivity, key: "tss" | "intensity
   return activity.derived?.[key] ?? activity.derived?.stress?.[key] ?? null;
 }
 
+function getActivityCategory(activity: ActivityCardActivity): string {
+  return (
+    activity.activity_categories?.[0] ??
+    activity.segments?.find((segment) => segment.role === "activity")?.category ??
+    "other"
+  );
+}
+
 function getLoadPresentation(activity: ActivityCardActivity) {
   const method = activity.derived?.method ?? activity.derived?.stress?.method ?? null;
   const unavailableReason =
@@ -160,7 +173,9 @@ function getCalibrationText(activity: ActivityCardActivity): string | null {
   if (quality) return formatCalibrationQuality(quality, activity.started_at);
   const unavailableReason =
     activity.derived?.unavailable_reason ?? activity.derived?.stress?.unavailable_reason ?? null;
-  return unavailableReason === "threshold_missing" ? getThresholdNextAction(activity.type) : null;
+  return unavailableReason === "threshold_missing"
+    ? getThresholdNextAction(getActivityCategory(activity))
+    : null;
 }
 
 function getIngestionStatusText(activity: ActivityCardActivity): string | null {
@@ -192,8 +207,13 @@ function ActivityMetricsRow({
     });
   }
 
-  if (typeof activity.duration_seconds === "number" && activity.duration_seconds > 0) {
-    metrics.push({ label: "Duration", value: formatDurationSec(activity.duration_seconds) });
+  const elapsedSeconds =
+    activity.elapsed_seconds ??
+    (typeof (activity.active_ms ?? activity.elapsed_ms) === "number"
+      ? (activity.active_ms ?? activity.elapsed_ms ?? 0) / 1000
+      : null);
+  if (typeof elapsedSeconds === "number" && elapsedSeconds > 0) {
+    metrics.push({ label: "Elapsed", value: formatDurationSec(elapsedSeconds) });
   }
 
   metrics.push({
@@ -239,7 +259,7 @@ export function ActivityCard({
   const detail = variant === "detail";
   const list = variant === "list";
   const resolvedShowLike = showLike ?? list;
-  const activityType = activity.type || "other";
+  const activityType = getActivityCategory(activity);
   const activityConfig = getActivityCategoryConfig(activityType);
   const owner = ownerProp ?? activity.profile ?? null;
   const resolvedDateMode = dateMode ?? "relative";

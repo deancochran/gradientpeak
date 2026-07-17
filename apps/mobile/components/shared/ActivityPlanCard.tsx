@@ -30,7 +30,9 @@ import {
 export interface ActivityPlan {
   id: string;
   name: string;
-  activity_category: string;
+  categories: readonly string[];
+  primary_category: string;
+  structure_hash?: string;
   description?: string | null;
   structure?: unknown;
   authoritative_metrics?: {
@@ -344,7 +346,7 @@ function transformToCardData(
   return {
     id: plannedActivity?.id || plan.id,
     name: plan.name,
-    activityType: plan.activity_category,
+    activityType: plan.primary_category ?? plan.categories[0] ?? "other",
     description: plan.description || undefined,
     structure: plan.structure,
     estimatedDuration: authoritativeMetrics?.estimated_duration ?? undefined,

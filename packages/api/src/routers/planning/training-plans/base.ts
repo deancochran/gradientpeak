@@ -131,7 +131,11 @@ import {
 } from "../../../infrastructure/repositories";
 import {
   buildActivityDerivedSummaryMap,
+  buildActivitySegmentDerivedSummaries,
   buildDynamicStressSeries,
+  deriveActivityDurations,
+  loadActivitySegmentsByActivityId,
+  orderedActivitySegments,
 } from "../../../lib/activity-analysis";
 import { featureFlags } from "../../../lib/features";
 import { createContentAccessPermissions } from "../../../permissions/content-access";
@@ -152,11 +156,12 @@ const trainingPlanTemplateVisibilitySchema = z.enum(["private", "followers", "pu
 const trainingPlanUpdateMutationInputSchema = trainingPlanUpdateInputSchema
   .extend({
     id: z.string().uuid(),
+    expectedStructureHash: z.string().regex(/^v1:sha256:[0-9a-f]{64}$/),
     template_visibility: trainingPlanTemplateVisibilitySchema.optional(),
   })
   .strict()
   .superRefine((input, ctx) => {
-    if (Object.keys(input).length === 1) {
+    if (Object.keys(input).every((key) => ["id", "expectedStructureHash"].includes(key))) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "At least one training plan update field is required",
@@ -166,6 +171,7 @@ const trainingPlanUpdateMutationInputSchema = trainingPlanUpdateInputSchema
 const applyQuickAdjustmentInputSchema = z
   .object({
     id: z.string().uuid(),
+    expectedStructureHash: z.string().regex(/^v1:sha256:[0-9a-f]{64}$/),
     adjustedStructure: trainingPlanSchema,
   })
   .strict();
@@ -187,11 +193,13 @@ type TrainingPlanCountRow = { value: number | string };
 
 const activitySummaryColumns = {
   id: schema.activities.id,
-  type: schema.activities.type,
+  profile_id: schema.activities.profile_id,
   started_at: schema.activities.started_at,
   finished_at: schema.activities.finished_at,
-  duration_seconds: schema.activities.duration_seconds,
-  moving_seconds: schema.activities.moving_seconds,
+  elapsed_ms: schema.activities.elapsed_ms,
+  active_ms: schema.activities.active_ms,
+  moving_ms: schema.activities.moving_ms,
+  timing_coverage: schema.activities.timing_coverage,
   distance_meters: schema.activities.distance_meters,
   avg_heart_rate: schema.activities.avg_heart_rate,
   max_heart_rate: schema.activities.max_heart_rate,
@@ -203,6 +211,19 @@ const activitySummaryColumns = {
   normalized_speed_mps: schema.activities.normalized_speed_mps,
   normalized_graded_speed_mps: schema.activities.normalized_graded_speed_mps,
 } as const;
+
+async function attachActivitySegments<
+  T extends Omit<
+    Parameters<typeof buildActivityDerivedSummaryMap>[0]["activities"][number],
+    "segments"
+  >,
+>(db: DbClient, rows: T[]) {
+  const segments = await loadActivitySegmentsByActivityId(
+    db,
+    rows.map((row) => row.id),
+  );
+  return rows.map((row) => ({ ...row, segments: segments.get(row.id) ?? [] }));
+}
 
 function getSqlRows<T>(result: unknown) {
   return ((result as { rows?: T[] }).rows ?? []) as T[];
@@ -2137,50 +2158,31 @@ async function estimateCurrentCtl(input: {
           ),
         )
         .orderBy(asc(schema.activities.started_at))
-    : input.supabase
-      ? await input.supabase
-          .from("activities")
-          .select(
-            "id, type, started_at, finished_at, duration_seconds, moving_seconds, distance_meters, avg_heart_rate, max_heart_rate, avg_power, max_power, avg_speed_mps, max_speed_mps, normalized_power, normalized_speed_mps, normalized_graded_speed_mps",
-          )
-          .eq("profile_id", profileId)
-          .gte("started_at", since.toISOString())
-          .order("started_at", { ascending: true })
-          .then(({ data: rows, error }: { data: any[] | null; error: any }) =>
-            error ? null : rows,
-          )
-      : null;
+    : null;
 
-  if (!data) {
+  if (!input.db || !data) {
     return 0;
   }
 
+  const activitiesWithSegments = await attachActivitySegments(input.db, data);
   const derivedMap = await buildActivityDerivedSummaryMap({
     store,
     profileId,
-    activities: data.map(normalizeActivitySummaryRow),
+    activities: activitiesWithSegments,
   });
 
   const bootstrap = computeLoadBootstrapState({
     activities: data.map((activity: any) => ({
       occurred_at: activity.started_at,
       tss: derivedMap.get(activity.id)?.tss ?? null,
-      duration_seconds: activity.duration_seconds,
+      duration_seconds:
+        deriveActivityDurations(activity).active_seconds ??
+        deriveActivityDurations(activity).elapsed_seconds,
     })),
     as_of: asOf.toISOString(),
   });
 
   return bootstrap.starting_ctl;
-}
-
-function normalizeActivitySummaryRow(activity: Record<string, any>) {
-  return {
-    ...activity,
-    started_at:
-      activity.started_at instanceof Date ? activity.started_at : new Date(activity.started_at),
-    finished_at:
-      activity.finished_at instanceof Date ? activity.finished_at : new Date(activity.finished_at),
-  } as Parameters<typeof buildActivityDerivedSummaryMap>[0]["activities"][number];
 }
 
 const blockSnapshotSchema = z.object({
@@ -2206,6 +2208,7 @@ const createFromCreationConfigRouterInputSchema = createFromCreationConfigInputS
 
 const updateFromCreationConfigRouterInputSchema = createFromCreationConfigRouterInputSchema.extend({
   plan_id: z.string().uuid(),
+  expectedStructureHash: z.string().regex(/^v1:sha256:[0-9a-f]{64}$/),
 });
 
 function mergeCalibrationInput(
@@ -2490,7 +2493,7 @@ export async function deriveProfileAwareCreationContext(input: {
           input.db
             .select({
               id: schema.activityEfforts.id,
-              activity_id: schema.activityEfforts.activity_id,
+              activity_id: schema.activityEfforts.segment_id,
               recorded_at: schema.activityEfforts.recorded_at,
               effort_type: schema.activityEfforts.effort_type,
               duration_seconds: schema.activityEfforts.duration_seconds,
@@ -2548,7 +2551,7 @@ export async function deriveProfileAwareCreationContext(input: {
           input.supabase
             ?.from("activities")
             .select(
-              "id, type, started_at, finished_at, duration_seconds, moving_seconds, distance_meters, avg_heart_rate, max_heart_rate, avg_power, max_power, avg_speed_mps, max_speed_mps, normalized_power, normalized_speed_mps, normalized_graded_speed_mps",
+              "id, profile_id, started_at, finished_at, elapsed_ms, active_ms, moving_ms, timing_coverage, distance_meters, avg_heart_rate, max_heart_rate, avg_power, max_power, avg_speed_mps, max_speed_mps, normalized_power, normalized_speed_mps, normalized_graded_speed_mps",
             )
             .eq("profile_id", input.profileId)
             .gte("started_at", recentActivitiesCutoff.toISOString())
@@ -2557,7 +2560,7 @@ export async function deriveProfileAwareCreationContext(input: {
           input.supabase
             ?.from("activity_efforts")
             .select(
-              "id, activity_id, recorded_at, effort_type, duration_seconds, value, activity_category, unit, source, method, provenance",
+              "id, segment_id, recorded_at, effort_type, duration_seconds, value, activity_category, unit, source, method, provenance",
             )
             .eq("profile_id", input.profileId)
             .gte("recorded_at", recentEffortsCutoff.toISOString())
@@ -2610,19 +2613,30 @@ export async function deriveProfileAwareCreationContext(input: {
   }
 
   const activityRows = activitiesResult.error ? [] : (activitiesResult.data ?? []);
-  const activityDerivedMap = await buildActivityDerivedSummaryMap({
+  const activitiesWithSegments = input.db
+    ? await attachActivitySegments(input.db, activityRows)
+    : [];
+  const segmentDerived = await buildActivitySegmentDerivedSummaries({
     store: input.store,
     profileId: input.profileId,
-    activities: activityRows.map(normalizeActivitySummaryRow),
+    activities: activitiesWithSegments,
   });
 
-  const completedActivities = activityRows.map((activity: any) => ({
-    occurred_at: activity.started_at,
-    activity_category: activity.type,
-    duration_seconds: activity.duration_seconds,
-    tss: activityDerivedMap.get(activity.id)?.tss ?? null,
-    intensity_factor: activityDerivedMap.get(activity.id)?.intensity_factor ?? null,
-  }));
+  const completedActivities = activitiesWithSegments.flatMap((activity) =>
+    orderedActivitySegments(activity.segments).map((segment) => {
+      const derived = segmentDerived.find((candidate) => candidate.segment_id === segment.id);
+      return {
+        occurred_at: new Date(
+          activity.started_at.getTime() + segment.start_offset_ms,
+        ).toISOString(),
+        activity_category: segment.category,
+        duration_seconds:
+          (segment.active_ms ?? segment.end_offset_ms - segment.start_offset_ms) / 1_000,
+        tss: derived?.tss ?? null,
+        intensity_factor: derived?.intensity_factor ?? null,
+      };
+    }),
+  );
 
   const activityCounts = completedActivities.reduce(
     (acc: Record<string, number>, activity: any) => {
@@ -3341,29 +3355,31 @@ export async function getPlanTabProjectionService({
     scheduledByDate.set(scheduledDate, (scheduledByDate.get(scheduledDate) || 0) + estimatedTss);
   }
 
-  const actualActivities = projectionInputs
-    ? projectionInputs.actualActivities
-    : await fallbackSupabase
-        ?.from("activities")
-        .select(
-          "id, type, started_at, finished_at, duration_seconds, moving_seconds, distance_meters, avg_heart_rate, max_heart_rate, avg_power, max_power, avg_speed_mps, max_speed_mps, normalized_power, normalized_speed_mps, normalized_graded_speed_mps",
+  const actualActivityParents = db
+    ? await db
+        .select(activitySummaryColumns)
+        .from(schema.activities)
+        .where(
+          and(
+            eq(schema.activities.profile_id, profileId),
+            gte(schema.activities.started_at, new Date(`${input.start_date}T00:00:00.000Z`)),
+            lt(schema.activities.started_at, new Date(endExclusiveIso)),
+          ),
         )
-        .eq("profile_id", profileId)
-        .gte("started_at", `${input.start_date}T00:00:00.000Z`)
-        .lt("started_at", endExclusiveIso)
-        .then(({ data }: { data: any[] | null }) => data ?? []);
-
-  const actualDerivedMap = await buildActivityDerivedSummaryMap({
+    : [];
+  const actualActivities = db ? await attachActivitySegments(db, actualActivityParents) : [];
+  const actualSegments = await buildActivitySegmentDerivedSummaries({
     store,
     profileId,
-    activities: (actualActivities || []).map(normalizeActivitySummaryRow),
+    activities: actualActivities,
   });
 
   const actualByDate = new Map<string, number>();
-  for (const activity of actualActivities || []) {
-    if (!activity.started_at) continue;
+  for (const activity of actualActivities) {
     const date = formatDateOnlyUtc(new Date(activity.started_at));
-    const tss = actualDerivedMap.get(activity.id)?.tss || 0;
+    const tss = actualSegments
+      .filter((segment) => segment.activity_id === activity.id)
+      .reduce((sum, segment) => sum + (segment.tss ?? 0), 0);
     actualByDate.set(date, (actualByDate.get(date) || 0) + tss);
   }
 
@@ -4136,10 +4152,11 @@ const trainingPlansProcedures = {
       )
       .orderBy(asc(schema.activities.started_at));
 
+    const activitiesWithSegments = await attachActivitySegments(db, activities);
     const stressSeries = await buildDynamicStressSeries({
       store: createActivityAnalysisStore(db),
       profileId: ctx.session.user.id,
-      activities,
+      activities: activitiesWithSegments,
     });
 
     // No activities is not evidence of zero fitness, and a partial/incompatible
@@ -4181,10 +4198,11 @@ const trainingPlansProcedures = {
         ),
       );
 
+    const weekActivitiesWithSegments = await attachActivitySegments(db, weekActivities);
     const weekActivitiesDerivedMap = await buildActivityDerivedSummaryMap({
       store: createActivityAnalysisStore(db),
       profileId: ctx.session.user.id,
-      activities: weekActivities,
+      activities: weekActivitiesWithSegments,
     });
 
     const completedWeeklyTSS =
@@ -4415,10 +4433,11 @@ const trainingPlansProcedures = {
       let currentCTL = Math.max(10, Math.round((derivedWeeklyTss / 7) * 0.75));
 
       if (actualCurve && actualCurve.length > 0) {
+        const actualCurveWithSegments = await attachActivitySegments(db, actualCurve);
         const actualCurveDerivedMap = await buildActivityDerivedSummaryMap({
           store: createActivityAnalysisStore(db),
           profileId: ctx.session.user.id,
-          activities: actualCurve,
+          activities: actualCurveWithSegments,
         });
         const tssData = actualCurve.map((a: any) => actualCurveDerivedMap.get(a.id)?.tss || 0);
         const series = calculateTrainingLoadSeries(tssData, 0, 0);
@@ -4539,10 +4558,11 @@ const trainingPlansProcedures = {
         .orderBy(asc(schema.activities.started_at));
 
       const historyActivities = [...baselineActivities, ...activities];
+      const historyActivitiesWithSegments = await attachActivitySegments(db, historyActivities);
       const stressSeries = await buildDynamicStressSeries({
         store: createActivityAnalysisStore(db),
         profileId: ctx.session.user.id,
-        activities: historyActivities,
+        activities: historyActivitiesWithSegments,
       });
 
       // Abstain rather than drawing a zero curve when there is no load evidence,
@@ -4589,6 +4609,7 @@ const trainingPlansProcedures = {
       return applyQuickAdjustmentUseCase({
         adjustedStructure: input.adjustedStructure,
         db,
+        expectedStructureHash: input.expectedStructureHash,
         id: input.id,
         profileId: ctx.session.user.id,
         repository: createTrainingPlanRepository(db),
@@ -4712,10 +4733,11 @@ const trainingPlansProcedures = {
           ),
         );
 
+      const completedActivitiesWithSegments = await attachActivitySegments(db, completedActivities);
       const completedDerivedMap = await buildActivityDerivedSummaryMap({
         store: createActivityAnalysisStore(db),
         profileId: ctx.session.user.id,
-        activities: completedActivities,
+        activities: completedActivitiesWithSegments,
       });
 
       // Group by week
@@ -4817,10 +4839,11 @@ const trainingPlansProcedures = {
         )
         .orderBy(desc(schema.activities.started_at));
 
+      const activitiesWithSegments = await attachActivitySegments(db, activities);
       const derivedMap = await buildActivityDerivedSummaryMap({
         store: createActivityAnalysisStore(db),
         profileId: ctx.session.user.id,
-        activities,
+        activities: activitiesWithSegments,
       });
 
       const totalActivities = activities.length;
@@ -4969,10 +4992,11 @@ const trainingPlansProcedures = {
         )
         .orderBy(asc(schema.activities.started_at));
 
+      const activitiesWithSegments = await attachActivitySegments(db, activities);
       const derivedMap = await buildActivityDerivedSummaryMap({
         store: createActivityAnalysisStore(db),
         profileId: ctx.session.user.id,
-        activities,
+        activities: activitiesWithSegments,
       });
 
       // Group by week
@@ -5089,10 +5113,11 @@ const trainingPlansProcedures = {
         )
         .orderBy(asc(schema.activities.started_at));
 
+      const allActivitiesWithSegments = await attachActivitySegments(db, allActivities);
       const derivedMap = await buildActivityDerivedSummaryMap({
         store: createActivityAnalysisStore(db),
         profileId: ctx.session.user.id,
-        activities: allActivities,
+        activities: allActivitiesWithSegments,
       });
 
       // Filter activities with IF >= 0.85
@@ -5184,7 +5209,10 @@ const trainingPlansProcedures = {
       const activities = await db
         .select({
           distance_meters: schema.activities.distance_meters,
-          duration_seconds: schema.activities.duration_seconds,
+          elapsed_ms: schema.activities.elapsed_ms,
+          active_ms: schema.activities.active_ms,
+          moving_ms: schema.activities.moving_ms,
+          timing_coverage: schema.activities.timing_coverage,
         })
         .from(schema.activities)
 
@@ -5204,7 +5232,8 @@ const trainingPlansProcedures = {
       if (activities.length > 0) {
         for (const activity of activities) {
           totalDistance += activity.distance_meters || 0;
-          totalTime += activity.duration_seconds || 0;
+          const durations = deriveActivityDurations(activity);
+          totalTime += durations.active_seconds ?? durations.elapsed_seconds;
         }
       }
 

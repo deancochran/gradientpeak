@@ -3,7 +3,6 @@ import type {
   ActivitySubmissionQueueJob,
   ActivitySubmissionQueueJobStatus,
   ActivitySubmissionQueueRunnerDeps,
-  MarkUploadedAndProcessInput,
 } from "./types";
 import { activitySubmissionQueueJobSchema } from "./types";
 
@@ -24,7 +23,7 @@ function getFileName(filePath: string): string {
   return withoutQuery.split("/").filter(Boolean).at(-1) ?? "activity.fit";
 }
 
-function getFileType(filePath: string): MarkUploadedAndProcessInput["fileType"] {
+function getFileType(filePath: string): "fit" | "gpx" | "tcx" {
   const extension = getFileName(filePath).split(".").at(-1)?.toLowerCase();
 
   if (extension === "gpx" || extension === "tcx") {
@@ -78,33 +77,12 @@ async function runActivitySubmissionQueueJobOnce(
   if (job.status === "complete") return job;
 
   try {
-    if (!job.activityId || !job.ingestionId) {
-      job = await persistJobProgress(job, "creating_activity", now, deps);
-      const created = await deps.createFromRecordingSummary({
-        ...job.draft,
-        localFileMetadata: {
-          filePath: job.localActivityFilePath,
-          fileSize: job.localActivityFileSize ?? undefined,
-          fileType: getFileType(job.localActivityFilePath),
-        },
-        source: "mobile_recording",
-      });
-
-      if (!created.ingestion?.id) {
-        throw new Error("Activity file ingestion was not returned");
-      }
-
-      job = await persistJobProgress(job, "creating_activity", now, deps, {
-        activityId: created.id,
-        ingestionId: created.ingestion.id,
-      });
-    }
-
     if (!job.remoteFilePath) {
       job = await persistJobProgress(job, "uploading", now, deps);
+      const artifactMetadata = await deps.getLocalArtifactMetadata(job.localActivityFilePath);
       const signedUrl = await deps.getSignedUploadUrl({
         fileName: getFileName(job.localActivityFilePath),
-        ...(job.localActivityFileSize ? { fileSize: job.localActivityFileSize } : {}),
+        fileSize: artifactMetadata.byteSize,
       });
       const uploadResult = await deps.uploadToSignedUrl(
         job.localActivityFilePath,
@@ -117,28 +95,70 @@ async function runActivitySubmissionQueueJobOnce(
 
       job = await persistJobProgress(job, "uploading", now, deps, {
         remoteFilePath: signedUrl.filePath,
+        localActivityFileSize: artifactMetadata.byteSize,
+        artifactSha256: artifactMetadata.sha256,
       });
     }
 
-    const activityId = job.activityId;
-    const ingestionId = job.ingestionId;
-    const remoteFilePath = job.remoteFilePath;
-
-    if (!activityId || !ingestionId || !remoteFilePath) {
-      throw new Error("Activity submission job is missing required remote identifiers");
+    if (job.remoteFilePath && (!job.artifactSha256 || !job.localActivityFileSize)) {
+      const artifactMetadata = await deps.getLocalArtifactMetadata(job.localActivityFilePath);
+      job = await persistJobProgress(job, "uploading", now, deps, {
+        artifactSha256: artifactMetadata.sha256,
+        localActivityFileSize: artifactMetadata.byteSize,
+      });
     }
 
-    job = await persistJobProgress(job, "processing", now, deps);
-    const processResult = await deps.markUploadedAndProcess({
-      activityId,
-      ingestionId,
-      activityFilePath: remoteFilePath,
-      ...(job.localActivityFileSize ? { fileSize: job.localActivityFileSize } : {}),
-      fileType: getFileType(job.localActivityFilePath),
-    });
+    if (!job.activityId || !job.ingestionId) {
+      if (!job.remoteFilePath || !job.artifactSha256 || !job.localActivityFileSize) {
+        throw new Error("Uploaded activity artifact metadata is incomplete");
+      }
+      const acceptedArtifact = {
+        path: job.remoteFilePath,
+        sha256: job.artifactSha256,
+        byteSize: job.localActivityFileSize,
+      };
+      job = await persistJobProgress(job, "creating_activity", now, deps);
+      const fileType = getFileType(job.localActivityFilePath);
+      const created = await deps.createFromRecordingSummary({
+        profileId: job.draft.profileId,
+        recordingSessionId: job.draft.recordingSessionId,
+        name: job.draft.name,
+        notes: job.draft.notes,
+        is_private: job.draft.is_private,
+        content_visibility: job.draft.content_visibility,
+        startedAt: job.draft.startedAt,
+        finishedAt: job.draft.finishedAt,
+        activityPlanId: job.draft.activityPlanId,
+        executionManifest: job.executionManifest,
+        acceptedArtifact: {
+          sha256: acceptedArtifact.sha256,
+          byteSize: acceptedArtifact.byteSize,
+          bucket: "activity-files",
+          path: acceptedArtifact.path,
+          mediaType:
+            fileType === "fit"
+              ? "application/vnd.ant.fit"
+              : fileType === "gpx"
+                ? "application/gpx+xml"
+                : "application/vnd.garmin.tcx+xml",
+          format: fileType,
+          originalName: getFileName(job.localActivityFilePath),
+        },
+        summary: {
+          distanceMeters: Math.round(job.draft.distanceMeters),
+          calories: job.draft.calories ?? null,
+        },
+        source: "mobile_recording",
+      });
 
-    if (processResult && !processResult.success) {
-      throw new Error("Activity file processing failed");
+      if (!created.ingestion?.id) {
+        throw new Error("Activity file ingestion was not returned");
+      }
+
+      job = await persistJobProgress(job, "creating_activity", now, deps, {
+        activityId: created.id,
+        ingestionId: created.ingestion.id,
+      });
     }
 
     return persistJobProgress(job, "complete", now, deps);

@@ -23,16 +23,23 @@ describe("useActivityPlanDetailViewModel", () => {
       useActivityPlanDetailViewModel({
         activityPlanParam: JSON.stringify({
           id: "param-plan",
-          activity_category: "ride",
+          categories: ["bike"],
+          primary_category: "bike",
           structure: {},
         }),
-        fetchedPlan: { id: "db-plan", activity_category: "swim", structure: {} },
+        fetchedPlan: {
+          id: "db-plan",
+          categories: ["swim"],
+          primary_category: "swim",
+          structure: {},
+        },
         formatDuration: (seconds) => `${seconds / 60}m`,
         isScheduled: true,
         plannedActivity: {
           activity_plan: {
             id: "planned-plan",
-            activity_category: "run",
+            categories: ["run"],
+            primary_category: "run",
             profile_id: "profile-1",
             estimated_tss: 30,
             authoritative_metrics: {
@@ -70,7 +77,12 @@ describe("useActivityPlanDetailViewModel", () => {
         },
         profile: { id: "profile-1" },
         route: { polyline: "abc" },
-        template: JSON.stringify({ id: "template-plan", activity_category: "hike", structure: {} }),
+        template: JSON.stringify({
+          id: "template-plan",
+          categories: ["other"],
+          primary_category: "other",
+          structure: {},
+        }),
       }),
     );
 

@@ -6,7 +6,7 @@ import {
   normalizeActivityEffortUpdate,
   updateActivityEffortInputSchema,
 } from "@repo/core/athlete-inputs";
-import { activityEfforts, publicActivityEffortsRowSchema } from "@repo/db";
+import { activityEfforts, activitySegments, publicActivityEffortsRowSchema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -38,6 +38,7 @@ const deleteActivityEffortOutputSchema = z
 
 const observationFieldNames = [
   "activity_id",
+  "segment_id",
   "activity_category",
   "duration_seconds",
   "effort_type",
@@ -45,6 +46,67 @@ const observationFieldNames = [
   "start_offset",
   "value",
 ] as const;
+
+async function validateActivityEffortSegment(input: {
+  db: ReturnType<typeof getRequiredDb>;
+  profileId: string;
+  effort: {
+    activity_id?: string | null;
+    segment_id?: string | null;
+    activity_category: string;
+    duration_seconds: number;
+    start_offset?: number | null;
+  };
+}) {
+  if (input.effort.activity_id == null && input.effort.segment_id == null) return;
+  if (
+    input.effort.activity_id == null ||
+    input.effort.segment_id == null ||
+    input.effort.start_offset == null
+  ) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Activity-backed efforts require activity_id, segment_id, and start_offset",
+    });
+  }
+  const rows = await input.db
+    .select({
+      category: activitySegments.category,
+      role: activitySegments.role,
+      start_offset_ms: activitySegments.start_offset_ms,
+      end_offset_ms: activitySegments.end_offset_ms,
+    })
+    .from(activitySegments)
+    .where(
+      and(
+        eq(activitySegments.id, input.effort.segment_id),
+        eq(activitySegments.activity_id, input.effort.activity_id),
+        eq(activitySegments.profile_id, input.profileId),
+      ),
+    )
+    .limit(2);
+  if (rows.length !== 1 || rows[0]?.role !== "activity") {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Effort must reference exactly one owned activity segment",
+    });
+  }
+  const segment = rows[0];
+  if (segment.category !== input.effort.activity_category) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Effort category must match its activity segment",
+    });
+  }
+  const effortStartMs = input.effort.start_offset * 1_000;
+  const effortEndMs = effortStartMs + input.effort.duration_seconds * 1_000;
+  if (effortStartMs < segment.start_offset_ms || effortEndMs > segment.end_offset_ms) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "Effort range must remain within its referenced activity segment",
+    });
+  }
+}
 
 export const activityEffortsRouter = createTRPCRouter({
   getForProfile: protectedProcedure.output(getForProfileOutputSchema).query(async ({ ctx }) => {
@@ -80,6 +142,12 @@ export const activityEffortsRouter = createTRPCRouter({
     .mutation(async ({ input, ctx }) => {
       const db = getRequiredDb(ctx);
 
+      await validateActivityEffortSegment({
+        db,
+        profileId: ctx.session.user.id,
+        effort: input,
+      });
+
       const [data] = await db
         .insert(activityEfforts)
         .values({
@@ -111,6 +179,7 @@ export const activityEffortsRouter = createTRPCRouter({
         .select({
           activity_category: activityEfforts.activity_category,
           activity_id: activityEfforts.activity_id,
+          segment_id: activityEfforts.segment_id,
           duration_seconds: activityEfforts.duration_seconds,
           effort_type: activityEfforts.effort_type,
           method: activityEfforts.method,
@@ -136,6 +205,25 @@ export const activityEffortsRouter = createTRPCRouter({
           });
         }
       })();
+      const effectiveEffort = createActivityEffortInputSchema.parse({
+        activity_id: input.activity_id === undefined ? existing.activity_id : input.activity_id,
+        segment_id: input.segment_id === undefined ? existing.segment_id : input.segment_id,
+        activity_category: input.activity_category ?? existing.activity_category,
+        duration_seconds: input.duration_seconds ?? existing.duration_seconds,
+        effort_type: input.effort_type ?? existing.effort_type,
+        recorded_at:
+          input.recorded_at ??
+          (existing.recorded_at instanceof Date
+            ? existing.recorded_at.toISOString()
+            : new Date(existing.recorded_at).toISOString()),
+        start_offset: input.start_offset === undefined ? existing.start_offset : input.start_offset,
+        value: input.value ?? existing.value,
+      });
+      await validateActivityEffortSegment({
+        db,
+        profileId: ctx.session.user.id,
+        effort: effectiveEffort,
+      });
 
       const changesObservation = observationFieldNames.some(
         (fieldName) => input[fieldName] !== undefined,
@@ -145,6 +233,7 @@ export const activityEffortsRouter = createTRPCRouter({
       if (resetsTrustedProvenance) {
         const manualOverride = createActivityEffortInputSchema.parse({
           activity_id: input.activity_id === undefined ? existing.activity_id : input.activity_id,
+          segment_id: input.segment_id === undefined ? existing.segment_id : input.segment_id,
           activity_category: input.activity_category ?? existing.activity_category,
           duration_seconds: input.duration_seconds ?? existing.duration_seconds,
           effort_type: input.effort_type ?? existing.effort_type,

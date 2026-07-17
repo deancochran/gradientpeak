@@ -61,9 +61,11 @@ function createDeps(overrides: Partial<ActivitySubmissionQueueRunnerDeps> = {}) 
       filePath: "activities/profile-1/uploads/activity.fit",
     })),
     uploadToSignedUrl: vi.fn(async () => ({ success: true })),
-    markUploadedAndProcess: vi.fn(async () => ({ success: true })),
     now: vi.fn(() => "2026-01-01T11:01:00.000Z"),
     ...overrides,
+    getLocalArtifactMetadata:
+      overrides.getLocalArtifactMetadata ??
+      vi.fn(async () => ({ sha256: "a".repeat(64), byteSize: 1024 })),
   } satisfies ActivitySubmissionQueueRunnerDeps;
 }
 
@@ -106,40 +108,50 @@ describe("activity submission queue runner", () => {
     expect(result.ingestionId).toBe("ingestion-1");
     expect(result.remoteFilePath).toBe("activities/profile-1/uploads/activity.fit");
     expect(deps.createFromRecordingSummary).toHaveBeenCalledWith({
-      ...baseJob.draft,
-      localFileMetadata: {
-        filePath: baseJob.localActivityFilePath,
-        fileType: "fit",
+      profileId: "profile-1",
+      recordingSessionId: undefined,
+      name: "Morning ride",
+      notes: undefined,
+      is_private: undefined,
+      content_visibility: undefined,
+      startedAt: "2026-01-01T10:00:00.000Z",
+      finishedAt: "2026-01-01T11:00:00.000Z",
+      activityPlanId: undefined,
+      executionManifest,
+      acceptedArtifact: {
+        sha256: "a".repeat(64),
+        byteSize: 1024,
+        bucket: "activity-files",
+        path: "activities/profile-1/uploads/activity.fit",
+        mediaType: "application/vnd.ant.fit",
+        format: "fit",
+        originalName: "activity.fit",
       },
+      summary: { distanceMeters: 25000, calories: 500 },
       source: "mobile_recording",
     });
     expect(deps.getSignedUploadUrl).toHaveBeenCalledWith({
       fileName: "activity.fit",
+      fileSize: 1024,
     });
     expect(deps.uploadToSignedUrl).toHaveBeenCalledWith(
       "file:///activity.fit",
       "https://storage.example/upload",
     );
-    expect(deps.markUploadedAndProcess).toHaveBeenCalledWith({
-      activityId: "activity-1",
-      ingestionId: "ingestion-1",
-      activityFilePath: "activities/profile-1/uploads/activity.fit",
-      fileType: "fit",
-    });
     expect(persistedHistory.map((job) => job.status)).toEqual([
-      "creating_activity",
-      "creating_activity",
       "uploading",
       "uploading",
-      "processing",
+      "creating_activity",
+      "creating_activity",
       "complete",
     ]);
-    expect(persistedHistory[1]).toMatchObject({
+    expect(persistedHistory[3]).toMatchObject({
       activityId: "activity-1",
       ingestionId: "ingestion-1",
     });
-    expect(persistedHistory[3]).toMatchObject({
+    expect(persistedHistory[1]).toMatchObject({
       remoteFilePath: "activities/profile-1/uploads/activity.fit",
+      artifactSha256: "a".repeat(64),
     });
   });
 
@@ -154,13 +166,11 @@ describe("activity submission queue runner", () => {
       status: "failed",
       attempts: 1,
       lastError: "network down",
-      activityId: "activity-1",
-      ingestionId: "ingestion-1",
     });
     expect(persistedJobs.at(-1)).toMatchObject({ status: "failed", lastError: "network down" });
   });
 
-  it("resumes retry from existing activity and ingestion without duplicate create", async () => {
+  it("completes a retry with an existing accepted activity without duplicate create", async () => {
     const deps = createDeps();
     const retryJob: ActivitySubmissionQueueJob = {
       ...baseJob,
@@ -179,11 +189,5 @@ describe("activity submission queue runner", () => {
     expect(deps.createFromRecordingSummary).not.toHaveBeenCalled();
     expect(deps.getSignedUploadUrl).not.toHaveBeenCalled();
     expect(deps.uploadToSignedUrl).not.toHaveBeenCalled();
-    expect(deps.markUploadedAndProcess).toHaveBeenCalledWith({
-      activityId: "activity-existing",
-      ingestionId: "ingestion-existing",
-      activityFilePath: "activities/profile-1/uploads/existing.fit",
-      fileType: "fit",
-    });
   });
 });

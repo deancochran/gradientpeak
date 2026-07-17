@@ -9,6 +9,7 @@ type EffortRowOverrides = Partial<{
   id: string;
   profile_id: string;
   activity_id: string | null;
+  segment_id: string | null;
   recorded_at: Date;
   activity_category: "bike" | "run" | "swim";
   effort_type: "power" | "speed";
@@ -31,6 +32,12 @@ function createEffortRow(overrides: EffortRowOverrides = {}) {
     updated_at: null,
     profile_id: overrides.profile_id ?? OWNER_ID,
     activity_id: activityId,
+    segment_id:
+      overrides.segment_id === undefined
+        ? activityId === null
+          ? null
+          : crypto.randomUUID()
+        : overrides.segment_id,
     recorded_at: overrides.recorded_at ?? new Date("2026-03-10T00:00:00.000Z"),
     activity_category: overrides.activity_category ?? "bike",
     effort_type: overrides.effort_type ?? "power",

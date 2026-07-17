@@ -1,7 +1,10 @@
 import {
   activities,
+  activityArtifactLinks,
+  activityArtifacts,
   activityEfforts,
   activityFileIngestions,
+  activitySegments,
   integrationResourceLinks,
   profileMetrics,
 } from "@repo/db";
@@ -9,6 +12,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { getRequiredDb } from "../../db";
 import {
   type ActivitySubmission,
+  providerActivityId,
+  providerProjectionDecision,
   recordingSessionActivityId,
   submitActivity,
 } from "./submit-activity";
@@ -23,7 +28,81 @@ describe("recordingSessionActivityId", () => {
   });
 });
 
+describe("providerActivityId", () => {
+  it("is stable for exact redelivery and scoped by provider identity", () => {
+    const id = providerActivityId("profile-1", "wahoo", "external-1");
+    expect(id).toBe(providerActivityId("profile-1", "wahoo", "external-1"));
+    expect(id).not.toBe(providerActivityId("profile-1", "wahoo", "external-2"));
+  });
+});
+
+describe("providerProjectionDecision", () => {
+  const versions = {
+    existingParserVersion: "canonical-submission-v1",
+    existingDecodedVersion: "decoded-activity-artifact-v1",
+    existingMaterializerVersion: "activity-segments-v1",
+  };
+
+  it("makes exact redelivery a no-op and rejects out-of-order provider payloads", () => {
+    const existingProviderUpdatedAt = new Date("2026-07-17T12:00:00Z");
+    expect(
+      providerProjectionDecision({
+        ...versions,
+        existingProviderUpdatedAt,
+        incomingProviderUpdatedAt: existingProviderUpdatedAt,
+        existingDigest: "a".repeat(64),
+        incomingDigest: "a".repeat(64),
+      }),
+    ).toBe("exact-redelivery");
+    expect(
+      providerProjectionDecision({
+        ...versions,
+        existingProviderUpdatedAt,
+        incomingProviderUpdatedAt: new Date("2026-07-17T11:59:59Z"),
+        existingDigest: "b".repeat(64),
+        incomingDigest: "a".repeat(64),
+      }),
+    ).toBe("stale");
+  });
+
+  it("applies changed bytes only for a newer provider revision", () => {
+    expect(
+      providerProjectionDecision({
+        ...versions,
+        existingProviderUpdatedAt: new Date("2026-07-17T12:00:00Z"),
+        incomingProviderUpdatedAt: new Date("2026-07-17T12:00:00Z"),
+        existingDigest: "b".repeat(64),
+        incomingDigest: "a".repeat(64),
+      }),
+    ).toBe("conflict");
+    expect(
+      providerProjectionDecision({
+        ...versions,
+        existingProviderUpdatedAt: new Date("2026-07-17T12:00:00Z"),
+        incomingProviderUpdatedAt: new Date("2026-07-17T12:00:01Z"),
+        existingDigest: "b".repeat(64),
+        incomingDigest: "a".repeat(64),
+      }),
+    ).toBe("apply");
+  });
+});
+
 type DbClient = ReturnType<typeof getRequiredDb>;
+const segmentSet = {
+  version: 1 as const,
+  elapsedMs: 3_600_000,
+  segments: [
+    {
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      ordinal: 0,
+      role: "activity" as const,
+      category: "bike" as const,
+      startOffsetMs: 0,
+      endOffsetMs: 3_600_000,
+      summary: { version: 1 as const, timing: { timingCoverage: "unavailable" as const } },
+    },
+  ],
+};
 interface MockTx {
   execute(query: unknown): Promise<unknown>;
   select(): {
@@ -35,11 +114,17 @@ interface MockTx {
   };
   insert(table: unknown): {
     values(values: unknown): {
-      onConflictDoUpdate(input: unknown): Promise<void>;
-      onConflictDoNothing(): Promise<void>;
+      onConflictDoUpdate(input: unknown): { returning(fields?: unknown): Promise<unknown[]> };
+      onConflictDoNothing(): { returning(fields?: unknown): Promise<unknown[]> };
     };
   };
-  update(table: unknown): { set(values: unknown): { where(condition: unknown): Promise<void> } };
+  update(table: unknown): {
+    set(values: unknown): {
+      where(
+        condition: unknown,
+      ): PromiseLike<unknown> & { returning(fields?: unknown): Promise<unknown[]> };
+    };
+  };
   delete(table: unknown): { where(condition: unknown): Promise<void> };
 }
 
@@ -51,10 +136,15 @@ function createDb(
     activity_plan_id: "plan-1",
     name: "Recorded",
     notes: null,
-    type: "bike",
     is_private: true,
     started_at: new Date(),
     finished_at: new Date(),
+    elapsed_ms: 60_000,
+    active_ms: 60_000,
+    moving_ms: 60_000,
+    timing_coverage: "complete",
+    segments_revision: 1,
+    content_visibility: "private",
   },
 ) {
   const committed: unknown[] = [];
@@ -69,6 +159,7 @@ function createDb(
             const rows = table === activities && existingActivity ? [existingActivity] : [];
             return Object.assign(Promise.resolve(rows), {
               limit: vi.fn().mockResolvedValue(rows),
+              orderBy: vi.fn(() => ({ limit: vi.fn().mockResolvedValue(rows) })),
             });
           }),
         })),
@@ -79,18 +170,26 @@ function createDb(
           if (table === failOn) throw new Error("write failed");
           staged.push(table);
           insertedValues.push({ table, values });
+          const conflictResult = {
+            returning: vi.fn().mockResolvedValue([{ id: "persisted-id" }]),
+          };
           return {
-            onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
-            onConflictDoNothing: vi.fn().mockResolvedValue(undefined),
+            onConflictDoUpdate: vi.fn(() => conflictResult),
+            onConflictDoNothing: vi.fn(() => conflictResult),
+            returning: vi.fn().mockResolvedValue([{ id: "persisted-id" }]),
           };
         }),
       })),
       update: vi.fn((table: unknown) => ({
         set: vi.fn((values: unknown) => ({
-          where: vi.fn(async () => {
+          where: vi.fn(() => {
             updatedValues.push({ table, values });
             if (table === failOn) throw new Error("write failed");
             staged.push(table);
+            const result = Promise.resolve(undefined);
+            return Object.assign(result, {
+              returning: vi.fn().mockResolvedValue([{ id: "activity-1" }]),
+            });
           }),
         })),
       })),
@@ -118,18 +217,11 @@ function createInput(): ActivitySubmission {
     profileId: "profile-1",
     name: "Ride",
     notes: null,
-    activityType: "bike",
     isPrivate: false,
     startedAt: new Date("2026-01-01T10:00:00Z"),
     finishedAt: new Date("2026-01-01T11:00:00Z"),
-    durationSeconds: 3600,
-    movingSeconds: 3500,
+    elapsedMs: 3_600_000,
     distanceMeters: 20_000,
-    activityFilePath: "ride.fit",
-    activityFileSize: 123,
-    importSource: null,
-    importFileType: "fit",
-    importOriginalFileName: null,
     calories: 500,
     elevationGainMeters: 200,
     avgHeartRate: 140,
@@ -157,12 +249,74 @@ function createInput(): ActivitySubmission {
       integrationId: "integration-1",
       providerUpdatedAt: null,
     },
+    segmentSet,
   };
 }
 
 describe("submitActivity", () => {
+  it("rejects generated efforts that cross or mismatch segment boundaries", async () => {
+    const { db, committed } = createDb(undefined, null);
+    await expect(
+      submitActivity(db, {
+        ...createInput(),
+        analysis: {
+          efforts: [
+            {
+              id: "effort-crossing",
+              created_at: new Date(),
+              profile_id: "profile-1",
+              activity_id: "activity-1",
+              activity_category: "bike",
+              effort_type: "power",
+              duration_seconds: 300,
+              start_offset: 3_500,
+              recorded_at: new Date(),
+              unit: "watts",
+              value: 250,
+            },
+          ],
+          detectedLTHR: null,
+          activityCompletedAt: new Date(),
+        },
+      }),
+    ).rejects.toThrow("exactly one bike segment without crossing boundaries");
+    expect(committed).toEqual([]);
+  });
+
+  it("aborts before projection when the ingestion claim is lost", async () => {
+    const { db, committed } = createDb();
+    await expect(
+      submitActivity(db, {
+        kind: "enrich",
+        segmentSet,
+        activityId: "activity-1",
+        profileId: "profile-1",
+        deviceManufacturer: null,
+        deviceProduct: null,
+        summaryValues: { elapsed_ms: 3_600_000 },
+        efforts: [],
+        detectedLTHR: null,
+        activityCompletedAt: new Date(),
+        ingestion: {
+          source: "mobile_recording",
+          operationKey: "recording:1",
+          claimToken: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          artifact: {
+            sha256: "a".repeat(64),
+            byteSize: 3,
+            bucket: "activity-files",
+            path: `artifacts/sha256/profile-1/${"a".repeat(64)}`,
+            mediaType: "application/octet-stream",
+            format: "fit",
+          },
+        },
+      }),
+    ).rejects.toThrow("claim was lost before projection");
+    expect(committed).toEqual([]);
+  });
+
   it("atomically creates every canonical provider projection", async () => {
-    const { db, committed, insertedValues, transaction } = createDb();
+    const { db, committed, insertedValues, transaction } = createDb(undefined, null);
     await submitActivity(db, {
       ...createInput(),
       analysis: {
@@ -187,6 +341,14 @@ describe("submitActivity", () => {
           provider: "wahoo",
           externalId: "external-1",
           fileType: "fit",
+          artifact: {
+            sha256: "a".repeat(64),
+            byteSize: 123,
+            bucket: "activity-files",
+            path: `artifacts/sha256/profile-1/${"a".repeat(64)}`,
+            mediaType: "application/octet-stream",
+            format: "fit",
+          },
         },
       },
     });
@@ -194,13 +356,12 @@ describe("submitActivity", () => {
     expect(committed).toEqual(
       expect.arrayContaining([
         activities,
-        activities,
-        activities,
-        activities,
-        activities,
         integrationResourceLinks,
         activityEfforts,
         activityFileIngestions,
+        activityArtifacts,
+        activityArtifactLinks,
+        activitySegments,
       ]),
     );
     expect(insertedValues.find((entry) => entry.table === activityEfforts)?.values).toEqual([
@@ -224,11 +385,9 @@ describe("submitActivity", () => {
     const { db, committed } = createDb();
     await submitActivity(db, {
       kind: "enrich",
+      segmentSet,
       activityId: "activity-1",
       profileId: "profile-1",
-      activityFilePath: "recorded.fit",
-      activityFileSize: 50,
-      activityFileType: "fit",
       deviceManufacturer: null,
       deviceProduct: null,
       laps: [{ lap: 1 }],
@@ -237,8 +396,9 @@ describe("submitActivity", () => {
       summaryValues: {
         activity_id: "activity-1",
         profile_id: "profile-1",
-        duration_seconds: 60,
-        moving_seconds: 60,
+        elapsed_ms: 60_000,
+        active_ms: 60_000,
+        moving_ms: 60_000,
         distance_meters: 100,
       },
       efforts: [
@@ -275,11 +435,9 @@ describe("submitActivity", () => {
     const omitted = createDb();
     await submitActivity(omitted.db, {
       kind: "enrich",
+      segmentSet,
       activityId: "activity-1",
       profileId: "profile-1",
-      activityFilePath: "recorded.fit",
-      activityFileSize: 50,
-      activityFileType: "fit",
       deviceManufacturer: null,
       deviceProduct: null,
       summaryValues: {},
@@ -295,11 +453,9 @@ describe("submitActivity", () => {
     const cleared = createDb();
     await submitActivity(cleared.db, {
       kind: "enrich",
+      segmentSet,
       activityId: "activity-1",
       profileId: "profile-1",
-      activityFilePath: "recorded.fit",
-      activityFileSize: 50,
-      activityFileType: "fit",
       deviceManufacturer: null,
       deviceProduct: null,
       laps: null,
@@ -322,11 +478,9 @@ describe("submitActivity", () => {
     await expect(
       submitActivity(db, {
         kind: "enrich",
+        segmentSet,
         activityId: "foreign-activity",
         profileId: "profile-1",
-        activityFilePath: "recorded.fit",
-        activityFileSize: 1,
-        activityFileType: "fit",
         deviceManufacturer: null,
         deviceProduct: null,
         laps: null,
@@ -335,8 +489,9 @@ describe("submitActivity", () => {
         summaryValues: {
           activity_id: "foreign-activity",
           profile_id: "profile-1",
-          duration_seconds: 1,
-          moving_seconds: 1,
+          elapsed_ms: 1_000,
+          active_ms: 1_000,
+          moving_ms: 1_000,
           distance_meters: 1,
         },
         efforts: [],
@@ -351,11 +506,9 @@ describe("submitActivity", () => {
     const { db, insertedValues } = createDb();
     await submitActivity(db, {
       kind: "enrich",
+      segmentSet,
       activityId: "activity-1",
       profileId: "profile-1",
-      activityFilePath: "recorded.fit",
-      activityFileSize: 1,
-      activityFileType: "fit",
       deviceManufacturer: null,
       deviceProduct: null,
       laps: null,
@@ -364,8 +517,9 @@ describe("submitActivity", () => {
       summaryValues: {
         activity_id: "foreign-activity",
         profile_id: "foreign-profile",
-        duration_seconds: 1,
-        moving_seconds: 1,
+        elapsed_ms: 1_000,
+        active_ms: 1_000,
+        moving_ms: 1_000,
         distance_meters: 1,
       },
       efforts: [
@@ -405,11 +559,9 @@ describe("submitActivity", () => {
     await expect(
       submitActivity(db, {
         kind: "enrich",
+        segmentSet,
         activityId: "activity-1",
         profileId: "profile-1",
-        activityFilePath: "recorded.fit",
-        activityFileSize: 1,
-        activityFileType: "fit",
         deviceManufacturer: null,
         deviceProduct: null,
         summaryValues: {},
@@ -443,7 +595,6 @@ describe("submitActivity", () => {
     });
     const result = await submitActivity(db, {
       ...createInput(),
-      activityFilePath: null,
       providerProvenance: undefined,
       composition: { persist: (tx, context) => composition(tx as unknown as MockTx, context) },
     });

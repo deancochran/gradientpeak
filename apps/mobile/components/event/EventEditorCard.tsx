@@ -29,7 +29,9 @@ export type EventRecurrenceFrequency = "none" | "daily" | "weekly" | "monthly";
 export type ActivityPlanListItem = {
   id: string;
   name: string;
-  activity_category?: string | null;
+  categories: readonly string[];
+  primary_category: string;
+  structure?: unknown;
   description?: string | null;
   authoritative_metrics?: {
     estimated_duration?: number | null;
@@ -38,10 +40,7 @@ export type ActivityPlanListItem = {
 };
 
 function toActivityPlanCardData(plan: ActivityPlanListItem): ActivityPlan {
-  return {
-    ...plan,
-    activity_category: plan.activity_category ?? "other",
-  };
+  return plan;
 }
 
 export function toDateOnly(value: Date) {

@@ -157,7 +157,8 @@ describe("ResourcePickerResultRow", () => {
       mapActivityPlanToResourcePickerItem({
         id: "plan-2",
         name: "Endurance",
-        activity_category: "ride",
+        categories: ["bike"],
+        primary_category: "bike",
       }),
     ).toMatchObject({
       activityPlanCardData: { id: "plan-2", name: "Endurance" },

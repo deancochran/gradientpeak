@@ -1,15 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { type ActivityPlanStructureV3, compileActivityPlanV3 } from "@repo/core/activity-plan";
+import type { ActivityPlanStructureV3 } from "@repo/core/activity-plan";
 import { type ActivityPlanInsert, activityPlans } from "@repo/db";
 import { sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
+import { activityPlanStructureHash } from "./structure-hash";
 
 type ActivityPlansDb = ReturnType<typeof getRequiredDb>;
-
-/** Phase 3: delete with the required legacy activity_category column. */
-export function deriveLegacyActivityCategoryForRow(structure: ActivityPlanStructureV3) {
-  return compileActivityPlanV3(structure).primaryCategory;
-}
 
 type ImportedActivityPlanInput = {
   externalId: string;
@@ -33,7 +29,6 @@ export async function upsertImportedActivityPlan(
 ) {
   const id = randomUUID();
   const now = new Date();
-  const primaryCategory = deriveLegacyActivityCategoryForRow(input.template.structure);
   const payload = {
     id,
     created_at: now,
@@ -41,9 +36,9 @@ export async function upsertImportedActivityPlan(
     name: input.template.name,
     description: input.template.description?.trim() ? input.template.description.trim() : null,
     notes: input.template.notes ?? null,
-    activity_category: primaryCategory,
     structure: input.template.structure,
-    version: "1.0",
+    structure_hash: activityPlanStructureHash(input.template.structure),
+    gps_recording_enabled: true,
     profile_id: input.profileId,
     template_visibility: "private",
     import_provider: input.provider,
@@ -66,9 +61,9 @@ export async function upsertImportedActivityPlan(
         name: payload.name,
         description: payload.description,
         notes: payload.notes,
-        activity_category: payload.activity_category,
         structure: payload.structure,
-        version: payload.version,
+        structure_hash: payload.structure_hash,
+        gps_recording_enabled: payload.gps_recording_enabled,
         profile_id: payload.profile_id,
         template_visibility: payload.template_visibility,
         import_provider: payload.import_provider,

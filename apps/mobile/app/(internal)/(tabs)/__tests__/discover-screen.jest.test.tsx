@@ -78,6 +78,8 @@ const activityPlans = [
   {
     id: "ap-1",
     name: "Threshold Run",
+    categories: ["run"],
+    primary_category: "run",
     created_at: "2026-04-01T10:00:00.000Z",
   },
 ];

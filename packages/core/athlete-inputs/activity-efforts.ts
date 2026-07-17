@@ -232,6 +232,7 @@ export function formatActivityEffortValue(input: {
 const activityEffortWritableFieldsSchema = z
   .object({
     activity_id: z.string().uuid().optional().nullable(),
+    segment_id: z.string().uuid().optional().nullable(),
     activity_category: canonicalSportSchema,
     duration_seconds: z
       .number()
@@ -251,6 +252,20 @@ const activityEffortWritableFieldsSchema = z
 
 export const createActivityEffortInputSchema = activityEffortWritableFieldsSchema
   .superRefine((data, ctx) => {
+    if ((data.activity_id == null) !== (data.segment_id == null)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Activity-backed efforts require both activity_id and segment_id",
+        path: [data.activity_id == null ? "activity_id" : "segment_id"],
+      });
+    }
+    if (data.activity_id != null && data.start_offset == null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Activity-backed efforts require a parent-relative start_offset",
+        path: ["start_offset"],
+      });
+    }
     const definition = getActivityEffortDefinition({
       activityCategory: data.activity_category,
       effortType: data.effort_type,
@@ -319,6 +334,7 @@ export interface ActivityEffortUpdateExisting {
   value: number;
   recorded_at: Date | string;
   activity_id?: string | null;
+  segment_id?: string | null;
   start_offset?: number | null;
 }
 
@@ -329,6 +345,7 @@ export function normalizeActivityEffortUpdate(
   const effective = {
     activity_id:
       patch.activity_id === undefined ? (existing.activity_id ?? null) : patch.activity_id,
+    segment_id: patch.segment_id === undefined ? (existing.segment_id ?? null) : patch.segment_id,
     activity_category: patch.activity_category ?? existing.activity_category,
     duration_seconds: patch.duration_seconds ?? existing.duration_seconds,
     effort_type: patch.effort_type ?? existing.effort_type,
@@ -344,6 +361,7 @@ export function normalizeActivityEffortUpdate(
   const normalized = createActivityEffortInputSchema.parse(effective);
   return {
     activity_id: patch.activity_id === undefined ? undefined : normalized.activity_id,
+    segment_id: patch.segment_id === undefined ? undefined : normalized.segment_id,
     activity_category:
       patch.activity_category === undefined ? undefined : normalized.activity_category,
     duration_seconds:

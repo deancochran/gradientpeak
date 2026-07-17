@@ -1,6 +1,7 @@
 import { performance } from "node:perf_hooks";
 import type { DrizzleDbClient } from "@repo/db";
 import { describe, expect, it, vi } from "vitest";
+import { activityPlanStructureHash } from "../../application/activity-plans/structure-hash";
 import { getActivityPlansDerivedMetrics } from "../activity-plan-derived-metrics";
 import type { EstimationReadStore } from "../estimation-helpers";
 
@@ -18,39 +19,40 @@ function createBenchmarkPlan(index: number) {
   const ftpPercent = 70 + (index % 10);
   const identityBase = index * 3;
 
+  const structure = {
+    version: 3 as const,
+    segments: [
+      {
+        id: fixtureUuid(identityBase + 1),
+        role: "activity" as const,
+        category: "bike" as const,
+        name: "Benchmark ride",
+        intervals: [
+          {
+            id: fixtureUuid(identityBase + 2),
+            name: "Steady effort",
+            repetitions: 1,
+            steps: [
+              {
+                id: fixtureUuid(identityBase + 3),
+                name: "Ride",
+                duration: { type: "time" as const, seconds: durationSeconds },
+                targets: [{ type: "%FTP" as const, intensity: ftpPercent }],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
   return {
     id: `plan-${index}`,
     profile_id: "profile-1",
     name: `Plan ${index}`,
     description: null,
-    activity_category: "bike" as const,
-    structure: {
-      version: 3 as const,
-      segments: [
-        {
-          id: fixtureUuid(identityBase + 1),
-          role: "activity" as const,
-          category: "bike" as const,
-          name: "Benchmark ride",
-          intervals: [
-            {
-              id: fixtureUuid(identityBase + 2),
-              name: "Steady effort",
-              repetitions: 1,
-              steps: [
-                {
-                  id: fixtureUuid(identityBase + 3),
-                  name: "Ride",
-                  duration: { type: "time" as const, seconds: durationSeconds },
-                  targets: [{ type: "%FTP" as const, intensity: ftpPercent }],
-                },
-              ],
-            },
-          ],
-        },
-      ],
-    },
-    version: "1",
+    structure,
+    structure_hash: activityPlanStructureHash(structure),
+    gps_recording_enabled: true,
     updated_at: "2026-07-12T12:00:00.000Z",
   };
 }

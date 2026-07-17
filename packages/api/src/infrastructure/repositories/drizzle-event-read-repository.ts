@@ -1,4 +1,5 @@
 import { getScheduledDateKey } from "@repo/core";
+import { compileActivityPlanV3 } from "@repo/core/activity-plan";
 import { type DrizzleDbClient, schema } from "@repo/db";
 import {
   and,
@@ -40,6 +41,8 @@ function serializeActivityPlanRow(activityPlan: typeof schema.activityPlans.$inf
 
   return {
     ...activityPlan,
+    categories: compileActivityPlanV3(activityPlan.structure).categories,
+    primary_category: compileActivityPlanV3(activityPlan.structure).primaryCategory,
     created_at: activityPlan.created_at.toISOString(),
     updated_at: activityPlan.updated_at.toISOString(),
   };
@@ -210,8 +213,9 @@ export function createEventReadRepository(
         db
           .select({
             id: schema.activityPlans.id,
-            activity_category: schema.activityPlans.activity_category,
+            gps_recording_enabled: schema.activityPlans.gps_recording_enabled,
             structure: schema.activityPlans.structure,
+            structure_hash: schema.activityPlans.structure_hash,
           })
           .from(schema.activityPlans)
           .where(eq(schema.activityPlans.id, activityPlanId))
@@ -462,11 +466,12 @@ export function createEventReadRepository(
       const actualActivities = await db
         .select({
           id: schema.activities.id,
-          type: schema.activities.type,
+          name: schema.activities.name,
           started_at: schema.activities.started_at,
           finished_at: schema.activities.finished_at,
-          duration_seconds: schema.activities.duration_seconds,
-          moving_seconds: schema.activities.moving_seconds,
+          elapsed_ms: schema.activities.elapsed_ms,
+          active_ms: schema.activities.active_ms,
+          moving_ms: schema.activities.moving_ms,
           distance_meters: schema.activities.distance_meters,
           avg_heart_rate: schema.activities.avg_heart_rate,
           max_heart_rate: schema.activities.max_heart_rate,
@@ -556,7 +561,11 @@ export function createEventReadRepository(
       }
 
       if (input.activityCategory) {
-        conditions.push(eq(schema.activityPlans.activity_category, input.activityCategory));
+        conditions.push(
+          sql`${schema.activityPlans.structure} @> ${JSON.stringify({
+            segments: [{ category: input.activityCategory }],
+          })}::jsonb`,
+        );
       }
 
       const rows = await db

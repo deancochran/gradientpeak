@@ -1,5 +1,5 @@
 import { buildEstimationContext, estimateActivity, estimateMetrics } from "@repo/core/estimation";
-import type { DrizzleDbClient } from "@repo/db";
+import type { ActivityPlanRow, DrizzleDbClient } from "@repo/db";
 import {
   type ActivityPlanRouteSummary,
   type ActivityPlanWithEstimation,
@@ -13,10 +13,10 @@ import {
 
 export const ESTIMATOR_VERSION = "2026-05-estimated-provenance-v1";
 
-type SupportedActivityPlan = EstimationActivityPlanInput & {
-  updated_at: Date | string;
-  version: string;
-};
+type SupportedActivityPlan = EstimationActivityPlanInput &
+  Pick<ActivityPlanRow, "gps_recording_enabled" | "structure" | "structure_hash"> & {
+    updated_at: Date | string;
+  };
 
 export type ActivityPlanWithDerivedMetrics<TPlan extends EstimationActivityPlanInput> =
   ActivityPlanWithEstimation<TPlan> & {
@@ -38,7 +38,6 @@ type MemoizedEstimate = {
 
 function estimationMemoKey(plan: SupportedActivityPlan, route: unknown): string {
   return JSON.stringify({
-    activity_category: plan.activity_category,
     structure: plan.structure,
     route,
   });

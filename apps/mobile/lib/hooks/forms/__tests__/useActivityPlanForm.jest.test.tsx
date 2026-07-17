@@ -4,8 +4,8 @@ import { useActivityPlanCreationStore } from "@/lib/stores/activityPlanCreation"
 (globalThis as any).__DEV__ = false;
 const backMock = jest.fn();
 const alertMock = jest.fn();
-const createMock = jest.fn(async () => ({ id: "created-1" }));
-const updateMock = jest.fn(async () => ({ id: "updated-1" }));
+const createMock = jest.fn(async (_input: unknown) => ({ id: "created-1" }));
+const updateMock = jest.fn(async (_input: unknown) => ({ id: "updated-1" }));
 const getByIdMock = jest.fn(() => ({ data: undefined, isLoading: false }));
 
 jest.mock("expo-router", () => ({ __esModule: true, useRouter: () => ({ back: backMock }) }));
@@ -154,17 +154,15 @@ describe("useActivityPlanForm V3", () => {
     ).toBeDefined();
   });
 
-  it("submits only strict V3 and derives the primary category", async () => {
+  it("submits only strict V3 without a synthetic category field", async () => {
     useActivityPlanCreationStore.setState({ structure: validStructure() });
     const { result } = renderHook(() => useActivityPlanForm());
     await act(async () => {
       await expect(result.current.submit()).resolves.toEqual({ id: "created-1" });
     });
     expect(createMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        activity_category: "bike",
-        structure: expect.objectContaining({ version: 3 }),
-      }),
+      expect.objectContaining({ structure: expect.objectContaining({ version: 3 }) }),
     );
+    expect(createMock.mock.calls[0]?.[0]).not.toHaveProperty("activity_category");
   });
 });

@@ -509,7 +509,8 @@ export const CreateEventFlow = forwardRef<
 
   const handleSelectPlanResource = (item: ResourcePickerItem) => {
     handleSelectPlan({
-      activity_category: item.activityCategory ?? null,
+      categories: item.activityCategory ? [item.activityCategory] : ["other"],
+      primary_category: item.activityCategory ?? "other",
       authoritative_metrics: {
         estimated_duration: item.estimatedDuration ?? null,
         estimated_tss: item.estimatedTss ?? null,
@@ -517,7 +518,7 @@ export const CreateEventFlow = forwardRef<
       description: item.description ?? null,
       id: item.id,
       name: item.name,
-    } as ActivityPlanListItem);
+    });
     setActivityPlanPickerOpen(false);
   };
 

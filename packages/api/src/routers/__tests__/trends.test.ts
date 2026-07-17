@@ -16,6 +16,7 @@ const analysisMocks = vi.hoisted(() => ({
   createActivityAnalysisStore: vi.fn(() => ({ kind: "activity-analysis-store" })),
   buildActivityDerivedSummaryMap: vi.fn(),
   buildDynamicStressSeries: vi.fn(),
+  activityRows: new Map<string, any>(),
 }));
 
 const workloadMocks = vi.hoisted(() => ({
@@ -55,6 +56,46 @@ vi.mock("../../infrastructure/repositories", () => ({
 vi.mock("../../lib/activity-analysis", () => ({
   buildActivityDerivedSummaryMap: analysisMocks.buildActivityDerivedSummaryMap,
   buildDynamicStressSeries: analysisMocks.buildDynamicStressSeries,
+  loadActivitySegmentsByActivityId: vi.fn(
+    async (_db, ids: string[]) =>
+      new Map(
+        ids.map((id) => {
+          const row = analysisMocks.activityRows.get(id);
+          const activeSeconds = Math.max(row?.duration_seconds ?? 0, row?.moving_seconds ?? 0);
+          return [
+            id,
+            row
+              ? [
+                  {
+                    id,
+                    activity_id: id,
+                    ordinal: 0,
+                    role: "activity",
+                    category: row.type,
+                    start_offset_ms: 0,
+                    end_offset_ms: activeSeconds * 1_000,
+                    timing_coverage: "complete",
+                    active_ms: activeSeconds * 1_000,
+                    moving_ms: row.moving_seconds * 1_000,
+                    summary: {
+                      version: 1,
+                      timing: {
+                        timingCoverage: "complete",
+                        activeMs: activeSeconds * 1_000,
+                        movingMs: row.moving_seconds * 1_000,
+                      },
+                      distanceMeters: row.distance_meters,
+                      averageSpeedMetersPerSecond: row.avg_speed_mps ?? undefined,
+                      averagePowerWatts: row.avg_power ?? undefined,
+                      averageHeartRateBpm: row.avg_heart_rate ?? undefined,
+                    },
+                  },
+                ]
+              : [],
+          ];
+        }),
+      ),
+  ),
 }));
 
 vi.mock("../../lib/features", () => featureFlagMocks);
@@ -82,7 +123,7 @@ type ActivityOverrides = Partial<{
 }>;
 
 function createActivityRow(overrides: ActivityOverrides = {}) {
-  return {
+  const row = {
     id: overrides.id ?? crypto.randomUUID(),
     created_at: new Date("2026-01-01T00:00:00.000Z"),
     updated_at: null,
@@ -91,7 +132,7 @@ function createActivityRow(overrides: ActivityOverrides = {}) {
     description: null,
     type: overrides.type ?? "bike",
     started_at: overrides.started_at ?? new Date("2026-04-01T07:00:00.000Z"),
-    completed_at: overrides.started_at ?? new Date("2026-04-01T08:00:00.000Z"),
+    finished_at: overrides.started_at ?? new Date("2026-04-01T08:00:00.000Z"),
     duration_seconds: "duration_seconds" in overrides ? overrides.duration_seconds! : 3600,
     moving_seconds: "moving_seconds" in overrides ? overrides.moving_seconds! : 3600,
     distance_meters: "distance_meters" in overrides ? overrides.distance_meters! : 10000,
@@ -120,6 +161,14 @@ function createActivityRow(overrides: ActivityOverrides = {}) {
     weather_conditions: null,
     equipment_used: null,
   };
+  Object.assign(row, {
+    elapsed_ms: (row.duration_seconds ?? 0) * 1_000,
+    active_ms: (row.duration_seconds ?? 0) * 1_000,
+    moving_ms: row.moving_seconds === null ? null : row.moving_seconds * 1_000,
+    timing_coverage: "complete",
+  });
+  analysisMocks.activityRows.set(row.id, row);
+  return row;
 }
 
 function createSelectBuilder(result: unknown, callLog: string[]) {

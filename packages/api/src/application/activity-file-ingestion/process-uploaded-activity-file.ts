@@ -8,7 +8,10 @@ import {
 import { TRPCError } from "@trpc/server";
 import { and, eq } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
-import { markFailed, markProcessing, markReady, markUploaded } from "./ingestion-state";
+import { getApiStorageService } from "../../storage-service";
+import type { ActivityArtifactSubmission } from "../activities/submit-activity";
+import { cleanupActivityArtifactStaging, promoteActivityArtifact } from "./artifact-storage";
+import { markFailed, markProcessing, markUploaded } from "./ingestion-state";
 
 type DbClient = ReturnType<typeof getRequiredDb>;
 
@@ -16,9 +19,9 @@ interface LoggerLike {
   error(message: string, metadata?: unknown): void;
 }
 
-interface ParseStoredActivityFileResult<TParsedData> {
+interface ReadStoredActivityFileResult {
   activityFile: { size?: number | null };
-  parsedData: TParsedData;
+  data: Uint8Array;
 }
 
 export interface ProcessUploadedActivityFileInput {
@@ -31,20 +34,22 @@ export interface ProcessUploadedActivityFileInput {
 }
 
 export interface ProcessUploadedActivityFileDependencies<TParsedData> {
-  parseStoredActivityFile(input: {
+  readStoredActivityFile(input: {
+    activityFilePath: string;
+    removeOnParseFailure: false;
+  }): Promise<ReadStoredActivityFileResult>;
+  decodeActivityFile(input: {
+    data: Uint8Array;
     activityFilePath: string;
     fileType: ActivityFileType;
-    removeOnParseFailure: false;
-  }): Promise<ParseStoredActivityFileResult<TParsedData>>;
+  }): TParsedData;
   upsertExistingActivityFileEnrichment(
     db: DbClient,
     input: {
-      activityId: string;
-      profileId: string;
-      activityType: string;
-      activityFilePath: string;
-      activityFileSize: number | null;
-      activityFileType: ActivityFileType;
+      activity: ActivityRow;
+      artifact: ActivityArtifactSubmission;
+      ingestion: ActivityFileIngestionRow;
+      claimToken: string;
       parsedData: TParsedData;
     },
   ): Promise<void>;
@@ -88,6 +93,7 @@ async function markIngestionFailed(
     profileId: string;
     errorCode: string;
     errorMessage: string;
+    claimToken?: string;
   },
 ) {
   try {
@@ -96,6 +102,7 @@ async function markIngestionFailed(
       profileId: input.profileId,
       errorCode: input.errorCode,
       errorMessage: input.errorMessage,
+      claimToken: input.claimToken,
     });
   } catch (transitionError) {
     logger.error("Failed to mark activity file ingestion failed", getErrorDetails(transitionError));
@@ -130,25 +137,14 @@ async function loadOwnedActivityFileIngestion(
   return ownerRow;
 }
 
-async function attachFileMetadataToIngestion(
-  db: DbClient,
-  input: ProcessUploadedActivityFileInput,
-) {
-  await db
-    .update(activityFileIngestions)
-    .set({
-      file_path: input.activityFilePath,
-      file_size: input.fileSize ?? null,
-      file_type: input.fileType,
-      updated_at: new Date(),
-    })
-    .where(
-      and(
-        eq(activityFileIngestions.id, input.ingestionId),
-        eq(activityFileIngestions.activity_id, input.activityId),
-        eq(activityFileIngestions.profile_id, input.userId),
-      ),
-    );
+async function promoteArtifact(input: ProcessUploadedActivityFileInput, data: Uint8Array) {
+  return promoteActivityArtifact(getApiStorageService(), {
+    profileId: input.userId,
+    bucket: "activity-files",
+    stagingPath: input.activityFilePath,
+    bytes: data,
+    format: input.fileType,
+  });
 }
 
 async function advanceUploadedIngestion(
@@ -182,35 +178,47 @@ export async function processUploadedActivityFile<TParsedData>(
   deps: ProcessUploadedActivityFileDependencies<TParsedData>,
 ): Promise<ProcessUploadedActivityFileResult> {
   const { activity, ingestion } = await loadOwnedActivityFileIngestion(db, input);
+  let claimToken: string | undefined;
 
   try {
-    await attachFileMetadataToIngestion(db, input);
-    await advanceUploadedIngestion(db, input, ingestion);
+    const processingIngestion = await advanceUploadedIngestion(db, input, ingestion);
+    if (!processingIngestion.claim_token) {
+      throw new TRPCError({ code: "CONFLICT", message: "Activity file ingestion claim was lost" });
+    }
+    claimToken = processingIngestion.claim_token;
 
-    const { activityFile, parsedData } = await deps.parseStoredActivityFile({
+    const { data } = await deps.readStoredActivityFile({
+      activityFilePath: input.activityFilePath,
+      removeOnParseFailure: false,
+    });
+    const artifact = await promoteArtifact(input, data);
+    const parsedData = deps.decodeActivityFile({
+      data,
       activityFilePath: input.activityFilePath,
       fileType: input.fileType,
-      removeOnParseFailure: false,
     });
 
     await deps.upsertExistingActivityFileEnrichment(db, {
-      activityId: input.activityId,
-      profileId: input.userId,
-      activityType: activity.type,
-      activityFilePath: input.activityFilePath,
-      activityFileSize: input.fileSize ?? activityFile.size ?? null,
-      activityFileType: input.fileType,
+      activity,
+      artifact,
+      ingestion: processingIngestion,
+      claimToken: processingIngestion.claim_token,
       parsedData,
     });
 
-    const readyIngestion = await markReady(db, {
-      id: input.ingestionId,
-      profileId: input.userId,
-    });
+    const readyIngestion =
+      (await db.query.activityFileIngestions.findFirst({
+        where: and(
+          eq(activityFileIngestions.id, input.ingestionId),
+          eq(activityFileIngestions.profile_id, input.userId),
+        ),
+      })) ?? processingIngestion;
 
     const updatedActivity =
       (await db.query.activities.findFirst({ where: eq(activities.id, input.activityId) })) ??
       activity;
+
+    await cleanupActivityArtifactStaging(getApiStorageService(), artifact);
 
     return {
       activity: updatedActivity,
@@ -223,6 +231,7 @@ export async function processUploadedActivityFile<TParsedData>(
         profileId: input.userId,
         errorCode: error.code === "BAD_REQUEST" ? "parse_failed" : "process_failed",
         errorMessage: error.message,
+        claimToken,
       });
     }
 
@@ -235,6 +244,7 @@ export async function processUploadedActivityFile<TParsedData>(
       profileId: input.userId,
       errorCode: "process_failed",
       errorMessage: getErrorMessage(error),
+      claimToken,
     });
 
     throw new TRPCError({

@@ -1,6 +1,13 @@
 import { parseActivityFile } from "@repo/core/server/activity-files";
-import { activities, db, pool } from "@repo/db";
-import { and, asc, eq, isNotNull } from "drizzle-orm";
+import {
+  activities,
+  activityArtifactLinks,
+  activityArtifacts,
+  activitySegments,
+  db,
+  pool,
+} from "@repo/db";
+import { and, asc, eq } from "drizzle-orm";
 import { replayParsedActivityFileEvidenceProfile } from "../src/application/activity-file-ingestion/reconcile-parsed-activity-file-evidence";
 import { getApiStorageService } from "../src/storage-service";
 
@@ -69,8 +76,11 @@ async function main() {
   const storage = getApiStorageService();
   const profiles = await db
     .selectDistinct({ profileId: activities.profile_id })
-    .from(activities)
-    .where(isNotNull(activities.activity_file_path))
+    .from(activityArtifactLinks)
+    .innerJoin(activities, eq(activities.id, activityArtifactLinks.activity_id))
+    .where(
+      and(eq(activityArtifactLinks.role, "source"), eq(activityArtifactLinks.is_current, true)),
+    )
     .orderBy(asc(activities.profile_id));
   const aggregate = emptyAggregate();
   let nextProfile = 0;
@@ -82,17 +92,28 @@ async function main() {
       if (!profile) return;
       const candidates = await db
         .select({
-          activityFilePath: activities.activity_file_path,
+          activityFilePath: activityArtifacts.path,
           activityId: activities.id,
-          activityType: activities.type,
+          activityType: activitySegments.category,
         })
         .from(activities)
-        .where(
+        .innerJoin(
+          activityArtifactLinks,
           and(
-            eq(activities.profile_id, profile.profileId),
-            isNotNull(activities.activity_file_path),
+            eq(activityArtifactLinks.activity_id, activities.id),
+            eq(activityArtifactLinks.role, "source"),
+            eq(activityArtifactLinks.is_current, true),
           ),
         )
+        .innerJoin(activityArtifacts, eq(activityArtifacts.id, activityArtifactLinks.artifact_id))
+        .innerJoin(
+          activitySegments,
+          and(
+            eq(activitySegments.activity_id, activities.id),
+            eq(activitySegments.role, "activity"),
+          ),
+        )
+        .where(eq(activities.profile_id, profile.profileId))
         .orderBy(asc(activities.finished_at), asc(activities.id));
       aggregate.activitiesAttempted += candidates.length;
       const parsedActivities: Array<{
@@ -103,7 +124,7 @@ async function main() {
       let preparationFailed = false;
 
       for (const candidate of candidates) {
-        if (!candidate.activityFilePath) continue;
+        if (!candidate.activityType) continue;
         const { data: blob, error } = await storage.storage
           .from(BUCKET)
           .download(candidate.activityFilePath);

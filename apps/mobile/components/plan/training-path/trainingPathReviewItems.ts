@@ -24,7 +24,9 @@ export type ScheduledWeekEvent = {
     id?: string | null;
     name?: string | null;
     title?: string | null;
-    activity_category?: string | null;
+    categories?: readonly string[];
+    primary_category?: string | null;
+    structure?: unknown;
     description?: string | null;
     notes?: string | null;
     estimated_tss?: number | null;
@@ -124,7 +126,10 @@ export function toTrainingPathScheduledItem(
       ? {
           id: event.activity_plan.id,
           name: getScheduledEventTitle(event),
-          activity_category: event.activity_plan.activity_category ?? "other",
+          categories: event.activity_plan.categories ?? [
+            event.activity_plan.primary_category ?? "other",
+          ],
+          primary_category: event.activity_plan.primary_category ?? "other",
           description: event.activity_plan.description,
           notes: event.activity_plan.notes,
           authoritative_metrics: event.activity_plan.authoritative_metrics,
@@ -138,7 +143,10 @@ export function toTrainingPathScheduledItem(
           activity_plan: {
             id: event.activity_plan.id,
             name: getScheduledEventTitle(event),
-            activity_category: event.activity_plan.activity_category ?? "other",
+            categories: event.activity_plan.categories ?? [
+              event.activity_plan.primary_category ?? "other",
+            ],
+            primary_category: event.activity_plan.primary_category ?? "other",
             description: event.activity_plan.description,
             notes: event.activity_plan.notes,
             authoritative_metrics: event.activity_plan.authoritative_metrics,

@@ -1,12 +1,13 @@
 #!/usr/bin/env tsx
 
+import { getTemplatesByCategory, SYSTEM_TEMPLATES, type SystemTemplate } from "@repo/core";
 import { activityPlanStructureSchemaV3 } from "@repo/core/activity-plan";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { getTemplatesByCategory, SYSTEM_TEMPLATES, type SystemTemplate } from "../../core/samples";
 import { activityPlans } from "../src/schema/tables";
 import { deepEqual, prepareDbEnv } from "./_helpers";
+import { structureHash } from "./canonical-json";
 
 const args = process.argv.slice(2);
 const isDryRun = args.includes("--dry-run");
@@ -23,10 +24,10 @@ let pool: Pool | undefined;
 type ExistingActivityTemplate = typeof activityPlans.$inferSelect;
 
 function hasChanges(local: SystemTemplate, remote: ExistingActivityTemplate): boolean {
-  if (local.version !== remote.version) return true;
   if (local.name !== remote.name) return true;
   if (local.description !== (remote.description ?? null)) return true;
-  if (local.activity_category !== remote.activity_category) return true;
+  if ((local.gps_recording_enabled ?? true) !== remote.gps_recording_enabled) return true;
+  if (structureHash(local.structure) !== remote.structure_hash) return true;
   if ((local.notes ?? null) !== (remote.notes ?? null)) return true;
 
   const localStructure = JSON.parse(JSON.stringify(local.structure));
@@ -54,14 +55,7 @@ async function seedTemplates() {
   const existingTemplates = await db
     .select()
     .from(activityPlans)
-    .where(
-      category
-        ? and(
-            eq(activityPlans.is_system_template, true),
-            eq(activityPlans.activity_category, category),
-          )
-        : eq(activityPlans.is_system_template, true),
-    );
+    .where(eq(activityPlans.is_system_template, true));
 
   const idCounts = new Map<string, number>();
   for (const template of existingTemplates) {
@@ -102,11 +96,11 @@ async function seedTemplates() {
             await db
               .update(activityPlans)
               .set({
-                version: template.version,
                 name: template.name,
                 description: template.description,
-                activity_category: template.activity_category,
                 structure: template.structure,
+                structure_hash: structureHash(template.structure),
+                gps_recording_enabled: template.gps_recording_enabled ?? true,
                 notes: template.notes ?? null,
                 template_visibility: "public",
                 updated_at: new Date(),
@@ -129,11 +123,11 @@ async function seedTemplates() {
             profile_id: null,
             is_system_template: true,
             template_visibility: "public",
-            version: template.version,
             name: template.name,
             description: template.description,
-            activity_category: template.activity_category,
             structure: template.structure,
+            structure_hash: structureHash(template.structure),
+            gps_recording_enabled: template.gps_recording_enabled ?? true,
             notes: template.notes ?? null,
             created_at: now,
             updated_at: now,

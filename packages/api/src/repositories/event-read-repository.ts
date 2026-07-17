@@ -27,7 +27,10 @@ type SerializedActivityTime = Pick<ActivityRow, "activity_plan_id" | "id"> & {
   started_at: string;
 };
 type SerializedEventDate = { starts_at: string };
-type ConstraintActivityPlan = Pick<ActivityPlanRow, "id" | "activity_category" | "structure">;
+type ConstraintActivityPlan = Pick<
+  ActivityPlanRow,
+  "id" | "gps_recording_enabled" | "structure" | "structure_hash"
+>;
 type ProfileMetricValue = Pick<ProfileMetricRow, "value">;
 type ConstraintTrainingPlan = Pick<TrainingPlanRow, "id" | "structure">;
 type EstimationEffort = Pick<
@@ -47,7 +50,7 @@ type EstimationRoute = {
 type ProjectionActivity = Pick<
   ActivityRow,
   | "id"
-  | "type"
+  | "name"
   | "avg_heart_rate"
   | "max_heart_rate"
   | "avg_power"
@@ -55,8 +58,9 @@ type ProjectionActivity = Pick<
   | "avg_speed_mps"
   | "max_speed_mps"
   | "distance_meters"
-  | "duration_seconds"
-  | "moving_seconds"
+  | "elapsed_ms"
+  | "active_ms"
+  | "moving_ms"
   | "normalized_power"
   | "normalized_speed_mps"
   | "normalized_graded_speed_mps"

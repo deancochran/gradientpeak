@@ -3,6 +3,7 @@ import * as relationsModule from "./relations";
 import * as tablesModule from "./tables";
 
 export * from "../auth-schema";
+export * from "./canonical-categories";
 export * from "./enums";
 export * from "./relations";
 export * as relations from "./relations";

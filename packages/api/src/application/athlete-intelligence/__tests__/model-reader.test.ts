@@ -31,6 +31,7 @@ interface CapturedSelect {
 interface FluentSelect extends PromiseLike<unknown[]> {
   from(table: unknown): FluentSelect;
   leftJoin(...args: unknown[]): FluentSelect;
+  innerJoin(...args: unknown[]): FluentSelect;
   where(condition: unknown): FluentSelect;
   orderBy(...columns: unknown[]): FluentSelect;
   limit(value: number): FluentSelect;
@@ -58,6 +59,10 @@ function createFluentReadDb(results: readonly unknown[][]) {
           return query;
         },
         leftJoin: (...args) => {
+          capture.leftJoins.push(args);
+          return query;
+        },
+        innerJoin: (...args) => {
           capture.leftJoins.push(args);
           return query;
         },
@@ -329,7 +334,7 @@ describe("materializeAthleteIntelligenceModelInput", () => {
     });
     expect(selects[3]).toMatchObject({
       limit: modelReaderBounds.activities + 1,
-      leftJoins: [],
+      leftJoins: [[expect.anything(), expect.anything()]],
       orderBy: [expect.anything(), expect.anything()],
     });
     expect(selects[4]).toMatchObject({

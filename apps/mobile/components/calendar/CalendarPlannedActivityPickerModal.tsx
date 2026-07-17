@@ -185,7 +185,8 @@ export function CalendarPlannedActivityPickerModal({
         <ActivityPlanCard
           activityPlan={{
             ...plan,
-            activity_category: plan.activityCategory ?? "other",
+            categories: plan.activityCategory ? [plan.activityCategory] : ["other"],
+            primary_category: plan.activityCategory ?? "other",
             created_at: plan.createdAt ?? undefined,
             authoritative_metrics: {
               estimated_duration: plan.estimatedDuration,

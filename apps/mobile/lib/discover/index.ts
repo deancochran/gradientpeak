@@ -81,7 +81,9 @@ export type DiscoverActivityPlanItem = {
   id: string;
   name: string;
   description?: string | null;
-  activity_category: string;
+  categories: readonly string[];
+  primary_category: string;
+  structure?: unknown;
   created_at?: string;
   updated_at?: string;
   authoritative_metrics?: {
@@ -318,6 +320,7 @@ function scoreActivityPlanSearch(query: string, item: DiscoverActivityPlanItem) 
   return (
     scoreSearchTextMatch(query, item.name) +
     scoreSearchTextMatch(query, item.description) * 0.65 +
+    scoreSearchTextMatch(query, item.categories.join(" ")) * 0.4 +
     TYPE_WEIGHT.activityPlans
   );
 }
@@ -437,7 +440,7 @@ export function matchesActivityPlanDerivedFilters(
 
   if (
     filters.categoryIds.length > 0 &&
-    !filters.categoryIds.includes(item.activity_category as DiscoverCategoryId)
+    !filters.categoryIds.includes(item.primary_category as DiscoverCategoryId)
   ) {
     return false;
   }

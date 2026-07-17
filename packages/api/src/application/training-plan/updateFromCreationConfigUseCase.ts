@@ -16,11 +16,13 @@ import {
   buildConflictCommitError,
   buildNotFoundCommitError,
   buildStalePreviewCommitError,
+  buildStaleStructureCommitError,
 } from "../../lib/errors/trainingPlanCommitErrors";
 import type { TrainingPlanRepository } from "../../repositories";
 
 type UpdateFromCreationConfigInput = z.infer<typeof createFromCreationConfigInputSchema> & {
   plan_id: string;
+  expectedStructureHash: string;
   prior_inferred_snapshot?: InferredStateSnapshot;
 };
 
@@ -238,6 +240,14 @@ export async function updateFromCreationConfigUseCase<
       operation: "updateFromCreationConfig",
     });
   }
+  const currentStructureHash = existingPlan.structure_hash ?? input.params.expectedStructureHash;
+  if (currentStructureHash !== input.params.expectedStructureHash) {
+    throw buildStaleStructureCommitError({
+      operation: "updateFromCreationConfig",
+      expectedStructureHash: input.params.expectedStructureHash,
+      currentStructureHash,
+    });
+  }
 
   const evaluation = await input.deps.evaluateCreationConfig({
     creationContextReader: input.creationContextReader,
@@ -314,6 +324,7 @@ export async function updateFromCreationConfigUseCase<
     ),
     values: {
       id: existingPlan.id,
+      expectedStructureHash: input.params.expectedStructureHash,
       profileId: input.profileId,
       name: expandedPlan.name,
       description: expandedPlan.description ?? null,

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { api } from "@/lib/api";
 import { runActivitySubmissionQueueJob } from "@/lib/services/activitySubmissionQueue";
+import { getLocalActivityArtifactMetadata } from "@/lib/services/activitySubmissionQueue/localArtifact";
 import { ActivityFileUploader } from "@/lib/services/fit/ActivityFileUploader";
 import { prepareMobileRecordingStartup } from "@/lib/services/mobileRecordingStartup";
 
@@ -8,7 +9,6 @@ import { prepareMobileRecordingStartup } from "@/lib/services/mobileRecordingSta
 export function useStartupActivitySubmissionRecovery(profileId: string | null): void {
   const create = api.activities.createFromRecordingSummary.useMutation();
   const signedUrl = api.activityFiles.getSignedUploadUrl.useMutation();
-  const process = api.activityFiles.markUploadedAndProcess.useMutation();
 
   useEffect(() => {
     if (!profileId) return;
@@ -20,10 +20,10 @@ export function useStartupActivitySubmissionRecovery(profileId: string | null): 
           if (cancelled || job.status === "complete" || job.draft.profileId !== profileId) continue;
           await runActivitySubmissionQueueJob(job, {
             createFromRecordingSummary: create.mutateAsync,
+            getLocalArtifactMetadata: getLocalActivityArtifactMetadata,
             getSignedUploadUrl: (input) =>
               signedUrl.mutateAsync({ fileName: input.fileName, fileSize: input.fileSize ?? 0 }),
             uploadToSignedUrl: (path, url) => uploader.uploadToSignedUrl(path, url),
-            markUploadedAndProcess: process.mutateAsync,
           });
         }
       })
@@ -31,5 +31,5 @@ export function useStartupActivitySubmissionRecovery(profileId: string | null): 
     return () => {
       cancelled = true;
     };
-  }, [profileId, create.mutateAsync, signedUrl.mutateAsync, process.mutateAsync]);
+  }, [profileId, create.mutateAsync, signedUrl.mutateAsync]);
 }

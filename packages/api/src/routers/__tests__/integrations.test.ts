@@ -779,7 +779,7 @@ describe("integrationsRouter", () => {
     expect(mocks.repositories.oauthStates.create).not.toHaveBeenCalled();
   });
 
-  it("disconnect deletes the integration for the current user", async () => {
+  it("disconnect deletes only the integration and retains historical artifact storage", async () => {
     const caller = createCaller();
     mocks.repositories.integrations.deleteByProfileIdAndProvider.mockResolvedValue(undefined);
 
@@ -788,6 +788,7 @@ describe("integrationsRouter", () => {
       profileId: SESSION_USER_ID,
       provider: "wahoo",
     });
+    expect(mocks.routeDownload).not.toHaveBeenCalled();
   });
 
   it("refreshToken refreshes and persists new provider tokens", async () => {

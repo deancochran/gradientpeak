@@ -1,357 +1,125 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildActivityDerivedSummaryMap, buildDynamicStressSeries } from "../derived";
+import {
+  buildActivityDerivedSummaryMap,
+  buildActivitySegmentDerivedSummaries,
+  deriveActivityParentClassification,
+} from "../derived";
 
-function createStoreMock() {
-  const efforts = [
-    {
-      activity_id: "january-bike",
-      recorded_at: "2025-01-01T00:00:00.000Z",
-      effort_type: "power",
-      duration_seconds: 1200,
-      value: 200,
-      unit: "watts",
-      activity_category: "bike",
-      source: "imported",
-      method: "activity_file_best_effort",
-      provenance: {
-        activity_id: "january-bike",
-        derived_from: "activity_file_stream",
-      },
-    },
-    {
-      activity_id: "march-bike",
-      recorded_at: "2025-03-01T00:00:00.000Z",
-      effort_type: "power",
-      duration_seconds: 1200,
-      value: 300,
-      unit: "watts",
-      activity_category: "bike",
-      source: "imported",
-      method: "activity_file_best_effort",
-      provenance: {
-        activity_id: "march-bike",
-        derived_from: "activity_file_stream",
-      },
-    },
-  ];
+const PROFILE_ID = "11111111-1111-4111-8111-111111111111";
 
+function segment(
+  id: string,
+  ordinal: number,
+  category: "bike" | "run",
+  start: number,
+  end: number,
+) {
+  return {
+    id,
+    activity_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    ordinal,
+    role: "activity" as const,
+    category,
+    start_offset_ms: start,
+    end_offset_ms: end,
+    timing_coverage: "complete" as const,
+    active_ms: end - start,
+    moving_ms: end - start,
+    summary: {
+      version: 1,
+      timing: { timingCoverage: "complete", activeMs: end - start, movingMs: end - start },
+      distanceMeters: category === "bike" ? 20_000 : 5_000,
+      averagePowerWatts: category === "bike" ? 200 : undefined,
+      averageSpeedMetersPerSecond: category === "run" ? 3.5 : undefined,
+    },
+  };
+}
+
+function activity(segments: ReturnType<typeof segment>[]) {
+  return {
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    profile_id: PROFILE_ID,
+    started_at: new Date("2026-07-01T08:00:00.000Z"),
+    finished_at: new Date("2026-07-01T09:00:00.000Z"),
+    elapsed_ms: 3_600_000,
+    active_ms: 3_600_000,
+    moving_ms: 3_600_000,
+    timing_coverage: "complete" as const,
+    distance_meters: 25_000,
+    avg_heart_rate: null,
+    max_heart_rate: null,
+    segments,
+  };
+}
+
+function store() {
   return {
     loadContextEvidence: vi.fn(
-      async (input: { requests: Array<{ profileId: string }> }) =>
-        new Map(
-          [...new Set(input.requests.map((request) => request.profileId))].map((profileId) => [
-            profileId,
+      async () =>
+        new Map([
+          [
+            PROFILE_ID,
             {
               profile: { dob: null, gender: null },
-              profileMetrics: [],
-              recentEfforts: efforts.map((effort) => ({
-                ...effort,
-                recorded_at: new Date(effort.recorded_at),
-              })),
+              profileMetrics: [
+                {
+                  id: "ftp",
+                  metric_type: "ftp",
+                  value: 250,
+                  unit: "watts",
+                  recorded_at: new Date("2026-01-01T00:00:00.000Z"),
+                  source: "manual",
+                  method: null,
+                  calculation_version: null,
+                  provenance: null,
+                  reference_activity_id: null,
+                  reference_activity_category: null,
+                },
+              ],
+              recentEfforts: [],
             },
-          ]),
-        ),
+          ],
+        ]),
     ),
   };
 }
 
-function buildBikeActivity(id: string, finishedAt: string, profileId?: string) {
-  return {
-    id,
-    profile_id: profileId,
-    type: "bike" as const,
-    started_at: new Date(new Date(finishedAt).getTime() - 3_600_000),
-    finished_at: new Date(finishedAt),
-    duration_seconds: 3600,
-    moving_seconds: 3600,
-    distance_meters: 40000,
-    avg_heart_rate: null,
-    max_heart_rate: null,
-    avg_power: null,
-    max_power: null,
-    avg_speed_mps: null,
-    max_speed_mps: null,
-    normalized_power: 250,
-    normalized_speed_mps: null,
-    normalized_graded_speed_mps: null,
-  };
-}
-
-describe("buildActivityDerivedSummaryMap", () => {
-  it("keeps a stable series when the threshold calibration changes", async () => {
-    const result = await buildDynamicStressSeries({
-      store: createStoreMock() as any,
-      profileId: "profile-1",
-      activities: [
-        buildBikeActivity("older-activity", "2025-02-01T10:00:00.000Z"),
-        buildBikeActivity("later-activity", "2025-04-01T10:00:00.000Z"),
-      ],
-    });
-
-    expect(result.complete).toBe(true);
-    expect(result.seriesIdentity).toMatchObject({ sport: "bike", method: "power_threshold" });
-    expect(result.byDate.size).toBe(2);
-  });
-
-  it("uses only as-of efforts for each activity", async () => {
-    const derivedMap = await buildActivityDerivedSummaryMap({
-      store: createStoreMock() as any,
-      profileId: "profile-1",
-      activities: [
-        {
-          id: "older-activity",
-          type: "bike",
-          started_at: new Date("2025-02-01T09:00:00.000Z"),
-          finished_at: new Date("2025-02-01T10:00:00.000Z"),
-          duration_seconds: 3600,
-          moving_seconds: 3600,
-          distance_meters: 40000,
-          avg_heart_rate: null,
-          max_heart_rate: null,
-          avg_power: null,
-          max_power: null,
-          avg_speed_mps: null,
-          max_speed_mps: null,
-          normalized_power: 250,
-          normalized_speed_mps: null,
-          normalized_graded_speed_mps: null,
-        },
-        {
-          id: "later-activity",
-          type: "bike",
-          started_at: new Date("2025-04-01T09:00:00.000Z"),
-          finished_at: new Date("2025-04-01T10:00:00.000Z"),
-          duration_seconds: 3600,
-          moving_seconds: 3600,
-          distance_meters: 40000,
-          avg_heart_rate: null,
-          max_heart_rate: null,
-          avg_power: null,
-          max_power: null,
-          avg_speed_mps: null,
-          max_speed_mps: null,
-          normalized_power: 250,
-          normalized_speed_mps: null,
-          normalized_graded_speed_mps: null,
-        },
-      ],
-    });
-
-    expect(derivedMap.get("older-activity")).toMatchObject({
-      intensity_factor: 1.32,
-      tss: 173,
-      method: "power_threshold",
-      unavailable_reason: null,
-      computed_as_of: "2025-02-01T09:00:00.000Z",
-      tss_identity: { sport: "bike", method: "power_threshold" },
-    });
-    expect(derivedMap.get("later-activity")).toMatchObject({
-      intensity_factor: 0.88,
-      tss: 77,
-      computed_as_of: "2025-04-01T09:00:00.000Z",
+describe("segment-derived activity analysis", () => {
+  it("preserves ordered and repeated parent categories", () => {
+    const segments = [
+      segment("11111111-1111-4111-8111-111111111111", 0, "run", 0, 600_000),
+      segment("22222222-2222-4222-8222-222222222222", 1, "bike", 600_000, 1_800_000),
+      segment("33333333-3333-4333-8333-333333333333", 2, "run", 1_800_000, 2_400_000),
+    ];
+    expect(deriveActivityParentClassification(segments)).toEqual({
+      kind: "multisport",
+      categories: ["run", "bike", "run"],
+      category: null,
     });
   });
 
-  it("uses activity start as the evidence cutoff so an activity cannot calibrate itself", async () => {
-    const store = {
-      loadContextEvidence: vi.fn(
-        async () =>
-          new Map([
-            [
-              "profile-1",
-              {
-                profile: { dob: null, gender: null },
-                profileMetrics: [],
-                recentEfforts: [
-                  {
-                    activity_id: "activity-under-analysis",
-                    activity_category: "bike",
-                    duration_seconds: 1200,
-                    effort_type: "power",
-                    recorded_at: new Date("2025-04-01T09:00:00.000Z"),
-                    unit: "watts",
-                    value: 300,
-                    source: "imported",
-                    method: "activity_file_best_effort",
-                    provenance: {
-                      activity_id: "activity-under-analysis",
-                      derived_from: "activity_file_stream",
-                    },
-                  },
-                ],
-              },
-            ],
-          ]),
-      ),
-    };
-
-    const result = await buildActivityDerivedSummaryMap({
-      store: store as any,
-      profileId: "profile-1",
-      activities: [
-        {
-          ...buildBikeActivity("activity-under-analysis", "2025-04-01T10:00:00.000Z"),
-          started_at: new Date("2025-04-01T09:00:00.000Z"),
-        },
-      ],
+  it("derives category-safe loads and does not publish a multisport parent TSS", async () => {
+    const input = activity([
+      segment("11111111-1111-4111-8111-111111111111", 0, "bike", 0, 1_800_000),
+      segment("22222222-2222-4222-8222-222222222222", 1, "run", 1_800_000, 3_600_000),
+    ]);
+    const segments = await buildActivitySegmentDerivedSummaries({
+      store: store() as never,
+      profileId: PROFILE_ID,
+      activities: [input],
+    });
+    expect(segments.map(({ category }) => category)).toEqual(["bike", "run"]);
+    expect(segments[0]).toMatchObject({
+      dedupe_key: `activity-segment:${input.id}:11111111-1111-4111-8111-111111111111:load:v1`,
+      load_stream_key: "bike:power_threshold:activity_analysis:1",
     });
 
-    expect(store.loadContextEvidence).toHaveBeenCalledWith({
-      requests: [
-        {
-          profileId: "profile-1",
-          asOf: new Date("2025-04-01T09:00:00.000Z"),
-        },
-      ],
+    const parent = await buildActivityDerivedSummaryMap({
+      store: store() as never,
+      profileId: PROFILE_ID,
+      activities: [input],
     });
-    expect(result.get("activity-under-analysis")).toMatchObject({
-      intensity_factor: null,
-      tss: null,
-      method: null,
-      unavailable_reason: "threshold_missing",
-    });
-  });
-
-  it.each([
-    1, 20, 100, 525,
-  ])("loads context evidence once for %i activities without queuing per-activity reads", async (activityCount) => {
-    const store = createStoreMock();
-    const activities = Array.from({ length: activityCount }, (_, index) =>
-      buildBikeActivity(`activity-${index}`, "2025-04-01T10:00:00.000Z"),
-    );
-    const startedAt = performance.now();
-
-    const result = await buildActivityDerivedSummaryMap({
-      store: store as any,
-      profileId: "profile-1",
-      activities,
-    });
-    const elapsedMs = performance.now() - startedAt;
-
-    expect(result).toHaveLength(activityCount);
-    expect(store.loadContextEvidence).toHaveBeenCalledTimes(1);
-    expect(store.loadContextEvidence).toHaveBeenCalledWith({
-      requests: expect.arrayContaining([expect.objectContaining({ profileId: "profile-1" })]),
-    });
-    expect(
-      elapsedMs,
-      `${activityCount}-activity derivation=${elapsedMs.toFixed(2)}ms`,
-    ).toBeLessThan(500);
-  });
-
-  it("isolates each activity owner's evidence instead of using the feed viewer context", async () => {
-    const ownerA = "owner-a";
-    const ownerB = "owner-b";
-    const store = {
-      loadContextEvidence: vi.fn(
-        async () =>
-          new Map([
-            [
-              ownerA,
-              {
-                profile: { dob: null, gender: null },
-                profileMetrics: [
-                  {
-                    metric_type: "ftp",
-                    recorded_at: new Date("2025-01-01T00:00:00.000Z"),
-                    unit: "W",
-                    value: 200,
-                  },
-                ],
-                recentEfforts: [],
-              },
-            ],
-            [
-              ownerB,
-              {
-                profile: { dob: null, gender: null },
-                profileMetrics: [
-                  {
-                    metric_type: "ftp",
-                    recorded_at: new Date("2025-01-01T00:00:00.000Z"),
-                    unit: "W",
-                    value: 300,
-                  },
-                ],
-                recentEfforts: [],
-              },
-            ],
-          ]),
-      ),
-    };
-
-    const result = await buildActivityDerivedSummaryMap({
-      store: store as any,
-      profileId: "feed-viewer",
-      activities: [
-        buildBikeActivity("owner-a-activity", "2025-01-02T10:00:00.000Z", ownerA),
-        buildBikeActivity("owner-b-activity", "2025-01-02T10:00:00.000Z", ownerB),
-      ],
-    });
-
-    expect(store.loadContextEvidence).toHaveBeenCalledWith({
-      requests: [
-        expect.objectContaining({ profileId: ownerA }),
-        expect.objectContaining({ profileId: ownerB }),
-      ],
-    });
-    expect(result.get("owner-a-activity")?.tss).toBe(156);
-    expect(result.get("owner-b-activity")?.tss).toBe(69);
-  });
-
-  it("lets later dynamic reads incorporate older backfilled history without rewriting later rows", async () => {
-    const derivedMap = await buildActivityDerivedSummaryMap({
-      store: createStoreMock() as any,
-      profileId: "profile-1",
-      activities: [
-        {
-          id: "historical-import",
-          type: "bike",
-          started_at: new Date("2025-02-01T09:00:00.000Z"),
-          finished_at: new Date("2025-02-01T10:00:00.000Z"),
-          duration_seconds: 3600,
-          moving_seconds: 3600,
-          distance_meters: 40000,
-          avg_heart_rate: null,
-          max_heart_rate: null,
-          avg_power: null,
-          max_power: null,
-          avg_speed_mps: null,
-          max_speed_mps: null,
-          normalized_power: 250,
-          normalized_speed_mps: null,
-          normalized_graded_speed_mps: null,
-        },
-        {
-          id: "existing-later-activity",
-          type: "bike",
-          started_at: new Date("2025-04-01T09:00:00.000Z"),
-          finished_at: new Date("2025-04-01T10:00:00.000Z"),
-          duration_seconds: 3600,
-          moving_seconds: 3600,
-          distance_meters: 40000,
-          avg_heart_rate: null,
-          max_heart_rate: null,
-          avg_power: null,
-          max_power: null,
-          avg_speed_mps: null,
-          max_speed_mps: null,
-          normalized_power: 250,
-          normalized_speed_mps: null,
-          normalized_graded_speed_mps: null,
-        },
-      ],
-    });
-
-    expect(derivedMap.get("historical-import")).toMatchObject({
-      intensity_factor: 1.32,
-      tss: 173,
-      computed_as_of: "2025-02-01T09:00:00.000Z",
-    });
-    expect(derivedMap.get("existing-later-activity")).toMatchObject({
-      intensity_factor: 0.88,
-      tss: 77,
-      computed_as_of: "2025-04-01T09:00:00.000Z",
-    });
+    expect(parent.has(input.id)).toBe(false);
+    expect(parent.has(input.segments[0]?.id ?? "missing-segment")).toBe(true);
   });
 });

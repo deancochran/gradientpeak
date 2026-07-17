@@ -2,7 +2,7 @@ import type { InferredStateSnapshot } from "@repo/core";
 import type { TrainingPlanRow } from "@repo/db";
 import type { TRPCError } from "@trpc/server";
 import { describe, expect, it } from "vitest";
-
+import { activityPlanStructureHash } from "../../../application/activity-plans/structure-hash";
 import { createQueryMapDbMock } from "../../../test/mock-query-db";
 import { createTrainingPlanRepository } from "../drizzle-training-plan-repository";
 
@@ -43,6 +43,7 @@ function createTrainingPlanRow(overrides: Partial<TrainingPlanRow> = {}): Traini
     name: "Base plan",
     description: "Build fitness",
     structure: {},
+    structure_hash: activityPlanStructureHash({}),
     template_visibility: "private",
     content_visibility: "private",
     is_system_template: false,
@@ -100,6 +101,7 @@ describe("drizzle-training-plan-repository", () => {
         name: "Spring build",
         description: "Target June event",
         structure: { id: planId, block: "base" },
+        structure_hash: activityPlanStructureHash({ id: planId, block: "base" }),
       },
     });
   });
@@ -121,9 +123,11 @@ describe("drizzle-training-plan-repository", () => {
     const payload = insert?.payload as {
       id?: unknown;
       structure?: { id?: unknown };
+      structure_hash?: unknown;
     };
     expect(payload.id).toEqual(expect.stringMatching(/^[0-9a-f-]{36}$/));
     expect(payload.structure?.id).toBe(payload.id);
+    expect(payload.structure_hash).toBe(activityPlanStructureHash(payload.structure));
   });
 
   it("throws BAD_REQUEST when create returns no row", async () => {
@@ -177,6 +181,7 @@ describe("drizzle-training-plan-repository", () => {
 
     const result = await repository.updateTrainingPlan({
       id: "plan-2",
+      expectedStructureHash: updatedPlan.structure_hash,
       profileId: "profile-1",
       name: "Peak block",
       description: "Sharpening",
@@ -191,24 +196,26 @@ describe("drizzle-training-plan-repository", () => {
         name: "Peak block",
         description: "Sharpening",
         structure: { block: "peak" },
+        structure_hash: activityPlanStructureHash({ block: "peak" }),
       },
     });
   });
 
-  it("throws BAD_REQUEST when update returns no row", async () => {
+  it("throws a stale conflict when update returns no row", async () => {
     const repository = createTrainingPlanRepository(createMissingReturningDb("update") as any);
 
     await expect(
       repository.updateTrainingPlan({
         id: "plan-1",
+        expectedStructureHash: `v1:sha256:${"a".repeat(64)}`,
         profileId: "profile-1",
         name: "Updated",
         description: null,
         structure: {},
       }),
     ).rejects.toMatchObject({
-      code: "BAD_REQUEST",
-      message: "Failed to update training plan",
+      code: "CONFLICT",
+      message: "STALE_STRUCTURE_HASH",
     } satisfies Partial<TRPCError>);
   });
 
@@ -337,6 +344,14 @@ describe("drizzle-training-plan-repository", () => {
             inferred_state_snapshot: snapshot,
           },
         },
+        structure_hash: activityPlanStructureHash({
+          blocks: [{ id: "block-1" }],
+          metadata: {
+            source: "generator",
+            version: 3,
+            inferred_state_snapshot: snapshot,
+          },
+        }),
       },
     });
   });

@@ -3,6 +3,7 @@ import {
   socialCommentEntityTypeValues,
   socialLikeEntityTypeValues,
 } from "@repo/core";
+import { canonicalActivityCategoryDbValues } from "./canonical-categories";
 import { integrationProviderEnum, likeEntityTypeEnum } from "./enums";
 
 /**
@@ -11,6 +12,11 @@ import { integrationProviderEnum, likeEntityTypeEnum } from "./enums";
  * the narrower Core comment taxonomy.
  */
 export const coreEnumParityManifest = {
+  canonical_activity_categories: {
+    coreValues: canonicalActivityCategoryDbValues,
+    databaseValues: canonicalActivityCategoryDbValues,
+    strategy: "reference-table-seed" as const,
+  },
   integration_provider: {
     coreValues: [...integrationProviderIdValues].sort(),
     databaseValues: integrationProviderEnum.enumValues,

@@ -17,6 +17,15 @@ const clearPendingFinalizedArtifactMock = jest.fn(async () => undefined);
 const deleteFinalizedArtifactFilesMock = jest.fn(async () => undefined);
 const invalidatePostActivityIngestionQueriesMock = jest.fn(async () => undefined);
 const setQueryDataMock = jest.fn();
+const localArtifactMetadataMock = jest.fn(async (_filePath: string) => ({
+  sha256: "a".repeat(64),
+  byteSize: 1234,
+}));
+
+jest.mock("@/lib/services/activitySubmissionQueue/localArtifact", () => ({
+  getLocalActivityArtifactMetadata: (...args: unknown[]) =>
+    localArtifactMetadataMock(...(args as [string])),
+}));
 
 jest.mock("react-native", () => ({
   __esModule: true,
@@ -174,7 +183,15 @@ describe("useActivitySubmission", () => {
       }),
     );
     expect(createFromRecordingSummaryMock).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "Queued ride", source: "mobile_recording" }),
+      expect.objectContaining({
+        name: "Queued ride",
+        executionManifest,
+        acceptedArtifact: expect.objectContaining({
+          sha256: "a".repeat(64),
+          path: "activities/profile-1/activity.fit",
+        }),
+        source: "mobile_recording",
+      }),
     );
     expect(uploadToSignedUrlMock).toHaveBeenCalledWith(
       "file:///activity.fit",
@@ -209,6 +226,7 @@ describe("useActivitySubmission", () => {
       activityId: "activity-existing",
       ingestionId: "ingestion-existing",
       remoteFilePath: "activities/profile-1/existing.fit",
+      artifactSha256: "a".repeat(64),
       status: "failed",
       attempts: 3,
       lastError: "app restarted",
@@ -227,13 +245,7 @@ describe("useActivitySubmission", () => {
     expect(createFromRecordingSummaryMock).not.toHaveBeenCalled();
     expect(getSignedUploadUrlMock).not.toHaveBeenCalled();
     expect(uploadToSignedUrlMock).not.toHaveBeenCalled();
-    expect(markUploadedAndProcessMock).toHaveBeenCalledWith({
-      activityId: "activity-existing",
-      ingestionId: "ingestion-existing",
-      activityFilePath: "activities/profile-1/existing.fit",
-      fileSize: 1234,
-      fileType: "fit",
-    });
+    expect(markUploadedAndProcessMock).not.toHaveBeenCalled();
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 
@@ -257,15 +269,14 @@ describe("useActivitySubmission", () => {
         movingSeconds: 3500,
         distanceMeters: 25000,
       },
-      activityId: "activity-existing",
-      ingestionId: "ingestion-existing",
       remoteFilePath: "activities/profile-1/existing.fit",
+      artifactSha256: "a".repeat(64),
       status: "failed",
       attempts: 1,
       createdAt: "2026-01-01T11:00:00.000Z",
       updatedAt: "2026-01-01T11:05:00.000Z",
     });
-    markUploadedAndProcessMock.mockResolvedValueOnce({ success: false });
+    createFromRecordingSummaryMock.mockRejectedValueOnce(new Error("server unavailable"));
 
     const { result } = renderHook(() => useActivitySubmission(service as any));
     await waitFor(() => expect(result.current.isReady).toBe(true));

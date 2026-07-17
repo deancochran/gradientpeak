@@ -78,7 +78,8 @@ describe("buildTrainingPathScheduledReviewItems", () => {
           activity_plan: {
             id: "activity-plan-1",
             name: "Tempo Builder",
-            activity_category: "ride",
+            categories: ["bike"],
+            primary_category: "bike",
             authoritative_metrics: { estimated_tss: 65 },
           },
         },
@@ -128,7 +129,8 @@ describe("buildTrainingPathScheduledReviewItems", () => {
           activity_plan: {
             id: "activity-plan-1",
             name: "Tempo Builder",
-            activity_category: "run",
+            categories: ["run"],
+            primary_category: "run",
             authoritative_metrics: { estimated_tss: 65 },
           },
         },

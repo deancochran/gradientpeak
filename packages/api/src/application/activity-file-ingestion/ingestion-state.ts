@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   type ActivityFileIngestionSource,
   type ActivityFileIngestionStatus,
@@ -22,6 +23,7 @@ export interface CreateActivityFileIngestionInput {
   filePath?: string | null;
   fileSize?: number | null;
   fileType?: string | null;
+  operationKey?: string;
   now?: Date;
 }
 
@@ -31,6 +33,7 @@ export interface TransitionActivityFileIngestionInput {
   status: ActivityFileIngestionStatus;
   errorCode?: string | null;
   errorMessage?: string | null;
+  claimToken?: string;
   now?: Date;
 }
 
@@ -74,14 +77,18 @@ export async function createActivityFileIngestion(
       source: input.source,
       provider: input.provider ?? null,
       external_id: input.externalId ?? null,
-      file_path: input.filePath ?? null,
-      file_size: input.fileSize ?? null,
-      file_type: input.fileType ?? null,
+      operation_key:
+        input.operationKey ??
+        `${input.source}:${input.provider ?? "direct"}:${input.externalId ?? input.activityId}`,
       status: "pending_upload",
       attempt_count: 0,
       requested_at: now,
       created_at: now,
       updated_at: now,
+    })
+    .onConflictDoUpdate({
+      target: [activityFileIngestions.profile_id, activityFileIngestions.operation_key],
+      set: { activity_id: input.activityId, updated_at: now },
     })
     .returning();
 
@@ -113,19 +120,25 @@ function buildTransitionUpdate(
         last_error_message: null,
         failed_at: null,
       };
-    case "processing":
+    case "processing": {
+      const claimToken = randomUUID();
       return {
         ...base,
         attempt_count: row.attempt_count + 1,
         started_at: now,
+        claim_token: claimToken,
+        lease_expires_at: new Date(now.getTime() + 5 * 60 * 1000),
         last_error_code: null,
         last_error_message: null,
         failed_at: null,
       };
+    }
     case "ready":
       return {
         ...base,
         completed_at: now,
+        claim_token: null,
+        lease_expires_at: null,
         last_error_code: null,
         last_error_message: null,
       };
@@ -135,6 +148,8 @@ function buildTransitionUpdate(
         failed_at: now,
         last_error_code: input.errorCode ?? "unknown_error",
         last_error_message: input.errorMessage ?? "Activity file ingestion failed",
+        claim_token: null,
+        lease_expires_at: null,
       };
     case "pending_upload":
       return {
@@ -162,7 +177,13 @@ export async function transitionActivityFileIngestion(
   const [updated] = await db
     .update(activityFileIngestions)
     .set(buildTransitionUpdate(existing, input))
-    .where(scopedIngestionWhere(input))
+    .where(
+      and(
+        scopedIngestionWhere(input),
+        eq(activityFileIngestions.status, existing.status),
+        input.claimToken ? eq(activityFileIngestions.claim_token, input.claimToken) : undefined,
+      ),
+    )
     .returning();
 
   if (!updated) {

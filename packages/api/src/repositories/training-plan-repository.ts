@@ -36,6 +36,7 @@ export interface CreateTrainingPlanRecordInput
 export interface UpdateTrainingPlanRecordInput
   extends Pick<TrainingPlanInsert, "description" | "name" | "structure"> {
   id: string;
+  expectedStructureHash: string;
   profileId: string;
 }
 

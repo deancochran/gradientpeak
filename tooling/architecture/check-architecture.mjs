@@ -396,7 +396,19 @@ function symbolValues(root, mapping) {
   const path = resolve(root, mapping.file);
   const sourceFile = sourceFileFor(mapping.file, readFileSync(path, "utf8"));
   const declarations = new Map();
+  const imports = new Map();
   for (const statement of sourceFile.statements) {
+    if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)) {
+      const bindings = statement.importClause?.namedBindings;
+      if (bindings && ts.isNamedImports(bindings)) {
+        for (const element of bindings.elements) {
+          imports.set(element.name.text, {
+            imported: element.propertyName?.text ?? element.name.text,
+            source: statement.moduleSpecifier.text,
+          });
+        }
+      }
+    }
     if (!ts.isVariableStatement(statement)) continue;
     for (const declaration of statement.declarationList.declarations) {
       if (ts.isIdentifier(declaration.name) && declaration.initializer)
@@ -410,7 +422,16 @@ function symbolValues(root, mapping) {
     if (ts.isIdentifier(expression) && !visited.has(expression.text)) {
       visited.add(expression.text);
       const initializer = declarations.get(expression.text);
-      return initializer ? resolveLiteralValues(initializer, visited) : [];
+      if (initializer) return resolveLiteralValues(initializer, visited);
+      const imported = imports.get(expression.text);
+      if (imported?.source.startsWith("@repo/core/")) {
+        const subpath = imported.source.slice("@repo/core/".length);
+        const candidate = `packages/core/${subpath}.ts`;
+        if (existsSync(resolve(root, candidate))) {
+          return symbolValues(root, { file: candidate, symbol: imported.imported });
+        }
+      }
+      return [];
     }
     if (ts.isCallExpression(expression)) {
       const argument = /(?:pgEnum|\.enum)$/.test(expression.expression.getText())

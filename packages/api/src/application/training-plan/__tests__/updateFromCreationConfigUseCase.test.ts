@@ -1,10 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import { updateFromCreationConfigUseCase } from "../updateFromCreationConfigUseCase";
 
+const STRUCTURE_HASH = `v1:sha256:${"a".repeat(64)}`;
+
 function createRepositoryMock(existingPlan: Record<string, unknown> | null) {
   return {
     createTrainingPlan: vi.fn(),
-    getOwnedTrainingPlan: vi.fn(async () => existingPlan),
+    getOwnedTrainingPlan: vi.fn(async () =>
+      existingPlan
+        ? { ...existingPlan, structure_hash: existingPlan.structure_hash ?? STRUCTURE_HASH }
+        : null,
+    ),
     updateTrainingPlan: vi.fn(async (input) => ({
       id: existingPlan?.id ?? input.id,
       profile_id: input.profileId,
@@ -89,6 +95,7 @@ describe("updateFromCreationConfigUseCase", () => {
       profileId: "profile-123",
       params: {
         plan_id: "11111111-1111-4111-8111-111111111111",
+        expectedStructureHash: STRUCTURE_HASH,
         minimal_plan: { plan_start_date: "2026-01-05", goals: [] },
         creation_input: {},
         preview_snapshot_token: "preview-token",
@@ -140,6 +147,7 @@ describe("updateFromCreationConfigUseCase", () => {
         profileId: "profile-123",
         params: {
           plan_id: "11111111-1111-4111-8111-111111111111",
+          expectedStructureHash: STRUCTURE_HASH,
           minimal_plan: { plan_start_date: "2026-01-05", goals: [] },
           creation_input: {},
           preview_snapshot_token: "preview-token",
@@ -178,6 +186,7 @@ describe("updateFromCreationConfigUseCase", () => {
         profileId: "profile-123",
         params: {
           plan_id: "11111111-1111-4111-8111-111111111111",
+          expectedStructureHash: STRUCTURE_HASH,
           minimal_plan: { plan_start_date: "2026-01-05", goals: [] },
           creation_input: {},
           preview_snapshot_token: "stale-preview-token",
@@ -216,6 +225,7 @@ describe("updateFromCreationConfigUseCase", () => {
         profileId: "profile-123",
         params: {
           plan_id: "11111111-1111-4111-8111-111111111111",
+          expectedStructureHash: STRUCTURE_HASH,
           minimal_plan: { plan_start_date: "2026-01-05", goals: [] },
           creation_input: {},
           preview_snapshot_token: "preview-token",
@@ -245,6 +255,7 @@ describe("updateFromCreationConfigUseCase", () => {
         profileId: "profile-123",
         params: {
           plan_id: "11111111-1111-4111-8111-111111111111",
+          expectedStructureHash: STRUCTURE_HASH,
           minimal_plan: { plan_start_date: "2026-01-05", goals: [] },
           creation_input: {},
           preview_snapshot_token: "preview-token",
@@ -267,6 +278,7 @@ describe("updateFromCreationConfigUseCase", () => {
         profileId: "profile-123",
         params: {
           plan_id: "11111111-1111-4111-8111-111111111111",
+          expectedStructureHash: STRUCTURE_HASH,
           minimal_plan: { plan_start_date: "2026-01-05", goals: [] },
           creation_input: {},
           preview_snapshot_token: "preview-token",

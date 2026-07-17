@@ -96,7 +96,8 @@ describe("CalendarPlannedActivityPickerModal", () => {
       {
         id: "favorite-1",
         name: "Favorite Long Run",
-        activity_category: "outdoor_run",
+        categories: ["run"],
+        primary_category: "run",
         estimated_duration: 5400,
         estimated_tss: 90,
         description: "Steady aerobic long run.",
@@ -107,7 +108,8 @@ describe("CalendarPlannedActivityPickerModal", () => {
       {
         id: "recent-1",
         name: "Recent Tempo",
-        activity_category: "outdoor_run",
+        categories: ["run"],
+        primary_category: "run",
         estimated_duration: 3600,
         estimated_tss: 78,
         updated_at: "2026-03-21T00:00:00.000Z",
@@ -115,7 +117,8 @@ describe("CalendarPlannedActivityPickerModal", () => {
       {
         id: "recent-2",
         name: "Recent Bike Build",
-        activity_category: "outdoor_bike",
+        categories: ["bike"],
+        primary_category: "bike",
         estimated_duration: 4200,
         estimated_tss: 82,
         updated_at: "2026-03-20T00:00:00.000Z",
@@ -123,7 +126,8 @@ describe("CalendarPlannedActivityPickerModal", () => {
       {
         id: "recent-3",
         name: "Recent Swim",
-        activity_category: "indoor_swim",
+        categories: ["swim"],
+        primary_category: "swim",
         estimated_duration: 2400,
         estimated_tss: 45,
         updated_at: "2026-03-19T00:00:00.000Z",
@@ -131,7 +135,8 @@ describe("CalendarPlannedActivityPickerModal", () => {
       {
         id: "recent-4",
         name: "Recent Strength",
-        activity_category: "indoor_strength",
+        categories: ["strength"],
+        primary_category: "strength",
         estimated_duration: 1800,
         estimated_tss: 30,
         updated_at: "2026-03-18T00:00:00.000Z",
@@ -139,7 +144,8 @@ describe("CalendarPlannedActivityPickerModal", () => {
       {
         id: "suggested-1",
         name: "Threshold Builder",
-        activity_category: "outdoor_run",
+        categories: ["run"],
+        primary_category: "run",
         estimated_duration: 4500,
         estimated_tss: 95,
         description: "Sharp threshold progression.",
@@ -148,7 +154,8 @@ describe("CalendarPlannedActivityPickerModal", () => {
       {
         id: "suggested-2",
         name: "VO2 Session",
-        activity_category: "outdoor_run",
+        categories: ["run"],
+        primary_category: "run",
         estimated_duration: 3900,
         estimated_tss: 92,
         updated_at: "2026-02-28T00:00:00.000Z",
@@ -156,7 +163,8 @@ describe("CalendarPlannedActivityPickerModal", () => {
       {
         id: "suggested-3",
         name: "Brick Builder",
-        activity_category: "outdoor_bike",
+        categories: ["bike"],
+        primary_category: "bike",
         estimated_duration: 4800,
         estimated_tss: 88,
         updated_at: "2026-02-27T00:00:00.000Z",
@@ -164,7 +172,8 @@ describe("CalendarPlannedActivityPickerModal", () => {
       {
         id: "suggested-4",
         name: "Progressive Climb",
-        activity_category: "outdoor_bike",
+        categories: ["bike"],
+        primary_category: "bike",
         estimated_duration: 5100,
         estimated_tss: 84,
         updated_at: "2026-02-26T00:00:00.000Z",
@@ -172,7 +181,8 @@ describe("CalendarPlannedActivityPickerModal", () => {
       {
         id: "all-1",
         name: "Easy Recovery Spin",
-        activity_category: "outdoor_bike",
+        categories: ["bike"],
+        primary_category: "bike",
         estimated_duration: 2400,
         estimated_tss: 28,
         updated_at: "2026-02-20T00:00:00.000Z",
@@ -196,7 +206,7 @@ describe("CalendarPlannedActivityPickerModal", () => {
     expect(screen.getByTestId("calendar-planned-activity-section-recent")).toBeTruthy();
     expect(screen.getByTestId("calendar-planned-activity-section-favorites")).toBeTruthy();
     expect(screen.getByTestId("calendar-planned-activity-filter-all")).toBeTruthy();
-    expect(screen.getByTestId("calendar-planned-activity-filter-outdoor_run")).toBeTruthy();
+    expect(screen.getByTestId("calendar-planned-activity-filter-run")).toBeTruthy();
   });
 
   it("supports category filtering and search-driven results", () => {
@@ -209,7 +219,7 @@ describe("CalendarPlannedActivityPickerModal", () => {
       />,
     );
 
-    fireEvent.press(screen.getByTestId("calendar-planned-activity-filter-outdoor_run"));
+    fireEvent.press(screen.getByTestId("calendar-planned-activity-filter-run"));
 
     expect(screen.getByText("Threshold Builder")).toBeTruthy();
     expect(screen.queryByText("Easy Recovery Spin")).toBeNull();

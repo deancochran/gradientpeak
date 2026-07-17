@@ -44,12 +44,31 @@ function submission(
     profileId,
     name: `Canonical ${randomUUID()}`,
     notes: null,
-    activityType: "bike",
     isPrivate: true,
     startedAt: new Date("2026-01-01T10:00:00Z"),
     finishedAt: new Date("2026-01-01T11:00:00Z"),
-    durationSeconds: 3600,
-    movingSeconds: 3500,
+    elapsedMs: 3_600_000,
+    activeMs: 3_500_000,
+    movingMs: 3_500_000,
+    timingCoverage: "complete",
+    segmentSet: {
+      version: 1,
+      elapsedMs: 3_600_000,
+      segments: [
+        {
+          id: randomUUID(),
+          ordinal: 0,
+          role: "activity",
+          category: "bike",
+          startOffsetMs: 0,
+          endOffsetMs: 3_600_000,
+          summary: {
+            version: 1,
+            timing: { timingCoverage: "complete", activeMs: 3_500_000, movingMs: 3_500_000 },
+          },
+        },
+      ],
+    },
     distanceMeters: 20_000,
     calories: null,
     elevationGainMeters: null,
@@ -115,7 +134,6 @@ describe("canonical activity persistence against PostgreSQL", () => {
       profileId,
       activityFilePath: "enriched.fit",
       activityFileSize: 99,
-      activityFileType: "fit" as const,
       deviceManufacturer: "Wahoo",
       deviceProduct: "ELEMNT",
       laps: [],
@@ -193,14 +211,10 @@ describe("canonical activity persistence against PostgreSQL", () => {
     };
     const first = await submitActivity(db, {
       ...submission(profileId),
-      activityFilePath: "first.fit",
-      activityFileSize: 1,
       providerProvenance: provider,
     });
     const duplicate = await submitActivity(db, {
       ...submission(profileId),
-      activityFilePath: "second.fit",
-      activityFileSize: 2,
       providerProvenance: provider,
     }).then(
       () => null,

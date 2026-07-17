@@ -15,10 +15,8 @@ import {
 import { TRPCError } from "@trpc/server";
 import { and, asc, count, desc, eq, gt, gte, ilike, inArray, lt, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import {
-  deriveLegacyActivityCategoryForRow,
-  upsertImportedActivityPlan,
-} from "../application/activity-plans/upsertImportedActivityPlan";
+import { activityPlanStructureHash } from "../application/activity-plans/structure-hash";
+import { upsertImportedActivityPlan } from "../application/activity-plans/upsertImportedActivityPlan";
 import { enqueueProviderPlannedActivityJobs } from "../application/events";
 import type { Context } from "../context";
 import { getRequiredDb } from "../db";
@@ -122,11 +120,13 @@ function getEstimationStore(ctx: Context) {
 }
 
 const createActivityPlanInput = activityPlanCreateSchema.omit({ route_id: true }).safeExtend({
+  gps_recording_enabled: z.boolean().default(true),
   structure: activityPlanStructureSchemaV3,
   template_visibility: templateVisibilitySchema.optional(),
 });
 
 const updateActivityPlanInput = activityPlanUpdateSchema.omit({ route_id: true }).safeExtend({
+  gps_recording_enabled: z.boolean().optional(),
   structure: activityPlanStructureSchemaV3.optional(),
   template_visibility: templateVisibilitySchema.optional(),
 });
@@ -134,11 +134,12 @@ const updateActivityPlanInput = activityPlanUpdateSchema.omit({ route_id: true }
 const updateActivityPlanWithIdInput = updateActivityPlanInput
   .safeExtend({
     id: uuidSchema,
+    expectedStructureHash: z.string().regex(/^v1:sha256:[0-9a-f]{64}$/),
   })
   .strict()
   .superRefine((input, ctx) => {
     const updateKeys = Object.entries(input).filter(
-      ([key, value]) => key !== "id" && value !== undefined,
+      ([key, value]) => !["id", "expectedStructureHash"].includes(key) && value !== undefined,
     );
     if (updateKeys.length === 0) {
       ctx.addIssue({
@@ -174,15 +175,10 @@ function serializeActivityPlanRow(row: ActivityPlanRow | unknown) {
   return serializedActivityPlanSchema.parse(row);
 }
 
-function toPublicActivityPlan<T extends { activity_category: unknown; structure: unknown }>(
-  plan: T,
-) {
-  const { activity_category: _storageCategory, ...publicPlan } = plan;
+function toPublicActivityPlan<T extends { structure: unknown }>(plan: T) {
   const compiled = compileActivityPlanV3(plan.structure);
   return {
-    ...publicPlan,
-    // Derived compatibility summary only; V3 segments remain authoritative.
-    activity_category: compiled.primaryCategory,
+    ...plan,
     categories: compiled.categories,
     primary_category: compiled.primaryCategory,
   };
@@ -349,8 +345,6 @@ function buildCreateValues(
 ): ActivityPlanInsert {
   const now = new Date();
   const templateVisibility = input.template_visibility ?? defaultContentVisibility;
-  const primaryCategory = deriveLegacyActivityCategoryForRow(input.structure);
-
   return {
     id: randomUUID(),
     created_at: now,
@@ -359,9 +353,9 @@ function buildCreateValues(
     name: input.name,
     description: input.description?.trim() ? input.description.trim() : null,
     notes: input.notes ?? null,
-    activity_category: primaryCategory,
     structure: input.structure,
-    version: "1.0",
+    structure_hash: activityPlanStructureHash(input.structure),
+    gps_recording_enabled: input.gps_recording_enabled,
     template_visibility: templateVisibility,
     content_visibility: templateVisibility,
     import_provider: null,
@@ -415,6 +409,17 @@ export const activityPlansRouter = createTRPCRouter({
       ...(input.activityCategories ?? []),
     ]);
 
+    if (requestedCategories.size > 0) {
+      conditions.push(
+        or(
+          ...[...requestedCategories].map(
+            (category) =>
+              sql`${activityPlans.structure} @> ${JSON.stringify({ segments: [{ category }] })}::jsonb`,
+          ),
+        ),
+      );
+    }
+
     const trimmedSearch = input.search?.trim();
 
     if (trimmedSearch) {
@@ -428,92 +433,35 @@ export const activityPlansRouter = createTRPCRouter({
       ? Number.parseInt(input.cursor.slice(6), 10)
       : null;
 
-    let pagedRows: Array<z.infer<typeof activityPlanRowSchema>>;
-    if (requestedCategories.size > 0) {
-      const batchSize = Math.max(50, Math.min(200, (limit + 1) * 4));
-      const matches: Array<z.infer<typeof activityPlanRowSchema>> = [];
-      const matchesToSkip = offsetCursor ?? 0;
-      let matchedCount = 0;
-      let scanCursor: { createdAt: Date; id: string } | undefined =
-        input.cursor && offsetCursor === null
-          ? (() => {
-              const [cursorDate, cursorId] = input.cursor.split("_");
-              return cursorDate && cursorId
-                ? { createdAt: new Date(cursorDate), id: cursorId }
-                : undefined;
-            })()
-          : undefined;
+    if (input.cursor && offsetCursor === null) {
+      const [cursorDate, cursorId] = input.cursor.split("_");
+      if (cursorDate && cursorId) {
+        const cursorCreatedAt = new Date(cursorDate);
+        conditions.push(
+          or(
+            lt(activityPlans.created_at, cursorCreatedAt),
+            and(eq(activityPlans.created_at, cursorCreatedAt), gt(activityPlans.id, cursorId)),
+          ),
+        );
+      }
+    }
 
-      while (matches.length < limit + 1) {
-        const batchConditions = [...conditions];
-        if (scanCursor) {
-          batchConditions.push(
-            or(
-              lt(activityPlans.created_at, scanCursor.createdAt),
-              and(
-                eq(activityPlans.created_at, scanCursor.createdAt),
-                gt(activityPlans.id, scanCursor.id),
-              ),
-            ),
-          );
-        }
-
-        const batch = z.array(activityPlanRowSchema).parse(
-          await db
+    const rows =
+      offsetCursor !== null
+        ? await db
             .select()
             .from(activityPlans)
-            .where(and(...batchConditions))
+            .where(and(...conditions))
             .orderBy(desc(activityPlans.created_at), asc(activityPlans.id))
-            .limit(batchSize),
-        );
-
-        for (const row of batch) {
-          const matchesCategory = compileActivityPlanV3(row.structure).categories.some((category) =>
-            requestedCategories.has(category),
-          );
-          if (!matchesCategory) continue;
-          if (matchedCount++ < matchesToSkip) continue;
-          matches.push(row);
-          if (matches.length === limit + 1) break;
-        }
-
-        const lastRow = batch.at(-1);
-        if (batch.length < batchSize || !lastRow) break;
-        scanCursor = { createdAt: lastRow.created_at, id: lastRow.id };
-      }
-
-      pagedRows = matches;
-    } else {
-      if (input.cursor && offsetCursor === null) {
-        const [cursorDate, cursorId] = input.cursor.split("_");
-        if (cursorDate && cursorId) {
-          const cursorCreatedAt = new Date(cursorDate);
-          conditions.push(
-            or(
-              lt(activityPlans.created_at, cursorCreatedAt),
-              and(eq(activityPlans.created_at, cursorCreatedAt), gt(activityPlans.id, cursorId)),
-            ),
-          );
-        }
-      }
-
-      const rows =
-        offsetCursor !== null
-          ? await db
-              .select()
-              .from(activityPlans)
-              .where(and(...conditions))
-              .orderBy(desc(activityPlans.created_at), asc(activityPlans.id))
-              .limit(limit + 1)
-              .offset(offsetCursor)
-          : await db
-              .select()
-              .from(activityPlans)
-              .where(and(...conditions))
-              .orderBy(desc(activityPlans.created_at), asc(activityPlans.id))
-              .limit(limit + 1);
-      pagedRows = z.array(activityPlanRowSchema).parse(rows);
-    }
+            .limit(limit + 1)
+            .offset(offsetCursor)
+        : await db
+            .select()
+            .from(activityPlans)
+            .where(and(...conditions))
+            .orderBy(desc(activityPlans.created_at), asc(activityPlans.id))
+            .limit(limit + 1);
+    const pagedRows = z.array(activityPlanRowSchema).parse(rows);
 
     const hasMore = pagedRows.length > limit;
     const pageRows = hasMore ? pagedRows.slice(0, limit) : pagedRows;
@@ -710,10 +658,7 @@ export const activityPlansRouter = createTRPCRouter({
     }
 
     const metrics = await computePlanMetrics(
-      {
-        activity_category: compileActivityPlanV3(input.structure).primaryCategory,
-        structure: input.structure,
-      },
+      { structure: input.structure },
       estimationStore,
       ctx.session.user.id,
     );
@@ -750,7 +695,7 @@ export const activityPlansRouter = createTRPCRouter({
     .mutation(async ({ ctx, input }) => {
       const db = getRequiredDb(ctx);
       const estimationStore = createEventReadRepository(db);
-      const { id, ...updates } = input;
+      const { id, expectedStructureHash, ...updates } = input;
 
       const [existingRow] = await db
         .select()
@@ -766,6 +711,17 @@ export const activityPlansRouter = createTRPCRouter({
       }
 
       activityPlanRowSchema.parse(existingRow);
+      if (existingRow.structure_hash !== expectedStructureHash) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "STALE_STRUCTURE_HASH",
+          cause: {
+            code: "STALE_STRUCTURE_HASH",
+            expectedStructureHash,
+            currentStructureHash: existingRow.structure_hash,
+          },
+        });
+      }
 
       if (updates.structure) {
         try {
@@ -782,10 +738,7 @@ export const activityPlansRouter = createTRPCRouter({
       const metricsUpdates: Partial<ActivityPlanInsert> = {};
       if (updates.structure) {
         await computePlanMetrics(
-          {
-            activity_category: compileActivityPlanV3(updates.structure).primaryCategory,
-            structure: updates.structure,
-          },
+          { structure: updates.structure },
           estimationStore,
           ctx.session.user.id,
         );
@@ -801,10 +754,11 @@ export const activityPlansRouter = createTRPCRouter({
               ? updates.description.trim()
               : null,
         notes: updates.notes,
-        activity_category: updates.structure
-          ? deriveLegacyActivityCategoryForRow(updates.structure)
-          : undefined,
         structure: updates.structure,
+        structure_hash: updates.structure
+          ? activityPlanStructureHash(updates.structure)
+          : undefined,
+        gps_recording_enabled: updates.gps_recording_enabled,
         template_visibility: updates.template_visibility,
         content_visibility: updates.template_visibility,
         ...metricsUpdates,
@@ -813,13 +767,20 @@ export const activityPlansRouter = createTRPCRouter({
       const [updatedRow] = await db
         .update(activityPlans)
         .set(updateValues)
-        .where(and(eq(activityPlans.id, id), eq(activityPlans.profile_id, ctx.session.user.id)))
+        .where(
+          and(
+            eq(activityPlans.id, id),
+            eq(activityPlans.profile_id, ctx.session.user.id),
+            eq(activityPlans.structure_hash, expectedStructureHash),
+          ),
+        )
         .returning();
 
       if (!updatedRow) {
         throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Failed to update activity plan",
+          code: "CONFLICT",
+          message: "STALE_STRUCTURE_HASH",
+          cause: { code: "STALE_STRUCTURE_HASH", expectedStructureHash },
         });
       }
 
@@ -986,10 +947,7 @@ export const activityPlansRouter = createTRPCRouter({
       }
 
       await computePlanMetrics(
-        {
-          activity_category: compileActivityPlanV3(originalPlan.structure).primaryCategory,
-          structure: originalPlan.structure,
-        },
+        { structure: originalPlan.structure },
         estimationStore,
         ctx.session.user.id,
       );
@@ -1004,9 +962,9 @@ export const activityPlansRouter = createTRPCRouter({
           name: input.newName?.trim() || `${originalPlan.name} (Copy)`,
           description: originalPlan.description,
           notes: originalRow.notes ?? null,
-          activity_category: deriveLegacyActivityCategoryForRow(originalPlan.structure),
           structure: originalPlan.structure,
-          version: originalPlan.version,
+          structure_hash: activityPlanStructureHash(originalPlan.structure),
+          gps_recording_enabled: originalPlan.gps_recording_enabled,
           profile_id: ctx.session.user.id,
           template_visibility: "private",
           import_provider: null,

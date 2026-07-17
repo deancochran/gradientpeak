@@ -80,7 +80,8 @@ describe("ActivityPlanCard", () => {
           id: "plan-1",
           name: "Tempo Builder",
           description: "Progressive tempo with a strong finish.",
-          activity_category: "run",
+          categories: ["run"],
+          primary_category: "run",
           updated_at: "2026-03-21T08:00:00.000",
           owner: null,
         }}
@@ -104,7 +105,8 @@ describe("ActivityPlanCard", () => {
         activityPlan={{
           id: "plan-1",
           name: "Tempo Builder",
-          activity_category: "run",
+          categories: ["run"],
+          primary_category: "run",
           updated_at: "2026-03-21T08:00:00.000",
           owner: {
             id: "owner-1",
@@ -130,7 +132,8 @@ describe("ActivityPlanCard", () => {
           id: "plan-list-1",
           name: "Tempo Builder",
           description: "Progressive tempo with a strong finish.",
-          activity_category: "run",
+          categories: ["run"],
+          primary_category: "run",
           authoritative_metrics: {
             estimated_duration: 3600,
             estimated_tss: 72,

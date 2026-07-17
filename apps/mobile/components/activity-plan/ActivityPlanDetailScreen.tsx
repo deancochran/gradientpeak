@@ -154,9 +154,10 @@ export function ActivityPlanDetailScreen({
   });
 
   const activityPlan = vm.activityPlan;
+  const planCategory = activityPlan?.primary_category ?? activityPlan?.categories?.[0] ?? "other";
   const authoritativeMetrics = getAuthoritativeActivityPlanMetrics(activityPlan);
   const planRoute = getActivityPlanRoute(activityPlan);
-  const activityConfig = getActivityCategoryConfig(activityPlan?.activity_category ?? "other");
+  const activityConfig = getActivityCategoryConfig(planCategory);
 
   const recordingCandidate = React.useMemo<RecordingObjectActionCandidate | null>(() => {
     if (!activityPlan) return null;
@@ -164,10 +165,10 @@ export function ActivityPlanDetailScreen({
       objectKind: "activity_plan",
       objectId: activityPlan.id,
       label: activityPlan.name,
-      category: activityPlan.activity_category,
+      category: planCategory,
       plan: activityPlan,
     };
-  }, [activityPlan]);
+  }, [activityPlan, planCategory]);
 
   const recordingAction = recordingCandidate
     ? resolveRecordingObjectAction({
@@ -381,7 +382,7 @@ export function ActivityPlanDetailScreen({
             />
 
             <ActivityPlanSummary
-              activityCategory={activityPlan.activity_category}
+              activityCategory={planCategory}
               description={activityPlan.description}
               estimatedDuration={authoritativeMetrics.estimated_duration ?? null}
               estimatedTss={tss}

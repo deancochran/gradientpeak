@@ -22,6 +22,7 @@ function buildEffortRow(overrides: Record<string, unknown> = {}) {
     updated_at: null,
     profile_id: userId,
     activity_id: null,
+    segment_id: null,
     recorded_at: new Date("2026-03-01T10:00:00.000Z"),
     activity_category: "run" as const,
     effort_type: "speed" as const,
@@ -41,6 +42,7 @@ function buildEffortRow(overrides: Record<string, unknown> = {}) {
 function createCaller(options?: {
   selectResult?: unknown;
   selectOneResult?: unknown[];
+  selectOneResults?: unknown[][];
   insertResult?: unknown[];
   updateResult?: unknown[];
   deleteResult?: unknown;
@@ -51,7 +53,12 @@ function createCaller(options?: {
   const updateResult = options?.updateResult ?? [];
   const deleteResult = options?.deleteResult ?? [];
 
-  const limit = vi.fn(async () => selectOneResult);
+  let selectOneIndex = 0;
+  const limit = vi.fn(async () =>
+    options?.selectOneResults
+      ? (options.selectOneResults[selectOneIndex++] ?? [])
+      : selectOneResult,
+  );
   const orderBy = vi.fn(async () => selectResult);
   const whereForSelect = vi.fn(() => ({ limit, orderBy }));
   const from = vi.fn(() => ({ where: whereForSelect }));
@@ -162,6 +169,61 @@ describe("activityEffortsRouter", () => {
     expect(insertedPayload.recorded_at.toISOString()).toBe(input.recorded_at);
   });
 
+  it("rejects activity-backed efforts without one exact segment", async () => {
+    const activityId = "33333333-3333-4333-8333-333333333333";
+    const segmentId = "44444444-4444-4444-8444-444444444444";
+    const { caller, spies } = createCaller({ selectOneResults: [[]] });
+
+    await expect(
+      caller.create({
+        activity_id: activityId,
+        segment_id: segmentId,
+        activity_category: "run",
+        duration_seconds: 60,
+        effort_type: "speed",
+        value: 4.2,
+        start_offset: 30,
+        recorded_at: "2026-03-02T12:34:56.000Z",
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Effort must reference exactly one owned activity segment",
+    });
+    expect(spies.insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects an effort range that crosses its referenced segment", async () => {
+    const { caller, spies } = createCaller({
+      selectOneResults: [
+        [
+          {
+            role: "activity",
+            category: "run",
+            start_offset_ms: 60_000,
+            end_offset_ms: 120_000,
+          },
+        ],
+      ],
+    });
+
+    await expect(
+      caller.create({
+        activity_id: "33333333-3333-4333-8333-333333333333",
+        segment_id: "44444444-4444-4444-8444-444444444444",
+        activity_category: "run",
+        duration_seconds: 40,
+        effort_type: "speed",
+        value: 4.2,
+        start_offset: 90,
+        recorded_at: "2026-03-02T12:34:56.000Z",
+      }),
+    ).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+      message: "Effort range must remain within its referenced activity segment",
+    });
+    expect(spies.insert).not.toHaveBeenCalled();
+  });
+
   it("updates an owned effort and normalizes timestamps", async () => {
     const oldRecordedAt = new Date("2026-03-01T10:00:00.000Z");
     const newRecordedAt = "2026-03-02T12:34:56.000Z";
@@ -207,6 +269,7 @@ describe("activityEffortsRouter", () => {
     const activityId = "33333333-3333-4333-8333-333333333333";
     const imported = buildEffortRow({
       activity_id: activityId,
+      segment_id: "44444444-4444-4444-8444-444444444444",
       activity_category: "bike",
       effort_type: "power",
       duration_seconds: 300,
@@ -219,13 +282,24 @@ describe("activityEffortsRouter", () => {
     const manualOverride = buildEffortRow({
       ...imported,
       id: randomUuidState.next,
+      segment_id: imported.segment_id,
       value: 330,
       source: "manual",
       method: "manual_activity_effort_entry",
       provenance: { trusted: true, observation_type: "observed", entered_by: "athlete" },
     });
     const { caller, spies } = createCaller({
-      selectOneResult: [imported],
+      selectOneResults: [
+        [imported],
+        [
+          {
+            role: "activity",
+            category: "bike",
+            start_offset_ms: 0,
+            end_offset_ms: 3_600_000,
+          },
+        ],
+      ],
       insertResult: [manualOverride],
     });
 
@@ -234,6 +308,7 @@ describe("activityEffortsRouter", () => {
     expect(result).toEqual(manualOverride);
     const insertPayload = (spies.values.mock.calls as any[][])[0]?.[0];
     expect(insertPayload).toMatchObject({
+      activity_id: activityId,
       value: 330,
       source: "manual",
       method: "manual_activity_effort_entry",

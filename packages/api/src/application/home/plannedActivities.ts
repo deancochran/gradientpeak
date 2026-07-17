@@ -1,4 +1,5 @@
 import { getScheduledDateKey } from "@repo/core";
+import { activityPlanStructureSchemaV3 } from "@repo/core/activity-plan";
 import { type EventRow, type PublicActivityPlansRow, schema } from "@repo/db";
 import { and, asc, eq, gte, lt } from "drizzle-orm";
 import { z } from "zod";
@@ -11,7 +12,9 @@ const activityPlanBoundarySchema = z
   .object({
     id: z.string(),
     name: z.string().nullable().optional(),
-    activity_category: z.string().nullable().optional(),
+    structure: activityPlanStructureSchemaV3,
+    structure_hash: z.string().regex(/^v1:sha256:[0-9a-f]{64}$/),
+    gps_recording_enabled: z.boolean(),
     estimated_distance: z.number().nullable().optional(),
     estimated_duration: z.number().nullable().optional(),
     estimated_tss: z.number().nullable().optional(),
@@ -107,15 +110,15 @@ export async function loadPlannedActivitiesWithEstimations(
   );
   const plansMap = new Map(plansWithEstimation.map((plan) => [plan.id, plan]));
 
-  const activitiesWithEstimations = plannedActivities.map((plannedActivity) => ({
-    ...plannedActivity,
-    activity_plan:
-      plannedActivity.activity_plan && plansMap.get(plannedActivity.activity_plan.id)
-        ? (plansMap.get(
-            plannedActivity.activity_plan.id,
-          )! as unknown as typeof plannedActivity.activity_plan)
-        : plannedActivity.activity_plan,
-  }));
+  const activitiesWithEstimations = plannedActivities.map((plannedActivity) => {
+    const estimatedPlan = plannedActivity.activity_plan
+      ? plansMap.get(plannedActivity.activity_plan.id)
+      : undefined;
+    return {
+      ...plannedActivity,
+      activity_plan: estimatedPlan ?? plannedActivity.activity_plan,
+    };
+  });
 
   return { plannedActivities, activitiesWithEstimations };
 }

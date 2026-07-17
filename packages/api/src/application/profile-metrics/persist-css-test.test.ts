@@ -39,8 +39,12 @@ function createDb(options: { failMetricInsert?: boolean } = {}) {
                 throw new Error("metric insert failed");
               }
               if (table === activityEfforts) {
-                staged.push({ table, values });
-                return values;
+                const returnedValues = (values as Array<Record<string, unknown>>).map((value) => ({
+                  ...value,
+                  segment_id: null,
+                }));
+                staged.push({ table, values: returnedValues });
+                return returnedValues;
               }
               const returnedValues = { ...(values as Record<string, unknown>), idx: 1 };
               staged.push({ table, values: returnedValues });

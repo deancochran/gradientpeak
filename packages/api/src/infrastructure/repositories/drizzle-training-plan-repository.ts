@@ -3,6 +3,7 @@ import type { TrainingPlanInsert, TrainingPlanRow } from "@repo/db";
 import { schema } from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, asc, eq, gte, inArray, isNotNull, sql } from "drizzle-orm";
+import { activityPlanStructureHash } from "../../application/activity-plans/structure-hash";
 import type {
   CreateTrainingPlanRecordInput,
   TrainingPlanRepository,
@@ -189,6 +190,7 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
         name,
         description,
         structure,
+        structure_hash,
         sessions_per_week_target,
         duration_hours,
         is_system_template,
@@ -258,13 +260,15 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
         typeof structure.id === "string" && isUuidString(structure.id)
           ? structure.id
           : crypto.randomUUID();
+      const canonicalStructure = { ...structure, id } as TrainingPlanInsert["structure"];
       const [data] = await db
         .insert(schema.trainingPlans)
         .values({
           id,
           name: input.name,
           description: input.description,
-          structure: { ...structure, id } as TrainingPlanInsert["structure"],
+          structure: canonicalStructure,
+          structure_hash: activityPlanStructureHash(canonicalStructure),
           profile_id: input.profileId,
           template_visibility: input.contentVisibility,
           content_visibility: input.contentVisibility,
@@ -438,25 +442,32 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
     },
 
     async updateTrainingPlan(input: UpdateTrainingPlanRecordInput): Promise<TrainingPlanRow> {
+      const structure = input.structure as TrainingPlanInsert["structure"];
       const [updatedPlan] = await db
         .update(schema.trainingPlans)
         .set({
           name: input.name,
           description: input.description,
-          structure: input.structure as TrainingPlanInsert["structure"],
+          structure,
+          structure_hash: activityPlanStructureHash(structure),
         })
         .where(
           and(
             eq(schema.trainingPlans.id, input.id),
             eq(schema.trainingPlans.profile_id, input.profileId),
+            eq(schema.trainingPlans.structure_hash, input.expectedStructureHash),
           ),
         )
         .returning();
 
       if (!updatedPlan) {
         throw new TRPCError({
-          code: "BAD_REQUEST",
-          message: "Failed to update training plan",
+          code: "CONFLICT",
+          message: "STALE_STRUCTURE_HASH",
+          cause: {
+            code: "STALE_STRUCTURE_HASH",
+            expectedStructureHash: input.expectedStructureHash,
+          },
         });
       }
 
@@ -502,6 +513,7 @@ export function createTrainingPlanRepository(db: DrizzleLike): TrainingPlanRepos
         .update(schema.trainingPlans)
         .set({
           structure: nextStructure as TrainingPlanInsert["structure"],
+          structure_hash: activityPlanStructureHash(nextStructure),
         })
         .where(
           and(

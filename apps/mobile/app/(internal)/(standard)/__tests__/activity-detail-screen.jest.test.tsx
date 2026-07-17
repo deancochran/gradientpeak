@@ -7,11 +7,21 @@ const activityData = {
   activity: {
     id: "11111111-1111-4111-8111-111111111111",
     profile_id: "profile-1",
-    type: "run",
+    activity_kind: "single",
+    segments: [
+      {
+        id: "22222222-2222-4222-8222-222222222222",
+        role: "activity",
+        category: "run",
+      },
+    ],
     name: "Morning Threshold",
     started_at: "2026-03-23T09:00:00.000Z",
     distance_meters: 10400,
-    duration_seconds: 3120,
+    elapsed_ms: 3_120_000,
+    active_ms: 3_120_000,
+    moving_ms: 3_000_000,
+    timing_coverage: "complete",
     avg_heart_rate: 162,
     max_heart_rate: 181,
     avg_speed_mps: 3.33,
@@ -19,7 +29,10 @@ const activityData = {
     likes_count: 0,
     is_private: false,
     notes: "Steady through the middle block.",
-    activity_file_path: "profile-1/activity.fit" as string | null,
+    current_artifact: {
+      id: "33333333-3333-4333-8333-333333333333",
+      availability: "accepted",
+    } as null | { id: string; availability: string },
     activity_plan_id: "plan-1",
     activity_plans: {
       id: "plan-1",
@@ -394,7 +407,10 @@ describe("activity detail screen", () => {
     toggleLikeMutateMock.mockReset();
     authState.user.id = "profile-1";
     activityData.activity.ingestion = null;
-    activityData.activity.activity_file_path = "profile-1/activity.fit";
+    activityData.activity.current_artifact = {
+      id: "33333333-3333-4333-8333-333333333333",
+      availability: "accepted",
+    };
     activityQueryState = { data: activityData, isLoading: false };
     streamsData.laps = [];
     mockUsePreferredUnitSystem.mockReturnValue("metric");
@@ -416,7 +432,7 @@ describe("activity detail screen", () => {
     expect(screen.getByTestId("activity-detail-like-button")).toBeTruthy();
     expect(screen.getByText("Distance")).toBeTruthy();
     expect(screen.getAllByText("10.4 km").length).toBeGreaterThan(0);
-    expect(screen.getByText("Duration")).toBeTruthy();
+    expect(screen.getByText("Elapsed")).toBeTruthy();
     expect(screen.getAllByText("52:00").length).toBeGreaterThan(0);
     expect(screen.getAllByText("rTSS").length).toBeGreaterThan(0);
     expect(screen.getAllByText("~84").length).toBeGreaterThan(0);

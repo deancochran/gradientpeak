@@ -23,9 +23,9 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { users } from "../auth-schema";
+import { canonicalActivityCategoryDbValues } from "./canonical-categories";
 
 import {
-  activityCategoryEnum,
   activityFileIngestionSourceEnum,
   activityFileIngestionStatusEnum,
   effortTypeEnum,
@@ -97,7 +97,7 @@ export const groups = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     created_by_profile_id: uuid("created_by_profile_id")
       .notNull()
-      .references(() => profiles.id, { onDelete: "cascade" }),
+      .references(() => profiles.id, { onDelete: "restrict" }),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     description: text("description"),
@@ -290,9 +290,9 @@ export const activityPlans = pgTable(
     name: text("name").notNull(),
     description: text("description"),
     notes: text("notes"),
-    activity_category: activityCategoryEnum("activity_category").notNull(),
     structure: jsonb("structure").notNull(),
-    version: text("version").notNull().default("1.0"),
+    structure_hash: text("structure_hash").notNull(),
+    gps_recording_enabled: boolean("gps_recording_enabled").notNull().default(true),
     template_visibility: text("template_visibility", { enum: ["private", "followers", "public"] })
       .notNull()
       .default("private"),
@@ -304,6 +304,14 @@ export const activityPlans = pgTable(
     is_system_template: boolean("is_system_template").notNull().default(false),
   },
   (table) => [
+    check(
+      "activity_plans_structure_v3_check",
+      sql`jsonb_typeof(${table.structure}) = 'object' and ${table.structure}->>'version' = '3' and jsonb_typeof(${table.structure}->'segments') = 'array' and jsonb_array_length(${table.structure}->'segments') between 1 and 64 and pg_column_size(${table.structure}) <= 1048576`,
+    ),
+    check(
+      "activity_plans_structure_hash_check",
+      sql`${table.structure_hash} ~ '^v1:sha256:[0-9a-f]{64}$'`,
+    ),
     check(
       "activity_plans_template_visibility_check",
       sql`${table.template_visibility} = any(array['private'::text, 'followers'::text, 'public'::text])`,
@@ -515,6 +523,7 @@ export const trainingPlans = pgTable(
     name: text("name").notNull(),
     description: text("description"),
     structure: jsonb("structure").notNull(),
+    structure_hash: text("structure_hash").notNull(),
     template_visibility: text("template_visibility", { enum: ["private", "followers", "public"] })
       .notNull()
       .default("private"),
@@ -526,6 +535,14 @@ export const trainingPlans = pgTable(
     duration_hours: numeric("duration_hours", { precision: 12, scale: 2, mode: "number" }),
   },
   (table) => [
+    check(
+      "training_plans_structure_v1_check",
+      sql`jsonb_typeof(${table.structure}) = 'object' and ${table.structure}->>'version' = '1' and jsonb_typeof(${table.structure}->'sessions') = 'array' and jsonb_array_length(${table.structure}->'sessions') > 0 and pg_column_size(${table.structure}) <= 1048576`,
+    ),
+    check(
+      "training_plans_structure_hash_check",
+      sql`${table.structure_hash} ~ '^v1:sha256:[0-9a-f]{64}$'`,
+    ),
     check(
       "training_plans_template_visibility_check",
       sql`${table.template_visibility} = any(array['private'::text, 'followers'::text, 'public'::text])`,
@@ -758,7 +775,6 @@ export const activities = pgTable(
       onDelete: "set null",
     }),
     name: text("name").notNull(),
-    type: text("type").notNull(),
     started_at: timestamp("started_at", { withTimezone: true, mode: "date" }).notNull(),
     finished_at: timestamp("finished_at", { withTimezone: true, mode: "date" }).notNull(),
     notes: text("notes"),
@@ -768,8 +784,24 @@ export const activities = pgTable(
       .default("private"),
     provider: integrationProviderEnum("provider"),
     external_id: text("external_id"),
-    duration_seconds: integer("duration_seconds").notNull().default(0),
-    moving_seconds: integer("moving_seconds").notNull().default(0),
+    elapsed_ms: bigint("elapsed_ms", { mode: "number" }).notNull(),
+    active_ms: bigint("active_ms", { mode: "number" }),
+    moving_ms: bigint("moving_ms", { mode: "number" }),
+    timing_coverage: text("timing_coverage", {
+      enum: ["complete", "partial", "unavailable"],
+    })
+      .notNull()
+      .default("unavailable"),
+    segments_revision: integer("segments_revision").notNull().default(1),
+    parser_version: text("parser_version").notNull(),
+    decoded_contract_version: text("decoded_contract_version").notNull(),
+    materializer_version: text("materializer_version").notNull(),
+    segments_generated_at: timestamp("segments_generated_at", {
+      withTimezone: true,
+      mode: "date",
+    })
+      .defaultNow()
+      .notNull(),
     distance_meters: integer("distance_meters").notNull().default(0),
     elevation_gain_meters: numeric("elevation_gain_meters", {
       precision: 10,
@@ -811,11 +843,6 @@ export const activities = pgTable(
     total_strokes: integer("total_strokes"),
     device_manufacturer: text("device_manufacturer"),
     device_product: text("device_product"),
-    activity_file_path: text("activity_file_path"),
-    activity_file_size: integer("activity_file_size"),
-    import_source: text("import_source"),
-    import_file_type: text("import_file_type"),
-    import_original_file_name: text("import_original_file_name"),
     polyline: text("polyline"),
     laps: jsonb("laps").$type<unknown[]>().notNull().default([]),
     map_bounds: jsonb("map_bounds"),
@@ -827,30 +854,29 @@ export const activities = pgTable(
       .where(sql`${table.activity_plan_id} is not null`),
     index("idx_activities_profile_started").on(table.profile_id, table.started_at),
     index("idx_activities_started").on(table.started_at),
-    index("idx_activities_type").on(table.type),
     index("idx_activities_content_visibility").on(table.content_visibility),
     check(
       "activities_content_visibility_check",
       sql`${table.content_visibility} in ('private', 'followers', 'public')`,
     ),
     check("activities_distance_meters_check", sql`${table.distance_meters} >= 0`),
-    check("activities_duration_seconds_check", sql`${table.duration_seconds} >= 0`),
-    check("activities_moving_seconds_check", sql`${table.moving_seconds} >= 0`),
+    check("activities_elapsed_ms_check", sql`${table.elapsed_ms} > 0`),
+    check(
+      "activities_active_ms_check",
+      sql`${table.active_ms} is null or (${table.active_ms} >= 0 and ${table.active_ms} <= ${table.elapsed_ms})`,
+    ),
+    check(
+      "activities_moving_ms_check",
+      sql`${table.moving_ms} is null or (${table.moving_ms} >= 0 and ${table.moving_ms} <= coalesce(${table.active_ms}, ${table.elapsed_ms}))`,
+    ),
+    check("activities_segments_revision_check", sql`${table.segments_revision} > 0`),
+    check(
+      "activities_timing_coverage_values_check",
+      sql`(${table.timing_coverage} = 'complete' and ${table.active_ms} is not null and ${table.moving_ms} is not null) or (${table.timing_coverage} in ('partial', 'unavailable') and ${table.active_ms} is null and ${table.moving_ms} is null)`,
+    ),
     check(
       "activities_moving_time_check",
-      sql`${table.moving_seconds} <= ${table.duration_seconds}`,
-    ),
-    check(
-      "activities_import_file_type_non_empty_check",
-      sql`${table.import_file_type} is null or btrim(${table.import_file_type}) <> ''`,
-    ),
-    check(
-      "activities_import_original_file_name_non_empty_check",
-      sql`${table.import_original_file_name} is null or btrim(${table.import_original_file_name}) <> ''`,
-    ),
-    check(
-      "activities_import_source_check",
-      sql`${table.import_source} is null or ${table.import_source} = 'manual_historical'`,
+      sql`${table.moving_ms} is null or ${table.active_ms} is null or ${table.moving_ms} <= ${table.active_ms}`,
     ),
     check(
       "activities_provider_identity_check",
@@ -865,9 +891,258 @@ export const activities = pgTable(
     index("idx_activities_provider_external")
       .on(table.provider, table.external_id)
       .where(sql`${table.external_id} is not null`),
-    index("idx_activities_activity_file_path")
-      .on(table.activity_file_path)
-      .where(sql`${table.activity_file_path} is not null`),
+  ],
+);
+
+export const canonicalActivityCategories = pgTable("canonical_activity_categories", {
+  code: text("code").primaryKey(),
+  display_name: text("display_name").notNull(),
+  enabled: boolean("enabled").notNull().default(true),
+});
+
+export const multisportCutoverAudits = pgTable("multisport_cutover_audits", {
+  run_id: uuid("run_id").primaryKey(),
+  manifest_checksum: text("manifest_checksum").notNull(),
+  final_manifest_checksum: text("final_manifest_checksum").notNull(),
+  snapshot_hash: text("snapshot_hash").notNull(),
+  staging_hash: text("staging_hash").notNull(),
+  backup_hash: text("backup_hash").notNull(),
+  storage_archive_hash: text("storage_archive_hash").notNull(),
+  storage_inventory_hash: text("storage_inventory_hash").notNull(),
+  status: text("status").notNull(),
+  migrated_at: timestamp("migrated_at", { withTimezone: true, mode: "date" })
+    .defaultNow()
+    .notNull(),
+  audited_at: timestamp("audited_at", { withTimezone: true, mode: "date" }),
+});
+
+export const multisportCutoverTemplateAudits = pgTable(
+  "multisport_cutover_template_audits",
+  {
+    run_id: uuid("run_id")
+      .notNull()
+      .references(() => multisportCutoverAudits.run_id, { onDelete: "restrict" }),
+    activity_plan_id: uuid("activity_plan_id").notNull(),
+    before_semantic_hash: text("before_semantic_hash"),
+    after_semantic_hash: text("after_semantic_hash").notNull(),
+    source_semantic_hash: text("source_semantic_hash"),
+    is_new_source: boolean("is_new_source").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.run_id, table.activity_plan_id] })],
+);
+
+export const activityArtifacts = pgTable(
+  "activity_artifacts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    digest_algorithm: text("digest_algorithm").notNull().default("sha256"),
+    digest: text("digest").notNull(),
+    byte_size: bigint("byte_size", { mode: "number" }).notNull(),
+    bucket: text("bucket").notNull(),
+    path: text("path").notNull(),
+    media_type: text("media_type").notNull(),
+    format: text("format").notNull(),
+    original_name: text("original_name"),
+    availability: text("availability", {
+      enum: ["accepted", "deletion_pending", "deleted"],
+    })
+      .notNull()
+      .default("accepted"),
+    first_accepted_at: timestamp("first_accepted_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    retention_until: timestamp("retention_until", { withTimezone: true, mode: "date" }),
+    deletion_requested_at: timestamp("deletion_requested_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    deleted_at: timestamp("deleted_at", { withTimezone: true, mode: "date" }),
+  },
+  (table) => [
+    unique("activity_artifacts_id_profile_unique").on(table.id, table.profile_id),
+    unique("activity_artifacts_profile_digest_size_unique").on(
+      table.profile_id,
+      table.digest_algorithm,
+      table.digest,
+      table.byte_size,
+    ),
+    unique("activity_artifacts_bucket_path_unique").on(table.bucket, table.path),
+    check(
+      "activity_artifacts_sha256_check",
+      sql`${table.digest_algorithm} = 'sha256' and ${table.digest} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check("activity_artifacts_byte_size_check", sql`${table.byte_size} > 0`),
+    check(
+      "activity_artifacts_path_check",
+      sql`btrim(${table.bucket}) <> '' and btrim(${table.path}) <> ''`,
+    ),
+    check(
+      "activity_artifacts_content_addressed_path_check",
+      sql`${table.path} = public.activity_artifact_content_path(${table.profile_id}, ${table.digest})`,
+    ),
+    check(
+      "activity_artifacts_lifecycle_check",
+      sql`(${table.availability} = 'accepted' and ${table.deletion_requested_at} is null and ${table.deleted_at} is null) or (${table.availability} = 'deletion_pending' and ${table.deletion_requested_at} is not null and ${table.deleted_at} is null) or (${table.availability} = 'deleted' and ${table.deletion_requested_at} is not null and ${table.deleted_at} is not null)`,
+    ),
+    index("idx_activity_artifacts_profile").on(table.profile_id),
+  ],
+);
+
+export const activityArtifactLinks = pgTable(
+  "activity_artifact_links",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    activity_id: uuid("activity_id").notNull(),
+    artifact_id: uuid("artifact_id").notNull(),
+    profile_id: uuid("profile_id").notNull(),
+    role: text("role", { enum: ["source", "supplemental", "export"] }).notNull(),
+    ordinal: integer("ordinal").notNull(),
+    is_current: boolean("is_current").notNull().default(false),
+    provider_revision: text("provider_revision"),
+    linked_at: timestamp("linked_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.activity_id, table.profile_id],
+      foreignColumns: [activities.id, activities.profile_id],
+      name: "activity_artifact_links_activity_profile_fkey",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.artifact_id, table.profile_id],
+      foreignColumns: [activityArtifacts.id, activityArtifacts.profile_id],
+      name: "activity_artifact_links_artifact_profile_fkey",
+    }).onDelete("restrict"),
+    unique("activity_artifact_links_activity_artifact_profile_unique").on(
+      table.activity_id,
+      table.artifact_id,
+      table.profile_id,
+    ),
+    unique("activity_artifact_links_activity_artifact_role_unique").on(
+      table.activity_id,
+      table.artifact_id,
+      table.role,
+    ),
+    unique("activity_artifact_links_activity_role_ordinal_unique").on(
+      table.activity_id,
+      table.role,
+      table.ordinal,
+    ),
+    uniqueIndex("activity_artifact_links_current_source_unique")
+      .on(table.activity_id)
+      .where(sql`${table.role} = 'source' and ${table.is_current} = true`),
+    check("activity_artifact_links_ordinal_check", sql`${table.ordinal} >= 0`),
+    check(
+      "activity_artifact_links_current_source_check",
+      sql`${table.is_current} = false or ${table.role} = 'source'`,
+    ),
+    index("idx_activity_artifact_links_artifact").on(table.artifact_id),
+  ],
+);
+
+export const activitySegments = pgTable(
+  "activity_segments",
+  {
+    id: uuid("id").primaryKey(),
+    activity_id: uuid("activity_id").notNull(),
+    profile_id: uuid("profile_id").notNull(),
+    ordinal: integer("ordinal").notNull(),
+    role: text("role", { enum: ["activity", "transition", "rest", "unknown"] }).notNull(),
+    category: text("category", { enum: canonicalActivityCategoryDbValues }).references(
+      () => canonicalActivityCategories.code,
+      {
+        onDelete: "restrict",
+      },
+    ),
+    start_offset_ms: bigint("start_offset_ms", { mode: "number" }).notNull(),
+    end_offset_ms: bigint("end_offset_ms", { mode: "number" }).notNull(),
+    source_artifact_id: uuid("source_artifact_id"),
+    source_session_index: integer("source_session_index"),
+    source_message_index: integer("source_message_index"),
+    raw_type_string: text("raw_type_string"),
+    raw_type_integer: integer("raw_type_integer"),
+    raw_sport_string: text("raw_sport_string"),
+    raw_sport_integer: integer("raw_sport_integer"),
+    summary: jsonb("summary").notNull(),
+    summary_version: integer("summary_version").notNull().default(1),
+    timing_coverage: text("timing_coverage", {
+      enum: ["complete", "partial", "unavailable"],
+    }).notNull(),
+    active_ms: bigint("active_ms", { mode: "number" }),
+    moving_ms: bigint("moving_ms", { mode: "number" }),
+    segment_revision: integer("segment_revision").notNull().default(1),
+    parser_version: text("parser_version").notNull(),
+    materializer_version: text("materializer_version").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.activity_id, table.profile_id],
+      foreignColumns: [activities.id, activities.profile_id],
+      name: "activity_segments_activity_profile_fkey",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.activity_id, table.source_artifact_id, table.profile_id],
+      foreignColumns: [
+        activityArtifactLinks.activity_id,
+        activityArtifactLinks.artifact_id,
+        activityArtifactLinks.profile_id,
+      ],
+      name: "activity_segments_source_link_fkey",
+    }).onDelete("restrict"),
+    unique("activity_segments_id_activity_profile_unique").on(
+      table.id,
+      table.activity_id,
+      table.profile_id,
+    ),
+    unique("activity_segments_effort_category_unique").on(
+      table.id,
+      table.activity_id,
+      table.profile_id,
+      table.category,
+    ),
+    unique("activity_segments_activity_ordinal_unique").on(table.activity_id, table.ordinal),
+    check("activity_segments_ordinal_check", sql`${table.ordinal} >= 0`),
+    check(
+      "activity_segments_offset_check",
+      sql`${table.start_offset_ms} >= 0 and ${table.end_offset_ms} > ${table.start_offset_ms}`,
+    ),
+    check(
+      "activity_segments_role_category_check",
+      sql`(${table.role} = 'activity' and ${table.category} is not null) or (${table.role} <> 'activity' and ${table.category} is null)`,
+    ),
+    check(
+      "activity_segments_unknown_source_check",
+      sql`${table.role} <> 'unknown' or num_nonnulls(${table.raw_type_string}, ${table.raw_type_integer}, ${table.raw_sport_string}, ${table.raw_sport_integer}) > 0`,
+    ),
+    check(
+      "activity_segments_source_indexes_check",
+      sql`(${table.source_session_index} is null and ${table.source_message_index} is null) or ${table.source_artifact_id} is not null`,
+    ),
+    check(
+      "activity_segments_summary_check",
+      sql`${table.summary_version} = 1 and jsonb_typeof(${table.summary}) = 'object' and pg_column_size(${table.summary}) <= 1048576`,
+    ),
+    check(
+      "activity_segments_timing_check",
+      sql`${table.active_ms} is null or (${table.active_ms} >= 0 and ${table.active_ms} <= ${table.end_offset_ms} - ${table.start_offset_ms})`,
+    ),
+    check(
+      "activity_segments_moving_check",
+      sql`${table.moving_ms} is null or (${table.moving_ms} >= 0 and ${table.moving_ms} <= coalesce(${table.active_ms}, ${table.end_offset_ms} - ${table.start_offset_ms}))`,
+    ),
+    check(
+      "activity_segments_timing_coverage_values_check",
+      sql`(${table.timing_coverage} = 'complete' and ${table.active_ms} is not null and ${table.moving_ms} is not null) or (${table.timing_coverage} = 'partial' and num_nonnulls(${table.active_ms}, ${table.moving_ms}) > 0) or (${table.timing_coverage} = 'unavailable' and ${table.active_ms} is null and ${table.moving_ms} is null)`,
+    ),
+    index("idx_activity_segments_activity").on(table.activity_id, table.ordinal),
+    index("idx_activity_segments_category")
+      .on(table.category)
+      .where(sql`${table.category} is not null`),
   ],
 );
 
@@ -875,16 +1150,23 @@ export const activityFileIngestions = pgTable(
   "activity_file_ingestions",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    activity_id: uuid("activity_id").notNull(),
+    activity_id: uuid("activity_id"),
+    artifact_id: uuid("artifact_id"),
     profile_id: uuid("profile_id")
       .notNull()
       .references(() => profiles.id, { onDelete: "cascade" }),
     source: activityFileIngestionSourceEnum("source").notNull(),
     provider: integrationProviderEnum("provider"),
     external_id: text("external_id"),
-    file_path: text("file_path"),
-    file_size: integer("file_size"),
-    file_type: text("file_type"),
+    integration_id: uuid("integration_id").references(() => integrations.id, {
+      onDelete: "set null",
+    }),
+    operation_key: text("operation_key").notNull(),
+    claim_token: uuid("claim_token"),
+    lease_expires_at: timestamp("lease_expires_at", { withTimezone: true, mode: "date" }),
+    received_at: timestamp("received_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
     status: activityFileIngestionStatusEnum("status").notNull().default("pending_upload"),
     attempt_count: integer("attempt_count").notNull().default(0),
     last_error_code: text("last_error_code"),
@@ -908,18 +1190,39 @@ export const activityFileIngestions = pgTable(
       foreignColumns: [activities.id, activities.profile_id],
       name: "activity_file_ingestions_activity_profile_fkey",
     }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.artifact_id, table.profile_id],
+      foreignColumns: [activityArtifacts.id, activityArtifacts.profile_id],
+      name: "activity_file_ingestions_artifact_profile_fkey",
+    }).onDelete("restrict"),
     check(
-      "activity_file_ingestions_file_size_check",
-      sql`${table.file_size} is null or ${table.file_size} >= 0`,
+      "activity_file_ingestions_ready_check",
+      sql`${table.status} <> 'ready' or (${table.activity_id} is not null and ${table.artifact_id} is not null)`,
     ),
+    check(
+      "activity_file_ingestions_claim_check",
+      sql`(${table.claim_token} is null) = (${table.lease_expires_at} is null)`,
+    ),
+    check("activity_file_ingestions_operation_key_check", sql`btrim(${table.operation_key}) <> ''`),
     check("activity_file_ingestions_attempt_count_check", sql`${table.attempt_count} >= 0`),
-    index("idx_activity_file_ingestions_activity_profile").on(table.activity_id, table.profile_id),
-    index("idx_activity_file_ingestions_activity_id").on(table.activity_id),
+    index("idx_activity_file_ingestions_activity_profile")
+      .on(table.activity_id, table.profile_id)
+      .where(sql`${table.activity_id} is not null`),
+    index("idx_activity_file_ingestions_activity_id")
+      .on(table.activity_id)
+      .where(sql`${table.activity_id} is not null`),
+    index("idx_activity_file_ingestions_artifact_id")
+      .on(table.artifact_id)
+      .where(sql`${table.artifact_id} is not null`),
     index("idx_activity_file_ingestions_profile_id").on(table.profile_id),
     index("idx_activity_file_ingestions_status").on(table.status),
     index("idx_activity_file_ingestions_provider_external")
       .on(table.provider, table.external_id)
       .where(sql`${table.provider} is not null and ${table.external_id} is not null`),
+    uniqueIndex("activity_file_ingestions_profile_operation_unique").on(
+      table.profile_id,
+      table.operation_key,
+    ),
   ],
 );
 
@@ -933,8 +1236,11 @@ export const activityEfforts = pgTable(
       .notNull()
       .references(() => profiles.id),
     activity_id: uuid("activity_id").references(() => activities.id, { onDelete: "cascade" }),
+    segment_id: uuid("segment_id"),
     recorded_at: timestamp("recorded_at", { withTimezone: true, mode: "date" }).notNull(),
-    activity_category: activityCategoryEnum("activity_category").notNull(),
+    activity_category: text("activity_category", { enum: canonicalActivityCategoryDbValues })
+      .notNull()
+      .references(() => canonicalActivityCategories.code, { onDelete: "restrict" }),
     effort_type: effortTypeEnum("effort_type").notNull(),
     duration_seconds: integer("duration_seconds").notNull(),
     start_offset: integer("start_offset"),
@@ -947,8 +1253,23 @@ export const activityEfforts = pgTable(
     provenance: jsonb("provenance"),
   },
   (table) => [
+    foreignKey({
+      columns: [table.segment_id, table.activity_id, table.profile_id, table.activity_category],
+      foreignColumns: [
+        activitySegments.id,
+        activitySegments.activity_id,
+        activitySegments.profile_id,
+        activitySegments.category,
+      ],
+      name: "activity_efforts_segment_activity_profile_category_fkey",
+    }).onDelete("cascade"),
     index("idx_activity_efforts_activity_id").on(table.activity_id),
+    index("idx_activity_efforts_segment_id").on(table.segment_id),
     index("idx_activity_efforts_profile_id").on(table.profile_id),
+    check(
+      "activity_efforts_activity_segment_check",
+      sql`(${table.activity_id} is null and ${table.segment_id} is null) or (${table.activity_id} is not null and ${table.segment_id} is not null)`,
+    ),
     check(
       "activity_efforts_duration_seconds_bounds_check",
       sql`${table.duration_seconds} between 1 and 14400`,

@@ -1,12 +1,13 @@
 #!/usr/bin/env tsx
 
-import { trainingPlanSchema } from "@repo/core/schemas";
+import { ALL_SAMPLE_PLANS } from "@repo/core";
+import { canonicalTrainingPlanStructureSchema } from "@repo/core/schemas";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { ALL_SAMPLE_PLANS } from "../../core/samples";
 import { trainingPlans } from "../src/schema/tables";
 import { deepEqual, prepareDbEnv } from "./_helpers";
+import { structureHash } from "./canonical-json";
 
 const args = process.argv.slice(2);
 const isDryRun = args.includes("--dry-run");
@@ -15,6 +16,11 @@ const noDelete = args.includes("--no-delete") || args.includes("--no-clear");
 
 const templates = ALL_SAMPLE_PLANS;
 let pool: Pool | undefined;
+
+function persistedStructure(template: (typeof templates)[number]) {
+  const { id: _id, ...structure } = template.structure;
+  return canonicalTrainingPlanStructureSchema.parse(structure);
+}
 
 type ExistingTrainingPlanTemplate = typeof trainingPlans.$inferSelect;
 
@@ -27,13 +33,16 @@ function hasChanges(
   if (local.sessions_per_week_target !== remote.sessions_per_week_target) return true;
   if (`${local.duration_hours}` !== `${remote.duration_hours ?? ""}`) return true;
 
-  const localStructure = JSON.parse(JSON.stringify(local.structure));
+  const localStructure = persistedStructure(local);
 
-  return !deepEqual(localStructure, remote.structure);
+  return (
+    structureHash(localStructure) !== remote.structure_hash ||
+    !deepEqual(localStructure, remote.structure)
+  );
 }
 
 async function seedTrainingPlanTemplates() {
-  for (const template of templates) trainingPlanSchema.parse(template.structure);
+  for (const template of templates) persistedStructure(template);
   if (isValidateOnly) {
     console.log(`Validated ${templates.length} strict canonical V1 system training templates.`);
     return;
@@ -94,7 +103,8 @@ async function seedTrainingPlanTemplates() {
               .set({
                 name: template.name,
                 description: template.description ?? null,
-                structure: template.structure,
+                structure: persistedStructure(template),
+                structure_hash: structureHash(persistedStructure(template)),
                 sessions_per_week_target: template.sessions_per_week_target,
                 duration_hours: template.duration_hours ?? null,
                 template_visibility: "public",
@@ -120,7 +130,8 @@ async function seedTrainingPlanTemplates() {
             template_visibility: "public",
             name: template.name,
             description: template.description ?? null,
-            structure: template.structure,
+            structure: persistedStructure(template),
+            structure_hash: structureHash(persistedStructure(template)),
             sessions_per_week_target: template.sessions_per_week_target,
             duration_hours: template.duration_hours ?? null,
             created_at: now,

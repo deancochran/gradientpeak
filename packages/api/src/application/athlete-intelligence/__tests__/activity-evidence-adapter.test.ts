@@ -23,6 +23,7 @@ function createDb(rows: unknown[]) {
       // biome-ignore lint/suspicious/noExplicitAny: Drizzle's fluent builder is intentionally a bounded test double.
       const builder: any = {
         from: () => builder,
+        innerJoin: () => builder,
         where: (condition: unknown) => {
           calls.where.push(condition);
           return builder;
@@ -59,19 +60,25 @@ describe("ActivityEvidenceAdapter", () => {
     const { db } = createDb([
       {
         id: "a1",
-        type: "run",
+        activity_id: "a1",
+        category: "run",
+        start_offset_ms: 0,
         started_at: new Date("2026-07-09T08:00:00.000Z"),
         duration_seconds: 3600,
       },
       {
         id: "a2",
-        type: "run",
+        activity_id: "a2",
+        category: "run",
+        start_offset_ms: 0,
         started_at: new Date("2026-07-08T08:00:00.000Z"),
         duration_seconds: 3600,
       },
       {
         id: "a3",
-        type: "bike",
+        activity_id: "a3",
+        category: "bike",
+        start_offset_ms: 0,
         started_at: new Date("2026-06-30T08:00:00.000Z"),
         duration_seconds: 7200,
       },
@@ -96,13 +103,17 @@ describe("ActivityEvidenceAdapter", () => {
     const rows = [
       {
         id: "b",
-        type: "bike",
+        activity_id: "b",
+        category: "bike",
+        start_offset_ms: 0,
         started_at: new Date("2026-07-02T08:00:00.000Z"),
         duration_seconds: 0,
       },
       {
         id: "a",
-        type: "bike",
+        activity_id: "a",
+        category: "bike",
+        start_offset_ms: 0,
         started_at: new Date("2026-07-03T08:00:00.000Z"),
         duration_seconds: 3600,
       },

@@ -1,19 +1,26 @@
 import {
   type ActivityDerivedMetrics,
   type ActivityListDerivedSummary,
-  analyzeActivityDerivedMetrics,
   parseActivityLapRecords,
 } from "@repo/core";
-import { activities, activityFileIngestions, activityPlans } from "@repo/db";
+import {
+  activities,
+  activityArtifactLinks,
+  activityArtifacts,
+  activityFileIngestions,
+  activityPlans,
+  activitySegments,
+} from "@repo/db";
 import { TRPCError } from "@trpc/server";
 import { and, count, desc, eq, gte, ilike, lt, lte, or, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 import { createActivityAnalysisStore } from "../../infrastructure/repositories";
 import {
+  type ActivitySegmentReadRow,
   buildActivityDerivedSummaryMap,
+  loadActivitySegmentsByActivityId,
   mapActivityToDerivedResponse,
   mapActivityToListDerivedResponse,
-  resolveActivityContextAsOf,
 } from "../../lib/activity-analysis";
 import { getLikeStats, loadLikeStats } from "../../repositories/like-stats";
 import { buildIndexPageInfo, parseIndexCursor } from "../../utils/index-cursor";
@@ -23,7 +30,7 @@ type Db = ReturnType<typeof getRequiredDb>;
 export type ActivityListQueryInput = {
   limit: number;
   cursor?: string;
-  activity_category?: NonNullable<typeof activities.$inferSelect.type>;
+  activity_category?: NonNullable<typeof activitySegments.$inferSelect.category>;
   search?: string;
   date_from?: string;
   date_to?: string;
@@ -35,10 +42,18 @@ const tssSortBatchSize = 200;
 export const tssSortMaximumHistory = 10_000;
 
 type ActivityRow = typeof activities.$inferSelect;
+type ActivityReadRow = ActivityRow & {
+  segments: ActivitySegmentReadRow[];
+};
+
+function decorateActivity(activity: ActivityReadRow) {
+  const { segments: _segments, ...publicActivity } = activity;
+  return publicActivity;
+}
 
 function compareTssCandidates(
-  a: { activity: ActivityRow; derived: ActivityListDerivedSummary | null },
-  b: { activity: ActivityRow; derived: ActivityListDerivedSummary | null },
+  a: { activity: ActivityReadRow; derived: ActivityListDerivedSummary | null },
+  b: { activity: ActivityReadRow; derived: ActivityListDerivedSummary | null },
   sortOrder: ActivityListQueryInput["sort_order"],
 ) {
   const aTss = a.derived?.tss ?? null;
@@ -68,19 +83,25 @@ export async function listActivitiesForProfile({
 }) {
   const offset = parseIndexCursor(input.cursor);
   const conditions = [eq(activities.profile_id, profileId)];
-  if (input.activity_category) conditions.push(eq(activities.type, input.activity_category));
-  if (input.search)
-    conditions.push(
-      or(
-        ilike(activities.name, `%${input.search}%`),
-        ilike(activities.notes, `%${input.search}%`),
-      )!,
+  if (input.activity_category)
+    conditions.push(sql<boolean>`exists (
+      select 1 from ${activitySegments}
+      where ${activitySegments.activity_id} = ${activities.id}
+        and ${activitySegments.role} = 'activity'
+        and ${activitySegments.category} = ${input.activity_category}
+    )`);
+  if (input.search) {
+    const searchCondition = or(
+      ilike(activities.name, `%${input.search}%`),
+      ilike(activities.notes, `%${input.search}%`),
     );
+    if (searchCondition) conditions.push(searchCondition);
+  }
   if (input.date_from) conditions.push(gte(activities.started_at, new Date(input.date_from)));
   if (input.date_to) conditions.push(lte(activities.started_at, new Date(input.date_to)));
   const whereClause = and(...conditions);
   const distance = sql<number>`${activities.distance_meters}`;
-  const duration = sql<number>`${activities.duration_seconds}`;
+  const duration = sql<number>`coalesce(${activities.active_ms}, ${activities.elapsed_ms})`;
   if (input.sort_by === "tss") {
     return db.transaction(
       async (tx) => {
@@ -103,7 +124,7 @@ export async function listActivitiesForProfile({
         // every internal batch has an indexable plan and cannot skip/duplicate rows. Evidence and
         // likes are loaded through the same transaction, preserving one repeatable-read snapshot.
         const candidates: Array<{
-          activity: ActivityRow;
+          activity: ActivityReadRow;
           derived: ActivityListDerivedSummary | null;
         }> = [];
         let scanCursor: Pick<ActivityRow, "id" | "started_at"> | undefined;
@@ -129,9 +150,13 @@ export async function listActivitiesForProfile({
           if (batch.length === 0) break;
 
           const normalizedBatch = batch.map(normalizeActivityLaps);
+          const segments = await loadActivitySegmentsByActivityId(
+            snapshotDb,
+            normalizedBatch.map((activity) => activity.id),
+          );
           candidates.push(
             ...normalizedBatch.map((activity) => ({
-              activity,
+              activity: { ...activity, segments: segments.get(activity.id) ?? [] },
               derived: null,
             })),
           );
@@ -163,7 +188,7 @@ export async function listActivitiesForProfile({
         const items = page.map(({ activity, derived }) =>
           mapActivityToListDerivedResponse({
             activity: {
-              ...activity,
+              ...decorateActivity(activity),
               likes_count: getLikeStats(likeStats, activity.id).likes_count,
             },
             has_liked: getLikeStats(likeStats, activity.id).has_liked,
@@ -209,7 +234,15 @@ export async function listActivitiesForProfile({
   const activityRows = rawRows.map((row) =>
     row && typeof row === "object" && "activity" in row ? row.activity : row,
   ) as Array<typeof activities.$inferSelect>;
-  const data = activityRows.map(normalizeActivityLaps);
+  const normalized = activityRows.map(normalizeActivityLaps);
+  const segments = await loadActivitySegmentsByActivityId(
+    db,
+    normalized.map((activity) => activity.id),
+  );
+  const data: ActivityReadRow[] = normalized.map((activity) => ({
+    ...activity,
+    segments: segments.get(activity.id) ?? [],
+  }));
   const derived = await buildActivityDerivedSummaryMap({
     store: createActivityAnalysisStore(db),
     profileId,
@@ -224,7 +257,7 @@ export async function listActivitiesForProfile({
   const items = data.map((activity) =>
     mapActivityToListDerivedResponse({
       activity: {
-        ...activity,
+        ...decorateActivity(activity),
         likes_count: getLikeStats(likeStats, activity.id).likes_count,
       },
       has_liked: getLikeStats(likeStats, activity.id).has_liked,
@@ -279,7 +312,7 @@ export async function getActivityByIdForViewer({
       code: "FORBIDDEN",
       message: "You don't have permission to view this activity",
     });
-  const [record, likeStats, ingestion] = await Promise.all([
+  const [record, likeStats, ingestion, currentArtifact] = await Promise.all([
     db
       .select({ activity: activities, activityPlan: activityPlans })
       .from(activities)
@@ -304,56 +337,78 @@ export async function getActivityByIdForViewer({
       ),
       orderBy: desc(activityFileIngestions.updated_at),
     }) ?? Promise.resolve(undefined),
+    db
+      .select({
+        id: activityArtifacts.id,
+        digest_algorithm: activityArtifacts.digest_algorithm,
+        digest: activityArtifacts.digest,
+        byte_size: activityArtifacts.byte_size,
+        media_type: activityArtifacts.media_type,
+        format: activityArtifacts.format,
+        original_name: activityArtifacts.original_name,
+        availability: activityArtifacts.availability,
+        first_accepted_at: activityArtifacts.first_accepted_at,
+      })
+      .from(activityArtifactLinks)
+      .innerJoin(activityArtifacts, eq(activityArtifacts.id, activityArtifactLinks.artifact_id))
+      .where(
+        and(
+          eq(activityArtifactLinks.activity_id, activityId),
+          eq(activityArtifactLinks.role, "source"),
+          eq(activityArtifactLinks.is_current, true),
+          eq(activityArtifacts.availability, "accepted"),
+        ),
+      )
+      .limit(1)
+      .then((rows) => rows[0] ?? null),
   ]);
   const row = record[0];
   if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Activity not found" });
-  const activity = normalizeActivityLaps(row.activity);
-  const values = activity as typeof activity & Record<string, number | null>;
-  const derived: ActivityDerivedMetrics =
+  const normalizedActivity = normalizeActivityLaps(row.activity);
+  const segments = await loadActivitySegmentsByActivityId(db, [normalizedActivity.id]);
+  const activity: ActivityReadRow = {
+    ...normalizedActivity,
+    segments: segments.get(normalizedActivity.id) ?? [],
+  };
+  const derived: ActivityDerivedMetrics = {
+    stress: {
+      tss: null,
+      tss_identity: null,
+      intensity_factor: null,
+      method: null,
+      unavailable_reason:
+        activity.profile_id === viewerId ? "activity_data_missing" : "private_data",
+      trimp: null,
+      trimp_source: null,
+      training_effect: null,
+    },
+    zones: { hr: [], power: [] },
+    computed_as_of: activity.started_at.toISOString(),
+  };
+  const ownedDerived =
     activity.profile_id === viewerId
-      ? analyzeActivityDerivedMetrics({
-          activity: {
-            id: activity.id,
-            type: activity.type,
-            started_at: activity.started_at.toISOString(),
-            finished_at: activity.finished_at.toISOString(),
-            duration_seconds: values.duration_seconds ?? 0,
-            moving_seconds: values.moving_seconds ?? 0,
-            distance_meters: values.distance_meters ?? 0,
-            avg_heart_rate: values.avg_heart_rate,
-            max_heart_rate: values.max_heart_rate,
-            avg_power: values.avg_power,
-            max_power: values.max_power,
-            avg_speed_mps: values.avg_speed_mps,
-            max_speed_mps: values.max_speed_mps,
-            normalized_power: values.normalized_power,
-            normalized_speed_mps: values.normalized_speed_mps,
-            normalized_graded_speed_mps: values.normalized_graded_speed_mps,
-          },
-          context: await resolveActivityContextAsOf({
-            store: createActivityAnalysisStore(db),
-            profileId: activity.profile_id,
-            activityTimestamp: activity.started_at,
-            activityId: activity.id,
-          }),
+      ? await buildActivityDerivedSummaryMap({
+          store: createActivityAnalysisStore(db),
+          profileId: activity.profile_id,
+          activities: [activity],
         })
-      : {
-          stress: {
-            tss: null,
-            tss_identity: null,
-            intensity_factor: null,
-            method: null,
-            unavailable_reason: "private_data",
-            trimp: null,
-            trimp_source: null,
-            training_effect: null,
-          },
-          zones: { hr: [], power: [] },
-          computed_as_of: activity.started_at.toISOString(),
-        };
+      : null;
+  const parentDerived = ownedDerived?.get(activity.id);
+  const resolvedDerived: ActivityDerivedMetrics = parentDerived
+    ? {
+        stress: {
+          ...parentDerived,
+          trimp: null,
+          trimp_source: null,
+          training_effect: null,
+        },
+        zones: { hr: [], power: [] },
+        computed_as_of: parentDerived.computed_as_of,
+      }
+    : derived;
   const response = mapActivityToDerivedResponse({
     activity: {
-      ...activity,
+      ...decorateActivity(activity),
       likes_count: getLikeStats(likeStats, activityId).likes_count,
       activity_plans:
         activity.profile_id === viewerId && row.activityPlan
@@ -371,10 +426,15 @@ export async function getActivityByIdForViewer({
           : null,
     },
     has_liked: getLikeStats(likeStats, activityId).has_liked,
-    derived,
+    derived: resolvedDerived,
   });
   return {
     ...response,
-    activity: { ...response.activity, ingestion: ingestion ?? null },
+    activity: {
+      ...response.activity,
+      segments: activity.segments,
+      current_artifact: currentArtifact,
+      ingestion: ingestion ?? null,
+    },
   };
 }

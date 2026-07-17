@@ -87,7 +87,8 @@ export function useTrainingPlanCreationQueries({
     onSuccess: (updatedPlan) => {
       onUpdated?.(updatedPlan);
     },
-    onError: (error) => {
+    onError: async (error) => {
+      if (error.data?.code === "CONFLICT") await editPlanQuery.refetch();
       onUpdateError?.(error);
     },
   });

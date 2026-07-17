@@ -51,10 +51,11 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
   const utils = api.useUtils();
   const store = useActivityPlanCreationStore();
   const isEditMode = Boolean(options.planId);
-  const { data: existingPlan, isLoading: isLoadingPlan } = api.activityPlans.getById.useQuery(
-    { id: options.planId ?? "" },
-    { enabled: isEditMode },
-  );
+  const {
+    data: existingPlan,
+    isLoading: isLoadingPlan,
+    refetch: refetchExistingPlan,
+  } = api.activityPlans.getById.useQuery({ id: options.planId ?? "" }, { enabled: isEditMode });
   const createMutation = api.activityPlans.create.useMutation({
     onSuccess: async (data) => {
       await invalidateActivityPlanQueries(utils);
@@ -72,7 +73,10 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
       });
       options.onSuccess?.(data.id);
     },
-    onError: (error) => options.onError?.(error) ?? showErrorAlert(error, "Failed to Update Plan"),
+    onError: async (error) => {
+      if (error.data?.code === "CONFLICT") await refetchExistingPlan();
+      options.onError?.(error) ?? showErrorAlert(error, "Failed to Update Plan");
+    },
   });
 
   useEffect(() => {
@@ -139,12 +143,9 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
       );
       return null;
     }
-    const primary = parsed.data.segments.find((segment) => segment.role === "activity");
-    if (!primary) return null;
     const payload = {
       name: store.name,
       description: store.description.trim() || null,
-      activity_category: primary.category,
       structure: parsed.data,
       notes: store.notes.trim() || null,
     };
@@ -152,14 +153,28 @@ export function useActivityPlanForm(options: UseActivityPlanFormOptions = {}) {
       // API cutover is owned separately; runtime payload is already strict V3 here.
       if (isEditMode) {
         if (!options.planId) throw new Error("Edit mode requires a plan id");
-        return await updateMutation.mutateAsync({ id: options.planId, ...payload } as never);
+        if (!existingPlan?.structure_hash)
+          throw new Error("Refresh this plan before saving changes.");
+        return await updateMutation.mutateAsync({
+          id: options.planId,
+          expectedStructureHash: existingPlan.structure_hash,
+          ...payload,
+        });
       }
-      return await createMutation.mutateAsync(payload as never);
+      return await createMutation.mutateAsync(payload);
     } catch (error) {
       console.error("Submit error:", error);
       return null;
     }
-  }, [store, validate, isEditMode, options.planId, createMutation, updateMutation]);
+  }, [
+    store,
+    validate,
+    isEditMode,
+    options.planId,
+    existingPlan?.structure_hash,
+    createMutation,
+    updateMutation,
+  ]);
 
   const cancel = useCallback(() => {
     const discard = () => {

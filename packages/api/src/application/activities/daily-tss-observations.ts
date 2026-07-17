@@ -1,23 +1,19 @@
 import type { ActivityListDerivedSummary } from "@repo/core";
-import { loadSeriesIdentityForActivityTss, sameLoadSeriesIdentity } from "@repo/core/load";
 import { activities } from "@repo/db";
 import { and, asc, eq, gte, lt } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 import { createActivityAnalysisStore } from "../../infrastructure/repositories";
-import { buildActivityDerivedSummaryMap } from "../../lib/activity-analysis";
+import {
+  buildActivitySegmentDerivedSummaries,
+  loadActivitySegmentsByActivityId,
+  type SegmentDerivedSummary,
+} from "../../lib/activity-analysis";
 
 export const dailyTssActivityLimit = 10_000;
-
 type Db = ReturnType<typeof getRequiredDb>;
-type ActivityRow = typeof activities.$inferSelect;
-type DailyTssActivityRow = Pick<ActivityRow, "id" | "started_at">;
 type TssIdentity = NonNullable<ActivityListDerivedSummary["tss_identity"]>;
 
-export type DailyTssObservationsInput = {
-  start_date: string;
-  end_date: string;
-  timezone: string;
-};
+export type DailyTssObservationsInput = { start_date: string; end_date: string; timezone: string };
 
 export type DailyTssObservation =
   | {
@@ -35,7 +31,7 @@ export type DailyTssObservation =
       tss_identity: null;
       activity_count: number;
       unavailable_activity_count: number;
-      reason: "tss_unavailable" | "mixed_tss_identities";
+      reason: "tss_unavailable";
     };
 
 export class DailyTssActivityLimitExceededError extends Error {
@@ -60,75 +56,79 @@ function localDate(startedAt: Date, timezone: string): string {
 }
 
 export function aggregateDailyTssObservations(input: {
-  activities: DailyTssActivityRow[];
-  derivedByActivityId: Map<string, ActivityListDerivedSummary>;
+  activities: Array<{ id: string; started_at: Date }>;
+  segmentSummaries: SegmentDerivedSummary[];
   startDate: string;
   endDate: string;
   timezone: string;
 }): DailyTssObservation[] {
-  const byDate = new Map<string, DailyTssActivityRow[]>();
-  for (const activity of input.activities) {
-    const date = localDate(activity.started_at, input.timezone);
-    if (date < input.startDate || date > input.endDate) continue;
-    byDate.set(date, [...(byDate.get(date) ?? []), activity]);
-  }
-
-  return [...byDate.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([date, dayActivities]): DailyTssObservation => {
-      const derived = dayActivities.map((activity) => input.derivedByActivityId.get(activity.id));
-      const unavailableActivityCount = derived.filter(
-        (summary) =>
-          summary?.tss_identity == null ||
-          summary.tss == null ||
-          !Number.isFinite(summary.tss) ||
-          summary.tss < 0,
-      ).length;
-
-      if (unavailableActivityCount > 0) {
-        return {
-          date,
-          state: "unavailable",
-          value: null,
-          tss_identity: null,
-          activity_count: dayActivities.length,
-          unavailable_activity_count: unavailableActivityCount,
-          reason: "tss_unavailable",
-        };
-      }
-
-      const firstIdentity = derived[0]?.tss_identity as TssIdentity;
-      const firstSeriesIdentity = loadSeriesIdentityForActivityTss(firstIdentity);
-      if (
-        derived.some(
-          (summary) =>
-            !summary?.tss_identity ||
-            !sameLoadSeriesIdentity(
-              firstSeriesIdentity,
-              loadSeriesIdentityForActivityTss(summary.tss_identity),
-            ),
-        )
-      ) {
-        return {
-          date,
-          state: "unavailable",
-          value: null,
-          tss_identity: null,
-          activity_count: dayActivities.length,
-          unavailable_activity_count: 0,
-          reason: "mixed_tss_identities",
-        };
-      }
-
-      return {
+  type StreamObservation = DailyTssObservation & { stream: string };
+  const activityDates = new Map(
+    input.activities.map((activity) => [
+      activity.id,
+      localDate(activity.started_at, input.timezone),
+    ]),
+  );
+  const observations: StreamObservation[] = [];
+  for (const summary of input.segmentSummaries) {
+    const date = activityDates.get(summary.activity_id);
+    if (!date || date < input.startDate || date > input.endDate) continue;
+    if (
+      summary.tss === null ||
+      !Number.isFinite(summary.tss) ||
+      summary.tss < 0 ||
+      summary.tss_identity === null ||
+      summary.load_stream_key === null
+    ) {
+      observations.push({
         date,
-        state: "calculated",
-        value: derived.reduce((sum, summary) => sum + (summary?.tss as number), 0),
-        tss_identity: firstIdentity,
-        activity_count: dayActivities.length,
-        unavailable_activity_count: 0,
-      };
+        state: "unavailable",
+        value: null,
+        tss_identity: null,
+        activity_count: 1,
+        unavailable_activity_count: 1,
+        reason: "tss_unavailable",
+        stream: summary.dedupe_key,
+      });
+      continue;
+    }
+    observations.push({
+      date,
+      state: "calculated",
+      value: summary.tss,
+      tss_identity: summary.tss_identity,
+      activity_count: 1,
+      unavailable_activity_count: 0,
+      stream: summary.load_stream_key,
     });
+  }
+  const grouped = new Map<string, StreamObservation>();
+  for (const observation of observations) {
+    const key = `${observation.date}:${observation.stream}`;
+    const current = grouped.get(key);
+    if (!current) {
+      grouped.set(key, observation);
+    } else if (current.state === "calculated" && observation.state === "calculated") {
+      grouped.set(key, {
+        ...current,
+        value: current.value + observation.value,
+        activity_count: current.activity_count + observation.activity_count,
+      });
+    } else if (current.state === "unavailable" && observation.state === "unavailable") {
+      grouped.set(key, {
+        ...current,
+        activity_count: current.activity_count + observation.activity_count,
+        unavailable_activity_count:
+          current.unavailable_activity_count + observation.unavailable_activity_count,
+      });
+    }
+  }
+  return [...grouped.values()]
+    .sort(
+      (left, right) =>
+        left.date.localeCompare(right.date) || left.stream.localeCompare(right.stream),
+    )
+    .map(({ stream: _stream, ...observation }) => observation);
 }
 
 export async function getDailyTssObservations(input: {
@@ -140,26 +140,8 @@ export async function getDailyTssObservations(input: {
   envelopeStart.setUTCDate(envelopeStart.getUTCDate() - 1);
   const envelopeEnd = new Date(`${input.range.end_date}T00:00:00.000Z`);
   envelopeEnd.setUTCDate(envelopeEnd.getUTCDate() + 2);
-
   const activityRows = await input.db
-    .select({
-      id: activities.id,
-      type: activities.type,
-      started_at: activities.started_at,
-      finished_at: activities.finished_at,
-      duration_seconds: activities.duration_seconds,
-      moving_seconds: activities.moving_seconds,
-      distance_meters: activities.distance_meters,
-      avg_heart_rate: activities.avg_heart_rate,
-      max_heart_rate: activities.max_heart_rate,
-      avg_power: activities.avg_power,
-      max_power: activities.max_power,
-      avg_speed_mps: activities.avg_speed_mps,
-      max_speed_mps: activities.max_speed_mps,
-      normalized_power: activities.normalized_power,
-      normalized_speed_mps: activities.normalized_speed_mps,
-      normalized_graded_speed_mps: activities.normalized_graded_speed_mps,
-    })
+    .select()
     .from(activities)
     .where(
       and(
@@ -170,23 +152,26 @@ export async function getDailyTssObservations(input: {
     )
     .orderBy(asc(activities.started_at), asc(activities.id))
     .limit(dailyTssActivityLimit + 1);
-
-  if (activityRows.length > dailyTssActivityLimit) {
-    throw new DailyTssActivityLimitExceededError();
-  }
-
-  const derivedByActivityId = await buildActivityDerivedSummaryMap({
+  if (activityRows.length > dailyTssActivityLimit) throw new DailyTssActivityLimitExceededError();
+  const segments = await loadActivitySegmentsByActivityId(
+    input.db,
+    activityRows.map((activity) => activity.id),
+  );
+  const activitiesWithSegments = activityRows.map((activity) => ({
+    ...activity,
+    segments: segments.get(activity.id) ?? [],
+  }));
+  const segmentSummaries = await buildActivitySegmentDerivedSummaries({
     store: createActivityAnalysisStore(input.db),
     profileId: input.profileId,
-    activities: activityRows,
+    activities: activitiesWithSegments,
   });
-
   return {
     ...input.range,
     day_policy: "activity_started_at_in_requested_timezone" as const,
     observations: aggregateDailyTssObservations({
       activities: activityRows,
-      derivedByActivityId,
+      segmentSummaries,
       startDate: input.range.start_date,
       endDate: input.range.end_date,
       timezone: input.range.timezone,

@@ -2,7 +2,7 @@
  * Helper functions for integrating TSS estimation into tRPC endpoints
  */
 
-import type { CanonicalSport } from "@repo/core";
+import { compileActivityPlanV3 } from "@repo/core/activity-plan";
 import {
   getActivityEffortThresholdEvidence,
   resolveCanonicalThresholds,
@@ -25,7 +25,7 @@ export type EstimationReadStore = {
 
 export type EstimationActivityPlanInput = Pick<
   ActivityPlanRow,
-  "id" | "profile_id" | "name" | "description" | "activity_category" | "structure"
+  "id" | "profile_id" | "name" | "description" | "structure"
 > & {
   [key: string]: unknown;
 };
@@ -36,7 +36,6 @@ type LegacyEstimationReadClient = {
 
 type PlannedActivityEstimationStore = EstimationReadStore & {
   getActivityPlanById(input: { activityPlanId: string }): Promise<{
-    activity_category: string;
     structure: unknown;
   } | null>;
   getLatestFitnessSnapshot(profileId: string): Promise<{
@@ -47,11 +46,10 @@ type PlannedActivityEstimationStore = EstimationReadStore & {
 };
 
 export function toEstimationActivityPlan(input: {
-  activity_category: unknown;
   structure: unknown;
 }): CoreEstimationActivityPlanInput {
   return {
-    activity_category: input.activity_category as CanonicalSport,
+    activity_category: compileActivityPlanV3(input.structure).primaryCategory,
     structure: input.structure as CoreEstimationActivityPlanInput["structure"],
   };
 }
@@ -560,7 +558,6 @@ export async function addEstimationToPlan<TPlan extends EstimationActivityPlanIn
  */
 export async function computePlanMetrics(
   planInput: {
-    activity_category: string;
     structure: any;
   },
   estimationReader: EstimationReadStore | LegacyEstimationReadClient,
@@ -588,10 +585,7 @@ export async function computePlanMetrics(
   const context = buildEstimationContext({
     asOf,
     userProfile: profile || {},
-    activityPlan: {
-      activity_category: planInput.activity_category as any,
-      structure: planInput.structure,
-    },
+    activityPlan: toEstimationActivityPlan(planInput),
     route,
   });
 
@@ -648,7 +642,6 @@ export async function addEstimationToPlans<TPlan extends EstimationActivityPlanI
       const authoritativeRoute = undefined;
 
       const memoKey = JSON.stringify({
-        activity_category: plan.activity_category,
         structure: plan.structure,
         route: authoritativeRoute,
       });

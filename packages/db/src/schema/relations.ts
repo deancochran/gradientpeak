@@ -2,10 +2,13 @@ import { relations } from "drizzle-orm";
 
 import {
   activities,
+  activityArtifactLinks,
+  activityArtifacts,
   activityEfforts,
   activityFileIngestions,
   activityPlans,
   activityRoutes,
+  activitySegments,
   comments,
   conversationParticipants,
   conversations,
@@ -37,6 +40,8 @@ import {
 
 export const profilesRelations = relations(profiles, ({ many }) => ({
   activities: many(activities),
+  activityArtifacts: many(activityArtifacts),
+  activitySegments: many(activitySegments),
   activityFileIngestions: many(activityFileIngestions),
   activityPlans: many(activityPlans),
   activityRoutes: many(activityRoutes),
@@ -240,6 +245,49 @@ export const activitiesRelations = relations(activities, ({ one, many }) => ({
   }),
   efforts: many(activityEfforts),
   fileIngestions: many(activityFileIngestions),
+  artifactLinks: many(activityArtifactLinks),
+  segments: many(activitySegments),
+}));
+
+export const activityArtifactsRelations = relations(activityArtifacts, ({ one, many }) => ({
+  profile: one(profiles, {
+    fields: [activityArtifacts.profile_id],
+    references: [profiles.id],
+  }),
+  links: many(activityArtifactLinks),
+  ingestions: many(activityFileIngestions),
+  sourcedSegments: many(activitySegments),
+}));
+
+export const activityArtifactLinksRelations = relations(activityArtifactLinks, ({ one }) => ({
+  activity: one(activities, {
+    fields: [activityArtifactLinks.activity_id],
+    references: [activities.id],
+  }),
+  artifact: one(activityArtifacts, {
+    fields: [activityArtifactLinks.artifact_id],
+    references: [activityArtifacts.id],
+  }),
+  profile: one(profiles, {
+    fields: [activityArtifactLinks.profile_id],
+    references: [profiles.id],
+  }),
+}));
+
+export const activitySegmentsRelations = relations(activitySegments, ({ one, many }) => ({
+  activity: one(activities, {
+    fields: [activitySegments.activity_id],
+    references: [activities.id],
+  }),
+  profile: one(profiles, {
+    fields: [activitySegments.profile_id],
+    references: [profiles.id],
+  }),
+  sourceArtifact: one(activityArtifacts, {
+    fields: [activitySegments.source_artifact_id],
+    references: [activityArtifacts.id],
+  }),
+  efforts: many(activityEfforts),
 }));
 
 export const activityFileIngestionsRelations = relations(activityFileIngestions, ({ one }) => ({
@@ -251,6 +299,10 @@ export const activityFileIngestionsRelations = relations(activityFileIngestions,
     fields: [activityFileIngestions.profile_id],
     references: [profiles.id],
   }),
+  artifact: one(activityArtifacts, {
+    fields: [activityFileIngestions.artifact_id],
+    references: [activityArtifacts.id],
+  }),
 }));
 
 export const activityEffortsRelations = relations(activityEfforts, ({ one }) => ({
@@ -261,6 +313,10 @@ export const activityEffortsRelations = relations(activityEfforts, ({ one }) => 
   activity: one(activities, {
     fields: [activityEfforts.activity_id],
     references: [activities.id],
+  }),
+  segment: one(activitySegments, {
+    fields: [activityEfforts.segment_id],
+    references: [activitySegments.id],
   }),
 }));
 
@@ -445,8 +501,11 @@ export const relationsSchema = {
   trainingPlansRelations,
   eventsRelations,
   activitiesRelations,
+  activityArtifactLinksRelations,
+  activityArtifactsRelations,
   activityFileIngestionsRelations,
   activityEffortsRelations,
+  activitySegmentsRelations,
   integrationsRelations,
   integrationCredentialsRelations,
   providerSyncJobsRelations,

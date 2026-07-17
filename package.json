@@ -24,6 +24,7 @@
     "check:architecture:baseline": "node tooling/architecture/check-architecture.mjs --write-baseline",
     "check:guidance": "node tooling/architecture/check-guidance.mjs",
     "doctor": "node tooling/doctor.mjs",
+    "multisport:legacy-denylist": "node tooling/multisport/legacy-denylist.mjs",
     "dev": "turbo run dev",
     "dev:all": "turbo run dev",
     "dev:clean": "pnpm exec k 3000 3100 8081 8082 || true && pnpm run self-host:down >/dev/null 2>&1 || true && printf '[dev-clean] local web/mobile dev servers and Supabase stopped\n'",

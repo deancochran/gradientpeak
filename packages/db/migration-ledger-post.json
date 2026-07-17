@@ -53,6 +53,10 @@
     {
       "version": "20260716120500",
       "name": "add_content_visibility"
+    },
+    {
+      "version": "20260717173000",
+      "name": "multisport_modern_hard_cut"
     }
   ]
 }

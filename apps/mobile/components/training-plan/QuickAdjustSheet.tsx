@@ -55,7 +55,8 @@ export function QuickAdjustSheet({
       Alert.alert("Success", "Training plan adjusted successfully");
       onClose();
     },
-    onError: (error) => {
+    onError: async (error) => {
+      if (error.data?.code === "CONFLICT") await utils.trainingPlans.invalidate();
       Alert.alert("Adjustment Failed", error.message || "Failed to adjust plan");
     },
   });
@@ -75,6 +76,7 @@ export function QuickAdjustSheet({
           onPress: async () => {
             await applyAdjustmentMutation.mutateAsync({
               id: plan.id,
+              expectedStructureHash: plan.structure_hash,
               adjustedStructure: smartSuggestion.adjustedStructure,
             });
           },
@@ -105,6 +107,7 @@ export function QuickAdjustSheet({
           onPress: async () => {
             await applyAdjustmentMutation.mutateAsync({
               id: plan.id,
+              expectedStructureHash: plan.structure_hash,
               adjustedStructure,
             });
           },

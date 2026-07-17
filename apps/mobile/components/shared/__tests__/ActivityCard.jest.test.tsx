@@ -97,7 +97,8 @@ describe("ActivityCard", () => {
         activity={{
           id: "activity-1",
           name: "Morning Run",
-          type: "run",
+          activity_kind: "single",
+          activity_categories: ["run"],
           started_at: "2026-03-21T12:00:00.000Z",
           likes_count: 2,
           has_liked: false,
@@ -116,9 +117,10 @@ describe("ActivityCard", () => {
         activity={{
           id: "activity-1",
           name: "Morning Run",
-          type: "run",
+          activity_kind: "single",
+          activity_categories: ["run"],
           distance_meters: 10000,
-          duration_seconds: 3600,
+          elapsed_ms: 3_600_000,
           avg_speed_mps: 2.78,
           avg_power: 240,
           avg_heart_rate: 148,
@@ -137,7 +139,7 @@ describe("ActivityCard", () => {
 
     expect(screen.getByText("Distance")).toBeTruthy();
     expect(screen.getByText("10.0 km")).toBeTruthy();
-    expect(screen.getByText("Duration")).toBeTruthy();
+    expect(screen.getByText("Elapsed")).toBeTruthy();
     expect(screen.getByText("60 min")).toBeTruthy();
     expect(screen.getByText("TSS")).toBeTruthy();
     expect(screen.getByText("~72")).toBeTruthy();
@@ -156,7 +158,8 @@ describe("ActivityCard", () => {
         activity={{
           id: "activity-1",
           name: "Morning Run",
-          type: "run",
+          activity_kind: "single",
+          activity_categories: ["run"],
           distance_meters: 5000,
         }}
         variant="list"
@@ -172,9 +175,10 @@ describe("ActivityCard", () => {
         activity={{
           id: "activity-1",
           name: "Morning Run",
-          type: "run",
+          activity_kind: "single",
+          activity_categories: ["run"],
           distance_meters: 1000,
-          duration_seconds: 600,
+          elapsed_ms: 600_000,
           derived: null,
         }}
         variant="list"
@@ -192,8 +196,9 @@ describe("ActivityCard", () => {
         activity={{
           id: "activity-1",
           name: "Strength Session",
-          type: "strength",
-          duration_seconds: 1800,
+          activity_kind: "single",
+          activity_categories: ["strength"],
+          elapsed_ms: 1_800_000,
           derived: {
             tss: 32,
             intensity_factor: 0.8,
@@ -213,8 +218,9 @@ describe("ActivityCard", () => {
         activity={{
           id: "activity-1",
           name: "Strength Session",
-          type: "strength",
-          duration_seconds: 1800,
+          activity_kind: "single",
+          activity_categories: ["strength"],
+          elapsed_ms: 1_800_000,
           derived: {
             tss: null,
             intensity_factor: null,
@@ -236,9 +242,10 @@ describe("ActivityCard", () => {
         activity={{
           id: "activity-1",
           name: "Morning Ride",
-          type: "bike",
+          activity_kind: "single",
+          activity_categories: ["bike"],
           started_at: "2026-04-11T00:00:00.000Z",
-          duration_seconds: 3600,
+          elapsed_ms: 3_600_000,
           derived: {
             tss: 72,
             intensity_factor: 0.82,

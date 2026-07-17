@@ -11,6 +11,7 @@ import {
 import { dbPackageRoot } from "./_helpers";
 import { classifyLedger, type LedgerEntry } from "./check-migration-ledger";
 import { createSchemaFingerprint } from "./check-schema-fingerprint";
+import { installWriterFence, proveWriterFence } from "./multisport-command";
 
 type LedgerEvidence = { entries: LedgerEntry[] };
 type Policy = {
@@ -136,6 +137,13 @@ async function main() {
         '11111111-1111-4111-8111-111111111111', 9001, null,
         'upgrade sentinel', '{"sessions":[]}'::jsonb, 'public', true
       );
+      insert into public.activity_plans (
+        id, profile_id, name, activity_category, structure, version,
+        template_visibility, is_system_template
+      ) values (
+        '77777777-7777-4777-8777-777777777777', null, 'upgrade activity sentinel',
+        'run', '{"version":2,"intervals":[]}'::jsonb, '2.0', 'public', true
+      );
       insert into public.users (id, name, email, email_verified)
       values (
         '22222222-2222-4222-8222-222222222222',
@@ -202,6 +210,53 @@ async function main() {
       [policy.baseline.version, policy.baseline.name],
     );
     for (const file of activeFiles.slice(1)) {
+      if (file.endsWith("_multisport_modern_hard_cut.sql")) {
+        await target.query(`
+          create table public._multisport_cutover_runs (
+            run_id uuid primary key, manifest_checksum text not null,target_database text not null,
+            database_oid oid not null,system_identifier text not null,snapshot_hash text not null,
+            backup_hash text not null,storage_archive_hash text not null,storage_inventory_hash text not null,
+            preflight_hash text,staging_hash text,status text not null,generated_at timestamptz not null,expires_at timestamptz not null
+          );
+          create table public._multisport_activity_plan_manifest (
+            run_id uuid not null,id uuid not null, profile_id uuid, name text not null, description text, notes text,
+            structure jsonb not null, structure_hash text not null, gps_recording_enabled boolean not null,
+            template_visibility text not null, content_visibility text not null, import_provider text,
+            import_external_id text, is_system_template boolean not null, created_at timestamptz not null,
+            updated_at timestamptz not null,before_semantic_hash text,after_semantic_hash text not null,
+            source_semantic_hash text,is_new_source boolean not null,primary key(run_id,id)
+          );
+          create table public._multisport_training_plan_manifest (
+            run_id uuid not null,id uuid not null, structure jsonb not null, structure_hash text not null,primary key(run_id,id)
+          );
+          create table public._multisport_artifact_manifest (
+            run_id uuid not null,artifact_id uuid not null,activity_id uuid not null,profile_id uuid not null,
+            source_bucket text not null,source_path text not null,storage_object_id uuid not null,
+            accepted_bucket text not null,accepted_path text not null,accepted_storage_object_id uuid not null,
+            accepted_storage_version text not null,digest text not null,byte_size bigint not null,
+            media_type text not null,format text not null,original_name text,ordinal integer not null,is_current boolean not null,
+            primary key(run_id,activity_id,ordinal),unique(run_id,activity_id,artifact_id)
+          );
+          create table public._multisport_ingestion_manifest(run_id uuid not null,ingestion_id uuid not null,
+            activity_id uuid not null,artifact_id uuid,operation_key text not null,primary key(run_id,ingestion_id));
+          insert into public._multisport_cutover_runs
+          select 'bbbbbbbb-bbbb-4bbb-abbb-bbbbbbbbbbbb',repeat('0',64),current_database(),
+            (select oid from pg_database where datname=current_database()),system_identifier::text,
+            repeat('1',64),repeat('2',64),repeat('3',64),repeat('4',64),repeat('5',64),repeat('6',64),
+            'migrating',now(),now()+interval '1 day' from pg_control_system();
+          insert into public._multisport_activity_plan_manifest values (
+            'bbbbbbbb-bbbb-4bbb-abbb-bbbbbbbbbbbb','77777777-7777-4777-8777-777777777777', null, 'upgrade activity sentinel', null, null,
+            '{"version":3,"segments":[{"id":"88888888-8888-4888-a888-888888888888","role":"activity","category":"run","name":"Run","intervals":[{"id":"99999999-9999-4999-a999-999999999999","name":"Run","repetitions":1,"steps":[{"id":"aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa","name":"Run","duration":{"type":"time","seconds":60},"targets":[{"type":"rpe","value":1}]}]}]}]}'::jsonb,
+            'v1:sha256:0000000000000000000000000000000000000000000000000000000000000000', true,
+            'public', 'public', null, null, true, now(), now(),repeat('7',64),repeat('7',64),null,false
+          );
+          insert into public._multisport_training_plan_manifest values (
+            'bbbbbbbb-bbbb-4bbb-abbb-bbbbbbbbbbbb','11111111-1111-4111-8111-111111111111',
+            '{"version":1,"sessions":[{"offset_days":0,"activity_plan_id":"77777777-7777-4777-8777-777777777777"}]}'::jsonb,
+            'v1:sha256:0000000000000000000000000000000000000000000000000000000000000000'
+          );
+        `);
+      }
       await applySqlFile(target, resolve(migrationDirectory, file));
       await target.query(
         "insert into supabase_migrations.schema_migrations (version, name) values ($1, $2)",
@@ -221,9 +276,20 @@ async function main() {
         from public.training_plans where id = '11111111-1111-4111-8111-111111111111'
       ) t`,
     );
-    if (JSON.stringify(before.rows) !== JSON.stringify(after.rows)) {
-      throw new Error("representative product data changed during reconciliation");
+    const beforeRow = before.rows[0]?.row as Record<string, unknown> | undefined;
+    const afterRow = after.rows[0]?.row as Record<string, unknown> | undefined;
+    if (!beforeRow || !afterRow) throw new Error("representative product data is missing");
+    const { structure: _beforeStructure, ...beforeMetadata } = beforeRow;
+    const { structure: afterStructure, ...afterMetadata } = afterRow;
+    if (JSON.stringify(beforeMetadata) !== JSON.stringify(afterMetadata)) {
+      throw new Error("representative product metadata changed during reconciliation");
     }
+    if ((afterStructure as { version?: unknown })?.version !== 1) {
+      throw new Error("representative training plan was not converted to canonical V1");
+    }
+    await target.query(
+      readFileSync(resolve(dbPackageRoot, "scripts/verify-multisport-constraints.sql"), "utf8"),
+    );
     const queueRows = await target.query<{ id: string; queue_sequence: string }>(`
       select id, queue_sequence::text
       from public.provider_sync_jobs
@@ -296,6 +362,29 @@ async function main() {
       allowTransitionalExtras: true,
     });
     assertFingerprintMatches(expandFingerprint, expectedFingerprint, "expand migration normalized");
+    await target.query("begin");
+    try {
+      await target.query(
+        "truncate public.activities cascade;truncate public.provider_sync_jobs cascade;truncate public.integration_resource_links cascade;delete from storage.objects where bucket_id='activity-files'",
+      );
+      await installWriterFence(target, "aaaaaaaa-bbbb-4ccc-addd-eeeeeeeeeeee");
+      const fenceProofs = await proveWriterFence(target);
+      for (const expected of [
+        "public.activities:trigger-enabled",
+        "public.provider_sync_jobs:trigger-enabled",
+        "public.integration_resource_links:trigger-enabled",
+        "storage.objects:trigger-enabled",
+        "synthetic-valid-insert:blocked",
+      ]) {
+        if (!fenceProofs.includes(expected))
+          throw new Error(`empty-table writer fence proof missing ${expected}`);
+      }
+      console.log(
+        `[db:migration:writer-fence] empty-table trigger attestation and synthetic insert rejection passed (${fenceProofs.length} proofs)`,
+      );
+    } finally {
+      await target.query("rollback");
+    }
 
     const contractPath = resolve(dbPackageRoot, "scripts/contract_redundant_idx_columns.sql");
     const contractSql = readFileSync(contractPath, "utf8");

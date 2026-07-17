@@ -12,6 +12,21 @@ vi.mock("@repo/db", () => ({
     finished_at: "activities.finished_at",
     activity_file_path: "activities.activity_file_path",
   },
+  activityArtifacts: {
+    id: "activity_artifacts.id",
+    path: "activity_artifacts.path",
+  },
+  activityArtifactLinks: {
+    activity_id: "activity_artifact_links.activity_id",
+    artifact_id: "activity_artifact_links.artifact_id",
+    is_current: "activity_artifact_links.is_current",
+    role: "activity_artifact_links.role",
+  },
+  activitySegments: {
+    activity_id: "activity_segments.activity_id",
+    category: "activity_segments.category",
+    role: "activity_segments.role",
+  },
   activityGeometry: { table: "activity_geometry", activity_id: "activity_geometry.activity_id" },
   activityImports: {
     activity_id: "activity_imports.activity_id",
@@ -131,10 +146,12 @@ vi.mock("../../lib/activity-analysis/context", () => ({
   resolveActivityContextAsOf: mocks.resolveActivityContextAsOf,
 }));
 
+import { activities } from "@repo/db";
 import { activityFilesRouter } from "../activity-files";
 
 type MockDbPlan = {
   selectResults?: unknown[][];
+  activitySelectResult?: unknown[];
   findFirstResults?: unknown[];
   executeResults?: unknown[];
 };
@@ -155,9 +172,13 @@ function createDbMock(plan: MockDbPlan = {}) {
     updateCalls: [] as Array<{ table: unknown; set: unknown }>,
     deleteCalls: [] as Array<{ table: unknown; where: unknown }>,
   };
+  let selectedTable: unknown;
 
   const builder: any = {
-    from: vi.fn(() => builder),
+    from: vi.fn((table: unknown) => {
+      selectedTable = table;
+      return builder;
+    }),
     innerJoin: vi.fn(() => builder),
     leftJoin: vi.fn(() => builder),
     where: vi.fn((...args: unknown[]) => {
@@ -173,9 +194,11 @@ function createDbMock(plan: MockDbPlan = {}) {
       return builder;
     }),
     then: (onFulfilled: (rows: unknown[]) => unknown) =>
-      Promise.resolve(selectResults.shift() ?? [findFirstResults.shift()].filter(Boolean)).then(
-        onFulfilled,
-      ),
+      Promise.resolve(
+        selectedTable === activities && plan.activitySelectResult
+          ? plan.activitySelectResult
+          : (selectResults.shift() ?? []),
+      ).then(onFulfilled),
   };
 
   const db = {
@@ -186,8 +209,12 @@ function createDbMock(plan: MockDbPlan = {}) {
     insert: vi.fn((table: unknown) => ({
       values: vi.fn((values: unknown) => {
         callLog.insertCalls.push({ table, values });
+        const conflictResult = {
+          returning: vi.fn(async () => (Array.isArray(values) ? values : [values])),
+        };
         return {
-          onConflictDoUpdate: vi.fn(async () => values),
+          onConflictDoUpdate: vi.fn(() => conflictResult),
+          onConflictDoNothing: vi.fn(() => conflictResult),
           returning: vi.fn(async () => (Array.isArray(values) ? values : [values])),
           then: (onFulfilled: (result: unknown) => unknown) =>
             Promise.resolve(values).then(onFulfilled),
@@ -199,7 +226,9 @@ function createDbMock(plan: MockDbPlan = {}) {
         callLog.updateCalls.push({ table, set });
         return {
           where: vi.fn(() => ({
-            returning: vi.fn(async () => selectResults.shift() ?? [set]),
+            returning: vi.fn(async () =>
+              table === activities ? [{ id: "activity-1" }] : (selectResults.shift() ?? [set]),
+            ),
             then: (onFulfilled: (result: unknown) => unknown) =>
               Promise.resolve(set).then(onFulfilled),
           })),
@@ -219,6 +248,9 @@ function createDbMock(plan: MockDbPlan = {}) {
           callLog.findFirstCalls.push(args);
           return findFirstResults.shift() ?? null;
         }),
+      },
+      activityFileIngestions: {
+        findFirst: vi.fn(async () => findFirstResults.shift() ?? null),
       },
     },
     select: vi.fn((fields: unknown) => {
@@ -367,7 +399,7 @@ describe("activityFilesRouter", () => {
       updated_at: finishedAt,
     };
     const { db, callLog } = createDbMock({
-      selectResults: [[{ value: "168" }], [{ value: "188" }], [{ value: "52" }], []],
+      selectResults: [[{ value: "168" }], [{ value: "52" }], [], [], []],
       findFirstResults: [createdActivity],
       executeResults: [{ rows: [] }],
     });
@@ -401,6 +433,16 @@ describe("activityFilesRouter", () => {
       ],
       laps: [],
       lengths: [],
+      segments: [
+        {
+          sessionMessageIndex: 0,
+          role: "activity",
+          category: "bike",
+          rawSport: "cycling",
+          startTime,
+          endTime: finishedAt,
+        },
+      ],
     });
 
     const caller = createCaller({ db });
@@ -408,7 +450,6 @@ describe("activityFilesRouter", () => {
       activityFilePath: "activities/11111111-1111-4111-8111-111111111111/uploads/123_history.fit",
       name: "Morning Ride",
       notes: "Imported",
-      activityType: "bike",
       importProvenance: {
         import_source: "manual_historical",
         import_file_type: "fit",
@@ -464,7 +505,9 @@ describe("activityFilesRouter", () => {
         }),
       ]),
     );
-    expect(mocks.storage.remove).not.toHaveBeenCalled();
+    expect(mocks.storage.remove).toHaveBeenCalledWith([
+      "activities/11111111-1111-4111-8111-111111111111/uploads/123_history.fit",
+    ]);
   });
 
   it("rejects processing activity files owned by another user", async () => {
@@ -475,10 +518,22 @@ describe("activityFilesRouter", () => {
       caller.processActivityFile({
         activityFilePath: "activities/22222222-2222-4222-8222-222222222222/uploads/ride.fit",
         name: "Other Ride",
-        activityType: "bike",
       }),
     ).rejects.toThrow("Access denied");
 
+    expect(mocks.storage.download).not.toHaveBeenCalled();
+  });
+
+  it("rejects the removed processActivityFile parent activity type field", async () => {
+    const { db } = createDbMock();
+    const caller = createCaller({ db });
+    await expect(
+      (caller.processActivityFile as (input: unknown) => Promise<unknown>)({
+        activityFilePath: "activities/11111111-1111-4111-8111-111111111111/uploads/legacy.fit",
+        name: "Legacy transport",
+        activityType: "bike",
+      }),
+    ).rejects.toThrow("Unrecognized key");
     expect(mocks.storage.download).not.toHaveBeenCalled();
   });
 
@@ -491,9 +546,13 @@ describe("activityFilesRouter", () => {
     const activity = {
       id: activityId,
       profile_id: userId,
-      type: "bike",
       started_at: startTime,
       finished_at: finishedAt,
+      elapsed_ms: 3_600_000,
+      active_ms: 3_600_000,
+      moving_ms: 3_600_000,
+      timing_coverage: "complete",
+      segments_revision: 1,
       created_at: startTime,
       updated_at: finishedAt,
     };
@@ -505,7 +564,16 @@ describe("activityFilesRouter", () => {
       attempt_count: 0,
     };
     const uploadedIngestion = { ...pendingIngestion, status: "uploaded" };
-    const processingIngestion = { ...pendingIngestion, status: "processing", attempt_count: 1 };
+    const processingIngestion = {
+      ...pendingIngestion,
+      status: "processing",
+      attempt_count: 1,
+      claim_token: "bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb",
+      operation_key: `mobile_recording:direct:${activityId}`,
+      source: "mobile_recording" as const,
+      provider: null,
+      external_id: null,
+    };
     const readyIngestion = { ...processingIngestion, status: "ready" };
     const { db, callLog } = createDbMock({
       selectResults: [
@@ -516,13 +584,14 @@ describe("activityFilesRouter", () => {
         [processingIngestion],
         [{ value: "168" }],
         [{ value: "52" }],
-        [activity],
+        [{ id: ingestionId }],
         [],
         [],
-        [processingIngestion],
-        [readyIngestion],
+        [],
+        [],
       ],
-      findFirstResults: [activity],
+      activitySelectResult: [activity],
+      findFirstResults: [readyIngestion, activity],
     });
 
     mocks.parseActivityFile.mockReturnValue({
@@ -556,6 +625,16 @@ describe("activityFilesRouter", () => {
       ],
       laps: [{ startTime }],
       lengths: [],
+      segments: [
+        {
+          sessionMessageIndex: 0,
+          role: "activity",
+          category: "bike",
+          rawSport: "cycling",
+          startTime,
+          endTime: finishedAt,
+        },
+      ],
     });
 
     const caller = createCaller({ db, userId });
@@ -575,15 +654,13 @@ describe("activityFilesRouter", () => {
       expect.arrayContaining([
         expect.objectContaining({
           set: expect.objectContaining({
-            activity_file_path: `activities/${userId}/uploads/phase5.fit`,
-            activity_file_size: 12345,
-            import_file_type: "fit",
+            elapsed_ms: 3_600_000,
             laps: expect.any(Array),
           }),
         }),
       ]),
     );
-    expect(mocks.storage.remove).not.toHaveBeenCalled();
+    expect(mocks.storage.remove).toHaveBeenCalledWith([`activities/${userId}/uploads/phase5.fit`]);
   });
 
   it("rejects attaching uploaded files when the activity or ingestion is not owned", async () => {
@@ -618,7 +695,7 @@ describe("activityFilesRouter", () => {
     const userId = "11111111-1111-4111-8111-111111111111";
     const activityId = "99999999-9999-4999-8999-999999999999";
     const ingestionId = "aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa";
-    const activity = { id: activityId, profile_id: userId, type: "bike" };
+    const activity = { id: activityId, profile_id: userId };
     const pendingIngestion = {
       id: ingestionId,
       activity_id: activityId,
@@ -627,7 +704,12 @@ describe("activityFilesRouter", () => {
       attempt_count: 0,
     };
     const uploadedIngestion = { ...pendingIngestion, status: "uploaded" };
-    const processingIngestion = { ...pendingIngestion, status: "processing", attempt_count: 1 };
+    const processingIngestion = {
+      ...pendingIngestion,
+      status: "processing",
+      attempt_count: 1,
+      claim_token: "bbbbbbbb-1111-4111-8111-bbbbbbbbbbbb",
+    };
     const failedIngestion = { ...processingIngestion, status: "failed" };
     const { db, callLog } = createDbMock({
       selectResults: [
@@ -652,7 +734,7 @@ describe("activityFilesRouter", () => {
         activityId,
         activityFilePath: `activities/${userId}/uploads/bad.fit`,
       }),
-    ).rejects.toThrow("Failed to parse activity file");
+    ).rejects.toThrow("Failed to parse activity file: bad fit");
     expect(callLog.deleteCalls).toEqual([]);
     expect(mocks.storage.remove).not.toHaveBeenCalled();
     expect(callLog.updateCalls).toEqual(
@@ -705,15 +787,22 @@ describe("activityFilesRouter", () => {
 
   it("returns parsed streams for an owned activity", async () => {
     const activityId = "66666666-6666-4666-8666-666666666666";
+    const segmentId = "99999999-9999-4999-8999-999999999999";
     const { db } = createDbMock({
-      findFirstResults: [
-        {
-          activity_file_path:
-            "activities/11111111-1111-4111-8111-111111111111/uploads/authorized.fit",
-          profile_id: "11111111-1111-4111-8111-111111111111",
-          is_private: true,
-          type: "bike",
-        },
+      selectResults: [
+        [
+          {
+            activityFilePath:
+              "activities/11111111-1111-4111-8111-111111111111/uploads/authorized.fit",
+            profile_id: "11111111-1111-4111-8111-111111111111",
+            is_private: true,
+            activityType: "bike",
+            parentStartedAt: new Date("2026-03-01T10:00:00.000Z"),
+            startOffsetMs: 0,
+            endOffsetMs: 20_000,
+            sourceSessionIndex: 0,
+          },
+        ],
       ],
     });
 
@@ -731,6 +820,7 @@ describe("activityFilesRouter", () => {
     const caller = createCaller({ db });
     const result = await caller.getStreams({
       activityId,
+      scope: { type: "segment", segmentId },
     });
 
     expect(mocks.storage.download).toHaveBeenCalledWith(
@@ -785,16 +875,58 @@ describe("activityFilesRouter", () => {
     });
   });
 
+  it("analyzes only the requested source session in a multisport artifact", async () => {
+    const activityId = "66666666-6666-4666-8666-666666666666";
+    const { db } = createDbMock({
+      selectResults: [
+        [
+          {
+            activityFilePath:
+              "activities/11111111-1111-4111-8111-111111111111/uploads/multisport.fit",
+            profile_id: "11111111-1111-4111-8111-111111111111",
+            activityType: "run",
+            parentStartedAt: new Date("2026-03-01T10:00:00.000Z"),
+            startOffsetMs: 600_000,
+            endOffsetMs: 1_200_000,
+            sourceSessionIndex: 1,
+          },
+        ],
+      ],
+    });
+    mocks.parseActivityFile.mockReturnValue({
+      metadata: { type: "multisport", startTime: new Date("2026-03-01T10:00:00.000Z") },
+      records: [
+        { timestamp: new Date("2026-03-01T10:01:00.000Z"), sessionMessageIndex: 0, power: 250 },
+        { timestamp: new Date("2026-03-01T10:11:00.000Z"), sessionMessageIndex: 1, heartRate: 165 },
+      ],
+      laps: [],
+      lengths: [],
+      summary: { totalTime: 1200, totalDistance: 5000 },
+    });
+
+    const result = await createCaller({ db }).getStreams({
+      activityId,
+      scope: { type: "session", sessionMessageIndex: 1 },
+    });
+
+    expect(result.records).toEqual([
+      expect.objectContaining({ sessionMessageIndex: 1, heartRate: 165 }),
+    ]);
+    expect(result.analysis.sport).toBe("run");
+  });
+
   it("rejects stream access when an authorized activity has no activity file", async () => {
     const activityId = "77777777-7777-4777-8777-777777777777";
     const { db } = createDbMock({
-      findFirstResults: [
-        {
-          activity_file_path: null,
-          profile_id: "11111111-1111-4111-8111-111111111111",
-          is_private: true,
-          type: "bike",
-        },
+      selectResults: [
+        [
+          {
+            activityFilePath: null,
+            profile_id: "11111111-1111-4111-8111-111111111111",
+            is_private: true,
+            activityType: "bike",
+          },
+        ],
       ],
     });
 
@@ -803,6 +935,7 @@ describe("activityFilesRouter", () => {
     await expect(
       caller.getStreams({
         activityId,
+        scope: { type: "segment", segmentId: "99999999-9999-4999-8999-999999999999" },
       }),
     ).rejects.toThrow("Activity does not have an associated activity file");
   });
@@ -810,13 +943,15 @@ describe("activityFilesRouter", () => {
   it("rejects stream access for non-owners even when the activity is public", async () => {
     const activityId = "88888888-8888-4888-8888-888888888888";
     const { db } = createDbMock({
-      findFirstResults: [
-        {
-          activity_file_path: "activities/22222222-2222-4222-8222-222222222222/uploads/public.fit",
-          profile_id: "22222222-2222-4222-8222-222222222222",
-          is_private: false,
-          type: "bike",
-        },
+      selectResults: [
+        [
+          {
+            activityFilePath: "activities/22222222-2222-4222-8222-222222222222/uploads/public.fit",
+            profile_id: "22222222-2222-4222-8222-222222222222",
+            is_private: false,
+            activityType: "bike",
+          },
+        ],
       ],
     });
 
@@ -825,12 +960,13 @@ describe("activityFilesRouter", () => {
     await expect(
       caller.getStreams({
         activityId,
+        scope: { type: "segment", segmentId: "99999999-9999-4999-8999-999999999999" },
       }),
     ).rejects.toThrow("Detailed activity streams are only available to the activity owner");
     expect(mocks.storage.download).not.toHaveBeenCalled();
   });
 
-  it("cleans up malformed parsed activity data during processing", async () => {
+  it("retains an accepted immutable artifact when decoded data is malformed", async () => {
     const { db } = createDbMock();
 
     mocks.parseActivityFile.mockReturnValue({
@@ -848,12 +984,9 @@ describe("activityFilesRouter", () => {
         activityFilePath: "activities/11111111-1111-4111-8111-111111111111/uploads/123_history.fit",
         name: "Morning Ride",
         notes: "Imported",
-        activityType: "bike",
       }),
     ).rejects.toThrow("Failed to parse activity file");
 
-    expect(mocks.storage.remove).toHaveBeenCalledWith([
-      "activities/11111111-1111-4111-8111-111111111111/uploads/123_history.fit",
-    ]);
+    expect(mocks.storage.remove).not.toHaveBeenCalled();
   });
 });

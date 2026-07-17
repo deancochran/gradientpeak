@@ -4,10 +4,10 @@ import { execFileSync } from "node:child_process";
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { SYSTEM_ROUTE_TEMPLATES, type SystemRouteTemplate } from "@repo/core";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-
 import {
   buildRouteFileArtifacts,
   inferRouteContentType,
@@ -15,7 +15,6 @@ import {
   ROUTES_BUCKET,
 } from "../../api/src/lib/routes/route-file-helpers";
 import { getApiStorageService } from "../../api/src/storage-service";
-import { SYSTEM_ROUTE_TEMPLATES, type SystemRouteTemplate } from "../../core/samples";
 import { activityRoutes, events, groupEvents } from "../src/schema/tables";
 import { prepareDbEnv } from "./_helpers";
 

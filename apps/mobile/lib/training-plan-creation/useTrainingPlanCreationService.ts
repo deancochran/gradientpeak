@@ -317,8 +317,12 @@ export function useTrainingPlanCreationService({
     if (!planId) {
       throw new Error("Missing training plan id for update.");
     }
-    await updatePlanMutation.mutateAsync(
-      toTrainingPlanUpdatePayload(planId, state, {
+    const expectedStructureHash = editPlanQuery.data?.structure_hash;
+    if (!expectedStructureHash) {
+      throw new Error("Refresh the training plan before saving changes.");
+    }
+    await updatePlanMutation.mutateAsync({
+      ...toTrainingPlanUpdatePayload(planId, state, {
         backendPlanning: {
           projectionSource:
             previewLifecycle.status === "backend_preview_ready" ? "backend" : "local",
@@ -328,8 +332,9 @@ export function useTrainingPlanCreationService({
               : null,
         },
       }),
-    );
-  }, [planId, previewLifecycle, state, updatePlanMutation]);
+      expectedStructureHash,
+    });
+  }, [editPlanQuery.data?.structure_hash, planId, previewLifecycle, state, updatePlanMutation]);
 
   const savePlan = useMemo(() => {
     const readiness = deriveTrainingPlanReadinessPresentation({

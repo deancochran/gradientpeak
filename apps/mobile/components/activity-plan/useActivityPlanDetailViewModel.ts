@@ -8,7 +8,8 @@ import { useMemo } from "react";
 import { getAuthoritativeActivityPlanMetrics } from "@/lib/activityPlanMetrics";
 
 type ActivityPlanLike = {
-  activity_category: string;
+  categories?: readonly string[];
+  primary_category?: string | null;
   authoritative_metrics?: {
     estimated_duration?: number | null;
     estimated_tss?: number | null;
@@ -110,7 +111,10 @@ export function useActivityPlanDetailViewModel({
   const isOwnedByUser = activityPlan?.profile_id === profile?.id;
   const detailBadges = activityPlan
     ? [
-        compiled?.categories.join(" → ") || activityPlan.activity_category,
+        compiled?.categories.join(" → ") ||
+          activityPlan.categories?.join(" → ") ||
+          activityPlan.primary_category ||
+          "Other",
         isScheduled ? "Scheduled" : isOwnedByUser ? "My plan" : "Template",
       ]
     : [];

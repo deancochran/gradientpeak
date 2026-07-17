@@ -14,7 +14,9 @@ import type { ResourcePickerItem, ResourcePickerScope } from "./resourcePickerTy
 type ActivityPlanPickerSource = NonNullable<
   Parameters<typeof getAuthoritativeActivityPlanMetrics>[0]
 > & {
-  activity_category?: string | null;
+  categories?: readonly string[];
+  primary_category?: string | null;
+  structure?: unknown;
   created_at?: string | null;
   description?: string | null;
   has_liked?: boolean | null;
@@ -182,10 +184,11 @@ export function mapActivityPlanToResourcePickerItem(
   plan: ActivityPlanPickerSource,
 ): ResourcePickerItem {
   const metrics = getAuthoritativeActivityPlanMetrics(plan);
+  const primaryCategory = plan.primary_category ?? plan.categories?.[0] ?? "other";
   return {
-    activityCategory: plan.activity_category,
+    activityCategory: primaryCategory,
     activityPlanCardData: {
-      activityType: plan.activity_category ?? "other",
+      activityType: primaryCategory,
       createdAt: plan.created_at,
       description: plan.description,
       estimatedDuration: metrics.estimated_duration,

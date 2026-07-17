@@ -1,18 +1,18 @@
 import { buildSystemActivityTemplateCatalog, SYSTEM_TEMPLATES } from "@repo/core";
 import { TRPCError } from "@trpc/server";
 import { describe, expect, it, vi } from "vitest";
+import { activityPlanStructureHash } from "../../application/activity-plans/structure-hash";
 import { createQueryMapDbMock, type QueryMap, type QueryResult } from "../../test/mock-query-db";
 import { deriveProfileAwareCreationContext, trainingPlansRouter } from "../planning/training-plans";
 
 const systemActivityPlanId = buildSystemActivityTemplateCatalog()[0]?.template_id;
 if (!systemActivityPlanId) throw new Error("Expected seeded system activity templates");
 const systemTemplateRows = SYSTEM_TEMPLATES.map((template) => ({
-  activity_category: template.activity_category,
   gps_recording_enabled: template.gps_recording_enabled,
   id: template.id,
   is_system_template: true,
   structure: template.structure,
-  version: "3.0",
+  structure_hash: activityPlanStructureHash(template.structure),
 }));
 
 function createSupabaseMock(results: QueryMap) {
@@ -66,12 +66,50 @@ function createSupabaseMock(results: QueryMap) {
 }
 
 function createTrainingPlansCaller(results: QueryMap = {}) {
+  const activityEntries = Array.isArray(results.activities)
+    ? results.activities
+    : results.activities
+      ? [results.activities]
+      : [];
+  const activityRows = activityEntries.flatMap((entry) =>
+    Array.isArray(entry.data) ? entry.data : [],
+  ) as Array<Record<string, any>>;
+  const activitySegments = activityRows
+    .filter((activity) => Number.isFinite(activity.elapsed_ms))
+    .map((activity) => {
+      const activeMs = activity.active_ms;
+      const movingMs = activity.moving_ms;
+      return {
+        id: `${activity.id}-segment`,
+        activity_id: activity.id,
+        ordinal: 0,
+        role: "activity",
+        category: "bike",
+        start_offset_ms: 0,
+        end_offset_ms: activity.elapsed_ms,
+        timing_coverage: activity.timing_coverage,
+        active_ms: activeMs,
+        moving_ms: movingMs,
+        summary: {
+          version: 1,
+          timing: {
+            timingCoverage: "complete",
+            activeMs,
+            movingMs,
+          },
+          distanceMeters: activity.distance_meters,
+          averageHeartRateBpm: activity.avg_heart_rate ?? undefined,
+          averagePowerWatts: activity.normalized_power ?? undefined,
+        },
+      };
+    });
   const { db } = createQueryMapDbMock({
     profiles: { data: { planningTimezone: "UTC" }, error: null },
     activity_plans: {
       data: systemTemplateRows,
       error: null,
     },
+    activity_segments: { data: activitySegments, error: null },
     ...results,
   });
 
@@ -154,11 +192,15 @@ const BALANCED_BEHAVIOR_CONTROLS = {
 function buildLoadActivity(id: string, startedAt: Date, normalizedPower: number | null = 200) {
   return {
     id,
-    type: "bike",
     started_at: startedAt,
     finished_at: new Date(startedAt.getTime() + 3_600_000),
-    duration_seconds: 3600,
-    moving_seconds: 3600,
+    profile_id: "profile-123",
+    elapsed_ms: 3_600_000,
+    active_ms: 3_600_000,
+    moving_ms: 3_600_000,
+    timing_coverage: "complete",
+    segments_revision: 1,
+    content_visibility: "private",
     distance_meters: 30_000,
     avg_heart_rate: null,
     max_heart_rate: null,
@@ -668,14 +710,17 @@ describe("trainingPlansRouter plan_start_date support", () => {
     expect((structure as { sessions: unknown[] }).sessions.length).toBeGreaterThan(0);
   });
 
-  it("does not persist a minimal-goal plan when template row versions become stale at lock time", async () => {
+  it("does not persist a minimal-goal plan when template hashes become stale at lock time", async () => {
     const { db, callLog } = createQueryMapDbMock({
       profiles: { data: { planningTimezone: "UTC" }, error: null },
       activity_plans: [
         { data: systemTemplateRows, error: null },
         { data: systemTemplateRows, error: null },
         {
-          data: systemTemplateRows.map((row) => ({ ...row, version: "2.0" })),
+          data: systemTemplateRows.map((row) => ({
+            ...row,
+            structure_hash: activityPlanStructureHash({ version: 3, segments: [] }),
+          })),
           error: null,
         },
       ],
@@ -1044,6 +1089,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
 
     const preview = await caller.previewCreationConfig(input);
     const updated = await caller.updateFromCreationConfig({
+      expectedStructureHash: `v1:sha256:${"a".repeat(64)}`,
       ...input,
       plan_id: "11111111-1111-4111-8111-111111111111",
       preview_snapshot_token: preview.preview_snapshot.token,
@@ -1075,6 +1121,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
 
     await expect(
       caller.updateFromCreationConfig({
+        expectedStructureHash: `v1:sha256:${"a".repeat(64)}`,
         plan_id: "11111111-1111-4111-8111-111111111111",
         minimal_plan: {
           plan_start_date: "2026-01-05",
@@ -1116,6 +1163,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
 
     await expect(
       caller.updateFromCreationConfig({
+        expectedStructureHash: `v1:sha256:${"a".repeat(64)}`,
         plan_id: "11111111-1111-4111-8111-111111111111",
         minimal_plan: {
           plan_start_date: "2026-01-05",
@@ -1550,10 +1598,11 @@ describe("trainingPlansRouter plan_start_date support", () => {
     const createCaller = createTrainingPlansCaller({
       activities: {
         data: [
-          {
-            started_at: "2026-01-01T10:00:00.000Z",
-            training_stress_score: 150,
-          },
+          buildLoadActivity(
+            "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            new Date("2026-01-01T10:00:00.000Z"),
+            300,
+          ),
         ],
         error: null,
       },
@@ -1637,6 +1686,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
 
     await expect(
       caller.updateFromCreationConfig({
+        expectedStructureHash: `v1:sha256:${"a".repeat(64)}`,
         plan_id: "11111111-1111-4111-8111-111111111111",
         minimal_plan: {
           plan_start_date: "2026-01-05",
@@ -2012,6 +2062,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
         preview_snapshot_token: preview.preview_snapshot.token,
       });
       const updated = await caller.updateFromCreationConfig({
+        expectedStructureHash: `v1:sha256:${"a".repeat(64)}`,
         ...input,
         plan_id: "11111111-1111-4111-8111-111111111111",
         preview_snapshot_token: preview.preview_snapshot.token,
@@ -2688,6 +2739,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
 
     await expect(
       caller.updateFromCreationConfig({
+        expectedStructureHash: `v1:sha256:${"a".repeat(64)}`,
         ...input,
         plan_id: "11111111-1111-4111-8111-111111111111",
         preview_snapshot_token: "not-used-because-parse-fails",
@@ -2743,6 +2795,7 @@ describe("trainingPlansRouter plan_start_date support", () => {
 
     await expect(
       caller.updateFromCreationConfig({
+        expectedStructureHash: `v1:sha256:${"a".repeat(64)}`,
         ...(poisonedPayload as any),
         plan_id: "11111111-1111-4111-8111-111111111111",
         preview_snapshot_token: "client-crafted-token",

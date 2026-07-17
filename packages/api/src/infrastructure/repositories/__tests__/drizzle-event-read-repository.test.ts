@@ -1,6 +1,6 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
-
+import { activityPlanStructureHash } from "../../../application/activity-plans/structure-hash";
 import { createQueryMapDbMock } from "../../../test/mock-query-db";
 import { createEventReadRepository } from "../drizzle-event-read-repository";
 
@@ -36,6 +36,31 @@ function createEventRow(overrides: Record<string, unknown> = {}) {
 }
 
 function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
+  const structure = {
+    version: 3,
+    segments: [
+      {
+        id: "22222222-2222-4222-8222-222222222222",
+        role: "activity",
+        category: "bike",
+        name: "Bike",
+        intervals: [
+          {
+            id: "33333333-3333-4333-8333-333333333333",
+            name: "Main",
+            repetitions: 1,
+            steps: [
+              {
+                id: "44444444-4444-4444-8444-444444444444",
+                duration: { type: "time", seconds: 1800 },
+                targets: [{ type: "%FTP", intensity: 75 }],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
   return {
     id: "activity-plan-1",
     created_at: new Date("2026-04-01T00:00:00.000Z"),
@@ -43,8 +68,9 @@ function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
     profile_id: "profile-1",
     title: "Threshold bike",
     description: "Bike intervals",
-    activity_category: "bike",
-    structure: { steps: [{ type: "warmup" }] },
+    structure,
+    structure_hash: activityPlanStructureHash(structure),
+    gps_recording_enabled: true,
     route_id: "route-1",
     is_public: false,
     is_system_template: false,
@@ -59,11 +85,12 @@ function createActivityPlanRow(overrides: Record<string, unknown> = {}) {
 function createActivityRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "activity-1",
-    type: "ride",
+    name: "Morning ride",
     started_at: new Date("2026-04-15T07:03:00.000Z"),
     finished_at: new Date("2026-04-15T08:11:00.000Z"),
-    duration_seconds: 4080,
-    moving_seconds: 3900,
+    elapsed_ms: 4_080_000,
+    active_ms: 3_960_000,
+    moving_ms: 3_900_000,
     distance_meters: 32100,
     avg_heart_rate: 151,
     max_heart_rate: 178,
@@ -201,8 +228,9 @@ describe("drizzle-event-read-repository", () => {
       activity_plans: [
         {
           id: "activity-plan-1",
-          activity_category: "bike",
-          structure: { steps: [] },
+          structure: createActivityPlanRow().structure,
+          structure_hash: createActivityPlanRow().structure_hash,
+          gps_recording_enabled: true,
           route_id: "route-1",
         },
       ],
@@ -220,9 +248,9 @@ describe("drizzle-event-read-repository", () => {
       trainingPlan: { id: "training-plan-1", structure: { block: "build" } },
       activityPlan: {
         id: "activity-plan-1",
-        activity_category: "bike",
-        structure: { steps: [] },
-        route_id: "route-1",
+        structure: createActivityPlanRow().structure,
+        structure_hash: createActivityPlanRow().structure_hash,
+        gps_recording_enabled: true,
       },
     });
 
@@ -506,6 +534,8 @@ describe("drizzle-event-read-repository", () => {
         updated_at: "2026-04-02T11:00:00.000Z",
         activity_plan: {
           ...activityPlan,
+          categories: ["bike"],
+          primary_category: "bike",
           created_at: "2026-04-01T00:00:00.000Z",
           updated_at: "2026-04-01T00:00:00.000Z",
         },
@@ -527,6 +557,8 @@ describe("drizzle-event-read-repository", () => {
       updated_at: "2026-04-02T11:00:00.000Z",
       activity_plan: {
         ...activityPlan,
+        categories: ["bike"],
+        primary_category: "bike",
         created_at: "2026-04-01T00:00:00.000Z",
         updated_at: "2026-04-01T00:00:00.000Z",
       },
@@ -635,6 +667,6 @@ describe("drizzle-event-read-repository", () => {
     expect(whereSql).toContain('"events"."starts_at" <');
     expect(whereSql).toContain('"events"."starts_at" >');
     expect(whereSql).toContain('"events"."id" >');
-    expect(whereSql).toContain('"activity_plans"."activity_category" =');
+    expect(whereSql).toContain('"activity_plans"."structure" @>');
   });
 });

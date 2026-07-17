@@ -13,12 +13,13 @@ import { scheduledDateTimeToIsoInstant } from "@repo/core/utils/schedule-date";
 import {
   activities,
   activityEfforts,
+  activitySegments,
   events,
   profileGoals,
   profileMetrics,
   profiles,
 } from "@repo/db";
-import { and, asc, desc, eq, gte, lte, type SQLWrapper, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte, sql } from "drizzle-orm";
 import type { getRequiredDb } from "../../db";
 import {
   filterSupersededProfileOverrides,
@@ -67,6 +68,7 @@ export interface AthleteIntelligenceRows {
   metrics: Array<{
     profileId: string;
     id: string;
+    parentActivityId?: string;
     referenceActivityId: string | null;
     referenceActivityType?: string | null;
     type: string;
@@ -88,7 +90,7 @@ export interface AthleteIntelligenceRows {
     startedAt: Date;
     finishedAt: Date;
     durationSeconds: number;
-    movingSeconds: number;
+    movingSeconds: number | null;
     distanceMeters: number;
     ascentMeters: number | null;
     descentMeters: number | null;
@@ -330,8 +332,6 @@ export function createDrizzleAthleteIntelligenceDataSource(
             )
           : input.asOf;
       const scheduleThrough = targetEnd > input.asOf ? targetEnd : input.asOf;
-      const temporalSummary = <T>(summaryValue: SQLWrapper, legacyValue: SQLWrapper) =>
-        sql<T>`case when ${activities.updated_at} <= ${input.asOf} then coalesce(${summaryValue}, ${legacyValue}) else ${legacyValue} end`;
       const eventSelection = {
         profileId: events.profile_id,
         id: events.id,
@@ -364,7 +364,7 @@ export function createDrizzleAthleteIntelligenceDataSource(
             profileId: profileMetrics.profile_id,
             id: profileMetrics.id,
             referenceActivityId: profileMetrics.reference_activity_id,
-            referenceActivityType: activities.type,
+            referenceActivityType: sql<null>`null`,
             type: profileMetrics.metric_type,
             value: profileMetrics.value,
             unit: profileMetrics.unit,
@@ -396,73 +396,55 @@ export function createDrizzleAthleteIntelligenceDataSource(
         db
           .select({
             profileId: activities.profile_id,
-            id: activities.id,
+            id: activitySegments.id,
+            parentActivityId: activities.id,
             activityPlanId: activities.activity_plan_id,
             routeId: sql<string | null>`null`,
-            type: activities.type,
-            startedAt: activities.started_at,
-            finishedAt: activities.finished_at,
-            durationSeconds: temporalSummary<number>(
-              activities.duration_seconds,
-              activities.duration_seconds,
-            ),
-            movingSeconds: temporalSummary<number>(
-              activities.moving_seconds,
-              activities.moving_seconds,
-            ),
-            distanceMeters: temporalSummary<number>(
-              activities.distance_meters,
-              activities.distance_meters,
-            ),
-            ascentMeters: temporalSummary<number | null>(
-              activities.elevation_gain_meters,
-              activities.elevation_gain_meters,
-            ),
-            descentMeters: temporalSummary<number | null>(
-              activities.elevation_loss_meters,
-              activities.elevation_loss_meters,
-            ),
-            calories: temporalSummary<number | null>(activities.calories, activities.calories),
-            averageHeartRate: temporalSummary<number | null>(
-              activities.avg_heart_rate,
-              activities.avg_heart_rate,
-            ),
-            maximumHeartRate: temporalSummary<number | null>(
-              activities.max_heart_rate,
-              activities.max_heart_rate,
-            ),
-            averagePower: temporalSummary<number | null>(
-              activities.avg_power,
-              activities.avg_power,
-            ),
-            maximumPower: temporalSummary<number | null>(
-              activities.max_power,
-              activities.max_power,
-            ),
-            normalizedPower: temporalSummary<number | null>(
-              activities.normalized_power,
-              activities.normalized_power,
-            ),
-            averageCadence: temporalSummary<number | null>(
-              activities.avg_cadence,
-              activities.avg_cadence,
-            ),
-            maximumCadence: temporalSummary<number | null>(
-              activities.max_cadence,
-              activities.max_cadence,
-            ),
-            averageSpeed: temporalSummary<number | null>(
-              activities.avg_speed_mps,
-              activities.avg_speed_mps,
-            ),
-            maximumSpeed: temporalSummary<number | null>(
-              activities.max_speed_mps,
-              activities.max_speed_mps,
-            ),
+            type: sql<string>`${activitySegments.category}`,
+            startedAt: sql<Date>`${activities.started_at} + (${activitySegments.start_offset_ms} * interval '1 millisecond')`,
+            finishedAt: sql<Date>`${activities.started_at} + (${activitySegments.end_offset_ms} * interval '1 millisecond')`,
+            durationSeconds: sql<number>`coalesce(${activitySegments.active_ms}, ${activitySegments.end_offset_ms} - ${activitySegments.start_offset_ms}) / 1000.0`,
+            movingSeconds: sql<
+              number | null
+            >`case when ${activitySegments.timing_coverage} = 'unavailable' then null else ${activitySegments.moving_ms} / 1000.0 end`,
+            distanceMeters: sql<number>`coalesce((${activitySegments.summary} ->> 'distanceMeters')::double precision, 0)`,
+            ascentMeters: sql<
+              number | null
+            >`(${activitySegments.summary} ->> 'ascentMeters')::double precision`,
+            descentMeters: sql<
+              number | null
+            >`(${activitySegments.summary} ->> 'descentMeters')::double precision`,
+            calories: sql<
+              number | null
+            >`(${activitySegments.summary} ->> 'caloriesKcal')::double precision`,
+            averageHeartRate: sql<
+              number | null
+            >`(${activitySegments.summary} ->> 'averageHeartRateBpm')::double precision`,
+            maximumHeartRate: sql<null>`null`,
+            averagePower: sql<
+              number | null
+            >`(${activitySegments.summary} ->> 'averagePowerWatts')::double precision`,
+            maximumPower: sql<null>`null`,
+            normalizedPower: sql<null>`null`,
+            averageCadence: sql<
+              number | null
+            >`(${activitySegments.summary} ->> 'averageCadenceRpm')::double precision`,
+            maximumCadence: sql<null>`null`,
+            averageSpeed: sql<
+              number | null
+            >`(${activitySegments.summary} ->> 'averageSpeedMetersPerSecond')::double precision`,
+            maximumSpeed: sql<null>`null`,
             createdAt: activities.created_at,
             updatedAt: activities.updated_at,
           })
           .from(activities)
+          .innerJoin(
+            activitySegments,
+            and(
+              eq(activitySegments.activity_id, activities.id),
+              eq(activitySegments.role, "activity"),
+            ),
+          )
           .where(
             and(
               eq(activities.profile_id, p),
@@ -473,13 +455,13 @@ export function createDrizzleAthleteIntelligenceDataSource(
               lte(activities.updated_at, input.asOf),
             ),
           )
-          .orderBy(desc(activities.started_at), desc(activities.id))
+          .orderBy(desc(activities.started_at), asc(activitySegments.ordinal))
           .limit(input.bounds.activities + 1),
         db
           .select({
             profileId: activityEfforts.profile_id,
             id: activityEfforts.id,
-            activityId: activityEfforts.activity_id,
+            activityId: activityEfforts.segment_id,
             recordedAt: activityEfforts.recorded_at,
             sport: activityEfforts.activity_category,
             kind: activityEfforts.effort_type,
@@ -994,7 +976,10 @@ export async function materializeAthleteIntelligenceModelInput(input: {
     .slice(0, modelReaderBounds.efforts);
   const trainingLoads = adaptActivityTrainingLoads({
     profileDob: rows.profile.dob,
-    activities: boundedActivityRows,
+    activities: boundedActivityRows.map((row) => ({
+      ...row,
+      movingSeconds: row.movingSeconds ?? 0,
+    })),
     metrics: boundedMetrics,
     efforts: boundedLoadEfforts,
   });
