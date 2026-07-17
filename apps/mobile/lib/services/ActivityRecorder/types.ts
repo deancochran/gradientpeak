@@ -1,15 +1,17 @@
 import type {
   ControlMode,
   CurrentMetricValue as CoreCurrentMetricValue,
+  RecordingSessionLifecycleState as CoreRecorderLifecycleState,
+  RecordingDegradedState as CoreRecordingDegradedState,
+  RecordingRuntimeSourceState as CoreRecordingRuntimeSourceState,
   RecordingSessionArtifact as CoreRecordingSessionArtifact,
   RecordingSessionOverride as CoreRecordingSessionOverride,
+  RecordingSessionOverrideState as CoreRecordingSessionOverrideState,
   RecordingSessionSnapshot as CoreRecordingSessionSnapshot,
+  RecordingSourceChangeEvent as CoreRecordingSourceChangeEvent,
   FtmsAvailableMode,
   FtmsControlMode,
   IntervalStepV2,
-  MetricFamily,
-  MetricProvenance,
-  MetricSourceSelection,
   PublicActivityMetric,
   PublicActivityMetricDataType,
   RecordingActivityCategory,
@@ -389,49 +391,23 @@ export interface RecordingMetadata {
   activityFilePath?: string;
 }
 
-export type RecorderLifecycleState =
-  | "pending"
-  | "ready"
-  | "recording"
-  | "paused"
-  | "finishing"
-  | "finished";
+export type RecorderLifecycleState = CoreRecorderLifecycleState;
 
 export type RecordingSessionSnapshot = CoreRecordingSessionSnapshot;
 export type RecordingSessionOverride = CoreRecordingSessionOverride;
 export type CurrentMetricValue = CoreCurrentMetricValue;
 
-export interface RecordingSourceChangeEvent {
-  metricFamily: MetricFamily;
-  previousSourceId: string | null;
-  nextSourceId: string | null;
-  previousProvenance: MetricProvenance;
-  nextProvenance: MetricProvenance;
-  recordedAt: string;
-}
+export type RecordingSourceChangeEvent = CoreRecordingSourceChangeEvent;
 
-export interface RecordingDegradedState {
-  isDegraded: boolean;
-  metrics: MetricFamily[];
-}
+export type RecordingDegradedState = CoreRecordingDegradedState;
 
-export interface RecordingRuntimeSourceState {
-  selectedSources: MetricSourceSelection[];
-  currentMetrics: Partial<Record<MetricFamily, CurrentMetricValue>>;
-  degradedState: RecordingDegradedState;
-  sourceChanges: RecordingSourceChangeEvent[];
-}
+export type RecordingRuntimeSourceState = CoreRecordingRuntimeSourceState;
 
 export type RecordingSessionArtifact = CoreRecordingSessionArtifact & {
   runtimeSourceState: RecordingRuntimeSourceState;
 };
 
-export interface RecordingSessionOverrideState {
-  trainerMode: "auto" | "manual";
-  intensityScale: number;
-  preferredSources: Partial<Record<MetricFamily, string>>;
-  disabledSources: Partial<Record<MetricFamily, string[]>>;
-}
+export type RecordingSessionOverrideState = CoreRecordingSessionOverrideState;
 
 export interface RecordingPlanView {
   hasPlan: boolean;
@@ -705,19 +681,26 @@ export interface PlanAdherenceMetrics {
 }
 
 // === Type Guards ===
-export function isLiveMetricsState(obj: any): obj is LiveMetricsState {
+export function isLiveMetricsState(obj: unknown): obj is LiveMetricsState {
   return (
+    obj !== null &&
     typeof obj === "object" &&
+    "elapsedTime" in obj &&
     typeof obj.elapsedTime === "number" &&
+    "distance" in obj &&
     typeof obj.distance === "number"
   );
 }
 
-export function isMetricUpdateEvent(obj: any): obj is MetricUpdateEvent {
+export function isMetricUpdateEvent(obj: unknown): obj is MetricUpdateEvent {
   return (
+    obj !== null &&
     typeof obj === "object" &&
+    "metric" in obj &&
     typeof obj.metric === "string" &&
+    "value" in obj &&
     typeof obj.value === "number" &&
+    "timestamp" in obj &&
     typeof obj.timestamp === "number"
   );
 }

@@ -18,6 +18,7 @@ export * from "./ftms";
 // ============================================================================
 export * from "./ftms-types";
 export * from "./profile/date-of-birth";
+export * from "./recording";
 
 // ============================================================================
 // Calculations Module
