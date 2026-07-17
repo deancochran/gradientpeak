@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as ProtectedRouteImport } from './routes/_protected'
+import { Route as CoachingRouteImport } from './routes/_coaching'
 import { Route as ProtectedIndexRouteImport } from './routes/_protected/index'
 import { Route as AuthVerifyRouteImport } from './routes/auth/verify'
 import { Route as AuthVerificationSuccessRouteImport } from './routes/auth/verification-success'
@@ -51,17 +52,20 @@ import { Route as ProtectedRecordSessionRouteImport } from './routes/_protected/
 import { Route as ProtectedRecordPlanRouteImport } from './routes/_protected/record/plan'
 import { Route as ProtectedActivityEffortsNewRouteImport } from './routes/_protected/activity-efforts/new'
 import { Route as ProtectedActivitiesImportRouteImport } from './routes/_protected/activities/import'
+import { Route as CoachingOrganizationsOrganizationIdRouteImport } from './routes/_coaching/organizations/$organizationId'
 import { Route as ProtectedUserUserIdIndexRouteImport } from './routes/_protected/user/$userId/index'
 import { Route as ProtectedRoutesRouteIdIndexRouteImport } from './routes/_protected/routes/$routeId/index'
 import { Route as ProtectedRecordRouteIndexRouteImport } from './routes/_protected/record/route/index'
 import { Route as ProtectedActivityEffortsEffortIdIndexRouteImport } from './routes/_protected/activity-efforts/$effortId/index'
 import { Route as ProtectedActivitiesActivityIdIndexRouteImport } from './routes/_protected/activities/$activityId/index'
+import { Route as CoachingOrganizationsOrganizationIdIndexRouteImport } from './routes/_coaching/organizations/$organizationId/index'
 import { Route as ApiIntegrationsCallbackProviderRouteImport } from './routes/api/integrations/callback/$provider'
 import { Route as ProtectedUserUserIdFollowingRouteImport } from './routes/_protected/user/$userId/following'
 import { Route as ProtectedUserUserIdFollowersRouteImport } from './routes/_protected/user/$userId/followers'
 import { Route as ProtectedRecordRoutePreviewRouteIdRouteImport } from './routes/_protected/record/route-preview/$routeId'
 import { Route as ProtectedCalendarEventsEventIdRouteImport } from './routes/_protected/calendar/events/$eventId'
 import { Route as ProtectedCalendarDayDateRouteImport } from './routes/_protected/calendar/day/$date'
+import { Route as CoachingOrganizationsOrganizationIdDashboardRouteImport } from './routes/_coaching/organizations/$organizationId/dashboard'
 import { Route as ApiInternalProviderSyncWahooStatusRouteImport } from './routes/api/internal/provider-sync/wahoo/status'
 import { Route as ApiInternalProviderSyncWahooRetryRouteImport } from './routes/api/internal/provider-sync/wahoo/retry'
 import { Route as ApiInternalProviderSyncWahooDrainRouteImport } from './routes/api/internal/provider-sync/wahoo/drain'
@@ -74,6 +78,10 @@ const AboutRoute = AboutRouteImport.update({
 } as any)
 const ProtectedRoute = ProtectedRouteImport.update({
   id: '/_protected',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CoachingRoute = CoachingRouteImport.update({
+  id: '/_coaching',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProtectedIndexRoute = ProtectedIndexRouteImport.update({
@@ -283,6 +291,12 @@ const ProtectedActivitiesImportRoute =
     path: '/activities/import',
     getParentRoute: () => ProtectedRoute,
   } as any)
+const CoachingOrganizationsOrganizationIdRoute =
+  CoachingOrganizationsOrganizationIdRouteImport.update({
+    id: '/organizations/$organizationId',
+    path: '/organizations/$organizationId',
+    getParentRoute: () => CoachingRoute,
+  } as any)
 const ProtectedUserUserIdIndexRoute =
   ProtectedUserUserIdIndexRouteImport.update({
     id: '/user/$userId/',
@@ -312,6 +326,12 @@ const ProtectedActivitiesActivityIdIndexRoute =
     id: '/activities/$activityId/',
     path: '/activities/$activityId/',
     getParentRoute: () => ProtectedRoute,
+  } as any)
+const CoachingOrganizationsOrganizationIdIndexRoute =
+  CoachingOrganizationsOrganizationIdIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => CoachingOrganizationsOrganizationIdRoute,
   } as any)
 const ApiIntegrationsCallbackProviderRoute =
   ApiIntegrationsCallbackProviderRouteImport.update({
@@ -348,6 +368,12 @@ const ProtectedCalendarDayDateRoute =
     id: '/day/$date',
     path: '/day/$date',
     getParentRoute: () => ProtectedCalendarRoute,
+  } as any)
+const CoachingOrganizationsOrganizationIdDashboardRoute =
+  CoachingOrganizationsOrganizationIdDashboardRouteImport.update({
+    id: '/dashboard',
+    path: '/dashboard',
+    getParentRoute: () => CoachingOrganizationsOrganizationIdRoute,
   } as any)
 const ApiInternalProviderSyncWahooStatusRoute =
   ApiInternalProviderSyncWahooStatusRouteImport.update({
@@ -398,6 +424,7 @@ export interface FileRoutesByFullPath {
   '/auth/update-password': typeof AuthUpdatePasswordRoute
   '/auth/verification-success': typeof AuthVerificationSuccessRoute
   '/auth/verify': typeof AuthVerifyRoute
+  '/organizations/$organizationId': typeof CoachingOrganizationsOrganizationIdRouteWithChildren
   '/activities/import': typeof ProtectedActivitiesImportRoute
   '/activity-efforts/new': typeof ProtectedActivityEffortsNewRoute
   '/record/plan': typeof ProtectedRecordPlanRoute
@@ -416,12 +443,14 @@ export interface FileRoutesByFullPath {
   '/profile-metrics/': typeof ProtectedProfileMetricsIndexRoute
   '/record/': typeof ProtectedRecordIndexRoute
   '/routes/': typeof ProtectedRoutesIndexRoute
+  '/organizations/$organizationId/dashboard': typeof CoachingOrganizationsOrganizationIdDashboardRoute
   '/calendar/day/$date': typeof ProtectedCalendarDayDateRoute
   '/calendar/events/$eventId': typeof ProtectedCalendarEventsEventIdRouteWithChildren
   '/record/route-preview/$routeId': typeof ProtectedRecordRoutePreviewRouteIdRoute
   '/user/$userId/followers': typeof ProtectedUserUserIdFollowersRoute
   '/user/$userId/following': typeof ProtectedUserUserIdFollowingRoute
   '/api/integrations/callback/$provider': typeof ApiIntegrationsCallbackProviderRoute
+  '/organizations/$organizationId/': typeof CoachingOrganizationsOrganizationIdIndexRoute
   '/activities/$activityId/': typeof ProtectedActivitiesActivityIdIndexRoute
   '/activity-efforts/$effortId/': typeof ProtectedActivityEffortsEffortIdIndexRoute
   '/record/route/': typeof ProtectedRecordRouteIndexRoute
@@ -433,6 +462,7 @@ export interface FileRoutesByFullPath {
   '/api/internal/provider-sync/wahoo/status': typeof ApiInternalProviderSyncWahooStatusRoute
 }
 export interface FileRoutesByTo {
+  '/': typeof ProtectedIndexRoute
   '/about': typeof AboutRoute
   '/coaching': typeof ProtectedCoachingRoute
   '/integrations': typeof ProtectedIntegrationsRoute
@@ -453,7 +483,6 @@ export interface FileRoutesByTo {
   '/auth/update-password': typeof AuthUpdatePasswordRoute
   '/auth/verification-success': typeof AuthVerificationSuccessRoute
   '/auth/verify': typeof AuthVerifyRoute
-  '/': typeof ProtectedIndexRoute
   '/activities/import': typeof ProtectedActivitiesImportRoute
   '/activity-efforts/new': typeof ProtectedActivityEffortsNewRoute
   '/record/plan': typeof ProtectedRecordPlanRoute
@@ -472,12 +501,14 @@ export interface FileRoutesByTo {
   '/profile-metrics': typeof ProtectedProfileMetricsIndexRoute
   '/record': typeof ProtectedRecordIndexRoute
   '/routes': typeof ProtectedRoutesIndexRoute
+  '/organizations/$organizationId/dashboard': typeof CoachingOrganizationsOrganizationIdDashboardRoute
   '/calendar/day/$date': typeof ProtectedCalendarDayDateRoute
   '/calendar/events/$eventId': typeof ProtectedCalendarEventsEventIdRouteWithChildren
   '/record/route-preview/$routeId': typeof ProtectedRecordRoutePreviewRouteIdRoute
   '/user/$userId/followers': typeof ProtectedUserUserIdFollowersRoute
   '/user/$userId/following': typeof ProtectedUserUserIdFollowingRoute
   '/api/integrations/callback/$provider': typeof ApiIntegrationsCallbackProviderRoute
+  '/organizations/$organizationId': typeof CoachingOrganizationsOrganizationIdIndexRoute
   '/activities/$activityId': typeof ProtectedActivitiesActivityIdIndexRoute
   '/activity-efforts/$effortId': typeof ProtectedActivityEffortsEffortIdIndexRoute
   '/record/route': typeof ProtectedRecordRouteIndexRoute
@@ -490,6 +521,7 @@ export interface FileRoutesByTo {
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
+  '/_coaching': typeof CoachingRouteWithChildren
   '/_protected': typeof ProtectedRouteWithChildren
   '/about': typeof AboutRoute
   '/_protected/calendar': typeof ProtectedCalendarRouteWithChildren
@@ -514,6 +546,7 @@ export interface FileRoutesById {
   '/auth/verification-success': typeof AuthVerificationSuccessRoute
   '/auth/verify': typeof AuthVerifyRoute
   '/_protected/': typeof ProtectedIndexRoute
+  '/_coaching/organizations/$organizationId': typeof CoachingOrganizationsOrganizationIdRouteWithChildren
   '/_protected/activities/import': typeof ProtectedActivitiesImportRoute
   '/_protected/activity-efforts/new': typeof ProtectedActivityEffortsNewRoute
   '/_protected/record/plan': typeof ProtectedRecordPlanRoute
@@ -532,12 +565,14 @@ export interface FileRoutesById {
   '/_protected/profile-metrics/': typeof ProtectedProfileMetricsIndexRoute
   '/_protected/record/': typeof ProtectedRecordIndexRoute
   '/_protected/routes/': typeof ProtectedRoutesIndexRoute
+  '/_coaching/organizations/$organizationId/dashboard': typeof CoachingOrganizationsOrganizationIdDashboardRoute
   '/_protected/calendar/day/$date': typeof ProtectedCalendarDayDateRoute
   '/_protected/calendar/events/$eventId': typeof ProtectedCalendarEventsEventIdRouteWithChildren
   '/_protected/record/route-preview/$routeId': typeof ProtectedRecordRoutePreviewRouteIdRoute
   '/_protected/user/$userId/followers': typeof ProtectedUserUserIdFollowersRoute
   '/_protected/user/$userId/following': typeof ProtectedUserUserIdFollowingRoute
   '/api/integrations/callback/$provider': typeof ApiIntegrationsCallbackProviderRoute
+  '/_coaching/organizations/$organizationId/': typeof CoachingOrganizationsOrganizationIdIndexRoute
   '/_protected/activities/$activityId/': typeof ProtectedActivitiesActivityIdIndexRoute
   '/_protected/activity-efforts/$effortId/': typeof ProtectedActivityEffortsEffortIdIndexRoute
   '/_protected/record/route/': typeof ProtectedRecordRouteIndexRoute
@@ -574,6 +609,7 @@ export interface FileRouteTypes {
     | '/auth/update-password'
     | '/auth/verification-success'
     | '/auth/verify'
+    | '/organizations/$organizationId'
     | '/activities/import'
     | '/activity-efforts/new'
     | '/record/plan'
@@ -592,12 +628,14 @@ export interface FileRouteTypes {
     | '/profile-metrics/'
     | '/record/'
     | '/routes/'
+    | '/organizations/$organizationId/dashboard'
     | '/calendar/day/$date'
     | '/calendar/events/$eventId'
     | '/record/route-preview/$routeId'
     | '/user/$userId/followers'
     | '/user/$userId/following'
     | '/api/integrations/callback/$provider'
+    | '/organizations/$organizationId/'
     | '/activities/$activityId/'
     | '/activity-efforts/$effortId/'
     | '/record/route/'
@@ -609,6 +647,7 @@ export interface FileRouteTypes {
     | '/api/internal/provider-sync/wahoo/status'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/'
     | '/about'
     | '/coaching'
     | '/integrations'
@@ -629,7 +668,6 @@ export interface FileRouteTypes {
     | '/auth/update-password'
     | '/auth/verification-success'
     | '/auth/verify'
-    | '/'
     | '/activities/import'
     | '/activity-efforts/new'
     | '/record/plan'
@@ -648,12 +686,14 @@ export interface FileRouteTypes {
     | '/profile-metrics'
     | '/record'
     | '/routes'
+    | '/organizations/$organizationId/dashboard'
     | '/calendar/day/$date'
     | '/calendar/events/$eventId'
     | '/record/route-preview/$routeId'
     | '/user/$userId/followers'
     | '/user/$userId/following'
     | '/api/integrations/callback/$provider'
+    | '/organizations/$organizationId'
     | '/activities/$activityId'
     | '/activity-efforts/$effortId'
     | '/record/route'
@@ -665,6 +705,7 @@ export interface FileRouteTypes {
     | '/api/internal/provider-sync/wahoo/status'
   id:
     | '__root__'
+    | '/_coaching'
     | '/_protected'
     | '/about'
     | '/_protected/calendar'
@@ -689,6 +730,7 @@ export interface FileRouteTypes {
     | '/auth/verification-success'
     | '/auth/verify'
     | '/_protected/'
+    | '/_coaching/organizations/$organizationId'
     | '/_protected/activities/import'
     | '/_protected/activity-efforts/new'
     | '/_protected/record/plan'
@@ -707,12 +749,14 @@ export interface FileRouteTypes {
     | '/_protected/profile-metrics/'
     | '/_protected/record/'
     | '/_protected/routes/'
+    | '/_coaching/organizations/$organizationId/dashboard'
     | '/_protected/calendar/day/$date'
     | '/_protected/calendar/events/$eventId'
     | '/_protected/record/route-preview/$routeId'
     | '/_protected/user/$userId/followers'
     | '/_protected/user/$userId/following'
     | '/api/integrations/callback/$provider'
+    | '/_coaching/organizations/$organizationId/'
     | '/_protected/activities/$activityId/'
     | '/_protected/activity-efforts/$effortId/'
     | '/_protected/record/route/'
@@ -725,6 +769,7 @@ export interface FileRouteTypes {
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
+  CoachingRoute: typeof CoachingRouteWithChildren
   ProtectedRoute: typeof ProtectedRouteWithChildren
   AboutRoute: typeof AboutRoute
   ApiHealthRoute: typeof ApiHealthRoute
@@ -765,6 +810,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof ProtectedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_coaching': {
+      id: '/_coaching'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof CoachingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_protected/': {
@@ -1047,6 +1099,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedActivitiesImportRouteImport
       parentRoute: typeof ProtectedRoute
     }
+    '/_coaching/organizations/$organizationId': {
+      id: '/_coaching/organizations/$organizationId'
+      path: '/organizations/$organizationId'
+      fullPath: '/organizations/$organizationId'
+      preLoaderRoute: typeof CoachingOrganizationsOrganizationIdRouteImport
+      parentRoute: typeof CoachingRoute
+    }
     '/_protected/user/$userId/': {
       id: '/_protected/user/$userId/'
       path: '/user/$userId'
@@ -1081,6 +1140,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/activities/$activityId/'
       preLoaderRoute: typeof ProtectedActivitiesActivityIdIndexRouteImport
       parentRoute: typeof ProtectedRoute
+    }
+    '/_coaching/organizations/$organizationId/': {
+      id: '/_coaching/organizations/$organizationId/'
+      path: '/'
+      fullPath: '/organizations/$organizationId/'
+      preLoaderRoute: typeof CoachingOrganizationsOrganizationIdIndexRouteImport
+      parentRoute: typeof CoachingOrganizationsOrganizationIdRoute
     }
     '/api/integrations/callback/$provider': {
       id: '/api/integrations/callback/$provider'
@@ -1124,6 +1190,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedCalendarDayDateRouteImport
       parentRoute: typeof ProtectedCalendarRoute
     }
+    '/_coaching/organizations/$organizationId/dashboard': {
+      id: '/_coaching/organizations/$organizationId/dashboard'
+      path: '/dashboard'
+      fullPath: '/organizations/$organizationId/dashboard'
+      preLoaderRoute: typeof CoachingOrganizationsOrganizationIdDashboardRouteImport
+      parentRoute: typeof CoachingOrganizationsOrganizationIdRoute
+    }
     '/api/internal/provider-sync/wahoo/status': {
       id: '/api/internal/provider-sync/wahoo/status'
       path: '/api/internal/provider-sync/wahoo/status'
@@ -1154,6 +1227,37 @@ declare module '@tanstack/react-router' {
     }
   }
 }
+
+interface CoachingOrganizationsOrganizationIdRouteChildren {
+  CoachingOrganizationsOrganizationIdDashboardRoute: typeof CoachingOrganizationsOrganizationIdDashboardRoute
+  CoachingOrganizationsOrganizationIdIndexRoute: typeof CoachingOrganizationsOrganizationIdIndexRoute
+}
+
+const CoachingOrganizationsOrganizationIdRouteChildren: CoachingOrganizationsOrganizationIdRouteChildren =
+  {
+    CoachingOrganizationsOrganizationIdDashboardRoute:
+      CoachingOrganizationsOrganizationIdDashboardRoute,
+    CoachingOrganizationsOrganizationIdIndexRoute:
+      CoachingOrganizationsOrganizationIdIndexRoute,
+  }
+
+const CoachingOrganizationsOrganizationIdRouteWithChildren =
+  CoachingOrganizationsOrganizationIdRoute._addFileChildren(
+    CoachingOrganizationsOrganizationIdRouteChildren,
+  )
+
+interface CoachingRouteChildren {
+  CoachingOrganizationsOrganizationIdRoute: typeof CoachingOrganizationsOrganizationIdRouteWithChildren
+}
+
+const CoachingRouteChildren: CoachingRouteChildren = {
+  CoachingOrganizationsOrganizationIdRoute:
+    CoachingOrganizationsOrganizationIdRouteWithChildren,
+}
+
+const CoachingRouteWithChildren = CoachingRoute._addFileChildren(
+  CoachingRouteChildren,
+)
 
 interface ProtectedCalendarEventsEventIdRouteChildren {
   ProtectedCalendarEventsEventIdEditRoute: typeof ProtectedCalendarEventsEventIdEditRoute
@@ -1268,6 +1372,7 @@ const ProtectedRouteWithChildren = ProtectedRoute._addFileChildren(
 )
 
 const rootRouteChildren: RootRouteChildren = {
+  CoachingRoute: CoachingRouteWithChildren,
   ProtectedRoute: ProtectedRouteWithChildren,
   AboutRoute: AboutRoute,
   ApiHealthRoute: ApiHealthRoute,

@@ -154,7 +154,7 @@ function getNotificationTargetHref(
     case "coaching_invitation":
     case "coaching_invitation_accepted":
     case "coaching_invitation_declined":
-      return item.actorId ? `/user/${item.actorId}` : "/coaching";
+      return item.actorId ? `/user/${item.actorId}` : "/notifications";
     default:
       return "/notifications";
   }

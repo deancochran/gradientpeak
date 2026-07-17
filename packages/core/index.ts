@@ -233,6 +233,7 @@ export {
 export * from "./load"; // Canonical load-domain helpers
 export * from "./messaging"; // Shared messaging adapters
 export * from "./notifications"; // Shared notification normalization helpers
+export * from "./organizations"; // Organization authorization contracts
 export * from "./parity"; // Product parity registry and contracts
 export * from "./plan"; // Training plan normalization/expansion helpers
 export * from "./profile"; // Shared profile contracts and adapters

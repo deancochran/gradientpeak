@@ -35,9 +35,21 @@ test("athlete can reach the migrated profile routes from the shell", async ({ at
   await expect(athletePage.getByText(/following$/i)).toBeVisible();
 });
 
-test("coach can open the coaching dashboard", async ({ coachPage }) => {
+test("legacy profile coaching route no longer renders a coaching environment", async ({
+  coachPage,
+}) => {
   await coachPage.goto("/coaching");
 
-  await expect(coachPage.getByRole("heading", { name: /coaching dashboard/i })).toBeVisible();
-  await expect(coachPage.getByRole("heading", { name: /^roster$/i })).toBeVisible();
+  await expect(coachPage).toHaveURL(/\/$/);
+  await expect(coachPage.getByRole("heading", { name: /coaching dashboard/i })).toHaveCount(0);
+});
+
+test("organization coaching routes fail closed outside an authorized coach membership", async ({
+  coachPage,
+}) => {
+  await coachPage.goto("/organizations/11111111-1111-4111-8111-111111111111/dashboard");
+
+  await expect(coachPage.getByRole("heading", { name: /coaching access required/i })).toBeVisible();
+  await expect(coachPage.getByRole("navigation", { name: /primary navigation/i })).toHaveCount(0);
+  await expect(coachPage.getByRole("heading", { name: /coaching workspace/i })).toHaveCount(0);
 });

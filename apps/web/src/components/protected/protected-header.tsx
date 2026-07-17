@@ -28,7 +28,6 @@ export function ProtectedHeader() {
     { to: "/record", label: "Record" },
     { to: "/plan", label: "Plan" },
     { to: "/calendar", label: "Calendar" },
-    { to: "/coaching", label: "Coaching" },
   ] as const;
 
   return (
@@ -92,7 +91,7 @@ export function ProtectedHeader() {
 }
 
 type PrimaryLink = {
-  to: "/" | "/activities" | "/routes" | "/record" | "/plan" | "/calendar" | "/coaching";
+  to: "/" | "/activities" | "/routes" | "/record" | "/plan" | "/calendar";
   label: string;
 };
 

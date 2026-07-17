@@ -48,6 +48,8 @@
     "./integrations/*": "./integrations/*.ts",
     "./notifications": "./notifications/index.ts",
     "./notifications/*": "./notifications/*.ts",
+    "./organizations": "./organizations/index.ts",
+    "./organizations/*": "./organizations/*.ts",
     "./parity": "./parity/index.ts",
     "./testing": "./testing/index.ts",
     "./testing/*": "./testing/*/index.ts",

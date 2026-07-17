@@ -28,6 +28,12 @@ import {
   messages,
   notifications,
   oauthStates,
+  organizationMembershipRoleGrants,
+  organizationMemberships,
+  organizationPermissions,
+  organizationRolePermissionGrants,
+  organizationRoles,
+  organizations,
   profileGoals,
   profileMetrics,
   profiles,
@@ -64,6 +70,8 @@ export const profilesRelations = relations(profiles, ({ many }) => ({
   notificationsReceived: many(notifications, { relationName: "notificationRecipient" }),
   notificationsTriggered: many(notifications, { relationName: "notificationActor" }),
   oauthStates: many(oauthStates),
+  organizationsCreated: many(organizations, { relationName: "organizationCreator" }),
+  organizationMemberships: many(organizationMemberships),
   profileGoals: many(profileGoals),
   profileMetrics: many(profileMetrics),
   providerSyncJobs: many(providerSyncJobs),
@@ -95,6 +103,76 @@ export const groupMembershipsRelations = relations(groupMemberships, ({ one }) =
     references: [profiles.id],
   }),
 }));
+
+export const organizationsRelations = relations(organizations, ({ one, many }) => ({
+  createdByProfile: one(profiles, {
+    relationName: "organizationCreator",
+    fields: [organizations.created_by_profile_id],
+    references: [profiles.id],
+  }),
+  memberships: many(organizationMemberships),
+  roles: many(organizationRoles),
+}));
+
+export const organizationMembershipsRelations = relations(
+  organizationMemberships,
+  ({ one, many }) => ({
+    organization: one(organizations, {
+      fields: [organizationMemberships.organization_id],
+      references: [organizations.id],
+    }),
+    profile: one(profiles, {
+      fields: [organizationMemberships.profile_id],
+      references: [profiles.id],
+    }),
+    roleGrants: many(organizationMembershipRoleGrants),
+  }),
+);
+
+export const organizationRolesRelations = relations(organizationRoles, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [organizationRoles.organization_id],
+    references: [organizations.id],
+  }),
+  permissionGrants: many(organizationRolePermissionGrants),
+  membershipGrants: many(organizationMembershipRoleGrants),
+}));
+
+export const organizationPermissionsRelations = relations(organizationPermissions, ({ many }) => ({
+  roleGrants: many(organizationRolePermissionGrants),
+}));
+
+export const organizationRolePermissionGrantsRelations = relations(
+  organizationRolePermissionGrants,
+  ({ one }) => ({
+    role: one(organizationRoles, {
+      fields: [organizationRolePermissionGrants.role_id],
+      references: [organizationRoles.id],
+    }),
+    permission: one(organizationPermissions, {
+      fields: [organizationRolePermissionGrants.permission_key],
+      references: [organizationPermissions.key],
+    }),
+  }),
+);
+
+export const organizationMembershipRoleGrantsRelations = relations(
+  organizationMembershipRoleGrants,
+  ({ one }) => ({
+    organization: one(organizations, {
+      fields: [organizationMembershipRoleGrants.organization_id],
+      references: [organizations.id],
+    }),
+    membership: one(organizationMemberships, {
+      fields: [organizationMembershipRoleGrants.membership_id],
+      references: [organizationMemberships.id],
+    }),
+    role: one(organizationRoles, {
+      fields: [organizationMembershipRoleGrants.role_id],
+      references: [organizationRoles.id],
+    }),
+  }),
+);
 
 export const groupInvitationsRelations = relations(groupInvitations, ({ one }) => ({
   group: one(groups, {
@@ -492,6 +570,12 @@ export const relationsSchema = {
   profilesRelations,
   groupsRelations,
   groupMembershipsRelations,
+  organizationsRelations,
+  organizationMembershipsRelations,
+  organizationRolesRelations,
+  organizationPermissionsRelations,
+  organizationRolePermissionGrantsRelations,
+  organizationMembershipRoleGrantsRelations,
   groupInvitationsRelations,
   groupJoinRequestsRelations,
   groupEventsRelations,

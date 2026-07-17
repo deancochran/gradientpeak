@@ -31,6 +31,12 @@ import type {
   messages,
   notifications,
   oauthStates,
+  organizationMembershipRoleGrants,
+  organizationMemberships,
+  organizationPermissions,
+  organizationRolePermissionGrants,
+  organizationRoles,
+  organizations,
   profileGoals,
   profileMetrics,
   profiles,
@@ -49,6 +55,32 @@ export type GroupInsert = InferInsertModel<typeof groups>;
 
 export type GroupMembershipRow = InferSelectModel<typeof groupMemberships>;
 export type GroupMembershipInsert = InferInsertModel<typeof groupMemberships>;
+
+export type OrganizationRow = InferSelectModel<typeof organizations>;
+export type OrganizationInsert = InferInsertModel<typeof organizations>;
+
+export type OrganizationMembershipRow = InferSelectModel<typeof organizationMemberships>;
+export type OrganizationMembershipInsert = InferInsertModel<typeof organizationMemberships>;
+
+export type OrganizationRoleRow = InferSelectModel<typeof organizationRoles>;
+export type OrganizationRoleInsert = InferInsertModel<typeof organizationRoles>;
+
+export type OrganizationPermissionRow = InferSelectModel<typeof organizationPermissions>;
+export type OrganizationPermissionInsert = InferInsertModel<typeof organizationPermissions>;
+
+export type OrganizationRolePermissionGrantRow = InferSelectModel<
+  typeof organizationRolePermissionGrants
+>;
+export type OrganizationRolePermissionGrantInsert = InferInsertModel<
+  typeof organizationRolePermissionGrants
+>;
+
+export type OrganizationMembershipRoleGrantRow = InferSelectModel<
+  typeof organizationMembershipRoleGrants
+>;
+export type OrganizationMembershipRoleGrantInsert = InferInsertModel<
+  typeof organizationMembershipRoleGrants
+>;
 
 export type GroupInvitationRow = InferSelectModel<typeof groupInvitations>;
 export type GroupInvitationInsert = InferInsertModel<typeof groupInvitations>;

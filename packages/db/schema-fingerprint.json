@@ -285,6 +285,42 @@
     {
       "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
       "rls": true,
+      "name": "organization_membership_role_grants",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "name": "organization_memberships",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "name": "organization_permissions",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "name": "organization_role_permission_grants",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "name": "organization_roles",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "name": "organizations",
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
       "name": "profile_goals",
       "forceRls": false
     },
@@ -4167,6 +4203,306 @@
       "generated": ""
     },
     {
+      "name": "organization_id",
+      "type": "uuid",
+      "table": "organization_membership_role_grants",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "membership_id",
+      "type": "uuid",
+      "table": "organization_membership_role_grants",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "role_id",
+      "type": "uuid",
+      "table": "organization_membership_role_grants",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "status",
+      "type": "text",
+      "table": "organization_membership_role_grants",
+      "default": "'active'::text",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "organization_membership_role_grants",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "table": "organization_membership_role_grants",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "organization_memberships",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "organization_id",
+      "type": "uuid",
+      "table": "organization_memberships",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "profile_id",
+      "type": "uuid",
+      "table": "organization_memberships",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "status",
+      "type": "text",
+      "table": "organization_memberships",
+      "default": "'active'::text",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "organization_memberships",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "table": "organization_memberships",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "key",
+      "type": "text",
+      "table": "organization_permissions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "description",
+      "type": "text",
+      "table": "organization_permissions",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "organization_permissions",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "role_id",
+      "type": "uuid",
+      "table": "organization_role_permission_grants",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "permission_key",
+      "type": "text",
+      "table": "organization_role_permission_grants",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "organization_role_permission_grants",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "organization_roles",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "organization_id",
+      "type": "uuid",
+      "table": "organization_roles",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "key",
+      "type": "text",
+      "table": "organization_roles",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "name",
+      "type": "text",
+      "table": "organization_roles",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "organization_roles",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "table": "organization_roles",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
+      "name": "id",
+      "type": "uuid",
+      "table": "organizations",
+      "default": "gen_random_uuid()",
+      "notNull": true,
+      "identity": "",
+      "position": 1,
+      "generated": ""
+    },
+    {
+      "name": "created_by_profile_id",
+      "type": "uuid",
+      "table": "organizations",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 2,
+      "generated": ""
+    },
+    {
+      "name": "name",
+      "type": "text",
+      "table": "organizations",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 3,
+      "generated": ""
+    },
+    {
+      "name": "slug",
+      "type": "text",
+      "table": "organizations",
+      "default": "",
+      "notNull": true,
+      "identity": "",
+      "position": 4,
+      "generated": ""
+    },
+    {
+      "name": "created_at",
+      "type": "timestamp with time zone",
+      "table": "organizations",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 5,
+      "generated": ""
+    },
+    {
+      "name": "updated_at",
+      "type": "timestamp with time zone",
+      "table": "organizations",
+      "default": "now()",
+      "notNull": true,
+      "identity": "",
+      "position": 6,
+      "generated": ""
+    },
+    {
       "name": "id",
       "type": "uuid",
       "table": "profile_goals",
@@ -6294,6 +6630,76 @@
       "definition": "CREATE UNIQUE INDEX oauth_states_pkey ON public.oauth_states USING btree (id)"
     },
     {
+      "name": "organization_membership_role_grants_pkey",
+      "table": "organization_membership_role_grants",
+      "definition": "CREATE UNIQUE INDEX organization_membership_role_grants_pkey ON public.organization_membership_role_grants USING btree (membership_id, role_id)"
+    },
+    {
+      "name": "organization_membership_role_grants_role_status_idx",
+      "table": "organization_membership_role_grants",
+      "definition": "CREATE INDEX organization_membership_role_grants_role_status_idx ON public.organization_membership_role_grants USING btree (role_id, status)"
+    },
+    {
+      "name": "organization_memberships_id_organization_unique",
+      "table": "organization_memberships",
+      "definition": "CREATE UNIQUE INDEX organization_memberships_id_organization_unique ON public.organization_memberships USING btree (id, organization_id)"
+    },
+    {
+      "name": "organization_memberships_organization_profile_unique",
+      "table": "organization_memberships",
+      "definition": "CREATE UNIQUE INDEX organization_memberships_organization_profile_unique ON public.organization_memberships USING btree (organization_id, profile_id)"
+    },
+    {
+      "name": "organization_memberships_pkey",
+      "table": "organization_memberships",
+      "definition": "CREATE UNIQUE INDEX organization_memberships_pkey ON public.organization_memberships USING btree (id)"
+    },
+    {
+      "name": "organization_memberships_profile_status_idx",
+      "table": "organization_memberships",
+      "definition": "CREATE INDEX organization_memberships_profile_status_idx ON public.organization_memberships USING btree (profile_id, status)"
+    },
+    {
+      "name": "organization_permissions_pkey",
+      "table": "organization_permissions",
+      "definition": "CREATE UNIQUE INDEX organization_permissions_pkey ON public.organization_permissions USING btree (key)"
+    },
+    {
+      "name": "organization_role_permission_grants_pkey",
+      "table": "organization_role_permission_grants",
+      "definition": "CREATE UNIQUE INDEX organization_role_permission_grants_pkey ON public.organization_role_permission_grants USING btree (role_id, permission_key)"
+    },
+    {
+      "name": "organization_roles_id_organization_unique",
+      "table": "organization_roles",
+      "definition": "CREATE UNIQUE INDEX organization_roles_id_organization_unique ON public.organization_roles USING btree (id, organization_id)"
+    },
+    {
+      "name": "organization_roles_organization_key_unique",
+      "table": "organization_roles",
+      "definition": "CREATE UNIQUE INDEX organization_roles_organization_key_unique ON public.organization_roles USING btree (organization_id, key)"
+    },
+    {
+      "name": "organization_roles_pkey",
+      "table": "organization_roles",
+      "definition": "CREATE UNIQUE INDEX organization_roles_pkey ON public.organization_roles USING btree (id)"
+    },
+    {
+      "name": "organizations_created_by_profile_id_idx",
+      "table": "organizations",
+      "definition": "CREATE INDEX organizations_created_by_profile_id_idx ON public.organizations USING btree (created_by_profile_id)"
+    },
+    {
+      "name": "organizations_pkey",
+      "table": "organizations",
+      "definition": "CREATE UNIQUE INDEX organizations_pkey ON public.organizations USING btree (id)"
+    },
+    {
+      "name": "organizations_slug_unique_idx",
+      "table": "organizations",
+      "definition": "CREATE UNIQUE INDEX organizations_slug_unique_idx ON public.organizations USING btree (slug)"
+    },
+    {
       "name": "idx_profile_goals_profile_id",
       "table": "profile_goals",
       "definition": "CREATE INDEX idx_profile_goals_profile_id ON public.profile_goals USING btree (profile_id)"
@@ -8122,6 +8528,195 @@
       "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
     },
     {
+      "kind": "f",
+      "name": "organization_membership_role_grants_membership_fkey",
+      "table": "organization_membership_role_grants",
+      "validated": true,
+      "definition": "FOREIGN KEY (membership_id, organization_id) REFERENCES organization_memberships(id, organization_id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "f",
+      "name": "organization_membership_role_grants_organization_id_fkey",
+      "table": "organization_membership_role_grants",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "p",
+      "name": "organization_membership_role_grants_pkey",
+      "table": "organization_membership_role_grants",
+      "validated": true,
+      "definition": "PRIMARY KEY (membership_id, role_id)"
+    },
+    {
+      "kind": "f",
+      "name": "organization_membership_role_grants_role_fkey",
+      "table": "organization_membership_role_grants",
+      "validated": true,
+      "definition": "FOREIGN KEY (role_id, organization_id) REFERENCES organization_roles(id, organization_id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "c",
+      "name": "organization_membership_role_grants_status_check",
+      "table": "organization_membership_role_grants",
+      "validated": true,
+      "definition": "CHECK (status = ANY (ARRAY['active'::text, 'inactive'::text]))"
+    },
+    {
+      "kind": "u",
+      "name": "organization_memberships_id_organization_unique",
+      "table": "organization_memberships",
+      "validated": true,
+      "definition": "UNIQUE (id, organization_id)"
+    },
+    {
+      "kind": "f",
+      "name": "organization_memberships_organization_id_fkey",
+      "table": "organization_memberships",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "u",
+      "name": "organization_memberships_organization_profile_unique",
+      "table": "organization_memberships",
+      "validated": true,
+      "definition": "UNIQUE (organization_id, profile_id)"
+    },
+    {
+      "kind": "p",
+      "name": "organization_memberships_pkey",
+      "table": "organization_memberships",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "f",
+      "name": "organization_memberships_profile_id_fkey",
+      "table": "organization_memberships",
+      "validated": true,
+      "definition": "FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "c",
+      "name": "organization_memberships_status_check",
+      "table": "organization_memberships",
+      "validated": true,
+      "definition": "CHECK (status = ANY (ARRAY['active'::text, 'inactive'::text]))"
+    },
+    {
+      "kind": "c",
+      "name": "organization_permissions_description_non_empty",
+      "table": "organization_permissions",
+      "validated": true,
+      "definition": "CHECK (btrim(description) <> ''::text)"
+    },
+    {
+      "kind": "c",
+      "name": "organization_permissions_key_check",
+      "table": "organization_permissions",
+      "validated": true,
+      "definition": "CHECK (key = 'coaching.access'::text)"
+    },
+    {
+      "kind": "p",
+      "name": "organization_permissions_pkey",
+      "table": "organization_permissions",
+      "validated": true,
+      "definition": "PRIMARY KEY (key)"
+    },
+    {
+      "kind": "f",
+      "name": "organization_role_permission_grants_permission_key_fkey",
+      "table": "organization_role_permission_grants",
+      "validated": true,
+      "definition": "FOREIGN KEY (permission_key) REFERENCES organization_permissions(key) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "p",
+      "name": "organization_role_permission_grants_pkey",
+      "table": "organization_role_permission_grants",
+      "validated": true,
+      "definition": "PRIMARY KEY (role_id, permission_key)"
+    },
+    {
+      "kind": "f",
+      "name": "organization_role_permission_grants_role_id_fkey",
+      "table": "organization_role_permission_grants",
+      "validated": true,
+      "definition": "FOREIGN KEY (role_id) REFERENCES organization_roles(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "u",
+      "name": "organization_roles_id_organization_unique",
+      "table": "organization_roles",
+      "validated": true,
+      "definition": "UNIQUE (id, organization_id)"
+    },
+    {
+      "kind": "c",
+      "name": "organization_roles_key_non_empty",
+      "table": "organization_roles",
+      "validated": true,
+      "definition": "CHECK (btrim(key) <> ''::text)"
+    },
+    {
+      "kind": "c",
+      "name": "organization_roles_name_non_empty",
+      "table": "organization_roles",
+      "validated": true,
+      "definition": "CHECK (btrim(name) <> ''::text)"
+    },
+    {
+      "kind": "f",
+      "name": "organization_roles_organization_id_fkey",
+      "table": "organization_roles",
+      "validated": true,
+      "definition": "FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE"
+    },
+    {
+      "kind": "u",
+      "name": "organization_roles_organization_key_unique",
+      "table": "organization_roles",
+      "validated": true,
+      "definition": "UNIQUE (organization_id, key)"
+    },
+    {
+      "kind": "p",
+      "name": "organization_roles_pkey",
+      "table": "organization_roles",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "f",
+      "name": "organizations_created_by_profile_id_fkey",
+      "table": "organizations",
+      "validated": true,
+      "definition": "FOREIGN KEY (created_by_profile_id) REFERENCES profiles(id) ON DELETE RESTRICT"
+    },
+    {
+      "kind": "c",
+      "name": "organizations_name_non_empty",
+      "table": "organizations",
+      "validated": true,
+      "definition": "CHECK (btrim(name) <> ''::text)"
+    },
+    {
+      "kind": "p",
+      "name": "organizations_pkey",
+      "table": "organizations",
+      "validated": true,
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "kind": "c",
+      "name": "organizations_slug_non_empty",
+      "table": "organizations",
+      "validated": true,
+      "definition": "CHECK (btrim(slug) <> ''::text)"
+    },
+    {
       "kind": "p",
       "name": "profile_goals_pkey",
       "table": "profile_goals",
@@ -8737,6 +9332,54 @@
       "rls": true,
       "kind": "r",
       "name": "oauth_states",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "organization_membership_role_grants",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "organization_memberships",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "organization_permissions",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "organization_role_permission_grants",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "organization_roles",
+      "managed": true,
+      "forceRls": false
+    },
+    {
+      "acl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+      "rls": true,
+      "kind": "r",
+      "name": "organizations",
       "managed": true,
       "forceRls": false
     },

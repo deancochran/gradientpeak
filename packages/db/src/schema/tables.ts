@@ -164,6 +164,154 @@ export const groupMemberships = pgTable(
   ],
 );
 
+export const organizations = pgTable(
+  "organizations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    created_by_profile_id: uuid("created_by_profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "restrict" }),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("organizations_slug_unique_idx").on(table.slug),
+    index("organizations_created_by_profile_id_idx").on(table.created_by_profile_id),
+    check("organizations_name_non_empty", sql`btrim(${table.name}) <> ''`),
+    check("organizations_slug_non_empty", sql`btrim(${table.slug}) <> ''`),
+  ],
+);
+
+export const organizationMemberships = pgTable(
+  "organization_memberships",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organization_id: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    profile_id: uuid("profile_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    status: text("status", { enum: ["active", "inactive"] })
+      .notNull()
+      .default("active"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("organization_memberships_organization_profile_unique").on(
+      table.organization_id,
+      table.profile_id,
+    ),
+    unique("organization_memberships_id_organization_unique").on(table.id, table.organization_id),
+    index("organization_memberships_profile_status_idx").on(table.profile_id, table.status),
+    check("organization_memberships_status_check", sql`${table.status} in ('active', 'inactive')`),
+  ],
+);
+
+export const organizationRoles = pgTable(
+  "organization_roles",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organization_id: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    name: text("name").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("organization_roles_organization_key_unique").on(table.organization_id, table.key),
+    unique("organization_roles_id_organization_unique").on(table.id, table.organization_id),
+    check("organization_roles_key_non_empty", sql`btrim(${table.key}) <> ''`),
+    check("organization_roles_name_non_empty", sql`btrim(${table.name}) <> ''`),
+  ],
+);
+
+export const organizationPermissions = pgTable(
+  "organization_permissions",
+  {
+    key: text("key", { enum: ["coaching.access"] }).primaryKey(),
+    description: text("description").notNull(),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    check("organization_permissions_key_check", sql`${table.key} in ('coaching.access')`),
+    check("organization_permissions_description_non_empty", sql`btrim(${table.description}) <> ''`),
+  ],
+);
+
+export const organizationRolePermissionGrants = pgTable(
+  "organization_role_permission_grants",
+  {
+    role_id: uuid("role_id")
+      .notNull()
+      .references(() => organizationRoles.id, { onDelete: "cascade" }),
+    permission_key: text("permission_key", { enum: ["coaching.access"] })
+      .notNull()
+      .references(() => organizationPermissions.key, { onDelete: "restrict" }),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.role_id, table.permission_key] })],
+);
+
+export const organizationMembershipRoleGrants = pgTable(
+  "organization_membership_role_grants",
+  {
+    organization_id: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    membership_id: uuid("membership_id").notNull(),
+    role_id: uuid("role_id").notNull(),
+    status: text("status", { enum: ["active", "inactive"] })
+      .notNull()
+      .default("active"),
+    created_at: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updated_at: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.membership_id, table.role_id] }),
+    foreignKey({
+      columns: [table.membership_id, table.organization_id],
+      foreignColumns: [organizationMemberships.id, organizationMemberships.organization_id],
+      name: "organization_membership_role_grants_membership_fkey",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.role_id, table.organization_id],
+      foreignColumns: [organizationRoles.id, organizationRoles.organization_id],
+      name: "organization_membership_role_grants_role_fkey",
+    }).onDelete("cascade"),
+    index("organization_membership_role_grants_role_status_idx").on(table.role_id, table.status),
+    check(
+      "organization_membership_role_grants_status_check",
+      sql`${table.status} in ('active', 'inactive')`,
+    ),
+  ],
+);
+
 export const groupInvitations = pgTable(
   "group_invitations",
   {

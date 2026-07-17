@@ -12,19 +12,11 @@ import { InlineLoadingStatus, LoadingButton } from "@repo/ui/components/loading"
 import { SearchField } from "@repo/ui/components/search-field";
 import { keepPreviousData } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import {
-  Calendar,
-  Circle,
-  Lock,
-  MessageSquare,
-  Search,
-  Settings,
-  Target,
-  Users,
-} from "lucide-react";
+import { Calendar, Circle, Lock, MessageSquare, Search, Settings, Target } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { api } from "../../lib/api/client";
+import { getMonthKey } from "../../lib/planning";
 
 export const Route = createFileRoute("/_protected/search")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -64,13 +56,75 @@ const QUICK_LINKS = [
     title: "Settings",
     to: "/settings" as const,
   },
-  {
-    description: "Open roster and coaching actions available on web.",
-    icon: Users,
-    title: "Coaching",
-    to: "/coaching" as const,
-  },
 ] as const;
+
+type QuickLinkSection = (typeof QUICK_LINKS)[number];
+
+const quickLinkClassName = "text-sm font-medium text-foreground underline-offset-4 hover:underline";
+
+function QuickLinkTarget({ section }: { section: QuickLinkSection }) {
+  switch (section.to) {
+    case "/messages":
+      return (
+        <Link
+          to="/messages"
+          search={{
+            compose: false,
+            composeGroup: undefined,
+            composeQuery: undefined,
+            composeRecipients: [],
+            conversationId: undefined,
+            flash: undefined,
+            flashType: undefined,
+          }}
+          className={quickLinkClassName}
+        >
+          Open {section.title}
+        </Link>
+      );
+    case "/record":
+      return (
+        <Link to="/record" search={{ category: "run", gps: "on" }} className={quickLinkClassName}>
+          Open {section.title}
+        </Link>
+      );
+    case "/plan":
+      return (
+        <Link
+          to="/plan"
+          search={{ flash: undefined, flashType: undefined }}
+          className={quickLinkClassName}
+        >
+          Open {section.title}
+        </Link>
+      );
+    case "/calendar":
+      return (
+        <Link
+          to="/calendar"
+          search={{
+            flash: undefined,
+            flashType: undefined,
+            month: getMonthKey(new Date()),
+            view: "month",
+          }}
+          className={quickLinkClassName}
+        >
+          Open {section.title}
+        </Link>
+      );
+    case "/settings":
+      return (
+        <Link
+          to="/settings"
+          search={{ flash: undefined, flashType: undefined }}
+          className={quickLinkClassName}
+        >
+          Open {section.title}
+        </Link>
+      );
+  }
+}
 
 function SearchPage() {
   const { q } = Route.useSearch();
@@ -259,23 +313,7 @@ function SearchPage() {
                   <CardDescription>{section.description}</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <Link
-                    to={section.to}
-                    {...(section.to === "/messages"
-                      ? {
-                          search: {
-                            compose: undefined,
-                            composeQuery: undefined,
-                            conversationId: undefined,
-                            flash: undefined,
-                            flashType: undefined,
-                          },
-                        }
-                      : {})}
-                    className="text-sm font-medium text-foreground underline-offset-4 hover:underline"
-                  >
-                    Open {section.title}
-                  </Link>
+                  <QuickLinkTarget section={section} />
                 </CardContent>
               </Card>
             );

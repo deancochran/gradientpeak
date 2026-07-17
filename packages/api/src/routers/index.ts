@@ -15,6 +15,7 @@ import {
 import { athleteIntelligenceRouter } from "./athlete-intelligence";
 import { groupsRouter } from "./groups";
 import { analyticsRouter, homeRouter, trendsRouter } from "./insights";
+import { organizationsRouter } from "./organizations";
 import { activityPlansRouter, eventsRouter, goalsRouter, trainingPlansRouter } from "./planning";
 import { integrationsRouter, storageRouter } from "./platform";
 import { publicShareRouter } from "./public-share";
@@ -53,6 +54,7 @@ export const appRouter = createTRPCRouter({
   profileSettings: profileSettingsRouter,
   groups: groupsRouter,
   publicShare: publicShareRouter,
+  organizations: organizationsRouter,
 });
 
 export type AppRouter = typeof appRouter;

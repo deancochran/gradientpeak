@@ -10,7 +10,7 @@ import {
 } from "@repo/ui/components/dropdown-menu";
 import { Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { Bell, Home, LogOut, MessageSquare, Settings, UserRound, Users } from "lucide-react";
+import { Bell, Home, LogOut, MessageSquare, Settings, UserRound } from "lucide-react";
 import { useState } from "react";
 
 import { signOutAction } from "../../lib/auth/server-actions";
@@ -29,11 +29,10 @@ export function UserNav() {
   type AccountLink = {
     icon: typeof Home;
     label: string;
-    to: "/" | "/coaching" | "/messages" | "/notifications" | "/settings";
+    to: "/" | "/messages" | "/notifications" | "/settings";
   };
   const accountLinks: AccountLink[] = [
     { to: "/", label: "Dashboard", icon: Home },
-    { to: "/coaching", label: "Coaching", icon: Users },
     { to: "/messages", label: "Messages", icon: MessageSquare },
     { to: "/notifications", label: "Notifications", icon: Bell },
     { to: "/settings", label: "Settings", icon: Settings },
