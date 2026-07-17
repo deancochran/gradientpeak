@@ -20,7 +20,6 @@ import {
 import {
   configureTimerOnlyRecording,
   createInitialTimerOnlyRecordingState,
-  finishTimerOnlyRecording,
   getTimerOnlyRecordingTimes,
   pauseTimerOnlyRecording,
   recoverTimerOnlyRecording,
@@ -43,7 +42,6 @@ type TimerOnlyRecordingContextValue = {
   start: () => void;
   pause: () => void;
   resume: () => void;
-  finish: () => void;
   reset: () => void;
   discardRecoveredDraft: () => void;
 };
@@ -243,7 +241,6 @@ export function TimerOnlyRecordingProvider({
     setProviderState((current) => ({ ...current, hasRecoveredDraft: false }));
     applyTransition(resumeTimerOnlyRecording);
   }, [applyTransition]);
-  const finish = useCallback(() => applyTransition(finishTimerOnlyRecording), [applyTransition]);
   const reset = useCallback(() => {
     const result = resetTimerOnlyRecording();
     setNowMs(Date.now());
@@ -281,7 +278,6 @@ export function TimerOnlyRecordingProvider({
         start,
         pause,
         resume,
-        finish,
         reset,
         discardRecoveredDraft,
       }}

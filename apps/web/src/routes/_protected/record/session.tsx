@@ -8,7 +8,7 @@ import {
   CardTitle,
 } from "@repo/ui/components/card";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { CircleStop, Pause, Play, RotateCcw, Timer, Trash2 } from "lucide-react";
+import { Pause, Play, RotateCcw, Timer, Trash2 } from "lucide-react";
 
 import { useTimerOnlyRecording } from "../../../lib/recording/provider";
 
@@ -124,11 +124,6 @@ export function RecordSessionPage() {
                 <Play className="h-5 w-5" /> Resume
               </Button>
             ) : null}
-            {lifecycle === "recording" || lifecycle === "paused" ? (
-              <Button size="lg" variant="destructive" onClick={recording.finish}>
-                <CircleStop className="h-5 w-5" /> Finish
-              </Button>
-            ) : null}
             {lifecycle === "finished" ? (
               <Button size="lg" variant="outline" onClick={recording.reset}>
                 <RotateCcw className="h-5 w-5" /> Reset
@@ -143,7 +138,9 @@ export function RecordSessionPage() {
           ) : null}
 
           <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-            This slice records elapsed and moving time only. GPS, BLE/FTMS sensors, FIT files, and
+            This slice records elapsed and moving time only. Pause before leaving so the timer can
+            be recovered safely. Finish remains unavailable until a finalized artifact can be saved
+            without deleting the only durable draft. GPS, BLE/FTMS sensors, FIT files, and
             background recording are not available.
           </div>
         </CardContent>

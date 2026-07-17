@@ -16,8 +16,6 @@ export const Route = createFileRoute("/_protected")({
         search: { flash: undefined, flashType: undefined, redirect: location.href },
       });
     }
-
-    return { session, user: session.user };
   },
   component: ProtectedLayout,
 });
