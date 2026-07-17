@@ -1276,7 +1276,7 @@ export const activityEfforts = pgTable(
     ),
     check(
       "activity_efforts_value_finite_positive_check",
-      sql`${table.value} > 0 and ${table.value} not in ('NaN'::real, 'Infinity'::real, '-Infinity'::real)`,
+      sql`(${table.value} > 0 and ${table.value} not in ('NaN'::real, 'Infinity'::real, '-Infinity'::real)) or (${table.value} = 0 and ${table.activity_id} is null and ${table.activity_category} = 'bike' and ${table.effort_type} = 'power' and ${table.source} = 'manual' and ${table.method} = 'profile_update_override' and ${table.provenance} ->> 'override_state' = 'cleared')`,
     ),
     check(
       "activity_efforts_supported_combination_check",

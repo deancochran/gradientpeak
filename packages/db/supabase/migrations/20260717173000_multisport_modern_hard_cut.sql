@@ -625,6 +625,8 @@ execute function public.activity_parent_segment_set_constraint_trigger();
 alter table public.activity_efforts
   add column segment_id uuid,
   add column category_code text;
+update public.activity_efforts
+set category_code = activity_category::text;
 do $$ begin
   if exists(
     select 1 from public.activity_efforts e where e.activity_id is not null and
@@ -635,7 +637,7 @@ do $$ begin
   ) then raise exception 'multisport hard cut blocked: effort segment mapping is crossing or ambiguous'; end if;
 end $$;
 update public.activity_efforts e
-set segment_id = s.id, category_code = e.activity_category::text
+set segment_id = s.id
 from public.activity_segments s
 where s.activity_id = e.activity_id
   and e.start_offset * 1000 >= s.start_offset_ms
@@ -664,7 +666,18 @@ alter table public.activity_efforts
   add constraint activity_efforts_activity_segment_check
     check ((activity_id is null and segment_id is null) or (activity_id is not null and segment_id is not null)),
   add constraint activity_efforts_value_finite_positive_check
-    check (value > 0 and value not in ('NaN'::real, 'Infinity'::real, '-Infinity'::real)),
+    check (
+      (value > 0 and value not in ('NaN'::real, 'Infinity'::real, '-Infinity'::real))
+      or (
+        value = 0
+        and activity_id is null
+        and activity_category = 'bike'
+        and effort_type = 'power'
+        and source = 'manual'
+        and method = 'profile_update_override'
+        and provenance ->> 'override_state' = 'cleared'
+      )
+    ),
   add constraint activity_efforts_supported_combination_check
     check ((activity_category = 'bike' and effort_type = 'power') or (activity_category in ('run', 'swim') and effort_type = 'speed')),
   add constraint activity_efforts_unit_compatibility_check

@@ -121,6 +121,40 @@ describe("activityEffortsRouter", () => {
     expect(spies.orderBy).toHaveBeenCalledOnce();
   });
 
+  it("hides cleared profile override tombstones from effort history", async () => {
+    const visible = buildEffortRow();
+    const tombstone = buildEffortRow({
+      id: "33333333-3333-4333-8333-333333333333",
+      activity_category: "bike",
+      effort_type: "power",
+      duration_seconds: 1200,
+      unit: "watts",
+      value: 0,
+      source: "manual",
+      method: "profile_update_override",
+      provenance: { input: "profile_update", override_state: "cleared" },
+    });
+    const { caller } = createCaller({ selectResult: [tombstone, visible] });
+
+    await expect(caller.getForProfile()).resolves.toEqual([visible]);
+  });
+
+  it("does not project a cleared profile override tombstone by id", async () => {
+    const tombstone = buildEffortRow({
+      activity_category: "bike",
+      effort_type: "power",
+      duration_seconds: 1200,
+      unit: "watts",
+      value: 0,
+      source: "manual",
+      method: "profile_update_override",
+      provenance: { input: "profile_update", override_state: "cleared" },
+    });
+    const { caller } = createCaller({ selectOneResult: [tombstone] });
+
+    await expect(caller.getById({ id: tombstone.id })).resolves.toBeNull();
+  });
+
   it("creates an effort for the current profile and normalizes timestamps", async () => {
     const input = {
       activity_id: null,

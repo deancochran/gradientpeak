@@ -58,6 +58,67 @@ begin
   exception when others then
     if sqlerrm='effort category mismatch was accepted' then raise; end if;
   end;
+  if (
+    select count(*) from public.activity_efforts
+    where id in (
+      '12222222-2222-4222-8222-222222222222',
+      '12333333-3333-4333-8333-333333333333'
+    ) and value = 0 and source = 'manual' and method = 'profile_update_override'
+      and provenance ->> 'override_state' = 'cleared'
+  ) <> 2 then
+    raise exception 'pre-cut cleared zero tombstones were not preserved: %', (
+      select coalesce(jsonb_agg(jsonb_build_object(
+        'id', id, 'value', value, 'source', source, 'method', method, 'provenance', provenance
+      ) order by id), '[]'::jsonb)
+      from public.activity_efforts
+      where id in (
+        '12222222-2222-4222-8222-222222222222',
+        '12333333-3333-4333-8333-333333333333'
+      )
+    );
+  end if;
+  begin
+    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
+      effort_type,duration_seconds,unit,value,source,method,provenance)
+    values(gen_random_uuid(),now(),profile,now(),'bike','power',1200,'watts',0,
+      'manual','manual_activity_effort_entry','{"override_state":"cleared"}'::jsonb);
+    raise exception 'generic zero effort was accepted';
+  exception when others then
+    if sqlerrm='generic zero effort was accepted' then raise; end if;
+  end;
+  begin
+    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
+      effort_type,duration_seconds,unit,value,source,method,provenance)
+    values(gen_random_uuid(),now(),profile,now(),'bike','power',1200,'watts',0,
+      'manual','profile_update_override','{"override_state":"active"}'::jsonb);
+    raise exception 'active zero override was accepted';
+  exception when others then
+    if sqlerrm='active zero override was accepted' then raise; end if;
+  end;
+  begin
+    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
+      effort_type,duration_seconds,unit,value)
+    values(gen_random_uuid(),now(),profile,now(),'bike','power',1200,'watts','NaN'::real);
+    raise exception 'NaN effort was accepted';
+  exception when others then
+    if sqlerrm='NaN effort was accepted' then raise; end if;
+  end;
+  begin
+    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
+      effort_type,duration_seconds,unit,value)
+    values(gen_random_uuid(),now(),profile,now(),'bike','power',1200,'watts','Infinity'::real);
+    raise exception 'positive infinity effort was accepted';
+  exception when others then
+    if sqlerrm='positive infinity effort was accepted' then raise; end if;
+  end;
+  begin
+    insert into public.activity_efforts(id,created_at,profile_id,recorded_at,activity_category,
+      effort_type,duration_seconds,unit,value)
+    values(gen_random_uuid(),now(),profile,now(),'bike','power',1200,'watts','-Infinity'::real);
+    raise exception 'negative infinity effort was accepted';
+  exception when others then
+    if sqlerrm='negative infinity effort was accepted' then raise; end if;
+  end;
   begin
     delete from public.activity_artifacts where id=disposable_artifact;
     raise exception 'direct accepted artifact delete was accepted';

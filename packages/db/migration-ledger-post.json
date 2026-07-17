@@ -57,6 +57,10 @@
     {
       "version": "20260717173000",
       "name": "multisport_modern_hard_cut"
+    },
+    {
+      "version": "20260717190000",
+      "name": "repair_activity_effort_tombstone_constraint"
     }
   ]
 }

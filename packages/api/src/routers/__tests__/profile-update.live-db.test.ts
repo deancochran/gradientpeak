@@ -159,7 +159,7 @@ describe("atomic profile update against PostgreSQL", () => {
     const ftpHistory = await manualFtp(profileId);
     expect(ftpHistory).toHaveLength(2);
     expect(ftpHistory.some(isClearedProfileOverride)).toBe(true);
-    expect(Number(ftpHistory.find(isClearedProfileOverride)?.value)).toBeGreaterThan(0);
+    expect(Number(ftpHistory.find(isClearedProfileOverride)?.value)).toBe(0);
   });
 
   it("keeps append-only override history and agrees across profile and as-of activity analysis", async () => {
@@ -233,7 +233,7 @@ describe("atomic profile update against PostgreSQL", () => {
       ftpHistory.find(isClearedProfileOverride),
     ];
     expect(tombstones.every(Boolean)).toBe(true);
-    expect(Number(ftpHistory.find(isClearedProfileOverride)?.value)).toBeGreaterThan(0);
+    expect(Number(ftpHistory.find(isClearedProfileOverride)?.value)).toBe(0);
     await expect(
       pool.query(
         `insert into public.activity_efforts (

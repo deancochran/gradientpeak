@@ -13,6 +13,7 @@ import { z } from "zod";
 import { listOwnedActivityEfforts } from "../application/activity-efforts/listOwnedActivityEfforts";
 import { getRequiredDb } from "../db";
 import { createTRPCRouter, protectedProcedure } from "../trpc";
+import { isClearedProfileOverride } from "../utils/profile-override-observations";
 
 const activityEffortRowSchema = publicActivityEffortsRowSchema;
 
@@ -133,7 +134,9 @@ export const activityEffortsRouter = createTRPCRouter({
         )
         .limit(1);
 
-      return row ? activityEffortRowSchema.parse(row) : null;
+      if (!row) return null;
+      const parsed = activityEffortRowSchema.parse(row);
+      return parsed.source === "manual" && isClearedProfileOverride(parsed) ? null : parsed;
     }),
 
   create: protectedProcedure

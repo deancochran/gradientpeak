@@ -158,6 +158,20 @@ async function main() {
         'idx-migration@gradientpeak.test',
         false
       );
+      insert into public.users (id, name, email, email_verified)
+      values (
+        '23232323-2323-4323-8323-232323232323',
+        'tombstone-only owner',
+        'tombstone-only@gradientpeak.test',
+        true
+      );
+      insert into public.profiles (id, idx, email, is_public)
+      values (
+        '23232323-2323-4323-8323-232323232323',
+        8002,
+        'tombstone-only@gradientpeak.test',
+        false
+      );
       insert into public.integrations (id, idx, profile_id, provider, external_id)
       values (
         '33333333-3333-4333-8333-333333333333',
@@ -255,6 +269,28 @@ async function main() {
             '{"version":1,"sessions":[{"offset_days":0,"activity_plan_id":"77777777-7777-4777-8777-777777777777"}]}'::jsonb,
             'v1:sha256:0000000000000000000000000000000000000000000000000000000000000000'
           );
+          insert into public.activity_efforts (
+            id, created_at, profile_id, recorded_at, activity_category, effort_type,
+            duration_seconds, unit, value, source, method, calculation_version, provenance
+          ) values
+            (
+              '12111111-1111-4111-8111-111111111111', now(),
+              '22222222-2222-4222-8222-222222222222', now() - interval '3 minutes',
+              'bike', 'power', 1200, 'watts', 300, 'manual', 'profile_update_override',
+              'profile-update-v1', '{"input":"profile_update","override_state":"active"}'::jsonb
+            ),
+            (
+              '12222222-2222-4222-8222-222222222222', now(),
+              '22222222-2222-4222-8222-222222222222', now() - interval '2 minutes',
+              'bike', 'power', 1200, 'watts', 0, 'manual', 'profile_update_override',
+              'profile-update-v1', '{"input":"profile_update","override_state":"cleared"}'::jsonb
+            ),
+            (
+              '12333333-3333-4333-8333-333333333333', now(),
+              '23232323-2323-4323-8323-232323232323', now() - interval '1 minute',
+              'bike', 'power', 1200, 'watts', 0, 'manual', 'profile_update_override',
+              'profile-update-v1', '{"input":"profile_update","override_state":"cleared"}'::jsonb
+            );
         `);
       }
       await applySqlFile(target, resolve(migrationDirectory, file));
@@ -290,6 +326,24 @@ async function main() {
     await target.query(
       readFileSync(resolve(dbPackageRoot, "scripts/verify-multisport-constraints.sql"), "utf8"),
     );
+    const tombstones = await target.query<{ id: string; value: number }>(`
+      select id, value
+      from public.activity_efforts
+      where id in (
+        '12111111-1111-4111-8111-111111111111',
+        '12222222-2222-4222-8222-222222222222',
+        '12333333-3333-4333-8333-333333333333'
+      )
+      order by id
+    `);
+    if (
+      tombstones.rows.length !== 3 ||
+      tombstones.rows[0]?.value !== 300 ||
+      tombstones.rows[1]?.value !== 0 ||
+      tombstones.rows[2]?.value !== 0
+    ) {
+      throw new Error("pre-cut active and cleared effort history changed during replay");
+    }
     const queueRows = await target.query<{ id: string; queue_sequence: string }>(`
       select id, queue_sequence::text
       from public.provider_sync_jobs

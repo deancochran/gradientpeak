@@ -7043,7 +7043,7 @@
       "name": "activity_efforts_value_finite_positive_check",
       "table": "activity_efforts",
       "validated": true,
-      "definition": "CHECK (value > 0::double precision AND (value <> ALL (ARRAY['NaN'::real, 'Infinity'::real, '-Infinity'::real])))"
+      "definition": "CHECK (value > 0::double precision AND (value <> ALL (ARRAY['NaN'::real, 'Infinity'::real, '-Infinity'::real])) OR value = 0::double precision AND activity_id IS NULL AND activity_category = 'bike'::text AND effort_type = 'power'::effort_type AND source = 'manual'::evidence_observation_source AND method = 'profile_update_override'::text AND (provenance ->> 'override_state'::text) = 'cleared'::text)"
     },
     {
       "kind": "f",
